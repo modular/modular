@@ -25,6 +25,7 @@
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -70,6 +71,32 @@ private:
 };
 } // end anonymous namespace
 
+/// Mangle a ParamDeclAttr or ParamDeclRefAttr during cloning of finally blocks.
+/// This scheme postpends "f{cnt-1}" to the param name, which guarantees
+/// uniqueness, since the parameters we started with must already be unique
+/// within their scope. It also retains the demangling rule assumed by the stack
+/// because removing everything after the backtick still yields the param name.
+template <typename DeclOrRef>
+static DeclOrRef mangle(DeclOrRef declOrRef, size_t cnt,
+                        const SmallPtrSet<StringAttr, 4> &needToMangle,
+                        DenseMap<Attribute, Attribute> &manglingCache) {
+  StringAttr name = declOrRef.getName();
+  // If counter is zero, we don't mangle to improve readability.
+  if (cnt-- == 0 || !needToMangle.contains(name))
+    return declOrRef;
+
+  // Check the cache here instead of straightforward memoization so that we
+  // limit memory footprint.
+  if (Attribute cached = manglingCache.lookup(declOrRef))
+    return cast<DeclOrRef>(cached);
+
+  auto mangledName = StringAttr::get(name.getContext(),
+                                     name.strref() + Twine("f") + Twine(cnt));
+  auto mangledDecl = DeclOrRef::get(mangledName, declOrRef.getType());
+  manglingCache.try_emplace(declOrRef, mangledDecl);
+  return mangledDecl;
+}
+
 /// Insert 'finally' block logic on a `lit.try` operation by finding all
 /// terminators that exit the try regions and pasting the finally clause before
 /// it. Try operations must be processed post-order, so that the order in which
@@ -77,17 +104,53 @@ private:
 static LIT::TryOp lowerTryFinally(LIT::TryOp tryOp) {
   Block &finallyBlock = tryOp.getFinallyRegion().front();
 
+  // While cloning the finally block, we need to ensure parameter names are kept
+  // unique. So we first collect parameter names that have to be mangled. Decls
+  // nested within another decl scope can be ignored safely, but everything else
+  // we need to remember.
+  SmallPtrSet<StringAttr, 4> needToMangle;
+  finallyBlock.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    if (auto paramOp = dyn_cast<ParamOpInterface>(op)) {
+      paramOp.walkDeclarations(
+          [&](ParamDeclAttr decl) { needToMangle.insert(decl.getName()); });
+    }
+    if (isa<DeclInterface>(op))
+      return WalkResult::skip();
+    return WalkResult::advance();
+  });
+
+  // We count how many times we cloned the block and use this for mangling.
+  size_t finallyCount = 0;
   auto pasteFinally = [&](Operation *term) {
     OpBuilder b(term);
     IRMapping map;
-    for (Operation &op : finallyBlock.without_terminator())
-      b.clone(op, map);
+
+    // Set up mangling utilities.
+    DenseMap<Attribute, Attribute> manglingCache;
+    mlir::AttrTypeReplacer replacer;
+    replacer.addReplacement([&](ParamDeclAttr decl) {
+      return mangle(decl, finallyCount, needToMangle, manglingCache);
+    });
+    replacer.addReplacement([&](ParamDeclRefAttr ref) {
+      return mangle(ref, finallyCount, needToMangle, manglingCache);
+    });
+
+    for (Operation &op : finallyBlock.without_terminator()) {
+      Operation *cloned = b.clone(op, map);
+
+      // We mangle the parameter names in the op. This must happen recursively
+      // for all ops, since references can be deeply nested.
+      replacer.recursivelyReplaceElementsIn(cloned, /*replaceAttrs=*/true,
+                                            /*replaceLocs=*/true,
+                                            /*replaceTypes=*/true);
+    }
     // If the finally block terminator exits, then the current terminator is
     // dead code.
     if (!isa<LIT::TryYieldOp>(finallyBlock.getTerminator())) {
       b.clone(*finallyBlock.getTerminator(), map);
       term->erase();
     }
+    ++finallyCount;
   };
 
   // FIXME: Re-traversing `lit.try` operations is N^2. This could be computed

@@ -840,3 +840,99 @@ lit.func @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   }
   kgen.return %0 : index
 }
+
+
+// COM: https://github.com/modularml/modular/issues/33570
+// COM: When cloning the finally block, we must uniquely mangle parameters to
+// COM: avoid duplicate parameter name errors.
+// CHECK-LABEL: lit.func @mangle_params_finally_1
+lit.func @mangle_params_finally_1<x>(%c: i1 borrow) -> !kgen.none {
+  lit.try {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
+      %none_0 = kgen.param.constant: none = <#kgen.none>
+      // CHECK: lit.alias.decl *"y`1x0"
+      // CHECK-NEXT: lit.call @mangle_params_finally_1<*"y`1x0">
+      // CHECK-NEXT: kgen.return
+      lit.return %none_0 : !kgen.none
+      hlcf.yield
+    // CHECK-NEXT: } else {
+    } else {
+      // CHECK-NEXT: hlcf.yield
+      hlcf.yield
+    }
+    lit.try.yield
+  // CHECK: } except
+  } except (%arg0: !lit.declref<@Error>) {
+    // CHECK-NEXT: kgen.unreachable
+    lit.try.yield
+  // CHECK-NEXT: } else {
+  } else {
+    // CHECK-NEXT: lit.alias.decl *"y`1x0f0"
+    // CHECK-NEXT: lit.call @mangle_params_finally_1<*"y`1x0f0">
+    // CHECK-NEXT: lit.try.yield
+    lit.try.yield
+  } finally {
+    lit.alias.decl *"y`1x0" = <x>
+    %0 = lit.call @mangle_params_finally_1<*"y`1x0">(%c) : !lit.signature<("c": i1 borrow) -> !kgen.none>
+    lit.try.yield
+  }
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_func
+}
+
+
+// CHECK-LABEL: lit.func @mangle_params_finally_2
+lit.func @mangle_params_finally_2<x>(%c: i1 borrow) -> !kgen.none {
+  lit.try {
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
+      %none_1 = kgen.param.constant: none = <#kgen.none>
+      // CHECK: lit.alias.decl *"y`1x0"
+      // CHECK-NEXT: lit.call @mangle_params_finally_2<*"y`1x0">
+      // CHECK-NEXT: kgen.return
+      lit.return %none_1 : !kgen.none
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+
+    // CHECK: hlcf.if %c
+    hlcf.if %c {
+      %none_1 = kgen.param.constant: none = <#kgen.none>
+      // CHECK: lit.alias.decl *"y`1x0f0"
+      // CHECK-NEXT: lit.call @mangle_params_finally_2<*"y`1x0f0">
+      // CHECK-NEXT: kgen.return
+      lit.return %none_1 : !kgen.none
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+
+    %none_0 = kgen.param.constant: none = <#kgen.none>
+    // CHECK: lit.alias.decl *"y`1x0f1"
+    // CHECK: lit.call @mangle_params_finally_2<*"y`1x0f1">
+    // CHECK: kgen.return
+    lit.return %none_0 : !kgen.none
+    lit.try.yield
+  // CHECK: } except
+  } except (%arg0: !lit.declref<@Error>) {
+    // CHECK-NEXT: kgen.unreachable
+    lit.try.yield
+  // CHECK-NEXT: } else {
+  } else {
+    // CHECK-NEXT: kgen.unreachable
+    lit.try.yield
+  } finally {
+    lit.alias.decl *"y`1x0" = <x>
+    %0 = lit.call @mangle_params_finally_2<*"y`1x0">(%c) : !lit.signature<("c": i1 borrow) -> !kgen.none>
+    lit.try.yield
+  }
+  // CHECK: kgen.unreachable
+
+  // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_func
+}
