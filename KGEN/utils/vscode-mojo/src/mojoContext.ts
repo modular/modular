@@ -177,6 +177,12 @@ export class MOJOContext extends DisposableContext {
     if (launchAndDebugLanguageServer)
       args.push("--attach-debugger-on-startup");
 
+    const includeDirs = await config.get<string[]|undefined>("lsp.includeDirs",
+                                                             workspaceFolder) ||
+                        [];
+    for (const includeDir of includeDirs)
+      args.push("-I", includeDir);
+
     // Configure the server options.
     const serverOptions: vscodelc.ServerOptions = {
       command : mojoConfig.mojoLanguageServerPath,
@@ -242,6 +248,8 @@ export class MOJOContext extends DisposableContext {
     let languageClient = new vscodelc.LanguageClient(
         'mojo-lsp', clientTitle, serverOptions, clientOptions);
     languageClient.start();
+    loggingService.logInfo("Launching Language Server with options:",
+                           serverOptions.args)
     return [ languageClient, mojoConfig.mojoLanguageServerPath ];
   }
 

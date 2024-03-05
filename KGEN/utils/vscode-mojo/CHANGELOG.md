@@ -2,6 +2,12 @@
 
 ## Current version
 
+### Added
+
+- The new setting `mojo.lsp.includeDirs` allows users to specify additional
+  search paths for the Mojo LSP Server to use when resolving imported modules in
+  a document.
+
 ### Fixed
 
 - Debugging of dangling Mojo files that don't belong to any mounted workspace
@@ -14,7 +20,7 @@
 
 ### Added
 
-- The Mojo LSP server will now generate fixits for populating empty
+- The Mojo LSP Server will now generate fixits for populating empty
   documentation strings:
 
   ```mojo

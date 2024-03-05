@@ -16,7 +16,6 @@ import {LoggingService} from './logging';
 import * as config from './utils/config';
 import {substituteVariables} from './utils/vscodeVariables';
 import {isNightlyExtension} from './utils/buildInfo';
-import {WorkspaceFolder} from 'vscode-languageclient';
 
 /**
  * This class represents a subset of the Modular config object used by extension

@@ -580,14 +580,18 @@ struct MojoDocument::Context {
 MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
-                           LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain)
+                           LLCL::Runtime &runtime, LLCL::AnyAsyncValueRef chain,
+                           ArrayRef<std::string> includeDirs)
     : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
       isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)) {
   // Add the parent directory of the main uri as an available include directory.
   std::string parentDir =
       std::filesystem::path(uris[0].file().str()).parent_path().string();
-  getSourceMgr().setIncludeDirs({parentDir});
+
+  std::vector<std::string> allIncludeDirs{parentDir};
+  llvm::append_range(allIncludeDirs, includeDirs);
+  getSourceMgr().setIncludeDirs(allIncludeDirs);
 
   // Start a task to resolve the document.
   chain.andThenAsync(
@@ -1568,9 +1572,10 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
                                    std::string &&contents, int64_t version,
                                    SendDiagnosticsFnRef sendDiagnosticsFn,
                                    LLCL::Runtime &runtime,
-                                   LLCL::AnyAsyncValueRef chain)
+                                   LLCL::AnyAsyncValueRef chain,
+                                   ArrayRef<std::string> includeDirs)
     : MojoDocument(Kind::kTextDocument, uri, version, sendDiagnosticsFn,
-                   runtime, std::move(chain)),
+                   runtime, std::move(chain), includeDirs),
       contents(std::move(contents)) {
   // We add the main doc to the SourceMgr here to ensure it's considered the
   // "main" file.
@@ -1693,9 +1698,9 @@ MojoNotebookDocument::MojoNotebookDocument(
     ArrayRef<lsp::NotebookCell> cellInfos,
     ArrayRef<lsp::TextDocumentItem> cellDocuments,
     SendDiagnosticsFnRef sendDiagnosticsFn, LLCL::Runtime &runtime,
-    LLCL::AnyAsyncValueRef chain)
+    LLCL::AnyAsyncValueRef chain, ArrayRef<std::string> includeDirs)
     : MojoDocument(Kind::kNotebookDocument, notebookAndCellURIs, version,
-                   sendDiagnosticsFn, runtime, std::move(chain)) {
+                   sendDiagnosticsFn, runtime, std::move(chain), includeDirs) {
   for (unsigned i = 0, e = cellInfos.size(); i < e; ++i) {
     if (cellInfos[i].kind != lsp::NotebookCellKind::Code)
       continue;
@@ -1884,13 +1889,14 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 
 struct MojoServer::Impl {
   Impl(bool singleThreaded, bool waitOnShutdown,
-       SendDiagnosticsFn sendDiagnosticsFn)
+       SendDiagnosticsFn sendDiagnosticsFn, ArrayRef<std::string> includeDirs)
       : runtime(
             LLCL::createUniqueRuntime(LLCL::RuntimeOptions()
                                           .withSingleThreaded(singleThreaded)
                                           .withMainWillNotDonate())),
         waitOnShutdown(waitOnShutdown),
-        sendDiagnosticsFn(std::move(sendDiagnosticsFn)) {}
+        sendDiagnosticsFn(std::move(sendDiagnosticsFn)),
+        includeDirs(includeDirs) {}
 
   /// Begin the shutdown process for the server.
   void shutdown() {
@@ -1942,6 +1948,9 @@ struct MojoServer::Impl {
   /// A mapping from file to the last set of semantic tokens sent to the client.
   llvm::StringMap<lsp::SemanticTokens> prevSemanticTokensForFile;
   std::mutex lastSemanticTokensMutex;
+
+  /// Additional directories to append to the search paths list.
+  std::vector<std::string> includeDirs;
 };
 
 //===----------------------------------------------------------------------===//
@@ -1949,9 +1958,10 @@ struct MojoServer::Impl {
 //===----------------------------------------------------------------------===//
 
 MojoServer::MojoServer(bool singleThreaded, bool waitOnShutdown,
-                       SendDiagnosticsFn sendDiagnosticsFn)
+                       SendDiagnosticsFn sendDiagnosticsFn,
+                       ArrayRef<std::string> includeDirs)
     : impl(std::make_unique<Impl>(singleThreaded, waitOnShutdown,
-                                  std::move(sendDiagnosticsFn))) {}
+                                  std::move(sendDiagnosticsFn), includeDirs)) {}
 MojoServer::~MojoServer() { shutdown(); }
 
 void MojoServer::shutdown() { impl->shutdown(); }
@@ -1976,9 +1986,9 @@ void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
   }
 
   // Create a new document.
-  it->second = MojoTextDocumentRef::create(uri, std::move(contents), version,
-                                           impl->sendDiagnosticsFn,
-                                           *impl->runtime, std::move(chain));
+  it->second = MojoTextDocumentRef::create(
+      uri, std::move(contents), version, impl->sendDiagnosticsFn,
+      *impl->runtime, std::move(chain), impl->includeDirs);
 }
 
 void MojoServer::updateDocument(
@@ -2049,9 +2059,9 @@ void MojoServer::addNotebookDocument(
     docURIs.push_back(cell.uri);
 
   // Create a new document.
-  file = MojoNotebookDocumentRef::create(docURIs, version, cells, cellDocuments,
-                                         impl->sendDiagnosticsFn,
-                                         *impl->runtime, std::move(chain));
+  file = MojoNotebookDocumentRef::create(
+      docURIs, version, cells, cellDocuments, impl->sendDiagnosticsFn,
+      *impl->runtime, std::move(chain), impl->includeDirs);
   for (const lsp::TextDocumentItem &cell : cellDocuments)
     impl->notebookCellToFile[cell.uri.file()] = file.copy();
 }
