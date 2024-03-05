@@ -105,7 +105,7 @@ struct EngineTensor(Sized):
 
     fn buffer(self) -> Buffer[DType.invalid]:
         return Buffer[DType.invalid](
-            self.data(), len(self) * self.dtype().sizeof()
+            self.data(), len(self) * _get_dtype_size(self.dtype())
         )
 
     fn tensor[type: DType](self) raises -> Tensor[type]:
@@ -141,3 +141,47 @@ struct _Numpy:
     fn __del__(owned self):
         _ = __get_address_as_owned_value(self.np.value)
         self.np.free()
+
+
+fn _get_dtype_size(type: DType) -> Int:
+    """
+    Get the size of the dynamic dtype.
+
+    We cannot directly using type.sizeof(), since that only works with
+    statically known dtypes. Instead, we have to perform a dispatch to
+    determine the size of the dtype.
+    """
+    alias type_list = List[DType](
+        DType.bool,
+        DType.int8,
+        DType.uint8,
+        DType.int16,
+        DType.uint16,
+        DType.bfloat16,
+        DType.float16,
+        DType.int32,
+        DType.uint32,
+        DType.float32,
+        DType.tensor_float32,
+        DType.int64,
+        DType.uint64,
+        DType.float64,
+        DType.index,
+        DType.address,
+    )
+    var size = -1
+
+    @parameter
+    @always_inline
+    fn func[idx: Int]():
+        if type_list[idx] == type:
+            alias concrete_type = type_list[idx]
+            size = concrete_type.sizeof()
+            return
+
+    unroll[func, len(type_list)]()
+
+    if size == -1:
+        abort("unable to get the dtype size of " + str(type))
+
+    return size
