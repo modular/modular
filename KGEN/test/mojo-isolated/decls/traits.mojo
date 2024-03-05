@@ -7,29 +7,30 @@
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-vtables | FileCheck %s
 
 
-# CHECK-LABEL: lit.trait.decl @Trait<?, MT: type, T: !kgen.paramref<MT>>
+# CHECK-LABEL: lit.trait.decl @Trait
+# CHECK-SAME: <?, [[MT:.*]]: type, [[T:.*]]: !kgen.paramref<[[MT]]>>
 trait Trait:
-    # CHECK: lit.func @"f0($1)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK: lit.func @"f0($1)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<[[MT]]> [[T]], imm {{.*}}> borrow_in_mem) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
     fn f0(self: Self):
         ...
 
-    # CHECK: lit.func @"f1($1&)"{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref) -> !kgen.none
+    # CHECK: lit.func @"f1($1&)"{{.*}}(%self: !lit.ref<{{.*}}> byref) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
     fn f1(inout self: Self):
         ...
 
-    # CHECK: lit.func @"f2($1&)"{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref) -> !kgen.none attributes
+    # CHECK: lit.func @"f2($1&)"{{.*}}(%self: !lit.ref<{{.*}}> byref) -> !kgen.none attributes
     # CHECK-NEXT: lit.trait_func
     fn f2(inout self: Self):
         pass
 
-    # CHECK: lit.func @"f3($1)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> owned_in_mem, ?, %__result__: !lit.ref<!object, mut {{.*}}> byref_result)
+    # CHECK: lit.func @"f3($1)"[{{.*}}](%self: !lit.ref<{{.*}}> owned_in_mem, ?, %__result__: !lit.ref<!object, mut {{.*}}> byref_result)
     # CHECK-NEXT: lit.trait_func
     def f3(self: Self):
         pass
 
-    # CHECK: lit.func @"f4($1&)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref, ?, %__result__: !lit.ref<!object, mut {{.*}}> byref_result)
+    # CHECK: lit.func @"f4($1&)"[{{.*}}](%self: !lit.ref<{{.*}}> byref, ?, %__result__: !lit.ref<!object, mut {{.*}}> byref_result)
     # CHECK-NEXT: lit.trait_func
     def f4(inout self: Self):
         pass
@@ -48,21 +49,20 @@ trait Trait:
         ...
 
 
-# CHECK-LABEL: lit.trait.decl @EmptyTrait<?, MT: type, T: !kgen.paramref<MT>>
+# CHECK-LABEL: lit.trait.decl @EmptyTrait
 trait EmptyTrait:
     pass
 
 
-# CHECK-LABEL: lit.trait.decl @Trait1<?, MT: type, T: !kgen.paramref<MT>>
+# CHECK-LABEL: lit.trait.decl @Trait1
+# CHECK-SAME: <?, [[MT:.*]]: type, [[T:.*]]: !kgen.paramref<[[MT]]>>
 trait Trait1:
-    # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref_result) -> !kgen.none
+    # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<{{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<:!kgen.paramref<[[MT]]> [[T]], mut {{.*}}> byref_result) -> !kgen.none
     fn f(self: Self) -> Self:
         ...
 
 
-# CHECK-LABEL: lit.trait.decl @Trait2<?, MT: type, T: !kgen.paramref<MT>>
 trait Trait2:
-    # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<:!kgen.paramref<MT> T, mut {{.*}}> byref_result) -> !kgen.none
     fn f(self: Self) -> Self:
         ...
 
@@ -74,9 +74,9 @@ struct StructWithTraits(Trait1, Trait2):
         ...
 
 
-# CHECK-LABEL: lit.trait.decl @CFMTrait<?, MT: type, T: !kgen.paramref<MT>>
+# CHECK-LABEL: lit.trait.decl @CFMTrait
 trait CFMTrait:
-    # CHECK: lit.func @"f1{{.*}}(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK: lit.func @"f1{{.*}}(%self: !lit.ref<{{.*}}> borrow_in_mem) -> !kgen.none
     fn f1(self: Self):
         pass
 
@@ -99,9 +99,9 @@ struct CFMStruct(CFMTrait):
 
 
 # Test for struct with parameters and function with parameters.
-# CHECK-LABEL: lit.trait.decl @CFMTraitParams<?, MT: type, T: !kgen.paramref<MT>>
+# CHECK-LABEL: lit.trait.decl @CFMTraitParams
 trait CFMTraitParams:
-    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<x: !CFMTraitParams>(%self: !lit.ref<:!kgen.paramref<MT> T, imm {{.*}}> borrow_in_mem)
+    # CHECK: lit.func @"f1{{.*}}"[{{.*}}]<x: !CFMTraitParams>(
     fn f1[x: CFMTraitParams](self):
         pass
 
