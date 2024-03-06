@@ -41,6 +41,6 @@ add_modular_testsuite(check-api-integration-tests
   mof
   ${FRAMEWORK_DYLIB_DEPS}
   is-cuda-available
-  )
+  max-mojo)
 
 add_subdirectory(python)
