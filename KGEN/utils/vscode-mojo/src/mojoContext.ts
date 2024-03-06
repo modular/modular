@@ -12,7 +12,7 @@ import {MojoDebugContext} from './debug/debug';
 import {MojoDecoratorContext} from './decorations';
 import {registerFormatter} from './formatter';
 import {LoggingService} from './logging';
-import {MOJOSDK} from './mojoSDK';
+import {MojoSDKManager} from './mojoSDK';
 import * as config from './utils/config';
 import {DisposableContext} from './utils/disposableContext';
 
@@ -21,7 +21,7 @@ import {DisposableContext} from './utils/disposableContext';
  *  client.
  */
 export class MOJOContext extends DisposableContext {
-  readonly sdk: MOJOSDK;
+  readonly sdkManager: MojoSDKManager;
   private lspClients: Map<string, Promise<vscodelc.LanguageClient|undefined>> =
       new Map();
   readonly loggingService: LoggingService;
@@ -32,7 +32,7 @@ export class MOJOContext extends DisposableContext {
     super();
     this.extensionContext = extensionContext;
     this.loggingService = loggingService;
-    this.sdk = new MOJOSDK(this.loggingService, extensionContext);
+    this.sdkManager = new MojoSDKManager(this.loggingService, extensionContext);
   }
 
   /**
@@ -82,7 +82,8 @@ export class MOJOContext extends DisposableContext {
         () => { this.disposeLSPClients(); }));
 
     // Initialize the formatter.
-    this.pushSubscription(registerFormatter(this.loggingService, this.sdk));
+    this.pushSubscription(
+        registerFormatter(this.loggingService, this.sdkManager));
 
     // Initialize the debugger support.
     this.pushSubscription(new MojoDebugContext(this));
@@ -142,9 +143,9 @@ export class MOJOContext extends DisposableContext {
 
     // Get the path of the lsp-server that is used to provide language
     // functionality.
-    let mojoConfig =
-        await this.sdk.resolveConfig({workspaceFolder : workspaceFolder});
-    if (!mojoConfig)
+    let sdk =
+        await this.sdkManager.findSDK({workspaceFolder : workspaceFolder});
+    if (!sdk)
       return undefined;
 
     let args = [];
@@ -159,10 +160,10 @@ export class MOJOContext extends DisposableContext {
 
     // Configure the server options.
     const serverOptions: vscodelc.ServerOptions = {
-      command : mojoConfig.mojoLanguageServerPath,
+      command : sdk.config.mojoLanguageServerPath,
       args,
       options :
-          {env : {...process.env, MODULAR_HOME : mojoConfig.modularHomePath}}
+          {env : {...process.env, MODULAR_HOME : sdk.config.modularHomePath}}
     };
 
     // Configure file patterns relative to the workspace folder.

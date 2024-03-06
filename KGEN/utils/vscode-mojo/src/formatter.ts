@@ -8,11 +8,11 @@ import {exec} from 'child_process';
 import * as vscode from 'vscode';
 
 import {LoggingService} from './logging';
-import {MOJOSDK} from './mojoSDK';
+import {MojoSDKManager} from './mojoSDK';
 import {get} from './utils/config';
 
 export function registerFormatter(loggingService: LoggingService,
-                                  mojoSDK: MOJOSDK) {
+                                  mojoSDKManager: MojoSDKManager) {
   return vscode.languages.registerDocumentFormattingEditProvider('mojo', {
     async provideDocumentFormattingEdits(document, _options) {
       const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
@@ -20,16 +20,16 @@ export function registerFormatter(loggingService: LoggingService,
       const cwd = workspaceFolder?.uri?.fsPath || backupFolder?.uri.fsPath;
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
-      const mojoConfig =
-          await mojoSDK.resolveConfig({workspaceFolder : workspaceFolder});
-      if (!mojoConfig)
+      const sdk =
+          await mojoSDKManager.findSDK({workspaceFolder : workspaceFolder});
+      if (!sdk)
         return [];
 
       // Grab the formatter from the Mojo SDK (i.e. `mojo format`).
-      var command = mojoConfig.mojoDriverPath + " format";
+      var command = sdk.config.mojoDriverPath + " format";
 
       let env = process.env;
-      env['MODULAR_HOME'] = mojoConfig.modularHomePath;
+      env['MODULAR_HOME'] = sdk.config.modularHomePath;
 
       command += " --quiet " + args.join(' ') + ' -';
 

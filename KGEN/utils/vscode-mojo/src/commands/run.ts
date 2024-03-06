@@ -61,15 +61,15 @@ class ExecutionManager extends DisposableContext {
       return;
 
     // Find the config for processing this file.
-    let config = await this.context.sdk.resolveConfig(
+    let sdk = await this.context.sdkManager.findSDK(
         {workspaceFolder : vscode.workspace.getWorkspaceFolder(doc.uri)});
-    if (!config)
+    if (!sdk)
       return;
 
     // Execute the file.
-    let terminal = this.getTerminalForFile(doc, config, newTerminalPerFile);
+    let terminal = this.getTerminalForFile(doc, sdk.config, newTerminalPerFile);
     terminal.show();
-    terminal.sendText(shellescape([ config.mojoDriverPath, doc.fileName ]));
+    terminal.sendText(shellescape([ sdk.config.mojoDriverPath, doc.fileName ]));
 
     // Focus on the terminal if the user has configured it to do so.
     if (this.shouldTerminalFocusOnStart(doc.uri))
