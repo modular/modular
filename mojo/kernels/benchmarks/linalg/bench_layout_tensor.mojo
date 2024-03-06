@@ -8,12 +8,12 @@ from random import rand
 
 import benchmark
 from algorithm import Static2DTileUnitFunc as Tile2DFunc
-from algorithm import parallelize, sync_parallelize, vectorize
+from algorithm import sync_parallelize, vectorize
 from memory import memset_zero
 from python import Python
 
 from kernel_utils.layout import Layout
-from kernel_utils.layout_tensor import LayoutTensor
+from kernel_utils.layout_tensor import LayoutTensor, TensorBuilder
 from kernel_utils.int_tuple import IntTuple, int
 
 
@@ -111,19 +111,6 @@ fn matmul_unrolled(inout C: Matrix, A: Matrix, B: Matrix):
     sync_parallelize[calc_row](C.rows // tile_m)
 
 
-struct TensorBuilder[
-    M: Int,
-    N: Int,
-    dtype: DType,
-    layout: Layout = Layout(IntTuple(M, N), IntTuple(N, 1)),
-]:
-    alias Type = LayoutTensor[layout, dtype]
-
-    @staticmethod
-    fn Wrap(ptr: DTypePointer[dtype]) -> Self.Type:
-        return Self.Type(ptr)
-
-
 fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
     var dst = TensorBuilder[M, N, dtype].Wrap(C.data)
     var lhs = TensorBuilder[M, K, dtype].Wrap(A.data)
@@ -178,6 +165,12 @@ fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
     sync_parallelize[calc_row](M // tile_m)
 
 
+fn alloc_aligned_tile[M: Int, N: Int, dtype: DType]() -> DTypePointer[dtype]:
+    alias alignment = alignof[SIMD[dtype]]()
+    alias cache_width = ((N + alignment - 1) // alignment) * alignment
+    return DTypePointer[dtype].alloc(M * cache_width, alignment=alignment)
+
+
 fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
     var dst = TensorBuilder[M, N, dtype].Wrap(C.data)
     var lhs = TensorBuilder[M, K, dtype].Wrap(A.data)
@@ -185,7 +178,7 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
 
     alias vec_size = simdwidthof[dtype]() * 2
 
-    alias tile_m = 4
+    alias tile_m = 8
     alias tile_n = 64
     alias tile_k = 4
 
@@ -195,20 +188,7 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
 
     @parameter
     fn calc_row(m_1: Int):
-        alias alignment = alignof[SIMD[dtype]]()
-        alias cache_width = (tile_n // alignment + 1) * alignment
-        var rhs_cache_data = DTypePointer[dtype].alloc(
-            tile_k * cache_width, alignment=alignment
-        )
-        var rhs_cache_aligned = TensorBuilder[tile_k, cache_width, dtype].Wrap(
-            rhs_cache_data
-        )
-        var rhs_cache = rhs_cache_aligned.tile[tile_k, tile_n](0, 0)
-
-        # var rhs_cache_data = DTypePointer[dtype].alloc(tile_k * tile_n)
-        # var rhs_cache = TensorBuilder[tile_k, tile_n, dtype].Wrap(
-        #     rhs_cache_data
-        # )
+        var rhs_cache = TensorBuilder[tile_k, tile_n, dtype].BuildAligned()
 
         for k_1 in range(K // tile_k):
             for n_1 in range(N // tile_n):
@@ -243,7 +223,58 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
                         alias unroll_factor = tile_n // vec_size
                         vectorize[dot, vec_size, tile_n, unroll_factor]()
 
-        rhs_cache_data.free()
+    sync_parallelize[calc_row](M // tile_m)
+
+
+fn matmul_layout_transposed(inout C: Matrix, A: Matrix, B: Matrix):
+    var dst = TensorBuilder[M, N, dtype].Wrap(C.data)
+    var lhs = TensorBuilder[M, K, dtype].Wrap(A.data)
+    var rhs = TensorBuilder[K, N, dtype].Wrap(B.data)
+
+    alias vec_size = 4 * simdwidthof[dtype]()
+
+    alias tile_m = 16
+    alias tile_n = 16
+    alias tile_k = 128
+
+    constrained[M % tile_m == 0, "N must be a multiple of tile_m"]()
+    constrained[N % tile_n == 0, "N must be a multiple of tile_n"]()
+    constrained[K % tile_k == 0, "K must be a multiple of tile_k"]()
+
+    constrained[
+        tile_k % vec_size == 0, "tile_k must be a multiple of vec_size"
+    ]()
+
+    @parameter
+    fn calc_row(m_1: Int):
+        var rhs_cache = TensorBuilder[tile_n, tile_k, dtype].BuildAligned()
+        var lhs_cache = TensorBuilder[tile_m, tile_k, dtype].BuildAligned()
+
+        for k_1 in range(K // tile_k):
+            var lhs_view = lhs.tile[tile_m, tile_k](m_1, k_1)
+            lhs_cache.copy_from(lhs_view)
+
+            for n_1 in range(N // tile_n):
+                var dst_view = dst.tile[tile_m, tile_n](m_1, n_1)
+                var rhs_view = rhs.tile[tile_k, tile_n](k_1, n_1).transpose()
+                rhs_cache.copy_from(rhs_view)
+
+                for m in range(tile_m):
+                    for n in range(tile_n):
+                        var sum = SIMD[dtype, vec_size](0)
+
+                        @parameter
+                        fn dot[simd_size: Int](k: Int):
+                            sum = math.fma(
+                                lhs_cache.load[vec_size](m, k),
+                                rhs_cache.load_aligned[vec_size](n, k),
+                                sum,
+                            )
+
+                        alias unroll_factor = tile_k // vec_size
+                        vectorize[dot, vec_size, tile_k, unroll_factor]()
+
+                        dst_view[m, n] += sum.reduce_add()
 
     sync_parallelize[calc_row](M // tile_m)
 
@@ -284,7 +315,8 @@ fn test_matrix_equal[
     _ = func(result, A, B)
     for i in range(C.rows):
         for j in range(C.cols):
-            if C[i, j] != result[i, j]:
+            # if C[i, j] != result[i, j]:
+            if math.abs(C[i, j] - result[i, j]) > 1e-3:
                 return False
     return True
 
@@ -308,6 +340,10 @@ fn test_all() raises:
             "Layout Tiled Parallel Vectorized output does not match naive"
             " implementation"
         )
+    if not test_matrix_equal[matmul_layout_transposed](C, A, B):
+        raise Error(
+            "Layout Transposed output does not match naive implementation"
+        )
 
     A.data.free()
     B.data.free()
@@ -322,3 +358,4 @@ fn main() raises:
     bench[matmul_unrolled, "Unrolled:"]()
     bench[matmul_tiled_layout, "LayoutTensor:"]()
     bench[matmul_tiled_layout_cache, "LayoutTensor Cached:"]()
+    bench[matmul_layout_transposed, "LayoutTensor Transposed:"]()
