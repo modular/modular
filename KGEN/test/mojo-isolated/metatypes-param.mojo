@@ -9,6 +9,7 @@
 # Actual tests
 # ===----------------------------------------------------------------------=== #
 
+
 # CHECK-LABEL: lit.struct.decl @Param
 @value
 @register_passable("trivial")
@@ -83,7 +84,7 @@ fn partially_bound_alias():
     alias FullyBoundFn = PartiallyBoundFn[`2`]
 
     # COM: Test fully binding a partially bound type.
-    # CHECK: *"BoundFromPartial`1x3": metatype<#TwoParam <1, 2>> =
+    # CHECK: *"BoundFromPartial`3": metatype<#TwoParam <1, 2>> =
     # CHECK-SAME: #lit.bind_type<:metatype<#TwoParam <1, ?>, <"y": index>> {{.*}}[[PBOUND]], [2]>
     alias BoundFromPartial = PartiallyBound[`2`]
     # CHECK: first{{.*}} = <1>
