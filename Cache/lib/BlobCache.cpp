@@ -12,6 +12,7 @@
 #include "Support/Base64.h"
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Filesystem/DiskUsage.h"
 #include "Support/HMAC.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/DynamicLibrary.h"
@@ -389,6 +390,17 @@ struct FilesystemBackend : public BlobCacheBackend {
     std::filesystem::create_directories(filePathOr->parent_path(), dirErr);
     if (dirErr)
       return Error(dirErr.message());
+
+    auto availableSizeOr = M::getAvailableDiskSpace(filePathOr->parent_path());
+    if (availableSizeOr.isError())
+      return availableSizeOr.takeError();
+
+    if (*availableSizeOr < obj->getBufferSize())
+      return Error("cannot write to file to filesystem cache since available "
+                   "space(" +
+                   std::to_string(*availableSizeOr) +
+                   ") is not enough to write " +
+                   std::to_string(obj->getBufferSize()) + " bytes");
 
     // Functor used when we actually need to write out the file.
     auto writeContent = [&](raw_ostream &os) {

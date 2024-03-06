@@ -15,6 +15,7 @@ add_modular_library(MCache
   LLCLRuntime
   LLCLSupport
   MSupport
+  MSupportFilesystem
   MVersion
   )
 

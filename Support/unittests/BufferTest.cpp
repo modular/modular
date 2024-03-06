@@ -61,7 +61,12 @@ TEST(BufferTest, TestWrite) {
 }
 
 TEST(BufferTest, TestReadPWriteFile) {
-  auto writeOr = WriteableBuffer::getFile("tmpFile", /*size=*/5, /*offset=*/0);
+  std::error_code ec;
+  std::filesystem::path tmpFilePath = std::filesystem::temp_directory_path(ec);
+  ASSERT_FALSE(ec) << ec.message();
+  tmpFilePath /= "tmpFile";
+  auto writeOr =
+      WriteableBuffer::getFile(tmpFilePath, /*size=*/5, /*offset=*/0);
   EXPECT_FALSE(writeOr.isError()) << writeOr.getError();
   WriteableBufferRef write = std::move(*writeOr);
   // pwrite because we want to write to a particular offset.
@@ -71,12 +76,13 @@ TEST(BufferTest, TestReadPWriteFile) {
   auto wrongBufferOr = Buffer::getFile("aSillyNamedTempFileThatShouldNotExist");
   EXPECT_TRUE(wrongBufferOr.isError()) << "No such file should exist...";
 
-  auto rightBufferOr = Buffer::getFile("tmpFile");
+  auto rightBufferOr = Buffer::getFile(tmpFilePath);
   EXPECT_FALSE(rightBufferOr.isError()) << rightBufferOr.getError();
   EXPECT_TRUE((*rightBufferOr)->getBuffer() == "hello");
 
   // Clean up the file.
-  llvm::sys::fs::remove("tmpFile");
+  std::filesystem::remove(tmpFilePath, ec);
+  ASSERT_FALSE(ec) << ec.message();
 }
 
 TEST(BufferTest, TestReadWriteFile) {

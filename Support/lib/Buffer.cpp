@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Buffer.h"
+#include "Support/Filesystem/DiskUsage.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 using namespace M;
@@ -183,6 +184,13 @@ llvm::MemoryBufferRef Buffer::getMemBufferRef() const {
 ErrorOr<WriteableBufferRef>
 WriteableBuffer::getFile(const std::filesystem::path &filepath, size_t size,
                          size_t offset) {
+  auto availableSizeOr = M::getAvailableDiskSpace(filepath.parent_path());
+  if (availableSizeOr.isError())
+    return availableSizeOr.takeError();
+
+  if (*availableSizeOr < size)
+    return Error("available space in disk less than requested size");
+
   auto fdOr = openFile(filepath, /*readOnly=*/false);
   if (fdOr.isError())
     return fdOr.takeError();

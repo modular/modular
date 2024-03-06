@@ -5,5 +5,6 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MSupportFilesystem
+  DiskUsage.cpp
   Paths.cpp
 )
