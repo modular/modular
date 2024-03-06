@@ -457,7 +457,6 @@ FloatArrayElementsAttr FloatArrayElementsAttr::get(ShapedType type,
   bitsToShift = bitWidth - semBitWidth;
 
   for (const APFloat &value : values) {
-    const auto &sem = value.getSemantics();
     if (floatType.isBF16()) {
       // TODO we need to investigate why BF16 returns a 32-bit width int #33856
       intVals.push_back(value.bitcastToAPInt());
