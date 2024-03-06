@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 ##===----------------------------------------------------------------------===##
+add_subdirectory(Filesystem)
 
 add_modular_library(MSupport
   OBJECT # Always generate an obj.${name} target.
@@ -41,6 +42,7 @@ add_modular_library(MSupport
   LLVMTargetParser
   MLIRSupport
   MVersion
+  MSupportFilesystem
   )
 
 set_property(
@@ -61,7 +63,6 @@ set_source_files_properties(BuildInfo.cpp PROPERTIES
 unset(BUILD_INFO_DEFINITIONS)
 unset(LLVM_TARGETS_BUILT)
 
-add_subdirectory(Filesystem)
 add_subdirectory(ADT)
 add_subdirectory(ASN1)
 add_subdirectory(Cryptography)
