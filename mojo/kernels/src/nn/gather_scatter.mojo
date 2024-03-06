@@ -193,12 +193,12 @@ fn gather_reduce[
                 ) -> StaticTuple[SIMD[type, simd_width], unroll_factor]:
                     var out = accums
                     var idxs = normalize_neg_index(
-                        indices.load[unroll_factor](i, j), gather_axis_size
+                        indices.simd_load[unroll_factor](i, j), gather_axis_size
                     )
 
                     @unroll
                     for unroll_idx in range(0, unroll_factor):
-                        var gather_chunk = input.load[simd_width](
+                        var gather_chunk = input.simd_load[simd_width](
                             int(idxs[unroll_idx]), k
                         )
                         out[unroll_idx] = reduce_fn[type, simd_width](
@@ -226,7 +226,7 @@ fn gather_reduce[
                     )[0]
 
                 var out_idx = StaticIntTuple[2](i, k)
-                output.store[simd_width](out_idx, accum)
+                output.simd_store[simd_width](out_idx, accum)
 
             tile[
                 gather_k_tile,
@@ -298,21 +298,25 @@ fn gather[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return input.load[width](rebind[StaticIntTuple[input_rank]](coords))
+        return input.simd_load[width](
+            rebind[StaticIntTuple[input_rank]](coords)
+        )
 
     @parameter
     @always_inline
     fn indices_fn[
         width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[indices_type, width]:
-        return indices.load[width](rebind[StaticIntTuple[indices_rank]](coords))
+        return indices.simd_load[width](
+            rebind[StaticIntTuple[indices_rank]](coords)
+        )
 
     @parameter
     @always_inline
     fn output_fn[
         width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank], val: SIMD[type, width]):
-        output.store[width](
+        output.simd_store[width](
             rebind[StaticIntTuple[output_rank]](coords),
             rebind[SIMD[type, width]](val),
         )

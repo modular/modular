@@ -155,9 +155,11 @@ fn fused_attention[
             for i in range(mask_rank):
                 idx[i] = _out_coords[_rank - mask_rank + i]
 
-            fused_val += rebind[SIMD[inner_type, width]](mask.load[width](idx))
+            fused_val += rebind[SIMD[inner_type, width]](
+                mask.simd_load[width](idx)
+            )
 
-        score.store[width](
+        score.simd_store[width](
             rebind[StaticIntTuple[rank]](_out_coords),
             fused_val.cast[score_type](),
         )
@@ -180,7 +182,7 @@ fn fused_attention[
                 _width: Int
             ](idx: Int) -> SIMD[DType.float32, _width]:
                 return rebind[SIMD[DType.float32, _width]](
-                    row_view.load[_width](idx)
+                    row_view.simd_load[_width](idx)
                 )
 
             softmax_3_pass[simd_size, Dim(), DType.float32, input_fn_1d](
@@ -1373,12 +1375,12 @@ fn _naive_attention[
     @parameter
     @always_inline
     fn scale_and_mask[width: Int, _rank: Int](coords: StaticIntTuple[_rank]):
-        var vec = score.load[width](rebind[StaticIntTuple[4]](coords))
+        var vec = score.simd_load[width](rebind[StaticIntTuple[4]](coords))
         vec = vec * scale.cast[type]()
-        vec = vec + mask.load[width](
+        vec = vec + mask.simd_load[width](
             Index(coords[_rank - 2], coords[_rank - 1])
         )
-        score.store[width](rebind[StaticIntTuple[4]](coords), vec)
+        score.simd_store[width](rebind[StaticIntTuple[4]](coords), vec)
 
     elementwise[scale_and_mask, simd_size, 4](score.dynamic_shape)
 
