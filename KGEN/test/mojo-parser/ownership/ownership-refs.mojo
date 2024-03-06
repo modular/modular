@@ -68,11 +68,11 @@ fn parametricMut[isMut: __mlir_type.i1,
 # CHECK-LABEL: lit.func @"testParametricMut
 fn testParametricMut(i: MemExample, inout m: MemExample):
   # This infers an immutable reference.
-  # CHECK:  lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, imm *"i`1x0">
+  # CHECK:  lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, imm *"i`">
   _ = parametricMut(Reference(i).value)
 
   # This infers a mutable reference.
-  # CHECK: lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, mut *"m`1x1">
+  # CHECK: lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, mut *"m`1">
   _ = parametricMut(Reference(m).value)
 
 ##===----------------------------------------------------------------------===##
@@ -159,7 +159,7 @@ fn testDefConditional(cond: __mlir_type.i1):
 # CHECK-LABEL: lit.func @"testUseConditionalReference
 
 fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
-  # CHECK: %a = lit.var.decl {{.*}} : !lit.ref<!MemExample, mut *"a`1x1">
+  # CHECK: %a = lit.var.decl {{.*}} : !lit.ref<!MemExample, mut *"a`1">
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%a)
 
   var a = MemExample()
@@ -168,7 +168,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   # CHECK-NEXT: [[ARV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%a)
   # CHECK-NEXT: lit.ref.store [[ARV]], %aref
   var aref = Reference(a)
-  # CHECK-NEXT: lit.alias.decl *"aLifetime{{.*}}": lifetime<1> = <*"a`1x1">
+  # CHECK-NEXT: lit.alias.decl *"aLifetime{{.*}}": lifetime<1> = <*"a`1">
   alias aLifetime =  aref.lifetime
 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
@@ -220,40 +220,40 @@ struct SelfRefTest:
 # CHECK-LABEL: lit.func @"testSelfRef
 fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
   # Bind immutably to a
-  # CHECK: = lit.call {{.*}}method{{.*}}:lifetime<0> *"a`1x0">(%a)
+  # CHECK: = lit.call {{.*}}method{{.*}}:lifetime<0> *"a`">(%a)
   _ = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}:lifetime<1> *"b`1x1">(%b)
+  # CHECK: = lit.call {{.*}}method{{.*}}:lifetime<1> *"b`1">(%b)
   _ = b.method()
 
 
 # CHECK-LABEL: lit.func @"testLifetimeOf1
-# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`1x0"> borrow_in_mem) ->
-# CHECK-SAME: Reference <{{.*}}, :i1 0, :lifetime<0> *"a`1x0">
+# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
+# CHECK-SAME: Reference <{{.*}}, :i1 0, :lifetime<0> *"a`">
 fn testLifetimeOf1(a: MemExample) ->
   Reference[MemExample, __mlir_attr.`0: i1`, __lifetime_of(a)]:
   return a
 
 # CHECK-LABEL: lit.func @"testLifetimeOf2
-# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`1x0"> borrow_in_mem) ->
-# CHECK-SAME: !lit.ref<!MemExample, imm *"a`1x0">
+# CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
+# CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
 fn testLifetimeOf2(a: MemExample) -> _LITRef[
         MemExample,  __mlir_attr.`0: i1`, __lifetime_of(a)].type:
 
-  # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`1x0">
+  # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
   return Reference(a).value
 
 # CHECK-LABEL: lit.func @"callByRefResultLifetime
 fn callByRefResultLifetime(inout x: MemExample, inout y: MemExample, z: MemExample):
-  # CHECK: lit.var.decl "l1" var : !lit.ref<@"ownership-refs"::@OneLifetime<:lifetime<0> (mutcast mut *"x`1x0")>
+  # CHECK: lit.var.decl "l1" var : !lit.ref<@"ownership-refs"::@OneLifetime<:lifetime<0> (mutcast mut *"x`")>
   var l1 = returnOneArgLifetime(x)
 
-  # CHECK: lit.var.decl "l2" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`1x0"), :lifetime<0> (mutcast mut *"y`1x1")>
+  # CHECK: lit.var.decl "l2" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"y`1")>
   var l2 = returnTwoArgLifetimes(x, y)
-  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`1x0"), :lifetime<0> (mutcast mut *"x`1x0")>
+  # CHECK: %l3 = lit.var.decl "l3" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> (mutcast mut *"x`"), :lifetime<0> (mutcast mut *"x`")>
   var l3 = returnTwoArgLifetimes(x, x)
-  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> *"z`1x2", :lifetime<0> *"z`1x2">
+  # CHECK: %l4 = lit.var.decl "l4" var : !lit.ref<@"ownership-refs"::@TwoLifetimes<:lifetime<0> *"z`2", :lifetime<0> *"z`2">
   var l4 = returnTwoArgLifetimes(z, z)
 
 fn returnOneArgLifetime(a: MemExample)

@@ -9,6 +9,7 @@
 #include "KGEN/LITDialect/LITInterfaces.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/DocString.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
@@ -80,9 +81,18 @@ static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(
 /// declarations change, so we have hash stability.
 static StringAttr mangleParamNameImpl(const Twine &name, size_t depth,
                                       ASTDecl *paramScope) {
-  return StringAttr::get(paramScope->getContext(),
-                         name + "`" + Twine(depth) + "x" +
-                             Twine(paramScope->getNextUniqueID()));
+  MLIRContext *ctx = paramScope->getContext();
+
+  // Top level funcs/structs are the most common, so we want to simplify the
+  // mangling for that case. Many tests (and real world code too) has a single
+  // parameter in a scope, so we also try to make that case nicer.
+  std::string suffix = "`";
+  if (depth != 1)
+    suffix.append(llvm::utostr(depth) + 'x');
+  if (size_t id = paramScope->getNextUniqueID(); id != 0)
+    suffix.append(llvm::utostr(id));
+
+  return StringAttr::get(ctx, name + suffix);
 }
 
 StringAttr ASTDecl::mangleUserDefinedParamName(StringAttr name) {

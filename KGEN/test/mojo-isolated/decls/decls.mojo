@@ -465,7 +465,7 @@ fn defaultArgumentNonRegisterType(a: MemoryType = 1):
 
 # CHECK-LABEL: lit.func @"callNonRegisterDefaultArg
 fn callNonRegisterDefaultArg():
-    # CHECK: %[[ANON:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemoryType, mut *"anonymous*`1x0">
+    # CHECK: %[[ANON:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemoryType, mut *"anonymous*`">
     # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemoryType = <apply_result_slot({{.*}}1}
     # CHECK: lit.ref.store %[[VALUE]], %[[ANON]]
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %anonymous2A
@@ -1299,11 +1299,11 @@ struct MyStruct:
 
 
 # CHECK-LABEL: lit.func @"getThing()"
-# CHECK-SAME: [mut *"__result__`1x0"](?, %__result__:
+# CHECK-SAME: [mut *"__result__`"](?, %__result__:
 fn getThing() -> MyStruct:
     # result slot parameter should get a different name to avoid conflict.
     # CHECK: lit.func *"localTest()"
-    # CHECK-SAME: [mut *"__result__`2x0"](?, %__result___0[__result__]:
+    # CHECK-SAME: [mut *"__result__`2x"](?, %__result___0[__result__]:
     fn localTest() -> MyStruct:
         return MyStruct()
 
@@ -1311,7 +1311,7 @@ fn getThing() -> MyStruct:
 
 
 # CHECK-LABEL: lit.func @"callThing()"
-# CHECK-SAME: [mut *"__result__`1x0"](?, %__result__:
+# CHECK-SAME: [mut *"__result__`"](?, %__result__:
 fn callThing() -> MyStruct:
     return getThing()
 
