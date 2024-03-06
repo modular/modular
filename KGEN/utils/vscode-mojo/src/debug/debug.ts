@@ -60,7 +60,7 @@ async function resolveSDKConfigForDebugSession(
   }
   return await context.sdk.resolveConfig({
     sdkPath : configuration.modularHomePath,
-    workspaceFolder : resolvedWorkspace
+    workspaceFolder : resolvedWorkspace,
   });
 }
 

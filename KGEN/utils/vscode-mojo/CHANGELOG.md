@@ -13,13 +13,18 @@
   higher level information and the logs of other tools, such as the debugger and
   the formatter.
 
+- The Mojo SDK resolution has changed to account for different configurations
+  and now allows Language Server and debugging support of Mojo files that don't
+  belong to any active Workspaces. More details are available in the
+  `Configuration` section of the `README`.
+
+- A new command `Mojo: Install and Configure the Mojo SDK` has been added that
+  assists with the set up of the Mojo SDK in a very basic manner.
+
 ### Fixed
 
-- Debugging of dangling Mojo files that don't belong to any mounted workspace
-  folders is now supported. The extension will look for a suitable Mojo SDK in
-  the User-level settings or in the MODULAR_HOME environment variable. Also, if
-  only one workspace folder is mounted on VSCode with a Mojo SDK specified in
-  its settings, this SDK might be reused for such dangling Mojo files.
+- The `Mojo: Attach to Process` command now works when the SDK is configured at
+  the Workspace-level and there are multiple open Workspaces.
 
 ## 24.1
 

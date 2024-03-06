@@ -33,6 +33,18 @@ extension setting.
 }
 ```
 
+### Mojo SDK Resolution
+
+Whenever you want to execute an action on a file, the extension will look for a
+suitable Mojo SDK that can serve it. The search will start with the
+`mojo.modularHomePath` setting of the file's Workspace, if available. Otherwise,
+the extension will try the to use the same setting but at the User-level. Then,
+it will try to use the `MODULAR_HOME` environment variable. If none of these
+attempts works, the extension will fall back to use the `mojo.modularHomePath`
+setting defined at the Workspace-level of any open Workspaces in the current
+window. This is particularly useful if the user opens Mojo files that don't
+belong to any active Workspace and wants to get some extension support.
+
 ## Code Completion
 
 To trigger a completion press `ctrl + space`, pressing `ctrl + space` again will
