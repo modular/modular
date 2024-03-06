@@ -16,23 +16,34 @@
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/SharedState.h"
 
+#include <bitset>
+
 namespace M::KGEN::LIT {
 
 struct GeneratedStubs {
-public:
-  GeneratedStubs(LIT::FuncOp dtor, LIT::FuncOp copyCtor, LIT::FuncOp moveCtr,
-                 LIT::FuncOp init)
-      : dtor(dtor), copyCtr(copyCtor), moveCtr(moveCtr), init(init) {}
-  LIT::FuncOp getDestructor() const { return dtor; }
-  LIT::FuncOp getCopyConstructor() const { return copyCtr; }
-  LIT::FuncOp getMoveConstructor() const { return moveCtr; }
-  LIT::FuncOp getFieldwiseInit() const { return init; }
-
-private:
   LIT::FuncOp dtor;
   LIT::FuncOp copyCtr;
   LIT::FuncOp moveCtr;
   LIT::FuncOp init;
+};
+
+class ValueInfo {
+public:
+  enum FuncIndex { Destruct = 0, Move = 1, Copy = 2, FieldwiseInit = 3 };
+
+  static std::optional<ValueInfo> createValueInfo(ASTDecl &structDecl,
+                                                  SharedState &shared);
+  bool hasDestructor() const { return existingFunctions[FuncIndex::Destruct]; }
+  bool hasMove() const { return existingFunctions[FuncIndex::Move]; }
+  bool hasCopy() const { return existingFunctions[FuncIndex::Copy]; }
+  bool hasFieldwiseInit() const {
+    return existingFunctions[FuncIndex::FieldwiseInit];
+  }
+
+private:
+  ValueInfo(const std::bitset<4> &existingFunctions)
+      : existingFunctions(existingFunctions) {}
+  std::bitset<4> existingFunctions;
 };
 
 class StructEmitter : public SharedStateUser {
@@ -80,6 +91,10 @@ public:
   /// field dels as needed, and makes sure that anything that refers to this
   /// struct properly runs its destructor.
   LIT::FuncOp synthesizeEmptyDtor(ASTDecl &structDecl);
+  /// Add an empty `__moveinit__` stub for this struct, to be filled in later.
+  LIT::FuncOp synthesizeEmptyMoveInit(ASTDecl &structDecl);
+  /// Add an empty `__copyinit__` stub for this struct, to be filled in later.
+  LIT::FuncOp synthesizeEmptyCopyInit(ASTDecl &structDecl);
 
   /// Return the initializer method with the specified signature if it exists
   /// and null otherwise. The operands type is not expected to include self.

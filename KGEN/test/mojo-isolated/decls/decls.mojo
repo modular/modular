@@ -852,16 +852,17 @@ struct ValueMem:
     var b: StructExample  # Copy ctor
 
 
-# CHECK: lit.func @"__init__(
-# CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<!ValueMem, mut {{.*}}> init_self,
-# CHECK-SAME:  %a: !Int borrow,
-# CHECK-SAME:  %b: !StructExample
-# CHECK-SAME: ) -> !kgen.none attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
-# CHECK-NEXT: %[[PA:.*]] = lit.ref.struct.ger %[[SELF]][a]
-# CHECK-NEXT: lit.ref.store %a, %[[PA]]
-# CHECK-NEXT: %[[PB:.*]] = lit.ref.struct.ger %[[SELF]][b]
-# CHECK-NEXT: lit.ref.store %b, %[[PB]]
-# CHECK-NEXT: kgen.param.constant: none
+# CHECK: lit.func @"__moveinit__(
+# CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
+# CHECK-SAME:  %other: !lit.ref<!ValueMem, mut {{.*}}> owned_in_mem, |)
+# CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
+# CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
+# CHECK-NEXT: %2 = lit.load.consume %1
+# CHECK-NEXT: lit.ref.store %2, %0
+# CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
+# CHECK-NEXT: %4 = lit.ref.struct.ger %other[b]
+# CHECK-NEXT: %5 = lit.load.consume %4
+# CHECK-NEXT: lit.ref.store %5, %3
 
 # CHECK: lit.func @"__copyinit__(
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
@@ -875,20 +876,16 @@ struct ValueMem:
 # CHECK-NEXT: %5 = lit.ref.load %4
 # CHECK-NEXT: %6 = lit.call {{.*}}__copyinit__{{.*}}(%5)
 # CHECK-NEXT: lit.ref.store %6, %3
-# CHECK-NEXT: kgen.param.constant: none
 
-# CHECK: lit.func @"__moveinit__(
-# CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
-# CHECK-SAME:  %other: !lit.ref<!ValueMem, mut {{.*}}> owned_in_mem, |)
-# CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
-# CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
-# CHECK-NEXT: %2 = lit.load.consume %1
-# CHECK-NEXT: lit.ref.store %2, %0
-# CHECK-NEXT: %3 = lit.ref.struct.ger %self[b]
-# CHECK-NEXT: %4 = lit.ref.struct.ger %other[b]
-# CHECK-NEXT: %5 = lit.load.consume %4
-# CHECK-NEXT: lit.ref.store %5, %3
-# CHECK-NEXT: kgen.param.constant: none
+# CHECK: lit.func @"__init__(
+# CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<!ValueMem, mut {{.*}}> init_self,
+# CHECK-SAME:  %a: !Int borrow,
+# CHECK-SAME:  %b: !StructExample
+# CHECK-SAME: ) -> !kgen.none attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
+# CHECK-NEXT: %[[PA:.*]] = lit.ref.struct.ger %[[SELF]][a]
+# CHECK-NEXT: lit.ref.store %a, %[[PA]]
+# CHECK-NEXT: %[[PB:.*]] = lit.ref.struct.ger %[[SELF]][b]
+# CHECK-NEXT: lit.ref.store %b, %[[PB]]
 
 
 # CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType, !Copyable, !Movable) attributes {
@@ -915,29 +912,16 @@ struct ValueMemHasMove:
 
 # CHECK-LABEL: lit.struct.decl @ValueRegTrivial
 # CHECK-SAME: (!AnyType, !Copyable, !Movable) register_passable_trivial
-# CHECK: lit.func @"__copyinit__{{.*}}"(%other: !ValueRegTrivial borrow, |) -> !ValueRegTrivial always_inline_no_debug attributes {isSynthetic, sourceName = "__copyinit__", specialFnKind = 6 : i8} {
-# CHECK-NEXT:  [[V0:%.*]] = lit.struct.extract %other[a] : index from !ValueRegTrivial
-# CHECK-NEXT:  [[V1:%.*]] = lit.struct.create(a=[[V0]]) : (index) -> !ValueRegTrivial
-# CHECK-NEXT:  lit.return [[V1]] : !ValueRegTrivial
-# CHECK-NEXT:  lit.end_func
 
-# CHECK: lit.func @"__moveinit__{{.*}}(%other: !ValueRegTrivial, |) -> !ValueRegTrivial always_inline_no_debug attributes {isSynthetic, sourceName = "__moveinit__", specialFnKind = 7 : i8} {
-# CHECK-NEXT: [[V0:%.*]] = lit.struct.extract %other[a] : index from !ValueRegTrivial
-# CHECK-NEXT: [[V1:%.*]] = lit.struct.create(a=[[V0]]) : (index) -> !ValueRegTrivial
-# CHECK-NEXT: lit.return [[V1]] : !ValueRegTrivial
-# CHECK-NEXT: lit.end_func
-
-# CHECK: lit.func @"__copyinit__{{.*}}_thunk"[{{.*}}](%self: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, {{.*}}> borrow_in_mem, |) -> !kgen.none always_inline_no_deb
-# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %arg : <!ValueRegTrivial
-# CHECK-NEXT: [[V1:%.*]] = lit.call @{{.*}}::@ValueRegTrivial::@"__copyinit__(decls::ValueRegTrivial)"(%0) : !lit.signature<("other": !ValueRegTrivial borrow, |) -> !ValueRegTrivial>
-# CHECK-NEXT: lit.ref.store [[V1]], %self
+# CHECK: lit.func @"__copyinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> borrow_in_mem, |) -> !kgen.none always_inline_no_debug
+# CHECK-NEXT: [[V0:%.*]] = lit.ref.load %1 : <!ValueRegTrivial
+# CHECK-NEXT: lit.ref.store [[V0]], %0
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: kgen.return %none : !kgen.none
 
-# CHECK: lit.func @"__moveinit__{{.*}}_thunk"[{{.*}}](%self: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %arg[existing]: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem, |) -> !kgen.none
-# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %arg
-# CHECK-NEXT: [[V1:%.*]] = lit.call {{.*}}__moveinit__{{.*}}([[V0]]) : !lit.signature<("other": !ValueRegTrivial, |) -> !ValueRegTrivial>
-# CHECK-NEXT: lit.ref.store [[V1]], %self
+# CHECK: lit.func @"__moveinit__{{.*}}_thunk"[{{.*}}](%0[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> init_self, %1[*""]: !lit.ref<!ValueRegTrivial, {{.*}}> owned_in_mem, |) -> !kgen.none
+# CHECK-NEXT: [[V0:%.*]] = lit.load.consume %1
+# CHECK-NEXT: lit.ref.store [[V0]], %0
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT: kgen.return %none : !kgen.none
 
@@ -956,14 +940,6 @@ struct ValueReg:
     var b: StructExample
 
 
-# CHECK: lit.func @"__init__(
-# CHECK-SAME:  %a: !Int borrow,
-# CHECK-SAME:  %b: !StructExample
-# CHECK-SAME: ) ownedresult -> !ValueReg
-# CHECK-NEXT: %0 = lit.struct.create(a=%a, b=%b)
-# CHECK-NEXT: lit.return %0
-# CHECK-NEXT: lit.end_func
-
 # CHECK: lit.func @"__copyinit__
 # CHECK-SAME: (%other: !ValueReg borrow, |)
 # CHECK-SAME:  -> !ValueReg
@@ -973,6 +949,14 @@ struct ValueReg:
 # CHECK-NEXT: %2 = lit.call {{.*}}__copyinit__{{.*}}(%1)
 # CHECK-NEXT: %3 = lit.struct.create(a=%0, b=%2)
 # CHECK-NEXT: lit.return %3
+
+# CHECK: lit.func @"__init__(
+# CHECK-SAME:  %a: !Int borrow,
+# CHECK-SAME:  %b: !StructExample
+# CHECK-SAME: ) ownedresult -> !ValueReg
+# CHECK-NEXT: %0 = lit.struct.create(a=%a, b=%b)
+# CHECK-NEXT: lit.return %0
+# CHECK-NEXT: lit.end_func
 
 
 # COM: Ensure that "self" is a valid field name.
@@ -997,16 +981,16 @@ struct ParamVarArg[*I: Int]:
 @value
 struct TraitMember[T: Copyable]:
     var value: T
-    # CHECK: lit.func @"__copyinit__
-    # CHECK: call_param{{.*}}__copyinit__
     # CHECK: lit.func @"__moveinit__
+    # CHECK: call_param{{.*}}__copyinit__
+    # CHECK: lit.func @"__copyinit__
     # CHECK: call_param{{.*}}__copyinit__
 
 
 # CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> borrow_in_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
-# CHECK: lit.func @"__init__{{.*}}isSynthetic
-# CHECK: lit.func @"__copyinit__{{.*}}isSynthetic
 # CHECK: lit.func @"__moveinit__{{.*}}isSynthetic
+# CHECK: lit.func @"__copyinit__{{.*}}isSynthetic
+# CHECK: lit.func @"__init__{{.*}}isSynthetic
 @value
 struct NotSynthetic:
     var member: __mlir_type.`index`
@@ -1027,6 +1011,27 @@ struct VarArgInit:
         return Self {a: 42}
 
     # CHECK: lit.func @"__init__({{.*}}Int)"(%a: !Int borrow) -> !VarArgInit
+
+
+# COM: Body resolution of `Node` will recurse on itself. Make sure that the
+# COM: trait requirements for Copyable and Movable are generated early.
+
+
+struct BoxCopyable[T: Copyable]:
+    pass
+
+
+@value
+struct Node:
+    var id: RecursiveCopyable.ID
+
+
+# CHECK-LABEL: lit.struct.decl @RecursiveCopyable
+struct RecursiveCopyable:
+    alias ID = Int
+    # CHECK: lit.struct.field recurse
+    # CHECK-SAME: "__copyinit__"
+    var recurse: BoxCopyable[Node]
 
 
 ##===----------------------------------------------------------------------===##

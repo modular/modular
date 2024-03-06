@@ -313,16 +313,16 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       structDecl, /*generateFieldwiseInit=*/false,
       /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
-  LIT::FuncOp destructor = stubs->getDestructor();
+  LIT::FuncOp destructor = stubs->dtor;
   declOp.setDestructorAttr(destructor.getBoundSymbolRef());
 
-  LIT::FuncOp copyCtr = stubs->getCopyConstructor();
+  LIT::FuncOp copyCtr = stubs->copyCtr;
   SymbolConstantAttr copyCtrRef = copyCtr.getBoundSymbolRef();
   declOp.setCopyInitAttr(copyCtrRef);
   ASTDecl *copyCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
 
-  LIT::FuncOp moveCtr = stubs->getMoveConstructor();
+  LIT::FuncOp moveCtr = stubs->moveCtr;
   SymbolConstantAttr moveCtrRef = moveCtr.getBoundSymbolRef();
   declOp.setMoveInitAttr(moveCtrRef);
   ASTDecl *moveCtrDecl =
@@ -598,11 +598,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     emitter.emitConstructorCall(clType, {}, loc, CallSyntax::kDirectCall, dest);
   }
 
-  LIT::FuncOp copyCtr = stubs->getCopyConstructor();
+  LIT::FuncOp copyCtr = stubs->copyCtr;
   SymbolConstantAttr copyCtrRef = copyCtr.getBoundSymbolRef();
   ASTDecl *copyCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(copyCtrRef.getSymbol());
-  LIT::FuncOp moveCtr = stubs->getMoveConstructor();
+  LIT::FuncOp moveCtr = stubs->moveCtr;
   SymbolConstantAttr moveCtrRef = moveCtr.getBoundSymbolRef();
   ASTDecl *moveCtrDecl =
       shared.declResolver->getDeclForFuncSymbol(moveCtrRef.getSymbol());
@@ -619,7 +619,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   else
     declOp.setMoveInitAttr(moveCtrRef);
 
-  if (LIT::FuncOp dtor = stubs->getDestructor())
+  if (LIT::FuncOp dtor = stubs->dtor)
     declOp.setDestructorAttr(dtor.getBoundSymbolRef());
 
   // Populate the body of the call op.

@@ -1582,6 +1582,18 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
       structOp.setConvention(TypeConvention::RegisterPassable);
       return success();
     }
+    // @value
+    if (declRef->spelling == "value") {
+      // During signature resolution, add the `Copyable` and `Movable` traits.
+      if (ASTDecl *decl = shared.lookupCopyableTrait(
+              decorator->getLoc(), structDecl.getParentDecl()))
+        StructEmitter::addTraitParent(structOp, decl);
+      if (ASTDecl *decl = shared.lookupMovableTrait(decorator->getLoc(),
+                                                    structDecl.getParentDecl()))
+        StructEmitter::addTraitParent(structOp, decl);
+      // Fallthrough the decorator to body resolution.
+      return failure();
+    }
   }
 
   // `x()` forms.
@@ -1597,16 +1609,16 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
 
       // @nonmaterializable(TargetType)
       if (declRef->spelling == "nonmaterializable" &&
-          callNode->operands.size() == 1)
-        if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].value))
-          if (auto parentDecl = structDecl.getParentDecl()) {
-            ExprEmitter emitter(shared, *parentDecl, EC_Type);
-            if (ASTType t = emitter.emitExprType(drn)) {
-              structOp.setNonmaterializableTargetAttr(
-                  TypeAttr::get(t.mlirType));
-              return success();
-            }
+          callNode->operands.size() == 1) {
+        if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].value)) {
+          ASTDecl *parentDecl = structDecl.getParentDecl();
+          ExprEmitter emitter(shared, *parentDecl, EC_Type);
+          if (ASTType t = emitter.emitExprType(drn)) {
+            structOp.setNonmaterializableTargetAttr(TypeAttr::get(t.mlirType));
+            return success();
           }
+        }
+      }
     }
   }
   // Not handled in signature phase.
@@ -1742,29 +1754,58 @@ static SymbolConstantAttr lookupCopyMoveInit(ASTDecl &structDecl,
   return {};
 }
 
+namespace {
 struct StructBodyDecorators : public SharedStateUser {
   StructBodyDecorators(
       StructDeclOp structOp, ASTDecl &structDecl, DeclResolver &resolver,
       ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields)
       : SharedStateUser(resolver.shared), structOp(structOp),
-        structDecl(structDecl), resolver(resolver), structFields(structFields) {
-  }
+        structDecl(structDecl), structFields(structFields) {}
 
-  LogicalResult processDecorator(ExprNode *decorator);
+  LogicalResult processDecorator(ExprNode *decorator, LIT::FuncOp moveFunc,
+                                 LIT::FuncOp copyFunc);
 
 private:
-  void processValueDecorator(SMLoc decoratorLoc);
-  void processRegisterPassableDecorator(bool isTrivial);
+  /// Process the @value body decorator on structs.  This synthesizes the
+  /// memberwise init, copy ctor and move ctor if requested.
+  void processValueDecorator(SMLoc decoratorLoc, LIT::FuncOp moveFunc,
+                             LIT::FuncOp copyFunc);
 
   StructDeclOp structOp;
   ASTDecl &structDecl;
-  DeclResolver &resolver;
   ArrayRef<std::pair<StructFieldOp, ASTDecl *>> structFields;
 };
+} // namespace
 
-/// Process the @value body decorator on structs.  This synthesizes the
-/// memberwise init, copy ctor and move ctor if requested.
-void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
+/// Synthesize the `__copyinit__` and `__moveinit__` stubs for `@value`
+/// decorated structs early to ensure their movability and copyability
+/// requirements are satisfied.
+static std::pair<LIT::FuncOp, LIT::FuncOp>
+preprocessValueDecorator(SharedState &shared, ASTDecl &structDecl) {
+  auto declOp = cast<StructDeclOp>(structDecl);
+  for (ExprNode *decorator : structDecl.getBodyDecorators(shared)) {
+    if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
+      if (declRef->spelling == "value") {
+        std::optional<ValueInfo> info =
+            ValueInfo::createValueInfo(structDecl, shared);
+        if (!info)
+          break;
+        StructEmitter emitter(shared);
+        LIT::FuncOp moveFunc, copyFunc;
+        if (!declOp.isRegisterPassable() && !info->hasMove())
+          moveFunc = emitter.synthesizeEmptyMoveInit(structDecl);
+        if (!declOp.isRegisterPassableTrivial() && !info->hasCopy())
+          copyFunc = emitter.synthesizeEmptyCopyInit(structDecl);
+        return {moveFunc, copyFunc};
+      }
+    }
+  }
+  return {nullptr, nullptr};
+}
+
+void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
+                                                 LIT::FuncOp moveFunc,
+                                                 LIT::FuncOp copyFunc) {
   // Check to see the classification of the fields, the result type will be
   // copyable/movable iff all the fields are.
   bool isCopyable = true, isMovable = true;
@@ -1782,6 +1823,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
           << fieldType;
       diag.attachNote(fieldDecl->getLoc())
           << fieldOp.getNameAttr() << " declared here";
+      structDecl.setErroneous();
       return;
     }
   }
@@ -1794,9 +1836,13 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   if (!stubs) {
     emitError(decoratorLoc, "'@value' cannot synthesize members of struct '")
         << declOp.getSymName() << "'";
+    structDecl.setErroneous();
     return;
   }
-  if (LIT::FuncOp copyCtr = stubs->getCopyConstructor()) {
+  stubs->moveCtr = moveFunc;
+  stubs->copyCtr = copyFunc;
+
+  if (LIT::FuncOp copyCtr = stubs->copyCtr) {
     SymbolConstantAttr ref = copyCtr.getBoundSymbolRef();
     ASTDecl *copyCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
@@ -1805,7 +1851,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
     else
       declOp.setCopyInitAttr(ref);
   }
-  if (LIT::FuncOp moveCtr = stubs->getMoveConstructor()) {
+  if (LIT::FuncOp moveCtr = stubs->moveCtr) {
     SymbolConstantAttr ref = moveCtr.getBoundSymbolRef();
     ASTDecl *moveCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
@@ -1816,10 +1862,12 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc) {
   }
 }
 
-LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator) {
+LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
+                                                     LIT::FuncOp moveFunc,
+                                                     LIT::FuncOp copyFunc) {
   if (auto declRef = dyn_cast<DeclRefNode>(decorator)) {
     if (declRef->spelling == "value") {
-      processValueDecorator(decorator->getRangeStart());
+      processValueDecorator(decorator->getRangeStart(), moveFunc, copyFunc);
       return success();
     }
     return failure();
@@ -2414,11 +2462,15 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
       structOp.setMoveInitAttr(moveInitAttr);
   }
 
-  /// This collects all the resolved struct fields.
-  SmallVector<std::pair<StructFieldOp, ASTDecl *>> structFields;
+  // If the struct is decorated with `@value`, make sure to synthesize the copy
+  // and move constructors before the field types are signature resolved to
+  // ensure that the Copyable and Movable trait requirements are satisfied.
+  // FIXME: The order of decorator resolution here is a bit gross.
+  auto [moveFunc, copyFunc] = preprocessValueDecorator(shared, structDecl);
 
-  // Now that the body is completely resolved, check the declared fields for
-  // extra invariants.
+  // This collects all the resolved struct fields. Now that the body is
+  // completely resolved, check the declared fields for extra invariants.
+  SmallVector<std::pair<StructFieldOp, ASTDecl *>> structFields;
   for (StructFieldOp field : structOp.getFieldDecls()) {
     // Make sure the field is signature resolved so we can get its type.
     auto fieldEntries = structDecl.lookupInCurrentScope(field.getNameAttr());
@@ -2426,9 +2478,6 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     ASTDecl &fieldASTDecl = *fieldEntries[0];
     if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
       continue;
-
-    ASTType(field.getType()).hasDestructor(fieldASTDecl.getLoc(), shared);
-
     structFields.push_back({field, &fieldASTDecl});
   }
 
@@ -2444,9 +2493,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // If there are any body decorators, resolve them now.
   StructBodyDecorators structDecorators(structOp, structDecl, *this,
                                         structFields);
-  Decorators(structDecl, shared).applyBodyDecorators([&](ExprNode *decorator) {
-    return structDecorators.processDecorator(decorator);
-  });
+  Decorators(structDecl, shared)
+      .applyBodyDecorators([&, moveFunc = moveFunc,
+                            copyFunc = copyFunc](ExprNode *decorator) {
+        return structDecorators.processDecorator(decorator, moveFunc, copyFunc);
+      });
 
   if (structDecl.isErroneous())
     return success();
