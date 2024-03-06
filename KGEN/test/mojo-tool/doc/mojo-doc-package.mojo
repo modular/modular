@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo doc %S/test_package | FileCheck %s
+# RUN: mojo doc %S/../package/test_package | FileCheck %s
 
 # CHECK:  "description": "This is a description.",
 # CHECK:  "kind": "package"
