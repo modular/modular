@@ -852,7 +852,6 @@ lit.func @mangle_params_finally_1<x>(%c: i1 borrow) -> !kgen.none {
     hlcf.if %c {
       %none_0 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`"
-      // CHECK-NEXT: lit.call @mangle_params_finally_1<*"y`">
       // CHECK-NEXT: kgen.return
       lit.return %none_0 : !kgen.none
       hlcf.yield
@@ -869,12 +868,10 @@ lit.func @mangle_params_finally_1<x>(%c: i1 borrow) -> !kgen.none {
   // CHECK-NEXT: } else {
   } else {
     // CHECK-NEXT: lit.alias.decl *"y`f0"
-    // CHECK-NEXT: lit.call @mangle_params_finally_1<*"y`f0">
     // CHECK-NEXT: lit.try.yield
     lit.try.yield
   } finally {
     lit.alias.decl *"y`" = <x>
-    %0 = lit.call @mangle_params_finally_1<*"y`">(%c) : !lit.signature<("c": i1 borrow) -> !kgen.none>
     lit.try.yield
   }
   %none = kgen.param.constant: none = <#kgen.none>
@@ -890,7 +887,6 @@ lit.func @mangle_params_finally_2<x>(%c: i1 borrow) -> !kgen.none {
     hlcf.if %c {
       %none_1 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`"
-      // CHECK-NEXT: lit.call @mangle_params_finally_2<*"y`">
       // CHECK-NEXT: kgen.return
       lit.return %none_1 : !kgen.none
       hlcf.yield
@@ -902,7 +898,6 @@ lit.func @mangle_params_finally_2<x>(%c: i1 borrow) -> !kgen.none {
     hlcf.if %c {
       %none_1 = kgen.param.constant: none = <#kgen.none>
       // CHECK: lit.alias.decl *"y`f0"
-      // CHECK-NEXT: lit.call @mangle_params_finally_2<*"y`f0">
       // CHECK-NEXT: kgen.return
       lit.return %none_1 : !kgen.none
       hlcf.yield
@@ -912,7 +907,6 @@ lit.func @mangle_params_finally_2<x>(%c: i1 borrow) -> !kgen.none {
 
     %none_0 = kgen.param.constant: none = <#kgen.none>
     // CHECK: lit.alias.decl *"y`f1"
-    // CHECK: lit.call @mangle_params_finally_2<*"y`f1">
     // CHECK: kgen.return
     lit.return %none_0 : !kgen.none
     lit.try.yield
@@ -926,12 +920,52 @@ lit.func @mangle_params_finally_2<x>(%c: i1 borrow) -> !kgen.none {
     lit.try.yield
   } finally {
     lit.alias.decl *"y`" = <x>
-    %0 = lit.call @mangle_params_finally_2<*"y`">(%c) : !lit.signature<("c": i1 borrow) -> !kgen.none>
     lit.try.yield
   }
   // CHECK: kgen.unreachable
 
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
+  %none = kgen.param.constant: none = <#kgen.none>
+  lit.return %none : !kgen.none
+  lit.end_func
+}
+
+
+// CHECK-LABEL: lit.func @mangle_params_finally_3
+lit.func @mangle_params_finally_3<x>(%c: i1 borrow) -> !kgen.none {
+  lit.try {
+    // CHECK: lit.func nested()
+    lit.func nested() -> !kgen.none {
+      // CHECK-NEXT: %[[NONE:.*]] = kgen.param.constant: none
+      %none_0 = kgen.param.constant: none = <#kgen.none>
+      // CHECK-NEXT: kgen.return %[[NONE:.*]]
+      lit.return %none_0 : !kgen.none
+      lit.end_func
+    }
+    // CHECK: hlcf.if
+    hlcf.if %c {
+      %none_0 = kgen.param.constant: none = <#kgen.none>
+      // CHECK: lit.alias.decl *"y`"
+      // CHECK: kgen.return
+      lit.return %none_0 : !kgen.none
+      hlcf.yield
+    // CHECK: } else {
+    } else {
+      // CHECK-NEXT: hlcf.yield
+      hlcf.yield
+    }
+    lit.try.yield
+  } except (%arg0: !lit.declref<@Error>) {
+    lit.try.yield
+  // CHECK: } else {
+  } else {
+    // CHECK: lit.alias.decl *"y`f0"
+    // CHECK: lit.try.yield
+    lit.try.yield
+  } finally {
+    lit.alias.decl *"y`" = <x>
+    lit.try.yield
+  }
   %none = kgen.param.constant: none = <#kgen.none>
   lit.return %none : !kgen.none
   lit.end_func
