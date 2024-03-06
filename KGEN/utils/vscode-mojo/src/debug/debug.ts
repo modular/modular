@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 
 import {MOJOContext} from '../mojoContext';
-import {MOJOSDKConfig} from '../mojoSDK';
+import {MojoSDK} from '../mojoSDK';
 import * as config from '../utils/config';
 import {DisposableContext} from '../utils/disposableContext';
 import {getAllOpenMojoFiles, WorkspaceAwareFile} from '../utils/files';
@@ -49,16 +49,15 @@ const DEBUG_TYPE: string = "mojo-lldb";
  * sessions have a workspace folder and other don't, in which case the mojoFile,
  * if it's a part of the config, is used to find a workspace folder.
  */
-async function resolveSDKConfigForDebugSession(
+async function findSDKForDebugSession(
     context: MOJOContext, configuration: MojoDebugConfiguration,
-    workspaceFolder
-    ?: vscode.WorkspaceFolder): Promise<MOJOSDKConfig|undefined> {
+    workspaceFolder?: vscode.WorkspaceFolder): Promise<MojoSDK|undefined> {
   let resolvedWorkspace = workspaceFolder;
   if (!workspaceFolder && configuration.mojoFile) {
     resolvedWorkspace = await vscode.workspace.getWorkspaceFolder(
         vscode.Uri.file(configuration.mojoFile));
   }
-  return await context.sdk.resolveConfig({
+  return await context.sdkManager.findSDK({
     sdkPath : configuration.modularHomePath,
     workspaceFolder : resolvedWorkspace,
   });
@@ -78,13 +77,13 @@ class MojoDebugAdapterDescriptorFactory implements
                                      _executable: vscode.DebugAdapterExecutable|
                                      undefined):
       Promise<vscode.DebugAdapterDescriptor|undefined> {
-    let config = await resolveSDKConfigForDebugSession(
-        this.context, session.configuration, session.workspaceFolder);
+    let sdk = await findSDKForDebugSession(this.context, session.configuration,
+                                           session.workspaceFolder);
     // We don't need to show error messages here because
-    // `resolveSDKConfigForDebugSession` does that.
-    if (!config)
+    // `findSDKConfigForDebugSession` does that.
+    if (!sdk)
       return undefined;
-    return new vscode.DebugAdapterExecutable(config.mojoLLDBVSCodePath,
+    return new vscode.DebugAdapterExecutable(sdk.config.mojoLLDBVSCodePath,
                                              [ "--repl-mode", "variable" ]);
   }
 }
@@ -106,11 +105,11 @@ class MojoDebugConfigurationResolver implements
           Promise<undefined|vscode.DebugConfiguration> {
     // Load the MojoLLDB plugin. The SDK must be present because otherwise we
     // can't get access to the debug adapter.
-    let config = await resolveSDKConfigForDebugSession(
-        this.context, debugConfiguration, folder);
+    let sdk =
+        await findSDKForDebugSession(this.context, debugConfiguration, folder);
     // We don't need to show error messages here because
-    // `resolveSDKConfigForDebugSession` does that.
-    if (!config)
+    // `findSDKConfigForDebugSession` does that.
+    if (!sdk)
       return undefined;
 
     if (typeof (debugConfiguration.pid) === "string") {
@@ -131,7 +130,7 @@ class MojoDebugConfigurationResolver implements
         "run", "--no-optimization", "--debug-level", "full",
         debugConfiguration.mojoFile, ...(debugConfiguration.args || [])
       ];
-      debugConfiguration.program = config.mojoDriverPath;
+      debugConfiguration.program = sdk.config.mojoDriverPath;
     }
 
     // We give preference to the init commands specified by the user.
@@ -169,7 +168,7 @@ class MojoDebugConfigurationResolver implements
       "?settings set target.process.optimization-warnings false",
     ];
 
-    initCommands.push(`?!plugin load '${config.mojoLLDBPluginPath}'`);
+    initCommands.push(`?!plugin load '${sdk.config.mojoLLDBPluginPath}'`);
 
     debugConfiguration.initCommands = [
       ...initCommands,
@@ -177,8 +176,8 @@ class MojoDebugConfigurationResolver implements
     ];
 
     // Pull in the additional visualizers within the lldb-visualizers dir.
-    if (await config.lldbHasPythonScriptingSupport()) {
-      let visualizersDir = config.mojoLLDBVisualizersPath;
+    if (await sdk.config.lldbHasPythonScriptingSupport()) {
+      let visualizersDir = sdk.config.mojoLLDBVisualizersPath;
       let visualizers = await vscode.workspace.fs.readDirectory(
           vscode.Uri.file(visualizersDir));
       let visualizerCommands = visualizers.map(
@@ -196,7 +195,7 @@ class MojoDebugConfigurationResolver implements
     // We add the MODULAR_HOME env var to enable debugging of SDK artifacts,
     // giving preference to the env specified by the user.
     if (config)
-      env.push(`MODULAR_HOME=${config.modularHomePath}`);
+      env.push(`MODULAR_HOME=${sdk.config.modularHomePath}`);
 
     debugConfiguration.env = [...env, ...(debugConfiguration.env || []) ];
     return debugConfiguration as vscode.DebugConfiguration;

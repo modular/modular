@@ -114,62 +114,39 @@ export class MOJOSDKConfig {
 }
 
 /**
- *  This class manages interacting with and checking the status of the Mojo SDK.
+ * Class used for interacting with and checking the status of the Mojo SDK.
  */
-export class MOJOSDK extends DisposableContext {
-  /**
-   * Cache for the `resolveConfig` method.
-   */
-  private resolveConfigCache: Map<string, Promise<MOJOSDKConfig|undefined>> =
-      new Map();
-
-  /**
-   * A service that can be used to log message in the Mojo output channel.
-   */
+export class MojoSDK {
+  public readonly config: MOJOSDKConfig;
   private loggingService: LoggingService;
+  private context: vscode.ExtensionContext;
 
-  /**
-   * The current extension context.
-   */
-  private readonly context: vscode.ExtensionContext;
-
-  constructor(loggingService: LoggingService,
+  constructor(config: MOJOSDKConfig, loggingService: LoggingService,
               context: vscode.ExtensionContext) {
-    super();
+    this.config = config;
     this.loggingService = loggingService;
     this.context = context;
-    // Whenever we have different workspace folders, we clear the internal
-    // config cache to allow for more precise SDK config resolution. For
-    // example, if a file is opened and it doesn't belong to any existing
-    // workspace folders, we try to use as fallback a config that belongs to
-    // some existing workspace folder. However, if later a workspace folder with
-    // a proper config is added and it contains that file in question, we should
-    // be able to pick this new config up and discard the previous one.
-    this.pushSubscription(vscode.workspace.onDidChangeWorkspaceFolders(
-        () => { this.resolveConfigCache.clear(); }));
-    this.pushSubscription(vscode.commands.registerCommand(
-        "mojo.sdk.install", () => { this.promptInstallSDK(); }))
   }
 
   /**
    * Return if the given modular home path refers to a dev-build of the SDK.
    */
-  private static isDevBuild(modularHomePath: string) {
+  static isDevBuild(modularHomePath: string) {
     return modularHomePath.endsWith('.derived');
   }
 
   /**
    * Return the configuration key for the SDK within the modular.cfg file.
    */
-  private static getConfigKey(modularHomePath: string, isNightly: boolean,
-                              possibleKeys: string[]): string|undefined {
+  static getConfigKey(modularHomePath: string, isNightly: boolean,
+                      possibleKeys: string[]): string|undefined {
     // Bail early if we don't have any keys.
     if (possibleKeys.length === 0)
       return undefined;
 
     // If this is a dev-build, there'll only be one key so just grab
     // it.
-    if (MOJOSDK.isDevBuild(modularHomePath))
+    if (MojoSDK.isDevBuild(modularHomePath))
       return possibleKeys[0];
 
     // Filter the keys to only those that match the current extension.
@@ -190,16 +167,18 @@ export class MOJOSDK extends DisposableContext {
   /**
    * Emit a warning to the user if the current SDK is out of date.
    */
-  private async warnIfSDKOutOfDate(modularHomePath: string, mojoPath: string) {
+  public async warnIfSDKOutOfDate() {
     // If this is a dev-build, there's no version to check.
-    if (MOJOSDK.isDevBuild(modularHomePath))
+    if (MojoSDK.isDevBuild(this.config.modularHomePath))
       return;
 
     // Otherwise, invoke `mojo` to grab the current version.
     try {
-      let rawStdout = child_process.execFileSync(mojoPath, [ "--version" ], {
-        env : {...process.env, "MODULAR_HOME" : modularHomePath},
-      });
+      let rawStdout = child_process.execFileSync(
+          this.config.mojoDriverPath, [ "--version" ], {
+            env :
+                {...process.env, "MODULAR_HOME" : this.config.modularHomePath},
+          });
       let stdout = rawStdout.toString();
 
       // Grab the version string from the output.
@@ -236,6 +215,45 @@ export class MOJOSDK extends DisposableContext {
           "Unable to invoke `mojo` to check the SDK version, failed with: ", e);
     }
   }
+}
+
+/**
+ *  This class manages the resolution of SDKs for different files, workspaces
+ * and tools.
+ */
+export class MojoSDKManager extends DisposableContext {
+  /**
+   * Cache for the `findSDK` method.
+   */
+  private findSDKCache: Map<string, Promise<MojoSDK|undefined>> = new Map();
+
+  /**
+   * A service that can be used to log message in the Mojo output channel.
+   */
+  private loggingService: LoggingService;
+
+  /**
+   * The current extension context.
+   */
+  private readonly context: vscode.ExtensionContext;
+
+  constructor(loggingService: LoggingService,
+              context: vscode.ExtensionContext) {
+    super();
+    this.loggingService = loggingService;
+    this.context = context;
+    // Whenever we have different workspace folders, we clear the internal
+    // config cache to allow for more precise SDK config resolution. For
+    // example, if a file is opened and it doesn't belong to any existing
+    // workspace folders, we try to use as fallback a config that belongs to
+    // some existing workspace folder. However, if later a workspace folder with
+    // a proper config is added and it contains that file in question, we should
+    // be able to pick this new config up and discard the previous one.
+    this.pushSubscription(vscode.workspace.onDidChangeWorkspaceFolders(
+        () => { this.findSDKCache.clear(); }));
+    this.pushSubscription(vscode.commands.registerCommand(
+        "mojo.sdk.install", () => { this.promptInstallSDK(); }))
+  }
 
   /**
    * Resolve the Modular config for the given context.
@@ -268,15 +286,15 @@ export class MOJOSDK extends DisposableContext {
    * This function caches it result and the cache is refreshed whenever there's
    * a change in the list of active workspaces.
    */
-  public async resolveConfig(context: {
+  public async findSDK(context: {
     workspaceFolder?: vscode.WorkspaceFolder,
     sdkPath?: string,
-  }): Promise<MOJOSDKConfig|undefined> {
-    const config = await this.resolveConfigAndCacheIt(context);
+  }): Promise<MojoSDK|undefined> {
+    const config = await this.findSDKAndCacheIt(context);
     if (!config && !context.sdkPath) {
       for (const workspaceFolder of (vscode.workspace.workspaceFolders || [])) {
-        const fallbackConfig = await this.resolveConfigAndCacheIt(
-            {workspaceFolder : workspaceFolder})
+        const fallbackConfig =
+            await this.findSDKAndCacheIt({workspaceFolder : workspaceFolder})
         if (fallbackConfig) {
           this.loggingService.main.logInfo(`Resolving Mojo SDK for Workspace ${
               context.workspaceFolder?.uri.fsPath}: reusing Mojo SDK from ${
@@ -290,28 +308,28 @@ export class MOJOSDK extends DisposableContext {
     return config;
   }
 
-  /// This function follows the procedure described in `resolveConfig` but
+  /// This function follows the procedure described in `findSDK` but
   /// without peeking into other workspaces as fallback.
-  private resolveConfigAndCacheIt(context: {
+  private findSDKAndCacheIt(context: {
     workspaceFolder?: vscode.WorkspaceFolder,
     sdkPath?: string
-  }): Promise<MOJOSDKConfig|undefined> {
+  }): Promise<MojoSDK|undefined> {
     const key = JSON.stringify({
       workspaceFolder : context.workspaceFolder?.uri.fsPath,
       sdkPath : context.sdkPath
     });
-    if (this.resolveConfigCache.has(key))
-      return this.resolveConfigCache.get(key)!;
-    const result = this.doResolveConfigAndCacheIt(context);
-    this.resolveConfigCache.set(key, result);
+    if (this.findSDKCache.has(key))
+      return this.findSDKCache.get(key)!;
+    const result = this.doFindSDKAndCacheIt(context);
+    this.findSDKCache.set(key, result);
     return result;
   }
 
-  /// Actual implementation of `resolveConfigAndCacheIt`.
-  private async doResolveConfigAndCacheIt(context: {
+  /// Actual implementation of `findSDKAndCacheIt`.
+  private async doFindSDKAndCacheIt(context: {
     workspaceFolder?: vscode.WorkspaceFolder,
     sdkPath?: string
-  }): Promise<MOJOSDKConfig|undefined> {
+  }): Promise<MojoSDK|undefined> {
     let modularPath: string|undefined =
         context.sdkPath ||
         await this.tryGetModularHomePathFromConfig(context.workspaceFolder);
@@ -359,7 +377,7 @@ export class MOJOSDK extends DisposableContext {
     // Find the appropriate mojo configuration key in the config file.
     let mojoKeys: string[] =
         Object.keys(modularConfig).filter(key => key.startsWith("mojo"));
-    let configKey = MOJOSDK.getConfigKey(
+    let configKey = MojoSDK.getConfigKey(
         modularPath, isNightlyExtension(this.context), mojoKeys);
     if (!configKey) {
       this.showSDKErrorMessage(
@@ -385,11 +403,12 @@ export class MOJOSDK extends DisposableContext {
           mojoConfig.mojoLanguageServerPath, mojoConfig.mojoLLDBPluginPath,
           mojoConfig.lldbPath
         ]));
+    const sdk = new MojoSDK(mojoConfig, this.loggingService, this.context);
 
     // Now that we have a resolved SDK, warn if it's out of date.
-    await this.warnIfSDKOutOfDate(modularPath, mojoConfig.mojoDriverPath);
+    await sdk.warnIfSDKOutOfDate();
 
-    return mojoConfig;
+    return sdk;
   }
 
   /**
