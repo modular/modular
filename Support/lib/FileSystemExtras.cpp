@@ -62,18 +62,36 @@ doLockedFileOperation(const std::filesystem::path &filePath,
   llvm_unreachable("something has gone very wrong with the lock file manager");
 }
 
-ErrorOr<std::filesystem::path>
-M::writeFileUnderLock(const std::filesystem::path &filePath,
-                      llvm::function_ref<void(raw_ostream &)> writeContent) {
+ErrorOr<std::filesystem::path> M::writeFileUnderLock(
+    const std::filesystem::path &filePath,
+    llvm::function_ref<void(llvm::raw_ostream &)> writeContent) {
   std::string filePathStr = filePath.string();
 
   // A helper function to write the content into the file.
   auto writeFile = [&]() -> ErrorOr<std::filesystem::path> {
-    llvm::Error err = llvm::writeToOutput(filePathStr, [&](raw_ostream &os) {
-      writeContent(os);
-      os.flush();
-      return llvm::Error::success();
-    });
+    llvm::Error err = llvm::writeToOutput(
+        filePathStr, [&](llvm::raw_ostream &os) -> llvm::Error {
+          if (filePathStr == "/dev/null" || filePathStr == "-") {
+            // For /dev/null we get a raw_null_ostream and for "-" and instance
+            // of llvm::outs(). Both of them doesn't have any error checking
+            // associated with it.
+            writeContent(os);
+            os.flush();
+          } else {
+            // The raw_ostream created by writeToOutput for a filePath will be a
+            // raw_fd_ostream.
+            auto *fdStream = static_cast<llvm::raw_fd_ostream *>(&os);
+            writeContent(*fdStream);
+            fdStream->flush();
+            if (fdStream->has_error()) {
+              llvm::Error err =
+                  llvm::make_error<llvm::StringError>(fdStream->error());
+              return err;
+            }
+          }
+
+          return llvm::Error::success();
+        });
     if (err)
       return toModularError(std::move(err));
     return filePath;
@@ -115,6 +133,8 @@ M::appendFileUnderLock(const std::filesystem::path &filePath,
     if (ec)
       return Error(ec.message());
     appendContent(stream);
+    if (stream.has_error())
+      return Error(stream.error().message());
     return Detail::Empty();
   };
 
