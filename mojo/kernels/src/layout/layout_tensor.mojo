@@ -41,12 +41,40 @@ struct LayoutTensor[
         return Self.stride[0]() * m + Self.stride[1]() * n
 
     @always_inline
-    fn __getitem__(self, m: Int, n: Int) -> Scalar[dtype]:
-        return self.ptr.simd_load[1](self._offset(m, n))
+    fn __getitem__(self, *dims: Int) -> Scalar[dtype]:
+        # TODO: Static assert ranks are the same!
+        alias strides = Self._toStatic[flatten(layout.stride)]()
+        return self.ptr.simd_load[1](Self._getOffset(strides, dims))
 
     @always_inline
-    fn __setitem__(self, m: Int, n: Int, val: Scalar[dtype]):
-        self.ptr.simd_store[1](self._offset(m, n), val)
+    fn __setitem__(self, d0: Int, val: Scalar[dtype]):
+        alias strides = Self._toStatic[flatten(layout.stride)]()
+        self.ptr.simd_store[1](
+            Self._getOffset(strides, VariadicList[Int](d0)), val
+        )
+
+    @always_inline
+    fn __setitem__(self, d0: Int, d1: Int, val: Scalar[dtype]):
+        alias strides = Self._toStatic[flatten(layout.stride)]()
+        self.ptr.simd_store[1](
+            Self._getOffset(strides, VariadicList[Int](d0, d1)), val
+        )
+
+    @always_inline
+    fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Scalar[dtype]):
+        alias strides = Self._toStatic[flatten(layout.stride)]()
+        self.ptr.simd_store[1](
+            Self._getOffset(strides, VariadicList[Int](d0, d1, d2)), val
+        )
+
+    @always_inline
+    fn __setitem__(
+        self, d0: Int, d1: Int, d2: Int, d3: Int, val: Scalar[dtype]
+    ):
+        alias strides = Self._toStatic[flatten(layout.stride)]()
+        self.ptr.simd_store[1](
+            Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3)), val
+        )
 
     @always_inline
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
@@ -74,6 +102,15 @@ struct LayoutTensor[
         for i in range(len(t)):
             st[i] = int(t[i])
         return st
+
+    @staticmethod
+    fn _getOffset[
+        rank: Int
+    ](stride: StaticIntTuple[rank], vals: VariadicList[Int]) -> Int:
+        var offset = 0
+        for i in range(rank):
+            offset += vals[i] * stride[i]
+        return offset
 
     @always_inline
     @staticmethod
@@ -146,6 +183,12 @@ struct LayoutTensor[
         ),
     ](self) -> LayoutTensor[transposed_layout, dtype, address_space]:
         return LayoutTensor[transposed_layout, dtype, address_space](self.ptr)
+
+    fn reshape[
+        dst_layout: Layout,
+        reshaped_layout: Layout = composition(layout, dst_layout),
+    ](self) -> LayoutTensor[reshaped_layout, dtype, address_space]:
+        return LayoutTensor[reshaped_layout, dtype, address_space](self.ptr)
 
     @always_inline
     fn copy_from[

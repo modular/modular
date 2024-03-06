@@ -6,11 +6,11 @@
 # REQUIRES: cuda
 # RUN: %mojo %s | FileCheck %s
 
-from builtin.io import _printf
 from gpu import AddressSpace
 from gpu.host import Context, Function, synchronize
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.sync import barrier
+from gpu.mma import mma
 from kernel_utils._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from kernel_utils.int_tuple import IntTuple
 from kernel_utils.layout import Layout
@@ -235,6 +235,112 @@ fn test_sram_blocked_matmul() raises:
     _ = mat_c ^
 
 
+# TODO: Eventually layout parameters needs to move here but it crashes NVPTX compilation.
+fn single_warp_mma_sync_m16n8k8[
+    layout_c: Layout, layout_a: Layout, layout_b: Layout
+](
+    mat_c: LayoutTensor[layout_c, DType.float32],
+    mat_a: LayoutTensor[layout_a, DType.float32],
+    mat_b: LayoutTensor[layout_b, DType.float32],
+):
+    # MMA layout are copied from CUTLASS:
+    # https://sourcegraph.com/github.com/NVIDIA/cutlass@ffa34e70756b0bc744e1dfcc115b5a991a68f132/-/blob/include/cute/atom/mma_traits_sm80.hpp?L167
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
+    alias layout_a_mma = Layout(
+        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
+        IntTuple(IntTuple(16, 1), IntTuple(8, 64)),
+    )
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
+    alias layout_b_mma = Layout(
+        IntTuple(IntTuple(4, 8), 2), IntTuple(IntTuple(8, 1), 32)
+    )
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
+    alias layout_c_mma = Layout(
+        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
+        IntTuple(IntTuple(32, 1), IntTuple(16, 8)),
+    )
+
+    var mat_a_mma = mat_a.reshape[layout_a_mma]()
+    # Note: CUTLASS layout above assumes the same layout as the instruction itself, l.h.s row-major and r.h.s col-major.
+    var mat_b_mma = mat_b.transpose().reshape[layout_b_mma]()
+    var mat_c_mma = mat_c.reshape[layout_c_mma]()
+
+    var thread_y = ThreadIdx.x() // 4
+    var thread_x = ThreadIdx.x() % 4
+
+    var vec_a_layout = SIMD[DType.float32, 4](
+        mat_a_mma[thread_x, thread_y, 0, 0],
+        mat_a_mma[thread_x, thread_y, 1, 0],
+        mat_a_mma[thread_x, thread_y, 0, 1],
+        mat_a_mma[thread_x, thread_y, 1, 1],
+    )
+    var vec_b_layout = SIMD[DType.float32, 2](
+        mat_b_mma[thread_x, thread_y, 0],
+        mat_b_mma[thread_x, thread_y, 1],
+    )
+
+    var vec_d = SIMD[DType.float32, 4](0)
+    var vec_c = SIMD[DType.float32, 4](0)
+
+    mma(vec_d, vec_a_layout, vec_b_layout, vec_c)
+
+    mat_c_mma[thread_x, thread_y, 0, 0] = vec_d[0]
+    mat_c_mma[thread_x, thread_y, 1, 0] = vec_d[1]
+    mat_c_mma[thread_x, thread_y, 0, 1] = vec_d[2]
+    mat_c_mma[thread_x, thread_y, 1, 1] = vec_d[3]
+
+
+fn test_single_warp_tf32_m16n8k8_matmul() raises:
+    print("=== single_warp_tf32_m16n8k8_matmul")
+    alias M = 16
+    alias N = 8
+    alias K = 8
+
+    alias TH_M = 4
+    alias TH_N = 8
+
+    alias layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
+    alias layout_b = Layout(IntTuple(K, N))
+    alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
+
+    var mat_a = ManagedLayoutTensor[
+        layout_a, DType.float32, gpu_managed_alloc, gpu_free
+    ]()
+    var mat_b = ManagedLayoutTensor[
+        layout_b, DType.float32, gpu_managed_alloc, gpu_free
+    ]()
+    var mat_c = ManagedLayoutTensor[
+        layout_c, DType.float32, gpu_managed_alloc, gpu_free
+    ]()
+
+    mat_a.tensor.linspace()
+    mat_b.tensor.linspace()
+    mat_c.tensor.fill(0)
+
+    alias single_warp_mma_sync_m16n8k8_kernel_kernel = single_warp_mma_sync_m16n8k8[
+        layout_c, layout_a, layout_b
+    ]
+
+    var kernel = Function[
+        __type_of(single_warp_mma_sync_m16n8k8_kernel_kernel),
+        single_warp_mma_sync_m16n8k8_kernel_kernel,
+    ]()
+    kernel(
+        mat_c,
+        mat_a,
+        mat_b,
+        grid_dim=(1, 1),
+        block_dim=(32),
+    )
+
+    synchronize()
+    mat_c.tensor.print()
+
+    _ = mat_a ^
+    _ = mat_b ^
+    _ = mat_c ^
+
+
 fn main() raises:
     with Context() as ctx:
         # CHECK: === test_naive_matmul_kernel
@@ -257,3 +363,22 @@ fn main() raises:
         # CHECK: 11872.0   13664.0   12696.0   14616.0   13520.0   15568.0   14344.0   16520.0
         # CHECK: 12284.0   14140.0   13108.0   15092.0   13932.0   16044.0   14756.0   16996.0
         test_sram_blocked_matmul()
+
+        # CHECK: === single_warp_tf32_m16n8k8_matmul
+        # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
+        # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0
+        # CHECK: 4704.0   4860.0   5016.0   5172.0   5328.0   5484.0   5640.0   5796.0
+        # CHECK: 6496.0   6716.0   6936.0   7156.0   7376.0   7596.0   7816.0   8036.0
+        # CHECK: 8288.0   8572.0   8856.0   9140.0   9424.0   9708.0   9992.0   10276.0
+        # CHECK: 10080.0   10428.0   10776.0   11124.0   11472.0   11820.0   12168.0   12516.0
+        # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
+        # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
+        # CHECK: 15456.0   15996.0   16536.0   17076.0   17616.0   18156.0   18696.0   19236.0
+        # CHECK: 17248.0   17852.0   18456.0   19060.0   19664.0   20268.0   20872.0   21476.0
+        # CHECK: 19040.0   19708.0   20376.0   21044.0   21712.0   22380.0   23048.0   23716.0
+        # CHECK: 20832.0   21564.0   22296.0   23028.0   23760.0   24492.0   25224.0   25956.0
+        # CHECK: 22624.0   23420.0   24216.0   25012.0   25808.0   26604.0   27400.0   28196.0
+        # CHECK: 24416.0   25276.0   26136.0   26996.0   27856.0   28716.0   29576.0   30436.0
+        # CHECK: 26208.0   27132.0   28056.0   28980.0   29904.0   30828.0   31752.0   32676.0
+        # CHECK: 28000.0   28988.0   29976.0   30964.0   31952.0   32940.0   33928.0   34916.0
+        test_single_warp_tf32_m16n8k8_matmul()
