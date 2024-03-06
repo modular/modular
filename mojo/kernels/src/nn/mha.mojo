@@ -42,7 +42,6 @@ from .softmax import softmax, softmax_3_pass
 
 fn fused_attention[
     rank: Int,
-    mask_rank: Int,
     q_shape: DimList,
     k_shape: DimList,
     v_shape: DimList,
@@ -61,7 +60,7 @@ fn fused_attention[
     q: NDBuffer[q_type, rank, q_shape],
     k: NDBuffer[k_type, rank, k_shape],
     v: NDBuffer[v_type, rank, v_shape],
-    mask: NDBuffer[mask_type, mask_rank, mask_shape],
+    mask: NDBuffer[mask_type, rank, mask_shape],
     scale: Float32,
     causal_mask_value: Float32,
 ) raises:
@@ -84,7 +83,6 @@ fn fused_attention[
     """
 
     constrained[rank == 3 or rank == 4, "Only support rank 3 and 4."]()
-    constrained[mask_rank <= rank, "Mask rank must be a subset of data rank"]()
 
     alias simd_size = simdwidthof[output_type]()
 
@@ -149,15 +147,8 @@ fn fused_attention[
 
         @parameter
         if add_attn_mask:
-            var idx: StaticIntTuple[mask_rank] = 0
-
-            @unroll
-            for i in range(mask_rank):
-                idx[i] = _out_coords[_rank - mask_rank + i]
-
-            fused_val += rebind[SIMD[inner_type, width]](
-                mask.simd_load[width](idx)
-            )
+            var idx = rebind[StaticIntTuple[rank]](_out_coords)
+            fused_val += mask.simd_load[width](idx).cast[inner_type]()
 
         score.simd_store[width](
             rebind[StaticIntTuple[rank]](_out_coords),

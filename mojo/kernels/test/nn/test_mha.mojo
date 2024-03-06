@@ -101,6 +101,11 @@ def test_mha[type: DType]():
     var q = NDBuffer[type, 4, BHSD](q_ptr)
     var v = NDBuffer[type, 4, BHSD](v_ptr)
     var mask = NDBuffer[type, 2](mask_ptr, Index(seq_len, seq_len))
+    var mask_4d = NDBuffer[type, 4](
+        mask_ptr,
+        Index(batch_size, num_heads, seq_len, seq_len),
+        Index(0, 0, seq_len, 1),
+    )
     var output = NDBuffer[type, 4, BHSD](output_ptr)
     var mha_output = NDBuffer[type, 4, BHSD](mha_output_ptr)
 
@@ -124,11 +129,10 @@ def test_mha[type: DType]():
 
         fused_attention[
             4,
-            2,
             BHSD,
             DimList.create_unknown[4](),
             BHSD,
-            DimList.create_unknown[2](),
+            DimList.create_unknown[4](),
             BHSD,
             type,
             type,
@@ -137,7 +141,7 @@ def test_mha[type: DType]():
             type,
             transpose_k=transpose_k,
             add_attn_mask=True,
-        ](mha_output, q, k, v, mask, scale, Float32())
+        ](mha_output, q, k, v, mask_4d, scale, Float32())
 
         assert_true(
             is_ndbuffer_close(
