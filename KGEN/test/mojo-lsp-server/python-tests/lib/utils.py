@@ -4,11 +4,14 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import inspect
+import logging
 import os
+import sys
 from pathlib import Path
-from typing import Generator, List, Optional, TypeVar
+from typing import Any, Dict, Generator, List, Optional, TypeVar
 
-import pytest_lsp
+import pytest_asyncio
 from lsprotocol.types import (
     CodeActionContext,
     CodeActionParams,
@@ -38,8 +41,11 @@ from lsprotocol.types import (
     TextDocumentItem,
 )
 from pytest_lsp import ClientServerConfig, LanguageClient, client_capabilities
+from pytest_lsp.plugin import get_fixture_arguments  # type: ignore
 
 T = TypeVar("T")
+
+logger = logging.getLogger("mojo-lsp-test")
 
 
 def fail_if_none(t: Optional[T]) -> T:
@@ -53,23 +59,76 @@ MOJO_LSP_CONFIG = ClientServerConfig(
     server_command=[os.environ["MOJO_LSP_SERVER"], "--log=error"],
 )
 
+# anext() was added in 3.10
+if sys.version_info.minor < 10:
 
-# pyright: reportUnknownMemberType=false
-@pytest_lsp.fixture(config=MOJO_LSP_CONFIG)
+    async def anext(it):  # type: ignore
+        return await it.__anext__()  # type: ignore
+
+
+def mojo_lsp_fixture(
+    fixture_function: Any = None,
+    *,
+    config: ClientServerConfig,
+    **kwargs: Dict[Any, Any],
+) -> Any:
+    """Define a fixture that returns a client connected to a server running in a
+    background sub-process. This is a modified version of pytest_lsp.fixture
+    with support for stderr handling.
+
+    Parameters
+    ----------
+    config
+       Configuration for the client and server.
+    """
+
+    def wrapper(fn: Any) -> Any:
+        @pytest_asyncio.fixture(**kwargs)  # type: ignore
+        async def the_fixture(request: Any):
+            client = await config.start()
+
+            kwargs = get_fixture_arguments(fn, client, request)  # type: ignore
+            result = fn(**kwargs)
+            if inspect.isasyncgen(result):
+                try:
+                    await anext(result)
+                except StopAsyncIteration:
+                    pass
+
+            yield client
+
+            if inspect.isasyncgen(result):
+                try:
+                    await anext(result)
+                except StopAsyncIteration:
+                    pass
+
+            await client.stop()
+            stderr = ""
+            server = client._server  # type: ignore
+            if server and server.stderr is not None:
+                stderr = (await server.stderr.read()).decode("utf8")
+
+            logger.info(
+                f"{os.linesep}======= Mojo Language Server stderr ======="
+                f"{stderr}{os.linesep}"
+                "==========================================="
+            )
+
+        return the_fixture
+
+    if fixture_function:
+        return wrapper(fixture_function)
+    return wrapper
+
+
+@mojo_lsp_fixture(config=MOJO_LSP_CONFIG)
 async def mojo_lsp_client(
     lsp_client: LanguageClient,
 ):
     # Setup
     await Requests(lsp_client).initialize()
     yield
-    # Teardown
-    # Here we should shutdown the session programmatically, but we instead don't
-    # do that, which forces pytest_lsp to kill the LSP manually. We have to do
-    # this because there's a race condition with version 0.3.1 in which
-    # pytest_lsp tries to kill the LSP even though it's already dead, which
-    # raises an Error. This only happens in smaller machines like our CI hosts.
-    #
-    # await lsp_client.shutdown_session()
 
 
 class Document:
