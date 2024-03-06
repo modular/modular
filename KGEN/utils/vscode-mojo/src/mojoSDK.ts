@@ -23,7 +23,7 @@ import * as configWatcher from './utils/configWatcher';
  * This class represents a subset of the Modular config object used by extension
  * for interacting with mojo.
  */
-export class MOJOSDKConfig {
+export class MojoSDKConfig {
   /**
    * A service that can be used to log message in the Mojo output channel.
    */
@@ -117,11 +117,11 @@ export class MOJOSDKConfig {
  * Class used for interacting with and checking the status of the Mojo SDK.
  */
 export class MojoSDK {
-  public readonly config: MOJOSDKConfig;
+  public readonly config: MojoSDKConfig;
   private loggingService: LoggingService;
   private context: vscode.ExtensionContext;
 
-  constructor(config: MOJOSDKConfig, loggingService: LoggingService,
+  constructor(config: MojoSDKConfig, loggingService: LoggingService,
               context: vscode.ExtensionContext) {
     this.config = config;
     this.loggingService = loggingService;
@@ -387,7 +387,7 @@ export class MojoSDKManager extends DisposableContext {
     let modularMojoConfig = modularConfig[configKey];
 
     // Extract out the pieces of the config that we care about.
-    const mojoConfig = new MOJOSDKConfig(this.loggingService);
+    const mojoConfig = new MojoSDKConfig(this.loggingService);
     mojoConfig.modularHomePath = modularPath;
     mojoConfig.mojoLLDBVSCodePath = modularMojoConfig.lldb_vscode_path;
     mojoConfig.mojoLLDBVisualizersPath =

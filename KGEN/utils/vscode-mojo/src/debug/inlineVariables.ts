@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 
-import {MOJOContext} from '../mojoContext';
+import {MojoContext} from '../mojoContext';
 import {DisposableContext} from '../utils/disposableContext';
 
 import {DEBUG_TYPE} from './constants';
@@ -105,9 +105,9 @@ export class LocalVariablesTracker implements vscode.DebugAdapterTracker {
 export class InlineLocalVariablesProvider implements
     vscode.InlineValuesProvider {
   private localVariablesTrackers: Map<SessionId, LocalVariablesTracker>;
-  private context: MOJOContext;
+  private context: MojoContext;
 
-  constructor(context: MOJOContext,
+  constructor(context: MojoContext,
               localVariablesTrackers: Map<SessionId, LocalVariablesTracker>) {
     this.context = context;
     this.localVariablesTrackers = localVariablesTrackers;
@@ -241,7 +241,7 @@ export class InlineLocalVariablesProvider implements
   }
 }
 
-export function initializeInlineLocalVariablesProvider(context: MOJOContext):
+export function initializeInlineLocalVariablesProvider(context: MojoContext):
     DisposableContext {
   const localVariablesTrackers: Map<SessionId, LocalVariablesTracker> =
       new Map();

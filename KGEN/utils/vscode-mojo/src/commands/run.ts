@@ -7,17 +7,17 @@
 import * as shellescape from 'shell-escape';
 import * as vscode from 'vscode';
 
-import {MOJOContext} from '../mojoContext';
-import {MOJOSDKConfig} from '../mojoSDK';
+import {MojoContext} from '../mojoContext';
+import {MojoSDKConfig} from '../mojoSDK';
 import {DisposableContext} from '../utils/disposableContext';
 
 /**
  * This class provides a manager for executing and debugging mojo files.
  */
 class ExecutionManager extends DisposableContext {
-  readonly context: MOJOContext;
+  readonly context: MojoContext;
 
-  constructor(context: MOJOContext) {
+  constructor(context: MojoContext) {
     super();
 
     this.context = context;
@@ -102,7 +102,7 @@ class ExecutionManager extends DisposableContext {
   /**
    * Get a terminal to use for the given file.
    */
-  getTerminalForFile(doc: vscode.TextDocument, config: MOJOSDKConfig,
+  getTerminalForFile(doc: vscode.TextDocument, config: MojoSDKConfig,
                      newTerminalPerFile: boolean): vscode.Terminal {
     let terminalName = "Mojo";
     if (newTerminalPerFile)
@@ -163,6 +163,6 @@ class ExecutionManager extends DisposableContext {
  * @returns A disposable connected to the lifetime of the registered run
  *     commands.
  */
-export function activateRunCommands(context: MOJOContext): vscode.Disposable {
+export function activateRunCommands(context: MojoContext): vscode.Disposable {
   return new ExecutionManager(context);
 }
