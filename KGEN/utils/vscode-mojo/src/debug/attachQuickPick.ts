@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 
 import {ProcessDescriptor, psList} from "../external/psList";
-import {MOJOContext} from '../mojoContext';
+import {MojoContext} from '../mojoContext';
 
 class RefreshButton implements vscode.QuickInputButton {
   get iconPath(): vscode.ThemeIcon {
@@ -63,7 +63,7 @@ async function getProcessItems(context: vscode.ExtensionContext):
  * @returns The pid of the selected process as string. If the user cancelled, an
  *     exception is thrown.
  */
-async function showQuickPick(context: MOJOContext,
+async function showQuickPick(context: MojoContext,
                              debugConfig: any): Promise<string|undefined> {
   const processItems: ProcessItem[] =
       await getProcessItems(context.extensionContext);
@@ -116,7 +116,7 @@ async function showQuickPick(context: MOJOContext,
   });
 }
 
-export function activatePickProcessToAttachCommand(context: MOJOContext):
+export function activatePickProcessToAttachCommand(context: MojoContext):
     vscode.Disposable {
   return vscode.commands.registerCommand(
       "mojo.pickProcessToAttach",

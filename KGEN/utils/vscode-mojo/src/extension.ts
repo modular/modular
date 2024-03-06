@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 
 import {LoggingService} from './logging';
-import {MOJOContext} from './mojoContext';
+import {MojoContext} from './mojoContext';
 import {isNightlyExtension} from './utils/buildInfo';
 
 /**
@@ -15,14 +15,14 @@ import {isNightlyExtension} from './utils/buildInfo';
  * extension's state and disposal.
  */
 class MojoExtension {
-  private readonly mojoContext: MOJOContext;
+  private readonly mojoContext: MojoContext;
   private readonly loggingService: LoggingService;
 
   constructor(context: vscode.ExtensionContext) {
     const isNightly = isNightlyExtension(context);
     this.loggingService = new LoggingService(isNightly);
     this.loggingService.main.logInfo("Initializing the Mojo extension.");
-    this.mojoContext = new MOJOContext(context, this.loggingService);
+    this.mojoContext = new MojoContext(context, this.loggingService);
     this.mojoContext.activate();
     this.loggingService.main.logInfo("Mojo extension initialized.");
 

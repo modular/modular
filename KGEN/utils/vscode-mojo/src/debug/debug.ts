@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 
-import {MOJOContext} from '../mojoContext';
+import {MojoContext} from '../mojoContext';
 import {MojoSDK} from '../mojoSDK';
 import * as config from '../utils/config';
 import {DisposableContext} from '../utils/disposableContext';
@@ -50,7 +50,7 @@ const DEBUG_TYPE: string = "mojo-lldb";
  * if it's a part of the config, is used to find a workspace folder.
  */
 async function findSDKForDebugSession(
-    context: MOJOContext, configuration: MojoDebugConfiguration,
+    context: MojoContext, configuration: MojoDebugConfiguration,
     workspaceFolder?: vscode.WorkspaceFolder): Promise<MojoSDK|undefined> {
   let resolvedWorkspace = workspaceFolder;
   if (!workspaceFolder && configuration.mojoFile) {
@@ -69,9 +69,9 @@ async function findSDKForDebugSession(
  */
 class MojoDebugAdapterDescriptorFactory implements
     vscode.DebugAdapterDescriptorFactory {
-  private context: MOJOContext;
+  private context: MojoContext;
 
-  constructor(context: MOJOContext) { this.context = context; }
+  constructor(context: MojoContext) { this.context = context; }
 
   async createDebugAdapterDescriptor(session: vscode.DebugSession,
                                      _executable: vscode.DebugAdapterExecutable|
@@ -94,9 +94,9 @@ class MojoDebugAdapterDescriptorFactory implements
  */
 class MojoDebugConfigurationResolver implements
     vscode.DebugConfigurationProvider {
-  private context: MOJOContext;
+  private context: MojoContext;
 
-  constructor(context: MOJOContext) { this.context = context; }
+  constructor(context: MojoContext) { this.context = context; }
 
   async resolveDebugConfigurationWithSubstitutedVariables
       ?(folder: vscode.WorkspaceFolder|undefined,
@@ -252,10 +252,10 @@ class MojoDebugDynamicConfigurationProvider implements
  * mojo debugging.
  */
 export class MojoDebugContext extends DisposableContext {
-  private context: MOJOContext;
+  private context: MojoContext;
   rpcServers: Map<string, RpcLaunchServer> = new Map();
 
-  constructor(context: MOJOContext) {
+  constructor(context: MojoContext) {
     super();
     this.context = context;
 

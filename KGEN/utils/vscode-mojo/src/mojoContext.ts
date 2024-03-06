@@ -20,7 +20,7 @@ import {DisposableContext} from './utils/disposableContext';
  *  This class manages the Mojo extension state, including the language
  *  client.
  */
-export class MOJOContext extends DisposableContext {
+export class MojoContext extends DisposableContext {
   readonly sdkManager: MojoSDKManager;
   private lspClients: Map<string, Promise<vscodelc.LanguageClient|undefined>> =
       new Map();
