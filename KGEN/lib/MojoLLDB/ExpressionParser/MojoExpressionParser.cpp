@@ -716,10 +716,8 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
     return failure();
   }
 
-  if (!result.isValid()) {
-    impl->expressionLogger->errorLog("Failed to parse the module");
+  if (!result.isValid())
     return failure();
-  }
   impl->expressionLogger->debugLog("Parsed module successfully");
 
   // Setup a diagnostic handler to process diagnostics emitted during lowering.
@@ -779,10 +777,8 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   }
 
   // Run the elaboration pipeline.
-  if (failed(impl->fullCompilationPM->run(*module))) {
-    impl->expressionLogger->errorLog("Elaboration failed");
+  if (failed(impl->fullCompilationPM->run(*module)))
     return returnErrorCleanup();
-  }
 
   if (isVerboseLoggingEnabled) {
     impl->expressionLogger->dumpIR("Pre-elaboration module:\n{0}",

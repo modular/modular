@@ -66,16 +66,7 @@ void MojoREPL::flushExpressionEventsAndProcessStreams() {
   lldb::TargetSP target = getTarget();
 
   // Report a message to the error stream.
-  auto reportMessage = [&](StringRef type, StringRef message) {
-    // If the LLDB Expression logs are enabled, we should send our message
-    // there. This has the benefit of being able to automatically send our logs
-    // to a file if the LLDB log has been configured to do so.
-    if (Log *log = GetLog(LLDBLog::Expressions)) {
-      LLDB_LOG(log, "[{0}] {1}", type, message);
-    }
-  };
-
-  auto sendUserOutput = [&](StringRef message) {
+  auto sendUserOutput = [&](StringRef type, StringRef message) {
     errorStream->AsRawOstream() << "[User] " << message << "\n";
     errorStream->Flush();
   };
@@ -84,7 +75,7 @@ void MojoREPL::flushExpressionEventsAndProcessStreams() {
   while (mojoExpressionListener->GetEvent(event, std::chrono::seconds(0))) {
     // Handle the mojo expression events by logging them to error stream.
     MojoExpressionLogger::getLoggerForTarget(*target).handleEvent(
-        event, reportMessage, sendUserOutput);
+        event, sendUserOutput);
   }
 
   if (lldb::ProcessSP process = target->GetProcessSP()) {

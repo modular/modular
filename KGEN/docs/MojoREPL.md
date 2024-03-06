@@ -211,16 +211,6 @@ The REPL environment runs all expressions within a `def` environment, not an
 `fn` one. This shouldn't have much if any significance for most user code, but
 is a potential foot-gun that devs should be aware of.
 
-## Configuration
-
-### Environment Variables
-
-- `MOJO_JUPYTER_LOG_FILE`: Setting this will cause the jupyter notebook kernel
-  to log to the file specified. We recommend providing an absolute path here. If
-  this is unspecified, the kernel simply logs to the stderr.
-- `MOJO_JUPYTER_JSON_LOGS`: Setting this will cause the jupyter notebook kernel
-  to produce logs in JSON format instead of plain text.
-
 ## Debugging Compiler Issues
 
 Debugging compiler issues within the REPL environment is much different from
@@ -333,22 +323,6 @@ Feel free to add more event kinds as is appropriate - event kinds ending with
 Lastly, as a troublshooting aid you can pass the `-f /tmp/logs.txt` option to
 the `:log enable lldb expr` command to output the logs to a file for easier
 inspection.
-
-#### MojoJupyter Log Format
-
-If the environment variable `MOJO_JUPYTER_JSON_LOGS` is set, the JSON format
-you'll see in the jupyter kernel logs is:
-
-```json
-{
-  // `|` separated list of event kinds. Each log event can be more than one
-  // kind.
-  "type": "BroadcastUserMessage|DebugLog|DumpIR|ErrorLog",
-  "message": "<log message>"
-}
-```
-
-Otherwise, you'll see logs in common textual form.
 
 ### LLDB and Mojo Commands
 

@@ -122,28 +122,7 @@ struct MojoKernel::Impl {
   Impl(OutputFn outputFn)
       : outputFn(std::move(outputFn)),
         mojoExpressionListener(
-            Listener::MakeListener("mojo-type-system.listener")) {
-    // Check for an environment variable we'll use to specify the log file path.
-    std::optional<std::string> logFilePath =
-        llvm::sys::Process::GetEnv("MOJO_JUPYTER_LOG_FILE");
-    if (!logFilePath.has_value()) {
-      // If we don't have a log file path, simply log to stderr.
-      logStream =
-          ConditionallyOwnedPointer<llvm::raw_ostream>::borrow(&llvm::errs());
-      return;
-    }
-
-    // We have a path, log to a file.
-    std::error_code ec;
-    logStream = ConditionallyOwnedPointer<llvm::raw_ostream>::allocate<
-        llvm::raw_fd_ostream>(*logFilePath, ec);
-    logStream->SetUnbuffered();
-
-    // We must not error opening the log file provided.
-    if (ec)
-      llvm::report_fatal_error("Error opening " + Twine(*logFilePath) +
-                               " for logging: " + ec.message());
-  }
+            Listener::MakeListener("mojo-type-system.listener")) {}
 
   ~Impl() {
     if (process->IsValid())
@@ -226,11 +205,6 @@ private:
   MojoExpressionEvaluationOptions exprOpts;
   ThreadSP mainThread;
   ListenerSP mojoExpressionListener;
-
-  /// The stream to write logs to. This may point to a file if the
-  /// `MOJO_JUPYTER_LOG_FILE` env variable is specified, otherwise it points to
-  /// stderr.
-  ConditionallyOwnedPointer<llvm::raw_ostream> logStream;
 
   /// The mojo persistent expression state.
   MojoPersistentExpressionState *exprState = nullptr;
@@ -539,28 +513,15 @@ void MojoKernel::Impl::flushLLDBStreams() {
   // Flush type system messages.
   lldb::EventSP event;
 
-  // Various logging utilities (like CloudWatch) parse JSON automatically so we
-  // should use that for structured logging.
-  auto reportMessage = [&](StringRef type, StringRef message) {
-    if (llvm::sys::Process::GetEnv("MOJO_JUPYTER_JSON_LOGS")) {
-      llvm::json::OStream j(*logStream);
-      // Produce `{"type": <type>, "message": <message>}`
-      j.object([&]() {
-        j.attribute("type", type);
-        j.attribute("message", message);
-      });
-      *logStream << "\n";
-    } else {
-      *logStream << '[' << type << "] " << message << "\n";
-    }
-  };
-
   // The following gets the stream of events without timeout. All the messages
   // will be read eventually anyway.
   while (mojoExpressionListener->GetEvent(event, std::chrono::seconds(0))) {
-    MojoExpressionLogger::handleEvent(event, reportMessage, [&](StringRef msg) {
-      sendOutput("stderr", msg);
-    });
+    MojoExpressionLogger::handleEvent(
+        event, [&](StringRef type, StringRef msg) {
+          // If the message isn't an error, print it out for the user to see as
+          // part of stderr.
+          sendOutput(type == "error" ? type : "stderr", msg);
+        });
     event->Clear();
   }
 
