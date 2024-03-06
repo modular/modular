@@ -14,7 +14,6 @@ import {registerFormatter} from './formatter';
 import {LoggingService} from './logging';
 import {MOJOSDK} from './mojoSDK';
 import * as config from './utils/config';
-import * as configWatcher from './utils/configWatcher';
 import {DisposableContext} from './utils/disposableContext';
 
 /**
@@ -23,7 +22,8 @@ import {DisposableContext} from './utils/disposableContext';
  */
 export class MOJOContext extends DisposableContext {
   readonly sdk: MOJOSDK;
-  private workspaceClients: Map<string, vscodelc.LanguageClient> = new Map();
+  private lspClients: Map<string, Promise<vscodelc.LanguageClient|undefined>> =
+      new Map();
   readonly loggingService: LoggingService;
   readonly extensionContext: vscode.ExtensionContext;
 
@@ -71,16 +71,15 @@ export class MOJOContext extends DisposableContext {
     // Watch any new documents to spawn servers when necessary.
     this.pushSubscription(
         vscode.workspace.onDidOpenTextDocument(startClientOnOpenDocument));
-    this.pushSubscription(
-        vscode.workspace.onDidChangeWorkspaceFolders((event) => {
-          for (const folder of event.removed) {
-            const client = this.workspaceClients.get(folder.uri.toString());
-            if (client) {
-              client.stop();
-              this.workspaceClients.delete(folder.uri.toString());
-            }
-          }
-        }));
+    // Whenever we have different workspace folder, we clear the internal state
+    // of LSP clients to allow for more precise SDK config resolution. For
+    // example, if a file is opened and it doesn't belong to any existing
+    // workspace folders, we try to use as fallback a config that belongs to
+    // some existing workspace folder. However, if later a workspace folder with
+    // a proper config is added and it contains that file in question, we should
+    // be able to pick this new config up and discard the previous one.
+    this.pushSubscription(vscode.workspace.onDidChangeWorkspaceFolders(
+        () => { this.disposeLSPClients(); }));
 
     // Initialize the formatter.
     this.pushSubscription(registerFormatter(this.loggingService, this.sdk));
@@ -119,52 +118,26 @@ export class MOJOContext extends DisposableContext {
     // Resolve the workspace folder if this document is in one. We use the
     // workspace folder when determining if a server needs to be started.
     let workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-    let workspaceFolderStr =
-        workspaceFolder ? workspaceFolder.uri.toString() : "";
+    let cacheKey =
+        workspaceFolder ? workspaceFolder.uri.toString() : uri.fsPath;
 
     // Get or create a client context for this folder.
-    let client = this.workspaceClients.get(workspaceFolderStr);
-    if (!client) {
-      client = await this.activateWorkspaceFolder(
-          workspaceFolder, this.loggingService, launchAndDebugLanguageServer);
-      if (client) {
-        this.workspaceClients.set(workspaceFolderStr, client);
-      }
+    if (!this.lspClients.has(cacheKey)) {
+      this.lspClients.set(
+          cacheKey, this.startLanguageClient(workspaceFolder,
+                                             launchAndDebugLanguageServer));
     }
-    return client;
+    return this.lspClients.get(cacheKey);
   }
 
   /**
-   *  Activate the language client for the given language in the given workspace
-   *  folder.
-   */
-  async activateWorkspaceFolder(workspaceFolder: vscode.WorkspaceFolder|
-                                undefined,
-                                loggingService: LoggingService,
-                                launchAndDebugLanguageServer: boolean):
-      Promise<vscodelc.LanguageClient|undefined> {
-    // Try to activate the language client.
-    const [server, serverPath] = await this.startLanguageClient(
-        workspaceFolder, loggingService, launchAndDebugLanguageServer);
-
-    // Watch for configuration changes on this folder.
-    if (workspaceFolder)
-      await configWatcher.activate(this, workspaceFolder, [ 'modularHomePath' ],
-                                   [ serverPath ]);
-    return server;
-  }
-
-  /**
-   *  Start a new language client. Returns an array containing the opened
-   *  server, or null if the server could not be started, and the resolved
-   *  server path.
+   *  Start a new language client.
    */
   async startLanguageClient(workspaceFolder: vscode.WorkspaceFolder|undefined,
-                            loggingService: LoggingService,
                             launchAndDebugLanguageServer: boolean):
-      Promise<[ vscodelc.LanguageClient | undefined, string ]> {
-    loggingService.lsp.logInfo("Starting language client for workspace",
-                               workspaceFolder);
+      Promise<vscodelc.LanguageClient|undefined> {
+    this.loggingService.lsp.logInfo(`Starting language client for workspace: ${
+        workspaceFolder?.uri.fsPath}`);
     const clientTitle = 'Mojo Language Client';
 
     // Get the path of the lsp-server that is used to provide language
@@ -172,7 +145,7 @@ export class MOJOContext extends DisposableContext {
     let mojoConfig =
         await this.sdk.resolveConfig({workspaceFolder : workspaceFolder});
     if (!mojoConfig)
-      return [ undefined, "" ];
+      return undefined;
 
     let args = [];
     if (launchAndDebugLanguageServer)
@@ -237,7 +210,7 @@ export class MOJOContext extends DisposableContext {
         // the workspace.
         fileEvents : vscode.workspace.createFileSystemWatcher(filePattern)
       },
-      outputChannel : loggingService.lsp.outputChannel,
+      outputChannel : this.loggingService.lsp.outputChannel,
       workspaceFolder : workspaceFolder,
       middleware : middleware,
 
@@ -248,31 +221,29 @@ export class MOJOContext extends DisposableContext {
     // Create the language client and start the client.
     let languageClient = new vscodelc.LanguageClient(
         'mojo-lsp', clientTitle, serverOptions, clientOptions);
+    this.loggingService.lsp.logInfo(
+        `Launching Language Server '${serverOptions.command}' with options:`,
+        serverOptions.args)
     languageClient.start();
-    loggingService.lsp.logInfo("Launching Language Server with options:",
-                               serverOptions.args)
-    return [ languageClient, mojoConfig.mojoLanguageServerPath ];
-  }
-
-  /**
-   * Return the language client for the given language and uri, or null if no
-   * client is active.
-   */
-  getLanguageClient(uri: vscode.Uri): vscodelc.LanguageClient|undefined {
-    let workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-    let workspaceFolderStr =
-        workspaceFolder ? workspaceFolder.uri.toString() : "";
-    return this.workspaceClients.get(workspaceFolderStr);
+    this.loggingService.lsp.logInfo("Language Server started");
+    return languageClient;
   }
 
   dispose() {
     this.loggingService.main.logInfo("Disposing MOJOContext.");
     super.dispose();
-    this.workspaceClients.forEach((client) => {
-      if (client) {
-        client.stop();
+    this.disposeLSPClients();
+  }
+
+  private disposeLSPClients() {
+    const clients = [...this.lspClients.values() ];
+    this.lspClients.clear();
+
+    Promise.all(clients.map(async client => {
+      const resolvedClient = await client;
+      if (resolvedClient) {
+        resolvedClient.stop();
       }
-    });
-    this.workspaceClients.clear();
+    }));
   }
 }

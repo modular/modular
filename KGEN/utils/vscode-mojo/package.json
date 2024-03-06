@@ -204,6 +204,11 @@
         "command": "mojo.attachToProcess",
         "icon": "$(debug)",
         "title": "Attach to Process"
+      },
+      {
+        "category": "Mojo",
+        "command": "mojo.sdk.install",
+        "title": "Install and Configure the Mojo SDK"
       }
     ],
     "submenus": [

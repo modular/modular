@@ -7,9 +7,8 @@
 import * as chokidar from 'chokidar';
 import * as vscode from 'vscode';
 
-import {MOJOContext} from '../mojoContext';
-
 import * as config from './config';
+import {DisposableContext} from './disposableContext';
 
 /**
  *  Prompt the user to see if we should restart the server.
@@ -48,11 +47,12 @@ async function promptRestart(settingName: string, promptMessage: string) {
  *  Activate watchers that track configuration changes for the given workspace
  *  folder, or null if the workspace is top-level.
  */
-export async function activate(mojoContext: MOJOContext,
-                               workspaceFolder: vscode.WorkspaceFolder,
-                               settings: string[], paths: string[]) {
+export async function activate(
+    workspaceFolder: vscode.WorkspaceFolder|undefined, settings: string[],
+    paths: string[]): Promise<DisposableContext> {
+  const disposables = new DisposableContext();
   // When a configuration change happens, check to see if we should restart.
-  mojoContext.pushSubscription(vscode.workspace.onDidChangeConfiguration(event => {
+  disposables.pushSubscription(vscode.workspace.onDidChangeConfiguration(event => {
     for (const setting of settings) {
       const expandedSetting = `mojo.${setting}`;
       if (event.affectsConfiguration(expandedSetting, workspaceFolder)) {
@@ -72,10 +72,6 @@ export async function activate(mojoContext: MOJOContext,
     awaitWriteFinish : true,
   };
   for (const serverPath of paths) {
-    if (serverPath === '') {
-      return;
-    }
-
     // If the path actually exists, track it in case it changes.
     const fileWatcher = chokidar.watch(serverPath, fileWatcherConfig);
     fileWatcher.on('all', (event, _filename, _details) => {
@@ -85,7 +81,8 @@ export async function activate(mojoContext: MOJOContext,
             'mojo language server file has changed. Do you want to reload the server?');
       }
     });
-    mojoContext.pushSubscription(
+    disposables.pushSubscription(
         new vscode.Disposable(() => { fileWatcher.close(); }));
   }
+  return disposables;
 }
