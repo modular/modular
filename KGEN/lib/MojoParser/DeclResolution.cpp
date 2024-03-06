@@ -1080,55 +1080,6 @@ static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
   return varDecl;
 }
 
-/// This adds a default return (lit.return of None, potentially converted
-/// to a variant) and emits a EndFuncOp.
-static void appendDefaultReturnAndEndOp(LIT::FuncOp func, ASTDecl &funcDecl,
-                                        SharedState &shared) {
-  Block &body = *func.getBody();
-  auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), &body);
-
-  auto makeNoneReturn = [&] {
-    // The function returns none.
-    Value retVal = b.create<ParamConstantOp>(shared.getNoneAttr());
-
-    // Wrap the result value if necessary.
-    if (func.isThrows())
-      retVal = b.create<VariantCreateOp>(func.getMLIRResultType(), retVal, 1);
-    ExprEmitter::emitNormalReturn(b, retVal, funcDecl);
-  };
-
-  // If the function returns None, insert a "return None".
-  ASTType normalResult = func.getUserResultType();
-  if (normalResult.isNoneType() &&
-      // No default return needed if we ended in a return.
-      (body.empty() || !isa<LIT::ReturnOp>(body.back()))) {
-    makeNoneReturn();
-  } else if (func.isDef() && func.getSignature().hasMemoryOnlyResult()) {
-    // If this `def` returns an object but is missing a return, insert one
-    // automatically.
-    auto objType = shared.lookupObjectType(funcDecl.getLoc(), funcDecl);
-    auto resultArg = func.getArguments().back();
-    if (objType && objType.isEqualCanon(
-                       cast<RefType>(resultArg.getType()).getElementType())) {
-      // Emit `object()` into the memory type return slot.
-      ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
-      emitter.builder = b;
-      ValueDest resultDest(MLValue(resultArg), EC_ReturnValue);
-      // Create a dummy node to pass down.
-      SyntheticNode locExpr(funcDecl.getLoc());
-      CValue result = emitter.emitConstructorCall(
-          objType, {}, locExpr, CallSyntax::kImplicitConvert, resultDest);
-      if (!result || !emitter.emitResult(result, locExpr, resultDest))
-        resultDest.resetForError();
-      else
-        makeNoneReturn();
-    }
-  }
-
-  // Insert the default end terminator.
-  b.create<LIT::EndFuncOp>();
-}
-
 ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
                                       ASTDecl &decl) {
   // Push the debug scope for this function if necessary so that nested
@@ -1260,7 +1211,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     body->clear();
     // Don't append anything to an empty function if this is a trait function.
   } else {
-    appendDefaultReturnAndEndOp(funcOp, decl, shared);
+    StructEmitter(shared).appendDefaultReturnAndEndOp(decl);
   }
 
   // Now that the body of the function is parsed, run any body decorators.
@@ -1789,62 +1740,6 @@ static SymbolConstantAttr lookupCopyMoveInit(ASTDecl &structDecl,
       return func.getBoundSymbolRef();
   }
   return {};
-}
-
-/// Given a struct that has no explicitly defined __del__ member, define a new
-/// one with an empty body.  This allows the CheckLifetimes pass to insert field
-/// dels as needed, and makes sure that anything that refers to this struct
-/// properly runs its destructor.
-static SymbolConstantAttr synthesizeEmptyDtor(SharedState &shared,
-                                              StructDeclOp structOp,
-                                              ASTDecl &structDecl,
-                                              DeclResolver &resolver) {
-  auto builder = ImplicitLocOpBuilder::atBlockEnd(
-      structOp.getLoc(), &structOp.getFields().front());
-
-  // Figure out the type of the 'self' argument.  It is the struct's `Self`
-  // type for register passable things, or indirect for a memory-only type.
-  ASTType selfType = structDecl.getSelfType();
-  // The argument is always owned.
-  ArgConvention convention = ArgConvention::OwnedInReg;
-  if (!selfType.isRegisterPassable(structDecl.getLoc(), resolver.shared)) {
-    selfType = selfType.getRefForArgument("self", /*isMut*/ true);
-    convention = ArgConvention::OwnedInMem;
-  }
-
-  StringAttr selfName = builder.getStringAttr("self");
-
-  // Create the FuncOp and ASTDecl for the method.
-  StructEmitter emitter(shared);
-  auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
-      "__del__", selfType.mlirType, convention,
-      PogsAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
-      shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
-
-  // Set up the body.
-  Block *body = funcOp.getBody();
-  BlockArgument arg = body->getArgument(0);
-
-  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-
-  // We need to make a var box + store for register_passable values since that
-  // is what lifetime tracking expects.  It does not track the individual
-  // fields of register passable values since they cannot be transfered and
-  // cannot be lit.ownership.mark_destroyed.
-  if (convention == ArgConvention::OwnedInReg) {
-    builder.setInsertionPointToStart(body);
-    ExprEmitter emitter(shared, funcDecl, builder);
-    (void)emitter.makeArgLValueVarSlot(SRValue(arg), selfName,
-                                       structDecl.getLoc());
-  }
-
-  // Finish off the function with a return + lit.endfunc.
-  appendDefaultReturnAndEndOp(funcOp, funcDecl, resolver.shared);
-
-  funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
-  return funcOp.getBoundSymbolRef();
 }
 
 struct StructBodyDecorators : public SharedStateUser {
@@ -2499,18 +2394,14 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
     // Check to see if we have an explicitly declared destructor.
     structOp.setDestructorAttr(dtorAttr);
-  } else if (!structOp.isRegisterPassableTrivial() &&
-             structDecl.getSelfType()) {
-    // Add an empty destructor if the struct is memory-only and does not have an
-    // explicit destructor. If one of the fields needs to be destroyed, then we
-    // synthesize an empty del function so that lifetime checking can handle
-    // field destruction.
-    if (structDecl
-            .lookupInCurrentScope(StringAttr::get(getContext(), "__del__"))
-            .empty()) {
-      structOp.setDestructorAttr(
-          synthesizeEmptyDtor(shared, structOp, structDecl, *this));
-    }
+  } else if (structDecl.getSelfType() &&
+             !structOp.isRegisterPassableTrivial() &&
+             structDecl
+                 .lookupInCurrentScope(StringAttr::get(getContext(), "__del__"))
+                 .empty()) {
+    structOp.setDestructorAttr(StructEmitter(shared)
+                                   .synthesizeEmptyDtor(structDecl)
+                                   .getBoundSymbolRef());
   }
 
   // Look up move and copy constructors and record them.

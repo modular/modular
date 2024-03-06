@@ -1862,7 +1862,8 @@ def KGEN_CaptureListCreateOp : KGENOp<"capture_list.create",
   let results = (outs PointerOf<KGEN_NoneType>:$result);
 
   let assemblyFormat = [{
-    attr-dict custom<ColonTypeParamValue>($callee) ($args^ `:` type($args))?
+    attr-dict custom<ColonTypeParamValue>($callee)
+    (`(` $args^ `:` type($args) `)`)?
   }];
 }
 

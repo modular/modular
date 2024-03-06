@@ -482,7 +482,7 @@ struct MemoryOnlySpecial(AnyType, Copyable, Movable):
         pass
 
     # CHECK: lit.func @"__del__
-    # CHECK-SAME: [{{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
+    # CHECK-SAME: [{{.*}} owned_in_mem, |) -> !kgen.none
     # CHECK: return %none
 
 

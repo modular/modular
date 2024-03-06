@@ -75,6 +75,12 @@ public:
                             ArrayRef<ArgConvention> argConventions,
                             PogsAttr argListAttrs, SpecialFunctionKind kind);
 
+  /// Given a struct that has no explicitly defined `__del__` member, define a
+  /// new one with an empty body. This allows the CheckLifetimes pass to insert
+  /// field dels as needed, and makes sure that anything that refers to this
+  /// struct properly runs its destructor.
+  LIT::FuncOp synthesizeEmptyDtor(ASTDecl &structDecl);
+
   /// Return the initializer method with the specified signature if it exists
   /// and null otherwise. The operands type is not expected to include self.
   LIT::FuncOp findInitInStruct(StructDeclOp structOp, ArrayRef<Type> operands);
@@ -122,6 +128,10 @@ public:
   /// struct if it does not already. This adds the trait decl to the struct's
   /// parent list and all transitive parents that are not already there.
   static void addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl);
+
+  /// This adds a default return (lit.return of None, potentially converted
+  /// to a variant) and emits a EndFuncOp.
+  void appendDefaultReturnAndEndOp(ASTDecl &funcDecl);
 
 protected:
   Type noneType;

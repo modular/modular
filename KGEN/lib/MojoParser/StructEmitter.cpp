@@ -196,6 +196,53 @@ void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
   structOp.setParentTypes(parentTypes);
 }
 
+void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
+  auto func = cast<LIT::FuncOp>(funcDecl);
+  Block &body = *func.getBody();
+  auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), &body);
+
+  auto makeNoneReturn = [&] {
+    // The function returns none.
+    Value retVal = b.create<ParamConstantOp>(shared.getNoneAttr());
+
+    // Wrap the result value if necessary.
+    if (func.isThrows())
+      retVal = b.create<VariantCreateOp>(func.getMLIRResultType(), retVal, 1);
+    ExprEmitter::emitNormalReturn(b, retVal, funcDecl);
+  };
+
+  // If the function returns None, insert a "return None".
+  ASTType normalResult = func.getUserResultType();
+  if (normalResult.isNoneType() &&
+      // No default return needed if we ended in a return.
+      (body.empty() || !isa<LIT::ReturnOp>(body.back()))) {
+    makeNoneReturn();
+  } else if (func.isDef() && func.getSignature().hasMemoryOnlyResult()) {
+    // If this `def` returns an object but is missing a return, insert one
+    // automatically.
+    auto objType = shared.lookupObjectType(funcDecl.getLoc(), funcDecl);
+    auto resultArg = func.getArguments().back();
+    if (objType && objType.isEqualCanon(
+                       cast<RefType>(resultArg.getType()).getElementType())) {
+      // Emit `object()` into the memory type return slot.
+      ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
+      emitter.builder = b;
+      ValueDest resultDest(MLValue(resultArg), EC_ReturnValue);
+      // Create a dummy node to pass down.
+      SyntheticNode locExpr(funcDecl.getLoc());
+      CValue result = emitter.emitConstructorCall(
+          objType, {}, locExpr, CallSyntax::kImplicitConvert, resultDest);
+      if (!result || !emitter.emitResult(result, locExpr, resultDest))
+        resultDest.resetForError();
+      else
+        makeNoneReturn();
+    }
+  }
+
+  // Insert the default end terminator.
+  b.create<LIT::EndFuncOp>();
+}
+
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs) {
@@ -403,6 +450,55 @@ LIT::FuncOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                        /*paramListAttrs=*/PogsAttr::get(getContext()));
 }
 
+LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
+  auto structOp = cast<StructDeclOp>(structDecl);
+  auto builder = ImplicitLocOpBuilder::atBlockEnd(
+      structOp.getLoc(), &structOp.getFields().front());
+
+  // Figure out the type of the 'self' argument.  It is the struct's `Self`
+  // type for register passable things, or indirect for a memory-only type.
+  ASTType selfType = structDecl.getSelfType();
+  // The argument is always owned.
+  ArgConvention convention = ArgConvention::OwnedInReg;
+  if (!selfType.isRegisterPassable(structDecl.getLoc(), shared)) {
+    selfType = selfType.getRefForArgument("self", /*isMut*/ true);
+    convention = ArgConvention::OwnedInMem;
+  }
+
+  StringAttr selfName = builder.getStringAttr("self");
+
+  // Create the FuncOp and ASTDecl for the method.
+  StructEmitter emitter(shared);
+  auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
+      "__del__", selfType.mlirType, convention,
+      PogsAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
+      shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
+
+  // Set up the body.
+  Block *body = funcOp.getBody();
+  BlockArgument arg = body->getArgument(0);
+
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
+    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+
+  // We need to make a var box + store for register_passable values since that
+  // is what lifetime tracking expects.  It does not track the individual
+  // fields of register passable values since they cannot be transfered and
+  // cannot be lit.ownership.mark_destroyed.
+  if (convention == ArgConvention::OwnedInReg) {
+    builder.setInsertionPointToStart(body);
+    ExprEmitter emitter(shared, funcDecl, builder);
+    (void)emitter.makeArgLValueVarSlot(SRValue(arg), selfName,
+                                       structDecl.getLoc());
+  }
+
+  // Finish off the function with a return + lit.endfunc.
+  appendDefaultReturnAndEndOp(funcDecl);
+  return funcOp;
+}
+
+namespace {
 struct ValueInfo {
   enum FuncIndex { Destruct = 0, Move = 1, Copy = 2, FieldwiseInit = 3 };
 
@@ -510,6 +606,7 @@ private:
   std::bitset<4> existingFunctions;
   bool initialized;
 };
+} // namespace
 
 std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     ASTDecl &structDecl, bool generateFieldwiseInit,
@@ -583,44 +680,8 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
         PogsAttr::get(getContext(), argNames, argPassingKinds));
   }
 
-  if (!valueInfo.hasDestructor()) {
-    ASTDecl &structDecl = shared.declResolver->getDeclForTypeSymbol(
-        cast<DeclRefType>(selfType).getSymbol());
-    bool needsDtor = forceGenerateDestructor;
-    if (!needsDtor) {
-      for (auto field : declOp.getFieldDecls()) {
-        auto fieldEntries =
-            structDecl.lookupInCurrentScope(field.getNameAttr());
-        assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
-        ASTDecl &fieldASTDecl = *fieldEntries[0];
-        if (failed(shared.declResolver->resolveSignature(
-                fieldASTDecl, fieldASTDecl.getLoc())))
-          continue;
-        if (ASTType(field.getType())
-                .hasDestructor(fieldASTDecl.getLoc(), shared)) {
-          needsDtor = true;
-          break;
-        }
-      }
-    }
-
-    // FIXME: This isn't using the logic for synthesizeEmptyDtor, not handling
-    // register passable correctly.  We just decline to generate this for now,
-    // which threads the needle between closure emission (which expects us to
-    // synthesize all members but only generates memory only members) and
-    // @value generation which doesn't need a del method because struct type
-    // checking will add it.
-    //
-    // We should probably move synthesizeEmptyDtor into this code and use it
-    // from the type checking logic.
-    if (needsDtor && isMemoryOnly) {
-      auto argListAttrs =
-          PogsAttr::get(getContext(), selfName, PassingKind::PosOnly);
-      destructorFunc = addVoidMethod(structDecl, "__del__", refToSelf,
-                                     ArgConvention::OwnedInMem, argListAttrs,
-                                     SpecialFunctionKind::kDel);
-    }
-  }
+  if (!valueInfo.hasDestructor() && forceGenerateDestructor)
+    destructorFunc = synthesizeEmptyDtor(structDecl);
 
   auto addCopyOrMoveBuiltinTrait = [&](bool isCopy) {
     ASTDecl *traitDecl;

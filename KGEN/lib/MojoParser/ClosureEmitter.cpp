@@ -69,8 +69,10 @@ static void storeField(ImplicitLocOpBuilder &b, Value self, Value value,
                  name, self));
 }
 
-static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
-                                 ArrayRef<ParamDeclAttr> params) {
+static std::pair<ASTDecl &, StructDeclOp>
+createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
+             ArrayRef<ParamDeclAttr> params) {
+  auto module = cast<FileModuleOp>(moduleDecl);
   OpBuilder b(module.getRegion());
   SmallVector<StringAttr> paramNames(params.size(),
                                      StringAttr::get(b.getContext()));
@@ -78,7 +80,7 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
   SmallVector<PassingKind> passingKinds(params.size(), PassingKind::PosOnly);
   auto paramListAttr = PogsAttr::get(b.getContext(), paramNames, passingKinds);
 
-  StructDeclOp declOp = b.create<StructDeclOp>(module.getLoc(), nameAttr);
+  StructDeclOp declOp = b.create<StructDeclOp>(module.getLoc(), name);
   declOp.setIsSynthetic(true);
 
   // Set attributes in bulk.
@@ -91,7 +93,12 @@ static StructDeclOp createStruct(FileModuleOp module, StringAttr nameAttr,
       ParamDeclArrayAttr::get(b.getContext(), params), paramListAttr);
   attrs.set(declOp.getSignatureAttrName(), TypeAttr::get(sig));
   declOp->setAttrs(attrs.getDictionary(module.getContext()));
-  return declOp;
+
+  ASTDecl &structDecl = shared.declResolver->addFullyResolvedDecl(
+      &*declOp, name, moduleDecl.getLoc(), &moduleDecl);
+
+  structDecl.setSelfType(ASTDecl::computeSelfTypeForStruct(declOp));
+  return {structDecl, declOp};
 }
 
 /// Given a signature of a function, create a new signature by inserting a
@@ -249,7 +256,9 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     paramValues.push_back(ParamDeclRefAttr::get(wrapperDecls.back()));
     evaluator.addInputValue(paramValues.back());
   }
-  StructDeclOp declOp = createStruct(fileModuleOp, name, wrapperDecls);
+
+  auto [structDecl, declOp] =
+      createStruct(shared, moduleDecl, name, wrapperDecls);
   addFieldsToStruct(declOp, opaquePtrType);
   declOp.setClosureSignature(dependentSignatureType);
 
@@ -294,14 +303,14 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto callMember = b.create<StructFieldOp>(declOp.getLoc(), callFieldAttr,
                                             callMemberSignatureType);
 
-  ASTDecl &astDecl = shared.declResolver->addFullyResolvedDecl(
-      &*declOp, name, moduleDecl.getLoc(), &moduleDecl);
-  for (StructFieldOp field : declOp.getFieldDecls())
-    shared.declResolver->addFullyResolvedDecl(
-        field.getOperation(), field.getNameAttr(), astDecl.getLoc(), &astDecl);
+  for (StructFieldOp field : declOp.getFieldDecls()) {
+    shared.declResolver->addFullyResolvedDecl(field.getOperation(),
+                                              field.getNameAttr(),
+                                              structDecl.getLoc(), &structDecl);
+  }
 
   std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
-      astDecl, /*generateFieldwiseInit=*/false,
+      structDecl, /*generateFieldwiseInit=*/false,
       /*forceGenerateDestructor=*/true);
   assert(stubs && "expected the stubs on a purely synthetic class to succeed.");
   LIT::FuncOp destructor = stubs->getDestructor();
@@ -378,7 +387,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     return {};
 
   // Add the __call__ Method.
-  ASTType selfType = ASTDecl::computeSelfTypeForStruct(declOp);
+  ASTType selfType = structDecl.getSelfType();
   auto refToSelfType = selfType.getRefForArgument("self", /*isMut=*/false);
   LITSignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(
@@ -386,7 +395,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   auto [callMethod, callDecl] = synthesizeMethodInStruct(
       "__call__", closureMethodSignatureType.getArguments(),
       closureMethodSignatureType.getArgConventions(),
-      closureMethodSignatureType.getArgListAttrs(), resultType, astDecl,
+      closureMethodSignatureType.getArgListAttrs(), resultType, structDecl,
       SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects());
 
   // Populate the body of ClosureWrapper::__call__.
@@ -418,7 +427,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     builder.create<LIT::EndFuncOp>();
   }
 
-  synthesizeWrapperFnPtrCtor(astDecl, selfType, dependentSignatureType);
+  synthesizeWrapperFnPtrCtor(structDecl, selfType, dependentSignatureType);
   return declOp;
 }
 
@@ -464,14 +473,11 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Create the closure impl struct with the field types. Add the capture
   // parameters as parameter decls to the generated struct. This way, parameter
   // references within the body do not have to be renamed.
-  StructDeclOp declOp =
-      createStruct(fileModuleOp, implName,
+  auto [structDecl, declOp] =
+      createStruct(shared, moduleDecl, implName,
                    llvm::map_to_vector(paramCaptures, [](ParamDeclRefAttr ref) {
                      return ParamDeclAttr::get(ref);
                    }));
-  // Register the struct as a fully resolved decl.
-  ASTDecl &structDecl = shared.declResolver->addFullyResolvedDecl(
-      declOp.getOperation(), implName, moduleDecl.getLoc(), &moduleDecl);
 
   // Generate the __call__ method.
 
@@ -489,7 +495,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Currently Closure Impls are not register passable, so use BorrowedInMem
   // convention.
-  auto structSelfType = ASTDecl::computeSelfTypeForStruct(declOp);
+  ASTType structSelfType = structDecl.getSelfType();
   callInputTypes.push_back(
       ASTType(structSelfType).getRefForArgument("self", /*isMut=*/false));
   callConventions.push_back(ArgConvention::BorrowedInMem);
@@ -553,7 +559,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   std::optional<GeneratedStubs> stubs = addMissingValueMemberStubsToStruct(
       structDecl, /*generateFieldwiseInit=*/false,
-      /*forceGenerateDestructor=*/hasParamClosureCaptures);
+      /*forceGenerateDestructor=*/true);
   LIT::FuncOp initFunc = synthesizeMemberwiseInit(
       structDecl, initSigTypes, initSigConventions,
       PogsAttr::get(ctx, initSigNames, initSigPassingKinds));
