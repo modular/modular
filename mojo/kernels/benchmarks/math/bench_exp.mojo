@@ -6,10 +6,11 @@
 
 from kernel_utils import *
 from math import *
-from math.math import _exp_taylor, _simd_apply
+from math.math import _exp_taylor, _simd_apply, _ldexp_impl
 from builtin.range import _StridedRange
 from sys.arg import argv
 
+from math.polynomial import EvaluationMethod
 from algorithm.functional import vectorize
 from benchmark import keep
 from mojobench import Bencher, BenchId, MojoBench
@@ -21,7 +22,7 @@ fn apply[
 ](input: Buffer[type], output: Buffer[type]):
     @parameter
     fn _func[width: Int](idx: Int):
-        output.simd_store(idx, func(input.simd_load[width](idx)))
+        output.store(idx, func(input.load[width=width](idx)))
 
     vectorize[_func, simdwidthof[type]()](len(input))
 
@@ -188,23 +189,26 @@ fn exp_sleef[
 
 
 @always_inline
+fn _exp_taylor0[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    alias coefficients = List[SIMD[type, simd_width]](
+        1.0,
+        1.0,
+        0.5,
+        0.16666666666666666667,
+        0.041666666666666666667,
+        0.0083333333333333333333,
+        0.0013888888888888888889,
+        0.00019841269841269841270,
+    )
+    return polynomial_evaluate[type, simd_width, coefficients](x)
+
+
+@always_inline
 fn exp_mojo_opt[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    """Calculates elementwise `e^{X_i}`, where `X_i` is an element in the input
-    SIMD vector at position `i`.
-
-    Parameters:
-      type: The `dtype` of the input and output SIMD vector.
-      simd_width: The width of the input and output SIMD vector.
-
-    Args:
-       x: The input SIMD vector.
-
-    Returns:
-      A SIMD vector containing `e` raised to the power `Xi` where `Xi` is an
-      element in the input SIMD vector.
-    """
     constrained[type.is_floating_point(), "must be a floating point value"]()
     alias neg_ln2 = -0.69314718055966295651160180568695068359375
     alias inv_lg2 = 1.442695040888963407359924681001892137426646
@@ -222,11 +226,77 @@ fn exp_mojo_opt[
 
     var r = k.fma(neg_ln2, xc)
     # var r = k.fma(-L2Lf, k.fma(-L2Uf, xc))
-    var taylor_result = _exp_taylor(r.cast[im_type]()).cast[type]()
+    var taylor_result = _exp_taylor0(r.cast[im_type]()).cast[type]()
     var expr = ldexp(taylor_result, k.cast[DType.int32]())
     return expr
     # var val1 = (expr > min_val).select(expr, SIMD[type,simd_width](0))
     # return (val1 < max_val).select(val1, SIMD[type,simd_width](inf[type]()))
+
+
+@always_inline
+fn exp_mojo_opt2[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    constrained[type.is_floating_point(), "must be a floating point value"]()
+    alias inv_lg2 = 1.44269504088896340736  # 1/log(2)
+
+    # upper and lower parts of log(2)=[L2Uf,L2Lf]
+    alias L2Uf = -0.693359375
+    alias L2Lf = -2.12194440e-4
+
+    alias min_val = SIMD[type, simd_width](-87.3)
+    alias max_val = SIMD[type, simd_width](87.3)
+
+    var xc = clamp(x, min_val, max_val)
+    var k = floor(xc * inv_lg2)
+
+    var r = k.fma(L2Lf, k.fma(L2Uf, xc))
+
+    var taylor_result = _exp_taylor(r)
+
+    var expr = ldexp(taylor_result, k.cast[DType.int32]())
+    return expr
+
+
+@always_inline
+fn _exp_taylor3[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    alias coefficients = List[SIMD[type, simd_width]](
+        0.5,
+        0.16666666666666666667,
+        0.041666666666666666667,
+        0.0083333333333333333333,
+        0.0013888888888888888889,
+        0.00019841269841269841270,
+    )
+    return polynomial_evaluate[
+        type, simd_width, coefficients  # , method = EvaluationMethod.ESTRIN
+    ](x)
+
+
+@always_inline
+fn exp_mojo_opt3[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    constrained[type.is_floating_point(), "must be a floating point value"]()
+    alias inv_lg2 = 1.44269504088896340736  # 1/log(2)
+
+    # upper and lower parts of log(2)=[L2Uf,L2Lf]
+    alias L2Uf = -0.693359375
+    alias L2Lf = -2.12194440e-4
+
+    alias min_val = SIMD[type, simd_width](-87.3)
+    alias max_val = SIMD[type, simd_width](87.3)
+
+    var xc = clamp(x, min_val, max_val)
+    var k = floor(xc * inv_lg2)
+
+    var r = k.fma(L2Lf, k.fma(L2Uf, xc))
+    var taylor_result = _exp_taylor3(r).fma(r * r, r) + 1
+
+    var expr = _ldexp_impl(taylor_result, k)
+    return expr
 
 
 @always_inline
@@ -236,7 +306,7 @@ fn _exp_taylor_mlas[
     return polynomial_evaluate[
         type,
         simd_width,
-        VariadicList[SIMD[type, simd_width]](
+        List[SIMD[type, simd_width]](
             1.0,
             1.0,
             0.499999851,
@@ -310,7 +380,7 @@ def accuracy_test():
     for i in range(0x3000_0000, 0x42B0_0000, 1):
         var f = bitcast[DType.float32, 1](SIMD[DType.uint32, 1](i))
 
-        var r1 = exp_mlas(f)
+        var r1 = exp_mojo_opt3(f)
         var r2 = exp_libm(f)
 
         var i1 = bitcast[DType.int32, 1](r1)
@@ -343,9 +413,11 @@ def main():
             return
 
     var m = MojoBench()
-    var problem_size = range(1 << 10, 1 << 12, 1 << 10)
+    var problem_size = range(1 << 24, 1 << 26, 1 << 25)
     bench_unary[exp, DType.float32](m, problem_size, "mojo")
     bench_unary[exp_mojo_opt, DType.float32](m, problem_size, "mojo_opt")
+    bench_unary[exp_mojo_opt2, DType.float32](m, problem_size, "mojo_opt2")
+    bench_unary[exp_mojo_opt3, DType.float32](m, problem_size, "mojo_opt3")
     bench_unary[exp_libm, DType.float32](m, problem_size, "libm")
     bench_unary[exp_sleef, DType.float32](m, problem_size, "sleef")
     bench_unary[exp_mlas, DType.float32](m, problem_size, "mlas")
