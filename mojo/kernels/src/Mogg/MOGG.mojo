@@ -2068,7 +2068,9 @@ fn gather[
     fn load_indices[
         width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[indices_type, width]:
-        return indices.load[width](rebind[StaticIntTuple[indices_rank]](coords))
+        return indices.simd_load[width](
+            rebind[StaticIntTuple[indices_rank]](coords)
+        )
 
     @parameter
     if single_thread_blocking_override:
@@ -3635,7 +3637,7 @@ fn no_mask_fused_attention_cpu[
     alias mask_shape = DimList()
     alias mask_type = DType.float32
     var mask = NDBuffer[mask_type, rank, mask_shape]()
-    var scale_f32 = scale.load[1](0).cast[DType.float32]()
+    var scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
     var causal_mask: Float32 = 0
     with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
         cpu_fused_attention_impl[
@@ -3708,7 +3710,7 @@ fn with_mask_fused_attention_cpu[
     constrained[target == "cpu"]()
 
     # TODO: Unimplemented and not used
-    var scale_f32 = scale.load[1](0).cast[DType.float32]()
+    var scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
     var causal_mask: Float32 = 0
     with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
         cpu_fused_attention_impl[
