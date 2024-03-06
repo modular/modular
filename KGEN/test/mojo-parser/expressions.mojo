@@ -1307,28 +1307,6 @@ fn testTransferWarning():
   # expected-warning @+1 {{transfer from an owned value has no effect}}
   consume(MemoryOnlyInt()^)
 
-##===----------------------------------------------------------------------===##
-# Test Type Expressions
-##===----------------------------------------------------------------------===##
-
-# CHECK-LABEL: lit.func @"type_function
-# CHECK-SAME: (%a: !Bool borrow) -> !kgen.type
-fn type_function(a: Bool) -> AnyRegType:
-    # CHECK: [[TYPE:%.*]] = hlcf.if %{{.*}} -> !kgen.type
-    # CHECK-NEXT: %metatype = kgen.param.constant: !mt_Int = <!Int>
-    # CHECK-NEXT: [[COERCED:%.*]] = lit.call {{.*}}(%metatype)
-    # CHECK-NEXT: yield [[COERCED]]
-    # CHECK-NEXT: else
-    # CHECK-NEXT: %type = kgen.param.constant: type = <!Bool>
-    # CHECK-NEXT: yield %type
-    # CHECK: return [[TYPE]] : !kgen.type
-    return rebind[AnyRegType](Int) if a else Bool
-
-
-# CHECK-LABEL: lit.func @"static_type{{.*}}"<a: !Bool>
-# CHECK-SAME: %x: !kgen.paramref<apply(:!lit.signature<("a": !Bool borrow) -> !kgen.type> {{.*}}@"type_function{{.*}}, a)> borrow)
-fn static_type[a: Bool](x: type_function(a)):
-    pass
 
 ##===----------------------------------------------------------------------===##
 # Test nonmaterializable IntLiteral beyond Int bounds.

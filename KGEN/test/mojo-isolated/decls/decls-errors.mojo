@@ -643,15 +643,6 @@ fn function_with_struct2():
             pass
     var s2 = S2() # In issue https://github.com/modularml/modular/issues/12598 this was crashing.
 
-struct TypeGetItem:
-    fn __getitem__(inout self, key: Int): # expected-note {{function declared here}}
-        pass
-
-fn bad_metatype_access():
-    var val = TypeGetItem
-    val[1] # expected-error {{invalid call to '__getitem__': l-value of type 'TypeGetItem' cannot be converted to reference of type 'TypeGetItem}}
-
-
 struct BadRefItem:
     fn __init__(inout self): pass
     fn __refitem__(inout self, key: Int) -> Int:
