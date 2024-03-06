@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/FileSystemExtras.h"
+#include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
 #include "llvm/Support/MemoryBuffer.h"
 
@@ -75,4 +76,20 @@ TEST(FileSystemExtras, Append) {
   // Just ensure we found every thread number in the vector.
   for (int thread = 0; thread < numThreads; ++thread)
     ASSERT_TRUE(llvm::find(values, thread) != values.end());
+}
+
+TEST(FileSystemExtras, WriteFile) {
+  auto tmpFileOr = TempFile::create("test-%%%%%%%.tmp");
+  ASSERT_FALSE(tmpFileOr.isError()) << tmpFileOr.getError();
+
+  auto err =
+      writeFileUnderLock(tmpFileOr->getPath(), [](llvm::raw_ostream &os) {
+        os << "hello world!"
+           << "\n";
+      });
+  ASSERT_FALSE(err.isError()) << err.getError();
+
+  auto bufferOr = Buffer::getFile(tmpFileOr->getPath());
+  ASSERT_FALSE(bufferOr.isError()) << bufferOr.getError();
+  EXPECT_TRUE(bufferOr->getPointer()->getBuffer().contains("hello world!"));
 }
