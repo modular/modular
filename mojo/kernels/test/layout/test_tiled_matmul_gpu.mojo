@@ -151,8 +151,8 @@ fn sram_blocked_matmul[
         var rhs_sram_tile_local = rhs_sram_tile.distribute[thread_layout](
             ThreadIdx.y(), ThreadIdx.x()
         )
-        lhs_sram_tile_local.copy_from(lhs_tile_local)
-        rhs_sram_tile_local.copy_from(rhs_tile_local)
+        lhs_sram_tile_local.copy_from_numa(lhs_tile_local)
+        rhs_sram_tile_local.copy_from_numa(rhs_tile_local)
 
         barrier()
 

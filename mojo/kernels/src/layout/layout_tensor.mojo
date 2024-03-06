@@ -20,6 +20,7 @@ struct LayoutTensor[
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
+    owning: Bool = False,
 ](CollectionElement):
     var ptr: DTypePointer[dtype, address_space]
 
@@ -30,6 +31,10 @@ struct LayoutTensor[
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
         self.ptr = existing.ptr
+
+    fn __del__(owned self):
+        if owning:
+            self.ptr.free()
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
@@ -88,7 +93,7 @@ struct LayoutTensor[
         return Self.shape[idx]()
 
     @staticmethod
-    fn _compute_tile_layout[layout: Layout, M: Int, N: Int]() -> Layout:
+    fn _compute_tile_layout[M: Int, N: Int]() -> Layout:
         alias tiler = MakeLayoutList(Layout(M, 1), Layout(N, 1))
         return zipped_divide(layout, tiler)
 
@@ -96,7 +101,7 @@ struct LayoutTensor[
         M1: Int,
         N1: Int,
         *,
-        __tiled_layout: Layout = Self._compute_tile_layout[layout, M1, N1](),
+        __tiled_layout: Layout = Self._compute_tile_layout[M1, N1](),
     ](self, m: Int, n: Int) -> LayoutTensor[
         __tiled_layout[0], dtype, address_space
     ]:
@@ -152,6 +157,7 @@ struct LayoutTensor[
             if (
                 int(self.layout.stride[1]) <= 1
                 and int(other.layout.stride[1]) <= 1
+                and not triple_is_nvidia_cuda()
             ):
                 # Optimize copy for row major layouts.
                 memcpy(
@@ -162,6 +168,15 @@ struct LayoutTensor[
             else:
                 for n in range(Self.dim[1]()):
                     self[m, n] = other[m, n]
+
+    # When source and destination address spaces differ
+    @always_inline
+    fn copy_from_numa[
+        other_layout: Layout
+    ](self, other: LayoutTensor[other_layout, dtype]):
+        for m in range(Self.dim[0]()):
+            for n in range(Self.dim[1]()):
+                self[m, n] = other[m, n]
 
     fn linspace(self):
         for m in range(Self.dim[0]()):
@@ -178,6 +193,42 @@ struct LayoutTensor[
             for n in range(Self.dim[1]()):
                 print_no_newline(self[m, n], "  ")
             print("")
+
+
+struct TensorBuilder[
+    M: Int,
+    N: Int,
+    dtype: DType,
+    layout: Layout = Layout(IntTuple(M, N), IntTuple(N, 1)),
+]:
+    alias Type = LayoutTensor[layout, dtype]
+    alias OwningType = LayoutTensor[layout, dtype, owning=True]
+
+    @staticmethod
+    fn Wrap(ptr: DTypePointer[dtype]) -> Self.Type:
+        return Self.Type(ptr)
+
+    @staticmethod
+    fn Build() -> Self.OwningType:
+        return Self.OwningType(DTypePointer[dtype].alloc(M * N))
+
+    @staticmethod
+    fn _aligned_layout() -> Layout:
+        alias alignment = alignof[SIMD[dtype]]()
+        alias n_aligned = ((N + alignment - 1) // alignment) * alignment
+        alias data_layout = Layout(
+            IntTuple(M, n_aligned), IntTuple(n_aligned, 1)
+        )
+        return LayoutTensor[data_layout, dtype]._compute_tile_layout[M, N]()[0]
+
+    @staticmethod
+    fn BuildAligned[
+        *, __target_layout: Layout = Self._aligned_layout()
+    ]() -> LayoutTensor[__target_layout, dtype, owning=True]:
+        var ptr = DTypePointer[dtype].alloc(
+            M * int(__target_layout.stride[0]), alignment=alignof[SIMD[dtype]]()
+        )
+        return LayoutTensor[__target_layout, dtype, owning=True](ptr)
 
 
 fn stack_allocation_like[
