@@ -188,10 +188,10 @@ struct Buffer[
         Returns:
             The value at the `idx` position.
         """
-        return self.load[1](idx)
+        return self.simd_load[1](idx)
 
     @always_inline
-    fn load[*, width: Int](self, idx: Int) -> SIMD[type, width]:
+    fn simd_load[width: Int](self, idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Parameters:
@@ -237,7 +237,7 @@ struct Buffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.store[1](idx, Scalar[type](val))
+        self.simd_store[1](idx, Scalar[type](val))
 
     @always_inline
     fn __setitem__(self, idx: Int, val: Scalar[type]):
@@ -247,11 +247,10 @@ struct Buffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.store[1](idx, val)
+        self.simd_store[1](idx, val)
 
     @always_inline
-    fn store[
-        *,
+    fn simd_store[
         width: Int,
     ](self, idx: Int, val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
@@ -345,7 +344,7 @@ struct Buffer[
         @always_inline
         @parameter
         fn _fill[simd_width: Int](idx: Int):
-            self.store[simd_width](idx, SIMD[type, simd_width].splat(val))
+            self.simd_store[simd_width](idx, SIMD[type, simd_width].splat(val))
 
         vectorize[_fill, simd_width](len(self))
 
@@ -939,7 +938,7 @@ struct NDBuffer[
         Returns:
             The value of the element.
         """
-        return self.load[1](idx)
+        return self.simd_load[1](idx)
 
     @always_inline
     fn __getitem__(self, idx: StaticIntTuple[rank]) -> Scalar[type]:
@@ -951,11 +950,10 @@ struct NDBuffer[
         Returns:
             The value of the element.
         """
-        return self.load[1](idx)
+        return self.simd_load[1](idx)
 
     @always_inline
-    fn load[
-        *,
+    fn simd_load[
         width: Int,
     ](self, *idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
@@ -973,11 +971,10 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.load[width](idx)
+        return self.simd_load[width](idx)
 
     @always_inline
-    fn load[
-        *,
+    fn simd_load[
         width: Int,
     ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
@@ -1002,8 +999,7 @@ struct NDBuffer[
         return self._offset(idx).simd_load[width]()
 
     @always_inline
-    fn load[
-        *,
+    fn simd_load[
         width: Int,
     ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
@@ -1021,11 +1017,10 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.load[width](idx.as_tuple())
+        return self.simd_load[width](idx.as_tuple())
 
     @always_inline
-    fn load[
-        *,
+    fn simd_load[
         width: Int,
     ](self, idx: StaticTuple[Int, rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
@@ -1153,11 +1148,11 @@ struct NDBuffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.store[1](idx, val)
+        self.simd_store[1](idx, val)
 
     @always_inline
-    fn store[
-        *, width: Int
+    fn simd_store[
+        width: Int
     ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
@@ -1171,11 +1166,11 @@ struct NDBuffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.store[width](idx.as_tuple(), val)
+        self.simd_store[width](idx.as_tuple(), val)
 
     @always_inline
-    fn store[
-        *, width: Int
+    fn simd_store[
+        width: Int
     ](self, idx: StaticTuple[Int, rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
