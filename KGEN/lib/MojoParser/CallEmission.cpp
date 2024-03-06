@@ -130,14 +130,10 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
   // If the parameter can be implicitly converted, do so.
   if (emitter.canImplicitlyConvertToType({bindingPVal, binding.expr},
                                          expectedType)) {
-    PValue argValue = emitter.emitPValue({bindingPVal, binding.expr},
-                                         EC_CallParamValue, expectedType);
-    if (!argValue)
-      return {};
     ++numImplicitConversions;
-    return argValue;
+    return emitter.emitPValue({bindingPVal, binding.expr}, EC_CallParamValue,
+                              expectedType);
   }
-
   return {};
 };
 

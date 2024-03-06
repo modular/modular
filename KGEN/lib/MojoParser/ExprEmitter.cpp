@@ -820,8 +820,8 @@ static bool checkExplicitConformance(TraitType trait, ASTDecl *typeDecl) {
 }
 
 /// Return true if the MLIR type can implicitly conform to the trait.
-static bool checkImplicitConformance(SharedState &shared, SMLoc loc,
-                                     TraitType trait) {
+static bool checkMLIRTypeImplicitConformance(SharedState &shared, SMLoc loc,
+                                             TraitType trait) {
   ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
   // Make sure the body of the trait is resolved.
   if (failed(shared.declResolver->resolveFully(traitDecl, loc)))
@@ -913,8 +913,8 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     if (isa<MetaTypeType, TraitType>(rvType) &&
         checkExplicitConformance(traitType, rvType.getDecl(shared)))
       return true;
-    if (isa<TypeType>(rvType) &&
-        checkImplicitConformance(shared, value.expr->getLoc(), traitType))
+    if (isa<TypeType>(rvType) && checkMLIRTypeImplicitConformance(
+                                     shared, value.expr->getLoc(), traitType))
       return true;
     return false;
   }
