@@ -108,7 +108,8 @@ template <typename TransformFnT>
 LLCL::AnyAsyncValueRef
 cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
-                TransformFnT transformFn, CacheHitFn cacheHitFn) {
+                TransformFnT transformFn, CacheHitFn cacheHitFn,
+                bool errorOnCacheInsertFailure = true) {
   TimeTraceScope traceScope(
       RuntimeCacheProfilerEntry::create("Cache::cachedTransform"));
   BufferRef keyBuffer = std::move(transformKey);
@@ -139,7 +140,8 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
   std::move(foundOr).andThenSync(
       [out = out.copy(), transformCache = transformCache.copy(),
        transformFn = std::move(transformFn), keyBuffer = std::move(keyBuffer),
-       cacheHitFn = std::move(cacheHitFn)](
+       cacheHitFn = std::move(cacheHitFn),
+       errorOnCacheInsertFailure = errorOnCacheInsertFailure](
           AsyncValueRef<std::optional<BufferRef>> &&foundOr) mutable {
         if (foundOr.isError())
           return std::move(out).setToError(
@@ -170,8 +172,9 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
         std::move(xform).andThenSync(
             [transformCache = transformCache.copy(), out = out.copy(),
              keyBuffer = std::move(keyBuffer),
-             bufferWrittenInTransform = std::move(writeableTransformResult)](
-                AnyAsyncValueRef &&xform) mutable {
+             bufferWrittenInTransform = std::move(writeableTransformResult),
+             errorOnCacheInsertFailure =
+                 errorOnCacheInsertFailure](AnyAsyncValueRef &&xform) mutable {
               if (xform.isError())
                 return std::move(out).setToError(xform.takeDiagnostic());
 
@@ -189,9 +192,10 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
               AsyncValueRef<std::string> hashOr = transformCache->insert(
                   std::move(keyBuffer), std::move(bufferToCache));
               std::move(hashOr).andThenSync(
-                  [out = out.copy(), xform = xform.copy()](
+                  [out = out.copy(), xform = xform.copy(),
+                   errorOnCacheInsertFailure = errorOnCacheInsertFailure](
                       AsyncValueRef<std::string> &&hashOr) mutable {
-                    if (hashOr.isError())
+                    if (hashOr.isError() && errorOnCacheInsertFailure)
                       return std::move(out).setToError(hashOr.takeDiagnostic());
 
                     return std::move(out).resolveIndirect(xform.copy());
@@ -208,7 +212,8 @@ template <typename TransformFnT, typename CacheHitFnT>
 LLCL::AnyAsyncValueRef
 cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
-                TransformFnT transformFn, CacheHitFnT cacheHitFn) {
+                TransformFnT transformFn, CacheHitFnT cacheHitFn,
+                bool errorOnCacheInsertFailure = true) {
   // Get the runtime pointer to hand to the closure.
   LLCL::CompactRuntimePtr rt = transformCache->getRuntime();
 
@@ -236,7 +241,8 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
   }
   return cachedTransform(std::move(loc), std::move(transformCache),
                          std::move(chain), std::move(transformKey),
-                         std::move(transformFn), std::move(onCacheHit));
+                         std::move(transformFn), std::move(onCacheHit),
+                         errorOnCacheInsertFailure);
 }
 } // namespace M::Cache
 
