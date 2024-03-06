@@ -3637,11 +3637,10 @@ fn no_mask_fused_attention_cpu[
     alias mask_shape = DimList()
     alias mask_type = DType.float32
     var mask = NDBuffer[mask_type, rank, mask_shape]()
-    var scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
+    var scale_f32 = scale[0].cast[DType.float32]()
     var causal_mask: Float32 = 0
     with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
         cpu_fused_attention_impl[
-            rank,
             rank,
             input_0_static_shape,
             input_1_static_shape,
@@ -3664,7 +3663,6 @@ fn no_mask_fused_attention_cpu[
 @export
 fn with_mask_fused_attention_cpu[
     rank: Int,
-    attn_mask_rank: Int,
     input_0_static_shape: DimList,
     input_1_static_shape: DimList,
     input_2_static_shape: DimList,
@@ -3682,7 +3680,7 @@ fn with_mask_fused_attention_cpu[
     q: NDBuffer[q_type, rank, input_0_static_shape],
     k: NDBuffer[k_type, rank, input_1_static_shape],
     v: NDBuffer[v_type, rank, input_2_static_shape],
-    attn_mask: NDBuffer[attn_mask_type, attn_mask_rank, input_3_static_shape],
+    attn_mask: NDBuffer[attn_mask_type, rank, input_3_static_shape],
     # TODO(28121): This should be rank 0, but only works with rank 1
     scale: NDBuffer[scale_type, 1, input_4_static_shape],
     output: NDBuffer[output_type, rank],
@@ -3710,12 +3708,11 @@ fn with_mask_fused_attention_cpu[
     constrained[target == "cpu"]()
 
     # TODO: Unimplemented and not used
-    var scale_f32 = scale.simd_load[1](0).cast[DType.float32]()
+    var scale_f32 = scale[0].cast[DType.float32]()
     var causal_mask: Float32 = 0
     with Trace[TraceLevel.OP]("mojo.fused_attention") as t:
         cpu_fused_attention_impl[
             rank,
-            attn_mask_rank,
             input_0_static_shape,
             input_1_static_shape,
             input_2_static_shape,
