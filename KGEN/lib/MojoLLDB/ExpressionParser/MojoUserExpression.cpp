@@ -595,8 +595,8 @@ lldb::ExpressionResults MojoUserExpression::DoExecute(
 
     // TODO: eventually we should put the exception into the persistent
     // state.
-    diagnosticManager.PutString(eDiagnosticSeverityError,
-                                "Unhandled exception caught during execution");
+    impl->expressionLogger.errorLog(
+        "Unhandled exception caught during execution");
     return lldb::eExpressionCompleted;
   }
 

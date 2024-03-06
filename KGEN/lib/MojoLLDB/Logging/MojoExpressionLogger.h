@@ -83,14 +83,13 @@ public:
 
   /// This function provides a reasonable default message handling policy. Users
   /// that want different behavior are encouraged to provide their own handler.
-  /// The behavior of this function is to:
-  ///  - Send eBroadcastUserMessage to `sendUserOutput`
-  ///  - Treat eDebugMessage same as eIRMessage
-  ///  - Send eErrorMessage to `reportMessage`
+  /// The provided `sendUserOutput` function is used for user broadcast events
+  /// and error logs. The first argument is the message kind, and the second is
+  /// the message itself. If the message kind is `eErrorLog`, the type is
+  /// "error". For `eBroadcastUserMessage`, the type is "user".
   MODULAR_VISIBILITY_EXPORT static void
   handleEvent(const lldb::EventSP &event,
-              function_ref<void(StringRef, StringRef)> reportMessage,
-              function_ref<void(StringRef)> sendUserOutput);
+              function_ref<void(StringRef, StringRef)> sendUserOutput);
 
   /// Get or create a unique expression logger for the given target.
   MODULAR_VISIBILITY_EXPORT static MojoExpressionLogger &

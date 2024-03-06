@@ -59,12 +59,9 @@ void MojoExpressionLogger::broadcastDiagnostics(
 
     switch (diag->GetSeverity()) {
     case eDiagnosticSeverityError:
-      msgOS << "error: ";
-
-      // Log error diagnostics explicitly so they get captured in the error log,
-      // the full diagnostic message will be available in the debug logs.
-      errorLog(diag->GetMessage());
-      break;
+      // Log error diagnostics explicitly so they get captured in the error log.
+      errorLog(("error: " + diag->GetMessage()).str());
+      continue;
     case eDiagnosticSeverityWarning:
       msgOS << "warning: ";
       break;
@@ -105,18 +102,19 @@ static std::string stringifyType(MojoExpressionLogger::MessageKind type) {
 
 void MojoExpressionLogger::handleEvent(
     const lldb::EventSP &event,
-    function_ref<void(StringRef, StringRef)> reportMessage,
-    function_ref<void(StringRef)> sendUserOutput) {
+    function_ref<void(StringRef, StringRef)> sendUserOutput) {
   assert(llvm::popcount(event->GetType()) == 1 &&
          "a message must contain one single type");
 
   if (event->GetType() & MojoExpressionLogger::eBroadcastUserMessage) {
     // If it's a user message broadcast, send that output.
-    sendUserOutput(getStringFromEvent(event));
+    sendUserOutput("user", getStringFromEvent(event));
   } else if (event->GetType() & (MojoExpressionLogger::eErrorLog)) {
     // If it's an error log, send that output as well.
-    reportMessage(stringifyType(MessageKind(event->GetType())),
-                  getStringFromEvent(event));
+    sendUserOutput("error", getStringFromEvent(event));
+    LLDB_LOG(GetLog(LLDBLog::Expressions), "[{0}] {1}",
+             stringifyType(MessageKind(event->GetType())),
+             getStringFromEvent(event));
   } else if (event->GetType() & (eDumpIR | eDebugLog)) {
     Log *log = GetLog(LLDBLog::Expressions);
     if (!log)
@@ -127,8 +125,6 @@ void MojoExpressionLogger::handleEvent(
       return;
     LLDB_LOG(log, "[{0}] {1}", stringifyType(MessageKind(event->GetType())),
              getStringFromEvent(event));
-    reportMessage(stringifyType(MessageKind(event->GetType())),
-                  getStringFromEvent(event));
   } else {
     llvm_unreachable("Unexpected message type");
   }
