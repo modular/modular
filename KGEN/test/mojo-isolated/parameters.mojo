@@ -143,9 +143,9 @@ fn testSIMD(a: SIMD[1, DType.float32],
 #
 # CHECK-LABEL: lit.func @"paramResolution[
 # CHECK-SAME: Int,
-# CHECK-SAME: parameters::StructWithIntParam[*(0,0)],
+# CHECK-SAME: parameters::StructWithIntParam[$0],
 # CHECK-SAME: Int,
-# CHECK-SAME: parameters::StructWithIntParam[*(0,2)]
+# CHECK-SAME: parameters::StructWithIntParam[$2]
 # CHECK-SAME: ]()"<
 # CHECK-SAME: size1: !Int, a: @parameters::@StructWithIntParam<:!Int size1>,
 # CHECK-SAME: size2: !Int, b: @parameters::@StructWithIntParam<:!Int size2>>()

@@ -418,6 +418,10 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
     });
     return;
   }
+  if (auto indexRef = dyn_cast<ParamIndexRefAttr>(param)) {
+    os << '$' << indexRef.getIndex();
+    return;
+  }
 
   os << getParamAsString(param);
 }
@@ -565,10 +569,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       ASTType(resultType).print(os, forDiag);
     }
   } else if (auto paramRef = dyn_cast<ParamRefType>(type)) {
-    if (auto indexRef = dyn_cast<ParamIndexRefAttr>(paramRef.getParam()))
-      os << '$' << indexRef.getIndex();
-    else
-      printParam(os, paramRef.getParam(), forDiag, demangleParams);
+    printParam(os, paramRef.getParam(), forDiag, demangleParams);
   } else if (isa<TypeType>(type)) {
     os << "AnyRegType";
   } else if (auto fnType = dyn_cast<FunctionType>(type)) {
