@@ -19,7 +19,9 @@ config.suffixes = [".mojo", ".test"]
 config.test_source_root = os.path.dirname(__file__)
 
 # test_exec_root: The root path where tests should be run.
-config.test_exec_root = os.path.join(config.modular_obj_root, "KGEN", "test")
+config.test_exec_root = os.path.join(
+    config.modular_obj_root, "KGEN", "test", "mojo-tool"
+)
 
 # Exclude directories that define Mojo packages; these are used as test inputs.
 config.excludes = ["test_package"]
