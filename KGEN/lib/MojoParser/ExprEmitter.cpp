@@ -19,6 +19,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/POPDialect/POPOps.h"
 
 #include "Support/Compiler/OperationUtils.h"
@@ -554,6 +555,25 @@ LValue ExprEmitter::emitLValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
   return {};
 }
 
+/// Helper to check if we are trying to materialize a dynamic type value.
+static bool emitErrorForMaterializingTypeValues(ExprEmitter &emitter,
+                                                ASTExprAnd<PValue> value,
+                                                ExprContext context) {
+  TypedAttr attr = value.ir.get();
+  if (isa<ModuleAttr>(attr) || !isTypeExpr(attr))
+    return false;
+
+  const ExprNode *expr = value.expr;
+  InflightDiag diag = emitter.emitError(
+      expr->getLoc(), "dynamic type values not permitted yet");
+  if (context == EC_VarInit)
+    diag << "; try creating an `alias` instead of a `var`";
+  else if (context == EC_CallArgValue)
+    diag << "; try passing types as a parameters instead of arguments";
+  diag << expr->getRange();
+  return true;
+}
+
 SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
                                          ExprContext context) {
   TypedAttr attr = value.ir.get();
@@ -570,6 +590,12 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
         << getContextMessage(context) << expr->getRange();
     return {};
   }
+
+  // We don't allow materializing Type values yet.
+  if (emitErrorForMaterializingTypeValues(*this, value, context))
+    return {};
+
+  Location location = expr->getLocation(*this);
 
   // If the value being materialized is itself parameterized, then we cannot
   // materialize it as an SSA value - there will be no way to bind parameters to
@@ -606,20 +632,16 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
           << ASTType(attr.getType()) << expr->getRange();
       return {};
     }
-  }
 
-  Location location = expr->getLocation(*this);
-
-  // Materialize signatures as closures.
-  if (auto sig = dyn_cast<SignatureType>(attr.getType())) {
-    if (sig.isCapturing()) {
+    // Materialize signatures as closures.
+    if (signature.isCapturing()) {
       emitError(
           expr->getLoc(),
           "TODO: capturing closures cannot be materialized as runtime values");
       return {};
     }
-    return SRValue(
-        builder->create<CreateClosureOp>(location, sig, attr, ValueRange()));
+    return SRValue(builder->create<CreateClosureOp>(location, signature, attr,
+                                                    ValueRange()));
   }
 
   // Otherwise, emit a generalized parameter constant.
@@ -632,6 +654,10 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
 /// Emit any kind of PValue to an MLValue.
 MBValue ExprEmitter::emitPValueToMLValue(ASTExprAnd<PValue> value, MLValue dest,
                                          ExprContext context) {
+  // We don't allow materializing Type values yet.
+  if (emitErrorForMaterializingTypeValues(*this, value, context))
+    return {};
+
   // PValues don't have lifetimes and are immortal with respect to the compiler.
   // Emit a memcpy into the LValue. Creating an SSA value of the memory-only
   // type for the sake of memcpy is safe because the bulk store will ensure the

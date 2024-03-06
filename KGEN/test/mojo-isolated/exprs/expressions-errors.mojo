@@ -49,12 +49,52 @@ fn invalid_with():
         foo.something()
 
 
-@register_passable("trivial")
-struct HasMember:
-    var value: int
+struct SomeType:
+    pass
 
 
-fn invalid_member_access():
-    var type = HasMember
-    # expected-error @below {{cannot access instance field 'value' without an instance of 'HasMember'}}
-    type.value
+fn mem_type_var():
+    # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var}}
+    var type = SomeType
+
+
+fn reg_type_var():
+    # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var}}
+    var type = Int
+
+
+trait SomeTrait:
+    pass
+
+
+fn trait_var():
+    # expected-error @below {{dynamic type values not permitted yet; try creating an `alias` instead of a `var}}
+    var type = SomeTrait
+
+
+fn reg_type_func() -> AnyRegType:
+    # expected-error @below {{dynamic type values not permitted yet}}
+    return Int
+
+
+fn mem_type_func() -> AnyType:
+    # expected-error @below {{dynamic type values not permitted yet}}
+    return SomeType
+
+
+fn takes_reg_type(t: AnyRegType):
+    pass
+
+
+fn test_takes_reg_type():
+    # expected-error @below {{use of unknown declaration 'takes_type', 'fn' declarations require explicit variable declarations}}
+    takes_type(Int)
+
+
+fn takes_mem_type(t: AnyType):
+    pass
+
+
+fn test_takes_mem_type():
+    # expected-error @below {{use of unknown declaration 'takes_type', 'fn' declarations require explicit variable declarations}}
+    takes_type(SomeType)
