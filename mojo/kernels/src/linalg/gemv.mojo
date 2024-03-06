@@ -41,8 +41,8 @@ fn gemv[
         type: DType, width: Int, rank: Int
     ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         return (
-            a_buf.load[width]((idx[0], idx[1])).cast[type]()
-            * b_buf.load[width](idx[1]).cast[type]()
+            a_buf.simd_load[width]((idx[0], idx[1])).cast[type]()
+            * b_buf.simd_load[width](idx[1]).cast[type]()
         ).cast[type]()
 
     @always_inline
@@ -58,7 +58,7 @@ fn gemv[
             for i in range(width):
                 func[out_type, 1]((idx[0] + i, 0), value[i])
         else:
-            c_buf.store[width](idx[0], value.cast[c_type]())
+            c_buf.simd_store[width](idx[0], value.cast[c_type]())
 
     @always_inline
     @parameter

@@ -53,14 +53,20 @@ fn matrix_solve_tiny[
     var A_inv22 = A01 * A10 - A00 * A11
 
     # Rows in B.
-    var B0 = B.load[N]((0, 0))
-    var B1 = B.load[N]((1, 0))
-    var B2 = B.load[N]((2, 0))
+    var B0 = B.simd_load[N]((0, 0))
+    var B1 = B.simd_load[N]((1, 0))
+    var B2 = B.simd_load[N]((2, 0))
 
     # Update solution.
-    X.store[N]((0, 0), rdet_A * B2.fma(A_inv02, B1.fma(A_inv01, A_inv00 * B0)))
-    X.store[N]((1, 0), rdet_A * B2.fma(A_inv12, B1.fma(A_inv11, A_inv10 * B0)))
-    X.store[N]((2, 0), rdet_A * B2.fma(A_inv22, B1.fma(A_inv21, A_inv20 * B0)))
+    X.simd_store[N](
+        (0, 0), rdet_A * B2.fma(A_inv02, B1.fma(A_inv01, A_inv00 * B0))
+    )
+    X.simd_store[N](
+        (1, 0), rdet_A * B2.fma(A_inv12, B1.fma(A_inv11, A_inv10 * B0))
+    )
+    X.simd_store[N](
+        (2, 0), rdet_A * B2.fma(A_inv22, B1.fma(A_inv21, A_inv20 * B0))
+    )
 
 
 @always_inline
