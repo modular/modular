@@ -27,6 +27,7 @@ add_modular_library(MojoParser
   SharedState.cpp
   Signatures.cpp
   StructEmitter.cpp
+  Traits.cpp
   UncheckedCallEmission.cpp
 
   DEPENDS

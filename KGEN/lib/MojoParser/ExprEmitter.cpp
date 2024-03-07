@@ -808,20 +808,26 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 // Type conversion helpers.
 
 /// Return true if the given type explicitly implements the trait.
-static bool checkExplicitConformance(TraitType trait, ASTDecl *typeDecl) {
+static bool checkNominalTypeConformance(TraitType trait, ASTDecl *typeDecl) {
   ArrayRef<TypeLineageAttr> parentTypes;
   if (auto structOp = dyn_cast<StructDeclOp>(typeDecl))
     parentTypes = structOp.getParentTypes();
   else
     parentTypes = cast<TraitDeclOp>(typeDecl).getParentTypes();
-  return llvm::find_if(parentTypes, [trait](TypeLineageAttr type) {
-           return type.getType() == trait;
-         }) != parentTypes.end();
+
+  // Check if the type explicitly conforms to the trait.
+  if (llvm::find_if(parentTypes, [trait](TypeLineageAttr type) {
+        return type.getType() == trait;
+      }) != parentTypes.end())
+    return true;
+
+  // Check if the type implicitly conforms to the trait.
+  return false;
 }
 
 /// Return true if the MLIR type can implicitly conform to the trait.
-static bool checkMLIRTypeImplicitConformance(SharedState &shared, SMLoc loc,
-                                             TraitType trait) {
+static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
+                                     TraitType trait) {
   ASTDecl &traitDecl = *ASTType(trait).getDecl(shared);
   // Make sure the body of the trait is resolved.
   if (failed(shared.declResolver->resolveFully(traitDecl, loc)))
@@ -911,10 +917,10 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // Metatypes can implicitly convert to any trait type they implement.
   if (auto traitType = dyn_cast<TraitType>(requiredType)) {
     if (isa<MetaTypeType, TraitType>(rvType) &&
-        checkExplicitConformance(traitType, rvType.getDecl(shared)))
+        checkNominalTypeConformance(traitType, rvType.getDecl(shared)))
       return true;
-    if (isa<TypeType>(rvType) && checkMLIRTypeImplicitConformance(
-                                     shared, value.expr->getLoc(), traitType))
+    if (isa<TypeType>(rvType) &&
+        checkMLIRTypeConformance(shared, value.expr->getLoc(), traitType))
       return true;
     return false;
   }
@@ -1063,7 +1069,7 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
 
   // Check that the struct implements the trait.
   ASTDecl *typeDecl = type.getDecl(shared);
-  if (!checkExplicitConformance(trait, typeDecl)) {
+  if (!checkNominalTypeConformance(trait, typeDecl)) {
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                         << type << " to trait " << ASTType(trait)
                         << value.expr->getRange();

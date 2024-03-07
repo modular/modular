@@ -168,29 +168,31 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
 }
 
 void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
-  SmallVector<TypeLineageAttr> parentTypes =
-      llvm::to_vector(structOp.getParentTypes());
-
-  // Helper to detect if a parent type is already in the list.
-  auto hasParent = [&](TypeLineageAttr parent) {
-    return llvm::find_if(parentTypes, [&](TypeLineageAttr type) {
-             return type.getType() == parent.getType();
-           }) != parentTypes.end();
-  };
+  llvm::MapVector<Type, TypeLineageAttr> parentTypeSet;
+  for (TypeLineageAttr parent : structOp.getParentTypes())
+    parentTypeSet.insert({parent.getType(), parent});
 
   auto targetTrait = cast<TraitDeclOp>(traitDecl);
-  TypeLineageAttr traitType = TypeLineageAttr::get(targetTrait.bindReference());
+  Type type = targetTrait.bindReference();
 
-  // Add the parent type and all transitive parents. Typical use case is
-  // Movable, which has only 1 parent.
-  if (hasParent(traitType))
+  // Add the trait parent if it isn't already there.
+  if (!parentTypeSet.insert({type, TypeLineageAttr::get(type)}).second)
     return;
-  parentTypes.push_back(traitType);
-  // If trait was added, add parents as well.
-  for (TypeLineageAttr parentTrait : targetTrait.getParentTypes())
-    if (!hasParent(parentTrait))
-      parentTypes.push_back(parentTrait);
 
+  // Inherit all parent types.
+  for (TypeLineageAttr inherited : targetTrait.getParentTypes()) {
+    if (auto it = parentTypeSet.find(inherited.getType());
+        it != parentTypeSet.end())
+      continue;
+    SmallVector<Type> lineage = llvm::to_vector(inherited.getInheritedFrom());
+    lineage.push_back(type);
+    Type parent = inherited.getType();
+    parentTypeSet.insert({parent, TypeLineageAttr::get(parent, lineage)});
+  }
+
+  SmallVector<TypeLineageAttr> parentTypes;
+  for (auto [_, type] : parentTypeSet)
+    parentTypes.push_back(type);
   structOp.setParentTypes(parentTypes);
 }
 
