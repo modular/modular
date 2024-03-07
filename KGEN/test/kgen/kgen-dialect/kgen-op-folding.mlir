@@ -2,11 +2,11 @@
 
 // CHECK-LABEL: @int_literal_bit_width
 kgen.func @int_literal_bit_width() -> (!kgen.int_literal, !kgen.int_literal) {
-  %x1 = kgen.param.constant: !kgen.int_literal = <#kgen.int_literal<255>>
+  %x1 = kgen.param.constant: !kgen.int_literal = <255>
   // Note that int literals are signed.
   // CHECK: kgen.int_literal = <9>
   %width1 = kgen.int_literal.bit_width %x1
-  %x2 = kgen.param.constant: !kgen.int_literal = <#kgen.int_literal<170141183460469231731687303715884105728>>
+  %x2 = kgen.param.constant: !kgen.int_literal = <170141183460469231731687303715884105728>
   // Note that int literals are signed.
   // CHECK: kgen.int_literal = <129>
   %width2 = kgen.int_literal.bit_width %x2
@@ -17,7 +17,7 @@ kgen.func @int_literal_bit_width() -> (!kgen.int_literal, !kgen.int_literal) {
 
 // CHECK-LABEL: @int_literal_to_float_literal
 kgen.func @int_literal_to_float_literal() -> !kgen.float_literal {
-  %fl = kgen.param.constant: !kgen.int_literal = <#kgen.int_literal<5>>
+  %fl = kgen.param.constant: !kgen.int_literal = <5>
   // CHECK: #kgen.float_literal<normal (5|1)>
   %il = kgen.int_literal.to_float_literal %fl
   kgen.return %il : !kgen.float_literal
