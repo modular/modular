@@ -80,7 +80,6 @@
 
 #ifdef MODULAR_PROFILING_NSIGHT
 #include "CUDASupport/Globals/Globals.h"
-#define NSIGHT_POC
 #endif
 
 namespace llvm {
@@ -521,6 +520,10 @@ struct TimeTraceThreadProfiler {
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
+#ifdef MODULAR_PROFILING_NSIGHT
+    // record the nvtx id associated with this profiler event id
+    llclToNvtx[id] = nvtxRangeStartA(event.name.toString().c_str());
+#endif
     return id;
   }
 
@@ -534,6 +537,10 @@ struct TimeTraceThreadProfiler {
 #if TRACE_IN_REAL_TIME
     event.dump();
 #endif
+#ifdef MODULAR_PROFILING_NSIGHT
+    // record the nvtx id associated with this profiler event id
+    llclToNvtx[id] = nvtxRangeStartA(event.name.toString().c_str());
+#endif
     return id;
   }
 
@@ -545,6 +552,11 @@ struct TimeTraceThreadProfiler {
         endEvents.emplace_back(nextSeqNum++, id, std::forward<Args>(args)...);
 #if TRACE_IN_REAL_TIME
     event.dump();
+#endif
+#ifdef MODULAR_PROFILING_NSIGHT
+    // also end the nvtx process range
+    nvtxRangeEnd(llclToNvtx[id]);
+    llclToNvtx.erase(id);
 #endif
   }
 
@@ -618,6 +630,10 @@ struct TimeTraceThreadProfiler {
   EndEventList endEvents;
   SampleEventList sampleEvents;
   DebugEventList debugEvents;
+#ifdef MODULAR_PROFILING_NSIGHT
+  // store the nvtx ids associated with profile event ids
+  llvm::DenseMap<ProfilerEventId, nvtxRangeId_t> llclToNvtx;
+#endif
 
   /// String arena.
   StringArena stringArena;
@@ -895,11 +911,6 @@ struct ProfilerEntry<true> {
 
   template <size_t N, typename... Args>
   static ProfilerEntry create(const char (&s)[N], Args &&...args) {
-#ifdef NSIGHT_POC
-    // minimal example of pushing some information into nsight profiles
-    // this only actually gets hit on a very small number of calls
-    nvtxMarkA(StringLiteral::withInnerNUL(s).str().c_str());
-#endif
     if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
       return ProfilerEntry(ctx->begin(StringLiteral::withInnerNUL(s),
                                       std::forward<Args>(args)...));
