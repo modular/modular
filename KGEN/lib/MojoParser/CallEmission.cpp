@@ -838,8 +838,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                                         "no matching function in call to '")
                   << baseName << "': " << expr->getRange();
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
-        auto fnDecl = cast<LIT::FuncOp>(*candidate);
-        diag.attachNote(fnDecl->getLoc())
+        diag.attachNote(candidate->getLoc())
             << "candidate not viable: " << eval.takeDiag();
       }
       return {};
@@ -875,8 +874,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                 << " implicit conversion" << plural(minConversions)
                 << ", disambiguate with an explicit cast" << expr->getRange();
     for (ASTDecl *candidate : newFnDecls)
-      diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
-          << "candidate declared here";
+      diag.attachNote(candidate->getLoc()) << "candidate declared here";
   }
   return {};
 }
@@ -904,7 +902,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
                    << "cannot convert function to non-function type "
                    << functionType;
       for (ASTDecl *candidate : fnDecls)
-        diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
+        diag.attachNote(candidate->getLoc())
             << "candidate declared here with type "
             << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
     }
@@ -994,7 +992,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   }
 
   for (ASTDecl *candidate : fnDecls) {
-    diag.attachNote(cast<LIT::FuncOp>(*candidate)->getLoc())
+    diag.attachNote(candidate->getLoc())
         << "candidate declared here with type "
         << ASTType(cast<LIT::FuncOp>(*candidate).getFullSignature());
   }
@@ -1012,10 +1010,8 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
                     expr->getLoc(),
                     "cannot form a reference to overloaded declaration of '")
                 << baseName << "'" << expr->getRange();
-    for (ASTDecl *candidate : fnDecls) {
-      auto funcOp = cast<LIT::FuncOp>(*candidate);
-      diag.attachNote(funcOp.getLoc()) << "candidate declared here";
-    }
+    for (ASTDecl *candidate : fnDecls)
+      diag.attachNote(candidate->getLoc()) << "candidate declared here";
 
     return {};
   }
