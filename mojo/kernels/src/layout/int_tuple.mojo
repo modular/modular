@@ -425,8 +425,7 @@ fn idx2crd(
 
             return apply_zip3[idx2crd](idx, shape, stride)
         else:  # tuple "int" "int"
-            abort("Illegal inputs")  # Error
-            return IntTuple()
+            return abort[IntTuple]("Illegal inputs")  # Error
     else:
         if is_tuple(shape):  # "int" tuple tuple
             if len(shape) != len(stride):

@@ -313,8 +313,8 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         var idx = len(self) + _idx if _idx < 0 else _idx
 
         if self.is_value():
-            if idx != 0:
-                abort("Index should be 0 for value items.")
+            if idx:
+                return abort[Self]("Index should be 0 for value items.")
             return self.value()
 
         # FIXME: we should be able to return Self(self.tuple()[idx])
@@ -325,7 +325,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
     @always_inline
     fn __getitem__(self, span: Slice) -> Self:
         if self.is_value():
-            abort("Can't slice a value.")
+            return abort[Self]("Can't slice a value.")
 
         var r = Self()
         r._value = self.tuple()[span]
