@@ -18,9 +18,9 @@ from test_utils import linear_fill
 from pathlib import Path
 
 
-fn test_model_metadata() raises:
-    # CHECK: test_model_metadata
-    print("====test_model_metadata")
+fn test_model_num_io_and_names() raises:
+    # CHECK: test_model_num_io_and_names
+    print("====test_model_num_io_and_names")
 
     var args = argv()
     var model_path = args[1]
@@ -48,6 +48,41 @@ fn test_model_metadata() raises:
 
     # CHECK: output
     print(output_names[0])
+
+
+fn test_model_metadata() raises:
+    # CHECK: test_model_metadata
+    print("====test_model_metadata")
+
+    var args = argv()
+    var model_path = args[1]
+
+    var session = InferenceSession()
+    var compiled_model = session.load_model(Path(model_path))
+
+    var input_metadata = compiled_model.get_model_input_metadata()
+    var num_inputs = len(input_metadata)
+
+    # CHECK: 1
+    print(num_inputs)
+
+    # CHECK: input
+    # CHECK: float32
+    for input in input_metadata:
+        print(input[].get_name())
+        print(input[].get_dtype())
+
+    var output_metadata = compiled_model.get_model_output_metadata()
+    var num_outputs = len(output_metadata)
+
+    # CHECK: 1
+    print(num_outputs)
+
+    # CHECK: output
+    # CHECK: float32
+    for output in output_metadata:
+        print(output[].get_name())
+        print(output[].get_dtype())
 
 
 fn test_model_mismatched_input_output_count() raises:
@@ -201,6 +236,7 @@ fn test_model_tuple_input_dynamic() raises:
 
 
 fn main() raises:
+    test_model_num_io_and_names()
     test_model_metadata()
     test_model_mismatched_input_output_count()
     test_model()
