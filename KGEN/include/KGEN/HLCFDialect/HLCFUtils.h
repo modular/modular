@@ -23,6 +23,9 @@ bool isParentLoop(LoopOp child, LoopOp parentToCheck);
 /// Get the parent operation of a terminator.
 Operation *getParentNode(HLCF::ControlFlowTerminator term);
 
+/// Given an elif op, transform into multiple IfOps. Return top IfOp.
+IfOp replaceElifWithIfOps(ElifOp elifOp);
+
 } // namespace M::HLCF
 
 #endif // KGEN_HLCFDIALECT_HLCFUTILS_H
