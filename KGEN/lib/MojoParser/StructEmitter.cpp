@@ -31,8 +31,7 @@ LIT::FuncOp StructEmitter::createFunction(
     PogsAttr paramListAttrs, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
-    bool ifMissing) {
+    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix) {
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
@@ -99,8 +98,10 @@ LIT::FuncOp StructEmitter::createFunction(
       DeclResolver::getMangledName(sourceName, parent, signature).getValue() +
       suffix);
 
-  // If a function with this signature already exists, ignore it.
-  if (ifMissing && shared.lookupSymbolIn(&parent, mangledName))
+  // If a function with this signature already exists in the struct, don't
+  // create a new one. Return null to indicate that there was an existing
+  // method.
+  if (shared.lookupSymbolIn(&parent, mangledName))
     return nullptr;
 
   auto funcOp = builder.create<LIT::FuncOp>(mangledName, sourceName, signature,
@@ -134,26 +135,25 @@ std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects fnEffects, StringRef suffix, bool ifMissing) {
+    FnEffects fnEffects, StringRef suffix) {
   return synthesizeMethodInStruct(
       name, /*params=*/{}, /*paramListAttrs=*/PogsAttr::get(getContext()),
       argTypes, argConventions, argListAttrs, resultType, structDecl,
-      specialFnID, fnEffects, suffix, ifMissing);
+      specialFnID, fnEffects, suffix);
 }
 
 std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<ParamDeclAttr> params, PogsAttr paramListAttrs,
     ArrayRef<Type> argTypes, ArrayRef<ArgConvention> argConventions,
     PogsAttr argListAttrs, Type resultType, ASTDecl &structDecl,
-    SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix,
-    bool ifMissing) {
+    SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
-  LIT::FuncOp funcOp = createFunction(
-      structDecl, name, params, paramListAttrs, argTypes, argConventions,
-      argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
-      fnEffects, suffix, ifMissing);
+  LIT::FuncOp funcOp =
+      createFunction(structDecl, name, params, paramListAttrs, argTypes,
+                     argConventions, argListAttrs, resultType, specialFnID,
+                     structDecl.getLoc(), builder, fnEffects, suffix);
 
   // Return null if the function already exists with the same signature.
   if (!funcOp)
@@ -170,10 +170,9 @@ std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
       structDecl.getLoc(), &structDecl);
 
   // Set the symbol and notice if we are redeclaring something.
-  if (shared.declResolver->finalizeFuncSignature(funcOp, funcDecl)) {
-    shared.emitError(structDecl.getLoc(), "duplicate definition of '")
-        << name << "'";
-  }
+  [[maybe_unused]] Operation *existing =
+      shared.declResolver->finalizeFuncSignature(funcOp, funcDecl);
+  assert(!existing && "unexpected redefinition of synthesized method");
 
   return {funcOp, &funcDecl};
 }
