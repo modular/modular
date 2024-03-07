@@ -45,6 +45,9 @@ struct object:
     fn __init__(inout self, value: Int):
         pass
 
+    fn __copyinit__(inout self, existing: Self, /):
+        pass
+
 
 @value
 @nonmaterializable(Int)
