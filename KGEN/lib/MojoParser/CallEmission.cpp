@@ -801,6 +801,15 @@ selectBestCandidates(ArrayRef<ASTDecl *> fnDecls,
 PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                                       bool allowImplicitConversions,
                                       bool emitDiagnosticOnFailure) const {
+  SmallVector<ASTDecl *, 1> newFnDecls;
+  return filterOverloadSet(operands, newFnDecls, allowImplicitConversions,
+                           emitDiagnosticOnFailure);
+}
+
+PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
+                                      SmallVectorImpl<ASTDecl *> &newFnDecls,
+                                      bool allowImplicitConversions,
+                                      bool emitDiagnosticOnFailure) const {
   // Evaluate the fitness of each candidate in our overload set.
   SmallVector<OverloadFitness> evaluations;
   bool anyValid = false;
@@ -853,7 +862,6 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   }
 
   // Ok, we have at least one valid candidate, so filter for the best matches.
-  SmallVector<ASTDecl *, 1> newFnDecls;
   const OverloadFitness *bestFitness =
       selectBestCandidates(fnDecls, evaluations, newFnDecls);
 
@@ -1499,14 +1507,15 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
 
   // Try to resolve the overload set to exactly one candidate, but don't emit an
   // error on failure (we typically want to customize the error).
-  PValue calleeFn = callee.filterOverloadSet(operands, allowImplicitConversion,
-                                             /*emitDiagnosticOnFailure=*/false);
+  SmallVector<ASTDecl *, 1> newFnDecls;
+  PValue calleeFn =
+      callee.filterOverloadSet(operands, newFnDecls, allowImplicitConversion,
+                               /*emitDiagnosticOnFailure=*/false);
 
   ASTType operandType;
   if (callOperands.posOperands.size() == 1 &&
-      callOperands.posOperands[0].ir.getIfCValue()) {
+      callOperands.posOperands[0].ir.getIfCValue())
     operandType = callOperands.posOperands[0].ir.getIfCValue().getRValueType();
-  }
 
   CValue autoNonmaterializableConversion;
   SmallVector<ASTExprAnd<AnyValue>> autoConvertedArgs;
@@ -1525,7 +1534,9 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
             {autoNonmaterializableConversion, origPosOperands[0].expr});
         operands.posOperands = autoConvertedArgs;
         argsAddSelf();
-        calleeFn = callee.filterOverloadSet(operands, allowImplicitConversion,
+        newFnDecls.clear();
+        calleeFn = callee.filterOverloadSet(operands, newFnDecls,
+                                            allowImplicitConversion,
                                             /*emitDiagnosticOnFailure=*/false);
       }
     }
@@ -1536,8 +1547,9 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
 
     // If we failed to resolve the set, then try to emit a tailored error.  If
     // constructing from one value, then this is a type conversion (either
-    // implicit or explicit).
-    if (operandType) {
+    // implicit or explicit). If there was an ambiguous overload, make sure to
+    // indicate that.
+    if (operandType && newFnDecls.size() <= 1) {
       auto diag = emitError(expr->getLoc());
       // Reject Int(x) where x is already an Int with an error + fixit.
       if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&

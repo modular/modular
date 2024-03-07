@@ -372,6 +372,10 @@ public:
   PValue filterOverloadSet(const CallOperands &operands,
                            bool allowImplicitConversions,
                            bool emitDiagnosticOnFailure) const;
+  PValue filterOverloadSet(const CallOperands &operands,
+                           SmallVectorImpl<ASTDecl *> &newFnDecls,
+                           bool allowImplicitConversions,
+                           bool emitDiagnosticOnFailure) const;
 
   /// Try to resolve the overload set to a single function candidate, using the
   /// expected type if provided or using current bindings if an emitter is
