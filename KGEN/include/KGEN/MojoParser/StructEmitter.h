@@ -111,7 +111,7 @@ public:
                              SpecialFunctionKind specialFnID, SMLoc loc,
                              ImplicitLocOpBuilder &builder,
                              FnEffects fnEffects = FnEffects(),
-                             StringRef suffix = "");
+                             StringRef suffix = "", bool ifMissing = false);
 
   /// This synthesizes an __init__ method that accepts values for every field of
   /// a struct, making it easy for external clients to initialize it.
@@ -126,18 +126,20 @@ public:
 
   /// Create a FuncOp within the scope of the given Struct. The body is not
   /// populated. `suffix` is appended to the mangled function name.
-  std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
+  std::pair<LIT::FuncOp, ASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<ParamDeclAttr> params, PogsAttr paramListAttrs,
       ArrayRef<Type> argTypes, ArrayRef<ArgConvention> argConventions,
       PogsAttr argListAttrs, Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
-      FnEffects fnEffects = FnEffects(), StringRef suffix = "");
-  std::pair<LIT::FuncOp, ASTDecl &> synthesizeMethodInStruct(
+      FnEffects fnEffects = FnEffects(), StringRef suffix = "",
+      bool ifMissing = false);
+  std::pair<LIT::FuncOp, ASTDecl *> synthesizeMethodInStruct(
       StringRef name, ArrayRef<Type> argTypes,
       ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
       Type resultType, ASTDecl &structDecl,
       SpecialFunctionKind specialFnID = SpecialFunctionKind::kNormal,
-      FnEffects fnEffects = FnEffects(), StringRef suffix = "");
+      FnEffects fnEffects = FnEffects(), StringRef suffix = "",
+      bool ifMissing = false);
 
   /// Given a struct and a trait declaration, make the trait inherit from the
   /// struct if it does not already. This adds the trait decl to the struct's

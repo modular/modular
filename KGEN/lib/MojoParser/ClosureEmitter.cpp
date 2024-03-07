@@ -392,7 +392,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   LITSignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(
           refToSelfType, ArgConvention::BorrowedInMem, signatureType);
-  auto [callMethod, callDecl] = synthesizeMethodInStruct(
+  auto [callMethod, _] = synthesizeMethodInStruct(
       "__call__", closureMethodSignatureType.getArguments(),
       closureMethodSignatureType.getArgConventions(),
       closureMethodSignatureType.getArgListAttrs(), resultType, structDecl,
@@ -403,9 +403,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
     if (DebugInfo::DIScopeAttr spAttr = callMethod.getLocScope())
       diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-    Location translatedLocation = shared.translateLocation(callDecl.getLoc());
     ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
-        translatedLocation, callMethod.getBody());
+        callMethod.getLoc(), callMethod.getBody());
     Value callSelf = callMethod.getBody()->getArgument(0);
 
     // Load self, but pass the rest unmodified.
