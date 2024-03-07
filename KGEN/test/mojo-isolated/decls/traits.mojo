@@ -449,6 +449,26 @@ fn generic_fn_return_type():
     c.method()
 
 
+trait SimpleTraitA:
+    fn method(self):
+        ...
+
+
+trait SimpleTraitB:
+    fn method(self):
+        ...
+
+
+# CHECK-LABEL: lit.struct.decl @TwoThunks
+# CHECK-SAME: (!SimpleTraitA, !AnyType[!SimpleTraitA], !SimpleTraitB)
+@register_passable
+struct TwoThunks(SimpleTraitA, SimpleTraitB):
+    # CHECK: lit.func @"method({{.*}}TwoThunks)"
+    # CHECK: lit.func @"method({{.*}}TwoThunks)_thunk"
+    fn method(self):
+        pass
+
+
 # ===----------------------------------------------------------------------=== #
 # Special Functions
 # ===----------------------------------------------------------------------=== #

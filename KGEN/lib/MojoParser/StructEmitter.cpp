@@ -31,7 +31,8 @@ LIT::FuncOp StructEmitter::createFunction(
     PogsAttr paramListAttrs, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix) {
+    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
+    bool ifMissing) {
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
@@ -97,6 +98,11 @@ LIT::FuncOp StructEmitter::createFunction(
   StringAttr mangledName = builder.getStringAttr(
       DeclResolver::getMangledName(sourceName, parent, signature).getValue() +
       suffix);
+
+  // If a function with this signature already exists, ignore it.
+  if (ifMissing && shared.lookupSymbolIn(&parent, mangledName))
+    return nullptr;
+
   auto funcOp = builder.create<LIT::FuncOp>(mangledName, sourceName, signature,
                                             specialFnID);
   funcOp.setIsSynthetic(true);
@@ -124,29 +130,34 @@ LIT::FuncOp StructEmitter::createFunction(
   return funcOp;
 }
 
-std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
+std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects fnEffects, StringRef suffix) {
+    FnEffects fnEffects, StringRef suffix, bool ifMissing) {
   return synthesizeMethodInStruct(
-      name, /*params=*/{},
-      /*paramListAttrs=*/PogsAttr::get(getContext()), argTypes, argConventions,
-      argListAttrs, resultType, structDecl, specialFnID, fnEffects, suffix);
+      name, /*params=*/{}, /*paramListAttrs=*/PogsAttr::get(getContext()),
+      argTypes, argConventions, argListAttrs, resultType, structDecl,
+      specialFnID, fnEffects, suffix, ifMissing);
 }
 
-std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
+std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<ParamDeclAttr> params, PogsAttr paramListAttrs,
     ArrayRef<Type> argTypes, ArrayRef<ArgConvention> argConventions,
     PogsAttr argListAttrs, Type resultType, ASTDecl &structDecl,
-    SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix) {
+    SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix,
+    bool ifMissing) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
-  LIT::FuncOp funcOp =
-      createFunction(structDecl, name, params, paramListAttrs, argTypes,
-                     argConventions, argListAttrs, resultType, specialFnID,
-                     structDecl.getLoc(), builder, fnEffects, suffix);
+  LIT::FuncOp funcOp = createFunction(
+      structDecl, name, params, paramListAttrs, argTypes, argConventions,
+      argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
+      fnEffects, suffix, ifMissing);
+
+  // Return null if the function already exists with the same signature.
+  if (!funcOp)
+    return {nullptr, nullptr};
 
   // If the struct is register_passable("trivial"), make this
   // @always_inline("nodebug").
@@ -164,7 +175,7 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
         << name << "'";
   }
 
-  return {funcOp, funcDecl};
+  return {funcOp, &funcDecl};
 }
 
 void StructEmitter::appendTraits(SmallVectorImpl<TypeLineageAttr> &parentTypes,
@@ -494,13 +505,13 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
   // cannot be lit.ownership.mark_destroyed.
   if (convention == ArgConvention::OwnedInReg) {
     builder.setInsertionPointToStart(body);
-    ExprEmitter emitter(shared, funcDecl, builder);
+    ExprEmitter emitter(shared, *funcDecl, builder);
     (void)emitter.makeArgLValueVarSlot(SRValue(arg), selfName,
                                        structDecl.getLoc());
   }
 
   // Finish off the function with a return + lit.endfunc.
-  appendDefaultReturnAndEndOp(funcDecl);
+  appendDefaultReturnAndEndOp(*funcDecl);
   return funcOp;
 }
 
@@ -530,14 +541,13 @@ static LIT::FuncOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
   }
 
   auto argListAttrs = PogsAttr::get(ctx, existingName, PassingKind::PosOnly);
-  return emitter
-      .synthesizeMethodInStruct(name, Type(selfType),
-                                isMove ? ArgConvention::OwnedInReg
-                                       : ArgConvention::BorrowedInReg,
-                                argListAttrs, selfType, structDecl,
-                                isMove ? SpecialFunctionKind::kMoveInitReg
-                                       : SpecialFunctionKind::kCopyInitReg)
-      .first;
+  auto [func, _] = emitter.synthesizeMethodInStruct(
+      name, Type(selfType),
+      isMove ? ArgConvention::OwnedInReg : ArgConvention::BorrowedInReg,
+      argListAttrs, selfType, structDecl,
+      isMove ? SpecialFunctionKind::kMoveInitReg
+             : SpecialFunctionKind::kCopyInitReg);
+  return func;
 }
 
 LIT::FuncOp StructEmitter::synthesizeEmptyMoveInit(ASTDecl &structDecl) {

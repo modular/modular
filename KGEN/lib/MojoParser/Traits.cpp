@@ -178,11 +178,13 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   }
 
   // Synthesize the method inside the struct.
-  auto [thunk, decl] = StructEmitter(shared).synthesizeMethodInStruct(
+  auto [thunk, _] = StructEmitter(shared).synthesizeMethodInStruct(
       name, paramDecls, memSig.getParamListAttrs(), memSig.getArguments(),
       memSig.getArgConventions(), memSig.getArgListAttrs(),
       memSig.getResultType(), structDecl, SpecialFunctionInfo::getKind(name),
-      memSig.getFnEffects(), "_thunk");
+      memSig.getFnEffects(), "_thunk", /*ifMissing=*/true);
+  if (!thunk)
+    return;
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
@@ -329,10 +331,13 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     // Synthesize an empty destructor. Don't do anything special, because we
     // want check lifetimes to insert a call to the real destructor here, if it
     // has one.
-    auto [dtor, decl] = gen.synthesizeMethodInStruct(
+    auto [dtor, _] = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedInMem,
         PogsAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
-        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
+        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk",
+        /*ifMissing=*/true);
+    if (!dtor)
+      return;
     func = dtor;
   } else {
     // Determine the name and argument conventions of the function.
@@ -352,12 +357,15 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     bool isMut = existingConv == ArgConvention::OwnedInMem;
     existingType =
         structDecl.getSelfType().getRefForArgument("existing", isMut);
-    auto [ctor, decl] = gen.synthesizeMethodInStruct(
+    auto [ctor, _] = gen.synthesizeMethodInStruct(
         name, {selfRefType, existingType},
         {ArgConvention::InitSelf, existingConv},
         PogsAttr::get(shared.getContext(), {empty, empty},
                       {PassingKind::PosOnly, PassingKind::PosOnly}),
-        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
+        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk",
+        /*ifMissing=*/true);
+    if (!ctor)
+      return;
     func = ctor;
     // In every case, the implementation is a load+store.
     auto b = ImplicitLocOpBuilder::atBlockBegin(func.getLoc(), func.getBody());
