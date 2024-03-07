@@ -665,9 +665,10 @@ ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
 
 OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
                          ParamBindings &&paramBindings, const ExprNode *expr,
-                         CallSyntax syntax)
+                         CallSyntax syntax, bool erroneous)
     : baseName(baseName), fnDecls(fnDecls.begin(), fnDecls.end()),
-      paramBindings(std::move(paramBindings)), expr(expr), syntax(syntax) {}
+      paramBindings(std::move(paramBindings)), expr(expr), syntax(syntax),
+      erroneous(erroneous) {}
 
 /// Utility function to perform substitutions of the specified callable bindings
 /// into the symbol for the given function declaration. It returns the resultant
@@ -830,7 +831,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
 
   // If all of the candidates are wrong, diagnose this as a failure.
   if (!anyValid) {
-    if (emitDiagnosticOnFailure) {
+    if (emitDiagnosticOnFailure && !isErroneous()) {
       // If there is a single callee, emit a specific error about the call.
       if (fnDecls.size() == 1) {
         auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
@@ -881,7 +882,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
-  if (emitDiagnosticOnFailure) {
+  if (emitDiagnosticOnFailure && !isErroneous()) {
     size_t minConversions = bestFitness->getNumImplicitConversions();
     auto diag = getShared().emitError(expr->getLoc(), "ambiguous call to '")
                 << baseName << "', each candidate requires " << minConversions
@@ -1064,7 +1065,7 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
   // If this is a previously-reported error, ignore and don't report an
   // additional error.
   if (type.isTypeCheckErrorType())
-    return OverloadSet(declScope, shared, expr, syntax);
+    return OverloadSet(declScope, shared, expr, syntax, /*erroneous=*/true);
 
   SMLoc callLoc = expr->getLoc();
 
@@ -1075,17 +1076,19 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
   if (resultDecls.empty()) {
     if (!lookupResult.isErroneous() && errorHandler) // Already diagnosed?
       errorHandler();
-    return OverloadSet(declScope, shared, expr, syntax);
+    return OverloadSet(declScope, shared, expr, syntax,
+                       lookupResult.isErroneous());
   }
 
   // If we find a vardecl or any other thing, then fail because it cannot be
   // called.
   if (!isa<LIT::FuncOp>(*resultDecls[0]))
-    return OverloadSet(declScope, shared, expr, syntax);
+    return OverloadSet(declScope, shared, expr, syntax,
+                       lookupResult.isErroneous());
 
   OverloadSet result(methodName, resultDecls,
                      ParamBindings::getForDeclaredType(declScope, shared, type),
-                     expr, syntax);
+                     expr, syntax, lookupResult.isErroneous());
   result.baseType = type;
   return result;
 }
@@ -1519,7 +1522,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
 
   CValue autoNonmaterializableConversion;
   SmallVector<ASTExprAnd<AnyValue>> autoConvertedArgs;
-  if (!calleeFn) {
+  if (!calleeFn && !callee.isErroneous()) {
     // If we are converting from a nonmaterializable struct, always allow an
     // extra implicit conversion to the nonmaterializable target.  Then try
     // again to find a constructor.
@@ -1549,7 +1552,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
     // constructing from one value, then this is a type conversion (either
     // implicit or explicit). If there was an ambiguous overload, make sure to
     // indicate that.
-    if (operandType && newFnDecls.size() <= 1) {
+    if (operandType && newFnDecls.size() <= 1 && !callee.isErroneous()) {
       auto diag = emitError(expr->getLoc());
       // Reject Int(x) where x is already an Int with an error + fixit.
       if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
@@ -1595,7 +1598,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
     }
 
     // If the type has no candidates, complain about that.
-    if (callee.isNull()) {
+    if (callee.isNull() && !callee.isErroneous()) {
       auto diag = emitError(expr->getLoc());
       if (!type.getDecl(shared)) {
         diag << "MLIR type " << type
@@ -1609,8 +1612,8 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
     }
 
     // Otherwise, do it again to emit a generic overload set error.
-    calleeFn = callee.filterOverloadSet(operands, allowImplicitConversion,
-                                        /*emitDiagnosticOnFailure=*/true);
+    auto calleeFn = callee.filterOverloadSet(operands, allowImplicitConversion,
+                                             /*emitDiagnosticOnFailure=*/true);
     assert(!calleeFn && "This should fail if it failed before");
     return {};
   }

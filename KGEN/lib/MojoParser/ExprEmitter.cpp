@@ -875,23 +875,20 @@ static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
   return true;
 }
 
-/// If the specified type can be constructed with the specified operands return
-/// the initializer that would be invoked. If not, return null. This does not
-/// generate any IR.
-PValue ExprEmitter::canConstructType(ASTType requiredType,
-                                     const CallOperands &operands,
-                                     const ExprNode *expr,
-                                     bool allowImplicitConversions) {
+std::pair<PValue, bool> ExprEmitter::canConstructType(
+    ASTType requiredType, const CallOperands &operands, const ExprNode *expr,
+    bool allowImplicitConversions) {
 
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
-  auto callee = OverloadSet::lookup(declScope, shared, requiredType, "__init__",
-                                    expr, CallSyntax::kImplicitConvert,
-                                    /*no error emission on failure */ {});
+  OverloadSet callee =
+      OverloadSet::lookup(declScope, shared, requiredType, "__init__", expr,
+                          CallSyntax::kImplicitConvert,
+                          /*no error emission on failure */ {});
 
   // If there are no viable candidates for the implicit conversion, we fail.
   if (!callee)
-    return {};
+    return {{}, callee.isErroneous()};
 
   // Initializers take 'inout self' as the first argument.
   // Register passable types have a funny exception that allow them to be
@@ -920,10 +917,9 @@ PValue ExprEmitter::canConstructType(ASTType requiredType,
   // If we have at least one candidate, we check to see if any of them can
   // work. This needs to call filterOverloadSet manually because we might not
   // be able to allow implicit conversions.
-  PValue initFn =
-      callee.filterOverloadSet(adjOperands, allowImplicitConversions,
-                               /*emitDiagnosticOnFailure=*/false);
-  return initFn;
+  return {callee.filterOverloadSet(adjOperands, allowImplicitConversions,
+                                   /*emitDiagnosticOnFailure=*/false),
+          callee.isErroneous()};
 }
 
 /// Return true if 'value' may be implicitly converted to 'requiredType'
@@ -959,8 +955,10 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
 
   // Disable implicit conversions though, to prevent converting T -> S -> U in
   // one step.
-  return (bool)canConstructType(requiredType, CallOperands({value}), value.expr,
-                                /*allowImplicitConversions=*/false);
+  auto [ctor, erroneousDecl] =
+      canConstructType(requiredType, CallOperands({value}), value.expr,
+                       /*allowImplicitConversions=*/false);
+  return (bool)ctor;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1168,7 +1166,7 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
       OverloadSet ov(name, typeFuncs, std::move(bindings), value.expr,
                      CallSyntax::kMethodCallSynthetic);
       ov.baseType = ASTType(typeValue);
-      PValue result = ov.filterOverloadSetForValueType(
+      auto result = ov.filterOverloadSetForValueType(
           sig, /*emitDiagnosticOnFailure=*/false);
       if (!result) {
         // Don't error out if name is for the thunk functions that will be

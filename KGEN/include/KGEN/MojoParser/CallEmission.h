@@ -326,11 +326,20 @@ public:
   const ExprNode *expr;
   CallSyntax syntax;
 
+  /// When doing resolution, we should only raise new errors if previous errors
+  /// haven't already been raised about functions in the overload set.  The most
+  /// common issue is when one of the included declarations is erroneous.
+  /// Emitting further errors about overload resolution failure can then be
+  /// spurious, since we can't properly consider the erroneous declarations
+  /// which otherwise might match.  This flag guards against raising those extra
+  /// errors.
+  bool erroneous;
+
   /// Form an overload set with the specified function overloads and the given
   /// parameter bindings. The parameter bindings are taken ownership of.
   OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
               ParamBindings &&paramBindings, const ExprNode *expr,
-              CallSyntax syntax);
+              CallSyntax syntax, bool erroneous = false);
 
   /// Form an OverloadSet with a lookup of a named method on the specified type,
   /// but without the candidate set filtered with operands.   If successful,
@@ -356,6 +365,11 @@ public:
   bool isNull() const { return fnDecls.empty(); }
   bool operator!() const { return isNull(); }
   explicit operator bool() const { return !isNull(); }
+
+  /// An overload set is erroneous primarily when constructed with erroneous
+  /// decls.  If an overload set is erroneous, you can't necessarily trust
+  /// lookup results when processing to find further errors.
+  bool isErroneous() const { return erroneous; }
 
   SharedState &getShared() const { return paramBindings.shared; }
 
@@ -411,8 +425,9 @@ public:
 
 private:
   OverloadSet(ASTDecl &declScope, SharedState &shared, const ExprNode *expr,
-              CallSyntax syntax)
-      : paramBindings(declScope, shared), expr(expr), syntax(syntax) {}
+              CallSyntax syntax, bool erroneous)
+      : paramBindings(declScope, shared), expr(expr), syntax(syntax),
+        erroneous(erroneous){};
 };
 
 /// This provides a wrapper around OverloadSet which is reference counted,

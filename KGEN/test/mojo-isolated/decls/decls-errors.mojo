@@ -540,9 +540,6 @@ struct BadInit[size: __mlir_type.index]:
     # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatDyn>' value to 'BadInit[size]' in assignment}}
     self = x
 
-  # expected-error @+1 {{'__init__' result type must be elided (or None)}}
-  fn __init__(inout self) -> Self: pass
-
 struct StructWithField:
   var field: __mlir_type.index
 
@@ -652,6 +649,15 @@ fn access_BadRefItem():
     var val = BadRefItem()
     _ = val[1] # expected-error {{the '__refitem__' method on 'BadRefItem' returned a value of 'Int', expected a reference}}
 
+# https://github.com/modularml/modular/issues/33557
+struct HasBadCtor:
+    var v: Int
+    fn __init__(inout self, v: Int) -> Self: # expected-error {{'__init__' result type must be elided (or None)}}
+        self.v = v
+def useBadCtor():
+    # Note that the key thing we're checking for here is that this does NOT have
+    # a spurious error about HasBadCtor not being constructable from IntLiteral
+    var fromBadCtor = HasBadCtor(123)
 
 ##===----------------------------------------------------------------------===##
 # Traits

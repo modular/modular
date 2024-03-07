@@ -380,8 +380,12 @@ ParameterInferenceState::checkOneOperand(ASTExprAnd<AnyValue> operand,
       // those are what we're inferring from the arguments.  The result
       // 'actualType' will have those newly inferred parameters.
       ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
-      PValue initFn = emitter.canConstructType(
+      auto [initFn, erroneousDecl] = emitter.canConstructType(
           expectedType.getWithoutParameters(), initValue.get(), operand.expr);
+      // If there were declaration errors, assume success to not raise spurious
+      // errors due to not resolving to those erroneous declarations.
+      if (erroneousDecl)
+        return success();
       if (!initFn)
         return failure();
 
@@ -940,11 +944,14 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         assert(initValue && "Unknown UValue!");
 
         // Initializer lists are good if we can construct the expected type.
-        PValue initFn =
+        auto [initFn, erroneousDecl] =
             ExprEmitter(shared, declScope, ExprContext::EC_CallArgValue)
                 .canConstructType(expectedType, initValue.get(), operand.expr);
+        // If there were declaration errors, assume construction is possible to
+        // avoid spurious errors.
+        bool valid = (bool)initFn || erroneousDecl;
         // If so, all is good, if not, we fail.
-        return {(bool)initFn ? kValidType : kWrongType, expectedType};
+        return {valid ? kValidType : kWrongType, expectedType};
       }
     }
 
