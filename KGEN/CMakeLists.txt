@@ -155,7 +155,7 @@ function(add_mojo_package target visibility)
   cmake_parse_arguments(KGEN
                         "STDLIB;DISABLE_PRIME_CODEGEN_CACHE;DISABLE_PRIME_CACHE"
                         "PACKAGE_DIR;PACKAGE_OUTPUT_DIR;OUTPUT_NAME;DOCS_DIR"
-                        "LINK_LIBS;LINK_DIRS" ${ARGN})
+                        "LINK_LIBS;LINK_DIRS;DEPENDS" ${ARGN})
 
   _setup_libs()
 
@@ -207,7 +207,7 @@ function(add_mojo_package target visibility)
     ${KGEN_PACKAGE_DIR} -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_PACKAGE_FILENAME}
+    DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_PACKAGE_FILENAME} ${KGEN_DEPENDS}
   )
 
   # Run a custom command to prime the cache with the current target. This
@@ -364,10 +364,10 @@ function(add_kgen_kernel target)
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPFILE ${CMAKE_CURRENT_BINARY_DIR}/${header_file_name}.d
-    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS} mojo-sdk
+    DEPENDS kgen ${KGEN_SOURCE} ${KGEN_LIB_DEPENDS} mojo-sdk ${KGEN_DEPENDS}
   )
   add_custom_target(${target}-headers DEPENDS ${header_file_name})
-  add_dependencies(${target}-headers ${KGEN_LIB_DEPENDS} kgen mojo-sdk ${KGEN_DEPENDS})
+  add_dependencies(${target}-headers ${KGEN_LIB_DEPENDS} kgen mojo-sdk)
   set_target_properties(${target}-headers PROPERTIES
     INCLUDE_DIRECTORIES ${CMAKE_CURRENT_BINARY_DIR}
   )
