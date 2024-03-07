@@ -117,7 +117,7 @@ from nn.pad import pad_shape
 from nn.pool import avg_pool as _avg_pool
 from nn.pool import max_pool as _max_pool
 from nn.pool import pool_shape, pool_shape_ceil
-from nn.reshape import reshape, reshape_shape
+from nn.reshape import reshape, reshape_shape, ndbuffer_reshape
 from nn.resize import CoordinateTransformationMode, RoundMode
 from nn.resize import resize_linear as resize_linear_kernel
 from nn.resize import resize_nearest_neighbor
@@ -213,6 +213,7 @@ fn MOGGExport():
     alias _relu = relu
     alias _reshape = reshape
     alias _reshape_shape = reshape_shape
+    alias _ndbuffer_reshape = ndbuffer_reshape
     alias _broadcast_to_shape = broadcast_to_shape
     alias _broadcast_to_tensor = broadcast_to_tensor
     alias _scatter_shape = scatter_shape

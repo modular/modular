@@ -1197,3 +1197,27 @@ fn slice_impl[
     return Tensor[x.type, x.same_rank_param(), out_static_strides](
         new_data, new_shape, new_stride, x.refcount()
     )
+
+
+@mogg_register_override("mo.static.reshape", 1000)
+@export
+fn reshape_impl[
+    out_static_strides: DimList
+](x: Tensor, shape: Tensor) -> Tensor[
+    x.type, shape.same_rank_param(), out_static_strides
+]:
+    var stride = IntList[DimList.create_unknown[shape.static_rank.value()]()]()
+    var accumulator: Int = 1
+
+    @always_inline
+    @parameter
+    fn body[i: Int]():
+        var idx = shape.static_rank.value() - i - 1
+        stride[idx] = accumulator
+        accumulator *= shape.shape[idx]
+
+    unroll[body, shape.static_rank.value()]()
+
+    return Tensor[x.type, shape.same_rank_param(), out_static_strides](
+        x.data, shape.shape, stride, x.refcount()
+    )
