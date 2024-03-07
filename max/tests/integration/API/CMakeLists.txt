@@ -28,7 +28,7 @@ file(GENERATE
   CONTENT $<TARGET_FILE:modular-framework-common>
 )
 
-add_modular_testsuite(check-max-engine-integration-tests
+add_modular_testsuite(check-api-integration-tests
   TOOLS
   c-api-validator
   modular-api-executor
