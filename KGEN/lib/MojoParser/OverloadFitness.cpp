@@ -124,7 +124,8 @@ public:
   /// should always return null /without/ an error if it cannot be inferred, and
   /// return a specific value if unambiguously determined.
   PValue infer(LITSignatureType signature, ArrayRef<TypedAttr> bindingsSoFar,
-               const CallOperands &callOperands);
+               const CallOperands &callOperands,
+               const KeywordOperands &variadicKwOperands);
 
 private:
   void matchTypes(Type actualType, Type expectedType);
@@ -437,9 +438,19 @@ ParameterInferenceState::checkOneOperand(ASTExprAnd<AnyValue> operand,
   llvm_unreachable("invalid argument convention");
 };
 
-PValue ParameterInferenceState::infer(LITSignatureType signature,
-                                      ArrayRef<TypedAttr> bindingsSoFar,
-                                      const CallOperands &callOperands) {
+/// Return the expected type of variadic argument values based on the **kwargs
+/// (dictionary) type from a signature.
+static Type getVariadicKwargsType(Type dictRefType) {
+  Type dictType = cast<RefType>(dictRefType).getElementType();
+  return cast<TypeConstantAttr>(ASTType(dictType).getParamBindings()[1])
+      .getValue();
+}
+
+PValue
+ParameterInferenceState::infer(LITSignatureType signature,
+                               ArrayRef<TypedAttr> bindingsSoFar,
+                               const CallOperands &callOperands,
+                               const KeywordOperands &variadicKwOperands) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
   size_t numPosOperands = posOperands.size();
 
@@ -461,6 +472,21 @@ PValue ParameterInferenceState::infer(LITSignatureType signature,
     // There is no provided operand for a by-ref result.
     if (expectedConvention == ArgConvention::ByRefResult)
       continue;
+
+    if (signature.isKwVarArg(expectedArgIdx)) {
+      Type valTy = getVariadicKwargsType(expectedType);
+      for (auto [name, operand] : variadicKwOperands) {
+        // TODO: Passing OwnedInReg is a hack that is needed because the value
+        // type is not a reference type (and doesn't have a lifetime), but we
+        // still want to type check it. So, passing it as if it was reg-passable
+        // happens to just work, until we rectify this. Right now the reason the
+        // value type cannot be a reference type is because `Reference` does not
+        // (and in fact cannot) conform to `CollectionElement`.
+        if (failed(checkOneOperand(operand, valTy, ArgConvention::OwnedInReg)))
+          return {};
+      }
+      continue;
+    }
 
     // Handle case when there are no more provided positional operands.
     if (posOperandIdx == numPosOperands) {
@@ -1317,7 +1343,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     if (PValue inferred =
             ParameterInferenceState(callable.paramBindings.declScope, shared,
                                     index, evaluator, inferenceDiags)
-                .infer(signature, bindingsSoFar, callOperands))
+                .infer(signature, bindingsSoFar, callOperands,
+                       variadicKwOperands))
       return inferred;
     return PValue();
   };
@@ -1415,10 +1442,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     }
 
     if (signature.isKwVarArg(expectedArgIdx)) {
-      Type dictType = cast<RefType>(expectedType).getElementType();
-      expectedType =
-          cast<TypeConstantAttr>(ASTType(dictType).getParamBindings()[1])
-              .getValue();
+      expectedType = getVariadicKwargsType(expectedType);
 
       for (auto [name, operand] : variadicKwOperands) {
         // TODO: Passing OwnedInReg is a hack that is needed because the value
