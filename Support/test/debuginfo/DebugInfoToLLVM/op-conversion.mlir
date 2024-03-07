@@ -18,6 +18,7 @@
   scopeLine = 10,
   subprogramFlags = Definition
 > : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+// CHECK-DAG: #[[LOCAL_VAR:.*]] = #llvm.di_local_variable<scope = {{.*}}, name = "foo"
 #local_variable = #debuginfo.local_variable<
   scope = #subprogram,
   name = "foo",
@@ -26,6 +27,7 @@
   arg = 0,
   alignInBits = 32
 > : !debuginfo.unresolved<i32>
+// CHECK-DAG: #[[LOCAL_VAR2:.*]] = #llvm.di_local_variable<scope = {{.*}}, name = "foo_2"
 #local_variable_2 = #debuginfo.local_variable<
   scope = #subprogram,
   name = "foo_2",
@@ -34,6 +36,7 @@
   arg = 0,
   alignInBits = 64
 > : !debuginfo.unresolved<!llvm.ptr>
+// CHECK-DAG: #[[LOCAL_VAR3:.*]] = #llvm.di_local_variable<scope = {{.*}}, name = "foo_3"
 #local_variable_3 = #debuginfo.local_variable<
   scope = #subprogram,
   name = "foo_3",
@@ -86,6 +89,82 @@ func.func @value_to_addr_op() -> i32 {
   return %value : i32
 }
 
+// CHECK-LABEL: func @value_with_two_nontrivial_ops
+func.func @value_with_two_nontrivial_ops() -> (i32, i32) {
+  // CHECK: %[[VALUE1:.*]] = "test.op"() : () -> i32
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[VALUE1]] : i32
+  // CHECK: %[[VALUE2:.*]] = "test.op2"() : () -> i32
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[VALUE2]] : i32
+  // CHECK: return %[[VALUE1]], %[[VALUE2]] : i32, i32
+
+  %value1 = "test.op"() : () -> i32
+  debuginfo.value #local_variable = %value1 : i32
+  %value2 = "test.op2"() : () -> i32
+  debuginfo.value #local_variable = %value2 : i32
+  return %value1, %value2 : i32, i32
+}
+
+// CHECK-LABEL: func @value_with_one_undef_op
+func.func @value_with_one_undef_op() -> i32 {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[VALUE:.*]] = "test.op"() : () -> i32
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : i32, !llvm.ptr
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR:.*]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
+  // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef : i32
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF]] : i32
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
+  // CHECK: return %[[RESULT]] : i32
+
+  %value = "test.op"() : () -> i32
+  debuginfo.value #local_variable = %value : i32
+  %undef = llvm.mlir.undef : i32
+  debuginfo.value #local_variable = %undef : i32
+  return %value : i32
+}
+
+// CHECK-LABEL: func @value_with_two_undef_ops
+func.func @value_with_two_undef_ops() -> i32 {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[UNDEF1:.*]] = llvm.mlir.undef : i32
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR:.*]] = %[[UNDEF1]] : i32
+  // CHECK: %[[VALUE:.*]] = "test.op"() : () -> i32
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : i32, !llvm.ptr
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
+  // CHECK: %[[UNDEF2:.*]] = llvm.mlir.undef : i32
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF2]] : i32
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
+  // CHECK: return %[[RESULT]] : i32
+
+  %undef1 = llvm.mlir.undef : i32
+  debuginfo.value #local_variable = %undef1 : i32
+  %value = "test.op"() : () -> i32
+  debuginfo.value #local_variable = %value : i32
+  %undef2 = llvm.mlir.undef : i32
+  debuginfo.value #local_variable = %undef2 : i32
+  return %value : i32
+}
+
+// CHECK-LABEL: func @undef_values_only
+func.func @undef_values_only() -> (i32, i32) {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[UNDEF1:.*]] = llvm.mlir.undef : i32
+  // CHECK: llvm.store %[[UNDEF1]], %[[ALLOC]] : i32, !llvm.ptr
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
+  // CHECK: %[[UNDEF2:.*]] = llvm.mlir.undef : i32
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF2]] : i32
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
+  // CHECK: return %[[RESULT]], %[[UNDEF2]] : i32, i32
+
+  %undef1 = llvm.mlir.undef : i32
+  debuginfo.value #local_variable = %undef1 : i32
+  %undef2 = llvm.mlir.undef : i32
+  debuginfo.value #local_variable = %undef2 : i32
+  return %undef1, %undef2 : i32, i32
+}
+
 // CHECK-LABEL: func @two_value_to_addr_op
 func.func @two_value_to_addr_op() -> !llvm.ptr {
   // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
@@ -100,6 +179,27 @@ func.func @two_value_to_addr_op() -> !llvm.ptr {
   %value = "test.op"() : () -> !llvm.ptr
   debuginfo.value #local_variable_2 = %value : !llvm.ptr
   debuginfo.value #local_variable_3 = %value : !llvm.ptr
+  return %value : !llvm.ptr
+}
+
+// CHECK-LABEL: func @one_value_one_value_and_undef
+func.func @one_value_one_value_and_undef() -> !llvm.ptr {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
+  // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr, !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #[[LOCAL_VAR2]] = %[[ALLOC]] : !llvm.ptr
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR3]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
+  // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef : !llvm.ptr
+  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR3]] = %[[UNDEF]] : !llvm.ptr
+  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
+  // CHECK: return %[[RESULT]] : !llvm.ptr
+
+  %value = "test.op"() : () -> !llvm.ptr
+  debuginfo.value #local_variable_2 = %value : !llvm.ptr
+  debuginfo.value #local_variable_3 = %value : !llvm.ptr
+  %undef = llvm.mlir.undef : !llvm.ptr
+  debuginfo.value #local_variable_3 = %undef : !llvm.ptr
   return %value : !llvm.ptr
 }
 
