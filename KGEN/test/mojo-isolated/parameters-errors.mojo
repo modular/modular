@@ -275,7 +275,8 @@ fn test_implicitly_parametric_static_methods_fails():
 ##===----------------------------------------------------------------------===##
 
 trait SomeTrait:
-    pass
+    fn requirement(self):
+        pass
 
 struct NoTraitsType:
     pass
