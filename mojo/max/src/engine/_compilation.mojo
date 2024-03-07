@@ -312,6 +312,8 @@ struct CCompiledModel:
     var ptr: DTypePointer[DType.invalid]
 
     alias FreeCompiledModelFnName = "M_freeCompiledModel"
+    alias GetModelInputSpecByNameFnName = "M_getModelInputSpecByName"
+    alias GetModelOutputSpecByNameFnName = "M_getModelOutputSpecByName"
     alias GetNumInputsFnName = "M_getNumModelInputs"
     alias GetNumOutputsFnName = "M_getNumModelOutputs"
 
@@ -337,6 +339,44 @@ struct CCompiledModel:
             raise Error(status.__str__())
         return num_outputs
 
+    fn get_model_input_spec_by_name(
+        self,
+        tensor_name: String,
+        borrowed lib: DLHandle,
+        owned session: InferenceSession,
+    ) raises -> EngineTensorSpec:
+        """Gets the input spec of the model by name."""
+        var status = Status(lib)
+        var input_spec = call_dylib_func[CTensorSpec](
+            lib,
+            Self.GetModelInputSpecByNameFnName,
+            self,
+            tensor_name._as_ptr(),
+            status.ptr,
+        )
+        if status:
+            raise Error(status.__str__())
+        return EngineTensorSpec(input_spec, lib, session.copy())
+
+    fn get_model_output_spec_by_name(
+        self,
+        tensor_name: String,
+        borrowed lib: DLHandle,
+        owned session: InferenceSession,
+    ) raises -> EngineTensorSpec:
+        """Gets the output spec of the model by name."""
+        var status = Status(lib)
+        var output_spec = call_dylib_func[CTensorSpec](
+            lib,
+            Self.GetModelOutputSpecByNameFnName,
+            self,
+            tensor_name._as_ptr(),
+            status.ptr,
+        )
+        if status:
+            raise Error(status.__str__())
+        return EngineTensorSpec(output_spec, lib, session.copy())
+
     fn free(self, borrowed lib: DLHandle):
         call_dylib_func(lib, Self.FreeCompiledModelFnName, self)
 
@@ -350,8 +390,6 @@ struct CompiledModel:
     var session: InferenceSession
 
     alias CompileModelFnName = "M_compileModelSync"
-    alias GetModelInputSpecByNameFnName = "M_getModelInputSpecByName"
-    alias GetModelOutputSpecByNameFnName = "M_getModelOutputSpecByName"
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CCompiledModel](
@@ -393,6 +431,32 @@ struct CompiledModel:
         for i in range(len(names)):
             name_vec.push_back(names[i])
         return name_vec
+
+    fn get_model_input_metadata(self) raises -> List[EngineTensorSpec]:
+        """Get the metadata for inputs of the model."""
+        var input_metadata = List[EngineTensorSpec]()
+        var input_tensor_names = self.get_model_input_names()
+        input_metadata.reserve(len(input_tensor_names))
+
+        for input_tensor_name in input_tensor_names:
+            var input_spec = self.ptr.get_model_input_spec_by_name(
+                input_tensor_name[], self.lib, self.session
+            )
+            input_metadata.push_back(input_spec ^)
+        return input_metadata
+
+    fn get_model_output_metadata(self) raises -> List[EngineTensorSpec]:
+        """Get the metadata for outputs of the model."""
+        var output_metadata = List[EngineTensorSpec]()
+        var output_tensor_names = self.get_model_output_names()
+        output_metadata.reserve(len(output_tensor_names))
+
+        for output_tensor_name in output_tensor_names:
+            var output_spec = self.ptr.get_model_output_spec_by_name(
+                output_tensor_name[], self.lib, self.session
+            )
+            output_metadata.push_back(output_spec ^)
+        return output_metadata
 
     fn borrow_ptr(self) -> CCompiledModel:
         return self.ptr

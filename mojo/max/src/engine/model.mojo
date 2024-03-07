@@ -15,6 +15,7 @@ from sys.ffi import DLHandle
 from ._utils import call_dylib_func, exchange
 from ._status import Status
 from .tensor_map import CTensorMap
+from tensor import TensorSpec
 from sys.intrinsics import _mlirtype_is_eq
 from utils import StringRef
 
@@ -328,6 +329,24 @@ struct Model:
             Output names of the model.
         """
         return self._compiled_model.get_model_output_names()
+
+    fn get_model_input_metadata(self) raises -> List[EngineTensorSpec]:
+        """Get metadata about the model's input tensors, as a list of EngineTensorSpec
+        objects.
+
+        Returns:
+            Metadata list of the model's input tensors.
+        """
+        return self._compiled_model.get_model_input_metadata()
+
+    fn get_model_output_metadata(self) raises -> List[EngineTensorSpec]:
+        """Get metadata about the model's output tensors, as a list of EngineTensorSpec
+        objects.
+
+        Returns:
+            Metadata list of the model's output tensors.
+        """
+        return self._compiled_model.get_model_output_metadata()
 
     fn __del__(owned self):
         """Destructor for Model."""

@@ -19,7 +19,7 @@ from .session import InferenceSession
 from ._tensor_spec_impl import CTensorSpec
 
 
-struct EngineTensorSpec(Stringable, Movable):
+struct EngineTensorSpec(Stringable, CollectionElement):
     """
     Describes input/output of a Max Engine Model.
     """
@@ -29,6 +29,43 @@ struct EngineTensorSpec(Stringable, Movable):
     var _session: InferenceSession
 
     alias _NewTensorSpecFnName = "M_newTensorSpec"
+
+    fn __copyinit__(inout self, other: Self):
+        """Copy constructor for Tensor Spec.
+
+        Args:
+            other: Instance of TensorSpec to be copied.
+        """
+        self._lib = other._lib
+        self._session = other._session
+
+        var rank = other.rank()
+        var name = other.get_name()
+        var shape = other.get_shape()
+
+        if shape:
+            var inner_shape = shape.value()
+            var rank = len(inner_shape)
+            self._ptr = call_dylib_func[CTensorSpec](
+                self._lib,
+                Self._NewTensorSpecFnName,
+                inner_shape.data,
+                rank,
+                other._ptr.get_dtype(self._lib),
+                name._as_ptr(),
+            )
+            _ = inner_shape ^
+        else:
+            self._ptr = call_dylib_func[CTensorSpec](
+                self._lib,
+                Self._NewTensorSpecFnName,
+                CTensorSpec.ptr_type(),
+                CTensorSpec.get_dynamic_rank_value(self._lib),
+                other._ptr.get_dtype(self._lib),
+                name._as_ptr(),
+            )
+        _ = name
+        _ = shape
 
     fn __moveinit__(inout self, owned existing: Self):
         """Move constructor for Tensor Spec.
@@ -221,6 +258,40 @@ struct EngineTensorSpec(Stringable, Movable):
         """
         return self._ptr.get_name(self._lib)
 
+    fn get_dtype(self) -> DType:
+        """Gets the DType of tensor corresponding to spec.
+
+        Returns:
+            DType of the Tensor.
+        """
+        return self._ptr.get_dtype(self._lib).to_dtype()
+
+    fn get_shape(self) -> Optional[List[Optional[Int]]]:
+        """Gets the shape of tensor corresponding to spec.
+
+        Returns:
+            Shape of the Tensor. Returns None if rank is dynamic.
+        """
+        var rank_or = self.rank()
+        if not rank_or:
+            return None
+
+        var shape_list = List[Optional[Int]]()
+        var rank = rank_or.value()
+        for i in range(rank):
+            var dim: Optional[Int]
+            try:
+                dim = self[i]
+            except err:
+                abort("unreachable condition")
+
+            if not dim:
+                shape_list.push_back(None)
+            else:
+                shape_list.push_back(dim.value())
+
+        return shape_list
+
     fn __str__(self) -> String:
         """Gets the String representation of Spec.
 
@@ -230,24 +301,19 @@ struct EngineTensorSpec(Stringable, Movable):
         var _repr: String = "{name="
         _repr += self.get_name()
         _repr += ", spec="
-        var rank_or = self.rank()
-        if not rank_or:
-            _repr += "None x "
-            _repr += str(self._ptr.get_dtype(self._lib).to_dtype())
-        else:
-            var rank = rank_or.value()
-            for i in range(rank):
-                var dim: Optional[Int]
-                try:
-                    dim = self[i]
-                except err:
-                    abort("unreachable condition")
 
-                if not dim:
-                    _repr += "-1x"
+        var shape_list = self.get_shape()
+
+        if not shape_list:
+            _repr += "None x "
+        else:
+            for dim in shape_list.value():
+                if not dim[]:
+                    _repr += "-1"
                 else:
-                    _repr += str(dim.value()) + "x"
-            _repr += str(self._ptr.get_dtype(self._lib).to_dtype())
+                    _repr += str(dim[].value())
+                _repr += "x"
+        _repr += str(self.get_dtype())
         _repr += "}"
         return _repr
 
