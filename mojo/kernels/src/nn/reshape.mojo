@@ -44,6 +44,23 @@ fn reshape[
     return NDBuffer[type, output_rank](input.data, new_shape, stride_tuple)
 
 
+@mogg_register("ndbuffer_reshape")
+@mogg_view_op
+@always_inline
+fn ndbuffer_reshape[
+    rank: Int,
+    output_rank: Int,
+    type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[type, rank],
+    new_shape: StaticIntTuple[output_rank],
+) -> NDBuffer[type, output_rank]:
+    return reshape[rank, output_rank, type, single_thread_blocking_override](
+        input, new_shape
+    )
+
+
 @always_inline
 fn reshape_shape[
     input_rank: Int,
