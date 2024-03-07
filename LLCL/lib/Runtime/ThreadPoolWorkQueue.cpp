@@ -1294,7 +1294,9 @@ M::LLCL::createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr,
     llvm::dbgs() << "CAUTION: The paranoid flag is ignored in non "
                     "MODULAR_PARANOID builds\n";
 #endif // MODULAR_PARANOID
-
+#if LLCL_NO_AFFINITY
+  withAffinity = false;
+#endif // LLCL_NO_AFFINITY
   // Using numThreads as a hint, figure out a CPU for each worker thread and
   // the main thread. The CPU ids may end up as kNoAffinity, but the vector
   // size will still guide the construction of worker threads.
