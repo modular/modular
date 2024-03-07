@@ -9,14 +9,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/DeclResolver.h"
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "MojoUtils.h"
+
+#include "KGEN/LITDialect/LITOps.h"
+
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "llvm/ADT/TypeSwitch.h"
+
 #include <deque>
 
 using namespace M;
@@ -892,10 +896,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     }
     bool isKwVarArg = fullSig.isKwVarArg(argNo);
     if (isKwVarArg) {
-      Type dictType = cast<RefType>(type.mlirType).getElementType();
-      auto valueTypeAttr =
-          cast<TypeConstantAttr>(ASTType(dictType).getParamBindings()[1]);
-      type = valueTypeAttr.getValue();
+      type = getVariadicKwargsType(type.mlirType);
     } else if (SignatureType::hasAddress(convention)) {
       type = type.getReferenceElementType();
     }
