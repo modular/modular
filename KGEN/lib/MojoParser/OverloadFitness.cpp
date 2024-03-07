@@ -18,6 +18,7 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
+
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
 
@@ -437,14 +438,6 @@ ParameterInferenceState::checkOneOperand(ASTExprAnd<AnyValue> operand,
   }
   llvm_unreachable("invalid argument convention");
 };
-
-/// Return the expected type of variadic argument values based on the **kwargs
-/// (dictionary) type from a signature.
-static Type getVariadicKwargsType(Type dictRefType) {
-  Type dictType = cast<RefType>(dictRefType).getElementType();
-  return cast<TypeConstantAttr>(ASTType(dictType).getParamBindings()[1])
-      .getValue();
-}
 
 PValue
 ParameterInferenceState::infer(LITSignatureType signature,

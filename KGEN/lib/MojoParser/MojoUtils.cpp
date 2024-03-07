@@ -201,6 +201,45 @@ ASTType LIT::getZeroCostCommonType(SharedState &shared, ASTType type1,
   return {};
 }
 
+bool LIT::canSynthesizeIfMissing(StringRef name, bool rpTrivial,
+                                 bool regPassable) {
+  // Allow types that lack `__del__` to conform. A no-op destructor will be
+  // synthesized for them.
+  if (name == "__del__")
+    return true;
+  // Trivial types are not allowed to have explicit `__copyinit__` methods, so
+  // if the trait requires them, consider them automatically satisfied by
+  // trivial types.
+  if (rpTrivial && name == "__copyinit__")
+    return true;
+  // All register-passable types are not allowed to have move constructors, so
+  // permit them to conform.
+  if (regPassable && name == "__moveinit__")
+    return true;
+  return false;
+}
+
+void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
+  Block &deadBlock = deadRegion->front();
+  Operation *op = &deadBlock.front();
+  // Erase bottom up to avoid deleting an op while something uses its results.
+  while (&deadBlock.back() != op)
+    deadBlock.back().erase();
+  op->erase();
+
+  OpBuilder::atBlockBegin(&deadBlock).create<UnreachableOp>(unreachableLoc);
+}
+
+Type LIT::getVariadicKwargsType(Type dictRefType) {
+  Type dictType = cast<RefType>(dictRefType).getElementType();
+  return cast<TypeConstantAttr>(ASTType(dictType).getParamBindings()[1])
+      .getValue();
+}
+
+//===----------------------------------------------------------------------===//
+// Diagnostic utilities
+//===----------------------------------------------------------------------===//
+
 void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
                                    size_t maxAllowed, size_t numActual,
                                    Twine argOrParam) {
@@ -248,33 +287,4 @@ void LIT::emitPosOnlyPassedByKw(InflightDiag &diag,
 
 std::string LIT::nameForPosOnly(size_t idx, const Twine &argOrParam) {
   return ("positional-only " + argOrParam + " #" + Twine(idx)).str();
-}
-
-bool LIT::canSynthesizeIfMissing(StringRef name, bool rpTrivial,
-                                 bool regPassable) {
-  // Allow types that lack `__del__` to conform. A no-op destructor will be
-  // synthesized for them.
-  if (name == "__del__")
-    return true;
-  // Trivial types are not allowed to have explicit `__copyinit__` methods, so
-  // if the trait requires them, consider them automatically satisfied by
-  // trivial types.
-  if (rpTrivial && name == "__copyinit__")
-    return true;
-  // All register-passable types are not allowed to have move constructors, so
-  // permit them to conform.
-  if (regPassable && name == "__moveinit__")
-    return true;
-  return false;
-}
-
-void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
-  Block &deadBlock = deadRegion->front();
-  Operation *op = &deadBlock.front();
-  // Erase bottom up to avoid deleting an op while something uses its results.
-  while (&deadBlock.back() != op)
-    deadBlock.back().erase();
-  op->erase();
-
-  OpBuilder::atBlockBegin(&deadBlock).create<UnreachableOp>(unreachableLoc);
 }
