@@ -954,6 +954,16 @@ ASTType SharedState::getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "Error", *this);
 }
 
+ASTType SharedState::getBuiltinDictType(ASTDecl &context, llvm::SMLoc loc) {
+  ASTDecl &collectionsModule =
+      importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
+  return resolveBuiltinModuleType(collectionsModule, loc, "Dict", *this);
+}
+
+ASTType SharedState::getBuiltinStringType(ASTDecl &context, llvm::SMLoc loc) {
+  return resolveBuiltinModuleType(context, loc, "String", *this);
+}
+
 ASTType SharedState::getBuiltinIntLiteralType(ASTDecl &context,
                                               llvm::SMLoc loc) {
   return resolveBuiltinModuleType(context, loc, "IntLiteral", *this);

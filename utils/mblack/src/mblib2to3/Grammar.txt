@@ -54,10 +54,10 @@ convention: OWNED | BORROWED | INOUT
 
 typedargslist:  [convention] tfpdef ['=' test] (','  [convention] tfpdef ['=' test])* ',' '/' [
                      ',' [(( [convention] tfpdef ['=' test] ',')* ( [convention] '*' [tname_star] (','  [convention] tname ['=' test])*
-                            [',' ['**' tname [',']]] | '**' tname [','])
+                            [',' [ [convention] '**' tname [',']]] | [convention] '**' tname [','])
                      |  [convention] tfpdef ['=' test] (','  [convention] tfpdef ['=' test])* [','])]
                 ] | (( [convention] tfpdef ['=' test] ',')* ([convention] '*' [tname_star] (','  [convention] tname ['=' test])*
-                     [',' ['**' tname [',']]] | '**' tname [','])
+                     [',' [ [convention] '**' tname [',']]] | [convention] '**' tname [','])
                      |  [convention] tfpdef ['=' test] (','  [convention] tfpdef ['=' test])* [','])
 
 tname: NAME [metaparams] [':' test]

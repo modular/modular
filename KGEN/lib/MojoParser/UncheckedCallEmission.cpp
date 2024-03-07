@@ -24,6 +24,7 @@
 
 #include "Support/Compiler/OperationUtils.h"
 
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/SaveAndRestore.h"
 
 using namespace M;
@@ -379,6 +380,12 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
   size_t posOperandIdx = 0;
 
+  // We will collect argument names that were passed by keyword, so that we can
+  // emit **kwargs arguments in the end with anything that's left.
+  SmallPtrSet<StringAttr, 4> passedByKw;
+  // We also remember if we had a **kwargs.
+  MRValue kwargsDict;
+
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   argumentValues.reserve(calleeSig.getNumArguments());
 
@@ -427,6 +434,17 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
         argumentValues.push_back({PValue(argAttr), callExpr});
         continue;
       }
+      if (calleeSig.isKwVarArg(argIdx)) {
+        assert(!kwargsDict && "multiple **kwargs not supported yet");
+        // If this is a variadic keyword argument, we initialize a dictionary.
+        auto dict = emitter.emitConstructorCall(
+            cast<RefType>(expectedType).getElementType(), {}, callExpr,
+            CallSyntax::kImplicitConvert, dest,
+            /*allowImplicitConversion=*/false);
+        kwargsDict = emitter.emitMRValue({dict, callExpr}, EC_CallArgValue);
+        argumentValues.push_back({kwargsDict, callExpr});
+        continue;
+      }
       if (auto kwOperandOr = operands.findKwArg(argName);
           kwOperandOr.has_value()) {
         // The argument is passed as a keyword operand.
@@ -434,6 +452,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
             emitOneArgVal(*kwOperandOr, argIdx, convention, expectedType);
         if (!argVal)
           return failure();
+        passedByKw.insert(argName);
         argumentValues.push_back({argVal, kwOperandOr->expr});
         continue;
       }
@@ -477,7 +496,50 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   }
 
   assert(posOperandIdx == posOperands.size() &&
-         "typechecking confirmed that we would use up all operands");
+         "typechecking confirmed that we would use up all positional operands");
+
+  // Find all keyword operands that we didn't bind to an argument.
+  SmallVector<std::pair<StringAttr, ASTExprAnd<AnyValue>>> variadicKwOperands;
+  if (operands.kwOperands) {
+    for (auto [name, operand] : *operands.kwOperands)
+      if (!passedByKw.contains(name))
+        variadicKwOperands.emplace_back(std::make_pair(name, operand));
+  }
+  assert(variadicKwOperands.empty() ||
+         kwargsDict && "typechecking confirmed we have no **kwargs");
+
+  // Sort by the names so that emission is deterministic.
+  // TODO: It would be better if CallOperands stored a sorted map.
+  llvm::sort(variadicKwOperands, [](const auto &lhs, const auto &rhs) {
+    return lhs.first.strref() < rhs.first.strref();
+  });
+
+  // Fill the **kwargs dict with values.
+  for (auto [name, operand] : variadicKwOperands) {
+    SMLoc loc = operand.expr->getLoc();
+
+    // We first construct a String key from the operand name.
+    ASTType stringLiteralType =
+        emitter.shared.getBuiltinStringLiteralType(emitter.declScope, loc);
+    auto nameAttr =
+        StringAttr::get(name.strref(), StringType::get(emitter.getContext()));
+    CValue literalKey = emitter.emitConstructorCall(
+        stringLiteralType, CallOperands({{PValue(nameAttr), operand.expr}}),
+        callExpr, CallSyntax::kImplicitConvert, dest);
+    ASTType stringType =
+        emitter.shared.getBuiltinStringType(emitter.declScope, loc);
+    CValue key = emitter.emitConstructorCall(
+        stringType, CallOperands({{literalKey, operand.expr}}), callExpr,
+        CallSyntax::kImplicitConvert, dest);
+
+    // Then we set the element with the given key and the operand as value.
+    emitter.emitNamedMethodCall(
+        "__setitem__",
+        CallOperands(
+            {{MLValue(kwargsDict), callExpr}, {key, operand.expr}, operand}),
+        dest, CallSyntax::kImplicitConvert, callExpr);
+  }
+
   return argumentValues;
 }
 

@@ -18,6 +18,7 @@
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringSet.h"
 
 #define DEBUG_TYPE "LITEXPRCALLS"
@@ -913,7 +914,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
   case ArgConvention::BorrowedInMem:
   case ArgConvention::OwnedInMem:
     // Ignore the pointer type on memory conventions when matching types.
-    // Note: Should do not support overloading on borrow/owned currently,
+    // Note: We do not support overloading on borrow/owned currently,
     // but we could add this if there is a reason to.
     expectedType = expectedType.getReferenceElementType();
     // If a register-passable type is being passed in-memory, remember this.
@@ -1053,13 +1054,17 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
          1 * hasVariadicParams;
 }
 
+/// Ordered map to store the name and value of variadic keyword arguments.
+using VariadicKwArgs = llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
+                                       SmallDenseMap<StringAttr, size_t>>;
+
 /// Helper to diagnose common cases of candidate mismatch related to keyword
 /// arguments/operands (unexpected kw-operands, pos-only argument provided by
-/// kw-operand, missing kw-only arguments).
-static std::optional<InflightDiag>
-diagnoseKeywordOperands(LITSignatureType signature,
-                        const CallOperands &callOperands,
-                        const DiagEmitter &emitDiagFor) {
+/// kw-operand, missing kw-only arguments). If the function accepts variadic
+/// keyword arguments, this function also collects them.
+static std::optional<InflightDiag> diagnoseKeywordOperands(
+    LITSignatureType signature, VariadicKwArgs &variadicKwOperands,
+    const CallOperands &callOperands, const DiagEmitter &emitDiagFor) {
   // First, we collect any (named) pos-only arguments passed by keyword operand,
   // and missing kw-only arguments. We also collect all argument names that
   // might be specified by keyword.
@@ -1071,14 +1076,14 @@ diagnoseKeywordOperands(LITSignatureType signature,
   for (auto [argIdx, argName, argPassingKind, conv] :
        llvm::enumerate(signature.getArgNames(), signature.getArgPassingKinds(),
                        signature.getArgConventions())) {
+    if (signature.isAnyVarArg(argIdx))
+      continue; // Variadic/pack args cannot be specified by their keyword.
     if (argPassingKind == PassingKind::KwOnly &&
         !defaultHandler.getKwOnlyDefault(argIdx) &&
         !callOperands.findKwArg(argName)) {
       missingKwOnly.emplace_back(argName);
       continue;
     }
-    if (signature.isAnyVarArg(argIdx))
-      continue; // Variadic/pack args cannot be specified by their keyword.
     if (argPassingKind == PassingKind::PosOnly) {
       if (callOperands.findKwArg(argName))
         posOnlyPassedByKw.emplace_back(argName);
@@ -1093,17 +1098,20 @@ diagnoseKeywordOperands(LITSignatureType signature,
   if (!posOnlyPassedByKw.empty())
     return emitDiagFor.posOnlyPassedByKw(posOnlyPassedByKw);
 
-  // TODO(#21295): handle variadic keyword arguments.
-  // Then we find all the keyword operands with unknown names.
-  StringSet<> unknownKwOperands;
+  // Collect all the keyword operands with unknown names.
   if (callOperands.hasKwOperands()) {
-    for (auto [name, operandVal] : *callOperands.kwOperands)
+    for (auto [name, operand] : *callOperands.kwOperands)
       if (!argNames.contains(name))
-        unknownKwOperands.insert(name);
+        variadicKwOperands.try_emplace(name, operand);
   }
 
-  if (!unknownKwOperands.empty())
+  // If the function doesn't accept variadic kwargs, this is an error.
+  if (!signature.hasKwVarArgs() && !variadicKwOperands.empty()) {
+    StringSet<> unknownKwOperands;
+    for (auto [name, _] : variadicKwOperands)
+      unknownKwOperands.insert(name);
     return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
+  }
 
   return std::nullopt;
 }
@@ -1179,7 +1187,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   SharedState &shared = callable.getShared();
   DiagEmitter emitDiagFor(shared, callLoc, numOperands, callable.syntax);
 
-  if (auto diag = diagnoseKeywordOperands(signature, callOperands, emitDiagFor))
+  // If a variadic keyword arg is expected, we collect the unknown kw operands.
+  VariadicKwArgs variadicKwOperands;
+  if (auto diag = diagnoseKeywordOperands(signature, variadicKwOperands,
+                                          callOperands, emitDiagFor))
     return std::move(*diag);
 
   if (auto diag = diagnosePosOperands(signature, callOperands, emitDiagFor))
@@ -1398,15 +1409,33 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
        llvm::enumerate(signature.getArguments(), signature.getArgConventions(),
                        signature.getArgNames(),
                        signature.getArgPassingKinds())) {
-    assert(!signature.isKwVarArg(expectedArgIdx) &&
-           "keyword variadics not supported yet");
-
     // Ignore the return slot if present.
     Type expectedType = evaluator.refineType(unboundExpectedType);
     if (expectedConvention == ArgConvention::ByRefResult) {
       numMismatchedConventions += ASTType(expectedType)
                                       .getReferenceElementType()
                                       .isRegisterPassable(loc, shared);
+      continue;
+    }
+
+    if (signature.isKwVarArg(expectedArgIdx)) {
+      Type dictType = cast<RefType>(expectedType).getElementType();
+      expectedType =
+          cast<TypeConstantAttr>(ASTType(dictType).getParamBindings()[1])
+              .getValue();
+
+      for (auto [name, operand] : variadicKwOperands) {
+        // TODO: Passing OwnedInReg is a hack that is needed because the value
+        // type is not a reference type (and doesn't have a lifetime), but we
+        // still want to type check it. So, passing it as if it was reg-passable
+        // happens to just work, until we rectify this. Right now the reason the
+        // value type cannot be a reference type is because `Reference` does not
+        // (and in fact cannot) conform to `CollectionElement`.
+        auto [kind, ty] =
+            checkAnOperand(operand, ArgConvention::OwnedInReg, expectedType);
+        if (kind != kValidType)
+          return emitDiagFor.argTypeMismatch(kind, ty, operand, expectedArgIdx);
+      }
       continue;
     }
 

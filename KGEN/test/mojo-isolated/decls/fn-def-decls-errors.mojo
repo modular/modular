@@ -81,3 +81,8 @@ fn two_variadic_packs[*Ts: AnyRegType](*a: *Ts, *b: *Ts):
 # expected-error @+1 {{parametric functions may not be used as arguments; consider passing as a parameter instead}}
 fn foo(x: fn[a: int] () -> None):
     pass
+
+# expected-error @below {{non-owned variadic keyword arguments are not supported yet}}
+# expected-error @below {{unexpected token in expression}}
+fn borrowed_kwargs(borrowed **kwargs: int):
+    pass

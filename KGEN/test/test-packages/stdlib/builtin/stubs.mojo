@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections import CollectionElement, KeyElement
+
 alias int = __mlir_type.index
 alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
@@ -109,6 +111,11 @@ struct Int(Copyable):
 @register_passable("trivial")
 struct StringLiteral:
     var value: __mlir_type.`!kgen.string`
+
+
+struct String(KeyElement):
+    fn __init__(inout self, literal: StringLiteral):
+        pass
 
 
 @value

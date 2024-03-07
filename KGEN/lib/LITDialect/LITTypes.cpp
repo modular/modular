@@ -951,6 +951,8 @@ bool LITSignatureType::hasPackVarArgs() {
   return getMetadata().hasPackVarArgs();
 }
 
+bool LITSignatureType::hasKwVarArgs() { return getMetadata().hasKwVarArgs(); }
+
 /// Substitute the specified implicit lifetime references into the specified
 /// type, replacing them with `values` if they are at depth 0, or decrementing
 /// their depth if not.  This returns the resultant FunctionType on success,

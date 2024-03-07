@@ -353,6 +353,12 @@ bool FnMetadataAttr::hasParamVarArgs() const {
   return !getParamListAttrs().getVariadicIndices().empty();
 }
 
+bool FnMetadataAttr::hasKwVarArgs() const {
+  return llvm::any_of(getArgListAttrs().getVariadicIndices(), [&](size_t idx) {
+    return getArgPassingKinds()[idx] == PassingKind::KwOnly;
+  });
+}
+
 bool FnMetadataAttr::isAnyVarArg(size_t idx) const {
   return llvm::is_contained(getArgListAttrs().getVariadicIndices(), idx) ||
          isPackVarArg(idx);
