@@ -426,7 +426,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
           specialFns.push_back(SpecialFunctionInfo::getKind(name));
           continue;
         }
-        diag.attachNote(traitFn.getLoc())
+        diag.attachNote(decl->getLoc())
             << "required function '" + name.str() + "' is not implemented";
         allMatchFound = false;
         break;
