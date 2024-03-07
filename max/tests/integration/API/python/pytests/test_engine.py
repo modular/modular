@@ -27,14 +27,26 @@ def modular_path() -> Path:
 @pytest.fixture
 def mo_model_path(modular_path: Path) -> Path:
     """Returns the path to the generated BasicMLP model."""
-    return modular_path / "All" / "test" / "API" / "c" / "mo-model.api"
+    return (
+        modular_path
+        / "SDK"
+        / "integration-test"
+        / "EngineAPI"
+        / "c"
+        / "mo-model.api"
+    )
 
 
 @pytest.fixture
 def mo_custom_ops_model_path(modular_path: Path) -> Path:
     """Returns the path to the generated BasicMLP model."""
     return (
-        modular_path / "All" / "test" / "API" / "c" / "custom-ops-override.api"
+        modular_path
+        / "SDK"
+        / "integration-test"
+        / "EngineAPI"
+        / "c"
+        / "custom-ops-override.api"
     )
 
 
@@ -46,7 +58,14 @@ def custom_ops_package_path(request) -> Path:
 @pytest.fixture
 def mo_listio_model_path(modular_path: Path) -> Path:
     """Returns the path to the generated model with list I/O."""
-    return modular_path / "All" / "test" / "API" / "c" / "mo-list-io-model.api"
+    return (
+        modular_path
+        / "SDK"
+        / "integration-test"
+        / "EngineAPI"
+        / "c"
+        / "mo-list-io-model.api"
+    )
 
 
 def test_execute_success(mo_model_path: Path):

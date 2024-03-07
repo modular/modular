@@ -11,7 +11,7 @@ from pathlib import Path
 from lit.llvm import llvm_config
 
 # name: The name of this test suite.
-config.name = "API Integration Tests"
+config.name = "Max Engine Integration Tests"
 
 # suffixes: A list of file extensions to treat as test files.
 config.suffixes = [".api", ".mojo"]
@@ -21,7 +21,7 @@ config.test_source_root = os.path.dirname(__file__)
 
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(
-    config.modular_obj_root, "All", "test", "API"
+    config.modular_obj_root, "SDK", "integration-test", "EngineAPI"
 )
 
 config.substitutions.append(
@@ -67,7 +67,11 @@ mojo_user_kernels = (
 )
 
 mojo_user_package = (
-    Path(config.modular_src_root) / "All" / "test" / "API" / "test_user_op"
+    Path(config.modular_src_root)
+    / "SDK"
+    / "integration-test"
+    / "EngineAPI"
+    / "test_user_op"
 )
 config.substitutions.append(("%mojo_user_kernels", mojo_user_kernels))
 config.substitutions.append(("%mojo_user_pkg", mojo_user_package))
