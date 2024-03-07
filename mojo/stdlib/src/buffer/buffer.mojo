@@ -328,6 +328,7 @@ struct Buffer[
             (False).__mlir_i1__(),
         )
 
+    @always_inline
     fn simd_fill[simd_width: Int](self, val: Scalar[type]):
         """Assigns val to all elements in chunks of size simd_width.
 
@@ -1367,6 +1368,7 @@ struct NDBuffer[
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
         memset_zero(self.data, len(self))
 
+    @always_inline
     fn simd_fill[simd_width: Int](self, val: Scalar[type]):
         """Assigns val to all elements in chunks of size simd_width.
 
