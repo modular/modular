@@ -652,8 +652,12 @@ public:
 };
 raw_ostream &operator<<(raw_ostream &os, AnyValue value);
 
-/// A shorthand to make function operand handling more readable.
+/// A shorthand to make positional operand handling more readable.
 using FuncOperand = ASTExprAnd<AnyValue>;
+
+/// A shorthand to make keyword operand handling more readable.
+using KeywordOperands = llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
+                                        SmallDenseMap<StringAttr, size_t>>;
 
 //===----------------------------------------------------------------------===//
 // BaseDLValue classes.
@@ -718,14 +722,14 @@ public:
   // Positional operands (including self) for the setter/getter call.
   SmallVector<FuncOperand> posOperands;
   // Keyword operands for the setter/getter call.
-  SmallDenseMap<StringAttr, FuncOperand> kwOperands;
+  KeywordOperands kwOperands;
 
   /// Return true if this is a subscript, false if this is an attribute access.
   bool isSubscript() const;
 
   SubscriptDLValue(SmallVectorImpl<FuncOperand> &&posOperands,
-                   SmallDenseMap<StringAttr, FuncOperand> &&kwOperands,
-                   ASTType elementType, const ExprNode *expr);
+                   KeywordOperands &&kwOperands, ASTType elementType,
+                   const ExprNode *expr);
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ValueDest &dest, ExprEmitter &emitter) const override;

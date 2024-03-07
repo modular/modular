@@ -210,7 +210,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // keyword-only arguments are specified accordingly.
   SyntheticNode node(structDecl.getLoc());
   SmallVector<FuncOperand> posOperands;
-  SmallDenseMap<StringAttr, FuncOperand> kwOperands;
+  KeywordOperands kwOperands;
   bool hasLegacyInitSelfArg = false;
   for (auto [arg, kind, conv, name] :
        llvm::zip(thunk.getArguments(), memSig.getArgPassingKinds(),

@@ -221,21 +221,19 @@ void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
        << " specified";
 }
 
-/// Emit a comma separated list of strings sorted alphabetically.
-static void emitSortedNames(InflightDiag &diag,
-                            SmallVectorImpl<StringRef> &&names) {
-  llvm::sort(names);
+/// Emit a comma separated list of names, each in '...'.
+static void emitNames(InflightDiag &diag, ArrayRef<StringRef> names) {
   llvm::interleave(
       names, [&](StringRef str) { diag << "'" << str << "'"; },
       [&]() { diag << ", "; });
 }
 
 void LIT::emitUnknownKeywords(InflightDiag &diag,
-                              SmallVectorImpl<StringRef> &&unknownKeywords,
+                              ArrayRef<StringRef> unknownKeywords,
                               StringRef argOrParam) {
   diag << "unknown keyword " << argOrParam << plural(unknownKeywords.size())
        << ": ";
-  emitSortedNames(diag, std::move(unknownKeywords));
+  emitNames(diag, unknownKeywords);
 }
 
 void LIT::emitPosOnlyPassedByKw(InflightDiag &diag,
@@ -244,7 +242,8 @@ void LIT::emitPosOnlyPassedByKw(InflightDiag &diag,
   size_t numNames = names.size();
   diag << "positional-only " << argOrParam << plural(numNames)
        << " passed as keyword " << argOrParam << plural(numNames) << ": ";
-  emitSortedNames(diag, std::move(names));
+  llvm::sort(names);
+  emitNames(diag, names);
 }
 
 std::string LIT::nameForPosOnly(size_t idx, const Twine &argOrParam) {

@@ -73,7 +73,8 @@ public:
   SmallVector<Binding> posBindings;
 
   /// This contains the bound parameters given by a keyword.
-  SmallDenseMap<StringAttr, Binding> kwBindings;
+  llvm::MapVector<StringAttr, Binding, SmallDenseMap<StringAttr, size_t>>
+      kwBindings;
 
   /// A list of all default parameter values declared for a type, if these are
   /// bindings for an overload set on a method.
@@ -165,7 +166,7 @@ public:
     /// Emit diagnostics for incorrect type in a keyword parameter.
     std::function<void(StringAttr, const Binding &, ASTType)> emitKwType;
     /// Emit diagnostics for parameters specified by an unknown keyword.
-    std::function<void(SmallVectorImpl<StringRef> &&)> emitUnknownKw;
+    std::function<void(ArrayRef<StringRef>)> emitUnknownKw;
     /// Emit diagnostics for a parameter specified both by position and keyword.
     std::function<void(size_t, StringAttr)> emitRedundantKw;
     /// Emit diagnostics for positional-only parameters specified by keyword.
@@ -250,29 +251,26 @@ enum class CallSyntax : uint8_t {
 /// does not own any values, only references and pointers to their containers.
 class CallOperands {
 public:
-  using PositionalOperands = ArrayRef<ASTExprAnd<AnyValue>>;
-
   /// Create call operands with positional and optional keyword arguments.
-  CallOperands(PositionalOperands posOperands = {},
-               const SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>>
-                   *kwOperands = nullptr)
+  CallOperands(ArrayRef<FuncOperand> posOperands = {},
+               const KeywordOperands *kwOperands = nullptr)
       : posOperands(posOperands), kwOperands(kwOperands) {}
 
   /// Create call operands with positional arguments given a value implicitly
   /// convertible to `ArrayRef`.
   template <typename OperandsT,
             typename = std::enable_if_t<
-                !std::is_same_v<OperandsT, PositionalOperands> &&
-                std::is_convertible_v<OperandsT, PositionalOperands>>>
+                !std::is_same_v<OperandsT, ArrayRef<FuncOperand>> &&
+                std::is_convertible_v<OperandsT, ArrayRef<FuncOperand>>>>
   CallOperands(OperandsT &&posOperands)
-      : CallOperands(PositionalOperands(std::forward<OperandsT>(posOperands))) {
-  }
+      : CallOperands(
+            ArrayRef<FuncOperand>(std::forward<OperandsT>(posOperands))) {}
 
   /// Return a keyword argument value if present, or null otherwise.
-  std::optional<ASTExprAnd<AnyValue>> findKwArg(StringAttr argName) const {
+  std::optional<FuncOperand> findKwArg(StringAttr argName) const {
     if (hasKwOperands())
       if (auto it = kwOperands->find(argName); it != kwOperands->end())
-        return it->getSecond();
+        return it->second;
     return std::nullopt;
   }
 
@@ -285,10 +283,10 @@ public:
   bool hasKwOperands() const { return getNumKwOperands(); }
 
   /// The values passed as positional operands.
-  PositionalOperands posOperands;
+  ArrayRef<FuncOperand> posOperands;
 
   /// The values passed as keyword operands.
-  const SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>> *kwOperands;
+  const KeywordOperands *kwOperands;
 
   /// Inidicates if the positional operands include a self operand.
   bool hasSelfOperand = false;

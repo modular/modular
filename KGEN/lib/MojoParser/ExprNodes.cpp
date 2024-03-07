@@ -753,8 +753,7 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
                        StringRef setterName, CallSyntax syntax,
                        function_ref<void()> lookupError,
                        SmallVectorImpl<ASTExprAnd<AnyValue>> &&posOperands,
-                       SmallDenseMap<StringAttr, FuncOperand> &&kwOperands =
-                           SmallDenseMap<StringAttr, FuncOperand>()) {
+                       KeywordOperands &&kwOperands = {}) {
   // If there is a ref method, prefer it.
   CallOperands callOperands(posOperands, &kwOperands);
   if (PValue reffer =
@@ -1389,7 +1388,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   /// Emit all the operands that we'll need.
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
-  SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>> kwOperands;
+  KeywordOperands kwOperands;
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
       auto diag = emitter.emitError(operand.getLoc());
@@ -1680,7 +1679,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
   SmallVector<ASTExprAnd<AnyValue>> posOperands{{baseValue, base}};
-  SmallDenseMap<StringAttr, ASTExprAnd<AnyValue>> kwOperands;
+  KeywordOperands kwOperands;
   for (const Operand &operand : operands) {
     ExprNode *expr = operand.value;
     AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);

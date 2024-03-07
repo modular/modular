@@ -499,20 +499,14 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
          "typechecking confirmed that we would use up all positional operands");
 
   // Find all keyword operands that we didn't bind to an argument.
-  SmallVector<std::pair<StringAttr, ASTExprAnd<AnyValue>>> variadicKwOperands;
+  KeywordOperands variadicKwOperands;
   if (operands.kwOperands) {
     for (auto [name, operand] : *operands.kwOperands)
       if (!passedByKw.contains(name))
-        variadicKwOperands.emplace_back(std::make_pair(name, operand));
+        variadicKwOperands.try_emplace(name, operand);
   }
   assert(variadicKwOperands.empty() ||
          kwargsDict && "typechecking confirmed we have no **kwargs");
-
-  // Sort by the names so that emission is deterministic.
-  // TODO: It would be better if CallOperands stored a sorted map.
-  llvm::sort(variadicKwOperands, [](const auto &lhs, const auto &rhs) {
-    return lhs.first.strref() < rhs.first.strref();
-  });
 
   // Fill the **kwargs dict with values.
   for (auto [name, operand] : variadicKwOperands) {
