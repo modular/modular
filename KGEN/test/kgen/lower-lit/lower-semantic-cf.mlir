@@ -970,3 +970,104 @@ lit.func @mangle_params_finally_3<x>(%c: i1 borrow) -> !kgen.none {
   lit.return %none : !kgen.none
   lit.end_func
 }
+
+
+// CHECK-LABEL: lit.func @containsEarlyReturn
+lit.func @containsEarlyReturn(%arg: i1) -> !kgen.none {
+  // CHECK: hlcf.if %arg {
+  // CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+  // CHECK-NEXT: kgen.return %none : !kgen.none
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT:  %none = kgen.param.constant: none = <#kgen.none>
+  // CHECK-NEXT:  kgen.return %none : !kgen.none
+  // CHECK-NEXT: }
+  // CHECK-NEXT: kgen.unreachable
+  hlcf.elif {
+    hlcf.elif.yield %arg : i1
+  } then {
+    %none_0 = kgen.param.constant: none = <#kgen.none>
+    lit.return %none_0 : !kgen.none
+    hlcf.yield
+  } else {
+    %none_0 = kgen.param.constant: none = <#kgen.none>
+    lit.return %none_0 : !kgen.none
+    hlcf.yield
+  }
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @fallthrough
+lit.func @fallthrough<cond0: i1, cond1: i1>(%lhs: index, %rhs: index, %cond2 : i1) -> index {
+// CHECK: kgen.param.if <cond0> {
+// CHECK-NEXT:   kgen.return %lhs : index
+// CHECK-NEXT: } else {
+// CHECK-NEXT: kgen.param.if <cond1> {
+// CHECK-NEXT:   kgen.return %rhs : index
+// CHECK-NEXT:  } else {
+// CHECK-NEXT:    hlcf.if %cond2 {
+// CHECK-NEXT:      hlcf.yield
+// CHECK-NEXT:    } else {
+// CHECK-NEXT:      hlcf.yield
+// CHECK-NEXT:    }
+// CHECK-NEXT:    %index0 = kgen.param.constant = <0>
+// CHECK-NEXT:    kgen.return %index0 : index
+// CHECK-NEXT:   }
+// CHECK-NEXT:  kgen.unreachable
+// CHECK-NEXT: }
+// CHECK-NEXT: kgen.unreachable
+ kgen.param.if <cond0> {
+   lit.return %lhs : index
+   kgen.param.yield
+ } else {
+   kgen.param.if <cond1> {
+     lit.return %rhs : index
+     kgen.param.yield
+   } else {
+     hlcf.elif {
+       hlcf.elif.yield %cond2 : i1
+     } then {
+       hlcf.yield
+     } else {
+       hlcf.yield
+     }
+     %0 = kgen.param.constant: index = <0>
+     lit.return %0 : index
+     kgen.param.yield
+   }
+   kgen.param.yield
+ }
+ lit.end_func
+}
+
+// CHECK-LABEL: lit.func @consecutiveElifs
+lit.func @consecutiveElifs(%arg0: index, %arg1: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %0 = hlcf.elif -> index {
+    %c = index.cmp eq(%arg0, %idx0)
+    hlcf.elif.yield %c : i1
+  } then {
+    hlcf.yield %arg0 : index
+  } else {
+    hlcf.yield %arg1 : index
+  }
+  hlcf.elif {
+    %c = index.cmp eq(%arg0, %idx1)
+    hlcf.elif.yield %c : i1
+  } then {
+    lit.return %arg0 : index
+    hlcf.yield
+  } else {
+    lit.return %arg1 : index
+    hlcf.yield
+  }
+
+  // CHECK:  [[COND:%.*]] = index.cmp eq(%arg0, %idx1)
+  // CHECK-NEXT:  hlcf.if [[COND]] {
+  // CHECK-NEXT:   kgen.return %arg0 : index
+  // CHECK-NEXT:  } else {
+  // CHECK-NEXT:    kgen.return %arg1 : index
+  // CHECK-NEXT:  }
+  // CHECK-NEXT: kgen.unreachable
+  lit.end_func
+}

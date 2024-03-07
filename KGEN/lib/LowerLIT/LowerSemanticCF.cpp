@@ -66,7 +66,8 @@ private:
                   bool &doesFallThrough);
   bool lowerLITLoop(LIT::LoopOp loopOp, bool &enclosingBlockDoesRaise,
                     bool &enclosingBlockDoesBreak);
-  bool lowerElif(HLCF::ElifOp elifOp);
+  void lowerElif(HLCF::ElifOp elifOp, bool &doesRaise, bool &doesBreak,
+                 bool &doesFallThrough);
   bool checkSelfRecursion(Block &block, bool isConditional);
 };
 } // end anonymous namespace
@@ -230,52 +231,26 @@ static ImplicitLocOpBuilder handleSemanticTerminatorOp(Operation &op,
                               std::next(Block::iterator(&op)));
 };
 
-bool LowerSemanticCF::lowerElif(HLCF::ElifOp elifOp) {
-  ImplicitLocOpBuilder builder(elifOp->getLoc(), elifOp);
-  builder.setInsertionPoint(elifOp);
-  Region *currentRegion = elifOp->getParentRegion();
-
-  // Lift condition ops into parent region.
-  Block &firstBlock = elifOp.getElifRegions().front().front();
-  assert(firstBlock.getNumArguments() == 0);
-  auto firstElifYieldOp = cast<HLCF::ElifYieldOp>(firstBlock.getTerminator());
-  currentRegion->front().getOperations().splice(builder.getInsertionPoint(),
-                                                firstBlock.getOperations());
-  // Replace ElifYield with IfOp.
-  HLCF::IfOp outerMostIfOp = builder.create<HLCF::IfOp>(
-      elifOp.getResultTypes(), firstElifYieldOp->getOperand(0));
-  currentRegion = &outerMostIfOp.getThenRegion();
-  firstElifYieldOp->erase();
-
-  // Nest Elif Regions into IfOp Else Regions.
-  for (Region &region : elifOp.getElifRegions().slice(1)) {
-    currentRegion->takeBody(region);
-    builder.setInsertionPointToEnd(&currentRegion->front());
-    // We moved Elif Condition region into If's Else region. Spawn a new IfOp
-    // and update current region to If's Then region.
-    if (auto elifYieldOp = dyn_cast<HLCF::ElifYieldOp>(
-            currentRegion->front().getTerminator())) {
-      auto newIfOp = builder.create<HLCF::IfOp>(elifOp.getResultTypes(),
-                                                elifYieldOp->getOperand(0));
-      mlir::IRRewriter rewriter{builder};
-      rewriter.replaceOp(elifYieldOp,
-                         builder.create<HLCF::YieldOp>(newIfOp.getResults()));
-      currentRegion = &newIfOp.getThenRegion();
-      continue;
-    }
-    // Otherwise, we moved Elif then region into If's Then region. Update the
-    // current region to If's Else region.
-    if (auto yieldOp =
-            dyn_cast<HLCF::YieldOp>(currentRegion->front().getTerminator())) {
-      auto ifOpParent = yieldOp->getParentOfType<HLCF::IfOp>();
-      currentRegion = &ifOpParent.getElseRegion();
-    }
+void LowerSemanticCF::lowerElif(HLCF::ElifOp elifOp, bool &doesRaise,
+                                bool &doesBreak, bool &doesFallThrough) {
+  HLCF::IfOp ifOp = HLCF::replaceElifWithIfOps(elifOp);
+  bool thenBlockRaises = false, thenBlockBreaks = false,
+       thenBlockFallThroughs = false;
+  lowerBlock(ifOp.getThenBlock(), thenBlockRaises, thenBlockBreaks,
+             thenBlockFallThroughs);
+  bool elseBlockRaises = false, elseBlockBreaks = false,
+       elseBlockFallThroughs = false;
+  lowerBlock(ifOp.getElseBlock(), elseBlockRaises, elseBlockBreaks,
+             elseBlockFallThroughs);
+  doesRaise |= (thenBlockRaises | elseBlockRaises);
+  doesBreak |= (thenBlockBreaks | elseBlockBreaks);
+  doesFallThrough = (thenBlockFallThroughs | elseBlockFallThroughs);
+  if (!doesFallThrough) {
+    auto b = handleSemanticTerminatorOp(
+        *ifOp.getOperation(),
+        "if statement with then/else that do not fall through");
+    b.create<UnreachableOp>(ifOp.getLoc());
   }
-  currentRegion->takeBody(elifOp.getElseRegion());
-  builder.setInsertionPoint(elifOp);
-  mlir::IRRewriter rewriter{builder};
-  rewriter.replaceOp(elifOp, outerMostIfOp);
-  return false;
 }
 
 /// Lower a LIT::LoopOp to HLCF::LoopOp.  Return true if the lowering should
@@ -378,6 +353,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       auto b = handleSemanticTerminatorOp(op, "return statement");
       b.create<KGEN::ReturnOp>(returnOp.getOperands());
       op.erase();
+      doesFallThrough = false;
       return;
     }
 
@@ -548,7 +524,8 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Process a HLCF::ElifOp
     if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
-      if (lowerElif(elifOp))
+      lowerElif(elifOp, doesRaise, doesBreak, doesFallThrough);
+      if (!doesFallThrough)
         return;
       continue;
     }
@@ -624,9 +601,9 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     return;
 
   // If we fell off the bottom, then we have a fall-through terminator.
-  assert((isa<HLCF::YieldOp, LIT::TryYieldOp, ParamYieldOp, LIT::EndFuncOp,
-              LIT::YieldOp, POP::CoroutineAwaitEndOp, LIT::LoopConditionOp,
-              LIT::LoopYieldOp>(block.back())));
+  assert((isa<HLCF::YieldOp, HLCF::ElifYieldOp, LIT::TryYieldOp, ParamYieldOp,
+              LIT::EndFuncOp, LIT::YieldOp, POP::CoroutineAwaitEndOp,
+              LIT::LoopConditionOp, LIT::LoopYieldOp>(block.back())));
   doesFallThrough = true;
 }
 

@@ -6,6 +6,9 @@
 
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/PatternMatch.h"
 
 using namespace M;
 using namespace HLCF;
@@ -39,4 +42,49 @@ Operation *HLCF::getParentNode(HLCF::ControlFlowTerminator term) {
   while (!term.isParentNode(op))
     op = op->getParentOp();
   return op;
+}
+
+HLCF::IfOp HLCF::replaceElifWithIfOps(ElifOp elifOp) {
+  ImplicitLocOpBuilder builder(elifOp->getLoc(), elifOp);
+  builder.setInsertionPoint(elifOp);
+  Region *currentRegion = elifOp->getParentRegion();
+
+  // Lift condition ops into parent region.
+  Block &firstBlock = elifOp.getElifRegions().front().front();
+  assert(firstBlock.getNumArguments() == 0);
+  auto firstElifYieldOp = cast<HLCF::ElifYieldOp>(firstBlock.getTerminator());
+  currentRegion->front().getOperations().splice(builder.getInsertionPoint(),
+                                                firstBlock.getOperations());
+  // Replace ElifYield with IfOp.
+  HLCF::IfOp outerMostIfOp = builder.create<HLCF::IfOp>(
+      elifOp.getResultTypes(), firstElifYieldOp->getOperand(0));
+  currentRegion = &outerMostIfOp.getThenRegion();
+  firstElifYieldOp->erase();
+
+  // Nest Elif Regions into IfOp Else Regions.
+  for (Region &region : elifOp.getElifRegions().slice(1)) {
+    currentRegion->takeBody(region);
+    builder.setInsertionPointToEnd(&currentRegion->front());
+    // We moved Elif Condition region into If's Else region. Spawn a new IfOp
+    // and update current region to If's Then region.
+    Operation *terminator = currentRegion->front().getTerminator();
+    if (auto elifYieldOp = dyn_cast<HLCF::ElifYieldOp>(terminator)) {
+      auto newIfOp = builder.create<HLCF::IfOp>(elifOp.getResultTypes(),
+                                                elifYieldOp->getOperand(0));
+      mlir::IRRewriter rewriter{builder};
+      rewriter.replaceOp(elifYieldOp,
+                         builder.create<HLCF::YieldOp>(newIfOp.getResults()));
+      currentRegion = &newIfOp.getThenRegion();
+      continue;
+    }
+    // Otherwise, we moved Elif then region into If's Then region. Update the
+    // current region to If's Else region.
+    auto ifOpParent = terminator->getParentOfType<HLCF::IfOp>();
+    currentRegion = &ifOpParent.getElseRegion();
+  }
+  currentRegion->takeBody(elifOp.getElseRegion());
+  builder.setInsertionPoint(elifOp);
+  mlir::IRRewriter rewriter{builder};
+  rewriter.replaceOp(elifOp, outerMostIfOp);
+  return outerMostIfOp;
 }
