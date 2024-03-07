@@ -488,89 +488,201 @@ struct DebugInfoToLLVMPass
 
   void runOnOperation() override;
 };
+
+/// Summary of all the variables that are tracked with debug info in a function.
+///
+/// - A "variable" refers to a source variable (described by the
+///   DILocalVariableAttr of a DbgValueOp)
+/// - A "value" refers to an IR Value that is used to define the value of a
+///   variable at some program location (as an operand of a DbgValueOp).
+struct DebugVariableSummary {
+public:
+  /// Debug info for variables that have at most one non-undef definition.
+  struct SingleDefVariable {
+    SingleDefVariable(LLVM::DbgValueOp op, bool undefs)
+        : debugValue(op), hasAdditionalUndefs(undefs) {}
+
+    /// If all definitions of this variable is undef, this is the first debug
+    /// value op for this variable. Otherwise, this debug value tracks the
+    /// single non-undef definition of this variable.
+    LLVM::DbgValueOp debugValue;
+    /// Whether there exists additional undef values for this variable.
+    /// This affects whether the definition can be easily allocated to stack.
+    bool hasAdditionalUndefs;
+  };
+
+  llvm::MapVector<Value, SmallVector<SingleDefVariable>> trackers;
+};
 } // namespace
 
-/// This function converts instances of llvm.dbg.value to llvm.dbg.addr when
+/// Filter out the debug values that are not needed, and summarize the rest in
+/// a DebugVariableSummary.
+static DebugVariableSummary
+filterAndSummarizeDebugVariables(mlir::FunctionOpInterface func) {
+  // Summarize debug values by variable.
+  llvm::MapVector<LLVM::DILocalVariableAttr,
+                  DebugVariableSummary::SingleDefVariable>
+      uniqueDebugValues;
+  func->walk([&](LLVM::DbgValueOp op) {
+    Value value = op.getValue();
+    // Don't build debug info for token values.
+    if (isa<LLVM::LLVMTokenType>(value.getType())) {
+      op->erase();
+      return;
+    }
+
+    if (value.getDefiningOp<LLVM::UndefOp>()) {
+      auto [iter, inserted] =
+          uniqueDebugValues.try_emplace(op.getVarInfo(), op, false);
+      if (!inserted)
+        iter->second.hasAdditionalUndefs = true;
+      return;
+    }
+
+    // Not undef.
+    auto [iter, inserted] =
+        uniqueDebugValues.try_emplace(op.getVarInfo(), op, false);
+    // If this variable was seen before, either override initial undef, or
+    // invalidate this variable altogether.
+    if (!inserted && iter->second.debugValue) {
+      if (iter->second.debugValue.getValue().getDefiningOp<LLVM::UndefOp>()) {
+        iter->second.debugValue = op;
+        iter->second.hasAdditionalUndefs = true;
+      } else {
+        iter->second.debugValue = nullptr;
+      }
+    }
+  });
+
+  DebugVariableSummary summary;
+  // Re-categorize debug values by operand Value, skipping those that have
+  // been invalidated due to having more than one non-undef definition.
+  for (auto &[_, dbgValueInfo] : uniqueDebugValues) {
+    if (!dbgValueInfo.debugValue)
+      continue;
+
+    summary.trackers[dbgValueInfo.debugValue.getValue()].push_back(
+        dbgValueInfo);
+  }
+
+  return summary;
+}
+
+/// This function converts instances of llvm.dbg.value to llvm.dbg.declare when
 /// desirable. LLVM optimizations and codegen often muck up the use of
 /// llvm.dbg.value (and other debug intrinsics), which creates subpar debugging
-/// experiences. Converting to llvm.dbg.addr provides a more stable debugging
+/// experiences. Converting to llvm.dbg.declare provides a more stable debugging
 /// environment, and more closely matches what a traditional frontend would
 /// provide in O0 modes.
 ///
+/// The current conversion policy considers two separate axes:
+/// - The number of dbg.values for a variable (regardless of whether the value
+/// is undef or not) determines whether dbg.value or dbg.declare is used.
+/// - The number of non-undef dbg.values for a variable determines whether we
+/// allocate to stack or not.
+///
+/// Or, listing out the possible combinations:
+/// - =1 dbg.value: use dbg.declare, allocate to stack (i.e. var is alive for
+/// its entire scope)
+/// - >1 dbg.value, =1 non-undef: use dbg.value, allocate to stack (i.e. var is
+/// stationary for its entire lifetime)
+/// - >1 dbg.value, >1 non-undef: use dbg.value, don't allocate to stack (i.e.
+/// var moves around, or exists as fragments)
+///
 /// TODO: As we grow support we may want to consider making this optional
 /// depending on the debug mode.
-static void convertDbgValueToAddr(ModuleOp module) {
+static void convertDbgValueToDeclare(ModuleOp module) {
   // A lot more logic is required to make this reverse-mem2reg work when
   // multiple DbgValueOps for one variable exists. Going with the simplest
   // solution for now until we decide to retire this altogether.
-  //
-  // We perform variable-uniqueness check per-function to reduce the memory
-  // footprint of uniqueness tracking.
   for (auto func : module.getOps<mlir::FunctionOpInterface>()) {
-    // A map from each LocalVariable to a unique DbgValueOp.
-    // If a LocalVariable maps to a nullptr DbgValueOp, that means this variable
-    // had more than one DbgValueOp for it, and cannot be trivially converted
-    // into a declare.
-    llvm::MapVector<LLVM::DILocalVariableAttr, LLVM::DbgValueOp> dbgValueCount;
-    func->walk([&](LLVM::DbgValueOp op) {
-      auto [iter, inserted] =
-          dbgValueCount.try_emplace(op.getVarInfoAttr(), op);
-      // If this variable was seen before, invalidate the current op.
-      if (!inserted)
-        iter->second = nullptr;
-    });
+    DebugVariableSummary debugVariableSummary =
+        filterAndSummarizeDebugVariables(func);
 
-    for (auto [varInfo, op] : dbgValueCount) {
-      // Skip conversion for variables with multiple DbgValueOps.
-      if (!op)
-        continue;
-
-      Value value = op.getValue();
-
+    for (auto &[value, trackers] : debugVariableSummary.trackers) {
       // Don't build debug information for simple constants.
       if (value.getDefiningOp<LLVM::ConstantOp>() &&
           isa<IntegerType, FloatType>(value.getType()))
         continue;
 
-      // Don't build debug info for token values.
-      if (isa<LLVM::LLVMTokenType>(value.getType())) {
-        op->erase();
-        continue;
+      // The converted alloca op that will hold the value if it is converted to
+      // a stack allocation.
+      LLVM::AllocaOp allocaOp;
+
+      // Get the allocaOp for this value. If one has not already been created,
+      // create one and save it for the next invocation.
+      auto getAllocaOp = [&, value = value](LLVM::DbgValueOp op) {
+        if (allocaOp)
+          return allocaOp;
+
+        // Build a new allocation to store the intermediate value.
+        OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
+        Location erasedLoc = UnknownLoc::get(op->getContext());
+        auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
+            erasedLoc, allocBuilder.getI32Type(), 1);
+
+        allocaOp = allocBuilder.create<LLVM::AllocaOp>(
+            erasedLoc, LLVM::LLVMPointerType::get(value.getContext()),
+            value.getType(), allocSize, 0);
+        return allocaOp;
+      };
+
+      // Converter for a single DbgValueOp.
+      // `hasLimitedScope` controls whether the DbgValueOp is converted into a
+      // DbgDeclareOp or is kept, because the scope of a DbgDeclareOp cannot be
+      // limited to a subset of the parent scope.
+      auto convertDbgValue = [&, value = value](LLVM::DbgValueOp op,
+                                                bool hasLimitedScope) {
+        if (hasLimitedScope) {
+          ArrayRef<LLVM::DIExpressionElemAttr> location =
+              op.getLocationExpr().getOperations();
+          SmallVector<LLVM::DIExpressionElemAttr> newLocations = {
+              LLVM::DIExpressionElemAttr::get(op.getContext(),
+                                              llvm::dwarf::DW_OP_deref, {})};
+          newLocations.append(location.begin(), location.end());
+          op.setOperand(getAllocaOp(op));
+          op.setLocationExprAttr(
+              LLVM::DIExpressionAttr::get(op->getContext(), newLocations));
+        } else {
+          ArrayRef<LLVM::DIExpressionElemAttr> location =
+              op.getLocationExpr().getOperations();
+          if (!location.empty() &&
+              location.front().getOpcode() == llvm::dwarf::DW_OP_deref) {
+            // For cases where the locationExpr begins with a deref, just
+            // pop off the initial deref and convert directly into a
+            // DbgDeclareOp. In this case no alloca needs to be created.
+            auto refLocation = LLVM::DIExpressionAttr::get(
+                op->getContext(), location.drop_front());
+            OpBuilder(op).create<LLVM::DbgDeclareOp>(
+                op.getLoc(), value, op.getVarInfo(), refLocation);
+          } else {
+            // For all other cases, create alloca and use dbg declare with it.
+            OpBuilder(op).create<LLVM::DbgDeclareOp>(
+                op.getLoc(), getAllocaOp(op), op.getVarInfo(),
+                op.getLocationExpr());
+          }
+          op->erase();
+        }
+      };
+
+      // Run converter on all single-def variables.
+      for (auto &singleDefInfo : trackers) {
+        LLVM::DbgValueOp op = singleDefInfo.debugValue;
+        const bool hasUndefs = singleDefInfo.hasAdditionalUndefs;
+
+        // If additional undef dbg.values exist for this variable, cannot create
+        // a dbg.declare for it as they don't allow undef dbg.values to limit
+        // their live ranges. Keep the dbg.value ops but reference the stack
+        // allocation instead.
+        // Otherwise, if it only has one dbg.value, replace the old dbg.value
+        // with a dbg.declare.
+        convertDbgValue(op, hasUndefs);
       }
 
-      // If the locationExpr begins with a deref, just pop off the deref and
-      // convert directly into a DbgDeclareOp.
-      auto processDerefValue = [&](LLVM::DbgValueOp op) {
-        ArrayRef<LLVM::DIExpressionElemAttr> location =
-            op.getLocationExpr().getOperations();
-        if (!location.empty() &&
-            location.front().getOpcode() == llvm::dwarf::DW_OP_deref) {
-          auto refLocation = LLVM::DIExpressionAttr::get(op->getContext(),
-                                                         location.drop_front());
-          OpBuilder(op).create<LLVM::DbgDeclareOp>(
-              op.getLoc(), value, op.getVarInfo(), refLocation);
-          op->erase();
-          return mlir::success();
-        }
-        return failure();
-      };
-      if (succeeded(processDerefValue(op)))
+      // If no alloca was created for this value, nothing else is needed.
+      // Otherwise, all users of the original value need to go thru the alloca.
+      if (!allocaOp)
         continue;
-
-      // Build a new allocation to store the intermediate value.
-      OpBuilder allocBuilder = OpBuilder::atBlockBegin(&func.front());
-      Location erasedLoc = UnknownLoc::get(op->getContext());
-      auto allocSize = allocBuilder.create<LLVM::ConstantOp>(
-          erasedLoc, allocBuilder.getI32Type(), 1);
-
-      auto allocaOp = allocBuilder.create<LLVM::AllocaOp>(
-          erasedLoc, LLVM::LLVMPointerType::get(value.getContext()),
-          value.getType(), allocSize, 0);
-
-      // Replace the old dbg.value with a dbg.declare.
-      OpBuilder(op).create<LLVM::DbgDeclareOp>(
-          op.getLoc(), allocaOp, op.getVarInfo(), op.getLocationExpr());
-      op->erase();
 
       // Update all of the old value uses to route through the alloca instead
       // of using the value directly.
@@ -580,18 +692,11 @@ static void convertDbgValueToAddr(ModuleOp module) {
         while (++it != e && *it == user)
           continue;
 
-        // If the user is another debug value, generate a declare instead of
-        // trying to load the value.
-        if (auto dbgValue = dyn_cast<LLVM::DbgValueOp>(user)) {
-          // If this value can be converted into a declare, do so.
-          if (std::exchange(dbgValueCount[dbgValue.getVarInfo()], nullptr)) {
-            if (succeeded(processDerefValue(dbgValue)))
-              continue;
-            OpBuilder(dbgValue).create<LLVM::DbgDeclareOp>(
-                dbgValue.getLoc(), allocaOp, dbgValue.getVarInfo(),
-                dbgValue.getLocationExpr());
-            dbgValue->erase();
-          }
+        // If the user is another dbg.value, it must be for a variable that has
+        // multiple non-undef definitions. Cannot convert to dbg.declare as it
+        // has a limited scope.
+        if (auto dbgUser = dyn_cast<LLVM::DbgValueOp>(user)) {
+          convertDbgValue(dbgUser, true);
           continue;
         }
 
@@ -622,6 +727,7 @@ static void convertDbgValueToAddr(ModuleOp module) {
         // Block arguments might not contain debuginfo scope (which can trip up
         // verifiers later), so to keep it simple, we also use erasedLoc.
         OpBuilder storeBuilder(&*insertPt);
+        Location erasedLoc = UnknownLoc::get(value.getContext());
         storeBuilder.create<LLVM::StoreOp>(erasedLoc, value, allocaOp);
       }
     }
@@ -685,6 +791,6 @@ void DebugInfoToLLVMPass::runOnOperation() {
     return signalPassFailure();
 
   // Clean up the generated LLVM.
-  convertDbgValueToAddr(getOperation());
+  convertDbgValueToDeclare(getOperation());
   simplifyLLVMDIExpressionRecursively(getOperation());
 }
