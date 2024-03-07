@@ -890,8 +890,15 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
           type = type.getReferenceElementType();
       }
     }
-    if (SignatureType::hasAddress(convention))
+    bool isKwVarArg = fullSig.isKwVarArg(argNo);
+    if (isKwVarArg) {
+      Type dictType = cast<RefType>(type.mlirType).getElementType();
+      auto valueTypeAttr =
+          cast<TypeConstantAttr>(ASTType(dictType).getParamBindings()[1]);
+      type = valueTypeAttr.getValue();
+    } else if (SignatureType::hasAddress(convention)) {
       type = type.getReferenceElementType();
+    }
     mangledName += type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
 
     // Add suffix to disambiguate overloadable conventions.
@@ -915,6 +922,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
 
     if (isPosVarArg)
       mangledName += '*';
+    else if (isKwVarArg)
+      mangledName += "**";
   }
   mangledName += ')';
   return StringAttr::get(baseName.getContext(), mangledName);

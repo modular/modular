@@ -263,9 +263,19 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
              << argOrParam << " list";
     }
 
-    if (arg.vararg == VarArgKind::KWVarArg)
-      return p.emitError(arg.loc,
-                         "variadic keyword argument not supported yet");
+    if (arg.vararg == VarArgKind::KWVarArg) {
+      if (kind == ArgListKind::kParamList ||
+          kind == ArgListKind::kFnTypeParamList) {
+        return p.emitError(arg.loc,
+                           "variadic keyword parameters not supported yet");
+      }
+      if (arg.convention != ParsedArgument::kConventionUnspec &&
+          arg.convention != ParsedArgument::kConventionOwned) {
+        return p.emitError(
+            arg.loc,
+            "non-owned variadic keyword arguments are not supported yet");
+      }
+    }
 
     // Otherwise just remember the argument.
     parsedArgs.push_back(arg);
@@ -595,8 +605,10 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // If no convention was explicitly specified, provide a default.  We default
   // to borrowed in an 'fn' or owned in a 'def'.
   if (arg.convention == ParsedArgument::kConventionUnspec) {
-    arg.convention = isDef ? ParsedArgument::kConventionOwned
-                           : ParsedArgument::kConventionBorrowed;
+    // TODO: enable other conventions for **kwargs.
+    arg.convention = (isDef || arg.vararg == VarArgKind::KWVarArg)
+                         ? ParsedArgument::kConventionOwned
+                         : ParsedArgument::kConventionBorrowed;
 
     // FIXME(owned varargs): we don't support owned varargs, so pass varargs
     // as borrowed instead for def's for now to hackaround this.
@@ -652,7 +664,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
     // Reject variadic owned register arguments, we can't support them yet.
     // TODO(ownership): Enable 'owned' @register_passable variadics.
-    if (arg.vararg != VarArgKind::None) {
+    if (arg.vararg == VarArgKind::VarArg ||
+        arg.vararg == VarArgKind::PackVarArg) {
       // Emit an error and remember this error.
       if (!arg.isErroneous) {
         shared.emitError(arg.loc)
@@ -679,10 +692,11 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     break;
   }
 
-  // Values passed by memory need an associated lifetime parameter, and
-  // need to be passed by reference.
+  // Values passed by memory need an associated lifetime parameter, and need to
+  // be passed by reference. For now, we don't use reference types in **kwargs.
   Type fullType;
-  if (!SignatureType::hasAddress(arg.kgenConvention)) {
+  if (!SignatureType::hasAddress(arg.kgenConvention) ||
+      arg.vararg == VarArgKind::KWVarArg) {
     fullType = type;
   } else {
     auto [lifetimeDecl, refType] =
@@ -697,6 +711,39 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   if (arg.vararg == VarArgKind::VarArg) {
     fullType = VariadicType::get(fullType, arg.kgenConvention);
     arg.kgenConvention = ArgConvention::BorrowedInReg;
+  }
+  if (arg.vararg == VarArgKind::KWVarArg) {
+    // We build Dict[String, ValType].
+    ASTType dictType = shared.getBuiltinDictType(declScope, arg.loc);
+    ASTType stringType = shared.getBuiltinStringType(declScope, arg.loc);
+
+    auto dictDecl = cast<DeclRefType>(dictType.mlirType);
+    auto dictMetatype = cast<MetaTypeType>(dictDecl.getMetaType());
+    ArrayRef<Type> inputTypes =
+        dictMetatype.getSignature().getInputParamTypes();
+    if (inputTypes.size() != 2) {
+      shared.emitError(arg.loc)
+          << "internal compiler error: Dict type has unexpected parameter "
+             "signature; please file a bug";
+      arg.isErroneous = true;
+      return;
+    }
+
+    auto keyElement = cast<TraitType>(inputTypes[0]);
+    auto collectionElement = cast<TraitType>(inputTypes[1]);
+    SmallVector<TypedAttr> newBindings{
+        typeEmitter.emitPValue({stringType, arg.typeExpr}, EC_Type, keyElement),
+        typeEmitter.emitPValue({fullType, arg.typeExpr}, EC_Type,
+                               collectionElement)};
+    fullType =
+        ParamRefType::get(BindTypeAttr::get(PValue(dictType), newBindings));
+
+    // Dict is memory only and only the callee can access it, so it's owned.
+    arg.kgenConvention = ArgConvention::OwnedInMem;
+    auto [lifetimeDecl, refType] =
+        getRefAndLifetimeForAddressArgument(arg, idx, fullType, declScope);
+    tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
+    fullType = refType;
   }
   tcSignature.fullArgTypes.push_back(fullType);
 
