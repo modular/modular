@@ -73,6 +73,24 @@ struct AmbiguousCtor:
         pass
 
 
+struct AlsoConvertibleFromInt:
+    fn __init__(inout self, arg: Int):
+        pass
+
+
+struct AmbiguousConversion:
+    # expected-note @below {{candidate declared here}}
+    fn __init__(inout self, x: ConvertibleFromInt):
+        pass
+
+    # expected-note @below {{candidate declared here}}
+    fn __init__(inout self, x: AlsoConvertibleFromInt):
+        pass
+
+
 fn ambiguous_ctor_call(x: Int):
     # expected-error @below {{ambiguous call}}
     AmbiguousCtor(x, x)
+
+    # expected-error @below {{ambiguous call to '__init__', each candidate requires 1 implicit conversion}}
+    AmbiguousConversion(x)
