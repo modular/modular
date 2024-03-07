@@ -231,7 +231,7 @@ fn test_struct_kw_params3():
     _ = VarParamStruct["woof", args=7]
     # expected-error @below {{unknown keyword parameter: 'c'}}
     _ = KwParamStruct[7, c=9]()
-    # expected-error @below {{unknown keyword parameters: 'c', 'z'}}
+    # expected-error @below {{unknown keyword parameters: 'z', 'c'}}
     _ = KwParamStruct[7, z=13, c=9]()
     # expected-error @below {{parameter #0 ('a') passed both as positional and keyword operand}}
     _ = KwParamStruct[7, b=7, a=9]()

@@ -332,10 +332,9 @@ void StoredAttributeRefDLValue::print(raw_ostream &os) const {
 // SubscriptDLValue
 //===----------------------------------------------------------------------===//
 
-SubscriptDLValue::SubscriptDLValue(
-    SmallVectorImpl<FuncOperand> &&posOperands,
-    SmallDenseMap<StringAttr, FuncOperand> &&kwOperands, ASTType elementType,
-    const ExprNode *expr)
+SubscriptDLValue::SubscriptDLValue(SmallVectorImpl<FuncOperand> &&posOperands,
+                                   KeywordOperands &&kwOperands,
+                                   ASTType elementType, const ExprNode *expr)
     : BaseDLValue(elementType), expr(expr), posOperands(std::move(posOperands)),
       kwOperands(std::move(kwOperands)) {}
 

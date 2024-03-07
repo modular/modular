@@ -52,7 +52,7 @@ fn pack_func[*Ts: AnyRegType](*args: *Ts):
 fn test_unknown_kw_arg(x: int):
     # expected-error @+1 {{unknown keyword argument: 'c'}}
     takes_pos_or_kw_arg(x, c=x, j=x)
-    # expected-error @+1 {{unknown keyword arguments: 'c', 'd'}}
+    # expected-error @+1 {{unknown keyword arguments: 'd', 'c'}}
     takes_pos_or_kw_arg(x, d=x, c=x)
     # expected-error @+1 {{unknown keyword argument: 'args'}}
     var_arg_func(args=x)
@@ -73,7 +73,7 @@ fn takes_pos_or_kw_param[i: int, j: int]():
 fn test_unknown_kw_param[x: int]():
     # expected-error @+1 {{unknown keyword parameter: 'c'}}
     takes_pos_or_kw_param[x, c=x, j=x]
-    # expected-error @+1 {{unknown keyword parameters: 'c', 'd'}}
+    # expected-error @+1 {{unknown keyword parameters: 'd', 'c'}}
     takes_pos_or_kw_param[x, d=x, c=x]
     # expected-error @below {{unknown keyword parameter: 'Ts'}}
     pack_func[Ts=int]

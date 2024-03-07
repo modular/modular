@@ -63,7 +63,7 @@ void emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
 
 /// Helper to emit an error message for unknown keyword operands.
 void emitUnknownKeywords(InflightDiag &diag,
-                         SmallVectorImpl<StringRef> &&unknownKeywords,
+                         ArrayRef<StringRef> unknownKeywords,
                          StringRef argOrParam);
 
 /// Helper to emit an error message for positional-only operands passed by

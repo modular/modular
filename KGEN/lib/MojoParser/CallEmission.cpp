@@ -176,13 +176,13 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
   // Then we find all the keyword parameters with unknown names, or specifying
   // positional-only parameters; both of these will result in diagnostics.
-  SmallPtrSet<StringAttr, 4> unknownKwParams;
+  SmallVector<StringRef> unknownKwParams;
   SmallPtrSet<StringAttr, 4> posOnlyPassedByKw;
   for (auto [name, operandVal] : kwBindings) {
     if (posOnlyNames.contains(name))
       posOnlyPassedByKw.insert(name);
     else if (!kwPassableNames.contains(name))
-      unknownKwParams.insert(name);
+      unknownKwParams.push_back(name);
   }
 
   auto setToVector = [](SmallPtrSet<StringAttr, 4> &names) {
@@ -192,7 +192,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   Fitness fitness{0, false};
   if (!unknownKwParams.empty()) {
     if (diagEmitter.emitUnknownKw)
-      diagEmitter.emitUnknownKw(setToVector(unknownKwParams));
+      diagEmitter.emitUnknownKw(unknownKwParams);
     return {{}, fitness};
   }
   if (!posOnlyPassedByKw.empty()) {
@@ -371,7 +371,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       if (auto it = kwBindings.find(paramName); it != kwBindings.end()) {
         assert(passingKind != PassingKind::PosOnly);
 
-        const Binding &binding = it->getSecond();
+        const Binding &binding = it->second;
 
         // If this value was already bound and checked, use it.
         if (binding.typeChecked) {
@@ -561,9 +561,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitUnknownKw=*/
-      [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
+      [&](ArrayRef<StringRef> unknownKeywords) {
         InflightDiag diag = shared.emitError(exprLoc);
-        emitUnknownKeywords(diag, std::move(unknownKeywords), "parameter");
+        emitUnknownKeywords(diag, unknownKeywords, "parameter");
         if (opLoc)
           diag.attachNote(*opLoc) << baseName << " declared here";
       },

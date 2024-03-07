@@ -1054,16 +1054,12 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
          1 * hasVariadicParams;
 }
 
-/// Ordered map to store the name and value of variadic keyword arguments.
-using VariadicKwArgs = llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
-                                       SmallDenseMap<StringAttr, size_t>>;
-
 /// Helper to diagnose common cases of candidate mismatch related to keyword
 /// arguments/operands (unexpected kw-operands, pos-only argument provided by
 /// kw-operand, missing kw-only arguments). If the function accepts variadic
 /// keyword arguments, this function also collects them.
 static std::optional<InflightDiag> diagnoseKeywordOperands(
-    LITSignatureType signature, VariadicKwArgs &variadicKwOperands,
+    LITSignatureType signature, KeywordOperands &variadicKwOperands,
     const CallOperands &callOperands, const DiagEmitter &emitDiagFor) {
   // First, we collect any (named) pos-only arguments passed by keyword operand,
   // and missing kw-only arguments. We also collect all argument names that
@@ -1188,7 +1184,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   DiagEmitter emitDiagFor(shared, callLoc, numOperands, callable.syntax);
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
-  VariadicKwArgs variadicKwOperands;
+  KeywordOperands variadicKwOperands;
   if (auto diag = diagnoseKeywordOperands(signature, variadicKwOperands,
                                           callOperands, emitDiagFor))
     return std::move(*diag);
@@ -1236,8 +1232,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
              << ASTType(binding.getType()) << binding.expr->getRange();
       },
       /*emitUnknownKw=*/
-      [&](SmallVectorImpl<StringRef> &&unknownKeywords) {
-        emitUnknownKeywords(diag, std::move(unknownKeywords), "parameter");
+      [&](ArrayRef<StringRef> unknownKeywords) {
+        emitUnknownKeywords(diag, unknownKeywords, "parameter");
       },
       /*emitRedundantKw=*/
       [&](size_t paramIdx, StringAttr paramName) {
