@@ -4,16 +4,11 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_tool(kgen-translate
-  kgen-translate.cpp
+add_modular_tool(llvm-module-split
+  llvm-module-split.cpp
 
   LINK_LIBS PRIVATE
-  KGENEmitObject
   KGENToolCommon
-  LLCLRuntimeGlobals
-  MSupportGlobals
-  MojoParser
-  MArchTarget
-  MLIRTranslateLib
-  MLIRTargetLLVMIRExport
+  KGENEmitObject
+  LLVMSupport
 )
