@@ -44,3 +44,13 @@ struct WrapsMadeFromPack[*Ts: AnyRegType]:
     fn __init__(inout self, *args: *Ts):
         # expected-error @+1 {{cannot implicitly convert '*Ts' value to 'MadeFromPack[Ts]' in assignment}}
         self.data = args
+
+
+struct ConvertFromInt:
+    fn __init__(inout self, arg: Int):
+        pass
+
+
+fn init_self_conversion():
+    # expected-error @below {{cannot implicitly convert 'fn(self = inout ConvertFromInt, /, arg = Int) -> None' value to 'fn() -> None' in alias initializer}}
+    alias f: fn () -> None = ConvertFromInt.__init__
