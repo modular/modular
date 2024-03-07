@@ -182,7 +182,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       name, paramDecls, memSig.getParamListAttrs(), memSig.getArguments(),
       memSig.getArgConventions(), memSig.getArgListAttrs(),
       memSig.getResultType(), structDecl, SpecialFunctionInfo::getKind(name),
-      memSig.getFnEffects(), "_thunk", /*ifMissing=*/true);
+      memSig.getFnEffects(), "_thunk");
   if (!thunk)
     return;
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -334,8 +334,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     auto [dtor, _] = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedInMem,
         PogsAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
-        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk",
-        /*ifMissing=*/true);
+        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     if (!dtor)
       return;
     func = dtor;
@@ -362,8 +361,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
         {ArgConvention::InitSelf, existingConv},
         PogsAttr::get(shared.getContext(), {empty, empty},
                       {PassingKind::PosOnly, PassingKind::PosOnly}),
-        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk",
-        /*ifMissing=*/true);
+        shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     if (!ctor)
       return;
     func = ctor;
