@@ -33,6 +33,7 @@ tools = [
     "kgen-translate",
     "kgen-opt",
     "kgen",
+    "llvm-module-split",
     "llvm-objdump",
     "hash-mlir",
 ]

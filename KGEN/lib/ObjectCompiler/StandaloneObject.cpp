@@ -6,6 +6,7 @@
 
 #include "KGEN/Compiler/ObjectCompiler.h"
 
+#include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -138,200 +139,6 @@ ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
 
   return singleModule;
 }
-
-//===----------------------------------------------------------------------===//
-// Module Splitter
-//===----------------------------------------------------------------------===//
-
-namespace {
-/// This class provides support for splitting an LLVM module into multiple
-/// parts.
-class LLVMModuleSplitter {
-public:
-  LLVMModuleSplitter(llvm::Module &module) : mainModule(module) {}
-
-  /// Split the LLVM module into multiple modules using the provided process
-  /// function.
-  void split(function_ref<void(llvm::Module &)> processFn) {
-    // Compute the value info for each global in the module.
-    auto computeUsers = [&](auto &value) { collectValueUsers(&value); };
-    llvm::for_each(mainModule.functions(), computeUsers);
-    llvm::for_each(mainModule.globals(), computeUsers);
-    llvm::for_each(mainModule.aliases(), computeUsers);
-
-    // With use information collected, propagate it to the dependencies.
-    propagateUseInfo();
-
-    // Now we can split the module. We do this using this by anchoring on the
-    // exports of the module, and cloning any necessary dependencies.
-    // Realistically we shouldn't be cloning, but we currently depend on LLVM to
-    // do various LTO style optimizations for us, which means that each export
-    // needs its full callstack present. When this isn't necessary, we should be
-    // to define much more fine grained splitting, which would enable
-    // significantly higher levels of parallelism (and smaller generated
-    // artifacts).
-    DenseSet<const llvm::Value *> splitValues;
-    SmallVector<std::unique_ptr<llvm::Module>> splitModules;
-    auto splitValue = [&](const llvm::Value *root) {
-      // If the function is already split, e.g. if it was a dependency of
-      // another function, skip it.
-      if (splitValues.count(root))
-        return;
-
-      auto &valueInfo = valueInfos[root];
-      llvm::ValueToValueMapTy valueMap;
-      std::unique_ptr<llvm::Module> splitModule(llvm::CloneModule(
-          mainModule, valueMap, [&](const llvm::GlobalValue *globalVal) {
-            return globalVal == root || valueInfo.dependencies.count(globalVal);
-          }));
-      if (splitModule->empty())
-        splitModule->setModuleInlineAsm("");
-
-      // Module cloning creates stubs for every function and global in the
-      // original module, even if they aren't used in this slice. Kill all of
-      // these off to make the module more self-contained.
-      for (auto &func : llvm::make_early_inc_range(*splitModule))
-        if (func.isDeclaration() && func.use_empty())
-          func.eraseFromParent();
-      for (auto &globalVar :
-           llvm::make_early_inc_range(splitModule->globals())) {
-        if (globalVar.isDeclaration() && globalVar.use_empty())
-          globalVar.eraseFromParent();
-      }
-
-      splitModules.emplace_back(std::move(splitModule));
-
-      // Record the split values.
-      splitValues.insert(root);
-      splitValues.insert(valueInfo.dependencies.begin(),
-                         valueInfo.dependencies.end());
-    };
-
-    for (auto &global : mainModule.globals()) {
-      if (global.hasInternalLinkage())
-        continue;
-      // TODO: Add special handling for `llvm.global_ctors` and
-      // `llvm.global_dtors`, because otherwise they end up tying almost all
-      // symbols into the same split.
-      splitValue(&global);
-    }
-    for (auto &fn : mainModule.functions())
-      if (!fn.isDeclaration() &&
-          (fn.hasExternalLinkage() || fn.hasWeakLinkage()))
-        splitValue(&fn);
-
-    // If we had no functions to split, just process the main module.
-    if (splitModules.empty())
-      return processFn(mainModule);
-
-    // Order the split modules by size. This allows for other threads to start
-    // processing the longer compilations first.
-    llvm::sort(splitModules, [](const std::unique_ptr<llvm::Module> &lhs,
-                                const std::unique_ptr<llvm::Module> &rhs) {
-      return lhs->size() > rhs->size();
-    });
-    for (auto &splitModule : splitModules)
-      processFn(*splitModule);
-  }
-
-private:
-  struct ValueInfo {
-    bool canBeSplit = true;
-    llvm::SmallPtrSet<const llvm::Value *, 4> dependencies;
-    llvm::SmallPtrSet<const llvm::Value *, 4> users;
-  };
-
-  /// Collect all of the immediate global value users of `value`.
-  void collectValueUsers(const llvm::Value *value) {
-    SmallVector<const llvm::User *> worklist(value->users());
-
-    while (!worklist.empty()) {
-      const llvm::User *userIt = worklist.pop_back_val();
-
-      // Recurse into pure constant users.
-      if (isa<llvm::Constant>(userIt) && !isa<llvm::GlobalValue>(userIt)) {
-        worklist.append(userIt->user_begin(), userIt->user_end());
-        continue;
-      }
-
-      if (const auto *inst = dyn_cast<llvm::Instruction>(userIt)) {
-        const llvm::Function *func = inst->getParent()->getParent();
-        valueInfos[value].users.insert(func);
-        valueInfos[func];
-      } else if (const auto *globalVal = dyn_cast<llvm::GlobalValue>(userIt)) {
-        valueInfos[value].users.insert(globalVal);
-        valueInfos[globalVal];
-      } else {
-        llvm_unreachable("unexpected user of global value");
-      }
-    }
-
-    // If the current value is a mutable global variable, then it can't be
-    // split.
-    if (auto *global = dyn_cast<llvm::GlobalVariable>(value))
-      if (!global->isConstant())
-        valueInfos[value].canBeSplit = false;
-  }
-
-  /// Propagate use information through the module.
-  void propagateUseInfo() {
-    std::vector<ValueInfo *> worklist;
-    // Each value depends on itself. Seed the iteration with that.
-    for (auto &[value, info] : valueInfos) {
-      info.dependencies.insert(value);
-      worklist.push_back(&info);
-      // If a value cannot be split, its users are also its dependencies.
-      if (!info.canBeSplit)
-        llvm::set_union(info.dependencies, info.users);
-    }
-
-    while (!worklist.empty()) {
-      ValueInfo *info = worklist.back();
-      worklist.pop_back();
-
-      // Propagate the dependencies of this value to its users.
-      for (const llvm::Value *user : info->users) {
-        ValueInfo &userInfo = valueInfos.find(user)->second;
-        if (info == &userInfo)
-          continue;
-        bool changed = false;
-        // If there is a change, add the user info to the worklist.
-        if (llvm::set_union(userInfo.dependencies, info->dependencies))
-          changed = true;
-
-        // If the value cannot be split, its users cannot be split either.
-        if (!info->canBeSplit && userInfo.canBeSplit) {
-          userInfo.canBeSplit = false;
-          changed = true;
-          // If a value cannot be split, its users are also its dependencies.
-          llvm::set_union(userInfo.dependencies, userInfo.users);
-        }
-
-        if (changed)
-          worklist.push_back(&userInfo);
-      }
-
-      if (info->canBeSplit)
-        continue;
-      // If a value cannot be split, propagate its dependencies up to its
-      // dependencies.
-      for (const llvm::Value *dep : info->dependencies) {
-        ValueInfo &depInfo = valueInfos.find(dep)->second;
-        if (info == &depInfo)
-          continue;
-        if (llvm::set_union(depInfo.dependencies, info->dependencies))
-          worklist.push_back(&depInfo);
-      }
-    }
-  }
-
-  /// The main LLVM module being split.
-  llvm::Module &mainModule;
-
-  /// The value info for each global value in the module.
-  DenseMap<const llvm::Value *, ValueInfo> valueInfos;
-};
-} // namespace
 
 /// For each external call, find the `kgen.link` op that it references, and add
 /// that op's linked bytes to the `links` collection.
@@ -492,11 +299,11 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
         cacheResults.push_back(
             lowerLLVMModuleToObject(*llvmModule, op->getLoc()));
       } else {
-        LLVMModuleSplitter splitter(*llvmModule);
-        splitter.split([&](llvm::Module &inputModule) {
-          cacheResults.push_back(
-              lowerLLVMModuleToObject(inputModule, op->getLoc()));
-        });
+        splitPerExported(
+            *llvmModule, [&](llvm::Module &inputModule, int64_t idx) {
+              cacheResults.push_back(
+                  lowerLLVMModuleToObject(inputModule, op->getLoc()));
+            });
       }
 
       andThenSyncMoving(

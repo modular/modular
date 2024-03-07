@@ -8,6 +8,7 @@ add_modular_library(KGENEmitObject
   JITSupport.cpp
   LowerToLLVM.cpp
   LowerToObject.cpp
+  LLVMIRUtils.cpp
   LLVMPassesPipeline.cpp
   StandaloneObject.cpp
   ProduceFunctionDecls.cpp
