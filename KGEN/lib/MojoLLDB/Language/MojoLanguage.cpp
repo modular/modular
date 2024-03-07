@@ -183,7 +183,7 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   constexpr const char *kListRegex =
       R"(^!lit.declref<@stdlib::@collections::@list::@"?List[\[<].*)";
   constexpr const char *kLLDBFormatterWrappingTypeRegex =
-      R"(.* {@stdlib::debug::visualizers::lldb_formatter_wrapping_type\(.*)";
+      R"(.* {@stdlib::utils::_visualizers::lldb_formatter_wrapping_type\(.*)";
 
   // Formatters are matched in reverse order.
   AddCXXSynthetic(mojoCategorySP,
