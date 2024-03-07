@@ -376,7 +376,8 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
 
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
                                      TypeLineageAttr parent,
-                                     SharedState &shared) {
+                                     SharedState &shared,
+                                     std::optional<InflightDiag> &diag) {
   auto trait = dyn_cast<TraitType>(parent.getType());
   if (!trait)
     return success();
@@ -407,10 +408,9 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   bool allMatchFound = true;
   // Prepare an error. It will be abandoned if the check succeeds.
   StringRef traitName = cast<TraitDeclOp>(traitDecl).getSymName();
-  InflightDiag diag = shared.emitError(structDecl.getLoc(), "struct ")
-                      << selfType
-                      << " does not implement all requirements for '"
-                      << traitName << "'";
+  diag = shared.emitError(structDecl.getLoc(), "struct ")
+         << selfType << " does not implement all requirements for '"
+         << traitName << "'";
 
   for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
     for (ASTDecl *decl : decls) {
@@ -426,7 +426,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
           specialFns.push_back(SpecialFunctionInfo::getKind(name));
           continue;
         }
-        diag.attachNote(decl->getLoc())
+        diag->attachNote(decl->getLoc())
             << "required function '" + name.str() + "' is not implemented";
         allMatchFound = false;
         break;
@@ -477,7 +477,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
           newSignature, emitError
                             ? function_ref<InflightDiag &(SMLoc)>(
                                   [&](SMLoc loc) -> InflightDiag & {
-                                    return diag.attachNote(decl->getLoc());
+                                    return diag->attachNote(decl->getLoc());
                                   })
                             : nullptr);
       if (!result && emitError)
@@ -487,14 +487,15 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     }
   }
   if (allMatchFound) {
-    diag.abandon();
+    diag->abandon();
+    diag.reset();
   } else {
-    diag.attachNote(traitDecl.getLoc())
+    diag->attachNote(traitDecl.getLoc())
         << "trait '" << traitName << "' declared here";
     if (!parent.getInheritedFrom().empty()) {
       ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
           cast<TraitType>(parent.getInheritedFrom().front()).getSymbol());
-      diag.attachNote(parentDecl.getLoc())
+      diag->attachNote(parentDecl.getLoc())
           << "inherited through '" << *parentDecl.getNameIfOperation()
           << "' here";
     }

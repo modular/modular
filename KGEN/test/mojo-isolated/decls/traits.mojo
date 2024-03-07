@@ -113,6 +113,11 @@ struct CFMStructParams[t1: AnyRegType, t2: AnyRegType](CFMTraitParams):
         pass
 
 
+# ===----------------------------------------------------------------------=== #
+# Call Emission
+# ===----------------------------------------------------------------------=== #
+
+
 # CHECK-LABEL: lit.func @"generic_trait_fn{{.*}}<T: !Trait>
 # CHECK-SAME: %x: !lit.ref<:!Trait T, imm {{.*}}> borrow_in_mem
 fn generic_trait_fn[T: Trait](x: T):
@@ -261,6 +266,11 @@ trait TraitForReg:
     @staticmethod
     fn may_throw() raises -> Self:
         ...
+
+
+# ===----------------------------------------------------------------------=== #
+# Calling Convention / Register Passable
+# ===----------------------------------------------------------------------=== #
 
 
 # CHECK-LABEL: lit.struct.decl @RegTraitType
@@ -439,6 +449,11 @@ fn generic_fn_return_type():
     c.method()
 
 
+# ===----------------------------------------------------------------------=== #
+# Special Functions
+# ===----------------------------------------------------------------------=== #
+
+
 # CHECK-LABEL: lit.struct.decl @RegTrivialSpecial
 @register_passable("trivial")
 struct RegTrivialSpecial(AnyType, Copyable, Movable):
@@ -513,6 +528,11 @@ fn test_special_fn_traits(
     copy(z)
     move(z)
     destroy(z)
+
+
+# ===----------------------------------------------------------------------=== #
+# Inheritance
+# ===----------------------------------------------------------------------=== #
 
 
 trait ParentTraitSameSig:
@@ -614,6 +634,11 @@ fn pass_up_trait[T: Father](x: T):
     # CHECK-SAME: "foo" : !lit.signature<[1]("self": !lit.ref<:!Father T, imm {{.*}}> borrow_in_mem) -> !kgen.none> = get_type_method({{.*}} T, "foo")
     # CHECK-SAME: }]>([[XI]])
     infer_grand_father(x)
+
+
+# ===----------------------------------------------------------------------=== #
+# Misc Bugs
+# ===----------------------------------------------------------------------=== #
 
 
 @register_passable("trivial")
@@ -732,3 +757,85 @@ trait KeysBuilder:
 struct KeysContainer[end: int](KeysBuilder):
     fn add[x: int](inout self):
         pass
+
+
+# ===----------------------------------------------------------------------=== #
+# Implicit Conformance
+# ===----------------------------------------------------------------------=== #
+
+
+trait ImplicitConformance:
+    fn implicit(self):
+        ...
+
+
+trait ImplicitParent:
+    fn parent_method(self):
+        ...
+
+
+trait ImplicitChild(ImplicitParent):
+    fn child_method(self):
+        ...
+
+
+# COM: The struct decl is modified to conform to the trait.
+
+
+# CHECK-LABEL: lit.struct.decl @NoExplicitTraits
+# CHECK-SAME: (!AnyType, !ImplicitConformance, !ImplicitParent, !ImplicitChild)
+struct NoExplicitTraits:
+    fn implicit(self):
+        pass
+
+    fn child_method(self):
+        pass
+
+    fn parent_method(self):
+        pass
+
+
+# CHECK-LABEL: lit.struct.decl @ChildFirst
+# CHECK-SAME: (!AnyType, !ImplicitChild, !ImplicitParent[!ImplicitChild])
+struct ChildFirst:
+    fn child_method(self):
+        pass
+
+    fn parent_method(self):
+        pass
+
+
+# CHECK-LABEL: lit.struct.decl @RegisterPassable
+# CHECK-SAME: (!AnyType, !Copyable, !ImplicitConformance)
+@register_passable
+struct RegisterPassable:
+    # CHECK: lit.func @"__copyinit__{{.*}}_thunk"
+    fn __copyinit__(existing: Self) -> Self:
+        return Self {}
+
+    # CHECK: lit.func @"implicit{{.*}}_thunk"
+    fn implicit(self):
+        pass
+
+
+# CHECK-LABEL: lit.func @"test_implicit_conformance
+fn test_implicit_conformance():
+    # CHECK-NEXT: !ImplicitConformance = <[!NoExplicitTraits, {"implicit" {{.*}}@NoExplicitTraits::@"implicit
+    alias bound0: ImplicitConformance = NoExplicitTraits
+    # CHECK-NEXT: !ImplicitConformance = <[!NoExplicitTraits, {"implicit"
+    alias bound1: ImplicitConformance = NoExplicitTraits
+
+    # CHECK-NEXT: !ImplicitParent = <[!NoExplicitTraits, {"parent_method"
+    alias bound2: ImplicitParent = NoExplicitTraits
+    # CHECK-NEXT: !ImplicitChild = <[!NoExplicitTraits, {"child_method" {{.*}} "parent_method"
+    alias bound3: ImplicitChild = NoExplicitTraits
+
+    # CHECK-NEXT: !ImplicitChild = <[!ChildFirst, {"child_method" {{.*}} "parent_method"
+    alias bound4: ImplicitChild = ChildFirst
+    # CHECK-NEXT: !ImplicitParent = <[!ChildFirst, {"parent_method"
+    alias bound5: ImplicitParent = ChildFirst
+
+    # CHECK-NEXT: !Copyable = <[!RegisterPassable, {"__copyinit__" {{.*}}@RegisterPassable::@"__copyinit__{{.*}}_thunk"
+    alias bound6: Copyable = RegisterPassable
+    # CHECK-NEXT: !ImplicitConformance = <[!RegisterPassable, {"implicit" {{.*}}@RegisterPassable::@"implicit{{.*}}_thunk"
+    alias bound7: ImplicitConformance = RegisterPassable

@@ -143,6 +143,8 @@ public:
   /// struct if it does not already. This adds the trait decl to the struct's
   /// parent list and all transitive parents that are not already there.
   static void addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl);
+  static void appendTraits(SmallVectorImpl<TypeLineageAttr> &parentTypes,
+                           ASTDecl *traitDecl);
 
   /// This adds a default return (lit.return of None, potentially converted
   /// to a variant) and emits a EndFuncOp.

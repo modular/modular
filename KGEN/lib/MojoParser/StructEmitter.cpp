@@ -167,9 +167,10 @@ std::pair<LIT::FuncOp, ASTDecl &> StructEmitter::synthesizeMethodInStruct(
   return {funcOp, funcDecl};
 }
 
-void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
+void StructEmitter::appendTraits(SmallVectorImpl<TypeLineageAttr> &parentTypes,
+                                 ASTDecl *traitDecl) {
   llvm::MapVector<Type, TypeLineageAttr> parentTypeSet;
-  for (TypeLineageAttr parent : structOp.getParentTypes())
+  for (TypeLineageAttr parent : parentTypes)
     parentTypeSet.insert({parent.getType(), parent});
 
   auto targetTrait = cast<TraitDeclOp>(traitDecl);
@@ -190,9 +191,14 @@ void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
     parentTypeSet.insert({parent, TypeLineageAttr::get(parent, lineage)});
   }
 
-  SmallVector<TypeLineageAttr> parentTypes;
-  for (auto [_, type] : parentTypeSet)
+  for (auto [_, type] : llvm::drop_begin(parentTypeSet, parentTypes.size()))
     parentTypes.push_back(type);
+}
+
+void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
+  SmallVector<TypeLineageAttr> parentTypes =
+      llvm::to_vector(structOp.getParentTypes());
+  appendTraits(parentTypes, traitDecl);
   structOp.setParentTypes(parentTypes);
 }
 

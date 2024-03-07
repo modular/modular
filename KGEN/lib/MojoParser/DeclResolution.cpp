@@ -1941,8 +1941,10 @@ static LogicalResult verifyExplicitConformances(ASTDecl &structDecl,
                                                 SharedState &shared) {
   bool hadErrors = false;
   auto structDeclOp = cast<StructDeclOp>(structDecl);
-  for (TypeLineageAttr parent : structDeclOp.getParentTypes())
-    hadErrors |= failed(verifyConformance(structDecl, parent, shared));
+  for (TypeLineageAttr parent : structDeclOp.getParentTypes()) {
+    std::optional<InflightDiag> diag;
+    hadErrors |= failed(verifyConformance(structDecl, parent, shared, diag));
+  }
 
   return success(!hadErrors);
 }
