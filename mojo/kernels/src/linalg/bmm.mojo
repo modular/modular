@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, gcd, max, min
+from math import align_up, div_ceil, gcd, max, min
 from sys.info import simdwidthof
 
 from algorithm import sync_parallelize, vectorize
@@ -23,6 +23,8 @@ from MatmulUtils import (
     get_min_task_size,
     get_partitioned_matmul,
     partition_work,
+    use_i8mm_fn,
+    packA_i8mm,
 )
 from memory import memset_zero
 from memory.buffer import NDBuffer
@@ -367,6 +369,22 @@ fn _batched_matmul_cpu[
                 a.data.offset(batch * a_stride_between_batches),
                 StaticIntTuple[2](a.dim[1](), a.dim[2]()),
             )
+
+            alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+            alias simd_size = simdwidthof[c_type]()
+            alias alignment = alignof[SIMD[c_type, simd_size]]()
+            var kh = align_up(k, 8)
+            var mh = align_up(m, 2)
+            var a_packed_ptr = DTypePointer[a_type]()
+            if use_i8mm:
+                a_packed_ptr = DTypePointer[a_type].alloc(
+                    mh * kh, alignment=alignment
+                )
+            var a_packed = NDBuffer[a_type, 2](a_packed_ptr, (mh, kh))
+
+            if use_i8mm:
+                packA_i8mm[a_type](0, m, k, a_view.data, a_packed_ptr)
+
             var b_view = NDBuffer[b_type, 2](
                 b.data.offset(batch * b_stride_between_batches),
                 StaticIntTuple[2](b.dim[1](), b.dim[2]()),
@@ -420,12 +438,13 @@ fn _batched_matmul_cpu[
                 saturated_vnni=saturated_vnni,
             ](
                 c_view,
-                a_view,
+                a_packed if use_i8mm else a_view,
                 b_view,
                 sub_matmul_config.shape,
                 sub_matmul_config.offset,
                 rowwise_closure,
             )
+            a_packed_ptr.free()
 
     sync_parallelize[task_func](num_tasks)
 

@@ -18,7 +18,14 @@ from sys.info import (
     sizeof,
 )
 
-from memory.buffer import DynamicRankBuffer, NDBuffer
+from memory.buffer import (
+    DynamicRankBuffer,
+    NDBuffer,
+    partial_simd_load,
+    partial_simd_store,
+)
+
+from algorithm import vectorize
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList
@@ -1059,3 +1066,42 @@ fn _get_tile_n_k[
             config.pack_data_size, config.pack_inner_size, factor
         ](b.dim(0), b.dim(1))
     return tile_n_k
+
+
+@always_inline
+fn packA_i8mm[
+    a_type: DType
+](
+    t0: Int,
+    t1: Int,
+    k: Int,
+    a_ptr: DTypePointer[a_type],
+    a_packed_ptr: DTypePointer[a_type],
+):
+    @always_inline
+    @__copy_capture(k)
+    @parameter
+    fn packA_helper[nrow: Int](offset: Int):
+        var kl = align_down(k, 8)
+        var kh = align_up(k, 8)
+        var j = t0 + offset
+        for l in range(0, k, 8):
+
+            @unroll
+            for idx in range(nrow):
+                var t0 = a_ptr.simd_load[8]((j + idx) * k + l)
+                a_packed_ptr.simd_store(kh * j + 2 * l + 8 * idx, t0)
+
+        @unroll
+        for idx in range(nrow):
+            var t0 = partial_simd_load[8](
+                a_ptr.offset((j + idx) * k + kl), 0, k - kl, 0
+            )
+            partial_simd_store(
+                a_packed_ptr.offset(kh * j + 2 * kl + 8 * idx),
+                0,
+                k - kl,
+                t0,
+            )
+
+    vectorize[packA_helper, 2](t1 - t0)

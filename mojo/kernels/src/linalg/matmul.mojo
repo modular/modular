@@ -42,6 +42,7 @@ from MatmulUtils import (
     search_mm_config,
     use_i8mm_fn,
     use_vnni_fn,
+    packA_i8mm,
 )
 from memory import memset_zero, stack_allocation
 from memory.buffer import (
@@ -3473,42 +3474,7 @@ fn _matmul_cpu[
             a_packed_ptr = DTypePointer[a_type].alloc(
                 mh * kh, alignment=alignment
             )
-        var a_packed_shape = Index(mh, kh)
-        var a_packed = NDBuffer[a_type, 2, a_shape](
-            a_packed_ptr.address, a_packed_shape
-        )
-
-        @always_inline
-        @__copy_capture(k, kh)
-        @parameter
-        fn packA_i8mm(t0: Int, t1: Int):
-            var kl = align_down(k, 8)
-
-            @always_inline
-            @__copy_capture(k, kh, kl)
-            @parameter
-            fn packA_helper[nrow: Int](offset: Int):
-                var j = t0 + offset
-                for l in range(0, k, 8):
-
-                    @unroll
-                    for idx in range(nrow):
-                        var t0 = a.data.simd_load[8]((j + idx) * k + l)
-                        a_packed_ptr.simd_store[8](kh * j + 2 * l + 8 * idx, t0)
-
-                @unroll
-                for idx in range(nrow):
-                    var t0 = partial_simd_load[8](
-                        a.data.offset((j + idx) * k + kl), 0, k - kl, 0
-                    )
-                    partial_simd_store(
-                        a_packed_ptr.offset(kh * j + 2 * kl + 8 * idx),
-                        0,
-                        k - kl,
-                        t0,
-                    )
-
-            vectorize[packA_helper, 2](t1 - t0)
+        var a_packed = NDBuffer[a_type, 2, a_shape](a_packed_ptr, (mh, kh))
 
         @always_inline
         @__copy_capture(m, k, num_tasks)
@@ -3519,7 +3485,7 @@ fn _matmul_cpu[
             ](m, 1, k, task_id, num_tasks, kernel_type_m)
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
-            packA_i8mm(t0, t1)
+            packA_i8mm[a_type](t0, t1, k, a.data, a_packed_ptr)
 
         @always_inline
         @__copy_capture(m, k, num_tasks, n, a_packed)
