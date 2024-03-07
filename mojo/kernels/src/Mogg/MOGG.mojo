@@ -1074,13 +1074,14 @@ fn concat[
     if _guard_against_gpu_target[target](ctx):
         return
 
-    var ins = variadic_list_to_vector(variadic_ins)
-    _concat[rank, type, single_thread_blocking_override, target](
-        output,
-        int(normalize_neg_index(axis[0], rank)),
-        ins,
-    )
-    ins._del_old()
+    with Trace[TraceLevel.OP]("mojo.concat") as t:
+        var ins = variadic_list_to_vector(variadic_ins)
+        _concat[rank, type, single_thread_blocking_override, target](
+            output,
+            int(normalize_neg_index(axis[0], rank)),
+            ins,
+        )
+        ins._del_old()
 
 
 @always_inline
