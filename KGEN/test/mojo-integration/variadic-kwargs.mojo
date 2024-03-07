@@ -62,7 +62,6 @@ fn main() raises:
     takes_int_variadic_kwargs(x=9, stuff=8)
 
     var m = MemOnly(42)
-    # TODO: implement parameter inference for **kwargs.
-    takes_mem_only_variadic_kwargs[MemOnly](y=m, fizzbuzz=MemOnly(13))
+    takes_mem_only_variadic_kwargs(y=m, fizzbuzz=MemOnly(13))
     # CHECK: m outside 42
     print("m outside", m.value)

@@ -11,8 +11,9 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
-# CHECK-DAG: #[[STRING_TYPE:.*]] = #kgen.parameterizedtype.constant<!String
-# CHECK-DAG: #[[INDEX_TYPE:.*]] = #kgen.concretetype.constant<index
+# CHECK-DAG: #[[STRING_TYPE:.*]] = #kgen.parameterizedtype.constant<!String,
+# CHECK-DAG: #[[INDEX_TYPE:.*]] = #kgen.concretetype.constant<index,
+# CHECK-DAG: #[[MEM_ONLY:.*]] = #kgen.parameterizedtype.constant<!MemOnly,
 
 
 # CHECK-LABEL: lit.func @"variadic_kwargs
@@ -55,3 +56,44 @@ fn test_variadic_kwargs():
 
     # CHECK lit.call {{.*}}@"takes_int_variadic_kwargs{{.*}}(%[[DICT_VAR]])
     takes_int_variadic_kwargs(x=`9`, stuff=`8`)
+
+
+trait SomeTrait(CollectionElement):
+    pass
+
+
+fn infers_param_from_kwargs[T: SomeTrait](**kwargs: T):
+    pass
+
+
+@value
+struct MemOnly(SomeTrait):
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_variadic_kwargs_param_inference
+fn test_variadic_kwargs_param_inference():
+    # %s = lit.var.decl "s"  var : !lit.ref<!MemOnly,
+    var s = MemOnly()
+
+    # CHECK: %[[M:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemOnly,
+    # CHECK-NEXT: lit.call {{.*}}@MemOnly::@"__init__{{.*}}(%[[M]])
+
+    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
+    # CHECK-SAME: @Dict<:!KeyElement #[[STRING_TYPE]], :!CollectionElement #[[MEM_ONLY]]>
+    # CHECK: lit.call {{.*}}@Dict::@"__init__{{.*}}(%[[DICT_VAR]])
+
+    # CHECK: %[[Y:.*]] = lit.var.decl {{.*}}!String,
+    # CHECK: %[[Y_LIT:.*]] = kgen.param.constant: !StringLiteral = <{:string "y"}>
+    # CHECK: lit.call {{.*}}@String::@"__init__{{.*}}(%[[Y]], %[[Y_LIT]])
+    # CHECK: %[[Y_KEY:.*]] = lit.ref.immut %[[Y]]
+    # CHECK: %[[Y_PASSED:.*]] = lit.ref.immut %[[M]] : <!MemOnly
+    # CHECK: lit.call {{.*}}@Dict::@"__setitem__{{.*}}(%[[DICT_VAR]], %[[Y_KEY]], %[[Y_PASSED]])
+
+    # CHECK: %[[Z:.*]] = lit.var.decl {{.*}}!String
+    # CHECK: %[[Z_LIT:.*]] = kgen.param.constant: !StringLiteral = <{:string "z"}>
+    # CHECK: lit.call {{.*}}@String::@"__init__{{.*}}(%[[Z]], %[[Z_LIT]])
+    # CHECK: %[[Z_KEY:.*]] = lit.ref.immut %[[Z]]
+    # CHECK: %[[S_PASSED:.*]] = lit.ref.immut %s
+    # CHECK: lit.call {{.*}}@Dict::@"__setitem__{{.*}}(%[[DICT_VAR]], %[[Z_KEY]], %[[S_PASSED]])
+    infers_param_from_kwargs(y=MemOnly(), z=s)
