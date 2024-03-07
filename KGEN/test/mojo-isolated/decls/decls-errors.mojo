@@ -693,7 +693,7 @@ struct ShapeContainer:
 ##===----------------------------------------------------------------------===##
 
 trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
-    # expected-note @below {{no 'f1' candidates have type 'fn(self = CFMStructFail) -> None'}}
+    # expected-note @below {{no 'f1' candidates have type 'fn(self: CFMStructFail) -> None'}}
     # expected-note @below {{required function 'f1' is not implemented}}
     fn f1(self: Self):
         pass
@@ -705,7 +705,7 @@ trait CFMTrait: # expected-note {{trait 'CFMTrait' declared here}}
 # struct implements CFMTrait but does not have f2().
 @register_passable("trivial")
 struct CFMStructFail(CFMTrait): # expected-error {{struct 'CFMStructFail' does not implement all requirements for 'CFMTrait'}}
-  fn f1(self, x: Int): # expected-note {{candidate declared here with type 'fn(self = CFMStructFail, x = Int) -> None'}}
+  fn f1(self, x: Int): # expected-note {{candidate declared here with type 'fn(self: CFMStructFail, x: Int) -> None'}}
     pass
 
 @register_passable("trivial")
@@ -752,13 +752,13 @@ struct InheritsTwice(Father, Father):
 # Parser crash when trait implementation parameters don't match the definition
 # expected-note @below {{trait 'TraitWithIntParamOnMethod' declared here}}
 trait TraitWithIntParamOnMethod:
-  # expected-note @below {{no 'f' candidates have type 'fn[Int](self = UseTraitWithIntParamOnMethod) -> None'}}
+  # expected-note @below {{no 'f' candidates have type 'fn[Int](self: UseTraitWithIntParamOnMethod) -> None'}}
   fn f[n: Int](self):
     ...
 # expected-error @below {{caller input parameter #0 has type }}
 # expected-error @below {{struct 'UseTraitWithIntParamOnMethod' does not implement all requirements for 'TraitWithIntParamOnMethod'}}
 struct UseTraitWithIntParamOnMethod(TraitWithIntParamOnMethod):
-  # expected-note @below {{candidate declared here with type 'fn[Bool](self = UseTraitWithIntParamOnMethod) -> None'}}
+  # expected-note @below {{candidate declared here with type 'fn[Bool](self: UseTraitWithIntParamOnMethod) -> None'}}
   fn f[n: Bool](self):
     pass
 
