@@ -139,7 +139,7 @@ struct Symbol(CollectionElement, Stringable):
 
         return ops.reshape(self, ops.stack(symbolic_dims), static_shape)
 
-    fn swap_axes(self, axis1: Int, axis2: Int) raises -> Symbol:
+    fn swapaxes(self, axis1: Int, axis2: Int) raises -> Symbol:
         """Interchanges two axes of this `Symbol`.
 
         Uses the `mo.transpose` op. Negative values are allowed, and represent
