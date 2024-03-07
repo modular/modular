@@ -344,6 +344,32 @@ class TorchInputSpec:
         torch_load_spec._impl = _core_torch_load_spec
         return torch_load_spec
 
+    def __repr__(self) -> str:
+        return f"TorchInputSpec(shape={self.shape}, dtype={self.dtype})"
+
+    def __str__(self) -> str:
+        if self.shape is not None:
+            mlir_shape = [
+                str(dim) if dim is not None else "-1" for dim in self.shape
+            ]
+            shape_str = "x".join(mlir_shape)
+            return f"{shape_str}x{self.dtype.name}"
+        else:
+            return f"None x {self.dtype.name}"
+
+    @property
+    def shape(self) -> Optional[List[int]]:
+        """The shape of the torch input tensor as a list of integers.
+
+        If a dimension size is unknown/dynamic (such as the batch size), its
+        value is ``None``."""
+        return self._impl.shape
+
+    @property
+    def dtype(self) -> DType:
+        """A torch input tensor data type."""
+        return DType._from(self._impl.dtype)
+
 
 def _unwrap_pybind_objects_dict_factory(
     data: List[Tuple[str, Any]]
