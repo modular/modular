@@ -519,9 +519,6 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         os << ", ";
       passingKindPrinter.printOptionalStarSlash(i);
 
-      if (!name.empty())
-        os << name.getValue() << " = ";
-
       if (convention == ArgConvention::OwnedInMem ||
           convention == ArgConvention::OwnedInReg)
         os << "owned ";
@@ -536,6 +533,10 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         if (isPack)
           os << ' ';
       }
+
+      if (!name.empty())
+        os << name.getValue() << ": ";
+
       ASTType actualType = type;
       auto actualConv = convention;
       if (isPosVarArg) {

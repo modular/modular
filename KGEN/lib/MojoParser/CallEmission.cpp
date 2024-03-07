@@ -840,6 +840,12 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         diag.attachNote(candidate->getLoc())
             << "candidate not viable: " << eval.takeDiag();
+        auto func = cast<LIT::FuncOp>(candidate);
+        if (func.getIsSynthetic()) {
+          diag.attachNote(candidate->getLoc())
+              << "generated function with type "
+              << ASTType(func.getFullSignature());
+        }
       }
       return {};
     }
@@ -873,8 +879,16 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                 << baseName << "', each candidate requires " << minConversions
                 << " implicit conversion" << plural(minConversions)
                 << ", disambiguate with an explicit cast" << expr->getRange();
-    for (ASTDecl *candidate : newFnDecls)
-      diag.attachNote(candidate->getLoc()) << "candidate declared here";
+    for (ASTDecl *candidate : newFnDecls) {
+      auto func = cast<LIT::FuncOp>(candidate);
+      InflightDiag &note = diag.attachNote(candidate->getLoc());
+      if (func.getIsSynthetic()) {
+        note << "candidate generated with type "
+             << ASTType(func.getFullSignature());
+      } else {
+        note << "candidate declared here";
+      }
+    }
   }
   return {};
 }
@@ -1010,8 +1024,16 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
                     expr->getLoc(),
                     "cannot form a reference to overloaded declaration of '")
                 << baseName << "'" << expr->getRange();
-    for (ASTDecl *candidate : fnDecls)
-      diag.attachNote(candidate->getLoc()) << "candidate declared here";
+    for (ASTDecl *candidate : fnDecls) {
+      auto func = cast<LIT::FuncOp>(candidate);
+      InflightDiag &note = diag.attachNote(candidate->getLoc());
+      if (func.getIsSynthetic()) {
+        note << "candidate generated with type "
+             << ASTType(func.getFullSignature());
+      } else {
+        note << "candidate declared here";
+      }
+    }
 
     return {};
   }

@@ -46,11 +46,33 @@ struct WrapsMadeFromPack[*Ts: AnyRegType]:
         self.data = args
 
 
-struct ConvertFromInt:
+struct Constructible:
     fn __init__(inout self, arg: Int):
         pass
 
 
 fn init_self_conversion():
-    # expected-error @below {{cannot implicitly convert 'fn(self = inout ConvertFromInt, /, arg = Int) -> None' value to 'fn() -> None' in alias initializer}}
-    alias f: fn () -> None = ConvertFromInt.__init__
+    # expected-error @below {{cannot implicitly convert 'fn(inout self: Constructible, /, arg: Int) -> None' value to 'fn() -> None'}}
+    alias f: fn () -> None = Constructible.__init__
+
+
+@value
+struct ConvertibleFromInt:
+    fn __init__(inout self, arg: Int):
+        pass
+
+
+@value
+# expected-note @below {{candidate generated with type 'fn(inout AmbiguousCtor, /, owned a: ConvertibleFromInt, b: Int) -> None'}}
+struct AmbiguousCtor:
+    var a: ConvertibleFromInt
+    var b: Int
+
+    # expected-note @below {{candidate declared here}}
+    fn __init__(inout self, b: Int, a: ConvertibleFromInt):
+        pass
+
+
+fn ambiguous_ctor_call(x: Int):
+    # expected-error @below {{ambiguous call}}
+    AmbiguousCtor(x, x)
