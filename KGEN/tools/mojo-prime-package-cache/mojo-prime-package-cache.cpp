@@ -57,7 +57,7 @@ public:
     std::vector<std::string> result;
     result.reserve(parser.includePaths.size());
     for (auto &path : parser.includePaths)
-      if (std::filesystem::is_directory(path))
+      if (std::error_code ec; std::filesystem::is_directory(path, ec) && !ec)
         result.push_back(path);
     return result;
   }
