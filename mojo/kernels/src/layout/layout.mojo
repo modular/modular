@@ -27,6 +27,15 @@ from .int_tuple import (
 )
 
 
+fn make_layout(*layouts: Layout) -> Layout:
+    var shape = IntTuple()
+    var stride = IntTuple()
+    for i in range(len(layouts)):
+        shape.append(layouts[i].shape)
+        stride.append(layouts[i].stride)
+    return Layout(shape, stride)
+
+
 @value
 struct _LayoutIter:
     var index: Int
@@ -241,9 +250,9 @@ fn apply_tiler[
 
 
 fn logical_divide(layout_a: Layout, _layout_b: Layout) -> Layout:
-    var layout_b = _layout_b
-    layout_b.append(complement(layout_b, layout_a.size()))
-    return composition(layout_a, layout_b)
+    return composition(
+        layout_a, make_layout(_layout_b, complement(_layout_b, layout_a.size()))
+    )
 
 
 fn logical_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
@@ -251,13 +260,13 @@ fn logical_divide(layout_a: Layout, tiler: LayoutList) -> Layout:
 
 
 fn logical_product(_layout_a: Layout, layout_b: Layout) -> Layout:
-    var layout_a = _layout_a
-    layout_a.append(
+    return make_layout(
+        _layout_a,
         composition(
-            complement(layout_a, layout_a.size() * layout_b.cosize()), layout_b
-        )
+            complement(_layout_a, _layout_a.size() * layout_b.cosize()),
+            layout_b,
+        ),
     )
-    return layout_a
 
 
 fn logical_product(layout_a: Layout, tiler: LayoutList) -> Layout:

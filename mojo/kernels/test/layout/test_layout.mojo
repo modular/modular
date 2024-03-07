@@ -323,7 +323,7 @@ fn test_logcial_divide() raises:
                 Layout(3, 3), Layout(IntTuple(2, 4), IntTuple(1, 8))
             ),
         ),
-        "(((3, 3), (2, 4, (2, 2))):((177, 59), (13, 2, (26, 1))))",
+        "(((3, 3), ((2, 4), (2, 2))):((177, 59), ((13, 2), (26, 1))))",
     )
 
 
@@ -333,7 +333,7 @@ fn test_logical_product() raises:
     var lp0 = logical_product(
         Layout(IntTuple(2, 2), IntTuple(4, 1)), Layout(6, 1)
     )
-    assert_equal(lp0, "((2, 2, (2, 3)):(4, 1, (2, 8)))")
+    assert_equal(lp0, "(((2, 2), (2, 3)):((4, 1), (2, 8)))")
     assert_equal(
         logical_product(
             Layout(IntTuple(2, 5), IntTuple(5, 1)),
