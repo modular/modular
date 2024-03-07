@@ -1373,6 +1373,7 @@ static bool floatLiteralCmpHelper(const FloatLiteralCmpPred &pred,
     case FloatLiteralSpecialValues::NegInf:
       return !isNan(rSpecial) && !isNegInf(rSpecial);
     }
+    llvm_unreachable("all specials covered");
   case FloatLiteralCmpPred::Le:
     return floatLiteralCmpHelper(FloatLiteralCmpPred::Lt, lSpecial, rSpecial,
                                  lhs, rhs) ||
@@ -1507,6 +1508,7 @@ floatLiteralMulSpecialCases(const FloatLiteralSpecialValues &lSpecial,
         return FloatLiteralSpecialValues::Normal;
       return FloatLiteralSpecialValues::NegZero;
     }
+    llvm_unreachable("all specials covered");
   case FloatLiteralSpecialValues::Inf:
     switch (rSpecial) {
     case FloatLiteralSpecialValues::Nan:
@@ -1523,6 +1525,7 @@ floatLiteralMulSpecialCases(const FloatLiteralSpecialValues &lSpecial,
         return FloatLiteralSpecialValues::NegInf;
       return FloatLiteralSpecialValues::Inf;
     }
+    llvm_unreachable("all specials covered");
   case FloatLiteralSpecialValues::NegInf:
     switch (rSpecial) {
     case FloatLiteralSpecialValues::Nan:
@@ -1539,6 +1542,7 @@ floatLiteralMulSpecialCases(const FloatLiteralSpecialValues &lSpecial,
         return FloatLiteralSpecialValues::Inf;
       return FloatLiteralSpecialValues::NegInf;
     }
+    llvm_unreachable("all specials covered");
   case FloatLiteralSpecialValues::Nan:
     return FloatLiteralSpecialValues::Nan;
   case FloatLiteralSpecialValues::Normal:
@@ -1587,6 +1591,7 @@ floatLiteralDivSpecialCases(const FloatLiteralSpecialValues &lSpecial,
         return FloatLiteralSpecialValues::Normal;
       return FloatLiteralSpecialValues::NegZero;
     }
+    llvm_unreachable("all specials covered");
   case FloatLiteralSpecialValues::Inf:
     switch (rSpecial) {
     case FloatLiteralSpecialValues::Nan:
@@ -1601,6 +1606,7 @@ floatLiteralDivSpecialCases(const FloatLiteralSpecialValues &lSpecial,
         return FloatLiteralSpecialValues::NegInf;
       return FloatLiteralSpecialValues::Inf;
     }
+    llvm_unreachable("all specials covered");
   case FloatLiteralSpecialValues::NegInf:
     switch (rSpecial) {
     case FloatLiteralSpecialValues::Nan:
@@ -1615,6 +1621,7 @@ floatLiteralDivSpecialCases(const FloatLiteralSpecialValues &lSpecial,
         return FloatLiteralSpecialValues::Inf;
       return FloatLiteralSpecialValues::NegInf;
     }
+    llvm_unreachable("all specials covered");
   case FloatLiteralSpecialValues::Nan:
     return FloatLiteralSpecialValues::Nan;
   case FloatLiteralSpecialValues::Normal:
