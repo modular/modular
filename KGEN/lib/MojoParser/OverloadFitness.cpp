@@ -116,7 +116,7 @@ public:
                           ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags)
       : declScope(declScope), shared(shared), parameterIndex(index),
-        evaluator(evaluator), diags(diags) {}
+        evaluator(evaluator), paramIndexRefDepth(0), diags(diags) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
   /// signature, try to infer the value of the next 'decl' parameter.  This
@@ -141,6 +141,7 @@ private:
   size_t parameterIndex;
   ParserParamEvaluator &evaluator;
   SmallVector<PValue> inferredValues;
+  size_t paramIndexRefDepth;
   ParameterInferenceDiagnostics &diags;
 
   const ExprNode *curArgExpr = nullptr;
@@ -241,6 +242,27 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
     if (auto expected = dyn_cast<PackType>(expectedType))
       return matchParams(actual.getVariadic(), expected.getVariadic());
 
+  // Handle SignatureType
+  if (auto actual = dyn_cast<SignatureType>(actualType))
+    if (auto expected = dyn_cast<SignatureType>(expectedType)) {
+      // When checking SignatureTypes, we have to keep track of
+      // paramIndexRefDepth to be sure we are binding the right parameters.
+      if (actual.getArguments().size() == expected.getArguments().size() &&
+          actual.getResults().size() == expected.getResults().size()) {
+        ++paramIndexRefDepth;
+        for (auto [actualArgument, expectedArgument] :
+             llvm::zip(actual.getArguments(), expected.getArguments())) {
+          matchTypes(actualArgument, expectedArgument);
+        }
+        for (auto [actualResult, expectedResult] :
+             llvm::zip(actual.getResults(), expected.getResults())) {
+          matchTypes(actualResult, expectedResult);
+        }
+        --paramIndexRefDepth;
+        return;
+      }
+    }
+
   // TODO: Could do StructType?
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER MISMATCH TYPES:\n";
              actualType.dump(); expectedType.dump();
@@ -267,7 +289,7 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
   // If the expected value is the parameter declaration in question, remember
   // this value!
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
-    if (ire.getDepth() == 0 && !ire.getIsResult() &&
+    if (ire.getDepth() == paramIndexRefDepth && !ire.getIsResult() &&
         ire.getIndex() == parameterIndex) {
       Type expectedType = expectedAttr.getType();
       if (actualAttr.getType() == expectedType) {

@@ -690,6 +690,20 @@ fn indirect_call_infer_params():
     # CHECK-SAME: [[CALLEE]], {2}
     callee(Abstraction[2]())
 
+# COM: test parameter inference through signatureType,
+# COM: from issue https://github.com/modularml/mojo/issues/1362
+fn mapSingle[A: AnyType, B: AnyType, R: AnyType](
+  f: fn(x: A, y: B) -> R,
+  a: A, b: B
+) -> R:
+  return f(a, b)
+fn useMapSingle() -> object:
+  fn f(x: object, y: object) -> object:
+    return object()
+  # CHECK: lit.call {{.*}}mapSingle{{.*}}<:!AnyType #object1, :!AnyType #object1, :!AnyType #object1>
+  return mapSingle(f, object(), object())
+
+
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
 ##===----------------------------------------------------------------------===##
