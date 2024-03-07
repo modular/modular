@@ -19,7 +19,7 @@ add_custom_command(
 add_modular_pytest(max-engine
 
   TOP_LEVEL_CHECK
-  check-api
+  check-sdk
 
   EXTRA_ARGS
   --custom-ops-path=${CUSTOM_OP_OUTPUT}
