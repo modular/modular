@@ -537,7 +537,7 @@ fn test_param_if_cond[cond: Bool]() -> Int:
   # CHECK-NEXT: lit.alias.decl [[I_ALIAS:.*]]: !IntLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.int_literal 2}, {:!kgen.int_literal 3})>
   alias i = 2 if cond else 3
 
-  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.float_literal #kgen.float_literal<normal (2|1)>}, {:!kgen.float_literal #kgen.float_literal<normal (3|1)>})>
+  # CHECK-NEXT: lit.alias.decl *"j{{.*}}": !FloatLiteral = <cond(apply({{.*}}Bool::@"__mlir_i1__{{.*}}", cond), {:!kgen.float_literal #kgen.float_literal<2|1>}, {:!kgen.float_literal #kgen.float_literal<3|1>})>
   alias j = 2.0 if cond else 3
 
   # CHECK-NEXT: %[[I:.*]] = kgen.param.constant: !Int = {{.*}}IntLiteral{{.*}}[[I_ALIAS]]{{.*}}
@@ -761,7 +761,7 @@ def literals():
     a = 0O711         # CHECK: 457
     # Test parsing for this value with lots of underscores here because mblack
     # can't handle it.
-    alias b = 1_2.3__1e+1_1 # CHECK: #kgen.float_literal<normal (1231000000000|1)>
+    alias b = 1_2.3__1e+1_1 # CHECK: #kgen.float_literal<1231000000000|1>
     c = False         # CHECK: !Bool = <{:scalar<bool> false}>
     c = True          # CHECK: !Bool = <{:scalar<bool> true}>
 

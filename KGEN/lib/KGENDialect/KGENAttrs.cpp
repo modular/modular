@@ -365,24 +365,19 @@ Attribute FloatLiteralAttr::parse(AsmParser &p, Type type) {
   if (p.parseLess()) {
     p.emitError(p.getCurrentLocation(), "expected '<' character");
   }
-  FloatLiteralSpecialValuesAttr specialAttr;
-  if (p.parseCustomAttributeWithFallback(specialAttr, ::mlir::Type{})) {
-    p.emitError(p.getCurrentLocation(),
-                "expected FloatLiteralSpecialValueAttr");
-    return {};
-  }
-
   std::optional<IPRational> rational;
+  FloatLiteralSpecialValuesAttr specialAttr;
 
-  if (specialAttr.getValue() == FloatLiteralSpecialValues::Normal) {
-    APInt numerator;
-    APInt denominator;
+  // Try to parse rational number first, then fall back to parsing special
+  // value.
+  APInt numerator;
+  APInt denominator;
+  OptionalParseResult isRational = p.parseOptionalInteger(numerator);
+  if (isRational.has_value() && !isRational.value()) {
     // MLIR's AsmParser doesn't have `parseSlash` or a more generic way to parse
     // literal strings/characters, so we will use the pipe "|" character
     // instead. https://github.com/modularml/modular/issues/23387
-    if (p.parseLParen() || p.parseInteger(numerator) ||
-        p.parseOptionalVerticalBar() || p.parseInteger(denominator) ||
-        p.parseRParen()) {
+    if (p.parseVerticalBar() || p.parseInteger(denominator)) {
       p.emitError(p.getCurrentLocation(),
                   "expected rational number with pipe in parens");
       return {};
@@ -392,6 +387,14 @@ Attribute FloatLiteralAttr::parse(AsmParser &p, Type type) {
                   "expected rational number with non-zero denominator");
     }
     rational = IPRational(numerator, denominator);
+    specialAttr = FloatLiteralSpecialValuesAttr::get(
+        p.getContext(), FloatLiteralSpecialValues::Normal);
+  } else {
+    if (p.parseCustomAttributeWithFallback(specialAttr, ::mlir::Type{})) {
+      p.emitError(p.getCurrentLocation(),
+                  "expected FloatLiteralSpecialValueAttr");
+      return {};
+    }
   }
 
   if (p.parseGreater()) {
@@ -402,11 +405,13 @@ Attribute FloatLiteralAttr::parse(AsmParser &p, Type type) {
 }
 
 void FloatLiteralAttr::print(AsmPrinter &p) const {
-  p.getStream() << "<" << getSpecial().getValue();
+  p.getStream() << "<";
   if (getSpecial().getValue() == FloatLiteralSpecialValues::Normal) {
     assert(getRational().has_value() &&
            "rational has value when special value is normal");
-    p.getStream() << " " << getRational().value();
+    p.getStream() << getRational().value();
+  } else {
+    p.getStream() << getSpecial().getValue();
   }
   p.getStream() << ">";
 }

@@ -138,7 +138,7 @@ llvm::raw_ostream &M::operator<<(llvm::raw_ostream &os, const IPRational &arg) {
   // TODO(#23387): MLIR's AsmParser doesn't have `parseSlash` or a more generic
   // way to parse literal strings/characters, so we will use the pipe "|"
   // character instead.
-  return os << "(" << arg.getNumerator() << "|" << arg.getDenominator() << ")";
+  return os << arg.getNumerator() << "|" << arg.getDenominator();
 }
 
 // namespace M
