@@ -206,14 +206,6 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
       if (auto store = dyn_cast<POP::StoreOp>(user))
         if (store.getArg() == alloc)
           return false;
-
-      // We can SROA loads if they are only used in extract ops.
-      if (auto load = dyn_cast<POP::LoadOp>(user)) {
-        for (Operation *loadUser : load->getUsers()) {
-          if (!isa<StructExtractOp, DebugInfo::ValueOp>(loadUser))
-            return false;
-        }
-      }
     }
     return true;
   }
@@ -250,15 +242,28 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
         return newVal;
       };
 
+      // Value of a loaded aggregate.
+      Value loadedAgg;
+      auto getOrCreateAggregateLoad = [&] {
+        if (!loadedAgg) {
+          for (unsigned i = 0, e = newAllocas.size(); i != e; ++i)
+            (void)getOrCreateLoad(i);
+          loadedAgg = builder.create<StructCreateOp>(
+              load.getLoc(), load.getType(), loadedVals);
+        }
+        return loadedAgg;
+      };
+
       // Replace the *user* of each load with the loaded scalar or for GEPs the
       // pointer itself.
-      for (Operation *loadUser : load->getUsers()) {
-        if (auto extract = dyn_cast<StructExtractOp>(loadUser)) {
+      for (OpOperand &loadUser : llvm::make_early_inc_range(load->getUses())) {
+        // Peephole `extract[i](load(%alloc))` -> `load(%newAlloc_i)`.
+        if (auto extract = dyn_cast<StructExtractOp>(loadUser.getOwner())) {
           Value newVal = getOrCreateLoad(extract.getIndex());
           extract.replaceAllUsesWith(newVal);
           toDelete.push_back(extract);
-        } else {
-          auto value = cast<DebugInfo::ValueOp>(loadUser);
+        } else if (auto value =
+                       dyn_cast<DebugInfo::ValueOp>(loadUser.getOwner())) {
           OpBuilder b(value);
           DebugInfo::DILocalVariableAttr valueInfo = value.getValueInfo();
           DebugInfo::DIExprAttr conversionExpr = value.getConversionExprAttr();
@@ -266,15 +271,15 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
             Value load = getOrCreateLoad(i);
             ErrorOr<DebugInfo::DIExprAttr> newConversionExpr =
                 leafReplacer.direct.apply(conversionExpr, i);
-            if (failed(newConversionExpr)) {
-              // Not enough source information available to track this
-              // transformation. Cannot debug this local variable anymore.
-              continue;
+            if (succeeded(newConversionExpr)) {
+              b.create<DebugInfo::ValueOp>(value.getLoc(), load, valueInfo,
+                                           newConversionExpr.get());
             }
-            b.create<DebugInfo::ValueOp>(value.getLoc(), load, valueInfo,
-                                         newConversionExpr.get());
           }
           toDelete.push_back(value);
+        } else {
+          // Replace any other value user with `create(load(%newAlloc_i), ...)`.
+          loadUser.set(getOrCreateAggregateLoad());
         }
       }
     } else if (auto value = dyn_cast<DebugInfo::ValueOp>(user)) {
