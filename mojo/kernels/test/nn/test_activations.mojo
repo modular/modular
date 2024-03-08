@@ -7,10 +7,10 @@
 # RUN: %mojo -debug-level full -I%S/.. %s | FileCheck %s
 
 from math import iota
-from random import randn, seed
+from random import seed
 
 from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
-from tensor import Tensor, TensorShape
+from tensor import Tensor, TensorShape, randn
 from test_utils import compare, get_minmax, libm_call
 
 
