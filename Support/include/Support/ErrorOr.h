@@ -302,7 +302,7 @@ class CodedErrorOrSuccess {
 public:
   CodedErrorOrSuccess(Error errorValue, CodedErrorComponent component,
                       const char *errorId)
-      : isSuccess(false), error(errorValue.copy()), component(component),
+      : isSuccess(false), error(std::move(errorValue)), component(component),
         errorId(errorId) {}
 
   CodedErrorOrSuccess(CodedErrorOrSuccess &&err)
@@ -323,12 +323,12 @@ public:
   /// Get the internal Error as a string
   const char *getErrorAsString() const {
     assert(!isSuccess && "not an error!");
-    return error.get();
+    return error->get();
   }
 
 private:
   bool isSuccess;
-  Error error;
+  std::optional<Error> error;
   CodedErrorComponent component;
   const char *errorId;
 };
