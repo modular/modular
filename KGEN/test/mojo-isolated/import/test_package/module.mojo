@@ -7,24 +7,7 @@
 
 from .test_nested_package.module import nested_function
 
-alias Int = __mlir_type.index
-
 alias top_level_alias = __mlir_attr.`2 : index`
-
-
-trait AnyType:
-    fn __del__(owned self, /):
-        ...
-
-
-trait Copyable:
-    fn __copyinit__(inout self, existing: Self, /):
-        ...
-
-
-trait Movable:
-    fn __moveinit__(inout self, owned existing: Self, /):
-        ...
 
 
 fn function():
@@ -39,7 +22,7 @@ fn call_nested_function():
 
 @value
 struct SomeType:
-    var value: Int
+    var value: int
 
 
 @value
@@ -52,13 +35,13 @@ fn `use()weird[]`() -> `weird()struct[]`:
 
 
 @value
-struct ParameterizedType[value: Int]:
+struct ParameterizedType[value: int]:
     pass
 
 
 @value
 struct Wrapper:
-    var data: Int
+    var data: int
 
     alias MyType = ParameterizedType[__mlir_attr.`42 : index`]
 
