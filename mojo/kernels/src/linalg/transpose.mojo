@@ -79,41 +79,68 @@ fn _transpose_inplace_8x8[
     var row6 = buf.simd_load[8](StaticIntTuple[2](6, 0))
     var row7 = buf.simd_load[8](StaticIntTuple[2](7, 0))
 
-    alias permute_0 = VariadicList[Int](0, 8, 1, 9, 4, 12, 5, 13)
-    alias permute_1 = VariadicList[Int](2, 10, 3, 11, 6, 14, 7, 15)
+    @parameter
+    fn _apply_permute_0(
+        vec: SIMD[type, 8], other: SIMD[type, 8]
+    ) -> SIMD[type, 8]:
+        return vec._shuffle_list[0, 8, 1, 9, 4, 12, 5, 13](other)
 
-    var k0 = row0._shuffle_list[permute_0](row1)
-    var k1 = row0._shuffle_list[permute_1](row1)
-    var k2 = row2._shuffle_list[permute_0](row3)
-    var k3 = row2._shuffle_list[permute_1](row3)
-    var k4 = row4._shuffle_list[permute_0](row5)
-    var k5 = row4._shuffle_list[permute_1](row5)
-    var k6 = row6._shuffle_list[permute_0](row7)
-    var k7 = row6._shuffle_list[permute_1](row7)
+    @parameter
+    fn _apply_permute_1(
+        vec: SIMD[type, 8], other: SIMD[type, 8]
+    ) -> SIMD[type, 8]:
+        return vec._shuffle_list[2, 10, 3, 11, 6, 14, 7, 15](other)
 
-    alias permute_2 = VariadicList[Int](0, 1, 8, 9, 4, 5, 12, 13)
-    alias permute_3 = VariadicList[Int](2, 3, 10, 11, 6, 7, 14, 15)
+    var k0 = _apply_permute_0(row0, row1)
+    var k1 = _apply_permute_1(row0, row1)
+    var k2 = _apply_permute_0(row2, row3)
+    var k3 = _apply_permute_1(row2, row3)
+    var k4 = _apply_permute_0(row4, row5)
+    var k5 = _apply_permute_1(row4, row5)
+    var k6 = _apply_permute_0(row6, row7)
+    var k7 = _apply_permute_1(row6, row7)
 
-    var k020 = k0._shuffle_list[permute_2](k2)
-    var k021 = k0._shuffle_list[permute_3](k2)
-    var k130 = k1._shuffle_list[permute_2](k3)
-    var k131 = k1._shuffle_list[permute_3](k3)
-    var k460 = k4._shuffle_list[permute_2](k6)
-    var k461 = k4._shuffle_list[permute_3](k6)
-    var k570 = k5._shuffle_list[permute_2](k7)
-    var k571 = k5._shuffle_list[permute_3](k7)
+    @parameter
+    fn _apply_permute_2(
+        vec: SIMD[type, 8], other: SIMD[type, 8]
+    ) -> SIMD[type, 8]:
+        return vec._shuffle_list[0, 1, 8, 9, 4, 5, 12, 13](other)
 
-    alias permute_4 = VariadicList[Int](0, 1, 2, 3, 8, 9, 10, 11)
-    alias permute_5 = VariadicList[Int](4, 5, 6, 7, 12, 13, 14, 15)
+    @parameter
+    fn _apply_permute_3(
+        vec: SIMD[type, 8], other: SIMD[type, 8]
+    ) -> SIMD[type, 8]:
+        return vec._shuffle_list[2, 3, 10, 11, 6, 7, 14, 15](other)
 
-    var r0 = k020._shuffle_list[permute_4](k460)
-    var r1 = k021._shuffle_list[permute_4](k461)
-    var r2 = k130._shuffle_list[permute_4](k570)
-    var r3 = k131._shuffle_list[permute_4](k571)
-    var r4 = k020._shuffle_list[permute_5](k460)
-    var r5 = k021._shuffle_list[permute_5](k461)
-    var r6 = k130._shuffle_list[permute_5](k570)
-    var r7 = k131._shuffle_list[permute_5](k571)
+    var k020 = _apply_permute_2(k0, k2)
+    var k021 = _apply_permute_3(k0, k2)
+    var k130 = _apply_permute_2(k1, k3)
+    var k131 = _apply_permute_3(k1, k3)
+    var k460 = _apply_permute_2(k4, k6)
+    var k461 = _apply_permute_3(k4, k6)
+    var k570 = _apply_permute_2(k5, k7)
+    var k571 = _apply_permute_3(k5, k7)
+
+    @parameter
+    fn _apply_permute_4(
+        vec: SIMD[type, 8], other: SIMD[type, 8]
+    ) -> SIMD[type, 8]:
+        return vec._shuffle_list[0, 1, 2, 3, 8, 9, 10, 11](other)
+
+    @parameter
+    fn _apply_permute_5(
+        vec: SIMD[type, 8], other: SIMD[type, 8]
+    ) -> SIMD[type, 8]:
+        return vec._shuffle_list[4, 5, 6, 7, 12, 13, 14, 15](other)
+
+    var r0 = _apply_permute_4(k020, k460)
+    var r1 = _apply_permute_4(k021, k461)
+    var r2 = _apply_permute_4(k130, k570)
+    var r3 = _apply_permute_4(k131, k571)
+    var r4 = _apply_permute_5(k020, k460)
+    var r5 = _apply_permute_5(k021, k461)
+    var r6 = _apply_permute_5(k130, k570)
+    var r7 = _apply_permute_5(k131, k571)
 
     buf.simd_store[8](StaticIntTuple[2](0, 0), r0)
     buf.simd_store[8](StaticIntTuple[2](1, 0), r1)
@@ -140,30 +167,69 @@ fn _transpose_inplace_16x16[
         ],
     ](bufloat0)
 
-    alias permute_0 = VariadicList[Int](
-        0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29
-    )
-    alias permute_1 = VariadicList[Int](
-        2, 18, 3, 19, 6, 22, 7, 23, 10, 26, 11, 27, 14, 30, 15, 31
-    )
-    alias permute_2 = VariadicList[Int](
-        0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29
-    )
-    alias permute_3 = VariadicList[Int](
-        2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31
-    )
-    alias permute_4 = VariadicList[Int](
-        0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
-    )
-    alias permute_5 = VariadicList[Int](
-        4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
-    )
-    alias permute_6 = VariadicList[Int](
-        0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
-    )
-    alias permute_7 = VariadicList[Int](
-        4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
-    )
+    @parameter
+    fn _apply_permute_0(
+        vec: SIMD[type, 16], other: SIMD[type, 16]
+    ) -> SIMD[type, 16]:
+        return vec._shuffle_list[
+            0, 16, 1, 17, 4, 20, 5, 21, 8, 24, 9, 25, 12, 28, 13, 29
+        ](other)
+
+    @parameter
+    fn _apply_permute_1(
+        vec: SIMD[type, 16], other: SIMD[type, 16]
+    ) -> SIMD[type, 16]:
+        return vec._shuffle_list[
+            2, 18, 3, 19, 6, 22, 7, 23, 10, 26, 11, 27, 14, 30, 15, 31
+        ](other)
+
+    @parameter
+    fn _apply_permute_2(
+        vec: SIMD[type, 16], other: SIMD[type, 16]
+    ) -> SIMD[type, 16]:
+        return vec._shuffle_list[
+            0, 1, 16, 17, 4, 5, 20, 21, 8, 9, 24, 25, 12, 13, 28, 29
+        ](other)
+
+    @parameter
+    fn _apply_permute_3(
+        vec: SIMD[type, 16], other: SIMD[type, 16]
+    ) -> SIMD[type, 16]:
+        return vec._shuffle_list[
+            2, 3, 18, 19, 6, 7, 22, 23, 10, 11, 26, 27, 14, 15, 30, 31
+        ](other)
+
+    @parameter
+    fn _apply_permute_4(
+        vec: SIMD[type, 16], other: SIMD[type, 16]
+    ) -> SIMD[type, 16]:
+        return vec._shuffle_list[
+            0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
+        ](other)
+
+    @parameter
+    fn _apply_permute_5(
+        vec: SIMD[type, 16], other: SIMD[type, 16]
+    ) -> SIMD[type, 16]:
+        return vec._shuffle_list[
+            4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
+        ](other)
+
+    @parameter
+    fn _apply_permute_6(
+        vec: SIMD[type, 16], other: SIMD[type, 16]
+    ) -> SIMD[type, 16]:
+        return vec._shuffle_list[
+            0, 1, 2, 3, 8, 9, 10, 11, 16, 17, 18, 19, 24, 25, 26, 27
+        ](other)
+
+    @parameter
+    fn _apply_permute_7(
+        vec: SIMD[type, 16], other: SIMD[type, 16]
+    ) -> SIMD[type, 16]:
+        return vec._shuffle_list[
+            4, 5, 6, 7, 12, 13, 14, 15, 20, 21, 22, 23, 28, 29, 30, 31
+        ](other)
 
     var row00 = buf.simd_load[16](StaticIntTuple[2](0, 0))
     var row01 = buf.simd_load[16](StaticIntTuple[2](1, 0))
@@ -182,73 +248,73 @@ fn _transpose_inplace_16x16[
     var row14 = buf.simd_load[16](StaticIntTuple[2](14, 0))
     var row15 = buf.simd_load[16](StaticIntTuple[2](15, 0))
 
-    var k00 = row00._shuffle_list[permute_0](row01)
-    var k01 = row00._shuffle_list[permute_1](row01)
-    var k02 = row02._shuffle_list[permute_0](row03)
-    var k03 = row02._shuffle_list[permute_1](row03)
-    var k04 = row04._shuffle_list[permute_0](row05)
-    var k05 = row04._shuffle_list[permute_1](row05)
-    var k06 = row06._shuffle_list[permute_0](row07)
-    var k07 = row06._shuffle_list[permute_1](row07)
-    var k08 = row08._shuffle_list[permute_0](row09)
-    var k09 = row08._shuffle_list[permute_1](row09)
-    var k10 = row10._shuffle_list[permute_0](row11)
-    var k11 = row10._shuffle_list[permute_1](row11)
-    var k12 = row12._shuffle_list[permute_0](row13)
-    var k13 = row12._shuffle_list[permute_1](row13)
-    var k14 = row14._shuffle_list[permute_0](row15)
-    var k15 = row14._shuffle_list[permute_1](row15)
+    var k00 = _apply_permute_0(row00, row01)
+    var k01 = _apply_permute_1(row00, row01)
+    var k02 = _apply_permute_0(row02, row03)
+    var k03 = _apply_permute_1(row02, row03)
+    var k04 = _apply_permute_0(row04, row05)
+    var k05 = _apply_permute_1(row04, row05)
+    var k06 = _apply_permute_0(row06, row07)
+    var k07 = _apply_permute_1(row06, row07)
+    var k08 = _apply_permute_0(row08, row09)
+    var k09 = _apply_permute_1(row08, row09)
+    var k10 = _apply_permute_0(row10, row11)
+    var k11 = _apply_permute_1(row10, row11)
+    var k12 = _apply_permute_0(row12, row13)
+    var k13 = _apply_permute_1(row12, row13)
+    var k14 = _apply_permute_0(row14, row15)
+    var k15 = _apply_permute_1(row14, row15)
 
-    var j00 = k00._shuffle_list[permute_2](k02)
-    var j01 = k00._shuffle_list[permute_3](k02)
-    var j02 = k01._shuffle_list[permute_2](k03)
-    var j03 = k01._shuffle_list[permute_3](k03)
-    var j04 = k04._shuffle_list[permute_2](k06)
-    var j05 = k04._shuffle_list[permute_3](k06)
-    var j06 = k05._shuffle_list[permute_2](k07)
-    var j07 = k05._shuffle_list[permute_3](k07)
-    var j08 = k08._shuffle_list[permute_2](k10)
-    var j09 = k08._shuffle_list[permute_3](k10)
-    var j10 = k09._shuffle_list[permute_2](k11)
-    var j11 = k09._shuffle_list[permute_3](k11)
-    var j12 = k12._shuffle_list[permute_2](k14)
-    var j13 = k12._shuffle_list[permute_3](k14)
-    var j14 = k13._shuffle_list[permute_2](k15)
-    var j15 = k13._shuffle_list[permute_3](k15)
+    var j00 = _apply_permute_2(k00, k02)
+    var j01 = _apply_permute_3(k00, k02)
+    var j02 = _apply_permute_2(k01, k03)
+    var j03 = _apply_permute_3(k01, k03)
+    var j04 = _apply_permute_2(k04, k06)
+    var j05 = _apply_permute_3(k04, k06)
+    var j06 = _apply_permute_2(k05, k07)
+    var j07 = _apply_permute_3(k05, k07)
+    var j08 = _apply_permute_2(k08, k10)
+    var j09 = _apply_permute_3(k08, k10)
+    var j10 = _apply_permute_2(k09, k11)
+    var j11 = _apply_permute_3(k09, k11)
+    var j12 = _apply_permute_2(k12, k14)
+    var j13 = _apply_permute_3(k12, k14)
+    var j14 = _apply_permute_2(k13, k15)
+    var j15 = _apply_permute_3(k13, k15)
 
-    var t00 = j00._shuffle_list[permute_4](j04)
-    var t01 = j01._shuffle_list[permute_4](j05)
-    var t02 = j02._shuffle_list[permute_4](j06)
-    var t03 = j03._shuffle_list[permute_4](j07)
-    var t04 = j00._shuffle_list[permute_5](j04)
-    var t05 = j01._shuffle_list[permute_5](j05)
-    var t06 = j02._shuffle_list[permute_5](j06)
-    var t07 = j03._shuffle_list[permute_5](j07)
-    var t08 = j08._shuffle_list[permute_4](j12)
-    var t09 = j09._shuffle_list[permute_4](j13)
-    var t10 = j10._shuffle_list[permute_4](j14)
-    var t11 = j11._shuffle_list[permute_4](j15)
-    var t12 = j08._shuffle_list[permute_5](j12)
-    var t13 = j09._shuffle_list[permute_5](j13)
-    var t14 = j10._shuffle_list[permute_5](j14)
-    var t15 = j11._shuffle_list[permute_5](j15)
+    var t00 = _apply_permute_4(j00, j04)
+    var t01 = _apply_permute_4(j01, j05)
+    var t02 = _apply_permute_4(j02, j06)
+    var t03 = _apply_permute_4(j03, j07)
+    var t04 = _apply_permute_5(j00, j04)
+    var t05 = _apply_permute_5(j01, j05)
+    var t06 = _apply_permute_5(j02, j06)
+    var t07 = _apply_permute_5(j03, j07)
+    var t08 = _apply_permute_4(j08, j12)
+    var t09 = _apply_permute_4(j09, j13)
+    var t10 = _apply_permute_4(j10, j14)
+    var t11 = _apply_permute_4(j11, j15)
+    var t12 = _apply_permute_5(j08, j12)
+    var t13 = _apply_permute_5(j09, j13)
+    var t14 = _apply_permute_5(j10, j14)
+    var t15 = _apply_permute_5(j11, j15)
 
-    var r00 = t00._shuffle_list[permute_6](t08)
-    var r01 = t01._shuffle_list[permute_6](t09)
-    var r02 = t02._shuffle_list[permute_6](t10)
-    var r03 = t03._shuffle_list[permute_6](t11)
-    var r04 = t04._shuffle_list[permute_6](t12)
-    var r05 = t05._shuffle_list[permute_6](t13)
-    var r06 = t06._shuffle_list[permute_6](t14)
-    var r07 = t07._shuffle_list[permute_6](t15)
-    var r08 = t00._shuffle_list[permute_7](t08)
-    var r09 = t01._shuffle_list[permute_7](t09)
-    var r10 = t02._shuffle_list[permute_7](t10)
-    var r11 = t03._shuffle_list[permute_7](t11)
-    var r12 = t04._shuffle_list[permute_7](t12)
-    var r13 = t05._shuffle_list[permute_7](t13)
-    var r14 = t06._shuffle_list[permute_7](t14)
-    var r15 = t07._shuffle_list[permute_7](t15)
+    var r00 = _apply_permute_6(t00, t08)
+    var r01 = _apply_permute_6(t01, t09)
+    var r02 = _apply_permute_6(t02, t10)
+    var r03 = _apply_permute_6(t03, t11)
+    var r04 = _apply_permute_6(t04, t12)
+    var r05 = _apply_permute_6(t05, t13)
+    var r06 = _apply_permute_6(t06, t14)
+    var r07 = _apply_permute_6(t07, t15)
+    var r08 = _apply_permute_7(t00, t08)
+    var r09 = _apply_permute_7(t01, t09)
+    var r10 = _apply_permute_7(t02, t10)
+    var r11 = _apply_permute_7(t03, t11)
+    var r12 = _apply_permute_7(t04, t12)
+    var r13 = _apply_permute_7(t05, t13)
+    var r14 = _apply_permute_7(t06, t14)
+    var r15 = _apply_permute_7(t07, t15)
 
     buf.simd_store[16](StaticIntTuple[2](0, 0), r00)
     buf.simd_store[16](StaticIntTuple[2](1, 0), r01)
