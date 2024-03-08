@@ -8,6 +8,7 @@ from math import add
 from random import random_si64
 
 from memory.buffer import NDBuffer
+from tensor import Tensor
 from mojobench import Bencher, BenchId, MojoBench
 from nn.gather_scatter import gather, gather_reduce
 from runtime.llcl import Runtime
