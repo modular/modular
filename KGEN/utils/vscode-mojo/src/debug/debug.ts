@@ -166,9 +166,9 @@ class MojoDebugConfigurationResolver implements
       "?settings set target.show-hex-variable-values-with-leading-zeroes false",
       // FIXME(#23274): remove this when we properly emit the opt flag.
       "?settings set target.process.optimization-warnings false",
+      `?!plugin load '${sdk.config.mojoLLDBPluginPath}'`,
+      "?mojo statistics telemetry session.start vscode"
     ];
-
-    initCommands.push(`?!plugin load '${sdk.config.mojoLLDBPluginPath}'`);
 
     debugConfiguration.initCommands = [
       ...initCommands,

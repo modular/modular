@@ -8,6 +8,8 @@
 #include "../REPL/MojoREPL.h"
 #include "../ScriptingBridge/SBClassUtils.h"
 #include "../TypeSystem/MojoTypeSystem.h"
+#include "LLCL/Runtime/Runtime.h"
+#include "Support/Telemetry/Telemetry.h"
 #include "lldb/Target/Target.h"
 
 using namespace M;
@@ -53,16 +55,64 @@ This is a non-comprehensive list of features not yet supported:
 Finally, we encourage you to submit feature requests and error reports in
 https://github.com/modularml/mojo/issues.
 )");
+    result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
     return true;
   }
 };
 
+//===----------------------------------------------------------------------===//
+// CommandStats: mojo stats
+//
+// Telemetry subcommand:
+//   This subcommand logs the given event using Modular's telemetry.
+//
+//   mojo stats telemetry <event> <interface>
+//     interface: vscode | cli
+//
+//===----------------------------------------------------------------------===//
+class CommandStats : public SBCommandPluginInterface {
+public:
+  CommandStats(LLCL::Runtime &runtime) : runtime(runtime) {}
+
+  bool DoExecute(SBDebugger debugger, char **command,
+                 SBCommandReturnObject &result) override {
+    SmallVector<StringRef> args;
+    for (char **it = command; it && *it; ++it)
+      args.push_back(*it);
+
+    // `telemetry` is not a proper subcommand to hide it from the help and
+    // autocompletion results of LLDB.
+    if (args.size() == 3 && args[0] == "telemetry") {
+      StringRef event = args[1];
+      StringRef interface = args[2];
+
+#ifdef MODULAR_ENABLE_TELEMETRY
+      auto &telemetryCtx =
+          runtime.emplaceContext<M::Telemetry::TelemetryContext>();
+      auto logger = telemetryCtx.getLogger("debugger");
+      logger->emitL1Event(event, {{"interface", interface}});
+#endif
+      result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
+      return true;
+    }
+    result.SetStatus(lldb::eReturnStatusFailed);
+    return false;
+  }
+
+  LLCL::Runtime &runtime;
+};
+
 } // namespace
 
-void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger) {
+void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger,
+                                         LLCL::Runtime &runtime) {
   SBCommandInterpreter interpreter = debugger.GetCommandInterpreter();
   SBCommand root = interpreter.AddMultiwordCommand(
       "mojo", "Commands related to the Mojo language support.");
+
+  root.AddCommand("statistics", new CommandStats(runtime),
+                  "Commands related to statistics of Mojo");
+
   SBCommand help = root.AddMultiwordCommand(
       "help", "Display help information about various "
               "components of the Mojo support in LLDB.");
