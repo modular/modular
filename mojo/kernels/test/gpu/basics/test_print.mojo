@@ -10,11 +10,11 @@ from gpu.host import Function, Context
 from gpu.device_print import _printf
 
 
-# CHECK: Hello I got 42
+# CHECK: Hello I got 42 7.2
 fn main() raises:
-    fn do_print(x: Int):
-        _printf("Hello I got %lld\n", x)
+    fn do_print(x: Int, y: Float64):
+        _printf("Hello I got %lld %g\n", [x, y])
 
     with Context() as ctx:
         var func = Function[__type_of(do_print), do_print]()
-        func(Int(42), grid_dim=1, block_dim=1)
+        func(Int(42), Float64(7.2), grid_dim=1, block_dim=1)
