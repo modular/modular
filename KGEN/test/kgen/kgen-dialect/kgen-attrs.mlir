@@ -22,8 +22,8 @@ kgen.generator @return_one() -> index {
 // CHECK: #kgen.int_literal<5> : !kgen.int_literal
 "some.op"() {data = #kgen.int_literal<5> : !kgen.int_literal} : () -> ()
 
-// CHECK: #kgen.float_literal<normal (5|3)> : !kgen.float_literal
-"some.op"() {data = #kgen.float_literal<normal (5|3)> : !kgen.float_literal} : () -> ()
+// CHECK: #kgen.float_literal<5|3> : !kgen.float_literal
+"some.op"() {data = #kgen.float_literal<5|3> : !kgen.float_literal} : () -> ()
 // CHECK: #kgen.float_literal<neg_zero> : !kgen.float_literal
 "some.op"() {data = #kgen.float_literal<neg_zero> : !kgen.float_literal} : () -> ()
 // CHECK: #kgen.float_literal<inf> : !kgen.float_literal
