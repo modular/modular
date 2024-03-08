@@ -407,3 +407,28 @@ kgen.func @large_array(%arg1: !pop.array<512, index>) -> index {
   %load = pop.load %gep : !kgen.pointer<index>
   kgen.return %load : index
 }
+
+// CHECK-LABEL: kgen.func @destructure_load
+kgen.func @destructure_load() -> !kgen.struct<(i1, i2)> {
+  // CHECK-NEXT: [[I1:%.*]] = pop.stack_allocation 1 x i1
+  // CHECK-NEXT: [[I2:%.*]] = pop.stack_allocation 1 x i2
+  %0 = pop.stack_allocation 1 x !kgen.struct<(i1, i2)>
+  // CHECK-NEXT: [[I1V:%.*]] = pop.load [[I1]]
+  // CHECK-NEXT: [[I2V:%.*]] = pop.load [[I2]]
+  // CHECK-NEXT: [[S:%.*]] = kgen.struct.create([[I1V]], [[I2V]])
+  %1 = pop.load %0 : !kgen.pointer<struct<(i1, i2)>>
+  // CHECK-NEXT: return [[S]]
+  kgen.return %1 : !kgen.struct<(i1, i2)>
+}
+
+// CHECK-LABEL: kgen.func @two_users
+kgen.func @two_users() {
+  %0 = pop.stack_allocation 1 x struct<(i1, i2)>
+  %1 = pop.load %0 : !kgen.pointer<struct<(i1, i2)>>
+  // CHECK: [[S:%.*]] = kgen.struct.create
+  // CHECK-NEXT: call @use1([[S]])
+  kgen.call @use1(%1) : (!kgen.struct<(i1, i2)>) -> ()
+  // CHECK-NEXT: call @use2([[S]])
+  kgen.call @use2(%1) : (!kgen.struct<(i1, i2)>) -> ()
+  kgen.return
+}
