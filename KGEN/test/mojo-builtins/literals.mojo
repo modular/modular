@@ -8,7 +8,7 @@
 
 
 fn var_let_decls():
-    # CHECK: %xx = lit.var.decl "xx"  var
+    # CHECK: %xx = lit.var.decl "xx" var
     # CHECK: %[[V1:.*]] = kgen.param.constant: !Int = <{42}>
     # CHECK: lit.ref.store %[[V1]], %xx
     var xx = 42
@@ -16,7 +16,7 @@ fn var_let_decls():
     # CHECK: lit.alias.decl {{.*}}il{{.*}}: !IntLiteral = <{:!kgen.int_literal 43}>
     alias il = 43
 
-    # CHECK: %yy = lit.var.decl "yy"  var
+    # CHECK: %yy = lit.var.decl "yy" var
     # CHECK: %[[V3:.*]] = kgen.param.constant: {{.*}}SIMD{{.*}}dtype f64
     # CHECK: lit.ref.store %[[V3]], %yy
     var yy = 1.0
