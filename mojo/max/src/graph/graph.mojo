@@ -17,6 +17,7 @@ compiled and executed by MAX Engine, for example using the MAX Engine API.
 
 from collections import Optional
 from sys.info import has_neon
+from tensor import Tensor
 
 import _mlir
 

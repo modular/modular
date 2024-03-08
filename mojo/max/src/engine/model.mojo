@@ -18,6 +18,7 @@ from .tensor_map import CTensorMap
 from tensor import TensorSpec
 from sys.intrinsics import _mlirtype_is_eq
 from utils import StringRef
+from tensor import Tensor
 
 
 @value

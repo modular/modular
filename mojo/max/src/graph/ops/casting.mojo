@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Operations which operate on the shape or dtype of symbolic tensor."""
 
-from tensor import TensorShape
+from tensor import Tensor, TensorShape
 from utils.variant import Variant
 
 from max.graph.type import Dim, ElementType

@@ -6,6 +6,7 @@
 """Types for values that can be passed in and out of engine models."""
 
 
+from tensor import Tensor
 from sys.ffi import DLHandle
 from ._context import CRuntimeContext
 from ._tensor_impl import EngineTensor

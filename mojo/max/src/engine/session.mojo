@@ -14,6 +14,7 @@ from memory.anypointer import AnyPointer
 from os.atomic import Atomic
 from sys.ffi import DLHandle
 from pathlib import Path
+from tensor import Tensor
 
 from max.graph import Graph, Module
 
