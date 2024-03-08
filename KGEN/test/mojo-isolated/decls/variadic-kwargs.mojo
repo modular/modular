@@ -73,7 +73,7 @@ struct MemOnly(SomeTrait):
 
 # CHECK-LABEL: lit.func @"test_variadic_kwargs_param_inference
 fn test_variadic_kwargs_param_inference():
-    # %s = lit.var.decl "s"  var : !lit.ref<!MemOnly,
+    # %s = lit.var.decl "s" var : !lit.ref<!MemOnly,
     var s = MemOnly()
 
     # CHECK: %[[M:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemOnly,

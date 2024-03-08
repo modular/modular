@@ -610,7 +610,7 @@ lit.struct.decl @Reg register_passable attributes {
 lit.func @copy_del_reg_value() {
   %0 = kgen.param.materialize: !Reg = <#lit.struct<{}>>
 
-  %x = lit.var.decl "x"  var : !lit.ref<!Reg, mut a>
+  %x = lit.var.decl "x" var : !lit.ref<!Reg, mut a>
   lit.ref.store %0, %x : !lit.ref<!Reg, mut a>
   %load = lit.ref.load %x : !lit.ref<!Reg, mut a>
   // CHECK: lit.ref.store
@@ -700,7 +700,7 @@ lit.func @y(%arg1: !lit.declref<@Int> borrow) {
 }
 // expected-note @+1 {{'arg0' declared here}}
 lit.func @x(%arg0: !lit.declref<@Int> owned) {
-  %x = lit.var.decl "x"  var : !lit.ref<@Int, mut a>
+  %x = lit.var.decl "x" var : !lit.ref<@Int, mut a>
   lit.ref.store %arg0, %x : !lit.ref<@Int, mut a>
   %1 = lit.ref.load %x : <@Int, mut a>
   %2 = kgen.call @Int::@__del__(%1) : !lit.signature<(!lit.declref<@Int>) -> !kgen.none>
