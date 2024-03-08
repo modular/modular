@@ -6,6 +6,7 @@
 
 add_modular_library(MOGGPreElabPasses
   SliceMOGGFuncs.cpp
+  UserLibraryChecker.cpp
 
   DEPENDS
   MLIRKGENMOGGPreElabPasses
