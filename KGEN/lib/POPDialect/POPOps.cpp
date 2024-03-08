@@ -149,23 +149,23 @@ LogicalResult CastOp::verify() {
 
 static ParseResult parseShuffleMask(AsmParser &p, TypedAttr &mask,
                                     Type resultType) {
-  return parseParamValue(p, mask,
-                         VariadicType::get(p.getBuilder().getIndexType()));
+
+  return parseColonTypeParamValue(p, mask);
 }
 
 static void printShuffleMask(AsmPrinter &p, Operation *op, TypedAttr mask,
                              Type resultType) {
-  printParamValue(p, mask);
+  printColonTypeParamValue(p, mask);
 }
 
 LogicalResult SIMDShuffleOp::verify() {
   std::optional<int64_t> size = getType().getResolvedSize();
   if (!size)
     return success();
-  auto maskType = cast<VariadicType>(getMask().getType());
+  auto maskType = cast<ArrayType>(getMask().getType());
   if (!isa<IndexType>(maskType.getElementType()))
     return emitOpError("expected mask to be a list of indices");
-  auto mask = dyn_cast_or_null<VariadicAttr>(getMask());
+  auto mask = dyn_cast_or_null<ArrayAttr>(getMask());
   if (!mask)
     return success();
 

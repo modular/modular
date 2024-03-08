@@ -794,7 +794,7 @@ OpFoldResult SIMDShuffleOp::fold(FoldAdaptor adaptor) {
   std::optional<int64_t> size = getType().getResolvedSize();
   auto lhs = dyn_cast_if_present<SIMDAttr>(adaptor.getLhs());
   auto rhs = dyn_cast_if_present<SIMDAttr>(adaptor.getRhs());
-  auto mask = dyn_cast_if_present<VariadicAttr>(getMaskAttr());
+  auto mask = dyn_cast_if_present<ArrayAttr>(getMaskAttr());
   if (!size || !lhs || !rhs || !mask)
     return {};
 
