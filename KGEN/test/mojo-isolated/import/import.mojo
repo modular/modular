@@ -57,3 +57,11 @@ fn test_function_calls():
     function()
     nested_function()
     method_defined_in_init()
+
+
+fn import_in_dead_branch():
+    # expected-warning @below {{if statement with constant condition 'if True'}}
+    if __mlir_attr.`true`:
+        pass
+    else:
+        from test_package.module import function

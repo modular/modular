@@ -220,14 +220,17 @@ bool LIT::canSynthesizeIfMissing(StringRef name, bool rpTrivial,
 }
 
 void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
-  Block &deadBlock = deadRegion->front();
-  Operation *op = &deadBlock.front();
   // Erase bottom up to avoid deleting an op while something uses its results.
-  while (&deadBlock.back() != op)
-    deadBlock.back().erase();
-  op->erase();
+  for (Operation &op :
+       llvm::make_early_inc_range(llvm::reverse(deadRegion->front()))) {
+    // Avoid erasing ops that correspond to lazily resolved decls.
+    if (isa<UnresolvedImportOp, UnresolvedWildcardImportOp>(op))
+      continue;
+    op.erase();
+  }
 
-  OpBuilder::atBlockBegin(&deadBlock).create<UnreachableOp>(unreachableLoc);
+  OpBuilder::atBlockEnd(&deadRegion->front())
+      .create<UnreachableOp>(unreachableLoc);
 }
 
 Type LIT::getVariadicKwargsType(Type dictRefType) {
