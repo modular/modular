@@ -13,7 +13,6 @@ from pytest_lsp import LanguageClient
 client = mojo_lsp_client
 
 
-@flaky
 async def test_signature_help_overload(client: LanguageClient):
     doc = Document(
         "foo.mojo",
