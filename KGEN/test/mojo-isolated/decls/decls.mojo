@@ -1086,6 +1086,16 @@ fn awaitable() -> Int:
     var aw = Awaitable()
     return await aw
 
+# COM: https://github.com/modularml/mojo/issues/951
+@always_inline
+async fn inline_async() -> Int: return 0
+# CHECK-LABEL: lit.func @"use_inline_async()"
+async fn use_inline_async() -> Int:
+    # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
+    # CHECK: [[CORO:%.*]] = lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}[[ASYNC_RESULT]]
+    # CHECK: [[RESULT:%.*]] = lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}[[CORO]]
+    # CHECK: lit.return [[RESULT]]
+    return await inline_async()
 
 ##===----------------------------------------------------------------------===##
 # Nested Functions

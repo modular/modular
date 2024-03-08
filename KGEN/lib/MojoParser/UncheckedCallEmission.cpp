@@ -717,7 +717,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
 FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
-  if (calleeSig.isThrows())
+  if (calleeSig.isThrows() || calleeSig.isAsync())
     return failure();
   auto calleePR = callee.getIfPValue();
   if (!calleePR)
