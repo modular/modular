@@ -41,8 +41,7 @@ struct Reducer {
                                            llvm::cl::desc("<input file>"),
                                            llvm::cl::init("-")};
 
-  llvm::cl::opt<std::string> pipeline{"pipeline",
-                                      llvm::cl::desc("Repro pipeline string")};
+  mlir::PassPipelineCLParser passPipeline{"", "pass pipeline to run"};
 
   cl::opt<unsigned> numSnapshots{"num-snapshots",
                                  llvm::cl::desc("number of snapshots to keep"),
@@ -111,15 +110,23 @@ ErrorOrSuccess Reducer::run() {
          "\n\n";
 
   log << "[kgen-reduce] " << inputFilename.getValue() << "\n";
-  log << "[kgen-reduce] " << pipeline.getValue() << "\n";
 
   // Parse the pass pipeline.
   {
     std::string err;
     llvm::raw_string_ostream os(err);
-    if (failed(mlir::parsePassPipeline(pipeline.getValue(), reproPm, os)))
-      return Error(err);
+    if (passPipeline.hasAnyOccurrences()) {
+      if (failed(passPipeline.addToPipeline(reproPm, [&](const Twine &msg) {
+            os << msg;
+            return failure();
+          })))
+        return Error(err);
+    }
   }
+
+  log << "[kgen-reduce] ";
+  reproPm.printAsTextualPipeline(log);
+  log << "\n";
 
   std::optional<std::string> initDiag = attemptRepro(*inputModule);
   if (!initDiag)
