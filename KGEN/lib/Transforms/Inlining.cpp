@@ -397,13 +397,6 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
           : &topLevelGraph.nestedScopes.find(scopeRegion)->second;
 
   mlir::IRRewriter b{OpBuilder(call)};
-  // Use a LoopOp to be able to break to a label - any returns inlined from
-  // callee must only exit the inlined block.
-  auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
-                                      ValueRange(), label);
-
-  b.createBlock(&scope.getBody());
-
   AttrTypeMangler mangler(manglerCache);
   bool needsMangling =
       mangler.populate(b, *callScope, calleeDecls, topLevelGraph);
@@ -415,8 +408,15 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     for (Type &type : argTypes)
       type = mangler.mangleRefsIn(type);
 
+  b.setInsertionPointAfter(call);
   SmallVector<Value> argVals =
       rebindValues(b, call.getLoc(), call->getOperands(), argTypes);
+
+  // Use a LoopOp to be able to break to a label - any returns inlined from
+  // callee must only exit the inlined block.
+  auto scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
+                                      ValueRange(), label);
+  b.createBlock(&scope.getBody());
 
   // Map the callee inputs.
   IRMapping map;
@@ -524,12 +524,12 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
 
   // Mangle the DeclInterface declarations.
   // TODO: mangle result parameter names as well.
-  b.setInsertionPointToStart(&scope.getBody().front());
+  b.setInsertionPoint(call);
   for (auto [origDecl, value] :
        llvm::zip(callee.getInputParams(), call.getParamValues())) {
     ParamDeclAttr decl = mangler.mangleDecl(origDecl, needsMangling);
     auto declOp = b.create<ParamDeclareOp>(
-        callee.getLoc(), decl,
+        call.getLoc(), decl,
         ParamOperatorAttr::get(b.getContext(), POC::Rebind, value,
                                decl.getType()));
     // Register the new declaration.
