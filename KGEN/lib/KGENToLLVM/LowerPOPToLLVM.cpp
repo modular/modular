@@ -390,7 +390,7 @@ struct ConvertPOPSIMDShuffle : public ConvertPOPToLLVMPattern<SIMDShuffleOp> {
   LogicalResult
   matchAndRewrite(SIMDShuffleOp op, SIMDShuffleOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-    auto mask = cast<VariadicAttr>(adaptor.getMask());
+    auto mask = cast<POP::ArrayAttr>(adaptor.getMask());
     SmallVector<int32_t> maskValues;
     for (TypedAttr maskElement : mask.getValues())
       maskValues.push_back(cast<IntegerAttr>(maskElement).getInt());

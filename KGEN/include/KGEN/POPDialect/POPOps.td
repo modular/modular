@@ -652,7 +652,7 @@ def POP_SIMDShuffleOp : POPOp<"simd.shuffle", [Pure,
   }];
 
   let arguments = (ins POP_SIMDType:$lhs, POP_SIMDType:$rhs,
-                       AttrOfType<KGEN_VariadicType>:$mask);
+                       AttrOfType<POP_ArrayType>:$mask);
   let results = (outs POP_SIMDType:$result);
 
   let assemblyFormat = [{

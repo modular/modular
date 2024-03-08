@@ -534,13 +534,11 @@ kgen.generator @pop_simd_insertelement<size, DT: dtype>(
 }
 
 // CHECK-LABEL: @pop_simd_shuffle
-kgen.generator @pop_simd_shuffle<size, mask: variadic<index>>(%a: !pop.simd<size, f32>, %b: !pop.simd<size, f32>) {
-  // CHECK: pop.simd.shuffle <size, f32> %{{.*}}, %{{.*}} -> <2, f32> [1, 2]
-  %0 = pop.simd.shuffle <size, f32> %a, %b -> <2, f32> [1, 2]
-  // CHECK: pop.simd.shuffle <size, f32> %{{.*}}, %{{.*}} -> <4, f32> [1, 2, 3, 4]
-  %1 = pop.simd.shuffle <size, f32> %a, %b -> <4, f32> [1, 2, 3, 4]
-  // CHECK: pop.simd.shuffle <size, f32> %{{.*}}, %{{.*}} -> <size, f32> mask
-  %2 = pop.simd.shuffle <size, f32> %a, %b -> <size, f32> mask
+kgen.generator @pop_simd_shuffle<size, mask: !pop.array<2,index>>(%a: !pop.simd<size, f32>, %b: !pop.simd<size, f32>) {
+  // CHECK: pop.simd.shuffle <size, f32> %{{.*}}, %{{.*}} -> <2, f32> :array<2, index> [1, 2]
+  %0 = pop.simd.shuffle <size, f32> %a, %b -> <2, f32> :array<2, index> [1, 2]
+  // CHECK: pop.simd.shuffle <size, f32> %{{.*}}, %{{.*}} -> <4, f32> :array<4, index> [1, 2, 3, 4]
+  %1 = pop.simd.shuffle <size, f32> %a, %b -> <4, f32> :array<4, index> [1, 2, 3, 4]
   kgen.return
 }
 

@@ -626,7 +626,7 @@ kgen.func @simd_shuffle() -> !pop.simd<2, si8> {
   // CHECK-NEXT: <3, 2>
   %0 = kgen.param.constant: scalar<si8> = <<2>>
   %1 = kgen.param.constant: scalar<si8> = <<3>>
-  %2 = pop.simd.shuffle <1, si8> %0, %1 -> <2, si8> [1, 0]
+  %2 = pop.simd.shuffle <1, si8> %0, %1 -> <2, si8> :array<2, index> [1, 0]
   kgen.return %2 : !pop.simd<2, si8>
 }
 

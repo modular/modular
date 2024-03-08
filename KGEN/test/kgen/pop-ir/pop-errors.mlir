@@ -70,7 +70,7 @@ kgen.generator @cast_simd_size<size, type: dtype>(%a: !pop.simd<size, type>) {
 
 kgen.generator @simd_shuffle(%a: !pop.simd<2, f32>) {
   // expected-error @below {{expected result dtype to match operand dtypes}}
-  %0 = pop.simd.shuffle <2, f32> %a, %a -> <1, f64> [1]
+  %0 = pop.simd.shuffle <2, f32> %a, %a -> <1, f64> :array<1, index> [1]
   kgen.return
 }
 
@@ -78,7 +78,7 @@ kgen.generator @simd_shuffle(%a: !pop.simd<2, f32>) {
 
 kgen.generator @simd_shuffle<type: dtype>(%a: !pop.simd<2, f32>) {
   // expected-error @below {{expected result dtype to match operand dtypes}}
-  %0 = pop.simd.shuffle <2, f32> %a, %a -> <1, type> [1]
+  %0 = pop.simd.shuffle <2, f32> %a, %a -> <1, type> :array<1, index> [1]
   kgen.return
 }
 
@@ -86,7 +86,7 @@ kgen.generator @simd_shuffle<type: dtype>(%a: !pop.simd<2, f32>) {
 
 kgen.generator @simd_shuffle<size>(%a: !pop.simd<2, f32>) {
   // expected-error @below {{mask element 4 is out of bounds}}
-  %0 = pop.simd.shuffle <2, f32> %a, %a -> <1, f32> [4]
+  %0 = pop.simd.shuffle <2, f32> %a, %a -> <1, f32> :array<1, index> [4]
   kgen.return
 }
 
