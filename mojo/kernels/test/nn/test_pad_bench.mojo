@@ -15,7 +15,7 @@ from testing import assert_equal, assert_true
 import benchmark
 from benchmark import Unit, keep
 from python import Python
-from algorithm.functional import unroll
+from utils import unroll
 from math import isclose
 
 
