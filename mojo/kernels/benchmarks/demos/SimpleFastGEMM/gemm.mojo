@@ -9,7 +9,7 @@
 from sys.intrinsics import PrefetchOptions
 
 import benchmark
-from algorithm import unroll
+from utils import unroll
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
