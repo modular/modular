@@ -42,6 +42,7 @@ struct Reducer {
                                            llvm::cl::init("-")};
 
   mlir::PassPipelineCLParser passPipeline{"", "pass pipeline to run"};
+  mlir::PassReproducerOptions reproOptions;
 
   cl::opt<unsigned> numSnapshots{"num-snapshots",
                                  llvm::cl::desc("number of snapshots to keep"),
@@ -99,8 +100,12 @@ struct Reducer {
 } // namespace
 
 ErrorOrSuccess Reducer::run() {
-  OwningOpRef<ModuleOp> inputModule = mlir::parseSourceFile<ModuleOp>(
-      inputFilename.getValue(), mlir::ParserConfig(ctx));
+  mlir::ParserConfig parserConfig(ctx);
+  if (!passPipeline.hasAnyOccurrences())
+    reproOptions.attachResourceParser(parserConfig);
+
+  OwningOpRef<ModuleOp> inputModule =
+      mlir::parseSourceFile<ModuleOp>(inputFilename.getValue(), parserConfig);
   if (!inputModule)
     return Error("failed to parse input file: " + inputFilename.getValue());
 
@@ -121,6 +126,8 @@ ErrorOrSuccess Reducer::run() {
             return failure();
           })))
         return Error(err);
+    } else if (failed(reproOptions.apply(reproPm))) {
+      return Error("failed to read pass reproducer");
     }
   }
 
