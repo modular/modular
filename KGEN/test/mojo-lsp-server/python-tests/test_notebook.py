@@ -4,12 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import pytest
-
-pytest.skip(
-    "https://github.com/modularml/modular/issues/34132", allow_module_level=True
-)
-
 from typing import List, Optional
 
 from lib.utils import NotebookDocument, Requests, fail_if_none, mojo_lsp_client
