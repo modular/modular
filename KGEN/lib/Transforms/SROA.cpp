@@ -198,8 +198,8 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
     for (Operation *user : alloc->getUsers()) {
       // If the user is something which actually expects the full structure like
       // a call then we cannot perfom the optimization.
-      if (!isa<StructGEPOp, StructExtractOp, POP::StoreOp, POP::LoadOp,
-               DebugInfo::ValueOp>(user))
+      if (!isa<StructGEPOp, POP::StoreOp, POP::LoadOp, DebugInfo::ValueOp>(
+              user))
         return false;
 
       // If the user is the argument of the store, then we cannot elide.
@@ -210,7 +210,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
       // We can SROA loads if they are only used in extract ops.
       if (auto load = dyn_cast<POP::LoadOp>(user)) {
         for (Operation *loadUser : load->getUsers()) {
-          if (!isa<StructGEPOp, StructExtractOp, DebugInfo::ValueOp>(loadUser))
+          if (!isa<StructExtractOp, DebugInfo::ValueOp>(loadUser))
             return false;
         }
       }
@@ -233,8 +233,6 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
                        SmallVectorImpl<Operation *> &toDelete) {
     if (auto gep = dyn_cast<StructGEPOp>(user)) {
       gep.replaceAllUsesWith(newAllocas[gep.getIndexAttr().getInt()]);
-    } else if (auto extract = dyn_cast<StructExtractOp>(user)) {
-      extract.replaceAllUsesWith(newAllocas[extract.getIndexAttr().getInt()]);
     } else if (auto load = dyn_cast<POP::LoadOp>(user)) {
       // Store each load in its index in the array, using the fact that C++ will
       // make value null by default.
@@ -255,10 +253,7 @@ struct ReplaceStructs : public Replacer<ReplaceStructs, StructType> {
       // Replace the *user* of each load with the loaded scalar or for GEPs the
       // pointer itself.
       for (Operation *loadUser : load->getUsers()) {
-        if (auto gep = dyn_cast<StructGEPOp>(loadUser)) {
-          gep.replaceAllUsesWith(newAllocas[gep.getIndexAttr().getInt()]);
-          toDelete.push_back(gep);
-        } else if (auto extract = dyn_cast<StructExtractOp>(loadUser)) {
+        if (auto extract = dyn_cast<StructExtractOp>(loadUser)) {
           Value newVal = getOrCreateLoad(extract.getIndex());
           extract.replaceAllUsesWith(newVal);
           toDelete.push_back(extract);
