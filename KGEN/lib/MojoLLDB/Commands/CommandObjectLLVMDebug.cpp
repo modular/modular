@@ -51,6 +51,7 @@ bool CommandLLVMDebugEnable::DoExecute(SBDebugger debugger, char **command,
 #else
   setCurrentDebugTypes(const_cast<const char **>(command), count);
 #endif
+  result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
   return true;
 }
 
@@ -60,6 +61,7 @@ bool CommandLLVMDebugEnable::DoExecute(SBDebugger debugger, char **command,
 bool CommandLLVMDebugDisable::DoExecute(SBDebugger debugger, char **command,
                                         SBCommandReturnObject &result) {
   llvm::DebugFlag = false;
+  result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
   return true;
 }
 

@@ -29,6 +29,14 @@ using namespace M::KGEN::Mojo;
 // Plugin Initialization
 //===--------------------------------------------------------------===//
 
+/// Get the global LLCL runtime to be used inside the plugin.
+static LLCL::Runtime &getOrCreateGlobalRuntime() {
+  static ConditionallyOwnedPointer<LLCL::Runtime> runtime =
+      LLCL::createRuntimeIfNeeded(
+          LLCL::RuntimeOptions().withMainWillNotDonate());
+  return *runtime;
+}
+
 /// LLDB has two different types of plugin initialization, we support them both
 /// here to provide flexibility for users. However, as we have the public API
 /// enabled, initialization will go through `lldb::PluginInitialize`.
@@ -48,8 +56,7 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
 
   // We need to create a global runtime for the bits to work with. This is a
   // bit strange, but there's no better place for it.
-  static auto runtime =
-      LLCL::createUniqueRuntime(LLCL::RuntimeOptions().withMainWillNotDonate());
+  getOrCreateGlobalRuntime();
 
   // Initialize the various plugin components.
   MojoTypeSystem::Initialize();
@@ -94,7 +101,7 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
   if (!LLDBPluginInitialize())
     return false;
 
-  registerMojoCommands(debugger);
+  registerMojoCommands(debugger, getOrCreateGlobalRuntime());
   registerLLVMDebugCommands(debugger);
   // We enable JIT debugging here so that this feature doesn't depend on
   // lldb init files or how LLDB was launched.
