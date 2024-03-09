@@ -7,7 +7,7 @@
 # RUN: cat %t.csv | FileCheck %s --check-prefix=CHECK-OUT
 # RUN: mojo %s -t | FileCheck %s --check-prefix=CHECK-TEST
 
-from mojobench import Bencher, BenchId, Mode, MojoBench, MojoBenchConfig
+from benchmark import Bencher, BenchId, Mode, Bench, BenchConfig
 
 
 @parameter
@@ -29,7 +29,7 @@ fn bench2(inout b: Bencher, mystr: String):
 
 
 def main():
-    var m = MojoBench(MojoBenchConfig(max_iters=10_000))
+    var m = Bench(BenchConfig(max_iters=10_000))
     m.bench_function[bench1](BenchId("bench1"))
 
     var inputs = List[String]()
