@@ -873,10 +873,14 @@ struct NDBuffer[
 
         @parameter
         fn serialize[T: Stringable](val: T):
-            res += val.__str__()
+            res += str(val)
+
+        var shape = List[Int]()
+        for i in range(rank):
+            shape.append(self.dynamic_shape[i])
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self.data, self.dynamic_shape
+            self.data, shape
         )
 
         return res + ")"
