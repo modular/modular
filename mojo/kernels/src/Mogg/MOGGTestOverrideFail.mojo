@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from utils._annotations import *
+from register import *
 
 
 @mogg_register("test_override_dummy_op")

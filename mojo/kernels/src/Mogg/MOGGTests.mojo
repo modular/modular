@@ -9,7 +9,7 @@ from algorithm.functional import _elementwise_impl
 from memory.buffer import NDBuffer
 from runtime.llcl import MojoCallContextPtr
 
-from utils._annotations import *
+from register import *
 from utils.index import StaticIntTuple
 from utils.list import DimList
 

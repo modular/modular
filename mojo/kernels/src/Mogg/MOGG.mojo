@@ -137,7 +137,7 @@ from runtime.llcl import (
 )
 from runtime.tracing import Trace, TraceLevel
 
-from utils._annotations import *
+from register import *
 from utils._optional import Optional
 from utils._optional_param import OptionalParamInt
 from utils.index import Index, StaticIntTuple, product

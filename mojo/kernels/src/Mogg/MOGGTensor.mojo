@@ -14,7 +14,7 @@ from memory.buffer import NDBuffer
 from memory.unsafe import Pointer, bitcast
 from MOGGIntList import IntList
 
-from utils._annotations import *
+from register import *
 from utils._optional import Optional
 
 

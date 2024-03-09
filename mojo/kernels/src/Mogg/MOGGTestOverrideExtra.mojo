@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from math import min
 
-from utils._annotations import *
+from register import *
 
 
 @mogg_register_override("mo.min", 10)
