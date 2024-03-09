@@ -397,7 +397,6 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // TODO: Should have a better way to say that it is safe to implicitly ignore
   // a value of a type (e.g. a type decorator)
   auto isImplicitlyIgnorableType = [&](ASTType type) -> bool {
-    // TODO: This is incorrect for throwing functions that return None.
     return type.isNoneType() ||
            type.isEqualCanon(shared.getTypeCheckErrorType());
   };
@@ -410,15 +409,10 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
 
   // If this type is a function with no arguments and an ignorable type, we
   // emit a warning with a fix it hint suggesting that it get called.
+  // TODO: This is incorrect for default arguments and varargs.
   if (auto sig = dyn_cast<SignatureType>(valueType)) {
-    // TODO: This is incorrect for default arguments and varargs.
-    assert(sig.getNumResults() == 1);
-
     // Get the result type without any error handling in the way.
-    Type resultType = sig.getResults()[0];
-    if (sig.isThrows())
-      resultType = cast<VariantType>(resultType).getType(1);
-
+    Type resultType = ASTType(sig).getSignatureUserResultType();
     if (sig.getArguments().empty() && isImplicitlyIgnorableType(resultType)) {
       shared.emitWarning(expr->getLoc())
           << "function pointer was formed but not called, did you forget '()'s?"

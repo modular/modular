@@ -823,8 +823,7 @@ TypedAttr CallEmitter::emitCallInParamContext(
 /// function looks up the corresponding coroutine type and binds its result
 /// type.
 static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
-                                     SMLoc loc, SignatureType sig,
-                                     Type resultType) {
+                                     SMLoc loc, SignatureType sig) {
   ASTType coroType = sig.isThrows()
                          ? shared.getBuiltinRaisingCoroutineType(declScope, loc)
                          : shared.getBuiltinCoroutineType(declScope, loc);
@@ -834,8 +833,7 @@ static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
     return {};
   }
   // If the async function throws, extract the normal result type.
-  if (sig.isThrows())
-    resultType = *std::next(cast<VariantType>(resultType).getTypes().begin());
+  Type resultType = ASTType(sig).getSignatureUserResultType();
 
   // Bind the result type to the base coroutine type.
   auto typeExpr =
@@ -1047,8 +1045,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
           loc,
           POP::CoroutineType::get(getContext(), resultType, sig.isThrows()),
           target.get(), implicitLifetimes, callArgs);
-      ASTType coroType = getBoundCoroutineType(
-          shared, declScope, callExpr->getLoc(), sig, resultType);
+      ASTType coroType =
+          getBoundCoroutineType(shared, declScope, callExpr->getLoc(), sig);
       if (!coroType) {
         dest.resetForError();
         return {};
