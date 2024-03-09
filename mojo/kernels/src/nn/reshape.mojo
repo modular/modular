@@ -7,7 +7,7 @@
 from utils import unroll
 from memory.buffer import NDBuffer
 
-from utils._annotations import mogg_register, mogg_view_op
+from register import mogg_register, mogg_view_op
 from utils.index import StaticIntTuple
 from utils.list import DimList
 
