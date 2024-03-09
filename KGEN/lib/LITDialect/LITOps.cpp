@@ -240,7 +240,9 @@ parseCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
   if (implicitLifetimes.empty()) {
     values = calleeType.getValues();
   } else {
-    auto calleeLITType = cast<LITSignatureType>(calleeType);
+    auto calleeLITType = dyn_cast<LITSignatureType>(calleeType);
+    if (!calleeLITType)
+      return p.emitError(p.getCurrentLocation(), "expected a `!lit.signature`");
     if (calleeLITType.getNumImplicitLifetimeDecls() != implicitLifetimes.size())
       return p.emitError(p.getNameLoc())
              << implicitLifetimes.size()
