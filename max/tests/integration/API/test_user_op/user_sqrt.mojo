@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from utils._annotations import *
+from register import *
 
 
 @mogg_register_override("mo.sqrt", 1)
