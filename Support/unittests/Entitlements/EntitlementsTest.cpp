@@ -421,12 +421,15 @@ TEST(TestEntitlementStore, Refresh) {
 TEST(TestRefreshPolicy, CheckMidpoint) {
   using namespace std::chrono_literals;
   std::chrono::system_clock::time_point from =
-      std::chrono::system_clock::now() - 1min;
+      std::chrono::system_clock::now() - 2min;
   std::chrono::system_clock::time_point to3Min =
       std::chrono::system_clock::now() + 3min;
   std::chrono::system_clock::time_point to1Min =
       std::chrono::system_clock::now() + 1min;
 
+  // We are 2 minutes into a 5 minute expiration; no refresh.
   EXPECT_FALSE(defaultEntitlementRefreshPolicy(from, to3Min));
+
+  // We are 2 minutes into a 3 minute expiration; refresh.
   EXPECT_TRUE(defaultEntitlementRefreshPolicy(from, to1Min));
 }
