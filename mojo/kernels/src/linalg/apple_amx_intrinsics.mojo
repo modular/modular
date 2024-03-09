@@ -381,10 +381,10 @@ fn fma[
 
 
 @always_inline
-fn dot_at_b(
-    c: NDBuffer[DType.float32, 2, DimList(16, 16)],
-    a: NDBuffer[DType.float32, 2, DimList(16, 16)],
-    b: NDBuffer[DType.float32, 2, DimList(16, 16)],
+fn dot_at_b_impl(
+    c: NDBuffer[DType.float32, 2, shape= (16, 16)],
+    a: NDBuffer[DType.float32, 2, shape= (16, 16)],
+    b: NDBuffer[DType.float32, 2, shape= (16, 16)],
 ):
     # Performs a 16x16x16 matrix multiply on the given matrices storing the
     # result into the C matrix. The matrix multiplication is performed as:
@@ -438,3 +438,16 @@ fn dot_at_b(
     _clr()
 
     memcpy(c_pointer, c_buffer, num_elements)
+
+
+@always_inline
+fn dot_at_b(c: NDBuffer[_, 2, (16, 16)], a: __type_of(c), b: __type_of(c)):
+    constrained[c.type == DType.float32, "the buffer dtype must be float32 "]()
+
+    @parameter
+    if c.type == DType.float32:
+        dot_at_b_impl(
+            rebind[NDBuffer[DType.float32, 2, shape= (16, 16)]](c),
+            rebind[NDBuffer[DType.float32, 2, shape= (16, 16)]](a),
+            rebind[NDBuffer[DType.float32, 2, shape= (16, 16)]](b),
+        )

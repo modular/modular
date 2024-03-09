@@ -20,44 +20,32 @@ from utils.index import StaticIntTuple
 from utils.list import DimList
 
 
-fn fill_a(buf: NDBuffer[DType.float32, _, _]):
+fn fill_a(buf: NDBuffer):
     # Fills the A matrix with the following values row + 2*col
     var rows = 16
     var cols = 16
     for i in range(rows):
         for j in range(cols):
-            buf[(i, j)] = Float32(i // (j + 1) + j)
+            buf[(i, j)] = Scalar[buf.type](i // (j + 1) + j)
 
 
-fn fill_b(buf: NDBuffer[DType.float32, _, _]):
+fn fill_b(buf: NDBuffer):
     # Fills the A matrix with the following values row/(col + 1) + col
     var rows = 16
     var cols = 16
     for i in range(rows):
         for j in range(cols):
-            buf[(i, j)] = Float32(i // (j + 1) + j)
+            buf[(i, j)] = Scalar[buf.type](i // (j + 1) + j)
 
 
-fn clear_c(buf: NDBuffer[DType.float32, _, _]):
+fn clear_c(buf: NDBuffer):
     buf.zero()
 
 
-def test_dot_at_b():
-    var a_matrix = NDBuffer[
-        DType.float32,
-        2,
-        DimList(16, 16),
-    ].stack_allocation()
-    var b_matrix = NDBuffer[
-        DType.float32,
-        2,
-        DimList(16, 16),
-    ].stack_allocation()
-    var c_matrix = NDBuffer[
-        DType.float32,
-        2,
-        DimList(16, 16),
-    ].stack_allocation()
+def test_dot_at_b[type: DType]():
+    var a_matrix = NDBuffer[type, 2, shape= (16, 16)].stack_allocation()
+    var b_matrix = NDBuffer[type, 2, shape= (16, 16)].stack_allocation()
+    var c_matrix = NDBuffer[type, 2, shape= (16, 16)].stack_allocation()
 
     fill_a(a_matrix)
     fill_b(b_matrix)
@@ -67,7 +55,7 @@ def test_dot_at_b():
 
     for m in range(c_matrix.dim[0]()):
         for n in range(c_matrix.dim[1]()):
-            var golden = Float32(0)
+            var golden = Scalar[type](0)
             for k in range(a_matrix.dim[1]()):
                 golden += a_matrix[k, m] * b_matrix[k, n]
             assert_almost_equal(
@@ -80,4 +68,4 @@ def test_dot_at_b():
 def main():
     @parameter
     if is_apple_silicon():
-        test_dot_at_b()
+        test_dot_at_b[DType.float32]()
