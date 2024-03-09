@@ -1471,7 +1471,7 @@ def LIT_TransferMemOwnershipOp : LITOp<"transfer_mem_ownership", [
     This works with both memory values.
 
     ```mlir
-    %1 = lit.transfer_mem_ownership %0 : !lit.ref<T, lt1>, !lit.ref<T, lt2>
+    %1 = lit.transfer_mem_ownership %0 : !lit.ref<T, lt1> -> !lit.ref<T, lt2>
     ```
   }];
 
