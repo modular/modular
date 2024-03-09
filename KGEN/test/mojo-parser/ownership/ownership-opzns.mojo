@@ -329,3 +329,40 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v3
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
     # CHECK-NEXT: kgen.param.constant: none
+
+# This is an integration test for elideCopyDestroyPair
+# CHECK-LABEL: lit.func @"optimize_copies
+fn optimize_copies() -> MemExample:
+    # CHECK: lit.call {{.*}}__init__{{.*}}(%x
+    var x = MemExample()
+
+    # Optimized away, so the vardecl is gone, but the lifetime still gets
+    # declared.
+    # CHECK-NOT: lit.var.decl
+    # CHECK: kgen.param.declare *"y`2":
+    var y = x
+    # CHECK-NOT: lit.var.decl
+    # CHECK: kgen.param.declare *"z`3":
+    # CHECK-NOT: lit.var.decl
+    var z = y
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%__result__,
+    return z
+
+# This is not optimized, because there are no destructors for CheckLifetimes
+# to insert, so it is a different optimization.
+
+# CHECK-LABEL: lit.func @"optimize_transfers
+# Issue #34138
+fn optimize_transfers() -> MemExample:
+    # CHECK: lit.call {{.*}}__init__{{.*}}(%x
+    var x = MemExample()
+
+    # CHECK: [[XTMP:%.*]] = lit.transfer_mem_ownership %x
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%y, [[XTMP]]
+    var y = x^
+    # CHECK: [[YTMP:%.*]] = lit.transfer_mem_ownership %y
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%z, [[YTMP]]
+    var z = y^
+    # CHECK: [[ZTMP:%.*]] = lit.transfer_mem_ownership %z
+    # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%__result__, [[ZTMP]]
+    return z^
