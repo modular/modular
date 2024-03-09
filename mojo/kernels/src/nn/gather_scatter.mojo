@@ -16,7 +16,8 @@ from algorithm.functional import (
 )
 from gpu.host.memory import _copy_device_to_device_async
 from gpu.host.stream import Stream
-from memory import memset_zero, parallel_memcpy, stack_allocation
+from memory import memset_zero, stack_allocation
+from closed_source_memory import parallel_memcpy
 from memory.buffer import Buffer, NDBuffer, prod_dims
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
