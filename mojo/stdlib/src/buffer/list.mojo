@@ -206,6 +206,48 @@ struct DimList(Sized, Stringable):
     """The underlying storage for the list of dimensions."""
 
     @always_inline("nodebug")
+    fn __init__(values: Tuple[Int]) -> Self:
+        """Creates a dimension list from the given list of values.
+
+        Args:
+            values: The initial dim values list.
+
+        Returns:
+            A dimension list.
+        """
+        return Self {value: VariadicList[Dim](values.get[0, Int]())}
+
+    @always_inline("nodebug")
+    fn __init__(values: Tuple[Int, Int]) -> Self:
+        """Creates a dimension list from the given list of values.
+
+        Args:
+            values: The initial dim values list.
+
+        Returns:
+            A dimension list.
+        """
+        return Self {
+            value: VariadicList[Dim](values.get[0, Int](), values.get[1, Int]())
+        }
+
+    @always_inline("nodebug")
+    fn __init__(values: Tuple[Int, Int, Int]) -> Self:
+        """Creates a dimension list from the given list of values.
+
+        Args:
+            values: The initial dim values list.
+
+        Returns:
+            A dimension list.
+        """
+        return Self {
+            value: VariadicList[Dim](
+                values.get[0, Int](), values.get[1, Int](), values.get[2, Int]()
+            )
+        }
+
+    @always_inline("nodebug")
     fn __init__(values: VariadicList[Dim]) -> Self:
         """Creates a dimension list from the given list of values.
 
