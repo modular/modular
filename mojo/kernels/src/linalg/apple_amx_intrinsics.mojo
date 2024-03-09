@@ -13,7 +13,7 @@
 from sys._assembly import inlined_assembly
 from sys.info import sizeof
 
-from memory import memcpy, memset_zero
+from memory import memcpy, memset_zero, stack_allocation
 from memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 
@@ -26,7 +26,7 @@ struct amx_detail:
     # where `op` is the operation and `operand` is the register to operate on.
 
     @staticmethod
-    fn _no_op_imms[op: __mlir_type.si32, imm: __mlir_type.si32]():
+    fn _no_op_imms[op: Int32, imm: Int32]():
         # In Apple's Accelerate, instruction 17 is apparently always prefixed by
         # three nops.
         inlined_assembly[
@@ -37,8 +37,7 @@ struct amx_detail:
         ](op, imm)
 
     @staticmethod
-    fn _op_gpr[op: __mlir_type.si32](gpr0: Int):
-        var gpr = __mlir_op.`index.castu`[_type = __mlir_type.ui64](gpr0.value)
+    fn _op_gpr[op: Int32](gpr: Int64):
         inlined_assembly[
             ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))",
             NoneType,
@@ -50,138 +49,138 @@ struct amx_detail:
     # immediate values via meta parameters.
     @staticmethod
     fn _set():
-        Self._no_op_imms[__mlir_attr.`17:si32`, __mlir_attr.`0:si32`]()
+        Self._no_op_imms[17, 0]()
 
     @staticmethod
     fn _clr():
-        Self._no_op_imms[__mlir_attr.`17:si32`, __mlir_attr.`1:si32`]()
+        Self._no_op_imms[17, 1]()
 
     @staticmethod
     fn ldx(gpr: Int):
-        Self._op_gpr[__mlir_attr.`0:si32`](gpr)
+        Self._op_gpr[0](gpr)
 
     @staticmethod
     fn ldy(gpr: Int):
-        Self._op_gpr[__mlir_attr.`1:si32`](gpr)
+        Self._op_gpr[1](gpr)
 
     @staticmethod
     fn stx(gpr: Int):
-        Self._op_gpr[__mlir_attr.`2:si32`](gpr)
+        Self._op_gpr[2](gpr)
 
     @staticmethod
     fn sty(gpr: Int):
-        Self._op_gpr[__mlir_attr.`3:si32`](gpr)
+        Self._op_gpr[3](gpr)
 
     @staticmethod
     fn ldz(gpr: Int):
-        Self._op_gpr[__mlir_attr.`4:si32`](gpr)
+        Self._op_gpr[4](gpr)
 
     @staticmethod
     fn stz(gpr: Int):
-        Self._op_gpr[__mlir_attr.`5:si32`](gpr)
+        Self._op_gpr[5](gpr)
 
     @staticmethod
     fn ldzi(gpr: Int):
-        Self._op_gpr[__mlir_attr.`6:si32`](gpr)
+        Self._op_gpr[6](gpr)
 
     @staticmethod
     fn stzi(gpr: Int):
-        Self._op_gpr[__mlir_attr.`7:si32`](gpr)
+        Self._op_gpr[7](gpr)
 
     @staticmethod
     fn extrx(gpr: Int):
         """
         Extracts a row or moves it to x, result in amx0.
         """
-        Self._op_gpr[__mlir_attr.`8:si32`](gpr)
+        Self._op_gpr[8](gpr)
 
     @staticmethod
     fn extry(gpr: Int):
         """
         Extracts a row or moves it to y, result in amx0.
         """
-        Self._op_gpr[__mlir_attr.`9:si32`](gpr)
+        Self._op_gpr[9](gpr)
 
     @staticmethod
     fn fma64(gpr: Int):
         """
         Float64 matrix multiply and add.
         """
-        Self._op_gpr[__mlir_attr.`10:si32`](gpr)
+        Self._op_gpr[10](gpr)
 
     @staticmethod
     fn fsm64(gpr: Int):
         """
         Float64 matrix multiply and subtract.
         """
-        Self._op_gpr[__mlir_attr.`11:si32`](gpr)
+        Self._op_gpr[11](gpr)
 
     @staticmethod
     fn fma32(gpr: Int):
         """
         Float32 matrix multiply and add.
         """
-        Self._op_gpr[__mlir_attr.`12:si32`](gpr)
+        Self._op_gpr[12](gpr)
 
     @staticmethod
     fn fsm32(gpr: Int):
         """
         Float32 matrix multiply and subtract.
         """
-        Self._op_gpr[__mlir_attr.`13:si32`](gpr)
+        Self._op_gpr[13](gpr)
 
     @staticmethod
     fn mac16(gpr: Int):
         """
         SI16 matrix multiply and add.
         """
-        Self._op_gpr[__mlir_attr.`14:si32`](gpr)
+        Self._op_gpr[14](gpr)
 
     @staticmethod
     fn fma16(gpr: Int):
         """
         Float16 matrix multiply and subtract.
         """
-        Self._op_gpr[__mlir_attr.`15:si32`](gpr)
+        Self._op_gpr[15](gpr)
 
     @staticmethod
     fn fms16(gpr: Int):
         """
         Float16 matrix multiply and add.
         """
-        Self._op_gpr[__mlir_attr.`16:si32`](gpr)
+        Self._op_gpr[16](gpr)
 
     @staticmethod
-    fn vecInt__(gpr: Int):
+    fn vec_int__(gpr: Int):
         """
         Horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`.
         """
-        Self._op_gpr[__mlir_attr.`18:si32`](gpr)
+        Self._op_gpr[18](gpr)
 
     @staticmethod
     fn vecfp(gpr: Int):
         """
         Horizontal float16 multiply `z0[i] += x0[i] + y0[i]`.
         """
-        Self._op_gpr[__mlir_attr.`19:si32`](gpr)
+        Self._op_gpr[19](gpr)
 
     @staticmethod
-    fn matInt__(gpr: Int):
+    fn max_int__(gpr: Int):
         """
         UI16 matrix multiply.
         """
-        Self._op_gpr[__mlir_attr.`20:si32`](gpr)
+        Self._op_gpr[20](gpr)
 
     @staticmethod
     fn matfp(gpr: Int):
         """
         Float16 matrix multiply.
         """
-        Self._op_gpr[__mlir_attr.`21:si32`](gpr)
+        Self._op_gpr[21](gpr)
 
     @staticmethod
     fn genlut(gpr: Int):
-        Self._op_gpr[__mlir_attr.`22:si32`](gpr)
+        Self._op_gpr[22](gpr)
 
     # Apple.amx.LoadStore is a set of utilities that are thin wrappers around
     # the inline assembly calls, and they provide an easier interface to use
@@ -256,7 +255,7 @@ struct amx_detail:
 
     @staticmethod
     fn transpose_z_to_x_or_y[
-        destination: __mlir_type.`!kgen.string`, type: DType
+        destination: StringLiteral, type: DType
     ](z_col_index: Int, xy_row_index: Int, z_row_suboffset: Int):
         # transpose_z_to_x_or_y is a thin wrapper around the fp32 transpose mode of
         # the amx instruction `extry`. This instruction takes a (sub) column of
@@ -286,17 +285,7 @@ struct amx_detail:
         #    z_row_suboffset needs to be 0-4.
 
         # The destination must be either "X" or "Y".
-        constrained[
-            __mlir_attr[
-                `#kgen.param.expr<in,`,
-                destination,
-                `,`,
-                __mlir_attr.`"X" : !kgen.string`,
-                `,`,
-                __mlir_attr.`"Y" : !kgen.string`,
-                `> : i1`,
-            ]
-        ]()
+        constrained[destination == "X" or destination == "Y"]()
         # The type must be Float32.
         constrained[type == DType.float32]()
 
@@ -308,15 +297,9 @@ struct amx_detail:
             xy_row_index << 6
         )
 
-        var is_x_destination = __mlir_attr[
-            `#kgen.param.expr<eq,`,
-            destination,
-            `,`,
-            __mlir_attr.`"X" : !kgen.string`,
-            `> : i1`,
-        ]
+        alias is_x_destination = destination == "X"
 
-        var operand: Int = offset | (
+        var operand = offset | (
             0x8000000004004000 if is_x_destination else 0x8000000010004000
         )
 
@@ -324,7 +307,7 @@ struct amx_detail:
 
     @staticmethod
     fn fma[
-        mode: __mlir_type.`!kgen.string`, type: DType
+        mode: StringLiteral, type: DType
     ](z_row_index: Int, x_row_index: Int, y_row_index: Int, clear_z: Bool):
         # Apple.amx.fma abstracts the fma operation on the amx hardware. Two modes of
         #  fma operations are supported in this instruction, referred to here as
@@ -343,27 +326,11 @@ struct amx_detail:
         #  x_row_index, y_row_index : always in [0, 8).
 
         # The mode must be either "TILE" or "ROW".
-        constrained[
-            __mlir_attr[
-                `#kgen.param.expr<in,`,
-                mode,
-                `,`,
-                __mlir_attr.`"TILE" : !kgen.string`,
-                `,`,
-                __mlir_attr.`"ROW" : !kgen.string`,
-                `> : i1`,
-            ]
-        ]()
+        constrained[mode == "TILE" or mode == "ROW"]()
         # The type must be Float32.
         constrained[type == DType.float32]()
 
-        var is_row_mode = __mlir_attr[
-            `#kgen.param.expr<eq,`,
-            mode,
-            `,`,
-            __mlir_attr.`"ROW" : !kgen.string`,
-            `> : i1`,
-        ]
+        alias is_row_mode = mode == "ROW"
 
         var operand = (
             y_row_index << 6
@@ -407,57 +374,41 @@ struct amx_detail:
         var c_pointer = c.data
 
         # TODO: We can elide the copy if the data is already is already aligned.
-
-        alias c256 = Int(256).value
-        alias c128 = Int(128).value
-        var a_buffer: DTypePointer[
-            DType.float32
-        ] = __mlir_op.`pop.stack_allocation`[
-            count=c256,
-            alignment=c128,
-            _type = __mlir_type.`!kgen.pointer<scalar<f32>>`,
-        ]()
-        var b_buffer: DTypePointer[
-            DType.float32
-        ] = __mlir_op.`pop.stack_allocation`[
-            count=c256,
-            alignment=c128,
-            _type = __mlir_type.`!kgen.pointer<scalar<f32>>`,
-        ]()
-        var c_buffer: DTypePointer[
-            DType.float32
-        ] = __mlir_op.`pop.stack_allocation`[
-            count=c256,
-            alignment=c128,
-            _type = __mlir_type.`!kgen.pointer<scalar<f32>>`,
-        ]()
+        var a_buffer = stack_allocation[256, Float32, alignment=128]()
+        var b_buffer = stack_allocation[256, Float32, alignment=128]()
+        var c_buffer = stack_allocation[256, Float32, alignment=128]()
 
         var num_elements = c.num_elements()
-        memcpy[DType.float32](a_buffer, a_pointer, num_elements)
-        memcpy[DType.float32](b_buffer, b_pointer, num_elements)
-        memset_zero[DType.float32](c_buffer, num_elements)
+        memcpy(a_buffer, a_pointer, num_elements)
+        memcpy(b_buffer, b_pointer, num_elements)
+        memset_zero(c_buffer, num_elements)
 
         Self._set()
 
+        @unroll
         for i in range(8):
             Self.ldx((i << 56) | int(b_buffer.offset(i * b.dim[0]())))
             Self.ldy((i << 56) | int(a_buffer.offset(i * a.dim[0]())))
 
         Self.fma32(1 << 27)
 
+        @unroll
         for i in range(1, 8):
             Self.fma32((i << 6 << 10) | (i << 6))
 
+        @unroll
         for i in range(8):
             Self.ldx((i << 56) | int(b_buffer.offset((i + 8) * b.dim[0]())))
             Self.ldy((i << 56) | int(a_buffer.offset((i + 8) * a.dim[0]())))
 
+        @unroll
         for i in range(8):
             Self.fma32((i << 6 << 10) | (i << 6))
 
+        @unroll
         for i in range(0, 64, 4):
             Self.stz((i << 56) | int(c_buffer.offset((i >> 2) * c.dim[0]())))
 
         Self._clr()
 
-        memcpy[DType.float32](c_pointer, c_buffer, num_elements)
+        memcpy(c_pointer, c_buffer, num_elements)
