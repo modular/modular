@@ -20,395 +20,421 @@ from memory.unsafe import DTypePointer
 from utils.list import DimList
 
 
-struct amx_detail:
-    # All AMX instructions are of the form
-    # `0x00201000 | ((op & 0x1F) << 5) | (operand & 0x1F)`
-    # where `op` is the operation and `operand` is the register to operate on.
+# All AMX instructions are of the form
+# `0x00201000 | ((op & 0x1F) << 5) | (operand & 0x1F)`
+# where `op` is the operation and `operand` is the register to operate on.
 
-    @staticmethod
-    fn _no_op_imms[op: Int32, imm: Int32]():
-        # In Apple's Accelerate, instruction 17 is apparently always prefixed by
-        # three nops.
-        inlined_assembly[
-            "nop\nnop\nnop\n.word (0x201000 + ($0 << 5) + $1)",
-            NoneType,
-            constraints="i,i,~{memory}",
-            has_side_effect=True,
-        ](op, imm)
 
-    @staticmethod
-    fn _op_gpr[op: Int32](gpr: Int64):
-        inlined_assembly[
-            ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))",
-            NoneType,
-            constraints="i,r,~{memory}",
-            has_side_effect=True,
-        ](op, gpr)
+@always_inline
+fn _no_op_imms[op: Int32, imm: Int32]():
+    # In Apple's Accelerate, instruction 17 is apparently always prefixed by
+    # three nops.
+    inlined_assembly[
+        "nop\nnop\nnop\n.word (0x201000 + ($0 << 5) + $1)",
+        NoneType,
+        constraints="i,i,~{memory}",
+        has_side_effect=True,
+    ](op, imm)
 
-    # The `set` and `clr` take no non-constant operands, and so we pass them as
-    # immediate values via meta parameters.
-    @staticmethod
-    fn _set():
-        Self._no_op_imms[17, 0]()
 
-    @staticmethod
-    fn _clr():
-        Self._no_op_imms[17, 1]()
+@always_inline
+fn _op_gpr[op: Int32](gpr: Int64):
+    inlined_assembly[
+        ".word (0x201000 + ($0 << 5) + 0$1 - ((0$1 >> 4) * 6))",
+        NoneType,
+        constraints="i,r,~{memory}",
+        has_side_effect=True,
+    ](op, gpr)
 
-    @staticmethod
-    fn ldx(gpr: Int):
-        Self._op_gpr[0](gpr)
 
-    @staticmethod
-    fn ldy(gpr: Int):
-        Self._op_gpr[1](gpr)
+# The `set` and `clr` take no non-constant operands, and so we pass them as
+# immediate values via meta parameters.
+@always_inline
+fn _set():
+    _no_op_imms[17, 0]()
 
-    @staticmethod
-    fn stx(gpr: Int):
-        Self._op_gpr[2](gpr)
 
-    @staticmethod
-    fn sty(gpr: Int):
-        Self._op_gpr[3](gpr)
+@always_inline
+fn _clr():
+    _no_op_imms[17, 1]()
 
-    @staticmethod
-    fn ldz(gpr: Int):
-        Self._op_gpr[4](gpr)
 
-    @staticmethod
-    fn stz(gpr: Int):
-        Self._op_gpr[5](gpr)
+@always_inline
+fn ldx(gpr: Int):
+    _op_gpr[0](gpr)
 
-    @staticmethod
-    fn ldzi(gpr: Int):
-        Self._op_gpr[6](gpr)
 
-    @staticmethod
-    fn stzi(gpr: Int):
-        Self._op_gpr[7](gpr)
+@always_inline
+fn ldy(gpr: Int):
+    _op_gpr[1](gpr)
 
-    @staticmethod
-    fn extrx(gpr: Int):
-        """
-        Extracts a row or moves it to x, result in amx0.
-        """
-        Self._op_gpr[8](gpr)
 
-    @staticmethod
-    fn extry(gpr: Int):
-        """
-        Extracts a row or moves it to y, result in amx0.
-        """
-        Self._op_gpr[9](gpr)
+@always_inline
+fn stx(gpr: Int):
+    _op_gpr[2](gpr)
 
-    @staticmethod
-    fn fma64(gpr: Int):
-        """
-        Float64 matrix multiply and add.
-        """
-        Self._op_gpr[10](gpr)
 
-    @staticmethod
-    fn fsm64(gpr: Int):
-        """
-        Float64 matrix multiply and subtract.
-        """
-        Self._op_gpr[11](gpr)
+@always_inline
+fn sty(gpr: Int):
+    _op_gpr[3](gpr)
 
-    @staticmethod
-    fn fma32(gpr: Int):
-        """
-        Float32 matrix multiply and add.
-        """
-        Self._op_gpr[12](gpr)
 
-    @staticmethod
-    fn fsm32(gpr: Int):
-        """
-        Float32 matrix multiply and subtract.
-        """
-        Self._op_gpr[13](gpr)
+@always_inline
+fn ldz(gpr: Int):
+    _op_gpr[4](gpr)
 
-    @staticmethod
-    fn mac16(gpr: Int):
-        """
-        SI16 matrix multiply and add.
-        """
-        Self._op_gpr[14](gpr)
 
-    @staticmethod
-    fn fma16(gpr: Int):
-        """
-        Float16 matrix multiply and subtract.
-        """
-        Self._op_gpr[15](gpr)
+@always_inline
+fn stz(gpr: Int):
+    _op_gpr[5](gpr)
 
-    @staticmethod
-    fn fms16(gpr: Int):
-        """
-        Float16 matrix multiply and add.
-        """
-        Self._op_gpr[16](gpr)
 
-    @staticmethod
-    fn vec_int__(gpr: Int):
-        """
-        Horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`.
-        """
-        Self._op_gpr[18](gpr)
+@always_inline
+fn ldzi(gpr: Int):
+    _op_gpr[6](gpr)
 
-    @staticmethod
-    fn vecfp(gpr: Int):
-        """
-        Horizontal float16 multiply `z0[i] += x0[i] + y0[i]`.
-        """
-        Self._op_gpr[19](gpr)
 
-    @staticmethod
-    fn max_int__(gpr: Int):
-        """
-        UI16 matrix multiply.
-        """
-        Self._op_gpr[20](gpr)
+@always_inline
+fn stzi(gpr: Int):
+    _op_gpr[7](gpr)
 
-    @staticmethod
-    fn matfp(gpr: Int):
-        """
-        Float16 matrix multiply.
-        """
-        Self._op_gpr[21](gpr)
 
-    @staticmethod
-    fn genlut(gpr: Int):
-        Self._op_gpr[22](gpr)
+@always_inline
+fn extrx(gpr: Int):
+    """
+    Extracts a row or moves it to x, result in amx0.
+    """
+    _op_gpr[8](gpr)
 
-    # Apple.amx.LoadStore is a set of utilities that are thin wrappers around
-    # the inline assembly calls, and they provide an easier interface to use
-    # the amx registers.
+
+@always_inline
+fn extry(gpr: Int):
+    """
+    Extracts a row or moves it to y, result in amx0.
+    """
+    _op_gpr[9](gpr)
+
+
+@always_inline
+fn fma64(gpr: Int):
+    """
+    Float64 matrix multiply and add.
+    """
+    _op_gpr[10](gpr)
+
+
+@always_inline
+fn fsm64(gpr: Int):
+    """
+    Float64 matrix multiply and subtract.
+    """
+    _op_gpr[11](gpr)
+
+
+@always_inline
+fn fma32(gpr: Int):
+    """
+    Float32 matrix multiply and add.
+    """
+    _op_gpr[12](gpr)
+
+
+@always_inline
+fn fsm32(gpr: Int):
+    """
+    Float32 matrix multiply and subtract.
+    """
+    _op_gpr[13](gpr)
+
+
+@always_inline
+fn mac16(gpr: Int):
+    """
+    SI16 matrix multiply and add.
+    """
+    _op_gpr[14](gpr)
+
+
+@always_inline
+fn fma16(gpr: Int):
+    """
+    Float16 matrix multiply and subtract.
+    """
+    _op_gpr[15](gpr)
+
+
+@always_inline
+fn fms16(gpr: Int):
+    """
+    Float16 matrix multiply and add.
+    """
+    _op_gpr[16](gpr)
+
+
+@always_inline
+fn vec_int__(gpr: Int):
+    """
+    Horizontal ui16 multiply `z0[i] += x0[i] + y0[i]`.
+    """
+    _op_gpr[18](gpr)
+
+
+@always_inline
+fn vecfp(gpr: Int):
+    """
+    Horizontal float16 multiply `z0[i] += x0[i] + y0[i]`.
+    """
+    _op_gpr[19](gpr)
+
+
+@always_inline
+fn max_int__(gpr: Int):
+    """
+    UI16 matrix multiply.
+    """
+    _op_gpr[20](gpr)
+
+
+@always_inline
+fn matfp(gpr: Int):
+    """
+    Float16 matrix multiply.
+    """
+    _op_gpr[21](gpr)
+
+
+@always_inline
+fn genlut(gpr: Int):
+    _op_gpr[22](gpr)
+
+
+# Apple.amx.LoadStore is a set of utilities that are thin wrappers around
+# the inline assembly calls, and they provide an easier interface to use
+# the amx registers.
+#
+# The M1 AMX hardware has 3 dedicated register banks, in fp32 mode they
+# can be described as:
+#
+#     float X[8][16], Y[8][16], Z[64][16];
+#
+#  All instructions reading and writing these AMX registers are memory
+#  instructions. The ops defined here marks the direction into/out of amx
+#  registers. e.g. :
+#
+#       load_store.store_x(ptr, idx),
+#
+#   will read a row of 16 fp32 elements from memory at `ptr`, and save the
+#   data in X[idx][:].
+#   while
+#
+#       load_store.load_x (ptr, idx),
+#
+#   is the opposite, taking X[idx][:] and write to the memory location `ptr`.
+
+
+@always_inline
+fn _encode_load_store[
+    row_count: Int, type: DType
+](src: DTypePointer[type], start_index: Int) -> Int:
+    """
+    Utility to do the bit encoding for load and store ops.
+    """
+    var src_idx = int(src) | (start_index << 56)
+
+    @parameter
+    if row_count == 2:
+        src_idx |= 1 << 62
+    return src_idx
+
+
+@always_inline
+fn store_x[
+    row_count: Int, type: DType
+](src: DTypePointer[type], start_index: Int):
+    ldx(_encode_load_store[row_count, type](src, start_index))
+
+
+@always_inline
+fn store_y[
+    row_count: Int, type: DType
+](src: DTypePointer[type], start_index: Int):
+    ldy(_encode_load_store[row_count, type](src, start_index))
+
+
+@always_inline
+fn store_z[
+    row_count: Int, type: DType
+](src: DTypePointer[type], start_index: Int):
+    ldz(_encode_load_store[row_count, type](src, start_index))
+
+
+@always_inline
+fn read_x[
+    row_count: Int, type: DType
+](src: DTypePointer[type], start_index: Int):
+    stx(_encode_load_store[row_count, type](src, start_index))
+
+
+@always_inline
+fn read_y[
+    row_count: Int, type: DType
+](src: DTypePointer[type], start_index: Int):
+    sty(_encode_load_store[row_count, type](src, start_index))
+
+
+@always_inline
+fn load_z[
+    row_count: Int, type: DType
+](src: DTypePointer[type], start_index: Int):
+    stz(_encode_load_store[row_count, type](src, start_index))
+
+
+@always_inline
+fn transpose_z_to_x_or_y[
+    destination: StringLiteral, type: DType
+](z_col_index: Int, xy_row_index: Int, z_row_suboffset: Int):
+    # transpose_z_to_x_or_y is a thin wrapper around the fp32 transpose mode of
+    # the amx instruction `extry`. This instruction takes a (sub) column of
+    # register Z (see description above), and transposes it into a row in either
+    # register X or register Y.
     #
-    # The M1 AMX hardware has 3 dedicated register banks, in fp32 mode they
-    # can be described as:
+    # Note that each column of Z has 64 element but each row of X or Y has only
+    # 16 elements. The slightly strange part of this instruction is that the
+    # value written into X/Y is actually a downsample (i.e. one in every four)
+    # result of a column of Z.
     #
-    #     float X[8][16], Y[8][16], Z[64][16];
+    # The instruction takes 1 static parameter dest and 3 dynamic parameters:
+    # z_col_index, xy_row_index, and z_row_suboffset.
+    # dest can be either `X` or `Y`.
+    # With the X,Y,Z data layout described as
     #
-    #  All instructions reading and writing these AMX registers are memory
-    #  instructions. The ops defined here marks the direction into/out of amx
-    #  registers. e.g. :
+    #    float X[8][16], Y[8][16], Z[64][16];
     #
-    #       load_store.store_x(ptr, idx),
+    #  This instruction essentially takes:
     #
-    #   will read a row of 16 fp32 elements from memory at `ptr`, and save the
-    #   data in X[idx][:].
-    #   while
+    #    extracted_column [16] = Z[z_row_suboffset : 64 : 4][z_col_index]
     #
-    #       load_store.load_x (ptr, idx),
+    # and writes extracted_column[16] to X/Y[xy_row_index][:].
+    #  Legal ranges for the parameters:
+    #    z_col_index needs to be 0-15,
+    #    xy_row_index needs to be 0-7,
+    #    z_row_suboffset needs to be 0-4.
+
+    # The destination must be either "X" or "Y".
+    constrained[destination == "X" or destination == "Y"]()
+    # The type must be Float32.
+    constrained[type == DType.float32]()
+
+    # make the y offset field
+    #  shift left by 6 to make this an offset in rows,
+    #    in fp32 mode, there are 16 elements / 64 byte per row.
+    #  The offset field has to be given in bytes.
+    var offset = ((z_col_index << 2) | z_row_suboffset) << 20 | (
+        xy_row_index << 6
+    )
+
+    alias is_x_destination = destination == "X"
+
+    var operand = offset | (
+        0x8000000004004000 if is_x_destination else 0x8000000010004000
+    )
+
+    extry(operand)
+
+
+@always_inline
+fn fma[
+    mode: StringLiteral, type: DType
+](z_row_index: Int, x_row_index: Int, y_row_index: Int, clear_z: Bool):
+    # Apple.amx.fma abstracts the fma operation on the amx hardware. Two modes of
+    #  fma operations are supported in this instruction, referred to here as
+    #  `RowMode` and `TileMode`.
+    # `RowMode` is elementwise fma, for each set of given indices, the instruction
+    #  computes z[z_row_index][:] += X[x_row_index][:] * Y[y_row_index][:].
+    # `TileMode` is matrix fma, each op computes an outer product of:
+    #   Y[y_row_index][:] X X[x_row_index][:], (generating a 16x16 matrix)
+    #   and the resulting matrix is accumulated into Z[z_row_index::step 4][:].
+    #  When clear_z is true, the existing value in Z will be ignored instead of
+    #   being accumulated.
     #
-    #   is the opposite, taking X[idx][:] and write to the memory location `ptr`.
+    # Issues fma.fp32 instruction to AMX.
+    #  Required input range (behavior for out of range is undefined):
+    #  z_row_index : [0, 8) in row mode, [0, 4) in tile mode.
+    #  x_row_index, y_row_index : always in [0, 8).
 
-    @staticmethod
-    fn _encode_load_store[
-        row_count: Int, type: DType
-    ](src: DTypePointer[type], start_index: Int) -> Int:
-        """
-        Utility to do the bit encoding for load and store ops.
-        """
-        var src_idx = int(src) | (start_index << 56)
-        if row_count == 2:
-            src_idx |= 1 << 62
-        return src_idx
+    # The mode must be either "TILE" or "ROW".
+    constrained[mode == "TILE" or mode == "ROW"]()
+    # The type must be Float32.
+    constrained[type == DType.float32]()
 
-    @staticmethod
-    fn store_x[
-        row_count: Int, type: DType
-    ](src: DTypePointer[type], start_index: Int):
-        Self.ldx(Self._encode_load_store[row_count, type](src, start_index))
+    alias is_row_mode = mode == "ROW"
 
-    @staticmethod
-    fn store_y[
-        row_count: Int, type: DType
-    ](src: DTypePointer[type], start_index: Int):
-        Self.ldy(Self._encode_load_store[row_count, type](src, start_index))
+    var operand = (
+        y_row_index << 6
+        | x_row_index << 16
+        | z_row_index << 20
+        | ((1 << 27) if clear_z else 0)
+        | ((1 << 63) if is_row_mode else 0)
+    )
 
-    @staticmethod
-    fn store_z[
-        row_count: Int, type: DType
-    ](src: DTypePointer[type], start_index: Int):
-        Self.ldz(Self._encode_load_store[row_count, type](src, start_index))
+    fma32(operand)
 
-    @staticmethod
-    fn read_x[
-        row_count: Int, type: DType
-    ](src: DTypePointer[type], start_index: Int):
-        Self.stx(Self._encode_load_store[row_count, type](src, start_index))
 
-    @staticmethod
-    fn read_y[
-        row_count: Int, type: DType
-    ](src: DTypePointer[type], start_index: Int):
-        Self.sty(Self._encode_load_store[row_count, type](src, start_index))
+@always_inline
+fn dot_at_b(
+    c: NDBuffer[DType.float32, 2, DimList(16, 16)],
+    a: NDBuffer[DType.float32, 2, DimList(16, 16)],
+    b: NDBuffer[DType.float32, 2, DimList(16, 16)],
+):
+    # Performs a 16x16x16 matrix multiply on the given matrices storing the
+    # result into the C matrix. The matrix multiplication is performed as:
+    #
+    #     C = A^T * B
+    #
+    # Where the dimensions of the matrices are all 16x16. The A matrix is
+    # assumed to be transposed and all matrices are stored in row-major
+    # order.
 
-    @staticmethod
-    fn load_z[
-        row_count: Int, type: DType
-    ](src: DTypePointer[type], start_index: Int):
-        Self.stz(Self._encode_load_store[row_count, type](src, start_index))
+    var a_pointer = a.data
+    var b_pointer = b.data
+    var c_pointer = c.data
 
-    @staticmethod
-    fn transpose_z_to_x_or_y[
-        destination: StringLiteral, type: DType
-    ](z_col_index: Int, xy_row_index: Int, z_row_suboffset: Int):
-        # transpose_z_to_x_or_y is a thin wrapper around the fp32 transpose mode of
-        # the amx instruction `extry`. This instruction takes a (sub) column of
-        # register Z (see description above), and transposes it into a row in either
-        # register X or register Y.
-        #
-        # Note that each column of Z has 64 element but each row of X or Y has only
-        # 16 elements. The slightly strange part of this instruction is that the
-        # value written into X/Y is actually a downsample (i.e. one in every four)
-        # result of a column of Z.
-        #
-        # The instruction takes 1 static parameter dest and 3 dynamic parameters:
-        # z_col_index, xy_row_index, and z_row_suboffset.
-        # dest can be either `X` or `Y`.
-        # With the X,Y,Z data layout described as
-        #
-        #    float X[8][16], Y[8][16], Z[64][16];
-        #
-        #  This instruction essentially takes:
-        #
-        #    extracted_column [16] = Z[z_row_suboffset : 64 : 4][z_col_index]
-        #
-        # and writes extracted_column[16] to X/Y[xy_row_index][:].
-        #  Legal ranges for the parameters:
-        #    z_col_index needs to be 0-15,
-        #    xy_row_index needs to be 0-7,
-        #    z_row_suboffset needs to be 0-4.
+    # TODO: We can elide the copy if the data is already is already aligned.
+    var a_buffer = stack_allocation[256, Float32, alignment=128]()
+    var b_buffer = stack_allocation[256, Float32, alignment=128]()
+    var c_buffer = stack_allocation[256, Float32, alignment=128]()
 
-        # The destination must be either "X" or "Y".
-        constrained[destination == "X" or destination == "Y"]()
-        # The type must be Float32.
-        constrained[type == DType.float32]()
+    var num_elements = c.num_elements()
+    memcpy(a_buffer, a_pointer, num_elements)
+    memcpy(b_buffer, b_pointer, num_elements)
+    memset_zero(c_buffer, num_elements)
 
-        # make the y offset field
-        #  shift left by 6 to make this an offset in rows,
-        #    in fp32 mode, there are 16 elements / 64 byte per row.
-        #  The offset field has to be given in bytes.
-        var offset = ((z_col_index << 2) | z_row_suboffset) << 20 | (
-            xy_row_index << 6
-        )
+    _set()
 
-        alias is_x_destination = destination == "X"
+    @unroll
+    for i in range(8):
+        ldx((i << 56) | int(b_buffer.offset(i * b.dim[0]())))
+        ldy((i << 56) | int(a_buffer.offset(i * a.dim[0]())))
 
-        var operand = offset | (
-            0x8000000004004000 if is_x_destination else 0x8000000010004000
-        )
+    fma32(1 << 27)
 
-        Self.extry(operand)
+    @unroll
+    for i in range(1, 8):
+        fma32((i << 6 << 10) | (i << 6))
 
-    @staticmethod
-    fn fma[
-        mode: StringLiteral, type: DType
-    ](z_row_index: Int, x_row_index: Int, y_row_index: Int, clear_z: Bool):
-        # Apple.amx.fma abstracts the fma operation on the amx hardware. Two modes of
-        #  fma operations are supported in this instruction, referred to here as
-        #  `RowMode` and `TileMode`.
-        # `RowMode` is elementwise fma, for each set of given indices, the instruction
-        #  computes z[z_row_index][:] += X[x_row_index][:] * Y[y_row_index][:].
-        # `TileMode` is matrix fma, each op computes an outer product of:
-        #   Y[y_row_index][:] X X[x_row_index][:], (generating a 16x16 matrix)
-        #   and the resulting matrix is accumulated into Z[z_row_index::step 4][:].
-        #  When clear_z is true, the existing value in Z will be ignored instead of
-        #   being accumulated.
-        #
-        # Issues fma.fp32 instruction to AMX.
-        #  Required input range (behavior for out of range is undefined):
-        #  z_row_index : [0, 8) in row mode, [0, 4) in tile mode.
-        #  x_row_index, y_row_index : always in [0, 8).
+    @unroll
+    for i in range(8):
+        ldx((i << 56) | int(b_buffer.offset((i + 8) * b.dim[0]())))
+        ldy((i << 56) | int(a_buffer.offset((i + 8) * a.dim[0]())))
 
-        # The mode must be either "TILE" or "ROW".
-        constrained[mode == "TILE" or mode == "ROW"]()
-        # The type must be Float32.
-        constrained[type == DType.float32]()
+    @unroll
+    for i in range(8):
+        fma32((i << 6 << 10) | (i << 6))
 
-        alias is_row_mode = mode == "ROW"
+    @unroll
+    for i in range(0, 64, 4):
+        stz((i << 56) | int(c_buffer.offset((i >> 2) * c.dim[0]())))
 
-        var operand = (
-            y_row_index << 6
-            | x_row_index << 16
-            | z_row_index << 20
-            | ((1 << 27) if clear_z else 0)
-            | ((1 << 63) if is_row_mode else 0)
-        )
+    _clr()
 
-        Self.fma32(operand)
-
-    @staticmethod
-    fn dot_at_b(
-        c: NDBuffer[
-            DType.float32,
-            2,
-            DimList(16, 16),
-        ],
-        a: NDBuffer[
-            DType.float32,
-            2,
-            DimList(16, 16),
-        ],
-        b: NDBuffer[
-            DType.float32,
-            2,
-            DimList(16, 16),
-        ],
-    ):
-        # Performs a 16x16x16 matrix multiply on the given matrices storing the
-        # result into the C matrix. The matrix multiplication is performed as:
-        #
-        #     C = A^T * B
-        #
-        # Where the dimensions of the matrices are all 16x16. The A matrix is
-        # assumed to be transposed and all matrices are stored in row-major
-        # order.
-
-        var a_pointer = a.data
-        var b_pointer = b.data
-        var c_pointer = c.data
-
-        # TODO: We can elide the copy if the data is already is already aligned.
-        var a_buffer = stack_allocation[256, Float32, alignment=128]()
-        var b_buffer = stack_allocation[256, Float32, alignment=128]()
-        var c_buffer = stack_allocation[256, Float32, alignment=128]()
-
-        var num_elements = c.num_elements()
-        memcpy(a_buffer, a_pointer, num_elements)
-        memcpy(b_buffer, b_pointer, num_elements)
-        memset_zero(c_buffer, num_elements)
-
-        Self._set()
-
-        @unroll
-        for i in range(8):
-            Self.ldx((i << 56) | int(b_buffer.offset(i * b.dim[0]())))
-            Self.ldy((i << 56) | int(a_buffer.offset(i * a.dim[0]())))
-
-        Self.fma32(1 << 27)
-
-        @unroll
-        for i in range(1, 8):
-            Self.fma32((i << 6 << 10) | (i << 6))
-
-        @unroll
-        for i in range(8):
-            Self.ldx((i << 56) | int(b_buffer.offset((i + 8) * b.dim[0]())))
-            Self.ldy((i << 56) | int(a_buffer.offset((i + 8) * a.dim[0]())))
-
-        @unroll
-        for i in range(8):
-            Self.fma32((i << 6 << 10) | (i << 6))
-
-        @unroll
-        for i in range(0, 64, 4):
-            Self.stz((i << 56) | int(c_buffer.offset((i >> 2) * c.dim[0]())))
-
-        Self._clr()
-
-        memcpy(c_pointer, c_buffer, num_elements)
+    memcpy(c_pointer, c_buffer, num_elements)
