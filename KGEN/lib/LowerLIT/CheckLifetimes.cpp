@@ -2269,12 +2269,12 @@ static bool mightPointTo(Value p1, Value p2) {
 //
 // We currently only do this transformation in extremely limited cases: we
 // need to defend against weird situations where "src" doesn't dominate
-// "tmp" and where "src" gets re-initialized before the use of "tmp", e.g.:
+// "tmp" and where "src" gets mutated before the use of "tmp", e.g.:
 //
 //    %tmp = lit.varlet.decl "anonymous"
-//    kgen.call __copyinit__(%tmp, %src)
-//    kgen.call __del__(%src)   <<<=== Thinking about inserting this.
-//    kgen.call __init__(%src, ...)
+//    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
+// ** kgen.call __del__(%src)   <<== Thinking about inserting this.
+//    kgen.call __init__(%src)  <<== Could reinitialize %src before use of %tmp!
 //    use(%tmp)
 //    use(%src)
 //
@@ -2284,54 +2284,88 @@ static bool mightPointTo(Value p1, Value p2) {
 // "guaranteed" optimization.
 static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
                                             VarDeclOp tmpDecl) {
+  assert(copyInitCall.getOperand(0) == tmpDecl &&
+         "the vardecl is known to be directly assigned");
   Block *tmpBlock = tmpDecl->getBlock();
   if (copyInitCall->getBlock() != tmpBlock)
     return false;
 
-  Value srcPointer = copyInitCall.getOperand(1);
+  // Find all users of "tmp".
+  SmallPtrSet<Operation *, 3> userOfTmp;
+  // Worklist of projections of the tmp VarDecl we need to check.
+  SmallVector<Value> valuesToCheck;
+  valuesToCheck.push_back(tmpDecl);
 
-  size_t numUses = 0;
-  for (OpOperand &operand : copyInitCall.getOperand(0).getUses()) {
-    auto user = dyn_cast<LIT::CallOp>(operand.getOwner());
+  while (!valuesToCheck.empty()) {
+    Value checkVal = valuesToCheck.pop_back_val();
 
-    // Don't handle control flow or other weird cases that are not calls.
-    if (!user || user->getBlock() != tmpBlock)
-      return false;
+    for (OpOperand &operand : checkVal.getUses()) {
+      Operation *user = operand.getOwner();
 
-    // Ignore the copyinit.
-    if (user == copyInitCall.getOperation())
-      continue;
-    // We are doing n^2 scanning below, harshly limit it.
-    if (++numUses > 3)
-      return false;
+      if (user->getBlock() != tmpBlock)
+        return false; // We don't handle control flow.
 
-    // The argument convention for the callee must be consuming, not
-    // initializing or anything else.
-    auto convention =
-        user.getCalleeType().getArgConvention(operand.getOperandNumber());
-    if (convention != ArgConvention::OwnedInMem)
-      return false;
+      // If we see a lit.ref.immut or rebind of the lifetime, check all its uses
+      // as well.
+      if (isa<RefImmutOp, RebindOp>(user)) {
+        valuesToCheck.push_back(user->getResult(0));
+        continue;
+      }
 
-    // Ok, scan to check that nothing between the copyinit and the user of
-    // the temp use src.
-    for (auto it = ++Block::iterator(copyInitCall), e = tmpBlock->end();;
-         ++it) {
-      // If we ran off the end of the block, then the copyinit doesn't
-      // dominate this use, something weird is going on, bail out.
-      if (it == e)
+      // Ignore the copyinit of tmp.
+      if (user == copyInitCall)
+        continue;
+
+      // Otherwise, the only sort of user we can support is a call that consumes
+      // the value.
+      // NOTE: This could be extended in the future to be more powerful, e.g. to
+      // support patterns like:
+      //    %tmp = lit.varlet.decl "anonymous"
+      //    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
+      // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
+      //    use(%tmp)
+      //    consume(%tmp)
+      // It isn't clear why we're limiting this?
+      auto callUser = dyn_cast<LIT::CallOp>(user);
+      if (!callUser)
+        return false; // Unknown user.
+
+      // The argument convention for the callee must be consuming, not
+      // initializing or anything else.
+      auto convention =
+          callUser.getCalleeType().getArgConvention(operand.getOperandNumber());
+      if (convention != ArgConvention::OwnedInMem)
         return false;
-
-      // Scan all the operands to see if any of them are related to %src. We
-      // disallow regions because we don't recurse into them.
-      if (it->getNumRegions() || llvm::any_of(it->getOperands(), [&](Value v) {
-            return mightPointTo(v, srcPointer);
-          }))
-        return false;
-
-      // If we found the user, then we succeed.  Otherwise keep scanning.
-      if (&*it == user.getOperation())
-        break;
+      userOfTmp.insert(callUser);
     }
+  }
+
+  assert(!userOfTmp.empty() && "tmp should at least be destroyed");
+
+  // Okay, we only see users of the 'tmp' decl that we can understand.  Do a
+  // lexical scan to make sure there is nothing between the initialization of
+  // the tmp and the use of the tmp that might re-use the source.
+  Value srcPointer = copyInitCall.getOperand(1);
+  for (auto it = ++Block::iterator(copyInitCall), e = tmpBlock->end();; ++it) {
+    // If we ran off the end of the block but we didn't see the users, then the
+    // copyinit doesn't dominate this use, something weird is going on, bail
+    // out.
+    if (it == e)
+      return false;
+
+    // Scan all the operands to see if any of them are related to %src. We
+    // disallow regions because we don't recurse into them.
+    if (it->getNumRegions() || llvm::any_of(it->getOperands(), [&](Value v) {
+          return v && mightPointTo(v, srcPointer);
+        }))
+      return false;
+
+    // If this operation is a known user of tmp, then we might be done scanning.
+    if (userOfTmp.erase(&*it)) {
+      if (userOfTmp.empty())
+        return true;
+    }
+    // Otherwise, keep looking through the block until we see all the users.
   }
   return true;
 }
@@ -2398,6 +2432,12 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     // Transform into:
     //   kgen.call user(%value)
     copyInitCall.getResult(0).replaceAllUsesWith(srcValue);
+
+    // We'll delete the copyInit but don't want to invalidate iterators so do it
+    // later.  Remove the operand uses so we don't see them in later def-use
+    // scans, and to make it more obvious when reading IR dumps that these will
+    // be gone.
+    copyInitCall->dropAllReferences();
     opsToRemove.push_back(copyInitCall);
     return success();
   }
@@ -2413,7 +2453,7 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   // Make sure we're destroying the whole value, not a subvalue.
   if (copyInitCall.getOperand(1) != value) {
     // The value being destroyed may be a mutable source, and the source of the
-    // copy is definition immutable.
+    // copy is (by definition) immutable.
     if (stripImmutCast(copyInitCall.getOperand(1)) == value)
       value = copyInitCall.getOperand(1);
     else
@@ -2445,6 +2485,12 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
                                                 copyInitCall.getOperand(1));
 
       tmpDecl.getResult().replaceAllUsesWith(refCasted);
+
+      // We'll delete the copyInit but don't want to invalidate iterators so do
+      // later.  Remove the operand uses so we don't see them in later def-use
+      // scans, and to make it more obvious when reading IR dumps that these
+      // will be gone.
+      copyInitCall->dropAllReferences();
       opsToRemove.push_back(copyInitCall);
       opsToRemove.push_back(tmpDecl);
       return success();
