@@ -6,6 +6,7 @@
 
 from collections import List
 from memory.anypointer import AnyPointer
+from memory.buffer import Buffer
 from memory.unsafe import bitcast, DTypePointer
 from python import Python, PythonObject
 from sys.ffi import DLHandle

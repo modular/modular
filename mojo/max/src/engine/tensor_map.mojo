@@ -6,9 +6,9 @@
 """
 Holds the input and output tensors for a model.
 """
-from memory.unsafe import DTypePointer
+from memory.buffer import Buffer
+from memory.unsafe import bitcast, DTypePointer
 from sys.ffi import DLHandle
-from memory.unsafe import bitcast
 from tensor import Tensor, TensorShape
 from .session import InferenceSession
 from ._context import CRuntimeContext
