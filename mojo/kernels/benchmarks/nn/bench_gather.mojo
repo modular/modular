@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from mojobench import *
+from benchmark import *
 from nn.gather_scatter import gather_elements
 from tensor import Tensor, TensorShape
 from collections.vector import InlinedFixedVector
@@ -19,7 +19,7 @@ fn linear_fill[
         buf[i] = elems[i]
 
 
-fn bench_gather(inout m: MojoBench, spec: GatherSpec) raises:
+fn bench_gather(inout m: Bench, spec: GatherSpec) raises:
     @parameter
     @always_inline
     fn bench_gather_wrapper(inout b: Bencher, concrete_spec: GatherSpec):
@@ -100,7 +100,7 @@ struct GatherSpec(Stringable):
 
 
 def main():
-    var m = MojoBench(MojoBenchConfig(num_repetitions=2))
+    var m = Bench(BenchConfig(num_repetitions=2))
     bench_gather(m, GatherSpec(axis=1, m1=400, m2=400, n1=200, n2=200))
     bench_gather(m, GatherSpec(axis=1, m1=1000, m2=1000, n1=200, n2=200))
     m.dump_report()

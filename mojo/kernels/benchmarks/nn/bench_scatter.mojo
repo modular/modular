@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from mojobench import *
+from benchmark import *
 from nn.gather_scatter import scatter_elements
 from tensor import Tensor, TensorShape
 from collections.vector import InlinedFixedVector
@@ -19,7 +19,7 @@ fn linear_fill[
         buf[i] = elems[i]
 
 
-fn bench_scatter(inout m: MojoBench, spec: ScatterSpec) raises:
+fn bench_scatter(inout m: Bench, spec: ScatterSpec) raises:
     @parameter
     @always_inline
     fn bench_scatter_wrapper(inout b: Bencher, concrete_spec: ScatterSpec):
@@ -119,7 +119,7 @@ struct ScatterSpec(Stringable):
 
 
 def main():
-    var m = MojoBench(MojoBenchConfig(num_repetitions=2))
+    var m = Bench(BenchConfig(num_repetitions=2))
     bench_scatter(m, ScatterSpec(axis=1, m1=400, m2=400, n1=200, n2=200))
     bench_scatter(m, ScatterSpec(axis=1, m1=1000, m2=1000, n1=200, n2=200))
     m.dump_report()

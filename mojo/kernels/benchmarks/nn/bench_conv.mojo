@@ -11,7 +11,7 @@ from sys.param_env import env_get_string, env_get_int
 
 from benchmark import keep
 from memory.buffer import NDBuffer
-from mojobench import *
+from benchmark import *
 from NN.Conv import (
     ConvDirectNHWC,
     ConvInfoStatic,

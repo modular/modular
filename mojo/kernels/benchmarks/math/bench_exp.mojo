@@ -13,7 +13,7 @@ from sys.arg import argv
 from math.polynomial import EvaluationMethod
 from algorithm.functional import vectorize
 from benchmark import keep
-from mojobench import Bencher, BenchId, MojoBench
+from benchmark import Bencher, BenchId, Bench
 
 
 fn apply[
@@ -30,7 +30,7 @@ fn apply[
 def bench_unary[
     func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
     type: DType,
-](inout m: MojoBench, size_range: _StridedRange, op_name: String):
+](inout m: Bench, size_range: _StridedRange, op_name: String):
     for i in size_range:
         bench_unary[func, type](m, i, op_name)
 
@@ -38,7 +38,7 @@ def bench_unary[
 def bench_unary[
     func: fn[type: DType, width: Int] (SIMD[type, width]) -> SIMD[type, width],
     type: DType,
-](inout m: MojoBench, size: Int, op_name: String):
+](inout m: Bench, size: Int, op_name: String):
     alias alignment = 64
     var input_ptr = DTypePointer[type].alloc(size, alignment=alignment)
     var output_ptr = DTypePointer[type].alloc(size, alignment=alignment)
@@ -412,7 +412,7 @@ def main():
             )
             return
 
-    var m = MojoBench()
+    var m = Bench()
     var problem_size = range(1 << 24, 1 << 26, 1 << 25)
     bench_unary[exp, DType.float32](m, problem_size, "mojo")
     bench_unary[exp_mojo_opt, DType.float32](m, problem_size, "mojo_opt")

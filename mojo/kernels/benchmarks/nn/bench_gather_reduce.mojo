@@ -8,8 +8,8 @@ from math import add
 from random import random_si64
 
 from memory.buffer import NDBuffer
+from benchmark import Bencher, BenchId, Bench
 from tensor import Tensor
-from mojobench import Bencher, BenchId, MojoBench
 from nn.gather_scatter import gather, gather_reduce
 from runtime.llcl import Runtime
 
@@ -55,7 +55,7 @@ fn bench_gather_reduce(inout b: Bencher):
 
 
 def main():
-    var m = MojoBench()
+    var m = Bench()
     m.bench_function[bench_gather_reduce](
         BenchId("gather_reduce_dlrm1_multihot")
     )

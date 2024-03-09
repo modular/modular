@@ -9,7 +9,7 @@ from random import rand
 from benchmark import keep
 from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
 from memory.buffer import NDBuffer
-from mojobench import *
+from benchmark import *
 from testing import assert_almost_equal
 
 from utils.index import Index
@@ -46,7 +46,7 @@ fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
     c_ref_ptr.free()
 
 
-fn bench_matmul_spec(inout m: MojoBench, spec: MatmulSpec) raises:
+fn bench_matmul_spec(inout m: Bench, spec: MatmulSpec) raises:
     # disatch to bench_matmul with concrete spec type
     m.bench_with_input[
         MatmulSpec[spec.static_info], bench_matmul[spec.static_info]
@@ -159,7 +159,7 @@ struct MatmulSpec[static_info: MatmulSpecStatic](Stringable):
 
 
 def main():
-    var m = MojoBench(MojoBenchConfig(num_repetitions=2))
+    var m = Bench(BenchConfig(num_repetitions=2))
 
     alias packed_float32 = MatmulSpecStatic(
         b_packed=True,
