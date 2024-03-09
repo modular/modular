@@ -475,7 +475,7 @@ lit.func @global_ref_reg_store(%x: !lit.declref<@MyRegStruct> owned) {
 
 // COM: Verify that we don't traverse external functions.
 
-lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__ > : !lit.signature<[1](!lit.ref<@MyStruct, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+lit.struct.decl @MyStruct attributes {destructor = #kgen.symbol.constant<@MyStruct::@__del__> : !lit.signature<[1](!lit.ref<@MyStruct, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
   lit.struct.field a : index
 }
 
@@ -583,6 +583,89 @@ lit.func @eatErrorRef() {
     lit.try.yield
   } else {
     lit.try.yield
+  }
+  kgen.return
+}
+
+lit.func @consume_err(%value: !Error) {
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @conditional_consumption_1
+// Issue#34320: https://github.com/modularml/modular/issues/34320
+lit.func @conditional_consumption_1(%c: i1, %value: !Error) {
+  // CHECK-NOT: @Error::@__del__
+  hlcf.loop {
+    hlcf.if %c {
+      lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+      hlcf.break
+    } else {
+      hlcf.yield
+    }
+    lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+    hlcf.break
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @conditional_consumption_2
+lit.func @conditional_consumption_2(%c: i1, %value: !Error) {
+  // CHECK-NOT: @Error::@__del__
+  hlcf.loop {
+    hlcf.if %c {
+      hlcf.yield
+    } else {
+      lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+      hlcf.break
+    }
+    lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+    hlcf.break
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @conditional_consumption_3
+lit.func @conditional_consumption_3(%c: i1, %value: !Error) {
+  // CHECK-NOT: @Error::@__del__
+  hlcf.loop {
+    lit.try {
+      hlcf.if %c {
+        lit.try.raise %c : i1
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield
+    } except (%e: i1) {
+      lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+      hlcf.break
+    } else {
+      lit.try.yield
+    }
+    lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+    hlcf.break
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: lit.func @conditional_consumption_4
+lit.func @conditional_consumption_4(%c: i1, %value: !Error) {
+  // CHECK-NOT: @Error::@__del__
+  hlcf.loop {
+    lit.try {
+      hlcf.if %c {
+        lit.try.raise %c : i1
+      } else {
+        hlcf.yield
+      }
+      lit.try.yield
+    } except (%e: i1) {
+      lit.try.yield
+    } else {
+      lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+      hlcf.break
+    }
+    lit.call @consume_err(%value) : !lit.signature<(!Error) -> ()>
+    hlcf.break
   }
   kgen.return
 }
