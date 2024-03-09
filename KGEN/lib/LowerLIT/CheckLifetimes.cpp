@@ -1262,17 +1262,18 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   if (isa<HLCF::BreakOp>(op)) {
     assert(breakSet && "Not in a loop?");
     *breakSet &= liveValues;
-    return;
-  }
-  if (isa<HLCF::ContinueOp>(op)) {
+  } else if (isa<HLCF::ContinueOp>(op)) {
     assert(continueSet && "Not in a loop?");
     *continueSet &= liveValues;
-    return;
+  } else {
+    assert(isa<LIT::TryRaiseOp>(op) && "Unknown local CF op");
+    assert(raiseSet && "Not in a 'try'?");
+    *raiseSet &= liveValues;
   }
 
-  assert(isa<LIT::TryRaiseOp>(op) && "Unknown local CF op");
-  assert(raiseSet && "Not in a 'try'?");
-  *raiseSet &= liveValues;
+  // Indicate that all values are live after the terminator so an 'if' will get
+  // properly intersected with the other side of the branch.
+  liveValues.set();
 }
 
 /// This is HLCF::IfOp, ParamIfOp, or HandleVariantOp, which are all if-like.
