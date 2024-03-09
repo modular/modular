@@ -505,14 +505,12 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       os << ']';
     }
     os << '(';
-    Type inMemResult;
     PassingKindPrinter passingKindPrinter(os, sig.getArgPassingKinds());
     for (auto [i, type, convention, name, passingKind] :
          llvm::enumerate(sig.getArguments(), sig.getArgConventions(),
                          sig.getArgNames(), sig.getArgPassingKinds())) {
       if (convention == ArgConvention::ByRefResult) {
         // Print this later.
-        inMemResult = type;
         continue;
       }
       if (i)
@@ -559,17 +557,11 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       if (enabled)
         os << ' ' << effect;
     os << " -> ";
-    Type resultType = sig.getResults().front();
-    if (inMemResult) {
-      ASTType(cast<RefType>(inMemResult).getElementType()).print(os, forDiag);
-    } else if (isa<KGEN::NoneType>(resultType)) {
+    Type resultType = ASTType(sig).getSignatureUserResultType();
+    if (isa<KGEN::NoneType>(resultType))
       os << "None";
-    } else if (sig.isThrows()) {
-      ASTType(*std::next(cast<VariantType>(resultType).getTypes().begin()))
-          .print(os, forDiag);
-    } else {
+    else
       ASTType(resultType).print(os, forDiag);
-    }
   } else if (auto paramRef = dyn_cast<ParamRefType>(type)) {
     printParam(os, paramRef.getParam(), forDiag, demangleParams);
   } else if (isa<TypeType>(type)) {
