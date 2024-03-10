@@ -101,6 +101,7 @@ def maybeRaises() -> Int:
 
 # CHECK-LABEL: lit.func @"propagateErrorInDef
 def propagateErrorInDef():
+    # CHECK: %a = lit.var.decl "a"
     # CHECK: %[[VALUE:.*]] = lit.call @"{{.*}}"::@"maybeRaises
     # CHECK: %1 = lit.handle_variant %0 : (!kgen.variant<!Error, !Int>) -> !Int
     # CHECK: {
@@ -111,7 +112,6 @@ def propagateErrorInDef():
     # CHECK:    lit.raise [[ERR]] : !Error
     # CHECK:    kgen.unreachable
     # CHECK:  }
-    # CHECK: %a = lit.var.decl "a"
     # CHECK-NEXT: lit.ref.store %1, %a
     a = maybeRaises()
 
