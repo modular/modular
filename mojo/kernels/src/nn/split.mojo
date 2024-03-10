@@ -106,10 +106,10 @@ fn _split[
         for j in range(h):
             var output_offset = j * w * c
             var input_offset = j * stride_h_in + w_offset * stride_w_in
-            var out_slice = Buffer[type](out_buf.data + output_offset, w * c)
-            var in_slice = Buffer[type](input.data + input_offset, w * c)
             # these slices are contiguous
-            memcpy(out_slice, in_slice)
+            memcpy(
+                out_buf.data + output_offset, input.data + input_offset, w * c
+            )
         w_offset += w
 
 
@@ -121,10 +121,9 @@ fn _split_inner[
     for i in range(len(outputs)):
         var output_buf = outputs[i].flatten()
         var buffer_len = len(output_buf)
-        var input_buffer_offset = Buffer[type](
-            input.data.offset(num_elems_copied), buffer_len
+        memcpy[type](
+            output_buf.data, input.data.offset(num_elems_copied), buffer_len
         )
-        memcpy[type](output_buf, input_buffer_offset)
         num_elems_copied += buffer_len
 
 

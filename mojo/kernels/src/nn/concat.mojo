@@ -266,10 +266,12 @@ fn _concat[
         for j in range(h):
             var input_offset = j * w * c
             var output_offset = j * stride_h_out + w_offset * stride_w_out
-            var in_slice = Buffer[type](inputs[i].data + input_offset, w * c)
-            var out_slice = Buffer[type](output.data + output_offset, w * c)
             # these slices are contiguous
-            memcpy(out_slice, in_slice)
+            memcpy(
+                output.data + output_offset,
+                inputs[i].data + input_offset,
+                w * c,
+            )
         w_offset += w
 
 

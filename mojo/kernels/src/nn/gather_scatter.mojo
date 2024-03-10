@@ -723,7 +723,7 @@ fn scatter_nd_generator[
 
     @parameter
     if target != "cuda":
-        memcpy(output_flat, data_flat)
+        memcpy(output_flat.data, data_flat.data, len(output_flat))
 
     @__copy_capture(
         r_minus_m, data_shape, last_shape_of_indices, output_flat, updates_flat
