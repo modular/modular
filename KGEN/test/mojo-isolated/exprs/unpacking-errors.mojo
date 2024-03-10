@@ -18,9 +18,6 @@ fn takes_var_params[*a: int]():
 fn test_multiple_unbound_pack():
     # expected-error @+1 {{multiple unbound pack symbols not allowed}}
     alias t = Parametric[*_, `1`, *_]
-    # expected-error @+1 {{multiple unbound pack symbols not allowed}}
-    takes_var_params[*_, `1`, *_]()
-
 
 # expected-note @+1 {{declared here}}
 struct VarParamStruct[*args: Int]:

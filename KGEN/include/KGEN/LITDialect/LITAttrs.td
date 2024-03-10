@@ -290,22 +290,18 @@ def UnboundMLIROperationAttr
 //===----------------------------------------------------------------------===//
 
 def LIT_UnpackedAttr : LITTypedAttr<"Unpacked", "unpacked"> {
-  let summary = "An attribute representing an unpacked value.";
+  let summary = "An attribute representing a `*_` value";
   let description = [{
-    Represents unpacked expressions (a.k.a. starred expressions in Python).
-    The contained expression must be a single iterable attribute e.g. a
-    `#kgen.variadic` (in which case this represents unpacking it), or an
-    `UnboundAttr` (whose unpacking means repeating it).
+    Represents *_ expressions which are magic expressions that can appear in
+    parameter lists that autoparameterize the containing declaration.
   }];
 
-  let parameters = (ins "TypedAttr":$value,
-                        AttributeSelfTypeParameter<"", "UnpackedType">:$type);
-  let assemblyFormat = "`<` custom<ColonTypeParamValue>($value) `>`";
+  let parameters = (ins AttributeSelfTypeParameter<"", "UnpackedType">:$type);
+  let assemblyFormat = "";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "TypedAttr":$value,
-                                        "UnpackedType":$type), [{
-      return get(type.getContext(), value, type);
+    AttrBuilder<(ins), [{
+      return get($_ctxt, UnpackedType::get($_ctxt));
     }]>
   ];
 }

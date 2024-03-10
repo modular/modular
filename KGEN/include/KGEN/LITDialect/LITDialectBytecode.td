@@ -24,9 +24,7 @@ def TypeSignatureType : DialectType<(type
   ConcreteAttribute<"PogsAttr">:$paramListAttrs
 )>;
 
-def UnpackedType : DialectType<(type
-  Type:$exprType
-)>;
+def UnpackedType : DialectType<(type)>;
 
 def DeclRefType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
@@ -113,7 +111,6 @@ def UnboundMLIROperationAttr : DialectAttribute<(attr
 )>;
 
 def UnpackedAttr : DialectAttribute<(attr
-  TypedAttr:$value,
   ConcreteType<"UnpackedType">:$type
 )>;
 

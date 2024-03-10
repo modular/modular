@@ -2471,6 +2471,19 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (kind == kTransfer)
     return emitTransfer(exprRep, dest, emitter);
 
+  if (kind == kUnpack) {
+    // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
+    // specially.
+    // TODO: This isn't really a general expression with a real type, it would
+    // be better to handle this somehow else.
+    if (subExpr->kind == kDiscardLiteral) {
+      auto unpackedExpr = UnpackedAttr::get(emitter.getContext());
+      return emitter.emitResult(unpackedExpr, this, dest);
+    }
+    emitter.emitError(getLoc(), "unsupported unpack operation") << getRange();
+    return {};
+  }
+
   return emitArith(kind, this, {exprRep, subExpr}, dest, emitter);
 }
 
@@ -2517,27 +2530,6 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
       return {};
     // Now that we know we bool-ized the expression, invert it with ~.
     return emitArith(kInvert, expr, argValue, dest, emitter);
-  }
-
-  if (kind == kUnpack) {
-    auto pValue =
-        emitter.emitPValue({argValue.ir, argValue.expr}, dest.getContext());
-    if (!pValue) {
-      emitter.emitError(expr->getLoc(),
-                        "dynamic values not supported in unpacking");
-      return {};
-    }
-
-    // TODO: This is really a special representation for *_, collapse this into
-    // one attr instead of handling it syntactically.
-    if (!isa<UnboundAttr>(pValue.get())) {
-      emitter.emitError(expr->getLoc(), "unsupported unpack operation");
-      return {};
-    }
-
-    auto unpackedExpr =
-        UnpackedAttr::get(pValue, UnpackedType::get(pValue.getType()));
-    return emitter.emitResult(unpackedExpr, expr, dest);
   }
 
   // If this operator maps onto a special function, attempt to lower it.
