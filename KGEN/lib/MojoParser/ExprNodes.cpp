@@ -333,7 +333,6 @@ bool ExprNode::isEmptyTuple() const {
 //===----------------------------------------------------------------------===//
 
 AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  // TODO: Handle contextual types.
   APInt value = Lexer::getIntegerLiteralValue(spelling);
   // Values produced are sometimes produced unsigned, so we must add an extra
   // sign bit.
@@ -2493,32 +2492,6 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
                                 ExprEmitter &emitter) {
   if (!argValue.ir)
     return {};
-
-  // Special case some things for literals.
-  // TODO: Fix literal representation.
-  if (auto exprParam = argValue.ir.getIfPValue();
-      exprParam && (exprParam.getType().mlirType.isIndex() ||
-                    exprParam.getType().mlirType.isF64())) {
-    switch (kind) {
-    default:
-      break;
-    case ExprNode::kNeg:
-      if (auto constantFP = dyn_cast<FloatAttr>(exprParam.get())) {
-        auto result =
-            FloatAttr::get(constantFP.getType(), -constantFP.getValue());
-        return emitter.emitResult(result, expr, dest);
-      }
-
-      // Support general integer parameter exprs.
-      if (exprParam.getType().mlirType.isIndex())
-        return emitter.emitResult(ParamOperatorAttr::getNeg(exprParam), expr,
-                                  dest);
-
-      break;
-    case ExprNode::kPos:
-      return emitter.emitResult(exprParam, expr, dest);
-    }
-  }
 
   if (kind == kBoolNot) {
     // Turn this into a call to __bool__.
