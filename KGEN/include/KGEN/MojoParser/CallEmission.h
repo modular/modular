@@ -176,8 +176,6 @@ public:
     /// Emit diagnostics when an unbound pack (i.e. `*_`) appears in a variadic
     /// signature.
     std::function<void(const Binding &)> emitUnboundPackInVariadic;
-    /// Emit diagnostics for failure to unpack parameters.
-    std::function<void(const Binding &)> emitUnpack;
     /// Emit diagnostics when multiple unbound packs appear in parameter list.
     std::function<void(const Binding &)> emitMultipleUnboundPack;
     /// Emit diagnostics for failure to deduce an infer-only parameter.

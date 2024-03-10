@@ -1290,11 +1290,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
              << binding.expr->getRange();
         ;
       },
-      /*emitUnpack=*/
-      [&](const ParamBindings::Binding &binding) {
-        diag << "cannot unpack non-literal variadic parameters"
-             << binding.expr->getRange();
-      },
       /*emitMultipleUnboundPack=*/
       [&](const ParamBindings::Binding &binding) {
         diag << "multiple unbound pack symbols not allowed"
