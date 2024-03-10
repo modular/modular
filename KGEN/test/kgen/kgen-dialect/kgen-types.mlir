@@ -56,3 +56,9 @@ kgen.generator @type_printing() {
 kgen.generator @variadic_variant<values: variadic<type>>(%arg0: !kgen.variant<[values]>, %arg1: !kgen.variant<[[]]>) {
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @pack
+// CHECK-SAME: %arg0: !kgen.pack<[i32, i64], owned_in_mem>
+kgen.func @pack(%arg0: !kgen.pack<[i32, i64], owned_in_mem>) {
+  kgen.return
+}

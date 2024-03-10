@@ -240,8 +240,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       auto unpacked = cast<UnpackedAttr>(binding.value);
       TypedAttr packed = unpacked.getValue();
 
-      // Unbound pack is special: it fills up all available positional slots, so
-      // we must first unpack all others. Remember where it is.
+      // UnpackedAttr(UnboundAttr) is aka "*_": it fills up all available
+      // positional slots, so we must first unpack all others. Remember it.
       if (isa<UnboundAttr>(packed)) {
         assert(isa<DiscardType>(packed.getType()));
         if (unpackedUnboundIdx != -1) {
