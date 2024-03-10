@@ -402,29 +402,24 @@ ParameterInferenceState::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (!actualType)
       return success();
 
-    // If the argument is an explicit low-level reference type passed as a
-    // borrowed register value, then we allow matching it to its underlying
-    // element type.
+    // If the argument is an explicit !lit.ref type and the argument value is an
+    // MValue, then we allow matching it to its underlying element type,
+    // addrspace, mutability, lifetime etc.
+    //
+    // This is magic used by Reference.__init__, allowing Reference(someMValue)
+    // to infer the lifetime and mutability of the MValue.
     if (auto expectedRef = dyn_cast<RefType>(expectedType.mlirType)) {
       if (expectedConvention == ArgConvention::BorrowedInReg &&
-          !isa<RefType>(actualType)) {
-        // Infer element, addrspace, and lifetime.
-        if (value.isMValue()) {
-          auto valueRefType =
-              cast<RefType>(value.getMValueReference().getType());
-          // If the MValue is an MBValue specifically, make sure to strip off
-          // any mutability from the reference.  There are lots of things that
-          // are mutable that have borrowed references.
-          if (value.getIfMBValue() && !valueRefType.isMutableKnown(false))
-            valueRefType = valueRefType.getWithMutability(false);
+          !isa<RefType>(actualType) && value.isMValue()) {
+        auto valueRefType = cast<RefType>(value.getMValueReference().getType());
+        // If the MValue is an MBValue specifically, make sure to strip off
+        // any mutability from the reference.  The parser allows the IR
+        // representation of an MBValue to be mutable, but we don't want to
+        // infer mutability of a reference from that.
+        if (value.getIfMBValue() && !valueRefType.isMutableKnown(false))
+          valueRefType = valueRefType.getWithMutability(false);
 
-          matchTypes(valueRefType, expectedRef);
-        } else {
-          // In the case of a SValue / PValue, we can do an MBValue conversion
-          // to expose the address, but we can't infer a lifetime or address
-          // space.
-          matchTypes(actualType, expectedRef.getElementType());
-        }
+        matchTypes(valueRefType, expectedRef);
         return success();
       }
     }
@@ -1012,17 +1007,16 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       break;
     }
 
-    // Check value -> reference conversion is allowed in an argument.  This can
-    // be performed by passing the existing address of dropping something into a
-    // memory box.
-    // TODO(references): if we had lifetimeof(self) and inout/borrowed
-    // overloading, we could get rid of this implicit conversion.
+    // If this is a low-level !lit.ref passed by value, we support binding an
+    // MValue of the element type.  Parameter inference will infer the lifetime
+    // and mutability of the reference in the common case that they are params.
+    //
+    // This is magic used by Reference.__init__, allowing Reference(someMValue)
+    // to infer the lifetime and mutability of the MValue.
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
       // Element type and address have to be exactly equal, the mutability just
       // has to be compatible.
       if (ASTType(argType).isEqualCanon(expectedRef.getElementType()) &&
-          // We don't currently support non-MValues.  We could dump them into
-          // memory with an MBValue conversion if there is a need to.
           argVal.isMValue()) {
         auto argRefType = cast<RefType>(argVal.getMValueReference().getType());
         if (canZeroCostConvert(shared, argRefType, expectedRef))

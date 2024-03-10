@@ -204,49 +204,62 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
         convention == ArgConvention::OwnedInMem)
       return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
 
-    // If this is a low-level !lit.ref passed by value, we can bind either to a
-    // !lit.ref SBValue of the same type, or an MValue of the element type.
-    // This is used by the initializer for Reference itself but shouldn't
-    // otherwise be used directly.
+    // If this is a low-level !lit.ref passed by value, we support binding an
+    // MValue of the element type.
+    //
+    // This is magic used by Reference.__init__, allowing Reference(someMValue)
+    // to infer the lifetime and mutability of the MValue.
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
-      if (auto cValue = operand.ir.getIfCValue())
-        if (convention == ArgConvention::BorrowedInReg &&
-            ASTType(cValue.getRValueType())
-                .isEqualCanon(expectedRef.getElementType())) {
-          // We don't currently support non-MValues.  We could dump them into
-          // memory with an MBValue conversion if there is a need to.
-          if (!cValue.isMValue()) {
-            emitter.emitError(
-                operand.expr->getLoc(),
-                "cannot pass non-memory value through implicit reference");
-            return {};
-          }
-
-          Value refValue = cValue.getMValueReference();
-          auto refValueType = cast<RefType>(refValue.getType());
-
-          // If the lifetime is an InvalidRefLifetimeAttr then this value is
-          // derived from an argument which might be bound (after elaboration)
-          // to a register value that has no lifetime.  Emit an error because
-          // you can't form a Reference to these things.
-          if (isa<InvalidRefLifetimeAttr>(refValueType.getLifetime())) {
-            emitter.emitError(
-                operand.expr->getLoc(),
-                "cannot form a reference to an argument that might "
-                "instantiate to @register_passable type");
-            return {};
-          }
-
-          // Lifetimes must be convertible, this is checked by OverloadFitness.
-          // The destination may be less mutable.
-          if (!refValueType.isMutableKnown(false) &&
-              expectedRef.isMutableKnown(false))
-            refValue = emitter.builder->create<RefImmutOp>(
-                operand.expr->getLocation(emitter), refValue);
-          assert(refValue.getType() == expectedType &&
-                 "Should have exact match now");
-          return SBValue(refValue);
+      auto cValue = operand.ir.getIfCValue();
+      if (cValue && convention == ArgConvention::BorrowedInReg &&
+          cValue.getRValueType().isEqualCanon(expectedRef.getElementType())) {
+        // We don't support non-MValues: you shouldn't be able to form a
+        // reference to something that isn't in memory.  We could relax this to
+        // support things like Reference("foo") - such a thing could dump the
+        // value into a memory temp - but we can do that later if there is
+        // demand.
+        if (!cValue.isMValue()) {
+          emitter.emitError(operand.expr->getLoc(),
+                            "cannot bind a non-memory value to a Reference");
+          return {};
         }
+
+        Value refValue = cValue.getMValueReference();
+        auto refValueType = cast<RefType>(refValue.getType());
+
+        // If the lifetime is an InvalidRefLifetimeAttr then this value is
+        // derived from an argument which might be bound (after elaboration)
+        // to a register value that has no lifetime.  Emit an error because
+        // you can't form a Reference to these things.
+        if (isa<InvalidRefLifetimeAttr>(refValueType.getLifetime())) {
+          emitter.emitError(operand.expr->getLoc(),
+                            "cannot form a reference to an argument that might "
+                            "instantiate to @register_passable type");
+          return {};
+        }
+
+        // Lifetimes must be convertible, this is checked by OverloadFitness.
+        // The destination may be less mutable.
+        if (!refValueType.isMutableKnown(false) &&
+            expectedRef.isMutableKnown(false)) {
+          refValue = emitter.builder->create<RefImmutOp>(
+              operand.expr->getLocation(emitter), refValue);
+          refValueType = cast<RefType>(refValue.getType());
+        }
+
+        // The lifetimes may disagree if we're converting a value to a
+        // superset lifetime, e.g. "immortal -> X" or "X -> X|y".
+        if (refValueType.getLifetime() != expectedRef.getLifetime()) {
+          refValue = emitter.builder->create<RebindOp>(
+              operand.expr->getLocation(emitter),
+              refValueType.getWithLifetime(expectedRef.getLifetime()),
+              refValue);
+          refValueType = cast<RefType>(refValue.getType());
+        }
+
+        assert(refValueType == expectedType && "Should have exact match now");
+        return SBValue(refValue);
+      }
     }
 
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
