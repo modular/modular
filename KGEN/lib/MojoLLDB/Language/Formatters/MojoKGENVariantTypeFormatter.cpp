@@ -20,12 +20,12 @@ MojoKGENVariantTypeSyntheticFrontEnd::MojoKGENVariantTypeSyntheticFrontEnd(
     Update();
 }
 
-size_t MojoKGENVariantTypeSyntheticFrontEnd::CalculateNumChildren() {
+uint32_t MojoKGENVariantTypeSyntheticFrontEnd::CalculateNumChildren() {
   return 1;
 }
 
 lldb::ValueObjectSP
-MojoKGENVariantTypeSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
+MojoKGENVariantTypeSyntheticFrontEnd::GetChildAtIndex(uint32_t idx) {
   if (idx >= 1)
     return ValueObjectSP();
   return content;

@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from flaky import flaky
 from lib.utils import Document, Requests, fail_if_none, mojo_lsp_client
 from pytest_lsp import LanguageClient
 

@@ -18,9 +18,9 @@ public:
 
   ~MojoKGENVariantTypeSyntheticFrontEnd() override = default;
 
-  size_t CalculateNumChildren() override;
+  uint32_t CalculateNumChildren() override;
 
-  lldb::ValueObjectSP GetChildAtIndex(size_t idx) override;
+  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override;
 
   lldb::ChildCacheState Update() override;
 
