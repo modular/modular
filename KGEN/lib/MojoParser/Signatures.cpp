@@ -97,6 +97,7 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
           }
         }
         vararg = VarArgKind::PackVarArg;
+        p.consumeToken(Token::star);
       }
       ExprNode *typeExprNode;
       if (p.parseStarredItem(typeExprNode))
@@ -333,8 +334,10 @@ TypeCheckedParamList::TypeCheckedParamList(
     ASTType type;
     if (arg.typeExpr)
       type = emitter.emitExprType(arg.typeExpr);
-    else
+    else {
       emitter.emitError(arg.loc, "parameters must always have a type");
+      arg.isErroneous = true;
+    }
     if (!type)
       type = emitter.shared.getTypeCheckErrorType();
 
@@ -537,6 +540,42 @@ getRefAndLifetimeForAddressArgument(ParsedArgument &arg, size_t idx, Type type,
   return {lifetimeDecl, refType};
 }
 
+// If this argument is a pack vararg like "*args: *Ts" then the argument
+// expression is "Ts", and the star before it was syntactically parsed.
+// This expression must be a PValue of variadic metatype.  We need to
+// process it into a PackType.
+static Type typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg,
+                                               ExprEmitter &emitter) {
+  assert(arg.vararg == VarArgKind::PackVarArg &&
+         "this applies to pack arguments");
+
+  PValue param = emitter.emitExprPValue(arg.typeExpr, EC_Type);
+  if (!param) // Error emitting the expression is already diagnosed.
+    return {};
+  // Make sure the param value is a variadic list of types.
+  VariadicType paramVariadicType =
+      dyn_cast<VariadicType>(param.getRValueType().mlirType);
+  if (!paramVariadicType) {
+    emitter.emitError(arg.typeExpr->getLoc(),
+                      "pack argument type list must reference a variadic list")
+        << arg.typeExpr->getRange();
+    return {};
+  }
+
+  // ParamRefType
+  Type elementType = paramVariadicType.getElementType();
+  if (!isa<MetaTypeType, TypeType, TraitType>(elementType)) {
+    emitter.emitError(arg.typeExpr->getLoc(),
+                      "argument type list elements must be types")
+        << arg.typeExpr->getRange();
+    return {};
+  }
+
+  // FIXME: Use the correct convention eventually.
+  auto packConvention = ArgConvention::BorrowedInReg;
+  return PackType::get(param.get(), packConvention);
+}
+
 /// Type check each argument in turn, resolving their type and default
 /// initializer value.  Arguments in Mojo can refer to previous arguments in
 /// their type+default value expressions as PValues, so we need to ensure that
@@ -554,10 +593,16 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // Start by computing the declared type of the argument.
   ASTType type;
   if (arg.typeExpr) {
-    // Emit the argument type. Allow argument types to be "automatically"
-    // parameterized: if the type is fully unbound, its parameters are
-    // appended to the function parameters.
-    type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+    if (arg.vararg != VarArgKind::PackVarArg) {
+      // Emit the argument type. Allow argument types to be "automatically"
+      // parameterized: if the type is fully unbound, its parameters are
+      // appended to the function parameters.
+      type = typeEmitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
+    } else {
+      // Ts in "*args: *Ts" is a reference to a variadic list of types, but
+      // needs to be typechecked.
+      type = typeCheckVariadicPackTypeSpecifier(arg, typeEmitter);
+    }
 
     // If the type couldn't be emitted, mark this argument erroneous (so uses
     // within the body of the function don't trigger secondary errors) and

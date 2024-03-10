@@ -217,11 +217,12 @@ fn passMemTypeResultGeneric():
 # expected-error @+1 {{unexpected token in expression}}
 fn invalidStarExpression(*x: *): pass
 
-# expected-error @+1 {{only variadic types may be unpacked}}
+# expected-error @+1 {{pack argument type list must reference a variadic list}}
 fn invalidPackType(*x: *Int): pass
 
-fn invalidParameterPack[*Ts: __mlir_type.`!kgen.type`]():
+fn invalidParameterPack[*Ts: AnyType]():
   @parameter
+  # expected-error @+2 {{expected a type, not a value}}
   # expected-error @+1 {{parameters may not be variadic packs}}
   fn invalid[*Us: *Ts](): pass
 

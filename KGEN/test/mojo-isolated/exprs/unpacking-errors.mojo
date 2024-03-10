@@ -7,17 +7,8 @@
 # RUN: %parse-mojo-isolated %s -verify-diagnostics
 
 
-# expected-note @+1 {{declared here}}
 struct Parametric[a: int]:
     pass
-
-
-fn test_too_many_unpacked():
-    # expected-error @+1 {{expects 1 parameter, but 2 were specified}}
-    alias s = Parametric[
-        *__mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`
-    ]
-
 
 # expected-note @+1 {{declared here}}
 fn takes_var_params[*a: int]():
@@ -44,9 +35,9 @@ fn test_unbound_pack_with_variadic():
 
 
 fn test_unpack_non_literal[*a: int]():
-    # expected-error @+1 {{cannot unpack non-literal variadic parameters}}
+    # expected-error @+1 {{unsupported unpack operation}}
     Parametric[*a]
-    # expected-error @+1 {{cannot unpack non-literal variadic parameters}}
+    # expected-error @+1 {{unsupported unpack operation}}
     takes_var_params[*a]
 
 
