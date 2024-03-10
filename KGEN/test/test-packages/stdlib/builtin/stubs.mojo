@@ -129,8 +129,8 @@ struct Bool(AnyType):
 
 @register_passable("trivial")
 struct Slice:
-    fn __init__(end: int) -> Self:
-        return Self {}
+    fn __init__(inout self, end: int):
+        pass
 
     fn __init__(start: int, end: int) -> Self:
         return Self {}

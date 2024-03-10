@@ -947,6 +947,11 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     bool selfIsRegPassable =
         selfType.isRegisterPassable(fnDecl->getLoc(), shared);
     if (selfIsRegPassable && resultTypeExpr) {
+#if 0 // TODO: Enable this to warn about `-> Self` syntax when ready.
+      shared.emitWarning(fnDecl->getLoc(), "'")
+           << fnInfo.name
+           << "' should take 'inout self' instead of returning 'Self'";
+#endif
       if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
         fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyInitReg);
       else if (fnInfo.kind == SpecialFunctionKind::kInit)
@@ -968,7 +973,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     // they can't define a moveinit.
     if (selfIsRegPassable && fnInfo.kind == SpecialFunctionKind::kMoveInit) {
       fnDecl->setErroneous();
-      paramList.shared.emitError(fnDecl->getLoc(), "'")
+      shared.emitError(fnDecl->getLoc(), "'")
           << fnInfo.name
           << "' is not supported for @register_passable types, they "
              "are always movable by copying a register";
