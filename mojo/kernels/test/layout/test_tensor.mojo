@@ -7,7 +7,7 @@
 
 from kernel_utils._utils import ManagedLayoutTensor
 from kernel_utils.int_tuple import IntTuple
-from kernel_utils.layout import Layout
+from kernel_utils.layout import Layout, print_layout
 from kernel_utils.layout_tensor import LayoutTensor
 
 
@@ -289,8 +289,64 @@ fn test_tensor_tile_and_distribute_custom_layout():
     _ = managed_tensor ^
 
 
+# CHECK-LABEL: test_copy_to_tile_major_layout
+fn test_copy_to_tile_major_layout():
+    print("== test_copy_to_tile_major_layout")
+    var mat_4x4_row_major = LayoutTensor[
+        Layout(IntTuple(4, 4), IntTuple(4, 1)), DType.float32
+    ].stack_allocation()
+    mat_4x4_row_major.linspace()
+
+    # CHECK: (((2, 2), (2, 2)):((1, 8), (2, 4)))
+    # CHECK:        0    1    2    3
+    # CHECK:     +----+----+----+----+
+    # CHECK:  0  |  0 |  2 |  4 |  6 |
+    # CHECK:     +----+----+----+----+
+    # CHECK:  1  |  1 |  3 |  5 |  7 |
+    # CHECK:     +----+----+----+----+
+    # CHECK:  2  |  8 | 10 | 12 | 14 |
+    # CHECK:     +----+----+----+----+
+    # CHECK:  3  |  9 | 11 | 13 | 15 |
+    # CHECK:     +----+----+----+----+
+    alias tiled_major_layout = Layout(
+        IntTuple(IntTuple(2, 2), IntTuple(2, 2)),
+        IntTuple(IntTuple(1, 8), IntTuple(2, 4)),
+    )
+    var mat_4x4_tiled_2x2 = LayoutTensor[
+        tiled_major_layout, DType.float32
+    ].stack_allocation()
+    print_layout(tiled_major_layout)
+
+    mat_4x4_tiled_2x2.copy_from_numa(mat_4x4_row_major)
+
+    # CHECK: mat_4x4_row_major:
+    # CHECK: row: 0 data 0.0         1.0     2.0     3.0
+    # CHECK: row: 1 data 4.0         5.0     6.0     7.0
+    # CHECK: row: 2 data 8.0         9.0     10.0    11.0
+    # CHECK: row: 3 data 12.0        13.0    14.0    15.0
+    print("mat_4x4_row_major:")
+    for i in range(4):
+        print_no_newline("row:", i, "data ")
+        for j in range(4):
+            print_no_newline(mat_4x4_row_major.ptr[i * 4 + j], "\t")
+        print("")
+
+    # CHECK: mat_4x4_tiled_2x2:
+    # CEHCK: row: 0 data 0.0         4.0     1.0     5.0
+    # CEHCK: row: 1 data 2.0         6.0     3.0     7.0
+    # CEHCK: row: 2 data 8.0         12.0    9.0     13.0
+    # CEHCK: row: 3 data 10.0        14.0    11.0    15.0
+    print("mat_4x4_tiled_2x2:")
+    for i in range(4):
+        print_no_newline("row:", i, "data ")
+        for j in range(4):
+            print_no_newline(mat_4x4_tiled_2x2.ptr[i * 4 + j], "\t")
+        print("")
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
     test_tensor_tile_and_distribute()
     test_tensor_tile_and_distribute_custom_layout()
+    test_copy_to_tile_major_layout()

@@ -217,9 +217,20 @@ struct LayoutTensor[
     fn copy_from_numa[
         other_layout: Layout
     ](self, other: LayoutTensor[other_layout, dtype]):
-        for m in range(Self.dim[0]()):
-            for n in range(Self.dim[1]()):
-                self[m, n] = other[m, n]
+        @parameter
+        fn copy_element[i: Int]():
+            alias src_idx = other_layout(i)
+            alias dst_idx = self.layout(i)
+            self.ptr[dst_idx] = other.ptr[src_idx]
+
+        alias dst_size = layout.size()
+        alias src_size = other_layout.size()
+
+        debug_assert(
+            dst_size == src_size, "copy_from should move data of the same size"
+        )
+
+        unroll[copy_element, dst_size]()
 
     fn linspace(self):
         for m in range(Self.dim[0]()):
