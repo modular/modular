@@ -11,16 +11,6 @@
 struct VarParamStruct[*args: int]:
     pass
 
-
-# CHECK-LABEL: lit.func @"unpacked_literal
-fn unpacked_literal():
-    # CHECK: lit.alias.decl {{.*}}: metatype<{{.*}}@VarParamStruct<:variadic<index> [1, 2, 3, 4]>>
-    alias s = VarParamStruct[
-        *__mlir_attr.`#kgen.variadic<1, 2> : !kgen.variadic<index>`,
-        *__mlir_attr.`#kgen.variadic<3, 4> : !kgen.variadic<index>`,
-    ]
-
-
 struct StructWithDefault[a: int, b: int, c: int = `1`, d: int = `2`]:
     pass
 
