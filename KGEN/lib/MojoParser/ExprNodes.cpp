@@ -2540,7 +2540,9 @@ AnyValue UnaryOpNode::emitArith(Kind kind, const ExprNode *expr,
       if (isa<TypeType, MetaTypeType, TraitType, ParamRefType>(
               varType.getElementType())) {
         auto packTypeExpr = TypeConstantAttr::get(
-            PackType::get(pValue.get()), TypeType::get(emitter.getContext()));
+            PackType::get(pValue.get(),
+                          /*FIXME:*/ ArgConvention::BorrowedInReg),
+            TypeType::get(emitter.getContext()));
         return emitter.emitResult(packTypeExpr, expr, dest);
       }
     } else if (!isa<UnboundAttr>(pValue.get())) {

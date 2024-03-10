@@ -391,7 +391,7 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
                         "ArgConvention":$convention);
   let assemblyFormat = [{
     `<`custom<ParamType>($elementType)
-      `` custom<VariadicConvention>($convention) `>`
+      `` custom<VariadicOrPackConvention>($convention) `>`
   }];
 
   let builders = [
@@ -538,14 +538,17 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
     A `!kgen.pack` type represents a sequence of heterogeneously typed elements.
     This type can be used to represent a tuple of 0 or more elements.
 
+    It also includes the original argument convention so the MojoParser knows if
+    the input argument is supposed to be owned, borrowed, inout, etc.
+
     Example:
 
     ```mlir
-    // A concrete pack type with no element types.
+    // A concrete pack type with no element types, defauling to borrowed_in_reg.
     !kgen.pack<[]>
 
     // A concrete pack type with two element types.
-    !kgen.pack<[i32, i64]>
+    !kgen.pack<[i32, i64], owned_in_mem>
 
     kgen.generator @pack<Ts: variadic<!kgen.type>, T0: type, T1: type>(
       // A pack type parameterized on a variadic sequence of elements.
@@ -556,13 +559,17 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$variadic);
-  let assemblyFormat = "`<` custom<PackType>($variadic) `>`";
+  let parameters = (ins "TypedAttr":$variadic, "ArgConvention":$convention);
+  let assemblyFormat = [{
+    `<` custom<PackType>($variadic)
+        `` custom<VariadicOrPackConvention>($convention) `>`
+  }];
   let genVerifyDecl = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic), [{
-      return get(variadic.getContext(), variadic);
+    TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic,
+                                        "ArgConvention":$convention), [{
+      return get(variadic.getContext(), variadic, convention);
     }]>
   ];
 
