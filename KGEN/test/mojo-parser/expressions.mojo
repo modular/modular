@@ -718,23 +718,24 @@ def basic_assignments(a: Int, b: Int, c: RegPassable, d: RegPassable):
 # Issue #20145: Walrus operator should implicitly declare variable in def functions.
 # CHECK-LABEL: lit.func @"walrus_implicit_decl
 def walrus_implicit_decl():
+  # CHECK:      %d = lit.var.decl "d" imp
+  # CHECK:      %c = lit.var.decl "c" imp
+  # CHECK:      %b = lit.var.decl "b" imp
   # CHECK:      %a = lit.var.decl "a" imp
+
   # CHECK-NEXT: [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
   # CHECK-NEXT: lit.ref.store [[THREE]], %a
   # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load %a
   # CHECK-NEXT: lit.call {{.*}}([[THREE]], [[VAR_A]])
   simpleMath(a := 3, a)
 
-  # CHECK:      %b = lit.var.decl "b" imp
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: !Int = <{4}>
   # CHECK-NEXT: lit.ref.store [[FOUR]], %b
   if b := 4:
     print(b)
 
-  # CHECK:      %c = lit.var.decl "c" imp
-  # CHECK-NEXT: [[FIVE:%.*]] = kgen.param.constant: !Int = <{5}>
+  # CHECK: [[FIVE:%.*]] = kgen.param.constant: !Int = <{5}>
   # CHECK-NEXT: lit.ref.store [[FIVE]], %c
-  # CHECK:      %d = lit.var.decl "d" imp
   # CHECK-NEXT: lit.ref.store [[FIVE]], %d
   d = c := 5
 

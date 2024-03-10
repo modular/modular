@@ -33,18 +33,6 @@ fn var_decls():
     # CHECK-NEXT: [[TMP:%.*]] = kgen.param.constant = <42>
     # CHECK-NEXT: lit.ref.store [[TMP]], %z
 
-
-# CHECK-LABEL: lit.func @"var_decls_implicit()
-def var_decls_implicit() -> None:
-    # Implicit declaration is mutable.
-    # CHECK: %x = lit.var.decl "x" imp
-    x = `123`
-
-    # CHECK: %[[F:.*]] = lit.call {{.*}}::@"fudge_int{{.*}}(%index42)
-    # CHECK: lit.ref.store %[[F]], %x
-    x = fudge_int(`42`)
-
-
 # CHECK-LABEL: lit.func @"test_var_let_scopes
 fn test_var_let_scopes(cond: Bool):
     # CHECK: lit.var.decl "c"
@@ -90,3 +78,63 @@ fn test_shadowing_reference_shadowed(cond: Bool):
     var num: int = `10`
     if cond:
         var num = fudge_int(`42`)
+
+# ===----------------------------------------------------------------------=== #
+# Implicitly declared variables.
+# ===----------------------------------------------------------------------=== #
+
+# CHECK-LABEL: lit.func @"var_decls_implicit()
+def var_decls_implicit() -> None:
+    # Implicit declaration is mutable.
+    # CHECK: %x = lit.var.decl "x" imp
+    x = `123`
+
+    # CHECK: %[[F:.*]] = lit.call {{.*}}::@"fudge_int{{.*}}(%index42)
+    # CHECK: lit.ref.store %[[F]], %x
+    x = fudge_int(`42`)
+
+
+fn use_int(x: Int): pass
+
+# Check implicit values are declared at top level where they belong.
+# https://github.com/modularml/modular/issues/34368
+
+# CHECK-LABEL: lit.func @"walrus_control_flow
+def walrus_control_flow(a: Int):
+   # CHECK: %a_0 = lit.var.decl
+   # CHECK: %b = lit.var.decl
+   # CHECK: %curr = lit.var.decl "curr"
+   curr = a
+
+   # CHECK: lit.loop cond {
+   # CHECK-NEXT: lit.ref.load %curr
+   while b := curr + 1:
+   # CHECK: } body {
+   # CHECK-NEXT: lit.ref.load %b
+     use_int(b)
+     curr = b
+
+# Check that we only get one implicit declaration and all three scopes use it.
+# CHECK-LABEL: lit.func @"reuse_implicit
+def reuse_implicit(a: Int, cond: __mlir_type.i1):
+  # CHECK: %a_0 = lit.var.decl
+  # CHECK: %implicit = lit.var.decl
+
+  # CHECK: hlcf.if
+  if cond:
+      # CHECK: lit.ref.store {{.*}}, %implicit :
+      implicit = a
+      # CHECK: lit.ref.load %implicit :
+      use_int(implicit)
+
+  # CHECK: hlcf.if
+  if cond:
+      # CHECK: lit.ref.store {{.*}}, %implicit :
+      implicit = a
+      # CHECK: lit.ref.load %implicit :
+      use_int(implicit)
+
+  # CHECK: lit.ref.store {{.*}}, %implicit :
+  implicit = a
+  # CHECK: lit.ref.load %implicit :
+  use_int(implicit)

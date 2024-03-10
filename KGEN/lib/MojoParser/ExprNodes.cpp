@@ -456,34 +456,38 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   LookupResult lookup = emitter.shared.lookupAndResolveDecl(
       spelling, getLoc(), container, /*searchParentScopes=*/true);
 
-  // This creates an untyped VarDeclOp which is then inferred from its
-  // initializer.
-  auto createVarDecl = [&](OpBuilder &builder, VarDeclKind kind) -> VarDeclOp {
-    auto contextualType = dest.getIfLValueInitializerType();
-    assert(contextualType && "must have contextual type");
-    return emitter.emitVarDecl(spelling, contextualType, getLocation(emitter),
-                               kind);
-  };
-
   // If that lookup failed, but we can synthesize a variable declaration in this
   // scope, do that.  We can only do this if there is a varDeclCursor,
   // indicating that we're in a `def` node, and if we have a contextual type
   // (which tells us we need to emit an LValue).
   if (lookup.isFailure() && emitter.varDeclCursor &&
       dest.getIfLValueInitializerType()) {
+    auto contextualType = dest.getIfLValueInitializerType();
+    assert(contextualType && "must have contextual type");
+
     // Use this builder to place any VarDeclOps. In Python there is only one
-    // scope per function and all variables belong to that scope, so builders
-    // should reflect that.
+    // scope for the whole def and all variables belong to that scope.
     OpBuilder varDeclBuilder(
         emitter.varDeclCursor->getInsertionBlock(),
         std::next(emitter.varDeclCursor->getInsertionPoint()));
-    VarDeclOp varDecl = // Marked Implicit to disable warnings.
-        createVarDecl(varDeclBuilder, VarDeclKind::Implicit);
+    ExprEmitter varDeclEmitter(emitter.shared, emitter.declScope,
+                               varDeclBuilder);
+    VarDeclOp varDecl = varDeclEmitter.emitVarDecl(
+        spelling, contextualType, getLocation(emitter),
+        // Marked Implicit to disable warnings.
+        VarDeclKind::Implicit);
 
-    // In a normal implicit declaration, we add it to the name table so
-    // subsequent uses find this one.
+    // Add implicitly declared variable to the name table OF THE FUNCTION, so
+    // subsequent uses find this one.  We don't want implicit declarations in
+    // different subscopes to get different implicit declarations.
+    ASTDecl *scopeToInsert = &container;
+    while (!isa<FuncOp>(*scopeToInsert)) {
+      scopeToInsert = scopeToInsert->getParentDecl();
+      assert(scopeToInsert && "not in a def?");
+    }
+
     emitter.getDeclResolver().addFullyResolvedDecl(
-        DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), &container);
+        DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), scopeToInsert);
     return emitter.emitResult(MLValue(varDecl), this, dest);
   }
 
@@ -2045,6 +2049,10 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 /// The walrus := operator in Python requires the left side to be a simple
 /// identifier, but Mojo allows arbitrary lvalues like the assign stmt.
 AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
+
+  if (kind == kWalrus)
+    printf("here");
+
   // In an assignment, we emit the RHS into the LHS as its context.  This is
   // required to enable the 'implicit declaration' behavior in a def and to
   // support patterns.

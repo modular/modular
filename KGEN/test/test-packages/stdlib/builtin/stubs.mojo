@@ -106,6 +106,10 @@ struct Int(Copyable):
             pred = __mlir_attr.`#index<cmp_predicate eq>`
         ](lhs.value, rhs.value)
 
+    @always_inline("nodebug")
+    fn __bool__(self) -> Bool:
+        return not (self == 0)
+
 
 @value
 @register_passable("trivial")
@@ -125,6 +129,14 @@ struct Bool(AnyType):
 
     fn __mlir_i1__(self) -> __mlir_type.i1:
         return self.value
+
+    @always_inline("nodebug")
+    fn __bool__(self) -> Bool:
+        return self
+
+    @always_inline("nodebug")
+    fn __invert__(self) -> Bool:
+        return self  # Incorrect impl
 
 
 @register_passable("trivial")
