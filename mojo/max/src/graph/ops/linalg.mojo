@@ -8,7 +8,6 @@
 from math import max
 
 from max.graph.type import Dim, ElementType, MOTensor
-from max.graph.type_promotion import promote
 from max.graph.ops.casting import reshape
 
 
@@ -41,11 +40,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     Returns:
         A pair of symbolic tensors corresponding to the `lhs` and `rhs`
         respectively, after being broadcast to the right shapes to perform
-        a matmul between them. This is similar to an `elementwise_broadcast`
-        except in the final two dimensions of each tensor. The last dimension
-        of `lhs` is broadcast against the 2nd-to-last dimension of `rhs`, while
-        the 2nd-to-last dimension of `lhs` and the last dimension of `rhs` are
-        untouched.
+        a matmul between them. All but the final two dimensions are broadcasted.
     """
     var g = lhs.graph()
     var lhs_type = lhs.tensor_type()
@@ -124,8 +119,8 @@ def matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
 def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     """Computes the matrix multiplication of two symbolic tensors.
 
-    The last two dimensions of each tensor are treated as matricies and multiplied,
-    and the remaining dimensions are broadcast dimensions.
+    The last two dimensions of each tensor are treated as matricies and
+    multiplied, and the remaining dimensions are broadcast dimensions.
 
     This supports arbitrary-rank `rhs` inputs, but may be less performant than
     `matmul_by_matrix`.
@@ -230,6 +225,7 @@ def band_part(
             diagonal. If -1, include the entire upper triangle.
         exclude: If true, invert the selection of elements to mask. Elements
             in the band are set to zero.
+
     Returns:
         A symbolic tensor value with the configured selection masked out
         to 0 values, and the remaining values copied from the input tensor.

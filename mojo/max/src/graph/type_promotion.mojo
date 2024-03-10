@@ -55,7 +55,8 @@ implementation, so we never promote other types to them, and they instead
 behave as uint64.
 
 `bfloat16` and `tensor_float_32` are placed _above_ their higher-precision
-counterparts, ie. `float16` can promote to a `bfloat16` but not vice-versa.
+counterparts, in other words, `float16` can promote to a `bfloat16` but not
+vice-versa.
 This means that unless you're explicitly using `bfloat16` or `tensor_float_32`
 you'll never accidentally promote to them, but will always promote to the
 higher-precision alternative. If you _are_ using them, be careful to manage
@@ -68,7 +69,7 @@ output. You can work around this with explicit casts, eg.
 `b16.cast(DType.float16) ** f16`.
 """
 
-# TODO: Clean up visibility, rules.
+# TODO: Clean up rules.
 
 
 from collections import Dict, KeyElement, Optional
@@ -78,13 +79,14 @@ from max.graph.symbol import Symbol
 from max.graph.ops import cast
 
 
-fn promotion_semilattice() -> Dict[DType, List[DType]]:
+fn _promotion_semilattice() -> Dict[DType, List[DType]]:
     """The promotion semilattice structure.
 
-    - Keys of this dictionary are DTypes.
-    - Values are lists of DTypes to which the key can be _directly_ promoted.
-    - The result will satisfy the semilattice condition for joins, ie.
-      for any subset of elements, there is a unique minimal join.
+    Properties:
+     - Keys of this dictionary are DTypes.
+     - Values are lists of DTypes to which the key can be _directly_ promoted.
+     - The result will satisfy the semilattice condition for joins, in other
+        words for any subset of elements, there is a unique minimal join.
 
     Returns:
         The promotion semilattice as a dictionary of direct promotions.
@@ -121,19 +123,18 @@ fn promotion_semilattice() -> Dict[DType, List[DType]]:
     return semilattice ^
 
 
-fn min[
+fn _minumum[
     T: KeyElement
 ](semilattice: Dict[T, List[T]], owned elements: Set[T]) raises -> Optional[T]:
-    """The smallest given element in the semilattice, if it exists and is
-    unique, otherwise None.
+    """Returns the minumum of `elements`, according to the semilattice ordering.
 
     Args:
         semilattice: The semilattice.
         elements: The elements from amongst which to choose the minimum.
 
     Returns:
-        The smallest element in elements, according to the semilattice structure.
-        If no unique smallest element exists, None.
+        The smallest value in `elements`. If it is not unique, (in other words,
+        the semilattice is not valid), returns `None` instead.
 
     Raises:
         If any element in elements is not in the semilattice.
@@ -144,30 +145,28 @@ fn min[
         larger |= semilattice[e[]]
 
     var smallest = elements - larger
-    # min(join(subset)) will be unique as long as semilattice criteria is met
+    # min(_join(subset)) will be unique as long as semilattice criteria is met
     if len(smallest) != 1:
         return None
 
     return smallest.pop()
 
 
-fn all_greater_or_equal_elements[
+fn _greater_subset[
     T: KeyElement
 ](semilattice: Dict[T, List[T]], element: T) raises -> Set[T]:
-    """Find all elements in the partial ordering which are greater than
-    or equal to the element, including itself.
+    """Returns the subset elements of `semilattice` greater than `element`.
 
     Args:
         semilattice: The semilattice.
         element: The element.
 
     Returns:
-        The set of all elements ordered >= the element.
+        The set of all `semilattice` elements greater than `element`.
 
     Raises:
-        - If the element isn't in the semilattice
-        - If the semilattice structure doesn't contain keys for
-          all its elements.
+        If the element not in the semilattice, of if the semilattice is
+        inconsistent.
     """
     var results = Set[T](element)
     var queue = Set[T](element)
@@ -183,10 +182,10 @@ fn all_greater_or_equal_elements[
     return results ^
 
 
-fn join[
+fn _join[
     T: KeyElement
-](semilattice: Dict[T, List[T]], e0: T, *elts: T) raises -> T:
-    """The join of any number of elements in the semilattice.
+](semilattice: Dict[T, List[T]], e0: T, *elements: T) raises -> T:
+    """Returns the join of `elements`.
 
     This is the smallest element which is greater than or equal to
     every passed in element. It is unique as long as the semilattice
@@ -194,56 +193,46 @@ fn join[
 
     Args:
         semilattice: The semilattice.
-        e0: At least one item to join.
-        elts: Any number of other items to join.
+        e0: At least one item to _join.
+        elements: Any number of other items to _join.
 
     Returns:
-        The unique join of the passed in elements.
+        The unique _join of the passed in elements.
 
     Raises:
-        - If any passed in element is not in the semilattice
-        - If the semilattice doesn't meet the semilattice condition,
-          ie. if there is no unique join.
+        If any element is not in the semilattice, of if the join is not unique.
     """
-    var gte = all_greater_or_equal_elements(semilattice, e0)
-    for e in elts:
-        gte &= all_greater_or_equal_elements(semilattice, e[])
-    var min_gte = min(semilattice, gte ^)
-    if not min_gte:
-        raise "No unique join"
-    return min_gte.value()
+    var gte = _greater_subset(semilattice, e0)
+    for e in elements:
+        gte &= _greater_subset(semilattice, e[])
+    var _minumum_gte = _minumum(semilattice, gte ^)
+    if not _minumum_gte:
+        raise "no unique join"
+    return _minumum_gte.value()
 
 
-# TODO(30966): Can't make these aliases
-# alias PROMOTION_SEMILATTICE = promotion_semilattice()
-
-
-fn promote(t0: DType, t1: DType) raises -> DType:
-    """The smallest DType to which both DTypes may be promoted.
-
-    This gives the correct type to cast two tensors to
-    before computing a binary operation.
+fn implicit_cast_type(lhs: DType, rhs: DType) raises -> DType:
+    """Returns the smallest DType to which both DTypes may be promoted.
 
     Args:
-        t0: The first dtype. The order doesn't matter.
-        t1: The second dtype. The order doesn't matter.
+        lhs: The first dtype.
+        rhs: The second dtype.
 
     Returns:
         The promotion type for a binary operation on two values
-        of types t0 and t1 respectively.
+        of types lhs and rhs respectively.
 
     Raises:
         If either DType isn't supported by promotion.
-        This should only happen for `DType.invalid`.
     """
     try:
-        return join(promotion_semilattice(), t0, t1)
+        return _join(_promotion_semilattice(), lhs, rhs)
     except:
-        raise "No legal promotion for (" + str(t0) + ", " + str(t1) + ")"
+        raise "no legal promotion for (" + str(lhs) + ", " + str(rhs) + ")"
 
 
-fn promote(lhs: Symbol, rhs: Symbol) raises -> SymbolTuple:
-    """Performs type promotion between two arguments of a binary operation.
+fn implicit_cast(lhs: Symbol, rhs: Symbol) raises -> SymbolTuple:
+    """Performs implicit type conversion between operands.
 
     See the `max.graph.type_promotion` documentation for details on the
     promotion rules.
@@ -256,7 +245,7 @@ fn promote(lhs: Symbol, rhs: Symbol) raises -> SymbolTuple:
         A `SymbolTuple` containing `lhs` and `rhs`, cast to the promoted dtype
         if necessary.
     """
-    var dtype = promote(
+    var dtype = implicit_cast_type(
         lhs.tensor_type().dtype.dtype, rhs.tensor_type().dtype.dtype
     )
     return (cast(lhs, dtype), cast(rhs, dtype))

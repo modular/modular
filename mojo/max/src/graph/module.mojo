@@ -98,7 +98,7 @@ struct Module(Stringable):
         This method takes ownership of `value` and is suitable for use with
         very large `Tensor` values (such as model weights).
 
-        Params:
+        Parameters:
             dtype: The attribute tensor's element type.
 
         Args:
@@ -146,7 +146,7 @@ struct Module(Stringable):
         The value of this attribute will have the type `MOTensor` with 1D shape,
         consistent with the size of `values`.
 
-        Params:
+        Parameters:
             dtype: The attribute tensor's element type.
 
         Args:
@@ -174,7 +174,7 @@ struct Module(Stringable):
         The `Tensor` is considered to contain a single element, and its shape
         be of the specified rank (for example, `rank=0` denotes a scalar).
 
-        Params:
+        Parameters:
             dtype: The attribute tensor's element type.
 
         Args:

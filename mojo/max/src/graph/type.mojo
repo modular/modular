@@ -101,6 +101,7 @@ struct StaticDim(CollectionElement):
 
         Args:
             other: The other dimension to check equality against.
+
         Returns:
             True if both dimensions have the same static size, False otherwise.
         """

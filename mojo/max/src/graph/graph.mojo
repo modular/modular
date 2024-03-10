@@ -39,26 +39,26 @@ struct Graph(CollectionElement, Stringable):
     fn __init__(
         inout self, name: String, in_types: TypeTuple, out_types: TypeTuple
     ):
-        """Constructs a new Graph object.
+        """Constructs a new `Graph`.
 
         The constructed Graph will not be valid unless it has no outputs;
         a graph with outputs will need a `graph.output` call to tell it
         what to return. The graph's validity can be checked by calling
         `graph.module().verify()`.
 
-        Args
+        Args:
             name: A name for the graph.
-            in_types: The input types of the graph's computation.
-            out_types: The output types of the graph's computation.
+            in_types: The `Graph`'s input types.
+            out_types: The `Graph`'s output types.
         """
         var module = Module()
         self = module.graph(name, in_types, out_types)
 
     fn __str__(self) -> String:
-        """Constructs a human-readable string representation of the graph.
+        """Returns a `String` representation of this `Graph`.
 
-        The string is in MLIR text format, and will show the graph's name,
-        inputs, outputs, and the operations in the graph in order.
+        The representation uses a MLIR textual format. The format is subject to
+        change and should only be used for debugging pruposes.
 
         Returns:
             A human-readable string representation of the graph.
@@ -73,14 +73,18 @@ struct Graph(CollectionElement, Stringable):
         return self._op.region(0).first_block()
 
     fn module(self) raises -> Module:
-        """Returns the `Module` containing this `Graph`."""
+        """Returns the `Graph`'s parent `Module`s.
+
+        Returns:
+            The `Module` that holds this `Graph`.
+        """
         return Module(_mlir.Module.from_op(self._op.parent()))
 
     fn __getitem__(self, n: Int) raises -> Symbol:
         """Returns the `n`th argument of this `Graph`.
 
         The `Symbol` that the argument is returned as can be used as input to
-        other `Graph` nodes.
+        other `Graph` `Node`s.
 
         Args:
             n: The argument number. First argument is at position 0.
@@ -113,15 +117,15 @@ struct Graph(CollectionElement, Stringable):
     ) raises -> SymbolTuple:
         """Adds a new `Node` to the `Graph`.
 
-        The node represents a single MAX Graph operation.
+        The `Node` represents a single MAX Graph operation.
 
         This is a very low level API meant to enable creating any supported op.
         In general, it's less ergonomic compared to the higher level helpers in
         the `ops` module.
 
-        Note that these nodes don't take concrete values as inputs, but rather
-        symbolic values representing the outputs of other nodes or the `Graph`s
-        arguments.
+        Note that these `Node`s don't take concrete values as inputs, but rather
+        symbolic values representing the outputs of other `Node`s or the
+        `Graph`s arguments.
 
         Args:
             name: The name of the operation to use.
@@ -210,19 +214,19 @@ struct Graph(CollectionElement, Stringable):
     fn constant[
         dtype: DType
     ](self, owned value: Tensor[dtype]) raises -> Symbol:
-        """Adds a node representing a `mo.constant` operation.
+        """Adds a `Node` representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` with the same
         shape and dtype as `value`.
 
-        Params:
+        Parameters:
             dtype: The constant tensor's element type.
 
         Args:
             value: The constant's value.
 
         Returns:
-            The symbolic output of this node.
+            The symbolic output of this `Node`.
         """
         return self.op(
             "mo.constant",
@@ -231,19 +235,19 @@ struct Graph(CollectionElement, Stringable):
         )
 
     fn vector[dtype: DType](self, values: List[Scalar[dtype]]) raises -> Symbol:
-        """Adds a node representing a `mo.constant` operation.
+        """Adds a `Node` representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` with 1-D shape,
         consistent with the size of `values`.
 
-        Params:
+        Parameters:
             dtype: The constant tensor's element type.
 
         Args:
             values: A vector represneting the constant's value.
 
         Returns:
-            The symbolic output of this node.
+            The symbolic output of this `Node`.
         """
         return self.op(
             "mo.constant",
@@ -254,13 +258,13 @@ struct Graph(CollectionElement, Stringable):
     fn scalar[
         dtype: DType
     ](self, value: Scalar[dtype], rank: Int = 0) raises -> Symbol:
-        """Adds a node representing a `mo.constant` operation.
+        """Adds a `Node` representing a `mo.constant` operation.
 
         The value of this constant will have the type scalar `MOTensor`
         (0-D shape), when `rank` is 0, or a higher-rank `MOTensor` of a single
         element.
 
-        Params:
+        Parameters:
             dtype: The constant tensor's element type.
 
         Args:
@@ -268,7 +272,7 @@ struct Graph(CollectionElement, Stringable):
             rank: The output tensor's rank.
 
         Returns:
-            The symbolic output of this node.
+            The symbolic output of this `Node`.
         """
         var shape = List[Int](capacity=rank)
         for i in range(rank):
@@ -276,7 +280,7 @@ struct Graph(CollectionElement, Stringable):
         return self.constant[dtype](Tensor(shape, value))
 
     fn scalar(self, value: Int, dtype: ElementType) raises -> Symbol:
-        """Adds a node representing a `mo.constant` operation.
+        """Adds a `Node` representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` of the same
         element type as `dtype`, and scalar (0-D) shape.
@@ -286,7 +290,7 @@ struct Graph(CollectionElement, Stringable):
             dtype: The constant's element type.
 
         Returns:
-            The symbolic output of this node.
+            The symbolic output of this `Node`.
 
         Raises:
             If `value` cannot be instantiated as a tensor of element `dtype`.
@@ -327,7 +331,7 @@ struct Graph(CollectionElement, Stringable):
         raise "unimplemented Int conversion dtype: " + str(dtype.dtype)
 
     fn scalar(self, value: Float64, dtype: ElementType) raises -> Symbol:
-        """Adds a node representing a `mo.constant` operation.
+        """Adds a `Node` representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` of the same
         element type as `dtype`, and scalar (0-D) shape.
@@ -337,7 +341,7 @@ struct Graph(CollectionElement, Stringable):
             dtype: The constant's element type.
 
         Returns:
-            The symbolic output of this node.
+            The symbolic output of this `Node`.
 
         Raises:
             If `value` cannot be instantiated as a tensor of element `dtype`.
@@ -365,9 +369,9 @@ struct Graph(CollectionElement, Stringable):
     ](
         self, start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]
     ) raises -> Symbol:
-        """Adds a node representing a `mo.range` operation.
+        """Adds a `Node` representing a `mo.range` operation.
 
-        Params:
+        Parameters:
             dtype: The output tensor's element type.
 
         Args:
@@ -376,7 +380,7 @@ struct Graph(CollectionElement, Stringable):
             step: The step value.
 
         Returns:
-            The symbolic output of this node.
+            The symbolic output of this `Node`.
         """
         return self.op(
             "mo.range",
@@ -393,7 +397,7 @@ struct Graph(CollectionElement, Stringable):
     ](self, value: Scalar[dtype], dims: SymbolTuple) raises -> Symbol:
         """Creates a constant-valued symbolic tensor of a specified shape.
 
-        Params:
+        Parameters:
             dtype: The output tensor's element type.
 
         Args:
@@ -418,9 +422,9 @@ struct Graph(CollectionElement, Stringable):
         )
 
     fn output(self, outs: SymbolTuple) raises:
-        """Adds a node representing a `mo.output` operation.
+        """Adds a `Node` representing a `mo.output` operation.
 
-        This is a special node that all `Graph`s must have. The inputs must
+        This is a special `Node` that all `Graph`s must have. The inputs must
         match the `Graph`s signature (specifically, its return values).
 
         Args:

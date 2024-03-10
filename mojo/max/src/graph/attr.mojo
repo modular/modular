@@ -26,7 +26,7 @@ struct AttrMap(Sized):
     var attrs: List[_mlir.NamedAttribute]
     """The list of attributes held by this map.
 
-    The list values are an opaque handle to an `Attribute`.
+    The list values are internal `Attribute` representations.
     """
 
     # ===------------------------------------------------------------------=== #
@@ -34,11 +34,15 @@ struct AttrMap(Sized):
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, *attrs: _mlir.NamedAttribute):
-        """Constructs an `AttrMap` from a set of opaque `Attribute` handles."""
+        """Constructs an `AttrMap` from internal `Attribute` representations.
+
+        Args:
+            attrs: Variadic list of internal `Attribute` representations.
+        """
         self.attrs = List[_mlir.NamedAttribute]()
         for attr in attrs:
             self.attrs.append(attr[])
 
     fn __len__(self) -> Int:
-        """Returns the length of this map."""
+        """Returns the size of this map."""
         return len(self.attrs)

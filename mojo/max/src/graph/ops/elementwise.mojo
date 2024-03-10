@@ -23,7 +23,7 @@ Elementwise-binary-operations all have the following properties:
 - They operate on two symbolic tensor values, a `left` value and a `right`
     value.
 - The input tensor types must be compatible according to the
-    elementwise_broadcast()` broadcasting rules. `broadcasting` documentation
+    _elementwise_broadcast()` broadcasting rules. `broadcasting` documentation
     for more details.
 - If the input tensor types have different element types, they will each
     be "promoted" to some dtype according to `type_promotion.promote()`
@@ -32,7 +32,7 @@ Elementwise-binary-operations all have the following properties:
     See the `type_promotion` documentation for more details.
 - Their output is a single symbolic tensor value with
     - dtype depending on the op and the _promoted_ dtype, ie. `promote(lhs, rhs)`
-    - shape equal to the result of `elementwise_broadcast(lhs, rhs)`
+    - shape equal to the result of `_elementwise_broadcast(lhs, rhs)`
 - The computation they represent will be itemwise-independent, in other words
     _after broadcasting_ the input values to the same shape, the output value in
     any position of the output tensor at computation time will depend only on
@@ -43,7 +43,7 @@ Elementwise-binary-operations all have the following properties:
 from math import max as math_max
 
 from max.graph.type import Dim, ElementType, MOTensor
-from max.graph.type_promotion import promote
+from max.graph.type_promotion import implicit_cast_type, implicit_cast
 
 
 # ===----------------------------------------------------------------------=== #
@@ -51,7 +51,7 @@ from max.graph.type_promotion import promote
 # ===----------------------------------------------------------------------=== #
 
 
-def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
+def _elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     var g = lhs.graph()
     var lhs_type = lhs.tensor_type()
     var rhs_type = rhs.tensor_type()
@@ -108,8 +108,8 @@ def elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
 
 
 def _binary_op[op_name: StringLiteral](lhs: Symbol, rhs: Symbol) -> Symbol:
-    var broadcast_operands = elementwise_broadcast(lhs, rhs)
-    var operands = promote(broadcast_operands[0], broadcast_operands[1])
+    var broadcast_operands = _elementwise_broadcast(lhs, rhs)
+    var operands = implicit_cast(broadcast_operands[0], broadcast_operands[1])
     return lhs.graph().op(op_name, operands, operands[0].tensor_type())
 
 
@@ -122,7 +122,7 @@ def add(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -137,7 +137,7 @@ def add(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -153,7 +153,7 @@ def div(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -168,7 +168,7 @@ def div(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -184,7 +184,7 @@ def max(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -199,7 +199,7 @@ def max(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -215,7 +215,7 @@ def min(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -230,7 +230,7 @@ def min(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -246,7 +246,7 @@ def mod(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -261,7 +261,7 @@ def mod(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -277,7 +277,7 @@ def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -292,7 +292,7 @@ def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -308,7 +308,7 @@ def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -323,7 +323,7 @@ def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -339,7 +339,7 @@ def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -354,7 +354,7 @@ def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -364,7 +364,7 @@ def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
 def _binary_comparison_op[
     op_name: StringLiteral
 ](lhs: Symbol, rhs: Symbol) -> Symbol:
-    var operands = elementwise_broadcast(lhs, rhs)
+    var operands = _elementwise_broadcast(lhs, rhs)
     var result_type = operands[0].tensor_type().cast(DType.bool)
     return lhs.graph().op(op_name, operands, result_type)
 
@@ -378,7 +378,7 @@ def equal(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -396,7 +396,7 @@ def equal(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -412,7 +412,7 @@ def greater(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -430,7 +430,7 @@ def greater(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -446,7 +446,7 @@ def greater_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -464,7 +464,7 @@ def greater_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -480,7 +480,7 @@ def not_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
     - If `lhs` and `rhs` have different dtypes, they will be promoted
         according to `type_promotion` before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast
-        to the same shape according to `elementwise_broadcast()` before
+        to the same shape according to `_elementwise_broadcast()` before
         the operation.
 
     Args:
@@ -497,7 +497,7 @@ def not_equal(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     Raises:
         - If the input values' shapes are not compatible for broadcasting.
-            See `elementwise_broadcast()` for more.
+            See `_elementwise_broadcast()` for more.
         - If one of the input values has an unsupported dtype.
         - If the two symbols are parts of different graphs.
     """
@@ -516,10 +516,8 @@ def _unary_op[op_name: StringLiteral](value: Symbol) -> Symbol:
 
 def _unary_float_op[op_name: StringLiteral](value: Symbol) -> Symbol:
     var dtype = value.tensor_type().dtype.dtype
-    # This should be an arbitrary-precision float when we get around to it
-    # ie. currently `2. * sqrt(2)` will compute `sqrt(2)` as a float16
-    # and then promote it rather than computing in the right precision.
-    var float_v = cast(value, promote(dtype, DType.float16))
+    # TODO: Don't cast implicitly here, we don't know what to cast to.
+    var float_v = cast(value, implicit_cast_type(dtype, DType.float16))
     return value.graph().op(op_name, float_v, float_v.tensor_type())
 
 
@@ -533,14 +531,6 @@ def abs(value: Symbol) -> Symbol:
 
     Creates a new op node to compute the elementwise absolute value of a
     symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    The [absolute value](https://en.wikipedia.org/wiki/Absolute_value) function
-    is the [Euclidian distance](https://en.wikipedia.org/wiki/Euclidean_space#Euclidean_norm)
-    between a value and the origin (0).
-
-    For real numbers this is the same as the number with its sign changed to
-    positive, ie. `abs(x) = x if x > 0 else -x`. Complex numbers are currently
-    unsupported.
 
     Args:
         value: The symbolic tensor to use as the input to the absolute value

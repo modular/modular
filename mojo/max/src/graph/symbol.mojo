@@ -63,7 +63,11 @@ struct Symbol(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn graph(self) -> Graph:
-        """Returns the `Graph` owning this `Symbol`."""
+        """Returns the `Graph` owning this `Symbol`.
+
+        Returns:
+            The parent `Graph`.
+        """
         var parent = self.handle.parent()
         var block: _mlir.Block
         if parent.isa[_mlir.Block]():
@@ -76,7 +80,11 @@ struct Symbol(CollectionElement, Stringable):
         return Graph(graph_op)
 
     fn type(self) raises -> AnyMOType:
-        """Returns this `Symbol`'s type."""
+        """Returns this `Symbol`'s type.
+
+        Returns:
+            The `Symbol`'s type.
+        """
         return AnyMOType.from_mlir(self.handle.type())
 
     fn tensor_type(self) raises -> MOTensor:
@@ -231,131 +239,352 @@ struct Symbol(CollectionElement, Stringable):
         return self.graph().scalar(value, self.type().tensor().dtype)
 
     fn __add__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise addition."""
+        """Element-wise addition.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return add(self, rhs)
 
     fn __add__(self, rhs: Int) raises -> Symbol:
-        """Element-wise addition by an `Int` literal."""
+        """Element-wise addition by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return add(self, self._consistent_scalar(rhs))
 
     fn __add__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise addition by a `Float64`."""
+        """Element-wise addition by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return add(self, self._consistent_scalar(rhs))
 
     fn __matmul__(self, rhs: Symbol) raises -> Symbol:
-        """Matrix multiplication."""
+        """Matrix multiplication.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return matmul(self, rhs)
 
     fn __mul__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise multiplication."""
+        """Element-wise multiplication.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return mul(self, rhs)
 
     fn __mul__(self, rhs: Int) raises -> Symbol:
-        """Element-wise multiplication by an `Int` literal."""
+        """Element-wise multiplication by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return mul(self, self._consistent_scalar(rhs))
 
     fn __mul__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise multiplication by a `Float64`."""
+        """Element-wise multiplication by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return mul(self, self._consistent_scalar(rhs))
 
     fn __neg__(self) raises -> Symbol:
-        """Numerical negative, element-wise."""
+        """Numerical negative, element-wise.
+
+        Returns:
+            The operation result.
+        """
         return self.graph().op("mo.negative", self, self.tensor_type())
 
     fn __pow__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise raise to power."""
+        """Element-wise raise to power.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return pow(self, rhs)
 
     fn __pow__(self, rhs: Int) raises -> Symbol:
-        """Element-wise raise to power by an `Int` literal."""
+        """Element-wise raise to power by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return pow(self, self._consistent_scalar(rhs))
 
     fn __pow__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise raise to power by a `Float64`."""
+        """Element-wise raise to power by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return pow(self, self._consistent_scalar(rhs))
 
     fn __radd__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise addition."""
+        """Element-wise addition.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return add(rhs, self)
 
     fn __radd__(self, rhs: Int) raises -> Symbol:
-        """Element-wise addition by an `Int` literal."""
+        """Element-wise addition by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return add(self._consistent_scalar(rhs), self)
 
     fn __radd__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise addition by a `Float64`."""
+        """Element-wise addition by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return add(self._consistent_scalar(rhs), self)
 
     fn __rmul__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise multiplication."""
+        """Element-wise multiplication.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return mul(rhs, self)
 
     fn __rmul__(self, rhs: Int) raises -> Symbol:
-        """Element-wise multiplication by an `Int` literal."""
+        """Element-wise multiplication by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return mul(self._consistent_scalar(rhs), self)
 
     fn __rmul__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise multiplication by a `Float64`."""
+        """Element-wise multiplication by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return mul(self._consistent_scalar(rhs), self)
 
     fn __rpow__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise raise to power."""
+        """Element-wise raise to power.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return pow(rhs, self)
 
     fn __rpow__(self, rhs: Int) raises -> Symbol:
-        """Element-wise raise to power by an `Int` literal."""
+        """Element-wise raise to power by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return pow(self._consistent_scalar(rhs), self)
 
     fn __rpow__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise raise to power by a `Float64`."""
+        """Element-wise raise to power by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return pow(self._consistent_scalar(rhs), self)
 
     fn __rsub__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise subtraction."""
+        """Element-wise subtraction.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return sub(rhs, self)
 
     fn __rsub__(self, rhs: Int) raises -> Symbol:
-        """Element-wise subtraction by an `Int` literal."""
+        """Element-wise subtraction by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return sub(self._consistent_scalar(rhs), self)
 
     fn __rsub__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise subtraction by a `Float64`."""
+        """Element-wise subtraction by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return sub(self._consistent_scalar(rhs), self)
 
     fn __rtruediv__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise division."""
+        """Element-wise division.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return div(rhs, self)
 
     fn __rtruediv__(self, rhs: Int) raises -> Symbol:
-        """Element-wise division by an `Int` literal."""
+        """Element-wise division by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return div(self._consistent_scalar(rhs), self)
 
     fn __rtruediv__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise division by a `Float64`."""
+        """Element-wise division by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return div(self._consistent_scalar(rhs), self)
 
     fn __sub__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise subtraction."""
+        """Element-wise subtraction.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return sub(self, rhs)
 
     fn __sub__(self, rhs: Int) raises -> Symbol:
-        """Element-wise subtraction by an `Int` literal."""
+        """Element-wise subtraction by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return sub(self, self._consistent_scalar(rhs))
 
     fn __sub__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise subtraction by a `Float64`."""
+        """Element-wise subtraction by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return sub(self, self._consistent_scalar(rhs))
 
     fn __truediv__(self, rhs: Symbol) raises -> Symbol:
-        """Element-wise division."""
+        """Element-wise division.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return div(self, rhs)
 
     fn __truediv__(self, rhs: Int) raises -> Symbol:
-        """Element-wise division by an `Int` literal."""
+        """Element-wise division by an `Int` literal.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return div(self, self._consistent_scalar(rhs))
 
     fn __truediv__(self, rhs: Float64) raises -> Symbol:
-        """Element-wise division by a `Float64`."""
+        """Element-wise division by a `Float64`.
+
+        Args:
+            rhs: The right hand side operand.
+
+        Returns:
+            The operation result.
+        """
         return div(self, self._consistent_scalar(rhs))
 
     # ===------------------------------------------------------------------=== #
@@ -392,8 +621,8 @@ struct Symbol(CollectionElement, Stringable):
         Args:
             transform: A function that creates a unary subgraph (single input,
                 single output) and returns the result of the final node. The
-                function will be called with `self`, and its return value will
-                replace all uses of `self`.
+                function will be called with this `Symbol`, and its return value
+                will replace all of its uses.
         """
         var dummy = self.graph().constant[DType.float32](0)
         self.handle.replace_all_uses_with(dummy.handle)
@@ -457,17 +686,29 @@ struct SymbolTuple(Sized):
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, *symbols: Symbol):
-        """Constructor from a variadic list of `Symbol`s."""
+        """Constructor from a variadic list of `Symbol`s.
+
+        Args:
+            symbols: `Symbol`s to initializae the tuple with.
+        """
         self.symbols = List[Symbol]()
         for symbol in symbols:
             self.symbols.append(symbol[])
 
     fn __init__(inout self, owned symbols: ()):
-        """Convenience constructor for an empty tuple."""
+        """Convenience constructor for an empty tuple.
+
+        Args:
+            symbols: The empty tuple.
+        """
         self.__init__()
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol)):
-        """Convenience constructor from a 2-tuple."""
+        """Convenience constructor from a 2-tuple.
+
+        Args:
+            symbols: A tuple of two `Symbol`s.
+        """
         var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
             ptr.bitcast[Symbol]()[],
@@ -475,7 +716,11 @@ struct SymbolTuple(Sized):
         )
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol)):
-        """Convenience constructor from a 3-tuple."""
+        """Convenience constructor from a 3-tuple.
+
+        Args:
+            symbols: A tuple of three `Symbol`s.
+        """
         var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
             ptr.bitcast[Symbol]()[],
@@ -484,7 +729,11 @@ struct SymbolTuple(Sized):
         )
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol, Symbol)):
-        """Convenience constructor from a 4-tuple."""
+        """Convenience constructor from a 4-tuple.
+
+        Args:
+            symbols: A tuple of four `Symbol`s.
+        """
         var ptr = Pointer.address_of(symbols).bitcast[Int8]()
         self.__init__(
             ptr.bitcast[Symbol]()[],
@@ -501,5 +750,12 @@ struct SymbolTuple(Sized):
         return len(self.symbols)
 
     fn __getitem__(self, i: Int) -> Symbol:
-        """Returns the `Symbol` at the specified index."""
+        """Returns the `Symbol` at the specified index.
+
+        Args:
+            i: The index to retrieve from.
+
+        Returns:
+            The `Symbol` at position `i`.
+        """
         return self.symbols[i]

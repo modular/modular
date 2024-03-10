@@ -13,12 +13,16 @@ from collections import Optional
 
 
 fn list(elements: SymbolTuple) raises -> Symbol:
-    """Creates a new list of `MOTensor` elements.
+    """Creates a new list and fills it with elements.
 
-    This uses the `mo.list.create` operation.
+    This uses the `mo.list.create` operation. The elements must have the same
+    type.
 
     Args:
         elements: The list's elements.
+
+    Returns:
+        The list filled with `elements`. It's type will be `MOList`.
     """
     if len(elements) == 0:
         raise "`elements` cannot be empty"
@@ -45,5 +49,8 @@ fn list(type: MOTensor, g: Graph) raises -> Symbol:
     Args:
         type: The list's element type.
         g: The `Graph` to add nodes to.
+
+    Returns:
+        A new empty list. It's type will be `MOList`.
     """
     return g.op("mo.list.create", MOList(type))
