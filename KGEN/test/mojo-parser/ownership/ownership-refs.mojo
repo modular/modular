@@ -97,8 +97,10 @@ fn testUseConditional(cond: __mlir_type.i1):
 
   # This uses both A and B, so it needs to extend both of their lifetimes.
   Reference(cref)[].noop()
+  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[CR]])
+  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
+  # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut [[MREF]]
   # CHECK-NEXT: lit.call @{{.*}}noop
@@ -122,16 +124,20 @@ fn testDefConditional(cond: __mlir_type.i1):
   # Mutating either of these is fine - it doesn't matter which one is mutated,
   # we know that both are live.
   Reference(cref)[].mutate()
+  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[CR]])
+  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
+  # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}([[MREF]])
 
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
   Reference(cref)[] = MemExample()
+  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[CR]])
+  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
+  # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[MREF]])
@@ -140,8 +146,10 @@ fn testDefConditional(cond: __mlir_type.i1):
   var shouldBeMovedFrom = MemExample()
   Reference(cref)[] = shouldBeMovedFrom
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
+  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
-  # CHECK-NEXT: [[REF:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}([[CR]])
+  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
+  # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
   # CHECK-NEXT: lit.ref.immut
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
@@ -165,8 +173,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   var a = MemExample()
 
   # CHECK-NEXT: %aref = lit.var.decl "aref"
-  # CHECK-NEXT: [[ARV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%a)
-  # CHECK-NEXT: lit.ref.store [[ARV]], %aref
+  # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}(%aref, %a)
   var aref = Reference(a)
   # CHECK-NEXT: lit.alias.decl *"aLifetime{{.*}}": lifetime<1> = <*"a`1">
   alias aLifetime =  aref.lifetime
@@ -196,8 +203,7 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
 
   # Reference can bind to immutable things as well, no problem.
   # CHECK-NEXT: %immref = lit.var.decl "immref"
-  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%imm)
-  # CHECK-NEXT: lit.ref.store [[IMMRV]], %immref
+  # CHECK-NEXT: [[IMMRV:%.*]] = lit.call @{{.*}}@Reference::@"__init__{{.*}}(%immref, %imm)
   var immref = Reference(imm)
   immref[].noop()
 

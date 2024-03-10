@@ -276,11 +276,9 @@ trait TraitForReg:
 # CHECK-LABEL: lit.struct.decl @RegTraitType
 @register_passable
 struct RegTraitType(TraitForReg):
-    # CHECK-LABEL: lit.func @"__init__{{.*}}_thunk"
-    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %x: index borrow) -> !kgen.none
-    fn __init__(x: int) -> Self:
-        # CHECK: %0 = lit.call {{.*}}@RegTraitType{{.*}}__init__{{.*}}(%x)
-        # CHECK: store %0, %self
+    # CHECK-LABEL: lit.func @"__init__
+    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %x: index borrow)
+    fn __init__(inout self, x: int):
         pass
 
     # CHECK-LABEL: lit.func @"__copyinit__{{.*}}_thunk"
@@ -394,8 +392,8 @@ struct ThunkAmbiguityRP(ThunkAmbiguity):
     fn mismatched_ret() -> Self:
         return Self {}
 
-    fn __init__() -> Self:
-        return Self {}
+    fn __init__(inout self):
+        pass
 
 
 # COM: Make sure that the generated thunks aren't select over the methods.
@@ -424,7 +422,7 @@ struct NoDtor(OwnedArguments, DefaultConstructible):
         # CHECK-NEXT: lit.call {{.*}}take{{.*}}(%0, %x)
         pass
 
-    fn __init__() -> Self:
+    fn __init__(inout self):
         pass
 
     fn method(self):
@@ -495,12 +493,11 @@ struct RegTrivialSpecial(AnyType, Copyable, Movable):
 # CHECK-LABEL: lit.struct.decl @RegSpecial
 @register_passable
 struct RegSpecial(AnyType, Copyable, Movable):
-    fn __copyinit__(existing: Self) -> Self:
-        return Self {}
+    fn __copyinit__(inout self, existing: Self):
+        pass
 
     # CHECK: lit.func @"__del__{{.*}}_thunk"
     # CHECK-SAME: {{.*}} owned_in_mem, |) -> !kgen.none always_inline_no_debug
-    # CHECK: return %none
 
     # CHECK: lit.func @"__moveinit__{{.*}}_thunk"
     # CHECK-SAME: %0[{{.*}} init_self, %1[{{.*}} owned_in_mem
@@ -750,7 +747,7 @@ struct ABC(SomeTrait):
 
 @register_passable("trivial")
 struct ABCOptionalParamInt[dim_parametric: ABCDim]:
-    fn __init__() -> Self:
+    fn __init__(inout self):
         pass
 
 

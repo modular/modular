@@ -75,11 +75,9 @@ int64_t LLVMDataLayout::getTypeABIAlign(Type type) const {
     return target.getDataLayout().getIntegerABIAlign(intType.getWidth());
   if (auto fpType = dyn_cast<FloatType>(type))
     return target.getDataLayout().getFloatABIAlign(fpType.getWidth());
-  if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type)) {
-    assert(ptrType.getAddressSpace() == 0 &&
-           "only default address space supported");
+  if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type))
     return target.getDataLayout().getPointerABIAlign();
-  }
+
   if (auto vecType = dyn_cast<VectorType>(type)) {
     return target.getDataLayout().getVectorABIAlign(
         vecType.getNumElements(), vecType.getElementTypeBitWidth());

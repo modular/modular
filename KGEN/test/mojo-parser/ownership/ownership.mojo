@@ -260,13 +260,15 @@ struct FieldSensitiveMemExample:
   fn mutate2(inout self):
     # Disable the dtor of 'self' before we overwrite it to show we can do this,
     # both F1 and F2 need to be destroyed before being overwritten
-    # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Reference::@"__init__{{.*}}(%self)
+    # CHECK-NEXT: [[REF:%.*]] = lit.var.decl "anonymous*"
+    # CHECK-NEXT: lit.call {{.*}}Reference::@"__init__{{.*}}([[REF]], %self)
     # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %self[f1]
     # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
     # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %self[f2]
     # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
 
-    # CHECK-NEXT: [[LITREF:%.*]] = lit.struct.extract [[REF]][value]
+    # CHECK-NEXT: [[LITVALREF:%.*]] = lit.ref.struct.ger [[REF]][value]
+    # CHECK-NEXT: [[LITREF:%.*]] = lit.ref.load [[LITVALREF]]
     # CHECK-NEXT: lit.ownership.mark_destroyed [[LITREF]]
     __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
        Reference(self).value)
@@ -287,13 +289,15 @@ struct FieldSensitiveMemExample:
 # This disables the destructor of 'x' which causes the fields to be destroyed.
 # CHECK-LABEL: lit.func @"disableDtor
 fn disableDtor(owned x: FieldSensitiveMemExample):
-  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Reference::@"__init__{{.*}}(%x)
+  # CHECK-NEXT: [[REF:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: lit.call {{.*}}Reference::@"__init__{{.*}}([[REF]], %x)
 
   # CHECK-NEXT: [[F1R:%.*]] = lit.ref.struct.ger %x[f1]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F1R]])
   # CHECK-NEXT: [[F2R:%.*]] = lit.ref.struct.ger %x[f2]
   # CHECK-NEXT: lit.call @{{.*}}@"__del__{{.*}}([[F2R]])
-  # CHECK-NEXT: [[LITREF:%.*]] = lit.struct.extract [[REF]][value]
+  # CHECK-NEXT: [[LITVALREF:%.*]] = lit.ref.struct.ger [[REF]][value]
+  # CHECK-NEXT: [[LITREF:%.*]] = lit.ref.load [[LITVALREF]]
   # CHECK-NEXT: lit.ownership.mark_destroyed [[LITREF]]
   # CHECK-NEXT: kgen.param.constant: none
   __mlir_op.`lit.ownership.mark_destroyed`[_type=None](

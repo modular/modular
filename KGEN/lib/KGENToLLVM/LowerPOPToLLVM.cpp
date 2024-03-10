@@ -695,9 +695,7 @@ static unsigned getAlignment(const POPToLLVMTypeConverter *tc,
   if (alignmentAttr)
     return cast<IntegerAttr>(alignmentAttr).getInt();
 
-  Type elementType = tc->convertType(ptrType.getElementType());
-
-  return tc->getTypeABIAlign(elementType);
+  return tc->getTypeABIAlign(tc->convertType(ptrType.getElementType()));
 }
 
 //===----------------------------------------------------------------------===//
