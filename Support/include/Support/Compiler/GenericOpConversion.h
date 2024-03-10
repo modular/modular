@@ -34,6 +34,10 @@ ErrorOr<TargetOp> convertGraphOp(SourceOp op,
   if (failed(typeConverter->convertTypes(fnType.getResults(), resultTypes)))
     return Error("result types cannot be converted");
 
+  if (failed(rewriter.convertRegionTypes(&op.getBody(), *typeConverter,
+                                         &signatureConverter)))
+    return Error("block argument types cannot be converted");
+
   auto newOp = rewriter.create<TargetOp>(op.getLoc(), op.getName(),
                                          signatureConverter.getConvertedTypes(),
                                          resultTypes);
@@ -42,10 +46,6 @@ ErrorOr<TargetOp> convertGraphOp(SourceOp op,
   // it with the body of the source op.
   newOp.eraseBody();
   rewriter.inlineRegionBefore(op.getBody(), newOp.getBody(), newOp.end());
-
-  if (failed(rewriter.convertRegionTypes(&newOp.getBody(), *typeConverter,
-                                         &signatureConverter)))
-    return Error("block argument types cannot be converted");
 
   rewriter.eraseOp(op);
   return newOp;
