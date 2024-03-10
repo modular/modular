@@ -21,9 +21,9 @@ MojoListSyntheticFrontEnd::MojoListSyntheticFrontEnd(
     Update();
 }
 
-size_t MojoListSyntheticFrontEnd::CalculateNumChildren() { return size; }
+uint32_t MojoListSyntheticFrontEnd::CalculateNumChildren() { return size; }
 
-lldb::ValueObjectSP MojoListSyntheticFrontEnd::GetChildAtIndex(size_t idx) {
+lldb::ValueObjectSP MojoListSyntheticFrontEnd::GetChildAtIndex(uint32_t idx) {
   if (idx >= size)
     return ValueObjectSP();
   uint64_t addr = start + (idx * elementSize);

@@ -33,13 +33,13 @@ public:
     return m_backend.GetChildAtIndex(0, /*can_create=*/true);
   }
 
-  size_t CalculateNumChildren() override {
+  uint32_t CalculateNumChildren() override {
     if (!MightHaveChildren())
       return 0;
     return GetSyntheticValue()->GetNumChildren();
   }
 
-  lldb::ValueObjectSP GetChildAtIndex(size_t idx) override {
+  lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override {
     return GetSyntheticValue()->GetChildAtIndex(idx);
   }
 
