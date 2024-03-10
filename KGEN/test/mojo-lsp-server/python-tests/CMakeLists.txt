@@ -5,7 +5,6 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_pytest(mojo-lsp-server
-
   SKIP_PRELOAD_ASAN_RT
 
   ENV_VARS
@@ -19,6 +18,8 @@ add_modular_pytest(mojo-lsp-server
   mojo-lsp-server
   mojo-sdk
 
-  TOP_LEVEL_CHECK
-  check-mojo-lsp-server
+  # Disabled due to https://github.com/modularml/modular/issues/34132
+  # TOP_LEVEL_CHECK
+  # check-mojo-lsp-server
+  EXCLUDE_FROM_CHECK_ALL
 )
