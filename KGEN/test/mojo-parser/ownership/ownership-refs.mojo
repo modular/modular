@@ -276,3 +276,16 @@ struct OneLifetime[a_lifetime: ImmLifetime]:
 struct TwoLifetimes[a_lifetime: ImmLifetime,
                     b_lifetime: ImmLifetime]:
   fn __init__(inout self): pass
+
+# Crash converting mvalue of #lit.lifetime lifetime to Reference with specific one.
+# https://github.com/modularml/mojo/issues/1921
+struct SomeStruct:
+  # CHECK-LABEL: lit.func @"refBindingToImmortal
+  fn refBindingToImmortal(inout self, ptr: AnyPointer[Int])
+      -> Reference[Int, __mlir_attr.`1: i1`, __lifetime_of(self)]:
+    # CHECK: [[REFVAL:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%ptr)
+    # CHECK: %anonymous2A = lit.var.decl "anonymous*"
+    # CHECK: [[REBIND:%.*]] = kgen.rebind [[REFVAL]]
+    # CHECK-SAME : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut *"self`2x">
+    # CHECK: lit.call {{.*}}__init__{{.*}}(%anonymous2A, [[REBIND]]
+    return ptr[]
