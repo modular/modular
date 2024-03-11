@@ -12,7 +12,7 @@ from nn.resize import (
     resize_nearest_neighbor,
 )
 from tensor import Tensor, TensorShape
-from test_utils import linear_fill
+from closed_source_test_utils import linear_fill
 from testing import assert_almost_equal
 
 

@@ -9,7 +9,7 @@ from math import max
 
 from nn.gather_scatter import scatter_elements
 from tensor import Tensor, TensorShape
-from test_utils import linear_fill
+from closed_source_test_utils import linear_fill
 
 
 fn test_case[

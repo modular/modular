@@ -11,7 +11,8 @@ from random import seed
 
 from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
 from tensor import Tensor, TensorShape, randn
-from test_utils import compare, get_minmax, libm_call
+from closed_source_test_utils import compare, get_minmax
+from test_utils import libm_call
 
 
 # CHECK-LABEL: test_elu
