@@ -323,6 +323,19 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
   // Let the server know who we are.
   curl_easy_setopt(curl, CURLOPT_USERAGENT, context->userAgent.c_str());
 
+  if (request.range) {
+    auto [start, end] = *request.range;
+    if (end) {
+      auto str = llvm::formatv("{0}-{1}", start, *end);
+      curl_easy_setopt(curl, CURLOPT_RANGE, str.str().c_str());
+    } else {
+      auto str = llvm::formatv("{0}-", start);
+      curl_easy_setopt(curl, CURLOPT_RANGE, str.str().c_str());
+    }
+  } else {
+    curl_easy_setopt(curl, CURLOPT_RANGE, nullptr);
+  }
+
   // Execute our reqeust.
   CURLcode res = curl_easy_perform(curl);
 
