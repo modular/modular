@@ -44,6 +44,7 @@ from math import (
 )
 from math.limit import max_or_inf, min_or_neginf
 from random import randn, seed
+from sys import external_call
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
@@ -390,6 +391,45 @@ fn TensorIndicesTypeDef[
 @export
 fn DimTypeDef(ty: Dim) -> Dim:
     return ty
+
+
+@mogg_register("builtin.create_int_async")
+@always_inline
+@export
+fn create_int_async(
+    value: Int,
+    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+):
+    external_call["KGEN_CompilerRT_CreateAsync_ssizet", NoneType](
+        value, async_ptr, runtime
+    )
+
+
+@mogg_register("builtin.unpack_async")
+@always_inline
+@export
+fn unpack_async(
+    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+) -> __mlir_type.`!kgen.pointer<scalar<invalid>>`:
+    return external_call[
+        "KGEN_CompilerRT_GetValueFromAsync",
+        __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    ](async_ptr)
+
+
+@mogg_register("mip.constant.index")
+@always_inline
+@export
+fn mip_constant_index[value: Int]() -> Int:
+    return value
+
+
+@mogg_register("mip.add")
+@always_inline
+@export
+fn mip_add(x: Int, y: Int) -> Int:
+    return x + y
 
 
 # ===----------------------------------------------------------------------===#
