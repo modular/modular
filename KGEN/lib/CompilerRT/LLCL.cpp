@@ -215,6 +215,36 @@ KGEN_CompilerRT_LLCL_MojoCallContext_SetToError(
   unwrap(callContext).setToError(message);
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsync_ssizet(ssize_t data,
+                                   LLCLWrapper<AnyAsyncValueRef> async,
+                                   LLCLWrapper<Runtime> runtimePtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+  value = value.createReady<size_t>(runtime, data);
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_GetValueFromAsync(void *async) {
+  AnyAsyncValueRef &value = *reinterpret_cast<AnyAsyncValueRef *>(async);
+  return value.getPointerToData();
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
+                                    LLCLWrapper<AnyAsyncValueRef> async,
+                                    LLCLWrapper<Runtime> runtimePtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+  value = value.createReady<void *>(runtime, data);
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_GetValueFromAsyncVoidStar(void *async) {
+  AnyAsyncValueRef &value = *reinterpret_cast<AnyAsyncValueRef *>(async);
+  return value.get<void *>();
+}
+
 void M::KGEN::registerLLCL(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeChain",
@@ -248,7 +278,10 @@ void M::KGEN::registerLLCL(
 
   funcs.push_back({"KGEN_CompilerRT_LLCL_GetCurrentStream",
                    (void *)&KGEN_CompilerRT_LLCL_GetCurrentStream});
-
+  funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
+                   (void *)&KGEN_CompilerRT_CreateAsync_ssizet});
+  funcs.push_back({"KGEN_CompilerRT_GetValueFromAsync",
+                   (void *)&KGEN_CompilerRT_GetValueFromAsync});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_Complete",
                    (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_Complete});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_SetToError",

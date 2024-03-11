@@ -91,6 +91,8 @@ public:
   /// Return a raw pointer.
   T *getPointer() const { return pointer; }
 
+  void *getOpaquePointer() const { return reinterpret_cast<void *>(pointer); }
+
   /// Make an explicit copy of this RCRef, increasing the refcount by one.
   RCRef<T> copy() const { return RCRef<T>::copy(pointer); }
 

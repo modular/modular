@@ -56,6 +56,8 @@ public:
     return AnyAsyncValueRef(takeRCRef(pointer));
   }
 
+  void *getPointerToData() const { return value->getUnderlyingPtr(); }
+
   /// Return a raw pointer to the AsyncValue. Will be null if reference is null.
   AsyncValue *getPointer() const { return value.getPointer(); }
 
