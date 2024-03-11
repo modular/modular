@@ -20,14 +20,23 @@ from gpu import (
     AddressSpace,
 )
 from gpu.host import Context, Function, synchronize, Stream
-from gpu.memory import async_copy, async_copy_wait_all
+from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
+from gpu.memory import async_copy, async_copy_wait_all
 from testing import assert_almost_equal
+from sys import argv
+
+
+fn is_benchmark() -> Bool:
+    for arg in argv():
+        if arg == "--benchmark" or arg == "-benchmark":
+            return True
+    return False
 
 
 fn sgemm_double_buffer[
@@ -87,18 +96,6 @@ fn sgemm_double_buffer[
     var b_tile = stack_allocation[
         int(2 * BK * BN), b_type, address_space = AddressSpace.SHARED
     ]()
-
-    # Double buffer in registers (fragments in nvidia terms).
-    var a_reg = NDBuffer[a_type, 2, DimList(2, TM)].stack_allocation()
-    var b_reg = NDBuffer[b_type, 2, DimList(2, TN)].stack_allocation()
-    var c_reg = NDBuffer[c_type, 2, DimList(TM, TN)].stack_allocation()
-    c_reg.zero()
-
-    # Thread swizzling
-    # Warp has 2D Layout [warp_dim_x, warp_dim_y]. Current thread is mapped to
-    # (mma_x, mma_y) in this layout.
-    var mma_x = (lane_id // 2) % warp_dim_x
-    var mma_y = (lane_id // 2) // warp_dim_x * 2 + lane_id % 2
 
     # Configure the load for A.
     # Each thread load one elements from A.
@@ -172,6 +169,22 @@ fn sgemm_double_buffer[
     # Alternate share memory buffer for loading.
     storea_smem_ptr += a_smem_shift
     storeb_smem_ptr += b_smem_shift
+
+    # Double buffer in registers (fragments in nvidia terms).
+    var a_reg = NDBuffer[a_type, 2, DimList(2, TM)].stack_allocation()
+    var b_reg = NDBuffer[b_type, 2, DimList(2, TN)].stack_allocation()
+    var c_reg = NDBuffer[c_type, 2, DimList(TM, TN)].stack_allocation()
+    c_reg.zero()
+
+    # Thread swizzling
+    # Warp has 2D Layout [warp_dim_x, warp_dim_y]. Current thread is mapped to
+    # (mma_x, mma_y) in this layout as follow (the number is thread id).
+    # 0  2  4  6  8  10 12 14
+    # 1  3  5  7  9  11 13 15
+    # 16 18 20 22 24 26 28 30
+    # 17 19 21 23 25 27 29 31
+    var mma_x = (lane_id // 2) % warp_dim_x
+    var mma_y = (lane_id // 2) // warp_dim_x * 2 + lane_id % 2
 
     # Load address in shared memory for fma.
     var loada_smem_ptr = a_tile + warp_y * WM + mma_y * simd_size
@@ -335,8 +348,8 @@ fn sgemm_double_buffer[
 
 fn test() raises:
     alias NUM_THREADS = 256
-    alias M = 128
-    alias N = 128
+    alias M = 8192
+    alias N = 8192
     alias K = 128
     alias BM = 128
     alias BN = 128
@@ -389,6 +402,32 @@ fn test() raises:
         NUM_THREADS,
     ]
     var func = Function[__type_of(gemm), gemm](threads_per_block=NUM_THREADS)
+
+    if is_benchmark():
+        alias nrun = 200
+        alias nwarmup = 2
+
+        @always_inline
+        @parameter
+        fn run_func(stream: Stream) raises:
+            for i in range(nrun):
+                func(
+                    c_buffer,
+                    a_buffer,
+                    b_buffer,
+                    grid_dim=(div_ceil(N, BN), div_ceil(M, BM), 1),
+                    block_dim=(NUM_THREADS, 1, 1),
+                    stream=stream,
+                )
+
+        # Warmup
+        for i in range(nwarmup):
+            run_func(stream)
+
+        var nstime = time_function[run_func](stream) / nrun
+        var sectime = nstime * 1e-9
+        var TFlog = 2.0 * M * N * K * 1e-12
+        print(nrun, "runs avg(s)", sectime, "TFlogs/s", TFlog / sectime)
 
     func(
         c_buffer,
