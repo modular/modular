@@ -700,6 +700,16 @@ LogicalResult RefType::printValue(AsmPrinter &p, TypedAttr value) const {
 }
 
 //===----------------------------------------------------------------------===//
+// RefPackType
+//===----------------------------------------------------------------------===//
+
+RefPackType RefPackType::get(TypedAttr variadic, ArgConvention convention,
+                             TypedAttr lifetime, TypedAttr addressSpace) {
+  return get(variadic.getContext(), variadic, convention, lifetime,
+             addressSpace);
+}
+
+//===----------------------------------------------------------------------===//
 // REPLResultRefType
 //===----------------------------------------------------------------------===//
 

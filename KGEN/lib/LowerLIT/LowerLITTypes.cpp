@@ -343,6 +343,12 @@ Type LITTypeLowerer::replace(Type type) {
   } else if (auto ref = dyn_cast<LIT::RefType>(type)) {
     // !lit.ref<@T, life> => !kgen.pointer<@T>
     result = replaceImpl(ref.getAsPointerType());
+  } else if (auto ref = dyn_cast<LIT::RefPackType>(type)) {
+    // !lit.ref.pack<:variadic<!kgen.type> types, owned_in_mem, mut life, 42>
+    // => !kgen.pack<variadic_ptr_map(types), 42>
+    auto mappedTypes = ParamOperatorAttr::get(
+        POC::VariadicPtrMap, ref.getVariadic(), ref.getAddressSpace());
+    result = replaceImpl(PackType::get(mappedTypes));
   } else {
     // Recursively replace types.
     result = replaceImpl(type);
