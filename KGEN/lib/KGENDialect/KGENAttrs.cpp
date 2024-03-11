@@ -937,6 +937,26 @@ verifyGetTypeMethod(ArrayRef<TypedAttr> operands, Type type,
   return success();
 }
 
+static LogicalResult
+verifyVariadicPtrMap(ArrayRef<TypedAttr> operands, Type type,
+                     function_ref<InFlightDiagnostic()> emitError) {
+  if (operands.size() != 2)
+    return emitError() << "'variadic_ptr_map' requires 2 operands";
+
+  auto srcVariadic = dyn_cast<VariadicType>(operands[0].getType());
+  if (!srcVariadic || !isa<TypeType>(srcVariadic.getElementType()))
+    return emitError() << "'variadic_ptr_map' operand should have "
+                          "!kgen.variadic<!kgen.type> type";
+  if (type != srcVariadic)
+    return emitError() << "'variadic_ptr_map' result should have "
+                          "!kgen.variadic<!kgen.type> type";
+  if (!operands[1].getType().isIndex())
+    return emitError()
+           << "'variadic_ptr_map' addr space operand should have 'index' type";
+
+  return success();
+}
+
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
@@ -956,6 +976,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::CompileAssembly:
   case POC::GetLinkageName:
   case POC::GetTypeMethod:
+  case POC::VariadicPtrMap:
     break;
   default:
     if (!llvm::all_of(operands, [&](auto operand) {
@@ -1138,9 +1159,9 @@ LogicalResult ParamOperatorAttr::verify(
              << "'get_linkage_name' first operand should be a target type";
     break;
   case POC::GetTypeMethod:
-    if (failed(verifyGetTypeMethod(operands, type, emitError)))
-      return failure();
-    break;
+    return verifyGetTypeMethod(operands, type, emitError);
+  case POC::VariadicPtrMap:
+    return verifyVariadicPtrMap(operands, type, emitError);
   }
   return success();
 }
@@ -2207,6 +2228,27 @@ static TypedAttr simplifyGetTypeMethod(ArrayRef<TypedAttr> operands,
   return {};
 }
 
+static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
+                                        TypedAttr addrSpaceOperand,
+                                        Type resultType) {
+  // Fold a concrete variadic list of types.
+  auto variadic = dyn_cast<VariadicAttr>(variadicOperand);
+  if (!variadic)
+    return {};
+
+  auto resultEltType = cast<VariadicType>(resultType).getElementType();
+
+  SmallVector<TypedAttr> results;
+  // Map each type to PointerType of their type.
+  for (auto elt : variadic.getValues()) {
+    results.push_back(ParameterizedTypeConstantAttr::get(
+        PointerType::get(ParamRefType::get(elt), addrSpaceOperand),
+        resultEltType));
+  }
+
+  return VariadicAttr::get(results, cast<VariadicType>(resultType));
+}
+
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
@@ -2315,6 +2357,10 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
   case POC::GetTypeMethod:
     result = simplifyGetTypeMethod(operands, resultType);
     break;
+  case POC::VariadicPtrMap:
+    assert(operands.size() == 2 && "variadic_ptr_map always has one operand");
+    result = simplifyVariadicPtrMap(operands[0], operands[1], resultType);
+    break;
   }
 
   // If we folded to an operand, return it.
@@ -2347,12 +2393,13 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::BindSignature)
     resultType = operandsIn.front().getType();
-  assert(llvm::is_contained(
-             {POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
-              POC::TargetHasFeature, POC::TargetGetField, POC::GetSizeOf,
-              POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
-              POC::CompileAssembly, POC::GetLinkageName, POC::GetTypeMethod},
-             opcode) ||
+  assert(llvm::is_contained({POC::BindSignature, POC::Apply,
+                             POC::ApplyResultSlot, POC::TargetHasFeature,
+                             POC::TargetGetField, POC::GetSizeOf,
+                             POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
+                             POC::CompileAssembly, POC::GetLinkageName,
+                             POC::GetTypeMethod, POC::VariadicPtrMap},
+                            opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
 
