@@ -562,7 +562,6 @@ static Type typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg,
     return {};
   }
 
-  // ParamRefType
   Type elementType = paramVariadicType.getElementType();
   if (!isa<MetaTypeType, TypeType, TraitType>(elementType)) {
     emitter.emitError(arg.typeExpr->getLoc(),
@@ -571,9 +570,7 @@ static Type typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg,
     return {};
   }
 
-  // FIXME: Use the correct convention eventually.
-  auto packConvention = ArgConvention::BorrowedInReg;
-  return PackType::get(param.get(), packConvention);
+  return PackType::get(param.get());
 }
 
 /// Type check each argument in turn, resolving their type and default
