@@ -85,6 +85,13 @@ struct HTTPRequest {
   };
   Method method = Method::GET;
 
+  /// Range to request. If set, the server should return only the bytes in the
+  /// range. This is useful for resuming downloads.
+  /// The first element is the start of the range, and the second element is the
+  /// end of the range. If the second element is `std::nullopt`, then the range
+  /// is open-ended.
+  std::optional<std::pair<size_t, std::optional<size_t>>> range = std::nullopt;
+
   /// curl generally recommends sending body data (when it's large) with a
   /// callback. This allows the user to specify any state that may need to be
   /// held. Write as much data as possible into `buffer`, but not more than
