@@ -205,7 +205,7 @@ struct Buffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.data.simd_load[width](idx)
+        return self.data.load[width=width](idx)
 
     @always_inline
     fn aligned_simd_load[
@@ -1002,7 +1002,7 @@ struct NDBuffer[
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        return self._offset(idx).simd_load[width]()
+        return self._offset(idx).load[width=width]()
 
     @always_inline
     fn simd_load[
@@ -1048,7 +1048,7 @@ struct NDBuffer[
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        return self._offset(idx).simd_load[width]()
+        return self._offset(idx).load[width=width]()
 
     @always_inline
     fn aligned_simd_load[
@@ -1486,7 +1486,7 @@ struct NDBuffer[
             @unroll
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
-                var vec = self.data.simd_load[simd_size](i * TN + j)
+                var vec = self.data.load[width=simd_size](i * TN + j)
                 self.data.simd_store[simd_size](idx, vec * rhs.cast[type]())
 
     @always_inline("nodebug")
@@ -1511,7 +1511,7 @@ struct NDBuffer[
             @unroll
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
-                var vec = self.data.simd_load[simd_size](idx)
+                var vec = self.data.load[width=simd_size](idx)
                 var rhs_vec = SIMD[type, simd_size](
                     rhs.data.load(i).cast[type]()
                 )
@@ -1539,7 +1539,7 @@ struct NDBuffer[
             @unroll
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
-                var vec = self.data.simd_load[simd_size](idx)
+                var vec = self.data.load[width=simd_size](idx)
                 var rhs_vec = SIMD[type, simd_size](
                     rhs.data.load(i).cast[type]()
                 )
@@ -1657,7 +1657,7 @@ struct NDBuffer[
             for j in range(0, n, simd_size):
                 var idx = i * n + j
                 res.data.simd_store[simd_size](
-                    idx, self.data.simd_load[simd_size](idx) - rhs.data.load(i)
+                    idx, self.data.load[width=simd_size](idx) - rhs.data.load(i)
                 )
 
         return res
