@@ -410,12 +410,12 @@ struct Tensor[
 
                 @parameter
                 if type == DType.bool:
-                    var v = self.data.bitcast[DType.uint8]().simd_load[
-                        simd_width
+                    var v = self.data.bitcast[DType.uint8]().load[
+                        width=simd_width
                     ](flat_index)
                     return v.cast[type]()
                 else:
-                    return self.data.simd_load[simd_width](flat_index)
+                    return self.data.load[width=simd_width](flat_index)
 
             else:
 

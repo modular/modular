@@ -683,10 +683,10 @@ fn _simd_load_internal[
 ]:
     @parameter
     if type == DType.bool:
-        var v = buffer.data.bitcast[DType.uint8]().simd_load[simd_width](index)
+        var v = buffer.data.bitcast[DType.uint8]().load[width=simd_width](index)
         return v.cast[type]()
     else:
-        return buffer.data.simd_load[simd_width](index)
+        return buffer.data.load[width=simd_width](index)
 
 
 @mogg_register("simd_load")
