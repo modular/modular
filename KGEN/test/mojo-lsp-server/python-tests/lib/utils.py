@@ -53,10 +53,8 @@ def fail_if_none(t: Optional[T]) -> T:
     return t
 
 
-# We need to use `--log=error` instead of `debug`, because when stderr is too
-# long, mojo-lsp-server hangs trying to send bytes to the test client.
 MOJO_LSP_CONFIG = ClientServerConfig(
-    server_command=[os.environ["MOJO_LSP_SERVER"], "--log=error"],
+    server_command=[os.environ["MOJO_LSP_SERVER"]],
 )
 
 # anext() was added in 3.10
