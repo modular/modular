@@ -91,8 +91,8 @@ fn sram_blocked_matmul[
     BK: Int,
 ](
     dst: LayoutTensor[layout_dst, DType.float32],
-    lhs: LayoutTensor[layout_dst, DType.float32],
-    rhs: LayoutTensor[layout_dst, DType.float32],
+    lhs: LayoutTensor[layout_lhs, DType.float32],
+    rhs: LayoutTensor[layout_rhs, DType.float32],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
@@ -133,7 +133,8 @@ fn sram_blocked_matmul[
     var dst_register_tile = stack_allocation_like(dst_local_tile)
     dst_register_tile.fill(0)
 
-    for k in range(BK):
+    # Loop over tiles in K dim.
+    for k in range(lhs.shape[1]() // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
         var lhs_tile = lhs.tile[BM, BK](BlockIdx.y(), k)
         var rhs_tile = rhs.tile[BK, BN](k, BlockIdx.x())
