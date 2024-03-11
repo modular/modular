@@ -41,6 +41,8 @@ add_modular_testsuite(check-max-engine-integration-tests
   mof
   ${FRAMEWORK_DYLIB_DEPS}
   is-cuda-available
-  max-mojo)
+  max-mojo
+  kernels-register
+)
 
 add_subdirectory(python)
