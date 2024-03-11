@@ -480,7 +480,7 @@ struct Q4sym[
         for i in range(outer_stride):
             for j in range(output_inner_stride):
                 var flat_index_input = input_inner_stride * i + j * group_size
-                var loaded_group = input_tensor.data.simd_load[group_size](
+                var loaded_group = input_tensor.data.load[width=group_size](
                     flat_index_input
                 )
 
@@ -574,7 +574,7 @@ fn _block_quantize_a[
     # quantization.
     for m in range(M):
         for k in range(0, K, group_size):
-            var fp_data = a_ptr.simd_load[group_size]()
+            var fp_data = a_ptr.load[width=group_size]()
             var max_value = abs(fp_data).reduce_max()
             var scale = max_value / 127.0
             var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
@@ -693,9 +693,9 @@ fn _process_rows[
             accum_fp_tile.simd_store(Index(row, 0), SIMD[type, simd_width](0))
 
         for k in range(0, k_groups):
-            var b_data_i4 = b_ptr.offset(2).simd_load[group_size // 2]()
+            var b_data_i4 = b_ptr.offset(2).load[width = group_size // 2]()
             var b_scale = bitcast[DType.float16, 1](
-                b_ptr.offset(0).simd_load[2]()
+                b_ptr.offset(0).load[width=2]()
             ).cast[type]()
             var b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
             var b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
@@ -710,8 +710,8 @@ fn _process_rows[
 
             @unroll
             for row in range(row_count):
-                var a_data_i8 = a_quant_ptr.offset(row * K).simd_load[
-                    group_size
+                var a_data_i8 = a_quant_ptr.offset(row * K).load[
+                    width=group_size
                 ]()
                 var a_scale = a_scale_ptr.offset(row * k_groups)[0].cast[type]()
 
