@@ -559,9 +559,8 @@ ParameterInferenceState::infer(LITSignatureType signature,
         types.push_back(result);
       }
 
-      // Infer the pack attribute from the actual params that are present.
-      matchParams(VariadicAttr::get(types, variadicType),
-                  packType.getVariadic());
+      matchTypes(PackType::get(VariadicAttr::get(types, variadicType)),
+                 expectedType);
       continue;
     }
 

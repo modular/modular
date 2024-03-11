@@ -56,8 +56,7 @@ def StructType : DialectType<(type
 )>;
 
 def PackType : DialectType<(type
-  TypedAttr:$variadic,
-  EnumAttr<"ArgConvention">:$convention
+  TypedAttr:$variadic
 )>;
 
 def VariantType : DialectType<(type

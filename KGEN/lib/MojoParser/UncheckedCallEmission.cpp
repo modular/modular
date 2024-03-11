@@ -177,12 +177,9 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     convention = variadic.getConvention();
   } else if (auto packType = getIfPackType(calleeSig, argIdx)) {
     // Operands being applied to a concrete pack type argument must be
-    // converted to the pack element type at that index.  While the pack element
-    // type will be parametric in the callee, we know that it is always concrete
-    // on the caller's side here.
+    // converted to the pack element type at that index.
     expectedType =
         ASTType(packType.getVariadicAttr().getValues()[sequenceIndex]);
-    convention = packType.getConvention();
   }
 
   switch (convention) {
@@ -350,7 +347,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
   // If there are lifetimes on anything, create a uniform representation and
   // cast to a common reference type.
-  if (!args.empty() && isa<RefType>(args.back().getType())) {
+  if (isPosVarArg && !args.empty() && isa<RefType>(args.back().getType())) {
     auto expectedVararg = cast<VariadicType>(expectedType);
     // If one arg is a reference, then they all are.
     auto expectedRefType = cast<RefType>(expectedVararg.getElementType());

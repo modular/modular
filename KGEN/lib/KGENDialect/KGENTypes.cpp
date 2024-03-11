@@ -828,14 +828,13 @@ ErrorOr<TypedAttr> StringType::readFrom(int64_t addr,
 // VariadicType
 //===----------------------------------------------------------------------===//
 
-static void printVariadicOrPackConvention(AsmPrinter &p, ArgConvention conv) {
+static void printVariadicConvention(AsmPrinter &p, ArgConvention conv) {
   // Default to borrowed_in_reg
   if (conv != ArgConvention::BorrowedInReg)
     p << ", " << stringifyArgConvention(conv);
 }
 
-static ParseResult parseVariadicOrPackConvention(AsmParser &p,
-                                                 ArgConvention &conv) {
+static ParseResult parseVariadicConvention(AsmParser &p, ArgConvention &conv) {
   // Default to borrowed_in_reg
   if (!succeeded(p.parseOptionalComma())) {
     conv = ArgConvention::BorrowedInReg;
@@ -1060,7 +1059,7 @@ static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
 /// Verify that the element type of the variadic attribute or expression is a
 /// type expression.
 LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
-                               TypedAttr variadic, ArgConvention convention) {
+                               TypedAttr variadic) {
   if (::isa<VariadicType>(variadic.getType()))
     return success();
   return emitError() << "expected an operand of variadic type, but got "
