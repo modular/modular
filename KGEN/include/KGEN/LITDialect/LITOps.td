@@ -1850,7 +1850,7 @@ def LIT_LoopOp: LITOp<"loop"> {
 // RefPackCreateOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_RefPackCreateOp : LITOp<"ref.pack.create", [Pure]> {
+def LIT_RefPackCreateOp : LITOp<"ref.pack.create", [Pure]> {
   let summary = "create a reference pack";
   let description = [{
     The `kgen.ref.pack.create` operation creates a value of `!lit.ref.pack`
@@ -1872,4 +1872,43 @@ def KGEN_RefPackCreateOp : LITOp<"ref.pack.create", [Pure]> {
   }];
 
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// RefPackGetOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefPackGetOp : LITOp<"ref.pack.get", [Pure]> {
+  let summary = "reference pack get element";
+  let description = [{
+    The `lit.ref.pack.get` operation returns the reference in the pack at the
+    provided index.
+  }];
+
+  let arguments = (ins LIT_RefPackType:$pack, AttrOfType<Index>:$index);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = [{
+    $pack `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($pack)
+    custom<PackGetResultType>(ref($pack), ref(type($pack)), ref($index),
+                              type($result))
+  }];
+
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// RefPackSizeOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefPackSizeOp : LITOp<"ref.pack.size", [Pure]> {
+  let summary = "given a pack, return its size";
+  let description = [{
+    The `lit.ref.pack.size` operation takes an operand with a `!lit.ref.pack`
+    type and returns the number of elements in the pack.
+  }];
+
+  let arguments = (ins LIT_RefPackType:$operand);
+  let results = (outs Index:$result);
+
+  let assemblyFormat = "$operand attr-dict `:` type($operand)";
 }
