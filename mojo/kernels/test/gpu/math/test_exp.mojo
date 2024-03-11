@@ -59,7 +59,7 @@ fn run_elementwise() raises:
         var idx = rebind[StaticIntTuple[1]](idx0)
 
         out_buffer.simd_store[simd_width](
-            idx, exp(in_buffer.simd_load[simd_width](idx))
+            idx, exp(in_buffer.load[width=simd_width](idx))
         )
 
     _elementwise_impl[func, pack_size, 1, True, target="cuda"](

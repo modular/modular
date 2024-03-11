@@ -186,7 +186,7 @@ fn run_elementwise_transpose_copy() raises:
         var idx = rebind[StaticIntTuple[3]](idx0)
 
         out_buffer.simd_store[simd_width](
-            idx, in_buffer_transposed.simd_load[simd_width](idx)
+            idx, in_buffer_transposed.load[width=simd_width](idx)
         )
 
     _elementwise_impl[func, 4, 3, True, target="cuda"](
