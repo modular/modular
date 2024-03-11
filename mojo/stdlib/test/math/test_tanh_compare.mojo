@@ -10,7 +10,8 @@ from math import tanh
 from random import seed
 
 from tensor import Tensor, TensorShape, randn
-from test_utils import compare, get_minmax, libm_call
+from test_utils import libm_call
+from closed_source_test_utils import compare, get_minmax
 
 
 fn tanh_libm[
