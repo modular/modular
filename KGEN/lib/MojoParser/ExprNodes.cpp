@@ -2049,10 +2049,6 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
 /// The walrus := operator in Python requires the left side to be a simple
 /// identifier, but Mojo allows arbitrary lvalues like the assign stmt.
 AnyValue BinOpNode::emitAssign(ValueDest &dest, ExprEmitter &emitter) const {
-
-  if (kind == kWalrus)
-    printf("here");
-
   // In an assignment, we emit the RHS into the LHS as its context.  This is
   // required to enable the 'implicit declaration' behavior in a def and to
   // support patterns.
