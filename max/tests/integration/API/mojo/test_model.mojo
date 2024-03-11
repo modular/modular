@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# COM: See #34373 - flaky test
+# REQUIRES: disabled
 # UNSUPPORTED: windows
 # RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %S/model_different_input_output.mlir %S/model_different_dtypes.mlir | FileCheck %s
 
