@@ -399,12 +399,13 @@ fn dot_at_b_impl(
     var b_pointer = b.data
     var c_pointer = c.data
 
-    # TODO: We can elide the copy if the data is already is already aligned.
-    var a_buffer = stack_allocation[256, Float32, alignment=128]()
-    var b_buffer = stack_allocation[256, Float32, alignment=128]()
-    var c_buffer = stack_allocation[256, Float32, alignment=128]()
+    alias num_elements = int(c.shape.at[1]() * c.shape.at[0]())
 
-    var num_elements = c.num_elements()
+    # TODO: We can elide the copy if the data is already is already aligned.
+    var a_buffer = stack_allocation[num_elements, Float32, alignment=128]()
+    var b_buffer = stack_allocation[num_elements, Float32, alignment=128]()
+    var c_buffer = stack_allocation[num_elements, Float32, alignment=128]()
+
     memcpy(a_buffer, a_pointer, num_elements)
     memcpy(b_buffer, b_pointer, num_elements)
     memset_zero(c_buffer, num_elements)
