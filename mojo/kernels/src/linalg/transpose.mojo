@@ -567,7 +567,7 @@ fn _process_tile[
     @parameter
     @always_inline
     fn load_input_vals[count: Int]():
-        input_vals[count] = in_ptr.simd_load[tile_size_m](
+        input_vals[count] = in_ptr.load[width=tile_size_m](
             input_tile_offset + M * count
         )
 

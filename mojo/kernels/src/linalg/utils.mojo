@@ -1089,7 +1089,7 @@ fn packA_i8mm[
 
             @unroll
             for idx in range(nrow):
-                var t0 = a_ptr.simd_load[8]((j + idx) * k + l)
+                var t0 = a_ptr.load[width=8]((j + idx) * k + l)
                 a_packed_ptr.simd_store(kh * j + 2 * l + 8 * idx, t0)
 
         @unroll

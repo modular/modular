@@ -594,7 +594,7 @@ struct LoadStoreOutputTile[
 
                 @parameter
                 if is_load:
-                    var data = self.row_ptrs[row].offset(col).simd_load[
+                    var data = self.row_ptrs[row].offset(col).load[
                         column_step
                     ]()
                     self.output_tile.simd_store(Index(row, col), data)
@@ -828,10 +828,10 @@ struct MatmulInnerLoopBPacked[
                 if skip_boundary_check or (
                     idx1 * 2 + 2 <= self.c_bound[1] - tile_n_idx
                 ):
-                    var t0 = c_ptr.simd_load[2](
+                    var t0 = c_ptr.load[width=2](
                         self.c_stride * (2 * idx0 + 0) + 2 * idx1
                     )
-                    var t1 = c_ptr.simd_load[2](
+                    var t1 = c_ptr.load[width=2](
                         self.c_stride * (2 * idx0 + 1) + 2 * idx1
                     ) if not single_row_i8mm else SIMD[c_type, 2](0)
                     c_data = rebind[SIMD[c_type, simd_size]](t0.join(t1))
@@ -879,7 +879,7 @@ struct MatmulInnerLoopBPacked[
                 idx1 * simd_size + simd_size <= self.c_bound[1] - tile_n_idx
             ):
                 # Use simd load if all within bound
-                c_data = c_ptr.simd_load[simd_size](idx1 * simd_size)
+                c_data = c_ptr.load[width=simd_size](idx1 * simd_size)
             elif idx1 * simd_size <= self.c_bound[1]:
                 # Use partial load if row inbound but col not
                 #  in simd bound.
@@ -1280,8 +1280,8 @@ struct MatmulInnerLoopBPacked[
 
             @unroll
             for col in range(pack_inner_size // simd_size):
-                var b_val = b_ptr.offset(col * simd_size).simd_load[
-                    simd_size
+                var b_val = b_ptr.offset(col * simd_size).load[
+                    width=simd_size
                 ]().cast[c_type]()
 
                 @unroll
@@ -1369,7 +1369,7 @@ struct MatmulInnerLoopBPacked[
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
-                var a_val = a_ptr.simd_load[16](2 * idx0 * K)
+                var a_val = a_ptr.load[width=16](2 * idx0 * K)
                 var b_val = b_ptr.offset(16 * idx1).aligned_simd_load[
                     16, alignment
                 ]()

@@ -41,7 +41,7 @@ fn _simd_load_maybe_partial[
             ptr + offset, 0, partial_load_size.value(), 0.0
         )
     else:
-        return ptr.simd_load[simd_size](offset)
+        return ptr.load[width=simd_size](offset)
 
 
 @always_inline
@@ -332,7 +332,7 @@ fn _accumulate_x86_simd[
                     fma(
                         a_splat_vec.cast[c.type](),
                         b_vec.cast[c.type](),
-                        c_ptr.simd_load[simd_size](),
+                        c_ptr.load[width=simd_size](),
                     )
                 )
 
@@ -402,7 +402,7 @@ fn _accumulate_x86_simd[
                     fma(
                         a_splat_vec.cast[c.type](),
                         b_vec.cast[c.type](),
-                        c_ptr.simd_load[simd_size](),
+                        c_ptr.load[width=simd_size](),
                     )
                 )
 
@@ -486,7 +486,7 @@ fn _accumulate_neon[
         # Load vectors of size num_lanes from input.
         @unroll
         for i in range(num_rows):
-            a_vecs[i] = a.simd_load[num_lanes](offset + i * a_stride)
+            a_vecs[i] = a.load[width=num_lanes](offset + i * a_stride)
 
         var b_ptr = b + offset * b_stride
 
@@ -509,7 +509,7 @@ fn _accumulate_neon[
                         fma[c.type, simd_size](
                             a_vecs[i][lane].cast[c.type](),
                             b_vec.cast[c.type](),
-                            c_ptr.simd_load[simd_size](),
+                            c_ptr.load[width=simd_size](),
                         )
                     )
 
@@ -557,7 +557,7 @@ fn _accumulate_neon[
         @unroll
         for i in range(num_rows):
             var a_idx = a_base_offsets[i].value + a_offset + offset
-            a_vecs[i] = a.simd_load[num_lanes](a_idx)
+            a_vecs[i] = a.load[width=num_lanes](a_idx)
 
         var b_ptr = b + offset * b_stride
 
@@ -580,7 +580,7 @@ fn _accumulate_neon[
                         fma[c.type, simd_size](
                             a_vecs[i][lane].cast[c.type](),
                             b_vec.cast[c.type](),
-                            c_ptr.simd_load[simd_size](),
+                            c_ptr.load[width=simd_size](),
                         )
                     )
 
@@ -705,7 +705,7 @@ fn store_register_tile[
         _simd_store_maybe_partial[simd_size, partial_store_last_vec](
             output,
             i * output_stride + j * simd_size,
-            tile.simd_load[simd_size](i * tile_width + j * simd_size).cast[
+            tile.load[width=simd_size](i * tile_width + j * simd_size).cast[
                 output.type
             ](),
             partial_store_size,

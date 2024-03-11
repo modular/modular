@@ -39,31 +39,37 @@ fn main():
         c[i] = i
         csat[i] = c[i]
 
-    var av16u = a.data.offset(128 + 64).bitcast[DType.int32]().simd_load[16]()
-    var av16s = asat.data.offset(128 + 64).bitcast[DType.int32]().simd_load[
-        16
+    var av16u = a.data.offset(128 + 64).bitcast[DType.int32]().load[width=16]()
+    var av16s = asat.data.offset(128 + 64).bitcast[DType.int32]().load[
+        width=16
     ]()
-    var bv16 = b.data.offset(0).bitcast[DType.int32]().simd_load[16]()
+    var bv16 = b.data.offset(0).bitcast[DType.int32]().load[width=16]()
     var cv16u: SIMD[DType.int32, 16] = 0
     var cv16s: SIMD[DType.int32, 16] = 0
     if has_avx512f():
-        cv16u = dot_i8_to_i32_AVX2[16](c.data.simd_load[16](), av16u, bv16)
+        cv16u = dot_i8_to_i32_AVX2[16](c.data.load[width=16](), av16u, bv16)
         cv16s = dot_i8_to_i32_saturated_AVX2[16](
-            c.data.simd_load[16](), av16s, bv16
+            c.data.load[width=16](), av16s, bv16
         )
     else:
         # split the vectors into high and low
         var cv8ul = dot_i8_to_i32_AVX2[8](
-            c.data.simd_load[8](), av16u.slice[8](0), bv16.slice[8](0)
+            c.data.load[width=8](), av16u.slice[8](0), bv16.slice[8](0)
         )
         var cv8sl = dot_i8_to_i32_saturated_AVX2[8](
-            c.data.simd_load[8](), av16s.slice[8](0), bv16.slice[8](0)
+            c.data.load[width=8](),
+            av16s.slice[8](0),
+            bv16.slice[8](0),
         )
         var cv8uh = dot_i8_to_i32_AVX2[8](
-            c.data.offset(8).simd_load[8](), av16u.slice[8](8), bv16.slice[8](8)
+            c.data.offset(8).load[width=8](),
+            av16u.slice[8](8),
+            bv16.slice[8](8),
         )
         var cv8sh = dot_i8_to_i32_saturated_AVX2[8](
-            c.data.offset(8).simd_load[8](), av16s.slice[8](8), bv16.slice[8](8)
+            c.data.offset(8).load[width=8](),
+            av16s.slice[8](8),
+            bv16.slice[8](8),
         )
         cv16u = cv8ul.join(cv8uh)
         cv16s = cv8sl.join(cv8sh)
@@ -73,22 +79,26 @@ fn main():
     # CHECK: [-33138, -34049, -34832, -35487, -36014, -36413, -36684, -36827, -36842, -36729, -36488, -36119, -35622, -34997, -34244, -33363]
     print(cv16s)
 
-    var av8u = a.data.offset(128 + 64).bitcast[DType.int32]().simd_load[8]()
-    var av8s = asat.data.offset(128 + 64).bitcast[DType.int32]().simd_load[8]()
-    var bv8 = b.data.offset(0).bitcast[DType.int32]().simd_load[8]()
-    var cv8u = dot_i8_to_i32_AVX2[8](c.data.simd_load[8](), av8u, bv8)
-    var cv8s = dot_i8_to_i32_saturated_AVX2[8](c.data.simd_load[8](), av8s, bv8)
+    var av8u = a.data.offset(128 + 64).bitcast[DType.int32]().load[width=8]()
+    var av8s = asat.data.offset(128 + 64).bitcast[DType.int32]().load[width=8]()
+    var bv8 = b.data.offset(0).bitcast[DType.int32]().load[width=8]()
+    var cv8u = dot_i8_to_i32_AVX2[8](c.data.load[width=8](), av8u, bv8)
+    var cv8s = dot_i8_to_i32_saturated_AVX2[8](
+        c.data.load[width=8](), av8s, bv8
+    )
 
     # CHECK: [-97906, -96769, -95504, -94111, -92590, -90941, -89164, -87259]
     print(cv8u)
     # CHECK: [-33138, -34049, -34832, -35487, -36014, -36413, -36684, -36827]
     print(cv8s)
 
-    var av4u = a.data.offset(128 + 64).bitcast[DType.int32]().simd_load[4]()
-    var av4s = asat.data.offset(128 + 64).bitcast[DType.int32]().simd_load[4]()
-    var bv4 = b.data.offset(0).bitcast[DType.int32]().simd_load[4]()
-    var cv4u = dot_i8_to_i32_AVX2[4](c.data.simd_load[4](), av4u, bv4)
-    var cv4s = dot_i8_to_i32_saturated_AVX2[4](c.data.simd_load[4](), av4s, bv4)
+    var av4u = a.data.offset(128 + 64).bitcast[DType.int32]().load[width=4]()
+    var av4s = asat.data.offset(128 + 64).bitcast[DType.int32]().load[width=4]()
+    var bv4 = b.data.offset(0).bitcast[DType.int32]().load[width=4]()
+    var cv4u = dot_i8_to_i32_AVX2[4](c.data.load[width=4](), av4u, bv4)
+    var cv4s = dot_i8_to_i32_saturated_AVX2[4](
+        c.data.load[width=4](), av4s, bv4
+    )
 
     # CHECK: [-97906, -96769, -95504, -94111]
     print(cv4u)
