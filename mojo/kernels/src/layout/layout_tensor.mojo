@@ -44,7 +44,7 @@ struct LayoutTensor[
     fn __getitem__(self, *dims: Int) -> Scalar[dtype]:
         # TODO: Static assert ranks are the same!
         alias strides = Self._toStatic[flatten(layout.stride)]()
-        return self.ptr.simd_load[1](Self._getOffset(strides, dims))
+        return self.ptr.load[width=1](Self._getOffset(strides, dims))
 
     @always_inline
     fn __setitem__(self, d0: Int, val: Scalar[dtype]):
@@ -78,7 +78,7 @@ struct LayoutTensor[
 
     @always_inline
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
-        return self.ptr.simd_load[width](self._offset(m, n))
+        return self.ptr.load[width=width](self._offset(m, n))
 
     @always_inline
     fn load_aligned[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
