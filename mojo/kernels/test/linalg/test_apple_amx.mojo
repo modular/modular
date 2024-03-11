@@ -42,10 +42,10 @@ fn clear_c(buf: NDBuffer):
     buf.zero()
 
 
-def test_dot_at_b[type: DType]():
-    var a_matrix = NDBuffer[type, 2, shape= (16, 16)].stack_allocation()
-    var b_matrix = NDBuffer[type, 2, shape= (16, 16)].stack_allocation()
-    var c_matrix = NDBuffer[type, 2, shape= (16, 16)].stack_allocation()
+def test_dot_at_b[type: DType, shape: Tuple[Int, Int]]():
+    var a_matrix = NDBuffer[type, 2, shape=shape].stack_allocation()
+    var b_matrix = NDBuffer[type, 2, shape=shape].stack_allocation()
+    var c_matrix = NDBuffer[type, 2, shape=shape].stack_allocation()
 
     fill_a(a_matrix)
     fill_b(b_matrix)
@@ -68,4 +68,5 @@ def test_dot_at_b[type: DType]():
 def main():
     @parameter
     if is_apple_silicon():
-        test_dot_at_b[DType.float32]()
+        test_dot_at_b[DType.float32, (16, 16)]()
+        # test_dot_at_b[DType.float16, (32, 32)]()

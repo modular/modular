@@ -442,13 +442,127 @@ fn dot_at_b_impl(
 
 
 @always_inline
-fn dot_at_b(c: NDBuffer[_, 2, (16, 16)], a: __type_of(c), b: __type_of(c)):
-    constrained[c.type == DType.float32, "the buffer dtype must be float32 "]()
+fn dot_at_b_impl(
+    c: NDBuffer[DType.float16, 2, shape= (32, 32)],
+    a: NDBuffer[DType.float16, 2, shape= (32, 32)],
+    b: NDBuffer[DType.float16, 2, shape= (32, 32)],
+):
+    var a_pointer = a.data
+    var b_pointer = b.data
+    var c_pointer = c.data
+
+    alias num_elements = int(c.shape.at[1]() * c.shape.at[0]())
+
+    var a_buffer = stack_allocation[num_elements, Float16, alignment=128]()
+    var b_buffer = stack_allocation[num_elements, Float16, alignment=128]()
+    var c_buffer = stack_allocation[num_elements, Float16, alignment=128]()
+
+    memcpy(a_buffer, a_pointer, num_elements)
+    memcpy(b_buffer, b_pointer, num_elements)
+    memset_zero(c_buffer, num_elements)
+
+    _set()
+
+    @unroll
+    for i in range(8):
+        ldx((i << 56) | int(b_buffer.offset(i * b.dim[0]())))
+        ldy((i << 56) | int(a_buffer.offset(i * a.dim[0]())))
+
+    fma32(1 << 27)
+
+    @unroll
+    for i in range(1, 8):
+        fma32((i << 6 << 10) | (i << 6))
+
+    @unroll
+    for i in range(8):
+        ldx((i << 56) | int(b_buffer.offset((i + 8) * b.dim[0]())))
+        ldy((i << 56) | int(a_buffer.offset((i + 8) * a.dim[0]())))
+
+    @unroll
+    for i in range(8):
+        fma32((i << 6 << 10) | (i << 6))
+
+    @unroll
+    for i in range(0, 64, 4):
+        stz((i << 56) | int(c_buffer.offset((i >> 2) * c.dim[0]())))
+
+    _clr()
+
+    memcpy(c_pointer, c_buffer, num_elements)
+
+
+@always_inline
+fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
+    constrained[
+        c.type == DType.float32 or c.type == DType.float16,
+        "the buffer dtype must be float32 or float16",
+    ]()
 
     @parameter
     if c.type == DType.float32:
         dot_at_b_impl(
-            rebind[NDBuffer[DType.float32, 2, shape= (16, 16)]](c),
-            rebind[NDBuffer[DType.float32, 2, shape= (16, 16)]](a),
-            rebind[NDBuffer[DType.float32, 2, shape= (16, 16)]](b),
+            NDBuffer[
+                DType.float32,
+                2,
+                shape= (16, 16),
+                address_space = AddressSpace.GENERIC,
+            ](
+                c.data.bitcast[DType.float32]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
+            ),
+            NDBuffer[
+                DType.float32,
+                2,
+                shape= (16, 16),
+                address_space = AddressSpace.GENERIC,
+            ](
+                a.data.bitcast[DType.float32]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
+            ),
+            NDBuffer[
+                DType.float32,
+                2,
+                shape= (16, 16),
+                address_space = AddressSpace.GENERIC,
+            ](
+                b.data.bitcast[DType.float32]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
+            ),
+        )
+    elif c.type == DType.float16:
+        dot_at_b_impl(
+            NDBuffer[
+                DType.float16,
+                2,
+                shape= (32, 32),
+                address_space = AddressSpace.GENERIC,
+            ](
+                c.data.bitcast[DType.float16]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
+            ),
+            NDBuffer[
+                DType.float16,
+                2,
+                shape= (32, 32),
+                address_space = AddressSpace.GENERIC,
+            ](
+                a.data.bitcast[DType.float16]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
+            ),
+            NDBuffer[
+                DType.float16,
+                2,
+                shape= (32, 32),
+                address_space = AddressSpace.GENERIC,
+            ](
+                b.data.bitcast[DType.float16]().address_space_cast[
+                    AddressSpace.GENERIC
+                ](),
+            ),
         )
