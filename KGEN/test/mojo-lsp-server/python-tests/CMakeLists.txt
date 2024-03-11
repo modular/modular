@@ -19,6 +19,8 @@ add_modular_pytest(mojo-lsp-server
   mojo-lsp-server
   mojo-sdk
 
-  TOP_LEVEL_CHECK
-  check-mojo-lsp-server
+  # Disabled due to https://github.com/modularml/modular/issues/34132
+  # TOP_LEVEL_CHECK
+  # check-mojo-lsp-server
+  EXCLUDE_FROM_CHECK_ALL
 )
