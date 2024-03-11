@@ -679,14 +679,14 @@ LogicalResult ElifOp::verify() {
 void ElifOp::getEntryTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == 0);
+  assert(operands.empty());
   targets.push_back(std::optional<unsigned>(0));
 }
 
 ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
   if (!target)
     return getResults();
-  assert(*target >= 0 && *target < getNumRegions());
+  assert(*target < getNumRegions());
   return getRegion(target.value()).getArguments();
 }
 
