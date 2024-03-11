@@ -717,7 +717,7 @@ fn flash_attention_kernel[
             @unroll
             for j in range(0, TN, simd_size):
                 var idx = int(i * TN + j)
-                var vec = reg_result.simd_load[simd_size](idx)
+                var vec = reg_result.load[width=simd_size](idx)
                 var mask_idx = int(mask_offset + i * seq_len + j)
                 var mask_vec = mask_ptr.aligned_simd_load[simd_size, alignment](
                     mask_idx
@@ -782,7 +782,7 @@ fn flash_attention_kernel[
                     for j in range(0, TN, simd_size):
                         p_tile.aligned_simd_store[simd_size, alignment](
                             (mm_row + i) * BK + mm_col - storep_col_start + j,
-                            reg_result.simd_load[simd_size](i * TN + j),
+                            reg_result.load[width=simd_size](i * TN + j),
                         )
             storep_col_start += BK
 
@@ -829,7 +829,7 @@ fn flash_attention_kernel[
         @unroll
         for offset in range(0, TN.to_int(), simd_size):
             # Apply the denominator of softmax.
-            var vec = o_thread_tile.simd_load[simd_size](
+            var vec = o_thread_tile.load[width=simd_size](
                 int(i * TN + offset)
             ) / rowsum.load(i)
 
@@ -1139,7 +1139,7 @@ fn flash_attention_kernel_flexible_seqlen[
             for j in range(0, TN, simd_size):
                 p_tile.aligned_simd_store[simd_size, alignment](
                     ((mm_row + i) * BN + mm_col + j),
-                    reg_result.simd_load[simd_size]((i * TN + j)),
+                    reg_result.load[width=simd_size]((i * TN + j)),
                 )
 
         # Clear thread register results for P * V.
@@ -1216,7 +1216,7 @@ fn flash_attention_kernel_flexible_seqlen[
             @unroll
             for offset in range(0, TN.to_int(), simd_size):
                 # Apply the denominator of softmax.
-                var vec = o_thread_tile.simd_load[simd_size](
+                var vec = o_thread_tile.load[width=simd_size](
                     int(i * TN + offset)
                 ) / rowsum.load(i)
 

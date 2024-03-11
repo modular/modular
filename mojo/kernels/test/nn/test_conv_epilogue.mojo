@@ -209,8 +209,8 @@ fn test[
                     offset,
                     10.0
                     * (
-                        output_ref_ptr.simd_load[width](offset)
-                        + bias_ptr.simd_load[width](offset)
+                        output_ref_ptr.load[width=width](offset)
+                        + bias_ptr.load[width=width](offset)
                     ),
                 )
 
@@ -230,7 +230,8 @@ fn test[
 
             output.simd_store(
                 curr_coords,
-                10.0 * (vec + bias_ptr.simd_load[width](curr_coords[rank + 1])),
+                10.0
+                * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
 
         vectorize[body1, simd_size](f_size)

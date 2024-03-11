@@ -83,16 +83,16 @@ def test_accumulate[
     # [0.0, 0.0, 0.0, 0.0]
     # [1.0, 1.0, 1.0, 1.0]
     # [1.0, 1.0, 1.0, 1.0]
-    assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](0.0))
+    assert_equal(c.load[width=simd_size](), SIMD[DType.float32, simd_size](0.0))
     assert_equal(
-        c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
+        c.load[width=simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
     )
     assert_equal(
-        c.simd_load[simd_size](2 * simd_size),
+        c.load[width=simd_size](2 * simd_size),
         SIMD[DType.float32, simd_size](1.0),
     )
     assert_equal(
-        c.simd_load[simd_size](3 * simd_size),
+        c.load[width=simd_size](3 * simd_size),
         SIMD[DType.float32, simd_size](1.0),
     )
 
@@ -105,16 +105,16 @@ def test_accumulate[
     # [0.0, 0.0, 0.0, 0.0]
     # [7.0, 7.0, 7.0, 7.0]
     # [7.0, 7.0, 7.0, 7.0]
-    assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](0.0))
+    assert_equal(c.load[width=simd_size](), SIMD[DType.float32, simd_size](0.0))
     assert_equal(
-        c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
+        c.load[width=simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
     )
     assert_equal(
-        c.simd_load[simd_size](2 * simd_size),
+        c.load[width=simd_size](2 * simd_size),
         SIMD[DType.float32, simd_size](7.0),
     )
     assert_equal(
-        c.simd_load[simd_size](3 * simd_size),
+        c.load[width=simd_size](3 * simd_size),
         SIMD[DType.float32, simd_size](7.0),
     )
 
@@ -132,16 +132,16 @@ def test_accumulate[
     # [4.0, 4.0, 4.0, 4.0]
     # [19.0, 19.0, 19.0, 19.0]
     # [19.0, 19.0, 19.0, 19.0]
-    assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](4.0))
+    assert_equal(c.load[width=simd_size](), SIMD[DType.float32, simd_size](4.0))
     assert_equal(
-        c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](4.0)
+        c.load[width=simd_size](simd_size), SIMD[DType.float32, simd_size](4.0)
     )
     assert_equal(
-        c.simd_load[simd_size](2 * simd_size),
+        c.load[width=simd_size](2 * simd_size),
         SIMD[DType.float32, simd_size](19.0),
     )
     assert_equal(
-        c.simd_load[simd_size](3 * simd_size),
+        c.load[width=simd_size](3 * simd_size),
         SIMD[DType.float32, simd_size](19.0),
     )
 
@@ -198,16 +198,16 @@ def test_accumulate_with_offsets[
     # [0.0, 0.0, 0.0, 0.0]
     # [1.0, 1.0, 1.0, 1.0]
     # [1.0, 1.0, 1.0, 1.0]
-    assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](0.0))
+    assert_equal(c.load[width=simd_size](), SIMD[DType.float32, simd_size](0.0))
     assert_equal(
-        c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
+        c.load[width=simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
     )
     assert_equal(
-        c.simd_load[simd_size](2 * simd_size),
+        c.load[width=simd_size](2 * simd_size),
         SIMD[DType.float32, simd_size](1.0),
     )
     assert_equal(
-        c.simd_load[simd_size](3 * simd_size),
+        c.load[width=simd_size](3 * simd_size),
         SIMD[DType.float32, simd_size](1.0),
     )
 
@@ -222,16 +222,16 @@ def test_accumulate_with_offsets[
     # [0.0, 0.0, 0.0, 0.0]
     # [7.0, 7.0, 7.0, 7.0]
     # [7.0, 7.0, 7.0, 7.0]
-    assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](0.0))
+    assert_equal(c.load[width=simd_size](), SIMD[DType.float32, simd_size](0.0))
     assert_equal(
-        c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
+        c.load[width=simd_size](simd_size), SIMD[DType.float32, simd_size](0.0)
     )
     assert_equal(
-        c.simd_load[simd_size](2 * simd_size),
+        c.load[width=simd_size](2 * simd_size),
         SIMD[DType.float32, simd_size](7.0),
     )
     assert_equal(
-        c.simd_load[simd_size](3 * simd_size),
+        c.load[width=simd_size](3 * simd_size),
         SIMD[DType.float32, simd_size](7.0),
     )
 
@@ -253,16 +253,16 @@ def test_accumulate_with_offsets[
     # [4.0, 4.0, 4.0, 4.0]
     # [19.0, 19.0, 19.0, 19.0]
     # [19.0, 19.0, 19.0, 19.0]
-    assert_equal(c.simd_load[simd_size](), SIMD[DType.float32, simd_size](4.0))
+    assert_equal(c.load[width=simd_size](), SIMD[DType.float32, simd_size](4.0))
     assert_equal(
-        c.simd_load[simd_size](simd_size), SIMD[DType.float32, simd_size](4.0)
+        c.load[width=simd_size](simd_size), SIMD[DType.float32, simd_size](4.0)
     )
     assert_equal(
-        c.simd_load[simd_size](2 * simd_size),
+        c.load[width=simd_size](2 * simd_size),
         SIMD[DType.float32, simd_size](19.0),
     )
     assert_equal(
-        c.simd_load[simd_size](3 * simd_size),
+        c.load[width=simd_size](3 * simd_size),
         SIMD[DType.float32, simd_size](19.0),
     )
 
@@ -301,19 +301,19 @@ def test_load_store_register_tile[
     load_register_tile[num_rows, num_cols, simd_size](tile0, a, row_size)
 
     assert_equal(
-        tile0.simd_load[simd_size](),
+        tile0.load[width=simd_size](),
         SIMD[type, simd_size](0.0),
     )
     assert_equal(
-        tile0.simd_load[simd_size](simd_size),
+        tile0.load[width=simd_size](simd_size),
         SIMD[type, simd_size](1.0),
     )
     assert_equal(
-        tile0.simd_load[simd_size](2 * simd_size),
+        tile0.load[width=simd_size](2 * simd_size),
         SIMD[type, simd_size](1.0),
     )
     assert_equal(
-        tile0.simd_load[simd_size](3 * simd_size),
+        tile0.load[width=simd_size](3 * simd_size),
         SIMD[type, simd_size](2.0),
     )
 
@@ -329,12 +329,12 @@ def test_load_store_register_tile[
         tile1, a, row_size, residual
     )
 
-    assert_equal(tile1.simd_load[simd_size](), one_vec)
-    assert_equal(tile1.simd_load[simd_size](simd_size), one_vec)
-    assert_equal(tile1.simd_load[simd_size](2 * simd_size), residual_vec)
-    assert_equal(tile1.simd_load[simd_size](3 * simd_size), one_vec)
-    assert_equal(tile1.simd_load[simd_size](4 * simd_size), one_vec)
-    assert_equal(tile1.simd_load[simd_size](5 * simd_size), residual_vec)
+    assert_equal(tile1.load[width=simd_size](), one_vec)
+    assert_equal(tile1.load[width=simd_size](simd_size), one_vec)
+    assert_equal(tile1.load[width=simd_size](2 * simd_size), residual_vec)
+    assert_equal(tile1.load[width=simd_size](3 * simd_size), one_vec)
+    assert_equal(tile1.load[width=simd_size](4 * simd_size), one_vec)
+    assert_equal(tile1.load[width=simd_size](5 * simd_size), residual_vec)
 
     alias residual_vec1 = SIMD[type, residual](-2.0)
 
@@ -347,8 +347,8 @@ def test_load_store_register_tile[
         a, row_size, tile1, residual
     )
 
-    assert_equal(a.simd_load[residual](row_size - residual), residual_vec1)
-    assert_equal(a.simd_load[residual](2 * row_size - residual), residual_vec1)
+    assert_equal(a.load[width=residual](row_size - residual), residual_vec1)
+    assert_equal(a.load[width=residual](2 * row_size - residual), residual_vec1)
 
 
 def main():

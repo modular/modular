@@ -313,12 +313,12 @@ fn _reduce_output[
         @always_inline
         fn sum[width: Int](offset: Int):
             var tid_output_offset = reduce_range[0] * F + offset
-            var vec = scratch.simd_load[width](tid_output_offset)
+            var vec = scratch.load[width=width](tid_output_offset)
             # The number of partitions here is typically small.
             # There may not be much benefit from unrolling the reduction axis.
             # Only unroll the last dimension.
             for i in range(1, num_partitions):
-                vec += scratch.simd_load[width](
+                vec += scratch.load[width=width](
                     tid_output_offset + i * buf_size
                 )
             output.simd_store[width](tid_output_offset, vec)
@@ -943,7 +943,9 @@ struct ConvDirectNHWC[
                 else:
                     output_micro_tile.simd_store[simd_size](
                         Index(i, j * simd_size),
-                        output_ptr.offset(j * simd_size).simd_load[simd_size](),
+                        output_ptr.offset(j * simd_size).load[
+                            width=simd_size
+                        ](),
                     )
 
             @parameter
@@ -2755,7 +2757,7 @@ fn pack_filter[
                 for i in range(f_tile_size // simd_size):
                     packed_filter_ptr.simd_store(
                         i * simd_size,
-                        filter_ptr.simd_load[simd_size](i * simd_size).cast[
+                        filter_ptr.load[width=simd_size](i * simd_size).cast[
                             packed_filter.type
                         ](),
                     )
