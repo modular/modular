@@ -36,7 +36,7 @@ fn test_elementwise_1d():
     @__copy_capture(vector)
     @parameter
     fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
-        var elem = vector.simd_load[simd_width](idx[0])
+        var elem = vector.load[width=simd_width](idx[0])
         var val = exp(erf(tanh(elem + 1)))
         vector.simd_store[simd_width](idx[0], val)
 

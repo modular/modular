@@ -83,7 +83,7 @@ fn test_stencil_avg_pool():
         simd_width: Int, dtype: DType
     ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            input.simd_load[simd_width](point)
+            input.load[width=simd_width](point)
         )
 
     @always_inline
@@ -195,7 +195,7 @@ fn test_stencil_avg_pool_padded():
         simd_width: Int, dtype: DType
     ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            input.simd_load[simd_width](point)
+            input.load[width=simd_width](point)
         )
 
     @always_inline
@@ -308,7 +308,7 @@ fn test_stencil_avg_pool_stride_2():
         simd_width: Int, dtype: DType
     ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            input.simd_load[simd_width](point)
+            input.load[width=simd_width](point)
         )
 
     @always_inline
@@ -423,7 +423,7 @@ fn test_stencil_max_pool_dilation_2():
         simd_width: Int, dtype: DType
     ](point: StaticIntTuple[rank]) -> SIMD[dtype, simd_width]:
         return rebind[SIMD[dtype, simd_width]](
-            input.simd_load[simd_width](point)
+            input.load[width=simd_width](point)
         )
 
     @always_inline

@@ -71,7 +71,7 @@ fn test_fused_reductions() raises:
     fn input_fn[
         type: DType, width: Int, rank: Int
     ](indices: StaticIntTuple[rank]) -> SIMD[type, width]:
-        var loaded_val = vector.simd_load[width](indices[0])
+        var loaded_val = vector.load[width=width](indices[0])
         return rebind[SIMD[type, width]](loaded_val)
 
     var out = StaticTuple[Scalar[test_type], num_reductions]()

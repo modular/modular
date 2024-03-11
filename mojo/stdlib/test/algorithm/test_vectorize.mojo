@@ -28,7 +28,7 @@ fn test_vectorize():
     @parameter
     fn add_two[simd_width: Int](idx: Int):
         vector.simd_store[simd_width](
-            idx, vector.simd_load[simd_width](idx) + 2
+            idx, vector.load[width=simd_width](idx) + 2
         )
 
     vectorize[add_two, 2](len(vector))
@@ -50,8 +50,8 @@ fn test_vectorize():
     fn add[simd_width: Int](idx: Int):
         vector.simd_store[simd_width](
             idx,
-            vector.simd_load[simd_width](idx)
-            + vector.simd_load[simd_width](idx),
+            vector.load[width=simd_width](idx)
+            + vector.load[width=simd_width](idx),
         )
 
     vectorize[add, 2](len(vector))
@@ -86,7 +86,7 @@ fn test_vectorize_unroll():
     fn double_buf[simd_width: Int](idx: Int):
         buf.simd_store[simd_width](
             idx,
-            buf.simd_load[simd_width](idx) + buf.simd_load[simd_width](idx),
+            buf.load[width=simd_width](idx) + buf.load[width=simd_width](idx),
         )
 
     @parameter
@@ -95,7 +95,7 @@ fn test_vectorize_unroll():
     fn double_vec[simd_width: Int](idx: Int):
         vec.simd_store[simd_width](
             idx,
-            vec.simd_load[simd_width](idx) + vec.simd_load[simd_width](idx),
+            vec.load[width=simd_width](idx) + vec.load[width=simd_width](idx),
         )
 
     alias simd_width = 4

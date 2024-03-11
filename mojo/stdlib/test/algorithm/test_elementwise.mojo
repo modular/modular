@@ -42,8 +42,8 @@ fn test_elementwise[
     @parameter
     fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         var index = rebind[StaticIntTuple[outer_rank]](idx)
-        var in1 = buffer1.simd_load[simd_width](index)
-        var in2 = buffer2.simd_load[simd_width](index)
+        var in1 = buffer1.load[width=simd_width](index)
+        var in2 = buffer2.load[width=simd_width](index)
         out_buffer.simd_store[simd_width](index, mul(in1, in2))
 
     _elementwise_impl[func, 1, outer_rank, is_blocking](
