@@ -718,7 +718,7 @@ fn _process_rows[
                 var c_data_i32 = _matmul_int4_dotprod[simd_width, group_size](
                     a_data_i8, rebind[SIMD[DType.int8, group_size]](b_data_i8)
                 )
-                var accum_fp = accum_fp_tile.simd_load[simd_width](
+                var accum_fp = accum_fp_tile.load[width=simd_width](
                     Index(row, 0)
                 )
                 accum_fp += c_data_i32.cast[type]() * a_scale * b_scale
@@ -730,7 +730,7 @@ fn _process_rows[
 
         @unroll
         for row in range(row_count):
-            var accum_fp = accum_fp_tile.simd_load[simd_width](Index(row, 0))
+            var accum_fp = accum_fp_tile.load[width=simd_width](Index(row, 0))
             c.simd_store(Index(row + m, n), accum_fp.reduce_add())
 
 
