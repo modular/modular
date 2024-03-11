@@ -898,7 +898,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           val: The value to store.
         """
         debug_assert(self.rank() == 1, "rank must be 1")
-        self.simd_store[1](index, val)
+        self.store[width=1](index, val)
 
     @always_inline
     fn __setitem__(inout self, indices: VariadicList[Int], val: Scalar[dtype]):
@@ -908,7 +908,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           indices: The indices of the value to set.
           val: The value to store.
         """
-        self.simd_store[1](indices, val)
+        self.store[width=1](indices, val)
 
     @always_inline
     fn __setitem__[
@@ -923,60 +923,56 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           indices: The indices of the value to set.
           val: The value to store.
         """
-        self.simd_store[1, len](indices, val)
+        self.store[len, width=1](indices, val)
 
     @always_inline
-    fn simd_store[
-        simd_width: Int
-    ](inout self, index: Int, val: SIMD[dtype, simd_width]):
+    fn store[
+        *, width: Int = 1
+    ](inout self, index: Int, val: SIMD[dtype, width]):
         """Sets the SIMD value at the specified index.
 
         Parameters:
-          simd_width: The SIMD width of the vector.
+          width: The SIMD width of the vector.
 
         Args:
           index: The index of the value to set.
           val: The SIMD value to store.
         """
         debug_assert(self.rank() == 1, "rank must be 1")
-        self._ptr.simd_store[simd_width](index, val)
+        self._ptr.simd_store[width](index, val)
 
     @always_inline
-    fn simd_store[
-        simd_width: Int
-    ](inout self, indices: VariadicList[Int], val: SIMD[dtype, simd_width]):
+    fn store[
+        *, width: Int = 1
+    ](inout self, indices: VariadicList[Int], val: SIMD[dtype, width]):
         """Sets the SIMD value at the specified indices.
 
         Parameters:
-          simd_width: The SIMD width of the vector.
+          width: The SIMD width of the vector.
 
         Args:
           indices: The indices of the value to set.
           val: The SIMD value to store.
         """
         debug_assert(len(indices) == self.rank(), "invalid rank value")
-        self._ptr.simd_store[simd_width](
-            self._compute_linear_offset(indices), val
-        )
+        self._ptr.simd_store[width](self._compute_linear_offset(indices), val)
 
     @always_inline
-    fn simd_store[
-        simd_width: Int, len: Int
-    ](inout self, indices: StaticIntTuple[len], val: SIMD[dtype, simd_width]):
+    fn store[
+        len: Int, /, *, width: Int = 1
+    ](inout self, indices: StaticIntTuple[len], val: SIMD[dtype, width]):
         """Sets the SIMD value at the specified indices.
 
         Parameters:
-          simd_width: The SIMD width of the vector.
           len: The length of the indecies.
+          width: The SIMD width of the vector.
 
         Args:
           indices: The indices of the value to set.
           val: The SIMD value to store.
         """
         debug_assert(len == self.rank(), "invalid length value")
-        self._ptr.simd_store[simd_width](
-            self._compute_linear_offset(indices), val
-        )
+        self._ptr.simd_store(self._compute_linear_offset(indices), val)
 
     @always_inline
     fn _compute_linear_offset[
@@ -1278,7 +1274,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     var header_bytes = Tensor[DType.int8](header_size)
 
     for i in range(header_size):
-        header_bytes.simd_store(i, _SERIALIZATION_HEADER[i])
+        header_bytes.store(i, _SERIALIZATION_HEADER[i])
 
     var major_format: UInt32 = _SERIALIZATION_MAJOR_FORMAT
     var major_format_bytes = _serialize_as_tensor(major_format)
