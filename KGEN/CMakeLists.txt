@@ -539,6 +539,8 @@ function(add_internal_mojo_doc target doc_filename output_file output_directory)
   add_dependencies(modular-internal-doc ${target}DocGen)
 endfunction()
 
+add_subdirectory(tools/mojo-build-server)
+
 # Testing infrastructure
 add_subdirectory(test)
 add_subdirectory(unittests)
