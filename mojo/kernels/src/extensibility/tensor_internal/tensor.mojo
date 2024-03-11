@@ -77,7 +77,7 @@ fn _elementwise[
     fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
         var idx = indices[0]
         result_buffer.simd_store(
-            idx, op[dtype, width](buffer.simd_load[width](idx))
+            idx, op[dtype, width](buffer.load[width=width](idx))
         )
 
     elementwise[func=func, simd_width = simdwidthof[dtype](), rank=1](
@@ -106,7 +106,7 @@ fn _elementwise[
         result_buffer.simd_store(
             idx,
             op[dtype, width](
-                a_buffer.simd_load[width](idx), b_buffer.simd_load[width](idx)
+                a_buffer.load[width=width](idx), b_buffer.load[width=width](idx)
             ),
         )
 
@@ -135,7 +135,7 @@ fn _elementwise[
         result_buffer.simd_store(
             idx,
             op[dtype, width](
-                a_buffer.simd_load[width](idx), SIMD[dtype, width](b)
+                a_buffer.load[width=width](idx), SIMD[dtype, width](b)
             ),
         )
 
@@ -164,7 +164,7 @@ fn _elementwise[
         result_buffer.simd_store(
             idx,
             op[dtype, width](
-                SIMD[dtype, width](a), b_buffer.simd_load[width](idx)
+                SIMD[dtype, width](a), b_buffer.load[width=width](idx)
             ),
         )
 
@@ -571,7 +571,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         @parameter
         fn _pow[width: Int, rank: Int](indices: StaticIntTuple[rank]) -> None:
             var idx = indices[0]
-            var val = buffer.simd_load[width](idx)
+            var val = buffer.load[width=width](idx)
             var res = math.pow(val, exponent)
             buffer.simd_store(idx, res)
 
@@ -603,7 +603,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
             var idx = indices[0]
             result_buffer.simd_store(
-                idx, buffer.simd_load[width](idx).cast[new_dtype]()
+                idx, buffer.load[width=width](idx).cast[new_dtype]()
             )
 
         elementwise[func=func, simd_width = simdwidthof[dtype](), rank=1](
@@ -638,7 +638,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
             result_buffer.simd_store(
                 idx,
                 math.clamp[dtype, width](
-                    buffer.simd_load[width](idx), lower_bound, upper_bound
+                    buffer.load[width=width](idx), lower_bound, upper_bound
                 ),
             )
 
