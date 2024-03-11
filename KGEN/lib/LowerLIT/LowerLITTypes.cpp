@@ -577,6 +577,19 @@ static Value lowerOp(RefPackCreateOp op, RefPackCreateOpAdaptor adaptor,
       op.getLoc(), lowerer.replace(op.getType()), adaptor.getOperands());
 }
 
+// lit.ref.pack.get => kgen.pack.get
+static Value lowerOp(RefPackGetOp op, RefPackGetOpAdaptor adaptor,
+                     LITTypeLowerer &lowerer) {
+  return lowerer.create<PackGetOp>(op.getLoc(), lowerer.replace(op.getType()),
+                                   adaptor.getOperands()[0], op.getIndex());
+}
+
+// lit.ref.pack.size => kgen.pack.size
+static Value lowerOp(RefPackSizeOp op, RefPackSizeOpAdaptor adaptor,
+                     LITTypeLowerer &lowerer) {
+  return lowerer.create<PackSizeOp>(op.getLoc(), adaptor.getOperand());
+}
+
 static Value getCastedToType(Location newLoc, Value value, Type destType,
                              OpBuilder &b) {
   // If already casted, done.
@@ -763,7 +776,8 @@ void LowerLITTypesPass::runOnOperation() {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
               RefImmutOp, RefToPointerOp, RefFromPointerOp, RefStructGEROp,
-              RefOffsetOp, RefLoadOp, RefStoreOp, RebindOp, RefPackCreateOp>(
+              RefOffsetOp, RefLoadOp, RefStoreOp, RebindOp, RefPackCreateOp,
+              RefPackSizeOp, RefPackGetOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Default([](auto) { return success(); });
   });
