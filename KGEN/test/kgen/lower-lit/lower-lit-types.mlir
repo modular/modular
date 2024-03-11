@@ -230,6 +230,18 @@ kgen.generator @takes_val_after_lifetime<life: lifetime<1>, type: type>(%a: !lit
   kgen.return
 }
 
+//===----------------------------------------------------------------------===//
+// Reference Pack Lowering
+//===----------------------------------------------------------------------===//
+
+// CHECK-LABEL: kgen.generator @takes_pack<life: struct<()>, types: variadic<type>>
+kgen.generator @takes_pack
+<life: !lit.lifetime<1>, types: !kgen.variadic<!kgen.type>>
+// CHECK-SAME: (%arg0: !kgen.pack<variadic_ptr_map(:variadic<type> types, 42)>) {
+(%args: !lit.ref.pack<:variadic<!kgen.type> types, owned_in_mem, mut life, 42>) {
+  kgen.return
+}
+
 // -----
 
 // CHECK-LABEL: kgen.generator @parameterized_declref_type
