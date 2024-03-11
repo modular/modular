@@ -16,6 +16,7 @@ from max.engine import (
 from sys import argv
 from tensor import Tensor
 from test_utils import linear_fill
+from closed_source_test_utils import linear_fill
 from python import Python
 
 

@@ -43,6 +43,7 @@ add_modular_testsuite(check-max-engine-integration-tests
   is-cuda-available
   max-mojo
   kernels-register
+  closed-source-mojo-test-utils
 )
 
 add_subdirectory(python)

@@ -16,7 +16,7 @@ from max.engine import (
 from max.engine._context import _Device
 from sys import argv
 from tensor import Tensor, TensorShape
-from test_utils import linear_fill
+from closed_source_test_utils import linear_fill
 from pathlib import Path
 
 
