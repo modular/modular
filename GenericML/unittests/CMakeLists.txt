@@ -9,6 +9,7 @@ add_subdirectory(GraphCompiler/CLOptions)
 add_subdirectory(GraphCompiler/Conversion)
 add_subdirectory(GraphCompiler/Matchers)
 add_subdirectory(GraphCompiler/MODialect)
+add_subdirectory(GraphCompiler/RMODialect)
 add_subdirectory(EngineCLI)
 
 if (TARGET max-pybind-ext)
