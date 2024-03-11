@@ -120,8 +120,8 @@ fn _small_batched_matmul[
                 type: DType, width: Int, rank: Int
             ](idx: StaticIntTuple[rank]) -> SIMD[type, width]:
                 return (
-                    a_view.simd_load[width](idx[0]).cast[type]()
-                    * b_view.simd_load[width](idx[0]).cast[type]()
+                    a_view.load[width=width](idx[0]).cast[type]()
+                    * b_view.load[width=width](idx[0]).cast[type]()
                 ).cast[type]()
 
             @always_inline
@@ -183,11 +183,11 @@ fn _small_batched_matmul[
                         indices[rank - 1] = n
                         b_buf_index[rank - 1] = n
 
-                        var b_val = b_buf.simd_load[simd_width](b_buf_index)
+                        var b_val = b_buf.load[width=simd_width](b_buf_index)
 
                         c_buf.simd_store[simd_width](
                             indices,
-                            c_buf.simd_load[simd_width](indices)
+                            c_buf.load[width=simd_width](indices)
                             + a_val.cast[c_type]() * b_val.cast[c_type](),
                         )
 
@@ -202,7 +202,7 @@ fn _small_batched_matmul[
                     @parameter
                     fn apply_epilogue[width: Int](n: Int):
                         indices[rank - 1] = n
-                        var val = c_buf.simd_load[width](indices)
+                        var val = c_buf.load[width=width](indices)
                         alias func = elementwise_epilogue_fn.value()
                         func[c_type, width, rank](indices, val)
 

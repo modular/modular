@@ -79,7 +79,7 @@ fn elementwise_epilogue_c_tile[
         for idx_m in range(tile_len.M):
             var m_coord = idx_m + offset.M
             var c_coord = (m_coord, n_coord)
-            var c_val = c.simd_load[col_chunk_size](c_coord)
+            var c_val = c.load[width=col_chunk_size](c_coord)
             func[type, col_chunk_size](c_coord, c_val)
 
     vectorize[activation_on_col_chunk, simd_width](tile_len.N)
@@ -223,7 +223,7 @@ struct PackMatrixRows[
                     # This is fastest path where both row and col bounds
                     #  are skipped so the code path is simd-in and simd-out
                     #  without any predicate.
-                    row_data = self.original_matrix.simd_load[simd_size](
+                    row_data = self.original_matrix.load[width=simd_size](
                         row_global_index
                     )
                 else:
@@ -256,7 +256,7 @@ struct PackMatrixRows[
         @__copy_capture(write_bound)
         @parameter
         fn transposed_inner_row_body[idx: Int]():
-            var transposed_data = transpose_buffer.simd_load[simd_size](
+            var transposed_data = transpose_buffer.load[width=simd_size](
                 (idx, 0)
             )
             # compute the packed index
@@ -423,7 +423,7 @@ struct PackMatrixCols[
             if skip_col_bound or (
                 col_idx + simd_size <= self.valid_data_dim[1]
             ):
-                data = self.original_matrix.simd_load[simd_size](global_idx)
+                data = self.original_matrix.load[width=simd_size](global_idx)
             elif col_idx < self.valid_data_dim[1]:
                 # Starting point within bound but cannot load a whole
                 #  vector. Do a partial load.
@@ -599,7 +599,7 @@ struct LoadStoreOutputTile[
                     ]()
                     self.output_tile.simd_store(Index(row, col), data)
                 else:
-                    var data = self.output_tile.simd_load[column_step](
+                    var data = self.output_tile.load[width=column_step](
                         Index(row, col)
                     )
                     self.row_ptrs[row].offset(col).simd_store(data)
@@ -927,7 +927,7 @@ struct MatmulInnerLoopBPacked[
             @always_inline
             @parameter
             fn body_i8mm[idx0: Int, idx1: Int]():
-                var c_data = c_local.simd_load[simd_size](
+                var c_data = c_local.load[width=simd_size](
                     Index(idx0, idx1 * simd_size)
                 )
                 if skip_boundary_check or (
@@ -978,7 +978,7 @@ struct MatmulInnerLoopBPacked[
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
-            var c_data = c_local.simd_load[simd_size](
+            var c_data = c_local.load[width=simd_size](
                 Index(idx0, idx1 * simd_size)
             )
             if skip_boundary_check or (
@@ -1270,7 +1270,7 @@ struct MatmulInnerLoopBPacked[
         @unroll
         for row in range(a_row_size):
             var global_m = self.global_offset.M + row
-            var a_val = self.a.simd_load[a_col_size](global_m, global_k).cast[
+            var a_val = self.a.load[width=a_col_size](global_m, global_k).cast[
                 c_type
             ]()
             a_vals[row] = a_val
@@ -1288,7 +1288,7 @@ struct MatmulInnerLoopBPacked[
                 for row in range(a_row_size):
                     var a_val = a_vals[row]
                     var c_idx = Index(row, col * simd_size)
-                    var c_val = c_local.simd_load[simd_size](c_idx)
+                    var c_val = c_local.load[width=simd_size](c_idx)
                     c_val = fma[c_type, simd_size](a_val[lane], b_val, c_val)
                     c_local.simd_store[simd_size](c_idx, c_val)
 
@@ -2418,9 +2418,9 @@ fn _small_matmul[
                     if width == 1:
                         acc_scalar += a[m, k] * b[n, k]
                     else:
-                        acc_vector += a.simd_load[simd_width](
-                            m, k
-                        ) * b.simd_load[simd_width](n, k)
+                        acc_vector += a.load[width=simd_width](m, k) * b.load[
+                            width=simd_width
+                        ](n, k)
 
                 vectorize[compute_fn, simd_width, unroll_factor=2](K)
 
@@ -2471,8 +2471,8 @@ fn _small_matmul[
             fn _wrapper[simd_width: Int](n: Int):
                 output_func[type, simd_width](
                     Index(m, n),
-                    c.simd_load[simd_width](m, n)
-                    + a_val * b.simd_load[simd_width](k, n),
+                    c.load[width=simd_width](m, n)
+                    + a_val * b.load[width=simd_width](k, n),
                 )
 
             vectorize[_wrapper, simd_width, unroll_factor=2](N)
@@ -2738,7 +2738,7 @@ fn sgemm_warp_tiling_kernel[
                     var c_idx = (
                         thread_row_in_warp * TM + res_idx_m
                     ) * N + thread_col_in_warp * TN + res_idx_n
-                    var result_vec = thread_results.simd_load[4](
+                    var result_vec = thread_results.load[width=4](
                         Index(
                             w_sub_row_idx,
                             w_sub_col_idx,
