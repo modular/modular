@@ -518,8 +518,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       if (!passedByKw.contains(name))
         variadicKwOperands.try_emplace(name, operand);
   }
-  assert(variadicKwOperands.empty() ||
-         kwargsDict && "typechecking confirmed we have no **kwargs");
+  assert((variadicKwOperands.empty() || kwargsDict) &&
+         "typechecking confirmed we have no **kwargs");
 
   // Fill the **kwargs dict with values.
   for (auto [name, operand] : variadicKwOperands) {
