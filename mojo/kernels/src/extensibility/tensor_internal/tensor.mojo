@@ -196,6 +196,18 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         self._ptr = DTypePointer[dtype]()
 
     @always_inline
+    fn __init__(inout self, other: Self):
+        """Creates a deep copy of an existing tensor.
+
+        Args:
+            other: The tensor to copy from.
+        """
+        var num_elements = other.num_elements()
+        self._spec = other._spec
+        self._ptr = DTypePointer[dtype].alloc(num_elements)
+        memcpy(self._ptr, other._ptr, num_elements)
+
+    @always_inline
     fn __init__(inout self, *dims: Int):
         """Allocates a tensor using the shape provided.
 
