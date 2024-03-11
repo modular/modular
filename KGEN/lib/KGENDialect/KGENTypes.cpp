@@ -1069,7 +1069,7 @@ LogicalResult PackType::verify(function_ref<InFlightDiagnostic()> emitError,
 std::optional<int64_t> PackType::getTypeSize(TargetInfoAttr target) const {
   // A pack backed by an attribute has a size equivalent to a struct composed
   // of the elements in the sequence.
-  if (VariadicAttr attr = getVariadicAttr()) {
+  if (VariadicAttr attr = getVariadicIfResolved()) {
     SmallVector<Type> types;
     if (failed(resolveTypes(attr.getValues(), types)))
       return {};
@@ -1103,11 +1103,11 @@ std::optional<int64_t> PackType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 bool PackType::isEmpty() const {
-  VariadicAttr attr = getVariadicAttr();
+  VariadicAttr attr = getVariadicIfResolved();
   return attr && attr.getValues().empty();
 }
 
-VariadicAttr PackType::getVariadicAttr() const {
+VariadicAttr PackType::getVariadicIfResolved() const {
   return ::dyn_cast<VariadicAttr>(getVariadic());
 }
 

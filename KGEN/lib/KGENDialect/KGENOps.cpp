@@ -2068,7 +2068,7 @@ static ParseResult parsePackCreateType(AsmParser &p, Type &resultType,
   if (!type)
     return p.emitError(loc, "expected a pack type");
 
-  auto variadic = type.getVariadicAttr();
+  auto variadic = type.getVariadicIfResolved();
   if (!variadic) {
     // We can only infer if we know the elements of the pack type (i.e.: it is
     // backed by a variadic attribute).
@@ -2089,7 +2089,7 @@ static void printPackCreateType(OpAsmPrinter &p, Operation *op, Type resultType,
 }
 
 LogicalResult PackCreateOp::verify() {
-  VariadicAttr elementTypesAttr = getType().getVariadicAttr();
+  VariadicAttr elementTypesAttr = getType().getVariadicIfResolved();
   if (!elementTypesAttr)
     return emitOpError() << "cannot create pack with parametric element types";
   ArrayRef<TypedAttr> elementTypes = elementTypesAttr.getValues();
@@ -2133,7 +2133,7 @@ parsePackGetResultType(AsmParser &p, OpAsmParser::UnresolvedOperand packOperand,
   if (index && index.getInt() < 0)
     return p.emitError(loc) << "pack element index must not be negative";
 
-  auto variadic = packType.getVariadicAttr();
+  auto variadic = packType.getVariadicIfResolved();
   if (variadic && index) {
     if (index.getInt() >= static_cast<int64_t>(variadic.getValues().size()))
       return p.emitError(loc) << "pack element index out of bounds";
@@ -2152,7 +2152,7 @@ parsePackGetResultType(AsmParser &p, OpAsmParser::UnresolvedOperand packOperand,
 static void printPackGetResultType(OpAsmPrinter &p, Operation *op,
                                    TypedValue<PackType> pack, PackType type,
                                    TypedAttr indexAttr, Type resultType) {
-  if (!pack.getType().getVariadicAttr() || !isa<IntegerAttr>(indexAttr)) {
+  if (!pack.getType().getVariadicIfResolved() || !isa<IntegerAttr>(indexAttr)) {
     p << " -> ";
     p.printType(resultType);
   }
@@ -2165,7 +2165,7 @@ LogicalResult PackGetOp::verify() {
 
   // If we have a pack backed by an attribute, check that the provided index
   // attribute is within bounds.
-  auto variadic = getPack().getType().getVariadicAttr();
+  auto variadic = getPack().getType().getVariadicIfResolved();
   if (!variadic || !index)
     return success();
 

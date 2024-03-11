@@ -1991,6 +1991,74 @@ LogicalResult LIT::UnresolvedImportOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// RefPackCreateOp
+//===----------------------------------------------------------------------===//
+
+/// Parses a kgen.pack.create op.
+///
+/// operation ::=
+///   `lit.ref.pack.create` `(` operands `)` attr-dict `:` result-type
+///
+/// This is custom because we need to match operands at each index to the
+/// resulting pack type element at that index.
+static ParseResult parseRefPackCreateType(AsmParser &p, Type &resultType,
+                                          SmallVectorImpl<Type> &elementTypes) {
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (p.parseType(resultType))
+    return failure();
+  auto type = dyn_cast<RefPackType>(resultType);
+  if (!type)
+    return p.emitError(loc, "expected a !lit.ref.pack type");
+
+  auto variadic = type.getVariadicIfResolved();
+  if (!variadic) {
+    // We can only infer if we know the elements of the pack type (i.e.: it is
+    // backed by a variadic attribute).
+    return p.emitError(loc) << "operand types cannot be "
+                               "inferred for resulting pack type "
+                            << type;
+  }
+
+  // The operands have the same type as the elements but wrapped in a reference
+  // with the specified lifetime and addr space.
+  ArrayRef<TypedAttr> values = variadic.getValues();
+  for (TypedAttr value : values) {
+    Type eltType = RefType::get(ParamRefType::get(value), type.getLifetime(),
+                                type.getAddressSpace());
+    elementTypes.push_back(eltType);
+  }
+  return success();
+}
+
+static void printRefPackCreateType(OpAsmPrinter &p, Operation *op,
+                                   Type resultType, TypeRange elementTypes) {
+  p << resultType;
+}
+
+LogicalResult RefPackCreateOp::verify() {
+  RefPackType packType = getType();
+  VariadicAttr elementTypesAttr = packType.getVariadicIfResolved();
+  if (!elementTypesAttr)
+    return emitOpError() << "cannot create pack with parametric element types";
+  ArrayRef<TypedAttr> elementTypes = elementTypesAttr.getValues();
+  if (elementTypes.size() != getNumOperands()) {
+    return emitOpError() << "expected " << elementTypes.size()
+                         << " operands, but got " << getNumOperands();
+  }
+  for (auto [i, expected, provided] :
+       llvm::enumerate(elementTypes, getOperandTypes())) {
+    Type type =
+        RefType::get(ParamRefType::get(expected), packType.getLifetime(),
+                     packType.getAddressSpace());
+    if (type == provided)
+      continue;
+    return emitOpError() << "operand #" << i << " should have type " << type
+                         << " but got " << provided;
+  }
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TableGen generated logic.
 //===----------------------------------------------------------------------===//
 
