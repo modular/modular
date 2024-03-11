@@ -9,7 +9,7 @@
 # RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s | FileCheck %s
 
 from max.engine import EngineNumpyView
-from test_utils import linear_fill
+from closed_source_test_utils import linear_fill
 from python import Python
 
 

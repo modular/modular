@@ -8,7 +8,7 @@
 
 from max.engine import EngineTensorView, InferenceSession
 from tensor import Tensor, TensorShape
-from test_utils import linear_fill
+from closed_source_test_utils import linear_fill
 from utils.index import Index
 from python import Python
 
