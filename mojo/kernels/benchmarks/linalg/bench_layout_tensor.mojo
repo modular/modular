@@ -50,7 +50,7 @@ struct Matrix[rows: Int, cols: Int]:
         self.store[1](y, x, val)
 
     fn load[nelts: Int](self, y: Int, x: Int) -> SIMD[dtype, nelts]:
-        return self.data.simd_load[nelts](y * self.cols + x)
+        return self.data.load[width=nelts](y * self.cols + x)
 
     fn store[nelts: Int](self, y: Int, x: Int, val: SIMD[dtype, nelts]):
         return self.data.simd_store[nelts](y * self.cols + x, val)
@@ -217,7 +217,7 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
                                 n,
                                 dst_view.load[simd_size](m, n)
                                 + lhs_val
-                                * rhs_cache.load_aligned[simd_size](k, n),
+                                * rhs_cache.aligned_load[simd_size](k, n),
                             )
 
                         alias unroll_factor = tile_n // vec_size
@@ -267,7 +267,7 @@ fn matmul_layout_transposed(inout C: Matrix, A: Matrix, B: Matrix):
                         fn dot[simd_size: Int](k: Int):
                             sum = math.fma(
                                 lhs_cache.load[vec_size](m, k),
-                                rhs_cache.load_aligned[vec_size](n, k),
+                                rhs_cache.aligned_load[vec_size](n, k),
                                 sum,
                             )
 

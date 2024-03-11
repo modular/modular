@@ -36,9 +36,9 @@ fn print_mat(a_ptr: DTypePointer[DType.float32], m: Int, n: Int):
 
 
 fn gemm_naive(
-    a: NDBuffer[DType.float32, DimList.create_unknown[2]()],
-    b: NDBuffer[DType.float32, DimList.create_unknown[2]()],
-    c: NDBuffer[DType.float32, DimList.create_unknown[2]()],
+    a: NDBuffer[DType.float32, 2, shape = DimList.create_unknown[2]()],
+    b: NDBuffer[DType.float32, 2, shape = DimList.create_unknown[2]()],
+    c: NDBuffer[DType.float32, 2, shape = DimList.create_unknown[2]()],
     m: Int,
     n: Int,
     k: Int,
@@ -46,7 +46,7 @@ fn gemm_naive(
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                c[i, j] += a[i, p] * b[p, j]
+                c[(i, j)] += a[i, p] * b[p, j]
 
 
 fn kernel(
@@ -57,13 +57,13 @@ fn kernel(
     k: Int,
     kc: Int,
 ):
-    var a = Buffer[Dim(), DType.float32](a_ptr, mr * k)
-    var b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
-    var c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
+    var a = Buffer[DType.float32, size = Dim()](a_ptr, mr * k)
+    var b = Buffer[DType.float32, size = Dim()](b_ptr, k * nr)
+    var c = Buffer[DType.float32, size = Dim()](c_ptr, mr * n)
 
-    var c_local = Buffer[mr * nr, DType.float32]().aligned_stack_allocation[
-        alignment
-    ]()
+    var c_local = Buffer[
+        DType.float32, size = mr * nr
+    ]().aligned_stack_allocation[alignment]()
 
     alias nr2 = nr // simd_size
 
@@ -114,8 +114,8 @@ fn pack_B(
     kc: Int,
     nc: Int,
 ):
-    var b = Buffer[Dim(), DType.float32](b_ptr, kc * n)
-    var bc = Buffer[Dim(), DType.float32](b2_ptr, kc * n)
+    var b = Buffer[DType.float32, size = Dim()](b_ptr, k * n)
+    var bc = Buffer[DType.float32, size = Dim()](b2_ptr, k * n)
     for pr in range(kc):
         for ir in range(nc // nr):
             for v in range(nr):
@@ -186,11 +186,11 @@ fn main():
     var b2_ptr = DTypePointer[DType.float32].alloc(k * n, alignment=alignment)
     var c_ptr = DTypePointer[DType.float32].alloc(m * n, alignment=alignment)
     var c2_ptr = DTypePointer[DType.float32].alloc(m * n, alignment=alignment)
-    var a = Buffer[Dim(), DType.float32](a_ptr, m * k)
-    var b = Buffer[Dim(), DType.float32](b_ptr, k * n)
-    var b2 = Buffer[Dim(), DType.float32](b2_ptr, k * n)
-    var c = Buffer[Dim(), DType.float32](c_ptr, m * n)
-    var c2 = Buffer[Dim(), DType.float32](c2_ptr, m * n)
+    var a = Buffer[DType.float32, size = Dim()](a_ptr, m * k)
+    var b = Buffer[DType.float32, size = Dim()](b_ptr, k * n)
+    var b2 = Buffer[DType.float32, size = Dim()](b2_ptr, k * n)
+    var c = Buffer[DType.float32, size = Dim()](c_ptr, m * n)
+    var c2 = Buffer[DType.float32, size = Dim()](c2_ptr, m * n)
 
     var am = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         a_ptr, Index(m, k)
