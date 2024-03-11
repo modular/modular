@@ -1845,3 +1845,31 @@ def LIT_LoopOp: LITOp<"loop"> {
     }]>
   ];
 }
+
+//===----------------------------------------------------------------------===//
+// RefPackCreateOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_RefPackCreateOp : LITOp<"ref.pack.create", [Pure]> {
+  let summary = "create a reference pack";
+  let description = [{
+    The `kgen.ref.pack.create` operation creates a value of `!lit.ref.pack`
+    type, populated with the given SSA values.  The elements should all have
+    reference type with matching lifetime and address space.
+
+    Example:
+
+    ```mlir
+      %0 = lit.ref.pack.create(%arg0, %arg1) : ...
+    ```
+  }];
+
+  let arguments = (ins Variadic<LIT_RefType>:$elements);
+  let results = (outs LIT_RefPackType:$result);
+  let assemblyFormat = [{
+    `(` $elements `)` attr-dict `:`
+    custom<RefPackCreateType>(type($result), type($elements))
+  }];
+
+  let hasVerifier = 1;
+}

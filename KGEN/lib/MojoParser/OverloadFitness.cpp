@@ -884,7 +884,7 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
   if (auto packType = getIfPackType(signature, lastPosIdx)) {
     // NOTE: we adjust the number of user declared pos args since that
     // includes the pack itself (hence the "-1").
-    if (VariadicAttr packed = packType.getVariadicAttr())
+    if (VariadicAttr packed = packType.getVariadicIfResolved())
       if (size_t packSize = packed.getValues().size())
         return {numPosArgs - 1 + packSize, numPosArgs - 1 + packSize};
     return {0, numPosArgs - 1};
@@ -1510,7 +1510,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // If we have a pack type, it must have a known number of elements, and so
     // consume exactly that many positional operands.
     if (PackType packType = getIfPackType(signature, expectedArgIdx)) {
-      for (TypedAttr element : packType.getVariadicAttr().getValues()) {
+      for (TypedAttr element : packType.getVariadicIfResolved().getValues()) {
         if (auto result =
                 processPositionalOperand(ASTType(element), expectedConvention))
           return std::move(*result);

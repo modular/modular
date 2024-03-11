@@ -430,8 +430,7 @@ class RefOf<Type type> : ConfinedType<LIT_RefType,
 // RefPackType
 //===----------------------------------------------------------------------===//
 
-def LIT_RefPackType : LITType<"RefPack", "ref.pack",
-                        []> {
+def LIT_RefPackType : LITType<"RefPack", "ref.pack", []> {
   let summary = "a parameterized pack of by-ref values";
   let description = [{
     A `!lit.ref.pack` type represents a sequence of heterogeneously typed
@@ -474,6 +473,14 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
                                         "TypedAttr":$lifetime,
                                         "TypedAttr":$addressSpace)>,
   ];
+
+
+  let extraClassDeclaration = [{
+    /// If the pack type is concrete, returns the attribute representing the
+    /// variadic sequence that the pack type is based upon. Otherwise, returns
+    /// a null attribute.
+    VariadicAttr getVariadicIfResolved() const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//

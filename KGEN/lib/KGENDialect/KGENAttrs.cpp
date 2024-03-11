@@ -645,7 +645,7 @@ TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
 
 static ParseResult
 parsePackElements(AsmParser &p, SmallVector<TypedAttr> &values, PackType type) {
-  auto variadic = type.getVariadicAttr();
+  auto variadic = type.getVariadicIfResolved();
   if (!variadic)
     return p.emitError(p.getCurrentLocation())
            << "pack attribute expected a variadic constant type, but got "
@@ -700,7 +700,7 @@ static bool compareTypeToTypeExpr(Type type, TypedAttr expr) {
 
 LogicalResult PackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                                ArrayRef<TypedAttr> values, PackType type) {
-  auto variadic = type.getVariadicAttr();
+  auto variadic = type.getVariadicIfResolved();
   if (!variadic)
     return emitError()
            << "pack attribute expected a variadic constant type, but got "

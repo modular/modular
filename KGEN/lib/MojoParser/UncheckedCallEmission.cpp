@@ -179,7 +179,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // Operands being applied to a concrete pack type argument must be
     // converted to the pack element type at that index.
     expectedType =
-        ASTType(packType.getVariadicAttr().getValues()[sequenceIndex]);
+        ASTType(packType.getVariadicIfResolved().getValues()[sequenceIndex]);
   }
 
   switch (convention) {

@@ -709,6 +709,10 @@ RefPackType RefPackType::get(TypedAttr variadic, ArgConvention convention,
              addressSpace);
 }
 
+VariadicAttr RefPackType::getVariadicIfResolved() const {
+  return ::dyn_cast<VariadicAttr>(getVariadic());
+}
+
 //===----------------------------------------------------------------------===//
 // REPLResultRefType
 //===----------------------------------------------------------------------===//

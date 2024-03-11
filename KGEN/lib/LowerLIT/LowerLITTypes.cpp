@@ -452,7 +452,6 @@ static Value lowerOp(StructInsertOp op, StructInsertOpAdaptor adaptor,
 
   // Check to see if we need to flatten this.  Flattening an insert just
   // replaces the value.
-
   PointerUnion<KGEN::StructType, Type> resultStructType =
       lowerer.substituteStructRef(op.getType());
   if (index == 0) {
@@ -569,6 +568,13 @@ static Value lowerOp(RebindOp op, RebindOpAdaptor adaptor,
   // Otherwise just leave it and type replacement will form a valid rebind in
   // the new type domain.
   return op.getResult();
+}
+
+// lit.ref.pack.create => kgen.pack.create
+static Value lowerOp(RefPackCreateOp op, RefPackCreateOpAdaptor adaptor,
+                     LITTypeLowerer &lowerer) {
+  return lowerer.create<PackCreateOp>(
+      op.getLoc(), lowerer.replace(op.getType()), adaptor.getOperands());
 }
 
 static Value getCastedToType(Location newLoc, Value value, Type destType,
@@ -757,7 +763,7 @@ void LowerLITTypesPass::runOnOperation() {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
               RefImmutOp, RefToPointerOp, RefFromPointerOp, RefStructGEROp,
-              RefOffsetOp, RefLoadOp, RefStoreOp, RebindOp>(
+              RefOffsetOp, RefLoadOp, RefStoreOp, RebindOp, RefPackCreateOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Default([](auto) { return success(); });
   });

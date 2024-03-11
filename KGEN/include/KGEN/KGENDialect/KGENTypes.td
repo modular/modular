@@ -573,7 +573,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
     /// If the pack type is concrete, returns the attribute representing the
     /// variadic sequence that the pack type is based upon. Otherwise, returns
     /// a null attribute.
-    VariadicAttr getVariadicAttr() const;
+    VariadicAttr getVariadicIfResolved() const;
   }];
 }
 
