@@ -313,7 +313,7 @@ fn gather[
     fn load_indices[
         width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[indices.type, width]:
-        return indices_buf.simd_load[width](
+        return indices_buf.load[width=width](
             rebind[StaticIntTuple[indices.static_rank.value()]](coords)
         )
 
