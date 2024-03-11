@@ -189,10 +189,10 @@ struct Buffer[
         Returns:
             The value at the `idx` position.
         """
-        return self.simd_load[1](idx)
+        return self.load[width=1](idx)
 
     @always_inline
-    fn simd_load[width: Int](self, idx: Int) -> SIMD[type, width]:
+    fn load[*, width: Int = 1](self, idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Parameters:
@@ -944,7 +944,7 @@ struct NDBuffer[
         Returns:
             The value of the element.
         """
-        return self.simd_load[1](idx)
+        return self.load[width=1](idx)
 
     @always_inline
     fn __getitem__(self, idx: StaticIntTuple[rank]) -> Scalar[type]:
@@ -956,12 +956,10 @@ struct NDBuffer[
         Returns:
             The value of the element.
         """
-        return self.simd_load[1](idx)
+        return self.load[width=1](idx)
 
     @always_inline
-    fn simd_load[
-        width: Int,
-    ](self, *idx: Int) -> SIMD[type, width]:
+    fn load[*, width: Int = 1](self, *idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -977,11 +975,11 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.simd_load[width](idx)
+        return self.load[width=width](idx)
 
     @always_inline
-    fn simd_load[
-        width: Int,
+    fn load[
+        *, width: Int = 1
     ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1005,8 +1003,8 @@ struct NDBuffer[
         return self._offset(idx).load[width=width]()
 
     @always_inline
-    fn simd_load[
-        width: Int,
+    fn load[
+        *, width: Int = 1
     ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1023,11 +1021,11 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.simd_load[width](idx.as_tuple())
+        return self.load[width=width](idx.as_tuple())
 
     @always_inline
-    fn simd_load[
-        width: Int,
+    fn load[
+        *, width: Int = 1
     ](self, idx: StaticTuple[Int, rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 

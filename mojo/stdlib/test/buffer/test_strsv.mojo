@@ -54,7 +54,7 @@ fn strsv[
             x_vec = x_ptr.load[width=simd_width](i)
             # Move to right column by column within in a tile.
             for j in range(simd_width):
-                x_solved_vec = x_solved.simd_load[simd_width](j * simd_width)
+                x_solved_vec = x_solved.load[width=simd_width](j * simd_width)
                 L_col_vec = L_ptr.load[width=simd_width](i + j * size)
                 x_vec = x_solved_vec.fma(-L_col_vec, x_vec)
             x_ptr.simd_store[simd_width](i, x_vec)
