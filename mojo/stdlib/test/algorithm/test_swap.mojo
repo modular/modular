@@ -1,0 +1,88 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+# RUN: %mojo -debug-level full %s
+
+from algorithm import map
+from algorithm.swap import swap
+from test_utils import MoveOnly
+from testing import *
+
+
+def test_swap_Int():
+    var a: Int = 42
+    var b: Int = 24
+
+    swap(a, b)
+
+    assert_equal(a, 24)
+    assert_equal(b, 42)
+
+
+def test_swap_MoveOnlyInt():
+    var a: MoveOnly[Int] = 42
+    var b: MoveOnly[Int] = 24
+
+    swap(a, b)
+
+    assert_equal(a.data, 24)
+    assert_equal(b.data, 42)
+
+
+def test_swap_String():
+    var a: String = "Hello"
+    var b: String = "World"
+
+    swap(a, b)
+
+    assert_equal(a, "World")
+    assert_equal(b, "Hello")
+
+
+def test_swap_Tuple_Int():
+    var a = (1, 2, 3, 4)
+    var b = (5, 6, 7, 8)
+
+    swap(a, b)
+
+    assert_equal(a.get[0, Int](), 5)
+    assert_equal(a.get[1, Int](), 6)
+    assert_equal(a.get[2, Int](), 7)
+    assert_equal(a.get[3, Int](), 8)
+
+    assert_equal(b.get[0, Int](), 1)
+    assert_equal(b.get[1, Int](), 2)
+    assert_equal(b.get[2, Int](), 3)
+    assert_equal(b.get[3, Int](), 4)
+
+
+# TODO: We can not implement this test because Tuple currently can not bind to
+# memory types -- like String. In addition, Tuple does not support equality
+# comparison which requires us to manually unpack compare individual tuple
+# elements.
+#
+# https://github.com/modularml/modular/issues/27660
+#
+#  def test_swap_Tuple_Mixed():
+#
+#      var a = (1,"Hello",3)
+#      var b = (4,"World",6)
+#
+#      swap(a, b)
+#
+#      assert_equal(a.get[0, Int](), 4)
+#      assert_equal(a.get[1, String](), "World")
+#      assert_equal(a.get[2, Int](), 6)
+#
+#      assert_equal(b.get[0, Int](), 1)
+#      assert_equal(b.get[1, String](), "Hello")
+#      assert_equal(b.get[2, Int](), 3)
+
+
+def main():
+    test_swap_Int()
+    test_swap_String()
+    test_swap_Tuple_Int()
+    #  test_swap_Tuple_Mixed()
