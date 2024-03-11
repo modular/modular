@@ -20,25 +20,38 @@ struct LayoutTensor[
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
-    owning: Bool = False,
 ](CollectionElement):
     var ptr: DTypePointer[dtype, address_space]
+    var owning: Bool
 
     @always_inline
-    fn __init__(inout self, ptr: DTypePointer[dtype, address_space]):
+    fn __init__(
+        inout self,
+        ptr: DTypePointer[dtype, address_space],
+        /,
+        *,
+        owning: Bool = False,
+    ):
         self.ptr = ptr
+        self.owning = owning
 
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
         self.ptr = existing.ptr
+        self.owning = False
 
     fn __del__(owned self):
-        if owning:
+        if self.owning:
             self.ptr.free()
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
         return Self.stride[0]() * m + Self.stride[1]() * n
+
+    # FIXME: Without this __getitem__(m, n) gemm results are wrong
+    @always_inline
+    fn __getitem__(self, m: Int, n: Int) -> Scalar[dtype]:
+        return self.ptr.load[width=1](self._offset(m, n))
 
     @always_inline
     fn __getitem__(self, *dims: Int) -> Scalar[dtype]:
@@ -81,7 +94,13 @@ struct LayoutTensor[
         return self.ptr.load[width=width](self._offset(m, n))
 
     @always_inline
-    fn load_aligned[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
+    fn prefetch(self, m: Int, n: Int):
+        self.ptr.offset(self._offset(m, n)).prefetch[
+            PrefetchOptions().for_read().high_locality().to_data_cache()
+        ]()
+
+    @always_inline
+    fn aligned_load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
         alias alignment = alignof[SIMD[dtype, width]]()
         return self.ptr.aligned_simd_load[width, alignment](self._offset(m, n))
 
@@ -89,11 +108,28 @@ struct LayoutTensor[
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
         return self.ptr.simd_store[width](self._offset(m, n), val)
 
+    @always_inline
+    fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
+        alias alignment = alignof[SIMD[dtype, width]]()
+        return self.ptr.aligned_simd_store[width, alignment](
+            self._offset(m, n), val
+        )
+
     @staticmethod
     @always_inline("nodebug")
     fn stack_allocation() -> Self:
         return stack_allocation[
             layout.size(), dtype, address_space=address_space
+        ]()
+
+    @staticmethod
+    @always_inline("nodebug")
+    fn aligned_stack_allocation[alignment: Int]() -> Self:
+        return stack_allocation[
+            layout.size(),
+            dtype,
+            alignment=alignment,
+            address_space=address_space,
         ]()
 
     @staticmethod
@@ -256,15 +292,26 @@ struct TensorBuilder[
     layout: Layout = Layout(IntTuple(M, N), IntTuple(N, 1)),
 ]:
     alias Type = LayoutTensor[layout, dtype]
-    alias OwningType = LayoutTensor[layout, dtype, owning=True]
+    alias AlignedType = LayoutTensor[Self._aligned_layout(), dtype]
 
     @staticmethod
     fn Wrap(ptr: DTypePointer[dtype]) -> Self.Type:
         return Self.Type(ptr)
 
     @staticmethod
-    fn Build() -> Self.OwningType:
-        return Self.OwningType(DTypePointer[dtype].alloc(M * N))
+    fn Build() -> Self.Type:
+        return Self.Type(
+            DTypePointer[dtype].alloc(M * N, alignment=alignof[SIMD[dtype]]()),
+            owning=True,
+        )
+
+    @staticmethod
+    fn OnStack() -> Self.Type:
+        return Self.Type.stack_allocation()
+
+    @staticmethod
+    fn OnStackAligned[alignment: Int]() -> Self.Type:
+        return Self.Type.aligned_stack_allocation[alignment]()
 
     @staticmethod
     fn _aligned_layout() -> Layout:
@@ -278,11 +325,11 @@ struct TensorBuilder[
     @staticmethod
     fn BuildAligned[
         *, __target_layout: Layout = Self._aligned_layout()
-    ]() -> LayoutTensor[__target_layout, dtype, owning=True]:
+    ]() -> LayoutTensor[__target_layout, dtype]:
         var ptr = DTypePointer[dtype].alloc(
             M * int(__target_layout.stride[0]), alignment=alignof[SIMD[dtype]]()
         )
-        return LayoutTensor[__target_layout, dtype, owning=True](ptr)
+        return LayoutTensor[__target_layout, dtype](ptr, owning=True)
 
 
 fn stack_allocation_like[
