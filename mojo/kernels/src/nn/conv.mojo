@@ -986,7 +986,7 @@ struct ConvDirectNHWC[
 
             @unroll
             for j in range(micro_kernel_width):
-                var output_vec = output_micro_tile.simd_load[simd_size](
+                var output_vec = output_micro_tile.load[width=simd_size](
                     Index(i, j * simd_size)
                 )
 
@@ -3030,7 +3030,7 @@ fn conv_nhwc_direct[
             var curr_coords = rebind[StaticIntTuple[input_rank]](coords)
             curr_coords[input_rank - 1] += idx
 
-            var vec = output.simd_load[width](curr_coords)
+            var vec = output.load[width=width](curr_coords)
             elementwise_lambda(curr_coords, vec)
 
         vectorize[body, simd_size](f_size)

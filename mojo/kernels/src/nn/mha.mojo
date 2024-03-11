@@ -148,7 +148,7 @@ fn fused_attention[
         @parameter
         if add_attn_mask:
             var idx = rebind[StaticIntTuple[rank]](_out_coords)
-            fused_val += mask.simd_load[width](idx).cast[inner_type]()
+            fused_val += mask.load[width=width](idx).cast[inner_type]()
 
         score.simd_store[width](
             rebind[StaticIntTuple[rank]](_out_coords),
@@ -173,7 +173,7 @@ fn fused_attention[
                 _width: Int
             ](idx: Int) -> SIMD[DType.float32, _width]:
                 return rebind[SIMD[DType.float32, _width]](
-                    row_view.simd_load[_width](idx)
+                    row_view.load[width=_width](idx)
                 )
 
             softmax_3_pass[simd_size, Dim(), DType.float32, input_fn_1d](
@@ -1366,9 +1366,9 @@ fn _naive_attention[
     @parameter
     @always_inline
     fn scale_and_mask[width: Int, _rank: Int](coords: StaticIntTuple[_rank]):
-        var vec = score.simd_load[width](rebind[StaticIntTuple[4]](coords))
+        var vec = score.load[width=width](rebind[StaticIntTuple[4]](coords))
         vec = vec * scale.cast[type]()
-        vec = vec + mask.simd_load[width](
+        vec = vec + mask.load[width=width](
             Index(coords[_rank - 2], coords[_rank - 1])
         )
         score.simd_store[width](rebind[StaticIntTuple[4]](coords), vec)

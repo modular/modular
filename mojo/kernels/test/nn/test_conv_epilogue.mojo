@@ -226,7 +226,7 @@ fn test[
             var curr_coords = rebind[StaticIntTuple[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
-            var vec = output.simd_load[width](curr_coords)
+            var vec = output.load[width=width](curr_coords)
 
             output.simd_store(
                 curr_coords,

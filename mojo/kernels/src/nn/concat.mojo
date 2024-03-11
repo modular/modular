@@ -375,8 +375,8 @@ fn _concat_small[
             if target_dim < input.dynamic_shape[axis]:
                 var in_index = out_index
                 in_index[axis] = target_dim
-                var load = rebind[NDBuffer[type, rank]](input).simd_load[
-                    simd_width
+                var load = rebind[NDBuffer[type, rank]](input).load[
+                    width=simd_width
                 ](in_index)
                 rebind[NDBuffer[type, rank]](output).simd_store[simd_width](
                     out_index, load

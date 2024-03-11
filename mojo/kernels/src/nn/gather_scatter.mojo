@@ -194,12 +194,13 @@ fn gather_reduce[
                 ) -> StaticTuple[SIMD[type, simd_width], unroll_factor]:
                     var out = accums
                     var idxs = normalize_neg_index(
-                        indices.simd_load[unroll_factor](i, j), gather_axis_size
+                        indices.load[width=unroll_factor](i, j),
+                        gather_axis_size,
                     )
 
                     @unroll
                     for unroll_idx in range(0, unroll_factor):
-                        var gather_chunk = input.simd_load[simd_width](
+                        var gather_chunk = input.load[width=simd_width](
                             int(idxs[unroll_idx]), k
                         )
                         out[unroll_idx] = reduce_fn[type, simd_width](
@@ -299,7 +300,7 @@ fn gather[
     fn input_fn[
         width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
-        return input.simd_load[width](
+        return input.load[width=width](
             rebind[StaticIntTuple[input_rank]](coords)
         )
 
@@ -308,7 +309,7 @@ fn gather[
     fn indices_fn[
         width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[indices_type, width]:
-        return indices.simd_load[width](
+        return indices.load[width=width](
             rebind[StaticIntTuple[indices_rank]](coords)
         )
 

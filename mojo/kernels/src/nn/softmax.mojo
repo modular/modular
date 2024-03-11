@@ -101,7 +101,7 @@ fn _softmax_2_pass_step1[
     var vector_end = align_down(length, simd_width)
 
     for i in range(0, vector_end, simd_width):
-        var simd_elem = input.simd_load[simd_width](i)
+        var simd_elem = input.load[width=simd_width](i)
         var new_max_vec = SIMD[type, simd_width].splat(
             running_max_vec.max(simd_elem).reduce_max()
         )
@@ -147,7 +147,7 @@ fn _softmax_2_pass_step2[
     fn _step_2[simd_width: Int](idx: Int):
         var running_max_simd = SIMD[type, simd_width].splat(running_max)
         var running_sum_simd = SIMD[type, simd_width].splat(running_sum)
-        var input_val = input.simd_load[simd_width](idx)
+        var input_val = input.load[width=simd_width](idx)
         output.simd_store[simd_width](
             idx,
             exp(input_val - running_max_simd) / running_sum_simd,
@@ -278,7 +278,7 @@ fn _softmax_3_pass_step_3[
     @parameter
     fn step_3[simd_width: Int](idx: Int):
         var accum_simd = SIMD[type, simd_width].splat(accum_proc)
-        var elem = output.simd_load[simd_width](idx)
+        var elem = output.load[width=simd_width](idx)
         elem = accum_apply_func[type, simd_width](elem, accum_simd)
         output.simd_store[simd_width](idx, elem)
 
@@ -562,7 +562,7 @@ fn logsoftmax[
     fn input_fn[
         _simd_width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
-        return input.simd_load[_simd_width](
+        return input.load[width=_simd_width](
             rebind[StaticIntTuple[rank]](coords)
         )
 
@@ -658,7 +658,7 @@ fn softmax[
     fn input_fn[
         _simd_width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, _simd_width]:
-        return input.simd_load[_simd_width](
+        return input.load[width=_simd_width](
             rebind[StaticIntTuple[rank]](coords)
         )
 
