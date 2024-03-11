@@ -207,6 +207,12 @@ public:
     return const_cast<T &>(static_cast<const AsyncValue *>(this)->get<T>());
   }
 
+  void *getUnderlyingPtr() const;
+
+  void *getUnderlyingPtr() {
+    return static_cast<const AsyncValue *>(this)->getUnderlyingPtr();
+  }
+
   /// Return true if this AsyncValue is "Ready" and filled with a concrete
   /// value.   get() will return a value in this state.
   bool isValueAvailable() const { return getState() == State::kAvailable; }
@@ -835,6 +841,18 @@ const T &AsyncValue::get() const {
   assert(thisIndirect->value &&
          "indirect can't be constructed without being resolved");
   return thisIndirect->value->get<T>();
+}
+
+inline void *AsyncValue::getUnderlyingPtr() const {
+  if (getSubclassKind() == SubclassKind::kConcrete) {
+    auto *thisConcrete =
+        static_cast<const Detail::ConcreteAsyncValue<size_t> *>(this);
+    return reinterpret_cast<void *>(
+        const_cast<size_t *>(&thisConcrete->payload));
+  }
+
+  auto *thisIndirect = static_cast<const Detail::IndirectAsyncValue *>(this);
+  return thisIndirect->value->getUnderlyingPtr();
 }
 
 inline AsyncValue::Waiter *AsyncValue::getInlineWaiterPointer() {
