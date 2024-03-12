@@ -704,6 +704,46 @@ def TypeLineageArrayAttr : ArrayOfAttr<LITDialect, "TypeLineageArray",
                                        "type_lineage.array", "TypeLineageAttr">;
 
 //===----------------------------------------------------------------------===//
+// RefPackAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_RefPackAttr : LITAttr<"RefPack", "ref.pack", [
+    TypedAttrInterface,
+    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
+  let summary = "heterogeneous list of constant elements";
+  let description = [{
+    The `#kgen.pack` attribute contains a heterogenously typed list of constant
+    references.
+
+    Example:
+
+    ```mlir
+    // A pack of 3 elements.
+    %0 = kgen.param.constant: !lit.ref.pack<[i8, ui4, i32]> =
+         <store_to_mem(3), store_to_mem(1), store_to_mem(4)>>
+    // An empty pack.
+    %1 = kgen.param.constant: !lit.ref.pack<[]> = <<>>
+    ```
+  }];
+
+  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
+                        AttributeSelfTypeParameter<"", "RefPackType">:$type);
+
+  let assemblyFormat = [{
+    `<` (`>`) : (custom<PackElements>($values, ref($type))^ `>`)?
+  }];
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
+                                        "RefPackType":$type), [{
+      return get(type.getContext(), values, type);
+    }]>
+  ];
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // TypeConventionAttr
 //===----------------------------------------------------------------------===//
 

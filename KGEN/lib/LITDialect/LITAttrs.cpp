@@ -783,6 +783,88 @@ TypedAttr LIT::StructExtractAttr::get(MLIRContext *context,
 }
 
 //===----------------------------------------------------------------------===//
+// RefPackAttr
+//===----------------------------------------------------------------------===//
+
+static ParseResult parsePackElements(AsmParser &p,
+                                     SmallVector<TypedAttr> &values,
+                                     RefPackType packType) {
+  auto variadic = packType.getVariadicIfResolved();
+  if (!variadic)
+    return p.emitError(p.getCurrentLocation())
+           << "lit.ref.pack attribute expected a variadic constant, but got "
+           << packType.getVariadic();
+
+  // Parse one element for each type in the list.
+  return failableInterleave(
+      variadic.getValues(),
+      [&](TypedAttr eltType) {
+        return parseParamValue(
+            p, values.emplace_back(),
+            packType.getElementRefTypeFor(ParamRefType::get(eltType)));
+      },
+      [&] { return p.parseComma(); });
+}
+
+static void printPackElements(AsmPrinter &p, ArrayRef<TypedAttr> values,
+                              RefPackType type) {
+  llvm::interleaveComma(values, p,
+                        [&](TypedAttr value) { printParamValue(p, value); });
+}
+
+OptionalParseResult RefPackType::parseValue(AsmParser &p,
+                                            TypedAttr &value) const {
+  if (failed(p.parseOptionalLess()))
+    return std::nullopt;
+  SmallVector<TypedAttr> values;
+  if (failed(parsePackElements(p, values, *this)))
+    return failure();
+
+  value = RefPackAttr::get(values, *this);
+  return p.parseGreater();
+}
+
+LogicalResult RefPackType::printValue(AsmPrinter &p, TypedAttr value) const {
+  auto packAttr = ::dyn_cast<RefPackAttr>(value);
+  if (!packAttr)
+    return failure();
+
+  p << "<";
+  printPackElements(p, packAttr.getValues(), *this);
+  p << ">";
+  return success();
+}
+
+LogicalResult RefPackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                                  ArrayRef<TypedAttr> values,
+                                  RefPackType packType) {
+  auto variadic = packType.getVariadicIfResolved();
+  if (!variadic)
+    return emitError()
+           << "pack attribute expected a variadic constant, but got "
+           << packType.getVariadic();
+
+  ArrayRef<TypedAttr> expected = variadic.getValues();
+  if (values.size() != expected.size())
+    return emitError() << "pack attribute type requires " << expected.size()
+                       << " elements, but got " << values.size();
+
+  // Check that the element constants have the right types.
+  for (auto [i, value, type] :
+       llvm::zip(llvm::seq<size_t>(0, expected.size()), values, expected)) {
+    auto eltType = packType.getElementRefTypeFor(ParamRefType::get(type));
+    if (value.getType() != eltType)
+      return emitError() << "pack attribute element #" << i << " has type "
+                         << value.getType() << " but expected " << type;
+  }
+  return success();
+}
+
+bool RefPackAttr::isConstant() const {
+  return llvm::all_of(getValues(), ParameterAttr::isSimpleConstant);
+}
+
+//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

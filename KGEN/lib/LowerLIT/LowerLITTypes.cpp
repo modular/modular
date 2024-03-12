@@ -275,6 +275,17 @@ Attribute LITTypeLowerer::replace(Attribute attr) {
         anyRegTypeType);
   };
 
+  // #lit.ref.pack => #kgen.pack
+  auto processRefPackAttr = [&](RefPackAttr refPack) {
+    SmallVector<TypedAttr> loweredElts;
+    loweredElts.reserve(refPack.getValues().size());
+    for (auto elt : refPack.getValues())
+      loweredElts.push_back(cast<TypedAttr>(replace(elt)));
+    // for (auto elt : elts
+    return KGEN::PackAttr::get(loweredElts,
+                               cast<PackType>(replace(refPack.getType())));
+  };
+
   Attribute result = attr;
   if (auto sattr = dyn_cast<LITStructAttr>(attr)) {
     result = processStructAttr(sattr);
@@ -284,8 +295,8 @@ Attribute LITTypeLowerer::replace(Attribute attr) {
     result = processBindType(bind);
   } else if (isa<LifetimeAttr, LifetimeUnionAttr, LifetimeMutCastAttr>(attr)) {
     result = emptyStructAttr; // #lit.lifetime => #kgen.struct<>
-  } else if (auto paramDRE = dyn_cast<ParamDeclRefAttr>(attr)) {
-    result = replaceImpl<Attribute, Attribute>(attr);
+  } else if (auto refPack = dyn_cast<RefPackAttr>(attr)) {
+    result = processRefPackAttr(refPack);
   } else {
     // Recursively replace attributes.
     result = replaceImpl<Attribute, Attribute>(attr);

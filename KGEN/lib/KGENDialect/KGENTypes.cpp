@@ -1102,7 +1102,7 @@ std::optional<int64_t> PackType::getTypeAlign(TargetInfoAttr target) const {
   return DataLayoutInterface::getTypeABIAlign(target, type);
 }
 
-bool PackType::isEmpty() const {
+bool PackType::isEmpty() {
   VariadicAttr attr = getVariadicIfResolved();
   return attr && attr.getValues().empty();
 }

@@ -2023,8 +2023,7 @@ static ParseResult parseRefPackCreateType(AsmParser &p, Type &resultType,
   // with the specified lifetime and addr space.
   ArrayRef<TypedAttr> values = variadic.getValues();
   for (TypedAttr value : values) {
-    Type eltType = RefType::get(ParamRefType::get(value), type.getLifetime(),
-                                type.getAddressSpace());
+    Type eltType = type.getElementRefTypeFor(ParamRefType::get(value));
     elementTypes.push_back(eltType);
   }
   return success();
@@ -2047,9 +2046,7 @@ LogicalResult RefPackCreateOp::verify() {
   }
   for (auto [i, expected, provided] :
        llvm::enumerate(elementTypes, getOperandTypes())) {
-    Type type =
-        RefType::get(ParamRefType::get(expected), packType.getLifetime(),
-                     packType.getAddressSpace());
+    Type type = packType.getElementRefTypeFor(ParamRefType::get(expected));
     if (type == provided)
       continue;
     return emitOpError() << "operand #" << i << " should have type " << type
@@ -2089,6 +2086,7 @@ parsePackGetResultType(AsmParser &p, OpAsmParser::UnresolvedOperand packOperand,
       return p.emitError(loc) << "pack element index out of bounds";
 
     resultType = ParamRefType::get(variadic.getValues()[index.getInt()]);
+    resultType = packType.getElementRefTypeFor(resultType);
     return success();
   }
 
@@ -2105,7 +2103,7 @@ static void printPackGetResultType(OpAsmPrinter &p, Operation *op,
                                    Type resultType) {
   if (!pack.getType().getVariadicIfResolved() || !isa<IntegerAttr>(indexAttr)) {
     p << " -> ";
-    p.printType(resultType);
+    p.printType(cast<RefType>(resultType).getElementType());
   }
 }
 
@@ -2127,8 +2125,7 @@ LogicalResult RefPackGetOp::verify() {
            << index << " is out of bounds (>=" << values.size() << ")";
   TypedAttr value = values[index.getInt()];
 
-  Type eltType = RefType::get(ParamRefType::get(value), packType.getLifetime(),
-                              packType.getAddressSpace());
+  Type eltType = packType.getElementRefTypeFor(ParamRefType::get(value));
 
   if (eltType != getType()) {
     return emitOpError("result")
