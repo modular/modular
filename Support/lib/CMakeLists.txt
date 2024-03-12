@@ -35,6 +35,7 @@ add_modular_library(MSupport
   TypeID.cpp
   URI.cpp
   Version.cpp
+  VisualizationUtils.cpp
 
   LINK_LIBS PUBLIC
   LLVMSupport
