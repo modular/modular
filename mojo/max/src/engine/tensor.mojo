@@ -164,15 +164,16 @@ struct EngineTensorView:
 @value
 @register_passable
 struct EngineNumpyView:
-    """A non-owning register_passable view of a numpy array.
+    """A register_passable view of a numpy array.
 
-    CAUTION: Make sure the source array outlives the view.
+    Keeps its own reference to the NumPy PythonObject, so there is no need to
+    manually keep the Python object alive after construction.
     """
 
     var _np: _Numpy
-    var _ptr: Pointer[PythonObject]
+    var _obj: PythonObject
 
-    fn __init__(inout tensor: PythonObject) raises -> Self:
+    fn __init__(tensor: PythonObject) raises -> Self:
         """Creates a non-owning view of given numpy array.
 
         Args:
@@ -181,9 +182,7 @@ struct EngineNumpyView:
         Returns:
             An instance of EngineNumpyView of given array.
         """
-        return Self {
-            _np: _Numpy(), _ptr: Pointer[PythonObject].address_of(tensor)
-        }
+        return Self {_np: _Numpy(), _obj: tensor}
 
     fn data(self) raises -> DTypePointer[DType.invalid]:
         """Returns type erased pointer to the start of numpy array.
@@ -191,7 +190,7 @@ struct EngineNumpyView:
         Returns:
             DTypePointer of given type.
         """
-        var data_ptr = self._ptr[].ctypes.data.__index__()
+        var data_ptr = self._obj.ctypes.data.__index__()
         return bitcast[DType.invalid](data_ptr)
 
     fn dtype(self) raises -> DType:
@@ -200,7 +199,7 @@ struct EngineNumpyView:
         Returns:
             DataType of the array backing the view.
         """
-        var self_type = self._ptr[].dtype
+        var self_type = self._obj.dtype
         if self_type == self._np.int8:
             return DType.int8
         if self_type == self._np.int16:
@@ -239,7 +238,7 @@ struct EngineNumpyView:
         @parameter
         fn get_spec[ty: DType]() raises -> TensorSpec:
             var shape = List[Int]()
-            var array_shape = self._ptr[].shape
+            var array_shape = self._obj.shape
             for dim in array_shape:
                 shape.push_back(dim.__index__())
             return TensorSpec(ty, shape)
