@@ -23,6 +23,14 @@ namespace M {
 /// This value must match max_rank in Kernels/mojo/Stdlib/Buffer.mojo
 constexpr size_t kMaxRank = 8;
 
+/// The value representing dynamic dimension in TensorShape and TensorSpec.
+/// This value can be retrieved by M_getDynamicDimensionValue in C API.
+constexpr int64_t kDynamicDimensionValue = -1;
+
+/// The value representing dynamic rank in TensorShape and TensorSpec.
+/// This value can be retrieved by M_getDynamicRankValue in C API.
+constexpr int64_t kDynamicRankValue = -1;
+
 /// Flag to signal construction of dynamic ranked shapes.
 enum TensorRankStyle { kStaticallyRanked = 0, kDynamicallyRanked = 1 };
 
