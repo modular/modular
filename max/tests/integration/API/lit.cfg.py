@@ -28,6 +28,7 @@ config.test_exec_root = os.path.join(
 config.substitutions.append(
     ("%modelsdir", str(Path(config.modular_src_root) / "Models"))
 )
+config.substitutions.append(("%pyexe", sys.executable))
 
 tool_dirs = [
     config.modular_tools_dir,

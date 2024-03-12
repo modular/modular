@@ -6,7 +6,19 @@
 # COM: See #34373 - flaky test
 # REQUIRES: disabled
 # UNSUPPORTED: windows
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %S/model_different_input_output.mlir %S/model_different_dtypes.mlir | FileCheck %s
+# Mojo requires that the "python3" executable on PATH be usable to determine
+# the location of site-packages.  We don't know that the user is using the
+# autovenv, so we can't just prepend the autovenv bin to the PATH, and we
+# wouldn't want all the executables in there anyway.  Symbolic link also fails
+# because Python can't find its pyvenv.cfg file.  So we need to create a stub
+# bin directory containing a shell script causing python3 to be re-exec'ed with
+# its original argv0, just so Mojo's Python can find the site-packages so that
+# the Engine's NumPy import works.
+# RUN: rm -rf %t/bin
+# RUN: mkdir -p %t/bin
+# RUN: printf '#!/bin/bash\nexec "%%s" "$@"\n' %pyexe > %t/bin/python3
+# RUN: chmod +x %t/bin/python3
+# RUN: env "PATH=%t/bin:$PATH" %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %S/model_different_input_output.mlir %S/model_different_dtypes.mlir | FileCheck %s
 
 from max.engine import (
     InferenceSession,
@@ -18,11 +30,12 @@ from sys import argv
 from tensor import Tensor, TensorShape
 from closed_source_test_utils import linear_fill
 from pathlib import Path
+from python import Python
 
 
+# CHECK-LABEL: ==== test_model_num_io_and_names
 fn test_model_num_io_and_names() raises:
-    # CHECK: test_model_num_io_and_names
-    print("====test_model_num_io_and_names")
+    print("==== test_model_num_io_and_names")
 
     var args = argv()
     var model_path = args[1]
@@ -52,9 +65,9 @@ fn test_model_num_io_and_names() raises:
     print(output_names[0])
 
 
+# CHECK-LABEL: ==== test_model_metadata
 fn test_model_metadata() raises:
-    # CHECK: test_model_metadata
-    print("====test_model_metadata")
+    print("==== test_model_metadata")
 
     var args = argv()
     var model_path = args[1]
@@ -87,9 +100,9 @@ fn test_model_metadata() raises:
         print(output[].get_dtype())
 
 
+# CHECK-LABEL: ==== test_model_mismatched_input_output_count
 fn test_model_mismatched_input_output_count() raises:
-    # CHECK: test_model_mismatched_input_output_count
-    print("====test_model_mismatched_input_output_count")
+    print("==== test_model_mismatched_input_output_count")
 
     var args = argv()
     var model_path = args[2]
@@ -124,9 +137,9 @@ fn test_model_mismatched_input_output_count() raises:
     print(output_names[0])
 
 
+# CHECK-LABEL: ==== test_model
 fn test_model() raises:
-    # CHECK: test_model
-    print("====test_model")
+    print("==== test_model")
 
     var args = argv()
     var model_path = args[1]
@@ -154,9 +167,9 @@ fn test_model() raises:
     print(expected_output == output_tensor)
 
 
+# CHECK-LABEL: ==== test_model_tuple_input
 fn test_model_tuple_input() raises:
-    # CHECK: test_model_tuple_input
-    print("====test_model_tuple_input")
+    print("==== test_model_tuple_input")
 
     var args = argv()
     var model_path = args[1]
@@ -180,9 +193,9 @@ fn test_model_tuple_input() raises:
     print(expected_output == output_tensor)
 
 
+# CHECK-LABEL: ==== test_model_tuple_input_different_dtypes
 fn test_model_tuple_input_different_dtypes() raises:
-    # CHECK: test_model_tuple_input_different_dtypes
-    print("====test_model_tuple_input_different_dtypes")
+    print("==== test_model_tuple_input_different_dtypes")
 
     var args = argv()
     var model_path = args[3]
@@ -209,9 +222,9 @@ fn test_model_tuple_input_different_dtypes() raises:
     print(input_tensor_int == output_tensor)
 
 
+# CHECK-LABEL: ==== test_model_tuple_input_dynamic
 fn test_model_tuple_input_dynamic() raises:
-    # CHECK: test_model_tuple_input_dynamic
-    print("====test_model_tuple_input_dynamic")
+    print("==== test_model_tuple_input_dynamic")
 
     var args = argv()
     var model_path = args[1]
@@ -237,6 +250,28 @@ fn test_model_tuple_input_dynamic() raises:
     print(expected_output == output_tensor)
 
 
+# CHECK-LABEL: ==== test_model_py_dict_execute
+fn test_model_py_dict_execute() raises:
+    print("==== test_model_py_dict_execute")
+
+    var model_path = Path(argv()[1])
+    var session = InferenceSession()
+    var model = session.load_model(model_path)
+    var inputs = Python.evaluate(
+        "{'input': __import__('numpy').arange(5).astype('float32')}"
+    )
+    var outputs = model.execute(inputs)
+    var output_tensor = outputs.get[DType.float32]("output")
+
+    # CHECK: 5xfloat32
+    print(str(output_tensor.spec()))
+
+    var expected_output = Tensor[DType.float32](5)
+    linear_fill(expected_output, 3.0, 2.0, -4.0, 5.0, 9.0)
+    # CHECK: True
+    print(expected_output == output_tensor)
+
+
 fn main() raises:
     test_model_num_io_and_names()
     test_model_metadata()
@@ -245,3 +280,4 @@ fn main() raises:
     test_model_tuple_input()
     test_model_tuple_input_different_dtypes()
     test_model_tuple_input_dynamic()
+    test_model_py_dict_execute()
