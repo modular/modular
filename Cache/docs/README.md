@@ -108,11 +108,6 @@ virtual bool containsImpl(StringRef keyHash) const = 0;
 /// Subclasses should use this to provide the implementation of getting an
 /// item from storage.
 virtual CacheFindResult findImpl(StringRef keyHash) const = 0;
-/// Subclasses should use this to provide the implementation of clearing the
-/// cache. Subclasses may choose not to provide this, for example, a cloud
-/// storage backend may not wish to actually clear all its storage. Backends
-/// are advised to kick off a clear operation asynchronously.
-virtual ErrorOrSuccess clearImpl() { return success(); }
 ```
 
 ### KeyInfo
@@ -131,8 +126,8 @@ struct KeyInfo {
 ### BlobCache
 
 The [BlobCache](../include/Cache/BlobCache.h) has an API like `llvm::DenseMap`
-with `insert`, `contains`, `find`, and `clear`. It is templated on KeyInfo,
-which enables the user to use any C++ type as the key. It uses a linked-list of
+with `insert`, `contains`, and `find`. It is templated on KeyInfo, which
+enables the user to use any C++ type as the key. It uses a linked-list of
 backends to provide its storage hierarchy. The BlobCache API is fully async,
 enabling the user to kick off a cache operation and chain other computation off
 its result. This is important because in the future this may kick off a network

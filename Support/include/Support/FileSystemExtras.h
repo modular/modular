@@ -105,6 +105,31 @@ private:
   bool keepFile = false;
 };
 
+/// This class provides a temporary directory, in the same fashion as TempFile.
+class TempDir {
+public:
+  /// See TempFile::create.
+  static ErrorOr<TempDir> create(StringRef model);
+  TempDir(TempDir &&other);
+  ~TempDir();
+
+  /// Keep the directory after the destructor.
+  void keep() { keepFile = true; }
+
+  /// Remove the directory.
+  void remove();
+
+  /// Return the path to the directory.
+  const std::filesystem::path &getPath() const { return path; }
+
+private:
+  TempDir(std::filesystem::path path) : path(std::move(path)) {}
+  TempDir(const TempDir &other) = delete;
+
+  std::filesystem::path path;
+  bool keepFile = false;
+};
+
 /// Invokes the provided callback, writing the output to a temporary file whose
 /// name is based on the provided model.
 ErrorOr<TempFile> writeTempFile(const Twine &model,

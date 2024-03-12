@@ -69,10 +69,6 @@ public:
        std::optional<WriteableBufferRef> backingBuf = std::nullopt,
        std::optional<EncodedLocation> loc = std::nullopt);
 
-  /// Clear out this backend and its delegates.
-  virtual LLCL::AsyncValueRef<LLCL::Chain>
-  clear(std::optional<EncodedLocation> loc = std::nullopt);
-
   /// Add delegate to the end of the backend chain.
   void appendDelegate(RCRef<BlobCacheBackend> d);
 
@@ -99,11 +95,6 @@ protected:
            std::optional<WriteableBufferRef> backingBuf = std::nullopt) const {
     return Error("findImpl not implemented");
   }
-  /// Subclasses should use this to provide the implementation of clearing the
-  /// cache. Subclasses may choose not to provide this, for example, a cloud
-  /// storage backend may not wish to actually clear all its storage. Backends
-  /// are advised to kick off a clear operation asynchronously.
-  virtual ErrorOrSuccess clearImpl() { return success(); }
 
   /// Use delegate to insert an item and set the status in the provided
   /// AsyncValue. This is called by the default insert, and can optionally be
@@ -126,11 +117,6 @@ protected:
                     BufferRef keyHash,
                     std::optional<WriteableBufferRef> backingBuf,
                     std::optional<EncodedLocation> loc = std::nullopt);
-
-  /// Clear delegate cache. This is called by the default clear, and can
-  /// optionally be used by subclasses that override clear.
-  void delegateClear(LLCL::AsyncValueRef<LLCL::Chain> result,
-                     std::optional<LLCL::EncodedLocation> loc = std::nullopt);
 
   /// The LLCL runtime we should use for managing asynchrony.
   LLCL::Runtime &runtime;
@@ -291,11 +277,6 @@ public:
     // Do the find, and return the map.
     backendList->find(map, std::move(backingBuf), std::move(loc));
     return map;
-  }
-
-  LLCL::AsyncValueRef<LLCL::Chain>
-  clear(std::optional<EncodedLocation> loc = std::nullopt) {
-    return backendList->clear(std::move(loc));
   }
 
 private:

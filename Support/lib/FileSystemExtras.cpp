@@ -261,6 +261,36 @@ ErrorOr<size_t> TempFile::getSize() {
   return size;
 }
 
+ErrorOr<TempDir> TempDir::create(StringRef model) {
+  std::filesystem::path dir;
+  {
+    // Create an delete a temporary file.
+    auto file = TempFile::create(model);
+    if (file.isError())
+      return file.takeError();
+    dir = file->getPath();
+  }
+  // Create the directory.
+  std::error_code ec;
+  std::filesystem::create_directory(dir, ec);
+  if (ec)
+    return Error(ec.message());
+  return TempDir(dir);
+}
+
+TempDir::TempDir(TempDir &&other) : path(other.path) {
+  other.keep(); // Don't remove on destruction.
+}
+
+TempDir::~TempDir() { remove(); }
+
+void TempDir::remove() {
+  if (!keepFile) {
+    std::error_code ec;
+    std::filesystem::remove_all(path, ec);
+  }
+}
+
 /// Open the filename with a given alignment (if specified) as the argument and
 /// return a memory buffer, or an error message on failure.
 ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
