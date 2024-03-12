@@ -58,17 +58,6 @@ public:
        std::optional<WriteableBufferRef> backingBuf = std::nullopt,
        std::optional<EncodedLocation> loc = std::nullopt);
 
-  /// Get all the items in `map` and emplace the AsyncValueRefs contained
-  /// therein. The caller must ensure that the AsyncValueRef objects are
-  /// allocated, this method will emplace them. This simply provides a default
-  /// implementation - backends are expected to override this method if they
-  /// wish to handle group finds differently than multiple individual finds. If
-  /// `backingBuf` is provided, then we can return offsets to it.
-  virtual void
-  find(llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> &map,
-       std::optional<WriteableBufferRef> backingBuf = std::nullopt,
-       std::optional<EncodedLocation> loc = std::nullopt);
-
   /// Add delegate to the end of the backend chain.
   void appendDelegate(RCRef<BlobCacheBackend> d);
 
@@ -236,47 +225,6 @@ public:
     auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
     return backendList->find(std::move(hash), std::move(backingBuf),
                              std::move(loc));
-  }
-
-  /// Get the items from any of the provided backends. This will attempt to
-  /// fetch all the items in the array `keys`. Returns a map from the key's hash
-  /// to the returned buffer. Every key will be found in the returned map, but
-  /// the value may resolve to std::nullopt if it's not found in the cache. In
-  /// case of an error, the individual entries will be set to error.
-  // TODO: Provide a version that can take a single writable buffer and return
-  //       aliases to it.
-  llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>>
-  find(ArrayRef<KeyTy> keys,
-       std::optional<EncodedLocation> loc = std::nullopt) {
-    llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> map;
-    for (auto k : keys) {
-      map[KeyInfo::hashKey(std::forward<KeyTy>(k))] =
-          AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
-    }
-
-    // Do the find, and return the map.
-    backendList->find(map, std::nullopt, std::move(loc));
-    return map;
-  }
-
-  /// Get the items from any of the provided backends. This will attempt to
-  /// fetch all the items in the array `keys`. Returns a map from the key's hash
-  /// to the returned buffer. Every key will be found in the returned map, but
-  /// the value may resolve to std::nullopt if it's not found in the cache. In
-  /// case of an error, the individual entries will be set to error. All the
-  /// returned BufferRefs will be offsets into `backingBuf`.
-  llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>>
-  find(ArrayRef<KeyTy> keys, WriteableBufferRef backingBuf,
-       std::optional<EncodedLocation> loc = std::nullopt) {
-    llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> map;
-    for (auto k : keys) {
-      map[KeyInfo::hashKey(std::forward<KeyTy>(k))] =
-          AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
-    }
-
-    // Do the find, and return the map.
-    backendList->find(map, std::move(backingBuf), std::move(loc));
-    return map;
   }
 
 private:
