@@ -73,6 +73,22 @@ struct Model:
             raise status.__str__()
         return TensorMap(outputs, self._lib, self._session.copy())
 
+    fn execute(self, inputs: PythonObject) raises -> TensorMap:
+        """Execute model with given inputs.
+
+        Args:
+            inputs:
+                Inputs as a Python object, which must be a dictionary with
+                string keys (matching input names) and NumPy array values.
+
+        Returns:
+            A TensorMap with output names as keys.
+        """
+        var input_map = self._session.new_tensor_map()
+        for py_pair in inputs.items():
+            input_map.borrow(str(py_pair[0]), EngineNumpyView(py_pair[1]))
+        return self.execute(input_map)
+
     fn _execute_view[
         key_type: AnyRegType, value_type: AnyRegType
     ](
