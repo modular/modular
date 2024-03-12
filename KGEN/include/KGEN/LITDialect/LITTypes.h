@@ -20,6 +20,7 @@
 namespace M::KGEN::LIT {
 class PogsAttr;
 class FnMetadataAttr;
+class RefPackType;
 class SymbolAttr;
 enum class PassingKind : uint32_t;
 
@@ -88,6 +89,9 @@ public:
 
   /// Returns true if the argument at this index is a pack vararg.
   bool isPackVarArg(size_t index);
+
+  /// If the specified argument is a variadic pack, return the RefPackType.
+  RefPackType getIfRefPackType(size_t index);
 
   /// Returns true if the signature has variadic parameters.
   bool hasParamVarArgs();

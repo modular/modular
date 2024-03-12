@@ -138,7 +138,6 @@ fn exampleByRefVariadic(a: FloatLiteral, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
 
-# expected-error @+1 {{'owned' @register_passable arguments cannot be variadic}}
 fn ownedPack[*Ts: __mlir_type.`!kgen.type`](owned *args: *Ts): pass
 fn ownedVariadic(owned *args: Inner): pass
 # expected-error @+1 {{'owned' @register_passable arguments cannot be variadic}}

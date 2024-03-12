@@ -526,7 +526,47 @@ ParameterInferenceState::infer(LITSignatureType signature,
 
     // If we have a pack argument, then we're binding a variadic parameter with
     // multiple type values.  We need to consume all remaining arguments and use
-    // their types as bindings.
+    // their RValue types as bindings.
+    if (RefPackType packType = signature.getIfRefPackType(expectedArgIdx)) {
+      SmallVector<TypedAttr> types;
+      Type elementType = packType.getVariadicElementType();
+      ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
+      SyntheticNode node(shared.getTopLevelDecl().getLoc());
+      while (posOperandIdx != numPosOperands) {
+        ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
+        CValue value = operand.ir.getIfCValue();
+        if (!value) {
+          shared.emitWarning(operand.expr->getLoc(),
+                             "could not infer parameter type for this value, "
+                             "because it is not concrete");
+          return {};
+        }
+        ASTType toPush = value.getRValueType();
+        // Infer nonmaterializable types as their materialization target.
+        if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
+          toPush = nmTarget;
+        Type metatype = toPush.getMetaType();
+        TypedAttr actualAttr = TypeConstantAttr::get(
+            toPush, metatype ? metatype : TypeType::get(shared.getContext()));
+        if (!emitter.canImplicitlyConvertToType({actualAttr, node},
+                                                elementType))
+          return {};
+        // Perform a conversion (e.g. from a concrete to trait type) as needed.
+        PValue result = emitter.emitPValue({actualAttr, node},
+                                           EC_TypeParamValue, elementType);
+        if (!result)
+          return {};
+        types.push_back(result);
+      }
+
+      // Infer the value of type list from the types we have.
+      auto variadicType = cast<VariadicType>(packType.getVariadic().getType());
+      matchParams(VariadicAttr::get(types, variadicType),
+                  packType.getVariadic());
+      continue;
+    }
+
+    // TODO(references): Remove this when PackType is no longer used.
     if (auto packType = getIfPackType(signature, expectedArgIdx)) {
       SmallVector<TypedAttr> types;
       auto variadicType = cast<VariadicType>(packType.getVariadic().getType());
@@ -856,11 +896,11 @@ InflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
 
 /// Calculate the minimum required and maximum allowed number of positional
 /// operands for a signature, assuming that the signature has a variadic pack;
-/// NOTE: this function heavily assumes that a signature has at most
-/// one pack variadic argument and that variadics are always the last positional
-/// args.
 static std::pair<size_t, size_t>
 calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
+  // This function heavily assumes that a signature has at most
+  // one pack variadic argument and that variadics are always the last
+  // positional args.
   size_t numPosArgs = countNumPositional(signature.getArgPassingKinds());
 
   // We don't require any positional operands (because this function does not
@@ -881,6 +921,16 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
   // arguments with default values: the pack cannot have a default value and
   // _must_ be provided positional operands explicitly, and therefore the
   // preceding defaults won't be used anyway.
+  if (RefPackType packType = signature.getIfRefPackType(lastPosIdx)) {
+    VariadicAttr packed = packType.getVariadicIfResolved();
+    assert(packed && "caller always knows what is passed");
+    // NOTE: we adjust the number of user declared pos args since that
+    // includes the pack itself (hence the "-1").
+    size_t packSize = packed.getValues().size();
+    return {numPosArgs - 1 + packSize, numPosArgs - 1 + packSize};
+  }
+
+  // TODO(references): Remove this when PackType is no longer used.
   if (auto packType = getIfPackType(signature, lastPosIdx)) {
     // NOTE: we adjust the number of user declared pos args since that
     // includes the pack itself (hence the "-1").
@@ -1509,6 +1559,17 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
     // If we have a pack type, it must have a known number of elements, and so
     // consume exactly that many positional operands.
+    if (RefPackType packType = signature.getIfRefPackType(expectedArgIdx)) {
+      for (TypedAttr element : packType.getVariadicIfResolved().getValues()) {
+        if (auto result =
+                processPositionalOperand(ASTType(element), expectedConvention))
+          return std::move(*result);
+        passesVarArgArgument = true;
+      }
+      continue;
+    }
+
+    // TODO(references): Remove this when PackType is no longer used.
     if (PackType packType = getIfPackType(signature, expectedArgIdx)) {
       for (TypedAttr element : packType.getVariadicIfResolved().getValues()) {
         if (auto result =

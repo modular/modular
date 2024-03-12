@@ -518,10 +518,12 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
 }
 
 /// This function creates a new anonymous lifetime decl for the specified
-/// argument, and wraps the type with a reference using that lifetime.
-static std::pair<ParamDeclAttr, RefType>
-getRefAndLifetimeForAddressArgument(ParsedArgument &arg, size_t idx, Type type,
-                                    ASTDecl &declScope) {
+/// argument, and wraps the type with a RefType using that lifetime.
+static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
+                                         Type type,
+                                         TypeCheckedFnSignature &tcSignature) {
+  ASTDecl &declScope = tcSignature.paramList.declScope;
+
   StringAttr lifetimeName;
   if (arg.name) {
     lifetimeName = declScope.mangleParamName(arg.name.strref());
@@ -535,23 +537,28 @@ getRefAndLifetimeForAddressArgument(ParsedArgument &arg, size_t idx, Type type,
   auto lifetimeDecl = ParamDeclAttr::get(
       lifetimeName, LifetimeType::get(lifetimeName.getContext(), isMutable));
 
-  auto refType = RefType::get(
+  // Tell the signature about the new lifetime decl.
+  tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
+
+  return RefType::get(
       type, ParamDeclRefAttr::get(lifetimeName, lifetimeDecl.getType()));
-  return {lifetimeDecl, refType};
 }
 
 // If this argument is a pack vararg like "*args: *Ts" then the argument
 // expression is "Ts", and the star before it was syntactically parsed.
 // This expression must be a PValue of variadic metatype.  We need to
 // process it into a PackType.
-static Type typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg,
-                                               ExprEmitter &emitter) {
+static Type
+typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg, size_t argIdx,
+                                   ExprEmitter &emitter,
+                                   TypeCheckedFnSignature &tcSignature) {
   assert(arg.vararg == VarArgKind::PackVarArg &&
          "this applies to pack arguments");
 
   PValue param = emitter.emitExprPValue(arg.typeExpr, EC_Type);
   if (!param) // Error emitting the expression is already diagnosed.
     return {};
+
   // Make sure the param value is a variadic list of types.
   VariadicType paramVariadicType =
       dyn_cast<VariadicType>(param.getRValueType().mlirType);
@@ -561,7 +568,6 @@ static Type typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg,
         << arg.typeExpr->getRange();
     return {};
   }
-
   Type elementType = paramVariadicType.getElementType();
   if (!isa<MetaTypeType, TypeType, TraitType>(elementType)) {
     emitter.emitError(arg.typeExpr->getLoc(),
@@ -570,7 +576,38 @@ static Type typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg,
     return {};
   }
 
-  return PackType::get(param.get());
+  // If the pack is over an "AnyRegType" list, use the KGEN direct
+  // representation for compatibility.
+  // TODO: Move to RefPackType consistently.
+  if (isa<TypeType>(elementType) ||
+
+      arg.convention != ParsedArgument::kConventionOwned)
+    return PackType::get(param.get());
+
+  ArgConvention convention;
+  switch (arg.convention) {
+  case ParsedArgument::kConventionByRefResult:
+  case ParsedArgument::kConventionInitSelfResult:
+    llvm_unreachable("can't occur in argument packs");
+  case ParsedArgument::kConventionUnspec:
+  case ParsedArgument::kConventionBorrowed:
+    convention = ArgConvention::BorrowedInMem;
+    break;
+  case ParsedArgument::kConventionOwned:
+    convention = ArgConvention::OwnedInMem;
+    break;
+  case ParsedArgument::kConventionInOut:
+    convention = ArgConvention::ByRef;
+    break;
+  }
+
+  // Arguments passed by memory need an associated lifetime parameter, and need
+  // to be passed by reference.
+  RefType refType =
+      makeImplicitRefTypeForArg(arg, argIdx, elementType, tcSignature);
+
+  return RefPackType::get(param.get(), convention, refType.getLifetime(),
+                          refType.getAddressSpace());
 }
 
 /// Type check each argument in turn, resolving their type and default
@@ -598,7 +635,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     } else {
       // Ts in "*args: *Ts" is a reference to a variadic list of types, but
       // needs to be typechecked.
-      type = typeCheckVariadicPackTypeSpecifier(arg, typeEmitter);
+      type = typeCheckVariadicPackTypeSpecifier(arg, idx, typeEmitter,
+                                                tcSignature);
     }
 
     // If the type couldn't be emitted, mark this argument erroneous (so uses
@@ -706,8 +744,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
     // Reject variadic owned register arguments, we can't support them yet.
     // TODO(ownership): Enable 'owned' @register_passable variadics.
-    if (arg.vararg == VarArgKind::VarArg ||
-        arg.vararg == VarArgKind::PackVarArg) {
+    if (arg.vararg == VarArgKind::VarArg) {
       // Emit an error and remember this error.
       if (!arg.isErroneous) {
         shared.emitError(arg.loc)
@@ -741,10 +778,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       arg.vararg == VarArgKind::KWVarArg) {
     fullType = type;
   } else {
-    auto [lifetimeDecl, refType] =
-        getRefAndLifetimeForAddressArgument(arg, idx, type, declScope);
-    tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
-    fullType = refType;
+    fullType = makeImplicitRefTypeForArg(arg, idx, type, tcSignature);
   }
 
   // If this is a valid vararg argument, then we pass it as a variadic type.
@@ -753,8 +787,11 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   if (arg.vararg == VarArgKind::VarArg) {
     fullType = VariadicType::get(fullType, arg.kgenConvention);
     arg.kgenConvention = ArgConvention::BorrowedInReg;
-  }
-  if (arg.vararg == VarArgKind::KWVarArg) {
+  } else if (arg.vararg == VarArgKind::PackVarArg) {
+    // !lit.ref.pack is always passed as borrowed, even if the elements are
+    // owned/inout etc.
+    arg.kgenConvention = ArgConvention::BorrowedInReg;
+  } else if (arg.vararg == VarArgKind::KWVarArg) {
     // We build Dict[String, ValType].
     ASTType dictType = shared.getBuiltinDictType(declScope, arg.loc);
     ASTType stringType = shared.getBuiltinStringType(declScope, arg.loc);
@@ -782,10 +819,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
     // Dict is memory only and only the callee can access it, so it's owned.
     arg.kgenConvention = ArgConvention::OwnedInMem;
-    auto [lifetimeDecl, refType] =
-        getRefAndLifetimeForAddressArgument(arg, idx, fullType, declScope);
-    tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
-    fullType = refType;
+    fullType = makeImplicitRefTypeForArg(arg, idx, fullType, tcSignature);
   }
   tcSignature.fullArgTypes.push_back(fullType);
 
@@ -908,10 +942,9 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
     tcSignature.argList.parsedArgs.push_back(resultArg);
     tcSignature.argTypes.push_back(resultType);
 
-    // Compute the full type for this new argument and a lifetime for it.
-    auto [lifetimeDecl, refType] = getRefAndLifetimeForAddressArgument(
-        resultArg, 0, resultType, declScope);
-    tcSignature.implicitLifetimeDecls.push_back(lifetimeDecl);
+    // Compute the RefType for this new argument with an implicit lifetime.
+    RefType refType =
+        makeImplicitRefTypeForArg(resultArg, 0, resultType, tcSignature);
     tcSignature.fullArgTypes.push_back(refType);
 
     // If this is for a lit.func declaration (as opposed to a function type),
