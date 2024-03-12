@@ -165,41 +165,6 @@ BlobCacheBackend::find(BufferRef keyHash,
   return result;
 }
 
-void BlobCacheBackend::find(
-    llvm::StringMap<LLCL::AsyncValueRef<std::optional<BufferRef>>> &map,
-    std::optional<WriteableBufferRef> backingBuf,
-    std::optional<EncodedLocation> loc) {
-  for (auto &kv : map) {
-    // TODO: This necessitates a copy of the string, but it's unclear that
-    //       changing all the methods to take a StringRef will work the way we
-    //       intend. Re-evaluate this later.
-    BufferRef keyHash = Buffer::get(kv.first());
-    auto result = kv.second.copy();
-    addTask(runtime, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
-                      result = std::move(result),
-                      backingBuf = std::move(backingBuf),
-                      loc = std::move(loc)]() mutable {
-      // Find it at this level.
-      ErrorOr<std::optional<BufferRef>> bufOr = thisRef->findImpl(
-          keyHash->getBuffer(),
-          (backingBuf ? std::optional<WriteableBufferRef>(backingBuf->copy())
-                      : std::nullopt));
-      if (bufOr.isError()) {
-        return std::move(result).setToError(
-            getError(std::move(loc), bufOr.takeError()));
-      }
-
-      // If we had it, return, and we're done.
-      if (bufOr->has_value())
-        return std::move(result).emplace(std::move(*bufOr));
-
-      // If we don't have it, try with delegate.
-      return thisRef->delegateFind(std::move(result), std::move(keyHash),
-                                   std::move(backingBuf), std::move(loc));
-    });
-  }
-}
-
 void BlobCacheBackend::delegateFind(
     AsyncValueRef<std::optional<BufferRef>> result, BufferRef keyHash,
     std::optional<WriteableBufferRef> backingBuf,

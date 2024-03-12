@@ -165,57 +165,6 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   await(found);
 }
 
-TEST_F(BlobCacheTest, FindItemWithMultiAPI) {
-  // Get an uninitialized buffer. We don't care what's in this, as long as it
-  // goes in and comes out the same.
-  auto zerosDataBuf = WriteableBuffer::get();
-  zerosDataBuf->write(0);
-  BufferRef zerosBuf = std::move(zerosDataBuf);
-
-  auto inserted = AsyncValueRef<Chain>::allocate(*runtime);
-  AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
-  std::move(insertOr).andThenSync(
-      [cache = cache.copy(), inserted = inserted.copy()](
-          AsyncValueRef<std::string> insertOr) mutable {
-        ASSERT_FALSE(insertOr.isError())
-            << insertOr.getDiagnostic().getMessage() << '\n';
-        EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
-
-        auto contains = cache->contains("zeros");
-        std::move(contains).andThenSync(
-            [inserted =
-                 std::move(inserted)](AsyncValueRef<bool> contains) mutable {
-              ASSERT_FALSE(contains.isError())
-                  << contains.getDiagnostic().getMessage() << '\n';
-              EXPECT_TRUE(*contains) << "expected to have item named 'zeros'\n";
-              std::move(inserted).emplace();
-            });
-      });
-  await(inserted);
-
-  auto found = AsyncValueRef<Chain>::allocate(*runtime);
-  auto zerosOr = cache->find(ArrayRef<StringRef>{"zeros"});
-  ASSERT_TRUE(zerosOr.contains(StringKeyInfo::hashKey("zeros")))
-      << "did not have the expected key";
-  std::move(zerosOr.find(StringKeyInfo::hashKey("zeros"))->getValue())
-      .andThenSync(
-          [zerosBuf = zerosBuf.copy(), found = found.copy()](
-              AsyncValueRef<std::optional<BufferRef>> zerosOr) mutable {
-            ASSERT_FALSE(zerosOr.isError())
-                << zerosOr.getDiagnostic().getMessage() << '\n';
-            ASSERT_TRUE(zerosOr->has_value());
-            BufferRef outZeros = std::move(**zerosOr);
-            ASSERT_EQ(outZeros->getBufferSize(), zerosBuf->getBufferSize())
-                << "output buffer size did not match input buffer size\n";
-            EXPECT_TRUE(outZeros->getBuffer() ==
-                        StringRef(zerosBuf->getBufferStart(),
-                                  zerosBuf->getBufferSize()))
-                << "buffer returned did not match the buffer inputted\n";
-            std::move(found).emplace();
-          });
-  await(found);
-}
-
 TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
