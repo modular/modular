@@ -22,6 +22,7 @@ class MetaTypeType;
 class StructFieldOp;
 class UnpackedType;
 class FnMetadataAttr;
+class RefPackType;
 } // namespace LIT
 } // namespace M::KGEN
 

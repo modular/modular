@@ -653,9 +653,9 @@ parsePackElements(AsmParser &p, SmallVector<TypedAttr> &values, PackType type) {
 
   return failableInterleave(
       variadic.getValues(),
-      [&](TypedAttr type) {
+      [&](TypedAttr eltType) {
         return parseParamValue(p, values.emplace_back(),
-                               ParamRefType::get(type));
+                               ParamRefType::get(eltType));
       },
       [&] { return p.parseComma(); });
 }
@@ -688,34 +688,24 @@ LogicalResult PackType::printValue(AsmPrinter &p, TypedAttr value) const {
   return success();
 }
 
-/// Compare a type between value domains.
-static bool compareTypeToTypeExpr(Type type, TypedAttr expr) {
-  if (auto refType = dyn_cast<ParamRefType>(type))
-    return refType.getParam() == expr;
-  if (auto typeCst = dyn_cast<TypeConstantAttr>(expr))
-    return typeCst.getValue() == type;
-  // `expr` is a parameter expression but `type` is not.
-  return false;
-}
-
 LogicalResult PackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                               ArrayRef<TypedAttr> values, PackType type) {
-  auto variadic = type.getVariadicIfResolved();
+                               ArrayRef<TypedAttr> values, PackType packType) {
+  auto variadic = packType.getVariadicIfResolved();
   if (!variadic)
     return emitError()
            << "pack attribute expected a variadic constant type, but got "
-           << type.getVariadic();
+           << packType.getVariadic();
 
   ArrayRef<TypedAttr> expected = variadic.getValues();
   if (values.size() != expected.size())
     return emitError() << "pack attribute type requires " << expected.size()
                        << " elements, but got " << values.size();
-
-  for (auto [i, value, type] :
+  // Verify the constant elements have the right type.
+  for (auto [i, value, typeAttr] :
        llvm::zip(llvm::seq<size_t>(0, expected.size()), values, expected))
-    if (!compareTypeToTypeExpr(value.getType(), type))
+    if (value.getType() != ParamRefType::get(typeAttr))
       return emitError() << "pack attribute element #" << i << " has type "
-                         << value.getType() << " but expected " << type;
+                         << value.getType() << " but expected " << typeAttr;
   return success();
 }
 

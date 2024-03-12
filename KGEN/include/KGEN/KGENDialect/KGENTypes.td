@@ -568,7 +568,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
 
   let extraClassDeclaration = [{
     /// Returns whether this is a concrete pack type with no elements.
-    bool isEmpty() const;
+    bool isEmpty();
 
     /// If the pack type is concrete, returns the attribute representing the
     /// variadic sequence that the pack type is based upon. Otherwise, returns

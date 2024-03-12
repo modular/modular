@@ -257,12 +257,17 @@ kgen.generator @pass_pack<life: !lit.lifetime<1>>
   (%index: !lit.ref<index, mut life>,
    %float: !lit.ref<f32, mut life>) {
 
-  // CHECK-NEXT: %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[pointer<index>, pointer<f32>]>
+  // CHECK-NEXT: kgen.pack.create(%arg0, %arg1) : !kgen.pack<[pointer<index>, pointer<f32>]>
   %pack = lit.ref.pack.create(%index, %float) :
     !lit.ref.pack<:variadic<!kgen.type> [index, f32], owned_in_mem, mut life, 0>
   // CHECK-NEXT: kgen.call @takes_pack<:struct<()> life, :variadic<type> [index, f32]>(%0)
   kgen.call @takes_pack<:lifetime<1> life, :variadic<!kgen.type> [index, f32]>(%pack)
      : (!lit.ref.pack<:variadic<!kgen.type> [index, f32], owned_in_mem, mut life, 0>) -> ()
+
+  // CHECK-NEXT: kgen.param.constant: !kgen.pack<[pointer<i8>, pointer<ui4>, pointer<i32>]> = <<store_to_mem(3), store_to_mem(1), store_to_mem(4)>>
+  %3 = kgen.param.constant: !lit.ref.pack<:variadic<!kgen.type> [i8, ui4, i32], owned_in_mem, mut life, 0>
+     = <<store_to_mem(3), store_to_mem(1), store_to_mem(4)>>
+
   kgen.return
 }
 

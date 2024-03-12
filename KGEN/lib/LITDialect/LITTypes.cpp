@@ -713,6 +713,12 @@ VariadicAttr RefPackType::getVariadicIfResolved() const {
   return ::dyn_cast<VariadicAttr>(getVariadic());
 }
 
+/// Return the effective type (always a reference) of each element given
+/// the type according to the type list.
+RefType RefPackType::getElementRefTypeFor(Type elementType) {
+  return RefType::get(elementType, getLifetime(), getAddressSpace());
+}
+
 //===----------------------------------------------------------------------===//
 // REPLResultRefType
 //===----------------------------------------------------------------------===//

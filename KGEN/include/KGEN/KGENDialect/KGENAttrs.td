@@ -667,9 +667,9 @@ def KGEN_PackAttr : KGENAttr<"Pack", "pack", [
 
     ```mlir
     // A pack of 3 elements.
-    %0 = kgen.param.constant: !kge.pack<[i8, ui4, i32]> = <<3, 1, 4>>
+    %0 = kgen.param.constant: !kgen.pack<[i8, ui4, i32]> = <<3, 1, 4>>
     // An empty pack.
-    %1 = kgen.param.constant: !kge.pack<[]> = <<>>
+    %1 = kgen.param.constant: !kgen.pack<[]> = <<>>
     ```
   }];
 
