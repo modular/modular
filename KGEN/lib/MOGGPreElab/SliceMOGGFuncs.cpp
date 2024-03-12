@@ -1212,6 +1212,12 @@ public:
 
     DenseSet<GeneratorOp> seenFuncs;
 
+    auto checker = UserLibraryChecker(mod, symTab);
+    if (failed(checker.run())) {
+      signalPassFailure();
+      return;
+    }
+
     for (GeneratorOp userKernel :
          llvm::make_early_inc_range(mod.getOps<GeneratorOp>())) {
 
