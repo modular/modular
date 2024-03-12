@@ -475,12 +475,15 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
                                         "TypedAttr":$addressSpace)>,
   ];
 
-
   let extraClassDeclaration = [{
     /// If the pack type is concrete, returns the attribute representing the
     /// variadic sequence that the pack type is based upon. Otherwise, returns
     /// a null attribute.
     VariadicAttr getVariadicIfResolved() const;
+
+    /// This returns the element type of the variadic list parameter, typically
+    /// something like !kgen.type or a trait type.
+    Type getVariadicElementType();
 
     /// Return the effective type (always a reference) of each element given
     /// the type according to the type list.

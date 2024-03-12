@@ -582,8 +582,23 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << "]";
 
   } else if (auto packType = dyn_cast<PackType>(type)) {
+    // TODO: Remove this when packs switch to RefPackType
     os << '*';
-    printParam(os, cast<PackType>(type).getVariadic(), forDiag, demangleParams);
+    printParam(os, packType.getVariadic(), forDiag, demangleParams);
+  } else if (auto packType = dyn_cast<RefPackType>(type)) {
+    switch (packType.getConvention()) {
+    default:
+      break;
+    case ArgConvention::OwnedInMem:
+      os << "owned ";
+      break;
+    case ArgConvention::ByRef:
+      os << "inout ";
+      break;
+    }
+    // TODO: Remove this when packs switch to RefPackType
+    os << '*';
+    printParam(os, packType.getVariadic(), forDiag, demangleParams);
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (forDiag)

@@ -719,6 +719,12 @@ RefType RefPackType::getElementRefTypeFor(Type elementType) {
   return RefType::get(elementType, getLifetime(), getAddressSpace());
 }
 
+/// This returns the element type of the variadic list parameter, typically
+/// something like !kgen.type or a trait type.
+Type RefPackType::getVariadicElementType() {
+  return ::cast<VariadicType>(getVariadic().getType()).getElementType();
+}
+
 //===----------------------------------------------------------------------===//
 // REPLResultRefType
 //===----------------------------------------------------------------------===//
@@ -961,6 +967,13 @@ bool LITSignatureType::isKwVarArg(size_t index) {
 
 bool LITSignatureType::isPackVarArg(size_t index) {
   return getMetadata().isPackVarArg(index);
+}
+
+/// If the specified argument is a variadic pack, return the RefPackType.
+RefPackType LITSignatureType::getIfRefPackType(size_t index) {
+  // TODO: References: switch dyn_cast to cast when PackType goes away.
+  return isPackVarArg(index) ? ::dyn_cast<RefPackType>(getArguments()[index])
+                             : nullptr;
 }
 
 bool LITSignatureType::hasParamVarArgs() {

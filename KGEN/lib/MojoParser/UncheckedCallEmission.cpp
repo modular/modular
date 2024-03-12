@@ -61,12 +61,9 @@ public:
 
   /// This function emits the specified pre-emitted argument into a single MLIR
   /// Value suitable for passing to the callee with the specified convention.
-  /// This handles promotion of PValues to dynamic values as needed. It needs
-  /// the list of pre-emitted argument values to check aliasing with the result
-  /// slot.
-  Value emitPreemittedArgumentAsDynamicValue(
-      ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention,
-      ArrayRef<ASTExprAnd<AnyValue>> argumentValues);
+  /// This handles promotion of PValues to dynamic values as needed.
+  Value emitPreemittedArgumentAsDynamicValue(ASTExprAnd<AnyValue> argValAndExpr,
+                                             ArgConvention convention);
 
   /// If this is a call to a @always_inline function (and there's only one
   /// possible callee), this method tries to fold the entire function body into
@@ -175,6 +172,18 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // !pop.variadic<> wrapper to get the type to convert to.
     expectedType = variadic.getElementType();
     convention = variadic.getConvention();
+
+  } else if (RefPackType packType = calleeSig.getIfRefPackType(argIdx)) {
+    // Operands being applied to a concrete pack type argument must be
+    // converted to the pack element type at that index.  The calleeSig has the
+    // pack type resolved to a concrete list of types it is expecting.
+    expectedType =
+        ASTType(packType.getVariadicIfResolved().getValues()[sequenceIndex]);
+    // Get the !lit.ref with the lifetime and other paraphernalia.
+    expectedType = packType.getElementRefTypeFor(expectedType);
+    convention = packType.getConvention();
+
+    // TODO(references): Remove this when PackType is no longer used.
   } else if (auto packType = getIfPackType(calleeSig, argIdx)) {
     // Operands being applied to a concrete pack type argument must be
     // converted to the pack element type at that index.
@@ -201,8 +210,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
         convention == ArgConvention::OwnedInMem)
       return emitter.emitRValue(operand, EC_CallArgValue, expectedType);
 
-    // If this is a low-level !lit.ref passed by value, we support binding an
-    // MValue of the element type.
+    // If this is a low-level !lit.ref argument, allow binding an MValue of the
+    // element type.
     //
     // This is magic used by Reference.__init__, allowing Reference(someMValue)
     // to infer the lifetime and mutability of the MValue.
@@ -286,6 +295,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   bool isPosVarArg = calleeSig.isPosVarArg(argIdx);
   if (isPosVarArg)
     convention = cast<VariadicType>(expectedType).getConvention();
+  else if (RefPackType refPackType = calleeSig.getIfRefPackType(argIdx))
+    convention = refPackType.getConvention();
 
   // If we are emitting in a compile-time context and all of the remaining
   // operands are compile-time values, then emit the sequence as an attribute.
@@ -310,8 +321,17 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       }
       auto newVarType = VariadicType::get(varElType, varType.getConvention());
       attr = VariadicAttr::get(args, newVarType);
-    } else {
+    } else if (isa<PackType>(expectedType)) {
+      // TODO: Remove when packs move to memory form.
       attr = PackAttr::get(args, cast<PackType>(expectedType));
+    } else {
+      RefPackType refPackType = cast<RefPackType>(expectedType);
+      // RefPack elements are passed through memory.
+      SmallVector<TypedAttr> storedAttrs;
+      for (TypedAttr &arg : args)
+        arg = StoreToMemAttr::get(
+            arg, refPackType.getElementRefTypeFor(arg.getType()));
+      attr = RefPackAttr::get(storedAttrs, refPackType);
     }
     argumentValues.push_back({PValue(attr), remainingOperands[0].expr});
     return success();
@@ -321,54 +341,61 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // create a variadic or pack sequence.
   SmallVector<Value> args;
   for (auto &operand : remainingOperands) {
-    Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention,
-                                                        argumentValues);
+    Value argVal = emitPreemittedArgumentAsDynamicValue(operand, convention);
     if (!argVal)
       return failure();
     args.push_back(argVal);
 
     // Make sure any register values in the pack stay live across the entire
     // call, not just the pop.variadic.create op.  Memory values are kept alive
-    // by their lifetime.
-    bool isTrivial = false;
-    if (auto cv = operand.ir.getIfCValue())
-      isTrivial =
-          cv.getRValueType().isTrivial(callExpr->getLoc(), emitter.shared);
+    // by their lifetime so they don't need this.
+    if (SignatureType::hasAddress(convention))
+      continue;
 
-    // Memory values are kept alive by their lifetime so they don't need these
-    // ops.
-    // TODO: Expand this to packs as well.
-    if (isPosVarArg && SignatureType::hasAddress(convention))
-      isTrivial = true;
-
-    if (!isTrivial)
+    // Don't emit this for trivial types like Int either.
+    if (!ASTType(argVal.getType())
+             .isTrivial(callExpr->getLoc(), emitter.shared))
       afterCallActions.valuesToKeepAlive.emplace_back(argVal);
   }
 
   // If there are lifetimes on anything, create a uniform representation and
   // cast to a common reference type.
-  if (isPosVarArg && !args.empty() && isa<RefType>(args.back().getType())) {
-    auto expectedVararg = cast<VariadicType>(expectedType);
+  if ( // TODO: Remove legacy PackType.
+      !isa<PackType>(expectedType) && !args.empty() &&
+      isa<RefType>(args.back().getType())) {
     // If one arg is a reference, then they all are.
-    auto expectedRefType = cast<RefType>(expectedVararg.getElementType());
     SmallVector<TypedAttr> refLifetimes;
     for (auto arg : args)
       refLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
 
+    // All the lifetimes will have the same LifetimeType, indicating the
+    // reference mutability that the callee expected.
+    LifetimeType commonLifetimeType =
+        cast<LifetimeType>(refLifetimes.back().getType());
+
     // If there is more than one element, they probably have different
     // lifetimes, and thus need to be rebound into a common union of them.
-    LifetimeType commonLifetimeType = expectedRefType.getLifetimeType();
     auto commonLifetime =
         LifetimeUnionAttr::get(refLifetimes, commonLifetimeType);
-    expectedRefType = expectedRefType.getWithLifetime(commonLifetime);
-    for (auto &arg : args)
-      // Cast to common lifetime.
-      if (arg.getType() != expectedRefType)
-        arg = emitter.builder->create<RebindOp>(loc, expectedRefType, arg);
+    for (auto &arg : args) {
+      auto argType = cast<RefType>(arg.getType());
+      if (argType.getLifetime() == commonLifetime)
+        continue; // Already the right lifetime.
+      // Cast to common lifetime with a rebind.
+      arg = emitter.builder->create<RebindOp>(
+          loc, argType.getWithLifetime(commonLifetime), arg);
+    }
 
-    // TODO(metatypes): preserve metatype?  These don't seem to do anything.
-    expectedType =
-        VariadicType::get(expectedRefType, expectedVararg.getConvention());
+    // Update 'expectedType' to the right lifetime.
+    if (auto expectedVararg = dyn_cast<VariadicType>(expectedType)) {
+      expectedType = VariadicType::get(args.back().getType(),
+                                       expectedVararg.getConvention());
+    } else {
+      auto refPackType = cast<RefPackType>(expectedType);
+      expectedType = RefPackType::get(
+          refPackType.getVariadic(), refPackType.getConvention(),
+          commonLifetime, refPackType.getAddressSpace());
+    }
   }
 
   Value argVal;
@@ -382,9 +409,13 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       argVal = emitter.builder->create<POP::VariadicCreateOp>(loc, expectedType,
                                                               args);
     }
-  } else
+  } else if (isa<PackType>(expectedType)) {
+    // TODO: Remove when packs are always in memory
     argVal = emitter.builder->create<PackCreateOp>(loc, expectedType, args);
-  argumentValues.push_back({SRValue(argVal), remainingOperands[0].expr});
+  } else {
+    argVal = emitter.builder->create<RefPackCreateOp>(loc, expectedType, args);
+  }
+  argumentValues.push_back({SBValue(argVal), remainingOperands[0].expr});
   return success();
 }
 
@@ -439,6 +470,17 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
         argumentValues.push_back({PValue(argAttr), callExpr});
         continue;
       }
+
+      // Pack arguments are fulfilled with an empty #lit.ref.pack.
+      if (RefPackType packType = calleeSig.getIfRefPackType(argIdx)) {
+        assert(packType.getVariadicIfResolved().getValues().empty() &&
+               "pack type already checked against operand count");
+        auto argAttr = RefPackAttr::get(ArrayRef<TypedAttr>(), packType);
+        argumentValues.push_back({PValue(argAttr), callExpr});
+        continue;
+      }
+
+      // TODO(references): Remove this when PackType is no longer used.
       if (auto packType = getIfPackType(calleeSig, argIdx)) {
         // Pack arguments are fulfilled with an empty !kgen.pack sequence.
         assert(packType.isEmpty() &&
@@ -635,8 +677,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 }
 
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
-    ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention,
-    ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
+    ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention) {
 
   Value arg;
   switch (convention) {
@@ -959,10 +1000,10 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // which is emitted as an SRValue instead of whatever the underlying type
     // is.
     if (calleeSig.isPosVarArg(argIdx) || calleeSig.isPackVarArg(argIdx))
-      convention = ArgConvention::OwnedInReg;
+      convention = ArgConvention::BorrowedInReg;
 
-    Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(
-        argValAndExpr, convention, argumentValues);
+    Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(argValAndExpr,
+                                                                 convention);
     if (!arg)
       return {};
 
@@ -974,9 +1015,12 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       auto eltType = ASTType(arg.getType()).getVariadicElementType();
       if (auto refType = dyn_cast<RefType>(eltType))
         implicitLifetimes.push_back(refType.getLifetime());
+    } else if (calleeSig.getIfRefPackType(argIdx)) {
+      // Use the union lifetime that covers all the values.
+      implicitLifetimes.push_back(
+          cast<RefPackType>(arg.getType()).getLifetime());
     }
 
-    // TODO: What about pack types?
     callArgs.push_back(arg);
   }
 
@@ -986,8 +1030,10 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // anyway, because there is no way to name it in the Mojo program.
   FunctionType expectedCalleeType =
       calleeSig.substituteImplicitLifetimesIntoValues(
-          implicitLifetimes,
-          [&]() -> InFlightDiagnostic { llvm_unreachable("bad call"); });
+          implicitLifetimes, [&]() -> InFlightDiagnostic {
+            return mlir::emitError(loc) << "INTERNAL ERROR: ";
+          });
+  assert(expectedCalleeType && "Substitution should always succeed");
 
   // With that done, we can know what type the byref result slot should have.
   // We see if we can emit directly into the ValueDest slot, and if not, we

@@ -50,7 +50,6 @@ fn test_func_type():
     alias float4: fn[a: Int](inout *Int) -> None = test_func_type
     # expected-error @below {{fn(*MemType) raises capturing -> None}}
     alias float5: def(*MemType) capturing -> None = test_func_type
-    # expected-error @below {{'owned' @register_passable arguments cannot be variadic}}
     # expected-error @below {{'fn[*AnyRegType](* *$0) capturing -> None'}}
     alias float6: fn[*Ts: AnyRegType](owned* *Ts) capturing -> None = test_func_type
     # expected-error @below {{fn[AnyRegType](*$0) capturing -> None}}
