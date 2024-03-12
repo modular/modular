@@ -160,6 +160,7 @@ private:
 
     constexpr llvm::StringLiteral response = R"({
       "device_code": "abcdefg",
+      "user_code": "ABCD-EFGH",
       "interval": 5,
       "verification_uri_complete": "https://testing.modular.com"
     })";

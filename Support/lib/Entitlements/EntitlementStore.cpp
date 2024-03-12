@@ -1063,11 +1063,17 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
   if (!jsonResponse)
     return Error("/oauth/device/code invalid response, expected JSON object");
 
-  auto codeOr = jsonResponse->getString("device_code");
-  if (!codeOr) {
+  auto deviceCodeOr = jsonResponse->getString("device_code");
+  if (!deviceCodeOr) {
     return Error(
         "/oauth/device/code invalid response, expected 'device_code' in "
         "response payload");
+  }
+
+  auto userCodeOr = jsonResponse->getString("user_code");
+  if (!userCodeOr) {
+    return Error("/oauth/device/code invalid response, expected 'user_code' in "
+                 "response payload");
   }
 
   auto intervalOr = jsonResponse->getInteger("interval");
@@ -1082,12 +1088,14 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
                  "'verification_uri_complete' in response payload");
   }
 
-  llvm::outs() << "# Please visit this URL in your browser: " << *verifURIOr
-               << "\n";
-  llvm::outs() << "# Waiting for confirmation...\n";
+  llvm::outs() << "To complete auth, open this web page:\n"
+               << *verifURIOr << "\n\n"
+               << "Verify using this code:\n"
+               << *userCodeOr << "\n\n";
+  llvm::outs() << "Waiting for confirmation...\n";
 
-  auto toksOr =
-      pollForOAuthTokens(client, std::chrono::seconds(*intervalOr), *codeOr);
+  auto toksOr = pollForOAuthTokens(client, std::chrono::seconds(*intervalOr),
+                                   *deviceCodeOr);
   if (toksOr.isError())
     return toksOr.takeError();
   auto [accessToken, idToken] = std::move(*toksOr);
