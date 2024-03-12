@@ -10,6 +10,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
+#include "Support/FileSystemExtras.h"
 #include "Support/Preprocessor.h"
 #include "Support/RCRef.h"
 #include "llvm/ADT/StringExtras.h"
@@ -34,15 +35,23 @@ struct StringKeyInfo {
   }
 };
 
+static TempDir createTempDir() {
+  auto tempDirOr = TempDir::create("cache-test.%%%%%%");
+  assert(!tempDirOr.isError());
+  return tempDirOr.takeValue();
+}
+
 class BlobCacheTest : public testing::Test {
 protected:
+  TempDir tempDir;
   std::unique_ptr<LLCL::Runtime> runtime;
   RCRef<BlobCache<StringKeyInfo>> cache;
   BlobCacheTest()
-      : runtime(createUniqueRuntime(
+      : tempDir(createTempDir()),
+        runtime(createUniqueRuntime(
             LLCL::RuntimeOptions().withLeakCheckedAllocator())),
         cache(RCRef<BlobCache<StringKeyInfo>>::create(
-            getLocalDefaultBackendChain(*runtime, STRINGIFY(CACHE_TEST_DIR))
+            getLocalDefaultBackendChain(*runtime, tempDir.getPath())
                 .takeValue())) {}
 };
 
@@ -257,109 +266,6 @@ TEST_F(BlobCacheTest, FindItemThatExistsWithPreallocatedBuf) {
   await(found);
 }
 
-TEST_F(BlobCacheTest, FindItemThatExistsThenClear) {
-  // Number of sequential runs.
-  const int numRuns = 10;
-  // Number of concurrent keys to insert then check.
-  const int numThreads = 10;
-
-  for (int run = 0; run < numRuns; ++run) {
-    std::vector<std::thread> threads;
-    for (int thread = 0; thread < numThreads; ++thread) {
-      threads.emplace_back([this, thread]() {
-        std::string key = "zeros" + std::to_string(thread);
-
-        // Get an uninitialized buffer. We don't care what's in this, as long as
-        // it goes in and comes out the same.
-        auto zerosDataBuf = WriteableBuffer::get();
-        zerosDataBuf->write(0);
-        BufferRef zerosBuf = std::move(zerosDataBuf);
-
-        auto inserted = AsyncValueRef<Chain>::allocate(*runtime);
-        AsyncValueRef<std::string> insertOr =
-            cache->insert(key, zerosBuf.copy());
-        std::move(insertOr).andThenSync(
-            [key, cache = cache.copy(), inserted = inserted.copy()](
-                AsyncValueRef<std::string> insertOr) mutable {
-              ASSERT_FALSE(insertOr.isError())
-                  << insertOr.getDiagnostic().getMessage() << '\n';
-              EXPECT_FALSE(insertOr->empty())
-                  << "expected to receive the hash key\n";
-
-              auto contains = cache->contains(key);
-              std::move(contains).andThenSync(
-                  [key, inserted = std::move(inserted)](
-                      AsyncValueRef<bool> contains) mutable {
-                    ASSERT_FALSE(contains.isError())
-                        << contains.getDiagnostic().getMessage() << '\n';
-                    EXPECT_TRUE(*contains)
-                        << "expected to have item named '" << key << "'\n";
-                    std::move(inserted).emplace();
-                  });
-            });
-        // Use await to make the sequencing easier to follow.
-        await(inserted);
-
-        auto found = AsyncValueRef<Chain>::allocate(*runtime);
-        auto zerosOr = cache->find(key);
-        std::move(zerosOr).andThenSync(
-            [zerosBuf = zerosBuf.copy(), found = found.copy()](
-                AsyncValueRef<std::optional<BufferRef>> zerosOr) mutable {
-              ASSERT_FALSE(zerosOr.isError())
-                  << zerosOr.getDiagnostic().getMessage() << '\n';
-              ASSERT_TRUE(zerosOr->has_value());
-
-              BufferRef outZeros = std::move(**zerosOr);
-              ASSERT_EQ(outZeros->getBufferSize(), zerosBuf->getBufferSize())
-                  << "output buffer size did not match input buffer size\n";
-              EXPECT_TRUE(outZeros->getBuffer() ==
-                          StringRef(zerosBuf->getBufferStart(),
-                                    zerosBuf->getBufferSize()))
-                  << "buffer returned did not match the buffer inputted\n";
-              std::move(found).emplace();
-            });
-        await(found);
-      });
-    }
-
-    for (auto &thread : threads)
-      thread.join();
-
-    auto cleared = AsyncValueRef<Chain>::allocate(*runtime);
-    auto clearOr = cache->clear();
-    std::move(clearOr).andThenSync([this, cache = cache.copy(),
-                                    cleared = cleared.copy()](
-                                       AsyncValueRef<Chain> clearOr) mutable {
-      ASSERT_FALSE(clearOr.isError())
-          << clearOr.getDiagnostic().getMessage() << "\n";
-
-      std::vector<AnyAsyncValueRef> chains;
-      for (int j = 0; j < numThreads; ++j) {
-        auto checkedContains = AsyncValueRef<Chain>::allocate(*runtime);
-        chains.emplace_back(checkedContains.copy());
-        std::string key = "zeros" + std::to_string(j);
-        auto contains = cache->contains(key);
-        std::move(contains).andThenSync([checkedContains =
-                                             std::move(checkedContains)](
-                                            AsyncValueRef<bool>
-                                                contains) mutable {
-          ASSERT_FALSE(contains.isError())
-              << contains.getDiagnostic().getMessage() << "\n";
-          EXPECT_FALSE(*contains)
-              << "expected not to have item named 'zeros' after the clear\n";
-          std::move(checkedContains).emplace();
-        });
-      }
-      andThenSyncMoving(chains,
-                        [cleared = std::move(cleared)](
-                            MutableArrayRef<AnyAsyncValueRef> chains) mutable {
-                          std::move(cleared).emplace();
-                        });
-    });
-    await(cleared);
-  }
-}
-
 TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   // Get an uninitialized buffer. We don't care what's in this, as long as it
   // goes in and comes out the same.
@@ -373,8 +279,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
-      getLocalDefaultBackendChain(*runtime, STRINGIFY(CACHE_TEST_DIR))
-          .takeValue());
+      getLocalDefaultBackendChain(*runtime, tempDir.getPath()).takeValue());
 
   // Check that the cache holds the new item, and it's the same data as before.
   auto zerosOr = fsCache->find("zeros");
@@ -404,8 +309,7 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExistsWithPreallocatedBuffer) {
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
-      getLocalDefaultBackendChain(*runtime, STRINGIFY(CACHE_TEST_DIR))
-          .takeValue());
+      getLocalDefaultBackendChain(*runtime, tempDir.getPath()).takeValue());
 
   // Get a buffer to read into.
   auto readBuf = WriteableBuffer::get(/*size=*/0, /*alignment=*/std::nullopt,
@@ -445,8 +349,7 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
   // Mock the existence of an old version of the cache.
   // Specifically create the directory to have a trailing path separator to
   // test canonicalization of paths when figuring out deletion criteria.
-  auto cacheDir = std::filesystem::path(STRINGIFY(CACHE_TEST_DIR)) / "";
-  auto tempDirectory = cacheDir / "ModularOldVersionString";
+  auto tempDirectory = tempDir.getPath() / "ModularOldVersionString";
 
   std::error_code ec;
   std::filesystem::create_directory(tempDirectory, ec);
@@ -455,7 +358,7 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
   // Upon creating a new cache, all of the old versions on the filesystem
   // should be deleted.
   auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
-      getLocalDefaultBackendChain(*runtime, cacheDir).takeValue());
+      getLocalDefaultBackendChain(*runtime, tempDir.getPath()).takeValue());
   ASSERT_TRUE(!std::filesystem::exists(tempDirectory, ec))
       << "expected the temp directory to be deleted by cacheDir creation\n";
 }
@@ -494,31 +397,17 @@ static std::unique_ptr<Runtime> makeRuntime() {
       LLCL::RuntimeOptions().withLeakCheckedAllocator());
 }
 
-static RCRef<BlobCacheBackend> makeFilesytemBackend(Runtime &runtime) {
-  return getFilesystemBackend(runtime, STRINGIFY(CACHE_TEST_DIR));
-}
-
-/// Force the cache to be cleared, synchronously.
-static void clearCache() {
-  auto runtime = makeRuntime();
-  auto backend = makeFilesytemBackend(*runtime);
-  auto clearDone = backend->clear();
-  await(clearDone);
-  assert(clearDone.isValueAvailable());
-}
-
 TEST(FilesystemBackend, Hammer) {
   const size_t size = 8000;
   const int numThreads = 20;
   const int numKeys = 200;
-
-  clearCache();
+  TempDir tempDir = createTempDir();
 
   std::vector<std::thread> threads;
   for (int thread = 0; thread < numThreads; ++thread) {
-    threads.emplace_back([thread]() {
+    threads.emplace_back([thread, &tempDir]() {
       auto runtime = makeRuntime();
-      auto backend = makeFilesytemBackend(*runtime);
+      auto backend = getFilesystemBackend(*runtime, tempDir.getPath());
       auto threadDone = AsyncValueRef<Chain>::allocate(*runtime);
 
       // Insert known values with known keys.
@@ -591,6 +480,4 @@ TEST(FilesystemBackend, Hammer) {
 
   for (auto &thread : threads)
     thread.join();
-
-  clearCache();
 }

@@ -32,6 +32,3 @@ add_modular_unittest(
   MLIRParser
   MLIRPass
 )
-
-target_compile_definitions(CacheTests
-  PRIVATE -DCACHE_TEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/CacheTestsDir)

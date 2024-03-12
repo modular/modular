@@ -49,9 +49,6 @@ public:
   requestImpl(StringRef keyHash, std::optional<WriteableBufferRef> buf,
               bool headOnly) const;
 
-  /// We do not support clear for this backend impl.
-  ErrorOrSuccess clearImpl() override;
-
 private:
   /// The HTTP context ref for any clients we spin up for a find operation.
   HTTPContextRef ctx;

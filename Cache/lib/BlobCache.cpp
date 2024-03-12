@@ -246,36 +246,6 @@ void BlobCacheBackend::delegateFind(
       });
 }
 
-AsyncValueRef<Chain>
-BlobCacheBackend::clear(std::optional<EncodedLocation> loc) {
-  auto result = AsyncValueRef<Chain>::allocate(runtime);
-  addTask(runtime, [thisRef = copyRCRef(this), result = result.copy(),
-                    loc = std::move(loc)]() mutable {
-    if (auto err = thisRef->clearImpl()) {
-      return std::move(result).setToError(
-          getError(std::move(loc), err.takeError()));
-    }
-
-    return thisRef->delegateClear(std::move(result), std::move(loc));
-  });
-  return result;
-}
-
-void BlobCacheBackend::delegateClear(AsyncValueRef<Chain> result,
-                                     std::optional<EncodedLocation> loc) {
-  if (!delegate)
-    return std::move(result).emplace();
-
-  auto clear = delegate->clear(std::move(loc));
-  std::move(clear).andThenSync(
-      [result = std::move(result)](AsyncValueRef<Chain> &&clear) mutable {
-        if (clear.isError())
-          return std::move(result).setToError(clear.takeDiagnostic());
-
-        return std::move(result).emplace();
-      });
-}
-
 void BlobCacheBackend::appendDelegate(RCRef<BlobCacheBackend> d) {
   if (!delegate)
     delegate = std::move(d);
@@ -338,12 +308,6 @@ struct InMemoryBackend : public BlobCacheBackend {
     // And return an alias to *that* buffer.
     return Buffer::getAlias(backingBuf->copy(), startOffset,
                             foundBuf.getBufferSize());
-  }
-
-  ErrorOrSuccess clearImpl() override {
-    std::lock_guard<std::shared_mutex> lock(mutex);
-    cache.clear();
-    return success();
   }
 
   llvm::StringMap<BufferRef> cache;
@@ -499,20 +463,6 @@ struct FilesystemBackend : public BlobCacheBackend {
     // Take an alias to the provided buffer and return it.
     return Buffer::getAlias(backingBuf->copy(), startOffset,
                             (*bufOr)->getBufferSize());
-  }
-
-  ErrorOrSuccess clearImpl() override {
-    // We cannot clear the filesystem backend if we cannot write to it.
-    // Note that this is not an error, there's simply nothing to do.
-    if (readOnly)
-      return success();
-
-    std::error_code ec;
-    std::filesystem::remove_all(basePath, ec);
-    if (ec)
-      return Error(ec.message());
-
-    return success();
   }
 
   ErrorOr<std::filesystem::path>
@@ -691,12 +641,6 @@ struct FileSystemBackedInMemoryBackend : public BlobCacheBackend {
     return result;
   }
 
-  ErrorOrSuccess clearImpl() override {
-    if (auto err = inmemoryBackend->clearImpl())
-      return err;
-    return filesystemBackend->clearImpl();
-  }
-
   /// The in-memory backend used to store filesystem references.
   RCRef<InMemoryBackend> inmemoryBackend;
 
@@ -745,10 +689,6 @@ struct DylibBackendStub : public BlobCacheBackend {
   find(BufferRef keyHash, std::optional<WriteableBufferRef> buf,
        std::optional<EncodedLocation> loc) override {
     return backend->find(std::move(keyHash), std::move(buf), std::move(loc));
-  }
-
-  AsyncValueRef<Chain> clear(std::optional<EncodedLocation> loc) override {
-    return backend->clear(std::move(loc));
   }
 
 private:

@@ -5,18 +5,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheDialect/CachedTransform.h"
+#include "Cache/CacheDialect/CacheDialect.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "LLCL/Support/UnknownLocationDecoder.h"
+#include "Support/FileSystemExtras.h"
 #include "Support/Preprocessor.h"
+
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "mlir/Parser/Parser.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 
-#include "Cache/CacheDialect/CacheDialect.h"
-#include "LLCL/Support/UnknownLocationDecoder.h"
-#include "mlir/Parser/Parser.h"
 #include "gtest/gtest.h"
 
 using namespace M;
@@ -25,6 +27,12 @@ using namespace LLCL;
 using namespace mlir;
 
 namespace {
+static TempDir createTempDir() {
+  auto tempDirOr = TempDir::create("cache-transform-test.%%%%%%");
+  assert(!tempDirOr.isError());
+  return tempDirOr.takeValue();
+}
+
 class TestPass
     : public mlir::PassWrapper<TestPass, OperationPass<mlir::func::FuncOp>> {
 public:
@@ -77,16 +85,16 @@ func.func private @someFunc() {
 )";
 
 TEST(CachedTransformTest, CacheHits) {
+  TempDir tempDir = createTempDir();
   std::unique_ptr<Runtime> runtime =
       createUniqueRuntime(RuntimeOptions().forDebug());
-  std::filesystem::path cacheTestPath(STRINGIFY(CACHE_TEST_DIR));
   auto regionBackendChainOr =
-      getLocalDefaultBackendChain(*runtime, cacheTestPath / "region");
+      getLocalDefaultBackendChain(*runtime, tempDir.getPath() / "region");
   EXPECT_FALSE(failed(regionBackendChainOr));
   auto regionCache = RCRef<BlobCache<RegionCacheKey>>::create(
       regionBackendChainOr.takeValue());
   auto transformBackendChainOr =
-      getLocalDefaultBackendChain(*runtime, cacheTestPath / "xform");
+      getLocalDefaultBackendChain(*runtime, tempDir.getPath() / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
   auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
       transformBackendChainOr.takeValue());
@@ -174,10 +182,10 @@ TEST(CachedTransformTest, CacheHits) {
 // Here we are testing the transform return value is the value that's returned
 // on a cache miss and output of cacheHitFn on cache hit.
 TEST(CachedTransformTest, BufferReturn) {
+  TempDir tempDir = createTempDir();
   auto runtime = createRuntimeIfNeeded(RuntimeOptions().forDebug());
-  std::filesystem::path cacheTestPath(STRINGIFY(CACHE_TEST_DIR));
   auto transformBackendChainOr =
-      getLocalDefaultBackendChain(*runtime, cacheTestPath / "xform");
+      getLocalDefaultBackendChain(*runtime, tempDir.getPath() / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
   auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
       transformBackendChainOr.takeValue());

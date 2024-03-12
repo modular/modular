@@ -124,10 +124,6 @@ HTTPCacheBackend::requestImpl(StringRef keyHash,
   }
 }
 
-ErrorOrSuccess HTTPCacheBackend::clearImpl() {
-  return Error::getStaticString("HTTP backend does not support clear");
-}
-
 void HTTPCacheBackend::cacheBuffer(StringRef keyHash, BufferRef buf) {
   localCache.modify(
       [&](llvm::StringMap<BufferRef> &map) { map[keyHash] = std::move(buf); });
