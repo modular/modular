@@ -410,27 +410,20 @@ fn dot_at_b_impl(
     memcpy(b_buffer, b_pointer, num_elements)
     memset_zero(c_buffer, num_elements)
 
+    # _set() has the side effect of clearing the z tile
     _set()
 
     @unroll
-    for i in range(8):
-        ldx((i << 56) | int(b_buffer.offset(i * b.dim[0]())))
-        ldy((i << 56) | int(a_buffer.offset(i * a.dim[0]())))
+    for j in range(2):
 
-    fma32(1 << 27)
+        @unroll
+        for i in range(8):
+            ldx((i << 56) | int(b_buffer.offset((j * 8 + i) * b.dim[0]())))
+            ldy((i << 56) | int(a_buffer.offset((j * 8 + i) * a.dim[0]())))
 
-    @unroll
-    for i in range(1, 8):
-        fma32((i << 6 << 10) | (i << 6))
-
-    @unroll
-    for i in range(8):
-        ldx((i << 56) | int(b_buffer.offset((i + 8) * b.dim[0]())))
-        ldy((i << 56) | int(a_buffer.offset((i + 8) * a.dim[0]())))
-
-    @unroll
-    for i in range(8):
-        fma32((i << 6 << 10) | (i << 6))
+        @unroll
+        for i in range(8):
+            fma32((i << 6 << 10) | (i << 6))
 
     @unroll
     for i in range(0, 64, 4):
@@ -461,31 +454,24 @@ fn dot_at_b_impl(
     memcpy(b_buffer, b_pointer, num_elements)
     memset_zero(c_buffer, num_elements)
 
+    # _set() has the side effect of clearing the z tile
     _set()
 
     @unroll
-    for i in range(8):
-        ldx((i << 56) | int(b_buffer.offset(i * b.dim[0]())))
-        ldy((i << 56) | int(a_buffer.offset(i * a.dim[0]())))
+    for j in range(4):
 
-    fma32(1 << 27)
+        @unroll
+        for i in range(8):
+            ldx((i << 56) | int(b_buffer.offset((j * 8 + i) * b.dim[0]())))
+            ldy((i << 56) | int(a_buffer.offset((j * 8 + i) * a.dim[0]())))
 
-    @unroll
-    for i in range(1, 8):
-        fma32((i << 6 << 10) | (i << 6))
-
-    @unroll
-    for i in range(8):
-        ldx((i << 56) | int(b_buffer.offset((i + 8) * b.dim[0]())))
-        ldy((i << 56) | int(a_buffer.offset((i + 8) * a.dim[0]())))
+        @unroll
+        for i in range(8):
+            fma16((i << 6 << 10) | (i << 6))
 
     @unroll
-    for i in range(8):
-        fma32((i << 6 << 10) | (i << 6))
-
-    @unroll
-    for i in range(0, 64, 4):
-        stz((i << 56) | int(c_buffer.offset((i >> 2) * c.dim[0]())))
+    for i in range(0, 64, 2):
+        stz((i << 56) | int(c_buffer.offset((i >> 1) * c.dim[0]())))
 
     _clr()
 

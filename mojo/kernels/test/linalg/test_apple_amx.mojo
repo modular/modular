@@ -22,19 +22,15 @@ from utils.list import DimList
 
 fn fill_a(buf: NDBuffer):
     # Fills the A matrix with the following values row + 2*col
-    var rows = 16
-    var cols = 16
-    for i in range(rows):
-        for j in range(cols):
+    for i in range(buf.dim[0]()):
+        for j in range(buf.dim[1]()):
             buf[(i, j)] = Scalar[buf.type](i // (j + 1) + j)
 
 
 fn fill_b(buf: NDBuffer):
     # Fills the A matrix with the following values row/(col + 1) + col
-    var rows = 16
-    var cols = 16
-    for i in range(rows):
-        for j in range(cols):
+    for i in range(buf.dim[0]()):
+        for j in range(buf.dim[1]()):
             buf[(i, j)] = Scalar[buf.type](i // (j + 1) + j)
 
 
@@ -69,4 +65,4 @@ def main():
     @parameter
     if is_apple_silicon():
         test_dot_at_b[DType.float32, (16, 16)]()
-        # test_dot_at_b[DType.float16, (32, 32)]()
+        test_dot_at_b[DType.float16, (32, 32)]()
