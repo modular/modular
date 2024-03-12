@@ -20,12 +20,6 @@
 using namespace M;
 using namespace Frameworks;
 
-void M::Frameworks::StatsReport::countLowering(mlir::Operation &op) {
-  auto opName = op.getName().stripDialect();
-  ++loweredHistogram[opName.str()];
-  ++numLoweredOps;
-}
-
 /// Get just the op signature: name, in/out types, attributes.
 static std::string getOpSignature(mlir::Operation &op) {
   std::string key;
@@ -74,6 +68,11 @@ static std::string getOpSignature(mlir::Operation &op) {
   }
   ss << "}";
   return key;
+}
+
+void M::Frameworks::StatsReport::countLowering(mlir::Operation &op) {
+  ++numLoweredOps;
+  ++loweredHistogram[getOpSignature(op)];
 }
 
 void M::Frameworks::StatsReport::countFallback(mlir::Operation &op) {
@@ -157,6 +156,11 @@ void M::Frameworks::StatsReport::emitTelemetry(
     }
   };
   // Add fallback histogram
+  std::vector<std::string_view> loweredOps;
+  std::vector<uint32_t> loweredCounts;
+  fillHistogram(loweredOps, loweredCounts, loweredHistogram);
+
+  // Add fallback histogram
   std::vector<std::string_view> fallbackOps;
   std::vector<uint32_t> fallbackCounts;
   fillHistogram(fallbackOps, fallbackCounts, fallbackHistogram);
@@ -171,6 +175,8 @@ void M::Frameworks::StatsReport::emitTelemetry(
                           {"lowered_op_count", numLoweredOps},
                           {"fallback_op_count", numFallbackOps},
                           {"failed_op_count", numFailedOps},
+                          {"lowered_ops.histogram.keys", loweredOps},
+                          {"lowered_ops.histogram.values", loweredCounts},
                           {"fallback_ops.histogram.keys", fallbackOps},
                           {"fallback_ops.histogram.values", fallbackCounts},
                           {"failed_ops.histogram.keys", failureOps},
