@@ -6,9 +6,11 @@
 
 set(TORCH_LIB "missing")
 set(FRAMEWORK_DYLIB_DEPS "")
+set(FRAMEWORK_TEST_DEPS "")
 if(TARGET mtorch)
   set(TORCH_LIB "mtorch")
   list(APPEND FRAMEWORK_DYLIB_DEPS mtorch)
+  list(APPEND FRAMEWORK_TEST_DEPS pytorch-generated-tests)
 endif()
 
 if(TARGET tf)
@@ -40,6 +42,7 @@ add_modular_testsuite(check-max-engine-integration-tests
   monnx
   mof
   ${FRAMEWORK_DYLIB_DEPS}
+  ${FRAMEWORK_TEST_DEPS}
   is-cuda-available
   max-mojo
   kernels-register

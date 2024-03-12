@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -145,3 +146,30 @@ torchscript_relu_model_path = (
 config.substitutions.append(
     ("%torchscript_relu_model", str(torchscript_relu_model_path))
 )
+
+pytorch_generated_tests_dir = os.path.join(
+    config.modular_derived_dir, "pytorch-generated-tests"
+)
+config.substitutions.append(("%deriveddir", config.modular_derived_dir))
+
+torch_vision_path = (
+    Path(config.modular_derived_dir)
+    / "third-party"
+    / "stock-torchvision"
+    / "src"
+    / "build"
+)
+
+if platform.system() == "Darwin":
+    torch_vision_path /= "libtorchvision.dylib"
+elif platform.system() == "Linux":
+    torch_vision_path /= "libtorchvision.so"
+else:
+    torch_vision_path /= "torchvision.dll"
+
+config.substitutions.append(("%torchvisionlib", str(torch_vision_path)))
+if Path(pytorch_generated_tests_dir).exists():
+    config.substitutions.append(
+        ("%pytorch_generated_tests_dir", pytorch_generated_tests_dir)
+    )
+    config.available_features.add("pytorch-generated-tests")
