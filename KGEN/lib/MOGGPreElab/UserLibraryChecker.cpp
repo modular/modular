@@ -24,8 +24,26 @@ struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
     return true;
   }
 
-  const SymbolTable symtab;
+  const SymbolTable &symtab;
 };
+
+UserLibraryChecker::UserLibraryChecker(ModuleOp module,
+                                       const SymbolTable &symtab)
+    : cg(new CallGraph(symtab)) {
+  cg->build(module, symtab);
+  for (auto gen : module.getOps<GeneratorOp>())
+    for (auto region : gen.getOps<ParamDeclareRegionOp>())
+      paramDeclRegions.push_back(region);
+}
+
+UserLibraryChecker::~UserLibraryChecker() = default;
+
+LogicalResult UserLibraryChecker::run() {
+  if (failed(checkCallsiteLocation()))
+    return failure();
+
+  return success();
+}
 
 bool isDecorator(TypedAttr decorator, StringLiteral annotation) {
   if (auto apply = dyn_cast<KGEN::ParamOperatorAttr>(decorator))
@@ -54,6 +72,122 @@ bool hasAnyDecorator(GeneratorOp gen,
                              return isDecorator(decorator, annot);
                            });
       });
+}
+
+namespace {
+LogicalResult checkCallsiteErrorInternal(CallOp call, GeneratorOp root,
+                                         GeneratorOp gen) {
+  auto checkFunc = [&](const StringLiteral &decorator, StringRef msg,
+                       GeneratorOp root) -> LogicalResult {
+    if (hasDecorator(gen, decorator)) {
+      mlir::emitError(call->getLoc(), msg)
+          << ", see kernel at " << root->getLoc() << ".";
+      return failure();
+    }
+    return success();
+  };
+
+  if (failed(checkFunc(tensorAllocDecorator,
+                       "Tensor allocations are currently only supported inside "
+                       "the top level kernel",
+                       root)))
+    return failure();
+  if (failed(checkFunc(tensorEnableFusion,
+                       "Calling enable_fusion outside of kernel entry point is "
+                       "not supported",
+                       root)))
+    return failure();
+
+  return success();
+}
+
+LogicalResult checkParamRegionCallsiteLocation(
+    CallGraph *cg,
+    const llvm::SmallVectorImpl<ParamDeclareRegionOp> &paramDeclRegions,
+    llvm::SmallPtrSetImpl<CallGraphNode *> &visited) {
+
+  llvm::SmallVector<ParamDeclareRegionOp> registeredRegions;
+  LogicalResult res = success();
+
+  for (ParamDeclareRegionOp region : paramDeclRegions) {
+    // Scan through the decorators to see if the region is inside a registered
+    // kernel.
+    if (hasAnyDecorator(region->getParentOfType<GeneratorOp>(),
+                        {registerDecorator, registerOverrideDecorator}))
+      registeredRegions.push_back(region);
+  }
+
+  for (ParamDeclareRegionOp region : registeredRegions) {
+    // Checks and enqueues calls inside the ParamDeclareRegionOp within a
+    // registered kernel.
+    for (CallOp call : region.getOps<CallOp>()) {
+      GeneratorOp gen = dyn_cast_or_null<GeneratorOp>(
+          cg->symtab.lookup(call.getCallee().getSymbol().getLeafReference()));
+      assert(gen && "invalid IR?");
+      if (failed(checkCallsiteErrorInternal(
+              call, region->getParentOfType<GeneratorOp>(), gen))) {
+        res = failure();
+      }
+    }
+  }
+
+  return res;
+}
+
+LogicalResult checkGeneratorCallsiteLocation(
+    CallGraph *cg, llvm::SmallPtrSetImpl<CallGraphNode *> &visited) {
+
+  llvm::SmallVector<GeneratorOp> kernels;
+  std::list<CallGraphNode *> queue;
+  LogicalResult res = success();
+
+  for (auto &[gen, node] : cg->nodes) {
+    // Scan through the decorators to see if the kernel is registered.
+    if (hasAnyDecorator(gen, {registerDecorator, registerOverrideDecorator}))
+      kernels.push_back(gen);
+  }
+
+  for (GeneratorOp gen : kernels) {
+    // Traverse and check the call graph starting from this kernel.
+    CallGraphNode *root = &cg->nodes.find(gen)->second;
+    queue.push_back(root);
+    while (!queue.empty()) {
+      CallGraphNode *caller = queue.front();
+      queue.pop_front();
+      for (CallGraphNode::EdgeT edge : caller->callsites) {
+        CallGraphNode *callee = edge.node;
+
+        if (visited.contains(callee))
+          continue;
+
+        if (caller != root) {
+          if (failed(checkCallsiteErrorInternal(edge.call, root->func,
+                                                callee->func))) {
+            res = failure();
+            continue;
+          }
+          visited.insert(callee);
+        }
+
+        queue.push_back(callee);
+      }
+    }
+  }
+
+  return res;
+}
+} // namespace
+
+LogicalResult UserLibraryChecker::checkCallsiteLocation() {
+  llvm::SmallPtrSet<CallGraphNode *, 32> visited;
+  LogicalResult res = success();
+  if (failed(checkGeneratorCallsiteLocation(cg.get(), visited)))
+    res = failure();
+  if (failed(checkParamRegionCallsiteLocation(cg.get(), paramDeclRegions,
+                                              visited)))
+    res = failure();
+
+  return res;
 }
 
 } // namespace M::KGEN::MOGGPreElab

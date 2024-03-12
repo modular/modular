@@ -7,33 +7,33 @@
 #ifndef KGEN_LIB_MOGGPREELAB_MOGGDECORATORS_H
 #define KGEN_LIB_MOGGPREELAB_MOGGDECORATORS_H
 
-#include "KGEN/KGENDialect/KGENOps.h"
-
+#include "llvm/ADT/StringRef.h"
 namespace M::KGEN::MOGGPreElab {
 
 // The decorators we will look for on the generator to identify it as a MO
 // kernel.
-constexpr StringLiteral registerDecorator = "register::register::mogg_register";
+constexpr llvm::StringLiteral registerDecorator =
+    "register::register::mogg_register";
 // TODO(#27757): Temporary as transition to Mojo async/await.
-constexpr StringLiteral willBecomeAsyncDecorator =
+constexpr llvm::StringLiteral willBecomeAsyncDecorator =
     "register::register::mogg_will_become_async";
-constexpr StringLiteral registerOverrideDecorator =
+constexpr llvm::StringLiteral registerOverrideDecorator =
     "register::register::mogg_register_override";
 
-constexpr StringLiteral tensorAllocDecorator =
+constexpr llvm::StringLiteral tensorAllocDecorator =
     "register::register::mogg_tensor_allocator";
-constexpr StringLiteral tensorCopyConstructDecorator =
+constexpr llvm::StringLiteral tensorCopyConstructDecorator =
     "register::register::mogg_tensor_copy_constructor";
-constexpr StringLiteral tensorDeconstructDecorator =
+constexpr llvm::StringLiteral tensorDeconstructDecorator =
     "register::register::mogg_tensor_deconstructor";
 
-constexpr StringLiteral elementwiseHook =
+constexpr llvm::StringLiteral elementwiseHook =
     "register::register::mogg_elementwise_hook";
-constexpr StringLiteral tensorEnableFusion =
+constexpr llvm::StringLiteral tensorEnableFusion =
     "register::register::mogg_enable_fusion";
-constexpr StringLiteral tensorInputFusionHook =
+constexpr llvm::StringLiteral tensorInputFusionHook =
     "register::register::mogg_input_fusion_hook";
-constexpr StringLiteral tensorOutputFusionHook =
+constexpr llvm::StringLiteral tensorOutputFusionHook =
     "register::register::mogg_output_fusion_hook";
 
 } // namespace M::KGEN::MOGGPreElab
