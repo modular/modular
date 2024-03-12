@@ -148,6 +148,15 @@ struct LayoutTensor[
             offset += vals[i] * stride[i]
         return offset
 
+    @staticmethod
+    fn _getOffset[
+        rank_1: Int, rank_2: Int
+    ](stride: StaticIntTuple[rank_1], vals: StaticIntTuple[rank_2]) -> Int:
+        var offset = 0
+        for i in range(rank_1):
+            offset += vals[i] * stride[i]
+        return offset
+
     @always_inline
     @staticmethod
     fn shape[idx: Int]() -> Int:
@@ -185,6 +194,21 @@ struct LayoutTensor[
         )
 
     @staticmethod
+    fn _toCoords[
+        rank_1: Int, rank_2: Int
+    ](
+        id: Int, shape: StaticIntTuple[rank_1], stride: StaticIntTuple[rank_2]
+    ) -> StaticIntTuple[rank_1]:
+        # In theory we should be able to verify this at compile time but it not happening now!
+        debug_assert(
+            rank_1 == rank_2, "shape and stride should be the same rank!"
+        )
+        var coords = StaticIntTuple[rank_1]()
+        for i in range(rank_1):
+            coords[i] = (id // stride[i]) % shape[i]
+        return coords
+
+    @staticmethod
     fn _compute_distribute_layout[
         data_layout: Layout, threads_layout: Layout
     ]() -> Layout:
@@ -198,14 +222,16 @@ struct LayoutTensor[
         tiled_layout: Layout = Self._compute_distribute_layout[
             layout, threads_layout
         ](),
-    ](self, m: Int, n: Int) -> LayoutTensor[
+    ](self, thread_id: Int) -> LayoutTensor[
         tiled_layout[1], dtype, address_space
     ]:
-        alias composed_layout = composition(tiled_layout[0], threads_layout)
-        alias fragments_layout_stride = Self._toStatic[composed_layout.stride]()
-        var offset = m * fragments_layout_stride[
-            0
-        ] + n * fragments_layout_stride[1]
+        alias threads_shape = Self._toStatic[threads_layout.shape]()
+        alias threads_stride = Self._toStatic[threads_layout.stride]()
+        var thread_coords = Self._toCoords(
+            thread_id, threads_shape, threads_stride
+        )
+        alias fragments_layout_stride = Self._toStatic[tiled_layout[0].stride]()
+        var offset = Self._getOffset(fragments_layout_stride, thread_coords)
         return LayoutTensor[tiled_layout[1], dtype, address_space](
             self.ptr.offset(offset)
         )

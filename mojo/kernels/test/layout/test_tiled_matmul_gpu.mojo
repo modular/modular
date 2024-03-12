@@ -12,7 +12,7 @@ from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.sync import barrier
 from gpu.mma import mma
 from kernel_utils._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from kernel_utils.int_tuple import IntTuple
+from kernel_utils.int_tuple import IntTuple, int
 from kernel_utils.layout import Layout
 from kernel_utils.layout_tensor import LayoutTensor, stack_allocation_like
 
@@ -116,18 +116,16 @@ fn sram_blocked_matmul[
     # layout accross the BMxBN block, e.g row major layout will repeate as the
     # the following:
     # +---------------------------------BN-+----------------------------------+-------------
-    # |  TH_(0, 0) TH_(0, 1) ... TH_(M, N) | TH_(0, 0) TH_(0, 1) ... TH_(M, N)| TH_(0, 0)...
-    # |  TH_(1, 0) TH_(1, 1) ... TH_(1, N) | TH_(1, 0) TH_(1, 1) ... TH_(1, N)| TH_(1, 0)...
-    # |      .               .             |                     .            |      .
-    # |      .                 .           |                       .          |      .
-    # BN TH_(M, 0) TH_(M, 1) ... TH_(M, N) | TH_(M, 0) TH_(M, 1) ... TH_(M, N)| TH_(M, 0)
+    # |  TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N
+    # |  TH_3 TH_4     ... TH_5    | TH_3 TH_4     ... TH_5    | TH_3 TH_4     ... TH_5
+    # |    .            .          |   .           .           |   .            .
+    # |    .             .         |   .           .           |   .             .
+    # BN TH_M TH_(M+1) ... TH_(MN) | TH_M TH_(M+1) ... TH_(MN) | TH_M TH_(M+1) ... TH_(MN)
     # +------------------------------------+----------------------------------+------------
-    # |  TH_(0, 0) TH_(0, 1) ... TH_(M, N) | TH_(0, 0) TH_(0, 1) ... TH_(M, N)| TH_(0, 0)...
-    # |      .        .      ...     .     |     .        .      ...      .          .
-    # |      .        .      ...     .     |     .        .      ...      .          .
-    var dst_local_tile = dst_tile.distribute[thread_layout](
-        ThreadIdx.y(), ThreadIdx.x()
-    )
+    # |  TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N    |  TH_0 TH_1     ... TH_N
+    # |      .        .      ...   |     .         ...   .     |    .
+    # |      .        .      ...   |     .         ...   .     |    .
+    var dst_local_tile = dst_tile.distribute[thread_layout](ThreadIdx.x())
 
     # Allocate a register tile for the dst matrix with the same layout.
     var dst_register_tile = stack_allocation_like(dst_local_tile)
@@ -140,17 +138,13 @@ fn sram_blocked_matmul[
         var rhs_tile = rhs.tile[BK, BN](k, BlockIdx.x())
 
         # Distribute layout of threads into DRAM and SRAM to perform the copy.
-        var lhs_tile_local = lhs_tile.distribute[thread_layout](
-            ThreadIdx.y(), ThreadIdx.x()
-        )
-        var rhs_tile_local = rhs_tile.distribute[thread_layout](
-            ThreadIdx.y(), ThreadIdx.x()
-        )
+        var lhs_tile_local = lhs_tile.distribute[thread_layout](ThreadIdx.x())
+        var rhs_tile_local = rhs_tile.distribute[thread_layout](ThreadIdx.x())
         var lhs_sram_tile_local = lhs_sram_tile.distribute[thread_layout](
-            ThreadIdx.y(), ThreadIdx.x()
+            ThreadIdx.x()
         )
         var rhs_sram_tile_local = rhs_sram_tile.distribute[thread_layout](
-            ThreadIdx.y(), ThreadIdx.x()
+            ThreadIdx.x()
         )
         lhs_sram_tile_local.copy_from_numa(lhs_tile_local)
         rhs_sram_tile_local.copy_from_numa(rhs_tile_local)
@@ -159,14 +153,14 @@ fn sram_blocked_matmul[
 
         # Distribute thread layout into rows of l.h.s and cols of r.h.s
         # to perform dot mma instruction.
-        alias TH_ROWS = thread_layout.shape[0]
-        alias TH_COLS = thread_layout.shape[1]
+        alias TH_ROWS = int(thread_layout.shape[0])
+        alias TH_COLS = int(thread_layout.shape[1])
         var lhs_sram_local = lhs_sram_tile.distribute[
             Layout(IntTuple(TH_ROWS, 1), IntTuple(1, 1))
-        ](ThreadIdx.y(), 0)
+        ](ThreadIdx.x() % TH_ROWS)
         var rhs_sram_local = rhs_sram_tile.distribute[
             Layout(IntTuple(1, TH_COLS), IntTuple(1, 1))
-        ](0, ThreadIdx.x())
+        ](ThreadIdx.x() // TH_ROWS)
 
         # Iterate over fragments of each thread.
         for m_i in range(dst_register_tile.shape[0]()):
@@ -224,8 +218,8 @@ fn test_sram_blocked_matmul() raises:
         mat_c,
         mat_a,
         mat_b,
-        grid_dim=(M // BM, N // BN),
-        block_dim=(TH_M, TH_N),
+        grid_dim=(N // BN, M // BM),
+        block_dim=(thread_layout.size()),
     )
 
     synchronize()
