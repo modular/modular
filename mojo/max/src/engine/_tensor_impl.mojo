@@ -127,19 +127,10 @@ struct EngineTensor(Sized):
 @value
 @register_passable
 struct _Numpy:
-    var np: AnyPointer[PythonObject]
+    var np: PythonObject
 
-    fn __init__() raises -> Self:
-        var np_ptr = AnyPointer[PythonObject].alloc(1)
-        __get_address_as_uninit_lvalue(np_ptr.value) = Python.import_module(
-            "numpy"
-        )
-
-        return Self {np: np_ptr}
+    fn __init__(inout self) raises:
+        self.np = Python.import_module("numpy")
 
     fn __getattr__(self, attr: StringLiteral) raises -> PythonObject:
-        return self.np[].__getattr__(attr)
-
-    fn __del__(owned self):
-        _ = __get_address_as_owned_value(self.np.value)
-        self.np.free()
+        return self.np.__getattr__(attr)
