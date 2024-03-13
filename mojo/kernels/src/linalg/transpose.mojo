@@ -585,7 +585,7 @@ fn _process_tile[
     @parameter
     @always_inline
     fn store_output_vals[count: Int]():
-        out_ptr.simd_store[tile_size_n](
+        out_ptr.store[width=tile_size_n](
             output_tile_offset + N * count, output_vals[count]
         )
 

@@ -65,7 +65,7 @@ fn _simd_store_maybe_partial[
             ptr + offset, 0, partial_store_size.value(), vec
         )
     else:
-        return ptr.simd_store[simd_size](offset, vec)
+        return ptr.store[width=simd_size](offset, vec)
 
 
 # ===----------------------------------------------------------------------===#
@@ -328,7 +328,7 @@ fn _accumulate_x86_simd[
                 # The following should be lifted to registers and show up as
                 # FMA instructions.
                 var c_ptr = c + i * kernel_width + j * simd_size
-                c_ptr.simd_store(
+                c_ptr.store(
                     fma(
                         a_splat_vec.cast[c.type](),
                         b_vec.cast[c.type](),
@@ -398,7 +398,7 @@ fn _accumulate_x86_simd[
                 # The following should be lifted to registers and show up as
                 # FMA instructions.
                 var c_ptr = c + i * kernel_width + j * simd_size
-                c_ptr.simd_store(
+                c_ptr.store(
                     fma(
                         a_splat_vec.cast[c.type](),
                         b_vec.cast[c.type](),
@@ -505,7 +505,7 @@ fn _accumulate_neon[
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
                     var c_ptr = c + i * kernel_width + j * simd_size
-                    c_ptr.simd_store(
+                    c_ptr.store(
                         fma[c.type, simd_size](
                             a_vecs[i][lane].cast[c.type](),
                             b_vec.cast[c.type](),
@@ -576,7 +576,7 @@ fn _accumulate_neon[
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
                     var c_ptr = c + i * kernel_width + j * simd_size
-                    c_ptr.simd_store(
+                    c_ptr.store(
                         fma[c.type, simd_size](
                             a_vecs[i][lane].cast[c.type](),
                             b_vec.cast[c.type](),
@@ -618,7 +618,7 @@ fn init_register_tile[
 
         @unroll
         for j in range(num_cols):
-            tile.simd_store(i * tile_width + j * simd_size, zero_vec)
+            tile.store(i * tile_width + j * simd_size, zero_vec)
 
 
 @always_inline
@@ -659,7 +659,7 @@ fn load_register_tile[
         alias partial_load_last_vec = partial_load and (j == num_cols - 1)
 
         # TODO: check if partial_load_size has value.
-        tile_ptr.simd_store(
+        tile_ptr.store(
             _simd_load_maybe_partial[simd_size, partial_load_last_vec](
                 input_ptr, 0, partial_load_size
             ).cast[tile_ptr.type]()

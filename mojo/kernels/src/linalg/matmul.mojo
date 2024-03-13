@@ -603,7 +603,7 @@ struct LoadStoreOutputTile[
                     var data = self.output_tile.load[width=column_step](
                         Index(row, col)
                     )
-                    self.row_ptrs[row].offset(col).simd_store(data)
+                    self.row_ptrs[row].offset(col).store(data)
 
     @always_inline
     fn _load_store_tail[
@@ -936,13 +936,13 @@ struct MatmulInnerLoopBPacked[
                 ):
                     c_ptr.offset(
                         self.c_stride * (2 * idx0 + 0) + 2 * idx1
-                    ).simd_store[2](c_data.slice[2](0))
+                    ).store[width=2](c_data.slice[2](0))
 
                     @parameter
                     if not single_row_i8mm:
                         c_ptr.offset(
                             self.c_stride * (2 * idx0 + 1) + 2 * idx1
-                        ).simd_store[2](c_data.slice[2](2))
+                        ).store[width=2](c_data.slice[2](2))
                 elif idx1 * 2 <= self.c_bound[1]:
                     partial_simd_store(
                         c_ptr.offset(self.c_stride * (2 * idx0 + 0) + 2 * idx1),
@@ -986,7 +986,7 @@ struct MatmulInnerLoopBPacked[
                 idx1 * simd_size + simd_size <= self.c_bound[1] - tile_n_idx
             ):
                 # Use simd store if all within bound
-                c_ptr.offset(idx1 * simd_size).simd_store[simd_size](c_data)
+                c_ptr.offset(idx1 * simd_size).store[width=simd_size](c_data)
             elif idx1 * simd_size <= self.c_bound[1]:
                 # Use partial store if col not in simd bound.
                 partial_simd_store(
