@@ -7,7 +7,8 @@
 # Meant to be run on an AVX512 system
 
 import benchmark
-from algorithm import unroll, sync_parallelize
+from algorithm import sync_parallelize
+from utils import unroll
 
 from kernel_utils.layout import Layout
 from kernel_utils.layout_tensor import LayoutTensor, TensorBuilder
