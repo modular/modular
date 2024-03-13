@@ -1878,7 +1878,8 @@ def LIT_RefPackCreateOp : LITOp<"ref.pack.create", [Pure]> {
 // RefPackGetOp
 //===----------------------------------------------------------------------===//
 
-def LIT_RefPackGetOp : LITOp<"ref.pack.get", [Pure]> {
+def LIT_RefPackGetOp : LITOp<"ref.pack.get",
+                      [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "reference pack get element";
   let description = [{
     The `lit.ref.pack.get` operation returns the reference in the pack at the
@@ -1889,9 +1890,5 @@ def LIT_RefPackGetOp : LITOp<"ref.pack.get", [Pure]> {
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $pack `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($pack)
-    custom<PackGetResultType>(ref($pack), ref(type($pack)), ref($index),
-                              type($result))
   }];
-
-  let hasVerifier = 1;
 }
