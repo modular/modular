@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/ML/CompiledFrameworkLabel.h"
-
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
@@ -15,7 +15,6 @@ const char *CompiledFrameworkLabel::getAsOpNameOrNull() const {
   case kUnknown:
     return nullptr;
   case kTensorFlowModel:
-  case kTFLiteModel:
   case kONNXModel:
   case kPyTorchModel:
   case kModularModel:
@@ -38,10 +37,11 @@ bool CompiledFrameworkLabel::isValidOpName(StringRef opName) {
 }
 
 bool CompiledFrameworkLabel::isValidFrameworkName(StringRef frameworkName) {
-  return frameworkName == "tfl" || frameworkName == "tf" ||
-         // TODO(#6190): "mgp" isn't really a framework, replace with faux.
-         frameworkName == "mgp" || frameworkName == "onnx" ||
-         frameworkName == "pytorch" || frameworkName == "mof";
+  return llvm::is_contained(
+      {"tf",
+       "mgp", // TODO(#6190): "mgp" isn't really a framework, replace with faux.
+       "onnx", "pytorch", "mof"},
+      frameworkName);
 }
 
 CompiledFrameworkLabel
@@ -51,15 +51,13 @@ CompiledFrameworkLabel::getLabelForOpName(StringRef opName,
     // TODO(#6190): Support mgp.model for faux.
     return CompiledFrameworkLabel{kFauxModel};
   if (opName == "mgp.model") {
-    if (frameworkName == "tfl")
-      return CompiledFrameworkLabel{kTFLiteModel};
-    else if (frameworkName == "tf")
+    if (frameworkName == "tf")
       return CompiledFrameworkLabel{kTensorFlowModel};
-    else if (frameworkName == "onnx")
+    if (frameworkName == "onnx")
       return CompiledFrameworkLabel{kONNXModel};
-    else if (frameworkName == "pytorch")
+    if (frameworkName == "pytorch")
       return CompiledFrameworkLabel{kPyTorchModel};
-    else if (frameworkName == "mof")
+    if (frameworkName == "mof")
       return CompiledFrameworkLabel{kModularModel};
   }
   llvm::errs() << opName << " & " << frameworkName << "\n";
@@ -72,8 +70,6 @@ const char *CompiledFrameworkLabel::getAsString() const {
     return "unknown";
   case kTensorFlowModel:
     return "compiled TensorFlow model";
-  case kTFLiteModel:
-    return "compiled TFLite model";
   case kFauxModel:
     return "compiled Faux model";
   case kONNXModel:
@@ -93,8 +89,6 @@ CompiledFrameworkLabel::asLabelString(CompiledFrameworkLabel::Cases label) {
     return nullptr;
   case kTensorFlowModel:
     return "tf";
-  case kTFLiteModel:
-    return "tfl";
   case kFauxModel:
     // TODO(#6190): Support mgp.model for faux.
     return nullptr;
