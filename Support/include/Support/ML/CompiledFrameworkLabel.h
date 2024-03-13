@@ -44,8 +44,6 @@ public:
     kUnknown,
     /// A compiled TensorFlow model.
     kTensorFlowModel,
-    /// A compiled TFLite model.
-    kTFLiteModel,
     /// A compiled Faux test case.
     kFauxModel,
     // A compiled ONNX model.
