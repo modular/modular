@@ -263,7 +263,7 @@ struct Buffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.data.simd_store[width](idx, val)
+        self.data.store[width=width](idx, val)
 
     @always_inline
     fn aligned_simd_store[
@@ -1192,7 +1192,7 @@ struct NDBuffer[
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        self._offset(idx).simd_store[width](val)
+        self._offset(idx).store[width=width](val)
 
     @always_inline
     fn aligned_simd_store[
@@ -1485,7 +1485,7 @@ struct NDBuffer[
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
                 var vec = self.data.load[width=simd_size](i * TN + j)
-                self.data.simd_store[simd_size](idx, vec * rhs.cast[type]())
+                self.data.store[width=simd_size](idx, vec * rhs.cast[type]())
 
     @always_inline("nodebug")
     fn __imul__(inout self, rhs: NDBuffer):
@@ -1513,7 +1513,7 @@ struct NDBuffer[
                 var rhs_vec = SIMD[type, simd_size](
                     rhs.data.load(i).cast[type]()
                 )
-                self.data.simd_store[simd_size](idx, vec * rhs_vec)
+                self.data.store[width=simd_size](idx, vec * rhs_vec)
 
     @always_inline("nodebug")
     fn __itruediv__(inout self, rhs: NDBuffer):
@@ -1541,7 +1541,7 @@ struct NDBuffer[
                 var rhs_vec = SIMD[type, simd_size](
                     rhs.data.load(i).cast[type]()
                 )
-                self.data.simd_store[simd_size](idx, vec / rhs_vec)
+                self.data.store[width=simd_size](idx, vec / rhs_vec)
 
     @always_inline("nodebug")
     fn __mul__(self, rhs: Self) -> Self:
@@ -1617,7 +1617,7 @@ struct NDBuffer[
 
         @unroll
         for i in range(m):
-            res.data.simd_store[simd_size](
+            res.data.store[width=simd_size](
                 i, self.data.load(i) - rhs.data.load(i)
             )
 
@@ -1654,7 +1654,7 @@ struct NDBuffer[
             @unroll
             for j in range(0, n, simd_size):
                 var idx = i * n + j
-                res.data.simd_store[simd_size](
+                res.data.store[width=simd_size](
                     idx, self.data.load[width=simd_size](idx) - rhs.data.load(i)
                 )
 
