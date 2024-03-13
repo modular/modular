@@ -18,8 +18,10 @@ namespace M::KGEN {
 /// Many backends don't support arbitrary symbol names. This function will
 /// losslessly re-mangle a symbol to only alnum characters and underscores.
 /// The mangling scheme will replace all unsupported characters with underscores
-/// and then append characters to the end of the symbol to keep it unique.
-StringAttr sanitizeSymbolToAlnum(StringAttr name);
+/// and then append characters to the end of the symbol to keep it unique, if
+/// name length is longer than charToKeep it truncates the sanitized name and
+/// append _hash_hex(name) to the end making it at most 64 character long.
+StringAttr sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep = 32);
 
 } // namespace M::KGEN
 

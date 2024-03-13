@@ -8,6 +8,8 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/BLAKE3.h"
 
 using namespace M;
 using namespace KGEN;
@@ -52,16 +54,14 @@ static constexpr auto produceEncoding() {
   return encoding;
 }
 
-StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name) {
-  CompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
-                                    [name] { return name.str(); });
-  // Replace contiguous sections of invalid symbols with a single '_' while
-  // tallying all the invalid symbols. They are encoded and placed at the end of
-  // the string.
+/// Replace contiguous sections of invalid symbols with a single '_' while
+/// tallying all the invalid symbols. They are encoded and placed at the end of
+/// the string.
+/// The resultant string. Each invalid character is encoded as 2 characters
+/// additional characters and replaced with at most 1 underscore, meaning the
+/// resulting string will be at most 3 times the size of the input string.
+static SmallString<1024> replaceInvalidCharacter(StringRef name) {
 
-  // The resultant string. Each invalid character is encoded as 2 characters
-  // additional characters and replaced with at most 1 underscore, meaning the
-  // resulting string will be at most 3 times the size of the input string.
   SmallVector<char, 256> invalid;
   invalid.reserve(name.size());
   SmallString<1024> result;
@@ -89,5 +89,21 @@ StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name) {
     result.push_back(d0);
     result.push_back(d1);
   }
-  return StringAttr::get(name.getContext(), result);
+  return result;
+}
+
+StringAttr KGEN::sanitizeSymbolToAlnum(StringAttr name, size_t charToKeep) {
+  CompilerTimeTraceScope traceScope("sanitizeSymbolToAlnum",
+                                    [name] { return name.str(); });
+  if (name.size() > charToKeep) {
+    auto rawNameBytes =
+        ArrayRef<uint8_t>((const uint8_t *)name.data(), name.size());
+    auto hash = llvm::BLAKE3::hash<16>(rawNameBytes);
+    return StringAttr::get(
+        name.getContext(),
+        replaceInvalidCharacter(name.strref().take_front(charToKeep)) + "_" +
+            llvm::toHex(hash, true));
+  }
+
+  return StringAttr::get(name.getContext(), replaceInvalidCharacter(name));
 }
