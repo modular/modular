@@ -549,7 +549,7 @@ struct Q4sym[
                 )
 
                 var flat_index_output = output_inner_dim * i + j * group_size
-                output_tensor.data.simd_store[group_size](
+                output_tensor.data.store[width=group_size](
                     flat_index_output, encoded.decode_fully()
                 )
 
@@ -580,8 +580,8 @@ fn _block_quantize_a[
             var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
 
             var quant_data = roundeven(fp_data * multiplier).cast[DType.int8]()
-            a_quant_ptr.simd_store(quant_data)
-            a_scale_ptr.simd_store(scale.cast[scale_type]())
+            a_quant_ptr.store(quant_data)
+            a_scale_ptr.store(scale.cast[scale_type]())
 
             a_ptr = a_ptr.offset(group_size)
             a_quant_ptr = a_quant_ptr.offset(group_size)
