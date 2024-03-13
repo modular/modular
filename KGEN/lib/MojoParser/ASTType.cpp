@@ -526,6 +526,21 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
 
       bool isPack = sig.isPackVarArg(i);
       bool isPosVarArg = sig.isPosVarArg(i);
+      if (isPosVarArg &&
+          // TODO: remove old PackType.
+          !isa<PackType>(type)) {
+        switch (sig.getPosVarArgConvention(i)) {
+        default:
+          break;
+        case ArgConvention::OwnedInMem:
+          os << "owned ";
+          break;
+        case ArgConvention::ByRef:
+          os << "inout ";
+          break;
+        }
+      }
+
       if (isPack || isPosVarArg) {
         os << '*';
         if (isPack)
@@ -586,16 +601,6 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << '*';
     printParam(os, packType.getVariadic(), forDiag, demangleParams);
   } else if (auto packType = dyn_cast<RefPackType>(type)) {
-    switch (packType.getConvention()) {
-    default:
-      break;
-    case ArgConvention::OwnedInMem:
-      os << "owned ";
-      break;
-    case ArgConvention::ByRef:
-      os << "inout ";
-      break;
-    }
     // TODO: Remove this when packs switch to RefPackType
     os << '*';
     printParam(os, packType.getVariadic(), forDiag, demangleParams);

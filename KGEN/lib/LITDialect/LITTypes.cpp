@@ -103,12 +103,12 @@ TypeSignatureType TypeSignatureType::remapToSignature(
       });
 
   MLIRContext *ctx = paramDecls.getContext();
-  paramListAttrs = PogsAttr::getChecked(
-      emitError, ctx, paramListAttrs.getNames(),
-      paramListAttrs.getPassingKinds(),
+  paramListAttrs = PogsAttr::get(
+      ctx, paramListAttrs.getNames(), paramListAttrs.getPassingKinds(),
       remapper.replace(paramListAttrs.getDefaultPos()),
       remapper.replace(paramListAttrs.getDefaultKwOnly()),
-      paramListAttrs.getVariadicIndices(), /*packIndices=*/{});
+      paramListAttrs.getVariadicIndices(), paramListAttrs.getPackIndex(),
+      paramListAttrs.getOrigPackConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
 }
@@ -124,7 +124,8 @@ TypeSignatureType TypeSignatureType::get(
     ArrayRef<TypedAttr> defaultKwOnlyParams, ArrayRef<size_t> variadicIndices) {
   auto paramListAttrs =
       PogsAttr::get(context, paramNames, paramPassingKinds, defaultPosParams,
-                    defaultKwOnlyParams, variadicIndices, /*packIndices=*/{});
+                    defaultKwOnlyParams, variadicIndices, /*packIndex=*/-1,
+                    ArgConvention::None);
   return get(context, paramTypes, paramListAttrs);
 }
 
@@ -467,9 +468,10 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
   }
   assert(sigIt == sigRange.end() && "expected signature to get processed");
 
-  auto paramListAttrs = PogsAttr::get(
-      getContext(), newParamNames, newPassingKinds, newPosDefaults,
-      newKwOnlyDefaults, newVariadicIndices, /*packIndices=*/{});
+  auto paramListAttrs =
+      PogsAttr::get(getContext(), newParamNames, newPassingKinds,
+                    newPosDefaults, newKwOnlyDefaults, newVariadicIndices,
+                    /*packIndex=*/-1, ArgConvention::None);
   auto newSig =
       TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
   return MetaTypeType::get(getSymbol(), values, newSig);
@@ -703,10 +705,9 @@ LogicalResult RefType::printValue(AsmPrinter &p, TypedAttr value) const {
 // RefPackType
 //===----------------------------------------------------------------------===//
 
-RefPackType RefPackType::get(TypedAttr variadic, ArgConvention convention,
-                             TypedAttr lifetime, TypedAttr addressSpace) {
-  return get(variadic.getContext(), variadic, convention, lifetime,
-             addressSpace);
+RefPackType RefPackType::get(TypedAttr variadic, TypedAttr lifetime,
+                             TypedAttr addressSpace) {
+  return get(variadic.getContext(), variadic, lifetime, addressSpace);
 }
 
 VariadicAttr RefPackType::getVariadicIfResolved() const {
@@ -763,7 +764,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   SmallVector<ArgConvention> argConventions;
   SmallVector<size_t> argVariadicIndices;
-  SmallVector<size_t> argPackIndices;
+  ssize_t argPackIndex = -1;
+  auto origArgPackConvention = ArgConvention::None;
 
   PassingKindParser passingKindParser(p);
   size_t idx = 0;
@@ -778,9 +780,10 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
     // Parse the argument type and its input convention.
     Type &type = argTypes.emplace_back();
-    if (p.parseType(type) || parseConventionAndVariadicness(
-                                 p, argConventions.emplace_back(),
-                                 argVariadicIndices, argPackIndices, idx++))
+    if (p.parseType(type) ||
+        parseConventionAndVariadicness(p, argConventions.emplace_back(),
+                                       argVariadicIndices, argPackIndex,
+                                       origArgPackConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -811,7 +814,8 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
       PogsAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                    defaultKwOnlyArgs, argVariadicIndices, argPackIndices),
+                    defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
+                    origArgPackConvention),
       paramListAttr, numLifetimeDecls);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
@@ -868,8 +872,12 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     }
 
     p << signature.getArguments()[i];
-    printConventionAndVariadicness(p, signature.getArgConvention(i),
-                                   variadicness[i]);
+    ArgConvention argConv = signature.getArgConvention(i);
+    if (variadicness[i] == Variadicness::kPack) {
+      assert(argConv == ArgConvention::BorrowedInReg);
+      argConv = signature.getPackVarArgConvention(i);
+    }
+    printConventionAndVariadicness(p, argConv, variadicness[i]);
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";
@@ -961,6 +969,13 @@ bool LITSignatureType::isPosVarArg(size_t index) {
   return getMetadata().isPosVarArg(index);
 }
 
+/// For a PosVarArg, return the declared ArgConvention of the elements. For
+/// example: fn x(inout *args: Int) is declared 'inout'.
+ArgConvention LITSignatureType::getPosVarArgConvention(size_t index) {
+  assert(isPosVarArg(index) && "isn't a positional vararg");
+  return ::cast<VariadicType>(getArguments()[index]).getConvention();
+}
+
 bool LITSignatureType::isKwVarArg(size_t index) {
   return getMetadata().isKwVarArg(index);
 }
@@ -974,6 +989,13 @@ RefPackType LITSignatureType::getIfRefPackType(size_t index) {
   // TODO: References: switch dyn_cast to cast when PackType goes away.
   return isPackVarArg(index) ? ::dyn_cast<RefPackType>(getArguments()[index])
                              : nullptr;
+}
+
+/// For a PosVarArg, return the declared ArgConvention of the elements. For
+/// example: fn x(inout *args: Int) is declared 'inout'.
+ArgConvention LITSignatureType::getPackVarArgConvention(size_t index) {
+  assert(getMetadata().isPackVarArg(index));
+  return getArgListAttrs().getOrigPackConvention();
 }
 
 bool LITSignatureType::hasParamVarArgs() {

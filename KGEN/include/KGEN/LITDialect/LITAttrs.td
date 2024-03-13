@@ -90,7 +90,8 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
     OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
     OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly,
     OptionalArrayRefParameter<"size_t">:$variadicIndices,
-    OptionalArrayRefParameter<"size_t">:$packIndices
+    "ssize_t":$packIndex,
+    "ArgConvention":$origPackConvention
   );
 
   let assemblyFormat = [{
@@ -99,7 +100,7 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
         `[` (`]`) : ($defaultPos^      `]`)? `,`
         `[` (`]`) : ($defaultKwOnly^   `]`)? `,`
         `[` (`]`) : ($variadicIndices^ `]`)? `,`
-        `[` (`]`) : ($packIndices^     `]`)?
+        $packIndex $origPackConvention
     `>`
   }];
 

@@ -557,7 +557,8 @@ static ParseResult parseLITFunctionSignature(
   SmallVector<TypedAttr> defaultKwOnlyArgs;
   SmallVector<ArgConvention> argConventions;
   SmallVector<size_t> argVariadicIndices;
-  SmallVector<size_t> argPackIndices;
+  ssize_t argPackIndex = -1;
+  auto origArgPackConvention = ArgConvention::None;
 
   PassingKindParser passingKindParser(p);
   size_t idx = 0;
@@ -588,8 +589,8 @@ static ParseResult parseLITFunctionSignature(
     if (p.parseColonType(arg.type) ||
         p.parseOptionalLocationSpecifier(arg.sourceLoc) ||
         parseConventionAndVariadicness(p, argConventions.emplace_back(),
-                                       argVariadicIndices, argPackIndices,
-                                       idx++))
+                                       argVariadicIndices, argPackIndex,
+                                       origArgPackConvention, idx++))
       return failure();
 
     // Parse an optional default value.
@@ -619,7 +620,8 @@ static ParseResult parseLITFunctionSignature(
 
   auto metadata = FnMetadataAttr::get(
       PogsAttr::get(p.getContext(), argNames, argPassingKinds, defaultPosArgs,
-                    defaultKwOnlyArgs, argVariadicIndices, argPackIndices),
+                    defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
+                    origArgPackConvention),
       paramListAttr, lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
@@ -686,8 +688,13 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
 
     // Then we print the optional location before and input convention.
     p.printOptionalLocationSpecifier(arg.getLoc());
-    printConventionAndVariadicness(p, signature.getArgConvention(i),
-                                   variadicness[i]);
+    auto argConv = signature.getArgConvention(i);
+
+    if (variadicness[i] == Variadicness::kPack) {
+      assert(argConv == ArgConvention::BorrowedInReg);
+      argConv = signature.getPackVarArgConvention(i);
+    }
+    printConventionAndVariadicness(p, argConv, variadicness[i]);
 
     if (TypedAttr defaultOr = defaultHandler.getDefault(i)) {
       p << " = ";

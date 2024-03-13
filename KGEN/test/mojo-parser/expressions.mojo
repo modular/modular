@@ -1162,7 +1162,7 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>{{.*}}>() throws|ownedresult -> !kgen.variant<!Error, none>
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}<<"Ts": variadic<type> var>(!kgen.pack<*(0,0)> borrow|pack) throws|async|ownedresult -> !kgen.variant<!Error, none>
+  # CHECK-SAME: p2: {{.*}}<<"Ts": variadic<type> var>(!kgen.pack<*(0,0)> owned_in_mem|pack) throws|async|ownedresult -> !kgen.variant<!Error, none>
   p2: async def[*Ts: AnyRegType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) -> !Int

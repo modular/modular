@@ -91,7 +91,8 @@ def PogsAttr : DialectAttribute<(attr
   TypedAttrArray:$defaultPos,
   TypedAttrArray:$defaultKwOnly,
   IntegralAttrArray<"size_t">:$variadicIndices,
-  IntegralAttrArray<"size_t">:$packIndices
+  VarInt:$packIndex,
+  EnumAttr<"ArgConvention">:$origPackConvention
 )>;
 
 def FnMetadataAttr : DialectAttribute<(attr

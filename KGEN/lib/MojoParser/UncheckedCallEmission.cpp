@@ -167,12 +167,10 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
                                     unsigned argIdx, ArgConvention convention,
                                     Type expectedType, size_t sequenceIndex) {
   if (calleeSig.isPosVarArg(argIdx)) {
-    auto variadic = cast<VariadicType>(expectedType);
     // In the case of a variadic argument, we need to remove the
     // !pop.variadic<> wrapper to get the type to convert to.
-    expectedType = variadic.getElementType();
-    convention = variadic.getConvention();
-
+    expectedType = cast<VariadicType>(expectedType).getElementType();
+    convention = calleeSig.getPosVarArgConvention(argIdx);
   } else if (RefPackType packType = calleeSig.getIfRefPackType(argIdx)) {
     // Operands being applied to a concrete pack type argument must be
     // converted to the pack element type at that index.  The calleeSig has the
@@ -181,7 +179,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
         ASTType(packType.getVariadicIfResolved().getValues()[sequenceIndex]);
     // Get the !lit.ref with the lifetime and other paraphernalia.
     expectedType = packType.getElementRefTypeFor(expectedType);
-    convention = packType.getConvention();
+    convention = calleeSig.getPackVarArgConvention(argIdx);
 
     // TODO(references): Remove this when PackType is no longer used.
   } else if (auto packType = getIfPackType(calleeSig, argIdx)) {
@@ -294,9 +292,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   // convention of the list itself.
   bool isPosVarArg = calleeSig.isPosVarArg(argIdx);
   if (isPosVarArg)
-    convention = cast<VariadicType>(expectedType).getConvention();
+    convention = calleeSig.getPosVarArgConvention(argIdx);
   else if (RefPackType refPackType = calleeSig.getIfRefPackType(argIdx))
-    convention = refPackType.getConvention();
+    convention = calleeSig.getPackVarArgConvention(argIdx);
 
   // If we are emitting in a compile-time context and all of the remaining
   // operands are compile-time values, then emit the sequence as an attribute.
@@ -392,9 +390,8 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
                                        expectedVararg.getConvention());
     } else {
       auto refPackType = cast<RefPackType>(expectedType);
-      expectedType = RefPackType::get(
-          refPackType.getVariadic(), refPackType.getConvention(),
-          commonLifetime, refPackType.getAddressSpace());
+      expectedType = RefPackType::get(refPackType.getVariadic(), commonLifetime,
+                                      refPackType.getAddressSpace());
     }
   }
 

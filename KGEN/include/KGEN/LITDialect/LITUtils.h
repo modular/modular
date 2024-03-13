@@ -127,11 +127,10 @@ SmallVector<Variadicness> getVariadicness(PogsAttr listAttr);
 
 /// Parse an optional passing convention and variadicness. The the given index
 /// will be added to the appropriate index array if a variadicness is present.
-ParseResult
-parseConventionAndVariadicness(AsmParser &p, ArgConvention &convention,
-                               SmallVectorImpl<size_t> &variadicIndices,
-                               SmallVectorImpl<size_t> &packIndices,
-                               size_t idx);
+ParseResult parseConventionAndVariadicness(
+    AsmParser &p, ArgConvention &convention,
+    SmallVectorImpl<size_t> &variadicIndices, ssize_t &argPackIndex,
+    ArgConvention &origArgPackConvention, size_t idx);
 
 /// Print an optional passing convention and variadicness.
 void printConventionAndVariadicness(AsmPrinter &p, ArgConvention convention,

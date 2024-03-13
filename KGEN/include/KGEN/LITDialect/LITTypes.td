@@ -442,35 +442,31 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
     `!kgen.pack<[!lit.ref<f32, lt>, !lit.ref<String, lt>]>`.
 
     In addition to the variadic, this also takes the lifetime of the references,
-    and the argument convention (borrowed/owned/inout) in memory.  This does not
-    carry an address space for the reference, but could be extended to do so in
-    the future if there is a reason.
+    which indicates mutability of the references.
 
     Example:
 
     ```mlir
     // Pack with 'Ts' elements, with a parametric lifetime and addrspace=42.
-    !lit.ref.pack<Ts, owned_in_mem, life, 42>
+    !lit.ref.pack<Ts, life, 42>
 
     lit.func @pack<Ts: variadic<!kgen.type>>(
-      %0: !lit.ref.pack<Ts, owned_in_mem, life, 42>
+      %0: !lit.ref.pack<Ts, life, 42>
     )
     ```
   }];
 
-  let parameters = (ins "TypedAttr":$variadic, "ArgConvention":$convention,
-                        "TypedAttr":$lifetime,
+  let parameters = (ins "TypedAttr":$variadic,  "TypedAttr":$lifetime,
                         DefaultValuedParameter<"TypedAttr",
                           "Builder($_ctxt).getIndexAttr(0)">:$addressSpace);
   let assemblyFormat = [{
-    `<` custom<TypeParamValue>($variadic) `,` $convention `,`
+    `<` custom<TypeParamValue>($variadic) `,`
         custom<LifetimeParamValue>($lifetime) ``
         (`,` custom<IndexParamValue>($addressSpace)^)? `>`
   }];
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic,
-                                        "ArgConvention":$convention,
                                         "TypedAttr":$lifetime,
                                         "TypedAttr":$addressSpace)>,
   ];

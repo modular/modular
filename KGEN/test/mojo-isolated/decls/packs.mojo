@@ -27,13 +27,13 @@ struct SomeReg(SomeTrait):
 # This function takes a pack of owned values by Trait.
 
 # Test mangling:
-# CHECK-LABEL: lit.func @"takeOwnedTraitPack[*packs::SomeTrait](owned *$0)"
+# CHECK-LABEL: lit.func @"takeOwnedTraitPack[*packs::SomeTrait](*$0)"
 
 # Test implicit lifetimes / param list.
 # CHECK-SAME: [mut *"rest`"]<Ts: variadic<!SomeTrait> var>
 
 # Check the argument pack.
-# CHECK-SAME: (%rest: !lit.ref.pack<:variadic<!SomeTrait> Ts, owned_in_mem, mut *"rest`"> borrow|pack)
+# CHECK-SAME: (%rest: !lit.ref.pack<:variadic<!SomeTrait> Ts, mut *"rest`"> owned_in_mem|pack)
 fn takeOwnedTraitPack[*Ts: SomeTrait](owned *rest: *Ts):
   pass
 
