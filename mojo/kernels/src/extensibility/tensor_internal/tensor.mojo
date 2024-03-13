@@ -42,7 +42,7 @@ from collections import List
 from pathlib import Path
 
 from algorithm.functional import elementwise
-from algorithm.reduction import argmax, argmin
+from closed_source_algorithm.reduction import argmax, argmin
 from memory import memset_zero
 from memory.buffer import Buffer, NDBuffer
 from memory.unsafe import bitcast
