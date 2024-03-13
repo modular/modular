@@ -783,9 +783,11 @@ fn simd_store[
     @parameter
     if type == DType.bool:
         var v = val.cast[DType.uint8]()
-        buffer.data.bitcast[DType.uint8]().simd_store[simd_width](flat_index, v)
+        buffer.data.bitcast[DType.uint8]().store[width=simd_width](
+            flat_index, v
+        )
     else:
-        buffer.data.simd_store[simd_width](flat_index, val)
+        buffer.data.store[width=simd_width](flat_index, val)
 
 
 # ===----------------------------------------------------------------------===#
