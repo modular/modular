@@ -24,7 +24,7 @@ from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils._optional import Optional
-from utils._optional_param import OptionalParamInt
+from kernel_utils._optional_param import OptionalParamInt
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
 
