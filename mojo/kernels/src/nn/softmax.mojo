@@ -707,7 +707,7 @@ fn softmax_kernel[
     ):
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
-        var row_max = row_reduce[BLOCK_SIZE, input_fn, _max](
+        var row_max = row_reduce[BLOCK_SIZE, input_fn, _max, type, 1](
             row_coords, axis, min_or_neginf[type](), row_size
         )
         if ThreadIdx.x() == 0:
