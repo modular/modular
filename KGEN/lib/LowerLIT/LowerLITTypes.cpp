@@ -591,8 +591,8 @@ static Value lowerOp(RefPackCreateOp op, RefPackCreateOpAdaptor adaptor,
 // lit.ref.pack.get => kgen.pack.get
 static Value lowerOp(RefPackGetOp op, RefPackGetOpAdaptor adaptor,
                      LITTypeLowerer &lowerer) {
-  return lowerer.create<PackGetOp>(op.getLoc(), lowerer.replace(op.getType()),
-                                   adaptor.getOperands()[0], op.getIndex());
+  return lowerer.create<PackGetOp>(op.getLoc(), adaptor.getOperands()[0],
+                                   op.getIndex());
 }
 
 static Value getCastedToType(Location newLoc, Value value, Type destType,

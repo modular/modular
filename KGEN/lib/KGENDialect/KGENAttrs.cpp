@@ -2087,14 +2087,29 @@ static TypedAttr simplifyRebind(ArrayRef<TypedAttr> operands, Type resultType) {
 
 static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
                                      Type &resultType) {
-  auto variadicType = cast<VariadicType>(operands.front().getType());
-  resultType = variadicType.getElementType();
-  auto variadic = dyn_cast<VariadicAttr>(operands.front());
-  auto index = dyn_cast<IntegerAttr>(operands.back());
-  if (!variadic || !index || index.getInt() < 0 ||
-      index.getInt() >= static_cast<ssize_t>(variadic.getValues().size()))
-    return {};
-  return variadic.getValues()[index.getInt()];
+  resultType = cast<VariadicType>(operands.front().getType()).getElementType();
+
+  if (auto variadic = dyn_cast<VariadicAttr>(operands.front())) {
+    auto index = dyn_cast<IntegerAttr>(operands.back());
+    if (!index || index.getInt() < 0 ||
+        index.getInt() >= static_cast<ssize_t>(variadic.getValues().size()))
+      return {};
+    return variadic.getValues()[index.getInt()];
+  }
+
+  // Simplify get(ptr_map(x)) -> PointerType(get(x)).
+  if (auto expr = dyn_cast<ParamOperatorAttr>(operands.front()))
+    if (expr.getOpcode() == POC::VariadicPtrMap) {
+      TypedAttr list = expr.getOperand(0);
+      TypedAttr addrSpace = expr.getOperand(1);
+      auto unmappedElt =
+          ParamOperatorAttr::get(POC::VariadicGet, list, operands[1]);
+      auto ptrType =
+          PointerType::get(ParamRefType::get(unmappedElt), addrSpace);
+      return ParameterizedTypeConstantAttr::get(ptrType, resultType);
+    }
+
+  return {};
 }
 
 static TypedAttr simplifyVariadicSize(TypedAttr operand, Type &resultType) {

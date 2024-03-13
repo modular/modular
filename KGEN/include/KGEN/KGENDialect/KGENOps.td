@@ -1548,15 +1548,13 @@ def KGEN_PackCreateOp : KGENOp<"pack.create", [Pure]> {
 // PackGetOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_PackGetOp : KGENOp<"pack.get", [Pure]> {
+def KGEN_PackGetOp : KGENOp<"pack.get",
+                     [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "pack get element";
   let description = [{
     The `kgen.pack.get` operation returns the element of a pack at the provided
-    index.
-
-    The index must be a compile-time constant. If the pack is also a constant
-    value, the index is verified to be within the bounds of the pack size, and
-    the return type is inferred to match the specific type at that index.
+    index.  The index must be a parameter of index type.  This operation is
+    resolved post-elaboration when the pack details become known.
 
     Example:
 
@@ -1570,14 +1568,11 @@ def KGEN_PackGetOp : KGENOp<"pack.get", [Pure]> {
       // Get the second element, of type `!kgen.paramref<T>`.
       %1 = kgen.pack.get %arg0[1] : <[i32, T]>
 
-      // Get the element at an offset `I + 1`. Because the type of the element
-      // at this index cannot be inferred, it must be provided explicitly (here
-      // as `!kgen.paramref<T>`).
-      %2 = kgen.pack.get %arg0[add(I, 1)] : <[i32, T]> -> !kgen.paramref<T>
+      // Get the element at an offset `I + 1`.
+      %2 = kgen.pack.get %arg0[add(I, 1)] : <[i32, T]>
 
-      // Get the element at index 3. Again, becuase its type cannot be inferred,
-      // it must be provided explicitly (here as `i8`).
-      %3 = kgen.pack.get %arg1[3] : <Ts> -> i8
+      // Get the element at index 3.
+      %3 = kgen.pack.get %arg1[3] : <Ts>
 
       kgen.return
     }
@@ -1588,11 +1583,8 @@ def KGEN_PackGetOp : KGENOp<"pack.get", [Pure]> {
   let results = (outs AnyType:$result);
   let assemblyFormat = [{
     $pack `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($pack)
-    custom<PackGetResultType>(ref($pack), ref(type($pack)), ref($index),
-                              type($result))
   }];
 
-  let hasVerifier = 1;
   let hasFolder = 1;
 }
 
