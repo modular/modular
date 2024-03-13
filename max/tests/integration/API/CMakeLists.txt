@@ -38,7 +38,6 @@ add_modular_testsuite(check-max-engine-integration-tests
   mt
 
   DEPENDS
-  tfl
   monnx
   mof
   ${FRAMEWORK_DYLIB_DEPS}
