@@ -16,7 +16,7 @@ alias MR = 6
 alias NR = 64
 
 alias dtype = DType.float32
-alias simd_size = simdwidthof[dtype]() * 4  # 16
+alias simd_size = simdwidthof[dtype]()
 alias alignment = 64
 
 
@@ -55,18 +55,16 @@ fn kernel[
     @parameter
     @always_inline
     fn loadc[m: Int, n: Int]():
-        c_cache.aligned_store[simd_size](
-            m, simd_size * n, c.load[simd_size](m, simd_size * n)
-        )
+        c_cache.aligned_store[NR](m, NR * n, c.load[NR](m, NR * n))
 
-    unroll[loadc, MR, NR // simd_size]()
+    unroll[loadc, MR, 1]()
 
     for pr in range(K // NR):
         var a_tile = a.tile[MR, NR](0, pr)
         var b_row = b_packed.tile[1, NR * NR](0, pr)
 
         for k in range(NR):
-            var b_next_tile = b_row.tile[1, NR](0, k + 1)
+            var b_next_tile = b_row.tile[1, NR](0, k + 4)
 
             @unroll
             for n in range(0, NR, simd_size):
@@ -78,25 +76,22 @@ fn kernel[
             for m in range(MR):
                 var av = a_tile[m, k]
 
-                @unroll
-                for n in range(0, NR, simd_size):
-                    c_cache.aligned_store[simd_size](
-                        m,
-                        n,
-                        av * b_tile.load[simd_size](0, n)
-                        + c_cache.aligned_load[simd_size](m, n),
-                    )
+                c_cache.aligned_store[NR](
+                    m,
+                    0,
+                    av * b_tile.load[NR](0, 0) + c_cache.aligned_load[NR](m, 0),
+                )
 
     @parameter
     @always_inline
     fn storec[m: Int, n: Int]():
-        c.store[simd_size](
+        c.store[NR](
             m,
-            simd_size * n,
-            c_cache.aligned_load[simd_size](m, simd_size * n),
+            NR * n,
+            c_cache.aligned_load[NR](m, NR * n),
         )
 
-    unroll[storec, MR, NR // simd_size]()
+    unroll[storec, MR, 1]()
 
 
 fn pack_b[
@@ -127,7 +122,7 @@ fn gemm[
 ](
     c: LayoutTensor[layout_c, dtype],  # M x N
     a: LayoutTensor[layout_a, dtype],  # M x K
-    b_packed: LayoutTensor[layout_b, dtype],  # N // NR x K * NR
+    b_packed: LayoutTensor[layout_b, dtype],  # (N // NR) x (K * NR)
 ):
     alias M = c.dim[0]()
     alias N = c.dim[1]()
