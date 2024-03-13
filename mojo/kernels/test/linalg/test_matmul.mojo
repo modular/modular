@@ -22,6 +22,7 @@ from Matmul import (
 from memory.buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
+from utils.list import DimList
 
 alias alignment = 64
 
