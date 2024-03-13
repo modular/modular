@@ -73,6 +73,9 @@ struct HTTPRequest {
   /// Request URL.
   std::string URL;
 
+  /// UDS path if applicable - empty means disabled
+  std::string udsName;
+
   /// Headers to set on the request.
   llvm::StringMap<std::string> headers = {};
 

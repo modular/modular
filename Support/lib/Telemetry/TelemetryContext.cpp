@@ -4,6 +4,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Support/Telemetry/Exporters/UDSLogExporter.h"
+#include "Support/Telemetry/Exporters/UDSMetricExporter.h"
 #include "Support/Telemetry/Telemetry.h"
 
 #include "Config/Version.h"
@@ -29,6 +31,7 @@
 #include "opentelemetry/sdk/logs/event_logger_provider_factory.h"
 #include "opentelemetry/sdk/logs/logger_provider.h"
 #include "opentelemetry/sdk/logs/logger_provider_factory.h"
+
 #include "opentelemetry/sdk/logs/processor.h"
 #include "opentelemetry/sdk/logs/simple_log_record_processor_factory.h"
 #include "opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader.h"
@@ -36,6 +39,11 @@
 #include "opentelemetry/sdk/metrics/meter_provider.h"
 #include "opentelemetry/sdk/resource/resource.h"
 #endif // MODULAR_ENABLE_TELEMETRY
+
+// enable TEST_UDS to use unix domain sockets for log/metrics. Do set the config
+// value for `telemetry.exporters.metrics.uds_name` to the right socket from the
+// server
+#define TEST_UDS 0
 
 #include <algorithm> // For std::sort.
 
@@ -258,6 +266,11 @@ TelemetryContext::TelemetryContext(
       cfg.getValue("telemetry.exporters.metrics.http_endpoint");
   std::filesystem::path filePath =
       cfg.getValue("telemetry.exporters.metrics.file_path").str();
+  std::filesystem::path udsName =
+      cfg.getValueOr("telemetry.exporters.metrics.uds_name",
+                     "/tmp/modular-telemetry.sock")
+          .str();
+
   if (httpEndpoint.empty() && filePath.empty()) {
     // If no config is provided, export to our default URL.
     httpEndpoint = kTelemetryUrl;
@@ -275,6 +288,11 @@ TelemetryContext::TelemetryContext(
   }
 
   if (enabled && !httpEndpoint.empty()) {
+
+#if TEST_UDS
+    auto exporter = std::make_unique<UDSMetricExporter>(udsName, "/v1/metrics");
+#else
+
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
 
@@ -292,6 +310,8 @@ TelemetryContext::TelemetryContext(
     auto exporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
             otlpOptions);
+#endif
+
     auto reader = std::make_shared<
         opentelemetry::sdk::metrics::PeriodicExportingMetricReader>(
         std::move(exporter), options);
@@ -320,7 +340,6 @@ TelemetryContext::TelemetryContext(
       processors;
 
   if (enabled && !filePath.empty()) {
-    // File exporter.
     auto logExporter = std::make_unique<FileLogExporter>(filePath);
     processors.emplace_back(
         opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
@@ -328,6 +347,10 @@ TelemetryContext::TelemetryContext(
   }
 
   if (enabled && !httpEndpoint.empty()) {
+#if TEST_UDS
+    auto logExporter = std::make_unique<UDSLogExporter>(udsName, "/v1/logs");
+#else
+
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
         otlpLogOptions;
@@ -345,11 +368,11 @@ TelemetryContext::TelemetryContext(
     auto logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
             otlpLogOptions);
+#endif
     processors.emplace_back(
         opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
             std::move(logExporter)));
   }
-
   loggerProvider = opentelemetry::sdk::logs::LoggerProviderFactory::Create(
       std::move(processors), otelResources);
   eventLoggerProvider =
@@ -485,6 +508,8 @@ TelemetryContext::TelemetryContext(
       settings.get<StringRef>("telemetry.exporters.metrics.http_endpoint");
   std::filesystem::path filePath =
       settings.get<StringRef>("telemetry.exporters.metrics.file_path").str();
+  std::filesystem::path udsName =
+      settings.get<StringRef>("telemetry.exporters.metrics.uds_name").str();
 
   // Only allow modular developers to overwrite this endpoint.
   if (!settings.getBool<ModularDeveloperEntitlement>())
@@ -502,6 +527,10 @@ TelemetryContext::TelemetryContext(
   }
 
   if (enabled && !httpEndpoint.empty()) {
+#if TEST_UDS
+    auto exporter = std::make_unique<UDSMetricExporter>(udsName);
+#else
+
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions otlpOptions;
     otlpOptions.ssl_client_key_path = settings.clientKeyPriv();
@@ -511,6 +540,7 @@ TelemetryContext::TelemetryContext(
     auto exporter =
         opentelemetry::exporter::otlp::OtlpHttpMetricExporterFactory::Create(
             otlpOptions);
+#endif
     auto reader = std::make_shared<
         opentelemetry::sdk::metrics::PeriodicExportingMetricReader>(
         std::move(exporter), options);
@@ -541,7 +571,7 @@ TelemetryContext::TelemetryContext(
       processors;
 
   if (enabled && !filePath.empty()) {
-    // File exporter.
+
     auto logExporter = std::make_unique<FileLogExporter>(filePath);
     processors.emplace_back(
         opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
@@ -549,6 +579,10 @@ TelemetryContext::TelemetryContext(
   }
 
   if (enabled && !httpEndpoint.empty()) {
+#if TEST_UDS
+    auto logExporter = std::make_unique<UDSLogExporter>(udsName, "/v1/logs");
+#else
+
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
         otlpLogOptions;
@@ -559,6 +593,7 @@ TelemetryContext::TelemetryContext(
     auto logExporter =
         opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterFactory::Create(
             otlpLogOptions);
+#endif
     processors.emplace_back(
         opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
             std::move(logExporter)));

@@ -18,7 +18,36 @@
 
 #include <chrono>
 
+#define CHECK_CURL_ERROR(X, MSG)                                               \
+  {                                                                            \
+    do {                                                                       \
+      auto errorCode = (X);                                                    \
+      if (errorCode) {                                                         \
+        HTTPResponse response;                                                 \
+        response.kind = M::HTTPResponse::TransportError;                       \
+        llvm::errs() << "Error in curl call " << MSG << " : \'"                \
+                     << curl_easy_strerror(errorCode) << "\'\n";               \
+        response.transportErrorMessage = curl_easy_strerror(errorCode);        \
+        return response;                                                       \
+      } /*if*/                                                                 \
+    } while (false);                                                           \
+  }
+
 using namespace M;
+
+namespace {
+inline HTTPResponse CheckCurlCode(CURLcode code, llvm::StringRef ctx = "") {
+  HTTPResponse response;
+  response.kind = M::HTTPResponse::Success;
+  if (code) {
+    response.kind = M::HTTPResponse::TransportError;
+    llvm::errs() << "Error in curl call " << ctx << " : \'"
+                 << curl_easy_strerror(code) << "\'\n";
+    response.transportErrorMessage = curl_easy_strerror(code);
+  }
+  return response;
+}
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // HTTPContext
@@ -260,30 +289,44 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
         list, llvm::formatv("{0}: {1}", h.first(), h.second).str().c_str());
   }
 
-  // TODO: All of these need return code checking - curl_easy_setopt returns a
-  // CURLcode...
+  // TODO arekay - figure out what are invalid combinations. The port is encoded
+  // in the url, so it is an overkill to check if the url contains a port as
+  // well as uds being set.
+  if (!request.udsName.empty()) {
+    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_UNIX_SOCKET_PATH,
+                                      request.udsName.c_str()),
+                     "set uds");
+  }
 
   // Set total timeout.
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout.count());
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout.count()),
+                   "set timeout");
   // Set connection timeout to 20 seconds.
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 20L);
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 20L),
+                   "set connection timeout");
   // Set the headers.
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list),
+                   "set http header list");
 
   // Set the method.
   switch (request.method) {
   case HTTPRequest::GET:
-    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
+    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_HTTPGET, 1),
+                     "set header to get");
     break;
   case HTTPRequest::PUT:
-    curl_easy_setopt(curl, CURLOPT_PUT, 1);
+    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_PUT, 1),
+                     "set header to put");
     break;
   case HTTPRequest::POST:
-    curl_easy_setopt(curl, CURLOPT_POST, 1);
+    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_POST, 1),
+                     "set header to post");
     break;
   case HTTPRequest::HEAD:
-    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1);
-    curl_easy_setopt(curl, CURLOPT_NOBODY, 1);
+    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_HTTPGET, 1),
+                     "set header to head.httpget");
+    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_NOBODY, 1),
+                     "set header to head nobody");
     break;
   }
 
@@ -291,37 +334,54 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
   // pass the progress object itself as the callback data.
   ProgressWrapper progress(request.progress);
   if (request.progress) {
-    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
-    curl_easy_setopt(curl, CURLOPT_XFERINFODATA,
-                     static_cast<void *>(&progress));
-    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progressCallback);
+    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0),
+                     "set no progress");
+    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_XFERINFODATA,
+                                      static_cast<void *>(&progress)),
+                     "set progress handler");
+    CHECK_CURL_ERROR(
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progressCallback),
+        "set progress callback");
   }
 
   // We can set the read data as a callback.
   if (request.body) {
-    curl_easy_setopt(curl, CURLOPT_READFUNCTION, &readCallback);
-    curl_easy_setopt(curl, CURLOPT_READDATA, &request.body);
+    CHECK_CURL_ERROR(
+        curl_easy_setopt(curl, CURLOPT_READFUNCTION, &readCallback),
+        "set body callback");
+    CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_READDATA, &request.body),
+                     "set body");
 
     // If the user provided the full size of the data here, provide it to curl.
     if (request.bodyLen)
-      curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, *request.bodyLen);
+      CHECK_CURL_ERROR(
+          curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, *request.bodyLen),
+          "set body len");
   }
 
   // Set URL we will perform the HTTP
-  curl_easy_setopt(curl, CURLOPT_URL, request.URL.c_str());
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_URL, request.URL.c_str()),
+                   "set url");
   // Follow any HTTP 301 or 302  redirects implicity.
-  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, true);
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, true),
+                   "set follow location");
   // Set our write callback function.
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &streamWriter);
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &streamWriter),
+                   "set write function");
   // Set our user data object for our callback.
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ret);
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ret),
+                   "set write data");
   // Allow transport compression. Empty string means all supported.
-  curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, ""),
+                   "set accept encoding");
   // Verify SSL certificate against peers
-  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,
-                   context->verifyTLSPeer ? 1 : 0);
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,
+                                    context->verifyTLSPeer ? 1 : 0),
+                   "set ssl verify peer");
   // Let the server know who we are.
-  curl_easy_setopt(curl, CURLOPT_USERAGENT, context->userAgent.c_str());
+  CHECK_CURL_ERROR(
+      curl_easy_setopt(curl, CURLOPT_USERAGENT, context->userAgent.c_str()),
+      "set user agent");
 
   if (request.range) {
     auto [start, end] = *request.range;
