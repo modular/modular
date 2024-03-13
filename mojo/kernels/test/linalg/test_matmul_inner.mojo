@@ -18,6 +18,8 @@ from memory.buffer import NDBuffer
 from utils.index import Index
 from utils.list import DimList
 
+from math import div_ceil
+
 alias prefetch_b_distance_k: Int = get_matmul_prefetch_b_distance_k()
 
 alias M: Int = 64
@@ -40,7 +42,7 @@ fn matmul_inner_loop[
         b_type,
         3,
         DimList(
-            N // tile_inner_size,
+            div_ceil(N, tile_inner_size),
             K,
             tile_inner_size,
         ),
@@ -50,7 +52,7 @@ fn matmul_inner_loop[
         DimList(M, K),
         DimList(M, N),
         DimList(
-            N // tile_inner_size,
+            div_ceil(N, tile_inner_size),
             K,
             tile_inner_size,
         ),
@@ -98,7 +100,7 @@ fn test_micro_kernel[
         b_type,
         3,
         DimList(
-            N // tile_inner_size,
+            div_ceil(N, tile_inner_size),
             K,
             tile_inner_size,
         ),
@@ -129,6 +131,5 @@ fn main():
     # TODO(30525): Re-enable after we resolve llvm lowering issues.
     @parameter
     if not has_neon():
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16]()
         test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16]()
         test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32]()
