@@ -41,7 +41,7 @@ fn _kernel_launch_helper[
         var result = kernel_fn(val)
         barrier()
 
-        device_ptr.simd_store(ThreadIdx.x() * simd_width, result)
+        device_ptr.store(ThreadIdx.x() * simd_width, result)
 
     var gpu_func = Function[__type_of(kernel_wrapper), kernel_wrapper]()
 
