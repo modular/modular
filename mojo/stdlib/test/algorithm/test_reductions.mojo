@@ -9,21 +9,25 @@ from math import max as _max
 from math import min as _min
 from math.limit import max_or_inf, min_or_neginf
 
-from algorithm import (
+from closed_source_algorithm import (
     all_true,
     any_true,
     argmax,
     argmin,
     cumsum,
+    max,
     mean,
+    min,
     none_true,
     product,
     sum,
     variance,
 )
 
-# TODO: Fold this import into the one above.
-from algorithm.reduction import _index_of_first_one, _reduce_generator, max, min
+from closed_source_algorithm.reduction import (
+    _index_of_first_one,
+    _reduce_generator,
+)
 from memory.buffer import Buffer, NDBuffer
 
 from utils.index import Index, StaticIntTuple
