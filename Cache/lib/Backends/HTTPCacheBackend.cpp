@@ -17,7 +17,7 @@ ErrorOrSuccess HTTPCacheBackend::insertImpl(StringRef keyHash, BufferRef obj) {
 }
 
 ErrorOr<bool> HTTPCacheBackend::containsImpl(StringRef keyHash) const {
-  auto findOr = requestImpl(keyHash, std::nullopt, /*headOnly=*/true);
+  auto findOr = requestImpl(keyHash, /*headOnly=*/true);
   if (findOr.isError())
     return findOr.takeError();
 
@@ -25,29 +25,12 @@ ErrorOr<bool> HTTPCacheBackend::containsImpl(StringRef keyHash) const {
 }
 
 ErrorOr<std::optional<BufferRef>>
-HTTPCacheBackend::findImpl(StringRef keyHash,
-                           std::optional<WriteableBufferRef> buf) const {
-  return requestImpl(keyHash, std::move(buf), /*headOnly=*/false);
+HTTPCacheBackend::findImpl(StringRef keyHash) const {
+  return requestImpl(keyHash, /*headOnly=*/false);
 }
 
 ErrorOr<std::optional<BufferRef>>
-HTTPCacheBackend::requestImpl(StringRef keyHash,
-                              std::optional<WriteableBufferRef> buf,
-                              bool headOnly) const {
-  // First, check to see if we've already got this in our local cache. Since
-  // this has no cost, we can return this even if headOnly is set.
-  auto localBuf = const_cast<HTTPCacheBackend *>(this)->findBuffer(keyHash);
-  if (localBuf) {
-    // If we weren't passed a buffer, return the ref we have.
-    if (!buf)
-      return std::move(*localBuf);
-
-    // If we were, then write the contents of our local buffer into the thing we
-    // were given.
-    (*buf)->write((*localBuf)->getBufferStart(), (*localBuf)->getBufferSize());
-    return std::move(*buf);
-  }
-
+HTTPCacheBackend::requestImpl(StringRef keyHash, bool headOnly) const {
   // Base64 encode the key hash so it's URL-safe.
   std::string keyHashB64 = encodeURLSafeBase64(keyHash);
 
@@ -63,11 +46,8 @@ HTTPCacheBackend::requestImpl(StringRef keyHash,
   // Either create a new WriteableBuffer or use the one that was passed in.
   // Note that if this is a head-only request, we still reserve the space for
   // the response (we just set a maximum size of zero bytes).
-  auto writeBuf =
-      buf.has_value()
-          ? std::move(*buf)
-          : WriteableBuffer::get(/*size=*/0, /*alignment=*/std::nullopt,
-                                 /*capacity=*/headOnly ? 0 : maxBytes);
+  auto writeBuf = WriteableBuffer::get(/*size=*/0, /*alignment=*/std::nullopt,
+                                       /*capacity=*/headOnly ? 0 : maxBytes);
 
   int retryCount = 0;
   while (true) {
@@ -84,11 +64,6 @@ HTTPCacheBackend::requestImpl(StringRef keyHash,
 
     // Everything is fine, return the buffer.
     if (response.isSuccess()) {
-      // Cache it, so we can avoid multiple requests at this level. This is only
-      // if the request is actually a full get.
-      if (!headOnly)
-        const_cast<HTTPCacheBackend *>(this)->cacheBuffer(keyHash,
-                                                          writeBuf.copy());
       return std::move(writeBuf);
     }
 
@@ -122,21 +97,6 @@ HTTPCacheBackend::requestImpl(StringRef keyHash,
         llvm::formatv("Looking for {0}", keyHashB64).str();
     return response.asError(errorContextStr).takeError();
   }
-}
-
-void HTTPCacheBackend::cacheBuffer(StringRef keyHash, BufferRef buf) {
-  localCache.modify(
-      [&](llvm::StringMap<BufferRef> &map) { map[keyHash] = std::move(buf); });
-}
-
-std::optional<BufferRef> HTTPCacheBackend::findBuffer(StringRef keyHash) {
-  return localCache.read(
-      [&](llvm::StringMap<BufferRef> &map) -> std::optional<BufferRef> {
-        auto found = map.find(keyHash);
-        if (found == map.end())
-          return std::nullopt;
-        return found->second.copy();
-      });
 }
 
 HTTPCacheBackendRef M::Cache::getHTTPCacheBackend(HTTPContextRef ctx,
