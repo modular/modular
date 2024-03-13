@@ -51,12 +51,9 @@ public:
            std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
-  /// delegates. If `backingBuf` is provided, write into that (and return a
-  /// read-only reference to it if found).
+  /// delegates.
   virtual LLCL::AsyncValueRef<std::optional<BufferRef>>
-  find(BufferRef keyHash,
-       std::optional<WriteableBufferRef> backingBuf = std::nullopt,
-       std::optional<EncodedLocation> loc = std::nullopt);
+  find(BufferRef keyHash, std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Add delegate to the end of the backend chain.
   void appendDelegate(RCRef<BlobCacheBackend> d);
@@ -76,12 +73,8 @@ protected:
     return Error("containsImpl not implemented");
   }
   /// Subclasses that don't override find should use this to provide the
-  /// implementation of getting an item from storage. If `backingBuf` is
-  /// provided, write directly into `backingBuf`, returning std::nullopt if the
-  /// item isn't found as usual.
-  virtual ErrorOr<std::optional<BufferRef>>
-  findImpl(StringRef keyHash,
-           std::optional<WriteableBufferRef> backingBuf = std::nullopt) const {
+  /// implementation of getting an item from storage.
+  virtual ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const {
     return Error("findImpl not implemented");
   }
 
@@ -104,7 +97,6 @@ protected:
   /// by subclasses that override find.
   void delegateFind(LLCL::AsyncValueRef<std::optional<BufferRef>> result,
                     BufferRef keyHash,
-                    std::optional<WriteableBufferRef> backingBuf,
                     std::optional<EncodedLocation> loc = std::nullopt);
 
   /// The LLCL runtime we should use for managing asynchrony.
@@ -213,18 +205,7 @@ public:
   LLCL::AsyncValueRef<std::optional<BufferRef>>
   find(KeyTy key, std::optional<EncodedLocation> loc = std::nullopt) {
     auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
-    return backendList->find(std::move(hash), std::nullopt, std::move(loc));
-  }
-
-  /// Get the item from any of the provided backends, reading it directly into
-  /// `buf`. Returns a read-only ref to the buffer that was passed in if the
-  /// item is found, std::nullopt otherwise.
-  LLCL::AsyncValueRef<std::optional<BufferRef>>
-  find(KeyTy key, WriteableBufferRef backingBuf,
-       std::optional<EncodedLocation> loc = std::nullopt) {
-    auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
-    return backendList->find(std::move(hash), std::move(backingBuf),
-                             std::move(loc));
+    return backendList->find(std::move(hash), std::move(loc));
   }
 
 private:

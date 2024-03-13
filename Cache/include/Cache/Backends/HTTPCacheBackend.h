@@ -28,7 +28,8 @@ public:
         progress(progress) {}
 
   /// Insert a binary blob with a PUT request.
-  // TODO: Currently unsupported
+  ///
+  /// NOTE: Currently unsupported.
   ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override;
 
   /// Check if we have the object we're looking for. Since really the only way
@@ -39,15 +40,12 @@ public:
   /// Find the object at `keyHash`. This essentially produces a GET request to
   /// <url>/<urlsafe-b64-key-hash>, which is expected to return the bytes of the
   /// object directly.
-  ErrorOr<std::optional<BufferRef>>
-  findImpl(StringRef keyHash,
-           std::optional<WriteableBufferRef> buf) const override;
+  ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override;
 
   /// Underlying implementation for both containsImpl and findImpl. There is a
   /// need to distinguish the full request from simple the HEAD.
-  ErrorOr<std::optional<BufferRef>>
-  requestImpl(StringRef keyHash, std::optional<WriteableBufferRef> buf,
-              bool headOnly) const;
+  ErrorOr<std::optional<BufferRef>> requestImpl(StringRef keyHash,
+                                                bool headOnly) const;
 
 private:
   /// The HTTP context ref for any clients we spin up for a find operation.
@@ -56,22 +54,6 @@ private:
   std::string url;
   /// Optional progress used for constructing requests.
   Progress *progress;
-
-  /// Store a buffer in our local in-memory cache. We can't always rely on the
-  /// backends ahead of us for this, because our `containsImpl` just runs
-  /// `findImpl` manually. If we have a find first though, backends before us
-  /// (notably the in-memory backend) will perform this same function.
-  void cacheBuffer(StringRef keyHash, BufferRef buf);
-
-  /// Check if we have a buffer in our local in-memory cache. If we do, return
-  /// it.
-  std::optional<BufferRef> findBuffer(StringRef keyHash);
-
-  /// Local cache we can use to store buffers we've fetched from upstream. This
-  /// is important because of the way we had to implement `containsImpl` - HTTP
-  /// doesn't really provide a way to check if a resource exists without
-  /// just...getting the resource.
-  Shared<llvm::StringMap<BufferRef>> localCache;
 };
 
 using HTTPCacheBackendRef = RCRef<HTTPCacheBackend>;
