@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s
 
 from math import align_up, div_ceil, exp, max, min
 from math.limit import min_or_neginf
@@ -22,7 +22,7 @@ from gpu.host.memory import (
 )
 from memory.buffer import NDBuffer
 from tensor import Tensor
-
+from testing import assert_equal
 from utils.index import Index
 
 alias num_reductions = 2
@@ -37,9 +37,9 @@ fn fused_reduce_inner_test[
 ](
     shape: StaticIntTuple[rank],
     init: StaticTuple[Scalar[type], num_reductions],
+    expected_vals0: List[Float32],
+    expected_vals1: List[Float32],
 ) raises:
-    print("== fused_reduce_inner_test")
-
     var axis = rank - 1
     var out_shape = shape
     out_shape[axis] = 1
@@ -47,6 +47,14 @@ fn fused_reduce_inner_test[
     var in_size = shape.flattened_length()
     var out_size = out_shape.flattened_length()
 
+    debug_assert(
+        len(expected_vals0) == out_size,
+        "expected vals must match output shape",
+    )
+    debug_assert(
+        len(expected_vals1) == out_size,
+        "expected vals must match output shape",
+    )
     var stream = Stream()
 
     var vec_host = Tensor[type](in_size)
@@ -73,7 +81,7 @@ fn fused_reduce_inner_test[
         _rank: Int,
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
         return rebind[SIMD[type, width]](
-            input_buf_device[rebind[StaticIntTuple[rank]](coords)]
+            input_buf_device.load[width](rebind[StaticIntTuple[rank]](coords))
         )
 
     @__copy_capture(output_buf_device0, output_buf_device1)
@@ -99,12 +107,12 @@ fn fused_reduce_inner_test[
     _copy_device_to_host(res_host0.data(), res_device0, out_size)
     _copy_device_to_host(res_host1.data(), res_device1, out_size)
 
-    print("REDUCTION = 0")
     for i in range(out_shape.flattened_length()):
-        print("res =", res_host0[i])
-    print("REDUCTION = 1")
+        assert_equal(res_host0[i], expected_vals0[i])
+
     for i in range(out_shape.flattened_length()):
-        print("res =", res_host1[i])
+        assert_equal(res_host1[i], expected_vals1[i])
+
     _free(vec_device)
     _free(res_device0)
     _free(res_device1)
@@ -122,8 +130,11 @@ fn reduce_inner_test[
     ) capturing -> SIMD[type, width],
     rank: Int,
     type: DType,
-](shape: StaticIntTuple[rank], init: Scalar[type]) raises:
-    print("== run_inner_test")
+](
+    shape: StaticIntTuple[rank],
+    init: Scalar[type],
+    expected_vals: List[Float32],
+) raises:
     alias num_reductions = 1
 
     var axis = rank - 1
@@ -132,6 +143,9 @@ fn reduce_inner_test[
 
     var in_size = shape.flattened_length()
     var out_size = shape.flattened_length() // shape[axis]
+    debug_assert(
+        len(expected_vals) == out_size, "expected vals must match output shape"
+    )
 
     var stream = Stream()
 
@@ -165,7 +179,7 @@ fn reduce_inner_test[
         _rank: Int,
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
         return rebind[SIMD[type, width]](
-            input_buf_device[rebind[StaticIntTuple[rank]](coords)]
+            input_buf_device.load[width](rebind[StaticIntTuple[rank]](coords))
         )
 
     @__copy_capture(output_buf_device)
@@ -188,7 +202,7 @@ fn reduce_inner_test[
     _copy_device_to_host(res_host.data(), res_device, out_size)
 
     for i in range(out_shape.flattened_length()):
-        print("res =", res_host[i])
+        assert_equal(res_host[i], expected_vals[i])
 
     _free(vec_device)
     _free(res_device)
@@ -199,7 +213,6 @@ fn reduce_inner_test[
     _ = stream ^
 
 
-# CHECK-NOT: CUDA_ERROR
 def main():
     @parameter
     fn reduce_add[
@@ -228,67 +241,63 @@ def main():
 
     try:
         with Context() as ctx:
-            # CHECK-LABEL: run_inner_test
-            # CHECK: res = 257.0
-            # CHECK: res = 514.0
-            # CHECK: res = 771.0
-            # CHECK: res = 1028.0
-            # CHECK: res = 1285.0
-            # CHECK: res = 1542.0
-
             reduce_inner_test[reduce_add](
-                StaticIntTuple[3](2, 3, 257), Float32(0)
+                StaticIntTuple[3](2, 3, 257),
+                Float32(0),
+                List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0, 1542.0),
             )
 
-            # CHECK-LABEL: run_inner_test
-            # CHECK: res = 257.0
-            # CHECK: res = 514.0
-            # CHECK: res = 771.0
-            # CHECK: res = 1028.0
-            # CHECK: res = 1285.0
-            reduce_inner_test[reduce_add](StaticIntTuple[2](5, 257), Float32(0))
-
-            # CHECK-LABEL: run_inner_test
-            # CHECK: res = 1029.0
-            # CHECK: res = 2058.0
-            # CHECK: res = 3087.0
-            # CHECK: res = 4116.0
-            # CHECK: res = 5145.0
-            # CHECK: res = 6174.0
-            # CHECK: res = 7203.0
-            # CHECK: res = 8232.0
             reduce_inner_test[reduce_add](
-                StaticIntTuple[4](2, 2, 2, 1029), Float32(0)
+                StaticIntTuple[2](5, 257),
+                Float32(0),
+                List[Float32](257.0, 514.0, 771.0, 1028.0, 1285.0),
             )
 
-            # CHECK-LABEL: run_inner_test
-            # CHECK: res = 1.0
-            # CHECK: res = 2.0
-            # CHECK: res = 3.0
-            # CHECK: res = 4.0
-            # CHECK: res = 5.0
+            reduce_inner_test[reduce_add](
+                StaticIntTuple[4](2, 2, 2, 1029),
+                Float32(0),
+                List[Float32](
+                    1029.0,
+                    2058.0,
+                    3087.0,
+                    4116.0,
+                    5145.0,
+                    6174.0,
+                    7203.0,
+                    8232.0,
+                ),
+            )
+
             reduce_inner_test[reduce_max](
-                StaticIntTuple[2](5, 3), min_or_neginf[DType.float32]()
+                StaticIntTuple[2](5, 3),
+                min_or_neginf[DType.float32](),
+                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             )
 
-            # CHECK-LABEL: fused_reduce_inner_test
-            # CHECK-NEXT: REDUCTION = 0
-            # CHECK-NEXT: res = 1.0
-            # CHECK-NEXT: res = 2.0
-            # CHECK-NEXT: res = 3.0
-            # CHECK-NEXT: res = 4.0
-            # CHECK-NEXT: res = 5.0
-            # CHECK-NEXT: REDUCTION = 1
-            # CHECK-NEXT: res = 3.0
-            # CHECK-NEXT: res = 6.0
-            # CHECK-NEXT: res = 9.0
-            # CHECK-NEXT: res = 12.0
-            # CHECK-NEXT: res = 15.0
             fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float32](
                 StaticIntTuple[2](5, 3),
                 StaticTuple[Scalar[DType.float32], 2](
                     min_or_neginf[DType.float32](), 0.0
                 ),
+                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+                List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
             )
+
+            # bf16 tests
+            reduce_inner_test[reduce_max](
+                StaticIntTuple[2](5, 5),
+                min_or_neginf[DType.bfloat16](),
+                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+            )
+
+            fused_reduce_inner_test[fused_reduce_add_max, 2, DType.bfloat16](
+                StaticIntTuple[2](5, 3),
+                StaticTuple[Scalar[DType.bfloat16], 2](
+                    min_or_neginf[DType.bfloat16](), 0.0
+                ),
+                List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
+                List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
+            )
+
     except e:
         print("CUDA_ERROR:", e)
