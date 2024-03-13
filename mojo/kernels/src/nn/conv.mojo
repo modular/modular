@@ -256,9 +256,7 @@ struct Naive2dConvolution[
                             )
 
         # Store the computed output at the given output position..
-        self.output.simd_store(
-            f + F * (wo + WO * (ho + HO * (do + DO * n))), value
-        )
+        self.output.store(f + F * (wo + WO * (ho + HO * (do + DO * n))), value)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -321,7 +319,7 @@ fn _reduce_output[
                 vec += scratch.load[width=width](
                     tid_output_offset + i * buf_size
                 )
-            output.simd_store[width](tid_output_offset, vec)
+            output.store[width=width](tid_output_offset, vec)
 
         vectorize[sum, simd_size, unroll_factor=4](reduce_range[1] * F)
 
@@ -1002,7 +1000,7 @@ struct ConvDirectNHWC[
                         output_vec,
                     )
                 else:
-                    output_ptr.offset(j * simd_size).simd_store[simd_size](
+                    output_ptr.offset(j * simd_size).store[width=simd_size](
                         output_vec
                     )
 
@@ -2755,7 +2753,7 @@ fn pack_filter[
 
                 @unroll
                 for i in range(f_tile_size // simd_size):
-                    packed_filter_ptr.simd_store(
+                    packed_filter_ptr.store(
                         i * simd_size,
                         filter_ptr.load[width=simd_size](i * simd_size).cast[
                             packed_filter.type
@@ -2789,7 +2787,7 @@ fn pack_filter[
                 var filter_vec = partial_simd_load[simd_size](
                     filter_ptr, 0, residual, 0.0
                 ).cast[packed_filter.type]()
-                packed_filter_ptr.simd_store(filter_vec)
+                packed_filter_ptr.store(filter_vec)
 
                 # Hence, packed filter is incremented by simd_size
                 packed_filter_ptr = packed_filter_ptr + simd_size

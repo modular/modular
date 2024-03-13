@@ -514,7 +514,7 @@ struct ConvTransposedPacked[
             @always_inline
             @parameter
             fn zero[width: Int](offset: Int):
-                output_ptr.simd_store[width](offset, 0)
+                output_ptr.store[width=width](offset, 0)
 
             vectorize[zero, simd_size](self.partition.f_size)
 

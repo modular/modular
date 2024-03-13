@@ -467,7 +467,7 @@ fn _mm[
             # vector load
             @unroll
             for offset in range(0, TM, simd_size):
-                reg_m.simd_store[simd_size](
+                reg_m.store[width=simd_size](
                     offset,
                     a.aligned_simd_load[simd_size, alignment](
                         k * M + row + offset
@@ -484,7 +484,7 @@ fn _mm[
             var vec = b.aligned_simd_load[simd_size, alignment](
                 k * N + col + offset
             )
-            reg_n.simd_store(offset, vec)
+            reg_n.store(offset, vec)
 
         @unroll
         for i in range(TM):
@@ -503,7 +503,7 @@ fn _fill[
 
     @unroll
     for i in range(0, vector_end, simd_width):
-        ptr.simd_store(i, SIMD[type, simd_width].splat(val))
+        ptr.store(i, SIMD[type, simd_width].splat(val))
 
     @unroll
     for i in range(vector_end, len, 1):
@@ -722,7 +722,7 @@ fn flash_attention_kernel[
                 var mask_vec = mask_ptr.aligned_simd_load[simd_size, alignment](
                     mask_idx
                 )
-                reg_result.simd_store(idx, vec * scale + mask_vec)
+                reg_result.store(idx, vec * scale + mask_vec)
 
         # Online Softmax
         @unroll

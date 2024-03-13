@@ -205,7 +205,7 @@ fn test[
             @__copy_capture(output_ref_ptr, bias_ptr)
             @parameter
             fn body0[width: Int](offset: Int):
-                output_ref_ptr.simd_store(
+                output_ref_ptr.store(
                     offset,
                     10.0
                     * (
