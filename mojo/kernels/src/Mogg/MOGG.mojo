@@ -49,16 +49,20 @@ from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
 
-from algorithm import argmax as _argmax
-from algorithm import argmin as _argmin
-from algorithm import reduce_shape, sync_parallelize, vectorize
+from closed_source_algorithm import argmax as _argmax
+from closed_source_algorithm import argmin as _argmin
+from closed_source_algorithm import (
+    reduce_shape,
+    sync_parallelize,
+    vectorize,
+)
 from utils import unroll
 from algorithm.functional import _async_elementwise_impl, _elementwise_impl
-from algorithm.reduction import (
+from closed_source_algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
-from algorithm.reduction import mean as _mean
+from closed_source_algorithm.reduction import mean as _mean
 from BatchedMatmul import batched_matmul as _batched_matmul
 from BatchedMatmul import batched_matmul_shape
 from BatchedMatmul import (
