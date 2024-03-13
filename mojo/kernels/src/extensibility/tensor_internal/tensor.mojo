@@ -939,7 +939,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           val: The SIMD value to store.
         """
         debug_assert(self.rank() == 1, "rank must be 1")
-        self._ptr.simd_store[width](index, val)
+        self._ptr.store[width=width](index, val)
 
     @always_inline
     fn store[
@@ -955,7 +955,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           val: The SIMD value to store.
         """
         debug_assert(len(indices) == self.rank(), "invalid rank value")
-        self._ptr.simd_store[width](self._compute_linear_offset(indices), val)
+        self._ptr.store[width=width](self._compute_linear_offset(indices), val)
 
     @always_inline
     fn store[
@@ -972,7 +972,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           val: The SIMD value to store.
         """
         debug_assert(len == self.rank(), "invalid length value")
-        self._ptr.simd_store(self._compute_linear_offset(indices), val)
+        self._ptr.store[width=width](self._compute_linear_offset(indices), val)
 
     @always_inline
     fn _compute_linear_offset[
