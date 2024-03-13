@@ -778,6 +778,28 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                            emitDiagnosticOnFailure);
 }
 
+enum class CallKind { kMethod, kFunction, kIndirect };
+
+static CallKind getCallKind(CallSyntax syntax) {
+  switch (syntax) {
+  case CallSyntax::kDirectCall:      //< f()
+  case CallSyntax::kTypeCall:        //< T()
+  case CallSyntax::kImplicitConvert: //< Conversion in an argument context
+    return CallKind::kFunction;
+  case CallSyntax::kIndirectCall: //< expr()
+    return CallKind::kIndirect;
+  case CallSyntax::kMethodCall:       //< x.f()
+  case CallSyntax::kOperator:         //< -x and x + y
+  case CallSyntax::kReversedOperator: //< y + x
+  case CallSyntax::kSubscript:        // v[1, 2]
+  case CallSyntax::kAttribute:        // v.x
+  case CallSyntax::kDestructor:       //< Destructor due to a value definition.
+  case CallSyntax::kTupleGetItem:     //< Call to getitem in a tuple assignment.
+  case CallSyntax::kMethodCallSynthetic:
+    return CallKind::kMethod;
+  }
+}
+
 PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
                                       SmallVectorImpl<ASTDecl *> &newFnDecls,
                                       bool allowImplicitConversions,
@@ -803,21 +825,39 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   // If all of the candidates are wrong, diagnose this as a failure.
   if (!anyValid) {
     if (emitDiagnosticOnFailure && !isErroneous()) {
+      auto diag = getShared().emitError(expr->getLoc()) << expr->getRange();
+      if (fnDecls.size() == 0) {
+        diag << "invalid call to '" << baseName << "': no candidates found";
+        return {};
+      }
+
+      if (fnDecls.size() == 1)
+        diag << "invalid ";
+      else {
+        diag << "no matching ";
+        diag << (getCallKind(syntax) == CallKind::kMethod ? "method"
+                                                          : "function");
+        diag << " in ";
+      }
+
+      switch (syntax) {
+      default:
+        diag << "call to '" << baseName << "'";
+        break;
+      case CallSyntax::kTypeCall:
+        diag << "initialization";
+        break;
+      }
+
       // If there is a single callee, emit a specific error about the call.
       if (fnDecls.size() == 1) {
         auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
-        auto diag = getShared().emitError(expr->getLoc(), "invalid call to '")
-                    << baseName << "': " << expr->getRange()
-                    << evaluations[0].takeDiag();
+        diag << ": " << evaluations[0].takeDiag();
         diag.attachNote(fnDecl.getLoc()) << "function declared here";
         return {};
       }
 
-      // Otherwise emit an error, and a note for what is wrong with each
-      // candidate.
-      auto diag = getShared().emitError(expr->getLoc(),
-                                        "no matching function in call to '")
-                  << baseName << "': " << expr->getRange();
+      // Add a note for what is wrong with each candidate.
       for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
         diag.attachNote(candidate->getLoc())
             << "candidate not viable: " << eval.takeDiag();
@@ -1524,10 +1564,10 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
     // implicit or explicit). If there was an ambiguous overload, make sure to
     // indicate that.
     if (operandType && newFnDecls.size() <= 1 && !callee.isErroneous()) {
-      auto diag = emitError(expr->getLoc());
       // Reject Int(x) where x is already an Int with an error + fixit.
       if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
           isa<CallNode>(expr)) {
+        auto diag = emitError(expr->getLoc());
         const CallNode &callNode = *cast<CallNode>(expr);
         // This removes the constructor call, but does not remove the parens
         // because we don't want to introduce precedence problems.
@@ -1538,34 +1578,32 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
         return {};
       }
 
-      if (syntax != CallSyntax::kImplicitConvert) {
-        diag << "cannot construct " << type << " from " << operandType
-             << " value" << getContextMessage(dest.getContext())
-             << expr->getRange();
+      // Diagnose implicit conversions with a custom message.
+      if (syntax == CallSyntax::kImplicitConvert) {
+        auto diag = emitError(expr->getLoc());
+
+        // Handle common type mismatches with tailored errors.
+        bool isConvertingTypeValue = type.hasMetaType(operandType);
+        if (dest.getContext() == EC_CallParamValue ||
+            dest.getContext() == EC_CallArgValue) {
+          diag << "cannot pass " << operandType
+               << (isConvertingTypeValue ? " type" : "") << " value, "
+               << ((dest.getContext() == EC_CallParamValue) ? "parameter"
+                                                            : "argument")
+               << " expected "
+               << (isConvertingTypeValue ? "an instance of " : "") << type;
+        } else {
+          diag << "cannot implicitly convert " << operandType
+               << (isConvertingTypeValue ? " type" : "") << " value to "
+               << (isConvertingTypeValue ? "an instance of " : "") << type
+               << getContextMessage(dest.getContext());
+        }
+
+        if (isConvertingTypeValue)
+          diag << "; did you mean to instantiate " << operandType << "?";
+        diag << expr->getRange();
         return {};
       }
-
-      // Handle common type mismatches with tailored errors.
-      bool isConvertingTypeValue = type.hasMetaType(operandType);
-      if (dest.getContext() == EC_CallParamValue ||
-          dest.getContext() == EC_CallArgValue) {
-        diag << "cannot pass " << operandType
-             << (isConvertingTypeValue ? " type" : "") << " value, "
-             << ((dest.getContext() == EC_CallParamValue) ? "parameter"
-                                                          : "argument")
-             << " expected " << (isConvertingTypeValue ? "an instance of " : "")
-             << type;
-      } else {
-        diag << "cannot implicitly convert " << operandType
-             << (isConvertingTypeValue ? " type" : "") << " value to "
-             << (isConvertingTypeValue ? "an instance of " : "") << type
-             << getContextMessage(dest.getContext());
-      }
-
-      if (isConvertingTypeValue)
-        diag << "; did you mean to instantiate " << operandType << "?";
-      diag << expr->getRange();
-      return {};
     }
 
     // If the type has no candidates, complain about that.
