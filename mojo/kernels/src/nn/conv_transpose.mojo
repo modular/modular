@@ -19,7 +19,6 @@ from algorithm import (
     sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
-    unroll,
     unswitch,
     vectorize,
 )
@@ -40,6 +39,7 @@ from runtime.llcl import Runtime
 from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
+from utils import unroll
 
 from .accumulate import (
     accumulate,

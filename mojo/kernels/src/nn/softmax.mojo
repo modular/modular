@@ -21,8 +21,8 @@ from math.limit import min_or_neginf, neginf
 from os import abort
 
 from algorithm import sync_parallelize, vectorize
-from algorithm._gpu.reduction import block_reduce, row_reduce
-from algorithm.reduction import (
+from closed_source_algorithm._gpu.reduction import block_reduce, row_reduce
+from closed_source_algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
