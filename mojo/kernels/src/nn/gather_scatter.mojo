@@ -8,7 +8,8 @@ from math import align_down, div_ceil, max, min
 from sys.info import has_neon, sizeof
 from sys.intrinsics import PrefetchOptions
 
-from algorithm import elementwise, sync_parallelize, unroll, vectorize
+from algorithm import elementwise, sync_parallelize, vectorize
+from utils import unroll
 from algorithm.functional import (
     _async_elementwise_impl,
     _elementwise_impl,
