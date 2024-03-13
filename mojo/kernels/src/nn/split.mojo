@@ -121,9 +121,7 @@ fn _split_inner[
     for i in range(len(outputs)):
         var output_buf = outputs[i].flatten()
         var buffer_len = len(output_buf)
-        memcpy[type](
-            output_buf.data, input.data.offset(num_elems_copied), buffer_len
-        )
+        memcpy(output_buf.data, input.data.offset(num_elems_copied), buffer_len)
         num_elems_copied += buffer_len
 
 

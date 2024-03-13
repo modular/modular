@@ -286,9 +286,7 @@ fn _concat_inner[
     var num_elems_copied: Int = 0
     for i in range(len(inputs)):
         var buffer_len = inputs[i].size()
-        memcpy[type](
-            output.data.offset(num_elems_copied), inputs[i].data, buffer_len
-        )
+        memcpy(output.data.offset(num_elems_copied), inputs[i].data, buffer_len)
         num_elems_copied += buffer_len
 
 

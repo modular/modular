@@ -1048,7 +1048,7 @@ fn scatter_elements[
     var axis = _axis if _axis >= 0 else _axis + rank
 
     # Do serial or parallel memcpy depending on output size.
-    parallel_memcpy[input_type](output.data, input.data, output.size())
+    parallel_memcpy(output.data, input.data, output.size())
 
     var input_ax_dim = input.get_shape()[axis]
 
@@ -1421,7 +1421,7 @@ fn gather_nd[
             output_buffer_copy_ind = output_buffer_copy_ind + 1
 
             # Perform the actual copy of element/slice/sheet/cuboid/etc.
-            memcpy[type](
+            memcpy(
                 output.data + output_offset,
                 reshaped_data.data + input_offset,
                 count_copy,
