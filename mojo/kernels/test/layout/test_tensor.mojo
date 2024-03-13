@@ -340,9 +340,54 @@ fn test_copy_to_tile_major_layout():
         print("")
 
 
+# This test repeats the following layout into the 4x8 matrix resulting:
+# TH_0 TH_2 TH_4 TH_6 TH_0 TH_2 TH_4 TH_6
+# TH_1 TH_3 TH_5 TH_7 TH_1 TH_3 TH_5 TH_7
+# TH_0 TH_2 TH_4 TH_6 TH_0 TH_2 TH_4 TH_6
+# TH_1 TH_3 TH_5 TH_7 TH_1 TH_3 TH_5 TH_7
+fn test_distribute_tiled_layout():
+    print("== test_distribute_tiled_layout")
+    var tensor = LayoutTensor[
+        Layout(IntTuple(4, 8), IntTuple(8, 1)), DType.float32
+    ].stack_allocation()
+    tensor.linspace()
+    alias threads_2x4_layout = Layout(
+        IntTuple(2, IntTuple(2, 2)), IntTuple(1, IntTuple(2, 4))
+    )
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 0.0   4.0
+    # CHECK: 16.0   20.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 8.0   12.0
+    # CHECK: 24.0   28.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 1.0   5.0
+    # CHECK: 17.0   21.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 9.0   13.0
+    # CHECK: 25.0   29.0
+    # CHECK: ----fragments-data[ 4 ]----
+    # CHECK: 2.0   6.0
+    # CHECK: 18.0   22.0
+    # CHECK: ----fragments-data[ 5 ]----
+    # CHECK: 10.0   14.0
+    # CHECK: 26.0   30.0
+    # CHECK: ----fragments-data[ 6 ]----
+    # CHECK: 3.0   7.0
+    # CHECK: 19.0   23.0
+    # CHECK: ----fragments-data[ 7 ]----
+    # CHECK: 11.0   15.0
+    # CHECK: 27.0   31.0
+    for th_i in range(8):
+        var thread_tile = tensor.distribute[threads_2x4_layout](th_i)
+        print("----fragments-data[", th_i, "]----")
+        thread_tile.print()
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
     test_tensor_tile_and_distribute()
     test_tensor_tile_and_distribute_custom_layout()
     test_copy_to_tile_major_layout()
+    test_distribute_tiled_layout()
