@@ -11,6 +11,8 @@ from .layout import *
 from sys.intrinsics import PrefetchOptions
 from algorithm import vectorize
 from memory import memcpy
+from gpu.memory import async_copy, async_copy_wait_all
+from gpu import AddressSpace
 
 
 @register_passable
@@ -284,8 +286,13 @@ struct LayoutTensor[
     # When source and destination address spaces differ
     @always_inline
     fn copy_from_numa[
-        other_layout: Layout
-    ](self, other: LayoutTensor[other_layout, dtype]):
+        other_layout: Layout, other_addr_space: AddressSpace
+    ](
+        self,
+        other: LayoutTensor[
+            other_layout, dtype, address_space=other_addr_space
+        ],
+    ):
         @parameter
         fn copy_element[i: Int]():
             alias src_idx = other_layout(i)
@@ -294,6 +301,40 @@ struct LayoutTensor[
 
         alias dst_size = layout.size()
         alias src_size = other_layout.size()
+
+        constrained[
+            dst_size == src_size, "copy_from should move data of the same size"
+        ]()
+
+        unroll[copy_element, dst_size]()
+
+    @always_inline
+    fn copy_from_async[
+        src_layout: Layout, src_addr_space: AddressSpace
+    ](
+        self,
+        src: LayoutTensor[src_layout, dtype, address_space=src_addr_space],
+    ):
+        constrained[
+            self.address_space == AddressSpace.SHARED,
+            "Async is only supported for destinations in shared memory",
+        ]()
+
+        @parameter
+        fn copy_element[i: Int]():
+            alias src_idx = src_layout(i)
+            alias dst_idx = self.layout(i)
+
+            var dst_ptr = self.ptr.address_space_cast[
+                AddressSpace.SHARED
+            ]() + dst_idx
+            var src_ptr = src.ptr.address_space_cast[
+                AddressSpace.GLOBAL
+            ]() + src_idx
+            async_copy[4](src_ptr, dst_ptr)
+
+        alias dst_size = layout.size()
+        alias src_size = src_layout.size()
 
         constrained[
             dst_size == src_size, "copy_from should move data of the same size"
