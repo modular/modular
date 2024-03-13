@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from gpu.host import Context, Dim, Function, Stream
-from mojobench import Bencher, BenchId, MojoBench
+from benchmark import Bencher, BenchId, Bench
 from kernel_utils import *
 from kernel_utils.layout import *
 
@@ -64,7 +64,7 @@ fn bench_empty_launch_many_params(inout b: Bencher) raises:
 
 def main():
     with Context() as ctx:
-        var m = MojoBench()
+        var m = Bench()
         m.bench_function[bench_empty_launch](BenchId("bench_empty_launch"))
         m.bench_function[bench_empty_launch_many_params](
             BenchId("bench_empty_launch_many_params")
