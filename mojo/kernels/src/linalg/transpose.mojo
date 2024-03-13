@@ -941,7 +941,7 @@ fn transpose_trivial_memcpy[
         var num_tasks = min(work_units, Runtime().parallelism_level())
         var work_block_size = div_ceil(work_units, num_tasks)
 
-        parallel_memcpy[type](
+        parallel_memcpy(
             dst_ptr,
             src_ptr,
             total_size,
