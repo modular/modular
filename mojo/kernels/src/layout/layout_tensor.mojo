@@ -64,21 +64,21 @@ struct LayoutTensor[
     @always_inline
     fn __setitem__(self, d0: Int, val: Scalar[dtype]):
         alias strides = Self._toStatic[flatten(layout.stride)]()
-        self.ptr.simd_store[1](
+        self.ptr.store[width=1](
             Self._getOffset(strides, VariadicList[Int](d0)), val
         )
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, val: Scalar[dtype]):
         alias strides = Self._toStatic[flatten(layout.stride)]()
-        self.ptr.simd_store[1](
+        self.ptr.store[width=1](
             Self._getOffset(strides, VariadicList[Int](d0, d1)), val
         )
 
     @always_inline
     fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Scalar[dtype]):
         alias strides = Self._toStatic[flatten(layout.stride)]()
-        self.ptr.simd_store[1](
+        self.ptr.store[width=1](
             Self._getOffset(strides, VariadicList[Int](d0, d1, d2)), val
         )
 
@@ -87,7 +87,7 @@ struct LayoutTensor[
         self, d0: Int, d1: Int, d2: Int, d3: Int, val: Scalar[dtype]
     ):
         alias strides = Self._toStatic[flatten(layout.stride)]()
-        self.ptr.simd_store[1](
+        self.ptr.store[width=1](
             Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3)), val
         )
 
@@ -108,7 +108,7 @@ struct LayoutTensor[
 
     @always_inline
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
-        return self.ptr.simd_store[width](self._offset(m, n), val)
+        return self.ptr.store[width=width](self._offset(m, n), val)
 
     @always_inline
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
