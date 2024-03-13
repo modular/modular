@@ -34,6 +34,7 @@ from nn.gather_scatter import Axis
 from nn.gather_scatter import gather as _gather
 from nn.gather_scatter import gather_shape
 from runtime.tracing import Trace, TraceLevel
+from utils.list import DimList
 
 from register import *
 

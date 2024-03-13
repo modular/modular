@@ -141,7 +141,7 @@ from runtime.tracing import Trace, TraceLevel
 
 from register import *
 from utils._optional import Optional
-from utils._optional_param import OptionalParamInt
+from kernel_utils._optional_param import OptionalParamInt
 from utils.index import Index, StaticIntTuple, product
 from utils.list import Dim, DimList
 
