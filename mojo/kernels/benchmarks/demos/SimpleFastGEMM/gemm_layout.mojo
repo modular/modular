@@ -7,10 +7,10 @@
 # Meant to be run on an AVX512 system
 
 import benchmark
-from algorithm import sync_parallelize
 from utils import unroll
+from memory.buffer import NDBuffer
 
-from kernel_utils.layout import Layout
+from kernel_utils.layout import Layout, IntTuple
 from kernel_utils.layout_tensor import LayoutTensor, TensorBuilder
 
 alias MR = 6
@@ -22,22 +22,20 @@ alias alignment = 64
 
 
 fn gemm_naive[
-    layout_c: Layout,
-    layout_a: Layout,
     layout_b: Layout,
 ](
-    c: LayoutTensor[layout_c, dtype],  # M x N
-    a: LayoutTensor[layout_a, dtype],  # M x K
+    c: NDBuffer[dtype, 2],  # M x N
+    a: NDBuffer[dtype, 2],  # M x K
     b: LayoutTensor[layout_b, dtype],  # N x K
 ):
-    alias M = c.dim[0]()
-    alias N = c.dim[1]()
-    alias K = a.dim[1]()
+    var M = c.dim(0)
+    alias N = b.dim[0]()
+    alias K = b.dim[1]()
 
     for mm in range(M):
         for kk in range(K):
             for nn in range(N):
-                c[mm, nn] += a[mm, kk] * b[kk, nn]
+                c[(mm, nn)] += a[mm, kk] * b[kk, nn]
 
 
 fn kernel[
@@ -55,10 +53,10 @@ fn kernel[
 
     @parameter
     @always_inline
-    fn loadc[m: Int, n: Int]():
-        c_cache.aligned_store[NR](m, NR * n, c.load[NR](m, NR * n))
+    fn loadc[m: Int]():
+        c_cache.store[NR](m, 0, c.load[NR](m, 0))
 
-    unroll[loadc, MR, 1]()
+    unroll[loadc, MR]()
 
     for pr in range(K // NR):
         var a_tile = a.tile[MR, NR](0, pr)
@@ -77,22 +75,16 @@ fn kernel[
             for m in range(MR):
                 var av = a_tile[m, k]
 
-                c_cache.aligned_store[NR](
-                    m,
-                    0,
-                    av * b_tile.load[NR](0, 0) + c_cache.aligned_load[NR](m, 0),
+                c_cache.store[NR](
+                    m, 0, av * b_tile.load[NR](0, 0) + c_cache.load[NR](m, 0)
                 )
 
     @parameter
     @always_inline
-    fn storec[m: Int, n: Int]():
-        c.store[NR](
-            m,
-            NR * n,
-            c_cache.aligned_load[NR](m, NR * n),
-        )
+    fn storec[m: Int]():
+        c.store[NR](m, 0, c_cache.load[NR](m, 0))
 
-    unroll[storec, MR, 1]()
+    unroll[storec, MR]()
 
 
 fn pack_b[
@@ -117,31 +109,56 @@ fn pack_b[
 
 
 fn gemm[
-    layout_c: Layout,
-    layout_a: Layout,
+    N: Int,
+    K: Int,
     layout_b: Layout,
 ](
-    c: LayoutTensor[layout_c, dtype],  # M x N
-    a: LayoutTensor[layout_a, dtype],  # M x K
+    c: NDBuffer[dtype, 2],  # M x N
+    a: NDBuffer[dtype, 2],  # M x K
     b_packed: LayoutTensor[layout_b, dtype],  # (N // NR) x (K * NR)
 ):
-    alias M = c.dim[0]()
-    alias N = c.dim[1]()
-    alias K = a.dim[1]()
+    var M = c.dim(0)
 
     for jc in range(N // NR):
         var b_tile = b_packed.tile[1, K * NR](jc, 0)
 
         # @parameter
         # fn process_row(ir: Int):
-        @unroll
         for ir in range(M // MR):
-            var c_tile = c.tile[MR, NR](ir, jc)
-            var a_tile = a.tile[MR, K](ir, 0)
+            var a_tile = TensorBuilder[MR, K, dtype].Wrap(
+                a.data.offset(K * MR * ir)
+            )
+
+            # var c_strip = TensorBuilder[MR, N, dtype].Wrap(
+            #     c.data.offset(N * MR * ir)
+            # )
+            # var c_tile = c_strip.tile[MR, NR](0, jc)
+
+            # Possibly a slightly more efficient way of building c_tile
+            alias c_tile_layout = Layout(IntTuple(MR, NR), IntTuple(N, 1))
+            var c_tile = LayoutTensor[c_tile_layout, dtype](
+                c.data.offset(N * MR * ir + NR * jc)
+            )
 
             kernel(c_tile, a_tile, b_tile)
 
         # sync_parallelize[process_row](M // MR)
+
+
+# kgen --emit-asm Kernels/benchmarks/demos/SimpleFastGEMM/gemm_layout.mojo >out.S
+@export(ABI="C")
+fn gemm_export_dynamic(
+    a_ptr: DTypePointer[dtype],
+    b_packed_ptr: DTypePointer[dtype],
+    c_ptr: DTypePointer[dtype],
+    M: Int,
+):
+    alias N = 1024
+    alias K = 1024
+    var a = NDBuffer[dtype, 2](a_ptr, (M, N))
+    var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
+    var c = NDBuffer[dtype, 2](c_ptr, (M, N))
+    gemm[N, K](c, a, b_packed)
 
 
 fn main():
@@ -171,15 +188,17 @@ fn main():
     var c_ptr = DTypePointer[DType.float32].alloc(M * N, alignment=alignment)
     var c2_ptr = DTypePointer[DType.float32].alloc(M * N, alignment=alignment)
 
-    var a = TensorBuilder[M, K, dtype].Wrap(a_ptr)
+    var a = NDBuffer[dtype, 2](a_ptr, (M, K))
+
     var b = TensorBuilder[K, N, dtype].Wrap(b_ptr)
     var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
-    var c = TensorBuilder[M, N, dtype].Wrap(c_ptr)
-    var c2 = TensorBuilder[M, N, dtype].Wrap(c2_ptr)
+
+    var c = NDBuffer[dtype, 2](c_ptr, (M, N))
+    var c2 = NDBuffer[dtype, 2](c2_ptr, (M, N))
 
     for j in range(M):
         for i in range(K):
-            a[j, i] = K * j + i
+            a[(j, i)] = K * j + i
 
     for j in range(K):
         for i in range(N):
@@ -187,12 +206,12 @@ fn main():
 
     for j in range(M):
         for i in range(N):
-            c[j, i] = c2[j, i] = 0
+            c[(j, i)] = c2[(j, i)] = 0
 
     pack_b(b, b_packed)
 
     gemm_naive(c, a, b)
-    gemm(c2, a, b_packed)
+    gemm[N, K](c2, a, b_packed)
     var errors: Int = 0
     for j in range(M):
         for i in range(N):
@@ -206,7 +225,7 @@ fn main():
 
     @parameter
     fn bench_gemm():
-        gemm(c2, a, b_packed)
+        gemm[N, K](c2, a, b_packed)
 
     var num_warmup: Int = 1
     var time = benchmark.run[bench_gemm](num_warmup).mean()
