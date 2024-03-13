@@ -238,16 +238,16 @@ kgen.generator @takes_val_after_lifetime<life: lifetime<1>, type: type>(%a: !lit
 kgen.generator @takes_pack
 <life: !lit.lifetime<1>, types: !kgen.variadic<!kgen.type>>
 // CHECK-SAME: (%arg0: !kgen.pack<variadic_ptr_map(:variadic<type> types, 42)>) {
-(%args: !lit.ref.pack<:variadic<!kgen.type> types, owned_in_mem, mut life, 42>) {
+(%args: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>) {
 
   // CHECK-NEXT: %0 = kgen.pack.size %arg0 : <variadic_ptr_map(:variadic<type> types, 42)>
-  %size = lit.ref.pack.size %args: !lit.ref.pack<:variadic<!kgen.type> types, owned_in_mem, mut life, 42>
+  %size = lit.ref.pack.size %args: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42>
 
   // CHECK-NEXT: %1 = kgen.pack.get %arg0[0] : <variadic_ptr_map(:variadic<type> types, 42)> -> index
-  %v1 = lit.ref.pack.get %args[0]: !lit.ref.pack<:variadic<!kgen.type> types, owned_in_mem, mut life, 42> -> index
+  %v1 = lit.ref.pack.get %args[0]: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42> -> index
 
   // CHECK-NEXT: %2 = kgen.pack.get %arg0[1] : <variadic_ptr_map(:variadic<type> types, 42)> -> f32
-  %v2 = lit.ref.pack.get %args[1]: !lit.ref.pack<:variadic<!kgen.type> types, owned_in_mem, mut life, 42> -> f32
+  %v2 = lit.ref.pack.get %args[1]: !lit.ref.pack<:variadic<!kgen.type> types, mut life, 42> -> f32
 
   kgen.return
 }
@@ -259,13 +259,13 @@ kgen.generator @pass_pack<life: !lit.lifetime<1>>
 
   // CHECK-NEXT: kgen.pack.create(%arg0, %arg1) : !kgen.pack<[pointer<index>, pointer<f32>]>
   %pack = lit.ref.pack.create(%index, %float) :
-    !lit.ref.pack<:variadic<!kgen.type> [index, f32], owned_in_mem, mut life, 0>
+    !lit.ref.pack<:variadic<!kgen.type> [index, f32], mut life, 0>
   // CHECK-NEXT: kgen.call @takes_pack<:struct<()> life, :variadic<type> [index, f32]>(%0)
   kgen.call @takes_pack<:lifetime<1> life, :variadic<!kgen.type> [index, f32]>(%pack)
-     : (!lit.ref.pack<:variadic<!kgen.type> [index, f32], owned_in_mem, mut life, 0>) -> ()
+     : (!lit.ref.pack<:variadic<!kgen.type> [index, f32], mut life, 0>) -> ()
 
   // CHECK-NEXT: kgen.param.constant: !kgen.pack<[pointer<i8>, pointer<ui4>, pointer<i32>]> = <<store_to_mem(3), store_to_mem(1), store_to_mem(4)>>
-  %3 = kgen.param.constant: !lit.ref.pack<:variadic<!kgen.type> [i8, ui4, i32], owned_in_mem, mut life, 0>
+  %3 = kgen.param.constant: !lit.ref.pack<:variadic<!kgen.type> [i8, ui4, i32], mut life, 0>
      = <<store_to_mem(3), store_to_mem(1), store_to_mem(4)>>
 
   kgen.return

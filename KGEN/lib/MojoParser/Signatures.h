@@ -92,6 +92,10 @@ struct ParsedArgument {
   // After type checking, this will hold the KGEN convention to use.
   ArgConvention kgenConvention = ArgConvention(128);
 
+  // For variadics and packs, this is the declared argument convention, even
+  // those the variadic type is passed another way.
+  ArgConvention kgenVariadicConvention = ArgConvention::None;
+
   VarArgKind vararg = VarArgKind::None;
   StringAttr name;
   const ExprNode *typeExpr = nullptr;

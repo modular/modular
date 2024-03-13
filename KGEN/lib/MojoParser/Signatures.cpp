@@ -406,7 +406,7 @@ TypeCheckedParamList::TypeCheckedParamList(
 PogsAttr TypeCheckedParamList::getParamListAttr() {
   return PogsAttr::get(shared.getContext(), names, passingKinds,
                        defaultPosParams, defaultKwOnlyParams, variadicIndices,
-                       /*packIndices=*/{});
+                       /*packIndex=*/-1, ArgConvention::None);
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -549,7 +549,7 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
 // This expression must be a PValue of variadic metatype.  We need to
 // process it into a PackType.
 static Type
-typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg, size_t argIdx,
+typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
                                    ExprEmitter &emitter,
                                    TypeCheckedFnSignature &tcSignature) {
   assert(arg.vararg == VarArgKind::PackVarArg &&
@@ -580,33 +580,16 @@ typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg, size_t argIdx,
   // representation for compatibility.
   // TODO: Move to RefPackType consistently.
   if (isa<TypeType>(elementType) ||
-
+      // To phase this in, only muck with 'owned'.
       arg.convention != ParsedArgument::kConventionOwned)
     return PackType::get(param.get());
-
-  ArgConvention convention;
-  switch (arg.convention) {
-  case ParsedArgument::kConventionByRefResult:
-  case ParsedArgument::kConventionInitSelfResult:
-    llvm_unreachable("can't occur in argument packs");
-  case ParsedArgument::kConventionUnspec:
-  case ParsedArgument::kConventionBorrowed:
-    convention = ArgConvention::BorrowedInMem;
-    break;
-  case ParsedArgument::kConventionOwned:
-    convention = ArgConvention::OwnedInMem;
-    break;
-  case ParsedArgument::kConventionInOut:
-    convention = ArgConvention::ByRef;
-    break;
-  }
 
   // Arguments passed by memory need an associated lifetime parameter, and need
   // to be passed by reference.
   RefType refType =
       makeImplicitRefTypeForArg(arg, argIdx, elementType, tcSignature);
 
-  return RefPackType::get(param.get(), convention, refType.getLifetime(),
+  return RefPackType::get(param.get(), refType.getLifetime(),
                           refType.getAddressSpace());
 }
 
@@ -618,7 +601,7 @@ typeCheckVariadicPackTypeSpecifier(const ParsedArgument &arg, size_t argIdx,
 static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
                                  bool isStaticMethod, ASTDecl *fnDecl,
                                  TypeCheckedFnSignature &tcSignature) {
-  auto &arg = tcSignature.argList.parsedArgs[idx];
+  ParsedArgument &arg = tcSignature.argList.parsedArgs[idx];
 
   ASTDecl &declScope = tcSignature.paramList.declScope;
   SharedState &shared = tcSignature.paramList.shared;
@@ -692,7 +675,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
     // FIXME(owned varargs): we don't support owned varargs, so pass varargs
     // as borrowed instead for def's for now to hackaround this.
-    if (isDef && arg.vararg != VarArgKind::None)
+    if (isDef && (arg.vararg == VarArgKind::VarArg ||
+                  arg.vararg == VarArgKind::KWVarArg))
       arg.convention = ParsedArgument::kConventionBorrowed;
   }
 
@@ -788,9 +772,26 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     fullType = VariadicType::get(fullType, arg.kgenConvention);
     arg.kgenConvention = ArgConvention::BorrowedInReg;
   } else if (arg.vararg == VarArgKind::PackVarArg) {
+    // Figure out the declared arg convention.
+    switch (arg.convention) {
+    case ParsedArgument::kConventionUnspec:
+    case ParsedArgument::kConventionByRefResult:
+    case ParsedArgument::kConventionInitSelfResult:
+      llvm_unreachable("not a pack arg convention");
+    case ParsedArgument::kConventionOwned:
+      arg.kgenVariadicConvention = ArgConvention::OwnedInMem;
+      break;
+    case ParsedArgument::kConventionBorrowed:
+      arg.kgenVariadicConvention = ArgConvention::BorrowedInMem;
+      break;
+    case ParsedArgument::kConventionInOut:
+      arg.kgenVariadicConvention = ArgConvention::ByRef;
+      break;
+    }
     // !lit.ref.pack is always passed as borrowed, even if the elements are
     // owned/inout etc.
     arg.kgenConvention = ArgConvention::BorrowedInReg;
+
   } else if (arg.vararg == VarArgKind::KWVarArg) {
     // We build Dict[String, ValType].
     ASTType dictType = shared.getBuiltinDictType(declScope, arg.loc);
@@ -1092,20 +1093,25 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   SmallVector<ArgConvention> argConventions;
   argConventions.reserve(numArgs);
   SmallVector<size_t> argVariadicIndices;
-  SmallVector<size_t> argPackIndices;
+  ssize_t argPackIndex = -1;
+  ArgConvention argPackOrigConvention = ArgConvention::None;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     argPassingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
     argNames.push_back(arg.name);
     argConventions.push_back(arg.kgenConvention);
     if (arg.vararg == VarArgKind::VarArg || arg.vararg == VarArgKind::KWVarArg)
       argVariadicIndices.push_back(idx);
-    else if (arg.vararg == VarArgKind::PackVarArg)
-      argPackIndices.push_back(idx);
+    else if (arg.vararg == VarArgKind::PackVarArg) {
+      assert(argPackIndex == -1 && "only one argument pack is possible");
+      argPackIndex = idx;
+      argPackOrigConvention = arg.kgenVariadicConvention;
+    }
   }
 
   auto metadata = FnMetadataAttr::get(
       PogsAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                    defaultKwOnlyArgs, argVariadicIndices, argPackIndices),
+                    defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
+                    argPackOrigConvention),
       paramList.getParamListAttr(), implicitLifetimeDecls.size());
 
   /// Silence internal verifier errors when constructing types from the parser.
