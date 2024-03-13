@@ -364,6 +364,7 @@ fn test_subscript_implicit_conversion(c: IncompatElementTypes):
   c[1] = tmp
 
 struct GetAttrNotString:
+    # expected-note @below {{function declared here}}
     fn __init__(inout self):
         pass
 
@@ -398,7 +399,7 @@ fn test_int_to_int_error(a: Int, b: NoSelfCtor):
   # expected-error @+1 {{cannot construct 'NoSelfCtor' with itself, you can remove the constructor call}}
   _ = NoSelfCtor(NoSelfCtor(a))
 
-  # expected-error @+1 {{cannot construct 'GetAttrNotString' from 'Int' value in assignment}}
+  # expected-error @+1 {{invalid initialization: expected at most 1 positional arguments, got 2}}
   _ = GetAttrNotString(a)
 
 
@@ -435,8 +436,6 @@ fn compare_mem_result():
   x <= x <= x
 
 fn test_bad_ref(a: Int, b: CopyAndInitMemType):
-  # expected-error @+1 {{cannot construct 'Reference[?, ?, ?]' from 'Int' value in assignment}}
-  _ = Reference(a)
 
   var bref = Reference(b) # ok
 

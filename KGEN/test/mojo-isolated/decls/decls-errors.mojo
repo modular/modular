@@ -416,6 +416,29 @@ fn test_param_deduction_failure[
     # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
     func[_](u, v)
 
+struct InitOverloaded:
+  # expected-note @below {{argument #1 cannot be converted from 'StringLiteral' to 'Int'}}
+  # expected-note @below {{argument #1 cannot be converted from 'Parametric[1]' to 'Int'}}
+  fn __init__(inout self, a: Int): pass
+  # expected-note @below {{argument #1 cannot be converted from 'StringLiteral' to 'index'}}
+  # expected-note @below {{argument #1 cannot be converted from 'Parametric[1]' to 'index'}}
+  fn __init__(inout self, a: int): pass
+
+fn testOverloadInitError(a: InitOverloaded, b: Parametric[1], c: Int):
+  # expected-error @+1 {{cannot construct 'InitOverloaded' with itself, you can remove the constructor call}}
+  _ = InitOverloaded(a)
+
+  # expected-error @+1 {{no matching function in initialization}}
+  _ = InitOverloaded(b)
+
+  # This is ok
+  _ = InitOverloaded(c)
+
+  # expected-error @+1 {{no matching function in initialization}}
+  _ = InitOverloaded("foo")
+
+
+
 ##===----------------------------------------------------------------------===##
 # Decorators
 ##===----------------------------------------------------------------------===##
