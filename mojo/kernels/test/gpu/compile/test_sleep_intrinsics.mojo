@@ -27,7 +27,7 @@ fn sleep_intrinsics():
 
 @always_inline
 fn _verify_sleep_intrinsics(asm: String) raises -> None:
-    assert_true("sleep_intrinsics" in asm)
+    assert_true("test_sleep_internsics_sleep" in asm)
     assert_true("mov.b32" in asm)
     assert_true("nanosleep.u32" in asm)
 

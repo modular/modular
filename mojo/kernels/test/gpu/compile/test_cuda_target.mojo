@@ -60,7 +60,7 @@ fn parameterized_on_cuda() -> Int:
 
 @always_inline
 fn _verify_parameterized_on_cuda(asm: String) raises -> None:
-    assert_true("parameterized_on_cuda" in asm)
+    assert_true("test_cuda_target_parameterized" in asm)
     assert_true("mov.u64" in asm)
 
 
@@ -97,7 +97,7 @@ fn hello_mojo():
 
 @always_inline
 fn _verify_hello(asm: String) raises -> None:
-    assert_true("hello_mojo" in asm)
+    assert_true("test_cuda_target_hello_mojo" in asm)
     assert_true("vprintf" in asm)
 
 
@@ -150,7 +150,7 @@ fn erf_elementwise(buf: DTypePointer[DType.float32], len: Int):
 
 @always_inline
 fn _verify_erf_elementwise(asm: String) raises -> None:
-    assert_true("erf_elementwise" in asm)
+    assert_true("test_cuda_target_erf_elementwis" in asm)
     assert_true("tid.x" in asm)
     assert_true("ntid.x" in asm)
     assert_true("ctaid.x" in asm)
@@ -237,7 +237,7 @@ fn test_shared_stack_allocation() -> (
 
 @always_inline
 fn _verify_shared_stack_allocation(asm: String) raises -> None:
-    assert_true("test_shared_stack_allocation" in asm)
+    assert_true("test_cuda_target_test_shared_" in asm)
     assert_true(".shared .align 8 .b8" in asm)
 
 
@@ -451,7 +451,7 @@ fn test_shuffle_up(val: Float32) -> Float32:
 
 @always_inline
 fn _verify_shuffle_up(asm: String) raises -> None:
-    assert_true("test_shuffle_up" in asm)
+    assert_true("test_shuffle_" in asm)
     assert_true("shfl.sync.up.b32" in asm)
 
 
@@ -490,7 +490,7 @@ fn test_shuffle_down(val: Int32) -> Int32:
 
 @always_inline
 fn _verify_shuffle_down(asm: String) raises -> None:
-    assert_true("test_shuffle_down" in asm)
+    assert_true("test_shuffle_" in asm)
     assert_true("shfl.sync.down.b32" in asm)
 
 
@@ -534,7 +534,7 @@ fn warp_sum_reduce(val: Float32) -> Float32:
 
 @always_inline
 fn _verify_warp_sum_reduce(asm: String) raises -> None:
-    assert_true("warp_sum_reduce" in asm)
+    assert_true("warp_sum_" in asm)
     assert_true("shfl.sync.bfly.b32" in asm)
 
 
