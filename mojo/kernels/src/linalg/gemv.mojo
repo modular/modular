@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.reduction import _reduce_generator
+from closed_source_algorithm.reduction import _reduce_generator
 from MatmulUtils import elementwise_epilogue_type
 from memory.buffer import Buffer, NDBuffer
 

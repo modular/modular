@@ -9,7 +9,7 @@ from math import div_ceil, min
 from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load, strided_store
 
-from algorithm import sync_parallelize, tile, unroll, unswitch, vectorize
+from algorithm import sync_parallelize, tile, unswitch, vectorize
 from memory import memcpy
 from closed_source_memory import parallel_memcpy
 from memory.buffer import Buffer, NDBuffer
@@ -18,6 +18,7 @@ from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple, StaticTuple
 from utils.list import DimList
+from utils import unroll
 
 
 fn _transpose_inplace_4x4[

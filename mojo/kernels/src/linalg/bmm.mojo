@@ -9,7 +9,7 @@ from sys.info import simdwidthof
 
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
-from algorithm.reduction import _reduce_generator
+from closed_source_algorithm.reduction import _reduce_generator
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Function, Stream
 from Matmul import _submatmul_sequential_sync
