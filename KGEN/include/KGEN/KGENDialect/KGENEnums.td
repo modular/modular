@@ -66,15 +66,16 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // Evaluator.
   I32EnumAttrCase<"GetAllImpls", 27, "get_all_impls">,
   I32EnumAttrCase<"VariadicGet", 28, "variadic_get">,
-  I32EnumAttrCase<"CompileAssembly", 29, "compile_assembly">,
-  I32EnumAttrCase<"GetLinkageName", 30, "get_linkage_name">,
+  I32EnumAttrCase<"VariadicSize", 29, "variadic_size">,
+  I32EnumAttrCase<"CompileAssembly", 30, "compile_assembly">,
+  I32EnumAttrCase<"GetLinkageName", 31, "get_linkage_name">,
 
   // Other
-  I32EnumAttrCase<"GetTypeMethod", 31, "get_type_method">,
+  I32EnumAttrCase<"GetTypeMethod", 32, "get_type_method">,
   // Given a list of !variadic<sometype> type, return the same list with each
   // element wrapped in a kgen pointer type: [i32, f32] -> [ptr<i32>, ptr<f32>].
   // The first operand is the list, the second operand is an integer addrspace.
-  I32EnumAttrCase<"VariadicPtrMap", 32, "variadic_ptr_map">,
+  I32EnumAttrCase<"VariadicPtrMap", 33, "variadic_ptr_map">,
 ]>;
 
 //===----------------------------------------------------------------------===//

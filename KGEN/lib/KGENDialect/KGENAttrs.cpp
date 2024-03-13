@@ -963,6 +963,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::ApplyResultSlot:
   case POC::Rebind:
   case POC::VariadicGet:
+  case POC::VariadicSize:
   case POC::CompileAssembly:
   case POC::GetLinkageName:
   case POC::GetTypeMethod:
@@ -1107,6 +1108,17 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'variadic_get' result type should be variadic "
                             "element type: expected "
                          << elType << " but got " << type;
+    break;
+  }
+  case POC::VariadicSize: {
+    if (operands.size() != 1)
+      return emitError() << "'variadic_size' expected one operand";
+    auto variadicType = ::dyn_cast<VariadicType>(operands.front().getType());
+    if (!variadicType)
+      return emitError()
+             << "'variadic_size' expected operand to be a variadic value";
+    if (!::isa<IndexType>(type))
+      return emitError() << "'variadic_size' result type should be index";
     break;
   }
   case POC::Cond:
@@ -2085,6 +2097,13 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
   return variadic.getValues()[index.getInt()];
 }
 
+static TypedAttr simplifyVariadicSize(TypedAttr operand, Type &resultType) {
+  if (auto variadic = dyn_cast<VariadicAttr>(operand))
+    return IntegerAttr::get(IndexType::get(operand.getContext()),
+                            variadic.getValues().size());
+  return {};
+}
+
 // Returns the op with operands replaced with substitutions with actual values.
 // substitutions are automatically added in conditionals with equals.
 //
@@ -2331,6 +2350,9 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::VariadicGet:
     result = simplifyVariadicGet(operands, resultType);
+    break;
+  case POC::VariadicSize:
+    result = simplifyVariadicSize(operands[0], resultType);
     break;
   case POC::Cond:
     result = simplifyCond(operands);

@@ -1895,20 +1895,3 @@ def LIT_RefPackGetOp : LITOp<"ref.pack.get", [Pure]> {
 
   let hasVerifier = 1;
 }
-
-//===----------------------------------------------------------------------===//
-// RefPackSizeOp
-//===----------------------------------------------------------------------===//
-
-def LIT_RefPackSizeOp : LITOp<"ref.pack.size", [Pure]> {
-  let summary = "given a pack, return its size";
-  let description = [{
-    The `lit.ref.pack.size` operation takes an operand with a `!lit.ref.pack`
-    type and returns the number of elements in the pack.
-  }];
-
-  let arguments = (ins LIT_RefPackType:$operand);
-  let results = (outs Index:$result);
-
-  let assemblyFormat = "$operand attr-dict `:` type($operand)";
-}

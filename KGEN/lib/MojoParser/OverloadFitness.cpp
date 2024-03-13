@@ -241,9 +241,18 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
       return matchTypes(actual.getElementType(), expected.getElementType());
 
   // Handle PackType.
+  // TODO: Remove PackType from the parser.
   if (auto actual = dyn_cast<PackType>(actualType))
     if (auto expected = dyn_cast<PackType>(expectedType))
       return matchParams(actual.getVariadic(), expected.getVariadic());
+
+  // Handle RefPackType.
+  if (auto actual = dyn_cast<RefPackType>(actualType))
+    if (auto expected = dyn_cast<RefPackType>(expectedType)) {
+      matchParams(actual.getVariadic(), expected.getVariadic());
+      matchParams(actual.getLifetime(), expected.getLifetime());
+      matchParams(actual.getAddressSpace(), expected.getAddressSpace());
+    }
 
   // Handle SignatureType
   if (auto actual = dyn_cast<SignatureType>(actualType))
