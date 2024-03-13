@@ -80,7 +80,7 @@ fn parallel_memcpy[
         var num_tasks = min(work_units, Runtime().parallelism_level())
         var work_block_size = div_ceil(work_units, num_tasks)
 
-        parallel_memcpy[type](
+        parallel_memcpy(
             dest,
             src,
             count,
