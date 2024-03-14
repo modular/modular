@@ -8,7 +8,7 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from memory.buffer import Buffer
+from closed_source_memory.buffer import Buffer
 ```
 """
 
@@ -27,8 +27,8 @@ from utils.index import product as tuple_product
 from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
-from .memory import stack_allocation
-from .unsafe import AddressSpace, DTypePointer, Pointer
+from memory import stack_allocation
+from memory.unsafe import AddressSpace, DTypePointer, Pointer
 
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.

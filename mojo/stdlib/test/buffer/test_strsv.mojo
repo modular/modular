@@ -7,7 +7,7 @@
 
 from math import abs
 
-from memory.buffer import Buffer
+from closed_source_memory.buffer import Buffer
 from memory.unsafe import DTypePointer
 
 alias simd_width = 8

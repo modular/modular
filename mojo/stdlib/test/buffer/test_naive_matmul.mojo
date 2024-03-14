@@ -60,7 +60,7 @@
 
 from sys.info import sizeof
 
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 
 from utils.index import StaticIntTuple
 from utils.list import DimList

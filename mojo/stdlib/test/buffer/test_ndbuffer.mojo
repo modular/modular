@@ -9,7 +9,7 @@ from math import iota
 from sys.intrinsics import PrefetchOptions
 
 from memory import memcmp, memset_zero
-from memory.buffer import NDBuffer, _compute_ndbuffer_offset
+from closed_source_memory.buffer import NDBuffer, _compute_ndbuffer_offset
 from pathlib import Path
 from sys.param_env import env_get_string
 from tensor import Tensor
