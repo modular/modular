@@ -27,7 +27,7 @@ from MatmulUtils import (
     packA_i8mm,
 )
 from memory import memset_zero
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from runtime.llcl import Runtime
 
 from utils._optional import Optional

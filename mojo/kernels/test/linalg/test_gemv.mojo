@@ -12,7 +12,7 @@ from sys.info import simdwidthof
 import benchmark
 from Gemv import gemv, naive_gemv
 from Matmul import matmul
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList

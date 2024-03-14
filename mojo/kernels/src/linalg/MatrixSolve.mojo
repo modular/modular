@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Matrix Solve functions."""
 
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple

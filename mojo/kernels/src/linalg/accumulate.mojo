@@ -11,7 +11,11 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm.functional import tile
 from memory import stack_allocation
-from memory.buffer import Buffer, partial_simd_load, partial_simd_store
+from closed_source_memory.buffer import (
+    Buffer,
+    partial_simd_load,
+    partial_simd_store,
+)
 from memory.unsafe import DTypePointer
 
 # ===----------------------------------------------------------------------===#

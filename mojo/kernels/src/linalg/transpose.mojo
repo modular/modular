@@ -12,7 +12,7 @@ from sys.intrinsics import strided_load, strided_store
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from memory import memcpy
 from closed_source_memory import parallel_memcpy
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 

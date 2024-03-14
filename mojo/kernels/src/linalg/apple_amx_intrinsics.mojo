@@ -14,7 +14,7 @@ from sys._assembly import inlined_assembly
 from sys.info import sizeof
 
 from memory import memcpy, memset_zero, stack_allocation
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.list import DimList

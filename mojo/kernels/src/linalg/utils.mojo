@@ -18,7 +18,7 @@ from sys.info import (
     sizeof,
 )
 
-from memory.buffer import (
+from closed_source_memory.buffer import (
     DynamicRankBuffer,
     NDBuffer,
     partial_simd_load,

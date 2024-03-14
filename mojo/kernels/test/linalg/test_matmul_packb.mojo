@@ -8,7 +8,7 @@
 from sys.info import simdwidthof
 
 from Matmul import PackMatrixCols
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 
 from utils.index import Index
 from utils.list import DimList

@@ -20,7 +20,7 @@ from Matmul import (
 )
 from MatmulUtils import get_pack_data_size
 from memory import stack_allocation
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.index import Index, StaticIntTuple

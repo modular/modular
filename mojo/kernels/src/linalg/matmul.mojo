@@ -46,7 +46,7 @@ from MatmulUtils import (
     packA_i8mm,
 )
 from memory import memset_zero, stack_allocation
-from memory.buffer import (
+from closed_source_memory.buffer import (
     Buffer,
     DynamicRankBuffer,
     NDBuffer,

@@ -8,7 +8,7 @@
 from math import div_ceil
 
 from Matmul import pack_b
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
