@@ -13,6 +13,8 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/Threading/Shared.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/Dominance.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
@@ -35,13 +37,43 @@ using namespace POP;
 /// The captured values, excluding the cloned values, are populate into
 /// `captures`.
 static void liftClosureRegion(Region &body, SmallVectorImpl<Value> &captures,
+                              mlir::DominanceInfo &domInfo,
                               bool formTransitiveClosure = false) {
   // Isolate the region from above.
   llvm::SetVector<Value> captureSet;
   mlir::getUsedValuesDefinedAbove(body, captureSet);
-  // Note: The size of `captureSet` is changing.
-  for (unsigned i = 0; i < captureSet.size(); ++i) {
-    Value capture = captureSet[i];
+  bool sortCaptureSet = false;
+
+  if (formTransitiveClosure) {
+    // Note: The size of `captureSet` is changing.
+    for (unsigned i = 0; i < captureSet.size(); ++i) {
+      Value capture = captureSet[i];
+      Operation *capturingOp = capture.getDefiningOp();
+      if (!capturingOp)
+        continue;
+      for (Value operand : capturingOp->getOperands()) {
+        if (!captureSet.insert(operand)) {
+          // Found an operand that is already in the captureSet.
+          // The captureSet will need to be sorted for proper dominance order to
+          // clone and replace in the region.
+          sortCaptureSet = true;
+        }
+      }
+    }
+  }
+
+  llvm::SmallVector<Value> captureValues = captureSet.takeVector();
+  if (sortCaptureSet) {
+    // Sort the captureSet in the right order for dominance if .
+    std::stable_sort(captureValues.begin(), captureValues.end(),
+                     [&](Value v1, Value v2) {
+                       if (!v2.getDefiningOp())
+                         return false;
+                       return !domInfo.dominates(v1, v2.getDefiningOp());
+                     });
+  }
+
+  for (Value capture : captureValues) {
     Operation *capturingOp = capture.getDefiningOp();
     // Clone ConstantLike operations into the region.
     if (capturingOp && (formTransitiveClosure ||
@@ -56,9 +88,6 @@ static void liftClosureRegion(Region &body, SmallVectorImpl<Value> &captures,
       for (auto [orig, replacement] :
            llvm::zip(capturingOp->getResults(), cloned->getResults()))
         replaceAllUsesInRegionWith(orig, replacement, body);
-      if (formTransitiveClosure)
-        for (Value operand : cloned->getOperands())
-          captureSet.insert(operand);
     } else {
       // Otherwise these are captured variables and we need to pass them as
       // arguments to the block body.
@@ -90,10 +119,11 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
 /// gets called.
 static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
                               Shared<SymbolTable &> &sharedTable,
-                              size_t &nameCounter) {
+                              size_t &nameCounter,
+                              mlir::DominanceInfo &domInfo) {
   SmallVector<Value> captures;
   Region &body = op.getBodyRegion();
-  liftClosureRegion(body, captures);
+  liftClosureRegion(body, captures, domInfo);
 
   // Insert the coroutine handle.
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder::atBlockBegin(&body.front()));
@@ -152,14 +182,15 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
 /// lifting it into a top-level function.
 static void lowerStageClosure(FuncOp parent, StageClosureOp op,
                               Shared<SymbolTable &> &sharedTable,
-                              size_t &nameCounter) {
+                              size_t &nameCounter,
+                              mlir::DominanceInfo &domInfo) {
   Region &body = op.getBodyRegion();
   unsigned numArgs = body.getNumArguments();
   SmallVector<Value> captures;
   // If the `stage_closure` is not capturing, then this is an inline (?)
   // function pointer. Force the transitive closure of operations to be cloned
   // into the body to isolate it.
-  liftClosureRegion(body, captures, !op.getType().isCapturing());
+  liftClosureRegion(body, captures, domInfo, !op.getType().isCapturing());
   // Add the captured arguments to the front so they can be partially applied by
   // `kgen.create_closure`.
   std::rotate(body.getArguments().begin(),
@@ -225,7 +256,8 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 /// it, marshall results through a `pop.coroutine.promise`, and return the
 /// handle directly.
 static LogicalResult lowerAsyncFunction(FuncOp func,
-                                        Shared<SymbolTable &> &sharedTable) {
+                                        Shared<SymbolTable &> &sharedTable,
+                                        mlir::DominanceInfo &domInfo) {
   size_t closureNameCounter = 0;
   Value coroHdl;
   ImplicitLocOpBuilder b(func.getLoc(),
@@ -273,9 +305,10 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
       call.erase();
 
     } else if (auto exec = dyn_cast<LIT::AsyncExecuteOp>(op)) {
-      lowerAsyncExecute(func, exec, sharedTable, closureNameCounter);
+      lowerAsyncExecute(func, exec, sharedTable, closureNameCounter, domInfo);
     } else if (auto closure = dyn_cast<StageClosureOp>(op)) {
-      lowerStageClosure(func, closure, sharedTable, closureNameCounter);
+      lowerStageClosure(func, closure, sharedTable, closureNameCounter,
+                        domInfo);
     }
     return WalkResult::advance();
   });
@@ -312,8 +345,10 @@ struct LowerClosuresPass : impl::LowerClosuresBase<LowerClosuresPass> {
         getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
     Shared<SymbolTable &> sharedTable(symtab);
 
+    auto &domInfo = getAnalysis<mlir::DominanceInfo>();
+
     auto eachFn = [&](FuncOp func) {
-      return lowerAsyncFunction(func, sharedTable);
+      return lowerAsyncFunction(func, sharedTable, domInfo);
     };
     std::vector<FuncOp> funcs;
     llvm::append_range(funcs, getOperation().getOps<FuncOp>());

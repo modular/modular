@@ -163,3 +163,28 @@ kgen.func @transitive_closure() {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @transitive_closure_cloning_closure_0
+// CHECK-NEXT: %string = kgen.param.constant: string = <"123">
+// CHECK-DAG: [[V0:%.*]] = pop.string.address %string
+// CHECK-DAG: %idx2 = index.constant 2
+// CHECK-NEXT: [[V1:%.*]] = pop.pointer.bitcast [[V0]] : !kgen.pointer<scalar<si8>> to !kgen.pointer<none>
+// CHECK: [[V2:%.*]] = pop.offset [[V0]][%idx2] : !kgen.pointer<scalar<si8>>
+// CHECK-NEXT: [[V3:%.*]] = pop.pointer.bitcast [[V2]] : !kgen.pointer<scalar<si8>> to !kgen.pointer<none>
+// CHECK-NEXT: kgen.return [[V1]], [[V3]] : !kgen.pointer<none>, !kgen.pointer<none>
+
+// CHECK-LABEL: @transitive_closure_cloning
+kgen.func @transitive_closure_cloning() {
+  %str = kgen.param.constant: string = <"123">
+  %0 = pop.string.address %str
+  %idx2 = index.constant 2
+  %1 = pop.pointer.bitcast %0 : !kgen.pointer<scalar<si8>> to !kgen.pointer<none>
+  %2 = pop.offset %0[%idx2] : !kgen.pointer<scalar<si8>>
+  %3 = pop.pointer.bitcast %2 : !kgen.pointer<scalar<si8>> to !kgen.pointer<none>
+
+  // CHECK: create_closure[() -> (!kgen.pointer<none>, !kgen.pointer<none>): @transitive_closure_cloning_closure_0]()
+  kgen.stage_closure = () -> (!kgen.pointer<none>, !kgen.pointer<none>) {
+    kgen.return %1, %3 : !kgen.pointer<none>, !kgen.pointer<none>
+  }
+  kgen.return
+}
