@@ -8,7 +8,7 @@
 from math import div_ceil, min
 
 from algorithm import async_parallelize, map, parallelize, sync_parallelize
-from memory.buffer import Buffer
+from closed_source_memory.buffer import Buffer
 from runtime.llcl import Runtime, num_physical_cores
 
 

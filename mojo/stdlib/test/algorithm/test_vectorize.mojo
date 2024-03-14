@@ -7,7 +7,7 @@
 
 from algorithm import vectorize
 from memory import memcmp
-from memory.buffer import Buffer
+from closed_source_memory.buffer import Buffer
 
 
 # CHECK-LABEL: test_vectorize

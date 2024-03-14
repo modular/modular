@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from algorithm import map
-from memory.buffer import Buffer
+from closed_source_memory.buffer import Buffer
 
 
 # CHECK-LABEL: test_map

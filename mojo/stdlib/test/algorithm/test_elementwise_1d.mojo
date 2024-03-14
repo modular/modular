@@ -10,7 +10,7 @@ from math import div_ceil, erf, exp, tanh
 from sys.info import num_physical_cores, simdwidthof
 
 from algorithm import elementwise
-from memory.buffer import Buffer
+from closed_source_memory.buffer import Buffer
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
