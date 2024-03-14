@@ -120,6 +120,8 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
     bool isVariadic(size_t idx) const;
     /// Return true if the argument/param at `idx` is a pack.
     bool isPack(size_t idx) const;
+    /// Return true if there is an variadic keyword argument/param.
+    bool hasKwVariadics() const;
   }];
 
   let genVerifyDecl = 1;

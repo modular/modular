@@ -113,6 +113,12 @@ bool PogsAttr::isPack(size_t idx) const {
   return getPackIndex() == ssize_t(idx);
 }
 
+bool PogsAttr::hasKwVariadics() const {
+  return llvm::any_of(getVariadicIndices(), [&](size_t idx) {
+    return getPassingKinds()[idx] == PassingKind::KwOnly;
+  });
+}
+
 //===----------------------------------------------------------------------===//
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
@@ -354,9 +360,7 @@ bool FnMetadataAttr::hasParamVarArgs() const {
 }
 
 bool FnMetadataAttr::hasKwVarArgs() const {
-  return llvm::any_of(getArgListAttrs().getVariadicIndices(), [&](size_t idx) {
-    return getArgPassingKinds()[idx] == PassingKind::KwOnly;
-  });
+  return getArgListAttrs().hasKwVariadics();
 }
 
 bool FnMetadataAttr::isAnyVarArg(size_t idx) const {
