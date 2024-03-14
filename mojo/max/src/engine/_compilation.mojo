@@ -440,7 +440,7 @@ struct CompiledModel:
 
         for input_tensor_name in input_tensor_names:
             var input_spec = self.ptr.get_model_input_spec_by_name(
-                input_tensor_name[], self.lib, self.session
+                input_tensor_name[], self.lib, self.session.copy()
             )
             input_metadata.push_back(input_spec ^)
         return input_metadata
@@ -453,7 +453,7 @@ struct CompiledModel:
 
         for output_tensor_name in output_tensor_names:
             var output_spec = self.ptr.get_model_output_spec_by_name(
-                output_tensor_name[], self.lib, self.session
+                output_tensor_name[], self.lib, self.session.copy()
             )
             output_metadata.push_back(output_spec ^)
         return output_metadata
