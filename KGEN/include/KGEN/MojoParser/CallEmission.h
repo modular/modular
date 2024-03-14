@@ -27,6 +27,51 @@ class StructDeclOp;
 class TypeSignatureType;
 enum class PassingKind : uint32_t;
 
+/// Struct that carries both positional and keyword operands for a call or
+/// parameter binding. This does not own any values, only references pointers to
+/// their containers.
+template <typename OperandType>
+class OperandContainer {
+public:
+  /// Create call operands with positional and optional keyword arguments.
+  OperandContainer(
+      ArrayRef<OperandType> posOperands = {},
+      const KeywordOperandContainer<OperandType> *kwOperands = nullptr)
+      : posOperands(posOperands), kwOperands(kwOperands) {}
+
+  /// Create call operands with positional arguments given a value implicitly
+  /// convertible to `ArrayRef`.
+  template <typename OperandsT,
+            typename = std::enable_if_t<
+                !std::is_same_v<OperandsT, ArrayRef<OperandType>> &&
+                std::is_convertible_v<OperandsT, ArrayRef<OperandType>>>>
+  OperandContainer(OperandsT &&posOperands)
+      : OperandContainer(
+            ArrayRef<OperandType>(std::forward<OperandsT>(posOperands))) {}
+
+  /// Return a keyword argument value if present, or null otherwise.
+  std::optional<OperandType> findKwArg(StringAttr argName) const {
+    if (hasKwOperands())
+      if (auto it = kwOperands->find(argName); it != kwOperands->end())
+        return it->second;
+    return std::nullopt;
+  }
+
+  /// Return the number of keyword operands.
+  size_t getNumKwOperands() const {
+    return kwOperands ? kwOperands->size() : 0;
+  }
+
+  /// Return if there are any keyword operands specified.
+  bool hasKwOperands() const { return getNumKwOperands(); }
+
+  /// The values passed as positional operands.
+  ArrayRef<OperandType> posOperands;
+
+  /// The values passed as keyword operands.
+  const KeywordOperandContainer<OperandType> *kwOperands;
+};
+
 //===----------------------------------------------------------------------===//
 // ParamBindings
 //===----------------------------------------------------------------------===//
@@ -245,46 +290,11 @@ enum class CallSyntax : uint8_t {
   kMethodCallSynthetic //< Call to a method for synthetic checks.
 };
 
-/// Struct to that carries both positional and keyword operands for a call. This
-/// does not own any values, only references and pointers to their containers.
-class CallOperands {
+/// Struct that carries both positional and keyword operands for a call. This
+/// does not own any values, only references pointers to their containers.
+class CallOperands : public OperandContainer<FuncOperand> {
 public:
-  /// Create call operands with positional and optional keyword arguments.
-  CallOperands(ArrayRef<FuncOperand> posOperands = {},
-               const KeywordOperands *kwOperands = nullptr)
-      : posOperands(posOperands), kwOperands(kwOperands) {}
-
-  /// Create call operands with positional arguments given a value implicitly
-  /// convertible to `ArrayRef`.
-  template <typename OperandsT,
-            typename = std::enable_if_t<
-                !std::is_same_v<OperandsT, ArrayRef<FuncOperand>> &&
-                std::is_convertible_v<OperandsT, ArrayRef<FuncOperand>>>>
-  CallOperands(OperandsT &&posOperands)
-      : CallOperands(
-            ArrayRef<FuncOperand>(std::forward<OperandsT>(posOperands))) {}
-
-  /// Return a keyword argument value if present, or null otherwise.
-  std::optional<FuncOperand> findKwArg(StringAttr argName) const {
-    if (hasKwOperands())
-      if (auto it = kwOperands->find(argName); it != kwOperands->end())
-        return it->second;
-    return std::nullopt;
-  }
-
-  /// Return the number of keyword operands.
-  size_t getNumKwOperands() const {
-    return kwOperands ? kwOperands->size() : 0;
-  }
-
-  /// Return if there are any keyword operands specified.
-  bool hasKwOperands() const { return getNumKwOperands(); }
-
-  /// The values passed as positional operands.
-  ArrayRef<FuncOperand> posOperands;
-
-  /// The values passed as keyword operands.
-  const KeywordOperands *kwOperands;
+  using OperandContainer::OperandContainer;
 
   /// Inidicates if the positional operands include a self operand.
   bool hasSelfOperand = false;

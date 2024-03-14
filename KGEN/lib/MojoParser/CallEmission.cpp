@@ -232,7 +232,6 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     // Otherwise, remember where it is.
     unpackedUnboundIdx = unpackedPosBindings.size();
     starUnderBinding = binding;
-    continue;
   }
 
   if (unpackedUnboundIdx != -1) {
@@ -265,6 +264,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     assert(unpackedPosBindings.size() == numPosPassable);
   }
 
+  // Create a view of the operands for ease of access.
+  OperandContainer<Binding> operands(unpackedPosBindings, &kwBindings);
+
   /// We will attempt to find a binding for every expected parameter.
   SmallVector<TypedAttr> newBindings;
   newBindings.reserve(numParams);
@@ -289,7 +291,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   ExprEmitter emitter(shared, declScope, EC_ParameterList);
 
   size_t posBindingIdx = 0;
-  size_t numPosBindings = unpackedPosBindings.size();
+  size_t numPosBindings = operands.posOperands.size();
 
   auto fulfillValue = [&](size_t idx, Type requestedType) -> PValue {
     // If we have a method to infer parameter values, invoke it to see if we
@@ -344,23 +346,21 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     if (posBindingIdx == numPosBindings ||
         (parameterInferenceHook && passingKind == PassingKind::Implicit)) {
       // We first check if we have a keyword parameter.
-      if (auto it = kwBindings.find(paramName); it != kwBindings.end()) {
+      if (std::optional<Binding> binding = operands.findKwArg(paramName)) {
         assert(passingKind != PassingKind::PosOnly);
 
-        const Binding &binding = it->second;
-
         // If this value was already bound and checked, use it.
-        if (binding.typeChecked) {
-          setParamValue(binding.value);
+        if (binding->typeChecked) {
+          setParamValue(binding->value);
           continue;
         }
 
-        PValue pValue = emitSingleParameterValue(binding, expectedType,
+        PValue pValue = emitSingleParameterValue(*binding, expectedType,
                                                  fitness.numImplicitConversions,
                                                  emitter, evaluator);
         if (!pValue) {
           if (diagEmitter.emitKwType)
-            diagEmitter.emitKwType(paramName, binding, expectedType);
+            diagEmitter.emitKwType(paramName, *binding, expectedType);
           return {{}, fitness};
         }
         setParamValue(pValue);
@@ -392,7 +392,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
     // If we still have positional bindings left, first check if we are dealing
     // with an UnboundAttr we might have to deduce.
-    const Binding &binding = unpackedPosBindings[posBindingIdx];
+    const Binding &binding = operands.posOperands[posBindingIdx];
     if (isa<UnboundAttr>(binding.value)) {
       if (boundness == Boundness::Full) {
         if (PValue value = fulfillValue(idx, requestedType)) {
@@ -416,7 +416,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           passingKind == PassingKind::Implicit)
         return success();
       assert(!paramName.empty());
-      if (auto it = kwBindings.find(paramName); it == kwBindings.end())
+      if (!operands.findKwArg(paramName))
         return success(); // Not redundant.
       if (diagEmitter.emitRedundantKw)
         diagEmitter.emitRedundantKw(posBindingIdx, paramName);
