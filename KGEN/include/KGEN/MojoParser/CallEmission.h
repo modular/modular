@@ -203,11 +203,11 @@ public:
     /// Emit diagnostics for incorrect type in a keyword parameter.
     std::function<void(StringAttr, const Binding &, ASTType)> emitKwType;
     /// Emit diagnostics for parameters specified by an unknown keyword.
-    std::function<void(ArrayRef<StringRef>)> emitUnknownKw;
+    std::function<void(ArrayRef<StringAttr>)> emitUnknownKeywords;
     /// Emit diagnostics for a parameter specified both by position and keyword.
-    std::function<void(size_t, StringAttr)> emitRedundantKw;
+    std::function<void(size_t, StringAttr)> emitRedundantKeywords;
     /// Emit diagnostics for positional-only parameters specified by keyword.
-    std::function<void(SmallVectorImpl<StringRef> &&)> emitPosOnlyPassedByKw;
+    std::function<void(ArrayRef<StringAttr>)> emitPosOnlyPassedByKw;
     /// Emit diagnostics for failure to deduce a parameter.
     std::function<void(size_t)> emitDeductionFailure;
     /// Emit diagnostics when an unbound pack (i.e. `*_`) appears in a variadic

@@ -648,7 +648,7 @@ struct DiagEmitter : public SharedStateUser {
       : SharedStateUser(shared), callLoc(callLoc), numOperands(numOperands),
         callSyntax(callSyntax) {}
 
-  InflightDiag unexpectedKwArgs(StringSet<> &unknownKwOperands) const;
+  InflightDiag unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const;
   InflightDiag wrongParamType(const ParamBindings::Binding &actualBinding,
                               size_t paramIdx, ASTType expectedType) const;
   InflightDiag wrongParamCount(size_t expectedNumParams,
@@ -708,11 +708,9 @@ void DiagEmitter::describeArgumentNo(InflightDiag &diag, size_t argIdx) const {
 }
 
 InflightDiag
-DiagEmitter::unexpectedKwArgs(StringSet<> &unknownKwOperands) const {
+DiagEmitter::unexpectedKwArgs(ArrayRef<StringAttr> unknownKwOperands) const {
   InflightDiag diag = initDiag();
-  SmallVector<StringRef> keywords = llvm::map_to_vector(
-      unknownKwOperands, [](auto &it) { return it.getKey(); });
-  emitUnknownKeywords(diag, std::move(keywords), "argument");
+  emitUnknownKeywords(diag, unknownKwOperands, "argument");
   return diag;
 }
 
@@ -1174,9 +1172,9 @@ static std::optional<InflightDiag> diagnoseKeywordOperands(
 
   // If the function doesn't accept variadic kwargs, this is an error.
   if (!argListAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
-    StringSet<> unknownKwOperands;
+    SmallVector<StringAttr> unknownKwOperands;
     for (auto [name, _] : variadicKwOperands)
-      unknownKwOperands.insert(name);
+      unknownKwOperands.push_back(name);
     return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
   }
 
@@ -1303,18 +1301,18 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
              << ASTType(expectedType) << " type, but value has type "
              << ASTType(binding.getType()) << binding.expr->getRange();
       },
-      /*emitUnknownKw=*/
-      [&](ArrayRef<StringRef> unknownKeywords) {
+      /*emitUnknownKeywords=*/
+      [&](ArrayRef<StringAttr> unknownKeywords) {
         emitUnknownKeywords(diag, unknownKeywords, "parameter");
       },
-      /*emitRedundantKw=*/
+      /*emitRedundantKeywords=*/
       [&](size_t paramIdx, StringAttr paramName) {
         diag << "parameter #" << paramIdx << " (" << paramName
              << ") passed both as positional and keyword operand";
       },
       /*emitPosOnlyPassedByKw=*/
-      [&](SmallVectorImpl<StringRef> &&names) {
-        emitPosOnlyPassedByKw(diag, std::move(names), "parameter");
+      [&](ArrayRef<StringAttr> names) {
+        emitPosOnlyPassedByKw(diag, names, "parameter");
       },
       /*emitDeductionFailure=*/
       [&](size_t paramIdx) {

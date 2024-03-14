@@ -264,27 +264,25 @@ void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
 }
 
 /// Emit a comma separated list of names, each in '...'.
-static void emitNames(InflightDiag &diag, ArrayRef<StringRef> names) {
+static void emitNames(InflightDiag &diag, ArrayRef<StringAttr> names) {
   llvm::interleave(
-      names, [&](StringRef str) { diag << "'" << str << "'"; },
+      names, [&](StringAttr str) { diag << "'" << str.strref() << "'"; },
       [&]() { diag << ", "; });
 }
 
 void LIT::emitUnknownKeywords(InflightDiag &diag,
-                              ArrayRef<StringRef> unknownKeywords,
+                              ArrayRef<StringAttr> unknownKeywords,
                               StringRef argOrParam) {
   diag << "unknown keyword " << argOrParam << plural(unknownKeywords.size())
        << ": ";
   emitNames(diag, unknownKeywords);
 }
 
-void LIT::emitPosOnlyPassedByKw(InflightDiag &diag,
-                                SmallVectorImpl<StringRef> &&names,
+void LIT::emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
                                 StringRef argOrParam) {
   size_t numNames = names.size();
   diag << "positional-only " << argOrParam << plural(numNames)
        << " passed as keyword " << argOrParam << plural(numNames) << ": ";
-  llvm::sort(names);
   emitNames(diag, names);
 }
 
