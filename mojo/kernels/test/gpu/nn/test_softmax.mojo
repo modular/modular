@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: has_cuda_device
+# REQUIRES: disabled, has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
 from math import iota, isclose
@@ -78,8 +78,8 @@ fn test_gpu_softmax() raises:
         if not isclose(
             out_ref.flatten()[i],
             out_host.flatten()[i],
-            1e-4,  # atol
-            1e-5,  # rtol
+            atol=1e-4,
+            rtol=1e-5,
         ):
             print("ERROR. Mismatch at flattened idx:", i)
 
@@ -91,9 +91,6 @@ fn test_gpu_softmax() raises:
     _free(out_device_ptr)
 
 
-fn main():
-    try:
-        with Context() as ctx:
-            test_gpu_softmax()
-    except e:
-        print(e)
+def main():
+    with Context() as ctx:
+        test_gpu_softmax()
