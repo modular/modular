@@ -656,8 +656,12 @@ raw_ostream &operator<<(raw_ostream &os, AnyValue value);
 using FuncOperand = ASTExprAnd<AnyValue>;
 
 /// A shorthand to make keyword operand handling more readable.
-using KeywordOperands = llvm::MapVector<StringAttr, ASTExprAnd<AnyValue>,
-                                        SmallDenseMap<StringAttr, size_t>>;
+template <typename OperandType>
+using KeywordOperandContainer =
+    llvm::MapVector<StringAttr, OperandType, SmallDenseMap<StringAttr, size_t>>;
+
+/// A shorthand to make keyword argument handling more readable.
+using KeywordOperands = KeywordOperandContainer<FuncOperand>;
 
 //===----------------------------------------------------------------------===//
 // BaseDLValue classes.
