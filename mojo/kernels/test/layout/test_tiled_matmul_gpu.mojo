@@ -230,31 +230,18 @@ fn test_sram_blocked_matmul() raises:
     _ = mat_c ^
 
 
-# TODO: Eventually layout parameters needs to move here but it crashes NVPTX compilation.
 fn single_warp_mma_sync_m16n8k8[
-    layout_c: Layout, layout_a: Layout, layout_b: Layout
+    layout_c: Layout,
+    layout_a: Layout,
+    layout_b: Layout,
+    layout_c_mma: Layout,
+    layout_a_mma: Layout,
+    layout_b_mma: Layout,
 ](
     mat_c: LayoutTensor[layout_c, DType.float32],
     mat_a: LayoutTensor[layout_a, DType.float32],
     mat_b: LayoutTensor[layout_b, DType.float32],
 ):
-    # MMA layout are copied from CUTLASS:
-    # https://sourcegraph.com/github.com/NVIDIA/cutlass@ffa34e70756b0bc744e1dfcc115b5a991a68f132/-/blob/include/cute/atom/mma_traits_sm80.hpp?L167
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
-    alias layout_a_mma = Layout(
-        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
-        IntTuple(IntTuple(16, 1), IntTuple(8, 64)),
-    )
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
-    alias layout_b_mma = Layout(
-        IntTuple(IntTuple(4, 8), 2), IntTuple(IntTuple(8, 1), 32)
-    )
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
-    alias layout_c_mma = Layout(
-        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
-        IntTuple(IntTuple(32, 1), IntTuple(16, 8)),
-    )
-
     var mat_a_mma = mat_a.reshape[layout_a_mma]()
     # Note: CUTLASS layout above assumes the same layout as the instruction itself, l.h.s row-major and r.h.s col-major.
     var mat_b_mma = mat_b.transpose().reshape[layout_b_mma]()
@@ -312,8 +299,25 @@ fn test_single_warp_tf32_m16n8k8_matmul() raises:
     mat_b.tensor.linspace()
     mat_c.tensor.fill(0)
 
+    # MMA layout are copied from CUTLASS:
+    # https://sourcegraph.com/github.com/NVIDIA/cutlass@ffa34e70756b0bc744e1dfcc115b5a991a68f132/-/blob/include/cute/atom/mma_traits_sm80.hpp?L167
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
+    alias layout_a_mma = Layout(
+        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
+        IntTuple(IntTuple(16, 1), IntTuple(8, 64)),
+    )
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
+    alias layout_b_mma = Layout(
+        IntTuple(IntTuple(4, 8), 2), IntTuple(IntTuple(8, 1), 32)
+    )
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
+    alias layout_c_mma = Layout(
+        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
+        IntTuple(IntTuple(32, 1), IntTuple(16, 8)),
+    )
+
     alias single_warp_mma_sync_m16n8k8_kernel_kernel = single_warp_mma_sync_m16n8k8[
-        layout_c, layout_a, layout_b
+        layout_c, layout_a, layout_b, layout_c_mma, layout_a_mma, layout_b_mma
     ]
 
     var kernel = Function[
