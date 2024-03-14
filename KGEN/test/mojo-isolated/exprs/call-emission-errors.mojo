@@ -88,7 +88,7 @@ fn test_pos_only_param_passed_by_kw[x: int]():
     # expected-error @+1 {{positional-only parameter passed as keyword parameter: 'b'}}
     takes_pos_only_param[x, b=x]()
 
-    # expected-error @+1 {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
+    # expected-error @+1 {{positional-only parameters passed as keyword parameters: 'b', 'a'}}
     takes_pos_only_param[b=x, a=x]()
 
 

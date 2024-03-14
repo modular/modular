@@ -180,28 +180,24 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
   // Then we find all the keyword parameters with unknown names, or specifying
   // positional-only parameters; both of these will result in diagnostics.
-  SmallVector<StringRef> unknownKwParams;
-  SmallPtrSet<StringAttr, 4> posOnlyPassedByKw;
+  SmallVector<StringAttr> unknownKwParams;
+  SmallVector<StringAttr> posOnlyPassedByKw;
   for (auto [name, operandVal] : kwBindings) {
     if (posOnlyNames.contains(name))
-      posOnlyPassedByKw.insert(name);
+      posOnlyPassedByKw.push_back(name);
     else if (!kwPassableNames.contains(name))
       unknownKwParams.push_back(name);
   }
 
-  auto setToVector = [](SmallPtrSet<StringAttr, 4> &names) {
-    return llvm::map_to_vector(names,
-                               [](StringAttr name) { return name.strref(); });
-  };
   Fitness fitness{0, false};
   if (!unknownKwParams.empty()) {
-    if (diagEmitter.emitUnknownKw)
-      diagEmitter.emitUnknownKw(unknownKwParams);
+    if (diagEmitter.emitUnknownKeywords)
+      diagEmitter.emitUnknownKeywords(unknownKwParams);
     return {{}, fitness};
   }
   if (!posOnlyPassedByKw.empty()) {
     if (diagEmitter.emitPosOnlyPassedByKw)
-      diagEmitter.emitPosOnlyPassedByKw(setToVector(posOnlyPassedByKw));
+      diagEmitter.emitPosOnlyPassedByKw(posOnlyPassedByKw);
     return {{}, fitness};
   }
 
@@ -422,8 +418,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       assert(!paramName.empty());
       if (!operands.findKwArg(paramName))
         return success(); // Not redundant.
-      if (diagEmitter.emitRedundantKw)
-        diagEmitter.emitRedundantKw(posBindingIdx, paramName);
+      if (diagEmitter.emitRedundantKeywords)
+        diagEmitter.emitRedundantKeywords(posBindingIdx, paramName);
       return failure();
     };
 
@@ -540,14 +536,14 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         if (opLoc)
           diag.attachNote(*opLoc) << baseName << " declared here";
       },
-      /*emitUnknownKw=*/
-      [&](ArrayRef<StringRef> unknownKeywords) {
+      /*emitUnknownKeywords=*/
+      [&](ArrayRef<StringAttr> unknownKeywords) {
         InflightDiag diag = shared.emitError(exprLoc);
         emitUnknownKeywords(diag, unknownKeywords, "parameter");
         if (opLoc)
           diag.attachNote(*opLoc) << baseName << " declared here";
       },
-      /*emitRedundantKw=*/
+      /*emitRedundantKeywords=*/
       [&](size_t paramIdx, StringAttr paramName) {
         InflightDiag diag = shared.emitError(exprLoc);
         diag << "parameter #" << paramIdx << " (" << paramName
@@ -556,9 +552,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitPosOnlyPassedByKw=*/
-      [&](SmallVectorImpl<StringRef> &&names) {
+      [&](ArrayRef<StringAttr> names) {
         InflightDiag diag = shared.emitError(exprLoc);
-        emitPosOnlyPassedByKw(diag, std::move(names), "parameter");
+        emitPosOnlyPassedByKw(diag, names, "parameter");
         if (opLoc)
           diag.attachNote(*opLoc) << baseName << " declared here";
       },
