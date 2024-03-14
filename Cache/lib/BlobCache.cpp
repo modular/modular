@@ -60,145 +60,228 @@ static bool checkOrCreateWriteableDirectory(std::filesystem::path path) {
 //===----------------------------------------------------------------------===//
 
 AsyncValueRef<Chain>
-BlobCacheBackend::insert(BufferRef keyHash, BufferRef obj,
-                         std::optional<EncodedLocation> loc) {
-  auto result = AsyncValueRef<Chain>::allocate(runtime);
-  addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    obj = obj.copy(), result = result.copy(),
-                    loc = std::move(loc)]() mutable {
-    if (auto err = thisRef->insertImpl(keyHash->getBuffer(), obj.copy())) {
-      return std::move(result).setToError(
-          getError(std::move(loc), err.takeError()));
-    }
-
-    return thisRef->delegateInsert(std::move(result), std::move(keyHash),
-                                   std::move(obj), std::move(loc));
-  });
-  return result;
-}
-
-void BlobCacheBackend::delegateInsert(
-    AsyncValueRef<Chain> result, BufferRef keyHash, BufferRef obj,
-    std::optional<LLCL::EncodedLocation> loc) {
-  if (!delegate)
-    return std::move(result).emplace();
-
-  AsyncValueRef<Chain> insert =
-      delegate->insert(keyHash.copy(), obj.copy(), std::move(loc));
-  std::move(insert).andThenSync(
-      [thisRef = copyRCRef(this),
-       // Safe to move local copy of result.
-       result = std::move(result)](AsyncValueRef<Chain> &&insert) mutable {
-        if (insert.isError())
-          return std::move(result).setToError(insert.takeDiagnostic());
-
-        return std::move(result).emplace();
-      });
-}
-
-AsyncValueRef<bool>
-BlobCacheBackend::contains(BufferRef keyHash,
-                           std::optional<EncodedLocation> loc) {
-  auto result = AsyncValueRef<bool>::allocate(runtime);
-  addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    result = result.copy(), loc = std::move(loc)]() mutable {
-    auto containsOr = thisRef->containsImpl(keyHash->getBuffer());
-    if (containsOr.isError()) {
-      return std::move(result).setToError(
-          getError(std::move(loc), containsOr.takeError()));
-    }
-
-    if (*containsOr)
-      return std::move(result).emplace(true);
-
-    return thisRef->delegateContains(std::move(result), std::move(keyHash),
-                                     std::move(loc));
-  });
-  return result;
-}
-
-void BlobCacheBackend::delegateContains(
-    AsyncValueRef<bool> result, BufferRef keyHash,
-    std::optional<LLCL::EncodedLocation> loc) {
-  if (!delegate)
-    return std::move(result).emplace(false);
-
-  auto contains = delegate->contains(keyHash.copy(), std::move(loc));
-  std::move(contains).andThenSync(
-      [thisRef = copyRCRef(this),
-       // Safe to move local copy of result.
-       result = std::move(result)](AsyncValueRef<bool> &&contains) mutable {
-        if (contains.isError())
-          return std::move(result).setToError(contains.takeDiagnostic());
-
-        return std::move(result).emplace(*contains);
-      });
-}
-
-AsyncValueRef<std::optional<BufferRef>>
-BlobCacheBackend::find(BufferRef keyHash, std::optional<EncodedLocation> loc) {
-  auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
-  addTask(runtime, [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-                    result = result.copy(), loc = std::move(loc)]() mutable {
-    // Find it at this level.
-    ErrorOr<std::optional<BufferRef>> bufOr =
-        thisRef->findImpl(keyHash->getBuffer());
-    if (bufOr.isError()) {
-      return std::move(result).setToError(
-          getError(std::move(loc), bufOr.takeError()));
-    }
-
-    // If we had it, return, and we're done.
-    if (bufOr->has_value())
-      return std::move(result).emplace(std::move(*bufOr));
-
-    // If we don't have it, try with delegate.
-    return thisRef->delegateFind(std::move(result), std::move(keyHash),
-                                 std::move(loc));
-  });
-
-  return result;
-}
-
-void BlobCacheBackend::delegateFind(
-    AsyncValueRef<std::optional<BufferRef>> result, BufferRef keyHash,
-    std::optional<EncodedLocation> loc) {
-  // No delegate and we don't have it, return nullopt.
-  if (!delegate)
-    return std::move(result).emplace(std::nullopt);
-
-  // Create a concrete location we can use here - we always need *a* location,
-  // even if it's unknown.
+BlobCacheBackend::insert(LLCL::Runtime &runtime, BufferRef keyHash,
+                         BufferRef obj, std::optional<EncodedLocation> loc) {
   EncodedLocation location = loc.has_value()
                                  ? std::move(*loc)
                                  : UnknownLocationDecoder::getEncodedLocation();
 
-  auto itemOr = delegate->find(keyHash.copy(), location.copy());
-  std::move(itemOr).andThenSync(
-      [thisRef = copyRCRef(this), keyHash = keyHash.copy(),
-       location = std::move(location),
-       // Safe to move local copy of result.
-       result = std::move(result)](
-          AsyncValueRef<std::optional<BufferRef>> &&itemOr) mutable {
-        if (itemOr.isError())
-          return std::move(result).setToError(itemOr.takeDiagnostic());
+  auto chain = insertImpl(runtime, keyHash.copy(), obj.copy(), location.copy());
+  if (!delegate)
+    return chain;
 
-        // Delegate doesn't have it either!
-        if (!*itemOr)
-          return std::move(result).emplace(std::nullopt);
-
-        BufferRef item = std::move(**itemOr);
-
-        // Store the item in our cache level so we can get a cache hit
-        // later.
-        if (auto err = thisRef->insertImpl(keyHash->getBuffer(), item.copy())) {
-          return std::move(result).setToError(
-              {err.takeError(), std::move(location)});
-        }
-
-        // Return the item.
-        return std::move(result).emplace(std::move(item));
+  // Arrange to wait and then insert into the delegate.
+  auto result = AsyncValueRef<Chain>::allocate(runtime);
+  std::move(chain).andThenSync(
+      [result = result.copy(), thisRef = copyRCRef(this),
+       keyHash = std::move(keyHash), obj = std::move(obj),
+       loc = std::move(location)](AsyncValueRef<Chain> &&chain) mutable {
+        if (chain.isError())
+          return std::move(result).setToError(chain.takeDiagnostic());
+        auto insert =
+            thisRef->delegate->insert(result.getRuntime(), std::move(keyHash),
+                                      std::move(obj), std::move(loc));
+        std::move(insert).andThenSync(
+            [result =
+                 std::move(result)](AsyncValueRef<Chain> &&insert) mutable {
+              if (insert.isError())
+                return std::move(result).setToError(insert.takeDiagnostic());
+              return std::move(result).emplace();
+            });
       });
+  return result;
+}
+
+ErrorOrSuccess BlobCacheBackend::insertSync(StringRef keyHash, BufferRef obj) {
+  auto err = insertSyncImpl(keyHash, obj.copy());
+  if (err.isError())
+    return err.takeError();
+  if (!delegate)
+    return success();
+
+  // Insert synchronously into the delegate as well.
+  return delegate->insertSync(std::move(keyHash), std::move(obj));
+}
+
+AsyncValueRef<Chain>
+BlobCacheBackend::insertImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+                             BufferRef obj,
+                             std::optional<EncodedLocation> loc) {
+  // Wrap the synchronous implementation by default.
+  auto result = AsyncValueRef<Chain>::allocate(runtime);
+  addTask(runtime, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
+                    obj = std::move(obj), result = result.copy(),
+                    loc = std::move(loc)]() mutable {
+    if (auto err = thisRef->insertSync(keyHash->getBuffer(), std::move(obj))) {
+      return std::move(result).setToError(
+          getError(std::move(loc), err.takeError()));
+    }
+    std::move(result).emplace();
+  });
+  return result;
+}
+
+AsyncValueRef<bool>
+BlobCacheBackend::contains(LLCL::Runtime &runtime, BufferRef keyHash,
+                           std::optional<EncodedLocation> loc) {
+  EncodedLocation location = loc.has_value()
+                                 ? std::move(*loc)
+                                 : UnknownLocationDecoder::getEncodedLocation();
+
+  auto chain = containsImpl(runtime, keyHash.copy(), location.copy());
+  if (!delegate)
+    return chain;
+
+  // Check the delegate, if this fails.
+  auto result = AsyncValueRef<bool>::allocate(runtime);
+  std::move(chain).andThenSync(
+      [result = result.copy(), thisRef = copyRCRef(this),
+       keyHash = std::move(keyHash),
+       loc = std::move(location)](AsyncValueRef<bool> &&chain) mutable {
+        if (chain.isError())
+          return std::move(result).setToError(chain.takeDiagnostic());
+        if (*chain)
+          return std::move(result).emplace(true); // Value is locally available.
+        // Need to schedule a delegate contains call.
+        auto contains = thisRef->delegate->contains(
+            result.getRuntime(), std::move(keyHash), std::move(loc));
+        std::move(contains).andThenSync(
+            [result =
+                 std::move(result)](AsyncValueRef<bool> &&contains) mutable {
+              if (contains.isError())
+                return std::move(result).setToError(contains.takeDiagnostic());
+              return std::move(result).emplace(*contains);
+            });
+      });
+  return result;
+}
+
+ErrorOr<bool> BlobCacheBackend::containsSync(StringRef keyHash) {
+  auto errOr = containsSyncImpl(keyHash);
+  if (errOr.isError())
+    return errOr.takeError();
+  if (*errOr)
+    return true;
+  if (!delegate)
+    return false;
+
+  // Check the delegate synchronously.
+  return delegate->containsSync(keyHash);
+}
+
+AsyncValueRef<bool>
+BlobCacheBackend::containsImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+                               std::optional<EncodedLocation> loc) {
+  // Wrap the synchronous implementation by default.
+  auto result = AsyncValueRef<bool>::allocate(runtime);
+  addTask(runtime, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
+                    result = result.copy(), loc = std::move(loc)]() mutable {
+    auto errOr = thisRef->containsSync(keyHash->getBuffer());
+    if (errOr.isError()) {
+      return std::move(result).setToError(
+          getError(std::move(loc), errOr.takeError()));
+    }
+    std::move(result).emplace(*errOr);
+  });
+  return result;
+}
+
+AsyncValueRef<std::optional<BufferRef>>
+BlobCacheBackend::find(LLCL::Runtime &runtime, BufferRef keyHash,
+                       std::optional<EncodedLocation> loc) {
+  EncodedLocation location = loc.has_value()
+                                 ? std::move(*loc)
+                                 : UnknownLocationDecoder::getEncodedLocation();
+
+  auto chain = findImpl(runtime, keyHash.copy(), location.copy());
+  if (!delegate)
+    return chain;
+
+  // Check the delegate, if this fails.
+  auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
+  std::move(chain).andThenSync([result = result.copy(),
+                                thisRef = copyRCRef(this),
+                                keyHash = std::move(keyHash),
+                                loc = std::move(location)](
+                                   AsyncValueRef<std::optional<BufferRef>>
+                                       &&chain) mutable {
+    if (chain.isError())
+      return std::move(result).setToError(chain.takeDiagnostic());
+    if (chain->has_value())
+      return std::move(result).emplace(std::move(**chain)); // Found locally.
+    // Need to attempt to find within the delegate.
+    auto found = thisRef->delegate->find(result.getRuntime(),
+                                         std::move(keyHash), loc.copy());
+    std::move(found).andThenSync(
+        [thisRef = thisRef.copy(), result = std::move(result),
+         keyHash = std::move(keyHash), loc = std::move(loc)](
+            AsyncValueRef<std::optional<BufferRef>> &&found) mutable {
+          if (found.isError())
+            return std::move(result).setToError(found.takeDiagnostic());
+          if (!found->has_value())
+            return std::move(result).emplace(std::nullopt); // Not found.
+          // We need to insert locally.
+          auto inserted =
+              thisRef->insert(result.getRuntime(), std::move(keyHash),
+                              (*found)->copy(), std::move(loc));
+          std::move(inserted).andThenSync(
+              [result = std::move(result), obj = std::move(**found)](
+                  AsyncValueRef<std::optional<BufferRef>> &&inserted) mutable {
+                if (inserted.isError())
+                  return std::move(result).setToError(
+                      inserted.takeDiagnostic());
+                return std::move(result).emplace(
+                    std::move(obj)); // Finally, put the buffer.
+              });
+        });
+  });
+  return result;
+}
+
+ErrorOr<std::optional<BufferRef>>
+BlobCacheBackend::findSync(StringRef keyHash) {
+  auto errOr = findSyncImpl(keyHash);
+  if (errOr.isError())
+    return errOr.takeError();
+  if (errOr->has_value())
+    return std::move(**errOr);
+  if (!delegate)
+    return std::nullopt;
+
+  // Check the delegate synchronously.
+  auto delegateErrOr = delegate->findSync(keyHash);
+  if (delegateErrOr.isError())
+    return delegateErrOr.takeError();
+  if (!delegateErrOr->has_value())
+    return std::nullopt;
+  BufferRef buf = std::move(**delegateErrOr);
+
+  // Insert the value locally.
+  auto insertOr = insertSync(keyHash, buf.copy());
+  if (insertOr.isError())
+    return insertOr.takeError();
+
+  // Return the loaded buffer.
+  return std::move(buf);
+}
+
+AsyncValueRef<std::optional<BufferRef>>
+BlobCacheBackend::findImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+                           std::optional<EncodedLocation> loc) {
+  // Wrap the synchronous execution by default.
+  auto result = AsyncValueRef<std::optional<BufferRef>>::allocate(runtime);
+  addTask(runtime, [thisRef = copyRCRef(this), keyHash = std::move(keyHash),
+                    result = result.copy(), loc = std::move(loc)]() mutable {
+    auto errOr = thisRef->findSync(keyHash->getBuffer());
+    if (errOr.isError())
+      return std::move(result).setToError(
+          getError(std::move(loc), errOr.takeError()));
+    if (!errOr->has_value())
+      return std::move(result).emplace(std::nullopt);
+    BufferRef buf = std::move(**errOr);
+    std::move(result).emplace(std::move(buf));
+  });
+  return result;
 }
 
 void BlobCacheBackend::appendDelegate(RCRef<BlobCacheBackend> d) {
@@ -216,22 +299,18 @@ namespace {
 /// Provides an in-memory backend that stores memory buffers in an
 /// llvm::StringMap.
 struct InMemoryBackend : public BlobCacheBackend {
-  InMemoryBackend(LLCL::Runtime &runtime) : BlobCacheBackend(runtime) {}
-
-  ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
+  ErrorOrSuccess insertSyncImpl(StringRef keyHash, BufferRef obj) override {
     std::lock_guard<std::shared_mutex> lock(mutex);
-
-    // Store the item in this cache.
     cache[keyHash] = std::move(obj);
     return success();
   }
 
-  ErrorOr<bool> containsImpl(StringRef keyHash) const override {
+  ErrorOr<bool> containsSyncImpl(StringRef keyHash) override {
     std::shared_lock<std::shared_mutex> lock(mutex);
     return cache.count(keyHash);
   }
 
-  ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override {
+  ErrorOr<std::optional<BufferRef>> findSyncImpl(StringRef keyHash) override {
     std::shared_lock<std::shared_mutex> lock(mutex);
     auto found = cache.find(keyHash);
     if (found == cache.end())
@@ -244,8 +323,8 @@ struct InMemoryBackend : public BlobCacheBackend {
 };
 } // namespace
 
-RCRef<BlobCacheBackend> M::Cache::getInMemoryBackend(LLCL::Runtime &runtime) {
-  return RCRef<InMemoryBackend>::create(runtime);
+RCRef<BlobCacheBackend> M::Cache::getInMemoryBackend() {
+  return RCRef<InMemoryBackend>::create();
 }
 
 //===----------------------------------------------------------------------===//
@@ -256,16 +335,14 @@ namespace {
 /// Provides a filesystem-backed backend that primarily stores the buffers in
 /// binary files on disk. If read-only, no writes are performed, only reads.
 struct FilesystemBackend : public BlobCacheBackend {
-  explicit FilesystemBackend(LLCL::Runtime &runtime,
-                             const std::filesystem::path &basePath,
+  explicit FilesystemBackend(const std::filesystem::path &basePath,
                              bool readOnly)
-      : BlobCacheBackend(runtime), basePath(basePath.string()),
-        readOnly(readOnly) {}
+      : basePath(basePath.string()), readOnly(readOnly) {}
 
-  ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
+  ErrorOrSuccess insertSyncImpl(StringRef keyHash, BufferRef obj) override {
     // Check if we already have the object in the filesystem cache - if we do,
     // then don't bother writing it again.
-    ErrorOr<bool> containsOr = containsImpl(keyHash);
+    ErrorOr<bool> containsOr = containsSync(keyHash);
     if (!containsOr.isError() && *containsOr)
       return success();
 
@@ -313,7 +390,7 @@ struct FilesystemBackend : public BlobCacheBackend {
     return success();
   }
 
-  ErrorOr<bool> containsImpl(StringRef keyHash) const override {
+  ErrorOr<bool> containsSyncImpl(StringRef keyHash) override {
     std::error_code ec;
     ErrorOr<std::filesystem::path> absOr = getAbsolutePathForKey(keyHash);
     if (absOr.isError())
@@ -332,7 +409,7 @@ struct FilesystemBackend : public BlobCacheBackend {
     return !is_dir;
   }
 
-  ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override {
+  ErrorOr<std::optional<BufferRef>> findSyncImpl(StringRef keyHash) override {
     // Get the file path and open it.
     ErrorOr<std::filesystem::path> filePath = getAbsolutePathForKey(keyHash);
 
@@ -402,10 +479,9 @@ struct FilesystemBackend : public BlobCacheBackend {
 } // namespace
 
 RCRef<BlobCacheBackend>
-M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
-                               const std::filesystem::path &basePath,
+M::Cache::getFilesystemBackend(const std::filesystem::path &basePath,
                                bool readOnly) {
-  return RCRef<FilesystemBackend>::create(runtime, basePath, readOnly);
+  return RCRef<FilesystemBackend>::create(basePath, readOnly);
 }
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. The
@@ -413,8 +489,7 @@ M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
 /// `version` specifies the version string of the cache, defaults to
 /// MODULAR_VERSION_STRING if the provided version is empty.
 static ErrorOr<RCRef<FilesystemBackend>>
-getVersionedFilesystemBackend(LLCL::Runtime &runtime,
-                              const std::filesystem::path &cacheDir,
+getVersionedFilesystemBackend(const std::filesystem::path &cacheDir,
                               std::string version) {
   // If no version is specified, use the default version.
   if (version.empty())
@@ -493,68 +568,14 @@ getVersionedFilesystemBackend(LLCL::Runtime &runtime,
   }
 
   base = base / version;
-  return RCRef<FilesystemBackend>::create(runtime, base, readOnly);
+  return RCRef<FilesystemBackend>::create(base, readOnly);
 }
 
 ErrorOr<RCRef<BlobCacheBackend>>
-M::Cache::getFilesystemBackend(LLCL::Runtime &runtime,
-                               const std::filesystem::path &cacheDir,
+M::Cache::getFilesystemBackend(const std::filesystem::path &cacheDir,
                                const std::string &version) {
-  return getVersionedFilesystemBackend(runtime, cacheDir, version);
+  return getVersionedFilesystemBackend(cacheDir, version);
 }
-//===----------------------------------------------------------------------===//
-// FileSystemBackedInMemoryBackend
-//===----------------------------------------------------------------------===//
-
-namespace {
-/// Provides a wrapper around in-memory and filesystem-backed backends that only
-/// stores mmap'd buffers in-memory. This is useful for caching large objects
-/// or large numbers of objects that would otherwise consume too much memory.
-struct FileSystemBackedInMemoryBackend : public BlobCacheBackend {
-  explicit FileSystemBackedInMemoryBackend(
-      LLCL::Runtime &runtime, RCRef<InMemoryBackend> inmemoryBackend,
-      RCRef<FilesystemBackend> filesystemBackend)
-      : BlobCacheBackend(runtime), inmemoryBackend(std::move(inmemoryBackend)),
-        filesystemBackend(std::move(filesystemBackend)) {}
-
-  ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override {
-    // We only need to insert into the filesystem backend. When looking up a
-    // result, that's when we'll populate the in-memory backend.
-    return filesystemBackend->insertImpl(keyHash, std::move(obj));
-  }
-
-  ErrorOr<bool> containsImpl(StringRef keyHash) const override {
-    auto containsOr = inmemoryBackend->containsImpl(keyHash);
-    if (containsOr.isError() || *containsOr)
-      return containsOr;
-    return filesystemBackend->containsImpl(keyHash);
-  }
-
-  ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override {
-    auto result = inmemoryBackend->findImpl(keyHash);
-    if (result.isError() || *result)
-      return result;
-
-    // If we didn't find it in the in-memory backend, try the filesystem
-    // backend.
-    result = filesystemBackend->findImpl(keyHash);
-    if (result.isError() || !*result)
-      return result;
-
-    // If we found it in the filesystem backend, insert it into the in-memory
-    // backend.
-    if (auto err = inmemoryBackend->insertImpl(keyHash, (*result)->copy()))
-      return err.takeError();
-    return result;
-  }
-
-  /// The in-memory backend used to store filesystem references.
-  RCRef<InMemoryBackend> inmemoryBackend;
-
-  /// The filsystem backend.
-  RCRef<FilesystemBackend> filesystemBackend;
-};
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // DylibBlobCacheBackend
@@ -567,10 +588,9 @@ namespace {
 struct DylibBackendStub : public BlobCacheBackend {
 
   static ErrorOr<RCRef<BlobCacheBackend>>
-  create(LLCL::Runtime &runtime, StringRef libPath,
-         const DylibBackendConfig *config) {
-    auto backendStub = RCRef<DylibBackendStub>::create(runtime);
-    if (auto err = backendStub->load(runtime, libPath, config))
+  create(StringRef libPath, const DylibBackendConfig *config) {
+    auto backendStub = RCRef<DylibBackendStub>::create();
+    if (auto err = backendStub->load(libPath, config))
       return err.takeError();
     return backendStub;
   }
@@ -582,44 +602,57 @@ struct DylibBackendStub : public BlobCacheBackend {
     llvm::sys::DynamicLibrary::closeLibrary(dylib);
   }
 
-  AsyncValueRef<Chain> insert(BufferRef keyHash, BufferRef obj,
-                              std::optional<EncodedLocation> loc) override {
-    return backend->insert(std::move(keyHash), std::move(obj), std::move(loc));
+  AsyncValueRef<Chain> insertImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+                                  BufferRef obj,
+                                  std::optional<EncodedLocation> loc) override {
+    return backend->insertImpl(runtime, std::move(keyHash), std::move(obj),
+                               std::move(loc));
+  }
+  ErrorOrSuccess insertSyncImpl(StringRef keyHash, BufferRef obj) override {
+    return backend->insertSyncImpl(std::move(keyHash), std::move(obj));
   }
 
-  AsyncValueRef<bool> contains(BufferRef keyHash,
-                               std::optional<EncodedLocation> loc) override {
-    return backend->contains(std::move(keyHash), std::move(loc));
+  AsyncValueRef<bool>
+  containsImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+               std::optional<EncodedLocation> loc) override {
+    return backend->containsImpl(runtime, std::move(keyHash), std::move(loc));
+  }
+  ErrorOr<bool> containsSyncImpl(StringRef keyHash) override {
+    return backend->containsSyncImpl(std::move(keyHash));
   }
 
   AsyncValueRef<std::optional<BufferRef>>
-  find(BufferRef keyHash, std::optional<EncodedLocation> loc) override {
-    return backend->find(std::move(keyHash), std::move(loc));
+  findImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+           std::optional<EncodedLocation> loc) override {
+    return backend->findImpl(runtime, std::move(keyHash), std::move(loc));
+  }
+  ErrorOr<std::optional<BufferRef>> findSyncImpl(StringRef keyHash) override {
+    return backend->findSyncImpl(std::move(keyHash));
+  }
+
+  void appendDelegate(RCRef<BlobCacheBackend> d) override {
+    return backend->appendDelegate(std::move(d));
   }
 
 private:
   /// So RCRef can access private constructor.
   friend class RCRef<DylibBackendStub>;
 
-  explicit DylibBackendStub(LLCL::Runtime &runtime)
-      : BlobCacheBackend(runtime) {}
-
-  ErrorOrSuccess load(LLCL::Runtime &runtime, StringRef libPath,
-                      const DylibBackendConfig *config) {
+  ErrorOrSuccess load(StringRef libPath, const DylibBackendConfig *config) {
     std::string errorMsg;
     dylib =
         llvm::sys::DynamicLibrary::getLibrary(libPath.str().c_str(), &errorMsg);
     if (!dylib.isValid())
       return Error("Failed to load library " + libPath + ": " + errorMsg);
 
-    using allocType = DylibBlobCacheBackend *(*)(LLCL::Runtime * runtime);
+    using allocType = DylibBlobCacheBackend *(*)();
     auto allocFunc = reinterpret_cast<allocType>(
         dylib.getAddressOfSymbol("M_CAS_allocateBackend"));
     if (!allocFunc) {
       llvm::sys::DynamicLibrary::closeLibrary(dylib);
       return Error("M_CAS_allocateBackend symbol not found\n");
     }
-    backend = RCRef<DylibBlobCacheBackend>::take(allocFunc(&runtime));
+    backend = RCRef<DylibBlobCacheBackend>::take(allocFunc());
     return backend->setConfig(config);
   }
 
@@ -631,7 +664,7 @@ private:
 } // namespace
 
 ErrorOr<RCRef<BlobCacheBackend>>
-M::Cache::getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config) {
+M::Cache::getS3Backend(const S3BackendConfig &config) {
 #if defined(__linux__)
   constexpr llvm::StringLiteral libPath = "libblobcache_s3.so";
 #elif defined(__APPLE__)
@@ -639,32 +672,27 @@ M::Cache::getS3Backend(LLCL::Runtime &runtime, const S3BackendConfig &config) {
 #elif defined(_WIN32)
   constexpr llvm::StringLiteral libPath = "blobcache_s3.dll";
 #endif
-  return DylibBackendStub::create(runtime, libPath, &config);
+  return DylibBackendStub::create(libPath, &config);
 }
 
 ErrorOr<RCRef<BlobCacheBackend>>
-M::Cache::getLocalDefaultBackendChain(LLCL::Runtime &runtime,
-                                      const std::filesystem::path &cacheDir,
+M::Cache::getLocalDefaultBackendChain(const std::filesystem::path &cacheDir,
                                       std::string version) {
-  auto backend = RCRef<InMemoryBackend>::create(runtime);
-
-  auto filesystemBackend =
-      getVersionedFilesystemBackend(runtime, cacheDir, std::move(version));
-  if (failed(filesystemBackend))
-    return filesystemBackend.takeError();
-
-  // Wrap the filesystem backend in an in-memory caching backend. This ensures
-  // we only store mmap'd data in memory.
-  return RCRef<FileSystemBackedInMemoryBackend>::create(
-      runtime, backend.copy(), filesystemBackend->copy());
+  auto filesystemOr = getFilesystemBackend(cacheDir, std::move(version));
+  if (filesystemOr.isError())
+    return filesystemOr.takeError();
+  auto memory = getInMemoryBackend();
+  memory->appendDelegate(std::move(*filesystemOr));
+  return std::move(memory);
 }
 
 ErrorOr<RCRef<BlobCacheBackend>>
-M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime, const URI &uri,
-                                 std::string version) {
+M::Cache::getDefaultBackendChain(const URI &uri, std::string version) {
   StringRef scheme = uri.getScheme();
-  if (scheme == "file")
-    return getLocalDefaultBackendChain(runtime, uri.getPath().str(), version);
+  if (scheme == "file") {
+    std::string path(uri.getPath());
+    return getLocalDefaultBackendChain(path, std::move(version));
+  }
 
   // If no version is specified, use the default version.
   if (version.empty())
@@ -674,14 +702,13 @@ M::Cache::getDefaultBackendChain(LLCL::Runtime &runtime, const URI &uri,
     StringRef path = uri.getPath();
     S3BackendConfig config(uri.getAuthority().str(),
                            path.str() + "/" + version);
-    auto backendOr = getS3Backend(runtime, config);
+    auto backendOr = getS3Backend(config);
     if (backendOr.isError())
       return backendOr.takeError();
 
     // Get a default local backend chain and add the s3 backend to the end.
     path.consume_front("/"); // Convert the path component to relative.
-    auto localChainOr =
-        getLocalDefaultBackendChain(runtime, path.str(), version);
+    auto localChainOr = getLocalDefaultBackendChain(path.str(), version);
     if (localChainOr.isError())
       return localChainOr.takeError();
     (*localChainOr)->appendDelegate(std::move(*backendOr));

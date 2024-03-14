@@ -28,6 +28,17 @@ namespace M::Cache {
 } // namespace M::Cache
 
 namespace {
+template <typename T>
+static ErrorOr<RCRef<BlobCache<T>>> createCache(StringRef cacheDir) {
+  auto uriOr = URI::parse(cacheDir);
+  if (uriOr.isError())
+    return uriOr.takeError();
+  auto errOr = getDefaultBackendChain(*uriOr);
+  if (errOr.isError())
+    return errOr.takeError();
+  return RCRef<BlobCache<T>>::create(std::move(*errOr));
+}
+
 class DeflateSymbolsPass : public impl::DeflateSymbolsBase<DeflateSymbolsPass> {
 public:
   /// Construct an instance of this pass with the provided runtime.
@@ -38,10 +49,9 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    RuntimeAndCache<RegionCacheKey> runtimeAndCache(cacheDir.getValue(),
-                                                    runtime);
-    if (auto errOr = runtimeAndCache.setup()) {
-      getOperation()->emitError() << errOr.getError();
+    auto cacheOr = createCache<RegionCacheKey>(cacheDir.getValue());
+    if (cacheOr.isError()) {
+      getOperation()->emitError() << cacheOr.getError();
       signalPassFailure();
       return;
     }
@@ -52,9 +62,8 @@ public:
       if (!op->hasAttr(SymbolTable::getSymbolAttrName()))
         return;
 
-      results.push_back(deflateOp(
-          op, runtimeAndCache.getCacheRef(),
-          AsyncValueRef<Chain>::createReady(runtimeAndCache.getRuntime())));
+      results.push_back(deflateOp(op, cacheOr->copy(),
+                                  AsyncValueRef<Chain>::createReady(*runtime)));
       // Gotta wait cause it could be nested.
       await(results.back());
     });
@@ -95,10 +104,9 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    RuntimeAndCache<RegionCacheKey> runtimeAndCache(cacheDir.getValue(),
-                                                    runtime);
-    if (auto errOr = runtimeAndCache.setup()) {
-      getOperation()->emitError() << errOr.getError();
+    auto cacheOr = createCache<RegionCacheKey>(cacheDir.getValue());
+    if (cacheOr.isError()) {
+      getOperation()->emitError() << cacheOr.getError();
       signalPassFailure();
       return;
     }
@@ -109,9 +117,8 @@ public:
       if (!op->hasAttr(getRegionHashAttrName()))
         return;
 
-      results.push_back(inflateOp(
-          op, runtimeAndCache.getCacheRef(),
-          AsyncValueRef<Chain>::createReady(runtimeAndCache.getRuntime())));
+      results.push_back(inflateOp(op, cacheOr->copy(),
+                                  AsyncValueRef<Chain>::createReady(*runtime)));
       // Gotta wait cause it could be nested.
       await(results.back());
     });
@@ -158,9 +165,9 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    RuntimeAndCache<DataCacheKey> runtimeAndCache(cacheDir.getValue(), runtime);
-    if (auto errOr = runtimeAndCache.setup()) {
-      getOperation()->emitError() << errOr.getError();
+    auto cacheOr = createCache<DataCacheKey>(cacheDir.getValue());
+    if (cacheOr.isError()) {
+      getOperation()->emitError() << cacheOr.getError();
       signalPassFailure();
       return;
     }
@@ -170,8 +177,7 @@ public:
     getOperation().walk([&](Operation *op) {
       if (op->hasTrait<OpTrait::ConstantLike>())
         results.push_back(deflateConstant(
-            op, runtimeAndCache.getCacheRef(),
-            AsyncValueRef<Chain>::createReady(runtimeAndCache.getRuntime())));
+            op, cacheOr->copy(), AsyncValueRef<Chain>::createReady(*runtime)));
     });
 
     await(results);
@@ -219,9 +225,9 @@ public:
   using Base::Base;
 
   void runOnOperation() override {
-    RuntimeAndCache<DataCacheKey> runtimeAndCache(cacheDir.getValue(), runtime);
-    if (auto errOr = runtimeAndCache.setup()) {
-      getOperation()->emitError() << errOr.getError();
+    auto cacheOr = createCache<DataCacheKey>(cacheDir.getValue());
+    if (cacheOr.isError()) {
+      getOperation()->emitError() << cacheOr.getError();
       signalPassFailure();
       return;
     }
@@ -231,8 +237,7 @@ public:
     getOperation().walk([&](Operation *op) {
       if (op->hasTrait<OpTrait::ConstantLike>())
         results.push_back(inflateConstant(
-            op, runtimeAndCache.getCacheRef(),
-            AsyncValueRef<Chain>::createReady(runtimeAndCache.getRuntime())));
+            op, cacheOr->copy(), AsyncValueRef<Chain>::createReady(*runtime)));
     });
 
     await(results);

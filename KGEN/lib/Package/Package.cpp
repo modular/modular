@@ -168,7 +168,8 @@ elaborateBytecode(ModuleOp packageModule, PackageLinkOp packageLink,
                                 compileOptions);
   LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
       packageModule, regionCache.copy(), transformCache.copy(),
-      runtime.getReadyChain().copy(), elaboratePM, /*deflateTarget=*/false);
+      AsyncValueRef<Chain>::createReady(runtime), elaboratePM,
+      /*deflateTarget=*/false);
   LLCL::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
@@ -326,7 +327,8 @@ static ErrorOr<OwningOpRef<ModuleOp>> specializeModuleForPreElaboration(
       createMaterializePackagesWithDefaultGen(runtime, compileOptions));
   LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
       *packageModuleOr, regionCache.copy(), transformCache.copy(),
-      runtime.getReadyChain().copy(), genLibPM, /*deflateTarget=*/false);
+      AsyncValueRef<Chain>::createReady(runtime), genLibPM,
+      /*deflateTarget=*/false);
   LLCL::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();

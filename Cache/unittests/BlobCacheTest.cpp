@@ -46,22 +46,22 @@ protected:
   TempDir tempDir;
   std::unique_ptr<LLCL::Runtime> runtime;
   RCRef<BlobCache<StringKeyInfo>> cache;
+
   BlobCacheTest()
       : tempDir(createTempDir()),
         runtime(createUniqueRuntime(
             LLCL::RuntimeOptions().withLeakCheckedAllocator())),
         cache(RCRef<BlobCache<StringKeyInfo>>::create(
-            getLocalDefaultBackendChain(*runtime, tempDir.getPath())
-                .takeValue())) {}
+            getLocalDefaultBackendChain(tempDir.getPath()).takeValue())) {}
 };
 
 } // namespace
 
 TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
   auto done = AsyncValueRef<Chain>::allocate(*runtime);
-  auto contains = cache->contains("does not exist");
+  auto contains = cache->contains(*runtime, "does not exist");
   std::move(contains).andThenSync(
-      [done = done.copy()](AsyncValueRef<bool> contains) mutable {
+      [done = done.copy()](AsyncValueRef<bool> &&contains) mutable {
         ASSERT_FALSE(contains.isError())
             << contains.getDiagnostic().getMessage() << '\n';
         EXPECT_FALSE(*contains)
@@ -73,7 +73,7 @@ TEST_F(BlobCacheTest, NotContainItemThatHasNotBeenInserted) {
 
 TEST_F(BlobCacheTest, FindShouldNotReturnErrorForNonexistantItem) {
   auto done = AsyncValueRef<Chain>::allocate(*runtime);
-  auto dneOr = cache->find("does not exist");
+  auto dneOr = cache->find(*runtime, "does not exist");
   std::move(dneOr).andThenSync(
       [done =
            done.copy()](AsyncValueRef<std::optional<BufferRef>> dneOr) mutable {
@@ -96,15 +96,15 @@ TEST_F(BlobCacheTest, ContainItemWhenInserted) {
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
   AsyncValueRef<std::string> insertOr =
-      cache->insert("zeros", std::move(zerosBuf));
+      cache->insert(*runtime, "zeros", std::move(zerosBuf));
   std::move(insertOr).andThenSync(
-      [cache = cache.copy(),
+      [this, cache = cache.copy(),
        done = done.copy()](AsyncValueRef<std::string> insertOr) mutable {
         ASSERT_FALSE(insertOr.isError())
             << insertOr.getDiagnostic().getMessage() << '\n';
         EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
-        auto contains = cache->contains("zeros");
+        auto contains = cache->contains(*runtime, "zeros");
         std::move(contains).andThenSync(
             [done = std::move(done)](AsyncValueRef<bool> contains) mutable {
               ASSERT_FALSE(contains.isError())
@@ -125,15 +125,16 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
   auto inserted = AsyncValueRef<Chain>::allocate(*runtime);
-  AsyncValueRef<std::string> insertOr = cache->insert("zeros", zerosBuf.copy());
+  AsyncValueRef<std::string> insertOr =
+      cache->insert(*runtime, "zeros", zerosBuf.copy());
   std::move(insertOr).andThenSync(
-      [cache = cache.copy(), inserted = inserted.copy()](
+      [this, cache = cache.copy(), inserted = inserted.copy()](
           AsyncValueRef<std::string> insertOr) mutable {
         ASSERT_FALSE(insertOr.isError())
             << insertOr.getDiagnostic().getMessage() << '\n';
         EXPECT_FALSE(insertOr->empty()) << "expected to receive the hash key\v";
 
-        auto contains = cache->contains("zeros");
+        auto contains = cache->contains(*runtime, "zeros");
         std::move(contains).andThenSync(
             [inserted =
                  std::move(inserted)](AsyncValueRef<bool> contains) mutable {
@@ -146,10 +147,10 @@ TEST_F(BlobCacheTest, FindItemThatExists) {
   await(inserted);
 
   auto found = AsyncValueRef<Chain>::allocate(*runtime);
-  auto zerosOr = cache->find("zeros");
+  auto zerosOr = cache->find(*runtime, "zeros");
   std::move(zerosOr).andThenSync(
       [zerosBuf = zerosBuf.copy(), found = found.copy()](
-          AsyncValueRef<std::optional<BufferRef>> zerosOr) mutable {
+          AsyncValueRef<std::optional<BufferRef>> &&zerosOr) mutable {
         ASSERT_FALSE(zerosOr.isError())
             << zerosOr.getDiagnostic().getMessage() << '\n';
         ASSERT_TRUE(zerosOr->has_value());
@@ -172,16 +173,17 @@ TEST_F(BlobCacheTest, FileSystemFindItemThatExists) {
   zerosDataBuf->write(0);
   BufferRef zerosBuf = std::move(zerosDataBuf);
 
-  AsyncValueRef<std::string> err = cache->insert("zeros", zerosBuf.copy());
+  AsyncValueRef<std::string> err =
+      cache->insert(*runtime, "zeros", zerosBuf.copy());
   await(err);
   ASSERT_FALSE(err.isError()) << err.getDiagnostic().getMessage() << '\n';
 
   // Reset the cache so that we are forced to look it up from the file system.
   auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
-      getLocalDefaultBackendChain(*runtime, tempDir.getPath()).takeValue());
+      getLocalDefaultBackendChain(tempDir.getPath()).takeValue());
 
   // Check that the cache holds the new item, and it's the same data as before.
-  auto zerosOr = fsCache->find("zeros");
+  auto zerosOr = fsCache->find(*runtime, "zeros");
   await(zerosOr);
   ASSERT_FALSE(zerosOr.isError())
       << zerosOr.getDiagnostic().getMessage() << '\n';
@@ -208,7 +210,7 @@ TEST_F(BlobCacheTest, FileSystemTestOldVersionDeletion) {
   // Upon creating a new cache, all of the old versions on the filesystem
   // should be deleted.
   auto fsCache = RCRef<BlobCache<StringKeyInfo>>::create(
-      getLocalDefaultBackendChain(*runtime, tempDir.getPath()).takeValue());
+      getLocalDefaultBackendChain(tempDir.getPath()).takeValue());
   ASSERT_TRUE(!std::filesystem::exists(tempDirectory, ec))
       << "expected the temp directory to be deleted by cacheDir creation\n";
 }
@@ -257,14 +259,15 @@ TEST(FilesystemBackend, Hammer) {
   for (int thread = 0; thread < numThreads; ++thread) {
     threads.emplace_back([thread, &tempDir]() {
       auto runtime = makeRuntime();
-      auto backend = getFilesystemBackend(*runtime, tempDir.getPath());
+      auto backend = getFilesystemBackend(tempDir.getPath());
       auto threadDone = AsyncValueRef<Chain>::allocate(*runtime);
 
       // Insert known values with known keys.
       std::vector<AnyAsyncValueRef> insertsDone;
       for (int run = 0; run < numKeys; ++run) {
-        insertsDone.emplace_back(backend->insert(
-            makeKey(thread, run), makeValue(size, numThreads, thread, run)));
+        insertsDone.emplace_back(
+            backend->insert(*runtime, makeKey(thread, run),
+                            makeValue(size, numThreads, thread, run)));
       }
       andThenSyncMoving(insertsDone, [thread, runtime = runtime.get(),
                                       backend = backend.copy(),
@@ -280,7 +283,7 @@ TEST(FilesystemBackend, Hammer) {
         std::vector<AnyAsyncValueRef> findsDone;
         for (int run = 0; run < numKeys; ++run) {
           auto findDone = AsyncValueRef<Chain>::allocate(*runtime);
-          backend->find(makeKey(thread, run))
+          backend->find(*runtime, makeKey(thread, run))
               .andThenSync([thread, run, findDone = findDone.copy()](
                                AsyncValueRef<std::optional<BufferRef>>
                                    optResult) mutable {

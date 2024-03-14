@@ -30,77 +30,65 @@ namespace M::Cache {
 /// order that the BlobCache below will use to find an item.
 class BlobCacheBackend : public ReferenceCounted<BlobCacheBackend> {
 public:
-  /// Construct a BlobCacheBackend from an LLCL runtime.
-  BlobCacheBackend(LLCL::Runtime &runtime) : runtime(runtime) {}
   virtual ~BlobCacheBackend() {}
-
-  /// Return a reference to the LLCL runtime the backend was created with.
-  LLCL::Runtime &getRuntime() { return runtime; }
 
   /// Store the object `obj` with hash `keyHash`. This is expected to take
   /// ownership of the data in `obj` on success. Subclasses are expected to
   /// overwrite the current contents on a collision.
-  virtual LLCL::AsyncValueRef<LLCL::Chain>
-  insert(BufferRef keyHash, BufferRef obj,
+  LLCL::AsyncValueRef<LLCL::Chain>
+  insert(LLCL::Runtime &runtime, BufferRef keyHash, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt);
+
+  /// May be overwritten to provide an asynchronous insert.
+  virtual LLCL::AsyncValueRef<LLCL::Chain>
+  insertImpl(LLCL::Runtime &runtime, BufferRef keyHash, BufferRef obj,
+             std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Check if an item with key hash `keyHash` exists in this backend or in any
   /// of the delegates.
-  virtual LLCL::AsyncValueRef<bool>
-  contains(BufferRef keyHash,
+  LLCL::AsyncValueRef<bool>
+  contains(LLCL::Runtime &runtime, BufferRef keyHash,
            std::optional<EncodedLocation> loc = std::nullopt);
+
+  /// May be overwritten to provide an asynchronous contains.
+  virtual LLCL::AsyncValueRef<bool>
+  containsImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+               std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Get the item with key hash `keyHash` from this backend or any of its
   /// delegates.
+  LLCL::AsyncValueRef<std::optional<BufferRef>>
+  find(LLCL::Runtime &runtime, BufferRef keyHash,
+       std::optional<EncodedLocation> loc = std::nullopt);
+
+  /// May be overwritten to provide an asynchronous find.
   virtual LLCL::AsyncValueRef<std::optional<BufferRef>>
-  find(BufferRef keyHash, std::optional<EncodedLocation> loc = std::nullopt);
-
-  /// Add delegate to the end of the backend chain.
-  void appendDelegate(RCRef<BlobCacheBackend> d);
-
-protected:
-  /// NOTE: The asynchrony of the cache backend is handled by the
-  /// BlobCacheBackend class so the *Impl functions can more or less ignore it.
+  findImpl(LLCL::Runtime &runtime, BufferRef keyHash,
+           std::optional<EncodedLocation> loc = std::nullopt);
 
   /// Subclasses that don't override insert should use this to provide the
   /// implementation of actually storing an item.
-  virtual ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) {
-    return Error("insertImpl not implemented");
-  }
+  ErrorOrSuccess insertSync(StringRef keyHash, BufferRef obj);
+
+  /// Must be overwritten to provide synchronous insert.
+  virtual ErrorOrSuccess insertSyncImpl(StringRef keyHash, BufferRef obj) = 0;
+
   /// Subclasses that don't override contains should use this to provide the
   /// implementation of checking if an item exists.
-  virtual ErrorOr<bool> containsImpl(StringRef keyHash) const {
-    return Error("containsImpl not implemented");
-  }
+  ErrorOr<bool> containsSync(StringRef keyHash);
+
+  /// Must be overwritten to provide synchronous contains.
+  virtual ErrorOr<bool> containsSyncImpl(StringRef keyHash) = 0;
+
   /// Subclasses that don't override find should use this to provide the
   /// implementation of getting an item from storage.
-  virtual ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const {
-    return Error("findImpl not implemented");
-  }
+  ErrorOr<std::optional<BufferRef>> findSync(StringRef keyHash);
 
-  /// Use delegate to insert an item and set the status in the provided
-  /// AsyncValue. This is called by the default insert, and can optionally be
-  /// used by subclasses that override insert.
-  void delegateInsert(LLCL::AsyncValueRef<LLCL::Chain> result,
-                      BufferRef keyHash, BufferRef obj,
-                      std::optional<LLCL::EncodedLocation> loc = std::nullopt);
+  /// Must be overwritten to provide a synchronous find.
+  virtual ErrorOr<std::optional<BufferRef>> findSyncImpl(StringRef keyHash) = 0;
 
-  /// Use delegate to check if an item exists, and set the status in the
-  /// provided AsyncValue. This is called by the default contains, and can
-  /// optionally be used by subclasses that override contains.
-  void
-  delegateContains(LLCL::AsyncValueRef<bool> result, BufferRef keyHash,
-                   std::optional<LLCL::EncodedLocation> loc = std::nullopt);
-
-  /// Use delegate to find an item and set the result in the provided
-  /// AsyncValue. This is called by the default find, and can optionally be used
-  /// by subclasses that override find.
-  void delegateFind(LLCL::AsyncValueRef<std::optional<BufferRef>> result,
-                    BufferRef keyHash,
-                    std::optional<EncodedLocation> loc = std::nullopt);
-
-  /// The LLCL runtime we should use for managing asynchrony.
-  LLCL::Runtime &runtime;
+  /// Add delegate to the end of the backend chain.
+  virtual void appendDelegate(RCRef<BlobCacheBackend> d);
 
 private:
   /// The next backend in the list. The public APIs handle nullptr here
@@ -128,8 +116,6 @@ private:
 /// generic.
 class DylibBlobCacheBackend : public BlobCacheBackend {
 public:
-  DylibBlobCacheBackend(LLCL::Runtime &runtime) : BlobCacheBackend(runtime) {}
-
   virtual ~DylibBlobCacheBackend() = default;
 
   virtual ErrorOrSuccess setConfig(const DylibBackendConfig *config) = 0;
@@ -153,12 +139,9 @@ template <typename KeyInfo>
 class BlobCache : public ReferenceCounted<BlobCache<KeyInfo>> {
 public:
   explicit BlobCache(RCRef<BlobCacheBackend> backendList)
-      : runtime(backendList->getRuntime()),
-        backendList(std::move(backendList)) {}
+      : backendList(std::move(backendList)) {}
 
   using KeyTy = typename KeyInfo::KeyTy;
-
-  LLCL::Runtime &getRuntime() { return runtime; }
 
   /// Simple method to get the hash of a key via the KeyInfo struct. This is
   /// useful if (for example) we already have the object in the cache.
@@ -172,11 +155,11 @@ public:
   /// this can be used for speeding up future hash computations or simply
   /// discarded.
   LLCL::AsyncValueRef<std::string>
-  insert(KeyTy key, BufferRef obj,
+  insert(LLCL::Runtime &runtime, KeyTy key, BufferRef obj,
          std::optional<EncodedLocation> loc = std::nullopt) {
     std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
     LLCL::AsyncValueRef<LLCL::Chain> insertAsync =
-        backendList->insert(Buffer::get(keyHash), std::move(obj));
+        backendList->insert(runtime, Buffer::get(keyHash), std::move(obj));
 
     // Allocate a space for the output.
     auto out = LLCL::AsyncValueRef<std::string>::allocate(runtime);
@@ -193,37 +176,51 @@ public:
 
     return out;
   }
+  ErrorOr<std::string> insertSync(KeyTy key, BufferRef obj) {
+    std::string keyHash = KeyInfo::hashKey(std::forward<KeyTy>(key));
+    auto errOr = backendList->insertSync(keyHash, std::move(obj));
+    if (errOr.isError())
+      return errOr.takeError();
+    return keyHash;
+  }
 
   /// Check if any of the provided backends have the item.
   LLCL::AsyncValueRef<bool>
-  contains(KeyTy key, std::optional<EncodedLocation> loc = std::nullopt) const {
+  contains(LLCL::Runtime &runtime, KeyTy key,
+           std::optional<EncodedLocation> loc = std::nullopt) const {
     auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
-    return backendList->contains(std::move(hash), std::move(loc));
+    return backendList->contains(runtime, std::move(hash), std::move(loc));
+  }
+  ErrorOr<bool> containsSync(KeyTy key) const {
+    auto hash = KeyInfo::hashKey(std::forward<KeyTy>(key));
+    return backendList->containsSync(hash);
   }
 
   /// Get the item from any of the provided backends.
   LLCL::AsyncValueRef<std::optional<BufferRef>>
-  find(KeyTy key, std::optional<EncodedLocation> loc = std::nullopt) {
+  find(LLCL::Runtime &runtime, KeyTy key,
+       std::optional<EncodedLocation> loc = std::nullopt) const {
     auto hash = Buffer::get(KeyInfo::hashKey(std::forward<KeyTy>(key)));
-    return backendList->find(std::move(hash), std::move(loc));
+    return backendList->find(runtime, std::move(hash), std::move(loc));
+  }
+  ErrorOr<std::optional<BufferRef>> findSync(KeyTy key) const {
+    auto hash = KeyInfo::hashKey(std::forward<KeyTy>(key));
+    return backendList->findSync(hash);
   }
 
 private:
-  LLCL::Runtime &runtime;
-
   RCRef<BlobCacheBackend> backendList;
 };
 
 /// Returns an in-memory implementation of the BlobCacheBackend.
-RCRef<BlobCacheBackend> getInMemoryBackend(LLCL::Runtime &runtime);
+RCRef<BlobCacheBackend> getInMemoryBackend();
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. If the
 /// base path is not specified, then the backend will use the CWD. The cache
 /// reads and writes to the filesystem by default, but if `readOnly` is
 /// specified, only reads are performed.
 RCRef<BlobCacheBackend>
-getFilesystemBackend(LLCL::Runtime &runtime,
-                     const std::filesystem::path &basePath = "",
+getFilesystemBackend(const std::filesystem::path &basePath = "",
                      bool readOnly = false);
 
 /// Returns a filesystem-based implementation of the BlobCacheBackend. The
@@ -231,8 +228,7 @@ getFilesystemBackend(LLCL::Runtime &runtime,
 /// `version` specifies the version string of the cache, defaults to
 /// MODULAR_VERSION_STRING if the provided version is empty.
 ErrorOr<RCRef<BlobCacheBackend>>
-getFilesystemBackend(LLCL::Runtime &runtime,
-                     const std::filesystem::path &cacheDir,
+getFilesystemBackend(const std::filesystem::path &cacheDir,
                      const std::string &version);
 
 class S3BackendConfig : public DylibBackendConfig {
@@ -259,82 +255,18 @@ public:
 /// Returns a BlobCacheBackend that uses S3 for storage. This accepts the S3
 /// config (which includes the bucket, region and prefix to use inside the
 /// bucket for cached objects).
-ErrorOr<RCRef<BlobCacheBackend>> getS3Backend(LLCL::Runtime &runtime,
-                                              const S3BackendConfig &config);
+ErrorOr<RCRef<BlobCacheBackend>> getS3Backend(const S3BackendConfig &config);
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `cacheDir` is used to derive a path for use
 /// by the filesystem backend. The `version` specifies the version string of the
 /// cache, defaults to MODULAR_VERSION_STRING if the provided version is empty.
 ErrorOr<RCRef<BlobCacheBackend>>
-getLocalDefaultBackendChain(LLCL::Runtime &runtime,
-                            const std::filesystem::path &cacheDir = "",
+getLocalDefaultBackendChain(const std::filesystem::path &cacheDir = "",
                             std::string version = "");
 
 ErrorOr<RCRef<BlobCacheBackend>>
-getDefaultBackendChain(LLCL::Runtime &runtime, const URI &cacheUri,
-                       std::string version = "");
-
-/// Helper class to hold a BlobStore over KeyT and associated runtime.
-/// If no existing runtime is available a default runtime is created.
-/// The BlobStore will be instantiated using the 'default' backend chain
-/// using the given cacheDir.
-template <typename KeyT>
-class RuntimeAndCache {
-public:
-  using CacheRef = RCRef<BlobCache<KeyT>>;
-
-  /// Captures the cache directory and optional existing runtime. However
-  /// the object is not valid until setup is called and returns success.
-  RuntimeAndCache(std::string cacheDir, Runtime *optExistingRuntime)
-      : cacheDir(std::move(cacheDir)), optExistingRuntime(optExistingRuntime) {}
-
-  /// Set up the runtime and cache. The version string is passed directly to
-  /// `getDefaultBackendChain` - it will commonly be KGEN_VERSION_STRING or
-  /// similar.
-  ErrorOrSuccess setup(std::string version = "") {
-    assert(!cacheRef && "setup already called");
-    auto uriOr = URI::parse(cacheDir);
-    if (uriOr.isError())
-      return uriOr.takeError();
-    ownedRuntime = ConditionallyOwnedPointer<Runtime>::takeIfNeeded(
-        optExistingRuntime, []() {
-          // FIXME: This will be removed in a future commit. Currently, this
-          // may or may not create a nested runtime. Since the first pass of
-          // this change causes all tools to explicitly create a runtime, this
-          // must be changed to accept this. It will then be updated to refer
-          // to the runtime that is guaranteed to exist.
-          return LLCL::createNestedRuntime(LLCL::RuntimeOptions().forDebug())
-              .release();
-        });
-    auto backendList =
-        getDefaultBackendChain(*ownedRuntime, *uriOr, std::move(version));
-    if (backendList.isError())
-      return backendList.takeError();
-    cacheRef = CacheRef::create(std::move(*backendList));
-    return success();
-  }
-
-  bool isValid() const { return cacheRef.getPointer() != nullptr; }
-  Runtime &getRuntime() {
-    assert(isValid());
-    return *ownedRuntime;
-  }
-  CacheRef getCacheRef() {
-    assert(isValid());
-    return cacheRef.copy();
-  }
-  BlobCache<KeyT> &getCache() {
-    assert(isValid());
-    return *cacheRef;
-  }
-
-private:
-  std::string cacheDir;
-  Runtime *optExistingRuntime;
-  ConditionallyOwnedPointer<Runtime> ownedRuntime;
-  CacheRef cacheRef;
-};
+getDefaultBackendChain(const URI &cacheUri, std::string version = "");
 
 } // namespace M::Cache
 
