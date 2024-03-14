@@ -561,7 +561,7 @@ fn mo_relu(
     @parameter
     @always_inline
     fn func[width: Int](i: IntList) -> SIMD[out.type, width]:
-        return x.simd_load[width](i)
+        return relu(x.simd_load[width](i))
 
     out.for_each[func]()
     return out
