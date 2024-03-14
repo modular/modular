@@ -104,6 +104,10 @@ void ParamBindings::add(const ExprNode *expr, TypedAttr value,
   assert(addedNew && "duplicate keyword parameter");
 }
 
+void ParamBindings::replace(size_t idx, const ExprNode *expr, TypedAttr value) {
+  posBindings[idx] = {expr, value, /*typeChecked=*/false};
+}
+
 //===----------------------------------------------------------------------===//
 // ParamBindings Implementation
 //===----------------------------------------------------------------------===//
@@ -641,13 +645,10 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
       paramBindings(std::move(paramBindings)), expr(expr), syntax(syntax),
       erroneous(erroneous) {}
 
-/// Utility function to perform substitutions of the specified callable bindings
-/// into the symbol for the given function declaration. It returns the resultant
-/// SymbolConstantAttr or produces an error message and returns null.
-static TypedAttr getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp,
-                                      StringRef baseName,
-                                      const ParamBindings &paramBindings,
-                                      const ExprNode *expr) {
+TypedAttr ParamBindings::getBoundConstAttrFor(ASTType baseType,
+                                              LIT::FuncOp funcOp,
+                                              StringRef baseName,
+                                              const ExprNode *expr) const {
   // Try to dig out a trait base value.
   auto getIfTrait = [](ASTType type) -> ASTType {
     if (isa_and_nonnull<TraitType>(type.getMetaType()))
@@ -658,13 +659,13 @@ static TypedAttr getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp,
   if (!trait) {
     // If there are no parameters specified and if we allow unbound symbols,
     // just return the unbound symbol.
-    if (paramBindings.empty())
+    if (empty())
       return funcOp.getBoundReference();
 
     // Check that the signature can be rebound with our set of bindings.
     LITSignatureType signature = funcOp.getFullSignature();
-    ParameterExprArrayAttr newBindings = paramBindings.verifyBindings(
-        signature, baseName, expr->getLoc(), funcOp.getLoc());
+    ParameterExprArrayAttr newBindings =
+        verifyBindings(signature, baseName, expr->getLoc(), funcOp.getLoc());
     if (!newBindings)
       return {};
 
@@ -677,14 +678,14 @@ static TypedAttr getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp,
   // parameters.
   // FIXME(#25492): The implicit trait parameters probably need a rethink.
   LITSignatureType signature = funcOp.getFullSignature();
-  ParamBindings bindings = paramBindings;
+  ParamBindings bindings = *this;
   assert(bindings.posBindings.size() >= 2);
   auto it = bindings.posBindings.begin();
   SmallVector<TypedAttr> paramValues({it->value, (it + 1)->value});
   bindings.posBindings.erase(it, it + 2);
   for (Type type : signature.getParamTypes().drop_front(2))
     paramValues.push_back(UnboundAttr::get(type));
-  auto loc = paramBindings.shared.translateLocation(expr->getLoc());
+  auto loc = shared.translateLocation(expr->getLoc());
   signature = signature.getSpecializedSignature(paramValues, loc);
 
   TypedAttr fnRef = ParamOperatorAttr::get(
@@ -710,7 +711,7 @@ static PValue getCallee(ASTType baseType, ArrayRef<ASTDecl *> fnDecls,
                         const ExprNode *expr) {
   assert(fnDecls.size() == 1 && "expected a single resolved callee");
   auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
-  return getBoundConstAttrFor(baseType, funcOp, baseName, paramBindings, expr);
+  return paramBindings.getBoundConstAttrFor(baseType, funcOp, baseName, expr);
 }
 
 /// Return if the given fitness is valid, and drop the diagnostics otherwise.
@@ -826,7 +827,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   if (!anyValid) {
     if (emitDiagnosticOnFailure && !isErroneous()) {
       auto diag = getShared().emitError(expr->getLoc()) << expr->getRange();
-      if (fnDecls.size() == 0) {
+      if (fnDecls.empty()) {
         diag << "invalid call to '" << baseName << "': no candidates found";
         return {};
       }
@@ -1058,8 +1059,8 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
     return {};
   }
 
-  return getBoundConstAttrFor(baseType, cast<LIT::FuncOp>(*fnDecls[0]),
-                              baseName, paramBindings, expr);
+  return paramBindings.getBoundConstAttrFor(
+      baseType, cast<LIT::FuncOp>(*fnDecls[0]), baseName, expr);
 }
 
 /// Get a OverloadSet for a lookup of a named method on the specified type.
@@ -1176,8 +1177,8 @@ PValue OverloadSet::getIfPValue() const {
   if (fnDecls.size() != 1)
     return {};
 
-  return getBoundConstAttrFor(baseType, cast<LIT::FuncOp>(*fnDecls[0]),
-                              baseName, paramBindings, expr);
+  return paramBindings.getBoundConstAttrFor(
+      baseType, cast<LIT::FuncOp>(*fnDecls[0]), baseName, expr);
 }
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity
