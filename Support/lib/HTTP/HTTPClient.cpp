@@ -35,20 +35,6 @@
 
 using namespace M;
 
-namespace {
-inline HTTPResponse CheckCurlCode(CURLcode code, llvm::StringRef ctx = "") {
-  HTTPResponse response;
-  response.kind = M::HTTPResponse::Success;
-  if (code) {
-    response.kind = M::HTTPResponse::TransportError;
-    llvm::errs() << "Error in curl call " << ctx << " : \'"
-                 << curl_easy_strerror(code) << "\'\n";
-    response.transportErrorMessage = curl_easy_strerror(code);
-  }
-  return response;
-}
-} // namespace
-
 //===----------------------------------------------------------------------===//
 // HTTPContext
 //===----------------------------------------------------------------------===//
