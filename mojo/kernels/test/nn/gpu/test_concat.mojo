@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys import argv
-
+from utils.list import DimList
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import Context, Function, Stream
@@ -102,10 +102,10 @@ fn test_concat_4_inputs_rank5() raises:
 
     var func = Function[
         fn (
-            NDBuffer[DType.float32, 5],
-            StaticTuple[NDBuffer[DType.float32, 5], 4],
+            NDBuffer[dtype, rank],
+            StaticTuple[NDBuffer[dtype, rank], 4],
         ) -> None, _concat_inner_most_single_dim[
-            rank=5, type = DType.float32, num_inputs=4, block_size=B_SIZE
+            rank=rank, type=dtype, num_inputs=4, block_size=B_SIZE
         ]
     ]()
 
@@ -115,16 +115,16 @@ fn test_concat_4_inputs_rank5() raises:
     @parameter
     fn run_concat_inner_most_single_dim(stream: Stream) raises:
         func(
-            (d0 * d1 * d2 * d3 * d4 // B_SIZE),
-            (B_SIZE),
             output_device,
-            StaticTuple[4](
+            StaticTuple[NDBuffer[dtype, rank], 4](
                 input_0_device,
                 input_1_device,
                 input_2_device,
                 input_3_device,
             ),
             stream=stream,
+            grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
+            block_dim=(B_SIZE),
         )
 
     var nstime_kernel = time_function[run_concat_inner_most_single_dim](stream)
@@ -180,7 +180,7 @@ fn test_concat_4_inputs_rank5() raises:
         _concat_gpu(
             output_device,
             4,
-            StaticTuple[4](
+            StaticTuple[NDBuffer[dtype, rank], 4](
                 input_0_device,
                 input_1_device,
                 input_2_device,
