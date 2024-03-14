@@ -110,25 +110,6 @@ public:
     ASTType getType() const { return value.getType(); }
   };
 
-  /// This is the scope that any references are resolved against.
-  ASTDecl &declScope;
-  SharedState &shared;
-
-  /// This contains a list of bound parameters given positionally.
-  SmallVector<Binding> posBindings;
-
-  /// This contains the bound parameters given by a keyword.
-  llvm::MapVector<StringAttr, Binding, SmallDenseMap<StringAttr, size_t>>
-      kwBindings;
-
-  /// A list of all default parameter values declared for a type, if these are
-  /// bindings for an overload set on a method.
-  ArrayRef<TypedAttr> defaultTypeParams;
-
-  /// The number of parameters declared for a type, if these are bindings for an
-  /// overload set on a method.
-  size_t numCtadParams = 0;
-
   /// Initialize ParamBindings with a declscope to perform lookups against
   /// and a notion of shared context.
   ParamBindings(ExprEmitter &emitter);
@@ -140,6 +121,13 @@ public:
   /// type is not a parametric user defined type, this returns empty bindings.
   static ParamBindings getForDeclaredType(ASTDecl &declScope,
                                           SharedState &shared, ASTType type);
+
+  /// Utility function to perform substitutions of the bindings into the symbol
+  /// for the given function declaration. It returns the resultant
+  /// SymbolConstantAttr or produces an error message and returns null.
+  TypedAttr getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp,
+                                 StringRef baseName,
+                                 const ExprNode *expr) const;
 
   /// Return whether there are any bindings given.
   bool empty() const { return posBindings.empty() && kwBindings.empty(); }
@@ -158,6 +146,10 @@ public:
   /// Add a bound value for a keyword parameter binding. The caller is
   /// responsible for ensuring the keyword is not already present.
   void add(const ExprNode *expr, TypedAttr value, StringAttr name);
+
+  /// Replace a positional binding at the given index. The callee must ensure
+  /// that a binding already exists at the index before replacing it.
+  void replace(size_t idx, const ExprNode *expr, TypedAttr value);
 
   /// The type of the function called when performing parameter inference. The
   /// hook will be provided the index of the parameter to be inferred, along
@@ -246,6 +238,12 @@ public:
   verifyBindings(LITSignatureType sig, StringRef baseName, llvm::SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt) const;
 
+  /// This is the scope that any references are resolved against.
+  ASTDecl &declScope;
+
+  /// Reference to the shared parser state these binding exist in.
+  SharedState &shared;
+
 private:
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
@@ -270,6 +268,21 @@ private:
                  const Twine &baseName, llvm::SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt,
                  Boundness boundness = Boundness::Explicit) const;
+
+  /// This contains a list of bound parameters given positionally.
+  SmallVector<Binding> posBindings;
+
+  /// This contains the bound parameters given by a keyword.
+  llvm::MapVector<StringAttr, Binding, SmallDenseMap<StringAttr, size_t>>
+      kwBindings;
+
+  /// A list of all default parameter values declared for a type, if these are
+  /// bindings for an overload set on a method.
+  ArrayRef<TypedAttr> defaultTypeParams;
+
+  /// The number of parameters declared for a type, if these are bindings for an
+  /// overload set on a method.
+  size_t numCtadParams = 0;
 };
 
 /// When emitting a function call, this enum is used to indicate why the call

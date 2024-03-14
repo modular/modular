@@ -2003,7 +2003,9 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   }
 
   // Bind the Tuple type parameters.
-  getDecl.paramBindings.addPrechecked(packVariadic);
+  ParamBindings &bindings = getDecl.paramBindings;
+  if (bindings.empty())
+    bindings.addPrechecked(packVariadic);
 
   // Ok, we have a tuple with the right number of elements, extract each element
   // and store into the corresponding lvalue.
@@ -2011,9 +2013,13 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     // Bind the i/T parameters.  Int implicitly constructs from index type.
     TypedAttr iParam =
         IntegerAttr::get(IndexType::get(emitter.getContext()), index);
-    getDecl.paramBindings.posBindings.resize(1);
-    getDecl.paramBindings.add(expr, iParam);
-    getDecl.paramBindings.add(expr, packVariadic.getValues()[index]);
+    if (index == 0) {
+      bindings.add(expr, iParam);
+      bindings.add(expr, packVariadic.getValues()[index]);
+    } else {
+      bindings.replace(1, expr, iParam);
+      bindings.replace(2, expr, packVariadic.getValues()[index]);
+    }
 
     // Emit the call to get the item from the tuple into the corresponding
     // LValue.
