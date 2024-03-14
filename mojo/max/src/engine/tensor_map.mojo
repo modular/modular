@@ -6,7 +6,7 @@
 """
 Holds the input and output tensors for a model.
 """
-from memory.buffer import Buffer
+from closed_source_memory.buffer import Buffer
 from memory.unsafe import bitcast, DTypePointer
 from sys.ffi import DLHandle
 from tensor import Tensor, TensorShape
