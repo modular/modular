@@ -8,7 +8,7 @@
 from math import abs, ceil, div_ceil, max
 from sys.info import alignof, sizeof
 
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from quantization import Q4sym
 from utils.list import DimList
 

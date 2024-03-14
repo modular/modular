@@ -17,7 +17,7 @@ from math import (
 from sys.info import alignof, has_avx2, has_neon_int8_dotprod, sizeof
 
 from algorithm import sync_parallelize
-from memory.buffer import NDBuffer, prod_dims
+from closed_source_memory.buffer import NDBuffer, prod_dims
 from memory.unsafe import bitcast
 from Neon import _neon_dotprod
 from VNNI import dot_i8_to_i32_saturated_x86
