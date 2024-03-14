@@ -451,14 +451,12 @@ ErrorOr<
     std::pair<RCRef<Cache::BlobCacheBackend>, RCRef<Cache::BlobCacheBackend>>>
 KGEN::getMojoCacheBackends(LLCL::Runtime &runtime) {
   auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".mojo_cache") / "transform").string(),
-      KGEN_VERSION_STRING);
+      std::filesystem::path(".mojo_cache") / "transform", KGEN_VERSION_STRING);
   if (transformCacheBackend.isError())
     return transformCacheBackend.takeError();
 
   auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
-      runtime, (std::filesystem::path(".mojo_cache") / "region").string(),
-      KGEN_VERSION_STRING);
+      std::filesystem::path(".mojo_cache") / "region", KGEN_VERSION_STRING);
   if (regionCacheBackend.isError())
     return regionCacheBackend.takeError();
 

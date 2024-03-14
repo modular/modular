@@ -22,25 +22,23 @@ namespace M::Cache {
 /// upstream.
 class HTTPCacheBackend : public BlobCacheBackend {
 public:
-  HTTPCacheBackend(HTTPContextRef c, std::string url, LLCL::Runtime &runtime,
-                   Progress *progress)
-      : BlobCacheBackend(runtime), ctx(std::move(c)), url(std::move(url)),
-        progress(progress) {}
+  HTTPCacheBackend(HTTPContextRef c, std::string url, Progress *progress)
+      : ctx(std::move(c)), url(std::move(url)), progress(progress) {}
 
   /// Insert a binary blob with a PUT request.
   ///
   /// NOTE: Currently unsupported.
-  ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) override;
+  ErrorOrSuccess insertSyncImpl(StringRef keyHash, BufferRef obj) override;
 
   /// Check if we have the object we're looking for. Since really the only way
   /// to check if we have the thing is to fetch it, we just get it and trust our
   /// in-memory request cache.
-  ErrorOr<bool> containsImpl(StringRef keyHash) const override;
+  ErrorOr<bool> containsSyncImpl(StringRef keyHash) override;
 
   /// Find the object at `keyHash`. This essentially produces a GET request to
   /// <url>/<urlsafe-b64-key-hash>, which is expected to return the bytes of the
   /// object directly.
-  ErrorOr<std::optional<BufferRef>> findImpl(StringRef keyHash) const override;
+  ErrorOr<std::optional<BufferRef>> findSyncImpl(StringRef keyHash) override;
 
   /// Underlying implementation for both containsImpl and findImpl. There is a
   /// need to distinguish the full request from simple the HEAD.
@@ -61,7 +59,6 @@ using HTTPCacheBackendRef = RCRef<HTTPCacheBackend>;
 /// Get the HTTP CAS backend. The backend will use `url` as the base, and append
 /// the url-safe base-64 encoded key hash as the resource path.
 HTTPCacheBackendRef getHTTPCacheBackend(HTTPContextRef ctx, std::string url,
-                                        LLCL::Runtime &runtime,
                                         Progress *progress);
 } // namespace M::Cache
 
