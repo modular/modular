@@ -7,7 +7,7 @@
 # RUN: %mojo %s
 
 from math import div_ceil, isclose, isnan
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from Matmul import matmul_kernel_naive
 from gpu import (

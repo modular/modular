@@ -23,7 +23,7 @@ from gpu.host.memory import (
     _memset,
 )
 from gpu.host.sync import synchronize
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from tensor import Tensor
 
 from utils.index import Index

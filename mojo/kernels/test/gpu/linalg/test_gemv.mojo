@@ -19,7 +19,7 @@ from gpu.host.memory import (
 )
 from gpu.sync import syncwarp
 from Matmul import gemv_kernel, gevm_kernel, matmul_kernel
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index

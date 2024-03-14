@@ -17,7 +17,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from tensor import Tensor, TensorShape
 
 from utils.index import Index

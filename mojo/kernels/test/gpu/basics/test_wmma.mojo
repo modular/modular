@@ -32,7 +32,7 @@ from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from gpu.sync import syncwarp
 from Matmul import matmul_kernel, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index

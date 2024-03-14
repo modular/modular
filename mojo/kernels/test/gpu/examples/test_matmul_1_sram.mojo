@@ -21,7 +21,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from memory import memset_zero, stack_allocation
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from tensor import Tensor
 
 from utils.index import Index

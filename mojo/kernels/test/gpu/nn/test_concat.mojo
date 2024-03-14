@@ -19,7 +19,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.host.sync import synchronize
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from nn.concat import _concat_gpu, _concat_inner_most_single_dim
 
 
