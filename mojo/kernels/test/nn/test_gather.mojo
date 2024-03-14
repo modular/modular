@@ -12,7 +12,7 @@
 
 from sys.info import simdwidthof
 
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from nn.gather_scatter import gather
 
 from utils.index import StaticIntTuple

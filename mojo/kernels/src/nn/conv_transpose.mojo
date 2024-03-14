@@ -23,7 +23,7 @@ from algorithm import (
     vectorize,
 )
 from MatmulUtils import partition_work
-from memory.buffer import (
+from closed_source_memory.buffer import (
     Buffer,
     DynamicRankBuffer,
     NDBuffer,

@@ -11,7 +11,7 @@ from math import iota
 from algorithm.functional import parallelize_over_rows
 from closed_source_algorithm.reduction import _get_nd_indices_from_flat_index
 from algorithm.sort import _quicksort, partition, sort
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 
 
 @always_inline

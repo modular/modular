@@ -10,7 +10,7 @@ from collections import List
 from math import iota
 
 from closed_source_algorithm.reduction import _get_nd_indices_from_flat_index
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from nn.topk import _top_k
 
 

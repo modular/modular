@@ -20,7 +20,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from nn.mha import (
     _naive_attention_with_transpose,

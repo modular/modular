@@ -7,7 +7,7 @@
 from math import abs, ceil, div_ceil, iota
 from sys.info import simdwidthof
 
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 
 from register import *
 from utils.index import StaticIntTuple

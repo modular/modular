@@ -7,7 +7,7 @@
 from sys.info import sizeof
 
 from memory import memcpy
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.list import DimList

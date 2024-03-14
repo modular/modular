@@ -9,7 +9,7 @@ from math import abs, div_ceil, isclose, min
 from random import rand
 from sys.info import has_avx2, has_avx512f, simdwidthof
 
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
     ConvShape,

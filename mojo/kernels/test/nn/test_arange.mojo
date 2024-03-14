@@ -9,7 +9,7 @@ from math import mul
 
 from algorithm import elementwise
 from memory import stack_allocation
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 from nn.arange import arange, arange_shape
 from nn.slice import slice_as_copy, slice_as_view
 

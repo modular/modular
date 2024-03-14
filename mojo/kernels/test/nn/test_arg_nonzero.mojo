@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
 

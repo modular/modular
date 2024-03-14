@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------===#
 
 from memory import memcpy
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
 # TODO Refactor -- we should decide on and put them into a more common file

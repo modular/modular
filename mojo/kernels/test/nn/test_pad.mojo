@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 from nn.pad import pad_constant, pad_reflect, pad_repeat
 
 from utils.index import StaticIntTuple

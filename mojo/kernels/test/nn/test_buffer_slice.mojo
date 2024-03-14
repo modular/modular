@@ -9,7 +9,7 @@ from math import mul
 
 from algorithm import elementwise
 from memory import stack_allocation
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, StaticIntTuple

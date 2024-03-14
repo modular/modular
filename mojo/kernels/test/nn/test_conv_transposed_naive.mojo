@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from nn.conv_transpose import conv_transpose_naive
 
 from utils.index import Index

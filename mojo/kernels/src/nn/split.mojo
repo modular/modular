@@ -9,7 +9,7 @@ from sys import external_call
 
 from algorithm import sync_parallelize
 from memory import memcpy
-from memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
+from closed_source_memory.buffer import Buffer, DynamicRankBuffer, NDBuffer
 
 from utils.index import product
 from utils.list import Dim, DimList

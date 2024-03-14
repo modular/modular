@@ -10,7 +10,7 @@ from random import rand
 from sys import external_call
 from sys.info import num_physical_cores, simdwidthof
 
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from nn.conv import (
     ConvDirectNHWC,
