@@ -64,7 +64,7 @@ zaz()
 
 # Will test a multiline alias with imports and a function that uses this alias
 
-from memory.buffer import (
+from closed_source_memory.buffer import (
   DynamicRankBuffer
 )
 
