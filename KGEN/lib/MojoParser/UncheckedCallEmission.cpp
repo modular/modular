@@ -296,16 +296,18 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   else if (RefPackType refPackType = calleeSig.getIfRefPackType(argIdx))
     convention = calleeSig.getPackVarArgConvention(argIdx);
 
-  // If we are emitting in a compile-time context and all of the remaining
-  // operands are compile-time values, then emit the sequence as an attribute.
-  if (!emitter.builder &&
-      std::all_of(remainingOperands.begin(), remainingOperands.end(),
-                  [](ASTExprAnd<AnyValue> operand) {
-                    return operand.ir.getIfPValue();
-                  })) {
+  // Handle emission in a compile-time context.  Parameter calls need to
+  // generate parameter attributes.
+  if (!emitter.builder) {
     SmallVector<TypedAttr> args;
-    for (ASTExprAnd<AnyValue> operand : remainingOperands)
+    for (ASTExprAnd<AnyValue> operand : remainingOperands) {
       args.push_back(operand.ir.getIfPValue().get());
+      if (!args.back()) {
+        emitter.emitErrorForDynamicValueInParameter(callExpr,
+                                                    "cannot use dynamic value");
+        return failure();
+      }
+    }
     Attribute attr;
     if (isPosVarArg) {
       auto varType = cast<VariadicType>(expectedType);
@@ -675,6 +677,7 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 
 Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     ASTExprAnd<AnyValue> argValAndExpr, ArgConvention convention) {
+  assert(emitter.builder && "Should only be called in dynamic context");
 
   Value arg;
   switch (convention) {
