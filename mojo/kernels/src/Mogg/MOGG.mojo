@@ -78,7 +78,7 @@ from MatmulUtils import GemmShape, get_trace_information, search_mm_config
 from MatrixBandPart import matrix_band_part
 from MatrixSolve import matrix_solve, matrix_solve_shape
 from memory import memset_zero
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
