@@ -361,8 +361,8 @@ public:
   DTypeSwitch &when(CallableT &&caseFn) {
     using CXXType = typename CXXTypeForDType<CaseValue>::CXXType;
     // Check to see if any of the types apply to 'value'.
-    if (!result && this->value.getValue() == CaseValue)
-      result = std::apply(
+    if (!result && this->value.getValue() == CaseValue) {
+      CallableReturnType callable_res = std::apply(
           [&](ParamPtrTypes... args) {
             return invokeWithDefaultResultType<EmptyReturnType>(
                 std::forward<CallableT>(caseFn),
@@ -370,6 +370,8 @@ public:
                     std::forward<ParamPtrTypes>(args))...);
           },
           paramPtrs);
+      result = std::move(callable_res);
+    }
     return *this;
   }
 
@@ -403,9 +405,12 @@ public:
   /// As a default, invoke the given callable within the root value.
   template <typename CallableT>
   DTypeSwitch &otherwise(CallableT &&defaultFn) {
-    if (!result)
-      result = invokeWithDefaultResultType<EmptyReturnType>(
-          std::forward<CallableT>(defaultFn));
+    if (!result) {
+      CallableReturnType callable_res =
+          invokeWithDefaultResultType<EmptyReturnType>(
+              std::forward<CallableT>(defaultFn));
+      result = std::move(callable_res);
+    }
     return *this;
   }
 
@@ -482,9 +487,8 @@ private:
   struct EmptyReturnType {
     static EmptyReturnType get() { return EmptyReturnType{}; }
   };
-  using CallableReturnType =
-      std::optional<std::conditional_t<std::is_void_v<ResultType>,
-                                       EmptyReturnType, ResultType>>;
+  using CallableReturnType = std::conditional_t<std::is_void_v<ResultType>,
+                                                EmptyReturnType, ResultType>;
 
   /// DTypeSwitch is not a value.
   DTypeSwitch(const DTypeSwitch &) = delete;
@@ -498,7 +502,7 @@ private:
   const DType value; /// The value we are switching on.
 
   /// The result of this switch statement, once known, None before that.
-  CallableReturnType result;
+  std::optional<CallableReturnType> result;
 };
 
 /// Perform a eltType dispatch to delegate to a lambda or other callable, see
