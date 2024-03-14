@@ -249,3 +249,13 @@ TEST(DType, getFromString) {
   EXPECT_EQ(DType::getComplex(DType::kBool),
             DType::getFromString("complex<bool>"));
 }
+
+TEST(DType, CanDispatchOptionals) {
+  auto dispatch = [](DType dType) -> std::optional<int> {
+    return dType.dispatch<std::optional<int>>()
+        .template when<M::DType::si32>([&]() { return 32; })
+        .otherwise([&]() { return std::nullopt; });
+  };
+  EXPECT_EQ(dispatch(DType::si32), 32);
+  EXPECT_EQ(dispatch(DType::f32), std::nullopt);
+}
