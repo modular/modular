@@ -336,6 +336,16 @@ Type LITTypeLowerer::replace(Type type) {
     return cast<KGEN::StructType>(result);
   };
 
+  // !lit.ref.pack<:variadic<!kgen.type> types, owned_in_mem, mut life, 42>
+  // => !kgen.pack<variadic_ptr_map(types), 42>
+  auto processRefPackType = [&](RefPackType ref) -> Type {
+    auto newVariadic = cast<TypedAttr>(replace(ref.getVariadic()));
+    auto newAddrSpace = cast<TypedAttr>(replace(ref.getAddressSpace()));
+    auto mappedTypes =
+        ParamOperatorAttr::get(POC::VariadicPtrMap, newVariadic, newAddrSpace);
+    return PackType::get(mappedTypes);
+  };
+
   Type result = type;
   if (auto ditype = dyn_cast<DebugInfo::DIType>(type)) {
     if (runDebugTypeConversion)
@@ -355,11 +365,8 @@ Type LITTypeLowerer::replace(Type type) {
     // !lit.ref<@T, life> => !kgen.pointer<@T>
     result = replaceImpl(ref.getAsPointerType());
   } else if (auto ref = dyn_cast<LIT::RefPackType>(type)) {
-    // !lit.ref.pack<:variadic<!kgen.type> types, owned_in_mem, mut life, 42>
-    // => !kgen.pack<variadic_ptr_map(types), 42>
-    auto mappedTypes = ParamOperatorAttr::get(
-        POC::VariadicPtrMap, ref.getVariadic(), ref.getAddressSpace());
-    result = replaceImpl(PackType::get(mappedTypes));
+    // !lit.ref.pack => !kgen.pack
+    result = processRefPackType(ref);
   } else {
     // Recursively replace types.
     result = replaceImpl(type);

@@ -262,9 +262,10 @@ getCallOpEffects(Operation &op,
                  SmallVectorImpl<std::pair<Value, OperandEffect>> &operands,
                  SmallVectorImpl<ResultEffect> &results,
                  SmallVectorImpl<TypedAttr> &lifetimes) {
-  SignatureType signature;
+  LITSignatureType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
+  size_t argIdxOffset = 0;
 
   if (auto directCall = dyn_cast<KGENCallOpInterface>(op)) {
     // These all have the callee as a parameter, not operand.
@@ -272,8 +273,10 @@ getCallOpEffects(Operation &op,
     conventions = signature.getArgConventions();
 
     // CreateClosureOp has a subset of the operands of a call.
-    if (isa<CreateClosureOp>(op))
+    if (isa<CreateClosureOp>(op)) {
       conventions = conventions.take_front(op.getNumOperands());
+      argIdxOffset = 1;
+    }
 
     assert(conventions.size() == op.getNumOperands());
   } else {
@@ -285,6 +288,7 @@ getCallOpEffects(Operation &op,
     operands.push_back({op.getOperand(0), OperandEffect::regUse});
     assert(signature.getArgConventions().size() == op.getNumOperands() - 1);
     callArguments = callArguments.drop_front();
+    argIdxOffset = 1;
   }
 
   /// Argument conventions cause a direct use of the register of pointee, and
@@ -345,14 +349,10 @@ getCallOpEffects(Operation &op,
     typesAccessibleByCallee.push_back(argType);
   };
 
-  for (auto [arg, convention] : llvm::zip(callArguments, conventions)) {
+  for (auto [idx, arg, convention] :
+       llvm::enumerate(callArguments, conventions)) {
     if (auto splat = arg.getDefiningOp<POP::VariadicSplatOp>()) {
       addArgument(splat.getOperand(), splat.getType().getConvention());
-      continue;
-    }
-    auto vararg = arg.getDefiningOp<POP::VariadicCreateOp>();
-    if (!vararg) {
-      addArgument(arg, convention);
       continue;
     }
 
@@ -367,9 +367,24 @@ getCallOpEffects(Operation &op,
     //   2) given "direct" access information, it allows us to model 'owned'
     //      argument conventions which consume the operand, something lifetime
     //      accesses cannot model (because it requires field sensitivity).
-    auto varargConvention = vararg.getType().getConvention();
-    for (auto varOperand : vararg.getOperands())
-      addArgument(varOperand, varargConvention);
+    if (auto vararg = arg.getDefiningOp<POP::VariadicCreateOp>()) {
+      auto varargConvention = vararg.getType().getConvention();
+      for (auto varOperand : vararg.getOperands())
+        addArgument(varOperand, varargConvention);
+      continue;
+    }
+
+    if (auto pack = arg.getDefiningOp<RefPackCreateOp>()) {
+      if (signature.isPackVarArg(idx + argIdxOffset)) {
+        auto argConvention =
+            signature.getPackVarArgConvention(idx + argIdxOffset);
+        for (auto packOperand : pack.getOperands())
+          addArgument(packOperand, argConvention);
+        continue;
+      }
+    }
+
+    addArgument(arg, convention);
   }
 
   // Look at the types accessible by the callee to see if there are any

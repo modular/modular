@@ -8,7 +8,7 @@
 
 
 # This isn't copyable or movable, but it is talkative!
-struct TalkativeMem:
+struct TalkativeMem(Stringable):
     var state: Int
 
     fn __init__(inout self, state: Int):
@@ -19,6 +19,9 @@ struct TalkativeMem:
     fn __del__(owned self):
         print_no_newline("destroying ")
         print(self.state)
+
+    fn __str__(self) -> String:
+        return "talkative " + self.state.__str__()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -88,6 +91,53 @@ fn test_owned_varargs():
     print("after call")
 
 
+# ===----------------------------------------------------------------------=== #
+# Owned variadic packs
+# ===----------------------------------------------------------------------=== #
+
+# TODO: VariadicPack can't work with Stringable and similar traits because we
+# don't have an AnyTypeType
+#
+# fn test_owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
+#  var packFormal = VariadicPack(pack, True)
+#
+#  fn process[T: Stringable](a: T):
+#      print("hello", a)
+#  packFormal.each[process]()
+
+
+fn test_owned_variadic_pack[*Ts: AnyType](owned *pack: *Ts):
+    var packFormal = VariadicPack(pack, True)
+    print("-- testing owned variadic pack with", len(packFormal), "elements")
+
+    fn process[T: AnyType](a: T):
+        print("hello value")
+
+    packFormal.each[process]()
+
+
+fn test_owned_variadic_pack():
+    # CHECK: -- testing owned variadic pack with 2 elements
+    # CHECK: hello value
+    # CHECK: hello value
+    test_owned_variadic_pack("foo", 42)
+    print("")
+
+    # CHECK: initializing 1
+    # CHECK: initializing 2
+    # CHECK: initializing 3
+    # CHECK: -- testing owned variadic pack with 3 elements
+    # CHECK: hello value
+    # CHECK: hello value
+    # CHECK: hello value
+    # CHECK: destroying 3
+    # CHECK: destroying 2
+    # CHECK: destroying 1
+    test_owned_variadic_pack(TalkativeMem(1), TalkativeMem(2), TalkativeMem(3))
+    print("")
+
+
 fn main():
     test_inout_varargs()
     test_owned_varargs()
+    test_owned_variadic_pack()
