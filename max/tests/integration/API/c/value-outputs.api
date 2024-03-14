@@ -1,0 +1,24 @@
+// REQUIRES: mtorch
+// REQUIRES: pytorch-generated-tests
+// RUN: modular-api-executor --model-inputs=ones --input-specs=1xsi32 --input-specs=3xf32 --input-specs=5xf32 --result-output-style=full --output-names result0 --output-names result1 --output-names result2 --output-names result3 --output-names result4 --output-names result5 %pytorch_generated_tests_dir/OutputVariants.pt | FileCheck %s
+
+// CHECK{LITERAL}: Dict{0: tensor<1xsi32> [1]
+// CHECK{LITERAL}: , 1: tensor<3xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: , 2: tensor<5xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: }, List[tensor<1xsi32> [1]
+// CHECK{LITERAL}: , tensor<3xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: , tensor<5xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: ], Tuple[tensor<1xsi32> [1]
+// CHECK{LITERAL}: , tensor<3xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: , tensor<5xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: ], tensor<1xsi32> [1]
+// CHECK{LITERAL}: , List[tensor<1xsi32> [1]
+// CHECK{LITERAL}: , tensor<3xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: , tensor<5xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: ], Dict{"d": Dict{0: tensor<1xsi32> [1]
+// CHECK{LITERAL}: , 1: tensor<3xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: , 2: tensor<5xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: }, "l": List[tensor<1xsi32> [1]
+// CHECK{LITERAL}: , tensor<3xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: , tensor<5xf32> [1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00, 1.000000e+00]
+// CHECK{LITERAL}: ]}
