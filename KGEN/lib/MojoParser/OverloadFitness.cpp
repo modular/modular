@@ -1131,7 +1131,7 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
 /// kw-operand, missing kw-only arguments). If the function accepts variadic
 /// keyword arguments, this function also collects them.
 static std::optional<InflightDiag> diagnoseKeywordOperands(
-    LITSignatureType signature, KeywordOperands &variadicKwOperands,
+    PogsAttr argListAttr, KeywordOperands &variadicKwOperands,
     const CallOperands &callOperands, const DiagEmitter &emitDiagFor) {
   // First, we collect any (named) pos-only arguments passed by keyword operand,
   // and missing kw-only arguments. We also collect all argument names that
@@ -1140,25 +1140,24 @@ static std::optional<InflightDiag> diagnoseKeywordOperands(
   SmallVector<StringAttr> posOnlyPassedByKw;
   SmallVector<StringAttr> missingKwOnly;
 
-  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  for (auto [argIdx, argName, argPassingKind, conv] :
-       llvm::enumerate(signature.getArgNames(), signature.getArgPassingKinds(),
-                       signature.getArgConventions())) {
-    if (signature.isAnyVarArg(argIdx))
+  DefaultValueHandler defaultHandler(argListAttr);
+  for (auto [argIdx, name, passingKind] :
+       llvm::enumerate(argListAttr.getNames(), argListAttr.getPassingKinds())) {
+    if (argListAttr.isPack(argIdx) || argListAttr.isVariadic(argIdx))
       continue; // Variadic/pack args cannot be specified by their keyword.
-    if (argPassingKind == PassingKind::KwOnly &&
+    if (passingKind == PassingKind::KwOnly &&
         !defaultHandler.getKwOnlyDefault(argIdx) &&
-        !callOperands.findKwArg(argName)) {
-      missingKwOnly.emplace_back(argName);
+        !callOperands.findKwArg(name)) {
+      missingKwOnly.emplace_back(name);
       continue;
     }
-    if (argPassingKind == PassingKind::PosOnly) {
-      if (callOperands.findKwArg(argName))
-        posOnlyPassedByKw.emplace_back(argName);
+    if (passingKind == PassingKind::PosOnly) {
+      if (callOperands.findKwArg(name))
+        posOnlyPassedByKw.emplace_back(name);
       continue;
     }
-    auto [_, addedNew] = argNames.insert(argName);
-    assert(addedNew && "duplicate argument name in signature");
+    auto [_, addedNew] = argNames.insert(name);
+    assert(addedNew && "duplicate argument/parameter name in signature");
   }
 
   if (!missingKwOnly.empty())
@@ -1174,7 +1173,7 @@ static std::optional<InflightDiag> diagnoseKeywordOperands(
   }
 
   // If the function doesn't accept variadic kwargs, this is an error.
-  if (!signature.hasKwVarArgs() && !variadicKwOperands.empty()) {
+  if (!argListAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
     StringSet<> unknownKwOperands;
     for (auto [name, _] : variadicKwOperands)
       unknownKwOperands.insert(name);
@@ -1257,8 +1256,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
   KeywordOperands variadicKwOperands;
-  if (auto diag = diagnoseKeywordOperands(signature, variadicKwOperands,
-                                          callOperands, emitDiagFor))
+  if (auto diag = diagnoseKeywordOperands(signature.getArgListAttrs(),
+                                          variadicKwOperands, callOperands,
+                                          emitDiagFor))
     return std::move(*diag);
 
   if (auto diag = diagnosePosOperands(signature, callOperands, emitDiagFor))
