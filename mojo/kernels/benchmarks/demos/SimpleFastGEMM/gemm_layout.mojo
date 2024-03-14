@@ -8,7 +8,7 @@
 
 import benchmark
 from utils import unroll
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 
 from kernel_utils.layout import Layout, IntTuple
 from kernel_utils.layout_tensor import LayoutTensor, TensorBuilder

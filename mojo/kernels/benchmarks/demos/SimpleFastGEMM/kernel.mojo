@@ -8,7 +8,7 @@
 
 from sys.intrinsics import PrefetchOptions
 
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.list import Dim, DimList

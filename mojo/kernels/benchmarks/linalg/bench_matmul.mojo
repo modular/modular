@@ -8,7 +8,7 @@ from random import rand
 
 from benchmark import keep
 from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from benchmark import *
 from testing import assert_almost_equal
 

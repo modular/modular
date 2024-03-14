@@ -7,7 +7,7 @@
 from math import add
 from random import random_si64
 
-from memory.buffer import NDBuffer
+from closed_source_memory.buffer import NDBuffer
 from benchmark import Bencher, BenchId, Bench
 from tensor import Tensor
 from nn.gather_scatter import gather, gather_reduce

@@ -10,7 +10,7 @@ from sys.intrinsics import PrefetchOptions
 
 import benchmark
 from utils import unroll
-from memory.buffer import Buffer, NDBuffer
+from closed_source_memory.buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.index import Index
