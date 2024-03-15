@@ -89,6 +89,11 @@ void emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
 void emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
                  const Twine &kindStr);
 
+/// Helper to emit an error message for arguments/parameters passed both
+/// positionally and by keyword.
+void emitByPosAndKw(InflightDiag &diag, ArrayRef<StringAttr> names,
+                    const Twine &kindStr);
+
 /// Return a printable name for an anonymous positional-only argument/parameter.
 std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
 

@@ -281,7 +281,7 @@ void LIT::emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
                                 StringRef argOrParam) {
   size_t numNames = names.size();
   diag << "positional-only " << argOrParam << plural(numNames)
-       << " passed as keyword " << argOrParam << plural(numNames) << ": ";
+       << " passed as keyword operand" << plural(numNames) << ": ";
   emitNames(diag, names);
 }
 
@@ -290,6 +290,14 @@ void LIT::emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
   size_t numNames = names.size();
   diag << "missing " << numNames << " required " << kindStr << plural(numNames)
        << ": ";
+  emitNames(diag, names);
+}
+
+void LIT::emitByPosAndKw(InflightDiag &diag, ArrayRef<StringAttr> names,
+                         const Twine &kindStr) {
+  size_t numNames = names.size();
+  diag << kindStr << plural(numNames)
+       << " passed both as positional and keyword operand: ";
   emitNames(diag, names);
 }
 

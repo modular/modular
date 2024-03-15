@@ -662,7 +662,6 @@ struct DiagEmitter : public SharedStateUser {
   InflightDiag resultGenericMemType(Type outputType) const;
   InflightDiag argGenericMemType(size_t expectedArgIdx,
                                  Type expectedType) const;
-  InflightDiag redundantArg(size_t argIdx, StringAttr argName) const;
   InflightDiag argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
                                ASTType ty, ASTExprAnd<AnyValue> operand,
                                size_t argIdx) const;
@@ -671,6 +670,7 @@ struct DiagEmitter : public SharedStateUser {
   InflightDiag posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const;
   InflightDiag tooManyPosArgs(size_t maxAllowedArgs,
                               size_t numPosOperands) const;
+  InflightDiag byPosAndKw(ArrayRef<StringAttr> names) const;
 
 private:
   SMLoc callLoc;
@@ -764,14 +764,6 @@ InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
   describeArgumentNo(diag, expectedArgIdx);
   return std::move(diag) << " cannot bind AnyRegType type to memory-only type "
                          << expectedType;
-}
-
-InflightDiag DiagEmitter::redundantArg(size_t argIdx,
-                                       StringAttr argName) const {
-  InflightDiag diag = initDiag();
-  describeArgumentNo(diag, argIdx);
-  return std::move(diag) << " (" << argName
-                         << ") passed both as positional and keyword operand";
 }
 
 /// Attach extra type conversion error detail or hints to the user.
@@ -878,13 +870,8 @@ InflightDiag DiagEmitter::missingArgs(ArrayRef<StringAttr> missingArgs,
 
 InflightDiag
 DiagEmitter::posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const {
-  size_t num = posOnlyPassedByKw.size();
-  InflightDiag diag = initDiag() << "got " << num << " positional-only argument"
-                                 << plural(num) << " passed as keyword operand"
-                                 << plural(num) << ": ";
-  llvm::interleave(
-      posOnlyPassedByKw, [&](StringAttr str) { diag << str; },
-      [&]() { diag << ", "; });
+  InflightDiag diag = initDiag();
+  emitPosOnlyPassedByKw(diag, posOnlyPassedByKw, "argument");
   return diag;
 }
 
@@ -892,6 +879,12 @@ InflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
                                          size_t numPosOperands) const {
   return initDiag() << "expected at most " << maxAllowedArgs
                     << " positional arguments, got " << numPosOperands;
+}
+
+InflightDiag DiagEmitter::byPosAndKw(ArrayRef<StringAttr> names) const {
+  InflightDiag diag = initDiag();
+  emitByPosAndKw(diag, names, "argument");
+  return diag;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1121,63 +1114,69 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
          1 * hasVariadicParams;
 }
 
+/// Designates the kind of positional operand errors.
+enum class PosDiagResult { kValid, kMissingPos, kTooManyPos, kByPosAndKw };
+
 /// Helper to diagnose common cases of candidate mismatch related to positional
 /// arguments/operands (too many positionals, missing positionals, argument
 /// specified both by positional and keyword operands).
-static std::optional<InflightDiag>
-diagnosePosOperands(LITSignatureType signature,
-                    const CallOperands &callOperands,
-                    const DiagEmitter &emitDiagFor) {
-  SmallVector<StringAttr> missingPosArgs;
+static std::pair<PosDiagResult, SmallVector<StringAttr>>
+diagnosePosOperands(PogsAttr pogsAttr, const CallOperands &operands) {
+  SmallVector<StringAttr> missingPosNames;
+  SmallVector<StringAttr> byPosAndKw;
 
-  size_t numPosOperands = callOperands.posOperands.size();
-  size_t numPosArguments = countNumPositional(signature.getArgPassingKinds());
+  size_t numPosOperands = operands.posOperands.size();
+  size_t numPosMaximum = countNumPositional(pogsAttr.getPassingKinds());
   bool hasVarArg = false;
 
-  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  for (size_t argIdx = 0; argIdx != numPosArguments; ++argIdx) {
-    if (signature.isPosVarArg(argIdx) || signature.isPackVarArg(argIdx)) {
-      // If the argument is (positional) variadic or pack, it is not required.
-      // But we remember this because it lifts the limit on the maximum number
-      // of arguments.
+  ArrayRef<StringAttr> names = pogsAttr.getNames();
+
+  DefaultValueHandler defaultHandler(pogsAttr);
+  for (size_t idx = 0; idx != numPosMaximum; ++idx) {
+    if (pogsAttr.isPosVariadic(idx) || pogsAttr.isPack(idx)) {
+      // Positional variadics and packs don't require any operands. But we
+      // remember this because it lifts the limit on the maximum number.
       hasVarArg = true;
       continue;
     }
 
     // If we found a positional operand, check if it was also provided by
     // keyword.
-    if (argIdx < numPosOperands) {
-      StringAttr argName = signature.getArgName(argIdx);
-      if (callOperands.findKwArg(argName))
-        return emitDiagFor.redundantArg(argIdx, argName);
+    if (idx < numPosOperands) {
+      StringAttr name = names[idx];
+      if (operands.findKwArg(name))
+        byPosAndKw.push_back(name);
       continue;
     }
 
     // If we have a positional default, we're okay.
-    if (defaultHandler.getPosDefault(argIdx))
+    if (defaultHandler.getPosDefault(idx))
       continue;
 
-    // If the arg was passed by keyword, we are okay.
-    StringAttr argName = signature.getArgName(argIdx);
-    if (callOperands.findKwArg(argName))
+    // If the arg/param was passed by keyword, we are okay.
+    StringAttr name = names[idx];
+    if (operands.findKwArg(name))
       continue;
 
-    // Otherwise, we have a missing positional argument.
-    if (argName.empty()) {
-      argName = StringAttr::get(argName.getContext(),
-                                "(" + nameForPosOnly(argIdx, "arg") + ")");
+    // Otherwise, we have a missing positional arg/param.
+    if (name.empty()) {
+      name = StringAttr::get(name.getContext(),
+                             "(" + nameForPosOnly(idx, "arg") + ")");
     }
-    missingPosArgs.push_back(argName);
+    missingPosNames.push_back(name);
   }
 
-  // If there are now positional variadics, we can check for too many operands.
-  if (!hasVarArg && numPosOperands > numPosArguments)
-    return emitDiagFor.tooManyPosArgs(numPosArguments, numPosOperands);
+  if (!byPosAndKw.empty())
+    return {PosDiagResult::kByPosAndKw, byPosAndKw};
 
-  if (!missingPosArgs.empty())
-    return emitDiagFor.missingArgs(missingPosArgs, "positional");
+  // If there are no positional variadics, we can check for too many operands.
+  if (!hasVarArg && numPosOperands > numPosMaximum)
+    return {PosDiagResult::kTooManyPos, {}};
 
-  return std::nullopt;
+  if (!missingPosNames.empty())
+    return {PosDiagResult::kMissingPos, missingPosNames};
+
+  return {PosDiagResult::kValid, {}};
 }
 
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
@@ -1194,21 +1193,33 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
   KeywordOperands variadicKwOperands;
-  auto [kwDiagRes, errorNames] = diagnoseKeywordOperands(
+  auto [kwDiagRes, kwDiagNames] = diagnoseKeywordOperands(
       signature.getArgListAttrs(), variadicKwOperands, callOperands);
   switch (kwDiagRes) {
   case KwDiagResult::kMissingKwOnly:
-    return emitDiagFor.missingArgs(errorNames, "keyword-only");
+    return emitDiagFor.missingArgs(kwDiagNames, "keyword-only");
   case KwDiagResult::kPosOnlyPassedByKw:
-    return emitDiagFor.posOnlyPassedByKw(errorNames);
+    return emitDiagFor.posOnlyPassedByKw(kwDiagNames);
   case KwDiagResult::kUnknownKeywords:
-    return emitDiagFor.unexpectedKwArgs(errorNames);
+    return emitDiagFor.unexpectedKwArgs(kwDiagNames);
   default:
     break;
   }
 
-  if (auto diag = diagnosePosOperands(signature, callOperands, emitDiagFor))
-    return std::move(*diag);
+  auto [posDiagRes, posDiagNames] =
+      diagnosePosOperands(signature.getArgListAttrs(), callOperands);
+  switch (posDiagRes) {
+  case PosDiagResult::kMissingPos:
+    return emitDiagFor.missingArgs(posDiagNames, "positional");
+  case PosDiagResult::kTooManyPos: {
+    size_t numPosMaximum = countNumPositional(signature.getArgPassingKinds());
+    return emitDiagFor.tooManyPosArgs(numPosMaximum, numPosOperands);
+  }
+  case PosDiagResult::kByPosAndKw:
+    return emitDiagFor.byPosAndKw(posDiagNames);
+  default:
+    break;
+  }
 
   // Check that the signature can be rebound with this set of bindings. We use
   // diagnostic handlers to capture any issues.
