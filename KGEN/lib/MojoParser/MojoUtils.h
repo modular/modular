@@ -8,8 +8,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MOJOPARSER_UTILS_H
-#define MOJOPARSER_UTILS_H
+#ifndef MOJOPARSER_MOJOUTILS_H
+#define MOJOPARSER_MOJOUTILS_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <cstddef>
@@ -85,9 +85,13 @@ void emitUnknownKeywords(InflightDiag &diag,
 void emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
                            StringRef argOrParam);
 
+/// Helper to emit an error message for missing operands.
+void emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
+                 const Twine &kindStr);
+
 /// Return a printable name for an anonymous positional-only argument/parameter.
 std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
 
 } // namespace M::KGEN::LIT
 
-#endif // MOJOPARSER_UTILS_H
+#endif // MOJOPARSER_MOJOUTILS_H

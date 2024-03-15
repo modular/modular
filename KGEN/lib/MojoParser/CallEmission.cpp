@@ -10,13 +10,13 @@
 
 #include "KGEN/MojoParser/CallEmission.h"
 
-#include "MojoUtils.h"
-
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/OverloadFitness.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
+#include "MojoUtils.h"
+#include "OperandDiagnostics.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
@@ -147,62 +147,11 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               ParameterInferenceHookTy parameterInferenceHook,
                               const DiagEmitter &diagEmitter,
                               Boundness boundness) const {
-  ArrayRef<StringAttr> paramNames = paramListAttr.getNames();
-  ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
-  DefaultValueHandler defaultHandler(paramListAttr);
-
   size_t numParams = expectedParamTypes.size();
-  assert(paramNames.size() == numParams);
-
-  // First, we separate the expected parameter names into positional-only and
-  // keyword-passable (pos-or-keyword or kw-only), and ignore variadic names.
-  SmallPtrSet<StringAttr, 4> kwPassableNames;
-  SmallPtrSet<StringAttr, 4> posOnlyNames;
-  for (auto [idx, paramName, passingKind] :
-       llvm::enumerate(paramNames, paramPassingKinds)) {
-    if (paramListAttr.isVariadic(idx) || paramListAttr.isPack(idx))
-      continue; // Variadic/pack parameters cannot be specified by keyword.
-    if (passingKind == PassingKind::PosOnly) {
-      // Implicit parameters can be unnamed.
-      if (!paramName.empty()) {
-        auto [_, addedNew] = posOnlyNames.insert(paramName);
-        assert(addedNew && "duplicate pos-only parameter name in declaration");
-      }
-      continue;
-    } else if (passingKind == PassingKind::Implicit) {
-      assert(paramName.empty());
-      continue;
-    }
-    assert(!paramName.empty());
-    auto [_, addedNew] = kwPassableNames.insert(paramName);
-    assert(addedNew && "duplicate parameter name in declaration");
-  }
-
-  // Then we find all the keyword parameters with unknown names, or specifying
-  // positional-only parameters; both of these will result in diagnostics.
-  SmallVector<StringAttr> unknownKwParams;
-  SmallVector<StringAttr> posOnlyPassedByKw;
-  for (auto [name, operandVal] : kwBindings) {
-    if (posOnlyNames.contains(name))
-      posOnlyPassedByKw.push_back(name);
-    else if (!kwPassableNames.contains(name))
-      unknownKwParams.push_back(name);
-  }
-
-  Fitness fitness{0, false};
-  if (!unknownKwParams.empty()) {
-    if (diagEmitter.emitUnknownKeywords)
-      diagEmitter.emitUnknownKeywords(unknownKwParams);
-    return {{}, fitness};
-  }
-  if (!posOnlyPassedByKw.empty()) {
-    if (diagEmitter.emitPosOnlyPassedByKw)
-      diagEmitter.emitPosOnlyPassedByKw(posOnlyPassedByKw);
-    return {{}, fitness};
-  }
 
   // Handle *_ if it is present, otherwise expanding posBindings into
   // unpackedPosBindings.
+  Fitness fitness{0, false};
   SmallVector<Binding> unpackedPosBindings;
   unpackedPosBindings.reserve(numParams);
   std::optional<Binding> starUnderBinding;
@@ -234,6 +183,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     starUnderBinding = binding;
   }
 
+  ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   if (unpackedUnboundIdx != -1) {
     // Check if we have too many parameters after unpacking
     size_t numPosPassable = countNumPositional(paramPassingKinds);
@@ -267,6 +217,31 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   // Create a view of the operands for ease of access.
   OperandContainer<Binding> operands(unpackedPosBindings, &kwBindings);
 
+  KeywordOperandContainer<Binding> variadicKwOperands;
+  bool allowMissingKwOnly =
+      boundness == Boundness::Partial || parameterInferenceHook;
+  auto [kwDiagRes, errorNames] = diagnoseKeywordOperands(
+      paramListAttr, variadicKwOperands, operands, allowMissingKwOnly);
+  if (kwDiagRes != KwDiagResult::kValid) {
+    switch (kwDiagRes) {
+    case KwDiagResult::kMissingKwOnly:
+      if (diagEmitter.emitMissing)
+        diagEmitter.emitMissing(errorNames, "keyword-only");
+      break;
+    case KwDiagResult::kPosOnlyPassedByKw:
+      if (diagEmitter.emitPosOnlyPassedByKw)
+        diagEmitter.emitPosOnlyPassedByKw(errorNames);
+      break;
+    case KwDiagResult::kUnknownKeywords:
+      if (diagEmitter.emitUnknownKeywords)
+        diagEmitter.emitUnknownKeywords(errorNames);
+      break;
+    default:
+      llvm_unreachable("unknown KwDiagResult");
+    }
+    return {{}, fitness};
+  }
+
   /// We will attempt to find a binding for every expected parameter.
   SmallVector<TypedAttr> newBindings;
   newBindings.reserve(numParams);
@@ -293,6 +268,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   size_t posBindingIdx = 0;
   size_t numPosBindings = operands.posOperands.size();
 
+  DefaultValueHandler defaultHandler(paramListAttr);
   auto fulfillValue = [&](size_t idx, Type requestedType) -> PValue {
     // If we have a method to infer parameter values, invoke it to see if we
     // can get an inferred value for the parameter.
@@ -330,8 +306,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     return {};
   };
 
-  for (auto [idx, sigType, paramName, passingKind] :
-       llvm::enumerate(expectedParamTypes, paramNames, paramPassingKinds)) {
+  for (auto [idx, sigType, paramName, passingKind] : llvm::enumerate(
+           expectedParamTypes, paramListAttr.getNames(), paramPassingKinds)) {
     // This is the refined type expected by the signature.
     Type requestedType = evaluator.getReboundType(sigType);
     // This is the expected type of a value satisfying this parameter.
@@ -378,11 +354,22 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       }
 
       // Otherwise, we're simply missing bindings.
-      fitness.lastExpectedType = expectedType;
       if (boundness == Boundness::Partial) {
         setParamValue(UnboundAttr::get(requestedType));
         continue;
       }
+
+      if (passingKind == PassingKind::KwOnly) {
+        // If this is a missing keyword-only, we collect them. We put pretend
+        // this is implicitly unbound, so we can error out in the end.
+        setParamValue(UnboundAttr::get(requestedType));
+        errorNames.push_back(paramName);
+        continue;
+      }
+
+      if (!fitness.lastExpectedType)
+        fitness.lastExpectedType = expectedType;
+
       if (diagEmitter.emitParamCount) {
         diagEmitter.emitParamCount(numPosBindings,
                                    passingKind == PassingKind::PosOnly);
@@ -477,6 +464,13 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     auto varType = VariadicType::get(evaluator.getReboundType(expectedType),
                                      variadicType.getConvention());
     setParamValue(VariadicAttr::get(elements, varType));
+  }
+
+  // Complaing if we collected any missing keyword-only parameters.
+  if (!errorNames.empty()) {
+    if (diagEmitter.emitMissing)
+      diagEmitter.emitMissing(errorNames, "keyword-only");
+    return {{}, fitness};
   }
 
   // Check and complain if we have bindings that didn't get used.
@@ -587,6 +581,13 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       [&](size_t paramIdx) {
         llvm_unreachable("parameter deduction failure in a context that "
                          "doesn't allow deduction");
+      },
+      /*emitMissing=*/
+      [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
+        InflightDiag diag = shared.emitError(exprLoc);
+        emitMissing(diag, names, kindStr + " parameter");
+        if (opLoc)
+          diag.attachNote(*opLoc) << baseName << " declared here";
       }};
 
   return verifyBindings(expectedParamTypes, paramListAttr,
@@ -603,7 +604,7 @@ ParamBindings::verifyBindings(
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(LITSignatureType sig) const {
-  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr,
+  DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
                           nullptr, nullptr, nullptr, nullptr, nullptr};
   return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                         /*parameterInferenceHook=*/{}, diagEmitter);
@@ -623,10 +624,10 @@ ParameterExprArrayAttr
 ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
                               llvm::SMLoc exprLoc,
                               std::optional<Location> opLoc) const {
-
   auto [newBindings, _] = verifyBindings(
       sig.getParamTypes(), sig.getParamListAttrs(),
-      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), exprLoc, opLoc);
+      opLoc ? Twine("'") + baseName + "'" : Twine(baseName), exprLoc, opLoc,
+      opLoc ? Boundness::Partial : Boundness::Explicit);
   return newBindings;
 }
 
