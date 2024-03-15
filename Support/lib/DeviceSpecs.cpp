@@ -159,7 +159,8 @@ static ErrorOrSuccess satisfiesTriple(const llvm::Triple &provided,
 
   std::string providedArch = canonArchName(provided.getArchName());
   std::string requiredArch = canonArchName(required.getArchName());
-  if (!requiredArch.empty() && providedArch != requiredArch) {
+  if (required.getArch() != llvm::Triple::ArchType::UnknownArch &&
+      providedArch != requiredArch) {
     return Error(Twine("Provided architecture '") + provided.getArchName() +
                  "' does not match required architecture '" +
                  required.getArchName() + "'.");
