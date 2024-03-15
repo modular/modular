@@ -11,13 +11,15 @@ from utils.list import DimList
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import Context, Function, Stream
-from gpu.host.event import time_function
+from gpu.host.event import time_function as time_function_cuda
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
+    _memset,
 )
+from time import time_function as time_function_sync
 from gpu.host.sync import synchronize
 from closed_source_memory.buffer import NDBuffer
 from nn.concat import _concat_gpu, _concat_inner_most_single_dim
@@ -127,11 +129,13 @@ fn test_concat_4_inputs_rank5() raises:
             block_dim=(B_SIZE),
         )
 
-    var nstime_kernel = time_function[run_concat_inner_most_single_dim](stream)
+    var nstime_kernel = time_function_cuda[run_concat_inner_most_single_dim](
+        stream
+    )
     print("concat_inner_most_single_dim time = ", nstime_kernel * 1e-6, " ms")
     print(
         "transfer rate = ",
-        output_device.bytecount() * 1e9 / (1024**3) / nstime_kernel,
+        output_device.bytecount() * 2 * 1e9 / (1024**3) / nstime_kernel,
         "GB/s",
     )
 
@@ -139,6 +143,7 @@ fn test_concat_4_inputs_rank5() raises:
     _copy_device_to_host(
         output_host.data, output_device.data, output_device.size()
     )
+    _memset(output_device.data, 0, output_device.num_elements())
 
     # CHECK: Test passed
     fn validate_results():
@@ -176,24 +181,27 @@ fn test_concat_4_inputs_rank5() raises:
 
     @always_inline
     @parameter
-    fn run_concat_gpu(unused: Stream) raises:
-        _concat_gpu(
-            output_device,
-            4,
-            StaticTuple[NDBuffer[dtype, rank], 4](
-                input_0_device,
-                input_1_device,
-                input_2_device,
-                input_3_device,
-            ),
-        )
-        synchronize()
+    fn run_concat_gpu():
+        try:
+            # uses default stream
+            _concat_gpu(
+                output_device,
+                4,
+                StaticTuple[NDBuffer[dtype, rank], 4](
+                    input_0_device,
+                    input_1_device,
+                    input_2_device,
+                    input_3_device,
+                ),
+            )
+        except e:
+            abort(e)
 
-    var nstime = time_function[run_concat_gpu](Stream())
+    var nstime = time_function_sync[run_concat_gpu]()
     print("concat_gpu time = ", nstime * 1e-6, " ms")
     print(
         "transfer rate = ",
-        output_device.bytecount() * 1e9 / (1024**3) / nstime,
+        output_device.bytecount() * 2 * 1e9 / (1024**3) / nstime,
         "GB/s",
     )
 
