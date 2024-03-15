@@ -13,10 +13,10 @@ fn takes_pos_only_arg(a: int, b: int, /):
 
 
 fn test_pos_only_arg_passed_by_kw(x: int):
-    # expected-error @+1 {{got 1 positional-only argument passed as keyword operand: 'b'}}
+    # expected-error @+1 {{positional-only argument passed as keyword operand: 'b'}}
     takes_pos_only_arg(x, b=x)
 
-    # expected-error @+1 {{got 2 positional-only arguments passed as keyword operands: 'a', 'b'}}
+    # expected-error @+1 {{positional-only arguments passed as keyword operands: 'a', 'b'}}
     takes_pos_only_arg(b=x, a=x)
 
 
@@ -61,8 +61,11 @@ fn test_unknown_kw_arg(x: int):
 
 
 fn test_passed_by_pos_and_kw_arg(x: int):
-    # expected-error @+1 {{argument #0 ('i') passed both as positional and keyword operand}}
+    # expected-error @+1 {{argument passed both as positional and keyword operand: 'i'}}
     takes_pos_or_kw_arg(x, i=x)
+
+    # expected-error @+1 {{arguments passed both as positional and keyword operand: 'i', 'j'}}
+    takes_pos_or_kw_arg(x, x, j=x, i=x)
 
 
 # expected-note @+1 {{declared here}}
@@ -85,10 +88,10 @@ fn takes_pos_only_param[a: int, b: int, /]():
 
 
 fn test_pos_only_param_passed_by_kw[x: int]():
-    # expected-error @+1 {{positional-only parameter passed as keyword parameter: 'b'}}
+    # expected-error @+1 {{positional-only parameter passed as keyword operand: 'b'}}
     takes_pos_only_param[x, b=x]()
 
-    # expected-error @+1 {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
+    # expected-error @+1 {{positional-only parameters passed as keyword operands: 'a', 'b'}}
     takes_pos_only_param[b=x, a=x]()
 
 

@@ -113,6 +113,12 @@ bool PogsAttr::isPack(size_t idx) const {
   return getPackIndex() == ssize_t(idx);
 }
 
+bool PogsAttr::isPosVariadic(size_t idx) const {
+  return llvm::is_contained({PassingKind::PosOnly, PassingKind::PosOrKw},
+                            getPassingKinds()[idx]) &&
+         isVariadic(idx);
+}
+
 bool PogsAttr::hasKwVariadics() const {
   return llvm::any_of(getVariadicIndices(), [&](size_t idx) {
     return getPassingKinds()[idx] == PassingKind::KwOnly;
@@ -369,9 +375,7 @@ bool FnMetadataAttr::isAnyVarArg(size_t idx) const {
 }
 
 bool FnMetadataAttr::isPosVarArg(size_t idx) const {
-  return llvm::is_contained({PassingKind::PosOnly, PassingKind::PosOrKw},
-                            getArgPassingKinds()[idx]) &&
-         llvm::is_contained(getArgListAttrs().getVariadicIndices(), idx);
+  return getArgListAttrs().isPosVariadic(idx);
 }
 
 bool FnMetadataAttr::isKwVarArg(size_t idx) const {
@@ -380,7 +384,7 @@ bool FnMetadataAttr::isKwVarArg(size_t idx) const {
 }
 
 bool FnMetadataAttr::isPackVarArg(size_t idx) const {
-  return getArgListAttrs().getPackIndex() == ssize_t(idx);
+  return getArgListAttrs().isPack(idx);
 }
 
 //===----------------------------------------------------------------------===//
