@@ -289,7 +289,7 @@ lit.struct.decl @DestructNone attributes {
                      %reg: index
                      ) throws|ownedresult -> !kgen.variant<@Error, none> {
     // CHECK: hlcf.if %cond {
-    // CHECK-NEXT: lit.call @S::@__del__[mut #lit.lifetime](%arg)
+    // CHECK-NEXT: lit.call @S::@__del__[mut #lit.lifetime](%takeMe)
     // CHECK-NEXT: %[[VAR0:.*]] = lit.call @Error::@__init__()
     // CHECK-NEXT: %[[VAR1:.*]] = kgen.variant.create %[[VAR0]], 0 : <@Error, none>
     // CHECK-NEXT: lit.error_return %[[VAR1]] : <@Error, none>

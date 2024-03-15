@@ -19,7 +19,7 @@
 # CHECK-LABEL: lit.func @"variadic_kwargs
 # CHECK-SAME: "[mut [[LT:.*]]](
 # CHECK-SAME: %a: index borrow, %b: index borrow, %args: !kgen.variadic<index> borrow|var, *, %c: index borrow, %d: index borrow,
-# CHECK-SAME: %arg[kwargs]: !lit.ref<{{.*}}@Dict<:!KeyElement #[[STRING_TYPE]], :!CollectionElement #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var)
+# CHECK-SAME: %kwargs: !lit.ref<{{.*}}@Dict<:!KeyElement #[[STRING_TYPE]], :!CollectionElement #[[INDEX_TYPE]]>, mut [[LT]]> owned_in_mem|var)
 fn variadic_kwargs(a: int, b: int, *args: int, c: int, d: int, **kwargs: int):
     pass
 

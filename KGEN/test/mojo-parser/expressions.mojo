@@ -651,7 +651,7 @@ fn mvalueStructField():
   alias value = int.value
   alias foldToValue = Int(5).value
 
-# CHECK-LABEL: lit.func @"defTests({{.*}}, %{{.*}}[untyped]: !lit.ref<!object, mut {{.*}}> owned_in_mem)
+# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !lit.ref<!object, mut {{.*}}> owned_in_mem)
 def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: %a_0 = lit.var.decl "a" imp
   # CHECK: lit.ref.store %a, %a_0
@@ -1197,8 +1197,8 @@ fn function_types[
 ): pass
 
 # CHECK-LABEL: lit.struct.decl @Mem
-# CHECK-NEXT: lit.alias.decl *"x{{.*}}": type = <i8>
-# CHECK-NEXT: lit.alias.decl *"B{{.*}}": type = <!lit.signature<("foo": i8 borrow) -> !kgen.none>>
+# CHECK:         lit.alias.decl *"x{{.*}}": type = <i8>
+# CHECK-NEXT:    lit.alias.decl *"B{{.*}}": type = <!lit.signature<("foo": i8 borrow) -> !kgen.none>>
 struct Mem:
    alias x = __mlir_type.i8
    alias B = fn (foo: Self.x) -> None

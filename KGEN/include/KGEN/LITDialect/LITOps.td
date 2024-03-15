@@ -412,7 +412,10 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     $sym_name ``
     custom<StructParameterSpec>($params, $signature, $parentTypes)
     custom<TypeConvention>($convention) attr-dict-with-keyword
-    custom<OptionalDecorators>($decorators) $fields
+    (`\n` `destructor` custom<Symbol>($destructor)^ ``)?
+    (`\n` `move` custom<Symbol>($moveInit)^ ``)?
+    (`\n` `copy` custom<Symbol>($copyInit)^ ``)?
+    custom<OptionalDecorators>($decorators) `` $fields
   }];
 
   let extraClassDeclaration = [{
@@ -703,8 +706,9 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
                         VariadicRegion<SizedRegion<1>>:$finallyRegions);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    (`->` type($results)^)? $tryRegion `except`
-    custom<ExceptRegion>($exceptRegion) `else` $elseRegion
+    (`->` type($results)^)? $tryRegion
+    `except` custom<RegionWithArgs>($exceptRegion)
+    `else` custom<RegionWithArgs>($elseRegion)
     (`finally` $finallyRegions^)? attr-dict
   }];
 
@@ -1622,7 +1626,6 @@ def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
   let results = (outs LIT_RefType:$result);
   let assemblyFormat = "$ref `:` type($ref) attr-dict";
 }
-
 
 //===----------------------------------------------------------------------===//
 // RefToPointerOp

@@ -12,7 +12,7 @@ fn use(x: int):
 
 # CHECK-LABEL: lit.func @"direct
 fn direct(output: int):
-    # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%anonymous2A, %arg)
+    # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%anonymous2A, %output)
     fn closure() escaping:
         @parameter
         fn body():

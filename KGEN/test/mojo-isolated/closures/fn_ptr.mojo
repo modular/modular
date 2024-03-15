@@ -18,7 +18,7 @@ struct Reg:
 
 # CHECK-LABEL: lit.struct.decl @"fn(Mem
 # CHECK-LABEL: lit.func @"__init__
-# CHECK-SAME: (%self: {{.*}}, %other: {{.*}}[1](!lit.ref<!Mem, imm *[0,0]> borrow_in_mem, |) -> !Int>
+# CHECK-SAME: (%self: {{.*}}, %other: {{.*}}[1](!lit.ref<!Mem{{[0-9]*}}, imm *[0,0]> borrow_in_mem, |) -> !Int>
 # CHECK-NEXT: [[OPAQUE:%.*]] = pop.pointer.bitcast %other
 # CHECK-NEXT: [[FIELD0:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT: store [[OPAQUE]], [[FIELD0]]

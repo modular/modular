@@ -212,9 +212,8 @@ kgen.func @try_region() {
     // CHECK: "use"(%idx3)
     "use"(%2) : (index) -> ()
     lit.try.yield
-  // CHECK: else
+  // CHECK: else (%arg0: index) {
   } else {
-  // CHECK-NEXT: ^bb0(%arg0: index):
     // CHECK-NEXT: "use"(%idx2, %arg0)
     %2 = pop.load %0 : !kgen.pointer<index>
     %3 = pop.load %1 : !kgen.pointer<index>

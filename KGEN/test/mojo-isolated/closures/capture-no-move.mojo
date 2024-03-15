@@ -21,9 +21,9 @@ fn use(x: StringNoMove):
 
 
 # CHECK: lit.struct.decl @"`_CI_
-# CHECK-SAME: copyInit =
-# CHECK-SAME: destructor =
-# CHECK-SAME: moveInit =
+# CHECK-NEXT: destructor :!lit.signature
+# CHECK-NEXT: move :!lit.signature
+# CHECK-NEXT: copy :!lit.signature
 # CHECK: lit.struct.field field0 : !StringNoMove
 # CHECK: lit.func @"__del__
 # CHECK: lit.func @"__copyinit__

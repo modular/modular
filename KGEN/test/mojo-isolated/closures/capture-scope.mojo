@@ -11,7 +11,7 @@ fn use(x: int):
 
 
 # CHECK: lit.struct.decl @"`_CI_
-# CHECK-NEXT: lit.struct.field field0 : index
+# CHECK: lit.struct.field field0 : index
 
 
 fn makes_escaping_closure(x: int):

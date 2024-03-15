@@ -282,9 +282,9 @@ struct RegTraitType(TraitForReg):
         pass
 
     # CHECK-LABEL: lit.func @"__copyinit__{{.*}}_thunk"
-    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %arg[existing]: !lit.ref<!RegTraitType, imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK-SAME: %self: !lit.ref<!RegTraitType, mut {{.*}}> init_self, |, %existing: !lit.ref<!RegTraitType, imm {{.*}}> borrow_in_mem) -> !kgen.none
     fn __copyinit__(existing: Self) -> Self:
-        # CHECK: %0 = lit.ref.load %arg
+        # CHECK: %0 = lit.ref.load %existing
         # CHECK: %1 = lit.call {{.*}}@RegTraitType{{.*}}__copyinit__{{.*}}(%0)
         # CHECK: store %1, %self
         pass
@@ -687,7 +687,7 @@ fn converted_metatype_struct_element(x: Collection[Item]):
 
 
 # CHECK-LABEL: lit.struct.decl @TraitMember
-# CHECK-SAME: destructor =
+# CHECK-NEXT: destructor
 struct TraitMember[T: Movable]:
     # CHECK: lit.func @"__del__
     var value: T
