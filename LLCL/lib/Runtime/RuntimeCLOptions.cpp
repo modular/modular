@@ -39,7 +39,8 @@ RuntimeOptions::createRuntime(StringRef profileName) const {
   case RuntimeOptions::WorkQueueType::kDefault:
     assert(0 && "should be resolved");
   case RuntimeOptions::WorkQueueType::kSingleThread:
-    runtimeOptions.singleThreaded = true;
+    assert(runtimeOptions.numThreads <= 1 &&
+           "num threads should be auto or 1 for single threaded workqueue");
     break;
   case RuntimeOptions::WorkQueueType::kThreadPool:
     runtimeOptions.numThreads = numThreads;
