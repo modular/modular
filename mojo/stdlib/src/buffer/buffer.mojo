@@ -959,6 +959,68 @@ struct NDBuffer[
         return self.load[width=1](idx)
 
     @always_inline
+    fn tile[
+        *tile_sizes: Dim
+    ](self, tile_coords: StaticIntTuple[rank]) -> NDBuffer[
+        type, rank, DimList(tile_sizes), address_space
+    ]:
+        """Returns an n-d tile "slice" of the buffer of size tile_sizes at
+           coords.
+
+        Parameters:
+            tile_sizes: The size of the tiles.
+
+        Args:
+            tile_coords: The tile index.
+
+        Returns:
+            The tiled buffer at tile_coords.
+        """
+
+        @parameter
+        fn num_tile_sizes() -> Int:
+            return __mlir_op.`pop.variadic.size`(tile_sizes)
+
+        constrained[
+            num_tile_sizes() == rank,
+            "The tile sould have the same rank as the buffer",
+        ]()
+
+        constrained[
+            DimList(tile_sizes).all_known[rank](),
+            "Static tile sizes are only supported",
+        ]()
+
+        var offset = 0
+        var shape = StaticIntTuple[rank]()
+
+        @parameter
+        fn compute_offset_and_fill_shape[i: Int]():
+            alias tile_size_i = tile_sizes[i].get()
+            shape[i] = tile_size_i
+            var coord_i = tile_coords[i]
+            offset += coord_i * tile_size_i * self.dynamic_stride[i]
+
+        unroll[compute_offset_and_fill_shape, rank]()
+        # The tile buffer has the same stride and an offset calculated as
+        # computed above, why?
+        # Consider the 2d case, tile(i, j) of size tile_m, tile_n can be accessed
+        # at buffer(i + m * tile_m, j + n * tile_n) =
+        #    dot((i + m * tile_m, j + n * tile_n), stride)
+        # = dot((i, j), stride) + dot(((m * tile_m), (n * tile_n)), stride)
+        # which tells us the tile has a stride of the original buffer stride and
+        # offset = dot(((m * tile_m), (n * tile_n)), stride).
+        var tile = NDBuffer[type, rank, DimList(tile_sizes), address_space](
+            self.data.offset(offset),
+            dynamic_shape=shape,
+            dynamic_stride=self.dynamic_stride,
+            # We are beign conservative here, some tiles can be contiguous
+            # TODO: Relax contiguous condition.
+            is_contiguous=False,
+        )
+        return tile
+
+    @always_inline
     fn load[*, width: Int = 1](self, *idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
