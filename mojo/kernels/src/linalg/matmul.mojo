@@ -57,6 +57,7 @@ from memory.unsafe import DTypePointer, bitcast
 from Neon import _neon_dotprod, _neon_matmul
 from runtime.llcl import Runtime
 from Transpose import transpose_inplace
+from gpu.tensor_ops import tc_reduce
 from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 from utils._optional import Optional
@@ -2826,6 +2827,53 @@ fn gemv_kernel[
                 c[warpId] = accum
 
 
+# Matrix-Column Vector Multiplication utilizing Tensor Cores
+fn gemv_tc_kernel[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: DTypePointer[c_type],
+    a: DTypePointer[a_type],
+    b: DTypePointer[b_type],
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
+    var warpId = x // WARP_SIZE
+    var accum = Scalar[c_type]()
+
+    if warpId < m:
+        # Every warp processes a single row of the resultant vector
+        for i in range(div_ceil(k, WARP_SIZE)):
+            var idx = i * WARP_SIZE + int(lane_id())
+            var val = Scalar[a_type]()
+            if idx < k:
+                val = a.load(warpId * k + idx) * b.load(idx).cast[a_type]()
+
+            var out_val = Scalar[c_type]()
+
+            @parameter
+            if c_type == a_type:
+                out_val = (tc_reduce[a_type](val)).cast[c_type]()
+            else:
+                out_val = tc_reduce[c_type, a_type](val)
+
+            if lane_id() == 0:
+                accum += out_val
+
+        if lane_id() == 0:
+
+            @parameter
+            if elementwise_lambda_fn:
+                alias elementwise_lambda = elementwise_lambda_fn.value()
+                elementwise_lambda[c_type, 1](Index(warpId, 0), accum)
+            else:
+                c[warpId] = accum
+
+
 # Row Vector-Matrix multiplication
 fn gevm_kernel[
     c_type: DType,
@@ -3168,34 +3216,63 @@ fn _matmul_gpu_dispatch[
             or b_type == DType.bfloat16
             or c_type == DType.bfloat16
         ):
-            alias BLOCK_DIM = 16
-            var gpu_func = Function[
-                fn (
-                    DTypePointer[a_type],
-                    DTypePointer[b_type],
-                    DTypePointer[c_type],
-                    Int,
-                    Int,
-                    Int,
-                ) capturing -> None, matmul_kernel_naive[
-                    a_type,
-                    b_type,
-                    c_type,
-                    BLOCK_DIM,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ]()
-            gpu_func(
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
-                block_dim=(BLOCK_DIM, BLOCK_DIM),
-                stream=stream,
-            )
+            if n == 1:
+                alias WARPS_PER_BLOCK = 32
+                var gpu_func = Function[
+                    fn (
+                        DTypePointer[c_type],
+                        DTypePointer[a_type],
+                        DTypePointer[b_type],
+                        Int,
+                        Int,
+                        Int,
+                    ) capturing -> None, gemv_kernel[
+                        c_type,
+                        a_type,
+                        b_type,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                gpu_func(
+                    c.data,
+                    a.data,
+                    b.data,
+                    m,
+                    n,
+                    k,
+                    grid_dim=div_ceil(m, WARPS_PER_BLOCK),
+                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+                    stream=stream,
+                )
+            else:
+                alias BLOCK_DIM = 16
+                var gpu_func = Function[
+                    fn (
+                        DTypePointer[a_type],
+                        DTypePointer[b_type],
+                        DTypePointer[c_type],
+                        Int,
+                        Int,
+                        Int,
+                    ) capturing -> None, matmul_kernel_naive[
+                        a_type,
+                        b_type,
+                        c_type,
+                        BLOCK_DIM,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                    ]
+                ]()
+                gpu_func(
+                    c.data,
+                    a.data,
+                    b.data,
+                    m,
+                    n,
+                    k,
+                    grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+                    block_dim=(BLOCK_DIM, BLOCK_DIM),
+                    stream=stream,
+                )
             return
 
         constrained[
