@@ -16,7 +16,7 @@
 # RUN: mkdir -p %t/bin
 # RUN: printf '#!/bin/bash\nexec "%%s" "$@"\n' %pyexe > %t/bin/python3
 # RUN: chmod +x %t/bin/python3
-# RUN: env "PATH=%t/bin:$PATH" %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %S/model_different_input_output.mlir %S/model_different_dtypes.mlir | FileCheck %s
+# RUN: env "PATH=%t/bin:$PATH" %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.mlir %S/model_different_input_output.mlir %S/model_different_dtypes.mlir | FileCheck %s
 
 from max.engine import (
     InferenceSession,

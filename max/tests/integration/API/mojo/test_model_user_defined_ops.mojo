@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
 # RUN: mojo package %mojo_user_pkg -o %t.mojopkg
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model %t.mojopkg | FileCheck %s
+# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.mlir %t.mojopkg | FileCheck %s
 
 from max.engine import (
     InferenceSession,

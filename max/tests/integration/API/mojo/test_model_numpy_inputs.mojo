@@ -6,7 +6,7 @@
 # UNSUPPORTED: windows
 # UNSUPPORTED: address
 # REQUIRES: numpy
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.model | FileCheck %s
+# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.mlir | FileCheck %s
 
 from max.engine import (
     InferenceSession,
@@ -29,7 +29,7 @@ fn test_model_numpy_input() raises:
     # CHECK: 2
     print(len(args))
 
-    # CHECK: mo.model
+    # CHECK: mo.mlir
     print(args[1])
 
     var model_path = args[1]
