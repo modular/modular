@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: cuda
+# REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
 from gpu import AddressSpace
