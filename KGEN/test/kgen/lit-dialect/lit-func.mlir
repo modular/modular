@@ -1,8 +1,8 @@
 // RUN: kgen-opt %s -verify-parameters | kgen-opt -verify-parameters | FileCheck %s
 
 // CHECK-LABEL: lit.func @argNameParsing(
-// CHECK-SAME: %a: index, %woof: index, %21451[*"!451"]: index, %arg[TooLong]: index, %arg_0[tooLong]: index)
-lit.func @argNameParsing(%a: index, %b[woof]: index, %c[*"!451"]: index, %d[TooLong]: index, %tooLong: index) {
+// CHECK-SAME: %a: index, %woof: index, %21451[*"!451"]: index
+lit.func @argNameParsing(%a: index, %b[woof]: index, %c[*"!451"]: index) {
   kgen.return
 }
 

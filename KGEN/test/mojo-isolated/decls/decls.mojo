@@ -843,9 +843,8 @@ struct ShadowsOuterName:
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType, !Copyable, !Movable) attributes {
-# CHECK-SAME: moveInit = #kgen.symbol.constant<{{.*}}ValueMem::@"__moveinit__
-# CHECK-SAME: !kgen.signature<!lit.signature<[2]({{.*}} init_self, {{.*}} owned_in_mem, |)
+# CHECK-LABEL: lit.struct.decl @ValueMem(!AnyType, !Copyable, !Movable)
+# CHECK: move :!lit.signature<[2]({{.*}} init_self, {{.*}} owned_in_mem, |) {{.*}}ValueMem::@"__moveinit__
 @value
 struct ValueMem:
     var a: Int  # Trivial
@@ -888,7 +887,7 @@ struct ValueMem:
 # CHECK-NEXT: lit.ref.store %b, %[[PB]]
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType, !Copyable, !Movable) attributes {
+# CHECK-LABEL: lit.struct.decl @ValueMemHasCopy(!AnyType, !Copyable, !Movable)
 @value
 struct ValueMemHasCopy:
     var a: Int
@@ -899,7 +898,7 @@ struct ValueMemHasCopy:
         self.b = other.b
 
 
-# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType, !Copyable, !Movable) attributes {
+# CHECK-LABEL: lit.struct.decl @ValueMemHasMove(!AnyType, !Copyable, !Movable)
 @value
 struct ValueMemHasMove:
     var a: Int
@@ -1086,9 +1085,13 @@ fn awaitable() -> Int:
     var aw = Awaitable()
     return await aw
 
+
 # COM: https://github.com/modularml/mojo/issues/951
 @always_inline
-async fn inline_async() -> Int: return 0
+async fn inline_async() -> Int:
+    return 0
+
+
 # CHECK-LABEL: lit.func @"use_inline_async()"
 async fn use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
@@ -1096,6 +1099,7 @@ async fn use_inline_async() -> Int:
     # CHECK: [[RESULT:%.*]] = lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}[[CORO]]
     # CHECK: lit.return [[RESULT]]
     return await inline_async()
+
 
 ##===----------------------------------------------------------------------===##
 # Nested Functions
@@ -1297,7 +1301,7 @@ fn decorated_fn():
 
 
 # CHECK-LABEL: lit.struct.decl @DecoratedStruct
-# CHECK-NEXT: decorators <:none apply({{.*}}decorator_arg{{.*}}, {2}
+# CHECK: decorators <:none apply({{.*}}decorator_arg{{.*}}, {2}
 @decorator_arg(2)
 struct DecoratedStruct:
     pass

@@ -817,15 +817,9 @@ void LIT::FuncOp::getAsmBlockArgumentNames(
     return;
 
   // Set a name for each argument.
-  auto resName = StringAttr::get(getContext(), "__result__");
   for (auto [arg, name] :
-       llvm::zip(getBody()->getArguments(), getSignature().getArgNames())) {
-    // If the user defined name is short and simple, we use it for the SSA names
-    // to make testing a bit easier. Otherwise we use 'arg' and let the
-    // interface unique the name.
-    bool shouldSugarSSA = name == resName || name.size() <= 5;
-    setNameFn(arg, shouldSugarSSA ? name.strref() : "arg");
-  }
+       llvm::zip(getBody()->getArguments(), getSignature().getArgNames()))
+    setNameFn(arg, name.strref());
 }
 
 LogicalResult LIT::FuncOp::verify() {
@@ -979,6 +973,18 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
 //===----------------------------------------------------------------------===//
 // StructDeclOp
 //===----------------------------------------------------------------------===//
+
+static ParseResult parseSymbol(AsmParser &p, SymbolConstantAttr &symbol) {
+  TypedAttr value;
+  if (parseColonTypeParamValue(p, value))
+    return failure();
+  symbol = cast<SymbolConstantAttr>(value);
+  return success();
+}
+
+static void printSymbol(AsmPrinter &p, Operation *, SymbolConstantAttr symbol) {
+  printColonTypeParamValue(p, symbol);
+}
 
 static ParseResult parseTypeConvention(AsmParser &p, TypeConvention &value) {
   StringRef str;
@@ -1531,20 +1537,24 @@ TraitType TraitDeclOp::bindReference() {
 // TryOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseExceptRegion(OpAsmParser &p, Region &region) {
+static ParseResult parseRegionWithArgs(OpAsmParser &p, Region &region) {
   SmallVector<OpAsmParser::Argument> args;
-  if (p.parseArgumentList(args, AsmParser::Delimiter::Paren,
+  if (p.parseArgumentList(args, AsmParser::Delimiter::OptionalParen,
                           /*allowType=*/true) ||
       p.parseRegion(region, args))
     return failure();
   return success();
 }
 
-static void printExceptRegion(OpAsmPrinter &p, Operation *op, Region &region) {
-  p << '(';
-  llvm::interleaveComma(region.getArguments(), p,
-                        [&](BlockArgument arg) { p.printRegionArgument(arg); });
-  p << ") ";
+static void printRegionWithArgs(OpAsmPrinter &p, Operation *op,
+                                Region &region) {
+  if (!region.getArguments().empty()) {
+    p << '(';
+    llvm::interleaveComma(region.getArguments(), p, [&](BlockArgument arg) {
+      p.printRegionArgument(arg);
+    });
+    p << ") ";
+  }
   p.printRegion(region, /*printEntryBlockArgs=*/false);
 }
 

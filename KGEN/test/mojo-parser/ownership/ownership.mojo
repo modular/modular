@@ -39,7 +39,7 @@ struct MemPair:
 
 
 # CHECK-LABEL: lit.struct.decl @RegExample
-# CHECK: attributes {{.*}}destructor = #kgen.symbol.constant<@ownership::@RegExample::@"__del__
+# CHECK: destructor {{.*}}@RegExample::@"__del__
 @register_passable
 struct RegExample:
   fn __init__() -> Self:

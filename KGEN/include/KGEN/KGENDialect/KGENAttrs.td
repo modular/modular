@@ -526,7 +526,9 @@ def KGEN_SymbolConstantAttr : KGEN_ExprAttr<"SymbolConstant", "symbol.constant",
     }]>,
   ];
 
-  let assemblyFormat = "`<` $symbol custom<ParameterValues>($paramValues) `>`";
+  let assemblyFormat = [{
+    `<` $symbol `` custom<ParameterValues>($paramValues) `` `>`
+  }];
 }
 
 //===----------------------------------------------------------------------===//
