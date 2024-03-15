@@ -15,6 +15,7 @@
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "MojoUtils.h"
+#include "OperandDiagnostics.h"
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -870,12 +871,8 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
 
 InflightDiag DiagEmitter::missingArgs(ArrayRef<StringAttr> missingArgs,
                                       const Twine &kindStr) const {
-  InflightDiag diag = initDiag() << "missing " << missingArgs.size()
-                                 << " required " << kindStr << " argument"
-                                 << plural(missingArgs.size()) << ": ";
-  llvm::interleave(
-      missingArgs, [&](StringAttr str) { diag << str; },
-      [&]() { diag << ", "; });
+  InflightDiag diag = initDiag();
+  emitMissing(diag, missingArgs, kindStr + " argument");
   return diag;
 }
 
@@ -1124,63 +1121,6 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
          1 * hasVariadicParams;
 }
 
-/// Helper to diagnose common cases of candidate mismatch related to keyword
-/// arguments/operands (unexpected kw-operands, pos-only argument provided by
-/// kw-operand, missing kw-only arguments). If the function accepts variadic
-/// keyword arguments, this function also collects them.
-static std::optional<InflightDiag> diagnoseKeywordOperands(
-    PogsAttr argListAttr, KeywordOperands &variadicKwOperands,
-    const CallOperands &callOperands, const DiagEmitter &emitDiagFor) {
-  // First, we collect any (named) pos-only arguments passed by keyword operand,
-  // and missing kw-only arguments. We also collect all argument names that
-  // might be specified by keyword.
-  StringSet<> argNames;
-  SmallVector<StringAttr> posOnlyPassedByKw;
-  SmallVector<StringAttr> missingKwOnly;
-
-  DefaultValueHandler defaultHandler(argListAttr);
-  for (auto [argIdx, name, passingKind] :
-       llvm::enumerate(argListAttr.getNames(), argListAttr.getPassingKinds())) {
-    if (argListAttr.isPack(argIdx) || argListAttr.isVariadic(argIdx))
-      continue; // Variadic/pack args cannot be specified by their keyword.
-    if (passingKind == PassingKind::KwOnly &&
-        !defaultHandler.getKwOnlyDefault(argIdx) &&
-        !callOperands.findKwArg(name)) {
-      missingKwOnly.emplace_back(name);
-      continue;
-    }
-    if (passingKind == PassingKind::PosOnly) {
-      if (callOperands.findKwArg(name))
-        posOnlyPassedByKw.emplace_back(name);
-      continue;
-    }
-    auto [_, addedNew] = argNames.insert(name);
-    assert(addedNew && "duplicate argument/parameter name in signature");
-  }
-
-  if (!missingKwOnly.empty())
-    return emitDiagFor.missingArgs(missingKwOnly, "keyword-only");
-  if (!posOnlyPassedByKw.empty())
-    return emitDiagFor.posOnlyPassedByKw(posOnlyPassedByKw);
-
-  // Collect all the keyword operands with unknown names.
-  if (callOperands.hasKwOperands()) {
-    for (auto [name, operand] : *callOperands.kwOperands)
-      if (!argNames.contains(name))
-        variadicKwOperands.try_emplace(name, operand);
-  }
-
-  // If the function doesn't accept variadic kwargs, this is an error.
-  if (!argListAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
-    SmallVector<StringAttr> unknownKwOperands;
-    for (auto [name, _] : variadicKwOperands)
-      unknownKwOperands.push_back(name);
-    return emitDiagFor.unexpectedKwArgs(unknownKwOperands);
-  }
-
-  return std::nullopt;
-}
-
 /// Helper to diagnose common cases of candidate mismatch related to positional
 /// arguments/operands (too many positionals, missing positionals, argument
 /// specified both by positional and keyword operands).
@@ -1254,10 +1194,18 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // If a variadic keyword arg is expected, we collect the unknown kw operands.
   KeywordOperands variadicKwOperands;
-  if (auto diag = diagnoseKeywordOperands(signature.getArgListAttrs(),
-                                          variadicKwOperands, callOperands,
-                                          emitDiagFor))
-    return std::move(*diag);
+  auto [kwDiagRes, errorNames] = diagnoseKeywordOperands(
+      signature.getArgListAttrs(), variadicKwOperands, callOperands);
+  switch (kwDiagRes) {
+  case KwDiagResult::kMissingKwOnly:
+    return emitDiagFor.missingArgs(errorNames, "keyword-only");
+  case KwDiagResult::kPosOnlyPassedByKw:
+    return emitDiagFor.posOnlyPassedByKw(errorNames);
+  case KwDiagResult::kUnknownKeywords:
+    return emitDiagFor.unexpectedKwArgs(errorNames);
+  default:
+    break;
+  }
 
   if (auto diag = diagnosePosOperands(signature, callOperands, emitDiagFor))
     return std::move(*diag);
@@ -1373,6 +1321,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
             }
           }
         }
+      },
+      /*emitMissing=*/
+      [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
+        emitMissing(diag, names, kindStr + " parameter");
       },
   };
 

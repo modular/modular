@@ -188,18 +188,18 @@ fn has_pos_only[a: Int, b: Int, /, c: Int = 9](): pass
 fn test_pos_only():
     # expected-error @below {{positional-only parameter passed as keyword parameter: 'b'}}
     has_pos_only[0, b=1, c=2]()
-    # expected-error @below {{positional-only parameters passed as keyword parameters: 'b', 'a'}}
+    # expected-error @below {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
     has_pos_only[b=1, a=3, c=2]()
 
     # expected-error @below {{expects at least 2 positional parameters, but 1 was specified}}
-    has_pos_only[1, c=9]
+    has_pos_only[1, c=9]()
 
 fn indirect_callable_pos_only[
     callable: fn[a: Int, b: Int, /, c: Int = 9] () -> None
 ]():
     # expected-error @below {{positional-only parameter passed as keyword parameter: 'b'}}
     _ = callable[0, b=1, c=2]
-    # expected-error @below {{positional-only parameters passed as keyword parameters: 'b', 'a'}}
+    # expected-error @below {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
     _ = callable[b=1, a=3, c=2]
     # expected-error @below {{parametric callable expects at least 2 positional parameters, but 1 was specified}}
     _ = callable[1, c=9]
@@ -250,7 +250,7 @@ struct PosOnlyStruct[a: Int, b: Int, /, c: Int = 9]:
 fn test_pos_only_struct():
     # expected-error @below {{positional-only parameter passed as keyword parameter: 'b'}}
     _ = PosOnlyStruct[0, b=1, c=2]
-    # expected-error @below {{positional-only parameters passed as keyword parameters: 'b', 'a'}}
+    # expected-error @below {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
     _ = PosOnlyStruct[b=1, a=3, c=2]
     # expected-error @below {{could not deduce parameter 'b' of parent struct 'PosOnlyStruct'}}
     _ = PosOnlyStruct[1, c=9]()

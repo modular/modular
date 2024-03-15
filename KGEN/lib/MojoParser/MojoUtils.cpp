@@ -266,8 +266,7 @@ void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
 /// Emit a comma separated list of names, each in '...'.
 static void emitNames(InflightDiag &diag, ArrayRef<StringAttr> names) {
   llvm::interleave(
-      names, [&](StringAttr str) { diag << "'" << str.strref() << "'"; },
-      [&]() { diag << ", "; });
+      names, [&](StringAttr str) { diag << str; }, [&]() { diag << ", "; });
 }
 
 void LIT::emitUnknownKeywords(InflightDiag &diag,
@@ -283,6 +282,14 @@ void LIT::emitPosOnlyPassedByKw(InflightDiag &diag, ArrayRef<StringAttr> names,
   size_t numNames = names.size();
   diag << "positional-only " << argOrParam << plural(numNames)
        << " passed as keyword " << argOrParam << plural(numNames) << ": ";
+  emitNames(diag, names);
+}
+
+void LIT::emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
+                      const Twine &kindStr) {
+  size_t numNames = names.size();
+  diag << "missing " << numNames << " required " << kindStr << plural(numNames)
+       << ": ";
   emitNames(diag, names);
 }
 

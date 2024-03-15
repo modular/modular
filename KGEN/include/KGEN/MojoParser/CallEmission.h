@@ -217,6 +217,8 @@ public:
     std::function<void(const Binding &)> emitMultipleUnboundPack;
     /// Emit diagnostics for failure to deduce an infer-only parameter.
     std::function<void(size_t)> emitInferOnlyFailure;
+    /// Emit diagnostics for missing parameters (specified by their names).
+    std::function<void(ArrayRef<StringAttr>, const Twine &)> emitMissing;
   };
 
   /// Verify the parameter bindings for the given signature. If the signature

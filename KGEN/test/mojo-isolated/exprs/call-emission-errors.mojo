@@ -88,7 +88,7 @@ fn test_pos_only_param_passed_by_kw[x: int]():
     # expected-error @+1 {{positional-only parameter passed as keyword parameter: 'b'}}
     takes_pos_only_param[x, b=x]()
 
-    # expected-error @+1 {{positional-only parameters passed as keyword parameters: 'b', 'a'}}
+    # expected-error @+1 {{positional-only parameters passed as keyword parameters: 'a', 'b'}}
     takes_pos_only_param[b=x, a=x]()
 
 
@@ -98,21 +98,22 @@ fn takes_kw_only_param[*, a: int, b: int, c: int = `7`]():
 
 
 fn test_missing_kw_only_param[x: int]():
-    # TODO: missing kw-only error should take precedence over unknown keyword
     # expected-error @+1 {{unknown keyword parameter: 'd'}}
     takes_kw_only_param[a=x, d=x]()
 
-    # TODO: we should emit an error with a list of expected kwargs here
-    # expected-error @+1 {{callee expects 3 parameters, but 0 were specified}}
+    # expected-error @+1 {{missing 2 required keyword-only parameters: 'a', 'b'}}
     takes_kw_only_param[]()
+
 
 # expected-note @+1 {{function declared here}}
 fn takes_kw_only_args(a: int, b: int, *args: int, c: int, d: int = `2`):
     pass
 
+
 fn test_missing_positional_arg_with_vararg_keyword(x: int):
-   # expected-error @+1 {{missing 1 required positional argument: 'b'}}
-   takes_kw_only_args(x, c=`2`)
+    # expected-error @+1 {{missing 1 required positional argument: 'b'}}
+    takes_kw_only_args(x, c=`2`)
+
 
 fn test_missing_keyword_arg_with_vararg_keyword(x: int):
-   takes_kw_only_args(x, x, c=`2`)
+    takes_kw_only_args(x, x, c=`2`)
