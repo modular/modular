@@ -185,6 +185,7 @@ struct LayoutTensor[
         alias tiler = MakeLayoutList(Layout(M, 1), Layout(N, 1))
         return zipped_divide(layout, tiler)
 
+    @always_inline
     fn tile[
         M1: Int,
         N1: Int,
@@ -193,27 +194,12 @@ struct LayoutTensor[
     ](self, m: Int, n: Int) -> LayoutTensor[
         __tiled_layout[0], dtype, address_space
     ]:
-        alias tiled_layout_stride = Self._toStatic[__tiled_layout[1].stride]()
-        var offset = m * tiled_layout_stride[0] + n * tiled_layout_stride[1]
+        alias stride_m = int(__tiled_layout[1].stride[0])
+        alias stride_n = int(__tiled_layout[1].stride[1])
+        var offset = m * stride_m + n * stride_n
         return LayoutTensor[__tiled_layout[0], dtype, address_space](
             self.ptr.offset(offset)
         )
-
-    @staticmethod
-    fn _toCoords[
-        rank_1: Int, rank_2: Int
-    ](
-        id: Int, shape: StaticIntTuple[rank_1], stride: StaticIntTuple[rank_2]
-    ) -> StaticIntTuple[rank_1]:
-        # In theory we should be able to verify this at compile time but it not happening now!
-        constrained[
-            rank_1 == rank_2, "shape and stride should be the same rank!"
-        ]()
-
-        var coords = StaticIntTuple[rank_1]()
-        for i in range(rank_1):
-            coords[i] = (id // stride[i]) % shape[i]
-        return coords
 
     @staticmethod
     fn _compute_distribute_layout[
@@ -224,6 +210,7 @@ struct LayoutTensor[
             thread_tile.append(Layout(dim))
         return zipped_divide(layout, thread_tile)
 
+    @always_inline
     fn distribute[
         threads_layout: Layout,
         tiled_layout: Layout = Self._compute_distribute_layout[
@@ -232,19 +219,28 @@ struct LayoutTensor[
     ](self, thread_id: Int) -> LayoutTensor[
         tiled_layout[1], dtype, address_space
     ]:
-        alias threads_shape = Self._toStatic[flatten(threads_layout.shape)]()
-        alias threads_stride = Self._toStatic[flatten(threads_layout.stride)]()
-        var thread_coords = Self._toCoords(
-            thread_id, threads_shape, threads_stride
-        )
-        alias fragments_layout_stride = Self._toStatic[
-            flatten(tiled_layout[0].stride)
-        ]()
-        var offset = Self._getOffset(fragments_layout_stride, thread_coords)
+        alias fragments_layout_stride = flatten(tiled_layout[0].stride)
+
+        alias threads_layout_shape = flatten(threads_layout.shape)
+        alias threads_layout_stride = flatten(threads_layout.stride)
+
+        var offset = 0
+
+        @parameter
+        fn compute_offset[i: Int]():
+            alias shape_i = int(threads_layout_shape[i])
+            alias stride_i = int(threads_layout_stride[i])
+            var coords_i = (thread_id // stride_i) % shape_i
+            alias fragments_stride_i = int(fragments_layout_stride[i])
+            offset += coords_i * fragments_stride_i
+
+        unroll[compute_offset, len(fragments_layout_stride)]()
+
         return LayoutTensor[tiled_layout[1], dtype, address_space](
             self.ptr.offset(offset)
         )
 
+    @always_inline
     fn transpose[
         M: Int = Self.dim[0](),
         N: Int = Self.dim[1](),
@@ -255,6 +251,7 @@ struct LayoutTensor[
     ](self) -> LayoutTensor[transposed_layout, dtype, address_space]:
         return LayoutTensor[transposed_layout, dtype, address_space](self.ptr)
 
+    @always_inline
     fn reshape[
         dst_layout: Layout,
         reshaped_layout: Layout = composition(layout, dst_layout),
