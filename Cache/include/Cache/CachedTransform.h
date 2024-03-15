@@ -116,15 +116,14 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
 
   // Try to find the key in the cache. The cache hit function should chain off
   // that and do the right for the cache state.
-  auto foundOr =
-      AsyncValueRef<std::optional<BufferRef>>::allocate(chain.getRuntime());
+  auto foundOr = AsyncValueRef<std::optional<BufferRef>>::allocate(
+      transformCache->getRuntime());
   chain.andThenSync([foundOr = foundOr.copy(), keyBuffer = keyBuffer.copy(),
                      transformCache = transformCache.copy(),
                      loc = std::move(loc)]() mutable {
     // Find the thing in the cache with the target op's location. This copy of
     // `keyBuffer` is local, so it's safe to move.
-    auto f = transformCache->find(foundOr.getRuntime(), std::move(keyBuffer),
-                                  std::move(loc));
+    auto f = transformCache->find(std::move(keyBuffer), std::move(loc));
     std::move(f).andThenSync(
         [foundOr = foundOr.copy()](
             AsyncValueRef<std::optional<BufferRef>> &&f) mutable {
@@ -136,7 +135,8 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
   });
 
   // Allocate space for the output.
-  AnyAsyncValueRef out = AnyAsyncValueRef::createIndirect(chain.getRuntime());
+  AnyAsyncValueRef out =
+      AnyAsyncValueRef::createIndirect(transformCache->getRuntime());
   std::move(foundOr).andThenSync(
       [out = out.copy(), transformCache = transformCache.copy(),
        transformFn = std::move(transformFn), keyBuffer = std::move(keyBuffer),
@@ -189,9 +189,8 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
                 llvm_unreachable("unknown_fn_type");
 
               // Again, this keyBuffer is local, so it's safe to move.
-              AsyncValueRef<std::string> hashOr =
-                  transformCache->insert(out.getRuntime(), std::move(keyBuffer),
-                                         std::move(bufferToCache));
+              AsyncValueRef<std::string> hashOr = transformCache->insert(
+                  std::move(keyBuffer), std::move(bufferToCache));
               std::move(hashOr).andThenSync(
                   [out = out.copy(), xform = xform.copy(),
                    errorOnCacheInsertFailure = errorOnCacheInsertFailure](
@@ -215,27 +214,27 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
                 LLCL::AnyAsyncValueRef chain, WriteableBufferRef transformKey,
                 TransformFnT transformFn, CacheHitFnT cacheHitFn,
                 bool errorOnCacheInsertFailure = true) {
+  // Get the runtime pointer to hand to the closure.
+  LLCL::CompactRuntimePtr rt = transformCache->getRuntime();
+
   CacheHitFn onCacheHit;
 
   // If the cache hit function return something like an ErrorOr<T> propagate
   // failures properly.
   if constexpr (Detail::is_result_error_or_v<CacheHitFnT>) {
-    onCacheHit = [chain = chain.copy(), loc = loc.copy(),
-                  cacheHitFn = std::move(cacheHitFn)](BufferRef buf) mutable {
+    onCacheHit = [loc = loc.copy(), cacheHitFn = std::move(cacheHitFn),
+                  rt](BufferRef buf) mutable {
       auto resultOr = cacheHitFn(std::move(buf));
       if (resultOr.isError())
         return Detail::AsyncValueRefResultT<CacheHitFnT>::createError(
-            chain.getRuntime(),
-            EncodedDiagnostic(resultOr.takeError(), std::move(loc)));
+            rt, EncodedDiagnostic(resultOr.takeError(), std::move(loc)));
 
       return Detail::AsyncValueRefResultT<CacheHitFnT>::createReady(
-          chain.getRuntime(), resultOr.takeValue());
+          rt, resultOr.takeValue());
     };
   } else {
-    onCacheHit = [chain = chain.copy(),
-                  cacheHitFn = std::move(cacheHitFn)](BufferRef buf) {
-      auto result = Detail::AsyncValueRefResultT<CacheHitFnT>::allocate(
-          chain.getRuntime());
+    onCacheHit = [cacheHitFn = std::move(cacheHitFn), rt](BufferRef buf) {
+      auto result = Detail::AsyncValueRefResultT<CacheHitFnT>::allocate(rt);
       result.copy().emplace(cacheHitFn(std::move(buf)));
       return result;
     };

@@ -92,16 +92,10 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
 
       BufferRef resourceData = Buffer::take(std::move(aliasedBuffer));
 
-      // Only do the insert if we don't already have it in the cache.
-      EncodedLocation loc =
-          MLIRLocationDecoder::getEncodedLocation(constant->getLoc());
-      AsyncValueRef<bool> contains =
-          cache->contains(out.getRuntime(), resourceAttr, loc.copy());
+      // We have to make this synchronous for now :(
+      auto contains = cache->contains(resourceAttr);
       await(contains);
-      if (contains.isError()) {
-        std::move(out).setToError(contains.takeDiagnostic());
-        return nullptr;
-      }
+      // Only do the insert if we don't already have it in the cache.
       std::string keyHash = cache->getHash(resourceAttr);
       if (!*contains) {
         // Insert the data into the cache. We don't really care about the
@@ -109,9 +103,9 @@ AsyncValueRef<Chain> Cache::deflateConstant(Operation *constant,
         // the result will be that the last one wins but since it's the same
         // data we still end up with the correct result. The `contains`
         // check is just for the obvious case.
-        AsyncValueRef<std::string> hashOr =
-            cache->insert(out.getRuntime(), resourceAttr,
-                          std::move(resourceData), std::move(loc));
+        AsyncValueRef<std::string> hashOr = cache->insert(
+            resourceAttr, std::move(resourceData),
+            MLIRLocationDecoder::getEncodedLocation(constant->getLoc()));
         // This is not great - we have to make this sync because MLIR
         // doesn't really have a good way to handle async here.
         await(hashOr);
@@ -181,7 +175,7 @@ AsyncValueRef<Chain> Cache::inflateConstant(Operation *constant,
 
       // Find the data in the cache.
       auto found = cache->find(
-          out.getRuntime(), cacheAttr.getHash(),
+          cacheAttr.getHash(),
           MLIRLocationDecoder::getEncodedLocation(constant->getLoc()));
       await(found);
       if (found.isError()) {
@@ -295,8 +289,7 @@ std::string RegionCacheKey::hashKey(RegionCacheKey::KeyTy key) {
 ///  - Unique the references and assign them indices.
 ///  - Replace their uses with indices.
 ///  - Cache the region.
-static AsyncValueRef<Chain> cacheSingleRegion(LLCL::Runtime &runtime, Region &r,
-                                              Operation *op,
+static AsyncValueRef<Chain> cacheSingleRegion(Region &r, Operation *op,
                                               RCRef<RegionCache> cache) {
   OpBuilder builder(op);
   llvm::SetVector<Attribute> attrs;
@@ -355,10 +348,10 @@ static AsyncValueRef<Chain> cacheSingleRegion(LLCL::Runtime &runtime, Region &r,
     container.erase();
   };
 
-  auto out = AsyncValueRef<Chain>::allocate(runtime);
+  auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
   // Store it, but only if we don't already have it.
   AsyncValueRef<bool> contains =
-      cache->contains(runtime, &container.getBodyRegion(),
+      cache->contains(&container.getBodyRegion(),
                       MLIRLocationDecoder::getEncodedLocation(op->getLoc()));
   std::move(contains).andThenSync(
       [container, attachHash = std::move(attachHash), out = out.copy(),
@@ -380,8 +373,8 @@ static AsyncValueRef<Chain> cacheSingleRegion(LLCL::Runtime &runtime, Region &r,
           return std::move(out).setToError(getMLIRDiagnostic(
               "failed to write bytecode file", container.getLoc()));
         }
-        AsyncValueRef<std::string> hashOr = cache->insert(
-            out.getRuntime(), &container.getBodyRegion(), std::move(bytecode));
+        AsyncValueRef<std::string> hashOr =
+            cache->insert(&container.getBodyRegion(), std::move(bytecode));
         // Keeping references is safe here because all the memory is owned by
         // the MLIRContext, which is guaranteed to live longer than any of this.
         std::move(hashOr).andThenSync(
@@ -421,8 +414,7 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
     SmallVector<AnyAsyncValueRef> results;
     results.reserve(op->getNumRegions());
     for (Region &r : op->getRegions())
-      results.push_back(
-          cacheSingleRegion(chain.getRuntime(), r, op, cache.copy()));
+      results.push_back(cacheSingleRegion(r, op, cache.copy()));
 
     andThenSyncMoving(
         results,
@@ -439,13 +431,12 @@ AsyncValueRef<Chain> M::Cache::deflateOp(Operation *op,
 }
 
 /// Inflate a single region from `regionHash` and have `r` take its body.
-static AsyncValueRef<Chain> inflateRegion(LLCL::Runtime &runtime, Region *r,
-                                          RegionHashAttr regionHash,
+static AsyncValueRef<Chain> inflateRegion(Region *r, RegionHashAttr regionHash,
                                           RCRef<RegionCache> cache) {
-  auto out = AsyncValueRef<Chain>::allocate(runtime);
+  auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
   auto foundOr =
-      cache->find(runtime, regionHash.getHash(),
+      cache->find(regionHash.getHash(),
                   MLIRLocationDecoder::getEncodedLocation(r->getLoc()));
   std::move(foundOr).andThenSync(
       [r, regionHash, out = out.copy()](
@@ -496,7 +487,7 @@ AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
                                          RCRef<RegionCache> cache,
                                          AnyAsyncValueRef chain) {
   TimeTraceScope traceScope(CacheProfilerEntry::create("Cache::inflateOp"));
-  auto out = AsyncValueRef<Chain>::allocate(chain.getRuntime());
+  auto out = AsyncValueRef<Chain>::allocate(cache->getRuntime());
 
   // Hang the inflation off the input chain.
   std::move(chain).andThenSync([cached, cache = cache.copy(), out = out.copy()](
@@ -513,8 +504,7 @@ AsyncValueRef<Chain> M::Cache::inflateOp(Operation *cached,
     // Fill in the regions on the operation.
     SmallVector<AnyAsyncValueRef> results;
     for (auto [regionHash, region] : llvm::zip(hashes, cached->getRegions()))
-      results.push_back(
-          inflateRegion(chain.getRuntime(), &region, regionHash, cache.copy()));
+      results.push_back(inflateRegion(&region, regionHash, cache.copy()));
 
     // Once all the regions are cached, remove the region hash attr and
     // resolve success/failure.
