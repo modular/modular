@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.vector import InlinedFixedVector
+from gpu.host._compile import _get_nvptx_target
 from math import (
     abs,
     add,
@@ -226,6 +227,7 @@ fn MOGGExport():
     alias _scatter_nd_shape = scatter_nd_shape
     alias _slice = slice
     alias _simd_target = get_target_simd
+    alias _simd_target_cuda = get_target_simd_cuda
     alias _simd_width_to_int = simd_width_to_int
     alias _split_ith_output_shape = split_ith_output_shape
     alias _reduce_shape = reduce_shape
@@ -986,6 +988,10 @@ fn broadcast_to_shape[
 # `mlir.index` typed so we need to return as `mlir.index` and then cast to int.
 fn get_target_simd[type: DType]() -> __mlir_type.index:
     return simdwidthof[type]().value
+
+
+fn get_target_simd_cuda[type: DType]() -> __mlir_type.index:
+    return simdwidthof[Scalar[type], target = _get_nvptx_target()]().value
 
 
 fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
