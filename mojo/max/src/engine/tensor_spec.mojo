@@ -36,36 +36,13 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         Args:
             other: Instance of TensorSpec to be copied.
         """
-        self._lib = other._lib
-        self._session = other._session
-
-        var rank = other.rank()
-        var name = other.get_name()
-        var shape = other.get_shape()
-
-        if shape:
-            var inner_shape = shape.value()
-            var rank = len(inner_shape)
-            self._ptr = call_dylib_func[CTensorSpec](
-                self._lib,
-                Self._NewTensorSpecFnName,
-                inner_shape.data,
-                rank,
-                other._ptr.get_dtype(self._lib),
-                name._as_ptr(),
-            )
-            _ = inner_shape ^
-        else:
-            self._ptr = call_dylib_func[CTensorSpec](
-                self._lib,
-                Self._NewTensorSpecFnName,
-                CTensorSpec.ptr_type(),
-                CTensorSpec.get_dynamic_rank_value(self._lib),
-                other._ptr.get_dtype(self._lib),
-                name._as_ptr(),
-            )
-        _ = name
-        _ = shape
+        self = Self(
+            other.get_name(),
+            other.get_shape(),
+            other.get_dtype(),
+            other._lib,
+            other._session.copy(),
+        )
 
     fn __moveinit__(inout self, owned existing: Self):
         """Move constructor for Tensor Spec.
@@ -137,6 +114,46 @@ struct EngineTensorSpec(Stringable, CollectionElement):
     fn __init__(
         inout self,
         name: String,
+        shape: Optional[List[Optional[Int]]],
+        dtype: DType,
+        lib: DLHandle,
+        owned session: InferenceSession,
+    ):
+        """Creates an instance of EngineTensorSpec.
+        Do not use this function directly.
+        Use functions from InferenceSession to create EngineTensorSpec.
+        Note that this almost similar to another constructor.
+        This accepts Int instead of Int64 shape types.
+
+        Args:
+            name: Name of tensor.
+            shape: Shape of the tensor.
+            dtype: DataType of the tensor.
+            lib: Handle to the library.
+            session: Copy of InferenceSession from which this instance
+                     was created.
+        """
+
+        if not shape:
+            self = Self(
+                name,
+                Optional[List[Optional[Int64]]](None),
+                dtype,
+                lib,
+                session.copy(),
+            )
+        else:
+            var casted_shape = List[Optional[Int64]]()
+            for dim in shape.value():
+                if not dim[]:
+                    casted_shape.push_back(None)
+                else:
+                    casted_shape.push_back(Int64(dim[].value()))
+            self = Self(name, casted_shape, dtype, lib, session.copy())
+
+    fn __init__(
+        inout self,
+        name: String,
         shape: Optional[List[Optional[Int64]]],
         dtype: DType,
         lib: DLHandle,
@@ -145,6 +162,8 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         """Creates an instance of EngineTensorSpec.
         Do not use this function directly.
         Use functions from InferenceSession to create EngineTensorSpec.
+        Note that this almost similar to another constructor.
+        This accepts Int64 instead of Int shape types.
 
         Args:
             name: Name of tensor.

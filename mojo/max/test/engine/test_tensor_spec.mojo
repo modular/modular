@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# RUN: %mojo -I %engine_pkg_dir %s | FileCheck %s
+# RUN: %mojo -debug-level full %s
 
 from max.engine import (
     InferenceSession,
@@ -12,27 +12,23 @@ from max.engine import (
 )
 from tensor import TensorSpec
 from collections.optional import Optional
+from testing import assert_false, assert_equal, assert_true
 
 
-fn test_tensor_spec() raises:
-    # CHECK: test_tensor_spec
-    print("====test_tensor_spec")
+fn test_tensor_spec_basic() raises:
+    print("==== test_tensor_spec_basic")
 
     var session = InferenceSession()
     var spec = TensorSpec(DType.float32, 1, 2, 3)
     var engine_spec = session.get_as_engine_tensor_spec("tensor", spec)
 
-    # CHECK: 1
-    print(engine_spec[0].value())
+    assert_equal(engine_spec[0].value(), 1)
 
-    # CHECK: tensor
-    print(engine_spec.get_name())
+    assert_equal(engine_spec.get_name(), "tensor")
 
-    # CHECK: {name=tensor, spec=1x2x3xfloat32}
-    print(str(engine_spec))
+    assert_equal(str(engine_spec), "{name=tensor, spec=1x2x3xfloat32}")
 
-    # CHECK: True
-    print(engine_spec.get_as_tensor_spec() == spec)
+    assert_equal(engine_spec.get_as_tensor_spec(), spec)
 
     var dynamic_dim_shape = List[Optional[Int64]]()
     dynamic_dim_shape.push_back(None)
@@ -42,31 +38,96 @@ fn test_tensor_spec() raises:
         "tensor", dynamic_dim_shape, DType.float32
     )
 
-    # CHECK: False
-    print(dynamic_dim_spec[0].__bool__())
+    assert_false(dynamic_dim_spec[0])
 
-    # CHECK: 3
-    print(dynamic_dim_spec.rank().value())
+    assert_equal(dynamic_dim_spec.rank().value(), 3)
 
-    # CHECK: True
-    print(dynamic_dim_spec.has_rank())
+    assert_true(dynamic_dim_spec.has_rank())
 
-    # CHECK: {name=tensor, spec=-1x1x2xfloat32}
-    print(str(dynamic_dim_spec))
+    assert_equal(str(dynamic_dim_spec), "{name=tensor, spec=-1x1x2xfloat32}")
 
     var dynamic_rank_spec = session.get_as_engine_tensor_spec(
         "tensor", None, DType.float32
     )
 
-    # CHECK: False
-    print(dynamic_rank_spec.rank().__bool__())
+    assert_false(dynamic_rank_spec.rank())
 
-    # CHECK: False
-    print(dynamic_rank_spec.has_rank())
+    assert_false(dynamic_rank_spec.has_rank())
 
-    # CHECK: {name=tensor, spec=None x float32}
-    print(str(dynamic_rank_spec))
+    assert_equal(str(dynamic_rank_spec), "{name=tensor, spec=None x float32}")
+
+
+fn test_engine_tensor_spec_static_dim_copy() raises:
+    print("==== test_engine_tensor_spec_static_dim_copy")
+
+    var session = InferenceSession()
+    var spec = TensorSpec(DType.float32, 1, 2, 3)
+    var static_engine_spec = session.get_as_engine_tensor_spec("tensor", spec)
+
+    var static_engine_spec_copy = static_engine_spec
+
+    assert_equal(
+        static_engine_spec_copy[0].value(), static_engine_spec[0].value()
+    )
+
+    assert_equal(
+        static_engine_spec_copy.get_name(), static_engine_spec.get_name()
+    )
+
+    assert_equal(
+        str(static_engine_spec_copy), "{name=tensor, spec=1x2x3xfloat32}"
+    )
+
+    assert_equal(static_engine_spec_copy.get_as_tensor_spec(), spec)
+
+
+fn test_engine_tensor_spec_dynamic_dim_copy() raises:
+    print("==== test_engine_tensor_spec_dynamic_dim_copy")
+
+    var session = InferenceSession()
+    var dynamic_dim_shape = List[Optional[Int64]]()
+    dynamic_dim_shape.push_back(None)
+    dynamic_dim_shape.push_back(Int64(1))
+    dynamic_dim_shape.push_back(Int64(2))
+    var dynamic_dim_spec = session.get_as_engine_tensor_spec(
+        "tensor", dynamic_dim_shape, DType.float32
+    )
+
+    var dynamic_dim_shape_spec_copy = dynamic_dim_spec
+
+    assert_equal(
+        dynamic_dim_shape_spec_copy[0].__bool__(),
+        dynamic_dim_spec[0].__bool__(),
+    )
+
+    assert_equal(
+        dynamic_dim_shape_spec_copy.rank().value(),
+        dynamic_dim_spec.rank().value(),
+    )
+
+    assert_equal(
+        dynamic_dim_shape_spec_copy.has_rank(), dynamic_dim_spec.has_rank()
+    )
+
+    assert_equal(
+        str(dynamic_dim_shape_spec_copy), "{name=tensor, spec=-1x1x2xfloat32}"
+    )
+
+    var dynamic_rank_spec = session.get_as_engine_tensor_spec(
+        "tensor", None, DType.float32
+    )
+    var dynamic_rank_spec_copy = dynamic_rank_spec
+
+    assert_false(dynamic_rank_spec_copy.rank())
+
+    assert_false(dynamic_rank_spec_copy.has_rank())
+
+    assert_equal(
+        str(dynamic_rank_spec_copy), "{name=tensor, spec=None x float32}"
+    )
 
 
 fn main() raises:
-    test_tensor_spec()
+    test_tensor_spec_basic()
+    test_engine_tensor_spec_static_dim_copy()
+    test_engine_tensor_spec_dynamic_dim_copy()
