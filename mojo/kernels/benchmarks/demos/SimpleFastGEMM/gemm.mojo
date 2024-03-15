@@ -16,18 +16,30 @@ from memory.unsafe import DTypePointer
 from utils.index import Index
 from utils.list import Dim, DimList
 
-alias mr = 6
-alias nr = 64
+from math import align_up
 
-alias simd_size = 16
-alias alignment = 64
-alias accum_type = DType.float32
+from MatmulUtils import (
+    get_matmul_kernel_shape,
+    get_matmul_prefetch_b_distance_k,
+)
+
+alias dtype = DType.float32
+alias simd_size = simdwidthof[dtype]()
+alias alignment = alignof[SIMD[dtype, simd_size]]()
+
+alias kernel_shape = get_matmul_kernel_shape[dtype, dtype, dtype, False]()
+alias MR = kernel_shape.a_row_size
+alias NR = kernel_shape.pack_inner_size * simd_size
+
+# AVX512 values
+# alias MR = 6
+# alias NR = 64
+
+alias prefetch_distance = get_matmul_prefetch_b_distance_k()
 
 
-fn print_mat(a_ptr: DTypePointer[DType.float32], m: Int, n: Int):
-    var a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        a_ptr, Index(m, n)
-    )
+fn print_mat(a_ptr: DTypePointer[dtype], m: Int, n: Int):
+    var a = NDBuffer[dtype, 2](a_ptr, Index(m, n))
     for i in range(m):
         for j in range(n):
             print_no_newline(a[i, j])
@@ -36,9 +48,9 @@ fn print_mat(a_ptr: DTypePointer[DType.float32], m: Int, n: Int):
 
 
 fn gemm_naive(
-    a: NDBuffer[DType.float32, 2, shape = DimList.create_unknown[2]()],
-    b: NDBuffer[DType.float32, 2, shape = DimList.create_unknown[2]()],
-    c: NDBuffer[DType.float32, 2, shape = DimList.create_unknown[2]()],
+    a: NDBuffer[dtype, 2],
+    b: NDBuffer[dtype, 2],
+    c: NDBuffer[dtype, 2],
     m: Int,
     n: Int,
     k: Int,
@@ -50,81 +62,81 @@ fn gemm_naive(
 
 
 fn kernel(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
-    c_ptr: DTypePointer[DType.float32],
+    a_ptr: DTypePointer[dtype],
+    b_ptr: DTypePointer[dtype],
+    c_ptr: DTypePointer[dtype],
     n: Int,
     k: Int,
     kc: Int,
 ):
-    var a = Buffer[DType.float32, size = Dim()](a_ptr, mr * k)
-    var b = Buffer[DType.float32, size = Dim()](b_ptr, k * nr)
-    var c = Buffer[DType.float32, size = Dim()](c_ptr, mr * n)
+    var a = Buffer[dtype](a_ptr, MR * k)
+    var b = Buffer[dtype](b_ptr, k * NR)
+    var c = Buffer[dtype](c_ptr, MR * n)
 
-    var c_local = Buffer[
-        DType.float32, size = mr * nr
-    ]().aligned_stack_allocation[alignment]()
+    var c_local = Buffer[dtype, size = MR * NR]().aligned_stack_allocation[
+        alignment
+    ]()
 
-    alias nr2 = nr // simd_size
+    alias NR2 = NR // simd_size
 
     @parameter
     @always_inline
     fn loadc[idx0: Int, idx1: Int]():
         var cv = c.load[simd_size](n * idx0 + simd_size * idx1)
-        c_local.simd_store[simd_size](nr * idx0 + simd_size * idx1, cv)
+        c_local.simd_store[simd_size](NR * idx0 + simd_size * idx1, cv)
 
-    unroll[loadc, mr, nr2]()
+    unroll[loadc, MR, NR2]()
 
     for pr in range(kc):
 
         @parameter
         @always_inline
         fn prefetch[idx0: Int]():
-            b_ptr.offset(nr * pr + simd_size * (idx0 + 16)).prefetch[
+            b_ptr.offset(NR * pr + simd_size * (idx0 + 16)).prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
             ]()
 
-        unroll[prefetch, nr2]()
+        unroll[prefetch, NR2]()
 
         @parameter
         @always_inline
         fn calc[idx0: Int, idx1: Int]():
-            var av = a.load[1](idx0 * k + pr).cast[accum_type]()
-            var bv = b.load[simd_size](nr * pr + simd_size * idx1)
-            var cv = c_local.load[simd_size](nr * idx0 + simd_size * idx1)
+            var av = a.load[1](idx0 * k + pr).cast[dtype]()
+            var bv = b.load[simd_size](NR * pr + simd_size * idx1)
+            var cv = c_local.load[simd_size](NR * idx0 + simd_size * idx1)
             cv += av * bv
-            c_local.simd_store[simd_size](nr * idx0 + simd_size * idx1, cv)
+            c_local.simd_store[simd_size](NR * idx0 + simd_size * idx1, cv)
 
-        unroll[calc, mr, nr2]()
+        unroll[calc, MR, NR2]()
 
     @parameter
     @always_inline
     fn storec[idx0: Int, idx1: Int]():
-        var cv = c_local.load[simd_size](nr * idx0 + simd_size * idx1)
+        var cv = c_local.load[simd_size](NR * idx0 + simd_size * idx1)
         c.simd_store[simd_size](n * idx0 + simd_size * idx1, cv)
 
-    unroll[storec, mr, nr2]()
+    unroll[storec, MR, NR2]()
 
 
 fn pack_B(
-    b_ptr: DTypePointer[DType.float32],
-    b2_ptr: DTypePointer[DType.float32],
+    b_ptr: DTypePointer[dtype],
+    b2_ptr: DTypePointer[dtype],
     k: Int,
     n: Int,
     kc: Int,
     nc: Int,
 ):
-    var b = Buffer[DType.float32, size = Dim()](b_ptr, k * n)
-    var bc = Buffer[DType.float32, size = Dim()](b2_ptr, k * n)
+    var b = Buffer[dtype](b_ptr, k * n)
+    var bc = Buffer[dtype](b2_ptr, k * n)
     for pr in range(kc):
-        for ir in range(nc // nr):
-            for v in range(nr):
-                bc[nr * (pr + kc * ir) + v] = b[pr * n + nr * ir + v]
+        for ir in range(nc // NR):
+            for v in range(NR):
+                bc[NR * (pr + kc * ir) + v] = b[pr * n + NR * ir + v]
 
 
 fn prepack_B(
-    b_ptr: DTypePointer[DType.float32],
-    b2_ptr: DTypePointer[DType.float32],
+    b_ptr: DTypePointer[dtype],
+    b2_ptr: DTypePointer[dtype],
     k: Int,
     n: Int,
     kc: Int,
@@ -136,9 +148,9 @@ fn prepack_B(
 
 
 fn gemm(
-    a_ptr: DTypePointer[DType.float32],
-    b_ptr: DTypePointer[DType.float32],
-    c_ptr: DTypePointer[DType.float32],
+    a_ptr: DTypePointer[dtype],
+    b_ptr: DTypePointer[dtype],
+    c_ptr: DTypePointer[dtype],
     m: Int,
     n: Int,
     k: Int,
@@ -149,8 +161,8 @@ fn gemm(
     for ic in range(0, m, mc):
         for pc in range(0, k, kc):
             for jc in range(0, n, nc):
-                for ir in range(0, mc, mr):
-                    for jr in range(0, nc, nr):
+                for ir in range(0, mc, MR):
+                    for jr in range(0, nc, NR):
                         kernel(
                             a_ptr + (ic + ir) * k + pc,
                             b_ptr + n * pc + jc * kc + jr * kc,
@@ -162,16 +174,16 @@ fn gemm(
 
 
 fn main():
-    var m: Int = 960
-    var n: Int = 1024
+    var m = align_up(1024, MR)
+    var n = align_up(1024, NR)
     var k: Int = 1024
     var mc: Int = m
-    var nc: Int = 64
+    var nc: Int = NR
     var kc: Int = k
-    if m % 6 != 0:
+    if m % MR != 0:
         print("m must be multiple of 6")
         return
-    if n % 64 != 0:
+    if n % NR != 0:
         print("n must be a multiple of 64")
         return
 
@@ -181,26 +193,20 @@ fn main():
     print_no_newline("x")
     print(k)
 
-    var a_ptr = DTypePointer[DType.float32].alloc(m * k, alignment=alignment)
-    var b_ptr = DTypePointer[DType.float32].alloc(k * n, alignment=alignment)
-    var b2_ptr = DTypePointer[DType.float32].alloc(k * n, alignment=alignment)
-    var c_ptr = DTypePointer[DType.float32].alloc(m * n, alignment=alignment)
-    var c2_ptr = DTypePointer[DType.float32].alloc(m * n, alignment=alignment)
-    var a = Buffer[DType.float32, size = Dim()](a_ptr, m * k)
-    var b = Buffer[DType.float32, size = Dim()](b_ptr, k * n)
-    var b2 = Buffer[DType.float32, size = Dim()](b2_ptr, k * n)
-    var c = Buffer[DType.float32, size = Dim()](c_ptr, m * n)
-    var c2 = Buffer[DType.float32, size = Dim()](c2_ptr, m * n)
+    var a_ptr = DTypePointer[dtype].alloc(m * k, alignment=alignment)
+    var b_ptr = DTypePointer[dtype].alloc(k * n, alignment=alignment)
+    var b2_ptr = DTypePointer[dtype].alloc(k * n, alignment=alignment)
+    var c_ptr = DTypePointer[dtype].alloc(m * n, alignment=alignment)
+    var c2_ptr = DTypePointer[dtype].alloc(m * n, alignment=alignment)
+    var a = Buffer[dtype](a_ptr, m * k)
+    var b = Buffer[dtype](b_ptr, k * n)
+    var b2 = Buffer[dtype](b2_ptr, k * n)
+    var c = Buffer[dtype](c_ptr, m * n)
+    var c2 = Buffer[dtype](c2_ptr, m * n)
 
-    var am = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        a_ptr, Index(m, k)
-    )
-    var bm = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        b_ptr, Index(k, n)
-    )
-    var cm = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
-        c_ptr, Index(m, n)
-    )
+    var am = NDBuffer[dtype, 2](a_ptr, Index(m, k))
+    var bm = NDBuffer[dtype, 2](b_ptr, Index(k, n))
+    var cm = NDBuffer[dtype, 2](c_ptr, Index(m, n))
 
     for i in range(m * k):
         a[i] = i

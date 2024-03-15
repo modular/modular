@@ -13,12 +13,19 @@ from closed_source_memory.buffer import NDBuffer
 from kernel_utils.layout import Layout, IntTuple
 from kernel_utils.layout_tensor import LayoutTensor, TensorBuilder
 
+from math import align_up
+
+from MatmulUtils import (
+    get_matmul_kernel_shape,
+    get_matmul_prefetch_b_distance_k,
+)
+
 alias MR = 6
 alias NR = 64
 
 alias dtype = DType.float32
 alias simd_size = simdwidthof[dtype]()
-alias alignment = 64
+alias alignment = alignof[SIMD[dtype, simd_size]]()
 
 
 fn gemm_naive[
@@ -29,8 +36,8 @@ fn gemm_naive[
     b: LayoutTensor[layout_b, dtype],  # N x K
 ):
     var M = c.dim(0)
-    alias N = b.dim[0]()
-    alias K = b.dim[1]()
+    alias N = b.dim[1]()
+    alias K = b.dim[0]()
 
     for mm in range(M):
         for kk in range(K):
@@ -162,8 +169,8 @@ fn gemm_export_dynamic(
 
 
 fn main():
-    alias M: Int = 960
-    alias N: Int = 1024
+    alias M = align_up(1024, MR)
+    alias N = align_up(1024, NR)
     alias K: Int = 1024
 
     if M % MR != 0:
