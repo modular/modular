@@ -10,6 +10,7 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
@@ -350,6 +351,44 @@ reorderValueIntoGroups(ValueRange values,
   return result;
 }
 
+/// Return whether the IfOp has complex logic that is not supported for raising.
+static bool hasComplexExitLogic(LoopOp loop, IfOp ifOp) {
+  // The if op is known to have one yield and one break.
+  Block *breakBlock = &ifOp.getThenRegion().getBlocks().front();
+  Block *yieldBlock = &ifOp.getElseRegion().getBlocks().front();
+  if (!isa<BreakOp>(breakBlock->getTerminator()))
+    std::swap(breakBlock, yieldBlock);
+
+  // Currently do not support complex yield block.
+  if (!yieldBlock->without_terminator().empty())
+    return true;
+
+  // Break block can contain ops that do not depend on values internal to the
+  // parent loop. These ops can be moved to after the for-loop because this
+  // break is the only exit for the loop.
+  DenseSet<Value> intermediateValues;
+  for (Operation &op : breakBlock->without_terminator()) {
+    for (Value operand : op.getOperands()) {
+      if (intermediateValues.contains(operand))
+        continue;
+
+      // If value is a block arg, this gets the defining block's parent
+      // op. Otherwise this gets the parent of the defining op.
+      Operation *closestDefiningScope = operand.getParentBlock()->getParentOp();
+      // If the parent loop is closestDefiningScope, or if it contains
+      // closestDefiningScope, this dbgValue describes a loop-internal value.
+      if (loop->isAncestor(closestDefiningScope))
+        return true;
+    }
+    intermediateValues.insert(op.result_begin(), op.result_end());
+  }
+
+  // BreakOp must not rely on any of the intermediate values.
+  return llvm::any_of(
+      breakBlock->getTerminator()->getOperands(),
+      [&](Value operand) { return intermediateValues.contains(operand); });
+}
+
 LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
                                            InFlightDiagnostic &diag) {
   auto iter = loopJumpOps.find(loop);
@@ -428,8 +467,7 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
     return failure();
   }
 
-  if (ifOp.getThenRegion().getBlocks().front().getOperations().size() != 1 ||
-      ifOp.getElseRegion().getBlocks().front().getOperations().size() != 1) {
+  if (hasComplexExitLogic(loop, ifOp)) {
     // TODO: handle exit logic in loop unrolling and lower loops, which requires
     // raise ForOp to keep track of the exit block.
     diag.attachNote(loop->getLoc()) << "loop has complex exit logic";
@@ -517,6 +555,10 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
     }
     prevOp = &op;
   }
+
+  // Move operations in the break-branch of `ifOp` immediately after the loop.
+  rewriter.inlineBlockBefore(breakOp->getBlock(), forOp->getNextNode());
+  breakOp->erase();
 
   loop->replaceAllUsesWith(forOp.getResults());
 

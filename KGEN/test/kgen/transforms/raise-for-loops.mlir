@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -pass-pipeline='builtin.module(kgen.func(raise-for-loops, canonicalize))' | FileCheck %s
+// RUN: kgen-opt %s -pass-pipeline='builtin.module(kgen.func(raise-for-loops, canonicalize))' -split-input-file | FileCheck %s
 
 // CHECK-LABEL: @zero_starting_range
 kgen.func @zero_starting_range() {
@@ -449,6 +449,110 @@ kgen.func @non_const_loop_end()  {
     }
     %3 = index.add %arg0, %index1
     hlcf.continue %3, %3 : index, index
+  }
+  kgen.return
+}
+
+// -----
+
+// Tests for handling ops inside the conditional break branch of the loop.
+
+// CHECK-LABEL: @simple_call_in_break_branch
+kgen.func @simple_call_in_break_branch() {
+  %index0 = index.constant 0
+  %index1 = index.constant 1
+  %index10 = index.constant 10
+
+  // CHECK:      [[INDEX0:%.*]] = index.constant 0
+  // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
+  // CHECK-NEXT: [[INDEX10:%.*]] = index.constant 10
+  // CHECK-NEXT: hlcf.for [[[INDEX0]] to [[INDEX10]] step [[INDEX1]] sgt add] (%arg0 = [[INDEX0]] : index)
+  // CHECK:        hlcf.for.yield
+  // CHECK-NEXT: }
+  // CHECK-NEXT: kgen.call @foo([[INDEX10]])
+  hlcf.loop (%arg0 = %index0 : index) {
+    %1 = index.cmp sgt(%arg0, %index10)
+    hlcf.if %1 {
+      hlcf.yield
+    } else {
+      kgen.call @foo(%index10) : (index) -> ()
+      hlcf.break
+    }
+    %2 = index.add %arg0, %index1
+    hlcf.continue %2 : index
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @intermediate_values_in_break_branch
+kgen.func @intermediate_values_in_break_branch() {
+  %index0 = index.constant 0
+  %index1 = index.constant 1
+  %index10 = index.constant 10
+
+  // CHECK:      [[INDEX0:%.*]] = index.constant 0
+  // CHECK-NEXT: [[INDEX1:%.*]] = index.constant 1
+  // CHECK-NEXT: [[INDEX10:%.*]] = index.constant 10
+  // CHECK-NEXT: hlcf.for [[[INDEX0]] to [[INDEX10]] step [[INDEX1]] sgt add] (%arg0 = [[INDEX0]] : index)
+  // CHECK:        hlcf.for.yield
+  // CHECK-NEXT: }
+  // CHECK-NEXT: [[V0:%.*]] = kgen.call @foo([[INDEX10]])
+  // CHECK-NEXT: kgen.call @bar([[V0]])
+  hlcf.loop (%arg0 = %index0 : index) {
+    %1 = index.cmp sgt(%arg0, %index10)
+    hlcf.if %1 {
+      hlcf.yield
+    } else {
+      %v0 = kgen.call @foo(%index10) : (index) -> (index)
+      kgen.call @bar(%v0) : (index) -> ()
+      hlcf.break
+    }
+    %2 = index.add %arg0, %index1
+    hlcf.continue %2 : index
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @break_dependent_on_break_branch
+kgen.func @break_dependent_on_break_branch() {
+  %index0 = index.constant 0
+  %index1 = index.constant 1
+  %index10 = index.constant 10
+
+  // CHECK-NOT: hlcf.for
+  %loop = hlcf.loop (%arg0 = %index0 : index) -> index {
+    %1 = index.cmp sgt(%arg0, %index10)
+    hlcf.if %1 {
+      hlcf.yield
+    } else {
+      // Break is dependent on intermediate results from this branch. Abort.
+      %v0 = kgen.call @foo(%index10) : (index) -> (index)
+      hlcf.break %v0 : index
+    }
+    %2 = index.add %arg0, %index1
+    hlcf.continue %2 : index
+  }
+  kgen.return
+}
+
+// CHECK-LABEL: @dependent_ops_in_break_branch
+kgen.func @dependent_ops_in_break_branch() {
+  %index0 = index.constant 0
+  %index1 = index.constant 1
+  %index10 = index.constant 10
+
+  // CHECK-NOT: hlcf.for
+  hlcf.loop (%arg0 = %index0 : index) {
+    %1 = index.cmp sgt(%arg0, %index10)
+    hlcf.if %1 {
+      hlcf.yield
+    } else {
+      // Op depends on internal value. Can no longer convert.
+      kgen.call @foo(%arg0) : (index) -> ()
+      hlcf.break
+    }
+    %2 = index.add %arg0, %index1
+    hlcf.continue %2 : index
   }
   kgen.return
 }
