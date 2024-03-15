@@ -138,7 +138,7 @@ putObjectsIntoCache(BinaryBlobCacheKey::KeyTy key, BufferRef value,
                     LLCL::Runtime &runtime, bool useHex) {
 
   AsyncValueRef<std::string> insert =
-      cache->insert(runtime, std::move(key), std::move(value));
+      cache->insert(std::move(key), std::move(value));
   auto outCh = AsyncValueRef<std::string>::allocate(runtime);
   std::move(insert).andThenSync([outCh = outCh.copy(),
                                  input = Buffer::get(input), useHex](
@@ -167,8 +167,8 @@ int main(int argc, char **argv) {
   if (backendPathOr.isError())
     return clOptions.reportError(backendPathOr.getError());
 
-  auto backendChainOr =
-      getDefaultBackendChain(*backendPathOr, clOptions.backendVersion);
+  auto backendChainOr = getDefaultBackendChain(*runtime, *backendPathOr,
+                                               clOptions.backendVersion);
   if (backendChainOr.isError())
     return clOptions.reportError(backendChainOr.getError());
 
@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
     // If the key is specified, use it directly.
     std::string keyToFind =
         key.empty() ? BinaryBlobCacheKey::hashKey(*hash) : key;
-    auto result = cache->find(*runtime, keyToFind);
+    auto result = cache->find(keyToFind);
     auto outCh = AsyncValueRef<BufferRef>::allocate(*runtime);
     std::move(result).andThenSync(
         [outCh = outCh.copy(), input = Buffer::get(*hash)](

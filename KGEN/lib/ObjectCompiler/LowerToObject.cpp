@@ -51,7 +51,8 @@ ErrorOr<ObjectCompiler> ObjectCompiler::create(LLCL::Runtime &runtime,
                                                CompilationOptions options,
                                                bool isJIT, bool isSearch) {
   auto transformCache = Cache::getLocalDefaultBackendChain(
-      std::filesystem::path(basePath.str()) / "transform", KGEN_VERSION_STRING);
+      runtime, (std::filesystem::path(basePath.str()) / "transform").string(),
+      KGEN_VERSION_STRING);
   if (failed(transformCache))
     return transformCache.takeError();
   return ObjectCompiler(runtime, mgr, std::move(*transformCache),
