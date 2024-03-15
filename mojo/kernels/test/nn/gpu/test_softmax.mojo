@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: disabled, has_cuda_device
+# REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
 from math import iota, isclose
@@ -45,6 +45,7 @@ fn test_gpu_softmax() raises:
     rand[type](in_host_ptr, shape.flattened_length())
     _copy_host_to_device(in_device_ptr, in_host_ptr, shape.flattened_length())
 
+    @__copy_capture(in_device)
     @parameter
     fn input_fn_device[
         _simd_width: Int, _rank: Int
