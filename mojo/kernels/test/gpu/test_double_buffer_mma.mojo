@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: cuda
+# REQUIRES: has_cuda_device
 # RUN: %mojo %s
 
 from math import div_ceil, isclose, isnan
@@ -32,6 +32,7 @@ from gpu.mma import mma
 from testing import assert_almost_equal
 from sys import argv
 from pathlib import Path
+from utils.list import DimList
 
 
 fn is_benchmark() -> Bool:
@@ -404,10 +405,10 @@ fn sgemm_double_buffer[
         @unroll
         for j in range(num_mma_n):
             var c_mma_tile = c_gmem_ptr + (i * MMA_M) * N + j * MMA_N
-            c_mma_tile.simd_store[2](
+            c_mma_tile.store[width=2](
                 int(row_c0_c1 * N + col_c0), c_reg.load[2]((i, j, 0))
             )
-            c_mma_tile.simd_store[2](
+            c_mma_tile.store[width=2](
                 int(row_c2_c3 * N + col_c2), c_reg.load[2]((i, j, 2))
             )
 

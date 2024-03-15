@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# REQUIRES: cuda
+# REQUIRES: has_cuda_device
 # RUN: %mojo %s
 
 from math import div_ceil, isclose, isnan
@@ -30,6 +30,7 @@ from gpu.host.memory import (
 from gpu.memory import async_copy, async_copy_wait_all
 from testing import assert_almost_equal
 from sys import argv
+from utils.list import DimList
 
 
 fn is_benchmark() -> Bool:
@@ -340,7 +341,7 @@ fn sgemm_double_buffer[
 
             @unroll
             for ii in range(simd_size_int):
-                var vec = c_reg.simd_load[simd_size_int]((i + ii, j))
+                var vec = c_reg.load[simd_size_int]((i + ii, j))
                 c_gmem_ptr.aligned_simd_store[simd_size_int, alignment](
                     (i * warp_dim_y + ii) * N + j * warp_dim_x, vec
                 )
