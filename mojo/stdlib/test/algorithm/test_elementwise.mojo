@@ -13,7 +13,7 @@ from algorithm.functional import (
     elementwise,
 )
 from memory import stack_allocation
-from closed_source_memory.buffer import Buffer, NDBuffer
+from buffer import Buffer, NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
