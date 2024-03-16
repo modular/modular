@@ -279,6 +279,25 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         self.__init__(ptr, shape)
 
     @always_inline
+    fn __init__(
+        inout self, shape: TensorShape, owned list: List[Scalar[dtype]]
+    ):
+        """Initializes a 1-dimensional Tensor from the provided list.
+
+        Args:
+            shape: The tensor shape.
+            list: The list to construct this Tensor from.
+        """
+        # Store the list length before we do a wiping take from it
+        var list_len = len(list)
+
+        var data_anyptr: AnyPointer[Scalar[dtype]] = list.steal_data()
+        var data_ptr = Pointer[Scalar[dtype]].__from_index(int(data_anyptr))
+        var data_dptr: DTypePointer[dtype] = DTypePointer[dtype](data_ptr)
+
+        self = Tensor[dtype](data_dptr, shape)
+
+    @always_inline
     fn __init__(inout self, owned list: List[Scalar[dtype]]):
         """Initializes a 1-dimensional Tensor from the provided list.
 
