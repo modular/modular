@@ -704,6 +704,17 @@ fn useMapSingle() -> object:
   return mapSingle(f, object(), object())
 
 
+# COM: Test that keyword-only parameter can be inferred after variadic.
+# COM: Issue https://github.com/modularml/modular/issues/33939
+fn deduce_kw_only[*Ts: Int, x: Int](y: Abstraction[x]):
+    pass
+
+
+# CHECK-LABEL: lit.func @"test_deduce_kw_only
+fn test_deduce_kw_only(a: Abstraction[3]):
+    # CHECK: call {{.*}}@"deduce_kw_only{{.*}}<:variadic<!Int> [{1}, {2}], :!Int {3}>(%a)
+    deduce_kw_only[1, 2](a)
+
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
 ##===----------------------------------------------------------------------===##

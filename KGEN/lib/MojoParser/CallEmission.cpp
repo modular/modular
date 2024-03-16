@@ -418,8 +418,15 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
     // This lambda hides the diagnostic and error handling logic for checking a
     // single positional parameter binding.
-    auto handlePosBinding = [&](size_t index, const Binding &binding,
-                                ASTType expectedType) -> PValue {
+    auto handlePosBinding =
+        [&, paramName = paramName, passingKind = passingKind,
+         &kwDiagNames = kwDiagNames](size_t index, const Binding &binding,
+                                     ASTType expectedType) -> PValue {
+      if (passingKind == PassingKind::KwOnly) {
+        // If this is a keyword-only passed positionally, we remember it.
+        kwDiagNames.push_back(paramName);
+        return UnboundAttr::get(expectedType);
+      }
       PValue pValue = emitSingleParameterValue(binding, expectedType,
                                                fitness.numImplicitConversions,
                                                emitter, evaluator);

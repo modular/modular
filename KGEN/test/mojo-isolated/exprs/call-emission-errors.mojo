@@ -108,6 +108,18 @@ fn test_missing_kw_only_param[x: int]():
     takes_kw_only_param[]()
 
 
+# expected-note @below {{declared here}}
+fn missing_keyword_only_params_tricky[
+    a: int, /, *, b: int, c: int
+]():
+    pass
+
+
+fn test_missing_keyword_only_params_tricky[x: int]():
+    # expected-error @below {{missing 2 required keyword-only parameters: 'b', 'c}}
+    missing_keyword_only_params_tricky[x, x, x]
+
+
 # expected-note @+1 {{function declared here}}
 fn takes_kw_only_args(a: int, b: int, *args: int, c: int, d: int = `2`):
     pass
