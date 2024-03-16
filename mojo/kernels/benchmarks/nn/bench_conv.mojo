@@ -12,13 +12,13 @@ from sys.param_env import env_get_string, env_get_int
 from benchmark import keep
 from closed_source_memory.buffer import NDBuffer
 from benchmark import *
-from NN.Conv import (
+from nn.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     pack_conv_filter_shape,
     pack_filter,
 )
-from NN.ConvUtils import (
+from nn.conv_utils import (
     ConvShape,
     append_shape,
     extend_shape,
@@ -27,9 +27,10 @@ from NN.ConvUtils import (
 from testing import assert_almost_equal
 
 from utils.index import Index
+from utils.list import DimList
 
 
-fn bench_conv(inout m: MojoBench, spec: ConvSpec) raises:
+fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
     alias input_type = spec.static_info.input_type
     alias filter_type = spec.static_info.filter_type
     alias output_type = spec.static_info.output_type
@@ -168,8 +169,9 @@ fn bench_conv(inout m: MojoBench, spec: ConvSpec) raises:
                     filter_type,
                     output_type,
                     True,
-                    ConvInfoStatic.create_unknown[spec.static_info.rank](),
-                    elementwise_epilogue_enabled=False,
+                    ConvInfoStatic[
+                        spec.static_info.rank + 2 - 2
+                    ].create_unknown(),
                 ].run(
                     output,
                     input,
@@ -257,7 +259,7 @@ struct ConvSpec[static_info: ConvSpecStatic](Stringable):
 
 
 def main():
-    var m = MojoBench(MojoBenchConfig())
+    var m = Bench(BenchConfig())
 
     alias fp32_1d = ConvSpecStatic(
         rank=1,

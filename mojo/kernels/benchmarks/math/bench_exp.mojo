@@ -14,6 +14,7 @@ from math.polynomial import EvaluationMethod
 from algorithm.functional import vectorize
 from benchmark import keep
 from benchmark import Bencher, BenchId, Bench
+from closed_source_memory.buffer import Buffer
 
 
 fn apply[
@@ -22,7 +23,7 @@ fn apply[
 ](input: Buffer[type], output: Buffer[type]):
     @parameter
     fn _func[width: Int](idx: Int):
-        output.store(idx, func(input.load[width=width](idx)))
+        output.simd_store(idx, func(input.load[width=width](idx)))
 
     vectorize[_func, simdwidthof[type]()](len(input))
 

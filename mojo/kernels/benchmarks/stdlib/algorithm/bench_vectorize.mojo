@@ -12,6 +12,7 @@ from random import rand
 
 from algorithm.functional import vectorize
 from benchmark import Unit, run
+from memory.unsafe import DTypePointer
 
 alias type = DType.uint8
 alias width = simdwidthof[type]()
@@ -34,7 +35,7 @@ fn main():
     fn arg_size():
         @parameter
         fn closure[width: Int](i: Int):
-            p2.simd_store(i, p1.simd_load[width](i) + p2.simd_load[width](i))
+            p2.store(i, p1.load[width=width](i) + p2.load[width=width](i))
 
         for i in range(its):
             vectorize[closure, width](size)
@@ -43,7 +44,7 @@ fn main():
     fn param_size():
         @parameter
         fn closure[width: Int](i: Int):
-            p2.simd_store(i, p1.simd_load[width](i) + p2.simd_load[width](i))
+            p2.store(i, p1.load[width=width](i) + p2.load[width=width](i))
 
         for i in range(its):
             vectorize[closure, width, size]()
@@ -52,7 +53,7 @@ fn main():
     fn arg_size_unroll():
         @parameter
         fn closure[width: Int](i: Int):
-            p2.simd_store(i, p1.simd_load[width](i) + p2.simd_load[width](i))
+            p2.store(i, p1.load[width=width](i) + p2.load[width=width](i))
 
         for i in range(its):
             vectorize[closure, width, unroll_factor](size)
@@ -61,25 +62,25 @@ fn main():
     fn param_size_unroll():
         @parameter
         fn closure[width: Int](i: Int):
-            p2.simd_store(i, p1.simd_load[width](i) + p2.simd_load[width](i))
+            p2.store(i, p1.load[width=width](i) + p2.load[width=width](i))
 
         for i in range(its):
             vectorize[closure, width, size, unroll_factor]()
 
     var arg = run[arg_size](max_runtime_secs=0.5).mean(unit)
-    print(p2.simd_load[size]())
+    print(p2.load[size]())
     memset_zero(p2, size)
 
     var param = run[param_size](max_runtime_secs=0.5).mean(unit)
-    print(p2.simd_load[size]())
+    print(p2.load[size]())
     memset_zero(p2, size)
 
     var arg_unroll = run[arg_size_unroll](max_runtime_secs=0.5).mean(unit)
-    print(p2.simd_load[size]())
+    print(p2.load[size]())
     memset_zero(p2, size)
 
     var param_unroll = run[param_size_unroll](max_runtime_secs=0.5).mean(unit)
-    print(p2.simd_load[size]())
+    print(p2.load[size]())
 
     print(
         "calculating",
