@@ -6,7 +6,7 @@
 
 from algorithm import vectorize
 from algorithm.functional import _elementwise_impl
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from runtime.llcl import MojoCallContextPtr
 
 from register import *

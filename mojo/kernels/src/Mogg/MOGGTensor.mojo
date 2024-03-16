@@ -10,7 +10,7 @@ from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 
 from algorithm.functional import elementwise, vectorize
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from memory.unsafe import Pointer, bitcast
 from MOGGIntList import IntList
 
