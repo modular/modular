@@ -22,7 +22,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from memory import memset_zero
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from tensor import Tensor
 

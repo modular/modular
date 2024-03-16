@@ -22,7 +22,7 @@ from gpu.mma import mma
 from Matmul import matmul_kernel_naive
 from MatmulUtils import elementwise_epilogue_type
 from memory import memset_zero, stack_allocation
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
 from tensor import Tensor
 

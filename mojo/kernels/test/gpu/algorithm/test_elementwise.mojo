@@ -22,7 +22,7 @@ from gpu.host.memory import (
     _memset,
 )
 from gpu.host.sync import synchronize
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from tensor import Tensor
 from testing import assert_equal
 

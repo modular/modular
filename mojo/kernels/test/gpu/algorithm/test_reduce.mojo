@@ -20,7 +20,7 @@ from gpu.host.memory import (
     _malloc,
     _memset,
 )
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from tensor import Tensor
 from testing import assert_equal
 from utils.index import Index
