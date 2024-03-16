@@ -19,7 +19,6 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import vectorize
 from utils.loop import unroll
-from gpu.memory import AddressSpace as GPUAddressSpace
 
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
@@ -28,7 +27,7 @@ from utils.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
 from memory import stack_allocation
-from memory.unsafe import AddressSpace, DTypePointer, Pointer
+from memory.unsafe import AddressSpace, DTypePointer, Pointer, _GPUAddressSpace
 
 alias _MAX_RANK = 8
 """The maximum tensor rank for any tensor shape.
@@ -477,7 +476,7 @@ fn _compute_ndbuffer_offset[
         return 0
 
     @parameter
-    if triple_is_nvidia_cuda() and address_space == GPUAddressSpace.SHARED:
+    if triple_is_nvidia_cuda() and address_space == _GPUAddressSpace.SHARED:
         var result: Int32 = 0
 
         @unroll
@@ -549,7 +548,7 @@ fn _compute_ndbuffer_offset[
         return 0
 
     @parameter
-    if triple_is_nvidia_cuda() and address_space == GPUAddressSpace.SHARED:
+    if triple_is_nvidia_cuda() and address_space == _GPUAddressSpace.SHARED:
         var result: Int32 = 0
 
         @unroll
