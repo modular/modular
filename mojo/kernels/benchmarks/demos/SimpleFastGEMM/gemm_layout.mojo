@@ -7,7 +7,7 @@
 # Meant to be run on an AVX512 system
 
 import benchmark
-from utils import unroll
+from utils.loop import unroll
 from closed_source_memory.buffer import NDBuffer
 
 from kernel_utils.layout import Layout, IntTuple
