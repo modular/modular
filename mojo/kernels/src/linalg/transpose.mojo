@@ -18,7 +18,7 @@ from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple, StaticTuple
 from utils.list import DimList
-from utils import unroll
+from utils.loop import unroll
 
 
 fn _transpose_inplace_4x4[

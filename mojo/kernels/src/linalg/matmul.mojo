@@ -16,7 +16,7 @@ from sys.info import (
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
-from utils import unroll
+from utils.loop import unroll
 from algorithm.functional import tile_and_unswitch
 from Gemv import gemv
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id

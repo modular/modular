@@ -13,7 +13,7 @@
 
 from sys.info import has_intel_amx, os_is_linux
 
-from utils import unroll
+from utils.loop import unroll
 from IntelAMX import (
     _tile_dpbssd,
     _tile_dpbssd_emulated,
