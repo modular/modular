@@ -417,7 +417,7 @@ fn test_int_to_int_error(a: Int, b: NoSelfCtor):
   # expected-error @+1 {{cannot construct 'NoSelfCtor' with itself, you can remove the constructor call}}
   _ = NoSelfCtor(NoSelfCtor(a))
 
-  # expected-error @+1 {{invalid initialization: expected at most 1 positional arguments, got 2}}
+  # expected-error @+1 {{invalid initialization: expected at most 1 positional argument, got 2}}
   _ = GetAttrNotString(a)
 
 

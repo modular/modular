@@ -15,7 +15,6 @@
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/OverloadFitness.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "MojoUtils.h"
 #include "OperandDiagnostics.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
@@ -184,13 +183,15 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   }
 
   ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
+  size_t numPosPassable = countNumPositional(paramPassingKinds);
   if (unpackedUnboundIdx != -1) {
     // Check if we have too many parameters after unpacking
-    size_t numPosPassable = countNumPositional(paramPassingKinds);
     size_t numUnpackedPositionals = unpackedPosBindings.size();
     if (unpackedPosBindings.size() > numPosPassable) {
-      if (diagEmitter.emitParamCount)
-        diagEmitter.emitParamCount(numUnpackedPositionals, /*posOnly=*/false);
+      if (diagEmitter.emitTooManyPositional) {
+        diagEmitter.emitTooManyPositional(numPosPassable,
+                                          numUnpackedPositionals);
+      }
       return {{}, fitness};
     }
 
@@ -220,26 +221,39 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   KeywordOperandContainer<Binding> variadicKwOperands;
   bool allowMissingKwOnly =
       boundness == Boundness::Partial || parameterInferenceHook;
-  auto [kwDiagRes, errorNames] = diagnoseKeywordOperands(
+  auto [kwDiagRes, kwDiagNames] = diagnoseKeywordOperands(
       paramListAttr, variadicKwOperands, operands, allowMissingKwOnly);
   if (kwDiagRes != KwDiagResult::kValid) {
     switch (kwDiagRes) {
     case KwDiagResult::kMissingKwOnly:
       if (diagEmitter.emitMissing)
-        diagEmitter.emitMissing(errorNames, "keyword-only");
+        diagEmitter.emitMissing(kwDiagNames, "keyword-only");
       break;
     case KwDiagResult::kPosOnlyPassedByKw:
       if (diagEmitter.emitPosOnlyPassedByKw)
-        diagEmitter.emitPosOnlyPassedByKw(errorNames);
+        diagEmitter.emitPosOnlyPassedByKw(kwDiagNames);
       break;
     case KwDiagResult::kUnknownKeywords:
       if (diagEmitter.emitUnknownKeywords)
-        diagEmitter.emitUnknownKeywords(errorNames);
+        diagEmitter.emitUnknownKeywords(kwDiagNames);
       break;
     default:
       llvm_unreachable("unknown KwDiagResult");
     }
     return {{}, fitness};
+  }
+
+  auto [posDiagRes, posDiagNames] =
+      diagnosePosOperands(paramListAttr, operands, /*allowCountMismatch=*/true);
+  if (posDiagRes == PosDiagResult::kByPosAndKw) {
+    if (diagEmitter.emitRedundantKeywords)
+      diagEmitter.emitRedundantKeywords(posDiagNames);
+    return {{}, fitness};
+  } else {
+    // Parameter inference and call emission rely on this function not failing
+    // early due to missing or too many positional parameters.
+    assert(posDiagRes == PosDiagResult::kValid &&
+           "positional parameter operand check failed unexpectedly");
   }
 
   /// We will attempt to find a binding for every expected parameter.
@@ -363,7 +377,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         // If this is a missing keyword-only, we collect them. We put pretend
         // this is implicitly unbound, so we can error out in the end.
         setParamValue(UnboundAttr::get(requestedType));
-        errorNames.push_back(paramName);
+        kwDiagNames.push_back(paramName);
         continue;
       }
 
@@ -395,25 +409,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       }
     }
 
-    // Helper to check and emit diagnostics for redundant keyword parameters.
-    auto checkRedundantKwParam = [&, paramName = paramName,
-                                  passingKind =
-                                      passingKind]() -> LogicalResult {
-      if (passingKind == PassingKind::PosOnly ||
-          passingKind == PassingKind::Implicit)
-        return success();
-      assert(!paramName.empty());
-      if (!operands.findKwArg(paramName))
-        return success(); // Not redundant.
-      if (diagEmitter.emitRedundantKeywords)
-        diagEmitter.emitRedundantKeywords(posBindingIdx, paramName);
-      return failure();
-    };
-
     // If this value was already bound and checked, use it.
     if (binding.typeChecked) {
-      if (failed(checkRedundantKwParam()))
-        return {{}, fitness};
       setParamValue(binding.value);
       ++posBindingIdx;
       continue;
@@ -438,8 +435,6 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     // PValue classification for `*Ts`, which is required to pass this legally?
     if (!paramListAttr.isVariadic(idx) ||
         binding.getValue().getType() == requestedType) {
-      if (failed(checkRedundantKwParam()))
-        return {{}, fitness};
       PValue paramValue = handlePosBinding(idx, binding, requestedType);
       if (!paramValue)
         return {{}, fitness};
@@ -466,10 +461,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     setParamValue(VariadicAttr::get(elements, varType));
   }
 
-  // Complaing if we collected any missing keyword-only parameters.
-  if (!errorNames.empty()) {
+  // Complain if we collected any missing keyword-only parameters.
+  if (!kwDiagNames.empty()) {
     if (diagEmitter.emitMissing)
-      diagEmitter.emitMissing(errorNames, "keyword-only");
+      diagEmitter.emitMissing(kwDiagNames, "keyword-only");
     return {{}, fitness};
   }
 
@@ -538,10 +533,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
           diag.attachNote(*opLoc) << baseName << " declared here";
       },
       /*emitRedundantKeywords=*/
-      [&](size_t paramIdx, StringAttr paramName) {
+      [&](ArrayRef<StringAttr> names) {
         InflightDiag diag = shared.emitError(exprLoc);
-        diag << "parameter #" << paramIdx << " (" << paramName
-             << ") passed both as positional and keyword operand";
+        emitByPosAndKw(diag, names, "parameter");
         if (opLoc)
           diag.attachNote(*opLoc) << baseName << " declared here";
       },
@@ -588,6 +582,13 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         emitMissing(diag, names, kindStr + " parameter");
         if (opLoc)
           diag.attachNote(*opLoc) << baseName << " declared here";
+      },
+      /*emitTooManyPositional=*/
+      [&](size_t numMaxAllowed, size_t numActual) {
+        InflightDiag diag = shared.emitError(exprLoc);
+        emitTooManyPositional(diag, numMaxAllowed, numActual, "parameter");
+        if (opLoc)
+          diag.attachNote(*opLoc) << baseName << " declared here";
       }};
 
   return verifyBindings(expectedParamTypes, paramListAttr,
@@ -605,7 +606,7 @@ ParamBindings::verifyBindings(
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(LITSignatureType sig) const {
   DiagEmitter diagEmitter{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                          nullptr, nullptr, nullptr, nullptr, nullptr};
+                          nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
   return verifyBindings(sig.getParamTypes(), sig.getParamListAttrs(),
                         /*parameterInferenceHook=*/{}, diagEmitter);
 }

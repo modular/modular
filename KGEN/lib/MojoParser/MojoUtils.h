@@ -94,6 +94,10 @@ void emitMissing(InflightDiag &diag, ArrayRef<StringAttr> names,
 void emitByPosAndKw(InflightDiag &diag, ArrayRef<StringAttr> names,
                     const Twine &kindStr);
 
+/// Helper to emit an error message for too many positional arguments/params.
+void emitTooManyPositional(InflightDiag &diag, size_t numMaxAllowed,
+                           size_t numActual, const Twine &kindStr);
+
 /// Return a printable name for an anonymous positional-only argument/parameter.
 std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
 

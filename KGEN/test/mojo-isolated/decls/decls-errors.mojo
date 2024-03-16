@@ -284,12 +284,12 @@ def fn_redecl2() -> FloatLiteral: pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'Int'}}
-# expected-note @below {{candidate not viable: expected at most 1 positional arguments, got 2}}
+# expected-note @below {{candidate not viable: expected at most 1 positional argument, got 2}}
 fn overloadIntFloat32(a: Int): pass
 
 # expected-note @below {{candidate declared here}}
 # expected-note-re @below {{candidate not viable: argument #0 cannot be converted from 'TestOverloading' to 'FloatDyn'}}
-# expected-note @below {{candidate not viable: expected at most 1 positional arguments, got 2}}
+# expected-note @below {{candidate not viable: expected at most 1 positional argument, got 2}}
 fn overloadIntFloat32(a: FloatDyn): pass
 
 # expected-note @below {{candidate declared here}}
