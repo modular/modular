@@ -14,7 +14,7 @@ from math.polynomial import EvaluationMethod
 from algorithm.functional import vectorize
 from benchmark import keep
 from benchmark import Bencher, BenchId, Bench
-from closed_source_memory.buffer import Buffer
+from buffer import Buffer
 
 
 fn apply[
