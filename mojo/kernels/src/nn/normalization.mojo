@@ -6,9 +6,9 @@
 
 from math import div_ceil, min, sqrt
 
-from closed_source_algorithm import map_reduce, mean, variance, vectorize
+from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import sync_parallelize
-from closed_source_algorithm.reduction import (
+from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _simd_sum,
     _simd_sum_elementwise,
