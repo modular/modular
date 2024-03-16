@@ -250,6 +250,7 @@ struct RuntimeOptions {
 
   size_t numThreads = 0;
   size_t maxThreads = 0;
+  bool singleThreaded = false;
   std::string profileFilename = {};
 
   // DO NOT CHANGE THIS.
@@ -411,7 +412,7 @@ struct RuntimeOptions {
   }
 
   RuntimeOptions &forDebug() {
-    numThreads = 1;
+    singleThreaded = true;
     leakCheckedAllocator = true;
     return *this;
   }
@@ -443,8 +444,7 @@ struct RuntimeOptions {
   }
 
   RuntimeOptions &withSingleThreaded(bool newSingleThreaded = true) {
-    if (newSingleThreaded)
-      numThreads = 1;
+    singleThreaded = newSingleThreaded;
     return *this;
   }
 
