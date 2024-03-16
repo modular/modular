@@ -12,7 +12,6 @@ from nn.resize import (
     resize_nearest_neighbor,
 )
 from tensor import Tensor, TensorShape
-from closed_source_test_utils import linear_fill
 from testing import assert_almost_equal
 
 
@@ -57,8 +56,7 @@ def main():
     fn test_upsample_sizes_nearest_1() raises:
         print("== test_upsample_sizes_nearest_1")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 2, 2)
-        linear_fill[type](input, VariadicList[Scalar[type]](1, 2, 3, 4))
+        var input = Tensor[type](TensorShape(1, 1, 2, 2), 1, 2, 3, 4)
         var output = Tensor[type](1, 1, 4, 6)
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
@@ -71,9 +69,8 @@ def main():
     fn test_downsample_sizes_nearest() raises:
         print("== test_downsample_sizes_nearest")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 2, 4)
-        linear_fill[type](
-            input, VariadicList[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8)
+        var input = Tensor[type](
+            TensorShape(1, 1, 2, 4), 1, 2, 3, 4, 5, 6, 7, 8
         )
         var output = Tensor[type](1, 1, 1, 2)
 
@@ -88,10 +85,9 @@ def main():
     fn test_downsample_sizes_nearest_half_pixel_1D() raises:
         print("== test_downsample_sizes_nearest_half_pixel_1D")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 4, 4)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](
+        var input = Tensor[type](
+            TensorShape(1, 1, 4, 4),
+            List[Scalar[type]](
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
@@ -108,8 +104,9 @@ def main():
     fn test_upsample_sizes_nearest_2() raises:
         print("== test_upsample_sizes_nearest_2")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 2, 2)
-        linear_fill[type](input, VariadicList[Scalar[type]](1, 2, 3, 4))
+        var input = Tensor[type](
+            TensorShape(1, 1, 2, 2), List[Scalar[type]](1, 2, 3, 4)
+        )
         var output = Tensor[type](1, 1, 7, 8)
 
         test_case_nearest[
@@ -123,10 +120,9 @@ def main():
     fn test_upsample_sizes_nearest_floor_align_corners() raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 4, 4)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](
+        var input = Tensor[type](
+            TensorShape(1, 1, 4, 4),
+            List[Scalar[type]](
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
@@ -143,10 +139,9 @@ def main():
     fn test_upsample_sizes_nearest_round_half_up_asymmetric() raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 4, 4)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](
+        var input = Tensor[type](
+            TensorShape(1, 1, 4, 4),
+            List[Scalar[type]](
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
@@ -163,10 +158,9 @@ def main():
     fn test_upsample_sizes_nearest_ceil_half_pixel() raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 4, 4)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](
+        var input = Tensor[type](
+            TensorShape(1, 1, 4, 4),
+            List[Scalar[type]](
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
@@ -183,22 +177,20 @@ def main():
     fn test_upsample_sizes_linear() raises:
         print("== test_upsample_sizes_linear")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 2, 2)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](1, 2, 3, 4),
+        var input = Tensor[type](
+            TensorShape(1, 1, 2, 2),
+            List[Scalar[type]](1, 2, 3, 4),
         )
         var output = Tensor[type](1, 1, 4, 4)
-        var reference = Tensor[type](1, 1, 4, 4)
 
         # TORCH REFERENCE:
         # x = np.array([[[[1, 2], [3, 4]]]])
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (4, 4), mode="bilinear")
         # print(y.flatten())
 
-        linear_fill[type](
-            reference,
-            VariadicList[Scalar[type]](
+        var reference = Tensor[type](
+            TensorShape(1, 1, 4, 4),
+            List[Scalar[type]](
                 1.0000,
                 1.2500,
                 1.7500,
@@ -229,22 +221,20 @@ def main():
     fn test_upsample_sizes_linear_align_corners() raises:
         print("== test_upsample_sizes_linear_align_corners")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 2, 2)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](1, 2, 3, 4),
+        var input = Tensor[type](
+            TensorShape(1, 1, 2, 2),
+            List[Scalar[type]](1, 2, 3, 4),
         )
         var output = Tensor[type](1, 1, 4, 4)
-        var reference = Tensor[type](1, 1, 4, 4)
 
         # TORCH REFERENCE:
         # x = np.array([[[[1, 2], [3, 4]]]])
         # y = torch.nn.functional.interpolate(
         # torch.Tensor(x), (4, 4), mode="bilinear", align_corners=True)
         # print(y.flatten())
-        linear_fill[type](
-            reference,
-            VariadicList[Scalar[type]](
+        var reference = Tensor[type](
+            TensorShape(1, 1, 4, 4),
+            List[Scalar[type]](
                 1.0000,
                 1.3333,
                 1.6667,
@@ -275,19 +265,17 @@ def main():
     fn test_downsample_sizes_linear() raises:
         print("== test_downsample_sizes_linear")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 2, 4)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8),
+        var input = Tensor[type](
+            TensorShape(1, 1, 2, 4),
+            List[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8),
         )
         var output = Tensor[type](1, 1, 1, 2)
-        var reference = Tensor[type](1, 1, 1, 2)
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (1, 2), mode="bilinear")
         # print(y.flatten())
-        linear_fill[type](
-            reference, VariadicList[Scalar[type]](3.50000, 5.50000)
+        var reference = Tensor[type](
+            TensorShape(1, 1, 1, 2), List[Scalar[type]](3.50000, 5.50000)
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
@@ -301,20 +289,19 @@ def main():
     fn test_downsample_sizes_linear_align_corners() raises:
         print("== test_downsample_sizes_linear_align_corners")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 2, 4)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8),
+        var input = Tensor[type](
+            TensorShape(1, 1, 2, 4), List[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8)
         )
         var output = Tensor[type](1, 1, 1, 2)
-        var reference = Tensor[type](1, 1, 1, 2)
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
         # y = torch.nn.functional.interpolate(
         #     torch.Tensor(x), (1, 2), mode="bilinear", align_corners=True
         # )
         # print(y.flatten())
-        linear_fill[type](reference, VariadicList[Scalar[type]](1, 4))
+        var reference = Tensor[type](
+            TensorShape(1, 1, 1, 2), List[Scalar[type]](1, 4)
+        )
 
         test_case_linear[4, CoordinateTransformationMode.AlignCorners, False](
             input, output, reference
@@ -327,25 +314,24 @@ def main():
     fn test_upsample_sizes_trilinear() raises:
         print("== test_upsample_sizes_trilinear")
         alias type = DType.float32
-        var input = Tensor[type](1, 4, 2, 2)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](
+        var input = Tensor[type](
+            TensorShape(1, 4, 2, 2),
+            List[Scalar[type]](
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
         var output = Tensor[type](1, 6, 4, 4)
-        var reference = Tensor[type](1, 6, 4, 4)
+
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 2, 2))
         # y = torch.nn.functional.interpolate(
         #     torch.Tensor(x), (6, 4, 4), mode="trilinear"
         # )
         # print(y.flatten())
-        linear_fill[type](
-            reference,
+        var reference = Tensor[type](
+            TensorShape(1, 6, 4, 4),
             # fmt: off
-            VariadicList[Scalar[type]](0.00000,  0.25000,  0.75000,  1.00000,  0.50000,  0.75000,  1.25000,
+            List[Scalar[type]](0.00000,  0.25000,  0.75000,  1.00000,  0.50000,  0.75000,  1.25000,
                 1.50000,  1.50000,  1.75000,  2.25000,  2.50000,  2.00000,  2.25000,
                 2.75000,  3.00000,  2.00000,  2.25000,  2.75000,  3.00000,  2.50000,
                 2.75000,  3.25000,  3.50000,  3.50000,  3.75000,  4.25000,  4.50000,
@@ -373,24 +359,23 @@ def main():
     fn test_downsample_sizes_linear_antialias() raises:
         print("== test_downsample_sizes_linear_antialias")
         alias type = DType.float32
-        var input = Tensor[type](1, 1, 4, 4)
-        linear_fill[type](
-            input,
-            VariadicList[Scalar[type]](
+        var input = Tensor[type](
+            TensorShape(1, 1, 4, 4),
+            List[Scalar[type]](
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
         var output = Tensor[type](1, 1, 2, 2)
-        var reference = Tensor[type](1, 1, 2, 2)
+
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 4))
         # y = torch.nn.functional.interpolate(
         #     torch.Tensor(x), (2, 2), mode="bilinear", antialias=True
         # )
         # print(y.flatten())
-        linear_fill[type](
-            reference,
-            VariadicList[Scalar[type]](3.57143, 5.14286, 9.85714, 11.42857),
+        var reference = Tensor[type](
+            TensorShape(1, 1, 2, 2),
+            List[Scalar[type]](3.57143, 5.14286, 9.85714, 11.42857),
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, True](

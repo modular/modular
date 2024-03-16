@@ -9,24 +9,17 @@ from math import max
 
 from nn.gather_scatter import gather_elements
 from tensor import Tensor, TensorShape
-from closed_source_test_utils import linear_fill
 
 
 fn test_case[
     type: DType,
 ](
-    input_shape: TensorShape,
-    indices_shape: TensorShape,
     axis: Int,
-    data_vals: VariadicList[Scalar[type]],
-    indices_vals: VariadicList[Int32],
-    output_ref_vals: VariadicList[Scalar[type]],
+    data: Tensor[type],
+    indices: Tensor[DType.int32],
+    output: Tensor[type],
 ) raises:
-    var data = Tensor[type](input_shape)
-    linear_fill(data, data_vals)
-    var indices = Tensor[DType.int32](indices_shape)
-    linear_fill(indices, indices_vals)
-    var output = Tensor[type](indices_shape)
+    var output_ref = output
 
     gather_elements(
         data._to_ndbuffer[2](),
@@ -34,12 +27,6 @@ fn test_case[
         axis,
         output._to_ndbuffer[2](),
     )
-
-    _ = data
-    _ = indices
-
-    var output_ref = Tensor[type](indices_shape)
-    linear_fill(output_ref, output_ref_vals)
 
     for i in range(output.num_elements()):
         if output_ref._to_buffer()[i] != output._to_buffer()[i]:
@@ -50,17 +37,16 @@ fn test_case[
 fn main() raises:
     fn test_gather_ax1() raises:
         print("== test_gather_ax1")
-        var data = VariadicList[Float32](1, 2, 3, 4)
-        var indices = VariadicList[Int32](0, 0, 1, 0)
-        var output_ref = VariadicList[Float32](1, 1, 4, 3)
-        test_case[DType.float32](
-            TensorShape(2, 2),
-            TensorShape(2, 2),
-            1,
-            data,
-            indices,
-            output_ref,
+        var data = Tensor[DType.float32](
+            TensorShape(2, 2), List[Float32](1, 2, 3, 4)
         )
+        var indices = Tensor[DType.int32](
+            TensorShape(2, 2), List[Int32](0, 0, 1, 0)
+        )
+        var output_ref = Tensor[DType.float32](
+            TensorShape(2, 2), List[Float32](1, 1, 4, 3)
+        )
+        test_case[DType.float32](1, data, indices, output_ref)
 
     # CHECK-LABEL: test_gather_ax1
     # CHECK-NOT: FAIL
@@ -68,17 +54,16 @@ fn main() raises:
 
     fn test_gather_ax0() raises:
         print("== test_gather_ax0")
-        var data = VariadicList[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
-        var indices = VariadicList[Int32](1, 2, 0, 2, 0, 0)
-        var output_ref = VariadicList[Float32](4, 8, 3, 7, 2, 3)
-        test_case[DType.float32](
-            TensorShape(3, 3),
-            TensorShape(2, 3),
-            0,
-            data,
-            indices,
-            output_ref,
+        var data = Tensor[DType.float32](
+            TensorShape(3, 3), List[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
         )
+        var indices = Tensor[DType.int32](
+            TensorShape(2, 3), List[Int32](1, 2, 0, 2, 0, 0)
+        )
+        var output_ref = Tensor[DType.float32](
+            TensorShape(2, 3), List[Float32](4, 8, 3, 7, 2, 3)
+        )
+        test_case[DType.float32](0, data, indices, output_ref)
 
     # CHECK-LABEL: test_gather_ax0
     # CHECK-NOT: FAIL
@@ -86,17 +71,16 @@ fn main() raises:
 
     fn test_gather_neg_indices() raises:
         print("== test_gather_neg_indices")
-        var data = VariadicList[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
-        var indices = VariadicList[Int32](-1, -2, 0, -2, 0, 0)
-        var output_ref = VariadicList[Float32](7, 5, 3, 4, 2, 3)
-        test_case[DType.float32](
-            TensorShape(3, 3),
-            TensorShape(2, 3),
-            0,
-            data,
-            indices,
-            output_ref,
+        var data = Tensor[DType.float32](
+            TensorShape(3, 3), List[Float32](1, 2, 3, 4, 5, 6, 7, 8, 9)
         )
+        var indices = Tensor[DType.int32](
+            TensorShape(2, 3), List[Int32](-1, -2, 0, -2, 0, 0)
+        )
+        var output_ref = Tensor[DType.float32](
+            TensorShape(2, 3), List[Float32](7, 5, 3, 4, 2, 3)
+        )
+        test_case[DType.float32](0, data, indices, output_ref)
 
     # CHECK-LABEL: test_gather_neg_indices
     # CHECK-NOT: FAIL
