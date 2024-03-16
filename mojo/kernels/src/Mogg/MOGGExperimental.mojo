@@ -26,7 +26,7 @@ from math import (
 )
 from math.limit import max_or_inf, min_or_neginf
 
-from closed_source_algorithm.reduction import _reduce_generator, reduce_shape
+from algorithm.reduction import _reduce_generator, reduce_shape
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn.activations import relu
