@@ -192,14 +192,14 @@ struct LayoutTensor[
         *,
         __tiled_layout: Layout = Self._compute_tile_layout[M1, N1](),
     ](self, m: Int, n: Int) -> LayoutTensor[
-        __tiled_layout[0], dtype, address_space
+        __tiled_layout[0], dtype, address_space=address_space
     ]:
         alias stride_m = int(__tiled_layout[1].stride[0])
         alias stride_n = int(__tiled_layout[1].stride[1])
         var offset = m * stride_m + n * stride_n
-        return LayoutTensor[__tiled_layout[0], dtype, address_space](
-            self.ptr.offset(offset)
-        )
+        return LayoutTensor[
+            __tiled_layout[0], dtype, address_space=address_space
+        ](self.ptr.offset(offset))
 
     @staticmethod
     fn _compute_distribute_layout[
@@ -217,7 +217,7 @@ struct LayoutTensor[
             layout, threads_layout
         ](),
     ](self, thread_id: Int) -> LayoutTensor[
-        tiled_layout[1], dtype, address_space
+        tiled_layout[1], dtype, address_space=address_space
     ]:
         alias fragments_layout_stride = flatten(tiled_layout[0].stride)
 
@@ -236,9 +236,9 @@ struct LayoutTensor[
 
         unroll[compute_offset, len(fragments_layout_stride)]()
 
-        return LayoutTensor[tiled_layout[1], dtype, address_space](
-            self.ptr.offset(offset)
-        )
+        return LayoutTensor[
+            tiled_layout[1], dtype, address_space=address_space
+        ](self.ptr.offset(offset))
 
     @always_inline
     fn transpose[
@@ -248,20 +248,31 @@ struct LayoutTensor[
             layout,
             Layout(IntTuple(N, M), IntTuple(M, 1)),
         ),
-    ](self) -> LayoutTensor[transposed_layout, dtype, address_space]:
-        return LayoutTensor[transposed_layout, dtype, address_space](self.ptr)
+    ](self) -> LayoutTensor[
+        transposed_layout, dtype, address_space=address_space
+    ]:
+        return LayoutTensor[
+            transposed_layout, dtype, address_space=address_space
+        ](self.ptr)
 
     @always_inline
     fn reshape[
         dst_layout: Layout,
         reshaped_layout: Layout = composition(layout, dst_layout),
-    ](self) -> LayoutTensor[reshaped_layout, dtype, address_space]:
-        return LayoutTensor[reshaped_layout, dtype, address_space](self.ptr)
+    ](self) -> LayoutTensor[
+        reshaped_layout, dtype, address_space=address_space
+    ]:
+        return LayoutTensor[
+            reshaped_layout, dtype, address_space=address_space
+        ](self.ptr)
 
     @always_inline
     fn copy_from[
         other_layout: Layout
-    ](self, other: LayoutTensor[other_layout, dtype, address_space]):
+    ](
+        self,
+        other: LayoutTensor[other_layout, dtype, address_space=address_space],
+    ):
         for m in range(Self.dim[0]()):
 
             @parameter
@@ -406,9 +417,12 @@ struct TensorBuilder[
 fn stack_allocation_like[
     layout: Layout,
     dtype: DType,
+    *,
     address_space: AddressSpace,
     target_address_space: AddressSpace = AddressSpace.GENERIC,
-](in_tensor: LayoutTensor[layout, dtype, address_space]) -> LayoutTensor[
-    layout, dtype, target_address_space
-]:
-    return LayoutTensor[layout, dtype, target_address_space].stack_allocation()
+](
+    in_tensor: LayoutTensor[layout, dtype, address_space=address_space]
+) -> LayoutTensor[layout, dtype, address_space=target_address_space]:
+    return LayoutTensor[
+        layout, dtype, address_space=target_address_space
+    ].stack_allocation()
