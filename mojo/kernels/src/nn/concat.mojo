@@ -393,7 +393,10 @@ fn _concat_small[
     # If we are concat'ing along the last dimension we can do a simd load.
     if axis == rank - 1 and inputs_simd_aligned:
         _elementwise_impl[
-            concat_lambda, simd_width, rank, single_thread_blocking_override
+            concat_lambda,
+            simd_width,
+            rank,
+            use_blocking_impl=single_thread_blocking_override,
         ](output.dynamic_shape)
     else:
         # Otherwise we must run scalar.
@@ -401,7 +404,7 @@ fn _concat_small[
             concat_lambda,
             1,
             rank,
-            single_thread_blocking_override,
+            use_blocking_impl=single_thread_blocking_override,
         ](output.dynamic_shape)
 
 
@@ -1391,11 +1394,10 @@ fn _concat_gpu[
     # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
     # Because the inner dim is contiguous we will get coalesced memory access
     # using the elementwise generator with simd_width=1.
-    alias target = "cuda"
     _elementwise_impl[
         per_output_elem,
         1,
         rank,
-        False,
-        target,
+        use_blocking_impl=False,
+        target="cuda",
     ](output.get_shape())

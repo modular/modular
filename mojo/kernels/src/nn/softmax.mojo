@@ -153,7 +153,7 @@ fn _softmax_2_pass_step2[
             exp(input_val - running_max_simd) / running_sum_simd,
         )
 
-    vectorize[_step_2, simd_width, unroll_factor](len(output))
+    vectorize[_step_2, simd_width, unroll_factor=unroll_factor](len(output))
 
 
 fn softmax_2_pass[
@@ -249,7 +249,7 @@ fn _softmax_3_pass_step_2[
             accum_scalar, accum_simd, elem
         )
 
-    vectorize[step_2, simd_width, unroll_factor](len(output))
+    vectorize[step_2, simd_width, unroll_factor=unroll_factor](len(output))
     # Reduce the values from both the scalar and vector accum.
     return accum_scalar + accum_simd.reduce_add()
 
@@ -282,7 +282,7 @@ fn _softmax_3_pass_step_3[
         elem = accum_apply_func[type, simd_width](elem, accum_simd)
         output.simd_store[simd_width](idx, elem)
 
-    vectorize[step_3, simd_width, unroll_factor](len(output))
+    vectorize[step_3, simd_width, unroll_factor=unroll_factor](len(output))
 
 
 fn _softmax_3_pass_base[
@@ -678,8 +678,12 @@ fn softmax_kernel[
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
-    var max_buf = Buffer[type, 1, AddressSpace.SHARED].stack_allocation()
-    var exp_sum_buf = Buffer[type, 1, AddressSpace.SHARED].stack_allocation()
+    var max_buf = Buffer[
+        type, 1, address_space = AddressSpace.SHARED
+    ].stack_allocation()
+    var exp_sum_buf = Buffer[
+        type, 1, address_space = AddressSpace.SHARED
+    ].stack_allocation()
 
     @parameter
     @always_inline

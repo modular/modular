@@ -533,8 +533,8 @@ fn gather[
                 gather_elementwise_fn,
                 1,
                 output_rank,
-                single_thread_blocking_override,
-                target,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
             ](
                 output_shape,
             )
@@ -543,8 +543,8 @@ fn gather[
                 gather_elementwise_fn,
                 simdwidthof[type](),
                 output_rank,
-                single_thread_blocking_override,
-                target,
+                use_blocking_impl=single_thread_blocking_override,
+                target=target,
             ](
                 output_shape,
             )
@@ -617,7 +617,7 @@ async fn async_gather[
                 gather_elementwise_fn,
                 1,
                 output_rank,
-                target,
+                target=target,
             ](
                 output_shape,
             )
@@ -626,7 +626,7 @@ async fn async_gather[
                 gather_elementwise_fn,
                 simdwidthof[type](),
                 output_rank,
-                target,
+                target=target,
             ](
                 output_shape,
             )
@@ -818,8 +818,8 @@ fn scatter_nd_generator[
         update_func,
         1,
         indices_rank - 1,
-        single_thread_blocking_override,
-        target,
+        use_blocking_impl=single_thread_blocking_override,
+        target=target,
     ](iter_shape)
 
 
