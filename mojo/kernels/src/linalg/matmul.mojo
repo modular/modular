@@ -596,7 +596,7 @@ struct LoadStoreOutputTile[
                 @parameter
                 if is_load:
                     var data = self.row_ptrs[row].offset(col).load[
-                        column_step
+                        width=column_step
                     ]()
                     self.output_tile.simd_store(Index(row, col), data)
                 else:

@@ -63,7 +63,11 @@ fn matrix_band_part[
             output[idx] = 0
 
     _elementwise_impl[
-        func, 1, rank, single_thread_blocking_override, target=target
+        func,
+        1,
+        rank,
+        use_blocking_impl=single_thread_blocking_override,
+        target=target,
     ](
         input_shape,
     )
