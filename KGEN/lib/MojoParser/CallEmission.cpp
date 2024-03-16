@@ -796,6 +796,7 @@ static CallKind getCallKind(CallSyntax syntax) {
   case CallSyntax::kMethodCallSynthetic:
     return CallKind::kMethod;
   }
+  llvm_unreachable("invalid call syntax");
 }
 
 PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
