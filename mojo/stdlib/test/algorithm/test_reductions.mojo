@@ -9,22 +9,21 @@ from math import max as _max
 from math import min as _min
 from math.limit import max_or_inf, min_or_neginf
 
-from closed_source_algorithm import (
+from algorithm import (
     all_true,
     any_true,
     argmax,
     argmin,
     cumsum,
-    max,
     mean,
-    min,
     none_true,
     product,
     sum,
     variance,
 )
+from algorithm.reduction import max, min
 
-from closed_source_algorithm.reduction import (
+from algorithm.reduction import (
     _index_of_first_one,
     _reduce_generator,
 )

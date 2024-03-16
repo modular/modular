@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from closed_source_algorithm.reduction import *
+from algorithm.reduction import *
 from tensor import *
 from testing import *
 
