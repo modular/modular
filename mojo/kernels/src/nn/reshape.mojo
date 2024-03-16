@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils import unroll
+from utils.loop import unroll
 from closed_source_memory.buffer import NDBuffer
 
 from register import mogg_register, mogg_view_op
