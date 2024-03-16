@@ -620,7 +620,7 @@ fn elementwise_wrapper[
                 func,
                 simd_width,
                 rank,
-                single_thread_blocking_override,
+                use_blocking_impl=single_thread_blocking_override,
                 target=target,
             ](
                 buffer.dynamic_shape,

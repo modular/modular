@@ -89,10 +89,7 @@ fn test_3D_in_out_lambda[
                 var result = input_0_fn[simd_width, 3](indices)
                 output_0_fn[simd_width, 3](indices, result)
 
-            vectorize[
-                func_wrapper,
-                simd_width,
-            ](tensor1.dim[2]())
+            vectorize[func_wrapper, simd_width](tensor1.dim[2]())
 
     return output
 
@@ -264,7 +261,7 @@ fn test_custom_identity[
         identity,
         simd_width,
         rank,
-        single_thread_blocking_override,
+        use_blocking_impl=single_thread_blocking_override,
         target="cpu",
     ](
         input_shape,
@@ -341,7 +338,7 @@ fn custom_op_that_raises[
         identity,
         simd_width,
         rank,
-        single_thread_blocking_override,
+        use_blocking_impl=single_thread_blocking_override,
         target="cpu",
     ](
         input_shape,
