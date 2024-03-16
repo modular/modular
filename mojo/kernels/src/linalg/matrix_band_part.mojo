@@ -24,6 +24,7 @@ fn matrix_band_part[
     ) capturing -> SIMD[type, width],
     simd_width: Int,
     single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
 ](
     input_shape: StaticIntTuple[rank],
     num_lower: NDBuffer[int_type, 1],
@@ -37,7 +38,7 @@ fn matrix_band_part[
 
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()
 
-    @__copy_capture(lower_diagonal_index, upper_diagonal_index, exclude)
+    @__copy_capture(lower_diagonal_index, upper_diagonal_index, exclude, output)
     @parameter
     @always_inline
     fn func[
@@ -61,6 +62,8 @@ fn matrix_band_part[
         else:
             output[idx] = 0
 
-    _elementwise_impl[func, 1, rank, single_thread_blocking_override](
+    _elementwise_impl[
+        func, 1, rank, single_thread_blocking_override, target=target
+    ](
         input_shape,
     )
