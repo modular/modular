@@ -5,4 +5,5 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the memory package."""
 
+from .buffer import Buffer, NDBuffer
 from .memory import parallel_memcpy

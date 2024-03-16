@@ -8,7 +8,7 @@
 from math import exp
 
 from memory import stack_allocation
-from closed_source_memory.buffer import (
+from buffer.buffer import (
     Buffer,
     NDBuffer,
     partial_simd_load,

@@ -8,7 +8,7 @@
 You can import these APIs from the `memory` package. For example:
 
 ```mojo
-from closed_source_memory.buffer import Buffer
+from buffer import Buffer
 ```
 """
 
