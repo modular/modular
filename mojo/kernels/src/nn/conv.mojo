@@ -37,9 +37,8 @@ from MatmulUtils import (
     partition_work,
 )
 from memory import memset_zero, stack_allocation
-from closed_source_memory.buffer import (
+from buffer.buffer import (
     Buffer,
-    DynamicRankBuffer,
     NDBuffer,
     _compute_ndbuffer_offset,
     partial_simd_load,

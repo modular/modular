@@ -7,7 +7,7 @@
 
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from nn.conv import conv1d_update_wo_tile
 from nn.conv_utils import ConvShape
 from testing import *

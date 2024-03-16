@@ -21,7 +21,7 @@ from gpu.host.memory import (
 )
 from time import time_function as time_function_sync
 from gpu.host.sync import synchronize
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from nn.concat import _concat_gpu, _concat_inner_most_single_dim
 
 

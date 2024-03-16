@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 
 # TODO: This implementation supports up to 4 dimensions.
 

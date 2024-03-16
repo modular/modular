@@ -11,7 +11,7 @@ from sys import external_call
 from sys.info import simdwidthof
 
 from algorithm.functional import vectorize
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from nn.conv import (
     ConvDirectNHWC,

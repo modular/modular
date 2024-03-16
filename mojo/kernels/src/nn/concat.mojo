@@ -29,7 +29,7 @@ from gpu.host.memory import (
     _memset_async,
 )
 from memory import memcpy
-from closed_source_memory.buffer import Buffer, NDBuffer
+from buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.index import StaticIntTuple, product

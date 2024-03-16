@@ -13,7 +13,7 @@ from closed_source_algorithm.reduction import (
     _simd_sum,
     _simd_sum_elementwise,
 )
-from closed_source_memory.buffer import Buffer, NDBuffer
+from buffer import Buffer, NDBuffer
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 

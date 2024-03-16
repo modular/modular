@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from nn.roi_align import roi_align_nhwc
 from utils.list import DimList
 from testing import *

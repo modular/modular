@@ -29,7 +29,7 @@ from closed_source_algorithm.reduction import (
 from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import Device, DeviceAttribute, Function, Stream
 from gpu.memory import AddressSpace
-from closed_source_memory.buffer import Buffer, NDBuffer
+from buffer import Buffer, NDBuffer
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 

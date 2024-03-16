@@ -10,7 +10,7 @@
 # ===----------------------------------------------------------------------===#
 
 from memory import memcpy
-from closed_source_memory.buffer import Buffer, NDBuffer
+from buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
 # TODO Refactor -- we should decide on and put them into a more common file
@@ -471,8 +471,8 @@ fn _pad_constant_impl[
             r, paddings, output_shape
         )
     """
-    CRITICAL: should be setting output_offset=0, input_offset=0, and 
-    pad_with_constant=False for axis=0 in padding. However, this is 
+    CRITICAL: should be setting output_offset=0, input_offset=0, and
+    pad_with_constant=False for axis=0 in padding. However, this is
     already addressed in the constructor of _AxisParams.
     """
     # axis_params[0].init_offsets(output_offset, input_offset, pad_with_constant)

@@ -9,7 +9,7 @@ from math import max, min
 
 from nn.gather_scatter import scatter_nd_generator
 from tensor import Tensor, TensorShape
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 
 
 fn test_case[

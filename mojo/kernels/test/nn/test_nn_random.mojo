@@ -7,7 +7,7 @@
 
 from random import seed
 
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from nn.randn import random_normal
 from utils.list import DimList
 

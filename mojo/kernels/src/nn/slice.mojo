@@ -7,7 +7,7 @@
 from math import div_ceil
 
 from algorithm import elementwise
-from closed_source_memory.buffer import Buffer, NDBuffer
+from buffer import Buffer, NDBuffer
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList

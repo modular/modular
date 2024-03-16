@@ -9,7 +9,7 @@ from math import abs, iota, max, min
 from math.limit import min_or_neginf
 
 from algorithm.sort import _quicksort
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from tensor import Tensor, TensorShape
 
 from utils.index import Index

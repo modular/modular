@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 
 
 @always_inline

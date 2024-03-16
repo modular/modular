@@ -9,7 +9,7 @@ from math import abs, div_ceil, isclose, min, rsqrt
 from random import rand
 
 from BatchedMatmul import batched_matmul
-from closed_source_memory.buffer import NDBuffer, _compute_nd_index
+from buffer.buffer import NDBuffer, _compute_nd_index
 from memory.unsafe import DTypePointer
 from nn.mha import _naive_attention, fused_attention
 from nn.softmax import softmax

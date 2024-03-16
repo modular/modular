@@ -6,7 +6,7 @@
 
 import math
 
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 
 from utils.list import DimList
 

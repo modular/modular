@@ -9,7 +9,7 @@ from math.limit import neginf
 from sys.info import simdwidthof
 
 from algorithm import elementwise, stencil
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

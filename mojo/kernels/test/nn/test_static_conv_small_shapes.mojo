@@ -10,7 +10,7 @@
 from math import div_ceil
 from sys.info import simdwidthof
 
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,

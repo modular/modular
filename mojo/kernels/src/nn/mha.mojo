@@ -24,7 +24,7 @@ from gpu.host import Function, Stream
 from gpu.memory import AddressSpace
 from Matmul import matmul
 from memory import stack_allocation
-from closed_source_memory.buffer import Buffer, NDBuffer
+from buffer import Buffer, NDBuffer
 from memory.unsafe import AddressSpace as _AddressSpace
 from memory.unsafe import DTypePointer, bitcast
 from Transpose import transpose

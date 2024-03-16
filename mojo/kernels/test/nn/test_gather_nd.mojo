@@ -6,7 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from memory import stack_allocation
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from nn.gather_scatter import gather_nd, gather_nd_shape
 from utils.list import DimList
 
