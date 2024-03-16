@@ -47,7 +47,7 @@ fn main():
             p2.store(i, p1.load[width=width](i) + p2.load[width=width](i))
 
         for i in range(its):
-            vectorize[closure, width, size]()
+            vectorize[closure, width, size=size]()
 
     @parameter
     fn arg_size_unroll():
@@ -56,7 +56,7 @@ fn main():
             p2.store(i, p1.load[width=width](i) + p2.load[width=width](i))
 
         for i in range(its):
-            vectorize[closure, width, unroll_factor](size)
+            vectorize[closure, width, unroll_factor=unroll_factor](size)
 
     @parameter
     fn param_size_unroll():
@@ -65,7 +65,7 @@ fn main():
             p2.store(i, p1.load[width=width](i) + p2.load[width=width](i))
 
         for i in range(its):
-            vectorize[closure, width, size, unroll_factor]()
+            vectorize[closure, width, size=size, unroll_factor=unroll_factor]()
 
     var arg = run[arg_size](max_runtime_secs=0.5).mean(unit)
     print(p2.load[size]())

@@ -104,7 +104,9 @@ fn matmul_unrolled(inout C: Matrix, A: Matrix, B: Matrix):
                         )
 
                     alias unroll_factor = tile_x // nelts
-                    vectorize[dot, nelts, tile_x, unroll_factor]()
+                    vectorize[
+                        dot, nelts, size=tile_x, unroll_factor=unroll_factor
+                    ]()
 
             tile[calc_tile, tile_n, tile_k](C.cols, B.rows)
 
@@ -160,7 +162,12 @@ fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
                             )
 
                         alias unroll_factor = tile_n // vec_size
-                        vectorize[dot, vec_size, tile_n, unroll_factor]()
+                        vectorize[
+                            dot,
+                            vec_size,
+                            size=tile_n,
+                            unroll_factor=unroll_factor,
+                        ]()
 
     sync_parallelize[calc_row](M // tile_m)
 
@@ -221,7 +228,12 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
                             )
 
                         alias unroll_factor = tile_n // vec_size
-                        vectorize[dot, vec_size, tile_n, unroll_factor]()
+                        vectorize[
+                            dot,
+                            vec_size,
+                            size=tile_n,
+                            unroll_factor=unroll_factor,
+                        ]()
 
     sync_parallelize[calc_row](M // tile_m)
 
@@ -272,7 +284,12 @@ fn matmul_layout_transposed(inout C: Matrix, A: Matrix, B: Matrix):
                             )
 
                         alias unroll_factor = tile_k // vec_size
-                        vectorize[dot, vec_size, tile_k, unroll_factor]()
+                        vectorize[
+                            dot,
+                            vec_size,
+                            size=tile_k,
+                            unroll_factor=unroll_factor,
+                        ]()
 
                         dst_view[m, n] += sum.reduce_add()
 
