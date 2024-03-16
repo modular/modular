@@ -166,6 +166,9 @@ fn badRef(inout val: Int):
   # expected-error-re @+1 {{invalid call to 'badRef': l-value of type 'SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type 'Int'}}
   badRef(x)
 
+struct PythonObject: pass
+fn getPythonObject() -> PythonObject: pass
+
 fn unused_values():
   var x : Int = 42
 
@@ -185,6 +188,21 @@ fn unused_values():
   testLValuesRvalues
   _ = testLValuesRvalues # OK
 
+  # No warning.
+  getPythonObject()
+
+  # No warning.
+  try:
+    unused_values2()
+  except e:
+    pass
+
+def unused_values2():
+  # No warning.
+  getPythonObject()
+
+  # expected-warning @+1 {{'IntLiteral' value is unused}}
+  4+1
 
 fn func_with_static_param[x: Int]() -> Int:
   return x

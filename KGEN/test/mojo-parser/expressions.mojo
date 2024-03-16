@@ -713,7 +713,7 @@ def basic_assignments(a: Int, b: Int, c: RegPassable, d: RegPassable):
   # CHECK-NEXT: lit.ref.store %[[SEVEN]], %b_1
   # CHECK-NEXT: %[[A:.*]] = lit.ref.load %a_0
   # CHECK-NEXT: lit.call {{.*}}simpleMath{{.*}}(%[[A]], %[[SEVEN]])
-  simpleMath(a, b := 7)
+  _ = simpleMath(a, b := 7)
 
 # Issue #20145: Walrus operator should implicitly declare variable in def functions.
 # CHECK-LABEL: lit.func @"walrus_implicit_decl
@@ -727,7 +727,7 @@ def walrus_implicit_decl():
   # CHECK-NEXT: lit.ref.store [[THREE]], %a
   # CHECK-NEXT: [[VAR_A:%.*]] = lit.ref.load %a
   # CHECK-NEXT: lit.call {{.*}}([[THREE]], [[VAR_A]])
-  simpleMath(a := 3, a)
+  _ = simpleMath(a := 3, a)
 
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: !Int = <{4}>
   # CHECK-NEXT: lit.ref.store [[FOUR]], %b

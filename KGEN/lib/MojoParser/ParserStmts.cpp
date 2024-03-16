@@ -397,8 +397,24 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // TODO: Should have a better way to say that it is safe to implicitly ignore
   // a value of a type (e.g. a type decorator)
   auto isImplicitlyIgnorableType = [&](ASTType type) -> bool {
-    return type.isNoneType() ||
-           type.isEqualCanon(shared.getTypeCheckErrorType());
+    if (type.isNoneType() || type.isEqualCanon(shared.getTypeCheckErrorType()))
+      return true;
+
+    // Allow object/PythonObject to be ignored.  This should really be
+    // implemented with a decorator on the type, not hard coded here.
+    auto declRef = dyn_cast<DeclRefType>(type.mlirType);
+    if (!declRef || !declRef.getParamValues().empty())
+      return false;
+    auto symbol = declRef.getSymbol();
+
+    StringRef name = (symbol.getNestedReferences().empty()
+                          ? symbol.getRootReference()
+                          : symbol.getNestedReferences().back().getAttr())
+                         .getValue();
+
+    // object is implicitly returned by 'def's, PythonObject is pervasive in
+    // interop.
+    return name == "object" || name == "PythonObject";
   };
 
   if (isImplicitlyIgnorableType(valueType) ||
@@ -653,9 +669,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     return success();
 
   // Emit a warning if the result is a value we should warn when unused.
-  auto funcOp = dyn_cast<LIT::FuncOp>(parentDecl);
-  if (!funcOp || !funcOp.isDef())
-    diagnoseIgnoredResult(expr, result, shared);
+  diagnoseIgnoredResult(expr, result, shared);
   return success();
 }
 
