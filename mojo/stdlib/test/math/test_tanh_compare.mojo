@@ -6,12 +6,43 @@
 # REQUIRES: linux
 # RUN: %mojo -debug-level full -I%S/../.. %s | FileCheck %s
 
-from math import tanh
+from math import tanh, abs
 from random import seed
 
 from tensor import Tensor, TensorShape, randn
 from test_utils import libm_call
-from closed_source_test_utils import compare, get_minmax
+
+
+fn get_minmax[dtype: DType](x: Tensor[dtype], N: Int) -> Tensor[dtype]:
+    var max_val = x[0]
+    var min_val = x[0]
+    for i in range(1, N):
+        if x[i] > max_val:
+            max_val = x[i]
+        if x[i] < min_val:
+            min_val = x[i]
+    return Tensor[dtype](TensorShape(2), min_val, max_val)
+
+
+fn compare[_dtype: DType, N: Int](x: Tensor, y: Tensor, label: String):
+    var atol = Tensor[_dtype](TensorShape(N))
+    var rtol = Tensor[_dtype](TensorShape(N))
+
+    for i in range(N):
+        var xx = x[i].cast[_dtype]()
+        var yy = y[i].cast[_dtype]()
+
+        var d = abs(xx - yy)
+        var e = abs(d / yy)
+        atol[i] = d
+        rtol[i] = e
+
+    print(label)
+    var atol_minmax = get_minmax[_dtype](atol, N)
+    var rtol_minmax = get_minmax[_dtype](rtol, N)
+    print("AbsErr-Min/Max", atol_minmax[0], atol_minmax[1])
+    print("RelErr-Min/Max", rtol_minmax[0], rtol_minmax[1])
+    print("==========================================================")
 
 
 fn tanh_libm[
