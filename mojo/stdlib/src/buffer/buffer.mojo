@@ -45,8 +45,8 @@ This value must match kMaxRank in Support/include/Support/ML/TensorShape.h
 struct Buffer[
     type: DType,
     /,
-    *,
     size: Dim = Dim(),
+    *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](Sized):
     """Defines a Buffer which can be parametrized on a static size and Dtype.
@@ -191,7 +191,7 @@ struct Buffer[
         return self.load[width=1](idx)
 
     @always_inline
-    fn load[*, width: Int = 1](self, idx: Int) -> SIMD[type, width]:
+    fn load[width: Int = 1](self, idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Parameters:
@@ -411,7 +411,7 @@ fn _compute_nd_index[
     shape: DimList,
     address_space: AddressSpace,
 ](
-    buf: NDBuffer[type, rank, shape, address_space], index: Int
+    buf: NDBuffer[type, rank, shape, address_space=address_space], index: Int
 ) -> StaticIntTuple[rank]:
     """Computes the NDBuffer's offset using the index positions provided.
 
@@ -614,8 +614,8 @@ struct NDBuffer[
     type: DType,
     rank: Int,
     /,
-    *,
     shape: DimList = DimList.create_unknown[rank](),
+    *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](Sized, Stringable):
     """An N-dimensional Buffer.
@@ -961,7 +961,7 @@ struct NDBuffer[
     fn tile[
         *tile_sizes: Dim
     ](self, tile_coords: StaticIntTuple[rank]) -> NDBuffer[
-        type, rank, DimList(tile_sizes), address_space
+        type, rank, DimList(tile_sizes), address_space=address_space
     ]:
         """Returns an n-d tile "slice" of the buffer of size tile_sizes at
            coords.
@@ -1009,7 +1009,9 @@ struct NDBuffer[
         # = dot((i, j), stride) + dot(((m * tile_m), (n * tile_n)), stride)
         # which tells us the tile has a stride of the original buffer stride and
         # offset = dot(((m * tile_m), (n * tile_n)), stride).
-        var tile = NDBuffer[type, rank, DimList(tile_sizes), address_space](
+        var tile = NDBuffer[
+            type, rank, DimList(tile_sizes), address_space=address_space
+        ](
             self.data.offset(offset),
             dynamic_shape=shape,
             dynamic_stride=self.dynamic_stride,
@@ -1020,7 +1022,7 @@ struct NDBuffer[
         return tile
 
     @always_inline
-    fn load[*, width: Int = 1](self, *idx: Int) -> SIMD[type, width]:
+    fn load[width: Int = 1](self, *idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -1039,9 +1041,7 @@ struct NDBuffer[
         return self.load[width=width](idx)
 
     @always_inline
-    fn load[
-        *, width: Int = 1
-    ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
+    fn load[width: Int = 1](self, idx: VariadicList[Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -1065,7 +1065,7 @@ struct NDBuffer[
 
     @always_inline
     fn load[
-        *, width: Int = 1
+        width: Int = 1
     ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1086,7 +1086,7 @@ struct NDBuffer[
 
     @always_inline
     fn load[
-        *, width: Int = 1
+        width: Int = 1
     ](self, idx: StaticTuple[Int, rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
