@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s
 
 from math import exp, isclose
-from sys.info import triple_is_nvidia_cuda
+from sys.info import triple_is_nvidia_cuda, has_neon
 
 from algorithm.functional import _elementwise_impl
 from builtin.io import _printf
@@ -25,32 +25,30 @@ from gpu.host.memory import (
 from gpu.host.sync import synchronize
 from closed_source_memory.buffer import NDBuffer
 from tensor import Tensor
+from testing import *
 
 from utils.index import Index
 
-alias pack_size = simdwidthof[Float32, target = _get_nvptx_target()]()
 
+def run_elementwise[type: DType]():
+    alias length = 256
 
-# CHECK-LABEL: run_elementwise
-fn run_elementwise() raises:
-    print("== run_elementwise")
+    alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
 
-    alias length = 16
-
-    var in_host = Tensor[DType.float32](length)
-    var out_host = Tensor[DType.float32](length)
+    var in_host = Tensor[type](length)
+    var out_host = Tensor[type](length)
 
     var flattened_length = in_host.num_elements()
     for i in range(length):
-        in_host[i] = Float32(i) - length // 2
+        in_host[i] = 0.001 * (Scalar[type](i) - length // 2)
 
-    var in_device = _malloc[DType.float32](flattened_length)
-    var out_device = _malloc[DType.float32](flattened_length)
+    var in_device = _malloc[type](flattened_length)
+    var out_device = _malloc[type](flattened_length)
 
     _copy_host_to_device(in_device, in_host.data(), flattened_length)
 
-    var in_buffer = NDBuffer[DType.float32, 1](in_device, Index(length))
-    var out_buffer = NDBuffer[DType.float32, 1](out_device, Index(length))
+    var in_buffer = NDBuffer[type, 1](in_device, (length))
+    var out_buffer = NDBuffer[type, 1](out_device, (length))
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
@@ -70,9 +68,16 @@ fn run_elementwise() raises:
     _copy_device_to_host(out_host.data(), out_device, flattened_length)
 
     for i in range(length):
-        # CHECK-NOT: Values did not match
-        if not isclose(out_host[i], exp(in_host[i])):
-            print("Values did not match")
+        assert_almost_equal[type, 1](
+            out_host[i],
+            exp(in_host[i]),
+            msg="values did not match at position "
+            + str(i)
+            + " for dtype="
+            + str(type),
+            atol=1e-08 if type == DType.float32 else 1e-04,
+            rtol=1e-05 if type == DType.float32 else 1e-03,
+        )
 
     _ = in_host ^
     _ = out_host ^
@@ -82,9 +87,11 @@ fn run_elementwise() raises:
 
 
 # CHECK-NOT: CUDA_ERROR
-fn main():
-    try:
-        with Context() as ctx:
-            run_elementwise()
-    except e:
-        print("CUDA_ERROR:", e)
+def main():
+    with Context() as ctx:
+
+        @parameter
+        if not has_neon():
+            run_elementwise[DType.float16]()
+
+        run_elementwise[DType.float32]()
