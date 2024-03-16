@@ -23,4 +23,12 @@
 #define MODULAR_ARM 1
 #endif
 
+#if defined(_WIN32) || defined(_WIN64)
+#define MODULAR_WINDOWS 1
+#elif defined(__APPLE__) || defined(__MACH__)
+#define MODULAR_MACOS 1
+#elif defined(__linux__)
+#define MODULAR_LINUX 1
+#endif
+
 #endif // SUPPORT_PLATFORM_UTILS_H
