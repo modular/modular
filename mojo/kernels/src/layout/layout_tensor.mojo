@@ -12,7 +12,7 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import vectorize
 from memory import memcpy
 from gpu.memory import async_copy, async_copy_wait_all
-from gpu import AddressSpace
+from memory.unsafe import AddressSpace, _GPUAddressSpace
 
 
 @register_passable
@@ -313,7 +313,7 @@ struct LayoutTensor[
         src: LayoutTensor[src_layout, dtype, address_space=src_addr_space],
     ):
         constrained[
-            self.address_space == AddressSpace.SHARED,
+            self.address_space == _GPUAddressSpace.SHARED,
             "Async is only supported for destinations in shared memory",
         ]()
 
@@ -323,10 +323,10 @@ struct LayoutTensor[
             alias dst_idx = self.layout(i)
 
             var dst_ptr = self.ptr.address_space_cast[
-                AddressSpace.SHARED
+                _GPUAddressSpace.SHARED
             ]() + dst_idx
             var src_ptr = src.ptr.address_space_cast[
-                AddressSpace.GLOBAL
+                _GPUAddressSpace.GLOBAL
             ]() + src_idx
             async_copy[4](src_ptr, dst_ptr)
 
