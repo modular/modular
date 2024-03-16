@@ -16,7 +16,6 @@ from max.engine import (
 from max.engine._context import _Device
 from sys import argv
 from tensor import Tensor, TensorShape
-from closed_source_test_utils import linear_fill
 from pathlib import Path
 
 
@@ -93,8 +92,9 @@ fn test_model() raises:
     # CHECK: 5xfloat32
     print(output_tensor.spec().__str__())
 
-    var expected_output = Tensor[DType.float32](5)
-    linear_fill(expected_output, 4.0, 2.0, -5.0, 3.0, 6.0)
+    var expected_output = Tensor[DType.float32](
+        TensorShape(5), 4.0, 2.0, -5.0, 3.0, 6.0
+    )
     # CHECK: True
     print(expected_output == output_tensor)
 

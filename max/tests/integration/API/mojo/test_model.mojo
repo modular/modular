@@ -26,7 +26,7 @@ from max.engine import (
 )
 from sys import argv
 from tensor import Tensor, TensorShape
-from closed_source_test_utils import linear_fill
+from collections import List
 from pathlib import Path
 from python import Python
 
@@ -159,8 +159,9 @@ fn test_model() raises:
     # CHECK: 5xfloat32
     print(output_tensor.spec().__str__())
 
-    var expected_output = Tensor[DType.float32](5)
-    linear_fill(expected_output, 4.0, 2.0, -5.0, 3.0, 6.0)
+    var expected_output = Tensor[DType.float32](
+        TensorShape(5), 4.0, 2.0, -5.0, 3.0, 6.0
+    )
     # CHECK: True
     print(expected_output == output_tensor)
 
@@ -185,8 +186,9 @@ fn test_model_tuple_input() raises:
     # CHECK: 5xfloat32
     print(output_tensor.spec().__str__())
 
-    var expected_output = Tensor[DType.float32](5)
-    linear_fill(expected_output, 4.0, 2.0, -5.0, 3.0, 6.0)
+    var expected_output = Tensor[DType.float32](
+        TensorShape(5), List[Float32](4.0, 2.0, -5.0, 3.0, 6.0)
+    )
     # CHECK: True
     print(expected_output == output_tensor)
 
@@ -242,8 +244,9 @@ fn test_model_tuple_input_dynamic() raises:
     # CHECK: 5xfloat32
     print(str(output_tensor.spec()))
 
-    var expected_output = Tensor[DType.float32](5)
-    linear_fill(expected_output, 4.0, 2.0, -5.0, 3.0, 6.0)
+    var expected_output = Tensor[DType.float32](
+        TensorShape(5), List[Float32](4.0, 2.0, -5.0, 3.0, 6.0)
+    )
     # CHECK: True
     print(expected_output == output_tensor)
 
@@ -264,8 +267,9 @@ fn test_model_py_dict_execute() raises:
     # CHECK: 5xfloat32
     print(str(output_tensor.spec()))
 
-    var expected_output = Tensor[DType.float32](5)
-    linear_fill(expected_output, 3.0, 2.0, -4.0, 5.0, 9.0)
+    var expected_output = Tensor[DType.float32](
+        TensorShape(5), List[Float32](3.0, 2.0, -4.0, 5.0, 9.0)
+    )
     # CHECK: True
     print(expected_output == output_tensor)
 

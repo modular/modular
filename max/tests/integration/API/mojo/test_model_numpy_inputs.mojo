@@ -14,9 +14,8 @@ from max.engine import (
     EngineNumpyView,
 )
 from sys import argv
-from tensor import Tensor
-from test_utils import linear_fill
-from closed_source_test_utils import linear_fill
+from tensor import Tensor, TensorShape
+from collections import List
 from python import Python
 
 
@@ -36,8 +35,9 @@ fn test_model_numpy_input() raises:
     var session = InferenceSession()
     var model = session.load_model(Path(model_path))
 
-    var expected_output = Tensor[DType.float32](5)
-    linear_fill(expected_output, 4.0, 2.0, -5.0, 3.0, 6.0)
+    var expected_output = Tensor[DType.float32](
+        TensorShape(5), 4.0, 2.0, -5.0, 3.0, 6.0
+    )
 
     var np = Python.import_module("numpy")
     var input_np_tensor = np.ones((5,)).astype(np.float32)

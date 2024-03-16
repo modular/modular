@@ -15,7 +15,6 @@ from max.engine import (
 )
 from sys import argv
 from tensor import Tensor, TensorShape
-from closed_source_test_utils import linear_fill
 from pathlib import Path
 
 
@@ -77,11 +76,11 @@ fn test_model() raises:
     # CHECK: 5xfloat32
     print(output_tensor.spec().__str__())
 
-    var expected_output = Tensor[DType.float32](5)
-
     # Verify our custom add op got replaced and called during execution
     # Our custom add op does x + y + 100 instead of the typical x + y.
-    linear_fill(expected_output, 104.0, 102.0, 95.0, 103.0, 106.0)
+    var expected_output = Tensor[DType.float32](
+        TensorShape(5), 104.0, 102.0, 95.0, 103.0, 106.0
+    )
 
     # CHECK: True
     print(expected_output == output_tensor)
