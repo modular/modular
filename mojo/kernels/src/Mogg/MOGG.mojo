@@ -57,7 +57,7 @@ from closed_source_algorithm import (
     sync_parallelize,
     vectorize,
 )
-from utils import unroll
+from utils.loop import unroll
 from algorithm.functional import _async_elementwise_impl, _elementwise_impl
 from closed_source_algorithm.reduction import (
     _get_nd_indices_from_flat_index,
