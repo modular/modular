@@ -285,6 +285,7 @@ fn calculate_tile_n_k[
             function of target cache size desired.
         pack_inner_size: The desired inner dimension of the packed data
             layout.
+        factor: Factor to adjust for vnni or i8mm.
 
     Returns:
         The calculated tile size to partition the matmul as (TileN, TileK).

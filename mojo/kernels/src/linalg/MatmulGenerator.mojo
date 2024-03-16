@@ -1342,11 +1342,11 @@ struct TiledMatmulBiasGenerated[
             @parameter
             fn bias_col_chunk[col_chunk_size: Int](idx_n: Int):
                 var n_coord = idx_n + dynamic_state.global_offset.N
-                var bias_val = bias.simd_load[col_chunk_size](n_coord)
+                var bias_val = bias.load[width=col_chunk_size](n_coord)
                 for idx_m in range(dynamic_state.valid_tile_bound.M):
                     var m_coord = idx_m + dynamic_state.global_offset.M
                     var c_coord = Index(m_coord, n_coord)
-                    var c_val = c_buffer.simd_load[col_chunk_size](c_coord)
+                    var c_val = c_buffer.load[width=col_chunk_size](c_coord)
                     c_buffer.simd_store[col_chunk_size](
                         c_coord, c_val + bias_val
                     )

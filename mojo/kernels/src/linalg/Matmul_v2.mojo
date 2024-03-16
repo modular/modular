@@ -2120,7 +2120,7 @@ fn pack_b_ndbuffer_M[
     Args:
         b_input: Input buffer that contains the weight to be packed.
         output_buffer: Output buffer to store the packed weight.
-        kernel_type_m: The M value of the a_shape (MxN)
+        kernel_type_m: The M value of the a_shape (MxN).
     """
     _pack_b_ndbuffer_impl[
         a_type,
@@ -2188,7 +2188,7 @@ fn pack_transposed_b_ndbuffer_M[
     Args:
         b_input: Input buffer that contains the transposed weight to be packed.
         output_buffer: Output buffer to store the packed weight.
-        kernel_type_m: The M value of the a_shape (MxN)
+        kernel_type_m: The M value of the a_shape (MxN).
     """
     _pack_b_ndbuffer_impl[
         a_type,
