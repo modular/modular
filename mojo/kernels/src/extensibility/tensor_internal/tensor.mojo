@@ -44,7 +44,7 @@ from pathlib import Path
 from algorithm.functional import elementwise
 from closed_source_algorithm.reduction import argmax, argmin
 from memory import memset_zero
-from closed_source_memory.buffer import Buffer, NDBuffer
+from buffer import Buffer, NDBuffer
 from memory.unsafe import bitcast
 from utils._serialize import _serialize
 
