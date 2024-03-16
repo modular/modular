@@ -14,7 +14,6 @@
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
 #include "KGEN/MojoParser/ParserParamEvaluator.h"
-#include "MojoUtils.h"
 #include "OperandDiagnostics.h"
 
 #include "KGEN/LITDialect/LITOps.h"
@@ -877,8 +876,9 @@ DiagEmitter::posOnlyPassedByKw(ArrayRef<StringAttr> posOnlyPassedByKw) const {
 
 InflightDiag DiagEmitter::tooManyPosArgs(size_t maxAllowedArgs,
                                          size_t numPosOperands) const {
-  return initDiag() << "expected at most " << maxAllowedArgs
-                    << " positional arguments, got " << numPosOperands;
+  InflightDiag diag = initDiag();
+  emitTooManyPositional(diag, maxAllowedArgs, numPosOperands, "argument");
+  return diag;
 }
 
 InflightDiag DiagEmitter::byPosAndKw(ArrayRef<StringAttr> names) const {
@@ -1114,71 +1114,6 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
          1 * hasVariadicParams;
 }
 
-/// Designates the kind of positional operand errors.
-enum class PosDiagResult { kValid, kMissingPos, kTooManyPos, kByPosAndKw };
-
-/// Helper to diagnose common cases of candidate mismatch related to positional
-/// arguments/operands (too many positionals, missing positionals, argument
-/// specified both by positional and keyword operands).
-static std::pair<PosDiagResult, SmallVector<StringAttr>>
-diagnosePosOperands(PogsAttr pogsAttr, const CallOperands &operands) {
-  SmallVector<StringAttr> missingPosNames;
-  SmallVector<StringAttr> byPosAndKw;
-
-  size_t numPosOperands = operands.posOperands.size();
-  size_t numPosMaximum = countNumPositional(pogsAttr.getPassingKinds());
-  bool hasVarArg = false;
-
-  ArrayRef<StringAttr> names = pogsAttr.getNames();
-
-  DefaultValueHandler defaultHandler(pogsAttr);
-  for (size_t idx = 0; idx != numPosMaximum; ++idx) {
-    if (pogsAttr.isPosVariadic(idx) || pogsAttr.isPack(idx)) {
-      // Positional variadics and packs don't require any operands. But we
-      // remember this because it lifts the limit on the maximum number.
-      hasVarArg = true;
-      continue;
-    }
-
-    // If we found a positional operand, check if it was also provided by
-    // keyword.
-    if (idx < numPosOperands) {
-      StringAttr name = names[idx];
-      if (operands.findKwArg(name))
-        byPosAndKw.push_back(name);
-      continue;
-    }
-
-    // If we have a positional default, we're okay.
-    if (defaultHandler.getPosDefault(idx))
-      continue;
-
-    // If the arg/param was passed by keyword, we are okay.
-    StringAttr name = names[idx];
-    if (operands.findKwArg(name))
-      continue;
-
-    // Otherwise, we have a missing positional arg/param.
-    if (name.empty()) {
-      name = StringAttr::get(name.getContext(),
-                             "(" + nameForPosOnly(idx, "arg") + ")");
-    }
-    missingPosNames.push_back(name);
-  }
-
-  if (!byPosAndKw.empty())
-    return {PosDiagResult::kByPosAndKw, byPosAndKw};
-
-  // If there are no positional variadics, we can check for too many operands.
-  if (!hasVarArg && numPosOperands > numPosMaximum)
-    return {PosDiagResult::kTooManyPos, {}};
-
-  if (!missingPosNames.empty())
-    return {PosDiagResult::kMissingPos, missingPosNames};
-
-  return {PosDiagResult::kValid, {}};
-}
-
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                           const OverloadSet &callable,
                                           const CallOperands &callOperands,
@@ -1265,9 +1200,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         emitUnknownKeywords(diag, unknownKeywords, "parameter");
       },
       /*emitRedundantKeywords=*/
-      [&](size_t paramIdx, StringAttr paramName) {
-        diag << "parameter #" << paramIdx << " (" << paramName
-             << ") passed both as positional and keyword operand";
+      [&](ArrayRef<StringAttr> names) {
+        emitByPosAndKw(diag, names, "parameter");
       },
       /*emitPosOnlyPassedByKw=*/
       [&](ArrayRef<StringAttr> names) {
@@ -1336,6 +1270,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {
         emitMissing(diag, names, kindStr + " parameter");
+      },
+      /*emitTooManyPositional=*/
+      [&](size_t numMaxAllowed, size_t numActual) {
+        emitTooManyPositional(diag, numMaxAllowed, numActual, "parameter");
       },
   };
 

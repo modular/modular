@@ -301,6 +301,12 @@ void LIT::emitByPosAndKw(InflightDiag &diag, ArrayRef<StringAttr> names,
   emitNames(diag, names);
 }
 
+void LIT::emitTooManyPositional(InflightDiag &diag, size_t numMaxAllowed,
+                                size_t numActual, const Twine &kindStr) {
+  diag << "expected at most " << numMaxAllowed << " positional " << kindStr
+       << plural(numMaxAllowed) << ", got " << numActual;
+}
+
 std::string LIT::nameForPosOnly(size_t idx, const Twine &argOrParam) {
   return ("positional-only " + argOrParam + " #" + Twine(idx)).str();
 }

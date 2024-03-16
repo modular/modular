@@ -11,6 +11,8 @@
 #ifndef MOJOPARSER_OPERANDDIAGNOSTICS_H
 #define MOJOPARSER_OPERANDDIAGNOSTICS_H
 
+#include "MojoUtils.h"
+
 #include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
 
@@ -52,7 +54,8 @@ static std::pair<KwDiagResult, SmallVector<StringAttr>> diagnoseKeywordOperands(
       continue; // Variadic/pack args cannot be specified by their keyword.
     if (passingKind == PassingKind::KwOnly &&
         !defaultHandler.getKwOnlyDefault(argIdx) && !operands.findKwArg(name)) {
-      missingKwOnly.push_back(name);
+      if (!allowMissingKwOnly)
+        missingKwOnly.push_back(name);
       continue;
     }
     if (passingKind == PassingKind::PosOnly) {
@@ -85,6 +88,78 @@ static std::pair<KwDiagResult, SmallVector<StringAttr>> diagnoseKeywordOperands(
   }
 
   return {KwDiagResult::kValid, {}};
+}
+
+/// Designates the kind of positional operand errors.
+enum class PosDiagResult { kValid, kMissingPos, kTooManyPos, kByPosAndKw };
+
+/// Helper to diagnose common cases of candidate mismatch related to positional
+/// arguments/parameter (too many positionals, missing positionals,
+/// argument/parameter specified both by positional and keyword operands).
+template <typename OperandType>
+static std::pair<PosDiagResult, SmallVector<StringAttr>>
+diagnosePosOperands(PogsAttr pogsAttr,
+                    const OperandContainer<OperandType> &operands,
+                    bool allowCountMismatch = false) {
+  SmallVector<StringAttr> missingPosNames;
+  SmallVector<StringAttr> byPosAndKw;
+
+  size_t numPosOperands = operands.posOperands.size();
+  size_t numPosMaximum = countNumPositional(pogsAttr.getPassingKinds());
+  bool hasVariadicOrPack = false;
+
+  ArrayRef<StringAttr> names = pogsAttr.getNames();
+
+  DefaultValueHandler defaultHandler(pogsAttr);
+  for (size_t idx = 0; idx != numPosMaximum; ++idx) {
+    if (pogsAttr.isPosVariadic(idx) || pogsAttr.isPack(idx)) {
+      // Positional variadics and packs don't require any operands. But we
+      // remember this because it lifts the limit on the maximum number.
+      hasVariadicOrPack = true;
+      continue;
+    }
+
+    // If we found a positional operand, check if it was also provided by
+    // keyword.
+    if (idx < numPosOperands) {
+      StringAttr name = names[idx];
+      if (operands.findKwArg(name))
+        byPosAndKw.push_back(name);
+      continue;
+    }
+
+    // If we have a positional default, we're okay. We also don't need to check
+    // for missing if the caller doesn't care about them.
+    if (allowCountMismatch || defaultHandler.getPosDefault(idx))
+      continue;
+
+    // If the arg/param was passed by keyword, we are okay.
+    StringAttr name = names[idx];
+    if (operands.findKwArg(name))
+      continue;
+
+    // Otherwise, we have a missing positional arg/param.
+    if (name.empty()) {
+      // TODO: fix "arg" below
+      name = StringAttr::get(name.getContext(),
+                             "(" + nameForPosOnly(idx, "arg") + ")");
+    }
+    missingPosNames.push_back(name);
+  }
+
+  if (!byPosAndKw.empty())
+    return {PosDiagResult::kByPosAndKw, byPosAndKw};
+
+  if (!allowCountMismatch) {
+    // If there are no positional variadics, we can check for too many operands.
+    if (!hasVariadicOrPack && numPosOperands > numPosMaximum)
+      return {PosDiagResult::kTooManyPos, {}};
+
+    if (!missingPosNames.empty())
+      return {PosDiagResult::kMissingPos, missingPosNames};
+  }
+
+  return {PosDiagResult::kValid, {}};
 }
 
 } // namespace M::KGEN::LIT
