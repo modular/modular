@@ -8,7 +8,6 @@
 
 from max.engine import EngineTensorView, InferenceSession
 from tensor import Tensor, TensorShape
-from closed_source_test_utils import linear_fill
 from utils.index import Index
 from python import Python
 
@@ -16,8 +15,7 @@ from python import Python
 fn test_tensor_view() raises:
     # CHECK-LABEL: ====test_tensor_view
     print("====test_tensor_view")
-    var t1 = Tensor[DType.float32](3)
-    linear_fill(t1, 1.0, 2.0, 3.0)
+    var t1 = Tensor[DType.float32](TensorShape(3), 1.0, 2.0, 3.0)
 
     var t1_view = EngineTensorView(t1)
 
