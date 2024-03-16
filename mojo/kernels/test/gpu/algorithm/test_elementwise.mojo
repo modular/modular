@@ -68,7 +68,9 @@ fn run_elementwise[type: DType]() raises:
                 in_buffer.load[simd_width](idx) + 42,
             )
 
-    _elementwise_impl[func, pack_size, 2, True, target="cuda"](
+    _elementwise_impl[
+        func, pack_size, 2, use_blocking_impl=True, target="cuda"
+    ](
         StaticIntTuple[2](2, 8),
     )
     synchronize()
@@ -145,7 +147,9 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
                 in_buffer.load[simd_width](idx) + 42,
             )
 
-    _elementwise_impl[func, pack_size, 2, True, target="cuda"](
+    _elementwise_impl[
+        func, pack_size, 2, use_blocking_impl=True, target="cuda"
+    ](
         StaticIntTuple[2](3, 3),
     )
     synchronize()
@@ -199,7 +203,7 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
             idx, in_buffer_transposed.load[width=simd_width](idx)
         )
 
-    _elementwise_impl[func, 4, 3, True, target="cuda"](
+    _elementwise_impl[func, 4, 3, use_blocking_impl=True, target="cuda"](
         StaticIntTuple[3](4, 2, 5),
     )
     synchronize()

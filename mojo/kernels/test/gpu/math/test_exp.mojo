@@ -60,7 +60,9 @@ def run_elementwise[type: DType]():
             idx, exp(in_buffer.load[width=simd_width](idx))
         )
 
-    _elementwise_impl[func, pack_size, 1, True, target="cuda"](
+    _elementwise_impl[
+        func, pack_size, 1, use_blocking_impl=True, target="cuda"
+    ](
         StaticIntTuple[1](length),
     )
     synchronize()
