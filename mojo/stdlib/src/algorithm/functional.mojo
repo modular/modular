@@ -134,9 +134,9 @@ fn vectorize[
     """
 
     var vector_end_simd = align_down(size, simd_width)
-    _perfect_vectorized_impl[func, simd_width, unroll_factor=unroll_factor](
-        size, vector_end_simd
-    )
+    _perfect_vectorized_impl[
+        func, simd_width=simd_width, unroll_factor=unroll_factor
+    ](size, vector_end_simd)
 
     for i in range(vector_end_simd, size):
         func[1](i)
@@ -183,7 +183,7 @@ fn vectorize[
             print("storing", simd_width, "els at pos", i)
             p.simd_store[simd_width](i, i)
 
-        vectorize[closure, simd_width, size]()
+        vectorize[closure, simd_width, unroll_factor=size]()
         print(p.simd_load[size]())
     ```
 
@@ -206,7 +206,7 @@ fn vectorize[
     cost of binary size:
 
     ```mojo
-    vectorize[closure, width, size, unroll_factor=2]()
+    vectorize[closure, width, size=size, unroll_factor=2]()
     ```
 
     In the generated assembly the function calls will be repeated, resulting in
@@ -221,9 +221,9 @@ fn vectorize[
     """
 
     alias vector_end_simd = align_down(size, simd_width)
-    _perfect_vectorized_impl[func, simd_width, unroll_factor](
-        size, vector_end_simd
-    )
+    _perfect_vectorized_impl[
+        func, simd_width=simd_width, unroll_factor=unroll_factor
+    ](size, vector_end_simd)
 
     @parameter
     if size != vector_end_simd:
@@ -1288,7 +1288,9 @@ fn _elementwise[
 
     @parameter
     if target == "cuda":
-        _elementwise_impl[func, simd_width, rank, False, target](shape)
+        _elementwise_impl[
+            func, simd_width, rank, use_blocking_impl=False, target=target
+        ](shape)
     else:
         elementwise[func, simd_width, rank](shape)
 
@@ -1318,7 +1320,7 @@ fn elementwise[
         rank,
         # On CUDA devices, we do not want to launch threads, so we use the
         # blocking API
-        triple_is_nvidia_cuda(),
+        use_blocking_impl = triple_is_nvidia_cuda(),
     ](shape)
 
 
@@ -1356,11 +1358,9 @@ fn _elementwise_impl_cpu_1d[
         fn blocking_task_fun[simd_width: Int](idx: Int):
             func[simd_width, rank](idx)
 
-        vectorize[
-            blocking_task_fun,
-            simd_width,
-            unroll_factor,
-        ](problem_size)
+        vectorize[blocking_task_fun, simd_width, unroll_factor=unroll_factor](
+            problem_size
+        )
         return
 
     var num_workers = _get_num_workers(problem_size)
@@ -1381,11 +1381,7 @@ fn _elementwise_impl_cpu_1d[
             var offset = start_offset + idx
             func[simd_width, rank](offset)
 
-        vectorize[
-            func_wrapper,
-            simd_width,
-            unroll_factor,
-        ](len)
+        vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](len)
 
     sync_parallelize[task_func](num_workers)
 
@@ -1431,11 +1427,7 @@ async fn _async_elementwise_impl_cpu_1d[
             var offset = start_offset + idx
             func[simd_width, rank](offset)
 
-        vectorize[
-            func_wrapper,
-            simd_width,
-            unroll_factor,
-        ](len)
+        vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](len)
 
     await async_parallelize[task_func](num_workers)
 
@@ -1489,11 +1481,9 @@ fn _elementwise_impl_cpu_nd[
                 func[simd_width, rank](indices)
 
             # We vectorize over the innermost dimension.
-            vectorize[
-                func_wrapper,
-                simd_width,
-                unroll_factor,
-            ](shape[rank - 1])
+            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1]
+            )
 
         map[blocking_task_fn](total_size // shape[rank - 1])
 
@@ -1530,11 +1520,9 @@ fn _elementwise_impl_cpu_nd[
                 func[simd_width, rank](indices)
 
             # We vectorize over the innermost dimension.
-            vectorize[
-                func_wrapper,
-                simd_width,
-                unroll_factor,
-            ](shape[rank - 1])
+            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1]
+            )
 
     sync_parallelize[task_func](num_workers)
 
@@ -1599,11 +1587,9 @@ async fn _async_elementwise_impl_cpu_nd[
                 func[simd_width, rank](indices)
 
             # We vectorize over the innermost dimension.
-            vectorize[
-                func_wrapper,
-                simd_width,
-                unroll_factor,
-            ](shape[rank - 1])
+            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1]
+            )
 
     await async_parallelize[task_func](num_workers)
 
@@ -1924,10 +1910,8 @@ fn stencil[
 
                 compute_finalize_fn[simd_width](indices, result)
 
-            vectorize[
-                func_wrapper,
-                simd_width,
-                unroll_factor,
-            ](shape[rank - 1])
+            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
+                shape[rank - 1]
+            )
 
     sync_parallelize[task_func](num_workers)

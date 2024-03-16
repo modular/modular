@@ -101,7 +101,7 @@ fn test_vectorize_unroll():
     alias simd_width = 4
     alias unroll_factor = 2
 
-    vectorize[double_vec, simd_width, unroll_factor](len(vec))
+    vectorize[double_vec, simd_width, unroll_factor=unroll_factor](len(vec))
     vectorize[double_buf, simd_width](len(buf))
 
     var err = memcmp(vec.data, buf.data, len(buf))
