@@ -18,7 +18,7 @@ from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import vectorize
-from utils.functional import unroll
+from utils.loop import unroll
 from gpu.memory import AddressSpace as GPUAddressSpace
 
 from utils._serialize import _serialize
