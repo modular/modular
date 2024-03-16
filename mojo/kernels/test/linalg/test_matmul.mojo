@@ -19,7 +19,7 @@ from Matmul import (
     pack_matmul_b_shape_func,
     pack_matmul_b_shape_func_M,
 )
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

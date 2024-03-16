@@ -16,7 +16,7 @@ from MatmulUtils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 
 from utils.index import Index
 from utils.list import DimList

@@ -13,7 +13,7 @@ from MatmulUtils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
 )
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 
 from utils.index import Index
 from utils.list import DimList

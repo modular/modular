@@ -13,7 +13,7 @@
 from sys.info import is_apple_silicon, sizeof
 
 from AppleAMX import *
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from testing import *
 
 from utils.index import StaticIntTuple

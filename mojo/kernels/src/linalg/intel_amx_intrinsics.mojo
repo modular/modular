@@ -11,7 +11,7 @@
 
 from sys import llvm_intrinsic
 
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.list import DimList

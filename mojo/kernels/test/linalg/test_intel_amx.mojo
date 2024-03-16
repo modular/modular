@@ -28,7 +28,7 @@ from IntelAMX import (
 )
 from Matmul import Matrix, naive_matmul
 from memory import memcmp, memset_zero
-from closed_source_memory.buffer import Buffer, NDBuffer
+from buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer, Pointer
 from Transpose import transpose, transpose_inplace
 

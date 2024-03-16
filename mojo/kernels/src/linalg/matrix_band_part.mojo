@@ -6,7 +6,7 @@
 """The module implements matrix band part functions."""
 
 from algorithm.functional import _elementwise_impl
-from closed_source_memory.buffer import NDBuffer
+from buffer import NDBuffer
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
