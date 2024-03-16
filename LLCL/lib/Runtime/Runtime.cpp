@@ -137,7 +137,7 @@ createRuntimeImpl(const RuntimeOptions &options) {
   if (options.profilingAllocator)
     allocator = createProfilingAllocator(std::move(allocator));
   std::unique_ptr<WorkQueue> workQueue =
-      options.numThreads == 1
+      options.singleThreaded
           ? createSingleThreadWorkQueue(runtimePtr)
           : createThreadPoolWorkQueue(
                 runtimePtr, options.numThreads, options.maxThreads,
