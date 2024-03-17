@@ -6,12 +6,12 @@
 # RUN: %mojo -D TEMP_FILE_DIR=%T -debug-level full %s | FileCheck %s
 
 from math import iota
-from sys.intrinsics import PrefetchOptions
-
-from memory import memcmp, memset_zero
-from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from pathlib import Path
+from sys.intrinsics import PrefetchOptions
 from sys.param_env import env_get_string
+
+from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
+from memory import memcmp, memset_zero
 from tensor import Tensor
 
 from utils.index import Index, StaticIntTuple

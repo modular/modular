@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from memory import stack_allocation
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
+from memory import stack_allocation
 
 from utils.list import Dim, DimList
 

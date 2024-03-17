@@ -7,13 +7,13 @@
 
 from math import exp
 
-from memory import stack_allocation
 from buffer.buffer import (
     Buffer,
     NDBuffer,
     partial_simd_load,
     partial_simd_store,
 )
+from memory import stack_allocation
 
 from utils.index import StaticIntTuple
 from utils.list import DimList

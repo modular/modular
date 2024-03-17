@@ -5,9 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -D TEMP_FILE_DIR=%T -debug-level full %s | FileCheck %s
 
-from buffer import Buffer
 from pathlib import Path
 from sys.param_env import env_get_string
+
+from buffer import Buffer
+
 from utils.list import Dim
 
 alias TEMP_FILE_DIR = env_get_string["TEMP_FILE_DIR"]()
