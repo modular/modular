@@ -721,7 +721,7 @@ struct ConvDirectNHWC[
 
         @unroll
         for i in range(micro_kernel_height):
-            input_base_offsets.simd_store[1](
+            input_base_offsets.store[width=1](
                 i,
                 self.conv_shape.output_flat_coord_to_input_offset(
                     n, output_flat_coord + i
@@ -888,7 +888,7 @@ struct ConvDirectNHWC[
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
-            output_micro_tile.simd_store[simd_size](
+            output_micro_tile.store[width=simd_size](
                 Index(idx0, idx1 * simd_size), SIMD[output_type, simd_size](0.0)
             )
 
@@ -931,14 +931,14 @@ struct ConvDirectNHWC[
                     var residual = align_down_residual(
                         self.conv_shape.f_per_group(), simd_size
                     )
-                    output_micro_tile.simd_store[simd_size](
+                    output_micro_tile.store[width=simd_size](
                         Index(i, j * simd_size),
                         partial_simd_load[simd_size](
                             output_ptr.offset(j * simd_size), 0, residual, 0.0
                         ),
                     )
                 else:
-                    output_micro_tile.simd_store[simd_size](
+                    output_micro_tile.store[width=simd_size](
                         Index(i, j * simd_size),
                         output_ptr.offset(j * simd_size).load[
                             width=simd_size

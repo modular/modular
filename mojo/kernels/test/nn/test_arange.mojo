@@ -77,7 +77,7 @@ fn test_arange[
         var range_val = arange[dtype, simd_width](
             start_tensor, stop_tensor, step_tensor, index
         )
-        out_tensor.simd_store[simd_width](index, range_val)
+        out_tensor.store[width=simd_width](index, range_val)
 
     elementwise[arange_lambda, 1, 1](
         rebind[StaticIntTuple[1]](out_tensor.dynamic_shape),

@@ -148,7 +148,7 @@ fn _softmax_2_pass_step2[
         var running_max_simd = SIMD[type, simd_width].splat(running_max)
         var running_sum_simd = SIMD[type, simd_width].splat(running_sum)
         var input_val = input.load[width=simd_width](idx)
-        output.simd_store[simd_width](
+        output.store[width=simd_width](
             idx,
             exp(input_val - running_max_simd) / running_sum_simd,
         )
@@ -243,7 +243,7 @@ fn _softmax_3_pass_step_2[
         var elem = vin - SIMD[type, simd_width].splat(max_val)
 
         elem = pre_update_func[type, simd_width](elem)
-        output.simd_store[simd_width](idx, elem)
+        output.store[width=simd_width](idx, elem)
         elem = post_update_func[type, simd_width](elem)
         reduce_add_simd[outer_simd_width, simd_width, type](
             accum_scalar, accum_simd, elem
@@ -280,7 +280,7 @@ fn _softmax_3_pass_step_3[
         var accum_simd = SIMD[type, simd_width].splat(accum_proc)
         var elem = output.load[width=simd_width](idx)
         elem = accum_apply_func[type, simd_width](elem, accum_simd)
-        output.simd_store[simd_width](idx, elem)
+        output.store[width=simd_width](idx, elem)
 
     vectorize[step_3, simd_width, unroll_factor=unroll_factor](len(output))
 

@@ -229,7 +229,7 @@ fn gather_reduce[
                     )[0]
 
                 var out_idx = StaticIntTuple[2](i, k)
-                output.simd_store[simd_width](out_idx, accum)
+                output.store[width=simd_width](out_idx, accum)
 
             tile[
                 gather_k_tile,
@@ -319,7 +319,7 @@ fn gather[
     fn output_fn[
         width: Int, _rank: Int
     ](coords: StaticIntTuple[_rank], val: SIMD[type, width]):
-        output.simd_store[width](
+        output.store[width=width](
             rebind[StaticIntTuple[output_rank]](coords),
             rebind[SIMD[type, width]](val),
         )

@@ -259,7 +259,7 @@ fn test_conv_transposed[
 
             var vec = output.load[width=width](curr_coords)
 
-            output.simd_store(
+            output.store(
                 curr_coords,
                 10.0
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),

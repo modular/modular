@@ -105,7 +105,7 @@ fn layer_norm[
             var norm_val = (out_val - mean_val) * norm_factor * gamma_buf.load[
                 width=simd_width
             ](idx) + beta_buf.load[width=simd_width](idx)
-            out_slice.simd_store(idx, norm_val)
+            out_slice.store(idx, norm_val)
 
         vectorize[_normalize, simd_width](n)
 
