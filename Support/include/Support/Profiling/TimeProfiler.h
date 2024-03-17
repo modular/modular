@@ -174,8 +174,7 @@ struct Trace {
   }
 
   static constexpr bool EnableTrace(Type type, int level) {
-    return level <= ((MODULAR_LLCL_MAX_PROFILING_LEVEL >>
-                      ((int)type * kProfilingTypeWidthBits)) &
+    return level <= ((MODULAR_LLCL_MAX_PROFILING_LEVEL >> typeBitshift(type)) &
                      kProfilingTypeBitmask);
   }
 };
