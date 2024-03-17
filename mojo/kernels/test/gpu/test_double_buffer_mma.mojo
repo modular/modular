@@ -231,14 +231,14 @@ fn sgemm_double_buffer[
         var a1 = loada_smem_ptr.load(row_a1 * BM_padded + col_a1 + i * MMA_M)
         var a2 = loada_smem_ptr.load(row_a2 * BM_padded + col_a2 + i * MMA_M)
         var a3 = loada_smem_ptr.load(row_a3 * BM_padded + col_a3 + i * MMA_M)
-        a_reg.simd_store[4]((0, i * 4), SIMD[a_type, 4](a0, a1, a2, a3))
+        a_reg.store[width=4]((0, i * 4), SIMD[a_type, 4](a0, a1, a2, a3))
 
     # Load B fragments to the first buffer.
     @unroll
     for i in range(num_mma_n):
         var b0 = loadb_smem_ptr.load(row_b0 * BN + col_b0_b1 + i * MMA_N)
         var b1 = loadb_smem_ptr.load(row_b1 * BN + col_b0_b1 + i * MMA_N)
-        b_reg.simd_store[2]((0, i * 2), SIMD[b_type, 2](b0, b1))
+        b_reg.store[width=2]((0, i * 2), SIMD[b_type, 2](b0, b1))
 
     var num_k_tiles = Scalar[itype](div_ceil(int(K), int(BK)))
 
@@ -288,7 +288,7 @@ fn sgemm_double_buffer[
                 var a3 = loada_smem_ptr.load(
                     (next_k + row_a3) * BM_padded + col_a3 + i * MMA_M
                 )
-                a_reg.simd_store[4](
+                a_reg.store[width=4](
                     (next_buffer_id, i * 4), SIMD[a_type, 4](a0, a1, a2, a3)
                 )
 
@@ -301,7 +301,7 @@ fn sgemm_double_buffer[
                 var b1 = loadb_smem_ptr.load(
                     (next_k + row_b1) * BN + col_b0_b1 + i * MMA_N
                 )
-                b_reg.simd_store[2](
+                b_reg.store[width=2](
                     (next_buffer_id, i * 2), SIMD[b_type, 2](b0, b1)
                 )
 
@@ -336,7 +336,7 @@ fn sgemm_double_buffer[
                         b_reg.load[width=2]((buffer_id, j * 2)),
                         d,
                     )
-                    c_reg.simd_store[width=4]((i, j, 0), d)
+                    c_reg.store[width=4]((i, j, 0), d)
 
             # Alternate buffer
             buffer_id ^= 0x1
@@ -363,7 +363,7 @@ fn sgemm_double_buffer[
                 var a3 = loada_smem_ptr.load(
                     (next_k + row_a3) * BM_padded + col_a3 + i * MMA_M
                 )
-                a_reg.simd_store[4](
+                a_reg.store[width=4](
                     (next_buffer_id, i * 4), SIMD[a_type, 4](a0, a1, a2, a3)
                 )
 
@@ -375,7 +375,7 @@ fn sgemm_double_buffer[
                 var b1 = loadb_smem_ptr.load(
                     (next_k + row_b1) * BN + col_b0_b1 + i * MMA_N
                 )
-                b_reg.simd_store[2](
+                b_reg.store[width=2](
                     (next_buffer_id, i * 2), SIMD[b_type, 2](b0, b1)
                 )
 
@@ -391,7 +391,7 @@ fn sgemm_double_buffer[
                     b_reg.load[width=2]((buffer_id, j * 2)),
                     d,
                 )
-                c_reg.simd_store[width=4]((i, j, 0), d)
+                c_reg.store[width=4]((i, j, 0), d)
 
         # Alternate buffer
         buffer_id ^= 0x1

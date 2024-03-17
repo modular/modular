@@ -56,7 +56,7 @@ def run_elementwise[type: DType]():
     fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
         var idx = rebind[StaticIntTuple[1]](idx0)
 
-        out_buffer.simd_store[simd_width](
+        out_buffer.store[width=simd_width](
             idx, exp(in_buffer.load[width=simd_width](idx))
         )
 
