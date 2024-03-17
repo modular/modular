@@ -13,9 +13,9 @@
 #define LLCL_RUNTIME_RUNTIMECLOPTIONS_H
 
 #include "LLCL/Runtime/Runtime.h"
-#include "LLCL/Support/Profiling.h"
 #include "Support/ADT/GenericUniquePtrSet.h"
 #include "Support/CommandLine.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "Support/RCRef.h"
 #include "llvm/Support/Threading.h"
 #include <chrono>

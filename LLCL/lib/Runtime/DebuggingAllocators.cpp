@@ -10,11 +10,11 @@
 
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Support/Atomics.h"
-#include "LLCL/Support/Profiling.h"
 #include "Support/ADT/ConcurrentAppendingVector.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/Host.h"
 #include "Support/Process.h"
+#include "Support/Profiling/TimeProfiler.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Process.h"

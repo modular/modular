@@ -1048,8 +1048,12 @@ struct ProfilerEntry<true, Type> {
   template <typename... Args>
   static void createWithParentAndPush(ProfilerEventId parentId,
                                       Args &&...args) {
-    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get()) {
+      if (!ctx->isEnabled(Type))
+        return;
+
       ctx->beginWithParentAndPush(parentId, std::forward<Args>(args)...);
+    }
   }
 
   template <size_t N, typename... Args>
