@@ -6,9 +6,10 @@
 """Implements device operations."""
 
 from sys.ffi import DLHandle
-from utils import StringRef
 
 from memory.unsafe import DTypePointer, Pointer
+
+from utils import StringRef
 
 from ._utils import _check_error, _get_dylib_function, _human_memory
 from .dim import Dim

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, Pointer, bitcast
+
 from utils import StringRef
 
 from ._utils import _check_error, _get_dylib_function
