@@ -61,14 +61,14 @@ std::optional<void *> TimeProfilerTimingManager::rootTimer() {
 void TimeProfilerTimingManager::startTimer(void *handle) {
   auto *timer = reinterpret_cast<Timer *>(handle);
   if (!timer->isHidden())
-    ProfilerEntry<true>::createAndPush(timer->name);
+    ProfilerEntry<true, Trace::kOther>::createAndPush(timer->name);
 }
 
 void TimeProfilerTimingManager::stopTimer(void *handle) {
   // Time trace profilers are timeline based, so we just stop the last timer.
   auto *timer = reinterpret_cast<Timer *>(handle);
   if (!timer->isHidden())
-    ProfilerEntry<true>::endAndPop();
+    ProfilerEntry<true, Trace::kOther>::endAndPop();
 }
 
 void *

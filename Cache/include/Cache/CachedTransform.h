@@ -15,7 +15,7 @@ namespace M::Cache {
 
 /// Profiler entry for run-time cache transforms.
 using RuntimeCacheProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kOther, 1)>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kOther, 1), Trace::kOther>;
 
 //===----------------------------------------------------------------------===//
 // Generic Transformations

@@ -101,6 +101,85 @@ class OStream;
 
 namespace M {
 
+static constexpr bool kIsProfilingEnabled =
+    MODULAR_LLCL_MAX_PROFILING_LEVEL > 0;
+
+// The cmake arg -DMODULAR_LLCL_MAX_PROFILING_LEVEL is interpreted as chunks of
+// octal numbers. The TraceType enum indicates which chunk corresponds to
+// which type of profiling. Each chunk, representing a type of profiling, has 3
+// bits worth of profiling levels to use. For example, to enable level 1 LLCL
+// profiling but not DEFAULT profiling, you would pass
+// -DMODULAR_LLCL_MAX_PROFILING_LEVEL=010 to cmake. To enable level 2 DEFAULT
+// profiling, but not LLCL profiling, you would pass
+// -DMODULAR_LLCL_MAX_PROFILING_LEVEL=02 to cmake.
+// This is intended to avoid cluttering profiles with unwanted information by
+// giving the user more control over which types of traces they want to see.
+struct Trace {
+  enum Type : uint8_t {
+    // For traces not covered by any of the following.
+    // Level 1:
+    //   DriverProfilerEntry for mt's execution.
+    //   MGPProfilerEntry for mgp primitives which use addTask.
+    //   CUDAProfilerEntry for cuda primitives which use addTask.
+    //   ATenProfilerEntry for fallback ATen primitives.
+    //   TFProfilerEntry for fallback TF primitives.
+    //   TFLProfilerEntry for fallback TFL primitives.
+    //   MallocProfilerEntry for memory profiling by overriding the system
+    //   malloc.
+    // Level 2:
+    //   RuntimeCacheProfilerEntry for cache transforms.
+    kOther = 0,
+    // For traces related to core LLCL scheduling and runtime.
+    // Level 1:
+    //   none
+    // Level 2:
+    //   AlgorithmProfilerEntry for addTask via parallization helpers
+    //   InternalProfilerEntry for tracking thread spinning and sleeping.
+    // Level 3:
+    //   AsyncProfilerEntry for AsyncValue allocation and premature freeing.
+    //   AlllWorkItemsProfilerEntry for the execution of every work/wait item.
+    kLLCL = 1,
+    // For traces related to memory usage.
+    // Level 1:
+    //   MemCopyProfilerEntry for memcpy.
+    // Level 2:
+    //   MemAllocFreeProfilerEntry for alloc and free.
+    // Level 3:
+    //   BufferRefLifetimeProfilerEntry for all buffer lifetimes.
+    //   MemProfilerEntry for outstanding bytes allocated.
+    kMem = 2,
+    // For traces related to mojo kernels. Controlled from Mojo side only.
+    kMojo = 3,
+    // For the GraphRT executor.
+    // Level 1:
+    //   PrimitiveProfilerEntry for all GraphRT primitives.
+    kPrimitives = 4,
+    // For traces related to compilation.
+    // Level 1:
+    //   CacheProfilerEntry for cache-related transforms.
+    //   CompilerProfilerEntry for Mojo compiler passes.
+    // Level 2:
+    //   VerboseCompilerProfilerEntry for very detailed Mojo compiler profiling.
+    kCompiler = 5,
+  };
+
+  // Each profiling type has 3 bits worth of levels to use
+  static constexpr int kProfilingTypeWidthBits = 3;
+  static constexpr int kProfilingTypeBitmask =
+      ((1 << kProfilingTypeWidthBits) - 1);
+  static constexpr uint64_t kFullyEnabled =
+      std::numeric_limits<uint64_t>::max();
+  static constexpr int typeBitshift(Type type) {
+    return type * kProfilingTypeWidthBits;
+  }
+
+  static constexpr bool EnableTrace(Type type, int level) {
+    return level <= ((MODULAR_LLCL_MAX_PROFILING_LEVEL >>
+                      ((int)type * kProfilingTypeWidthBits)) &
+                     kProfilingTypeBitmask);
+  }
+};
+
 /// Function that returns arbitrary messages when profiler events occur.
 /// `TimeTraceScope` has to store a `ProfilerDumpFn` in order to
 /// call that function when creating an `EndEvent` if `TRACE_IN_REAL_TIME` is 1.
@@ -508,7 +587,7 @@ using SampleEventList = BlockList<SampleEvent>;
 using DebugEventList = BlockList<DebugEvent>;
 
 struct TimeTraceThreadProfiler {
-  explicit TimeTraceThreadProfiler(uint16_t threadIndex);
+  explicit TimeTraceThreadProfiler(uint16_t threadIndex, uint64_t level);
 
   /// Begin a new timing entry, and return its globally unique id.
   template <typename... Args>
@@ -604,6 +683,12 @@ struct TimeTraceThreadProfiler {
     event.dump();
   }
 
+  /// Checks if the trace type has been disabled at runtime.
+  bool isEnabled(Trace::Type type) const {
+    return (maxProfilingLevel >> Trace::typeBitshift(type)) &
+           Trace::kProfilingTypeBitmask;
+  }
+
   /// Intern all event labels, returning initial and final number of strings
   /// in the string arena.
   std::pair<size_t, size_t> intern();
@@ -643,6 +728,9 @@ struct TimeTraceThreadProfiler {
   /// taken to reset this value to prevent erroneous association of parents
   /// to unrelated children which just happen to run on the same thread.
   ProfilerEventId currentId = 0;
+
+  /// Runtime configurable analogue of MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  uint64_t maxProfilingLevel;
 };
 
 //===----------------------------------------------------------------------===//
@@ -667,7 +755,8 @@ struct ThreadProfilerContext {
 
 /// This class represents the main context used for profiling.
 struct GlobalProfilerContext {
-  GlobalProfilerContext(DurationType granularity, StringRef name);
+  GlobalProfilerContext(DurationType granularity, StringRef name,
+                        uint64_t level);
 
   /// Collect all the begin, end, and sample events over all threads, reconcile
   /// them, and return them as timing entries sorted by time then thread id.
@@ -711,6 +800,9 @@ struct GlobalProfilerContext {
   DenseSet<ThreadProfilerContext *> threadProfilerContexts;
 
   SmallVector<std::string> inputShapes;
+
+  // Runtime configurable analogue of MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  uint64_t maxProfilingLevel;
 };
 
 //===----------------------------------------------------------------------===//
@@ -764,7 +856,10 @@ private:
 struct TimeTraceProfiler {
   /// Initialize the time trace profiler. This should be constructed from the
   /// main thread.
-  TimeTraceProfiler(unsigned timeTraceGranularity, StringRef procName);
+  /// `maxProfilingLevel` defaults to fully enabled, but can be set at runtime
+  /// to toggle trace types enabled with MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  TimeTraceProfiler(unsigned timeTraceGranularity, StringRef procName,
+                    uint64_t maxProfilingLevel = Trace::kFullyEnabled);
 
   /// Destroy the time trace profiler. This should be destroyed from the
   /// main thread.
@@ -837,12 +932,12 @@ struct TimeTraceProfiler {
 ///   -- `std::string`.
 ///   -- {Begin,End}Event dump returned strings to `llvm::dbgs()`.
 ///   void record(ProfilerDumpFn dumpFn) &&
-template <bool Enabled>
+template <bool Enabled, Trace::Type Type>
 struct ProfilerEntry {};
 
 /// Disabled profiling entry. Everything is a no-op.
-template <>
-struct ProfilerEntry<false> {
+template <Trace::Type Type>
+struct ProfilerEntry<false, Type> {
   // No copy, only move.
   ProfilerEntry(const ProfilerEntry &) = delete;
   ProfilerEntry &operator=(const ProfilerEntry &) = delete;
@@ -888,8 +983,8 @@ struct ProfilerEntry<false> {
 };
 
 /// Enabled profiling entry. Entries are created only if the profiler is active.
-template <>
-struct ProfilerEntry<true> {
+template <Trace::Type Type>
+struct ProfilerEntry<true, Type> {
   ProfilerEntry(ProfilerEventId id) : id(id) {}
 
   // No copy, only move.
@@ -904,32 +999,51 @@ struct ProfilerEntry<true> {
 
   template <typename... Args>
   static ProfilerEntry create(Args &&...args) {
-    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get()) {
+      if (!ctx->isEnabled(Type)) {
+        // Skip recording events that are turned off at runtime.
+        return {};
+      }
+
       return ProfilerEntry(ctx->begin(std::forward<Args>(args)...));
+    }
     return {};
   }
 
   template <size_t N, typename... Args>
   static ProfilerEntry create(const char (&s)[N], Args &&...args) {
-    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get()) {
+      if (!ctx->isEnabled(Type))
+        return {};
+
       return ProfilerEntry(ctx->begin(StringLiteral::withInnerNUL(s),
                                       std::forward<Args>(args)...));
+    }
     return {};
   }
 
   template <typename... Args>
   static ProfilerEntry createWithParent(ProfilerEventId parentId,
                                         Args &&...args) {
-    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get()) {
+      if (!ctx->isEnabled(Type))
+        return {};
+
       return ProfilerEntry(
           ctx->beginWithParent(parentId, std::forward<Args>(args)...));
+    }
+
     return {};
   }
 
   template <typename... Args>
   static void createAndPush(Args &&...args) {
-    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get()) {
+      if (!ctx->isEnabled(Type))
+        return;
+
       ctx->beginAndPush(std::forward<Args>(args)...);
+    }
   }
 
   template <typename... Args>
@@ -941,14 +1055,22 @@ struct ProfilerEntry<true> {
 
   template <size_t N, typename... Args>
   static void createAndPush(const char (&s)[N], Args &&...args) {
-    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get()) {
+      if (!ctx->isEnabled(Type))
+        return;
+
       ctx->beginAndPush(StringLiteral::withInnerNUL(s),
                         std::forward<Args>(args)...);
+    }
   }
 
   static void endAndPop() {
-    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get())
+    if (auto *ctx = ProfilingDetail::ThreadProfilerContext::get()) {
+      if (!ctx->isEnabled(Type))
+        return;
+
       ctx->endAndPop();
+    }
   }
 
   /// Returns the event id of the 'current' event for the callers thread.
@@ -1012,7 +1134,7 @@ struct Empty {};
 
 /// RAII class to automatically record the constructed or given profile entry
 /// when the object goes out of scope.
-template <bool Enabled = true, typename DumpFnT = Empty>
+template <Trace::Type Type, bool Enabled = true, typename DumpFnT = Empty>
 struct TimeTraceScope {
   static_assert(std::is_same_v<DumpFnT, Empty> ||
                     std::is_constructible_v<ProfilerDumpFn, DumpFnT>,
@@ -1024,7 +1146,7 @@ struct TimeTraceScope {
   TimeTraceScope(TimeTraceScope &&) = delete;
   TimeTraceScope &operator=(TimeTraceScope &&) = delete;
 
-  explicit TimeTraceScope(ProfilerEntry<Enabled> entry,
+  explicit TimeTraceScope(ProfilerEntry<Enabled, Type> entry,
                           DumpFnT extraDumpFn = Empty{})
       : entry(std::move(entry)), dumpFn(std::move(extraDumpFn)) {}
 
@@ -1035,7 +1157,7 @@ struct TimeTraceScope {
       std::move(entry).record(dumpFn);
   }
 
-  ProfilerEntry<Enabled> entry;
+  ProfilerEntry<Enabled, Type> entry;
   /// Optional function to dump statistics upon profiler events occurring.
   /// When present, this is a `ProfilerDumpFn`.
   /// Otherwise, this is an empty struct `Empty` so as to be cost free.
@@ -1045,8 +1167,9 @@ struct TimeTraceScope {
 };
 
 // The trivial deduction guide.
-template <bool Enabled>
-TimeTraceScope(ProfilerEntry<Enabled> &&) -> TimeTraceScope<Enabled>;
+template <Trace::Type Type, bool Enabled>
+TimeTraceScope(ProfilerEntry<Enabled, Type> &&)
+    -> TimeTraceScope<Type, Enabled>;
 
 } // namespace M
 

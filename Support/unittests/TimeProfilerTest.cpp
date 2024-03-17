@@ -35,8 +35,9 @@ TEST(TimeProfiler, Scope_Smoke) {
   TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
   {
-    TimeTraceScope</*Enabled=*/true> scope(
-        ProfilerEntry<true>::create("event", StringLiteral("detail")));
+    TimeTraceScope<Trace::kOther, /*Enabled=*/true> scope(
+        ProfilerEntry<true, Trace::kOther>::create("event",
+                                                   StringLiteral("detail")));
   }
 
   std::string json = teardownTrace(profiler);
@@ -47,8 +48,9 @@ TEST(TimeProfiler, Scope_Smoke) {
 TEST(TimeProfiler, Begin_End_Smoke) {
   TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
-  ProfilerEntry<true>::createAndPush("event", StringLiteral("detail"));
-  ProfilerEntry<true>::endAndPop();
+  ProfilerEntry<true, Trace::kOther>::createAndPush("event",
+                                                    StringLiteral("detail"));
+  ProfilerEntry<true, Trace::kOther>::endAndPop();
 
   std::string json = teardownTrace(profiler);
   ASSERT_TRUE(json.find(R"("name":"event")") != std::string::npos);
@@ -58,14 +60,16 @@ TEST(TimeProfiler, Begin_End_Smoke) {
 TEST(TimeProfiler, Begin_End_Disabled) {
   // Nothing should be observable here. The test is really just making sure
   // we've not got a stray nullptr deref.
-  ProfilerEntry<true>::createAndPush("event", StringLiteral("detail"));
-  ProfilerEntry<true>::endAndPop();
+  ProfilerEntry<true, Trace::kOther>::createAndPush("event",
+                                                    StringLiteral("detail"));
+  ProfilerEntry<true, Trace::kOther>::endAndPop();
 }
 
 TEST(TimeProfiler, Entry_Smoke) {
   TimeTraceProfiler profiler(/*timeTraceGranularity=*/0, "test");
 
-  auto entry = ProfilerEntry<true>::create("event", StringLiteral("detail"));
+  auto entry = ProfilerEntry<true, Trace::kOther>::create(
+      "event", StringLiteral("detail"));
   std::move(entry).record();
 
   std::string json = teardownTrace(profiler);
@@ -75,7 +79,8 @@ TEST(TimeProfiler, Entry_Smoke) {
 
 TEST(TimeProfiler, Entry_Disabled) {
   // Only get the default entry if tracing is not setup.
-  auto entry = ProfilerEntry<true>::create("event", StringLiteral("detail"));
+  auto entry = ProfilerEntry<true, Trace::kOther>::create(
+      "event", StringLiteral("detail"));
   ASSERT_TRUE(entry.empty());
   std::move(entry).record();
 }

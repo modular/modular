@@ -45,7 +45,7 @@ CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
 Runtime::Runtime(CompactRuntimePtr runtimePtr,
                  std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue,
-                 StringRef profileFilename)
+                 StringRef profileFilename, uint64_t maxProfilingLevel)
     : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profileFilename(profileFilename), runtimeIndex(runtimePtr.index),
@@ -56,7 +56,7 @@ Runtime::Runtime(CompactRuntimePtr runtimePtr,
   // NOTE: Users can't pass in profileFilename AND activate the time
   // profiler in the caller.
   if (!profileFilename.empty())
-    profiler.emplace(/*timeTraceGranularity=*/0, "Main");
+    profiler.emplace(/*timeTraceGranularity=*/0, "Main", maxProfilingLevel);
 }
 
 Runtime::~Runtime() {
@@ -144,9 +144,9 @@ createRuntimeImpl(const RuntimeOptions &options) {
                 options.mainWillDonate, options.withAffinity,
                 std::chrono::microseconds(options.threadBusyWaitTime),
                 options.poolName, options.paranoid);
-  return std::make_unique<Runtime>(runtimePtr, std::move(allocator),
-                                   std::move(workQueue),
-                                   options.profileFilename);
+  return std::make_unique<Runtime>(
+      runtimePtr, std::move(allocator), std::move(workQueue),
+      options.profileFilename, options.maxProfilingLevel);
 }
 
 std::unique_ptr<Runtime>

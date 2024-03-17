@@ -16,28 +16,28 @@ KGEN_CompilerRT_TimeTraceProfilerBegin(const char *namePtr, size_t nameLen,
                                        const char *detailPtr, size_t detailLen,
                                        size_t parentId) {
   // NOTE: Must be always enabled.
-  return ProfilerEntry<true>::createWithParent(parentId,
-                                               StringRef(namePtr, nameLen),
-                                               StringRef(detailPtr, detailLen))
+  return ProfilerEntry<true, Trace::kMojo>::createWithParent(
+             parentId, StringRef(namePtr, nameLen),
+             StringRef(detailPtr, detailLen))
       .getId();
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_TimeTraceProfilerEnd(size_t id) {
   // NOTE: Must be always enabled.
-  ProfilerEntry<true>(id).record();
+  ProfilerEntry<true, Trace::kMojo>(id).record();
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
 KGEN_CompilerRT_TimeTraceProfilerGetCurrentId() {
   // NOTE: Must be always enabled.
-  return ProfilerEntry<true>::getCurrentId();
+  return ProfilerEntry<true, Trace::kMojo>::getCurrentId();
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_TimeTraceProfilerSetCurrentId(size_t id) {
   // NOTE: Must be always enabled.
-  ProfilerEntry<true>(id).setAsCurrentId();
+  ProfilerEntry<true, Trace::kMojo>(id).setAsCurrentId();
 }
 
 void M::KGEN::registerTracing(

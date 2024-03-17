@@ -21,7 +21,7 @@ namespace M::LLCL {
 
 /// Profiling entry for sub-tasks launched by the parallelization helpers.
 using AlgorithmProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2), Trace::kLLCL>;
 
 //===----------------------------------------------------------------------===//
 // Helpers that wait for values.
