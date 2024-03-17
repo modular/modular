@@ -236,7 +236,7 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
   } else if (func.isDef() && func.getSignature().hasMemoryOnlyResult()) {
     // If this `def` returns an object but is missing a return, insert one
     // automatically.
-    auto objType = shared.lookupObjectType(funcDecl.getLoc(), funcDecl);
+    auto objType = shared.lookupObjectType(funcDecl, funcDecl.getLoc());
     auto resultArg = func.getArguments().back();
     if (objType && objType.isEqualCanon(
                        cast<RefType>(resultArg.getType()).getElementType())) {
@@ -721,14 +721,9 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     destructorFunc = synthesizeEmptyDtor(structDecl);
 
   auto addCopyOrMoveBuiltinTrait = [&](bool isCopy) {
-    ASTDecl *traitDecl;
-    if (isCopy) {
-      traitDecl = shared.lookupCopyableTrait(structDecl.getLoc(),
-                                             structDecl.getParentDecl());
-    } else {
-      traitDecl = shared.lookupMovableTrait(structDecl.getLoc(),
-                                            structDecl.getParentDecl());
-    }
+    ASTDecl *traitDecl = shared.lookupBuiltinTrait(
+        isCopy ? "Copyable" : "Movable", structDecl.getParentDecl(),
+        structDecl.getLoc());
     if (traitDecl)
       addTraitParent(declOp, traitDecl);
   };
