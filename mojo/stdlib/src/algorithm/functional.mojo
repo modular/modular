@@ -89,10 +89,10 @@ fn vectorize[
         @parameter
         fn closure[simd_width: Int](i: Int):
             print("storing", simd_width, "els at pos", i)
-            p.simd_store[simd_width](i, i)
+            p.store[width=simd_width](i, i)
 
         vectorize[closure, simd_width](size)
-        print(p.simd_load[size]())
+        print(p.load[width=size]())
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values
@@ -181,10 +181,10 @@ fn vectorize[
         @parameter
         fn closure[simd_width: Int](i: Int):
             print("storing", simd_width, "els at pos", i)
-            p.simd_store[simd_width](i, i)
+            p.store[width=simd_width](i, i)
 
-        vectorize[closure, simd_width, unroll_factor=size]()
-        print(p.simd_load[size]())
+        vectorize[closure, simd_width, size]()
+        print(p.load[width=size]())
     ```
 
     On a machine with a SIMD register size of 128, this will set 4xInt32 values

@@ -116,7 +116,7 @@ fn test_stencil_avg_pool():
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
-        output.simd_store(point, res)
+        output.store(point, res)
 
     alias stencil_axis = StaticIntTuple[stencil_rank](1, 2)
     stencil[
@@ -223,7 +223,7 @@ fn test_stencil_avg_pool_padded():
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
-        output.simd_store(point, res)
+        output.store(point, res)
 
     @always_inline
     @parameter
@@ -336,7 +336,7 @@ fn test_stencil_avg_pool_stride_2():
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
         var res = val / (pool_window_h * pool_window_w)
-        output.simd_store(point, res)
+        output.store(point, res)
 
     @always_inline
     @parameter
@@ -450,7 +450,7 @@ fn test_stencil_max_pool_dilation_2():
     fn max_pool_compute_finalize[
         simd_width: Int
     ](point: StaticIntTuple[rank], val: SIMD[dtype, simd_width]):
-        output.simd_store(point, val)
+        output.store(point, val)
 
     @always_inline
     @parameter
