@@ -12,8 +12,8 @@ from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     elementwise,
 )
-from memory import stack_allocation
 from buffer import Buffer, NDBuffer
+from memory import stack_allocation
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList

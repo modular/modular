@@ -27,20 +27,20 @@ from sys.info import (
     triple_is_nvidia_cuda,
 )
 
-from ._gpu.reduction import reduce_launch
-from gpu.host import Stream
-
 from algorithm import sync_parallelize, vectorize
-from utils.loop import unroll
 from algorithm.functional import _get_num_workers
-from builtin.dtype import _uint_type_of_width
 from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
+from builtin.dtype import _uint_type_of_width
+from gpu.host import Stream
 from memory.unsafe import bitcast
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
+from utils.loop import unroll
+
+from ._gpu.reduction import reduce_launch
 
 # ===----------------------------------------------------------------------===#
 # Utilities

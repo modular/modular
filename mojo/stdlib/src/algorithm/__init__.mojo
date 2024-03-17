@@ -6,6 +6,6 @@
 """Implements the closed source algorithm package."""
 
 from .functional import *
+from .reduction import *
 from .sort import *
 from .swap import *
-from .reduction import *

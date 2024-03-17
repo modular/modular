@@ -6,8 +6,8 @@
 
 from math import div_ceil, min
 
-from memory import memcpy
 from algorithm import sync_parallelize
+from memory import memcpy
 from runtime.llcl import Runtime
 
 

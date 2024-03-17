@@ -6,8 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from algorithm import vectorize
-from memory import memcmp
 from buffer import Buffer
+from memory import memcmp
 
 
 # CHECK-LABEL: test_vectorize
