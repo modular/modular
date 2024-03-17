@@ -8,6 +8,7 @@
 from math import align_up
 from sys.info import simdwidthof
 
+from buffer import NDBuffer
 from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
 from MatmulUtils import (
     get_matmul_arch_factor,
@@ -16,7 +17,6 @@ from MatmulUtils import (
     use_i8mm_fn,
     use_vnni_fn,
 )
-from buffer import NDBuffer
 
 from utils.index import Index
 from utils.list import DimList

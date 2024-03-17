@@ -18,14 +18,13 @@ from sys.info import (
     sizeof,
 )
 
+from algorithm import vectorize
 from buffer.buffer import (
     DynamicRankBuffer,
     NDBuffer,
     partial_simd_load,
     partial_simd_store,
 )
-
-from algorithm import vectorize
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

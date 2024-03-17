@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from algorithm.reduction import _reduce_generator
-from MatmulUtils import elementwise_epilogue_type
 from buffer import Buffer, NDBuffer
+from MatmulUtils import elementwise_epilogue_type
 
 from utils._optional import Optional
 from utils.index import Index

@@ -6,19 +6,18 @@
 # UNSUPPORTED: asan
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from math import div_ceil
 from sys.info import has_neon, simdwidthof
 
+from buffer import NDBuffer
 from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
 from MatmulUtils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
 )
-from buffer import NDBuffer
 
 from utils.index import Index
 from utils.list import DimList
-
-from math import div_ceil
 
 alias prefetch_b_distance_k: Int = get_matmul_prefetch_b_distance_k()
 

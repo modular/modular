@@ -10,9 +10,9 @@ from random import rand
 from sys.info import simdwidthof
 
 import benchmark
+from buffer import Buffer, NDBuffer
 from Gemv import gemv, naive_gemv
 from Matmul import matmul
-from buffer import Buffer, NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList

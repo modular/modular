@@ -10,6 +10,7 @@ from sys.info import simdwidthof
 from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from algorithm.reduction import _reduce_generator
+from buffer import NDBuffer
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Function, Stream
 from Matmul import _submatmul_sequential_sync
@@ -22,12 +23,11 @@ from MatmulUtils import (
     get_matmul_num_tasks,
     get_min_task_size,
     get_partitioned_matmul,
+    packA_i8mm,
     partition_work,
     use_i8mm_fn,
-    packA_i8mm,
 )
 from memory import memset_zero
-from buffer import NDBuffer
 from runtime.llcl import Runtime
 
 from utils._optional import Optional

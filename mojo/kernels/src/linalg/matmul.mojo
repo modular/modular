@@ -16,14 +16,20 @@ from sys.info import (
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
-from utils.loop import unroll
 from algorithm.functional import tile_and_unswitch
+from buffer.buffer import (
+    Buffer,
+    NDBuffer,
+    partial_simd_load,
+    partial_simd_store,
+)
 from Gemv import gemv
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Function, Stream
 from gpu.host.memory import _memset_async
 from gpu.memory import AddressSpace
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
+from gpu.tensor_ops import tc_reduce
 from MatmulUtils import (
     GemmShape,
     MatmulConfig,
@@ -40,28 +46,22 @@ from MatmulUtils import (
     get_min_task_size,
     get_packB_unroll_factor,
     get_partitioned_matmul,
+    packA_i8mm,
     search_mm_config,
     use_i8mm_fn,
     use_vnni_fn,
-    packA_i8mm,
 )
 from memory import memset_zero, stack_allocation
-from buffer.buffer import (
-    Buffer,
-    NDBuffer,
-    partial_simd_load,
-    partial_simd_store,
-)
 from memory.unsafe import DTypePointer, bitcast
 from Neon import _neon_dotprod, _neon_matmul
 from runtime.llcl import Runtime
 from Transpose import transpose_inplace
-from gpu.tensor_ops import tc_reduce
 from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
+from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 
 

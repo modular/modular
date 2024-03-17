@@ -13,12 +13,11 @@
 from sys._assembly import inlined_assembly
 from sys.info import sizeof
 
-from memory import memcpy, memset_zero, stack_allocation
 from buffer import NDBuffer
+from memory import memcpy, memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 
 from utils.list import DimList
-
 
 # All AMX instructions are of the form
 # `0x00201000 | ((op & 0x1F) << 5) | (operand & 0x1F)`

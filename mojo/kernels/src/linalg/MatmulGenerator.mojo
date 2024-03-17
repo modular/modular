@@ -8,6 +8,7 @@ from math import div_ceil, max, min
 from sys.info import simdbytewidth, simdwidthof
 
 from algorithm import tile, tile_and_unswitch, vectorize
+from buffer import NDBuffer
 from Matmul import (
     GemmShape,
     MatmulConfig,
@@ -20,7 +21,6 @@ from Matmul import (
 )
 from MatmulUtils import get_pack_data_size
 from memory import stack_allocation
-from buffer import NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.index import Index, StaticIntTuple

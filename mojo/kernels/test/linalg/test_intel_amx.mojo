@@ -13,7 +13,7 @@
 
 from sys.info import has_intel_amx, os_is_linux
 
-from utils.loop import unroll
+from buffer import Buffer, NDBuffer
 from IntelAMX import (
     _tile_dpbssd,
     _tile_dpbssd_emulated,
@@ -28,11 +28,11 @@ from IntelAMX import (
 )
 from Matmul import Matrix, naive_matmul
 from memory import memcmp, memset_zero
-from buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer, Pointer
 from Transpose import transpose, transpose_inplace
 
 from utils.list import Dim, DimList
+from utils.loop import unroll
 
 alias void = DType.invalid.value
 alias int32_pop = __mlir_type.`!pop.scalar<si32>`

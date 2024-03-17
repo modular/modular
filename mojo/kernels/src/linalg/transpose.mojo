@@ -10,9 +10,8 @@ from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load, strided_store
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
+from buffer import Buffer, NDBuffer, parallel_memcpy
 from memory import memcpy
-from buffer import parallel_memcpy
-from buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 

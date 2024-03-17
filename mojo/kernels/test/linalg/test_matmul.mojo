@@ -11,6 +11,7 @@
 
 from sys.info import has_avx2, has_neon_int8_matmul
 
+from buffer import NDBuffer
 from Matmul import (
     matmul,
     matmul_M,
@@ -19,7 +20,6 @@ from Matmul import (
     pack_matmul_b_shape_func,
     pack_matmul_b_shape_func_M,
 )
-from buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
 from utils.list import DimList

@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from MatrixBandPart import matrix_band_part as _matrix_band_part
 from buffer import NDBuffer
+from MatrixBandPart import matrix_band_part as _matrix_band_part
 from testing import assert_equal
 
 from utils.list import DimList
