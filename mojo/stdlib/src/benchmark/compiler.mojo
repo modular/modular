@@ -8,7 +8,6 @@ from sys._assembly import inlined_assembly
 
 from memory.unsafe import DTypePointer, Pointer
 
-
 # ===----------------------------------------------------------------------===#
 # keep
 # ===----------------------------------------------------------------------===#

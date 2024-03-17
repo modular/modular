@@ -6,9 +6,9 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from gpu.host import Context, Dim, Function, Stream
-from benchmark import Bencher, BenchId, Bench
+from benchmark import Bench, Bencher, BenchId
 from benchmark.cuda import time_async_cuda_kernel
+from gpu.host import Context, Dim, Function, Stream
 
 
 fn empty_kernel():

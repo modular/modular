@@ -5,12 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 """Implements benchmark utilties."""
 
-from .benchmark import Report, _run_impl, _RunOptions
-
-from gpu.host.event import time_function
-from gpu.host.stream import Stream
 from gpu.host import synchronize
-from gpu.host.event import Event
+from gpu.host.event import Event, time_function
+from gpu.host.stream import Stream
+
+from .benchmark import Report, _run_impl, _RunOptions
 
 # ===----------------------------------------------------------------------===#
 # run
