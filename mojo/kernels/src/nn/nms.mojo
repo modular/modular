@@ -82,9 +82,9 @@ fn non_max_suppression[
     @parameter
     @always_inline
     fn store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
-        output_predictions.push_back(batch_idx)
-        output_predictions.push_back(class_idx)
-        output_predictions.push_back(box_idx)
+        output_predictions.append(batch_idx)
+        output_predictions.append(class_idx)
+        output_predictions.append(box_idx)
 
     non_max_suppression[type, store_to_outputs](
         boxes,
