@@ -252,6 +252,7 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
       matchParams(actual.getVariadic(), expected.getVariadic());
       matchParams(actual.getLifetime(), expected.getLifetime());
       matchParams(actual.getAddressSpace(), expected.getAddressSpace());
+      return;
     }
 
   // Handle SignatureType

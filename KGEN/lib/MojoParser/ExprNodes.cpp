@@ -1765,8 +1765,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
   // The ASTType will carry around parameters bound, we want to unbind them so
   // they can be inferred from the elements.
-  auto declRef = cast<DeclRefType>(type);
-  type = DeclRefType::get(declRef.getSymbol(), declRef.getMetaType());
+  type = type.getWithoutParameters();
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
@@ -3061,8 +3060,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // The ASTType will carry around parameters bound, we want to unbind them so
   // they can be inferred from the elements.
-  auto declRef = cast<DeclRefType>(tupleType);
-  tupleType = DeclRefType::get(declRef.getSymbol(), declRef.getMetaType());
+  tupleType = ASTType(tupleType).getWithoutParameters();
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
