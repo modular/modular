@@ -1587,11 +1587,11 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
     // @value
     if (declRef->spelling == "value") {
       // During signature resolution, add the `Copyable` and `Movable` traits.
-      if (ASTDecl *decl = shared.lookupCopyableTrait(
-              decorator->getLoc(), structDecl.getParentDecl()))
+      if (ASTDecl *decl = shared.lookupBuiltinTrait(
+              "Copyable", structDecl.getParentDecl(), decorator->getLoc()))
         StructEmitter::addTraitParent(structOp, decl);
-      if (ASTDecl *decl = shared.lookupMovableTrait(decorator->getLoc(),
-                                                    structDecl.getParentDecl()))
+      if (ASTDecl *decl = shared.lookupBuiltinTrait(
+              "Movable", structDecl.getParentDecl(), decorator->getLoc()))
         StructEmitter::addTraitParent(structOp, decl);
       // Fallthrough the decorator to body resolution.
       return failure();
@@ -1686,8 +1686,8 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
   structOp.setParentTypes(parentTypes);
 
   // Make every nominal type inherit from `AnyType`.
-  if (ASTDecl *traitDecl =
-          shared.lookupAnyTypeTrait(decl.getLoc(), decl.getParentDecl()))
+  if (ASTDecl *traitDecl = shared.lookupBuiltinTrait(
+          "AnyType", decl.getParentDecl(), decl.getLoc()))
     StructEmitter::addTraitParent(structOp, traitDecl);
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
@@ -2104,10 +2104,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 
   // Make every trait inherit from `AnyType`, except itself.
   if (parentTypes.empty() && traitOp.getSymName() != "AnyType") {
-    if (ASTDecl *parentDecl =
-            shared.lookupAnyTypeTrait(decl.getLoc(), decl.getParentDecl())) {
+    if (ASTDecl *anyType = shared.lookupBuiltinTrait(
+            "AnyType", decl.getParentDecl(), decl.getLoc())) {
       parentTypes.push_back(
-          TypeLineageAttr::get(cast<TraitDeclOp>(parentDecl).bindReference()));
+          TypeLineageAttr::get(cast<TraitDeclOp>(anyType).bindReference()));
     }
   }
 

@@ -2998,7 +2998,7 @@ AnyValue MagicFunctionNode::emitSourceLocation(ValueDest &dest,
       cast<LIT::FuncOp>(emitter.declScope.getNearestDeclOfType<LIT::FuncOp>());
 
   return emitter.emitConstructorCall(
-      emitter.shared.getBuiltinSourceLocationType(emitter.declScope, getLoc()),
+      emitter.shared.getBuiltinSourceLocationType(getLoc()),
       ArrayRef<ASTExprAnd<AnyValue>>{
           {StringAttr::get(loc.getFilename().getValue(), stringType), this},
           {StringAttr::get(*func.getSourceName(), stringType), this},

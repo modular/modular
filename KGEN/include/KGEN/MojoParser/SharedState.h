@@ -200,28 +200,6 @@ public:
   LookupResult lookupAndResolveDecl(StringRef name, llvm::SMLoc loc,
                                     ASTType scope, bool searchParentScopes);
 
-  /// Lookup the specified name, and check that it is a non-parameterized type.
-  /// This emits a diagnostic on error and returns null, or returns the type on
-  /// success.
-  ASTType lookupNonparameterizedNamedType(StringRef name, llvm::SMLoc loc,
-                                          ASTDecl &context);
-
-  /// Lookup the `object` type in the specified context and return it if found,
-  /// otherwise emit an error and return null.
-  ASTType lookupObjectType(llvm::SMLoc loc, ASTDecl &context);
-
-  /// Lookup the `AnyType` trait in the specified context and return it if
-  /// found, otherwise emit an error and return null.
-  ASTDecl *lookupAnyTypeTrait(llvm::SMLoc loc, ASTDecl *context);
-
-  /// Lookup the `Copyable` trait in the specified context and return it if
-  /// found, otherwise emit an error and return null.
-  ASTDecl *lookupCopyableTrait(llvm::SMLoc loc, ASTDecl *context);
-
-  /// Lookup the `Movable` trait in the specified context and return it if
-  /// found, otherwise emit an error and return null.
-  ASTDecl *lookupMovableTrait(llvm::SMLoc loc, ASTDecl *context);
-
   //===--------------------------------------------------------------------===//
   // Module Resolution
 
@@ -380,24 +358,59 @@ public:
   /// Return true if the parser has builtins available.
   bool hasBuiltinModule() const;
 
+  /// Lookup a builtin trait like `AnyType`, `Copyable`, `Movable` etc.  On
+  /// error this returns null but does not print an error.
+  ASTDecl *lookupBuiltinTrait(StringRef traitName, ASTDecl *context, SMLoc loc);
+
+  /// Lookup the specified name, and check that it is a non-parameterized type.
+  /// This emits a diagnostic on error and returns null, or returns the type on
+  /// success.
+  ASTType lookupNamedType(StringRef name, ASTDecl &context, llvm::SMLoc loc);
+
+  /// Lookup the `object` type in the specified context and return it if found,
+  /// otherwise emit an error and return TypeCheckErrorType.
+  ASTType lookupObjectType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("object", context, loc);
+  }
+
   /// Get a builtin type, or emit an error and return TypeCheckErrorType if
   /// invalid. These never return null.
-  ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinDictType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinStringType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinIntLiteralType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinFloatLiteralType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinStringLiteralType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinListLiteralType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("Bool", context, loc);
+  }
+  ASTType getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("Tuple", context, loc);
+  }
+  ASTType getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("Error", context, loc);
+  }
+  ASTType getBuiltinStringType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("String", context, loc);
+  }
+  ASTType getBuiltinIntLiteralType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("IntLiteral", context, loc);
+  }
+  ASTType getBuiltinFloatLiteralType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("FloatLiteral", context, loc);
+  }
+  ASTType getBuiltinStringLiteralType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("StringLiteral", context, loc);
+  }
+  ASTType getBuiltinListLiteralType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("ListLiteral", context, loc);
+  }
   ASTType getBuiltinVariadicListType(ASTDecl &context, llvm::SMLoc loc,
                                      bool inMem);
-  ASTType getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinCoroutineType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinRaisingCoroutineType(ASTDecl &context, llvm::SMLoc loc);
-  ASTType getBuiltinSourceLocationType(ASTDecl &context, llvm::SMLoc loc);
+  ASTType getBuiltinCoroutineType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("Coroutine", context, loc);
+  }
+  ASTType getBuiltinRaisingCoroutineType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("RaisingCoroutine", context, loc);
+  }
+  ASTType getCollectionsDictType(llvm::SMLoc loc);
+  ASTType getBuiltinSourceLocationType(llvm::SMLoc loc);
   ASTType getBuiltinCaptureListType(llvm::SMLoc loc);
+  ASTType getBuiltinStubsMLIRType(llvm::SMLoc loc);
 
   /// This returns an instance of Tuple[...] with the specified element types
   /// installed.
@@ -407,10 +420,6 @@ public:
   /// Lookup a builtin special function overload set.
   ArrayRef<ASTDecl *> getBuiltinFunction(ASTDecl &context, StringRef moduleName,
                                          StringRef fnName, llvm::SMLoc loc);
-
-  /// Lookup a builtin special type.
-  ASTDecl *getBuiltinType(ASTDecl &context, StringRef moduleName,
-                          StringRef typeName, llvm::SMLoc loc);
 
   struct Impl;
   Impl &getImpl() const { return *impl; }

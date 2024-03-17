@@ -1031,10 +1031,11 @@ PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
     return {};
 
   // Use a special wrapper decl in the builtins as stubs.
-  ASTDecl *wrapperDecl =
-      shared.getBuiltinType(declScope, "builtin._stubs", "__MLIRType", loc);
-  if (!wrapperDecl)
+  ASTDecl *wrapperDecl = shared.getBuiltinStubsMLIRType(loc).getDecl(shared);
+  if (!wrapperDecl || !isa<StructDeclOp>(wrapperDecl)) {
+    emitError(loc, "malformed builtin._stubs.__MLIRType");
     return {};
+  }
   ASTType boundWrapper =
       cast<StructDeclOp>(wrapperDecl).bindReference({typeValue});
 

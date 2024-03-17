@@ -640,7 +640,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     type = selfType;
   } else if (isDef) {
     // In 'def', arguments with no types default to 'object'.
-    type = shared.lookupObjectType(arg.loc, declScope);
+    type = shared.lookupObjectType(declScope, arg.loc);
     if (!type) {
       type = shared.getTypeCheckErrorType();
       arg.isErroneous = true;
@@ -794,7 +794,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
   } else if (arg.vararg == VarArgKind::KWVarArg) {
     // We build Dict[String, ValType].
-    ASTType dictType = shared.getBuiltinDictType(declScope, arg.loc);
+    ASTType dictType = shared.getCollectionsDictType(arg.loc);
     ASTType stringType = shared.getBuiltinStringType(declScope, arg.loc);
 
     auto dictDecl = cast<DeclRefType>(dictType.mlirType);
@@ -896,7 +896,7 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
     // If this is a 'def', then we want to default to 'object' unless this is a
     // known function that doesn't support that.
     if (isDef && !fnInfo.hasNoneResult() && !fnInfo.isInitializer()) {
-      resultType = shared.lookupObjectType(resultLoc, declScope);
+      resultType = shared.lookupObjectType(declScope, resultLoc);
       if (!resultType)
         resultType = shared.getTypeCheckErrorType();
     }

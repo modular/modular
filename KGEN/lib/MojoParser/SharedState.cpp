@@ -564,66 +564,6 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc, ASTType scope,
   return LookupResult::getFailure({});
 }
 
-ASTType SharedState::lookupNonparameterizedNamedType(StringRef name,
-                                                     llvm::SMLoc loc,
-                                                     ASTDecl &context) {
-  LookupResult result =
-      lookupAndResolveDecl(name, loc, context, /*searchParentScopes=*/true);
-  if (result.isErroneous())
-    return {};
-  if (result.isFailure()) {
-    emitError(loc, "could not find an '") << name << "' type";
-    return {};
-  }
-  // The overload set may contain multiple entries, but if it is a struct, it
-  // must be a single entry and therefore we can just check that one.
-  ASTDecl &firstDecl = *result.getIfSuccess()[0];
-  auto structOp = dyn_cast<StructDeclOp>(firstDecl);
-  if (!structOp) {
-    auto diag = emitError(loc, "'") << name << "' doesn't resolve to a type";
-    diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
-    return {};
-  }
-  if (!structOp.getParams().empty()) {
-    auto diag = emitError(loc, "'")
-                << name << "' resolves to a parameterized type";
-    diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
-    return {};
-  }
-  return firstDecl.getSelfType();
-}
-
-/// Lookup the `object` type in the specified context and return it if found,
-/// otherwise emit an error and return null.
-ASTType SharedState::lookupObjectType(llvm::SMLoc loc, ASTDecl &context) {
-  return lookupNonparameterizedNamedType("object", loc, context);
-}
-
-static ASTDecl *findBuiltinTrait(StringRef traitName, SMLoc location,
-                                 ASTDecl *parent, SharedState &shared) {
-  LookupResult lookup =
-      shared.lookupAndResolveDecl(traitName, location, *parent, true);
-  if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
-    for (ASTDecl *result : lookup.getIfSuccess()) {
-      if (auto trait = dyn_cast<TraitDeclOp>(result))
-        return result;
-    }
-  }
-  return nullptr;
-}
-
-ASTDecl *SharedState::lookupAnyTypeTrait(llvm::SMLoc loc, ASTDecl *context) {
-  return findBuiltinTrait("AnyType", loc, context, *this);
-}
-
-ASTDecl *SharedState::lookupCopyableTrait(llvm::SMLoc loc, ASTDecl *context) {
-  return findBuiltinTrait("Copyable", loc, context, *this);
-}
-
-ASTDecl *SharedState::lookupMovableTrait(llvm::SMLoc loc, ASTDecl *context) {
-  return findBuiltinTrait("Movable", loc, context, *this);
-}
-
 /// Resolve the absolute path for a given module name within the provided
 /// directory. Returns nullopt if the module cannot be found.
 static std::optional<std::string> resolveModulePath(SharedState &shared,
@@ -918,105 +858,70 @@ SharedState::importRelativeModuleState(StringRef name, ASTDecl *parentDecl,
 
 bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
 
-static ASTType resolveBuiltinModuleType(ASTDecl &context, llvm::SMLoc loc,
-                                        StringRef typeName,
-                                        SharedState &shared) {
-  // Unresolved wildcard imports have been added for all builtin modules. Search
-  // from the contextual ASTDecl.
-  LookupResult lookup = shared.lookupAndResolveDecl(
-      typeName, loc, context, /*searchParentScopes=*/true);
+/// Lookup a builtin trait like `AnyType`, `Copyable`, `Movable` etc.  On error
+/// this returns null but does not print an error.
+ASTDecl *SharedState::lookupBuiltinTrait(StringRef traitName, ASTDecl *context,
+                                         SMLoc loc) {
+  LookupResult lookup = lookupAndResolveDecl(traitName, loc, *context, true);
   if (!lookup.isFailure() && !lookup.getIfSuccess().empty()) {
-    ASTDecl *decl = lookup.getIfSuccess().front();
-    if (auto structDecl = dyn_cast<StructDeclOp>(decl))
-      return structDecl.bindReference();
-
-    InflightDiag diag = shared.emitError(loc, "builtin '")
-                        << typeName << "' identifier does not denote a type";
-    diag.attachNote(decl->getLoc())
-        << "'" << typeName << "' identifier redeclared here";
-    return shared.getTypeCheckErrorType();
+    for (ASTDecl *result : lookup.getIfSuccess()) {
+      if (auto trait = dyn_cast<TraitDeclOp>(result))
+        return result;
+    }
   }
-
-  if (!lookup.isErroneous())
-    shared.emitError(loc, "could not find builtin '") << typeName << "' type";
-  return shared.getTypeCheckErrorType();
+  return nullptr;
 }
 
-ASTType SharedState::getBuiltinBoolType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "Bool", *this);
-}
-
-ASTType SharedState::getBuiltinTupleType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "Tuple", *this);
-}
-
-ASTType SharedState::getBuiltinErrorType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "Error", *this);
-}
-
-ASTType SharedState::getBuiltinDictType(ASTDecl &context, llvm::SMLoc loc) {
-  ASTDecl &collectionsModule =
-      importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
-  return resolveBuiltinModuleType(collectionsModule, loc, "Dict", *this);
-}
-
-ASTType SharedState::getBuiltinStringType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "String", *this);
-}
-
-ASTType SharedState::getBuiltinIntLiteralType(ASTDecl &context,
-                                              llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "IntLiteral", *this);
-}
-
-ASTType SharedState::getBuiltinFloatLiteralType(ASTDecl &context,
-                                                llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "FloatLiteral", *this);
-}
-
-ASTType SharedState::getBuiltinStringLiteralType(ASTDecl &context,
-                                                 llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "StringLiteral", *this);
-}
-
-ASTType SharedState::getBuiltinListLiteralType(ASTDecl &context,
-                                               llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "ListLiteral", *this);
+ASTType SharedState::lookupNamedType(StringRef name, ASTDecl &context,
+                                     llvm::SMLoc loc) {
+  LookupResult result =
+      lookupAndResolveDecl(name, loc, context, /*searchParentScopes=*/true);
+  if (result.isErroneous())
+    return getTypeCheckErrorType();
+  if (result.isFailure()) {
+    emitError(loc, "could not find an '") << name << "' type";
+    return getTypeCheckErrorType();
+  }
+  // The overload set may contain multiple entries, but if it is a struct, it
+  // must be a single entry and therefore we can just check that one.
+  ASTDecl &firstDecl = *result.getIfSuccess()[0];
+  auto structOp = dyn_cast<StructDeclOp>(firstDecl);
+  if (!structOp) {
+    auto diag = emitError(loc, "'") << name << "' doesn't resolve to a type";
+    diag.attachNote(firstDecl.getLoc()) << "'" << name << "' declared here";
+    return getTypeCheckErrorType();
+  }
+  return structOp.bindReference();
 }
 
 ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
                                                 llvm::SMLoc loc, bool inMem) {
-  return resolveBuiltinModuleType(
-      context, loc, inMem ? "VariadicListMem" : "VariadicList", *this);
+  return lookupNamedType(inMem ? "VariadicListMem" : "VariadicList", context,
+                         loc);
 }
 
-ASTType SharedState::getBuiltinDoubleType(ASTDecl &context, llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "FloatLiteral", *this);
+ASTType SharedState::getCollectionsDictType(llvm::SMLoc loc) {
+  ASTDecl &collectionsModule =
+      importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
+  return lookupNamedType("Dict", collectionsModule, loc);
 }
 
-ASTType SharedState::getBuiltinCoroutineType(ASTDecl &context,
-                                             llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "Coroutine", *this);
-}
-
-ASTType SharedState::getBuiltinRaisingCoroutineType(ASTDecl &context,
-                                                    llvm::SMLoc loc) {
-  return resolveBuiltinModuleType(context, loc, "RaisingCoroutine", *this);
-}
-
-ASTType SharedState::getBuiltinSourceLocationType(ASTDecl &context,
-                                                  llvm::SMLoc loc) {
+ASTType SharedState::getBuiltinSourceLocationType(llvm::SMLoc loc) {
   ASTDecl &locationModule =
       importModule("builtin._location", /*currentPackage=*/nullptr, loc);
-  return resolveBuiltinModuleType(locationModule, loc, "_SourceLocation",
-                                  *this);
+  return lookupNamedType("_SourceLocation", locationModule, loc);
 }
 
 ASTType SharedState::getBuiltinCaptureListType(llvm::SMLoc loc) {
   ASTDecl &closureModule =
       importModule("builtin._closure", /*currentPackage=*/nullptr, loc);
-  return resolveBuiltinModuleType(closureModule, loc,
-                                  "__ParameterClosureCaptureList", *this);
+  return lookupNamedType("__ParameterClosureCaptureList", closureModule, loc);
+}
+
+ASTType SharedState::getBuiltinStubsMLIRType(llvm::SMLoc loc) {
+  ASTDecl &stubsModule =
+      importModule("builtin._stubs", /*currentPackage=*/nullptr, loc);
+  return lookupNamedType("__MLIRType", stubsModule, loc);
 }
 
 ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &context,
@@ -1038,26 +943,6 @@ ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &context,
     return {};
   }
   return decls;
-}
-
-ASTDecl *SharedState::getBuiltinType(ASTDecl &context, StringRef moduleName,
-                                     StringRef typeName, llvm::SMLoc loc) {
-
-  ASTDecl &module = importModule(moduleName, /*currentPackage=*/nullptr, loc);
-  LookupResult result =
-      lookupAndResolveDecl(typeName, loc, module, /*searchParentScopes=*/false);
-  if (!result.isSuccess() || result.getIfSuccess().empty()) {
-    emitError(loc, "internal error: could not find builtin type '")
-        << typeName << "'";
-    return {};
-  }
-  ArrayRef<ASTDecl *> decls = result.getIfSuccess();
-  if (!isa<LIT::StructDeclOp>(decls.front())) {
-    emitError(loc, "internal error: builtin '")
-        << typeName << "' does not refer to a type";
-    return {};
-  }
-  return decls.front();
 }
 
 /// This returns an instance of Tuple[...] with the specified element types

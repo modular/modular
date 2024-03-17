@@ -733,7 +733,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 
     // Process a main returning object.
   } else if (userResultType.isEqualCanon(
-                 shared.lookupObjectType(funcDecl.getLoc(), *containingDecl))) {
+                 shared.lookupObjectType(*containingDecl, funcDecl.getLoc()))) {
     // Check that the function is raising, e.g. the `def main()` mode.
     if (!userMainSignature.isThrows()) {
       shared.emitError(
