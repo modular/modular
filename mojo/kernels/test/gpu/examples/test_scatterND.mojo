@@ -8,6 +8,7 @@
 
 from math import div_ceil
 
+from buffer import NDBuffer
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -17,7 +18,6 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from buffer import NDBuffer
 from tensor import Tensor, TensorShape
 
 from utils.index import Index

@@ -11,8 +11,8 @@ from math import abs, div_ceil, iota
 from sys.info import simdwidthof
 
 from algorithm import vectorize
+from buffer import NDBuffer
 from complex import ComplexSIMD
-from tensor import Tensor
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -22,7 +22,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from buffer import NDBuffer
+from tensor import Tensor
 
 from utils.index import Index
 

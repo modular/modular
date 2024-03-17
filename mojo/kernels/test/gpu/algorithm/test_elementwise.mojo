@@ -10,10 +10,11 @@ from math import exp
 from sys.info import triple_is_nvidia_cuda
 
 from algorithm.functional import _elementwise_impl
+from benchmark.cuda import run
+from buffer import NDBuffer
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream
 from gpu.host._compile import _get_nvptx_target
-from benchmark.cuda import run
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -22,7 +23,6 @@ from gpu.host.memory import (
     _memset,
 )
 from gpu.host.sync import synchronize
-from buffer import NDBuffer
 from tensor import Tensor
 from testing import assert_equal
 

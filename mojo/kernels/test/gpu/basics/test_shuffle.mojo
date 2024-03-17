@@ -7,23 +7,23 @@
 # RUN: %mojo %s
 
 from gpu import ThreadIdx, barrier
-from gpu.host import Function, Context, Stream
-from gpu.shuffle import (
-    shuffle_idx,
-    shuffle_up,
-    shuffle_down,
-    shuffle_xor,
-    warp_reduce,
-)
 from gpu.globals import WARP_SIZE
+from gpu.host import Context, Function, Stream
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from testing import assert_equal
+from gpu.shuffle import (
+    shuffle_down,
+    shuffle_idx,
+    shuffle_up,
+    shuffle_xor,
+    warp_reduce,
+)
 from memory.unsafe import DTypePointer
+from testing import assert_equal
 
 
 fn _kernel_launch_helper[

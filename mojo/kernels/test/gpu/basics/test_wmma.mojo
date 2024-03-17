@@ -9,6 +9,7 @@
 from math import div_ceil, max, min
 from random import random_si64, seed
 
+from buffer import NDBuffer
 from gpu import (
     WARP_SIZE,
     BlockDim,
@@ -32,7 +33,6 @@ from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from gpu.sync import syncwarp
 from Matmul import matmul_kernel, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
-from buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index

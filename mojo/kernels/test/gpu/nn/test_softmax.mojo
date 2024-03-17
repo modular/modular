@@ -10,6 +10,7 @@ from math import iota, isclose
 from random import rand
 from sys.info import simdwidthof
 
+from buffer import Buffer, NDBuffer
 from gpu.host import Context, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -18,7 +19,6 @@ from gpu.host.memory import (
     _malloc,
     _memset,
 )
-from buffer import Buffer, NDBuffer
 from nn.softmax import softmax, softmax_2_pass
 
 from utils.list import Dim, DimList

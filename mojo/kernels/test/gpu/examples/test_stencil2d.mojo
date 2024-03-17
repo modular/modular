@@ -8,6 +8,7 @@
 
 from math import div_ceil
 
+from buffer import NDBuffer
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.memory import (
@@ -18,7 +19,6 @@ from gpu.host.memory import (
 )
 from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation
-from buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from tensor import Tensor
 

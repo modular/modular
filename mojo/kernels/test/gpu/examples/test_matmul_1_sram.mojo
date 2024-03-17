@@ -12,6 +12,7 @@ from sys.info import triple_is_nvidia_cuda
 from sys.param_env import env_get_string
 
 from algorithm.functional import tile_and_unswitch
+from buffer import NDBuffer
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.memory import (
@@ -21,7 +22,6 @@ from gpu.host.memory import (
     _malloc,
 )
 from memory import memset_zero, stack_allocation
-from buffer import NDBuffer
 from tensor import Tensor
 
 from utils.index import Index

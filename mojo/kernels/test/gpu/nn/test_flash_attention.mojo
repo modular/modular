@@ -11,6 +11,7 @@ from random import rand
 from sys import argv
 
 from BatchedMatmul import batched_matmul
+from buffer import NDBuffer
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -20,7 +21,6 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from nn.mha import (
     _naive_attention_with_transpose,

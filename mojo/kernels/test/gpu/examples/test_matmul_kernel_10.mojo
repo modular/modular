@@ -9,6 +9,9 @@
 
 from math import div_ceil
 
+from benchmark import Bench, Bencher, BenchId
+from benchmark.cuda import time_async_cuda_kernel
+from buffer import NDBuffer
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -21,10 +24,7 @@ from gpu.host.memory import (
 from gpu.memory import AddressSpace
 from Matmul import sgemm_warp_tiling_kernel
 from memory import memset_zero, stack_allocation
-from buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
-from benchmark import Bencher, BenchId, Bench
-from benchmark.cuda import time_async_cuda_kernel
 from tensor import Tensor
 
 from utils.index import Index

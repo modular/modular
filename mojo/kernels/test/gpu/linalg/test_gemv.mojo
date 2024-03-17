@@ -8,6 +8,7 @@
 
 from math import div_ceil, max, min
 
+from buffer import NDBuffer
 from gpu import WARP_SIZE, BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -19,7 +20,6 @@ from gpu.host.memory import (
 )
 from gpu.sync import syncwarp
 from Matmul import gemv_kernel, gevm_kernel, matmul_kernel
-from buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index

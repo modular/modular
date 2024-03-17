@@ -7,19 +7,20 @@
 # RUN: %mojo %s
 
 from math import div_ceil, isclose, isnan
+from pathlib import Path
+from sys import argv
+
 from buffer import NDBuffer
-from memory.unsafe import DTypePointer
-from Matmul import matmul_kernel_naive
 from gpu import (
     WARP_SIZE,
+    AddressSpace,
     BlockDim,
     BlockIdx,
     ThreadIdx,
     barrier,
     lane_id,
-    AddressSpace,
 )
-from gpu.host import Context, Function, synchronize, Stream
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -29,9 +30,10 @@ from gpu.host.memory import (
 )
 from gpu.memory import async_copy, async_copy_wait_all
 from gpu.mma import mma
+from Matmul import matmul_kernel_naive
+from memory.unsafe import DTypePointer
 from testing import assert_almost_equal
-from sys import argv
-from pathlib import Path
+
 from utils.list import DimList
 
 

@@ -8,6 +8,7 @@
 
 from math import div_ceil, max, min
 
+from buffer import NDBuffer
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -22,7 +23,6 @@ from gpu.mma import mma
 from Matmul import matmul_kernel_naive
 from MatmulUtils import elementwise_epilogue_type
 from memory import memset_zero, stack_allocation
-from buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
 from tensor import Tensor
 

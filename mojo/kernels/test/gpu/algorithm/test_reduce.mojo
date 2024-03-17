@@ -11,6 +11,7 @@ from math.limit import min_or_neginf
 from pathlib import Path
 
 from algorithm._gpu.reduction import reduce_launch
+from buffer import NDBuffer
 from builtin.io import _printf
 from gpu.host import Context, Stream
 from gpu.host.memory import (
@@ -20,9 +21,9 @@ from gpu.host.memory import (
     _malloc,
     _memset,
 )
-from buffer import NDBuffer
 from tensor import Tensor
 from testing import assert_equal
+
 from utils.index import Index
 
 alias num_reductions = 2

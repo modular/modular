@@ -6,8 +6,8 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from gpu.host import Function, Context
 from gpu.device_print import _printf
+from gpu.host import Context, Function
 
 
 # CHECK: Hello I got 42 7.2

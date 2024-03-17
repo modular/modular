@@ -12,6 +12,7 @@ from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
 from sys.param_env import env_get_string
 
+from buffer import NDBuffer
 from builtin.io import _printf
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Context, Dim, Function, Stream, synchronize
@@ -22,7 +23,6 @@ from gpu.host.memory import (
     _malloc,
 )
 from memory import memset_zero
-from buffer import NDBuffer
 from memory.unsafe import DTypePointer
 from tensor import Tensor
 

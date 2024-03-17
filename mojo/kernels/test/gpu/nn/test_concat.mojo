@@ -7,8 +7,10 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from sys import argv
-from utils.list import DimList
+from time import time_function as time_function_sync
+
 from algorithm.functional import _get_start_indices_of_nth_subvolume
+from buffer import NDBuffer
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import Context, Function, Stream
 from gpu.host.event import time_function as time_function_cuda
@@ -19,10 +21,10 @@ from gpu.host.memory import (
     _malloc,
     _memset,
 )
-from time import time_function as time_function_sync
 from gpu.host.sync import synchronize
-from buffer import NDBuffer
 from nn.concat import _concat_gpu, _concat_inner_most_single_dim
+
+from utils.list import DimList
 
 
 fn _create_buffer_host[
