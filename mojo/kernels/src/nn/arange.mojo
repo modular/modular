@@ -8,8 +8,8 @@ from math import abs, ceil, div_ceil, iota
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
-
 from register import *
+
 from utils.index import StaticIntTuple
 from utils.list import DimList
 

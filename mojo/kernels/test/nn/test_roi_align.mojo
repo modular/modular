@@ -7,8 +7,9 @@
 
 from buffer import NDBuffer
 from nn.roi_align import roi_align_nhwc
-from utils.list import DimList
 from testing import *
+
+from utils.list import DimList
 
 
 # CHECK-LABEL: test_roi_align_avg

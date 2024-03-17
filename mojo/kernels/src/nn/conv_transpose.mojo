@@ -22,7 +22,6 @@ from algorithm import (
     unswitch,
     vectorize,
 )
-from MatmulUtils import partition_work
 from buffer.buffer import (
     Buffer,
     NDBuffer,
@@ -31,6 +30,7 @@ from buffer.buffer import (
     partial_simd_store,
     prod_dims,
 )
+from MatmulUtils import partition_work
 from memory.memory import memset_zero
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime

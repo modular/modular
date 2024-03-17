@@ -4,12 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils.loop import unroll
 from buffer import NDBuffer
-
 from register import mogg_register, mogg_view_op
+
 from utils.index import StaticIntTuple
 from utils.list import DimList
+from utils.loop import unroll
 
 
 # Reshape assumes inputs are contiguous. It should always be fused last and

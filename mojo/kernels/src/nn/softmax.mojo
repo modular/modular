@@ -26,10 +26,10 @@ from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
 )
+from buffer import Buffer, NDBuffer
 from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import Device, DeviceAttribute, Function, Stream
 from gpu.memory import AddressSpace
-from buffer import Buffer, NDBuffer
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 

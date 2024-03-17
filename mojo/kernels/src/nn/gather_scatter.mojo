@@ -9,25 +9,24 @@ from sys.info import has_neon, sizeof
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import elementwise, sync_parallelize, vectorize
-from utils.loop import unroll
 from algorithm.functional import (
     _async_elementwise_impl,
     _elementwise_impl,
     tile,
 )
+from buffer import Buffer, NDBuffer, parallel_memcpy
+from buffer.buffer import prod_dims
 from gpu.host.memory import _copy_device_to_device_async
 from gpu.host.stream import Stream
+from kernel_utils._optional_param import OptionalParamInt
 from memory import memset_zero, stack_allocation
-from buffer import parallel_memcpy
-from buffer import Buffer, NDBuffer
-from buffer.buffer import prod_dims
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils._optional import Optional
-from kernel_utils._optional_param import OptionalParamInt
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
+from utils.loop import unroll
 
 from .reshape import reshape
 

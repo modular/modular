@@ -9,8 +9,10 @@
 # pad
 # ===----------------------------------------------------------------------===#
 
-from memory import memcpy
+from collections.vector import InlinedFixedVector
+
 from buffer import Buffer, NDBuffer
+from memory import memcpy
 from memory.unsafe import DTypePointer
 
 # TODO Refactor -- we should decide on and put them into a more common file
@@ -18,8 +20,6 @@ from Transpose import _fill_strides
 
 from utils.index import StaticIntTuple
 from utils.list import Dim, DimList
-
-from collections.vector import InlinedFixedVector
 
 
 @always_inline

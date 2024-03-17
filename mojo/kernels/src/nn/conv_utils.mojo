@@ -16,10 +16,10 @@ from sys.info import (
     sizeof,
 )
 
-from MatmulUtils import partition_work
 from buffer import NDBuffer
-
 from kernel_utils._optional_param import OptionalParamInt, OptionalParamInts
+from MatmulUtils import partition_work
+
 from utils.index import Index, StaticIntTuple
 from utils.list import Dim, DimList
 

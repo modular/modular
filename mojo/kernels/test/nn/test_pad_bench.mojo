@@ -5,18 +5,18 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from buffer import Buffer, NDBuffer
-from nn.pad import pad_constant, pad_reflect, _AxisParams, _do_pad, _fill
-
-from utils.index import StaticIntTuple, Index
-from utils.list import DimList, Dim
-from testing import assert_equal, assert_true
+from math import isclose
 
 import benchmark
 from benchmark import Unit, keep
+from buffer import Buffer, NDBuffer
+from nn.pad import _AxisParams, _do_pad, _fill, pad_constant, pad_reflect
 from python import Python
+from testing import assert_equal, assert_true
+
+from utils.index import Index, StaticIntTuple
+from utils.list import Dim, DimList
 from utils.loop import unroll
-from math import isclose
 
 
 @always_inline

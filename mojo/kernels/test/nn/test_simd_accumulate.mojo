@@ -8,8 +8,8 @@
 from sys.info import has_neon, simdwidthof
 
 from algorithm.functional import vectorize
-from memory import stack_allocation
 from buffer import Buffer
+from memory import stack_allocation
 from nn.accumulate import (
     _simd_load_maybe_partial,
     accumulate,

@@ -9,6 +9,7 @@ from random import seed
 
 from buffer import NDBuffer
 from nn.randn import random_normal
+
 from utils.list import DimList
 
 

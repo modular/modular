@@ -8,8 +8,8 @@
 from math import mul
 
 from algorithm import elementwise
-from memory import stack_allocation
 from buffer import Buffer, NDBuffer
+from memory import stack_allocation
 from nn.arange import arange, arange_shape
 from nn.slice import slice_as_copy, slice_as_view
 

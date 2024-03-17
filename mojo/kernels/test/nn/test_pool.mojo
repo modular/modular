@@ -6,8 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 import builtin
-from memory import stack_allocation
 from buffer import Buffer, NDBuffer
+from memory import stack_allocation
 from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape
 from tensor import Tensor

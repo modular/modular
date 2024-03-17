@@ -6,7 +6,7 @@
 # REQUIRES: linux
 # RUN: %mojo -debug-level full -I%S/.. %s | FileCheck %s
 
-from math import iota, abs
+from math import abs, iota
 from random import seed
 
 from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1

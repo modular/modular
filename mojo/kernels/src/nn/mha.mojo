@@ -9,6 +9,7 @@ from math import align_down, div_ceil, exp, iota, max, min, neginf, sqrt
 
 from algorithm import elementwise, unswitch
 from BatchedMatmul import batched_matmul
+from buffer import Buffer, NDBuffer
 from gpu import (
     WARP_SIZE,
     BlockDim,
@@ -24,7 +25,6 @@ from gpu.host import Function, Stream
 from gpu.memory import AddressSpace
 from Matmul import matmul
 from memory import stack_allocation
-from buffer import Buffer, NDBuffer
 from memory.unsafe import AddressSpace as _AddressSpace
 from memory.unsafe import DTypePointer, bitcast
 from Transpose import transpose

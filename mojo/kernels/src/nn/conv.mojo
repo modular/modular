@@ -22,6 +22,14 @@ from algorithm import (
     unswitch,
     vectorize,
 )
+from buffer.buffer import (
+    Buffer,
+    NDBuffer,
+    _compute_ndbuffer_offset,
+    partial_simd_load,
+    partial_simd_store,
+    prod_dims,
+)
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -37,14 +45,6 @@ from MatmulUtils import (
     partition_work,
 )
 from memory import memset_zero, stack_allocation
-from buffer.buffer import (
-    Buffer,
-    NDBuffer,
-    _compute_ndbuffer_offset,
-    partial_simd_load,
-    partial_simd_store,
-    prod_dims,
-)
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 

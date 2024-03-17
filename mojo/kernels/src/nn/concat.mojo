@@ -15,6 +15,7 @@ from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     sync_parallelize,
 )
+from buffer import Buffer, NDBuffer
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
@@ -29,7 +30,6 @@ from gpu.host.memory import (
     _memset_async,
 )
 from memory import memcpy
-from buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.index import StaticIntTuple, product
