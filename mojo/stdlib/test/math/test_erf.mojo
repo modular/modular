@@ -7,7 +7,7 @@
 # RUN: %mojo -debug-level full -I%S/../.. %s | FileCheck %s
 
 
-from math import erf, abs
+from math import abs, erf
 from random import seed
 
 from tensor import Tensor, TensorShape, randn
