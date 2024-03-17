@@ -97,11 +97,13 @@ ArrayRef<Type> ASTType::getParameters() const {
 }
 
 /// Return this type with any parameter bindings removed.
-Type ASTType::getWithoutParameters() const {
+ASTType ASTType::getWithoutParameters() const {
   if (!mlirType)
     return {};
-  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
-    return DeclRefType::get(declRef.getSymbol(), declRef.getMetaType());
+  if (auto declRef = dyn_cast<DeclRefType>(mlirType)) {
+    auto fixedMetatype = ASTType(declRef.getMetaType()).getWithoutParameters();
+    return DeclRefType::get(declRef.getSymbol(), fixedMetatype);
+  }
   if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(mlirType))
     return MetaTypeType::get(metaType.getSymbol(), metaType.getSignature());
   return {};
