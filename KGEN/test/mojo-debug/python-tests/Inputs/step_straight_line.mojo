@@ -10,8 +10,8 @@ fn main():
 
     var vector = List[Int]()  # breakpoint
 
-    vector.push_back(9)
-    vector.push_back(1)
-    vector.push_back(2)
+    vector.append(9)
+    vector.append(1)
+    vector.append(2)
 
     var ptr = rebind[Pointer[Int]](vector.data)

@@ -19,15 +19,15 @@ fn main():
     var p1 = Point(1, -1)
     var p2 = Point(2, -2)
     var p3 = Point(3, -3)
-    point_vec.push_back(p1)
-    point_vec.push_back(p2)
-    point_vec.push_back(p3)  # breakpoint
+    point_vec.append(p1)
+    point_vec.append(p2)
+    point_vec.append(p3)  # breakpoint
 
     var int_vec = List[Int](capacity=3)
-    int_vec.push_back(1)
-    int_vec.push_back(2)
-    int_vec.push_back(3)  # breakpoint
+    int_vec.append(1)
+    int_vec.append(2)
+    int_vec.append(3)  # breakpoint
 
     for i in range(0, 100):
-        int_vec.push_back(i)
+        int_vec.append(i)
     print(int_vec[0])  # breakpoint
