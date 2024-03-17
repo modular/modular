@@ -191,7 +191,7 @@ struct Buffer[
         return self.load[width=1](idx)
 
     @always_inline
-    fn load[width: Int = 1](self, idx: Int) -> SIMD[type, width]:
+    fn load[*, width: Int = 1](self, idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Parameters:
@@ -1022,7 +1022,7 @@ struct NDBuffer[
         return tile
 
     @always_inline
-    fn load[width: Int = 1](self, *idx: Int) -> SIMD[type, width]:
+    fn load[*, width: Int = 1](self, *idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -1041,7 +1041,9 @@ struct NDBuffer[
         return self.load[width=width](idx)
 
     @always_inline
-    fn load[width: Int = 1](self, idx: VariadicList[Int]) -> SIMD[type, width]:
+    fn load[
+        *, width: Int = 1
+    ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
         Constraints:
@@ -1065,7 +1067,7 @@ struct NDBuffer[
 
     @always_inline
     fn load[
-        width: Int = 1
+        *, width: Int = 1
     ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1086,7 +1088,7 @@ struct NDBuffer[
 
     @always_inline
     fn load[
-        width: Int = 1
+        *, width: Int = 1
     ](self, idx: StaticTuple[Int, rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
