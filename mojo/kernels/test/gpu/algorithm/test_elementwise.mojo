@@ -65,7 +65,7 @@ fn run_elementwise[type: DType]() raises:
         else:
             out_buffer.simd_store[simd_width](
                 idx,
-                in_buffer.load[simd_width](idx) + 42,
+                in_buffer.load[width=simd_width](idx) + 42,
             )
 
     _elementwise_impl[
@@ -142,9 +142,9 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
                 in_buffer.aligned_simd_load[simd_width, alignment](idx) + 42,
             )
         else:
-            out_buffer.simd_store[simd_width](
+            out_buffer.simd_store(
                 idx,
-                in_buffer.load[simd_width](idx) + 42,
+                in_buffer.load[width=simd_width](idx) + 42,
             )
 
     _elementwise_impl[

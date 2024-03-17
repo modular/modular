@@ -81,7 +81,9 @@ fn fused_reduce_inner_test[
         _rank: Int,
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
         return rebind[SIMD[type, width]](
-            input_buf_device.load[width](rebind[StaticIntTuple[rank]](coords))
+            input_buf_device.load[width=width](
+                rebind[StaticIntTuple[rank]](coords)
+            )
         )
 
     @__copy_capture(output_buf_device0, output_buf_device1)
@@ -179,7 +181,9 @@ fn reduce_inner_test[
         _rank: Int,
     ](coords: StaticIntTuple[_rank]) -> SIMD[type, width]:
         return rebind[SIMD[type, width]](
-            input_buf_device.load[width](rebind[StaticIntTuple[rank]](coords))
+            input_buf_device.load[width=width](
+                rebind[StaticIntTuple[rank]](coords)
+            )
         )
 
     @__copy_capture(output_buf_device)

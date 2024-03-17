@@ -327,14 +327,14 @@ fn sgemm_double_buffer[
 
                 @unroll
                 for j in range(num_mma_n):
-                    var d = c_reg.load[4]((i, j, 0))
+                    var d = c_reg.load[width=4]((i, j, 0))
                     mma(
                         d,
-                        a_reg.load[4]((buffer_id, i * 4)),
-                        b_reg.load[2]((buffer_id, j * 2)),
+                        a_reg.load[width=4]((buffer_id, i * 4)),
+                        b_reg.load[width=2]((buffer_id, j * 2)),
                         d,
                     )
-                    c_reg.simd_store[4]((i, j, 0), d)
+                    c_reg.simd_store[width=4]((i, j, 0), d)
 
             # Alternate buffer
             buffer_id ^= 0x1
@@ -382,14 +382,14 @@ fn sgemm_double_buffer[
 
             @unroll
             for j in range(num_mma_n):
-                var d = c_reg.load[4]((i, j, 0))
+                var d = c_reg.load[width=4]((i, j, 0))
                 mma(
                     d,
-                    a_reg.load[4]((buffer_id, i * 4)),
-                    b_reg.load[2]((buffer_id, j * 2)),
+                    a_reg.load[width=4]((buffer_id, i * 4)),
+                    b_reg.load[width=2]((buffer_id, j * 2)),
                     d,
                 )
-                c_reg.simd_store[4]((i, j, 0), d)
+                c_reg.simd_store[width=4]((i, j, 0), d)
 
         # Alternate buffer
         buffer_id ^= 0x1
@@ -406,10 +406,10 @@ fn sgemm_double_buffer[
         for j in range(num_mma_n):
             var c_mma_tile = c_gmem_ptr + (i * MMA_M) * N + j * MMA_N
             c_mma_tile.store[width=2](
-                int(row_c0_c1 * N + col_c0), c_reg.load[2]((i, j, 0))
+                int(row_c0_c1 * N + col_c0), c_reg.load[width=2]((i, j, 0))
             )
             c_mma_tile.store[width=2](
-                int(row_c2_c3 * N + col_c2), c_reg.load[2]((i, j, 2))
+                int(row_c2_c3 * N + col_c2), c_reg.load[width=2]((i, j, 2))
             )
 
 

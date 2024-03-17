@@ -341,7 +341,7 @@ fn sgemm_double_buffer[
 
             @unroll
             for ii in range(simd_size_int):
-                var vec = c_reg.load[simd_size_int]((i + ii, j))
+                var vec = c_reg.load[width=simd_size_int]((i + ii, j))
                 c_gmem_ptr.aligned_simd_store[simd_size_int, alignment](
                     (i * warp_dim_y + ii) * N + j * warp_dim_x, vec
                 )
