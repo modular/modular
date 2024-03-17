@@ -529,7 +529,7 @@ struct MOTensor(MOType, CollectionElement):
                         "unknown dim variant",
                     )
                     raise "Unsupported dim type: symbolic expression"
-                dims.push_back(dim)
+                dims.append(dim)
             return Self(dtype, dims)
         else:
             return Self(dtype, ranked)

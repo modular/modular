@@ -80,11 +80,11 @@ def _elementwise_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     var smaller = rhs_type if lhs_rank > rhs_rank else lhs_type
     var offset = larger.rank() - smaller.rank()
     for i in range(offset):
-        broadcast_dims.push_back(larger.dims[i])
+        broadcast_dims.append(larger.dims[i])
     for i in range(offset, bcast_rank):
         var d1 = larger.dims[i]
         var d2 = smaller.dims[i - offset]
-        broadcast_dims.push_back(
+        broadcast_dims.append(
             d1 if d1 == d2 or d2 == 1 else (d2 if d1 == 1 else Dim.dynamic())
         )
 

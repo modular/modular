@@ -240,7 +240,7 @@ struct EngineNumpyView:
             var shape = List[Int]()
             var array_shape = self._obj.shape
             for dim in array_shape:
-                shape.push_back(dim.__index__())
+                shape.append(dim.__index__())
             return TensorSpec(ty, shape)
 
         if self.dtype().is_int8():

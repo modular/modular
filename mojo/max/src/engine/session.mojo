@@ -305,7 +305,7 @@ struct LoadOptions(CollectionElement):
         Args:
             spec: Spec for the input.
         """
-        self._input_specs.push_back(_Specs(spec))
+        self._input_specs.append(_Specs(spec))
 
     fn add_input_spec(
         inout self,
@@ -319,7 +319,7 @@ struct LoadOptions(CollectionElement):
             shape: Shape of the input.
             dtype: Datatype of the input.
         """
-        self._input_specs.push_back(_Specs(shape, dtype))
+        self._input_specs.append(_Specs(shape, dtype))
 
     fn add_input_specs(
         inout self,
@@ -333,7 +333,7 @@ struct LoadOptions(CollectionElement):
         """
 
         for i in range(len(specs)):
-            self._input_specs.push_back(_Specs(specs[i]))
+            self._input_specs.append(_Specs(specs[i]))
 
     fn add_input_specs(
         inout self,
@@ -348,7 +348,7 @@ struct LoadOptions(CollectionElement):
             dtypes: Datatypes of the input.
         """
         for i in range(len(shapes)):
-            self._input_specs.push_back(_Specs(shapes[i], dtypes[i]))
+            self._input_specs.append(_Specs(shapes[i], dtypes[i]))
 
 
 @value

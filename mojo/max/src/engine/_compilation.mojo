@@ -122,7 +122,7 @@ struct TorchInputSpec(Movable):
         var shape = Self.shape_type()
         shape.reserve(spec.rank())
         for i in range(spec.rank()):
-            shape.push_back(spec[i])
+            shape.append(spec[i])
         self.shape = shape
         self.dtype = spec.dtype()
         var ptr = call_dylib_func[CTorchInputSpec](
@@ -147,9 +147,9 @@ struct TorchInputSpec(Movable):
         for i in range(len(shape)):
             var dim_or = shape[i]
             if dim_or:
-                converted_shape.push_back(dim_or.value())
+                converted_shape.append(dim_or.value())
             else:
-                converted_shape.push_back(
+                converted_shape.append(
                     CTensorSpec.get_dynamic_dimension_value(engine_lib)
                 )
 
@@ -260,7 +260,7 @@ struct CompileConfig:
         var inner_spec = List[CTorchInputSpec]()
         for i in range(len(self.input_specs)):
             var spec_ptr = self.input_specs.get(i)
-            inner_spec.push_back(spec_ptr[].ptr)
+            inner_spec.append(spec_ptr[].ptr)
         self.ptr[].set_torch_input_specs(self.torch_lib.value(), inner_spec)
 
     fn add_input_spec(inout self, spec: TensorSpec):
@@ -412,7 +412,7 @@ struct CompiledModel:
         var name_vec = List[String]()
         name_vec.reserve(len(names))
         for i in range(len(names)):
-            name_vec.push_back(names[i])
+            name_vec.append(names[i])
         return name_vec
 
     fn num_model_outputs(self) raises -> Int:
@@ -429,7 +429,7 @@ struct CompiledModel:
         var name_vec = List[String]()
         name_vec.reserve(len(names))
         for i in range(len(names)):
-            name_vec.push_back(names[i])
+            name_vec.append(names[i])
         return name_vec
 
     fn get_model_input_metadata(self) raises -> List[EngineTensorSpec]:
@@ -442,7 +442,7 @@ struct CompiledModel:
             var input_spec = self.ptr.get_model_input_spec_by_name(
                 input_tensor_name[], self.lib, self.session.copy()
             )
-            input_metadata.push_back(input_spec ^)
+            input_metadata.append(input_spec ^)
         return input_metadata
 
     fn get_model_output_metadata(self) raises -> List[EngineTensorSpec]:
@@ -455,7 +455,7 @@ struct CompiledModel:
             var output_spec = self.ptr.get_model_output_spec_by_name(
                 output_tensor_name[], self.lib, self.session.copy()
             )
-            output_metadata.push_back(output_spec ^)
+            output_metadata.append(output_spec ^)
         return output_metadata
 
     fn borrow_ptr(self) -> CCompiledModel:

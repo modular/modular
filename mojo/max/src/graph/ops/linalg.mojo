@@ -68,12 +68,12 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     var lhs_final_dims = List[Dim]()
     var rhs_final_dims = List[Dim]()
     for _ in range(broadcast_rank - 2):
-        lhs_final_dims.push_back(Dim.dynamic())
-        rhs_final_dims.push_back(Dim.dynamic())
-    lhs_final_dims.push_back(lhs_type.dim(-2))
-    lhs_final_dims.push_back(lhs_type.dim(-1))
-    rhs_final_dims.push_back(rhs_type.dim(-2))
-    rhs_final_dims.push_back(rhs_type.dim(-1))
+        lhs_final_dims.append(Dim.dynamic())
+        rhs_final_dims.append(Dim.dynamic())
+    lhs_final_dims.append(lhs_type.dim(-2))
+    lhs_final_dims.append(lhs_type.dim(-1))
+    rhs_final_dims.append(rhs_type.dim(-2))
+    rhs_final_dims.append(rhs_type.dim(-1))
 
     var lhs_broadcast_shape = concat((broadcast_dims_shape, lhs_matrix_dims))
 
@@ -143,8 +143,8 @@ def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     var rhs_type = broadcast_rhs.tensor_type()
     var dims = List[Dim]()
     for i in range(lhs_type.rank() - 1):
-        dims.push_back(lhs_type.dims[i])
-    dims.push_back(rhs_type.dim(-1))
+        dims.append(lhs_type.dims[i])
+    dims.append(rhs_type.dim(-1))
     var out_type = MOTensor(lhs_type.dtype, dims)
 
     return g.op("mo.batch_matmul", (broadcast_lhs, broadcast_rhs), out_type)
@@ -179,8 +179,8 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
 
     var final_dims = List[Dim]()
     for i in range(lhs_type.rank() - 1):
-        final_dims.push_back(lhs_type.dim(i))
-    final_dims.push_back(rhs_type.dim(-1))
+        final_dims.append(lhs_type.dim(i))
+    final_dims.append(rhs_type.dim(-1))
 
     var matmul_dims = List[Dim]()
     matmul_dims.append(Dim.dynamic())

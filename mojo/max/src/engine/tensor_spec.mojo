@@ -97,7 +97,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         var shape = List[Int64]()
         var name_str = name._as_ptr()
         for i in range(rank):
-            shape.push_back(spec[i])
+            shape.append(spec[i])
         self._ptr = call_dylib_func[CTensorSpec](
             lib,
             Self._NewTensorSpecFnName,
@@ -146,9 +146,9 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             var casted_shape = List[Optional[Int64]]()
             for dim in shape.value():
                 if not dim[]:
-                    casted_shape.push_back(None)
+                    casted_shape.append(None)
                 else:
-                    casted_shape.push_back(Int64(dim[].value()))
+                    casted_shape.append(Int64(dim[].value()))
             self = Self(name, casted_shape, dtype, lib, session.copy())
 
     fn __init__(
@@ -183,9 +183,9 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             for i in range(rank):
                 var dim = inner_shape[i]
                 if not dim:
-                    adjusted_shape.push_back(dynamic_value)
+                    adjusted_shape.append(dynamic_value)
                 else:
-                    adjusted_shape.push_back(dim.value())
+                    adjusted_shape.append(dim.value())
             self._ptr = call_dylib_func[CTensorSpec](
                 lib,
                 Self._NewTensorSpecFnName,
@@ -264,7 +264,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         var shape = List[Int]()
         var rank = rank_or.value()
         for i in range(rank):
-            shape.push_back(self[i].value())
+            shape.append(self[i].value())
         var dtype = self._ptr.get_dtype(self._lib)
         var spec = TensorSpec(dtype.to_dtype(), shape)
         return spec
@@ -305,9 +305,9 @@ struct EngineTensorSpec(Stringable, CollectionElement):
                 abort("unreachable condition")
 
             if not dim:
-                shape_list.push_back(None)
+                shape_list.append(None)
             else:
-                shape_list.push_back(dim.value())
+                shape_list.append(dim.value())
 
         return shape_list
 

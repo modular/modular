@@ -84,7 +84,7 @@ def squeeze(v: Symbol, axis: Int) -> Symbol:
     var squeezed_dims = List[Dim]()
     for i in range(rank):
         if i != axis:
-            squeezed_dims.push_back(v_type.dims[i])
+            squeezed_dims.append(v_type.dims[i])
 
     return reshape(v, new_shape, squeezed_dims)
 
@@ -130,10 +130,10 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
     var dims = List[Dim]()
     for i in range(rank):
         if i == axis:
-            dims.push_back(1)
-        dims.push_back(type.dims[i])
+            dims.append(1)
+        dims.append(type.dims[i])
     if axis == rank:
-        dims.push_back(1)
+        dims.append(1)
 
     return reshape(v, new_shape, dims)
 
@@ -302,7 +302,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     var dims = List[Dim]()
     var ptr = DTypePointer[DType.int64].alloc(input_type.rank())
     for i in range(input_type.rank()):
-        dims.push_back(input_type.dims[i])
+        dims.append(input_type.dims[i])
         ptr.store(i, i)
 
     dims[x] = input_type.dims[y]

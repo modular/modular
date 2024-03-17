@@ -31,9 +31,9 @@ fn test_tensor_spec_basic() raises:
     assert_equal(engine_spec.get_as_tensor_spec(), spec)
 
     var dynamic_dim_shape = List[Optional[Int64]]()
-    dynamic_dim_shape.push_back(None)
-    dynamic_dim_shape.push_back(Int64(1))
-    dynamic_dim_shape.push_back(Int64(2))
+    dynamic_dim_shape.append(None)
+    dynamic_dim_shape.append(Int64(1))
+    dynamic_dim_shape.append(Int64(2))
     var dynamic_dim_spec = session.get_as_engine_tensor_spec(
         "tensor", dynamic_dim_shape, DType.float32
     )
@@ -86,9 +86,9 @@ fn test_engine_tensor_spec_dynamic_dim_copy() raises:
 
     var session = InferenceSession()
     var dynamic_dim_shape = List[Optional[Int64]]()
-    dynamic_dim_shape.push_back(None)
-    dynamic_dim_shape.push_back(Int64(1))
-    dynamic_dim_shape.push_back(Int64(2))
+    dynamic_dim_shape.append(None)
+    dynamic_dim_shape.append(Int64(1))
+    dynamic_dim_shape.append(Int64(2))
     var dynamic_dim_spec = session.get_as_engine_tensor_spec(
         "tensor", dynamic_dim_shape, DType.float32
     )
