@@ -13,14 +13,15 @@ namespace M::KGEN {
 
 /// Profiler entry for Mojo compilation passes.
 using CompilerProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 1)>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 1), Trace::kCompiler>;
 
 /// Verbose profiler entry for Mojo compilation passes.
 using VerboseCompilerProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 2)>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 2), Trace::kCompiler>;
 
 struct CompilerTimeTraceScope
-    : public TimeTraceScope<CompilerProfilerEntry::isEnabled()> {
+    : public TimeTraceScope<Trace::kCompiler,
+                            CompilerProfilerEntry::isEnabled()> {
   using TimeTraceScope::TimeTraceScope;
 
   CompilerTimeTraceScope(StringRef name, StringRef detail = {})
@@ -30,7 +31,8 @@ struct CompilerTimeTraceScope
 };
 
 struct VerboseCompilerTimeTraceScope
-    : public TimeTraceScope<VerboseCompilerProfilerEntry::isEnabled()> {
+    : public TimeTraceScope<Trace::kCompiler,
+                            VerboseCompilerProfilerEntry::isEnabled()> {
   using TimeTraceScope::TimeTraceScope;
 
   VerboseCompilerTimeTraceScope(StringRef name, StringRef detail = {})

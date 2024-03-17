@@ -55,7 +55,8 @@ inline std::string memoryStatistics() { return ""; }
 #endif // MODULAR_MALLOC_PROFILER
 
 /// Profiler entry for general memory profiling by overriding the system malloc.
-using MallocProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kOther, 1)>;
+using MallocProfilerEntry =
+    ProfilerEntry<Trace::EnableTrace(Trace::kOther, 1), Trace::kOther>;
 
 /// Opens a `TimeTraceScope` that also collects and dumps memory statistics.
 inline auto mallocTraceScope(StringRef name) {

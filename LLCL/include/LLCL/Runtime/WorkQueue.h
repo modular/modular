@@ -60,11 +60,11 @@ using TaskFunction = llvm::unique_function<void()>;
 /// Profiling entries for capturing the waiting time of tasks and other
 /// internal LLCL measurements.
 using InternalProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2)>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 2), Trace::kLLCL>;
 
 /// Profiling entries for capturing every execution of a task or local task.
 using AllWorkItemsProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 3)>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kLLCL, 3), Trace::kLLCL>;
 
 using namespace std::chrono_literals;
 

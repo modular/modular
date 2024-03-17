@@ -225,9 +225,10 @@ void ProfilingDetail::CompletedEntry::print(llvm::raw_pwrite_stream &os,
 //===----------------------------------------------------------------------===//
 
 ProfilingDetail::TimeTraceThreadProfiler::TimeTraceThreadProfiler(
-    uint16_t threadIndex)
+    uint16_t threadIndex, uint64_t level)
     : tid(llvm::get_threadid()),
-      nextId((static_cast<uint64_t>(threadIndex) << 48) + 1) {
+      nextId((static_cast<uint64_t>(threadIndex) << 48) + 1),
+      maxProfilingLevel(level) {
   llvm::get_thread_name(threadName);
 }
 
@@ -260,8 +261,8 @@ ProfilingDetail::ThreadProfilerContext::get() {
       // Add this profiler to the main context.
       instance.profiler =
           ctx->profilers
-              .emplace_back(
-                  std::make_unique<TimeTraceThreadProfiler>(threadIndex))
+              .emplace_back(std::make_unique<TimeTraceThreadProfiler>(
+                  threadIndex, ctx->maxProfilingLevel))
               .get();
       ctx->threadProfilerContexts.insert(&instance);
     }
@@ -281,10 +282,11 @@ ProfilingDetail::ThreadProfilerContext::~ThreadProfilerContext() {
 //===----------------------------------------------------------------------===//
 
 ProfilingDetail::GlobalProfilerContext::GlobalProfilerContext(
-    DurationType granularity, StringRef name)
+    DurationType granularity, StringRef name, uint64_t level)
     : granularity(granularity), procName(name),
       pid(llvm::sys::Process::getProcessId()),
-      beginningOfTime(system_clock::now()), startTime(ClockType::now()) {}
+      beginningOfTime(system_clock::now()), startTime(ClockType::now()),
+      maxProfilingLevel(level) {}
 
 std::vector<ProfilingDetail::CompletedEntry>
 ProfilingDetail::GlobalProfilerContext::getCompletedEntries() {
@@ -471,7 +473,8 @@ void ProfilingDetail::GlobalProfilerContext::writeTextTrace(
 //===----------------------------------------------------------------------===//
 
 TimeTraceProfiler::TimeTraceProfiler(unsigned timeTraceGranularity,
-                                     StringRef procName) {
+                                     StringRef procName,
+                                     uint64_t maxProfilingLevel) {
   if constexpr (!ProfilingDetail::kProfilingEnabled) {
     llvm::dbgs() << "PROFILE: INFO: Profiling is not enabled at compile time, "
                     "only direct profiling entries will be captured\n";
@@ -490,7 +493,7 @@ TimeTraceProfiler::TimeTraceProfiler(unsigned timeTraceGranularity,
 
   auto *ctx = new ProfilingDetail::GlobalProfilerContext(
       std::chrono::microseconds(timeTraceGranularity),
-      llvm::sys::path::filename(procName));
+      llvm::sys::path::filename(procName), maxProfilingLevel);
   [[maybe_unused]] auto *prevCtx = Globals::exchangeGlobalProfilerContext(ctx);
   assert(prevCtx == nullptr && "profiler should not be initialized");
 

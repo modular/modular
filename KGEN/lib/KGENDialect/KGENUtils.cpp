@@ -21,6 +21,7 @@
 #include "Support/Compiler/ParserUtils.h"
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/ML/DType.h"
+#include "Support/Preprocessor.h"
 #include "Support/STLExtras.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "llvm/ADT/StringExtras.h"

@@ -131,7 +131,8 @@ namespace {
 
 /// Profiling entry for sampling outstanding bytes allocated on every alloc
 /// and free.
-using MemProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kMem, 3)>;
+using MemProfilerEntry =
+    ProfilerEntry<Trace::EnableTrace(Trace::kMem, 3), Trace::kMem>;
 
 class ProfilingAllocator : public LeakCheckAllocator {
 public:

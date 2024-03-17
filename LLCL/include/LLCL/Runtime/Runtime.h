@@ -53,7 +53,8 @@ public:
   /// If profileFilename is non-empty then time profiling will be activated
   /// and the profile JSON and text will be written to files with that prefix.
   Runtime(CompactRuntimePtr runtimePtr, std::unique_ptr<Allocator> allocator,
-          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {});
+          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
+          uint64_t maxProfilingLevel = Trace::kFullyEnabled);
   ~Runtime();
 
   /// Return a CompactRuntimePtr that identifies this Runtime instance.
@@ -252,6 +253,7 @@ struct RuntimeOptions {
   size_t maxThreads = 0;
   bool singleThreaded = false;
   std::string profileFilename = {};
+  uint64_t maxProfilingLevel = Trace::kFullyEnabled;
 
   // DO NOT CHANGE THIS.
 

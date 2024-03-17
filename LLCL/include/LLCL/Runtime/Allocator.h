@@ -20,11 +20,12 @@
 namespace M::LLCL {
 
 /// Profiling entry for uses of memcpy via profiledMemcpy.
-using MemCopyProfilerEntry = ProfilerEntry<Trace::EnableTrace(Trace::kMem, 1)>;
+using MemCopyProfilerEntry =
+    ProfilerEntry<Trace::EnableTrace(Trace::kMem, 1), Trace::kMem>;
 
 /// Profiling entry for all allocs and frees.
 using MemAllocFreeProfilerEntry =
-    ProfilerEntry<Trace::EnableTrace(Trace::kMem, 2)>;
+    ProfilerEntry<Trace::EnableTrace(Trace::kMem, 2), Trace::kMem>;
 
 /// This class defines an abstract interface for custom allocators to implement.
 /// This is intended for use by large object allocations (e.g. tensor data), not
