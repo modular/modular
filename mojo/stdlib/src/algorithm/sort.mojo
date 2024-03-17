@@ -87,8 +87,8 @@ fn _quicksort[
         return
 
     var stack = List[Int](capacity=_estimate_initial_height(size))
-    stack.push_back(0)
-    stack.push_back(size)
+    stack.append(0)
+    stack.append(size)
     while len(stack) > 0:
         var end = stack.pop_back()
         var start = stack.pop_back()
@@ -119,11 +119,11 @@ fn _quicksort[
 
         var pivot = _partition[type, cmp_fn](array, start, end)
 
-        stack.push_back(pivot + 1)
-        stack.push_back(end)
+        stack.append(pivot + 1)
+        stack.append(end)
 
-        stack.push_back(start)
-        stack.push_back(pivot)
+        stack.append(start)
+        stack.append(pivot)
 
 
 # ===----------------------------------------------------------------------===#
@@ -146,8 +146,8 @@ fn partition[
         size: The length of the buffer.
     """
     var stack = List[Int](capacity=_estimate_initial_height(size))
-    stack.push_back(0)
-    stack.push_back(size)
+    stack.append(0)
+    stack.append(size)
     while len(stack) > 0:
         var end = stack.pop_back()
         var start = stack.pop_back()
@@ -155,11 +155,11 @@ fn partition[
         if pivot == k:
             break
         elif k < pivot:
-            stack.push_back(start)
-            stack.push_back(pivot)
+            stack.append(start)
+            stack.append(pivot)
         else:
-            stack.push_back(pivot + 1)
-            stack.push_back(end)
+            stack.append(pivot + 1)
+            stack.append(end)
 
 
 # ===----------------------------------------------------------------------===#

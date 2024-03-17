@@ -17,9 +17,9 @@ fn test_sort_small_3():
 
     var list = List[Int]()
 
-    list.push_back(9)
-    list.push_back(1)
-    list.push_back(2)
+    list.append(9)
+    list.append(1)
+    list.append(2)
 
     @parameter
     fn _less_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
@@ -42,11 +42,11 @@ fn test_sort_small_5():
 
     var list = List[Int]()
 
-    list.push_back(9)
-    list.push_back(1)
-    list.push_back(2)
-    list.push_back(3)
-    list.push_back(4)
+    list.append(9)
+    list.append(1)
+    list.append(2)
+    list.append(3)
+    list.append(4)
 
     @parameter
     fn _less_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
@@ -80,8 +80,8 @@ fn test_sort2():
     alias length = 2
     var list = List[Int]()
 
-    list.push_back(-1)
-    list.push_back(0)
+    list.append(-1)
+    list.append(0)
 
     sort(list)
 
@@ -108,9 +108,9 @@ fn test_sort3():
     alias length = 3
     var list = List[Int]()
 
-    list.push_back(-1)
-    list.push_back(0)
-    list.push_back(1)
+    list.append(-1)
+    list.append(0)
+    list.append(1)
 
     sort(list)
 
@@ -143,9 +143,9 @@ fn test_sort3_dupe_elements():
         cmp_fn: fn[type: AnyRegType] (type, type) capturing -> Bool,
     ]():
         var list = List[Int](capacity=3)
-        list.push_back(5)
-        list.push_back(3)
-        list.push_back(3)
+        list.append(5)
+        list.append(3)
+        list.append(3)
 
         var ptr = rebind[Pointer[Int]](list.data)
         _quicksort[Int, cmp_fn](ptr, len(list))
@@ -175,10 +175,10 @@ fn test_sort4():
     alias length = 4
     var list = List[Int]()
 
-    list.push_back(-1)
-    list.push_back(0)
-    list.push_back(1)
-    list.push_back(2)
+    list.append(-1)
+    list.append(0)
+    list.append(1)
+    list.append(2)
 
     sort(list)
 
@@ -212,7 +212,7 @@ fn test_sort5():
     var list = List[Int]()
 
     for i in range(5):
-        list.push_back(i)
+        list.append(i)
 
     sort(list)
 
@@ -249,7 +249,7 @@ fn test_sort_reverse():
     var list = List[Int](capacity=length)
 
     for i in range(length):
-        list.push_back(length - i - 1)
+        list.append(length - i - 1)
 
     sort(list)
 
@@ -271,9 +271,9 @@ fn test_sort_semi_random():
 
     for i in range(length):
         if i % 2:
-            list.push_back(-i)
+            list.append(-i)
         else:
-            list.push_back(i)
+            list.append(i)
 
     sort(list)
 
@@ -297,7 +297,7 @@ fn test_sort9():
     var list = List[Int](capacity=length)
 
     for i in range(length):
-        list.push_back(length - i - 1)
+        list.append(length - i - 1)
 
     sort(list)
 
@@ -322,7 +322,7 @@ fn test_sort103():
     var list = List[Int](capacity=length)
 
     for i in range(length):
-        list.push_back(length - i - 1)
+        list.append(length - i - 1)
 
     sort(list)
 
@@ -340,7 +340,7 @@ fn test_sort_any_103():
     var list = List[Float32](capacity=length)
 
     for i in range(length):
-        list.push_back(length - i - 1)
+        list.append(length - i - 1)
 
     sort[DType.float32](list)
 
@@ -357,10 +357,10 @@ fn test_quick_sort_repeated_val():
     var list = List[Float32](capacity=length)
 
     for i in range(0, length // 4):
-        list.push_back(i + 1)
-        list.push_back(i + 1)
-        list.push_back(i + 1)
-        list.push_back(i + 1)
+        list.append(i + 1)
+        list.append(i + 1)
+        list.append(i + 1)
+        list.append(i + 1)
 
     @parameter
     fn _greater_than[type: AnyRegType](lhs: type, rhs: type) -> Bool:
@@ -464,7 +464,7 @@ fn test_partition_top_k(length: Int, k: Int):
     var list = List[Float32](capacity=length)
 
     for i in range(0, length):
-        list.push_back(i)
+        list.append(i)
 
     @parameter
     fn _great_than_equal[type: AnyRegType](lhs: type, rhs: type) -> Bool:
@@ -493,7 +493,7 @@ fn test_sort_stress():
     ](length: Int):
         var list = List[Int](capacity=length)
         for i in range(length):
-            list.push_back(int(random_si64(-length, length)))
+            list.append(int(random_si64(-length, length)))
 
         var ptr = rebind[Pointer[Int]](list.data)
         _quicksort[Int, cmp_fn](ptr, len(list))
