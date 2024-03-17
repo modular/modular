@@ -40,7 +40,7 @@ fn strsv[
         for i in range(simd_width):
             # Broadcast one solution value to a simd vector.
             x_vec = x_ptr[i]
-            x_solved.simd_store(i * simd_width, x_vec)
+            x_solved.store(i * simd_width, x_vec)
 
         x_ptr += simd_width
         L_ptr += simd_width
