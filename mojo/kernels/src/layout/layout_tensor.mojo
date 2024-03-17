@@ -4,15 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe import DTypePointer
+from sys.intrinsics import PrefetchOptions
+
+from algorithm import vectorize
+from gpu.memory import async_copy, async_copy_wait_all
+from memory import memcpy
+from memory.unsafe import AddressSpace, DTypePointer, _GPUAddressSpace
 
 from .int_tuple import flatten, int
 from .layout import *
-from sys.intrinsics import PrefetchOptions
-from algorithm import vectorize
-from memory import memcpy
-from gpu.memory import async_copy, async_copy_wait_all
-from memory.unsafe import AddressSpace, _GPUAddressSpace
 
 
 @register_passable

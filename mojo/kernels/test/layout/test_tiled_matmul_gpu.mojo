@@ -9,8 +9,8 @@
 from gpu import AddressSpace
 from gpu.host import Context, Function, synchronize
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
-from gpu.sync import barrier
 from gpu.mma import mma
+from gpu.sync import barrier
 from kernel_utils._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from kernel_utils.int_tuple import IntTuple, int
 from kernel_utils.layout import Layout
