@@ -14,6 +14,7 @@ from tensor import TensorSpec
 """
 
 from collections import List
+
 from builtin.dtype import _get_runtime_dtype_size
 
 from .tensor_shape import TensorShape, _as_rep16
