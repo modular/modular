@@ -25,7 +25,7 @@ fn test(m: NDBuffer[DType.int32, 2, DimList(4, 4)]):
     print(m.load[width=4](3, 0))
 
     var v = iota[DType.int32, 4]()
-    m.simd_store[4](StaticIntTuple[2](3, 0), v)
+    m.store[width=4](StaticIntTuple[2](3, 0), v)
     # CHECK: [0, 1, 2, 3]
     print(m.load[width=4](3, 0))
 
@@ -41,7 +41,7 @@ fn test_dynamic_shape(m: NDBuffer[DType.int32, 2, DimList.create_unknown[2]()]):
     print(m.load[width=4](3, 0))
 
     var v = iota[DType.int32, 4]()
-    m.simd_store[4](StaticIntTuple[2](3, 0), v)
+    m.store[width=4](StaticIntTuple[2](3, 0), v)
     # CHECK: [0, 1, 2, 3]
     print(m.load[width=4](3, 0))
 

@@ -1347,7 +1347,7 @@ struct TiledMatmulBiasGenerated[
                     var m_coord = idx_m + dynamic_state.global_offset.M
                     var c_coord = Index(m_coord, n_coord)
                     var c_val = c_buffer.load[width=col_chunk_size](c_coord)
-                    c_buffer.simd_store[col_chunk_size](
+                    c_buffer.store[width=col_chunk_size](
                         c_coord, c_val + bias_val
                     )
 

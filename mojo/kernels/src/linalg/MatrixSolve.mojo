@@ -58,13 +58,13 @@ fn matrix_solve_tiny[
     var B2 = B.load[width=N]((2, 0))
 
     # Update solution.
-    X.simd_store[N](
+    X.store[width=N](
         (0, 0), rdet_A * B2.fma(A_inv02, B1.fma(A_inv01, A_inv00 * B0))
     )
-    X.simd_store[N](
+    X.store[width=N](
         (1, 0), rdet_A * B2.fma(A_inv12, B1.fma(A_inv11, A_inv10 * B0))
     )
-    X.simd_store[N](
+    X.store[width=N](
         (2, 0), rdet_A * B2.fma(A_inv22, B1.fma(A_inv21, A_inv20 * B0))
     )
 

@@ -50,10 +50,10 @@ fn _transpose_inplace_4x4[
     var r2 = tmp2.shuffle[0, 2, 4, 6](tmp3)
     var r3 = tmp2.shuffle[1, 3, 5, 7](tmp3)
 
-    buf.simd_store[4](StaticIntTuple[2](0, 0), r0)
-    buf.simd_store[4](StaticIntTuple[2](1, 0), r1)
-    buf.simd_store[4](StaticIntTuple[2](2, 0), r2)
-    buf.simd_store[4](StaticIntTuple[2](3, 0), r3)
+    buf.store[width=4](StaticIntTuple[2](0, 0), r0)
+    buf.store[width=4](StaticIntTuple[2](1, 0), r1)
+    buf.store[width=4](StaticIntTuple[2](2, 0), r2)
+    buf.store[width=4](StaticIntTuple[2](3, 0), r3)
 
 
 fn _transpose_inplace_8x8[
@@ -143,14 +143,14 @@ fn _transpose_inplace_8x8[
     var r6 = _apply_permute_5(k130, k570)
     var r7 = _apply_permute_5(k131, k571)
 
-    buf.simd_store[8](StaticIntTuple[2](0, 0), r0)
-    buf.simd_store[8](StaticIntTuple[2](1, 0), r1)
-    buf.simd_store[8](StaticIntTuple[2](2, 0), r2)
-    buf.simd_store[8](StaticIntTuple[2](3, 0), r3)
-    buf.simd_store[8](StaticIntTuple[2](4, 0), r4)
-    buf.simd_store[8](StaticIntTuple[2](5, 0), r5)
-    buf.simd_store[8](StaticIntTuple[2](6, 0), r6)
-    buf.simd_store[8](StaticIntTuple[2](7, 0), r7)
+    buf.store[width=8](StaticIntTuple[2](0, 0), r0)
+    buf.store[width=8](StaticIntTuple[2](1, 0), r1)
+    buf.store[width=8](StaticIntTuple[2](2, 0), r2)
+    buf.store[width=8](StaticIntTuple[2](3, 0), r3)
+    buf.store[width=8](StaticIntTuple[2](4, 0), r4)
+    buf.store[width=8](StaticIntTuple[2](5, 0), r5)
+    buf.store[width=8](StaticIntTuple[2](6, 0), r6)
+    buf.store[width=8](StaticIntTuple[2](7, 0), r7)
 
 
 fn _transpose_inplace_16x16[
@@ -317,22 +317,22 @@ fn _transpose_inplace_16x16[
     var r14 = _apply_permute_7(t06, t14)
     var r15 = _apply_permute_7(t07, t15)
 
-    buf.simd_store[16](StaticIntTuple[2](0, 0), r00)
-    buf.simd_store[16](StaticIntTuple[2](1, 0), r01)
-    buf.simd_store[16](StaticIntTuple[2](2, 0), r02)
-    buf.simd_store[16](StaticIntTuple[2](3, 0), r03)
-    buf.simd_store[16](StaticIntTuple[2](4, 0), r04)
-    buf.simd_store[16](StaticIntTuple[2](5, 0), r05)
-    buf.simd_store[16](StaticIntTuple[2](6, 0), r06)
-    buf.simd_store[16](StaticIntTuple[2](7, 0), r07)
-    buf.simd_store[16](StaticIntTuple[2](8, 0), r08)
-    buf.simd_store[16](StaticIntTuple[2](9, 0), r09)
-    buf.simd_store[16](StaticIntTuple[2](10, 0), r10)
-    buf.simd_store[16](StaticIntTuple[2](11, 0), r11)
-    buf.simd_store[16](StaticIntTuple[2](12, 0), r12)
-    buf.simd_store[16](StaticIntTuple[2](13, 0), r13)
-    buf.simd_store[16](StaticIntTuple[2](14, 0), r14)
-    buf.simd_store[16](StaticIntTuple[2](15, 0), r15)
+    buf.store[width=16](StaticIntTuple[2](0, 0), r00)
+    buf.store[width=16](StaticIntTuple[2](1, 0), r01)
+    buf.store[width=16](StaticIntTuple[2](2, 0), r02)
+    buf.store[width=16](StaticIntTuple[2](3, 0), r03)
+    buf.store[width=16](StaticIntTuple[2](4, 0), r04)
+    buf.store[width=16](StaticIntTuple[2](5, 0), r05)
+    buf.store[width=16](StaticIntTuple[2](6, 0), r06)
+    buf.store[width=16](StaticIntTuple[2](7, 0), r07)
+    buf.store[width=16](StaticIntTuple[2](8, 0), r08)
+    buf.store[width=16](StaticIntTuple[2](9, 0), r09)
+    buf.store[width=16](StaticIntTuple[2](10, 0), r10)
+    buf.store[width=16](StaticIntTuple[2](11, 0), r11)
+    buf.store[width=16](StaticIntTuple[2](12, 0), r12)
+    buf.store[width=16](StaticIntTuple[2](13, 0), r13)
+    buf.store[width=16](StaticIntTuple[2](14, 0), r14)
+    buf.store[width=16](StaticIntTuple[2](15, 0), r15)
 
 
 fn _transpose_inplace_naive[
