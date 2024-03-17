@@ -33,8 +33,8 @@ def main():
     m.bench_function[bench1](BenchId("bench1"))
 
     var inputs = List[String]()
-    inputs.push_back("input1")
-    inputs.push_back("input2")
+    inputs.append("input1")
+    inputs.append("input2")
     for i in range(len(inputs)):
         m.bench_with_input[String, bench2](
             BenchId("bench2", str(i)),

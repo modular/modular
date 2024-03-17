@@ -423,7 +423,7 @@ struct Bench:
         )
         print("done.")
 
-        self.info_vec.push_back(
+        self.info_vec.append(
             BenchmarkInfo(
                 full_name,
                 res,
