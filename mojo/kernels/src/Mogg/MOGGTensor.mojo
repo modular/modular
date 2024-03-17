@@ -13,8 +13,8 @@ from algorithm.functional import elementwise, vectorize
 from buffer import NDBuffer
 from memory.unsafe import Pointer, bitcast
 from MOGGIntList import IntList
-
 from register import *
+
 from utils._optional import Optional
 from utils.list import DimList
 

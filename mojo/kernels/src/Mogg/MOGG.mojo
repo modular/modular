@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.vector import InlinedFixedVector
-from gpu.host._compile import _get_nvptx_target
 from math import (
     abs,
     add,
@@ -52,12 +51,7 @@ from sys.param_env import is_defined
 
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
-from algorithm import (
-    reduce_shape,
-    sync_parallelize,
-    vectorize,
-)
-from utils.loop import unroll
+from algorithm import reduce_shape, sync_parallelize, vectorize
 from algorithm.functional import _async_elementwise_impl, _elementwise_impl
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
@@ -69,6 +63,9 @@ from BatchedMatmul import batched_matmul_shape
 from BatchedMatmul import (
     get_trace_information as get_trace_information_batched_matmul,
 )
+from buffer import NDBuffer
+from gpu.host._compile import _get_nvptx_target
+from kernel_utils._optional_param import OptionalParamInt
 from Matmul import matmul as _matmul
 from Matmul import (
     pack_b_ndbuffer,
@@ -79,7 +76,6 @@ from MatmulUtils import GemmShape, get_trace_information, search_mm_config
 from MatrixBandPart import matrix_band_part
 from MatrixSolve import matrix_solve, matrix_solve_shape
 from memory import memset_zero
-from buffer import NDBuffer
 from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
@@ -124,7 +120,7 @@ from nn.pad import pad_shape
 from nn.pool import avg_pool as _avg_pool
 from nn.pool import max_pool as _max_pool
 from nn.pool import pool_shape, pool_shape_ceil
-from nn.reshape import reshape, reshape_shape, ndbuffer_reshape
+from nn.reshape import ndbuffer_reshape, reshape, reshape_shape
 from nn.resize import CoordinateTransformationMode, RoundMode
 from nn.resize import resize_linear as resize_linear_kernel
 from nn.resize import resize_nearest_neighbor
@@ -136,6 +132,7 @@ from nn.split import split as _split
 from nn.tile import tile, tile_shape
 from nn.topk import top_k as _top_k
 from nn.topk import top_k_shape
+from register import *
 from runtime.llcl import (
     MojoCallContextPtr,
     MojoCallRaisingTask,
@@ -144,11 +141,10 @@ from runtime.llcl import (
 )
 from runtime.tracing import Trace, TraceLevel
 
-from register import *
 from utils._optional import Optional
-from kernel_utils._optional_param import OptionalParamInt
 from utils.index import Index, StaticIntTuple, product
 from utils.list import Dim, DimList
+from utils.loop import unroll
 
 
 # Prevent these functions from being DCE'd by explicitly exporting them.

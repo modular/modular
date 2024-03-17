@@ -7,9 +7,9 @@
 from algorithm import vectorize
 from algorithm.functional import _elementwise_impl
 from buffer import NDBuffer
+from register import *
 from runtime.llcl import MojoCallContextPtr
 
-from register import *
 from utils.index import StaticIntTuple
 from utils.list import DimList
 
