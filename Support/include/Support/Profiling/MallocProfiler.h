@@ -35,7 +35,6 @@
 #ifndef SUPPORT_PROFILING_MALLOCPROFILER_H
 #define SUPPORT_PROFILING_MALLOCPROFILER_H
 
-#include "LLCL/Support/Profiling.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include <string>

@@ -7,7 +7,7 @@
 #ifndef KGEN_SUPPORT_COMPILERPROFILING_H
 #define KGEN_SUPPORT_COMPILERPROFILING_H
 
-#include "LLCL/Support/Profiling.h"
+#include "Support/Profiling/TimeProfiler.h"
 
 namespace M::KGEN {
 

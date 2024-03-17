@@ -12,8 +12,8 @@
 #ifndef LLCL_RUNTIME_ALLOCATOR_H
 #define LLCL_RUNTIME_ALLOCATOR_H
 
-#include "LLCL/Support/Profiling.h"
 #include "Support/AlignedAlloc.h"
+#include "Support/Profiling/TimeProfiler.h"
 
 #include <memory>
 
