@@ -57,9 +57,9 @@ fn test_pytorch_model2() raises:
     var session = InferenceSession()
     var config = LoadOptions()
     var shape = List[Optional[Int64]]()
-    shape.push_back(Int64(3))
-    shape.push_back(Int64(100))
-    shape.push_back(Int64(100))
+    shape.append(Int64(3))
+    shape.append(Int64(100))
+    shape.append(Int64(100))
     config.add_input_spec(shape, DType.float32)
     var compiled_model = session.load_model(Path(model_path), config)
 
