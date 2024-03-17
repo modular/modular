@@ -100,9 +100,9 @@ var another_bool = False
 # CHECK: }
 from collections import List
 var z = List[Int](capacity=2)
-z.push_back(1)
-z.push_back(2)
-z.push_back(3)
+z.append(1)
+z.append(2)
+z.append(3)
 
 
 # CHECK: (Tuple[Int, SIMD[si8, 4]]) a = {
