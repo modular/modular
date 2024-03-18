@@ -24,7 +24,7 @@ from memory.unsafe import AddressSpace, DTypePointer, Pointer, _GPUAddressSpace
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
 from utils.index import product as tuple_product
-from utils.list import Dim, DimList
+from utils.list import Dim, DimList, _make_tuple
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 
@@ -670,8 +670,10 @@ struct NDBuffer[
         ]()
 
         self.data = ptr
-        self.dynamic_shape = shape
-        self.dynamic_stride = _compute_ndbuffer_stride[rank](shape)
+        self.dynamic_shape = _make_tuple[rank](shape)
+        self.dynamic_stride = _compute_ndbuffer_stride[rank](
+            _make_tuple[rank](shape)
+        )
         self.is_contiguous = True
 
     @always_inline
@@ -694,8 +696,10 @@ struct NDBuffer[
         ]()
 
         self.data = ptr
-        self.dynamic_shape = shape
-        self.dynamic_stride = _compute_ndbuffer_stride[rank](shape)
+        self.dynamic_shape = _make_tuple[rank](shape)
+        self.dynamic_stride = _compute_ndbuffer_stride[rank](
+            _make_tuple[rank](shape)
+        )
         self.is_contiguous = True
 
     @always_inline
@@ -745,6 +749,24 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
+        ptr: DTypePointer[type, address_space],
+        dynamic_shape: DimList,
+    ):
+        """Constructs an NDBuffer with statically known rank, but dynamic
+        shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A static tuple of size 'rank' representing shapes.
+        """
+        self.__init__(ptr, _make_tuple[rank](dynamic_shape))
+
+    @always_inline
+    fn __init__(
+        inout self,
         ptr: Pointer[Scalar[type], address_space],
         dynamic_shape: StaticIntTuple[rank],
         dynamic_stride: StaticIntTuple[rank],
@@ -770,6 +792,30 @@ struct NDBuffer[
     @always_inline
     fn __init__(
         inout self,
+        ptr: Pointer[Scalar[type], address_space],
+        dynamic_shape: DimList,
+        dynamic_stride: StaticIntTuple[rank],
+    ):
+        """Constructs a strided NDBuffer with statically known rank, but
+        dynamic shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A DimList of size 'rank' representing shapes.
+            dynamic_stride: A static tuple of size 'rank' representing strides.
+        """
+        self.__init__(
+            ptr=ptr,
+            dynamic_shape=_make_tuple[rank](dynamic_shape),
+            dynamic_stride=dynamic_stride,
+        )
+
+    @always_inline
+    fn __init__(
+        inout self,
         ptr: DTypePointer[type, address_space],
         dynamic_shape: StaticIntTuple[rank],
         dynamic_stride: StaticIntTuple[rank],
@@ -790,6 +836,30 @@ struct NDBuffer[
         self.dynamic_stride = dynamic_stride
         self.is_contiguous = (
             _compute_ndbuffer_stride[rank](dynamic_shape) == dynamic_stride
+        )
+
+    @always_inline
+    fn __init__(
+        inout self,
+        ptr: DTypePointer[type, address_space],
+        dynamic_shape: DimList,
+        dynamic_stride: StaticIntTuple[rank],
+    ):
+        """Constructs a strided NDBuffer with statically known rank, but
+        dynamic shapes and type.
+
+        Constraints:
+            The rank is known.
+
+        Args:
+            ptr: Pointer to the data.
+            dynamic_shape: A DimList of size 'rank' representing shapes.
+            dynamic_stride: A static tuple of size 'rank' representing strides.
+        """
+        self.__init__(
+            ptr=ptr,
+            dynamic_shape=_make_tuple[rank](dynamic_shape),
+            dynamic_stride=dynamic_stride,
         )
 
     @always_inline

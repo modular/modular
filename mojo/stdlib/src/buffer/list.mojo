@@ -13,6 +13,8 @@ from utils.list import Dim
 """
 
 from utils._optional import Optional
+from . import unroll
+from . import StaticIntTuple
 
 # ===----------------------------------------------------------------------===#
 # Dim
@@ -442,3 +444,29 @@ struct DimList(Sized, Stringable):
                 res += ", "
             res += str(self.value[i])
         return res + "]"
+
+
+@always_inline
+fn _make_tuple[size: Int](values: DimList) -> StaticIntTuple[size]:
+    """Creates a tuple constant using the specified values.
+
+    Args:
+        values: The list of values.
+
+    Returns:
+        A tuple with the values filled in.
+    """
+    var array = __mlir_op.`pop.array.repeat`[
+        _type = __mlir_type[`!pop.array<`, size.value, `, `, Int, `>`]
+    ](Int(0))
+
+    @always_inline
+    @parameter
+    fn fill[idx: Int]():
+        array = __mlir_op.`pop.array.replace`[
+            _type = __mlir_type[`!pop.array<`, size.value, `, `, Int, `>`],
+            index = idx.value,
+        ](values.at[idx]().get(), array)
+
+    unroll[fill, size]()
+    return StaticIntTuple(StaticTuple[Int, size](array))
