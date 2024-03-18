@@ -11,10 +11,9 @@ from gpu.host import Context, Function, synchronize
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.mma import mma
 from gpu.sync import barrier
-from kernel_utils._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from kernel_utils.int_tuple import IntTuple, int
-from kernel_utils.layout import Layout
-from kernel_utils.layout_tensor import LayoutTensor, stack_allocation_like
+from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout import *
+from layout.int_tuple import int
 
 
 fn naive_matmul[

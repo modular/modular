@@ -6,8 +6,8 @@
 # UNSUPPORTED: asan
 # RUN: %mojo %s | FileCheck %s
 
-from kernel_utils.int_tuple import IntTuple
-from kernel_utils.layout import (
+from layout import *
+from layout.layout import (
     Layout,
     MakeLayoutList,
     coalesce,

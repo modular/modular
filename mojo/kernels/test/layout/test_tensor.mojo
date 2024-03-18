@@ -5,10 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from kernel_utils._utils import ManagedLayoutTensor
-from kernel_utils.int_tuple import IntTuple
-from kernel_utils.layout import Layout, print_layout
-from kernel_utils.layout_tensor import LayoutTensor
+from layout._utils import ManagedLayoutTensor
+from layout import *
 
 
 fn print_raw_major_tensor[

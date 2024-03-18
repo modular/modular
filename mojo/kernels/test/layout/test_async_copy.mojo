@@ -10,10 +10,9 @@ from gpu import AddressSpace
 from gpu.host import Context, Function, synchronize
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.memory import async_copy_wait_all
-from kernel_utils._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from kernel_utils.int_tuple import IntTuple, int
-from kernel_utils.layout import Layout
-from kernel_utils.layout_tensor import LayoutTensor
+from layout.int_tuple import int
+from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout import *
 
 
 fn async_copy_kernel[

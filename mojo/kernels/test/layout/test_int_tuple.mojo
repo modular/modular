@@ -6,7 +6,7 @@
 # UNSUPPORTED: asan
 # RUN: %mojo %s | FileCheck %s
 
-from kernel_utils.int_tuple import *
+from layout.int_tuple import *
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 

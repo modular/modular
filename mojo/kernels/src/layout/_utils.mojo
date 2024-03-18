@@ -6,9 +6,7 @@
 # REQUIRES: disabled
 
 from gpu.host.memory import _free, _malloc_managed
-from kernel_utils.int_tuple import IntTuple
-from kernel_utils.layout import Layout
-from kernel_utils.layout_tensor import LayoutTensor
+from layout import *
 
 alias alloc_fn_type = fn[layout: Layout, dtype: DType] () -> DTypePointer[dtype]
 
