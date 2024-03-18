@@ -2929,7 +2929,7 @@ fn gevm_kernel[
         @parameter
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](Index(globalWarpId, 0), total)
+            elementwise_lambda[c_type, 1](Index(0, globalWarpId), total)
         else:
             c[globalWarpId] = total
 
