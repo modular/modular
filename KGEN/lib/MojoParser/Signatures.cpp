@@ -694,10 +694,9 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
                          ? ParsedArgument::kConventionOwned
                          : ParsedArgument::kConventionBorrowed;
 
-    // FIXME(owned varargs): we don't support owned varargs, so pass varargs
+    // FIXME(owned kwargs): we don't support owned kwargs, so pass varargs
     // as borrowed instead for def's for now to hackaround this.
-    if (isDef && (arg.vararg == VarArgKind::VarArg ||
-                  arg.vararg == VarArgKind::KWVarArg))
+    if (isDef && arg.vararg == VarArgKind::KWVarArg)
       arg.convention = ParsedArgument::kConventionBorrowed;
   }
 
@@ -739,28 +738,13 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   case ParsedArgument::kConventionByRefResult:
     llvm_unreachable("shouldn't occur in an argument list");
   case ParsedArgument::kConventionOwned:
-    // Memory-only owned argument are passed with a layer of indirection and
-    // use a specific convention to model this.
-    if (!type.isRegisterPassable(arg.loc, shared)) {
+    if (!type.isRegisterPassable(arg.loc, shared) ||
+        // VariadicListInMem supports owned, but VariadicList does not.
+        arg.vararg == VarArgKind::VarArg) {
       arg.kgenConvention = ArgConvention::OwnedInMem;
       break;
     }
     arg.kgenConvention = ArgConvention::OwnedInReg;
-
-    // Reject variadic owned register arguments, we can't support them yet.
-    // TODO(ownership): Enable 'owned' @register_passable variadics.
-    if (arg.vararg == VarArgKind::VarArg) {
-      // Emit an error and remember this error.
-      if (!arg.isErroneous) {
-        shared.emitError(arg.loc)
-            << "'owned' @register_passable arguments cannot be variadic";
-        arg.isErroneous = true;
-      }
-
-      // Switch to a convention that is supportable.
-      arg.convention = ParsedArgument::kConventionBorrowed;
-      arg.kgenConvention = ArgConvention::BorrowedInReg;
-    }
     break;
   case ParsedArgument::kConventionBorrowed:
     if (type.isRegisterPassable(arg.loc, shared))
