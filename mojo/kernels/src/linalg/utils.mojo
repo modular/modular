@@ -34,7 +34,6 @@ alias elementwise_epilogue_type = fn[type: DType, width: Int] (
 ) capturing -> None
 
 
-@register_passable("trivial")
 struct MatmulConfig:
     """Static configuration of tiled matmul algorithms."""
 
@@ -76,6 +75,37 @@ struct MatmulConfig:
 
     # If true, then perform saturated matmul
     var saturated_vnni: Bool
+
+    fn __init__(
+        inout self,
+        *,
+        shape_a: DimList,
+        shape_b: DimList,
+        shape_c: DimList,
+        packed_shape: DimList,
+        shape_bias: DimList,
+        simd_size: Int,
+        a_row_size: Int,
+        pack_inner_size: Int,
+        pack_data_size: Int,
+        prefetch_b_distance_k: Int,
+        use_vnni: Bool,
+        use_i8mm: Bool,
+        saturated_vnni: Bool,
+    ):
+        self.shape_a = shape_a
+        self.shape_b = shape_b
+        self.shape_c = shape_c
+        self.packed_shape = packed_shape
+        self.shape_bias = shape_bias
+        self.simd_size = simd_size
+        self.a_row_size = a_row_size
+        self.pack_inner_size = pack_inner_size
+        self.pack_data_size = pack_data_size
+        self.prefetch_b_distance_k = prefetch_b_distance_k
+        self.use_vnni = use_vnni
+        self.use_i8mm = use_i8mm
+        self.saturated_vnni = saturated_vnni
 
 
 @register_passable("trivial")
@@ -962,21 +992,21 @@ fn get_matmul_config[
     alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
     alias factor = 4 if use_i8mm_fn[a_type, b_type, c_type]() else simd_size
 
-    return MatmulConfig {
-        shape_a: DimList.create_unknown[2](),
-        shape_b: DimList.create_unknown[2](),
-        shape_c: DimList.create_unknown[2](),
-        packed_shape: DimList.create_unknown[3](),
-        shape_bias: DimList.create_unknown[1](),
-        simd_size: simd_size,
-        a_row_size: a_row_size,
-        pack_inner_size: pack_inner_size * factor,
-        pack_data_size: get_pack_data_size[b_type](),
-        prefetch_b_distance_k: prefetch_b_distance_k,
-        use_vnni: use_vnni_fn[a_type, b_type, c_type](),
-        use_i8mm: use_i8mm_fn[a_type, b_type, c_type](),
-        saturated_vnni: saturated,
-    }
+    return MatmulConfig(
+        shape_a=DimList.create_unknown[2](),
+        shape_b=DimList.create_unknown[2](),
+        shape_c=DimList.create_unknown[2](),
+        packed_shape=DimList.create_unknown[3](),
+        shape_bias=DimList.create_unknown[1](),
+        simd_size=simd_size,
+        a_row_size=a_row_size,
+        pack_inner_size=pack_inner_size * factor,
+        pack_data_size=get_pack_data_size[b_type](),
+        prefetch_b_distance_k=prefetch_b_distance_k,
+        use_vnni=use_vnni_fn[a_type, b_type, c_type](),
+        use_i8mm=use_i8mm_fn[a_type, b_type, c_type](),
+        saturated_vnni=saturated,
+    )
 
 
 # Determines which kernel shape to use based on the matmul shape MxNxK.
