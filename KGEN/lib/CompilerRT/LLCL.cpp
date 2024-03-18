@@ -216,6 +216,14 @@ KGEN_CompilerRT_LLCL_MojoCallContext_SetToError(
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsync_bool(bool data, LLCLWrapper<AnyAsyncValueRef> async,
+                                 LLCLWrapper<Runtime> runtimePtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+  value = value.createReady<bool>(runtime, data);
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_CreateAsync_ssizet(ssize_t data,
                                    LLCLWrapper<AnyAsyncValueRef> async,
                                    LLCLWrapper<Runtime> runtimePtr) {
@@ -280,6 +288,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_GetCurrentStream});
   funcs.push_back({"KGEN_CompilerRT_CreateAsync_ssizet",
                    (void *)&KGEN_CompilerRT_CreateAsync_ssizet});
+  funcs.push_back({"KGEN_CompilerRT_CreateAsync_bool",
+                   (void *)&KGEN_CompilerRT_CreateAsync_bool});
   funcs.push_back({"KGEN_CompilerRT_GetValueFromAsync",
                    (void *)&KGEN_CompilerRT_GetValueFromAsync});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_Complete",
