@@ -228,7 +228,7 @@ fn test[
 
             var vec = output.load[width=width](curr_coords)
 
-            output.store(
+            output.simd_store(
                 curr_coords,
                 10.0
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
