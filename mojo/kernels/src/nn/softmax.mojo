@@ -17,7 +17,7 @@ from math import (
     reciprocal,
     sub,
 )
-from math.limit import min_or_neginf, neginf
+from math.limit import neginf
 from os import abort
 
 from algorithm import sync_parallelize, vectorize
@@ -363,7 +363,7 @@ fn _softmax_3_pass_base[
             single_thread_blocking_override=True,
         ](
             StaticIntTuple[1](len(output)),
-            init=min_or_neginf[type](),
+            init=Scalar[type].MIN,
             reduce_dim=0,
         )
     except e:
@@ -712,7 +712,7 @@ fn softmax_kernel[
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
         var row_max = row_reduce[BLOCK_SIZE, input_fn, _max, type, 1](
-            row_coords, axis, min_or_neginf[type](), row_size
+            row_coords, axis, Scalar[type].MIN, row_size
         )
         if ThreadIdx.x() == 0:
             max_buf[0] = row_max

@@ -6,7 +6,6 @@
 
 from collections import List
 from math import abs, iota, max, min
-from math.limit import min_or_neginf
 
 from algorithm.sort import _quicksort
 from buffer import NDBuffer
@@ -222,7 +221,7 @@ fn non_max_suppression[
                     per_class_scores[i] = score
                     num_boxes_remaining += 1
                 else:
-                    per_class_scores[i] = min_or_neginf[type]()
+                    per_class_scores[i] = Scalar[type].MIN
 
             iota[DType.int64](box_idxs)
 
@@ -260,9 +259,7 @@ fn non_max_suppression[
                     var next_box = _get_bounding_box(b, int(box_idxs[i]), boxes)
 
                     if pred.iou(next_box) > iou_threshold.cast[type]():
-                        per_class_scores[int(box_idxs[i])] = min_or_neginf[
-                            type
-                        ]()
+                        per_class_scores[int(box_idxs[i])] = Scalar[type].MIN
                         num_boxes_remaining -= 1
                 pred_idx += 1
                 # don't need to sort all of box_idxs because:
