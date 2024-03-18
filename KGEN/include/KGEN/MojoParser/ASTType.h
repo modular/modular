@@ -171,6 +171,10 @@ public:
   void print(raw_ostream &os, bool forDiag = false,
              bool demangleParams = false) const;
 
+  /// Print the specified parameter like we would in AST type printing.
+  static void printParam(raw_ostream &os, TypedAttr value, bool forDiag,
+                         bool demangleParams);
+
   /// Create and return a reference type with 'this' as the underlying element
   /// type an implicit lifetime reference with the specified arg name.
   RefType getRefForArgument(const Twine &argName, bool isMut);

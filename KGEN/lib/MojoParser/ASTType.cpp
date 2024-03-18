@@ -345,15 +345,17 @@ static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag,
 }
 
 /// Pretty print a parameter value.
-static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
+static void printDemangledParam(raw_ostream &os, TypedAttr param,
+                                bool forDiag) {
   if (auto structAttr = dyn_cast<LITStructAttr>(param)) {
     // If the struct has a single element, elide the braces.
     if (forDiag && structAttr.getValues().size() == 1) {
-      printParam(os, std::get<1>(structAttr.getValues().front()), forDiag);
+      printDemangledParam(os, std::get<1>(structAttr.getValues().front()),
+                          forDiag);
     } else {
       os << '{';
       llvm::interleaveComma(structAttr.getValues(), os, [&](auto value) {
-        printParam(os, std::get<1>(value), forDiag);
+        printDemangledParam(os, std::get<1>(value), forDiag);
       });
       os << '}';
     }
@@ -365,7 +367,7 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
       os << '[';
       llvm::interleaveComma(
           symbolCst.getParamValues(), os,
-          [&](TypedAttr value) { printParam(os, value, forDiag); });
+          [&](TypedAttr value) { printDemangledParam(os, value, forDiag); });
       os << ']';
     }
     return;
@@ -374,29 +376,29 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
     // Sugar the parameter operators the parser can generate.
     switch (op.getOpcode()) {
     case POC::Apply:
-      printParam(os, op.getOperands().front(), forDiag);
+      printDemangledParam(os, op.getOperands().front(), forDiag);
       os << '(';
       llvm::interleaveComma(
           op.getOperands().drop_front(), os,
-          [&](TypedAttr value) { printParam(os, value, forDiag); });
+          [&](TypedAttr value) { printDemangledParam(os, value, forDiag); });
       os << ')';
       return;
     case POC::BindSignature:
-      printParam(os, op.getOperands().front(), forDiag);
+      printDemangledParam(os, op.getOperands().front(), forDiag);
       os << '[';
       llvm::interleaveComma(
           op.getOperands().drop_front(), os,
-          [&](TypedAttr value) { printParam(os, value, forDiag); });
+          [&](TypedAttr value) { printDemangledParam(os, value, forDiag); });
       os << ']';
       return;
     case POC::Rebind:
       // Just omit the types.
-      printParam(os, op.getOperands().front(), forDiag);
+      printDemangledParam(os, op.getOperands().front(), forDiag);
       return;
     case POC::VariadicGet:
-      printParam(os, op.getOperands().front(), forDiag);
+      printDemangledParam(os, op.getOperands().front(), forDiag);
       os << '[';
-      printParam(os, op.getOperands().back(), forDiag);
+      printDemangledParam(os, op.getOperands().back(), forDiag);
       os << ']';
       return;
     default:
@@ -408,7 +410,7 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
     return;
   }
   if (auto extractAttr = dyn_cast<LIT::StructExtractAttr>(param)) {
-    printParam(os, extractAttr.getStructValue(), forDiag);
+    printDemangledParam(os, extractAttr.getStructValue(), forDiag);
     os << '.' << extractAttr.getField().getValue();
     return;
   }
@@ -416,7 +418,7 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
     // VariadicAttr appears in a pack list, so it doesn't need extra []'s around
     // it.
     llvm::interleaveComma(variadicCst.getValues(), os, [&](TypedAttr value) {
-      printParam(os, value, forDiag);
+      printDemangledParam(os, value, forDiag);
     });
     return;
   }
@@ -430,11 +432,11 @@ static void printParam(raw_ostream &os, TypedAttr param, bool forDiag) {
 
 /// Pretty print a parameter value and optionally demangle it.
 /// TODO(16040): Remove this overload when symbol names are name-erased.
-static void printParam(raw_ostream &os, TypedAttr param, bool forDiag,
-                       bool demangleParams) {
+void ASTType::printParam(raw_ostream &os, TypedAttr param, bool forDiag,
+                         bool demangleParams) {
   if (forDiag || demangleParams)
     param = demangleIfNeeded(param);
-  printParam(os, param, forDiag);
+  printDemangledParam(os, param, forDiag);
 }
 
 void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
@@ -635,7 +637,7 @@ std::string ASTType::getAsString(bool forDiag, bool demangleParams) const {
 }
 
 void PValue::printForDiag(raw_ostream &os) const {
-  printParam(os, *this, /*forDiag=*/true);
+  ASTType::printParam(os, *this, /*forDiag=*/true, /*demangleParams=*/false);
 }
 
 void M::addToDiagnostic(ASTType type, InflightDiag &diag) {
