@@ -6,7 +6,7 @@
 
 import time
 from collections import Optional
-from math._numerics import FlushDenormals
+from utils._numerics import FlushDenormals
 from pathlib import Path
 from sys.arg import argv
 
