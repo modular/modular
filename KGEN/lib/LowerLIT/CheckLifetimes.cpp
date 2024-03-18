@@ -326,8 +326,8 @@ struct ValueInfo {
   /// True if this values starts out uninitialized at the beginning of its
   /// lifetime.
   const bool startsUninit;
-  /// True if this value needs to be uninitialized at the end of its lifetime.
-  const bool endsUninit;
+  /// Enum indicating whether the value is initalized at function exit.
+  const LifetimeTrackable::ExitInitState endInitState;
 
   /// True if this value lives in memory, not a @register_passable SSA value.
   const bool isIndirect;
@@ -500,11 +500,10 @@ struct ValueSet {
     if (valueLifetime)
       lifetimeToValueIndex[valueLifetime] = valueInfos.size();
 
-    valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
-                          trackable.startsUninit, trackable.endsUninit,
-                          trackable.isIndirect,
-                          trackable.isFullObjectLiveOnEntry,
-                          /*hasErrorDiagnosed=*/false});
+    valueInfos.push_back(
+        {val, firstValueBit, firstValueBit + numValueBits,
+         trackable.startsUninit, trackable.endInitState, trackable.isIndirect,
+         trackable.isFullObjectLiveOnEntry, /*hasErrorDiagnosed=*/false});
   }
 
   /// Return a reference to the entire value with the specified ID.
@@ -613,8 +612,19 @@ void ValueSet::dump() const {
 
     if (!info.startsUninit)
       os << " SI";
-    if (!info.endsUninit)
+    switch (info.endInitState) {
+    case LifetimeTrackable::EndsInit:
+      break;
+    case LifetimeTrackable::EndsUninit:
       os << " EI";
+      break;
+    case LifetimeTrackable::InitOnNormal:
+      os << " NR";
+      break;
+    case LifetimeTrackable::InitOnError:
+      os << " ER";
+      break;
+    }
     if (info.isIndirect)
       os << " [*]";
     if (info.isFullObjectLiveOnEntry)
@@ -1148,9 +1158,15 @@ void UninitializedValueScan::scanBlock(Block &block) {
       // Since this is an op result, the live in/out behavior must match each
       // other: if this weren't true, then control flow paths that didn't cross
       // the op could never be satisfied.
-      if (trackable)
-        assert(trackable.startsUninit == trackable.endsUninit &&
+      bool endsUninit = false;
+      if (trackable) {
+        assert(trackable.endInitState == LifetimeTrackable::EndsInit ||
+               trackable.endInitState == LifetimeTrackable::EndsUninit &&
+                   "invalid end init state for an op result");
+        endsUninit = trackable.endInitState == LifetimeTrackable::EndsUninit;
+        assert(trackable.startsUninit == endsUninit &&
                "op results must have same live in/out behavior");
+      }
 #endif
 
       switch (effect) {
@@ -1161,32 +1177,32 @@ void UninitializedValueScan::scanBlock(Block &block) {
                "Lifetime trackable and CheckLifetimes disagree");
         continue;
       case ResultEffect::regDefine:
-        assert(trackable && !trackable.isIndirect && trackable.endsUninit &&
+        assert(trackable && !trackable.isIndirect && endsUninit &&
                "Lifetime trackable and CheckLifetimes disagree");
         checkDef(result, op, /*isDeref=*/false);
         break;
       case ResultEffect::memDefineUninitToInit:
         // The live-in behavior is modeled by LifetimeTrackable to match the
         // live-out behavior.
-        assert(trackable && trackable.isIndirect && !trackable.endsUninit &&
+        assert(trackable && trackable.isIndirect && !endsUninit &&
                "Lifetime trackable and CheckLifetimes disagree");
         // We consume on execution to provide Uninit -> Init behavior.
         checkConsume(result, op, /*isDeref=*/true);
         break;
       case ResultEffect::memDefineUninitToUninit:
-        assert(trackable && trackable.isIndirect && trackable.endsUninit &&
+        assert(trackable && trackable.isIndirect && endsUninit &&
                "Lifetime trackable and CheckLifetimes disagree");
         // Nothing to do here.
         break;
       case ResultEffect::memDefineInitToInit:
-        assert(trackable && trackable.isIndirect && !trackable.endsUninit &&
+        assert(trackable && trackable.isIndirect && !endsUninit &&
                "Lifetime trackable and CheckLifetimes disagree");
         // Nothing to do here.
         break;
       case ResultEffect::memDefineInitToUninit:
         // The live-in behavior is modeled by LifetimeTrackable to match the
         // live-out behavior.
-        assert(trackable && trackable.isIndirect && trackable.endsUninit &&
+        assert(trackable && trackable.isIndirect && endsUninit &&
                "Lifetime trackable and CheckLifetimes disagree");
         // We consume on execution to provide Init -> Uninit behavior.
         checkDef(result, op, /*isDeref=*/true);
@@ -1222,6 +1238,17 @@ void UninitializedValueScan::scanBlock(Block &block) {
   }
 }
 
+/// Return true if the value is uninitialized at the given exit from the
+/// function. A value may be always uninitialized or initialized, or it may be
+/// depending on the exit kind.
+static bool isUninitializedAtExit(const ValueInfo &valueInfo, Operation &exit) {
+  return (valueInfo.endInitState == LifetimeTrackable::EndsUninit) ||
+         (valueInfo.endInitState == LifetimeTrackable::InitOnNormal &&
+          isa<ErrorReturnOp>(exit)) ||
+         (valueInfo.endInitState == LifetimeTrackable::InitOnError &&
+          isa<KGEN::ReturnOp>(exit));
+}
+
 /// This is called when the op is a return, lit.error_return or unreachable op.
 void UninitializedValueScan::checkTerminatorOp(Operation &op) {
   // If this is a kgen.return then we have an exit from the function
@@ -1232,15 +1259,7 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
     for (const ValueInfo &valueInfo :
          llvm::drop_begin(valueSet.getValueInfos())) {
       // If the value doesn't need to be live at end of function, ignore it.
-      if (valueInfo.endsUninit)
-        continue;
-
-      // If this an error_return (a thrown error out of this function) and
-      // this
-      // a `isFullObjectLiveOnEntry` value (i.e., the 'self' member in an
-      // __init__) then it is actually not used on the error path, only the
-      // normal path.
-      if (valueInfo.isFullObjectLiveOnEntry && isa<ErrorReturnOp>(op))
+      if (isUninitializedAtExit(valueInfo, op))
         continue;
 
       // Otherwise, it must be live at return/raise.
@@ -1653,24 +1672,11 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
   consumedValues.set(0); // Slot 0 indicates that this block is reachable.
 
   for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
-    if (valueInfo.endsUninit)
-      continue;
-
-    // If this value starts uninit and ends init, then it must be either an
-    // initself argument or a byref result argument. These get special
-    // handling when this is an error_return (a error is thrown/rethrown out
-    // of this function) because they aren't defined on the error condition.
-    if (valueInfo.startsUninit && !valueInfo.endsUninit &&
-        isa<ErrorReturnOp>(op)) {
-      assert(isa<BlockArgument>(valueInfo.value) &&
-             "should only be byrefresult or initself argument");
-
+    if (isUninitializedAtExit(valueInfo, op)) {
       // A `isFullObjectLiveOnEntry` value (i.e., the 'self' member in an
       // __init__) demands the full-object bit (which is live on entry)
       // because it cannot be destroyed without all the fields.  We don't
       // want to run the destructor on 'self' itself.
-      //
-      // Otherwise, we don't consume any part of a byref result.
       if (valueInfo.isFullObjectLiveOnEntry)
         consumedValues.set(valueInfo.endValueBit - 1);
       continue;

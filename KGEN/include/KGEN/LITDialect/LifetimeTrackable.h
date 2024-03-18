@@ -45,9 +45,25 @@ struct LifetimeTrackable {
   /// starts out initialized.
   bool startsUninit = false;
 
-  /// This is true if the value is uninitialized at function exit, false if it
-  /// ends up defined (e.g. as with a byref argument).
-  bool endsUninit = false;
+  /// This enum indicates the expected initialization state of a value upon
+  /// return from a function. A function can return normally or return in an
+  /// error state.
+  enum ExitInitState {
+    /// Value is never initialized upon function exit.
+    EndsUninit,
+    /// Value is always initialized upon function exit (e.g. as with a byref
+    /// argument).
+    EndsInit,
+    /// Value is initialized upon a normal function exit (e.g. as with a
+    /// byref_result or init_self argument).
+    InitOnNormal,
+    /// Value is initialized upon an error function exit (e.g. as with a
+    /// byref_error argument).
+    InitOnError
+  };
+
+  /// The expected initialization state of the value upon exit from a function.
+  ExitInitState endInitState = ExitInitState::EndsUninit;
 
   /// True if this is a InitSelf argument: the self parameter in an
   /// __init__/__copyinit__ method.  These have magic behavior so they become
