@@ -3551,7 +3551,9 @@ fn _matmul_cpu[
             a_packed_ptr = DTypePointer[a_type].alloc(
                 mh * kh, alignment=alignment
             )
-        var a_packed = NDBuffer[a_type, 2, a_shape](a_packed_ptr, (mh, kh))
+        var a_packed = NDBuffer[a_type, 2, a_shape](
+            a_packed_ptr, DimList(mh, kh)
+        )
 
         @always_inline
         @__copy_capture(m, k, num_tasks)
