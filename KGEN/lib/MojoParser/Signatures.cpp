@@ -589,8 +589,28 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   RefType refType =
       makeImplicitRefTypeForArg(arg, argIdx, elementType, tcSignature);
 
-  return RefPackType::get(param.get(), refType.getLifetime(),
-                          refType.getAddressSpace());
+  // Form a VariadicPack[isMutable, lifetime, elementTypes] type.
+  ASTType variadicPackType =
+      emitter.shared.getBuiltinVariadicPackType(emitter.declScope, arg.loc);
+
+  // Sanity check the returned VariadicPack declaration.
+  if (isa<TypeCheckErrorType>(variadicPackType.mlirType))
+    return {};
+  auto packStruct = dyn_cast_if_present<StructDeclOp>(
+      variadicPackType.getDecl(emitter.shared));
+  if (!packStruct || packStruct.getParams().size() != 3 ||
+      !packStruct.getParams()[0].getType().isInteger(1) ||
+      !isa<LifetimeType>(packStruct.getParams()[1].getType()) ||
+      !isa<VariadicType>(packStruct.getParams()[2].getType())) {
+    emitter.emitError(arg.loc, "malformed VariadicPack");
+    return {};
+  }
+
+  // Bind the VariadicPack[isMutable, lifetime, element_types, addr_space]
+  // parameters.
+  // TODO: Support addr_space in VariadicPack! refType.getAddressSpace()
+  return packStruct.bindReference(
+      {refType.isMutable(), refType.getLifetime(), param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default
@@ -629,6 +649,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     if (!type) {
       type = shared.getTypeCheckErrorType();
       arg.isErroneous = true;
+      arg.vararg = VarArgKind::None; // Don't break invariants on errors.
     }
     type = addImplicitTypeParams(shared, declScope, type, arg,
                                  tcSignature.paramList);
@@ -755,6 +776,33 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     break;
   }
 
+  // For packs, we figure out the declared arg convention and adjust passed
+  // convention.
+  if (arg.vararg == VarArgKind::PackVarArg) {
+    // Remember the original declared convention, forcing to memory convention.
+    switch (arg.convention) {
+    case ParsedArgument::kConventionUnspec:
+    case ParsedArgument::kConventionByRefResult:
+    case ParsedArgument::kConventionInitSelfResult:
+      llvm_unreachable("not a pack arg convention");
+    case ParsedArgument::kConventionOwned:
+      arg.kgenVariadicConvention = ArgConvention::OwnedInMem;
+      break;
+    case ParsedArgument::kConventionBorrowed:
+      arg.kgenVariadicConvention = ArgConvention::BorrowedInMem;
+      break;
+    case ParsedArgument::kConventionInOut:
+      arg.kgenVariadicConvention = ArgConvention::ByRef;
+      break;
+    }
+    // VariadicPack is always passed as borrowed_in_reg, even if the elements
+    // are owned/inout etc.  This is better than owned_in_reg because the
+    // destructor for the pack will be invoked on the caller side, which will
+    // know the constant value of the "is owned" bit without having to do
+    // inlining.
+    arg.kgenConvention = ArgConvention::BorrowedInReg;
+  }
+
   // Values passed by memory need an associated lifetime parameter, and need to
   // be passed by reference. For now, we don't use reference types in **kwargs.
   Type fullType;
@@ -771,27 +819,6 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   if (arg.vararg == VarArgKind::VarArg) {
     fullType = VariadicType::get(fullType, arg.kgenConvention);
     arg.kgenConvention = ArgConvention::BorrowedInReg;
-  } else if (arg.vararg == VarArgKind::PackVarArg) {
-    // Figure out the declared arg convention.
-    switch (arg.convention) {
-    case ParsedArgument::kConventionUnspec:
-    case ParsedArgument::kConventionByRefResult:
-    case ParsedArgument::kConventionInitSelfResult:
-      llvm_unreachable("not a pack arg convention");
-    case ParsedArgument::kConventionOwned:
-      arg.kgenVariadicConvention = ArgConvention::OwnedInMem;
-      break;
-    case ParsedArgument::kConventionBorrowed:
-      arg.kgenVariadicConvention = ArgConvention::BorrowedInMem;
-      break;
-    case ParsedArgument::kConventionInOut:
-      arg.kgenVariadicConvention = ArgConvention::ByRef;
-      break;
-    }
-    // !lit.ref.pack is always passed as borrowed, even if the elements are
-    // owned/inout etc.
-    arg.kgenConvention = ArgConvention::BorrowedInReg;
-
   } else if (arg.vararg == VarArgKind::KWVarArg) {
     // We build Dict[String, ValType].
     ASTType dictType = shared.getCollectionsDictType(arg.loc);

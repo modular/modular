@@ -74,6 +74,10 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in owned argument shadow";
   case EC_VarArgArgument:
     return " in vararg argument compiler implementation internals";
+  case EC_PackArgument:
+    return " in variadic pack argument compiler implementation internals";
+  case EC_KWArgsArgument:
+    return " in keyword arguments dict compiler implementation internals";
   case EC_DefaultParam:
     return " in default parameter";
   case EC_BoolCondition:

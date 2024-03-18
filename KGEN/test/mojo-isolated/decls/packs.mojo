@@ -27,14 +27,14 @@ struct SomeReg(SomeTrait):
 # This function takes a pack of owned values by Trait.
 
 # Test mangling:
-# CHECK-LABEL: lit.func @"takeOwnedTraitPack[*packs::SomeTrait](*$0)"
+# CHECK-LABEL: lit.func @"takeOwnedAnyTypePack[*stdlib::builtin::stubs::AnyType](*$0)"
 
 # Test implicit lifetimes / param list.
-# CHECK-SAME: [mut *"rest`"]<Ts: variadic<!SomeTrait> var>
+# CHECK-SAME: [mut *"rest`"]<Ts: variadic<!AnyType> var>
 
 # Check the argument pack.
-# CHECK-SAME: (%rest: !lit.ref.pack<:variadic<!SomeTrait> Ts, mut *"rest`"> owned_in_mem|pack)
-fn takeOwnedTraitPack[*Ts: SomeTrait](owned *rest: *Ts):
+# CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`", :variadic<!AnyType> Ts>> owned_in_mem|pack)
+fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
   pass
 
 # CHECK-LABEL: lit.func @"test_owned_trait
@@ -56,8 +56,15 @@ fn test_owned_trait():
 
     # Form pack and call
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create(%2, %3)
-    # CHECK-NEXT: lit.call {{.*}}takeOwnedTraitPack{{.*}}([[PACK]])
-    takeOwnedTraitPack(value1^, value2)
+
+    # Create the VariadicPack
+    # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
+    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
+    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
+
+    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[VARIADICPACK]])
+    takeOwnedAnyTypePack(value1^, value2)
 
     # Test register types.
     # CHECK-NEXT: %value3 = lit.var.decl
@@ -66,10 +73,17 @@ fn test_owned_trait():
     # Argument expressions emitted first
     # CHECK-NEXT: [[V3T:%.*]] = lit.transfer_mem_ownership %value3
     # CHECK-NEXT: [[ANONSLOT:%.*]] = lit.var.decl "anonymous
-    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%anonymous2A_0)
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANONSLOT]])
     # Coerce to common lifetime
     # CHECK-NEXT: [[V3C:%.*]] = kgen.rebind [[V3T]]
     # CHECK-NEXT: [[V4C:%.*]] = kgen.rebind [[ANONSLOT]]
     # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V3C]], [[V4C]])
-    # CHECK-NEXT: lit.call {{.*}}takeOwnedTraitPack{{.*}}([[PACK]])
-    takeOwnedTraitPack(value3^, SomeReg())
+
+    # Create the VariadicPack
+    # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
+    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
+    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
+
+    # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[VARIADICPACK]])
+    takeOwnedAnyTypePack(value3^, SomeReg())

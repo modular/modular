@@ -311,6 +311,20 @@ ASTType ASTType::getVariadicElementType() const {
   return ASTType(cast<VariadicType>(mlirType).getElementType());
 }
 
+/// Return the RefPackType that corresponds to the VariadicPack instance.
+RefPackType ASTType::getVariadicPackInfo() const {
+  auto bindings = getParamBindings();
+  assert(bindings.size() == 3 && bindings[0].getType().isInteger(1) &&
+         isa<LifetimeType>(bindings[1].getType()) &&
+         isa<VariadicType>(bindings[2].getType()) &&
+         "Not a VariadicPack struct?");
+
+  return RefPackType::get(
+      /*variadicList*/ bindings[2], /*lifetime*/ bindings[1],
+      // TODO: VariadicPack should support address space.
+      IntegerAttr::get(IndexType::get(bindings[1].getContext()), 0));
+}
+
 /// Returns the user-defined result type, looking through implicit memory
 /// results and stripping off the variant from error throwing results if needed.
 ASTType ASTType::getSignatureUserResultType() const {
@@ -510,60 +524,67 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     }
     os << '(';
     PassingKindPrinter passingKindPrinter(os, sig.getArgPassingKinds());
-    for (auto [i, type, convention, name, passingKind] :
+    for (auto [i, typeX, conventionX, name, passingKind] :
          llvm::enumerate(sig.getArguments(), sig.getArgConventions(),
                          sig.getArgNames(), sig.getArgPassingKinds())) {
-      if (convention == ArgConvention::ByRefResult) {
-        // Print this later.
-        continue;
-      }
+      ASTType type = typeX;
+      auto convention = conventionX;
+      if (convention == ArgConvention::ByRefResult)
+        continue; // Don't print result in argument list.
+
       if (i)
         os << ", ";
       passingKindPrinter.printOptionalStarSlash(i);
 
-      if (convention == ArgConvention::OwnedInMem ||
-          convention == ArgConvention::OwnedInReg)
-        os << "owned ";
-      else if (convention == ArgConvention::ByRef ||
-               convention == ArgConvention::InitSelf)
-        os << "inout ";
+      bool printStar = false;
+      if (sig.isPosVarArg(i)) { // Print with the element of the variadic.
+        auto variadic = cast<VariadicType>(type);
+        type = variadic.getElementType();
+        convention = variadic.getConvention();
+        printStar = true;
+      }
 
-      bool isPack = sig.isPackVarArg(i);
-      bool isPosVarArg = sig.isPosVarArg(i);
-      if (isPosVarArg &&
-          // TODO: remove old PackType.
-          !isa<PackType>(type)) {
-        switch (sig.getPosVarArgConvention(i)) {
-        default:
-          break;
-        case ArgConvention::OwnedInMem:
+      auto printConvention = [&]() {
+        if (convention == ArgConvention::OwnedInMem ||
+            convention == ArgConvention::OwnedInReg)
           os << "owned ";
-          break;
-        case ArgConvention::ByRef:
+        else if (convention == ArgConvention::ByRef ||
+                 convention == ArgConvention::InitSelf)
           os << "inout ";
-          break;
+      };
+
+      // The formal type is VariadicPack[] and the thing to print is a pack
+      // attribute, not a type.
+      if (sig.isPackVarArg(i)) {
+        convention = sig.getPackVarArgConvention(i);
+        TypedAttr variadic;
+        if (ASTType variadicPack = sig.getIfVariadicPack(i)) {
+          variadic = variadicPack.getVariadicPackInfo().getVariadic();
+        } else {
+          // TODO: remove old PackType.
+          variadic = cast<PackType>(type).getVariadic();
         }
-      }
-
-      if (isPack || isPosVarArg) {
+        printConvention();
         os << '*';
-        if (isPack)
+        if (!name.empty())
+          os << name.getValue() << ": ";
+        else
           os << ' ';
-      }
+        os << '*';
+        printParam(os, variadic, forDiag, demangleParams);
+      } else {
+        printConvention();
 
-      if (!name.empty())
-        os << name.getValue() << ": ";
+        if (printStar)
+          os << '*';
 
-      ASTType actualType = type;
-      auto actualConv = convention;
-      if (isPosVarArg) {
-        auto variadic = cast<VariadicType>(actualType.mlirType);
-        actualType = variadic.getElementType();
-        actualConv = variadic.getConvention();
+        if (!name.empty())
+          os << name.getValue() << ": ";
+
+        if (SignatureType::hasAddress(convention))
+          type = type.getReferenceElementType();
+        type.print(os, forDiag);
       }
-      if (SignatureType::hasAddress(actualConv))
-        actualType = actualType.getReferenceElementType();
-      actualType.print(os, forDiag);
 
       // Check if we are at the end; if so, we might still have to print a '/'.
       passingKindPrinter.printOptionalTrailingSlash(i);
@@ -601,10 +622,6 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     os << "]";
 
   } else if (auto packType = dyn_cast<PackType>(type)) {
-    // TODO: Remove this when packs switch to RefPackType
-    os << '*';
-    printParam(os, packType.getVariadic(), forDiag, demangleParams);
-  } else if (auto packType = dyn_cast<RefPackType>(type)) {
     // TODO: Remove this when packs switch to RefPackType
     os << '*';
     printParam(os, packType.getVariadic(), forDiag, demangleParams);

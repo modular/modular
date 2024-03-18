@@ -984,11 +984,15 @@ bool LITSignatureType::isPackVarArg(size_t index) {
   return getMetadata().isPackVarArg(index);
 }
 
-/// If the specified argument is a variadic pack, return the RefPackType.
-RefPackType LITSignatureType::getIfRefPackType(size_t index) {
-  // TODO: References: switch dyn_cast to cast when PackType goes away.
-  return isPackVarArg(index) ? ::dyn_cast<RefPackType>(getArguments()[index])
-                             : nullptr;
+/// If the specified argument is a variadic pack, return the VariadicPack.
+Type LITSignatureType::getIfVariadicPack(size_t index) {
+  if (!isPackVarArg(index))
+    return {};
+  Type argType = getArguments()[index];
+  // TODO: Remove support for PackType.
+  if (::isa<PackType>(argType))
+    return {};
+  return argType;
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For

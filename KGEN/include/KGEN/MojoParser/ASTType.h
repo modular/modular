@@ -30,6 +30,7 @@ template <typename ValueType>
 struct ASTExprAnd;
 enum class TypeConvention : uint32_t;
 class RefType;
+class RefPackType;
 
 /// This is a simple wrapper around an MLIR Type that provides helpful utilities
 /// for working with our types, provides pretty printing in diagnostics, and
@@ -140,6 +141,9 @@ public:
   /// Given a VariadicType, return the element as an ASTType.  This aborts if
   /// the current type isn't a VariadicType.
   ASTType getVariadicElementType() const;
+
+  /// Return the RefPackType that corresponds to the VariadicPack instance.
+  RefPackType getVariadicPackInfo() const;
 
   /// Returns the user-defined result type, looking through implicit memory
   /// results and stripping off the variant from error throwing results if
