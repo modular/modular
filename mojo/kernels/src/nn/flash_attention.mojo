@@ -284,7 +284,7 @@ struct _Matmul[
         )
 
 
-struct FlashAttention[
+struct _FlashAttention[
     type: DType,
     rank: Int,
     simd_width: Int,
@@ -556,3 +556,29 @@ struct FlashAttention[
             packed_ptr.free()
 
         sync_parallelize[task_func](num_threads)
+
+
+fn flash_attention[
+    type: DType,
+    rank: Int,
+    input_k_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_v_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_mask_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+](
+    q: NDBuffer[type, rank],
+    k_shape: StaticIntTuple[rank],
+    v_shape: StaticIntTuple[rank],
+    output: NDBuffer[type, rank],
+    scale: Float32,
+):
+    alias simd_width = simdwidthof[type]()
+
+    _FlashAttention[
+        type, rank, simd_width, 64, 128, input_k_fn, input_v_fn, input_mask_fn
+    ].run(q, k_shape, v_shape, output, scale)
