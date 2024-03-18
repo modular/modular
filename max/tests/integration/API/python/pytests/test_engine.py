@@ -63,8 +63,8 @@ def mo_listio_model_path(modular_path: Path) -> Path:
         / "SDK"
         / "integration-test"
         / "EngineAPI"
-        / "c"
-        / "mo-list-io-model.api"
+        / "Inputs"
+        / "mo-list-model.mlir"
     )
 
 

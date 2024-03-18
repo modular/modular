@@ -74,6 +74,7 @@ mojo_user_package = (
     / "SDK"
     / "integration-test"
     / "EngineAPI"
+    / "Inputs"
     / "test_user_op"
 )
 config.substitutions.append(("%mojo_user_kernels", mojo_user_kernels))

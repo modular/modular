@@ -12,7 +12,7 @@ endif()
 set(CUSTOM_OP_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/user_op.mojopkg)
 
 add_custom_command(
-  COMMAND $<TARGET_FILE:mojo> package ${CMAKE_CURRENT_SOURCE_DIR}/../test_user_op -o ${CUSTOM_OP_OUTPUT}
+  COMMAND $<TARGET_FILE:mojo> package ${CMAKE_CURRENT_SOURCE_DIR}/../Inputs/test_user_op -o ${CUSTOM_OP_OUTPUT}
   OUTPUT ${CUSTOM_OP_OUTPUT}
 )
 
