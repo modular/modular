@@ -13,12 +13,12 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
 )
 from buffer import Buffer, NDBuffer
-from math import div_ceil, exp, max, min, align_up
-from math.limit import neginf
+from math import align_up, div_ceil, exp, max, min
 from MatmulUtils import partition_work
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
+from sys.info import has_avx512f, has_neon
 from utils.index import Index
 from utils.list import Dim
 
@@ -80,17 +80,32 @@ struct _MatmulAccumulators[
         self._transfer[do_transfer](base_ptr, stride)
 
 
-@register_passable("trivial")
 struct _MatmulConfig:
-    var row_sizes: VariadicList[Int]
     var col_sizes: VariadicList[Int]
+    var row_sizes: VariadicList[Int]
+
+    fn __init__(
+        inout self,
+        *,
+        col_sizes: VariadicList[Int],
+        row_sizes: VariadicList[Int],
+    ):
+        self.col_sizes = col_sizes
+        self.row_sizes = row_sizes
 
     @staticmethod
     fn _get_matmul_config() -> _MatmulConfig:
-        return _MatmulConfig {
-            col_sizes: VariadicList[Int](4, 3, 2, 1),
-            row_sizes: VariadicList[Int](6, 4, 1),
-        }
+        @parameter
+        if has_neon() or has_avx512f():
+            return _MatmulConfig(
+                col_sizes=VariadicList[Int](4, 3, 2, 1),
+                row_sizes=VariadicList[Int](6, 4, 1),
+            )
+        else:
+            return _MatmulConfig(
+                col_sizes=VariadicList[Int](3, 2, 1),
+                row_sizes=VariadicList[Int](4, 1),
+            )
 
 
 struct _Matmul[
@@ -445,7 +460,7 @@ struct FlashAttention[
                 var o_ptr = output._offset(get_nd_index(m, n))
                 var q_ptr = q._offset(get_nd_index(m, 0))
 
-                max_vals.fill(neginf[type]())
+                max_vals.fill(Scalar[type].MIN)
                 sum_vals.fill(0)
 
                 for kv_seq_idx in range(0, kv_seq_len, block_n):
