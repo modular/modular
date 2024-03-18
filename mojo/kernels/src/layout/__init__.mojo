@@ -3,5 +3,3 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-from .assembly import compile_code
