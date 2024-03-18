@@ -140,7 +140,6 @@ fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
 
 fn ownedPack[*Ts: __mlir_type.`!kgen.type`](owned *args: *Ts): pass
 fn ownedVariadic(owned *args: Inner): pass
-# expected-error @+1 {{'owned' @register_passable arguments cannot be variadic}}
 fn ownedVariadicReg(owned *args: WrongType): pass
 
 

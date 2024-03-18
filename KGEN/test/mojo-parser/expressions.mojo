@@ -1186,7 +1186,7 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) throws|async|capturing|ownedresult -> !kgen.variant<!Error, none>
   float6: async fn(Int) capturing raises -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!Int> borrow|var) throws|ownedresult -> !kgen.variant<!Error, none>
+  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!lit.ref<!Int, mut *[0,0]>, owned_in_mem> borrow|var) throws|ownedresult -> !kgen.variant<!Error, none>
   float7: def(*Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int borrow = {10}, !StringLiteral borrow = {:string "foo"}, |) -> !kgen.none>

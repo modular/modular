@@ -24,6 +24,24 @@ struct TalkativeMem(Stringable):
         return "talkative " + self.state.__str__()
 
 
+# This isn't copyable or movable, but it is talkative!
+@register_passable
+struct TalkativeReg(Stringable):
+    var state: Int
+
+    fn __init__(inout self, state: Int):
+        self.state = state
+        print_no_newline("initializing ")
+        print(state)
+
+    fn __del__(owned self):
+        print_no_newline("destroying ")
+        print(self.state)
+
+    fn __str__(self) -> String:
+        return "talkative " + self.state.__str__()
+
+
 # ===----------------------------------------------------------------------=== #
 # Inout varargs
 # ===----------------------------------------------------------------------=== #
@@ -91,8 +109,35 @@ fn test_owned_varargs():
     print("after call")
 
 
+fn test_owned_reg_varargs():
+    # CHECK: -- testing owned reg varargs
+    print("\n-- testing owned reg varargs")
+
+    var v1 = TalkativeReg(1)  # CHECK-NEXT: initializing 1
+    var v2 = TalkativeReg(2)  # CHECK-NEXT: initializing 2
+    var v3 = TalkativeReg(3)  # CHECK-NEXT: initializing 3
+
+    fn handle_owned_reg(owned *strs: TalkativeReg):
+        # owned arguments are mutable and live as long as they are used.
+        for s in strs:
+            s[].state *= 2
+
+        # So they should die here, after the loop, before the print.
+        # CHECK-NEXT: destroying 6
+        # CHECK-NEXT: destroying 4
+        # CHECK-NEXT: destroying 2
+
+        # CHECK-NEXT: after last use
+        print("after last use")
+
+    handle_owned_reg(v1 ^, v2 ^, v3 ^)
+
+    # CHECK-NEXT: after call
+    print("after call")
+
+
 # ===----------------------------------------------------------------------=== #
-# Owned variadic packs
+# owned variadic packs
 # ===----------------------------------------------------------------------=== #
 
 # TODO: VariadicPack can't work with Stringable and similar traits because we
@@ -139,4 +184,5 @@ fn test_owned_variadic_pack():
 fn main():
     test_inout_varargs()
     test_owned_varargs()
+    test_owned_reg_varargs()
     test_owned_variadic_pack()
