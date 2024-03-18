@@ -29,7 +29,8 @@ protected:
                                          bool mainWillDonate = true) {
     RuntimeOptions runtimeOptions;
     runtimeOptions.leakCheckedAllocator = true;
-    runtimeOptions.numThreads = GetParam() == kSingleThread ? 1 : numThreads;
+    runtimeOptions.singleThreaded = GetParam() == kSingleThread;
+    runtimeOptions.numThreads = numThreads;
     runtimeOptions.mainWillDonate = mainWillDonate;
     return M::LLCL::createUniqueRuntime(runtimeOptions);
   }
