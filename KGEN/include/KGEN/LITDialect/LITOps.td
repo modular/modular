@@ -148,8 +148,8 @@ def LIT_FuncOp : LITOp<"func", [
 //===----------------------------------------------------------------------===//
 
 def LIT_CallOp : LITOp<"call", [
-    DeclareOpInterfaceMethods<CallOpInterface>,
-    DeclareOpInterfaceMethods<KGEN_CallOpInterface>]> {
+    DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "call a function";
   let description = [{
     The `lit.call` operation is a static call to a `lit.func`. It references its
@@ -164,47 +164,6 @@ def LIT_CallOp : LITOp<"call", [
   }];
 
   let arguments = (ins
-    KGEN_SymbolConstantAttr:$callee,
-    KGEN_ParameterExprArrayAttr:$implicitLifetimes,
-    Variadic<AnyType>:$operands
-  );
-  let results = (outs Variadic<AnyType>:$results);
-
-  let assemblyFormat = [{
-    custom<CallOp>($callee, $implicitLifetimes, $operands,
-                   type($operands), type($results)) attr-dict
-  }];
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// CallParamOp
-//===----------------------------------------------------------------------===//
-
-def LIT_CallParamOp : LITOp<"call_param", [
-    DeclareOpInterfaceMethods<KGEN_CallOpInterface>]> {
-  let summary = "call a parameter expresion";
-  let description = [{
-    The `lit.call_param` operation is a static call to a signature-typed
-    parameter value. It references its callee via a parameter value. It contains
-    optional parameter declarations for any callee result parameters and
-    bindings for implicit lifetime parameters.
-
-    Example:
-
-    ```mlir
-    lit.call_param[
-      // Callee `!lit.signature`:
-      !lit.signature<[1]<[] -> index>(!lit.ref<mut index, *[0,0]>) -> ()>:
-      // Callee expresion:
-      calleeFn
-    // Implicit lifetime and result parameter bindings.
-    ]<() -> out>[*"x`"](%x)
-    ```
-  }];
-
-  let arguments = (ins
     AttrOfType<LIT_SignatureType>:$callee,
     KGEN_ParameterExprArrayAttr:$implicitLifetimes,
     Variadic<AnyType>:$operands
@@ -212,14 +171,16 @@ def LIT_CallParamOp : LITOp<"call_param", [
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
-    `` custom<Callee>($callee) ``
-    custom<LifetimeParams>($implicitLifetimes) ``
-    custom<CallOpTypes>(type($operands), type($results), ref($callee),
-                        ref($implicitLifetimes))
-    `(` $operands `)` attr-dict
+    `` custom<CallOp>($callee, $implicitLifetimes, $operands,
+                      type($operands), type($results)) attr-dict
   }];
 
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    /// Get the direct callee symbol if this is a direct call.
+    SymbolRefAttr getDirectCallee();
+  }];
 }
 
 //===----------------------------------------------------------------------===//

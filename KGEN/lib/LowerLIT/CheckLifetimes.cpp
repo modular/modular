@@ -2411,8 +2411,8 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
     return failure();
 
   // See if we can resolve the callee.
-  LIT::FuncOp callee = valueSet.typeDeclInfo.getFuncForSymbol(
-      copyInitCall.getCallee().getSymbol());
+  LIT::FuncOp callee =
+      valueSet.typeDeclInfo.getFuncForSymbol(copyInitCall.getDirectCallee());
   if (!callee)
     return failure();
 
@@ -2594,13 +2594,8 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
   }
 
   // Emit the call to the destructor.
-  if (auto directDtor = dyn_cast<SymbolConstantAttr>(dtor)) {
-    builder.create<LIT::CallOp>(signature.getResults()[0], directDtor,
-                                implicitLifetimes, valueToDestroy);
-  } else {
-    builder.create<LIT::CallParamOp>(signature.getResults()[0], dtor,
-                                     implicitLifetimes, valueToDestroy);
-  }
+  builder.create<LIT::CallOp>(signature.getResults()[0], dtor,
+                              implicitLifetimes, valueToDestroy);
 }
 
 /// Destroy any values whose bits are indicated in the specified set.  Insert

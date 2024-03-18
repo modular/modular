@@ -418,7 +418,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
     // Notice self-recursive calls so we can check them out later.
     if (auto call = dyn_cast<LIT::CallOp>(op))
-      hasRecursiveCalls |= call.getCallee().getSymbol() == theFuncSymbol;
+      hasRecursiveCalls |= call.getDirectCallee() == theFuncSymbol;
 
     // Most ops don't have regions and are just fallthrough.
     // TODO: Add support for noreturn calls.
@@ -625,8 +625,8 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // Notice self-recursive calls so we can check them out later.  If we are
     // invoked in an unconditional area, we can emit the warning.
     if (auto call = dyn_cast<LIT::CallOp>(op);
-        call && !isConditional &&
-        call.getCallee().getSymbol() == theFuncSymbol) {
+        call && !isConditional && theFuncSymbol &&
+        call.getDirectCallee() == theFuncSymbol) {
       emitWarning(call.getLoc(),
                   "self recursive call will cause an infinite loop");
       continue;
