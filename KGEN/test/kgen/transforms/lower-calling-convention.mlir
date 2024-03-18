@@ -93,11 +93,11 @@ kgen.func @call_none() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.func @call_signature
+// CHECK-LABEL: kgen.func @call_indirect
 // CHECK-SAME: %arg0: !kgen.signature<() -> ()>
-kgen.func @call_signature(%arg0: !kgen.signature<() -> !kgen.none>) {
-  // CHECK: kgen.call_signature %arg0() : () -> ()
-  %0 = kgen.call_signature %arg0() : () -> !kgen.none
+kgen.func @call_indirect(%arg0: !kgen.signature<() -> !kgen.none>) {
+  // CHECK: kgen.call_indirect %arg0() : () -> ()
+  %0 = kgen.call_indirect %arg0() : () -> !kgen.none
   kgen.return
 }
 

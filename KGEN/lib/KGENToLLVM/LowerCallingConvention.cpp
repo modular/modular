@@ -97,8 +97,8 @@ static void rewriteCallingConventions(Operation &op) {
       return;
     }
 
-    // Handle `hlcf.if`, `hlcf.loop`, `kgen.call`, and `kgen.call_signature`.
-    if (isa<HLCF::IfOp, HLCF::LoopOp, CallOp, CallSignatureOp>(op)) {
+    // Handle `hlcf.if`, `hlcf.loop`, `kgen.call`, and `kgen.call_indirect`.
+    if (isa<HLCF::IfOp, HLCF::LoopOp, CallOp, CallIndirectOp>(op)) {
       auto [anyNone, newResults] = removeNoneTypes(op->getResultTypes());
       // Exit early if there are no none results.
       if (!anyNone)

@@ -228,8 +228,8 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
   SmallVector<Value> callArgs;
   llvm::append_range(callArgs, callImpl.getArguments());
   auto callIndirect =
-      b.create<CallSignatureOp>(fnPtrType.getResultType(), fnPtr, lifetimes,
-                                ArrayRef(callArgs).drop_front());
+      b.create<CallIndirectOp>(fnPtrType.getResultType(), fnPtr, lifetimes,
+                               ArrayRef(callArgs).drop_front());
   b.create<LIT::ReturnOp>(callIndirect.getResult(0));
   b.create<EndFuncOp>();
 }
@@ -335,9 +335,9 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value dtorSelf = destructor.getBody()->getArgument(0);
     Value dtorImpl = loadField(b, dtorSelf, impl);
     Value callee = loadField(b, dtorSelf, dtor);
-    b.create<CallSignatureOp>(noneType, callee,
-                              /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
-                              dtorImpl);
+    b.create<CallIndirectOp>(noneType, callee,
+                             /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
+                             dtorImpl);
   }
 
   // Populate the copy constructor.
@@ -359,7 +359,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     Value copyExisting = copyCtr.getBody()->getArgument(1);
     Value existingImpl = loadField(b, copyExisting, impl);
     Value funcPtr = loadField(b, copySelf, copy);
-    auto call = b.create<CallSignatureOp>(
+    auto call = b.create<CallIndirectOp>(
         opaquePtrType, funcPtr, /*implicitLifetimes=*/ArrayRef<TypedAttr>(),
         existingImpl);
     storeField(b, copySelf, call.getResult(0), impl);
@@ -420,7 +420,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
       if (SignatureType::hasAddress(conv))
         implicitLifetimes.push_back(cast<RefType>(arg.getType()).getLifetime());
 
-    auto callResult = builder.create<CallSignatureOp>(
+    auto callResult = builder.create<CallIndirectOp>(
         resultType, callMemberPtr, implicitLifetimes, arguments);
     ExprEmitter::emitNormalReturn(builder, callResult.getResult(0), callMethod);
     builder.create<LIT::EndFuncOp>();

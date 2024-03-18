@@ -122,7 +122,7 @@ kgen.func @foo() {
     kgen.return loc(#loc5)
   // CHECK: foo.mlir:325:11: error: 'kgen.stage_closure' op must have callsite location
   } loc(#loc5)
-  kgen.call_signature %0() : () -> () loc(#loc4)
+  kgen.call_indirect %0() : () -> () loc(#loc4)
   kgen.return loc(#loc4)
 } loc(#loc4)
 

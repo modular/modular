@@ -11,7 +11,7 @@
 # CHECK-NEXT: [[closure_impl0:%.*]] = lit.ref.load [[closure_impl_ref0]]
 # CHECK-NEXT: [[casting_call_ref0:%.*]] = lit.ref.struct.ger %[[SELF]][call]
 # CHECK-NEXT: [[casting_call0:%.*]] = lit.ref.load [[casting_call_ref0]]
-# CHECK-NEXT: [[result_of_typed_call0:%.*]] = lit.call_signature [[casting_call0]]{{.*}}([[closure_impl0]], %n, %j)
+# CHECK-NEXT: [[result_of_typed_call0:%.*]] = lit.call_indirect [[casting_call0]]{{.*}}([[closure_impl0]], %n, %j)
 # CHECK-NEXT: lit.return [[result_of_typed_call0]] : !Int
 # CHECK-NEXT: lit.end_func
 # CHECK-NEXT: }
@@ -22,7 +22,7 @@
 # CHECK-NEXT: [[closure_impl:%.*]] = lit.ref.load [[closure_impl_ref]]
 # CHECK-NEXT: [[casting_call_ref:%.*]] = lit.ref.struct.ger %[[SELF]][call]
 # CHECK-NEXT: [[casting_call:%.*]] = lit.ref.load [[casting_call_ref]]
-# CHECK-NEXT: [[result_of_typed_call:%.*]] = lit.call_signature [[casting_call]][{{.*}}]([[closure_impl]], %n, %[[RES]])
+# CHECK-NEXT: [[result_of_typed_call:%.*]] = lit.call_indirect [[casting_call]][{{.*}}]([[closure_impl]], %n, %[[RES]])
 # CHECK-NEXT: lit.return [[result_of_typed_call]] : !kgen.none
 
 

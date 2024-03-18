@@ -92,7 +92,7 @@ kgen.func @capturing_region(%arg0: si32, %arg1: si64) {
     "unregistered_op_to_capture"(%arg0, %arg1) : (si32, si64) -> ()
     kgen.return %arg2 : index
   } { name = "two_captures" }
-  %1 = kgen.call_signature %0(%idx4) : (index) capturing -> index
+  %1 = kgen.call_indirect %0(%idx4) : (index) capturing -> index
   kgen.return
 }
 

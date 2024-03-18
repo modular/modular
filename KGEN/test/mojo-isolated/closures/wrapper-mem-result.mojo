@@ -25,7 +25,7 @@ struct MemType:
 # CHECK-NEXT:      [[OPAQUE_IMPL:%.*]] = lit.ref.load [[REF_TO_IMPL]]
 # CHECK-NEXT:      [[DTOR_PTR:%.*]] = lit.ref.struct.ger %self[dtor]
 # CHECK-NEXT:      [[DTOR:%.*]] = lit.ref.load [[DTOR_PTR]]
-# CHECK-NEXT:      lit.call_signature [[DTOR]]([[OPAQUE_IMPL]])
+# CHECK-NEXT:      lit.call_indirect [[DTOR]]([[OPAQUE_IMPL]])
 # CHECK-NEXT:      kgen.param.constant: none = <#kgen.none>
 # CHECK-NEXT:      lit.ownership.mark_destroyed %self
 # CHECK-NEXT:      lit.return %none : !kgen.none
@@ -53,7 +53,7 @@ struct MemType:
 # CHECK-NEXT:      [[EXISTING_IMPL:%.*]] = lit.ref.load [[EXISTING_IMPL_PTR]]
 # CHECK-NEXT:      [[COPY_PTR:%.*]] = lit.ref.struct.ger %self[copy]
 # CHECK-NEXT:      [[COPY:%.*]] = lit.ref.load [[COPY_PTR]]
-# CHECK-NEXT:      [[NEW:%.*]] = lit.call_signature [[COPY]]([[EXISTING_IMPL]])
+# CHECK-NEXT:      [[NEW:%.*]] = lit.call_indirect [[COPY]]([[EXISTING_IMPL]])
 # CHECK-NEXT:      [[SELF_IMPL_REF:%.*]] = lit.ref.struct.ger %self[field0]
 # CHECK-NEXT:      store [[NEW]], [[SELF_IMPL_REF]]
 

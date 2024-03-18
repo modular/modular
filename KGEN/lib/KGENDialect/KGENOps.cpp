@@ -875,11 +875,11 @@ OpFoldResult UndefOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// CallSignatureOp
+// CallIndirectOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult CallSignatureOp::canonicalize(CallSignatureOp op,
-                                            PatternRewriter &b) {
+LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
+                                           PatternRewriter &b) {
   auto create = op.getCallee().getDefiningOp<CreateClosureOp>();
   if (!create)
     return b.notifyMatchFailure(op.getLoc(), "callee op is not create closure");

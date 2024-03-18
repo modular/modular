@@ -30,7 +30,7 @@ struct Reg:
 # CHECK-NEXT: store [[COPY]], [[COPY_FIELD]]
 # CHECK-NEXT: lit.func call_impl[[[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none> borrow, [[ARG:%.*]][*""]: !lit.ref<!Mem, [[LT]]> borrow_in_mem, |) -> !Int
 # CHECK-NEXT:   [[CALLEE:%.*]] = pop.pointer.bitcast [[FN_PTR]]
-# CHECK-NEXT:   [[RES:%.*]] = lit.call_signature [[CALLEE]][[[LT]]]([[ARG]])
+# CHECK-NEXT:   [[RES:%.*]] = lit.call_indirect [[CALLEE]][[[LT]]]([[ARG]])
 # CHECK-NEXT:   lit.return [[RES]]
 # CHECK-NEXT:   lit.end_func
 # CHECK-NEXT: }
@@ -42,7 +42,7 @@ struct Reg:
 # CHECK-LABEL: lit.func @"__init__
 # CHECK-SAME: (%self: {{.*}}, %other: {{.*}}[1]({{.*}}"__result__": !lit.ref<!Mem, mut *[0,0]> byref_result) throws|ownedresult -> !kgen.variant<!Error, none>
 # CHECK:      lit.func call_impl[mut [[LT:.*]]]([[FN_PTR:%.*]][*""]: !kgen.pointer<none> borrow, [[ARG:%.*]][*""]: !Reg borrow, |, ?, [[SLOT:%.*]]: !lit.ref<!Mem, mut [[LT]]> byref_result) throws|ownedresult
-# CHECK:        [[RES:%.*]] = lit.call_signature %{{.*}}[mut [[LT]]]([[ARG]], [[SLOT]])
+# CHECK:        [[RES:%.*]] = lit.call_indirect %{{.*}}[mut [[LT]]]([[ARG]], [[SLOT]])
 # CHECK-NEXT:   lit.return [[RES]]
 
 

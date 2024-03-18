@@ -1218,7 +1218,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
   target.addLegalDialect<POP::POPDialect>();
   target.addLegalDialect<mlir::index::IndexDialect>();
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
-  target.addLegalOp<KGEN::CallSignatureOp>();
+  target.addLegalOp<KGEN::CallIndirectOp>();
   target.addLegalOp<KGEN::CreateClosureOp>();
 
   // Collect C exported symbols. The calling convention will have to be

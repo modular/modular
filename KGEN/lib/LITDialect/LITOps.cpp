@@ -427,10 +427,10 @@ ErrorTreeOrSuccess LIT::CallOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// CallSignatureOp
+// CallIndirectOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult LIT::CallSignatureOp::verify() {
+LogicalResult LIT::CallIndirectOp::verify() {
   auto sig = cast<LITSignatureType>(getCallee().getType());
   if (failed(verifyLifetimeParams(*this, sig)))
     return failure();

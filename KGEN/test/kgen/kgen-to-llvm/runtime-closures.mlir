@@ -7,7 +7,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: %2 = llvm.extractvalue %arg0[1] : !llvm.struct<(ptr, ptr)>
     // CHECK: llvm.call %1(%2) {fastmathFlags = #llvm.fastmath<contract>}
     %0 = builtin.unrealized_conversion_cast %arg0 : !llvm.struct<(ptr, ptr)> to !kgen.signature<() capturing -> index>
-    %1 = kgen.call_signature %0() : () capturing -> index
+    %1 = kgen.call_indirect %0() : () capturing -> index
     llvm.return
   }
   llvm.func @h(%arg0: i64) -> i64 {

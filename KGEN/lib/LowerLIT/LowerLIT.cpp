@@ -189,13 +189,13 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
         b.replaceOpWithNewOp<KGEN::CallParamOp>(call, call.getResultTypes(),
                                                 call.getCallee(), newOperands);
       }
-    } else if (auto call = dyn_cast<LIT::CallSignatureOp>(op)) {
+    } else if (auto call = dyn_cast<LIT::CallIndirectOp>(op)) {
       auto calleeType = cast<SignatureType>(call.getCallee().getType());
       // Cast the arguments, but not the callee.
       auto newOperands =
           castCallOperands(call.getArguments(), calleeType, call.getLoc(), b);
-      b.replaceOpWithNewOp<KGEN::CallSignatureOp>(
-          call, call.getResultTypes(), call.getCallee(), newOperands);
+      b.replaceOpWithNewOp<KGEN::CallIndirectOp>(call, call.getResultTypes(),
+                                                 call.getCallee(), newOperands);
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
       call.setImplicitLifetimes({});
     } else if (auto varDecl = dyn_cast<VarDeclOp>(op)) {

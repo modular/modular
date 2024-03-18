@@ -1571,7 +1571,7 @@ kgen.generator @main() {
 // -----
 
 kgen.generator @take_closure(%arg0: !kgen.signature<(index) capturing -> index>, %arg1: index) {
-  %0 = kgen.call_signature %arg0(%arg1) : (index) capturing -> index
+  %0 = kgen.call_indirect %arg0(%arg1) : (index) capturing -> index
   kgen.return
 }
 

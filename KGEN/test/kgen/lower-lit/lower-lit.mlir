@@ -13,8 +13,8 @@ lit.func @calls[imm a, mut b]<f: !lit.signature<[2]() -> ()>>(%arg0: !lit.signat
   lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
   // CHECK: kgen.call_param[() -> (): f]()
   lit.call[!lit.signature<[2]() -> ()>: f][imm a, mut b]()
-  // CHECK: kgen.call_signature %arg0() : () -> ()
-  lit.call_signature %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
+  // CHECK: kgen.call_indirect %arg0() : () -> ()
+  lit.call_indirect %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
   kgen.return
 }
 

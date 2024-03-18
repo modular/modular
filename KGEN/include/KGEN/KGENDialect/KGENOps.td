@@ -1010,22 +1010,22 @@ def KGEN_UndefOp : KGENOp<"undef", [ConstantLike, Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// CallSignatureOp
+// CallIndirectOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_CallSignatureOp : KGENOp<"call_signature", [
+def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
     TypesMatchWith<"operands match callee argument types", "callee",
     "arguments", "cast<SignatureType>($_self).getArguments()">,
     CalleeResultTypes]> {
   let summary = "Call a signature typed instance";
   let description = [{
-    The `kgen.call_signature` operation takes an SSA value of `!kgen.signature`
+    The `kgen.call_indirect` operation takes an SSA value of `!kgen.signature`
     type and invokes it with the provided operands as arguments.
 
     Example:
 
     ```mlir
-    %0 = kgen.call_signature %closure(%arg0, %arg1)
+    %0 = kgen.call_indirect %closure(%arg0, %arg1)
       : (index, index) capturing -> index
     ```
   }];
