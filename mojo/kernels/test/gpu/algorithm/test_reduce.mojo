@@ -7,7 +7,6 @@
 # RUN: %mojo %s
 
 from math import align_up, div_ceil, exp, max, min
-from math.limit import min_or_neginf
 from pathlib import Path
 
 from algorithm._gpu.reduction import reduce_launch
@@ -275,14 +274,14 @@ def main():
 
             reduce_inner_test[reduce_max](
                 StaticIntTuple[2](5, 3),
-                min_or_neginf[DType.float32](),
+                Scalar[DType.float32].MIN,
                 List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             )
 
             fused_reduce_inner_test[fused_reduce_add_max, 2, DType.float32](
                 StaticIntTuple[2](5, 3),
                 StaticTuple[Scalar[DType.float32], 2](
-                    min_or_neginf[DType.float32](), 0.0
+                    Scalar[DType.float32].MIN, 0.0
                 ),
                 List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
                 List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
@@ -291,14 +290,14 @@ def main():
             # bf16 tests
             reduce_inner_test[reduce_max](
                 StaticIntTuple[2](5, 5),
-                min_or_neginf[DType.bfloat16](),
+                Scalar[DType.bfloat16].MIN,
                 List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
             )
 
             fused_reduce_inner_test[fused_reduce_add_max, 2, DType.bfloat16](
                 StaticIntTuple[2](5, 3),
                 StaticTuple[Scalar[DType.bfloat16], 2](
-                    min_or_neginf[DType.bfloat16](), 0.0
+                    Scalar[DType.bfloat16].MIN, 0.0
                 ),
                 List[Float32](1.0, 2.0, 3.0, 4.0, 5.0),
                 List[Float32](3.0, 6.0, 9.0, 12.0, 15.0),
