@@ -34,7 +34,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     name = varLet.getNameAttr();
     isIndirect = true;
     startsUninit = true;
-    endsUninit = true;
+    endInitState = EndsUninit;
     return;
   }
 
@@ -44,7 +44,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     name = StringAttr::get(v.getContext(), "(global variable)");
     isIndirect = true;
     startsUninit = false;
-    endsUninit = false;
+    endInitState = EndsInit;
     return;
   }
 
@@ -55,7 +55,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     name = StringAttr::get(v.getContext(), "(anonymous value)");
     isIndirect = false;
     startsUninit = true;
-    endsUninit = true;
+    endInitState = EndsUninit;
     return;
   }
 
@@ -65,7 +65,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     name = StringAttr::get(v.getContext(), "(transferred value)");
     isIndirect = false;
     startsUninit = true;
-    endsUninit = true;
+    endInitState = EndsUninit;
     return;
   }
 
@@ -75,7 +75,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     name = endLifetime.getParamDecl().getName();
     isIndirect = true;
     startsUninit = true;
-    endsUninit = true;
+    endInitState = EndsUninit;
     return;
   }
 
@@ -90,7 +90,8 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
   if (auto refFromPtr = v.getDefiningOp<RefFromPointerOp>()) {
     name = StringAttr::get(v.getContext(), "(reference value)");
     isIndirect = true;
-    startsUninit = endsUninit = refFromPtr.getEndUninit();
+    startsUninit = refFromPtr.getEndUninit();
+    endInitState = startsUninit ? EndsUninit : EndsInit;
     return;
   }
 
@@ -101,7 +102,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     name = StringAttr::get(v.getContext(), "(call result)");
     isIndirect = false;
     startsUninit = true;
-    endsUninit = true;
+    endInitState = EndsUninit;
     return;
   }
 
@@ -110,7 +111,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     name = StringAttr::get(v.getContext(), "(call result)");
     isIndirect = false;
     startsUninit = true; // Initialized at its definition point.
-    endsUninit = true;
+    endInitState = EndsUninit;
     return;
   }
 
@@ -122,7 +123,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
         name = StringAttr::get(v.getContext(), "(call result)");
         isIndirect = false;
         startsUninit = true;
-        endsUninit = true;
+        endInitState = EndsUninit;
       }
     }
     if (auto call = dyn_cast<LIT::CallSignatureOp>(res.getOwner())) {
@@ -130,7 +131,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
         name = StringAttr::get(v.getContext(), "(call result)");
         isIndirect = false;
         startsUninit = true;
-        endsUninit = true;
+        endInitState = EndsUninit;
       }
     }
   }
@@ -147,7 +148,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     if (bbArg.getOwner() == &tryBlock.getExceptRegion().front()) {
       isIndirect = false;
       startsUninit = true;
-      endsUninit = true;
+      endInitState = EndsUninit;
       name = StringAttr::get(v.getContext(), "(error argument # " +
                                                  Twine(bbArg.getArgNumber()) +
                                                  ")");
@@ -172,41 +173,36 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     // return slot optimization etc.
     isIndirect = true;
     startsUninit = false;
-    endsUninit = false;
+    endInitState = EndsInit;
     break;
 
   case ArgConvention::OwnedInReg:
     isIndirect = false;
     startsUninit = false;
-    endsUninit = true;
+    endInitState = EndsUninit;
     break;
   case ArgConvention::OwnedInMem:
     isIndirect = true;
     startsUninit = false;
-    endsUninit = true;
+    endInitState = EndsUninit;
     break;
   case ArgConvention::ByRefResult:
-    // __result__ slots in raising functions do not properly model the behavior
-    // when an error is thrown, so we don't track them here, they get special
-    // support in CheckLifetimes.
-    if (signature.isThrows())
-      return;
     isIndirect = true;
     startsUninit = true;
-    endsUninit = false;
+    endInitState = InitOnNormal;
     break;
   case ArgConvention::InitSelf:
     // Unlike byref-result, we allow memberwise initialization of 'self' in an
     // init method to construct a full value.
     isIndirect = true;
     startsUninit = true;
-    endsUninit = false;
+    endInitState = InitOnNormal;
     isFullObjectLiveOnEntry = true;
     break;
   case ArgConvention::ByRef:
     isIndirect = true;
     startsUninit = false;
-    endsUninit = false;
+    endInitState = EndsInit;
     break;
   case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
