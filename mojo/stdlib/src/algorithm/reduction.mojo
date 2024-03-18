@@ -19,7 +19,6 @@ from math import div_ceil, iota
 from math import min as _min
 from math import none_true as _none_true
 from math.bit import cttz
-from math.limit import max_or_inf, min_or_neginf
 from sys.info import (
     is_little_endian,
     simdwidthof,
@@ -1085,7 +1084,7 @@ fn max(src: Buffer) -> Scalar[src.type]:
     Returns:
         The maximum of the buffer elements.
     """
-    return reduce[_simd_max_elementwise](src, min_or_neginf[src.type]())
+    return reduce[_simd_max_elementwise](src, Scalar[src.type].MIN)
 
 
 fn max[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
@@ -1099,7 +1098,7 @@ fn max[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
         dst: The output buffer.
     """
     return reduce[_simd_max_elementwise, _simd_max, reduce_axis](
-        src, dst, min_or_neginf[src.type]()
+        src, dst, Scalar[src.type].MIN
     )
 
 
@@ -1139,7 +1138,7 @@ fn min(src: Buffer) -> Scalar[src.type]:
     Returns:
         The minimum of the buffer elements.
     """
-    return reduce[_simd_min_elementwise](src, max_or_inf[src.type]())
+    return reduce[_simd_min_elementwise](src, Scalar[src.type].MAX)
 
 
 fn min[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
@@ -1153,7 +1152,7 @@ fn min[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
         dst: The output buffer.
     """
     return reduce[_simd_min_elementwise, _simd_min, reduce_axis](
-        src, dst, max_or_inf[src.type]()
+        src, dst, Scalar[src.type].MAX
     )
 
 
@@ -1741,9 +1740,9 @@ fn _argn[
             # initialize limits
             @parameter
             if is_max:
-                global_val = min_or_neginf[input.type]()
+                global_val = Scalar[input.type].MIN
             else:
-                global_val = max_or_inf[input.type]()
+                global_val = Scalar[input.type].MAX
 
             # initialize vector of maximal/minimal values
             var global_values: SIMD[input.type, simd_width]
@@ -1784,7 +1783,7 @@ fn _argn[
             if not found_min:
                 var matching = global_values == global_val
                 var min_indices = matching.select(
-                    global_indices, max_or_inf[output.type]()
+                    global_indices, Scalar[output.type].MAX
                 )
                 idx = min_indices.reduce_min()
             output_dim_ptr.store(idx)

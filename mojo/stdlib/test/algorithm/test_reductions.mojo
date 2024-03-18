@@ -7,7 +7,6 @@
 
 from math import max as _max
 from math import min as _min
-from math.limit import max_or_inf, min_or_neginf
 
 from algorithm import (
     all_true,
@@ -106,8 +105,8 @@ fn test_fused_reductions() raises:
         else:
             return left + right
 
-    var init_min = max_or_inf[test_type]()
-    var init_max = min_or_neginf[test_type]()
+    var init_min = Scalar[test_type].MAX
+    var init_max = Scalar[test_type].MIN
     var init = StaticTuple[Scalar[test_type], num_reductions](
         init_min, init_max, 0
     )
