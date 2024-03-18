@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+import math
 from kernel_utils.dynamic_tuple import *
 
 from utils.variant import Variant
