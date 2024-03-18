@@ -11,9 +11,7 @@ from builtin.io import _printf
 from gpu.host import Context, Function
 from gpu.host.memory import _malloc_managed
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
-from kernel_utils.int_tuple import IntTuple
-from kernel_utils.layout import Layout
-from kernel_utils.layout_tensor import LayoutTensor
+from layout import *
 
 
 fn gpu_kernel(
