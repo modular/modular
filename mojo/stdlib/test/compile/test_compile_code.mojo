@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
 
-from kernel_utils import *
+from compile import *
 from testing import *
 
 
