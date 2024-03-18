@@ -64,7 +64,7 @@ from BatchedMatmul import (
 )
 from buffer import NDBuffer
 from gpu.host._compile import _get_nvptx_target
-from kernel_utils._optional_param import OptionalParamInt
+from nn._optional_param import OptionalParamInt
 from Matmul import matmul as _matmul
 from Matmul import (
     pack_b_ndbuffer,
