@@ -401,6 +401,9 @@ public:
   }
   ASTType getBuiltinVariadicListType(ASTDecl &context, llvm::SMLoc loc,
                                      bool inMem);
+  ASTType getBuiltinVariadicPackType(ASTDecl &context, llvm::SMLoc loc) {
+    return lookupNamedType("VariadicPack", context, loc);
+  }
   ASTType getBuiltinCoroutineType(ASTDecl &context, llvm::SMLoc loc) {
     return lookupNamedType("Coroutine", context, loc);
   }

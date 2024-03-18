@@ -246,6 +246,26 @@ struct VariadicListMem[
 
 
 @register_passable
+struct VariadicPack[
+    elt_is_mutable: __mlir_type.i1,
+    lifetime: __mlir_type[`!lit.lifetime<`, elt_is_mutable, `>`],
+    *element_types: AnyType,
+]:
+    alias _mlir_pack_type = __mlir_type[
+        `!lit.ref.pack<:variadic<`,
+        AnyType,
+        `> `,
+        element_types,
+        `, `,
+        lifetime,
+        `>`,
+    ]
+
+    fn __init__(inout self, value: Self._mlir_pack_type, is_owned: Bool):
+        pass
+
+
+@register_passable
 struct __ParameterClosureCaptureList[fn_type: AnyRegType, fn_ref: fn_type]:
     var value: __mlir_type.`!kgen.pointer<none>`
 

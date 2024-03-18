@@ -50,6 +50,8 @@ enum ExprContext {
   EC_DefaultArgument,       // def f(arg = x):
   EC_OwnedRegArgShadow,     // def f(x: Int):    -> var shadow slot.
   EC_VarArgArgument,        // fn f(x: *Int):    -> creation of VariadicList.
+  EC_PackArgument,          // fn f[..](*x: *Ts) -> creation of VariadicPack
+  EC_KWArgsArgument,        // fn f(x: **Int):   -> creation of KWArgs dict
   EC_DefaultParam,          // fn f[p: Int = x]():
   EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
   EC_CondExpr,              // x if a else y

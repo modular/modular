@@ -98,8 +98,8 @@ public:
   /// example: fn x[*Ts: AnyType](inout *pack: *Ts) is declared 'inout'.
   ArgConvention getPackVarArgConvention(size_t index);
 
-  /// If the specified argument is a variadic pack, return the RefPackType.
-  RefPackType getIfRefPackType(size_t index);
+  /// If the specified argument is a variadic pack, return the VariadicPack.
+  Type getIfVariadicPack(size_t index);
 
   /// Returns true if the signature has variadic parameters.
   bool hasParamVarArgs();

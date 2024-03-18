@@ -107,13 +107,12 @@ fn test_owned_varargs():
 
 
 fn test_owned_variadic_pack[*Ts: AnyType](owned *pack: *Ts):
-    var packFormal = VariadicPack(pack, True)
-    print("-- testing owned variadic pack with", len(packFormal), "elements")
+    print("-- testing owned variadic pack with", len(pack), "elements")
 
     fn process[T: AnyType](a: T):
         print("hello value")
 
-    packFormal.each[process]()
+    pack.each[process]()
 
 
 fn test_owned_variadic_pack():

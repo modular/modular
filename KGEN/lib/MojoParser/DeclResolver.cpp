@@ -873,8 +873,11 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
   }
 
   mangledName += '(';
-  for (auto [argNo, convention, argType] :
+  for (auto [argNo, conventionX, argTypeX] :
        llvm::enumerate(fullSig.getArgConventions(), fullSig.getArguments())) {
+    auto convention = conventionX;
+    ASTType argType = argTypeX;
+
     // We do not mangle byref results into the signature.
     if (convention == ArgConvention::ByRefResult)
       continue;
@@ -885,22 +888,30 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
 
     // If this had adjustments added to it because of its argument convention /
     // variadic state, strip them off.
-    ASTType type = argType;
-    bool isPosVarArg = fullSig.isPosVarArg(argNo);
-    if (isPosVarArg) {
-      if (auto variadic = dyn_cast<VariadicType>(type.mlirType)) {
-        type = variadic.getElementType();
-        if (SignatureType::hasAddress(variadic.getConvention()))
-          type = type.getReferenceElementType();
-      }
+    unsigned numStars = 0;
+    if (fullSig.isPosVarArg(argNo)) {
+      auto variadic = cast<VariadicType>(argType);
+      argType = variadic.getElementType();
+      convention = variadic.getConvention();
+      numStars = 1;
+    } else if (ASTType variadicPack = fullSig.getIfVariadicPack(argNo)) {
+      TypedAttr packVariadic = variadicPack.getVariadicPackInfo().getVariadic();
+      mangledName += '*';
+      ASTType::printParam(os, packVariadic, /*forDiag=*/false,
+                          /*demangleParam=*/true);
+      continue;
+    } else if (fullSig.isKwVarArg(argNo)) {
+      // TODO: Propagate convention correctly.
+      convention = ArgConvention::BorrowedInReg;
+      argType = getVariadicKwargsType(argType);
+      numStars = 2;
     }
-    bool isKwVarArg = fullSig.isKwVarArg(argNo);
-    if (isKwVarArg) {
-      type = getVariadicKwargsType(type.mlirType);
-    } else if (SignatureType::hasAddress(convention)) {
-      type = type.getReferenceElementType();
-    }
-    mangledName += type.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
+
+    if (SignatureType::hasAddress(convention))
+      argType = argType.getReferenceElementType();
+
+    mangledName +=
+        argType.getAsString(/*forDiag=*/false, /*demangleParams=*/true);
 
     // Add suffix to disambiguate overloadable conventions.
     switch (convention) {
@@ -921,10 +932,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       llvm_unreachable("none convention not permitted in lit");
     }
 
-    if (isPosVarArg)
+    while (numStars--)
       mangledName += '*';
-    else if (isKwVarArg)
-      mangledName += "**";
   }
   mangledName += ')';
   return StringAttr::get(baseName.getContext(), mangledName);
