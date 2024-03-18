@@ -251,6 +251,7 @@ struct RuntimeOptions {
 
   size_t numThreads = 0;
   size_t maxThreads = 0;
+  bool singleThreaded = false;
   std::string profileFilename = {};
   uint64_t maxProfilingLevel = Trace::kFullyEnabled;
 
@@ -413,7 +414,7 @@ struct RuntimeOptions {
   }
 
   RuntimeOptions &forDebug() {
-    numThreads = 1;
+    singleThreaded = true;
     leakCheckedAllocator = true;
     return *this;
   }
@@ -445,8 +446,7 @@ struct RuntimeOptions {
   }
 
   RuntimeOptions &withSingleThreaded(bool newSingleThreaded = true) {
-    if (newSingleThreaded)
-      numThreads = 1;
+    singleThreaded = newSingleThreaded;
     return *this;
   }
 
