@@ -1071,3 +1071,46 @@ lit.func @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   // CHECK-NEXT: kgen.unreachable
   lit.end_func
 }
+
+lit.func @raising(%i: i1 borrow) throws|ownedresult -> !kgen.variant<@Error, i1> {
+  %0 = kgen.variant.create %i, 1 : <@Error, i1>
+  lit.return %0 : !kgen.variant<@Error, i1>
+  lit.end_func
+}
+
+// CHECK-LABEL: lit.func @raiseInCondition
+lit.func @raiseInCondition(%arg0: i1, %arg1: i1, %arg2: i1) throws|ownedresult -> !kgen.variant<@Error, i1> {
+  // CHECK: [[V0:%*.]] = lit.call @raising(%arg2)
+  // CHECK-NEXT: [[V1:%*.]] = lit.handle_variant [[V0]] : (!kgen.variant<@Error, i1>) -> i1 {
+  // CHECK-NEXT:  [[V4:%*.]] = kgen.variant.take [[V0]], 1 : <@Error, i1>
+  // CHECK-NEXT:  lit.yield [[V4]] : i1
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT:  [[V5:%*.]] = kgen.variant.take [[V0]], 0 : <@Error, i1>
+  // CHECK-NEXT:  [[V6:%*.]] = kgen.variant.create [[V5]], 0 : <@Error, i1>
+  // CHECK-NEXT:  lit.error_return [[V6]] : <@Error, i1>
+  // CHECK-NEXT:}
+  // CHECK-NEXT: [[V2:%*.]] = hlcf.if [[V1]] -> i1 {
+  // CHECK-NEXT:  hlcf.yield %arg0 : i1
+  // CHECK-NEXT:} else {
+  // CHECK-NEXT:  hlcf.yield %arg1 : i1
+  // CHECK-NEXT:}
+  %0 = hlcf.elif -> i1 {
+      %1 = lit.call @raising(%arg2) : !lit.signature<("i": i1 borrow) throws|ownedresult -> !kgen.variant<@Error, i1>>
+      %2 = lit.handle_variant %1 : (!kgen.variant<@Error, i1>) -> i1 {
+        %3 = kgen.variant.take %1, 1 : <@Error, i1>
+        lit.yield %3 : i1
+      } else {
+        %4 = kgen.variant.take %1, 0 : <@Error, i1>
+        lit.raise %4 : !lit.declref<@Error>
+        kgen.unreachable
+      }
+      hlcf.elif.yield %2 : i1
+  } then {
+    hlcf.yield %arg0 : i1
+  } else {
+    hlcf.yield %arg1 : i1
+  }
+  %5 = kgen.variant.create %0, 1 : <@Error, i1>
+  lit.return %5 : !kgen.variant<@Error, i1>
+  lit.end_func
+}

@@ -233,18 +233,22 @@ static ImplicitLocOpBuilder handleSemanticTerminatorOp(Operation &op,
 
 void LowerSemanticCF::lowerElif(HLCF::ElifOp elifOp, bool &doesRaise,
                                 bool &doesBreak, bool &doesFallThrough) {
+  bool elifFallsThrough = false;
+  for (auto &region : elifOp->getRegions()) {
+    if (region.empty())
+      continue;
+    bool blockRaises = false, blockBreaks = false, blockFallThroughs = false;
+    lowerBlock(region.front(), blockRaises, blockBreaks, blockFallThroughs);
+    doesRaise |= blockRaises;
+    doesBreak |= blockBreaks;
+    // Condition regions are odd indexed regions and always fallthrough to elif
+    // contained regions.
+    if (region.getRegionNumber() % 2 == 1)
+      continue;
+    elifFallsThrough |= blockFallThroughs;
+  }
   HLCF::IfOp ifOp = HLCF::replaceElifWithIfOps(elifOp);
-  bool thenBlockRaises = false, thenBlockBreaks = false,
-       thenBlockFallThroughs = false;
-  lowerBlock(ifOp.getThenBlock(), thenBlockRaises, thenBlockBreaks,
-             thenBlockFallThroughs);
-  bool elseBlockRaises = false, elseBlockBreaks = false,
-       elseBlockFallThroughs = false;
-  lowerBlock(ifOp.getElseBlock(), elseBlockRaises, elseBlockBreaks,
-             elseBlockFallThroughs);
-  doesRaise |= (thenBlockRaises | elseBlockRaises);
-  doesBreak |= (thenBlockBreaks | elseBlockBreaks);
-  doesFallThrough = (thenBlockFallThroughs | elseBlockFallThroughs);
+  doesFallThrough = elifFallsThrough;
   if (!doesFallThrough) {
     auto b = handleSemanticTerminatorOp(
         *ifOp.getOperation(),
