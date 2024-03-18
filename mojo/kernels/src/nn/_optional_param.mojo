@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from utils.index import StaticIntTuple
-from utils.list import Dim, DimList
+from utils.list import Dim, DimList, _make_tuple
 
 
 @value
@@ -86,6 +86,6 @@ struct OptionalParamInts[rank: Int, dim_list_parametric: DimList](
     fn get(self) -> StaticIntTuple[rank]:
         @parameter
         if dim_list_parametric.all_known[rank]():
-            return dim_list_parametric
+            return _make_tuple[rank](dim_list_parametric)
         else:
             return self.dim_list_dynamic
