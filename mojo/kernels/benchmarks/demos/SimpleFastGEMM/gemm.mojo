@@ -83,7 +83,7 @@ fn kernel(
     @always_inline
     fn loadc[idx0: Int, idx1: Int]():
         var cv = c.load[simd_size](n * idx0 + simd_size * idx1)
-        c_local.store[width=simd_size](NR * idx0 + simd_size * idx1, cv)
+        c_local.simd_store[simd_size](NR * idx0 + simd_size * idx1, cv)
 
     unroll[loadc, MR, NR2]()
 
@@ -105,7 +105,7 @@ fn kernel(
             var bv = b.load[simd_size](NR * pr + simd_size * idx1)
             var cv = c_local.load[simd_size](NR * idx0 + simd_size * idx1)
             cv += av * bv
-            c_local.store[width=simd_size](NR * idx0 + simd_size * idx1, cv)
+            c_local.simd_store[simd_size](NR * idx0 + simd_size * idx1, cv)
 
         unroll[calc, MR, NR2]()
 
@@ -113,7 +113,7 @@ fn kernel(
     @always_inline
     fn storec[idx0: Int, idx1: Int]():
         var cv = c_local.load[simd_size](NR * idx0 + simd_size * idx1)
-        c.store[width=simd_size](n * idx0 + simd_size * idx1, cv)
+        c.simd_store[simd_size](n * idx0 + simd_size * idx1, cv)
 
     unroll[storec, MR, NR2]()
 
