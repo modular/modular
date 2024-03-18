@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from kernel_utils import *
+from layout import *
 from math import *
 from math.math import _exp_taylor, _ldexp_impl
 from builtin.range import _StridedRange

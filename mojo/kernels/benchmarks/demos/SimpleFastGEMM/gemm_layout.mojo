@@ -9,9 +9,7 @@
 import benchmark
 from utils.loop import unroll
 from buffer import NDBuffer
-
-from kernel_utils.layout import Layout, IntTuple
-from kernel_utils.layout_tensor import LayoutTensor, TensorBuilder
+from layout import *
 
 from math import align_up
 

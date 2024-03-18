@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 from gpu.host import Context, Dim, Function, Stream
 from benchmark import Bencher, BenchId, Bench
-from kernel_utils import *
-from kernel_utils.layout import *
+from layout import *
 
 
 @parameter

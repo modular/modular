@@ -12,9 +12,8 @@ from algorithm import sync_parallelize, vectorize
 from memory import memset_zero
 from python import Python
 
-from kernel_utils.layout import Layout
-from kernel_utils.layout_tensor import LayoutTensor, TensorBuilder
-from kernel_utils.int_tuple import IntTuple, int
+from layout import *
+from layout.int_tuple import int
 
 
 alias M = 512  # rows of A and C
