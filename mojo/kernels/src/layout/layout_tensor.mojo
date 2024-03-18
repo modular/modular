@@ -11,7 +11,7 @@ from gpu.memory import async_copy, async_copy_wait_all
 from memory import memcpy
 from memory.unsafe import AddressSpace, DTypePointer, _GPUAddressSpace
 
-from .int_tuple import flatten, int
+from .int_tuple import flatten, int, product, idx2crd
 from .layout import *
 
 
@@ -351,9 +351,17 @@ struct LayoutTensor[
         unroll[copy_element, dst_size]()
 
     fn linspace(self):
-        for m in range(Self.dim[0]()):
-            for n in range(Self.dim[1]()):
-                self[m, n] = m * Self.dim[1]() + n
+        @parameter
+        if len(layout) == 1:
+            for m in range(Self.dim[0]()):
+                self.ptr[m] = m
+
+        elif len(layout) == 2:
+            for m in range(Self.dim[0]()):
+                for n in range(Self.dim[1]()):
+                    self[m, n] = m * Self.dim[1]() + n
+        else:
+            abort("LayoutTensor linspace only support rank 1-2 layouts.")
 
     fn fill(self, val: Scalar[dtype]):
         for m in range(Self.dim[0]()):
@@ -361,10 +369,25 @@ struct LayoutTensor[
                 self[m, n] = val
 
     fn print(self):
-        for m in range(Self.dim[0]()):
-            for n in range(Self.dim[1]()):
-                print_no_newline(self[m, n], "  ")
-            print("")
+        """Print 2D tensor in 2D, otherwise print all values in column major
+        coordinate order."""
+
+        # The 2D print works only for layout shape (M, N).
+        @parameter
+        if (
+            len(layout) == 2
+            and layout.shape[0].is_value()
+            and layout.shape[1].is_value()
+        ):
+            for m in range(Self.dim[0]()):
+                for n in range(Self.dim[1]()):
+                    print(self[m, n], end=" ")
+                print("")
+        else:
+            for i in range(layout.size()):
+                var coord = idx2crd(i, layout.shape)
+                var idx = layout(coord)
+                print(self.ptr[idx])
 
 
 struct TensorBuilder[
