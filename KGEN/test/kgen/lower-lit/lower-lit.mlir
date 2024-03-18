@@ -7,18 +7,18 @@
 // Functions
 //===----------------------------------------------------------------------===//
 
-// CHECK-LABEL: kgen.generator @calls(%arg0
-lit.func @calls[imm a, mut b](%arg0: !lit.signature<[2]() -> ()>) {
+// CHECK-LABEL: kgen.generator @calls
+lit.func @calls[imm a, mut b]<f: !lit.signature<[2]() -> ()>>(%arg0: !lit.signature<[2]() -> ()>) {
   // CHECK: kgen.call @calls() : () -> ()
   lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
-  // CHECK: kgen.call_param[() -> (): @calls]()
-  lit.call_param[!lit.signature<[2]() -> ()>: @calls][imm a, mut b]()
+  // CHECK: kgen.call_param[() -> (): f]()
+  lit.call[!lit.signature<[2]() -> ()>: f][imm a, mut b]()
   // CHECK: kgen.call_signature %arg0() : () -> ()
   lit.call_signature %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @async_call()
+// CHECK-LABEL: kgen.generator @async_call
 lit.func @async_call[imm a, mut b]() async {
   // CHECK: lit.async.call[() async -> (): @async_call]()
   lit.async.call[!lit.signature<[2]() async -> ()>: @async_call][imm a, mut b]()
@@ -572,7 +572,7 @@ lit.func @getThing[mut *"abc`"](%res: !lit.ref<!Mem, mut *"abc`"> byref_result, 
   // CHECK: }
   // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
   // CHECK-NEXT: %2 = kgen.call_param[(!lit.ref<@Mem, mut *[0,0]> byref_result) capturing -> !kgen.none: localTest](%1)
-  %0 = lit.call_param[!lit.signature<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut *"abc`"](%res)
+  %0 = lit.call[!lit.signature<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut *"abc`"](%res)
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }

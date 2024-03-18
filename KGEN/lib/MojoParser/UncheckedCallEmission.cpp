@@ -970,7 +970,10 @@ static ASTType getBoundCoroutineType(SharedState &shared, ASTDecl &declScope,
 /// the full IR for the call is emitted, so we know that it was a valid call.
 void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
                                          const CallOperands &callOperands) {
-  SymbolConstantAttr symbol = call.getCallee();
+  // Check for a known callee.
+  auto symbol = dyn_cast<SymbolConstantAttr>(call.getCallee());
+  if (!symbol)
+    return;
 
   // Figure out what is getting called.
   ASTDecl *calleeDecl =
@@ -1187,19 +1190,14 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
           emitConstructorCall(coroType, {{{SBValue(call), callExpr}}}, callExpr,
                               CallSyntax::kImplicitConvert, ctorDest)
               .getIfSRValue();
-    } else if (auto symbol = dyn_cast<SymbolConstantAttr>(target.get())) {
-      // If the callee is a symbol constant, directly emit a call.
-      auto call = builder->create<CallOp>(loc, resultType, symbol,
+    } else {
+      auto call = builder->create<CallOp>(loc, resultType, target.get(),
                                           implicitLifetimes, callArgs);
       callResult = call.getResult(0);
 
       // If there are any callee-specific warnings to emit, do so after
       // successfully emitting the call.
       callEmitter.emitDirectCallWarnings(call, callOperands);
-    } else {
-      auto call = builder->create<CallParamOp>(loc, resultType, target.get(),
-                                               implicitLifetimes, callArgs);
-      callResult = call.getResult(0);
     }
   } else {
     Value calleeVal = callee.getIfSRValue();

@@ -141,7 +141,7 @@ fn destructors(owned arg0: MemExample):
 # CHECK-LABEL: lit.func @"indirect_call
 fn indirect_call[detail_fn: fn() -> MemExample]():
        # CHECK: %mem = lit.var.decl
-       # CHECK-NEXT: lit.call_param{{.*}}(%mem)
+       # CHECK-NEXT: lit.call{{.*}}(%mem)
        var mem = detail_fn()
        # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %mem
        # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])

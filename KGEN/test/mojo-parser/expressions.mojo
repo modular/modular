@@ -546,13 +546,13 @@ fn test_param_if_cond[cond: Bool]() -> Int:
 # CHECK-LABEL: lit.func @"callable_mv[fn({{.*}}::Int, /) -> {{.*}}::Int]({{.*}}::Int)"
 # CHECK-SAME: <callable: !lit.signature<(!Int borrow, |) -> !Int>>(%a: !Int borrow) -> !Int
 fn callable_mv[callable: fn (Int) -> Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call_param[!lit.signature<(!Int borrow, |) -> !Int>: callable](%a)
+  # CHECK-NEXT: lit.call[!lit.signature<(!Int borrow, |) -> !Int>: callable](%a)
   return callable(a)
 
 # CHECK-LABEL: lit.func @"callable_mv_inputs{{.*}})"<
 # CHECK-SAME: callable: !lit.signature<<"x": !Int>(!Int borrow, |) -> !Int>, b: !Int>(%a: !Int borrow) -> !Int
 fn callable_mv_inputs[callable: fn[x: Int](Int) -> Int, b: Int](a: Int) -> Int:
-  # CHECK-NEXT: lit.call_param[!lit.signature<(!Int borrow, |) -> !Int>: bind_signature({{.*}}callable, b)](%a)
+  # CHECK-NEXT: lit.call[!lit.signature<(!Int borrow, |) -> !Int>: bind_signature({{.*}}callable, b)](%a)
   return callable[b](a)
 
 # CHECK-LABEL: lit.func @"takeIndexParam{{.*}}"<a: !Int>() -> !Int

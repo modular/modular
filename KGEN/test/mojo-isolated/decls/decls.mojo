@@ -981,9 +981,9 @@ struct ParamVarArg[*I: Int]:
 struct TraitMember[T: Copyable]:
     var value: T
     # CHECK: lit.func @"__moveinit__
-    # CHECK: call_param{{.*}}__copyinit__
+    # CHECK: call{{.*}}__copyinit__
     # CHECK: lit.func @"__copyinit__
-    # CHECK: call_param{{.*}}__copyinit__
+    # CHECK: call{{.*}}__copyinit__
 
 
 # CHECK: lit.func @"notSynthetic{{.*}}(%self: !lit.ref<!NotSynthetic, imm {{.*}}> borrow_in_mem) -> !kgen.none attributes {sourceName = "notSynthetic", specialFnKind = 0 : i8}
@@ -1118,7 +1118,7 @@ fn topLevelFunction() -> Int:
 
     # CHECK: lit.alias.decl *"b{{.*}}": !lit.signature<() capturing -> !Int> = <*"nestedFunction()">
     alias b = nestedFunction
-    # CHECK: call_param[!lit.signature<() capturing -> !Int>: *"nestedFunction()"]()
+    # CHECK: call[!lit.signature<() capturing -> !Int>: *"nestedFunction()"]()
     return nestedFunction()
 
 
@@ -1136,7 +1136,7 @@ struct SomeStruct:
 
         # CHECK: lit.alias.decl *"b{{.*}}": !lit.signature<() capturing -> !Int> = <*"nestedFunction()">
         alias b = nestedFunction
-        # CHECK: call_param[!lit.signature<() capturing -> !Int>: *"nestedFunction()"]()
+        # CHECK: call[!lit.signature<() capturing -> !Int>: *"nestedFunction()"]()
         return nestedFunction()
 
 
@@ -1154,7 +1154,7 @@ fn topLevelParamFn[a_param: __mlir_type.index]():
 
     # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.signature<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[__mlir_type.index]()">
     alias thinref = nestedFunction
-    # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
+    # CHECK: call[{{.*}}: bind_signature(:!lit.signature<<"b_param": index>() -> !kgen.none> *"nestedFunction[__mlir_type.index]()", 2)]()
     nestedFunction[Int(2).value]()
 
     var value = 0
@@ -1177,7 +1177,7 @@ struct SomeParamStruct[c_param: Int]:
 
         # CHECK: lit.alias.decl *"reff{{.*}}": !lit.signature<<"b_param": !Int>() -> !kgen.none> = <*"nestedFunction[{{.*}}Int]()">
         alias reff = nestedFunction
-        # CHECK: call_param[{{.*}}: bind_signature(:!lit.signature<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
+        # CHECK: call[{{.*}}: bind_signature(:!lit.signature<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
         nestedFunction[2]()
 
 

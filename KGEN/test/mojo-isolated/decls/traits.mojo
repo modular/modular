@@ -122,21 +122,21 @@ struct CFMStructParams[t1: AnyRegType, t2: AnyRegType](CFMTraitParams):
 # CHECK-SAME: %x: !lit.ref<:!Trait T, imm {{.*}}> borrow_in_mem
 fn generic_trait_fn[T: Trait](x: T):
     # CHECK-NEXT: [[XI:%.*]] = kgen.rebind %x {{.*}}#lit.invalid.ref.lifetime
-    # CHECK: lit.call_param[!lit.signature<[1]("self": {{.*}} borrow_in_mem) -> !kgen.none>:
+    # CHECK: lit.call[!lit.signature<[1]("self": {{.*}} borrow_in_mem) -> !kgen.none>:
     # CHECK-SAME: get_type_method(:!Trait T, "f0")]{{.*}}([[XI]])
     x.f0()
 
-    # CHECK: lit.call_param[!lit.signature<[1]("self": {{[^)]*}}) -> !kgen.none>:
+    # CHECK: lit.call[!lit.signature<[1]("self": {{[^)]*}}) -> !kgen.none>:
     # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}([[XI]])
     x.overloaded()
-    # CHECK: lit.call_param[!lit.signature<[1]("self": {{.*}}, "x": index borrow)
+    # CHECK: lit.call[!lit.signature<[1]("self": {{.*}}, "x": index borrow)
     # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}([[XI]], %{{.*}})
     x.overloaded(`1`)
-    # CHECK: lit.call_param[!lit.signature<[1]("self": {{.*}}, "x": !kgen.string borrow)
+    # CHECK: lit.call[!lit.signature<[1]("self": {{.*}}, "x": !kgen.string borrow)
     # CHECK-SAME: get_type_method({{.*}}, "overloaded")]{{.*}}([[XI]], %{{.*}})
     x.overloaded(__mlir_attr.`"trait" : !kgen.string`)
 
-    # CHECK: lit.call_param[!lit.signature<[1]("self": {{[^)]*}} borrow_in_mem)
+    # CHECK: lit.call[!lit.signature<[1]("self": {{[^)]*}} borrow_in_mem)
     # CHECK-SAME: bind_signature(:!lit.signature<[1]<"x": index>(
     # CHECK-SAME: get_type_method(:{{.*}} T, "parametric"), 1)
     x.parametric[`1`]()
@@ -229,7 +229,7 @@ struct StaticMethodStruct(StaticMethodTrait, Copyable):
 
 # CHECK-LABEL: lit.func @"trait_static_method{{.*}}<T: !StaticMethodTrait
 fn trait_static_method[T: StaticMethodTrait]():
-    # CHECK: call_param[!lit.signature<() -> !kgen.none>: get_type_method(:!StaticMethodTrait T, "foobar")]()
+    # CHECK: call[!lit.signature<() -> !kgen.none>: get_type_method(:!StaticMethodTrait T, "foobar")]()
     T.foobar()
 
 
@@ -239,7 +239,7 @@ fn trait_static_method[T: StaticMethodTrait]():
 # CHECK-SAME: %__result__: !lit.ref<:!Copyable T, mut {{.*}}> byref_result
 fn copy_me[T: Copyable](value: T) -> T:
     # CHECK-NEXT: [[VI:%.*]] = kgen.rebind %value {{.*}}#lit.invalid.ref.lifetime
-    # CHECK-NEXT: call_param[!lit.signature<[2]("self": {{.*}}T, {{.*}}> init_self, "existing": {{.*}}T, {{.*}}> borrow_in_mem, |) -> !kgen.none>:
+    # CHECK-NEXT: call[!lit.signature<[2]("self": {{.*}}T, {{.*}}> init_self, "existing": {{.*}}T, {{.*}}> borrow_in_mem, |) -> !kgen.none>:
     # CHECK-SAME: get_type_method({{.*}} T, "__copyinit__")]{{.*}}(%__result__, [[VI]])
     return value
 
@@ -251,7 +251,7 @@ fn copy_me[T: Copyable](value: T) -> T:
 fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: [[VI:%.*]] = kgen.rebind %value {{.*}}#lit.invalid.ref.lifetime
     # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership [[VI]]
-    # CHECK-NEXT: call_param[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value28transfer29)
+    # CHECK-NEXT: call[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value28transfer29)
     return value ^
 
 
@@ -345,7 +345,7 @@ fn convert_result_type():
     fn convert_result_type[T: ChangedResultTypeTrait]():
         pass
 
-    # CHECK: call_param{{.*}}@ChangedResultTypeStruct::@"result_type()_thunk"
+    # CHECK: call{{.*}}@ChangedResultTypeStruct::@"result_type()_thunk"
     convert_result_type[ChangedResultTypeStruct]()
 
 
@@ -366,7 +366,7 @@ fn test_bind_variadic():
     fn bind_trait[T: SimpleTraitMethod]():
         pass
 
-    # CHECK: call_param
+    # CHECK: call
     # CHECK: "foo" : !lit.signature<[1]("self": {{.*}}<:variadic<index> []>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@"foo{{.*}}_thunk"<:variadic<index> []>
     bind_trait[VariadicTrait[]]()
 
@@ -623,14 +623,14 @@ fn test_trait_inheritance():
     fn take_father[T: Father]():
         pass
 
-    # CHECK: call_param
+    # CHECK: call
     # CHECK-SAME: "foo"
     take_great_grand_father[TraitInheritance]()
-    # CHECK: call_param
+    # CHECK: call
     # CHECK-SAME: "bar"
     # CHECK-SAME: "foo"
     take_grand_father[TraitInheritance]()
-    # CHECK: call_param
+    # CHECK: call
     # CHECK-SAME: "baz"
     # CHECK-SAME: "bar"
     # CHECK-SAME: "foo"

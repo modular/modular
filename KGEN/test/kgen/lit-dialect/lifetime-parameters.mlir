@@ -30,18 +30,16 @@ lit.func @calls(%f: !lit.signature<[1](!lit.ref<index, mut *[0,0]>) -> !lit.ref<
 
   // CHECK: lit.call @callee[mut a](%x) : !lit.signature<[1]("out": !lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>
   %0 = lit.call @callee[mut a](%x) : !lit.signature<[1]("out": !lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>
-  // CHECK: lit.call_param[!lit.signature<[1]("out": !lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>: @callee][mut a](%x)
-  %1 = lit.call_param[!lit.signature<[1]("out": !lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>: @callee][mut a](%x)
   // CHECK: lit.call_signature %f[mut a](%x) : !lit.signature<[1](!lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>
-  %2 = lit.call_signature %f[mut a](%x) : !lit.signature<[1](!lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>
+  %1 = lit.call_signature %f[mut a](%x) : !lit.signature<[1](!lit.ref<index, mut *[0,0]>) -> !lit.ref<index, mut *[0,0]>>
   // CHECK: = lit.async.call[!lit.signature<[1]("out": !lit.ref<index, mut *[0,0]>) async -> !lit.ref<index, mut *[0,0]>>: @async_callee][mut a](%x)
-  %3 = lit.async.call[!lit.signature<[1]("out": !lit.ref<index, mut *[0,0]>) async -> !lit.ref<index, mut *[0,0]>>: @async_callee][mut a](%x)
+  %2 = lit.async.call[!lit.signature<[1]("out": !lit.ref<index, mut *[0,0]>) async -> !lit.ref<index, mut *[0,0]>>: @async_callee][mut a](%x)
 
   // COM: Anchor the types to ensure they match.
   // CHECK: "use"
-  // CHECK-COUNT-3: !lit.ref<index, mut a>
+  // CHECK-COUNT-2: !lit.ref<index, mut a>
   // CHECK: !pop.coroutine<() -> !lit.ref<index, mut a>>
-  "use"(%0, %1, %2, %3) : (!lit.ref<index, mut a>, !lit.ref<index, mut a>, !lit.ref<index, mut a>, !pop.coroutine<() -> !lit.ref<index, mut a>>) -> ()
+  "use"(%0, %1, %2) : (!lit.ref<index, mut a>, !lit.ref<index, mut a>, !pop.coroutine<() -> !lit.ref<index, mut a>>) -> ()
 
   kgen.return
 }

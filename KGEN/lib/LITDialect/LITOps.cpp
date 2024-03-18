@@ -200,6 +200,21 @@ LogicalResult PackageOp::verify() {
 // CallOp
 //===----------------------------------------------------------------------===//
 
+static ParseResult parseCallee(OpAsmParser &p, TypedAttr &callee) {
+  ParamDeclArrayAttr paramDecls;
+  if (parseParametricCallee(p, callee, paramDecls))
+    return failure();
+  if (!paramDecls.empty()) {
+    return p.emitError(p.getCurrentLocation(),
+                       "operation does not support result parameters");
+  }
+  return success();
+}
+
+static void printCallee(OpAsmPrinter &p, Operation *op, TypedAttr callee) {
+  printParametricCallee(p, op, callee, /*paramDecls=*/{});
+}
+
 static ParseResult
 parseLifetimeParams(AsmParser &p, ParameterExprArrayAttr &implicitLifetimes) {
   SmallVector<TypedAttr> values;
@@ -266,50 +281,74 @@ static void printCallOpTypes(AsmPrinter &, Operation *, TypeRange, TypeRange,
                              CalleeT, ArrayRef<TypedAttr>) {}
 
 static ParseResult
-parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
+parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
             ParameterExprArrayAttr &implicitLifetimes,
             SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
             SmallVectorImpl<Type> &operandTypes,
             SmallVectorImpl<Type> &resultTypes) {
   SymbolRefAttr callee;
+  // Optionally parse the direct call syntax: `lit.call @abc`.
+  OptionalParseResult optResult = p.parseOptionalAttribute(callee);
+  if (!optResult.has_value()) {
+    // Otherwise, parse the parametric call syntax `lit.call[...: @abc]`
+    if (parseCallee(p, calleeAttr))
+      return failure();
+  } else if (failed(*optResult)) {
+    return failure();
+  }
+
   ParameterExprArrayAttr paramValues;
   ParamDeclArrayAttr paramDecls;
-  if (p.parseAttribute(callee) || parseLifetimeParams(p, implicitLifetimes),
-      parseCallOpParams(p, paramValues, paramDecls) ||
-          p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
-          p.parseColon())
+  if (parseLifetimeParams(p, implicitLifetimes))
     return failure();
-  if (!paramDecls.empty()) {
+  if (callee && parseCallOpParams(p, paramValues, paramDecls))
+    return failure();
+  if (paramDecls && !paramDecls.empty()) {
     return p.emitError(p.getCurrentLocation(),
                        "result parameters are not supported");
   }
-
-  SignatureType signature;
-  FunctionType functionType;
-  if (parseKGENSignature(p, paramDecls, functionType, signature))
+  if (p.parseOperandList(operands, AsmParser::Delimiter::Paren))
     return failure();
-  calleeCst = SymbolConstantAttr::get(callee, paramValues, signature);
-  if (failed(parseCallOpTypes(p, operandTypes, resultTypes, calleeCst,
+
+  if (callee) {
+    SignatureType signature;
+    FunctionType functionType;
+    if (p.parseColon() ||
+        parseKGENSignature(p, paramDecls, functionType, signature))
+      return failure();
+    calleeAttr = SymbolConstantAttr::get(callee, paramValues, signature);
+  }
+  if (failed(parseCallOpTypes(p, operandTypes, resultTypes, calleeAttr,
                               implicitLifetimes)))
     return failure();
   return success();
 }
 
-static void printCallOp(OpAsmPrinter &p, Operation *op,
-                        SymbolConstantAttr calleeCst,
+static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
                         ParameterExprArrayAttr implicitLifetimes,
                         ValueRange operands, TypeRange operandTypes,
                         TypeRange resultTypes) {
-  p << calleeCst.getSymbol();
+  auto symbolCst = dyn_cast<SymbolConstantAttr>(calleeAttr);
+  // Optionally print the direct call syntax. Otherwise, print the parametric
+  // call syntax.
+  if (symbolCst)
+    p << ' ' << symbolCst.getSymbol();
+  else
+    printCallee(p, op, calleeAttr);
   printLifetimeParams(p, op, implicitLifetimes);
-  printCallOpParams(p, op, calleeCst.getParamValues(), /*resultDecls=*/{},
-                    calleeCst.getType().getResultParamTypes());
+  if (symbolCst) {
+    printCallOpParams(p, op, symbolCst.getParamValues(), /*resultDecls=*/{},
+                      symbolCst.getType().getResultParamTypes());
+  }
   p << '(';
   p.printOperands(operands);
-  p << ") : ";
-  printSignatureValues(
-      p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
-      calleeCst.getType());
+  p << ')';
+  if (symbolCst) {
+    p << " : ";
+    printSignatureValues(
+        p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
+        symbolCst.getType());
+  }
 }
 
 template <typename OpT>
@@ -363,49 +402,28 @@ LogicalResult LIT::CallOp::verify() {
   return verifyCallOp(*this, sig, getOperands(), getResultTypes());
 }
 
-void LIT::CallOp::setCalleeAttr(TypedAttr callee) {
-  setCalleeAttr(cast<SymbolConstantAttr>(callee));
+SymbolRefAttr LIT::CallOp::getDirectCallee() {
+  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(getCallee()))
+    return symbolCst.getSymbol();
+  return {};
 }
 
-OperandRange LIT::CallOp::getArgOperands() { return getOperands(); }
+ErrorTreeOrSuccess LIT::CallOp::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  SymbolRefAttr callee = getDirectCallee();
+  if (!callee)
+    return ErrorTree(getLoc(), "cannot interpret a parametric call");
 
-MutableOperandRange LIT::CallOp::getArgOperandsMutable() {
-  return getOperandsMutable();
-}
+  auto bodyOr = state.lookupFunctionBody(callee);
+  if (bodyOr.isError())
+    return ErrorTree(getLoc(), bodyOr.takeError());
+  Region &body = **bodyOr;
 
-mlir::CallInterfaceCallable LIT::CallOp::getCallableForCallee() {
-  return getCallee().getSymbol();
-}
-
-void LIT::CallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
-  auto symbol = callee.get<SymbolRefAttr>();
-  setCalleeAttr(SymbolConstantAttr::get(symbol, getCallee().getType()));
-}
-
-//===----------------------------------------------------------------------===//
-// CallParamOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseCallee(OpAsmParser &p, TypedAttr &callee) {
-  ParamDeclArrayAttr paramDecls;
-  if (parseParametricCallee(p, callee, paramDecls))
-    return failure();
-  if (!paramDecls.empty()) {
-    return p.emitError(p.getCurrentLocation(),
-                       "operation does not support result parameters");
-  }
+  // Function regions are isolated from above, so push a new stack frame. Then,
+  // transfer control flow to the beginning of the function body.
+  state.pushFrame(*this, body.getParentOp());
+  state.transferControlFlowTo(&body.front(), operands);
   return success();
-}
-
-static void printCallee(OpAsmPrinter &p, Operation *op, TypedAttr callee) {
-  printParametricCallee(p, op, callee, /*paramDecls=*/{});
-}
-
-LogicalResult LIT::CallParamOp::verify() {
-  auto sig = cast<LITSignatureType>(getCallee().getType());
-  if (failed(verifyLifetimeParams(*this, sig)))
-    return failure();
-  return verifyCallOp(*this, sig, getOperands(), getResultTypes());
 }
 
 //===----------------------------------------------------------------------===//

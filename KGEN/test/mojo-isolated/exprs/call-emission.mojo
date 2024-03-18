@@ -39,10 +39,10 @@ fn test_kw_arg_passing_indirect(x: int, y: int, z: int):
     alias callee = has_default_args
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
-    # CHECK-NEXT: lit.call_param[{{.*}}](%x, %[[C1]], %z)
+    # CHECK-NEXT: lit.call[{{.*}}](%x, %[[C1]], %z)
     callee(x, c=z)
 
-    # CHECK-NEXT: lit.call_param[{{.*}}](%x, %y, %z)
+    # CHECK-NEXT: lit.call[{{.*}}](%x, %y, %z)
     callee(c=z, b=y, a=x)
 
 
@@ -76,10 +76,10 @@ fn test_kw_param_passing_indirect[x: int, y: int, z: int]():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = has_default_params
 
-    # CHECK: call_param{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, 1, z)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, 1, z)]()
     callee[x, c=z]()
 
-    # CHECK: call_param{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, y, z)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, y, z)]()
     callee[c=z, b=y, a=x]()
 
 
@@ -138,11 +138,11 @@ fn test_kw_only_indirect(x: int):
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
     # CHECK-DAG: %[[C2:.*]] = kgen.param.constant = <2>
-    # CHECK-NEXT: lit.call_param[{{.*}}](%x, %[[C1]], %x, %[[C2]])
+    # CHECK-NEXT: lit.call[{{.*}}](%x, %[[C1]], %x, %[[C2]])
     callee(x, c=x)
 
     # CHECK-DAG: %[[C1:.*]] = kgen.param.constant = <1>
-    # CHECK-NEXT: lit.call_param[{{.*}}](%x, %[[C1]], %x, %x)
+    # CHECK-NEXT: lit.call[{{.*}}](%x, %[[C1]], %x, %x)
     callee(x, d=x, c=x)
 
 
@@ -173,10 +173,10 @@ fn test_kw_only_params_indirect[x: int]():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = takes_kw_only_params
 
-    # CHECK: call_param{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, 1, x, 2)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, 1, x, 2)]()
     callee[x, c=x]()
 
-    # CHECK: call_param{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, 1, x, x)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, 1, x, x)]()
     callee[x, d=x, c=x]()
 
 
@@ -226,8 +226,8 @@ fn test_variadic_and_kw_only_params_indirect[x: int]():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = takes_variadic_and_kw_only_params
 
-    # CHECK: call_param{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, [], x, 0)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, [], x, 0)]()
     callee[x, x, c=x]()
 
-    # CHECK: call_param{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, [x, x], x, 0)]()
+    # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, [x, x], x, 0)]()
     callee[x, x, x, x, c=x]()

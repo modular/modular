@@ -376,7 +376,7 @@ fn memoryParam[value: MemoryType]():
 fn takeCallable[
      callable: fn(int) -> int
    ](a: int) -> int:
-  # CHECK-NEXT: %0 = lit.call_param[!lit.signature<(index borrow, |) -> index>: callable](%a)
+  # CHECK-NEXT: %0 = lit.call[!lit.signature<(index borrow, |) -> index>: callable](%a)
   # CHECK-NEXT: lit.return %0
   return callable(a)
 
@@ -685,7 +685,7 @@ fn fn_with_param[x: Int](y: Abstraction[x]):
 fn indirect_call_infer_params():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = fn_with_param
-    # CHECK: call_param[!lit.signature<("y": {{.*}}#Abstraction <:!Int {2}>
+    # CHECK: call[!lit.signature<("y": {{.*}}#Abstraction <:!Int {2}>
     # CHECK-SAME: bind_signature(:!lit.signature<<"x": !Int>("y": {{.*}}Abstraction <:!Int *(0,0)>
     # CHECK-SAME: [[CALLEE]], {2}
     callee(Abstraction[2]())
@@ -796,15 +796,15 @@ fn test_indirect_default_params():
     # CHECK: lit.alias.decl [[CALLEE:.*]]: !lit.signature
     alias callee = default_params
 
-    # CHECK: lit.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
     # CHECK-SAME: {1}, {7}, {:string "woof"})]()
     callee[1]()
 
-    # CHECK: lit.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
     # CHECK-SAME: {2}, {8}, {:string "woof"})]()
     callee[2, 8]()
 
-    # CHECK: lit.call_param[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
+    # CHECK: lit.call[!lit.signature<() -> !kgen.none>: bind_signature(:!lit.signature<<"a": {{.*}}, "b": {{.*}}, "c": {{.*}}>() -> !kgen.none> [[CALLEE]],
     # CHECK-SAME: {4}, {9}, {:string "meow"})]()
     callee[4, 9, "meow"]()
 
