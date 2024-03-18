@@ -31,36 +31,36 @@ fn kernel6x4(
     var b = Buffer[Dim(), DType.float32](b_ptr, kc * nr)
     var c = Buffer[Dim(), DType.float32](c_ptr, mr * n)
 
-    var cv0 = c.simd_load[simd_size](n * 0 + simd_size * 0)
-    var cv1 = c.simd_load[simd_size](n * 0 + simd_size * 1)
-    var cv2 = c.simd_load[simd_size](n * 0 + simd_size * 2)
-    var cv3 = c.simd_load[simd_size](n * 0 + simd_size * 3)
-    var cv4 = c.simd_load[simd_size](n * 1 + simd_size * 0)
-    var cv5 = c.simd_load[simd_size](n * 1 + simd_size * 1)
-    var cv6 = c.simd_load[simd_size](n * 1 + simd_size * 2)
-    var cv7 = c.simd_load[simd_size](n * 1 + simd_size * 3)
-    var cv8 = c.simd_load[simd_size](n * 2 + simd_size * 0)
-    var cv9 = c.simd_load[simd_size](n * 2 + simd_size * 1)
-    var cv10 = c.simd_load[simd_size](n * 2 + simd_size * 2)
-    var cv11 = c.simd_load[simd_size](n * 2 + simd_size * 3)
-    var cv12 = c.simd_load[simd_size](n * 3 + simd_size * 0)
-    var cv13 = c.simd_load[simd_size](n * 3 + simd_size * 1)
-    var cv14 = c.simd_load[simd_size](n * 3 + simd_size * 2)
-    var cv15 = c.simd_load[simd_size](n * 3 + simd_size * 3)
-    var cv16 = c.simd_load[simd_size](n * 4 + simd_size * 0)
-    var cv17 = c.simd_load[simd_size](n * 4 + simd_size * 1)
-    var cv18 = c.simd_load[simd_size](n * 4 + simd_size * 2)
-    var cv19 = c.simd_load[simd_size](n * 4 + simd_size * 3)
-    var cv20 = c.simd_load[simd_size](n * 5 + simd_size * 0)
-    var cv21 = c.simd_load[simd_size](n * 5 + simd_size * 1)
-    var cv22 = c.simd_load[simd_size](n * 5 + simd_size * 2)
-    var cv23 = c.simd_load[simd_size](n * 5 + simd_size * 3)
+    var cv0 = c.load[width=simd_size](n * 0 + simd_size * 0)
+    var cv1 = c.load[width=simd_size](n * 0 + simd_size * 1)
+    var cv2 = c.load[width=simd_size](n * 0 + simd_size * 2)
+    var cv3 = c.load[width=simd_size](n * 0 + simd_size * 3)
+    var cv4 = c.load[width=simd_size](n * 1 + simd_size * 0)
+    var cv5 = c.load[width=simd_size](n * 1 + simd_size * 1)
+    var cv6 = c.load[width=simd_size](n * 1 + simd_size * 2)
+    var cv7 = c.load[width=simd_size](n * 1 + simd_size * 3)
+    var cv8 = c.load[width=simd_size](n * 2 + simd_size * 0)
+    var cv9 = c.load[width=simd_size](n * 2 + simd_size * 1)
+    var cv10 = c.load[width=simd_size](n * 2 + simd_size * 2)
+    var cv11 = c.load[width=simd_size](n * 2 + simd_size * 3)
+    var cv12 = c.load[width=simd_size](n * 3 + simd_size * 0)
+    var cv13 = c.load[width=simd_size](n * 3 + simd_size * 1)
+    var cv14 = c.load[width=simd_size](n * 3 + simd_size * 2)
+    var cv15 = c.load[width=simd_size](n * 3 + simd_size * 3)
+    var cv16 = c.load[width=simd_size](n * 4 + simd_size * 0)
+    var cv17 = c.load[width=simd_size](n * 4 + simd_size * 1)
+    var cv18 = c.load[width=simd_size](n * 4 + simd_size * 2)
+    var cv19 = c.load[width=simd_size](n * 4 + simd_size * 3)
+    var cv20 = c.load[width=simd_size](n * 5 + simd_size * 0)
+    var cv21 = c.load[width=simd_size](n * 5 + simd_size * 1)
+    var cv22 = c.load[width=simd_size](n * 5 + simd_size * 2)
+    var cv23 = c.load[width=simd_size](n * 5 + simd_size * 3)
 
     for pr in range(kc):
-        var bv0 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 0)
-        var bv1 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 1)
-        var bv2 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 2)
-        var bv3 = b.simd_load[simd_size](4 * simd_size * pr + simd_size * 3)
+        var bv0 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 0)
+        var bv1 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 1)
+        var bv2 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 2)
+        var bv3 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 3)
         b_ptr.offset(4 * simd_size * pr + simd_size * 16).prefetch[
             PrefetchOptions().for_read().high_locality().to_data_cache()
         ]()
@@ -74,37 +74,37 @@ fn kernel6x4(
             PrefetchOptions().for_read().high_locality().to_data_cache()
         ]()
 
-        var av = a_ptr.offset(0 * k + pr).simd_load[1]().cast[DType.float32]()
+        var av = a_ptr.offset(0 * k + pr).load[width=1]().cast[DType.float32]()
         cv0 += av * bv0
         cv1 += av * bv1
         cv2 += av * bv2
         cv3 += av * bv3
 
-        av = a_ptr.offset(1 * k + pr).simd_load[1]().cast[DType.float32]()
+        av = a_ptr.offset(1 * k + pr).load[width=1]().cast[DType.float32]()
         cv4 += av * bv0
         cv5 += av * bv1
         cv6 += av * bv2
         cv7 += av * bv3
 
-        av = a_ptr.offset(2 * k + pr).simd_load[1]().cast[DType.float32]()
+        av = a_ptr.offset(2 * k + pr).load[width=1]().cast[DType.float32]()
         cv8 += av * bv0
         cv9 += av * bv1
         cv10 += av * bv2
         cv11 += av * bv3
 
-        av = a_ptr.offset(3 * k + pr).simd_load[1]().cast[DType.float32]()
+        av = a_ptr.offset(3 * k + pr).load[width=1]().cast[DType.float32]()
         cv12 += av * bv0
         cv13 += av * bv1
         cv14 += av * bv2
         cv15 += av * bv3
 
-        av = a_ptr.offset(4 * k + pr).simd_load[1]().cast[DType.float32]()
+        av = a_ptr.offset(4 * k + pr).load[width=1]().cast[DType.float32]()
         cv16 += av * bv0
         cv17 += av * bv1
         cv18 += av * bv2
         cv19 += av * bv3
 
-        av = a_ptr.offset(5 * k + pr).simd_load[1]().cast[DType.float32]()
+        av = a_ptr.offset(5 * k + pr).load[width=1]().cast[DType.float32]()
         cv20 += av * bv0
         cv21 += av * bv1
         cv22 += av * bv2
