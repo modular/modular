@@ -42,7 +42,6 @@ from math import (
     tanh,
     trunc,
 )
-from math.limit import max_or_inf, min_or_neginf
 from random import randn, seed
 from sys import external_call
 from sys.info import simdwidthof
@@ -1658,7 +1657,7 @@ fn reduce_max[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, min_or_neginf[type](), int(axis))
+        ](input_shape, Scalar[type].MIN, int(axis))
 
 
 @mogg_register("mo.reduce.min")
@@ -1715,7 +1714,7 @@ fn reduce_min[
             reduce_impl,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](input_shape, max_or_inf[type](), int(axis))
+        ](input_shape, Scalar[type].MAX, int(axis))
 
 
 @mogg_register("mo.reduce.mul")

@@ -24,7 +24,6 @@ from math import (
     sqrt,
     tanh,
 )
-from math.limit import max_or_inf, min_or_neginf
 
 from algorithm.reduction import _reduce_generator, reduce_shape
 from MOGGIntList import IntList
@@ -1005,7 +1004,7 @@ fn reduce_max[
         max,
         single_thread_blocking_override=single_thread_blocking_override,
         target=target,
-    ](input, output, min_or_neginf[input.type](), ax)
+    ](input, output, Scalar[input.type].MIN, ax)
 
     return output
 
@@ -1040,7 +1039,7 @@ fn reduce_min[
         min,
         single_thread_blocking_override=single_thread_blocking_override,
         target=target,
-    ](input, output, max_or_inf[input.type](), ax)
+    ](input, output, Scalar[input.type].MAX, ax)
 
     return output
 
