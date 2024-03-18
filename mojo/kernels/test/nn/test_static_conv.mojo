@@ -108,7 +108,7 @@ fn test[
     pack_filter(filter, packed_filter_dynamic, num_groups)
 
     # Conv attributes.
-    alias conv_attr_dynamic = ConvInfoStatic[2].create_unknown()
+    alias conv_attr_dynamic = ConvInfoStatic[2]()
 
     ConvDirectNHWC[
         4,

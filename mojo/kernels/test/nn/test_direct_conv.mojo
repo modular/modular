@@ -135,7 +135,7 @@ fn test[
     )
 
     # Test direct conv
-    alias conv_attr = ConvInfoStatic[2].create_unknown()
+    alias conv_attr = ConvInfoStatic[2]()
 
     @parameter
     if filter_packed:

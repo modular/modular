@@ -2581,12 +2581,12 @@ fn pack_filter_shape[
     )
     var F_per_group = F // num_groups
 
-    alias conv_attr = ConvInfoStatic[filter.rank - 2] {
-        pad: reorder_padding[filter.rank - 2](paddings),
-        stride: strides,
-        dilation: dilations,
-        num_groups: Dim(num_groups),
-    }
+    alias conv_attr = ConvInfoStatic[filter.rank - 2](
+        pad=reorder_padding[filter.rank - 2](paddings),
+        stride=strides,
+        dilation=dilations,
+        num_groups=num_groups,
+    )
 
     # TODO: extend to 1D/3D.
     alias WO = output_shape.at[2]() if filter.rank == 4 else Dim()

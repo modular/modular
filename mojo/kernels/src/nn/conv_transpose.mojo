@@ -1387,7 +1387,7 @@ fn conv_transposed[
     if not filter_packed:
         pack_filter(filter, packed_filter, 1)
 
-    alias conv_attr = ConvInfoStatic[input_rank - 2].create_unknown()
+    alias conv_attr = ConvInfoStatic[input_rank - 2]()
 
     var conv_shape = get_conv_shape[input_rank - 2, True](
         output,

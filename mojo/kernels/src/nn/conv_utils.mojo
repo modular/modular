@@ -515,9 +515,6 @@ fn reorder_padding[rank: Int](pad: DimList) -> DimList:
         )
 
 
-# must be register passable because it is used as a parameter
-@value
-@register_passable("trivial")
 struct ConvInfoStatic[rank: Int]:
     var pad: DimList
     var stride: DimList
@@ -525,13 +522,34 @@ struct ConvInfoStatic[rank: Int]:
     var num_groups: Dim
 
     @always_inline
+    fn __init__(inout self):
+        self.pad = DimList.create_unknown[2 * rank]()
+        self.stride = DimList.create_unknown[rank]()
+        self.dilation = DimList.create_unknown[rank]()
+        self.num_groups = Dim()
+
+    @always_inline
     fn __init__(
+        inout self,
+        pad: DimList,
+        stride: DimList,
+        dilation: DimList,
+        num_groups: Dim,
+    ):
+        self.pad = pad
+        self.stride = stride
+        self.dilation = dilation
+        self.num_groups = num_groups
+
+    @always_inline
+    fn __init__(
+        inout self,
         pad: DimList,
         stride: DimList,
         dilation: DimList,
         input_c: Dim,
         filter_c: Dim,
-    ) -> Self:
+    ):
         constrained[
             rank == 3 or rank == 2 or rank == 1,
             "Only support 1d/2d/3d/ conv attributes",
@@ -541,12 +559,10 @@ struct ConvInfoStatic[rank: Int]:
         if input_c.has_value() and filter_c.has_value():
             num_groups = Dim(input_c.get() // filter_c.get())
 
-        return Self {
-            pad: reorder_padding[rank](pad),
-            stride: stride,
-            dilation: dilation,
-            num_groups: num_groups,
-        }
+        self.pad = reorder_padding[rank](pad)
+        self.stride = stride
+        self.dilation = dilation
+        self.num_groups = num_groups
 
     @always_inline
     fn all_known(self) -> Bool:
@@ -574,18 +590,6 @@ struct ConvInfoStatic[rank: Int]:
     @always_inline
     fn dilations(self) -> StaticIntTuple[2]:
         return Index(self.dilation.get[0](), self.dilation.get[1]())
-
-    @always_inline
-    @staticmethod
-    fn create_unknown() -> Self:
-        return rebind[Self](
-            ConvInfoStatic[rank](
-                DimList.create_unknown[2 * rank](),
-                DimList.create_unknown[rank](),
-                DimList.create_unknown[rank](),
-                Dim(),
-            )
-        )
 
 
 fn get_direct_conv_micro_kernel_height() -> Int:
