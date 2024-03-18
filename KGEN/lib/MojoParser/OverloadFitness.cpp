@@ -901,8 +901,7 @@ InflightDiag DiagEmitter::byPosAndKw(ArrayRef<StringAttr> names) const {
 /// Calculate the minimum required and maximum allowed number of positional
 /// operands for a signature, assuming that the signature has a variadic pack;
 static std::pair<size_t, size_t>
-calculateRequiredPosOperandsForPacks(LITSignatureType signature,
-                                     SharedState &shared) {
+calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
   // This function heavily assumes that a signature has at most
   // one pack variadic argument and that variadics are always the last
   // positional args.
@@ -1337,7 +1336,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Binding the parameters would determine the type of pack varargs. Given
   // this, we need to check again if we have missing or too many arguments.
   auto [minPosOperands, maxPosOperands] =
-      calculateRequiredPosOperandsForPacks(signature, shared);
+      calculateRequiredPosOperandsForPacks(signature);
   if (numPosOperands < minPosOperands || maxPosOperands < numPosOperands) {
     return emitDiagFor.wrongArgCountWithPack(minPosOperands, maxPosOperands,
                                              numPosOperands);
