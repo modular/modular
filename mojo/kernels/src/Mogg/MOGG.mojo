@@ -94,6 +94,7 @@ from nn.conv_transpose import (
     pack_filter_shape as _pack_conv_transpose_filter_shape,
 )
 from nn.cumsum import cumsum as _cumsum
+from nn.flash_attention import flash_attention as cpu_flash_attention
 from nn.gather_scatter import Axis
 from nn.gather_scatter import async_gather as _async_gather
 from nn.gather_scatter import gather as _gather
@@ -3776,6 +3777,94 @@ fn with_mask_fused_attention_cpu[
             add_attn_mask=True,
             add_causal_mask=False,
         ](output, q, k, v, attn_mask, scale_f32, causal_mask)
+
+
+@mogg_register("no_mask_flash_attention_cpu")
+@always_inline
+@export
+fn no_mask_flash_attention_cpu[
+    type: DType,
+    rank: Int,
+    input_1_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_2_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, rank],
+    input_1_shape: StaticIntTuple[rank],
+    input_2_shape: StaticIntTuple[rank],
+    # TODO(28121): This should be rank 0, but only works with rank 1
+    scale: NDBuffer[type, 1],
+    output: NDBuffer[type, rank],
+    ctx: MojoCallContextPtr,
+) raises:
+    if _guard_against_gpu_target[target](ctx):
+        return
+
+    constrained[target == "cpu"]()
+
+    with Trace[TraceLevel.OP]("mojo.flash_attention") as t:
+
+        @parameter
+        @always_inline
+        fn mask_fn[
+            simd_width: Int, _rank: Int
+        ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
+            return SIMD[type, simd_width](0)
+
+        cpu_flash_attention[type, rank, input_1_fn, input_2_fn, mask_fn](
+            q,
+            input_1_shape,
+            input_2_shape,
+            output,
+            scale[0].cast[DType.float32](),
+        )
+
+
+@mogg_register("with_mask_flash_attention_cpu")
+@always_inline
+@export
+fn with_mask_flash_attention_cpu[
+    type: DType,
+    rank: Int,
+    input_1_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_2_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_3_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, rank],
+    input_1_shape: StaticIntTuple[rank],
+    input_2_shape: StaticIntTuple[rank],
+    input_3_shape: StaticIntTuple[rank],
+    # TODO(28121): This should be rank 0, but only works with rank 1
+    scale: NDBuffer[type, 1],
+    output: NDBuffer[type, rank],
+    ctx: MojoCallContextPtr,
+) raises:
+    if _guard_against_gpu_target[target](ctx):
+        return
+
+    constrained[target == "cpu"]()
+
+    with Trace[TraceLevel.OP]("mojo.flash_attention") as t:
+        cpu_flash_attention[type, rank, input_1_fn, input_2_fn, input_3_fn](
+            q,
+            input_1_shape,
+            input_2_shape,
+            output,
+            scale[0].cast[DType.float32](),
+        )
 
 
 # # ===----------------------------------------------------------------------===#
