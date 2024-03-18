@@ -1215,56 +1215,8 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
   // to apply to it.  Partially apply it to form a result closure.
   auto calleeSignature =
       cast<LITSignatureType>(directSymbolAttr.getType().mlirType);
-  Type firstArgIRType = calleeSignature.getArguments()[0];
-  ArgConvention selfConvention = calleeSignature.getArgConvention(0);
-  Value firstArgValue;
 
   assert(!calleeSignature.isAnyVarArg(0) && "Error: self shouldn't be varargs");
-
-  switch (selfConvention) {
-  case ArgConvention::ByRefResult:
-  case ArgConvention::OwnedInMem:
-  case ArgConvention::BorrowedInMem: {
-    auto diag =
-        emitter.emitError(
-            loc, "TODO: partial application requires closure generation ")
-        << baseValue.expr->getRange();
-    if (auto cValue = baseValue.ir.getIfCValue())
-      diag << cValue.getRValueType();
-    return {};
-  }
-
-  case ArgConvention::ByRef:
-  case ArgConvention::InitSelf: {
-    ValueDest baseLVDest(dest.getContext());
-    LValue baseLV = emitter.emitLValue(baseValue, baseLVDest);
-    if (!baseLV)
-      return {};
-
-    // Using partial application over an lvalue isn't safe until we support an
-    // ownership models with mutable borrows.
-    emitter.emitError(loc, "TODO: partial application to mutable base isn't "
-                           "supportable without a lifetime model")
-        << baseValue.expr->getRange();
-    return {};
-  }
-  case ArgConvention::BorrowedInReg:
-  case ArgConvention::OwnedInReg:
-    // Otherwise we can have either an lvalue or rvalue, but we need to convert
-    // to an rvalue if we have an lvalue.
-    firstArgValue = emitter.emitSRValue(baseValue, EC_CallArgValue);
-    if (!firstArgValue)
-      return {};
-
-    // TODO: Partial application isn't handling ownership right at all, we
-    // should probably disable it.
-    break;
-  case ArgConvention::None:
-    llvm_unreachable("none convention not permitted in lit");
-  }
-
-  assert(firstArgIRType == firstArgValue.getType() &&
-         "base types should always structurally line up");
 
   // TODO: Need to emit a closure instance that partially applies the 'self'
   // argument here.

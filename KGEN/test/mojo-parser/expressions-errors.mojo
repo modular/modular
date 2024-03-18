@@ -129,7 +129,7 @@ def testLValuesRvalues() -> None:
   lv.mutatingMethod()
 
   # Partial application.
-  # expected-error @+1 {{TODO: partial application to mutable base isn't supportable without a lifetime model}}
+  # expected-error @+1 {{TODO: partial application of member methods is not yet supported}}
   lv.mutatingMethod
 
   # Test with rvalues
@@ -490,7 +490,7 @@ fn transfer_warnings():
 struct SomeThing:
     fn overloaded[a: Int](self, b: Int) -> Int: pass
 fn testSomeThing(a: SomeThing):
-   # expected-error @+1 {{TODO: partial application requires closure generation 'SomeThing'}}
+   # expected-error @+1 {{TODO: partial application of member methods is not yet supported}}
    a.overloaded[4] / 1.0
 
 # Test invalid references that cannot bind to potentially-register_passable
