@@ -6,8 +6,9 @@
 
 from kernel_utils import *
 from math import *
-from math.math import _exp_taylor, _simd_apply, _ldexp_impl
+from math.math import _exp_taylor, _ldexp_impl
 from builtin.range import _StridedRange
+from builtin.simd import _simd_apply
 from sys.arg import argv
 
 from math.polynomial import EvaluationMethod
