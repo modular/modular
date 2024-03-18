@@ -164,8 +164,8 @@ kgen.func @caller() {
   // CHECK-NEXT: "use"(%idx0, %arg0)
   %0 = kgen.create_closure[(index, index) capturing -> (): @callee](%idx0)
 
-  // CHECK: call_signature %0(%idx0)
-  kgen.call_signature %0(%idx0) : (index) capturing -> ()
+  // CHECK: call_indirect %0(%idx0)
+  kgen.call_indirect %0(%idx0) : (index) capturing -> ()
   kgen.return
 }
 

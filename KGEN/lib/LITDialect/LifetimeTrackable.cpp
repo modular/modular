@@ -126,7 +126,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
         endInitState = EndsUninit;
       }
     }
-    if (auto call = dyn_cast<LIT::CallSignatureOp>(res.getOwner())) {
+    if (auto call = dyn_cast<LIT::CallIndirectOp>(res.getOwner())) {
       if (call.getCallee().getType().hasOwnedRegisterResult()) {
         name = StringAttr::get(v.getContext(), "(call result)");
         isIndirect = false;
@@ -276,7 +276,7 @@ getCallOpEffects(Operation &op,
 
     assert(conventions.size() == op.getNumOperands());
   } else {
-    auto call = cast<LIT::CallSignatureOp>(op);
+    auto call = cast<LIT::CallIndirectOp>(op);
     signature = call.getCallee().getType();
     conventions = signature.getArgConventions();
 
@@ -525,7 +525,7 @@ OverallOpValueEffect LIT::getOperationEffects(
 
   // If this is a call, investigate each of the operands along with the
   // argument convention effects.
-  if (isa<LIT::CallSignatureOp, KGENCallOpInterface>(op)) {
+  if (isa<LIT::CallIndirectOp, KGENCallOpInterface>(op)) {
     getCallOpEffects(op, operands, results, lifetimes);
     return {};
   }

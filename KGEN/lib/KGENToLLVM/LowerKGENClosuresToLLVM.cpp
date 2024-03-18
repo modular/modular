@@ -301,11 +301,11 @@ public:
   }
 };
 
-struct CallSignatureOpConversion
-    : public ConvertPOPToLLVMPattern<CallSignatureOp> {
-  using ConvertPOPToLLVMPattern<CallSignatureOp>::ConvertPOPToLLVMPattern;
+struct CallIndirectOpConversion
+    : public ConvertPOPToLLVMPattern<CallIndirectOp> {
+  using ConvertPOPToLLVMPattern<CallIndirectOp>::ConvertPOPToLLVMPattern;
   LogicalResult
-  matchAndRewrite(CallSignatureOp op, CallSignatureOpAdaptor adaptor,
+  matchAndRewrite(CallIndirectOp op, CallIndirectOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // If there are no result types, set it to void. Otherwise, set the result
     // type to the packed result types.
@@ -408,9 +408,9 @@ void LowerRuntimeClosuresPass::runOnOperation() {
   target.addLegalOp<mlir::UnrealizedConversionCastOp>();
 
   target.addIllegalOp<CreateClosureOp>();
-  target.addIllegalOp<CallSignatureOp>();
+  target.addIllegalOp<CallIndirectOp>();
   patterns.insert<CreateRuntimeClosureOpConversion>(symtab, typeConverter);
-  patterns.insert<CallSignatureOpConversion>(typeConverter);
+  patterns.insert<CallIndirectOpConversion>(typeConverter);
 
   if (failed(
           mlir::applyPartialConversion(theModule, target, std::move(patterns))))

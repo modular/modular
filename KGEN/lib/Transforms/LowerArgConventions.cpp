@@ -135,7 +135,7 @@ lowerSignature(SignatureType sig) {
 }
 
 /// Helper to perform the bulk of the lowering for `kgen.call` and
-/// `kgen.call_signature` ops.
+/// `kgen.call_indirect` ops.
 static std::pair<SignatureType, SmallVector<Value>>
 lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
                 SignatureType oldSig) {
@@ -213,8 +213,8 @@ static void lowerCallOp(CallOp callOp) {
       SymbolConstantAttr::get(callOp.getCallee().getSymbol(), newSig));
 }
 
-/// Lower the input conventions for a KGEN::CallSignatureOp if needed.
-static void lowerCallSignatureOp(CallSignatureOp callOp) {
+/// Lower the input conventions for a KGEN::CallIndirectOp if needed.
+static void lowerCallIndirectOp(CallIndirectOp callOp) {
   TypedValue<SignatureType> callee = callOp.getCallee();
   SignatureType oldSig = callee.getType();
   auto [newSig, newOperands] =
@@ -343,11 +343,11 @@ static void lowerArgConventions(Operation &op) {
     op.walk([](Operation *op) {
       if (auto callOp = dyn_cast<CallOp>(op))
         return lowerCallOp(callOp);
-      if (auto callOp = dyn_cast<CallSignatureOp>(op))
-        return lowerCallSignatureOp(callOp);
+      if (auto callOp = dyn_cast<CallIndirectOp>(op))
+        return lowerCallIndirectOp(callOp);
     });
 
-    // We must do this in a second pass, otherwise ops like kgen.call_signature
+    // We must do this in a second pass, otherwise ops like kgen.call_indirect
     // would be difficult to identify for lowering (since their argument types
     // would be lowered already).
     mlir::AttrTypeReplacer replacer;

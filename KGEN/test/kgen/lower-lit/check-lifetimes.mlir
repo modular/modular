@@ -77,7 +77,7 @@ lit.func @indirectCall(%a: !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem) {
       !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem,
       !lit.ref<@Struct, mut *"life"> byref_result) -> !kgen.none>: byrefResultFn]()
   %c = lit.var.decl "c" var : !lit.ref<@Struct, mut *"life">
-  lit.call_signature %callee(%a, %c) :
+  lit.call_indirect %callee(%a, %c) :
       !lit.signature<(
         !lit.ref<@Struct, imm #lit.lifetime> borrow_in_mem,
         !lit.ref<@Struct, mut *"life"> byref_result) -> !kgen.none>

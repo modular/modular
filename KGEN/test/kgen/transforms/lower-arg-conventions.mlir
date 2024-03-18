@@ -54,12 +54,12 @@ kgen.func @test_lower_args(%arg0: !lower_args_sig) {
 
   // CHECK-DAG: %[[VAL0:.*]] = pop.load %[[P0]] : !kgen.pointer<index>
   // CHECK-DAG: %[[VAL1:.*]] = pop.load %[[P1]] : !kgen.pointer<struct<(index, index)>>
-  // CHECK: kgen.call_signature %arg0(%[[VAL0]], %[[VAL1]], %[[P2]], %[[P0]]) : (
+  // CHECK: kgen.call_indirect %arg0(%[[VAL0]], %[[VAL1]], %[[P2]], %[[P0]]) : (
   // CHECK-SAME: index,
   // CHECK-SAME: !kgen.struct<(index, index)>,
   // CHECK-SAME: !kgen.pointer<struct<(index, index) memoryOnly>> borrow_in_mem,
   // CHECK-SAME: !kgen.pointer<index> owned) -> ()
-  kgen.call_signature %arg0(%0, %1, %2, %0) : !lower_args_sig
+  kgen.call_indirect %arg0(%0, %1, %2, %0) : !lower_args_sig
   kgen.return
 }
 
@@ -118,15 +118,15 @@ kgen.func @test_lower_res(%arg0: !byref_res_sig, %arg1: !byref_res_reg_passable_
   // CHECK-NOT: pop.store
   kgen.call @byref_res_mem_only(%arg3, %2) : !byref_res_mem_only_sig
 
-  // CHECK: %[[RES0:.*]] = kgen.call_signature %arg0(%arg3) : (index owned) -> index
+  // CHECK: %[[RES0:.*]] = kgen.call_indirect %arg0(%arg3) : (index owned) -> index
   // CHECK-NEXT: pop.store %[[RES0]], %[[P0]] : !kgen.pointer<index>
-  kgen.call_signature %arg0(%arg3, %0) : !byref_res_sig
-  // CHECK: %[[RES1:.*]] = kgen.call_signature %arg1(%arg3) : (index owned) -> !kgen.struct<(index, index)>
+  kgen.call_indirect %arg0(%arg3, %0) : !byref_res_sig
+  // CHECK: %[[RES1:.*]] = kgen.call_indirect %arg1(%arg3) : (index owned) -> !kgen.struct<(index, index)>
   // CHECK-NEXT: pop.store %[[RES1]], %[[P1]] : !kgen.pointer<struct<(index, index)>>
-  kgen.call_signature %arg1(%arg3, %1) : !byref_res_reg_passable_sig
-  // kgen.call_signature %arg2(%[[P2]], %arg3) : (index owned, !kgen.pointer<struct<(index, index) memoryOnly>> byref_result) -> !kgen.none
+  kgen.call_indirect %arg1(%arg3, %1) : !byref_res_reg_passable_sig
+  // kgen.call_indirect %arg2(%[[P2]], %arg3) : (index owned, !kgen.pointer<struct<(index, index) memoryOnly>> byref_result) -> !kgen.none
   // CHECK-NOT: pop.store
-  kgen.call_signature %arg2(%arg3, %2) : !byref_res_mem_only_sig
+  kgen.call_indirect %arg2(%arg3, %2) : !byref_res_mem_only_sig
 
   kgen.return
 }
@@ -188,7 +188,7 @@ kgen.func @test_byref_throws(
   "use.result"(%__result__) : (!kgen.pointer<index>) -> ()
 
 
-  // CHECK: %[[RES:.*]] = kgen.call_signature %arg0(%arg1)
+  // CHECK: %[[RES:.*]] = kgen.call_indirect %arg0(%arg1)
   // CHECK-NEXT: %[[COND:.*]] = kgen.variant.is %[[RES]], 1
   // CHECK-NEXT: %[[NEWRES:.*]] = hlcf.if %[[COND]]
   // CHECK-NEXT:   %[[VAL:.*]] = kgen.variant.take %[[RES]], 1
@@ -200,7 +200,7 @@ kgen.func @test_byref_throws(
   // CHECK-NEXT:   %[[ERR:.*]] = kgen.variant.take %[[RES]], 0
   // CHECK-NEXT:   %[[ELSE:.*]] = kgen.variant.create %[[ERR]], 0
   // CHECK-NEXT:   hlcf.yield %[[ELSE]]
-  %res2 = kgen.call_signature %arg0(%arg1, %__result__) : !byref_throws_sig
+  %res2 = kgen.call_indirect %arg0(%arg1, %__result__) : !byref_throws_sig
   "handle.error"(%res2) : (!kgen.variant<!Error, !kgen.none>) -> ()
   "use.result"(%__result__) : (!kgen.pointer<index>) -> ()
 }

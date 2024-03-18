@@ -1202,8 +1202,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   } else {
     Value calleeVal = callee.getIfSRValue();
     assert(calleeVal && "don't have a callee of expected type");
-    auto call = builder->create<CallSignatureOp>(loc, resultType, calleeVal,
-                                                 implicitLifetimes, callArgs);
+    auto call = builder->create<CallIndirectOp>(loc, resultType, calleeVal,
+                                                implicitLifetimes, callArgs);
     callResult = call.getResult(0);
   }
 

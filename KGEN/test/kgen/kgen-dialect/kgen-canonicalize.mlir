@@ -188,7 +188,7 @@ kgen.func @no_hoist() {
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
     kgen.return loc(#loc5)
   } callLoc(#loc4) loc(#loc5)
-  kgen.call_signature %0() : () -> () loc(#loc4)
+  kgen.call_indirect %0() : () -> () loc(#loc4)
   kgen.return loc(#loc4)
 } loc(#loc4)
 
@@ -203,7 +203,7 @@ kgen.func @no_hoist_nodebug_callee() {
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
     kgen.return loc(#loc5)
   } callLoc(#loc4) loc(#loc2)
-  kgen.call_signature %0() : () -> () loc(#loc4)
+  kgen.call_indirect %0() : () -> () loc(#loc4)
   kgen.return loc(#loc4)
 } loc(#loc4)
 
@@ -218,7 +218,7 @@ kgen.func @hoist() {
     pop.store %array, %1 : !kgen.pointer<array<1, index>>
     kgen.return
   }
-  kgen.call_signature %0() : () -> ()
+  kgen.call_indirect %0() : () -> ()
   kgen.return
 }
 
@@ -360,7 +360,7 @@ kgen.func @closure_callee(%arg0: index, %arg1: i32) -> i64 {
 kgen.func @call_create_closure(%arg0: index, %arg1: i32) -> i64 {
   // CHECK-NEXT: %0 = kgen.call @closure_callee(%arg0, %arg1)
   %0 = kgen.create_closure[(index, i32) -> i64: @closure_callee](%arg0)
-  %1 = kgen.call_signature %0(%arg1) : (i32) capturing -> i64
+  %1 = kgen.call_indirect %0(%arg1) : (i32) capturing -> i64
   // CHECK-NEXT: return %0
   kgen.return %1 : i64
 }

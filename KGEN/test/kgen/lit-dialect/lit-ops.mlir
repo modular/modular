@@ -65,8 +65,8 @@ kgen.generator @struct_extract(%struct: !lit.declref<@FooStruct<2, :dtype f32, :
 lit.func @calls[imm a, mut b](%arg0: !lit.signature<[2]() -> ()>) {
   // CHECK: lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
   lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
-  // CHECK: lit.call_signature %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
-  lit.call_signature %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
+  // CHECK: lit.call_indirect %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
+  lit.call_indirect %arg0[imm a, mut b]() : !lit.signature<[2]() -> ()>
   kgen.return
 }
 

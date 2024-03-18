@@ -184,20 +184,20 @@ def LIT_CallOp : LITOp<"call", [
 }
 
 //===----------------------------------------------------------------------===//
-// CallSignatureOp
+// CallIndirectOp
 //===----------------------------------------------------------------------===//
 
-def LIT_CallSignatureOp : LITOp<"call_signature"> {
+def LIT_CallIndirectOp : LITOp<"call_indirect"> {
   let summary = "indirect call";
   let description = [{
-    The `lit.call_signature` operation is an indirect call to a signature-typed
+    The `lit.call_indirect` operation is an indirect call to a signature-typed
     dynamic callee. It references its callee via an SSA operand. It contains
     optional bindings for implicit lifetime parameters.
 
     Example:
 
     ```mlir
-    lit.call_signature %callee[*"x`"](%x) : (!lit.ref<mut index, *"x`">) -> ()
+    lit.call_indirect %callee[*"x`"](%x) : (!lit.ref<mut index, *"x`">) -> ()
     ```
   }];
 
