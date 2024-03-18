@@ -17,7 +17,7 @@ from sys.info import (
 )
 
 from buffer import NDBuffer
-from kernel_utils._optional_param import OptionalParamInt, OptionalParamInts
+from ._optional_param import OptionalParamInt, OptionalParamInts
 from MatmulUtils import partition_work
 
 from utils.index import Index, StaticIntTuple

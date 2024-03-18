@@ -18,7 +18,7 @@ from buffer import Buffer, NDBuffer, parallel_memcpy
 from buffer.buffer import prod_dims
 from gpu.host.memory import _copy_device_to_device_async
 from gpu.host.stream import Stream
-from kernel_utils._optional_param import OptionalParamInt
+from ._optional_param import OptionalParamInt
 from memory import memset_zero, stack_allocation
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
