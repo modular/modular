@@ -395,15 +395,28 @@ fn DimTypeDef(ty: Dim) -> Dim:
     return ty
 
 
-@mogg_register("builtin.create_int_async")
+@mogg_register("builtin.create_index_async")
 @always_inline
 @export
-fn create_int_async(
+fn create_index_async(
     value: Int,
     async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
     runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
 ):
     external_call["KGEN_CompilerRT_CreateAsync_ssizet", NoneType](
+        value, async_ptr, runtime
+    )
+
+
+@mogg_register("builtin.create_i1_async")
+@always_inline
+@export
+fn create_i1_async(
+    value: Bool,
+    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+):
+    external_call["KGEN_CompilerRT_CreateAsync_bool", NoneType](
         value, async_ptr, runtime
     )
 
@@ -418,20 +431,6 @@ fn unpack_async(
         "KGEN_CompilerRT_GetValueFromAsync",
         __mlir_type.`!kgen.pointer<scalar<invalid>>`,
     ](async_ptr)
-
-
-@mogg_register("mip.constant.index")
-@always_inline
-@export
-fn mip_constant_index[value: Int]() -> Int:
-    return value
-
-
-@mogg_register("mip.add")
-@always_inline
-@export
-fn mip_add(x: Int, y: Int) -> Int:
-    return x + y
 
 
 # ===----------------------------------------------------------------------===#
@@ -3986,3 +3985,88 @@ fn pytorch_test_custom[
     rank: Int,
 ](data: NDBuffer[type, rank], out: NDBuffer[type, rank]):
     print("hello")
+
+
+# ===----------------------------------------------------------------------===#
+# MIP Index Primitives
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("mip.constant.index")
+@always_inline
+@export
+fn mip_constant_index[value: Int]() -> Int:
+    return value
+
+
+@mogg_register("mip.add")
+@always_inline
+@export
+fn mip_add(x: Int, y: Int) -> Int:
+    return x + y
+
+
+@mogg_register("mip.mul")
+@always_inline
+@export
+fn mip_mul(lhs: Int, rhs: Int) -> Int:
+    return lhs * rhs
+
+
+@mogg_register("mip.div")
+@always_inline
+@export
+fn mip_div(numerator: Int, denominator: Int) -> Int:
+    debug_assert(denominator != 0, "mip.div divide by zero")
+    return numerator // denominator
+
+
+@mogg_register("mip.div.ceil")
+@always_inline
+@export
+fn mip_div_ceil(numerator: Int, denominator: Int) -> Int:
+    debug_assert(denominator != 0, "mip.div.ceil divide by zero")
+    return div_ceil(numerator, denominator)
+
+
+@mogg_register("mip.cmp.eq")
+@always_inline
+@export
+fn mip_cmp_eq(x: Int, y: Int) -> Bool:
+    return x == y
+
+
+@mogg_register("mip.cmp.lt")
+@always_inline
+@export
+fn mip_cmp_lt(x: Int, y: Int) -> Bool:
+    return x < y
+
+
+@mogg_register("mip.cmp.le")
+@always_inline
+@export
+fn mip_cmp_le(x: Int, y: Int) -> Bool:
+    return x <= y
+
+
+@mogg_register("mip.max")
+@always_inline
+@export
+fn mip_max(x: Int, y: Int) -> Int:
+    return max(x, y)
+
+
+@mogg_register("mip.min")
+@always_inline
+@export
+fn mip_min(x: Int, y: Int) -> Int:
+    return min(x, y)
+
+
+@mogg_register("mip.mod")
+@always_inline
+@export
+fn mip_mod(numerator: Int, denominator: Int) -> Int:
+    debug_assert(denominator != 0, "mip.mod divide by zero")
+    return numerator % denominator
