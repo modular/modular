@@ -8,7 +8,7 @@
 from os import abort
 from time import now
 
-from gpu.host.stream import Stream, _StreamImpl
+from .stream import Stream, _StreamImpl
 from memory.unsafe import DTypePointer, Pointer
 
 from ._utils import _check_error, _get_dylib_function
