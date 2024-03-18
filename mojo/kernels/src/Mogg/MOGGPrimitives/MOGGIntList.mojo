@@ -9,7 +9,7 @@
 from math import max
 
 from utils.index import StaticIntTuple
-from utils.list import DimList
+from utils.list import DimList, _make_tuple
 
 
 struct IntList[static_values: DimList = DimList()](Sized):
@@ -173,7 +173,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
         @parameter
         if Self.is_fully_static():
-            return StaticIntTuple[Self._safe_len](Self.static_values)
+            return _make_tuple[Self._safe_len](Self.static_values)
         else:
             return self.stack_alloc_data
 
@@ -190,7 +190,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
 
         @parameter
         if Self.is_fully_static():
-            var v = StaticIntTuple[Self._length](Self.static_values)
+            var v = _make_tuple[Self._length](Self.static_values)
             return v[index]
         elif Self.has_static_length():
             return self.stack_alloc_data[index]
