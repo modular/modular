@@ -9,6 +9,7 @@
 from math import div_ceil, max, min
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -28,7 +29,6 @@ from tensor import Tensor
 
 from utils._optional import Optional
 from utils.index import Index
-from buffer.list import DimList
 
 
 @always_inline

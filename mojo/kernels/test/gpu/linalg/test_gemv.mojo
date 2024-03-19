@@ -7,8 +7,10 @@
 # RUN: %mojo %s | FileCheck %s
 
 from math import div_ceil, max, min
+from random import randn, seed
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -18,19 +20,17 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from random import seed, randn
 from gpu.sync import syncwarp
 from Matmul import (
+    elementwise_epilogue_type,
     gemv_kernel,
     gevm_kernel,
-    matmul_kernel_naive,
     matmul_kernel,
-    elementwise_epilogue_type,
+    matmul_kernel_naive,
 )
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index
-from buffer.list import DimList
 
 
 fn run_matvec(M: Int, N: Int, K: Int) raises:

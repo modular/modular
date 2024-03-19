@@ -12,6 +12,7 @@ from sys import argv
 
 from BatchedMatmul import batched_matmul
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -30,7 +31,6 @@ from nn.mha import (
 from nn.softmax import softmax
 
 from utils.index import Index
-from buffer.list import DimList
 
 alias type = DType.float32
 

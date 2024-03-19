@@ -10,6 +10,7 @@ from math import div_ceil, max, min
 from random import random_si64, seed
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import (
     WARP_SIZE,
     BlockDim,
@@ -36,7 +37,6 @@ from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index
-from buffer.list import DimList
 
 
 # TF32 Tensor core Matmul with shape m16n8k8

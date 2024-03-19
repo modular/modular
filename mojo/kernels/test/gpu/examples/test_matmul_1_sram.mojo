@@ -13,6 +13,7 @@ from sys.param_env import env_get_string
 
 from algorithm.functional import tile_and_unswitch
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.memory import (
@@ -25,7 +26,6 @@ from memory import memset_zero, stack_allocation
 from tensor import Tensor
 
 from utils.index import Index
-from buffer.list import DimList
 
 # Tile size for tiling in shared memory.
 # Thread block would have shape (tile_size, tile_size, 1)

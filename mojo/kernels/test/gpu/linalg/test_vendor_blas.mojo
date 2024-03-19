@@ -13,6 +13,7 @@ from sys.info import triple_is_nvidia_cuda
 from sys.param_env import env_get_string
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from builtin.io import _printf
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Context, Dim, Function, Stream, synchronize
@@ -27,7 +28,6 @@ from memory.unsafe import DTypePointer
 from tensor import Tensor
 
 from utils.index import Index
-from buffer.list import DimList
 
 alias BLOCK_DIM = 8
 

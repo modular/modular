@@ -9,6 +9,7 @@
 from math import div_ceil
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.memory import (
@@ -23,7 +24,6 @@ from memory.unsafe import DTypePointer
 from tensor import Tensor
 
 from utils.index import Index
-from buffer.list import DimList
 
 alias BLOCK_DIM = 4
 

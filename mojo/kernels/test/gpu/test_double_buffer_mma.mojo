@@ -11,6 +11,7 @@ from pathlib import Path
 from sys import argv
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import (
     WARP_SIZE,
     AddressSpace,
@@ -33,8 +34,6 @@ from gpu.mma import mma
 from Matmul import matmul_kernel_naive
 from memory.unsafe import DTypePointer
 from testing import assert_almost_equal
-
-from buffer.list import DimList
 
 
 fn is_benchmark() -> Bool:

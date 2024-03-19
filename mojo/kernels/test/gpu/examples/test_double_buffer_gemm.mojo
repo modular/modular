@@ -10,6 +10,7 @@ from math import div_ceil, isclose, isnan
 from sys import argv
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import (
     WARP_SIZE,
     AddressSpace,
@@ -31,8 +32,6 @@ from gpu.memory import async_copy, async_copy_wait_all
 from Matmul import matmul_kernel_naive
 from memory.unsafe import DTypePointer
 from testing import assert_almost_equal
-
-from buffer.list import DimList
 
 
 fn is_benchmark() -> Bool:

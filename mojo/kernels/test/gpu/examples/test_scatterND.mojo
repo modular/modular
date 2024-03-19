@@ -9,6 +9,7 @@
 from math import div_ceil
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.event import time_function
@@ -21,7 +22,6 @@ from gpu.host.memory import (
 from tensor import Tensor, TensorShape
 
 from utils.index import Index
-from buffer.list import DimList
 
 # This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global
 # with value of 256).
