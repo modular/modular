@@ -6,7 +6,9 @@
 # RUN: %mojo %s | FileCheck %s
 
 from layout._utils import ManagedLayoutTensor
-from layout import *
+from layout.int_tuple import product
+from layout.layout import Layout
+from layout.layout_tensor import *
 
 
 fn print_raw_major_tensor[
@@ -24,6 +26,22 @@ fn print_tile_tensor[
     for i in range(tensor.dim[0]()):
         for j in range(tensor.dim[1]()):
             print_no_newline(tensor[i, j], "\t")
+        print("")
+
+
+# Print for shape ((m, n), (p, q)) in a 2D format
+fn print_mode2_shape2_tensor[
+    layout: Layout, dtype: DType
+](tensor: LayoutTensor[layout, dtype]):
+    constrained[
+        len(layout) == 2
+        and len(layout.shape[0]) == 2
+        and len(layout.shape[1]) == 2
+    ]()
+    for i in range(product(layout.shape[0])):
+        for j in range(product(layout.shape[1])):
+            var idx = layout(IntTuple(i, j))
+            print_no_newline(tensor.ptr[idx], "\t")
         print("")
 
 
@@ -382,6 +400,137 @@ fn test_distribute_tiled_layout():
         thread_tile.print()
 
 
+fn test_distribute_with_tile_size():
+    print("== test_distribute_with_tile_size")
+
+    var tensor0 = LayoutTensor[
+        Layout(IntTuple(16, 8), IntTuple(8, 1)), DType.float32
+    ].stack_allocation()
+
+    tensor0.linspace()
+
+    # Thread layout:
+    # TH_0 TH_2
+    # TH_1 TH_3
+    # TH_4 TH_6
+    # TH_5 TH_7
+    alias thread_layout = Layout(
+        IntTuple(IntTuple(2, 2), 2), IntTuple(IntTuple(1, 4), 2)
+    )
+
+    # Each thread should have a rank-2 layout. The first mode is a tile to work
+    # on. The second mode is how this tile repeats in the domain. The tiles are
+    # distributed as follow:
+    # +-----------+-----------+-----------+-----------+
+    # | TH_0 TH_0 | TH_2 TH_2 | TH_0 TH_0 | TH_2 TH_2 |
+    # | TH_0 TH_0 | TH_2 TH_2 | TH_0 TH_0 | TH_2 TH_2 |
+    # |-----------+-----------+-----------+-----------+
+    # | TH_1 TH_1 | TH_3 TH_3 | TH_1 TH_1 | TH_3 TH_3 |
+    # | TH_1 TH_1 | TH_3 TH_3 | TH_1 TH_1 | TH_3 TH_3 |
+    # |-----------+-----------+-----------+-----------+
+    # | TH_4 TH_4 | TH_6 TH_6 | TH_4 TH_4 | TH_6 TH_6 |
+    # | TH_4 TH_4 | TH_6 TH_6 | TH_4 TH_4 | TH_6 TH_6 |
+    # |-----------+-----------+-----------+-----------+
+    # | TH_5 TH_5 | TH_7 TH_7 | TH_5 TH_5 | TH_7 TH_7 |
+    # | TH_5 TH_5 | TH_7 TH_7 | TH_5 TH_5 | TH_7 TH_7 |
+    # |-----------+-----------+-----------+-----------+
+    # | TH_0 TH_0 | TH_2 TH_2 | TH_0 TH_0 | TH_2 TH_2 |
+    # | TH_0 TH_0 | TH_2 TH_2 | TH_0 TH_0 | TH_2 TH_2 |
+    # |-----------+-----------+-----------+-----------+
+    # | TH_1 TH_1 | TH_3 TH_3 | TH_1 TH_1 | TH_3 TH_3 |
+    # | TH_1 TH_1 | TH_3 TH_3 | TH_1 TH_1 | TH_3 TH_3 |
+    # |-----------+-----------+-----------+-----------+
+    # | TH_4 TH_4 | TH_6 TH_6 | TH_4 TH_4 | TH_6 TH_6 |
+    # | TH_4 TH_4 | TH_6 TH_6 | TH_4 TH_4 | TH_6 TH_6 |
+    # |-----------+-----------+-----------+-----------+
+    # | TH_5 TH_5 | TH_7 TH_7 | TH_5 TH_5 | TH_7 TH_7 |
+    # | TH_5 TH_5 | TH_7 TH_7 | TH_5 TH_5 | TH_7 TH_7 |
+    # +-----------+-----------+-----------+-----------+
+
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: 0.0     64.0    4.0     68.0
+    # CHECK: 8.0     72.0    12.0    76.0
+    # CHECK: 1.0     65.0    5.0     69.0
+    # CHECK: 9.0     73.0    13.0    77.0
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: 16.0    80.0    20.0    84.0
+    # CHECK: 24.0    88.0    28.0    92.0
+    # CHECK: 17.0    81.0    21.0    85.0
+    # CHECK: 25.0    89.0    29.0    93.0
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: 2.0     66.0    6.0     70.0
+    # CHECK: 10.0    74.0    14.0    78.0
+    # CHECK: 3.0     67.0    7.0     71.0
+    # CHECK: 11.0    75.0    15.0    79.0
+    # CHECK: ----thread[ 3 ]----
+    # CHECK: 18.0    82.0    22.0    86.0
+    # CHECK: 26.0    90.0    30.0    94.0
+    # CHECK: 19.0    83.0    23.0    87.0
+    # CHECK: 27.0    91.0    31.0    95.0
+    # CHECK: ----thread[ 4 ]----
+    # CHECK: 32.0    96.0    36.0    100.0
+    # CHECK: 40.0    104.0   44.0    108.0
+    # CHECK: 33.0    97.0    37.0    101.0
+    # CHECK: 41.0    105.0   45.0    109.0
+    # CHECK: ----thread[ 5 ]----
+    # CHECK: 48.0    112.0   52.0    116.0
+    # CHECK: 56.0    120.0   60.0    124.0
+    # CHECK: 49.0    113.0   53.0    117.0
+    # CHECK: 57.0    121.0   61.0    125.0
+    # CHECK: ----thread[ 6 ]----
+    # CHECK: 34.0    98.0    38.0    102.0
+    # CHECK: 42.0    106.0   46.0    110.0
+    # CHECK: 35.0    99.0    39.0    103.0
+    # CHECK: 43.0    107.0   47.0    111.0
+    # CHECK: ----thread[ 7 ]----
+    # CHECK: 50.0    114.0   54.0    118.0
+    # CHECK: 58.0    122.0   62.0    126.0
+    # CHECK: 51.0    115.0   55.0    119.0
+    # CHECK: 59.0    123.0   63.0    127.0
+
+    for tid in range(thread_layout.size()):
+        print("----thread[", tid, "]----")
+        var tile = tensor0.distribute[
+            thread_layout, tile_size = IntTuple(2, 2)
+        ](tid)
+        print_mode2_shape2_tensor(tile)
+
+    var tensor1 = LayoutTensor[Layout(8), DType.float32].stack_allocation()
+    tensor1.linspace()
+
+    # Threads 2, 3, 6, 7 should have the same fragments as thread 0, 1, 4, 5.
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: 0.0
+    # CHECK: 1.0
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: 2.0
+    # CHECK: 3.0
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: 0.0
+    # CHECK: 1.0
+    # CHECK: ----thread[ 3 ]----
+    # CHECK: 2.0
+    # CHECK: 3.0
+    # CHECK: ----thread[ 4 ]----
+    # CHECK: 4.0
+    # CHECK: 5.0
+    # CHECK: ----thread[ 5 ]----
+    # CHECK: 6.0
+    # CHECK: 7.0
+    # CHECK: ----thread[ 6 ]----
+    # CHECK: 4.0
+    # CHECK: 5.0
+    # CHECK: ----thread[ 7 ]----
+    # CHECK: 6.0
+    # CHECK: 7.0
+    for tid in range(thread_layout.size()):
+        print("----thread[", tid, "]----")
+        var tile = tensor1.distribute[
+            thread_layout, tile_size = IntTuple(2), axis=0
+        ](tid)
+        tile.print()
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -389,3 +538,4 @@ fn main():
     test_tensor_tile_and_distribute_custom_layout()
     test_copy_to_tile_major_layout()
     test_distribute_tiled_layout()
+    test_distribute_with_tile_size()
