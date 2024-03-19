@@ -157,7 +157,7 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// be initialized when the function returns.
   I32EnumAttrCase<"ByRef", 5, "byref">,
 
-  /// This is used on the first argument of a function that returns a
+  /// This is used on the last argument of a function that returns a
   /// memory-only value, requiring it to be returned through memory.
   ///
   /// The MLIR type is always a PointerType, and the underlying type can be
@@ -171,6 +171,10 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   /// semantics to ByRefResult on the callee side, but isn't a result on the
   /// caller side.
   I32EnumAttrCase<"InitSelf", 7, "init_self">,
+
+  /// This is used on the second-last argument of a function that may raise,
+  /// returning a potentially initialized error value if the function throws.
+  I32EnumAttrCase<"ByRefError", 8, "byref_error">,
 ]> {
   let cppNamespace = "M::KGEN";
 }

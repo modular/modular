@@ -191,6 +191,11 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     startsUninit = true;
     endInitState = InitOnNormal;
     break;
+  case ArgConvention::ByRefError:
+    isIndirect = true;
+    startsUninit = true;
+    endInitState = InitOnError;
+    break;
   case ArgConvention::InitSelf:
     // Unlike byref-result, we allow memberwise initialization of 'self' in an
     // init method to construct a full value.
@@ -303,6 +308,7 @@ getCallOpEffects(Operation &op,
     case ArgConvention::ByRef:
       return OperandEffect::memInOut;
     case ArgConvention::ByRefResult:
+    case ArgConvention::ByRefError:
     case ArgConvention::InitSelf:
       return OperandEffect::memStoreOwned;
     case ArgConvention::None:

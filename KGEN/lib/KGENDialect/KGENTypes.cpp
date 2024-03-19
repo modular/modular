@@ -238,6 +238,7 @@ bool SignatureType::hasAddress(ArgConvention conv) {
   case ArgConvention::ByRef:
   case ArgConvention::ByRefResult:
   case ArgConvention::InitSelf:
+  case ArgConvention::ByRefError:
     return true;
   }
   llvm_unreachable("invalid argument convention");

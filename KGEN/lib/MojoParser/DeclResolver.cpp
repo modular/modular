@@ -879,7 +879,8 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     ASTType argType = argTypeX;
 
     // We do not mangle byref results into the signature.
-    if (convention == ArgConvention::ByRefResult)
+    if (convention == ArgConvention::ByRefResult ||
+        convention == ArgConvention::ByRefError)
       continue;
 
     // Update the mangled name for this argument.
@@ -927,6 +928,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       mangledName += "=&";
       break;
     case ArgConvention::ByRefResult:
+    case ArgConvention::ByRefError:
       llvm_unreachable("byref_result should be skipped");
     case ArgConvention::None:
       llvm_unreachable("none convention not permitted in lit");

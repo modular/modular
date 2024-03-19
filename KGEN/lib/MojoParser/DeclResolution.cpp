@@ -1102,7 +1102,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
        llvm::zip(funcSignature.getArgNames(), funcOp.getBody()->getArguments(),
                  funcSignature.getArgConventions())) {
     // Don't bind byref-result, it is handled specially by 'return'.
-    if (convention == ArgConvention::ByRefResult)
+    if (convention == ArgConvention::ByRefResult ||
+        convention == ArgConvention::ByRefError)
       continue;
 
     // Figure out which decl corresponds to this argument so we can finish it.
