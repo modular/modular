@@ -37,12 +37,12 @@ add_modular_library(MojoParser
   MSupportFilesystem
   MCompilerSupport
   KGENSupport
-  KGENToolCommon
-  LLCLRuntime
+  KGENInitAllDialects
+  KGENCompilationOptions
   MTelemetry
-  MLIRTransformUtils
+  LLCLRuntime
 
+  MLIRTransformUtils
   MLIRBytecodeReader
   MLIRBytecodeWriter
-  MLIRIndexDialect
 )

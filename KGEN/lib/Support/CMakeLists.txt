@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(KGENSupport
+  CompilerProfiling.cpp
   Configuration.cpp
   DebugInfoEncoding.cpp
   Debugging.cpp
