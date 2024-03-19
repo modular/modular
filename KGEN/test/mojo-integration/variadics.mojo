@@ -13,11 +13,11 @@ struct TalkativeMem(Stringable):
 
     fn __init__(inout self, state: Int):
         self.state = state
-        print_no_newline("initializing ")
+        print("initializing ", end="")
         print(state)
 
     fn __del__(owned self):
-        print_no_newline("destroying ")
+        print("destroying ", end="")
         print(self.state)
 
     fn __str__(self) -> String:
@@ -31,11 +31,11 @@ struct TalkativeReg(Stringable):
 
     fn __init__(inout self, state: Int):
         self.state = state
-        print_no_newline("initializing ")
+        print("initializing ", end="")
         print(state)
 
     fn __del__(owned self):
-        print_no_newline("destroying ")
+        print("destroying ", end="")
         print(self.state)
 
     fn __str__(self) -> String:
