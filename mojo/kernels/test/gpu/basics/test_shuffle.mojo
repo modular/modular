@@ -56,7 +56,7 @@ fn _kernel_launch_helper[
 fn _shuffle_idx_launch_helper[type: DType, simd_width: Int]() raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
-    alias constant_add = 42.0
+    alias constant_add: Scalar[type] = 42.0
     var host_ptr = DTypePointer[type].alloc(buffer_size)
 
     for i in range(buffer_size):
@@ -90,10 +90,18 @@ fn test_shuffle_idx_bf16_packed() raises:
     _shuffle_idx_launch_helper[DType.bfloat16, 2]()
 
 
+fn test_shuffle_idx_fp16() raises:
+    _shuffle_idx_launch_helper[DType.float16, 1]()
+
+
+fn test_shuffle_idx_fp16_packed() raises:
+    _shuffle_idx_launch_helper[DType.float16, 2]()
+
+
 fn _shuffle_up_launch_helper[type: DType, simd_width: Int]() raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
-    alias constant_add = 42.0
+    alias constant_add: Scalar[type] = 42.0
     alias offset = 16
 
     var host_ptr = DTypePointer[type].alloc(buffer_size)
@@ -138,10 +146,18 @@ fn test_shuffle_up_bf16_packed() raises:
     _shuffle_up_launch_helper[DType.bfloat16, 2]()
 
 
+fn test_shuffle_up_fp16() raises:
+    _shuffle_up_launch_helper[DType.float16, 1]()
+
+
+fn test_shuffle_up_fp16_packed() raises:
+    _shuffle_up_launch_helper[DType.float16, 2]()
+
+
 fn _shuffle_down_launch_helper[type: DType, simd_width: Int]() raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
-    alias constant_add = 42.0
+    alias constant_add: Scalar[type] = 42.0
     alias offset = 16
 
     var host_ptr = DTypePointer[type].alloc(buffer_size)
@@ -186,10 +202,18 @@ fn test_shuffle_down_bf16_packed() raises:
     _shuffle_down_launch_helper[DType.bfloat16, 2]()
 
 
+fn test_shuffle_down_fp16() raises:
+    _shuffle_down_launch_helper[DType.float16, 1]()
+
+
+fn test_shuffle_down_fp16_packed() raises:
+    _shuffle_down_launch_helper[DType.float16, 2]()
+
+
 fn _shuffle_xor_launch_helper[type: DType, simd_width: Int]() raises:
     alias block_size = WARP_SIZE
     alias buffer_size = block_size * simd_width
-    alias constant_add = 42.0
+    alias constant_add: Scalar[type] = 42.0
     alias offset = 1
 
     var host_ptr = DTypePointer[type].alloc(buffer_size)
@@ -208,7 +232,7 @@ fn _shuffle_xor_launch_helper[type: DType, simd_width: Int]() raises:
     for i in range(block_size):
         for j in range(simd_width):
             var idx = i * simd_width + j
-            var xor_mask = (UInt32(i) ^ UInt32(offset)).cast[DType.float32]()
+            var xor_mask = (UInt32(i) ^ UInt32(offset)).cast[type]()
             var val = xor_mask * simd_width + j + constant_add
             assert_equal(host_ptr[i * simd_width + j], val)
 
@@ -225,6 +249,14 @@ fn test_shuffle_xor_bf16() raises:
 
 fn test_shuffle_xor_bf16_packed() raises:
     _shuffle_xor_launch_helper[DType.bfloat16, 2]()
+
+
+fn test_shuffle_xor_fp16() raises:
+    _shuffle_xor_launch_helper[DType.float16, 1]()
+
+
+fn test_shuffle_xor_fp16_packed() raises:
+    _shuffle_xor_launch_helper[DType.float16, 2]()
 
 
 fn _warp_reduce_launch_helper[type: DType, simd_width: Int]() raises:
@@ -269,20 +301,38 @@ fn test_warp_reduce_bf16_packed() raises:
     _warp_reduce_launch_helper[DType.bfloat16, 2]()
 
 
+fn test_warp_reduce_fp16() raises:
+    _warp_reduce_launch_helper[DType.float16, 1]()
+
+
+fn test_warp_reduce_fp16_packed() raises:
+    _warp_reduce_launch_helper[DType.float16, 2]()
+
+
 fn main() raises:
     with Context() as ctx:
         test_shuffle_idx_fp32()
         test_shuffle_idx_bf16()
         test_shuffle_idx_bf16_packed()
+        test_shuffle_idx_fp16()
+        test_shuffle_idx_fp16_packed()
         test_shuffle_up_fp32()
         test_shuffle_up_bf16()
         test_shuffle_up_bf16_packed()
+        test_shuffle_up_fp16()
+        test_shuffle_up_fp16_packed()
         test_shuffle_down_fp32()
         test_shuffle_down_bf16()
         test_shuffle_down_bf16_packed()
+        test_shuffle_down_fp16()
+        test_shuffle_down_fp16_packed()
         test_shuffle_xor_fp32()
         test_shuffle_xor_bf16()
         test_shuffle_xor_bf16_packed()
+        test_shuffle_xor_fp16()
+        test_shuffle_xor_fp16_packed()
         test_warp_reduce_fp32()
         test_warp_reduce_bf16()
         test_warp_reduce_bf16_packed()
+        test_warp_reduce_fp16()
+        test_warp_reduce_fp16_packed()
