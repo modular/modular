@@ -24,7 +24,7 @@ from memory.unsafe import AddressSpace, DTypePointer, Pointer, _GPUAddressSpace
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
 from utils.index import product as tuple_product
-from utils.list import Dim, DimList, _make_tuple
+from buffer.list import Dim, DimList, _make_tuple
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 

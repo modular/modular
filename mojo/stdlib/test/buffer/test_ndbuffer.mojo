@@ -15,7 +15,7 @@ from memory import memcmp, memset_zero
 from tensor import Tensor
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 alias TEMP_FILE_DIR = env_get_string["TEMP_FILE_DIR"]()
 

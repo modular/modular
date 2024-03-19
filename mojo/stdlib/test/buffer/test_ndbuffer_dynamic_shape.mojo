@@ -8,7 +8,7 @@
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from memory import stack_allocation
 
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 # CHECK-LABEL: test_ndbuffer_dynamic_shape

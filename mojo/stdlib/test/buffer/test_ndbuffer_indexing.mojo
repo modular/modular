@@ -8,7 +8,7 @@
 from buffer import Buffer, NDBuffer
 from memory import stack_allocation
 
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # CHECK-LABEL: test_ndbuffer_indexing

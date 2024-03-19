@@ -10,7 +10,7 @@ from sys.info import simdwidthof
 from buffer import Buffer, NDBuffer
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 # To generate assembly, decorate the following function with `@export`
 # and run `kgen -emit -S %s` on intel machines with non-temporal store

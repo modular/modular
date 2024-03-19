@@ -16,7 +16,7 @@ from buffer.buffer import (
 from memory import stack_allocation
 
 from utils.index import StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # CHECK-LABEL: test_partial_load_store
