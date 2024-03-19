@@ -44,12 +44,12 @@ from pathlib import Path
 from algorithm.functional import elementwise
 from algorithm.reduction import argmax, argmin
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim
 from memory import memset_zero
 from memory.unsafe import bitcast
 
 from utils._serialize import _serialize
 from utils.index import Index
-from buffer.list import Dim
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 
