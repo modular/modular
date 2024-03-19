@@ -15,6 +15,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/Package/Package.h"
+#include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"

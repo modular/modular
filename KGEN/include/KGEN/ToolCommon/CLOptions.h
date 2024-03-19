@@ -360,24 +360,6 @@ private:
             llvm::cl::cat(KGENCLOptionsCategory)};
 };
 
-//===----------------------------------------------------------------------===//
-// TraceProfiler
-//===----------------------------------------------------------------------===//
-
-/// Common trace profiler setup.
-struct TraceProfiler {
-  TraceProfiler(bool enabled, int timeTraceGranularity) {
-    if (enabled)
-      initialize(timeTraceGranularity);
-  }
-  ~TraceProfiler();
-
-private:
-  void initialize(int timeTraceGranularity);
-
-  std::optional<TimeTraceProfiler> profiler;
-  std::filesystem::path outputFilePath;
-};
 } // namespace KGEN
 } // namespace M
 

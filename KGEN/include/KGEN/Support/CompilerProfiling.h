@@ -8,8 +8,13 @@
 #define KGEN_SUPPORT_COMPILERPROFILING_H
 
 #include "Support/Profiling/TimeProfiler.h"
+#include <filesystem>
 
 namespace M::KGEN {
+
+//===----------------------------------------------------------------------===//
+// TimeTraceScope
+//===----------------------------------------------------------------------===//
 
 /// Profiler entry for Mojo compilation passes.
 using CompilerProfilerEntry =
@@ -39,6 +44,25 @@ struct VerboseCompilerTimeTraceScope
       : TimeTraceScope(VerboseCompilerProfilerEntry::create(name, detail)) {}
   VerboseCompilerTimeTraceScope(StringRef name, ProfilerPrintFn detailFn)
       : TimeTraceScope(VerboseCompilerProfilerEntry::create(name, detailFn)) {}
+};
+
+//===----------------------------------------------------------------------===//
+// TraceProfiler
+//===----------------------------------------------------------------------===//
+
+/// Common trace profiler setup.
+struct TraceProfiler {
+  TraceProfiler(bool enabled, int timeTraceGranularity) {
+    if (enabled)
+      initialize(timeTraceGranularity);
+  }
+  ~TraceProfiler();
+
+private:
+  void initialize(int timeTraceGranularity);
+
+  std::optional<TimeTraceProfiler> profiler;
+  std::filesystem::path outputFilePath;
 };
 
 } // namespace M::KGEN

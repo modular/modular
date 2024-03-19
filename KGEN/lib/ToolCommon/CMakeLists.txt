@@ -4,19 +4,19 @@
 #
 ##===----------------------------------------------------------------------===##
 
+add_subdirectory(InitAllDialects)
+add_subdirectory(TranslationRegistry)
+add_subdirectory(CompilationOptions)
+
 add_modular_library(KGENToolCommon
   CLOptions.cpp
-  CompilationOptions.cpp
-  InitAllDialects.cpp
   PassRegistry.cpp
 
   LINK_LIBS PUBLIC
-  DebugInfoDialect
-  HLCFDialect
-  KGENDialect
-  LITDialect
-  POPDialect
-  CacheDialect
+  KGENInitAllDialects
+  KGENTranslationRegistry
+  KGENCompilationOptions
+
   LowerLIT
   KGENToLLVM
   KGENElaborator
