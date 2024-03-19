@@ -342,7 +342,7 @@ def test_ndbuffer_tile():
     fn print_buffer(buffer: NDBuffer):
         for i in range(buffer.dim[0]()):
             for j in range(buffer.dim[1]()):
-                print_no_newline(buffer[i, j], " ")
+                print(buffer[i, j], " ", end="")
             print("")
 
     linspace(buff)
