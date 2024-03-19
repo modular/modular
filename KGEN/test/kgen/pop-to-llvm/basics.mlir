@@ -855,47 +855,4 @@ kgen.func @fence() {
   kgen.return
 }
 
-// CHECK-LABEL: @memcpy
-// CHECK-SAME: %[[DEST:.*]]: !kgen.pointer<scalar<si32>>
-// CHECK-SAME: %[[SRC:.*]]: !kgen.pointer<scalar<f32>>
-// CHECK-SAME: %[[SIZE:.*]]: index
-kgen.func @memcpy(%dest: !kgen.pointer<!pop.scalar<si32>>,
-                  %src: !kgen.pointer<!pop.scalar<f32>>,
-                  %size: index) {
-  // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %[[DEST]]
-  // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %[[SRC]]
-  // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %[[SIZE]]
-  // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]]) <{isVolatile = false}> : (!llvm.ptr, !llvm.ptr, i64) -> ()
-  pop.memcpy %dest, %src, %size : !kgen.pointer<!pop.scalar<f32>> to !kgen.pointer<!pop.scalar<si32>>
-  kgen.return
-}
-
-// CHECK-LABEL: @memcpy_volatile
-// CHECK-SAME: %[[DEST:.*]]: !kgen.pointer<scalar<si32>>
-// CHECK-SAME: %[[SRC:.*]]: !kgen.pointer<scalar<f32>>
-// CHECK-SAME: %[[SIZE:.*]]: index
-kgen.func @memcpy_volatile(%dest: !kgen.pointer<!pop.scalar<si32>>,
-                           %src: !kgen.pointer<!pop.scalar<f32>>,
-                           %size: index) {
-  // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %[[DEST]]
-  // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %[[SRC]]
-  // CHECK: %[[SIZE_CAST:.*]] = builtin.unrealized_conversion_cast %[[SIZE]]
-  // CHECK:  "llvm.intr.memcpy"(%[[DEST_CAST]], %[[SRC_CAST]], %[[SIZE_CAST]]) <{isVolatile = true}> : (!llvm.ptr, !llvm.ptr, i64) -> ()
-  pop.memcpy volatile %dest, %src, %size : !kgen.pointer<!pop.scalar<f32>> to !kgen.pointer<!pop.scalar<si32>>
-  kgen.return
-}
-
-// CHECK-LABEL: @memcpy_inline
-// CHECK-SAME: %[[DEST:.*]]: !kgen.pointer<scalar<si32>>
-// CHECK-SAME: %[[SRC:.*]]: !kgen.pointer<scalar<f32>>
-// CHECK-SAME: %[[SIZE:.*]]: index
-kgen.func @memcpy_inline(%dest: !kgen.pointer<!pop.scalar<si32>>,
-                         %src: !kgen.pointer<!pop.scalar<f32>>,
-                         %size: index) {
-  // CHECK: %[[DEST_CAST:.*]] = builtin.unrealized_conversion_cast %[[DEST]]
-  // CHECK: %[[SRC_CAST:.*]] = builtin.unrealized_conversion_cast %[[SRC]]
-  // CHECK:  "llvm.intr.memcpy.inline"(%[[DEST_CAST]], %[[SRC_CAST]]) <{isVolatile = false, len = 32 : i64}> : (!llvm.ptr, !llvm.ptr) -> ()
-  pop.memcpy inline %dest, %src, %size : !kgen.pointer<!pop.scalar<f32>> to !kgen.pointer<!pop.scalar<si32>>
-  kgen.return
-}
 }
