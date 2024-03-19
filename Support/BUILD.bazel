@@ -125,6 +125,7 @@ cc_library(
     deps = [
         ":ADT",
         ":Base",
+        ":Filesystem",
     ],
 )
 
@@ -226,6 +227,7 @@ cc_library(
     strip_include_prefix = "include",
     deps = [
         ":Base",
+        ":Globals",
         "@llvm-project//mlir:IR",
     ],
 )
@@ -270,6 +272,7 @@ cc_library(
     deps = [
         ":Base",
         ":Configuration",
+        ":Settings",
         "@crashpad//:client",
     ],
 )
@@ -375,6 +378,7 @@ cc_test(
     name = "FilesystemTest",
     srcs = glob(["unittests/FileSystemExtrasTest.cpp"]),
     deps = [
+        ":Buffer",
         ":Filesystem",
         "@com_github_google_googletest//:gtest_main",
     ],
