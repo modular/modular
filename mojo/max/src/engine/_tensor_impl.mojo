@@ -11,7 +11,7 @@ from memory.unsafe import bitcast, DTypePointer
 from python import Python, PythonObject
 from sys.ffi import DLHandle
 from tensor import Tensor
-from utils.list import Dim
+from buffer.list import Dim
 from builtin.dtype import _get_runtime_dtype_size
 
 from .session import InferenceSession

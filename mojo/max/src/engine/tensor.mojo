@@ -9,7 +9,7 @@ model for execution.
 """
 from collections import List
 from memory.unsafe import bitcast, DTypePointer, Pointer
-from utils.list import Dim
+from buffer.list import Dim
 from sys.ffi import DLHandle
 
 from tensor import Tensor
