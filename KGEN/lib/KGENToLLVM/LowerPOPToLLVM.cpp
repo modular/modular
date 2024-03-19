@@ -1209,29 +1209,6 @@ struct ConvertPOPCallLLVMIntrinsic
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertPOPMemcpy
-//===----------------------------------------------------------------------===//
-
-struct ConvertPOPMemcpy : mlir::ConvertOpToLLVMPattern<MemcpyOp> {
-  using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
-
-  LogicalResult
-  matchAndRewrite(MemcpyOp op, MemcpyOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    auto isVolatile = rewriter.getBoolAttr(adaptor.getIsVolatile().has_value());
-    if (op.getIsInlined()) {
-      rewriter.replaceOpWithNewOp<LLVM::MemcpyInlineOp>(
-          op, adaptor.getDest(), adaptor.getSrc(),
-          rewriter.getIntegerAttr(adaptor.getSize().getType(), 32), isVolatile);
-      return success();
-    }
-    rewriter.replaceOpWithNewOp<LLVM::MemcpyOp>(
-        op, adaptor.getDest(), adaptor.getSrc(), adaptor.getSize(), isVolatile);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1299,7 +1276,6 @@ static void populatePOPToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertPOPInlineAsm,
       ConvertPOPLoad,
       ConvertPOPMax,
-      ConvertPOPMemcpy,
       ConvertPOPMin,
       ConvertPOPMul,
       ConvertPOPNeg,

@@ -1181,63 +1181,6 @@ def POP_AlignedFreeOp : POPOp<"aligned_free",
 }
 
 //===----------------------------------------------------------------------===//
-// MemcpyOp
-//===----------------------------------------------------------------------===//
-
-def POP_MemcpyOp : POPOp<"memcpy"> {
-  let summary = "copies memory from one location to another";
-  let description = [{
-    The `pop.memcpy` operation copies memory from the src operand to the
-    destination operand. The the source location to the destination location
-    must either be equal or non-overlapping. It copies `size` bytes of memory
-    over. The `pop.memcpy` does not return a value.
-
-    The first argument is a pointer to the destination, the second is a pointer
-    to the source. The third argument is an integer argument specifying the
-    number of bytes to copy.
-
-    If `size` is 0, it is no-op modulo the behavior of attributes attached to
-    the arguments. If `size` is not a well-defined value, the behavior is
-    undefined. If `size` is not zero, both `dest` and `src` should be
-    well-defined, otherwise the behavior is undefined.
-
-    The `pop.memcpy` takes optional modifiers to either inline or mark the
-    memcpy as a volatile access. Those are specified via the `inline` and
-    `volatile` tags respectively.
-
-    Example:
-
-    ```mlir
-    // Copy size bytes from src to dest.
-    pop.memcpy %dest, %src, %size : !kgen.pointer<!pop.scalar<type>> to
-                                    !kgen.pointer<!pop.scalar<i32>>
-
-    // Generate an inlined memcpy which copies size bytes from src to dest.
-    pop.memcpy inline %dest, %src, %size : !kgen.pointer<!pop.scalar<i32>> to
-                                           !kgen.pointer<!pop.scalar<type>>
-
-    // Generate an inlined memcpy which copies size bytes from src to dest and
-    // mark the memcpy as a volatile access.
-    pop.memcpy inline volatile %dest, %src, %size :
-                                           !kgen.pointer<!pop.scalar<i32>> to
-                                           !kgen.pointer<!pop.scalar<i32>>
-    ```
-  }];
-
-  let arguments = (ins PointerType:$dest,
-                       PointerType:$src,
-                       Index:$size,
-                       OptionalAttr<UnitAttr>:$isInlined,
-                       OptionalAttr<UnitAttr>:$isVolatile);
-
-  let assemblyFormat = [{
-    (`inline` $isInlined^)? (`volatile` $isVolatile^)? operands attr-dict `:`
-    qualified(type($src)) `to` qualified(type($dest))
-  }];
-
-}
-
-//===----------------------------------------------------------------------===//
 // ExternalCallOp
 //===----------------------------------------------------------------------===//
 
