@@ -13,10 +13,10 @@ from algorithm.functional import (
     elementwise,
 )
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from memory import stack_allocation
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 
 
 fn test_elementwise[

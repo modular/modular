@@ -11,9 +11,9 @@ from sys.info import num_physical_cores, simdwidthof
 
 from algorithm import elementwise
 from buffer import Buffer
+from buffer.list import Dim, DimList
 
 from utils.index import StaticIntTuple
-from buffer.list import Dim, DimList
 
 
 # CHECK-LABEL: test_elementwise_1d

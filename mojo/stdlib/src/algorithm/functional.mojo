@@ -13,7 +13,6 @@ from algorithm import map
 """
 
 from math import align_down, div_ceil, is_power_of_2, max, min
-from utils._numerics import FlushDenormals
 from os import abort
 from sys.info import num_physical_cores, sizeof, triple_is_nvidia_cuda
 
@@ -23,6 +22,7 @@ from runtime import tracing
 from runtime.llcl import Runtime, TaskGroup, TaskGroupTask, TaskGroupTaskList
 from runtime.tracing import Trace, TraceLevel
 
+from utils._numerics import FlushDenormals
 from utils.index import Index, StaticIntTuple
 from utils.static_tuple import StaticTuple
 

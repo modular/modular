@@ -30,13 +30,13 @@ from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_num_workers
 from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
+from buffer.list import Dim, DimList
 from builtin.dtype import _uint_type_of_width
 from gpu.host import Stream
 from memory.unsafe import bitcast
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 from ._gpu.reduction import reduce_launch
