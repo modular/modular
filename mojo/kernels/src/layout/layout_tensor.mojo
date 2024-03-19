@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from collections.optional import Optional
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
@@ -11,9 +12,8 @@ from gpu.memory import async_copy, async_copy_wait_all
 from memory import memcpy
 from memory.unsafe import AddressSpace, DTypePointer, _GPUAddressSpace
 
-from .int_tuple import flatten, int, product, idx2crd
+from .int_tuple import flatten, idx2crd, int, product
 from .layout import *
-from collections.optional import Optional
 
 
 @register_passable

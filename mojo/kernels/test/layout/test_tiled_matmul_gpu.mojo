@@ -11,8 +11,8 @@ from gpu.host import Context, Function, synchronize
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.mma import mma
 from gpu.sync import barrier
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout import *
+from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import int
 
 
