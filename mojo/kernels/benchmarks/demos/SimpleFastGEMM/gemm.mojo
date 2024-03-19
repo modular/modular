@@ -42,8 +42,7 @@ fn print_mat(a_ptr: DTypePointer[dtype], m: Int, n: Int):
     var a = NDBuffer[dtype, 2](a_ptr, Index(m, n))
     for i in range(m):
         for j in range(n):
-            print_no_newline(a[i, j])
-            print_no_newline(" ")
+            print(a[i, j], end=" ")
         print("")
 
 
@@ -187,10 +186,10 @@ fn main():
         print("n must be a multiple of 64")
         return
 
-    print_no_newline(m)
-    print_no_newline("x")
-    print_no_newline(n)
-    print_no_newline("x")
+    print(m, end="")
+    print("x", end="")
+    print(n, end="")
+    print("x", end="")
     print(k)
 
     var a_ptr = DTypePointer[dtype].alloc(m * k, alignment=alignment)
@@ -225,9 +224,9 @@ fn main():
     for i in range(m * n):
         if c[i] != c2[i]:
             errors += 1
-    print_no_newline(errors)
-    print_no_newline("/")
-    print_no_newline(m * n)
+    print(errors, end="")
+    print("/")
+    print(m * n, end="")
     print(" errors")
 
     @parameter
@@ -237,14 +236,14 @@ fn main():
     var num_warmup: Int = 1
     var time = benchmark.run[bench_gemm](num_warmup).mean()
     var flops = 2.0 * m * n * k / time / 1e9
-    print_no_newline(time)
+    print(time, end="")
     print(" seconds")
-    print_no_newline(flops)
+    print(flops, end="")
     print(" GFLOPS")
 
     # assume turbo is disabled and the frequency set to 2.9 GHz
     var rpeak = flops / (2.9 * 64)
-    print_no_newline(rpeak)
+    print(rpeak, end="")
     print(" measured/peak FLOPS assuming 2.9 GHz")
 
     a_ptr.free()

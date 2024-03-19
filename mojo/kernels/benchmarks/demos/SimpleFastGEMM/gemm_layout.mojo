@@ -178,10 +178,10 @@ fn main():
         print("N must be a multiple of", NR)
         return
 
-    print_no_newline(M)
-    print_no_newline("x")
-    print_no_newline(N)
-    print_no_newline("x")
+    print(M, end="")
+    print("x", end="")
+    print(N, end="")
+    print("x", end="")
     print(K)
 
     # FIXME: Something causes sporadic crashes on intel with TensorBuilder.Build()
@@ -223,9 +223,9 @@ fn main():
             if c[j, i] != c2[j, i]:
                 errors += 1
 
-    print_no_newline(errors)
-    print_no_newline("/")
-    print_no_newline(M * N)
+    print(errors)
+    print("/", end="")
+    print(M * N, end="")
     print(" errors")
 
     @parameter
@@ -235,14 +235,14 @@ fn main():
     var num_warmup: Int = 1
     var time = benchmark.run[bench_gemm](num_warmup).mean()
     var flops = 2.0 * M * N * K / time / 1e9
-    print_no_newline(time)
+    print(time, end="")
     print(" seconds")
-    print_no_newline(flops)
+    print(flops, end="")
     print(" GFLOPS")
 
     # assume turbo is disabled and the frequency set to 2.9 GHz
     var rpeak = flops / (2.9 * 64)
-    print_no_newline(rpeak)
+    print(rpeak, end="")
     print(" measured/peak FLOPS assuming 2.9 GHz")
 
     a_ptr.free()

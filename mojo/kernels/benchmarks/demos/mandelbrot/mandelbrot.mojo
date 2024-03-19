@@ -45,7 +45,7 @@ fn draw_mandelbrot(inout out: Tensor[int_type]):
                 var p = charset[v % len(charset)]
                 _printf("%c", p)
             else:
-                print_no_newline("0")
+                print("0", end="")
         print("")
 
 
