@@ -274,3 +274,6 @@ fn main() raises:
         run_elementwise[DType.bfloat16]()
         run_elementwise_uneven_simd[DType.bfloat16]()
         run_elementwise_transpose_copy[DType.bfloat16]()
+        run_elementwise[DType.float16]()
+        run_elementwise_uneven_simd[DType.float16]()
+        run_elementwise_transpose_copy[DType.float16]()
