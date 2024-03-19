@@ -45,11 +45,12 @@ CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
 Runtime::Runtime(CompactRuntimePtr runtimePtr,
                  std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue,
-                 StringRef profileFilename, uint64_t maxProfilingLevel)
+                 StringRef profileFilename, uint64_t maxProfilingLevel,
+                 RuntimeOptions::ProfilerDebuginfo profilerDebuginfo)
     : signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
-      profileFilename(profileFilename), runtimeIndex(runtimePtr.index),
-      readyChain(createReadyChain(*this)) {
+      profileFilename(profileFilename), profilerDebuginfo(profilerDebuginfo),
+      runtimeIndex(runtimePtr.index), readyChain(createReadyChain(*this)) {
   // Establish association of runtime to runtime index.
   Detail::RuntimeTable::getSingleton().setRuntime(runtimePtr.index, this);
 
@@ -146,7 +147,8 @@ createRuntimeImpl(const RuntimeOptions &options) {
                 options.poolName, options.paranoid);
   return std::make_unique<Runtime>(
       runtimePtr, std::move(allocator), std::move(workQueue),
-      options.profileFilename, options.maxProfilingLevel);
+      options.profileFilename, options.maxProfilingLevel,
+      options.profilerDebuginfo);
 }
 
 std::unique_ptr<Runtime>

@@ -34,6 +34,7 @@ namespace M::KGEN {
 struct ExecutionEngineOptions {
   /// Whether or not to register the GDB plugins.
   bool registerDebugPlugins = false;
+  bool registerPerfPlugins = false;
 
   /// Set to true if the executing engine is being used to cross-compile. This
   /// will forgo any JIT setup and capabilities.
@@ -299,6 +300,10 @@ public:
     return found->add(libName, std::forward<Args &&>(args)...);
   }
 
+  llvm::orc::ExecutionSession &getExecutionSession() {
+    return *executionSession;
+  }
+
   //===--------------------------------------------------------------------===//
   // Compiled symbol lookup
   //===--------------------------------------------------------------------===//
@@ -334,7 +339,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Get the base object linking layer.
-  llvm::orc::ObjectLayer &getLinkingLayer() { return *objectLayer; }
+  llvm::orc::ObjectLinkingLayer &getLinkingLayer() { return *objectLayer; }
 
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::ExecutionSession> session,
@@ -388,6 +393,9 @@ private:
   /// List of buffers that contain archive files added to the JIT. This holds
   /// references to them so they aren't deallocated underneath our feet.
   SmallVector<BufferRef> archiveBuffers;
+
+  /// Should the ORC Jit output symbols for the `perf` command.
+  bool perfProfiling{false};
 };
 } // namespace M::KGEN
 

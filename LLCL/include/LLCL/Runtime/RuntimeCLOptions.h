@@ -141,6 +141,21 @@ private:
       llvm::cl::location(options.profileFilename),
       llvm::cl::cat(RuntimeOptionsCategory)};
 
+  // Should we generate debuginfo for a profiler?
+  M::cl::MOpt<RuntimeOptions::ProfilerDebuginfo, true> profilerDebuginfo{
+      "profiler-debuginfo",
+      llvm::cl::desc(
+          "Output debug symbols in a way that a profiler can understand. After "
+          "running under perf, use `perf inject --jit -i perf.data -o "
+          "perf.jit.data` to add debug info for kernels to the profile."),
+      llvm::cl::values(
+          clEnumValN(RuntimeOptions::ProfilerDebuginfo::kNoProfiler, "none",
+                     "Do not generate debuginfo"),
+          clEnumValN(RuntimeOptions::ProfilerDebuginfo::kPerfProfiler, "perf",
+                     "Generate debuginfo for perf.")),
+      llvm::cl::location(options.profilerDebuginfo),
+      llvm::cl::cat(RuntimeOptionsCategory)};
+
   /// Set the behavior of executors if one of the functions they should run
   /// returns with an error. E.g. Set to `continue` for diagnostic
   /// verification.

@@ -41,184 +41,6 @@ class WorkQueue;
 // Runtime
 //===----------------------------------------------------------------------===//
 
-/// This represents one instance of the LLCL runtime, which can have multiple
-/// threads, a private heap for data, a way of reporting errors, and other
-/// context objects. This is also the natural unit for task cancellation.
-class Runtime final {
-public:
-  /// Construct runtime with the already reserved runtimePtr, and already
-  /// created allocator and workQueue. The work queue must have been constructed
-  /// with the same runtimePtr.
-  ///
-  /// If profileFilename is non-empty then time profiling will be activated
-  /// and the profile JSON and text will be written to files with that prefix.
-  Runtime(CompactRuntimePtr runtimePtr, std::unique_ptr<Allocator> allocator,
-          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
-          uint64_t maxProfilingLevel = Trace::kFullyEnabled);
-  ~Runtime();
-
-  /// Return a CompactRuntimePtr that identifies this Runtime instance.
-  CompactRuntimePtr getCompactPtr() const {
-    return CompactRuntimePtr(runtimeIndex);
-  }
-
-  /// Return a reference to a pre-allocated Chain value that is already ready.
-  /// This can be used by logic that needs to flag that a side effect has
-  /// already happened, without doing an extraneous memory allocation.
-  const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
-
-  /// Returns the runtime managing the work queue to which the callers thread
-  /// is associated (ie the callers thread is either a worker thread for that
-  /// runtime or is a 'main' thread which has donated itself to running work
-  /// items on behalf of the runtime). Returns null if no such runtime has been
-  /// associated.
-  static Runtime *getCurrentRuntimeOrNull() {
-    return CompactRuntimePtr::getCurrentRuntime().getOrNull();
-  }
-
-  /// As for getCurrentRuntimeOrNull, but assert fail if no runtime is
-  /// associated.
-  static Runtime &getCurrentRuntime() {
-    Runtime *runtime = getCurrentRuntimeOrNull();
-    assert(runtime && "no runtime is associated with the current thread");
-    return *runtime;
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Profiling
-  //===--------------------------------------------------------------------===//
-
-  /// Return a reference to the profiler instance, if its been initialized.
-  std::optional<TimeTraceProfiler> &getProfiler() { return profiler; }
-
-  //===--------------------------------------------------------------------===//
-  // Memory Management
-  //===--------------------------------------------------------------------===//
-
-  /// Get direct access to the low level allocator.
-  Allocator *getAllocator() { return allocator.get(); }
-
-  /// Returns the current runtime allocator. This assumes that a global
-  /// allocator is present and would assert otherwise.
-  static Allocator *getCurrentAllocator() {
-    auto rt = Runtime::getCurrentRuntimeOrNull();
-    assert(rt &&
-           "a global runtime must be set before getting the current allocator");
-    return rt->getAllocator();
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Concurrency
-  //===--------------------------------------------------------------------===//
-
-  /// Get direct access to the low level WorkQueue.  You should typically
-  /// interface with the higher level algorithms in Algorithms.h.
-  WorkQueue *getWorkQueue() { return workQueue.get(); }
-
-  //===--------------------------------------------------------------------===//
-  // Cancel the current execution
-  //===--------------------------------------------------------------------===//
-
-  /// Cancel the current MEF Execution. This transitions this Runtime to the
-  /// canceled state, which causes all asynchronously executing threads to be
-  /// canceled when they check the cancellation state (e.g. in MEFExecutor).
-  void cancelExecution(EncodedDiagnostic message);
-
-  /// restartFromCancellation() transitions Runtime from the canceled state to
-  /// the normal execution state.
-  void restartFromCancellation();
-
-  /// When this Runtime is in a canceled state, getCancelValue() returns a
-  /// non-null AsyncValue containing the message for the cancellation.
-  /// Otherwise, it returns nullptr.
-  AsyncValue *getCancelValue() const {
-    return cancelValue.load(std::memory_order_acquire);
-  }
-
-  //===--------------------------------------------------------------------===//
-  // Context Objects
-  //===--------------------------------------------------------------------===//
-
-  /// Transfers ptr into the context object set.
-  template <typename T>
-  void setContext(std::unique_ptr<T> ptr) {
-    contextObjects.set<T>(std::move(ptr));
-  }
-
-  /// Emplaces a new object of type T into the context object set and returns a
-  /// reference to it.
-  template <typename T, typename... Args>
-  T &emplaceContext(Args &&...args) {
-    return contextObjects.emplace<T, Args...>(std::forward<Args>(args)...);
-  }
-
-  /// Returns a reference to the object of type T held by the context object
-  /// set. If it does not contain such an object, emplaces a new object and
-  /// returns a reference to it.
-  template <typename T, typename... Args>
-  T &emplaceContextIfMissing(Args &&...args) {
-    return contextObjects.emplaceIfMissing<T, Args...>(
-        std::forward<Args>(args)...);
-  }
-
-  /// Returns a pointer to the object of type T held by the context object set.
-  /// If it does not contain such an object, calls the creator function to
-  /// create one and install. Returns any error the creator function returns.
-  template <typename T>
-  ErrorOr<T *> createContextIfMissing(
-      llvm::unique_function<ErrorOr<std::unique_ptr<T>>()> creator) {
-    return contextObjects.createIfMissing<T>(std::move(creator));
-  }
-
-  /// Returns a pointer to the context object of type T held by the context
-  /// object set, or nullptr if no such object exists.
-  template <typename T>
-  T *getContext() {
-    return contextObjects.get<T>();
-  }
-
-private:
-  Runtime(const Runtime &) = delete;
-  void operator=(const Runtime &) = delete;
-
-  /// The 'signature' for the type id registration system the runtime depends
-  /// on. This is expected to be unique for the running process. This can be
-  /// used to catch, at runtime, accidental multiple definitions for Modular
-  /// runtime statics across dynamic libraries / executables.
-  intptr_t signature;
-
-  /// These are the allocator and workQueue's that were configured by the client
-  /// for this Runtime.
-  std::unique_ptr<Allocator> allocator;
-  std::unique_ptr<WorkQueue> workQueue;
-
-  /// Filename into which time profiling should be written, or the empty
-  /// string if disabled.
-  std::string profileFilename;
-
-  /// An active profiler used for the runtime, or nullopt if profiling is
-  /// disabled. This is only set when profileFilename is non-empty.
-  std::optional<TimeTraceProfiler> profiler;
-
-  /// This is the index # for the runtime object created.  This is held by the
-  /// CompactRuntimePtr.
-  uint8_t runtimeIndex;
-
-  /// This is a preallocated Chain value that is marked as ready, for use by
-  /// getReadyChain.
-  AsyncValueRef<Chain> readyChain;
-
-  /// If execution is cancelled, this holds the error value to forward into the
-  /// results of computations.
-  std::atomic<AsyncValue *> cancelValue{nullptr};
-
-  /// Set of 'context objects' owned by this runtime.
-  GenericUniquePtrSet contextObjects;
-
-  friend void checkUniqueRuntime(const Runtime &runtime);
-  friend void checkKnownCallingThread(const Runtime &runtime);
-};
-
 /// Collects all the options which influence a runtime.
 struct RuntimeOptions {
   enum class OnFailure {
@@ -247,6 +69,13 @@ struct RuntimeOptions {
     kSingleThread,
     /// Default thread pool that uses std::thread and semaphores.
     kThreadPool,
+  };
+
+  enum class ProfilerDebuginfo {
+    /// No debug info generated.
+    kNoProfiler,
+    /// Generating debug info for Linux `perf`.
+    kPerfProfiler,
   };
 
   size_t numThreads = 0;
@@ -308,6 +137,8 @@ struct RuntimeOptions {
       RuntimeOptions::AllocatorType::kMalloc
 #endif
   };
+
+  ProfilerDebuginfo profilerDebuginfo = ProfilerDebuginfo::kNoProfiler;
   const RuntimeOptions::WorkQueueType defaultWorkQueue;
   RuntimeOptions(LLCL::RuntimeOptions::WorkQueueType wq =
                      LLCL::RuntimeOptions::WorkQueueType::kThreadPool)
@@ -464,6 +295,194 @@ struct RuntimeOptions {
     profileFilename = newProfileFilename;
     return *this;
   }
+};
+
+/// This represents one instance of the LLCL runtime, which can have multiple
+/// threads, a private heap for data, a way of reporting errors, and other
+/// context objects. This is also the natural unit for task cancellation.
+class Runtime final {
+public:
+  /// Construct runtime with the already reserved runtimePtr, and already
+  /// created allocator and workQueue. The work queue must have been constructed
+  /// with the same runtimePtr.
+  ///
+  /// If profileFilename is non-empty then time profiling will be activated
+  /// and the profile JSON and text will be written to files with that prefix.
+  Runtime(CompactRuntimePtr runtimePtr, std::unique_ptr<Allocator> allocator,
+          std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
+          uint64_t maxProfilingLevel = Trace::kFullyEnabled,
+          RuntimeOptions::ProfilerDebuginfo profilerDebuginfo =
+              RuntimeOptions::ProfilerDebuginfo::kNoProfiler);
+  ~Runtime();
+
+  /// Return a CompactRuntimePtr that identifies this Runtime instance.
+  CompactRuntimePtr getCompactPtr() const {
+    return CompactRuntimePtr(runtimeIndex);
+  }
+
+  /// Return a reference to a pre-allocated Chain value that is already ready.
+  /// This can be used by logic that needs to flag that a side effect has
+  /// already happened, without doing an extraneous memory allocation.
+  const AsyncValueRef<Chain> &getReadyChain() const { return readyChain; }
+
+  /// Returns the runtime managing the work queue to which the callers thread
+  /// is associated (ie the callers thread is either a worker thread for that
+  /// runtime or is a 'main' thread which has donated itself to running work
+  /// items on behalf of the runtime). Returns null if no such runtime has been
+  /// associated.
+  static Runtime *getCurrentRuntimeOrNull() {
+    return CompactRuntimePtr::getCurrentRuntime().getOrNull();
+  }
+
+  /// As for getCurrentRuntimeOrNull, but assert fail if no runtime is
+  /// associated.
+  static Runtime &getCurrentRuntime() {
+    Runtime *runtime = getCurrentRuntimeOrNull();
+    assert(runtime && "no runtime is associated with the current thread");
+    return *runtime;
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Profiling
+  //===--------------------------------------------------------------------===//
+
+  /// Return a reference to the profiler instance, if its been initialized.
+  std::optional<TimeTraceProfiler> &getProfiler() { return profiler; }
+
+  /// Which profiler should we generate debug information for.
+  RuntimeOptions::ProfilerDebuginfo getProfilerDebuginfo() const {
+    return profilerDebuginfo;
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Memory Management
+  //===--------------------------------------------------------------------===//
+
+  /// Get direct access to the low level allocator.
+  Allocator *getAllocator() { return allocator.get(); }
+
+  /// Returns the current runtime allocator. This assumes that a global
+  /// allocator is present and would assert otherwise.
+  static Allocator *getCurrentAllocator() {
+    auto rt = Runtime::getCurrentRuntimeOrNull();
+    assert(rt &&
+           "a global runtime must be set before getting the current allocator");
+    return rt->getAllocator();
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Concurrency
+  //===--------------------------------------------------------------------===//
+
+  /// Get direct access to the low level WorkQueue.  You should typically
+  /// interface with the higher level algorithms in Algorithms.h.
+  WorkQueue *getWorkQueue() { return workQueue.get(); }
+
+  //===--------------------------------------------------------------------===//
+  // Cancel the current execution
+  //===--------------------------------------------------------------------===//
+
+  /// Cancel the current MEF Execution. This transitions this Runtime to the
+  /// canceled state, which causes all asynchronously executing threads to be
+  /// canceled when they check the cancellation state (e.g. in MEFExecutor).
+  void cancelExecution(EncodedDiagnostic message);
+
+  /// restartFromCancellation() transitions Runtime from the canceled state to
+  /// the normal execution state.
+  void restartFromCancellation();
+
+  /// When this Runtime is in a canceled state, getCancelValue() returns a
+  /// non-null AsyncValue containing the message for the cancellation.
+  /// Otherwise, it returns nullptr.
+  AsyncValue *getCancelValue() const {
+    return cancelValue.load(std::memory_order_acquire);
+  }
+
+  //===--------------------------------------------------------------------===//
+  // Context Objects
+  //===--------------------------------------------------------------------===//
+
+  /// Transfers ptr into the context object set.
+  template <typename T>
+  void setContext(std::unique_ptr<T> ptr) {
+    contextObjects.set<T>(std::move(ptr));
+  }
+
+  /// Emplaces a new object of type T into the context object set and returns a
+  /// reference to it.
+  template <typename T, typename... Args>
+  T &emplaceContext(Args &&...args) {
+    return contextObjects.emplace<T, Args...>(std::forward<Args>(args)...);
+  }
+
+  /// Returns a reference to the object of type T held by the context object
+  /// set. If it does not contain such an object, emplaces a new object and
+  /// returns a reference to it.
+  template <typename T, typename... Args>
+  T &emplaceContextIfMissing(Args &&...args) {
+    return contextObjects.emplaceIfMissing<T, Args...>(
+        std::forward<Args>(args)...);
+  }
+
+  /// Returns a pointer to the object of type T held by the context object set.
+  /// If it does not contain such an object, calls the creator function to
+  /// create one and install. Returns any error the creator function returns.
+  template <typename T>
+  ErrorOr<T *> createContextIfMissing(
+      llvm::unique_function<ErrorOr<std::unique_ptr<T>>()> creator) {
+    return contextObjects.createIfMissing<T>(std::move(creator));
+  }
+
+  /// Returns a pointer to the context object of type T held by the context
+  /// object set, or nullptr if no such object exists.
+  template <typename T>
+  T *getContext() {
+    return contextObjects.get<T>();
+  }
+
+private:
+  Runtime(const Runtime &) = delete;
+  void operator=(const Runtime &) = delete;
+
+  /// The 'signature' for the type id registration system the runtime depends
+  /// on. This is expected to be unique for the running process. This can be
+  /// used to catch, at runtime, accidental multiple definitions for Modular
+  /// runtime statics across dynamic libraries / executables.
+  intptr_t signature;
+
+  /// These are the allocator and workQueue's that were configured by the client
+  /// for this Runtime.
+  std::unique_ptr<Allocator> allocator;
+  std::unique_ptr<WorkQueue> workQueue;
+
+  /// Filename into which time profiling should be written, or the empty
+  /// string if disabled.
+  std::string profileFilename;
+
+  /// An active profiler used for the runtime, or nullopt if profiling is
+  /// disabled. This is only set when profileFilename is non-empty.
+  std::optional<TimeTraceProfiler> profiler;
+
+  /// Should the runtime output debug info for `perf`.
+  RuntimeOptions::ProfilerDebuginfo profilerDebuginfo;
+
+  /// This is the index # for the runtime object created.  This is held by the
+  /// CompactRuntimePtr.
+  uint8_t runtimeIndex;
+
+  /// This is a preallocated Chain value that is marked as ready, for use by
+  /// getReadyChain.
+  AsyncValueRef<Chain> readyChain;
+
+  /// If execution is cancelled, this holds the error value to forward into the
+  /// results of computations.
+  std::atomic<AsyncValue *> cancelValue{nullptr};
+
+  /// Set of 'context objects' owned by this runtime.
+  GenericUniquePtrSet contextObjects;
+
+  friend void checkUniqueRuntime(const Runtime &runtime);
+  friend void checkKnownCallingThread(const Runtime &runtime);
 };
 
 //===----------------------------------------------------------------------===//

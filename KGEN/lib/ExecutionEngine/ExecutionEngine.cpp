@@ -17,7 +17,9 @@
 #include "llvm/ExecutionEngine/Orc/COFFPlatform.h"
 #include "llvm/ExecutionEngine/Orc/Core.h"
 #include "llvm/ExecutionEngine/Orc/DebugObjectManagerPlugin.h"
+#include "llvm/ExecutionEngine/Orc/Debugging/DebugInfoSupport.h"
 #include "llvm/ExecutionEngine/Orc/Debugging/DebuggerSupportPlugin.h"
+#include "llvm/ExecutionEngine/Orc/Debugging/PerfSupportPlugin.h"
 #include "llvm/ExecutionEngine/Orc/ELFNixPlatform.h"
 #include "llvm/ExecutionEngine/Orc/EPCDebugObjectRegistrar.h"
 #include "llvm/ExecutionEngine/Orc/EPCDynamicLibrarySearchGenerator.h"
@@ -25,6 +27,7 @@
 #include "llvm/ExecutionEngine/Orc/MapperJITLinkMemoryManager.h"
 #include "llvm/ExecutionEngine/Orc/ObjectFileInterface.h"
 #include "llvm/ExecutionEngine/Orc/ObjectLinkingLayer.h"
+#include "llvm/ExecutionEngine/Orc/TargetProcess/JITLoaderPerf.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Base64.h"
@@ -538,6 +541,20 @@ ExecutionEngine::create(ExecutionEngineOptions options,
                   session, llvm::orc::ExecutorAddr::fromPtr(
                                &llvm_orc_registerJITLoaderGDBWrapper))));
     }
+  }
+
+  if (options.registerPerfPlugins) {
+    auto debugInfo = llvm::orc::DebugInfoPreservationPlugin::Create();
+    if (!debugInfo)
+      return toModularError(debugInfo.takeError());
+    ee->objectLayer->addPlugin(std::move(debugInfo.get()));
+    auto perf = std::make_unique<llvm::orc::PerfSupportPlugin>(
+        ee->objectLayer->getExecutionSession().getExecutorProcessControl(),
+        llvm::orc::ExecutorAddr::fromPtr(&llvm_orc_registerJITLoaderPerfStart),
+        llvm::orc::ExecutorAddr::fromPtr(&llvm_orc_registerJITLoaderPerfEnd),
+        llvm::orc::ExecutorAddr::fromPtr(&llvm_orc_registerJITLoaderPerfImpl),
+        true, true);
+    ee->objectLayer->addPlugin(std::move(perf));
   }
 
   // Add the platform dylib to the search order.

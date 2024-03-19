@@ -79,6 +79,8 @@ add_modular_library(KGENExecutionEngine
   LLCLRuntime
   MCache
   MSupport
+  LLVMPerfJITEvents
+  LLVMOrcTargetProcess
 )
 set_property(TARGET KGENExecutionEngine PROPERTY KGEN_ORC_RT_LIB "${ORC_LIB}")
 target_compile_definitions(KGENExecutionEngine PRIVATE KGEN_ASAN_LIB="${KGEN_ASAN_LIBRARY}")
