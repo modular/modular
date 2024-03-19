@@ -332,9 +332,9 @@ TypeCheckedParamList::TypeCheckedParamList(
     // Check for things supported in arguments that are not supported in
     // parameters.
     ASTType type;
-    if (arg.typeExpr)
+    if (arg.typeExpr) {
       type = emitter.emitExprType(arg.typeExpr);
-    else {
+    } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
     }
@@ -857,9 +857,11 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
 
   DeclIRValue argIRValue;
   switch (arg.kgenConvention) {
+  case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError:
+    llvm_unreachable("should never need to handle result slots");
   case ArgConvention::ByRef:
   case ArgConvention::InitSelf:
-  case ArgConvention::ByRefResult:
   case ArgConvention::OwnedInMem:
     // OwnedInMem passes ownership of the argument into the callee so we
     // can directly mutate it if we want to.

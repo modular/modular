@@ -221,6 +221,7 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
   switch (convention) {
   case ArgConvention::ByRef:
   case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError:
   case ArgConvention::InitSelf:
     // By-ref arguments, must be lvalues.
     assert(operand.ir.getIfLValue() && "Call should already be type checked");
@@ -753,6 +754,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   Value arg;
   switch (convention) {
   case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError:
     llvm_unreachable("this is handled specially during call emission");
   case ArgConvention::OwnedInReg:
     // Promote PValue's if needed.

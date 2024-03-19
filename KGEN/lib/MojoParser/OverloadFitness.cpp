@@ -361,7 +361,8 @@ ParameterInferenceState::checkOneOperand(ASTExprAnd<AnyValue> operand,
         return success();
     [[fallthrough]];
   case ArgConvention::ByRef:
-  case ArgConvention::ByRefResult: {
+  case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError: {
     // The actual value must be an lvalue if callee takes things by-ref.
     LValue argVal = value.getIfLValue();
     if (!argVal)
@@ -966,7 +967,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         break;
     [[fallthrough]];
   case ArgConvention::ByRef:
-  case ArgConvention::ByRefResult: {
+  case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError: {
     // The actual value must be an lvalue if callee takes things by-ref.
     auto argVal = operand.ir.getIfLValue();
     if (!argVal)
