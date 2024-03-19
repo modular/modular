@@ -13,7 +13,7 @@ from algorithm import elementwise
 from buffer import Buffer
 
 from utils.index import StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 # CHECK-LABEL: test_elementwise_1d

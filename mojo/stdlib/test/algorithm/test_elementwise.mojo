@@ -16,7 +16,7 @@ from buffer import Buffer, NDBuffer
 from memory import stack_allocation
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 fn test_elementwise[

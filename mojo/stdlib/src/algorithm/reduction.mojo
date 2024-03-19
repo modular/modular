@@ -36,7 +36,7 @@ from memory.unsafe import bitcast
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 from ._gpu.reduction import reduce_launch

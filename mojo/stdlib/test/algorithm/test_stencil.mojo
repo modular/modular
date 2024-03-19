@@ -11,7 +11,7 @@ from math.limit import neginf
 from algorithm.functional import stencil
 from buffer import NDBuffer
 
-from utils.list import DimList
+from buffer.list import DimList
 
 alias _map_fn_type = fn[rank: Int] (StaticIntTuple[rank]) capturing -> (
     StaticIntTuple[rank],

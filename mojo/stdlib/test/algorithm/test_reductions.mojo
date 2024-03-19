@@ -24,7 +24,7 @@ from algorithm.reduction import _index_of_first_one, _reduce_generator, max, min
 from buffer import Buffer, NDBuffer
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # CHECK-LABEL: test_reductions
