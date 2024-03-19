@@ -89,6 +89,9 @@ static int demangle(const State &state) {
     name = buffer.str().trim();
   }
 
+  // Assert that we've parsed all command line arguments.
+  state.assertNoUnusedArguments(args);
+
   // Try to demangle the name and print it to stdout.
   FailureOr<MangledSymbol> mangled =
       MangledSymbol::demangle(StringAttr::get(&context, name));

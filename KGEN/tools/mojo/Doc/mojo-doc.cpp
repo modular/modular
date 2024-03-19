@@ -137,6 +137,10 @@ static int doc(const State &state) {
   }));
 
   out->keep();
+
+  // Assert that we've parsed all command line arguments.
+  state.assertNoUnusedArguments(args);
+
   return EXIT_SUCCESS;
 }
 
