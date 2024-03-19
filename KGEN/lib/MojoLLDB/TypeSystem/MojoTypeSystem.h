@@ -489,7 +489,7 @@ public:
   // Type Navigation
   //===--------------------------------------------------------------------===//
 
-  uint32_t
+  llvm::Expected<uint32_t>
   GetNumChildren(lldb::opaque_compiler_type_t type, bool omitEmptyBaseClasses,
                  const lldb_private::ExecutionContext *exeCtx) override;
 

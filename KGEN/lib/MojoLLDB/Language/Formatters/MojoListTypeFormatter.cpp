@@ -21,7 +21,9 @@ MojoListSyntheticFrontEnd::MojoListSyntheticFrontEnd(
     Update();
 }
 
-uint32_t MojoListSyntheticFrontEnd::CalculateNumChildren() { return size; }
+llvm::Expected<uint32_t> MojoListSyntheticFrontEnd::CalculateNumChildren() {
+  return size;
+}
 
 lldb::ValueObjectSP MojoListSyntheticFrontEnd::GetChildAtIndex(uint32_t idx) {
   if (idx >= size)

@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoKGENVariantTypeFormatter.h"
+#include "../../Utils/Errors.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "lldb/DataFormatters/FormattersHelpers.h"
 
@@ -20,7 +21,8 @@ MojoKGENVariantTypeSyntheticFrontEnd::MojoKGENVariantTypeSyntheticFrontEnd(
     Update();
 }
 
-uint32_t MojoKGENVariantTypeSyntheticFrontEnd::CalculateNumChildren() {
+llvm::Expected<uint32_t>
+MojoKGENVariantTypeSyntheticFrontEnd::CalculateNumChildren() {
   return 1;
 }
 
@@ -48,7 +50,7 @@ MojoKGENVariantTypeSyntheticFrontEnd::parseKGENVariant(
   if (!valobj || !valobj->GetError().Success())
     return {};
 
-  size_t numChildren = valobj->GetNumChildren();
+  auto numChildren = getExpectedValueOr(valobj->GetNumChildren(), 0u);
   if (numChildren < 1)
     return {};
 
