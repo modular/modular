@@ -9,9 +9,8 @@ from math import abs, ceil, div_ceil, max
 from sys.info import alignof, sizeof
 
 from buffer import NDBuffer
-from quantization import Q4sym
-
 from buffer.list import DimList
+from quantization import Q4sym
 
 
 fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
