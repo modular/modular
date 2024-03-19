@@ -183,7 +183,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   ctx->appendDialectRegistry(registry);
 
   // Parse the input Mojo file into an MLIR module.
-  ParserConfig parseConfig(ctx, runtime, compilationOptions);
+  ParserConfig parseConfig(ctx, compilationOptions);
   parseConfig.warnMissingDocStrings = args.hasArg(docWarnMissingId);
   int maxNotes = 0;
   if (!args.getLastArgValue(maxNotesId).getAsInteger(10, maxNotes))

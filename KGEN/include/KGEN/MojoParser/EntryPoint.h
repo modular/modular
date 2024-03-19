@@ -38,15 +38,11 @@ class CallOperands;
 
 /// This class provides the various configurations used to parse a Mojo file.
 struct ParserConfig {
-  ParserConfig(MLIRContext *context, LLCL::Runtime &runtime,
-               const CompilationOptions &options)
-      : context(context), runtime(runtime), options(options) {}
+  ParserConfig(MLIRContext *context, const CompilationOptions &options)
+      : context(context), options(options) {}
 
   /// The MLIR context to use when parsing the file.
   MLIRContext *context;
-
-  /// The runtime to use when parsing the file.
-  LLCL::Runtime &runtime;
 
   /// The compilation options to use when parsing the file.
   const CompilationOptions &options;
@@ -91,8 +87,8 @@ struct ParserConfig {
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 OwningOpRef<ModuleOp>
-importMojoFile(llvm::SourceMgr &sourceMgr, ParserConfig &config,
-               mlir::TimingScope &ts,
+importMojoFile(LLCL::Runtime &runtime, llvm::SourceMgr &sourceMgr,
+               ParserConfig &config, mlir::TimingScope &ts,
                SmallVectorImpl<std::string> *includedFiles = nullptr);
 
 /// Parse the directory at the given path as a Mojo package. Returns a module op
@@ -102,7 +98,7 @@ importMojoFile(llvm::SourceMgr &sourceMgr, ParserConfig &config,
 /// If `includedFiles` is provided, it is set to the list of included files when
 /// parsing imports.
 std::pair<OwningOpRef<ModuleOp>, KGEN::LIT::PackageOp>
-importMojoPackage(StringRef path, StringRef packageName,
+importMojoPackage(LLCL::Runtime &runtime, StringRef path, StringRef packageName,
                   llvm::SourceMgr &sourceMgr, ParserConfig &config,
                   mlir::TimingScope &ts,
                   SmallVectorImpl<std::string> *includedFiles = nullptr);

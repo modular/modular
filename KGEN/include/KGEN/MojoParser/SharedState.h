@@ -25,10 +25,6 @@ class ParamDeclAttr;
 class SignatureType;
 } // namespace M::KGEN
 
-namespace M::LLCL {
-class Runtime;
-} // namespace M::LLCL
-
 namespace M::KGEN::LIT {
 class ASTDecl;
 class ASTType;
@@ -104,7 +100,6 @@ public:
   std::unique_ptr<DeclResolver> declResolver;
   std::unique_ptr<DebugInfo::DIBuilder> diBuilder;
   ParserListener *parserListener;
-  LLCL::Runtime &runtime;
 
   const mlir::StringAttr bufferNameIdentifier;
 

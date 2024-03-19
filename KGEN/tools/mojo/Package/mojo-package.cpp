@@ -412,9 +412,9 @@ static int package(const State &state) {
       options::OPT_D,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
-        std::tie(moduleOp, packageOp) =
-            LIT::importMojoPackage(packageArgs.inputPath, packageArgs.name,
-                                   sourceMgr, parserConfig, ts);
+        std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
+            *runtime, packageArgs.inputPath, packageArgs.name, sourceMgr,
+            parserConfig, ts);
         return moduleOp;
       });
   if (failed(module))

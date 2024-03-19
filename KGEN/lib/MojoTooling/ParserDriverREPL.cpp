@@ -971,8 +971,7 @@ MojoParserContext::codeCompleteREPLExpression(
         results = MojoParserContext::codeComplete(
             llvm::MemoryBufferRef(wrappedExprText, identifier),
             completionPosition, impl->sharedState.getContext(),
-            impl->sharedState.runtime, impl->sharedState.options,
-            parserCallback,
+            impl->sharedState.options, parserCallback,
             /*disableModuleCaching=*/true);
       });
 
@@ -1003,8 +1002,8 @@ MojoParserContext::signatureHelpREPLExpression(
           function_ref<void(MojoParserContext &, int)> parserCallback) {
         result = MojoParserContext::signatureHelp(
             llvm::MemoryBufferRef(wrappedExprText, ""), position,
-            impl->sharedState.getContext(), impl->sharedState.runtime,
-            impl->sharedState.options, parserCallback,
+            impl->sharedState.getContext(), impl->sharedState.options,
+            parserCallback,
             /*disableModuleCaching=*/true);
       });
   return result;
