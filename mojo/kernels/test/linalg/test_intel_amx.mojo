@@ -14,6 +14,7 @@
 from sys.info import has_intel_amx, os_is_linux
 
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from IntelAMX import (
     _tile_dpbssd,
     _tile_dpbssd_emulated,
@@ -31,7 +32,6 @@ from memory import memcmp, memset_zero
 from memory.unsafe import DTypePointer, Pointer
 from Transpose import transpose, transpose_inplace
 
-from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 alias void = DType.invalid.value

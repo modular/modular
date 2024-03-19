@@ -14,10 +14,10 @@ from sys.info import is_apple_silicon, sizeof
 
 from AppleAMX import *
 from buffer import NDBuffer
+from buffer.list import DimList
 from testing import *
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 
 fn fill_a(buf: NDBuffer):

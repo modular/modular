@@ -12,9 +12,9 @@
 from sys import llvm_intrinsic
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from memory.unsafe import DTypePointer
 
-from buffer.list import DimList
 from utils.static_tuple import StaticTuple
 
 alias void = DType.invalid.value

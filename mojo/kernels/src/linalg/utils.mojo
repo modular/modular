@@ -25,9 +25,9 @@ from buffer.buffer import (
     partial_simd_load,
     partial_simd_store,
 )
+from buffer.list import DimList
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 alias elementwise_epilogue_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]

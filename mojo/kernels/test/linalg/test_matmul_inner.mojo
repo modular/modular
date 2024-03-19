@@ -10,6 +10,7 @@ from math import div_ceil
 from sys.info import has_neon, simdwidthof
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
 from MatmulUtils import (
     get_matmul_kernel_shape,
@@ -17,7 +18,6 @@ from MatmulUtils import (
 )
 
 from utils.index import Index
-from buffer.list import DimList
 
 alias prefetch_b_distance_k: Int = get_matmul_prefetch_b_distance_k()
 

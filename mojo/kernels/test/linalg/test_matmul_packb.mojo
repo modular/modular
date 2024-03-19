@@ -8,10 +8,10 @@
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from Matmul import PackMatrixCols
 
 from utils.index import Index
-from buffer.list import DimList
 
 alias type = DType.float32
 alias simd_size: Int = simdwidthof[DType.float32]()

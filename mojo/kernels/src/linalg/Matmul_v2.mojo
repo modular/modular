@@ -21,6 +21,7 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from algorithm.functional import tile_and_unswitch
+from buffer.list import Dim, DimList
 from Gemv import gemv
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Function, Stream
@@ -64,7 +65,6 @@ from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 

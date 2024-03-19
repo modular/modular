@@ -7,10 +7,10 @@
 
 from algorithm.functional import _elementwise_impl
 from buffer import NDBuffer
+from buffer.list import DimList
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 
 @always_inline

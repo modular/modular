@@ -9,6 +9,7 @@ from sys.info import simdbytewidth, simdwidthof
 
 from algorithm import tile, tile_and_unswitch, vectorize
 from buffer import NDBuffer
+from buffer.list import Dim, DimList
 from Matmul import (
     GemmShape,
     MatmulConfig,
@@ -24,7 +25,6 @@ from memory import stack_allocation
 from memory.unsafe import DTypePointer
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 
 
 @register_passable("trivial")

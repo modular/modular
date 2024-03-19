@@ -6,10 +6,10 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer import Buffer, NDBuffer
+from buffer.list import DimList
 from Transpose import _simplify_transpose_perms, transpose, transpose_inplace
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_transpose_4x4

@@ -11,12 +11,12 @@ from sys.intrinsics import strided_load, strided_store
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer import Buffer, NDBuffer, parallel_memcpy
+from buffer.list import DimList
 from memory import memcpy
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple, StaticTuple
-from buffer.list import DimList
 from utils.loop import unroll
 
 

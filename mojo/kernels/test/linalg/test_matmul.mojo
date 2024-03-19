@@ -12,6 +12,7 @@
 from sys.info import has_avx2, has_neon_int8_matmul
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from Matmul import (
     matmul,
     matmul_M,
@@ -22,7 +23,6 @@ from Matmul import (
 )
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 alias alignment = 64
 

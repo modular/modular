@@ -11,11 +11,11 @@ from sys.info import simdwidthof
 
 import benchmark
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from Gemv import gemv, naive_gemv
 from Matmul import matmul
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 
 alias alignment = 64
 

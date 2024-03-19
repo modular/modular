@@ -9,6 +9,7 @@ from math import align_up
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
 from MatmulUtils import (
     get_matmul_arch_factor,
@@ -19,7 +20,6 @@ from MatmulUtils import (
 )
 
 from utils.index import Index
-from buffer.list import DimList
 
 alias a_type = DType.uint8
 alias b_type = DType.int8

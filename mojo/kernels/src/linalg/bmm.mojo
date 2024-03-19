@@ -11,6 +11,7 @@ from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from algorithm.reduction import _reduce_generator
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Function, Stream
 from Matmul import _submatmul_sequential_sync
@@ -32,7 +33,6 @@ from runtime.llcl import Runtime
 
 from utils._optional import Optional
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 alias elementwise_epilogue_type = fn[c_type: DType, width: Int, rank: Int] (
     StaticIntTuple[rank], SIMD[c_type, width]

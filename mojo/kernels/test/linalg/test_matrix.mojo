@@ -8,10 +8,10 @@
 from math import iota
 
 from buffer import Buffer, NDBuffer
+from buffer.list import DimList
 from memory.unsafe import DTypePointer, Pointer
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 
 fn test(m: NDBuffer[DType.int32, 2, DimList(4, 4)]):
