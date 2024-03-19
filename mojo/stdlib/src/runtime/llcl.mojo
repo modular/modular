@@ -397,6 +397,10 @@ struct TaskGroupTaskList[type: AnyRegType](Sized):
         )
         self.size += 1
 
+    fn __getitem__(self, i: Int) -> TaskGroupTask[type]:
+        var hdl = (__get_address_as_owned_value(self.data.offset(i).address))
+        return hdl ^
+
     fn __len__(self) -> Int:
         return self.size
 
