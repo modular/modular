@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements CUDA compilation operations."""
 
-from compile import compile_info, get_linkage_name, Info
+from compile import Info, compile_info, get_linkage_name
 
 # ===----------------------------------------------------------------------===#
 # Compilation
