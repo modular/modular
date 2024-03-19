@@ -14,8 +14,8 @@ from buffer.list import Dim
 """
 
 from utils._optional import Optional
-from . import unroll
-from . import StaticIntTuple
+
+from . import StaticIntTuple, unroll
 
 # ===----------------------------------------------------------------------===#
 # Dim

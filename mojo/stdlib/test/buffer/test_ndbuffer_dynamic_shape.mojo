@@ -6,9 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
-from memory import stack_allocation
-
 from buffer.list import Dim, DimList
+from memory import stack_allocation
 
 
 # CHECK-LABEL: test_ndbuffer_dynamic_shape

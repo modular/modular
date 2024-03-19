@@ -11,11 +11,11 @@ from sys.intrinsics import PrefetchOptions
 from sys.param_env import env_get_string
 
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
+from buffer.list import DimList
 from memory import memcmp, memset_zero
 from tensor import Tensor
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 alias TEMP_FILE_DIR = env_get_string["TEMP_FILE_DIR"]()
 

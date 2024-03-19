@@ -18,13 +18,13 @@ from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import vectorize
+from buffer.list import Dim, DimList, _make_tuple
 from memory import stack_allocation
 from memory.unsafe import AddressSpace, DTypePointer, Pointer, _GPUAddressSpace
 
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
 from utils.index import product as tuple_product
-from buffer.list import Dim, DimList, _make_tuple
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 

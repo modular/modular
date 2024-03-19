@@ -13,10 +13,10 @@ from buffer.buffer import (
     partial_simd_load,
     partial_simd_store,
 )
+from buffer.list import DimList
 from memory import stack_allocation
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_partial_load_store

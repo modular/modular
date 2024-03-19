@@ -6,9 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer import Buffer, NDBuffer
-from memory import stack_allocation
-
 from buffer.list import DimList
+from memory import stack_allocation
 
 
 # CHECK-LABEL: test_ndbuffer_indexing

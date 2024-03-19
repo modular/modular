@@ -6,10 +6,10 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from memory import stack_allocation
 
 from utils.index import Index
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_sub_matrix

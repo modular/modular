@@ -61,9 +61,9 @@
 from sys.info import sizeof
 
 from buffer import NDBuffer
+from buffer.list import DimList
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 
 fn test_my_naive_matmul[
