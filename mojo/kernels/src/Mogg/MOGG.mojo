@@ -63,8 +63,8 @@ from BatchedMatmul import (
     get_trace_information as get_trace_information_batched_matmul,
 )
 from buffer import NDBuffer
+from buffer.list import Dim, DimList
 from gpu.host._compile import _get_nvptx_target
-from nn._optional_param import OptionalParamInt
 from Matmul import matmul as _matmul
 from Matmul import (
     pack_b_ndbuffer,
@@ -78,6 +78,7 @@ from memory import memset_zero
 from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
+from nn._optional_param import OptionalParamInt
 from nn.activations import gelu, relu, sigmoid
 from nn.arange import arange, arange_shape
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
@@ -143,7 +144,6 @@ from runtime.tracing import Trace, TraceLevel
 
 from utils._optional import Optional
 from utils.index import Index, StaticIntTuple, product
-from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 

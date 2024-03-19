@@ -8,8 +8,9 @@
 
 from math import max
 
-from utils.index import StaticIntTuple
 from buffer.list import DimList, _make_tuple
+
+from utils.index import StaticIntTuple
 
 
 struct IntList[static_values: DimList = DimList()](Sized):

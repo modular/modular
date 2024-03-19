@@ -11,12 +11,12 @@ from sys.intrinsics import strided_load
 
 from algorithm.functional import elementwise, vectorize
 from buffer import NDBuffer
+from buffer.list import DimList
 from memory.unsafe import Pointer, bitcast
 from MOGGIntList import IntList
 from register import *
 
 from utils._optional import Optional
-from buffer.list import DimList
 
 
 @value

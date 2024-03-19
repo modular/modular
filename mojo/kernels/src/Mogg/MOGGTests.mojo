@@ -7,11 +7,11 @@
 from algorithm import vectorize
 from algorithm.functional import _elementwise_impl
 from buffer import NDBuffer
+from buffer.list import DimList
 from register import *
 from runtime.llcl import MojoCallContextPtr
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 # ===----------------------------------------------------------------------===#
 # Special test targets just for generation tests
