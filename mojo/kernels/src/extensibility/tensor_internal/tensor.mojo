@@ -49,7 +49,7 @@ from memory.unsafe import bitcast
 
 from utils._serialize import _serialize
 from utils.index import Index
-from utils.list import Dim
+from buffer.list import Dim
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 
