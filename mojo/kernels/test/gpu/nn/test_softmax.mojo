@@ -21,7 +21,7 @@ from gpu.host.memory import (
 )
 from nn.softmax import softmax, softmax_2_pass
 
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 # CHECK-LABEL: test_gpu_softmax

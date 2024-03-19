@@ -23,7 +23,7 @@ from Matmul import gemv_kernel, gevm_kernel, matmul_kernel, matmul_kernel_naive
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn run_matvec(M: Int, N: Int, K: Int) raises:

@@ -32,7 +32,7 @@ from Matmul import matmul_kernel_naive
 from memory.unsafe import DTypePointer
 from testing import assert_almost_equal
 
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn is_benchmark() -> Bool:

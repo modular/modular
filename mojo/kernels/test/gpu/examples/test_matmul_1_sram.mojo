@@ -25,7 +25,7 @@ from memory import memset_zero, stack_allocation
 from tensor import Tensor
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 # Tile size for tiling in shared memory.
 # Thread block would have shape (tile_size, tile_size, 1)

@@ -23,7 +23,7 @@ from memory.unsafe import DTypePointer
 from tensor import Tensor
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 alias BLOCK_DIM = 4
 

@@ -30,7 +30,7 @@ from Matmul import (
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn run_matvec(M: Int, N: Int, K: Int) raises:

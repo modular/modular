@@ -21,7 +21,7 @@ from gpu.host.memory import (
 from tensor import Tensor, TensorShape
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 # This is DeviceAttribute.MAX_THREADS_PER_BLOCK (in ONNXRT it is a global
 # with value of 256).

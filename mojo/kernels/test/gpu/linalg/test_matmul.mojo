@@ -24,7 +24,7 @@ from memory import memset_zero, stack_allocation
 from tensor import Tensor
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 alias TILE_SZ_A = 128
 alias TILE_SZ_B = 16

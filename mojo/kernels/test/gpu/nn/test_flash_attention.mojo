@@ -30,7 +30,7 @@ from nn.mha import (
 from nn.softmax import softmax
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 alias type = DType.float32
 

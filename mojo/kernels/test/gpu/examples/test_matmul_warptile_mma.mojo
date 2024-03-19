@@ -28,7 +28,7 @@ from tensor import Tensor
 
 from utils._optional import Optional
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 
 @always_inline

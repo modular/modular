@@ -24,7 +24,7 @@ from gpu.host.memory import (
 from gpu.host.sync import synchronize
 from nn.concat import _concat_gpu, _concat_inner_most_single_dim
 
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn _create_buffer_host[

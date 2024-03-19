@@ -36,7 +36,7 @@ from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # TF32 Tensor core Matmul with shape m16n8k8
