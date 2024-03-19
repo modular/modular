@@ -314,7 +314,7 @@ fn test_case[
 
     for i in range(output.num_elements()):
         if output_ref._to_buffer()[i] != output._to_buffer()[i]:
-            print_no_newline("FAILURE: Mismatch at idx: ")
+            print("FAILURE: Mismatch at idx: ", end="")
             print(i)
 
 

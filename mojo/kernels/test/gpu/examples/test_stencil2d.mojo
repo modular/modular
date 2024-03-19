@@ -181,7 +181,7 @@ fn run_stencil2d[smem: Bool]() raises:
     # CHECK: 50277.0 ,73628.0 ,81985.0 ,83565.0 ,71417.0 ,43229.0 ,
     for i in range(1, num_rows - 1):
         for j in range(1, num_cols - 1):
-            print_no_newline(b_host[i * num_cols + j], ",")
+            print(b_host[i * num_cols + j], ",", end="")
         print()
 
     _free(a_device)
