@@ -99,7 +99,7 @@ struct EngineTensor(Sized):
 
     fn spec(self) raises -> TensorSpec:
         return self.ptr.get_tensor_spec(
-            self.lib, self.session.copy()
+            self.lib, self.session
         ).get_as_tensor_spec()
 
     fn buffer[type: DType](self) raises -> Buffer[type]:

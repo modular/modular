@@ -7,18 +7,18 @@
 The entry point to Max Engine and can be used to load models
 for inference.
 """
+from collections import List
 from collections.optional import Optional
 from collections.vector import InlinedFixedVector
-from collections import List
-from memory.anypointer import AnyPointer
 from os.atomic import Atomic
-from sys.ffi import DLHandle
 from pathlib import Path
-from tensor import Tensor
+from sys.ffi import DLHandle
 
 from max.graph import Graph, Module
+from memory._arc import Arc
+from memory.anypointer import AnyPointer
+from tensor import Tensor
 
-from ._context import _Device, RuntimeContext, RuntimeConfig
 from ._compilation import (
     CCompiledModel,
     CompileConfig,
@@ -26,6 +26,7 @@ from ._compilation import (
     FrameworkFormat,
     ModelSource,
 )
+from ._context import RuntimeConfig, RuntimeContext, _Device
 from ._engine_impl import _EngineImpl, _get_engine_path
 from ._model_impl import CModel
 from ._status import Status
@@ -155,9 +156,7 @@ struct _InferenceSessionImpl(Movable):
         """
         Compiles and initializes the model.
         """
-        var compiled_model = self._compile_model_from_config(
-            config ^, session.copy()
-        )
+        var compiled_model = self._compile_model_from_config(config ^, session)
 
         return self._init_model(compiled_model ^, session ^)
 
@@ -368,45 +367,23 @@ struct SessionOptions:
 
 
 @value
-@register_passable
 struct InferenceSession:
     """
     Holds the context of Max Engine and can be used for
     loading models.
     """
 
-    var _ptr: AnyPointer[_InferenceSessionImpl]
+    var _ptr: Arc[_InferenceSessionImpl]
 
-    fn __init__(options: SessionOptions = SessionOptions()) raises -> Self:
+    fn __init__(inout self, options: SessionOptions = SessionOptions()) raises:
         """Creates a new inference session.
 
         Args:
             options: Session options to configure how session is created.
 
-        Returns:
-            A new instance of InferenceSession.
         """
         var path = _get_engine_path()
-        var self = Self._allocateAndInit(path, options._device)
-        return Self {_ptr: self}
-
-    @staticmethod
-    fn _allocateAndInit(
-        lib_path: String,
-        device: _Device,
-    ) raises -> AnyPointer[_InferenceSessionImpl]:
-        var ptr = AnyPointer[_InferenceSessionImpl].alloc(1)
-        __get_address_as_uninit_lvalue(ptr.value).__init__(lib_path, device)
-        return ptr
-
-    fn copy(self) -> Self:
-        """Get a reference counted copy of inference session.
-
-        Returns:
-            An instance of inference session with incremented reference count.
-        """
-        _ = self._ptr[].ref_count.fetch_add(1)
-        return Self {_ptr: self._ptr}
+        self._ptr = Arc(_InferenceSessionImpl(path, options._device))
 
     fn load_model(
         self, path: Path, config: Optional[LoadOptions] = None
@@ -431,7 +408,7 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_path(path)
-        return self._ptr[].load_model(load_config ^, self.copy())
+        return self._ptr[].load_model(load_config ^, self)
 
     fn load_model(
         self, graph: Graph, config: Optional[LoadOptions] = None
@@ -469,7 +446,7 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_source(module)
-        return self._ptr[].load_model(load_config ^, self.copy())
+        return self._ptr[].load_model(load_config ^, self)
 
     fn get_as_engine_tensor_spec(
         self, name: String, spec: TensorSpec
@@ -484,7 +461,7 @@ struct InferenceSession:
            EngineTensorSpec to be used with Max Engine APIs.
 
         """
-        return self._ptr[].get_as_engine_tensor_spec(name, spec, self.copy())
+        return self._ptr[].get_as_engine_tensor_spec(name, spec, self)
 
     fn get_as_engine_tensor_spec(
         self,
@@ -504,9 +481,7 @@ struct InferenceSession:
         Returns:
             EngineTensorSpec to be used with Max Engine APIs.
         """
-        return self._ptr[].get_as_engine_tensor_spec(
-            name, shape, dtype, self.copy()
-        )
+        return self._ptr[].get_as_engine_tensor_spec(name, shape, dtype, self)
 
     fn new_tensor_map(self) raises -> TensorMap:
         """Gets a new TensorMap. This can be used to pass inputs to model.
@@ -514,7 +489,7 @@ struct InferenceSession:
         Returns:
             A new instance of TensorMap.
         """
-        return self._ptr[].new_tensor_map(self.copy())
+        return self._ptr[].new_tensor_map(self)
 
     fn new_borrowed_tensor_value[
         type: DType
@@ -533,7 +508,7 @@ struct InferenceSession:
         Returns:
             A value borrowing the tensor.
         """
-        return self._ptr[].new_borrowed_tensor_value(self.copy(), tensor)
+        return self._ptr[].new_borrowed_tensor_value(self, tensor)
 
     fn new_bool_value(self, value: Bool) raises -> Value:
         """Create a new Value representing a Bool.
@@ -544,7 +519,7 @@ struct InferenceSession:
         Returns:
             Value representing the given boolean.
         """
-        return self._ptr[].new_bool_value(self.copy(), value)
+        return self._ptr[].new_bool_value(self, value)
 
     fn new_list_value(self) raises -> Value:
         """Create a new Value representing an empty list.
@@ -552,19 +527,4 @@ struct InferenceSession:
         Returns:
             A new value containing an empty list.
         """
-        return self._ptr[].new_list_value(self.copy())
-
-    fn __del__(owned self):
-        """Destructor for the session. This will decrement the reference count
-        and when count reaches zero it will free the resources.
-        """
-        if self._ptr[].ref_count.fetch_sub(1) != 1:
-            # There are others holding reference to this session. Keep the
-            # session alive and let other reference holders deal with
-            # managing it.
-            return
-
-        # Now we know that there is only active reference to this session
-        # and that is held by us. So go ahead and call destructor on it.
-        _ = __get_address_as_owned_value(self._ptr.value)
-        self._ptr.free()
+        return self._ptr[].new_list_value(self)

@@ -41,7 +41,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             other.get_shape(),
             other.get_dtype(),
             other._lib,
-            other._session.copy(),
+            other._session,
         )
 
     fn __moveinit__(inout self, owned existing: Self):
@@ -140,7 +140,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
                 Optional[List[Optional[Int64]]](None),
                 dtype,
                 lib,
-                session.copy(),
+                session,
             )
         else:
             var casted_shape = List[Optional[Int64]]()
@@ -149,7 +149,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
                     casted_shape.append(None)
                 else:
                     casted_shape.append(Int64(dim[].value()))
-            self = Self(name, casted_shape, dtype, lib, session.copy())
+            self = Self(name, casted_shape, dtype, lib, session)
 
     fn __init__(
         inout self,

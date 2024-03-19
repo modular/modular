@@ -71,7 +71,7 @@ struct Value:
         owned session: InferenceSession,
         tensor: Tensor[type],
     ) raises -> Self:
-        var spec = EngineTensorSpec("", tensor.spec(), lib, session.copy())
+        var spec = EngineTensorSpec("", tensor.spec(), lib, session)
         var ptr = call_dylib_func[CValue](
             lib,
             Self._NewBorrowedTensorFnName,
@@ -86,7 +86,7 @@ struct Value:
         var ptr = self._ptr.get_c_tensor(self._lib)
         if not ptr.ptr:
             raise "value is not a tensor"
-        return EngineTensor(ptr, self._lib, self._session.copy())
+        return EngineTensor(ptr, self._lib, self._session)
 
     fn as_tensor_copy[type: DType](self) raises -> Tensor[type]:
         """Return a copy of the tensor contained in this value.
@@ -142,7 +142,7 @@ struct Value:
         var ptr = self._ptr.get_list(self._lib)
         if not ptr.ptr:
             raise "value is not a list"
-        return List(ptr, self._lib, self._session.copy())
+        return List(ptr, self._lib, self._session)
 
 
 struct List(Sized):
@@ -234,7 +234,7 @@ struct List(Sized):
         var c_value = self._ptr.get_value(self._lib, index)
         if not c_value.ptr:
             raise "list index out of range"
-        return Value(c_value, self._lib, self._session.copy())
+        return Value(c_value, self._lib, self._session)
 
     fn append(self, value: Value):
         """Append a Value to the list.

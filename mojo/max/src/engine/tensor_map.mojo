@@ -102,7 +102,7 @@ struct TensorMap(SizedRaising):
             key._strref_dangerous(),
             value.spec(),
             self._lib,
-            self._session.copy(),
+            self._session,
         )
         self._ptr.borrow_tensor_by_name(
             bitcast[DType.invalid](value.data()), spec, self._lib
@@ -122,7 +122,7 @@ struct TensorMap(SizedRaising):
             key._strref_dangerous(),
             value.spec(),
             self._lib,
-            self._session.copy(),
+            self._session,
         )
         self._ptr.borrow_tensor_by_name(value.data(), spec, self._lib)
         key._strref_keepalive()
@@ -140,7 +140,7 @@ struct TensorMap(SizedRaising):
             key._strref_dangerous(),
             value.spec(),
             self._lib,
-            self._session.copy(),
+            self._session,
         )
         self._ptr.borrow_tensor_by_name(value.data(), spec, self._lib)
         key._strref_keepalive()
@@ -176,9 +176,7 @@ struct TensorMap(SizedRaising):
             key._strref_dangerous().data, self._lib
         )
         key._strref_keepalive()
-        var mof_tensor = EngineTensor(
-            tensor_ptr, self._lib, self._session.copy()
-        )
+        var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
         var tensor = mof_tensor.tensor[type]()
         return tensor ^
 
@@ -198,9 +196,7 @@ struct TensorMap(SizedRaising):
             key._strref_dangerous().data, self._lib
         )
         key._strref_keepalive()
-        return EngineTensor(tensor_ptr, self._lib, self._session.copy()).buffer[
-            type
-        ]()
+        return EngineTensor(tensor_ptr, self._lib, self._session).buffer[type]()
 
     fn get_value(self, key: String) raises -> Value:
         """Gets the value pointed by the key.
@@ -215,7 +211,7 @@ struct TensorMap(SizedRaising):
             key._strref_dangerous().data, self._lib
         )
         key._strref_keepalive()
-        return Value(value_ptr, self._lib, self._session.copy())
+        return Value(value_ptr, self._lib, self._session)
 
     fn __len__(self) raises -> Int:
         """Gets number of elements in the map.

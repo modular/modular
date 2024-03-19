@@ -356,7 +356,7 @@ struct CCompiledModel:
         )
         if status:
             raise Error(status.__str__())
-        return EngineTensorSpec(input_spec, lib, session.copy())
+        return EngineTensorSpec(input_spec, lib, session)
 
     fn get_model_output_spec_by_name(
         self,
@@ -375,7 +375,7 @@ struct CCompiledModel:
         )
         if status:
             raise Error(status.__str__())
-        return EngineTensorSpec(output_spec, lib, session.copy())
+        return EngineTensorSpec(output_spec, lib, session)
 
     fn free(self, borrowed lib: DLHandle):
         call_dylib_func(lib, Self.FreeCompiledModelFnName, self)
@@ -440,7 +440,7 @@ struct CompiledModel:
 
         for input_tensor_name in input_tensor_names:
             var input_spec = self.ptr.get_model_input_spec_by_name(
-                input_tensor_name[], self.lib, self.session.copy()
+                input_tensor_name[], self.lib, self.session
             )
             input_metadata.append(input_spec ^)
         return input_metadata
@@ -453,7 +453,7 @@ struct CompiledModel:
 
         for output_tensor_name in output_tensor_names:
             var output_spec = self.ptr.get_model_output_spec_by_name(
-                output_tensor_name[], self.lib, self.session.copy()
+                output_tensor_name[], self.lib, self.session
             )
             output_metadata.append(output_spec ^)
         return output_metadata
