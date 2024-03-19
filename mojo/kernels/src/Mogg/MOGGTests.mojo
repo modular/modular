@@ -11,7 +11,7 @@ from register import *
 from runtime.llcl import MojoCallContextPtr
 
 from utils.index import StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 # ===----------------------------------------------------------------------===#
 # Special test targets just for generation tests

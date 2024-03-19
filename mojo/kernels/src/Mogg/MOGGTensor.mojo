@@ -16,7 +16,7 @@ from MOGGIntList import IntList
 from register import *
 
 from utils._optional import Optional
-from utils.list import DimList
+from buffer.list import DimList
 
 
 @value

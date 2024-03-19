@@ -35,7 +35,7 @@ from nn.gather_scatter import gather_shape
 from register import *
 from runtime.tracing import Trace, TraceLevel
 
-from utils.list import DimList
+from buffer.list import DimList
 
 alias MAX_BENEFIT = 1000
 

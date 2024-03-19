@@ -143,7 +143,7 @@ from runtime.tracing import Trace, TraceLevel
 
 from utils._optional import Optional
 from utils.index import Index, StaticIntTuple, product
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 

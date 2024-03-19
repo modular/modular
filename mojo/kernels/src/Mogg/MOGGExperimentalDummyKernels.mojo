@@ -9,7 +9,7 @@ from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from register import *
 
-from utils.list import DimList
+from buffer.list import DimList
 
 # Dummy kernels to test fundamental mechanisms without overwriting the normal
 # kernels.
