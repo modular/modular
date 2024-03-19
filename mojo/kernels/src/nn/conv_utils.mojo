@@ -17,12 +17,12 @@ from sys.info import (
 )
 
 from buffer import NDBuffer
-from ._optional_param import OptionalParamInt, OptionalParamInts
+from buffer.list import Dim, DimList
 from MatmulUtils import partition_work
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 
+from ._optional_param import OptionalParamInt, OptionalParamInts
 from .image import Image2DLayout, ImageData
 
 # ===----------------------------------------------------------------------=== #

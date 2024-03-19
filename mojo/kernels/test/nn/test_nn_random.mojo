@@ -8,9 +8,8 @@
 from random import seed
 
 from buffer import NDBuffer
-from nn.randn import random_normal
-
 from buffer.list import DimList
+from nn.randn import random_normal
 
 
 fn test_random_normal():

@@ -4,23 +4,25 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from math import align_up, div_ceil, exp, max, min
+from sys.info import has_avx512f, has_neon
+
 from algorithm import sync_parallelize, tile, vectorize
 from algorithm.reduction import (
-    map_reduce,
     _simd_max,
     _simd_max_elementwise,
     _simd_sum,
     _simd_sum_elementwise,
+    map_reduce,
 )
 from buffer import Buffer, NDBuffer
-from math import align_up, div_ceil, exp, max, min
+from buffer.list import Dim
 from MatmulUtils import partition_work
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
-from sys.info import has_avx512f, has_neon
+
 from utils.index import Index
-from buffer.list import Dim
 
 
 struct _MatmulAccumulators[

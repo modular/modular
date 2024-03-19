@@ -10,10 +10,10 @@ from sys import external_call
 from algorithm import sync_parallelize
 from buffer import Buffer, NDBuffer
 from buffer.buffer import DynamicRankBuffer
+from buffer.list import Dim, DimList
 from memory import memcpy
 
 from utils.index import product
-from buffer.list import Dim, DimList
 
 
 struct _NDBufferVector[type: DType, rank: Int](Sized):

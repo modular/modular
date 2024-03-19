@@ -9,11 +9,11 @@ from math import mul
 
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from memory import stack_allocation
 from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 
 
 fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):

@@ -8,9 +8,9 @@ from math import div_ceil
 
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 
 from utils.index import StaticIntTuple
-from buffer.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
 # slice_as_view

@@ -10,13 +10,13 @@ from random import rand
 
 from BatchedMatmul import batched_matmul
 from buffer.buffer import NDBuffer, _compute_nd_index
+from buffer.list import DimList
 from memory.unsafe import DTypePointer
 from nn.mha import _naive_attention, fused_attention
 from nn.softmax import softmax
 from testing import assert_true
 
 from utils.index import Index
-from buffer.list import DimList
 
 
 # TODO: Move this function to a common space.

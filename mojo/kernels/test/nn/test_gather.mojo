@@ -13,10 +13,10 @@
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from nn.gather_scatter import gather
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_gather

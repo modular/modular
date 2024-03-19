@@ -10,6 +10,7 @@ from random import rand
 from sys.info import has_avx2, has_avx512f, simdwidthof
 
 from buffer import NDBuffer
+from buffer.list import Dim, DimList
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
     ConvShape,
@@ -19,7 +20,6 @@ from nn.conv_utils import (
 )
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 
 
 fn test[

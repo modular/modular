@@ -8,9 +8,8 @@
 from math import iota
 
 from buffer import NDBuffer
-from nn.cumsum import cumsum
-
 from buffer.list import DimList
+from nn.cumsum import cumsum
 
 
 # CHECK-LABEL: test_cumsum_1d

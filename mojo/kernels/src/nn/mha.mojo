@@ -10,6 +10,7 @@ from math import align_down, div_ceil, exp, iota, max, min, neginf, sqrt
 from algorithm import elementwise, unswitch
 from BatchedMatmul import batched_matmul
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from gpu import (
     WARP_SIZE,
     BlockDim,
@@ -30,7 +31,6 @@ from memory.unsafe import DTypePointer, bitcast
 from Transpose import transpose
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
 from .softmax import softmax, softmax_3_pass

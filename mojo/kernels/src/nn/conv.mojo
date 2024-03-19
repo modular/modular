@@ -30,6 +30,7 @@ from buffer.buffer import (
     partial_simd_store,
     prod_dims,
 )
+from buffer.list import Dim, DimList
 from Matmul import (
     GemmShape,
     MatmulInnerLoopBPacked,
@@ -50,7 +51,6 @@ from runtime.llcl import Runtime
 
 from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
-from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 from .accumulate import (

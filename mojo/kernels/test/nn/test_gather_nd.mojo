@@ -6,10 +6,9 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from memory import stack_allocation
 from nn.gather_scatter import gather_nd, gather_nd_shape
-
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_gather_nd

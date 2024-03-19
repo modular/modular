@@ -7,10 +7,10 @@
 from algorithm import sync_parallelize
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
+from buffer.list import Dim, DimList
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
-from buffer.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
 # arg_nonzero

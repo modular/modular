@@ -8,9 +8,8 @@
 from sys.info import simdwidthof
 
 from buffer import Buffer, NDBuffer
-from nn.softmax import logsoftmax, softmax_2_pass
-
 from buffer.list import Dim, DimList
+from nn.softmax import logsoftmax, softmax_2_pass
 
 
 # CHECK-LABEL: test_logsoftmax

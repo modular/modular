@@ -11,6 +11,7 @@ from random import rand
 from sys.info import simdwidthof
 
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from gpu.host import Context, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -20,8 +21,6 @@ from gpu.host.memory import (
     _memset,
 )
 from nn.softmax import softmax, softmax_2_pass
-
-from buffer.list import Dim, DimList
 
 
 # CHECK-LABEL: test_gpu_softmax

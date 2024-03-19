@@ -12,6 +12,7 @@ from sys.info import simdwidthof
 
 from algorithm.functional import vectorize
 from buffer import NDBuffer
+from buffer.list import DimList
 from memory.unsafe import DTypePointer
 from nn.conv_transpose import (
     ConvTransposedPacked,
@@ -32,7 +33,6 @@ from nn.conv_utils import (
 )
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 alias simd_size: Int = simdwidthof[DType.float32]()
 alias type = DType.float32

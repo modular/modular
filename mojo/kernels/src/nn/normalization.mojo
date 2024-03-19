@@ -14,11 +14,11 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
 )
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
-from buffer.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
 from .reshape import reshape

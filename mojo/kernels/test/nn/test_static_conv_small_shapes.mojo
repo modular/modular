@@ -11,6 +11,7 @@ from math import div_ceil
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
+from buffer.list import Dim, DimList
 from nn.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv_utils import (
     ConvShape,
@@ -20,7 +21,6 @@ from nn.conv_utils import (
 )
 
 from utils.index import Index
-from buffer.list import Dim, DimList
 
 alias N = 1
 alias H = 14

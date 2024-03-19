@@ -11,6 +11,7 @@ from time import time_function as time_function_sync
 
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import Context, Function, Stream
 from gpu.host.event import time_function as time_function_cuda
@@ -23,8 +24,6 @@ from gpu.host.memory import (
 )
 from gpu.host.sync import synchronize
 from nn.concat import _concat_gpu, _concat_inner_most_single_dim
-
-from buffer.list import DimList
 
 
 fn _create_buffer_host[

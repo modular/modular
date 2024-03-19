@@ -16,6 +16,7 @@ from algorithm.functional import (
     sync_parallelize,
 )
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from gpu import BlockIdx, ThreadIdx
 from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
@@ -33,7 +34,6 @@ from memory import memcpy
 from memory.unsafe import DTypePointer
 
 from utils.index import StaticIntTuple, product
-from buffer.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
 # concat

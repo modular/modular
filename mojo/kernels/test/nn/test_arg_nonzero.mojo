@@ -6,10 +6,9 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer import Buffer, NDBuffer
+from buffer.list import DimList
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
-
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_where_size

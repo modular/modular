@@ -7,7 +7,6 @@
 from random import randn
 
 from buffer import NDBuffer
-
 from buffer.list import DimList
 
 

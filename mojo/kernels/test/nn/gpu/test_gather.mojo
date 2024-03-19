@@ -9,6 +9,7 @@
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from gpu.host import Context
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -21,7 +22,6 @@ from gpu.host.sync import synchronize
 from nn.gather_scatter import gather
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_gather

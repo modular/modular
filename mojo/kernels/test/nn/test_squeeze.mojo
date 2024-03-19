@@ -6,12 +6,12 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from memory import stack_allocation
 from memory.unsafe import DTypePointer, Pointer
 from MOGG import calculate_squeeze_shape, to_buffer
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_calculate_squeeze_shape

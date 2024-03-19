@@ -7,13 +7,13 @@
 
 import builtin
 from buffer import Buffer, NDBuffer
+from buffer.list import DimList
 from memory import stack_allocation
 from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape
 from tensor import Tensor
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 
 fn fill_tensor[rank: Int](tensor: Tensor[DType.float32]):

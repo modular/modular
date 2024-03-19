@@ -6,9 +6,8 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer import NDBuffer
-from nn.tile import tile
-
 from buffer.list import DimList
+from nn.tile import tile
 
 
 # CHECK-LABEL: test_tile_eg1

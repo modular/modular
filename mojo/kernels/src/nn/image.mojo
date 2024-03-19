@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
+from buffer.list import DimList
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 
 # Padding handling method.

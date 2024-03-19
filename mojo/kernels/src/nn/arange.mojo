@@ -8,10 +8,10 @@ from math import abs, ceil, div_ceil, iota
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from register import *
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 
 # ===----------------------------------------------------------------------===#
 # Arange op

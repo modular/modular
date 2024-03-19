@@ -6,10 +6,10 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from nn.conv_transpose import conv_transpose_naive
 
 from utils.index import Index
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_convtranspose_pads

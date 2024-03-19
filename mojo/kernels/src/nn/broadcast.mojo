@@ -7,10 +7,9 @@
 from sys.info import sizeof
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from memory import memcpy
 from memory.unsafe import DTypePointer
-
-from buffer.list import DimList
 
 # ===----------------------------------------------------------------------===#
 # _get_rightmost_broadcast_axis

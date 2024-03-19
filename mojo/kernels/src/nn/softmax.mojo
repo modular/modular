@@ -27,6 +27,7 @@ from algorithm.reduction import (
     _reduce_generator,
 )
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import Device, DeviceAttribute, Function, Stream
 from gpu.memory import AddressSpace
@@ -34,7 +35,6 @@ from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
-from buffer.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
 # ===----------------------------------------------------------------------===#

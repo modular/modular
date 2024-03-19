@@ -6,10 +6,9 @@
 # RUN: %mojo -debug-level full %s
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from nn.roi_align import roi_align_nhwc
 from testing import *
-
-from buffer.list import DimList
 
 
 # CHECK-LABEL: test_roi_align_avg

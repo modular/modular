@@ -7,7 +7,6 @@
 import math
 
 from buffer import NDBuffer
-
 from buffer.list import DimList
 
 

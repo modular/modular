@@ -6,6 +6,7 @@
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from memory.unsafe import DTypePointer
 from nn.concat import (
     _concat_parallel,
@@ -15,7 +16,6 @@ from nn.concat import (
 )
 
 from utils.index import StaticIntTuple
-from buffer.list import Dim, DimList
 
 
 fn test_concat() raises:

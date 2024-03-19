@@ -10,9 +10,9 @@ from sys.info import simdwidthof
 
 from algorithm import elementwise, stencil
 from buffer import NDBuffer
+from buffer.list import DimList
 
 from utils.index import Index, StaticIntTuple
-from buffer.list import DimList
 
 from .image import Image2DLayout, ImageData, ImageShape
 from .shapes import get_sliding_window_out_dim

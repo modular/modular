@@ -5,10 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
+from buffer.list import Dim, DimList
 from nn._optional_param import OptionalParamInt, OptionalParamInts
 from testing import *
-
-from buffer.list import Dim, DimList
 
 
 # CHECK-LABEL: test_opt_param_int

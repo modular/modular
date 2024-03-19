@@ -16,18 +16,18 @@ from algorithm.functional import (
 )
 from buffer import Buffer, NDBuffer, parallel_memcpy
 from buffer.buffer import prod_dims
+from buffer.list import Dim, DimList
 from gpu.host.memory import _copy_device_to_device_async
 from gpu.host.stream import Stream
-from ._optional_param import OptionalParamInt
 from memory import memset_zero, stack_allocation
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils._optional import Optional
 from utils.index import StaticIntTuple
-from buffer.list import Dim, DimList
 from utils.loop import unroll
 
+from ._optional_param import OptionalParamInt
 from .reshape import reshape
 
 

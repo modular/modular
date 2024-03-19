@@ -5,10 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
+from buffer.list import DimList
 from register import mogg_register, mogg_view_op
 
 from utils.index import StaticIntTuple
-from buffer.list import DimList
 from utils.loop import unroll
 
 

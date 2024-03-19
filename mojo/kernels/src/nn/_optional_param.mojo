@@ -4,8 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from utils.index import StaticIntTuple
 from buffer.list import Dim, DimList, _make_tuple
+
+from utils.index import StaticIntTuple
 
 
 @value

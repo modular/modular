@@ -12,6 +12,7 @@
 from collections.vector import InlinedFixedVector
 
 from buffer import Buffer, NDBuffer
+from buffer.list import Dim, DimList
 from memory import memcpy
 from memory.unsafe import DTypePointer
 
@@ -19,7 +20,6 @@ from memory.unsafe import DTypePointer
 from Transpose import _fill_strides
 
 from utils.index import StaticIntTuple
-from buffer.list import Dim, DimList
 
 
 @always_inline
