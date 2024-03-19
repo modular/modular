@@ -330,8 +330,8 @@ struct Report(CollectionElement):
         """
         var divisor = _divisor(unit)
         print("---------------------")
-        print_no_newline("Benchmark Report (")
-        print_no_newline(unit)
+        print("Benchmark Report (", end="")
+        print(unit, end="")
         print(")")
         print("---------------------")
         print("Mean:", self.mean(unit))

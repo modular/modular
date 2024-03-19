@@ -410,7 +410,7 @@ struct Bench:
             return b.elapsed
 
         var full_name = bench_id.func_name + "/" + bench_id.input_id.value() if bench_id.input_id else bench_id.func_name
-        print_no_newline("Running", full_name, "...")
+        print("Running", full_name, "...", end="")
 
         var res = _run_impl(
             _RunOptions[benchmark_fn](
