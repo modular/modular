@@ -166,7 +166,7 @@ def raiseErrorInDef(err: Error):
 
 # CHECK-LABEL: lit.func @"raiseErrorInIf
 def raiseErrorInIf(cond: Bool, err: Error):
-    # CHECK: hlcf.if
+    # CHECK: hlcf.elif
     if cond:
         # CHECK: lit.raise {{.*}} : !Error
         raise err

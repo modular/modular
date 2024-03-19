@@ -766,7 +766,7 @@ struct StructWithInit:
     # CHECK: lit.func @"__init__
     # CHECK-SAME: (%self: !lit.ref<!StructWithInit, mut {{.*}}> init_self,
     fn __init__(inout self, a: Int, b: Int):
-        # CHECK: hlcf.if
+        # CHECK: hlcf.elif
         if a == b:
             # CHECK:  lit.call {{.*}}__init__{{.*}}(%self, %a)
             self = StructWithInit(a)

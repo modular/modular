@@ -36,7 +36,7 @@ fn var_decls():
 # CHECK-LABEL: lit.func @"test_var_let_scopes
 fn test_var_let_scopes(cond: Bool):
     # CHECK: lit.var.decl "c"
-    # CHECK: hlcf.if
+    # CHECK: hlcf.elif
     var c = `10`
     if cond:
         # CHECK: lit.var.decl "c"
@@ -49,7 +49,7 @@ fn test_var_let_scopes(cond: Bool):
 
 # CHECK-LABEL: lit.func @"test_var_lifetime_mangling
 fn test_var_lifetime_mangling[x: int](c: Bool):
-    # CHECK: hlcf.if
+    # CHECK: hlcf.elif
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<index, mut *"y`">
         var y = x
@@ -61,7 +61,7 @@ fn test_var_lifetime_mangling[x: int](c: Bool):
 
 # CHECK-LABEL: lit.func @"test_nested_var_lifetime_mangling
 fn test_nested_var_lifetime_mangling[x: int](c: Bool):
-    # CHECK: hlcf.if
+    # CHECK: hlcf.elif
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<index, mut *"y`">
         var y = x
@@ -120,14 +120,14 @@ def reuse_implicit(a: Int, cond: __mlir_type.i1):
   # CHECK: %a_0 = lit.var.decl
   # CHECK: %implicit = lit.var.decl
 
-  # CHECK: hlcf.if
+  # CHECK: hlcf.elif
   if cond:
       # CHECK: lit.ref.store {{.*}}, %implicit :
       implicit = a
       # CHECK: lit.ref.load %implicit :
       use_int(implicit)
 
-  # CHECK: hlcf.if
+  # CHECK: hlcf.elif
   if cond:
       # CHECK: lit.ref.store {{.*}}, %implicit :
       implicit = a

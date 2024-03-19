@@ -729,6 +729,7 @@ def walrus_implicit_decl():
   # CHECK-NEXT: lit.call {{.*}}([[THREE]], [[VAR_A]])
   _ = simpleMath(a := 3, a)
 
+  # CHECK-NEXT: hlcf.elif {
   # CHECK-NEXT: [[FOUR:%.*]] = kgen.param.constant: !Int = <{4}>
   # CHECK-NEXT: lit.ref.store [[FOUR]], %b
   if b := 4:

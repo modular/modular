@@ -217,6 +217,10 @@ struct StmtParser : public ParserBase {
 
   // Compound statements.
   ParseResult parseIfStmt(LexerCursor startCursor, size_t curIndent);
+  ParseResult parseElif(Location ifLoc, LexerCursor startCursor,
+                        size_t curIndent);
+  ParseResult parseParamIf(Location ifLoc, LexerCursor startCursor,
+                           size_t curIndent);
   ParseResult parseWhileStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseTryStmt(size_t curIndent);
@@ -1545,6 +1549,231 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   return success();
 }
 
+ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
+                                     size_t curIndent) {
+  // We will be moving the builder into sub-regions that are created, make sure
+  // we end up after it when this is done.
+  llvm::SaveAndRestore builderSaver(builder);
+  ExprNode *condExp = nullptr;
+  if (parseAssignExpression(condExp, curIndent))
+    return failure();
+
+  // Each if/elif conditions could be dynamic or static, use some helpers to
+  // generate the right structure.
+  ParamIfOp paramIfOp;
+  auto parseCondAndTerminateElifCondition = [&](Location loc) -> ParseResult {
+    // For a @parameter if we emit the condition as an PValue
+    // without a builder.
+    RValue condRVal = getParamEmitter(EC_BoolParamCondition)
+                          .emitExprI1(condExp, EC_BoolParamCondition);
+    if (!condRVal)
+      return failure();
+    PValue condPVal = condRVal.getIfPValue();
+    if (!condPVal)
+      return emitError(condExp->getLoc(), "@parameter 'if' requires a "
+                                          "parameter expression as a condition")
+             << condExp->getRange();
+
+    paramIfOp = builder.create<ParamIfOp>(loc, condPVal.get());
+    return success();
+  };
+
+  auto emitIntoThenRegion = [&]() {
+    builder.createBlock(&paramIfOp.getThenRegion());
+  };
+
+  auto emitIntoElseRegion = [&]() {
+    builder.createBlock(&cast<ParamIfOp>(paramIfOp).getElseRegion());
+  };
+
+  auto createYield = [&](Location loc) { builder.create<ParamYieldOp>(loc); };
+  auto ifParseResult = parseCondAndTerminateElifCondition(ifLoc);
+  if (ifParseResult ||
+      parseToken(Token::colon, "expected ':' after 'if' expression"))
+    return failure();
+  emitIntoThenRegion();
+  if (failed(parseLocalScopeSuite(curIndent)))
+    return failure();
+  createYield(ifLoc);
+
+  while (getToken().is(Token::kw_elif) &&
+         isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
+    Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
+    if (parseAssignExpression(condExp, std::nullopt))
+      return failure();
+
+    // Moves emission into "Condition" block if elif.
+    emitIntoElseRegion();
+
+    auto ifParseResult = parseCondAndTerminateElifCondition(elifLoc);
+    if (ifParseResult ||
+        parseToken(Token::colon, "expected ':' after 'elif' expression"))
+      return failure();
+
+    createYield(elifLoc);
+    emitIntoThenRegion();
+    if (failed(parseLocalScopeSuite(curIndent)))
+      return failure();
+    createYield(elifLoc);
+  }
+
+  emitIntoElseRegion();
+  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_else)) {
+    if (parseToken(Token::colon, "expected ':' after else"))
+      return failure();
+    if (failed(parseLocalScopeSuite(curIndent)))
+      return failure();
+  }
+  createYield(ifLoc);
+  return success();
+}
+
+ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
+                                  size_t curIndent) {
+  // We will be moving the builder into sub-regions that are created, make sure
+  // we end up after it when this is done.
+  llvm::SaveAndRestore builderSaver(builder);
+
+  // Create a new elifOp state and initialize it with 2 blocks.
+  HLCF::ElifOp elifOp = builder.create<HLCF::ElifOp>(ifLoc, TypeRange(), 2);
+  elifOp.getElifRegions()[0].emplaceBlock();
+  elifOp.getElifRegions()[1].emplaceBlock();
+
+  auto parseCondition = [&](Location loc)
+      -> std::tuple<ParseResult,
+                    std::optional<std::tuple<bool, Location, unsigned>>> {
+    unsigned indexOfCondition = elifOp.getElifRegions().size() - 2;
+    Block &conditionBlock = elifOp.getElifRegions()[indexOfCondition].front();
+    builder.setInsertionPointToStart(&conditionBlock);
+    auto emitter = getEmitter();
+
+    ExprNode *condExp = nullptr;
+    if (parseAssignExpression(condExp, curIndent))
+      return {failure(), {}};
+
+    // Create the 'elif' and parse the body into its "then" region.
+    RValue condI1RVal = emitter.emitExprI1(condExp, EC_BoolCondition);
+    if (!condI1RVal)
+      return {failure(), {}};
+    std::optional<bool> knownConditionForWarning = {};
+    if (PValue condI1PVal = condI1RVal.getIfPValue()) {
+      if (IntegerAttr asIntAttr =
+              dyn_cast_or_null<IntegerAttr>(condI1PVal.get()))
+        knownConditionForWarning = !asIntAttr.getValue().isZero();
+    }
+    SRValue condRVal =
+        emitter.emitSRValue({condI1RVal, condExp}, EC_BoolCondition);
+    if (!condRVal)
+      return {failure(), {}};
+
+    // Terminate the condition region of the current ElifOp.
+    builder.create<HLCF::ElifYieldOp>(loc, condRVal);
+
+    std::optional<std::tuple<bool, Location, unsigned>> deadCodeInfo = {};
+    if (knownConditionForWarning.has_value()) {
+      deadCodeInfo = {knownConditionForWarning.value(),
+                      condExp->getLocation(emitter), indexOfCondition};
+    }
+    return {success(), deadCodeInfo};
+  };
+
+  auto appendElifRegionPair = [&]() {
+    // We need to add two regions.
+    builder.setInsertionPoint(elifOp);
+    mlir::IRRewriter rewriter{builder};
+    HLCF::ElifOp replacement =
+        builder.create<HLCF::ElifOp>(elifOp.getLoc(), elifOp->getResultTypes(),
+                                     elifOp.getElifRegions().size() + 2);
+
+    // Take previously parsed regions from old op.
+    for (auto [index, source] : llvm::enumerate(elifOp.getElifRegions()))
+      replacement.getElifRegions()[index].takeBody(source);
+
+    // Add another (Condition, Then) pair.
+    Region &lastConditionRegion =
+        replacement.getElifRegions()[replacement.getElifRegions().size() - 2];
+    Region &lastThenRegion = replacement.getElifRegions().back();
+    lastConditionRegion.emplaceBlock();
+    lastThenRegion.emplaceBlock();
+
+    // Replace the original elif with the expanded elif.
+    rewriter.replaceOp(elifOp, replacement);
+    elifOp = replacement;
+  };
+
+  auto createYield = [&](Location loc) { builder.create<HLCF::YieldOp>(loc); };
+
+  // Vector of unreachable code metadata.  After emitting code, these need to
+  // raise warnings and be marked as dead.
+  SmallVector<std::tuple<bool, Location, unsigned>> ifOpsWithDeadCode;
+  auto [ifParseResult, maybeDeadCodeInfo] = parseCondition(ifLoc);
+  if (maybeDeadCodeInfo.has_value())
+    ifOpsWithDeadCode.push_back(maybeDeadCodeInfo.value());
+  if (ifParseResult ||
+      parseToken(Token::colon, "expected ':' after 'if' expression"))
+    return failure();
+  // Parse Then region.
+  builder.setInsertionPointToStart(&elifOp.getElifRegions().back().front());
+  if (failed(parseLocalScopeSuite(curIndent)))
+    return failure();
+  createYield(ifLoc);
+
+  // Parse Elif chain if it exists.
+  while (getToken().is(Token::kw_elif) &&
+         isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
+    Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
+    appendElifRegionPair();
+
+    // Parse Condition region.
+    auto [ifParseResult, maybeDeadCodeInfo] = parseCondition(elifLoc);
+    if (ifParseResult ||
+        parseToken(Token::colon, "expected ':' after 'elif' expression"))
+      return failure();
+    if (maybeDeadCodeInfo.has_value())
+      ifOpsWithDeadCode.push_back(maybeDeadCodeInfo.value());
+
+    // Parse Then region.
+    builder.setInsertionPointToStart(&elifOp.getElifRegions().back().front());
+    if (failed(parseLocalScopeSuite(curIndent)))
+      return failure();
+    createYield(elifLoc);
+  }
+
+  builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());
+  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+      consumeIf(Token::kw_else)) {
+    if (parseToken(Token::colon, "expected ':' after else"))
+      return failure();
+    if (failed(parseLocalScopeSuite(curIndent)))
+      return failure();
+  }
+  createYield(ifLoc);
+
+  // Process dead code.  Go backward to avoid needing to erase an already erased
+  // IfOp.
+  if (!ifOpsWithDeadCode.empty()) {
+    for (auto [condition, condExprLoc, index] :
+         llvm::reverse(ifOpsWithDeadCode)) {
+      shared.emitWarning(condExprLoc)
+          << "if statement with constant condition 'if "
+          << (condition ? "True" : "False") << "'";
+      if (condition) {
+        // Condition is true which means all subsequent regions, including else
+        // region, are unreachable.
+        markRegionUnreachable(&elifOp.getElseRegion(), ifLoc);
+        for (auto &region : elifOp.getElifRegions().slice(index + 2))
+          markRegionUnreachable(&region, ifLoc);
+      } else {
+        // Condition is false. Only the first Then region is unreachable.
+        markRegionUnreachable(&elifOp.getElifRegions()[index + 1], ifLoc);
+      }
+    }
+  }
+
+  return success();
+}
+
 /// if_stmt ::=  "if" assignment_expression ":" suite
 ///             ("elif" assignment_expression ":" suite)*
 ///             ["else" ":" suite]
@@ -1568,152 +1797,14 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
           << decorator->getRange();
     }
   }
+
   Location ifLoc = translateLocation(getToken().getLoc());
   if (parseToken(Token::kw_if, "expected 'if' token after decorators"))
     return failure();
-
-  // We will be moving the builder into sub-regions that are created, make sure
-  // we end up after it when this is done.
-  llvm::SaveAndRestore builderSaver(builder);
-
-  ExprNode *condExp = nullptr;
-  if (parseAssignExpression(condExp, curIndent))
-    return failure();
-
-  // Each if/elif conditions could be dynamic or static, use some helpers to
-  // generate the right structure.
-  SmartVariant<HLCF::IfOp, ParamIfOp> ifOp;
-  // Returns the parse result and, if the condition value is statically known
-  // for a non-parameter if statement, it returns the IfOp, the value for the
-  // condition as a bool, and the location of the condition expression.
-  auto parseCondAndCreateIf = [&](Location loc)
-      -> std::tuple<ParseResult,
-                    std::optional<std::tuple<HLCF::IfOp, bool, Location>>> {
-    auto emitter = getEmitter();
-    // If this is a normal if statement, emit the condition as a SRValue.
-    if (!isParamIf) {
-      // Create the 'if' and parse the body into its "then" region.
-      RValue condI1RVal = emitter.emitExprI1(condExp, EC_BoolCondition);
-      if (!condI1RVal)
-        return {failure(), {}};
-      std::optional<bool> knownConditionForWarning = {};
-      if (PValue condI1PVal = condI1RVal.getIfPValue()) {
-        if (IntegerAttr asIntAttr =
-                dyn_cast_or_null<IntegerAttr>(condI1PVal.get()))
-          knownConditionForWarning = !asIntAttr.getValue().isZero();
-      }
-      SRValue condRVal =
-          emitter.emitSRValue({condI1RVal, condExp}, EC_BoolCondition);
-      if (!condRVal)
-        return {failure(), {}};
-      HLCF::IfOp hifOp = builder.create<HLCF::IfOp>(loc, condRVal);
-      ifOp = hifOp;
-      std::optional<std::tuple<HLCF::IfOp, bool, Location>> deadCodeInfo = {};
-      if (knownConditionForWarning.has_value()) {
-        deadCodeInfo = {hifOp, knownConditionForWarning.value(),
-                        condExp->getLocation(emitter)};
-      }
-      return {success(), deadCodeInfo};
-    }
-
-    // Otherwise, for a @parameter if, we emit the condition as an PValue
-    // without a builder.
-    RValue condRVal = getParamEmitter(EC_BoolParamCondition)
-                          .emitExprI1(condExp, EC_BoolParamCondition);
-    if (!condRVal)
-      return {failure(), {}};
-    PValue condPVal = condRVal.getIfPValue();
-    if (!condPVal)
-      return {
-          (emitError(condExp->getLoc(), "@parameter 'if' requires a "
-                                        "parameter expression as a condition")
-           << condExp->getRange()),
-          {}};
-
-    ifOp = builder.create<ParamIfOp>(loc, condPVal.get());
-    return {success(), {}};
-  };
-
-  auto createThenBlock = [&]() {
-    if (auto hifOp = dyn_cast<HLCF::IfOp>(ifOp))
-      builder.createBlock(&hifOp.getThenRegion());
-    else
-      builder.createBlock(&cast<ParamIfOp>(ifOp).getThenRegion());
-  };
-
-  auto createElseBlock = [&]() {
-    if (auto hifOp = dyn_cast<HLCF::IfOp>(ifOp))
-      builder.createBlock(&hifOp.getElseRegion());
-    else
-      builder.createBlock(&cast<ParamIfOp>(ifOp).getElseRegion());
-  };
-
-  auto createYield = [&](Location loc) {
-    if (isa<HLCF::IfOp>(builder.getBlock()->getParentOp()))
-      builder.create<HLCF::YieldOp>(loc);
-    else
-      builder.create<ParamYieldOp>(loc);
-  };
-
-  // Vector of IfOps that have statically known conditions, along with those
-  // conditions.  After emitting code, these need to raise warnings and be
-  // marked as dead.
-  SmallVector<std::tuple<HLCF::IfOp, bool, Location>> ifOpsWithDeadCode;
-  auto [ifParseResult, maybeDeadCodeInfo] = parseCondAndCreateIf(ifLoc);
-  if (maybeDeadCodeInfo.has_value())
-    ifOpsWithDeadCode.push_back(maybeDeadCodeInfo.value());
-  if (ifParseResult ||
-      parseToken(Token::colon, "expected ':' after 'if' expression"))
-    return failure();
-  createThenBlock();
-  if (failed(parseLocalScopeSuite(curIndent)))
-    return failure();
-  createYield(ifLoc);
-
-  while (getToken().is(Token::kw_elif) &&
-         isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
-    Location elifLoc = translateLocation(consumeToken(Token::kw_elif).getLoc());
-    if (parseAssignExpression(condExp, std::nullopt))
-      return failure();
-
-    createElseBlock();
-
-    auto [ifParseResult, maybeDeadCodeInfo] = parseCondAndCreateIf(elifLoc);
-    if (ifParseResult ||
-        parseToken(Token::colon, "expected ':' after 'elif' expression"))
-      return failure();
-    if (maybeDeadCodeInfo.has_value())
-      ifOpsWithDeadCode.push_back(maybeDeadCodeInfo.value());
-    createYield(elifLoc);
-
-    createThenBlock();
-    if (failed(parseLocalScopeSuite(curIndent)))
-      return failure();
-    createYield(elifLoc);
-  }
-
-  createElseBlock();
-  if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
-      consumeIf(Token::kw_else)) {
-    if (parseToken(Token::colon, "expected ':' after else"))
-      return failure();
-    if (failed(parseLocalScopeSuite(curIndent)))
-      return failure();
-  }
-  createYield(ifLoc);
-  // Process dead code.  Go backward to avoid needing to erase an already erased
-  // IfOp.
-  for (auto [deadLeggedIfOp, condition, condExprLoc] :
-       llvm::reverse(ifOpsWithDeadCode)) {
-    shared.emitWarning(condExprLoc)
-        << "if statement with constant condition 'if "
-        << (condition ? "True" : "False") << "'";
-    if (condition)
-      markRegionUnreachable(&deadLeggedIfOp.getElseRegion(), ifLoc);
-    else
-      markRegionUnreachable(&deadLeggedIfOp.getThenRegion(), ifLoc);
-  }
-  return success();
+  if (!isParamIf)
+    return parseElif(ifLoc, startCursor, curIndent);
+  else
+    return parseParamIf(ifLoc, startCursor, curIndent);
 }
 
 /// import_stmt     ::=  "from" relative_module "import" identifier

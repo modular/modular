@@ -26,6 +26,8 @@ alias `9` = __mlir_attr.`9 : index`
 alias `10` = __mlir_attr.`10 : index`
 alias `42` = __mlir_attr.`42 : index`
 alias `123` = __mlir_attr.`123 : index`
+alias `True` = __mlir_attr.`1 : i1`
+alias `False` = __mlir_attr.`0 : i1`
 
 # ===----------------------------------------------------------------------=== #
 # Builtin Types
@@ -299,4 +301,4 @@ struct Tuple[*Ts: AnyRegType]:
     var storage: __mlir_type[`!kgen.pack<`, Ts, `>`]
 
     fn __init__(*args: *Ts) -> Self:
-        pass
+        return Self {storage: args}

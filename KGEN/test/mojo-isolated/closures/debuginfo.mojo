@@ -38,8 +38,8 @@ fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
 # CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = #closure_in_block_name, linkageName = "closure_in_block{{.*}}", file = #file,
 
 # CHECK-LABEL: lit.func @"closure_in_block
-# CHECK:       hlcf.if
-# CHECK-NEXT:    %anonymous2A = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0:.*]])
+# CHECK:       hlcf.elif
+# CHECK:         %anonymous2A = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0:.*]])
 # CHECK-NEXT:     = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m) : {{.*}} loc(#[[LOC0]])
 # CHECK-NEXT:    %anonymous2A_0 = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0]])
 # CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A) : {{.*}} loc(#[[LOC0]])
