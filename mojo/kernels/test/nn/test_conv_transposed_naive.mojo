@@ -61,7 +61,7 @@ fn test_convtranspose_pads():
     for k in range(2):
         for i in range(7):
             for j in range(3):
-                print_no_newline(output[0, 0, i, j, k], ",")
+                print(output[0, 0, i, j, k], ",", end="")
             print()
         print()
     print()
@@ -112,7 +112,7 @@ fn test_convtranspose():
     for l in range(2):
         for j in range(5):
             for k in range(5):
-                print_no_newline(output[0, 0, j, k, l], ",")
+                print(output[0, 0, j, k, l], ",", end="")
             print()
         print()
     print()
@@ -167,7 +167,7 @@ fn test_convtranspose_dilation():
     for l in range(1):
         for j in range(5):
             for k in range(5):
-                print_no_newline(output[0, 0, j, k, l], ",")
+                print(output[0, 0, j, k, l], ",", end="")
             print()
         print()
     print()
@@ -228,7 +228,7 @@ fn test_convtranspose_attributes():
     for l in range(2):
         for j in range(10):
             for k in range(8):
-                print_no_newline(output[0, 0, j, k, l], ",")
+                print(output[0, 0, j, k, l], ",", end="")
             print()
         print()
     print()

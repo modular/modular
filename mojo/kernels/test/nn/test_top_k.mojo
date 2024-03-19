@@ -72,12 +72,12 @@ fn test_case[
     var xxx_no_lifetimes = input ^  # intentionally bad name
 
     for i in range(out_vals.storage.size):
-        print_no_newline(out_vals.storage[i])
-        print_no_newline(",")
+        print(out_vals.storage[i], end="")
+        print(",", end="")
     print("")
     for i in range(out_idxs.storage.size):
-        print_no_newline(out_idxs.storage[i])
-        print_no_newline(",")
+        print(out_idxs.storage[i], end="")
+        print(",", end="")
     print("")
 
 

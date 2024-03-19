@@ -63,7 +63,7 @@ fn test_tile_eg1() raises:
     print()
     for i in range(4):
         for j in range(4):
-            print_no_newline(output[i, j], ",")
+            print(output[i, j], ",", end="")
         print()
     print()
 
@@ -122,7 +122,7 @@ fn test_tile_eg2() raises:
     print()
     for i in range(6):
         for j in range(4):
-            print_no_newline(output[i, j], ",")
+            print(output[i, j], ",", end="")
         print()
     print()
 
@@ -179,7 +179,7 @@ fn test_tile_eg3() raises:
     print()
     for i in range(4):
         for j in range(6):
-            print_no_newline(output[i, j], ",")
+            print(output[i, j], ",", end="")
         print()
     print()
 
@@ -247,7 +247,7 @@ fn test_tile_eg4() raises:
     for i in range(4):
         for j in range(2):
             for k in range(2):
-                print_no_newline(output[i, j, k], ",")
+                print(output[i, j, k], ",", end="")
             print()
         print()
     print()
@@ -316,7 +316,7 @@ fn test_tile_eg5() raises:
     for i in range(4):
         for j in range(2):
             for k in range(4):
-                print_no_newline(output[i, j, k], ",")
+                print(output[i, j, k], ",", end="")
             print()
         print()
     print()
@@ -372,7 +372,7 @@ fn test_tile_eg6() raises:
     print()
     for i in range(2):
         for j in range(4):
-            print_no_newline(output[i, j], ",")
+            print(output[i, j], ",", end="")
         print()
     print()
 
@@ -429,7 +429,7 @@ fn test_tile_eg7() raises:
     print()
     for i in range(4):
         for j in range(2):
-            print_no_newline(output[i, j], ",")
+            print(output[i, j], ",", end="")
         print()
     print()
 
@@ -490,7 +490,7 @@ fn test_tile_eg8() raises:
     print()
     for i in range(4):
         for j in range(4):
-            print_no_newline(output[i, j], ",")
+            print(output[i, j], ",", end="")
         print()
     print()
 
@@ -571,7 +571,7 @@ fn test_tile_eg9() raises:
     for i in range(4):
         for j in range(4):
             for k in range(2):
-                print_no_newline(output[i, j, k], ",")
+                print(output[i, j, k], ",", end="")
             print()
         print()
     print()
@@ -656,7 +656,7 @@ fn test_tile_eg10() raises:
     for i in range(6):
         for j in range(4):
             for k in range(6):
-                print_no_newline(output[i, j, k], ",")
+                print(output[i, j, k], ",", end="")
             print()
         print()
     print()
@@ -763,7 +763,7 @@ fn test_tile_eg11() raises:
     for i in range(6):
         for j in range(6):
             for k in range(2):
-                print_no_newline(output[i, j, k], ",")
+                print(output[i, j, k], ",", end="")
             print()
         print()
     print()
@@ -831,7 +831,7 @@ fn test_tile_eg12() raises:
         for j in range(1):
             for k in range(4):
                 for l in range(6):
-                    print_no_newline(output[i, j, k, l], ",")
+                    print(output[i, j, k, l], ",", end="")
                 print()
             print()
         print()
@@ -927,7 +927,7 @@ fn test_tile_eg13() raises:
         for j in range(4):
             for k in range(4):
                 for l in range(6):
-                    print_no_newline(output[i, j, k, l], ",")
+                    print(output[i, j, k, l], ",", end="")
                 print()
             print()
         print()
@@ -1039,7 +1039,7 @@ fn test_tile_eg14() raises:
         for j in range(4):
             for k in range(4):
                 for l in range(6):
-                    print_no_newline(output[i, j, k, l], ",")
+                    print(output[i, j, k, l], ",", end="")
                 print()
             print()
         print()

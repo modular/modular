@@ -111,12 +111,12 @@ fn test_case[
     _ = scores
 
     for i in range(selected_idxs.dim(0)):
-        print_no_newline(selected_idxs[i, 0])
-        print_no_newline(",")
-        print_no_newline(selected_idxs[i, 1])
-        print_no_newline(",")
-        print_no_newline(selected_idxs[i, 2])
-        print_no_newline(",")
+        print(selected_idxs[i, 0], end="")
+        print(",", end="")
+        print(selected_idxs[i, 1], end="")
+        print(",", end="")
+        print(selected_idxs[i, 2], end="")
+        print(",", end="")
         print("")
 
 

@@ -59,7 +59,7 @@ fn test_case[
 
     for i in range(output.num_elements()):
         if output_ref._to_buffer()[i] != output._to_buffer()[i]:
-            print_no_newline("FAIL: Mismatch at idx: ")
+            print("FAIL: Mismatch at idx: ", end="")
             print(i)
 
 

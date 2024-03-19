@@ -35,7 +35,7 @@ fn test_cumsum_1d():
     )
 
     for i in range(5):
-        print_no_newline(cumsum_matrix[i], ",")
+        print(cumsum_matrix[i], ",", end="")
     print()
 
     matrix_data.free()
@@ -63,7 +63,7 @@ fn test_cumsum_1d_exclusive():
     )
 
     for i in range(5):
-        print_no_newline(cumsum_matrix[i], ",")
+        print(cumsum_matrix[i], ",", end="")
     print()
 
     matrix_data.free()
@@ -91,7 +91,7 @@ fn test_cumsum_1d_reverse():
     )
 
     for i in range(5):
-        print_no_newline(cumsum_matrix[i], ",")
+        print(cumsum_matrix[i], ",", end="")
     print()
 
     matrix_data.free()
@@ -119,7 +119,7 @@ fn test_cumsum_1d_reverse_exclusive():
     )
 
     for i in range(5):
-        print_no_newline(cumsum_matrix[i], ",")
+        print(cumsum_matrix[i], ",", end="")
     print()
 
     matrix_data.free()
@@ -154,7 +154,7 @@ fn test_cumsum_2d_axis_0():
 
     for i in range(2):
         for j in range(3):
-            print_no_newline(cumsum_matrix[i, j], ",")
+            print(cumsum_matrix[i, j], ",", end="")
     print()
 
     matrix_data.free()
@@ -189,7 +189,7 @@ fn test_cumsum_2d_axis_1():
 
     for i in range(2):
         for j in range(3):
-            print_no_newline(cumsum_matrix[i, j], ",")
+            print(cumsum_matrix[i, j], ",", end="")
     print()
 
     matrix_data.free()
@@ -224,7 +224,7 @@ fn test_cumsum_2d_negative_axis():
 
     for i in range(2):
         for j in range(3):
-            print_no_newline(cumsum_matrix[i, j], ",")
+            print(cumsum_matrix[i, j], ",", end="")
     print()
 
     matrix_data.free()

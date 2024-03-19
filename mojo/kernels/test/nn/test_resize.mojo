@@ -27,8 +27,7 @@ fn test_case_nearest[
     )
 
     for i in range(output.num_elements()):
-        print_no_newline(output._to_buffer()[i])
-        print_no_newline(",")
+        print(output._to_buffer()[i], end=",")
     print("")
 
 
