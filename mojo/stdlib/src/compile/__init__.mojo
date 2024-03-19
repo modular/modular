@@ -4,5 +4,5 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .compile import compile_info, compile_code, Info
+from .compile import Info, compile_code, compile_info
 from .reflection import get_linkage_name
