@@ -13,7 +13,7 @@ from benchmark import *
 from testing import assert_almost_equal
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer):

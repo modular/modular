@@ -16,7 +16,7 @@ from memory.unsafe import DTypePointer, bitcast
 from microbenchmark import Benchmarkable
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 alias alignment = 64
 

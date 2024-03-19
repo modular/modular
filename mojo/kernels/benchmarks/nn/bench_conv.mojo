@@ -27,7 +27,7 @@ from nn.conv_utils import (
 from testing import assert_almost_equal
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn bench_conv(inout m: Bench, spec: ConvSpec) raises:

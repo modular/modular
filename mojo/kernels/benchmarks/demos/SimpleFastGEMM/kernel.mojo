@@ -11,7 +11,7 @@ from sys.intrinsics import PrefetchOptions
 from buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 alias mr = 6
 alias nr = 64

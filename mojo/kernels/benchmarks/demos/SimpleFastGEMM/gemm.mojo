@@ -14,7 +14,7 @@ from buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer
 
 from utils.index import Index
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 from math import align_up
 
