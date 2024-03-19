@@ -73,6 +73,16 @@ struct State {
   int rejectUnknownArguments(llvm::opt::InputArgList &args,
                              llvm::opt::OptSpecifier unknownOptionID) const;
 
+  /// In debug modes, asserts that all `args` have been "claimed." This is a
+  /// no-op in release modes.
+  ///
+  /// Checking whether an argument was passed in on the command line, or
+  /// checking its value, results in that argument being "claimed." Unclaimed
+  /// arguments are those that `mojo` never checks, and so have no bearing on
+  /// the behavior of `mojo`. This represents a Modular employee programming
+  /// error.
+  void assertNoUnusedArguments(const llvm::opt::InputArgList &args) const;
+
   /// The name of the executable that the user invoked.
   /// This is used for error reporting.
   const char *programName;

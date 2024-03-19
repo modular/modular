@@ -104,6 +104,16 @@ int State::rejectUnknownArguments(
   return EXIT_FAILURE;
 }
 
+void State::assertNoUnusedArguments(const llvm::opt::InputArgList &args) const {
+#ifndef NDEBUG
+  int unused = 0;
+  for (const llvm::opt::Arg *a : args)
+    if (!a->isClaimed())
+      unused = reportError("'" + a->getSpelling() + "' argument is unclaimed");
+  assert(unused == 0 && "one or more arguments were unclaimed");
+#endif
+}
+
 //===----------------------------------------------------------------------===//
 // SubcommandRegistry
 //===----------------------------------------------------------------------===//

@@ -287,6 +287,9 @@ static int run(const State &state) {
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
 
+  // Assert that we've parsed all command line arguments.
+  state.assertNoUnusedArguments(args);
+
   // Execute the Mojo program.
   return executeModule(
       state, *runtime, context, options, **moduleOp, target,

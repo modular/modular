@@ -106,6 +106,9 @@ static int format(const State &state) {
     }
   }
 
+  // Assert that we've parsed all command line arguments.
+  state.assertNoUnusedArguments(args);
+
   // Read the mojo configuration.
   ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
   if (failed(configOr)) {

@@ -432,6 +432,10 @@ static int package(const State &state) {
     return state.reportError("failed to write package bytecode to a file");
 
   out->keep();
+
+  // Assert that we've parsed all command line arguments.
+  state.assertNoUnusedArguments(args);
+
   return EXIT_SUCCESS;
 }
 

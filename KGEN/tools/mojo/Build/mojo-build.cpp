@@ -243,6 +243,9 @@ static int linkExecutable(const State &state,
   StringRef outputName =
       args.getLastArgValue(options::OPT_o, defaultOutputName);
 
+  // Assert that we've parsed all command line arguments.
+  state.assertNoUnusedArguments(args);
+
   // Check that the parent directory of the output exists.
   auto outputDirPath =
       std::filesystem::absolute(outputName.str(), ec).parent_path();
