@@ -14,7 +14,7 @@ from nn.arange import arange, arange_shape
 from nn.slice import slice_as_copy, slice_as_view
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 fn print_elements[type: DType, in_rank: Int](tensor: NDBuffer[type, in_rank]):

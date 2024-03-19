@@ -8,7 +8,7 @@ from random import randn
 
 from buffer import NDBuffer
 
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn random_normal[

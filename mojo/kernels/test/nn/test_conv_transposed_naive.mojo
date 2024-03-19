@@ -9,7 +9,7 @@ from buffer import NDBuffer
 from nn.conv_transpose import conv_transpose_naive
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # CHECK-LABEL: test_convtranspose_pads

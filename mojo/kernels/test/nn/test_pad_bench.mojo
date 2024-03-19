@@ -15,7 +15,7 @@ from python import Python
 from testing import assert_equal, assert_true
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 

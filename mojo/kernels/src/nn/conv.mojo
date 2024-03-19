@@ -50,7 +50,7 @@ from runtime.llcl import Runtime
 
 from utils._optional import Optional
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 from .accumulate import (

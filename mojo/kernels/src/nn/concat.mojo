@@ -33,7 +33,7 @@ from memory import memcpy
 from memory.unsafe import DTypePointer
 
 from utils.index import StaticIntTuple, product
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
 # concat

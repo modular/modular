@@ -30,7 +30,7 @@ from memory.unsafe import DTypePointer, bitcast
 from Transpose import transpose
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
 from .softmax import softmax, softmax_3_pass

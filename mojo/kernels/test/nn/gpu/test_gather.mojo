@@ -21,7 +21,7 @@ from gpu.host.sync import synchronize
 from nn.gather_scatter import gather
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # CHECK-LABEL: test_gather

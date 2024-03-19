@@ -9,7 +9,7 @@ from buffer import Buffer, NDBuffer
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from testing import assert_equal
 
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # CHECK-LABEL: test_where_size

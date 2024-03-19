@@ -10,7 +10,7 @@ from sys.info import simdwidthof
 from buffer import Buffer, NDBuffer
 from nn.softmax import logsoftmax, softmax_2_pass
 
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 # CHECK-LABEL: test_logsoftmax

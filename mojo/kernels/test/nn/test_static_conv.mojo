@@ -19,7 +19,7 @@ from nn.conv_utils import (
 )
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 fn test[

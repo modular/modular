@@ -11,7 +11,7 @@ from buffer import NDBuffer
 from register import *
 
 from utils.index import StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 # ===----------------------------------------------------------------------===#
 # Arange op

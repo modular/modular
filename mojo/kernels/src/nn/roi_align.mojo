@@ -8,7 +8,7 @@ import math
 
 from buffer import NDBuffer
 
-from utils.list import DimList
+from buffer.list import DimList
 
 
 @register_passable("trivial")

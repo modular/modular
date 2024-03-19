@@ -20,7 +20,7 @@ from nn.conv_utils import (
 )
 
 from utils.index import Index
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 alias N = 1
 alias H = 14

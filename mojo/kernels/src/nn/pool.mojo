@@ -12,7 +12,7 @@ from algorithm import elementwise, stencil
 from buffer import NDBuffer
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 from .image import Image2DLayout, ImageData, ImageShape
 from .shapes import get_sliding_window_out_dim

@@ -11,7 +11,7 @@ from memory.unsafe import DTypePointer, Pointer
 from MOGG import calculate_unsqueeze_shape, to_buffer
 
 from utils.index import StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # CHECK-LABEL: test_calculate_unsqueeze_shape

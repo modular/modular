@@ -13,7 +13,7 @@ from nn.conv_utils import ConvShape
 from testing import *
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 alias type = DType.float32
 alias micro_kernel_height = 2

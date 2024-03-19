@@ -34,7 +34,7 @@ from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 from utils.static_tuple import StaticTuple
 
 # ===----------------------------------------------------------------------===#

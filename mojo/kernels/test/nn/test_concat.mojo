@@ -15,7 +15,7 @@ from nn.concat import (
 )
 
 from utils.index import StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 fn test_concat() raises:

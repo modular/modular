@@ -21,7 +21,7 @@ from ._optional_param import OptionalParamInt, OptionalParamInts
 from MatmulUtils import partition_work
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 from .image import Image2DLayout, ImageData
 

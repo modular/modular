@@ -8,7 +8,7 @@
 from buffer import NDBuffer
 from nn.tile import tile
 
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # CHECK-LABEL: test_tile_eg1

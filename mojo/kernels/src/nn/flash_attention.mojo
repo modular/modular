@@ -20,7 +20,7 @@ from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 from sys.info import has_avx512f, has_neon
 from utils.index import Index
-from utils.list import Dim
+from buffer.list import Dim
 
 
 struct _MatmulAccumulators[

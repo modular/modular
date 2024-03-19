@@ -16,7 +16,7 @@ from nn.softmax import softmax
 from testing import assert_true
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # TODO: Move this function to a common space.

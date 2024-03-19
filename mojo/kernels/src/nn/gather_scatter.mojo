@@ -25,7 +25,7 @@ from runtime.tracing import Trace, TraceLevel
 
 from utils._optional import Optional
 from utils.index import StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 from .reshape import reshape

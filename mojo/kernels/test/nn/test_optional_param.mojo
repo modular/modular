@@ -8,7 +8,7 @@
 from nn._optional_param import OptionalParamInt, OptionalParamInts
 from testing import *
 
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 # CHECK-LABEL: test_opt_param_int

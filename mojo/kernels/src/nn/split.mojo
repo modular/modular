@@ -13,7 +13,7 @@ from buffer.buffer import DynamicRankBuffer
 from memory import memcpy
 
 from utils.index import product
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 struct _NDBufferVector[type: DType, rank: Int](Sized):

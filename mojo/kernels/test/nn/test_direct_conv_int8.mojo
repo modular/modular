@@ -29,7 +29,7 @@ from nn.conv_utils import (
 from nn.image import Image2DLayout, ImageData, ImageShape
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 alias input_type = DType.uint8
 alias filter_type = DType.int8

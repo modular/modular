@@ -10,7 +10,7 @@ from random import seed
 from buffer import NDBuffer
 from nn.randn import random_normal
 
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn test_random_normal():

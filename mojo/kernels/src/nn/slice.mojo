@@ -10,7 +10,7 @@ from algorithm import elementwise
 from buffer import Buffer, NDBuffer
 
 from utils.index import StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 # ===----------------------------------------------------------------------===#
 # slice_as_view

@@ -9,7 +9,7 @@ from buffer import Buffer, NDBuffer
 from nn.pad import pad_constant, pad_reflect, pad_repeat
 
 from utils.index import StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 
 # CHECK-LABEL: test_pad_1d
