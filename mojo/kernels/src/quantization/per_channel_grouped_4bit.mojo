@@ -24,7 +24,7 @@ from Neon import _neon_dotprod
 from VNNI import dot_i8_to_i32_saturated_x86
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 
 @always_inline

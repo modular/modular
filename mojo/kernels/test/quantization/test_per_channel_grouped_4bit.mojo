@@ -11,7 +11,7 @@ from sys.info import alignof, sizeof
 from buffer import NDBuffer
 from quantization import Q4sym
 
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
