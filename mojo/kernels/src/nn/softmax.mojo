@@ -675,14 +675,16 @@ fn softmax_kernel[
     type: DType,
     rank: Int,
 ](shape: StaticIntTuple[rank], output: NDBuffer[type, rank], axis: Int,):
+    alias accum_type = DType.float32 if type.is_bfloat16() or type.is_float16() else type
+
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
     var max_buf = Buffer[
-        type, 1, address_space = AddressSpace.SHARED
+        accum_type, 1, address_space = AddressSpace.SHARED
     ].stack_allocation()
     var exp_sum_buf = Buffer[
-        type, 1, address_space = AddressSpace.SHARED
+        accum_type, 1, address_space = AddressSpace.SHARED
     ].stack_allocation()
 
     @parameter
@@ -715,7 +717,7 @@ fn softmax_kernel[
             BLOCK_SIZE,
             input_fn,
             _max,
-            type,
+            accum_type,
             type,
             1,
             rank,
@@ -726,7 +728,7 @@ fn softmax_kernel[
         barrier()
 
         # Step 2: out[i] = exp(in[i] - max) and compute sum of out[i]
-        var exp_sum = Scalar[type](0)
+        var exp_sum = Scalar[accum_type](0)
         for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
             var idx_in_padded_row = ThreadIdx.x() + offset_in_row
             if idx_in_padded_row >= row_size:
@@ -734,11 +736,14 @@ fn softmax_kernel[
 
             row_coords[axis] = idx_in_padded_row
             # loads from input_fn twice
-            var val = exp(input_fn[type, 1, rank](row_coords) - max_buf[0])
+            var val = exp(
+                input_fn[type, 1, rank](row_coords).cast[accum_type]()
+                - max_buf[0]
+            )
 
             # TODO we're writing to and reading from global memory twice
             # we can reduce the amount of reads by keeping values local here.
-            output[row_coords] = val
+            output[row_coords] = val.cast[type]()
             exp_sum += val
 
         var block_exp_sum = block_reduce[BLOCK_SIZE, _sum](exp_sum, 0)
@@ -754,7 +759,7 @@ fn softmax_kernel[
                 break
 
             row_coords[axis] = idx_in_padded_row
-            output[row_coords] *= block_exp_sum_recip
+            output[row_coords] *= block_exp_sum_recip.cast[type]()
 
 
 fn _softmax_gpu[
