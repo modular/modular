@@ -6,11 +6,12 @@
 
 import time
 from collections import Optional
-from utils._numerics import FlushDenormals
 from pathlib import Path
 from sys.arg import argv
 
 from stdlib.builtin.file import FileHandle
+
+from utils._numerics import FlushDenormals
 
 from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
