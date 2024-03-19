@@ -31,9 +31,6 @@ struct CodeCompletionResult;
 struct SignatureHelpResult;
 } // namespace Mojo
 } // namespace KGEN
-namespace LLCL {
-class Runtime;
-} // namespace LLCL
 
 class DeclView;
 class MojoASTDeclRef;
@@ -146,8 +143,7 @@ public:
   /// completion position.
   static std::vector<KGEN::Mojo::CodeCompletionResult>
   codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-               MLIRContext *context, LLCL::Runtime &runtime,
-               const KGEN::CompilationOptions &options);
+               MLIRContext *context, const KGEN::CompilationOptions &options);
 
   /// Returns the code completion results for the given buffer at the given
   /// completion position. The given callback is invoked with the parsing
@@ -155,8 +151,7 @@ public:
   /// setup and parser invocation.
   static std::vector<KGEN::Mojo::CodeCompletionResult>
   codeComplete(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-               MLIRContext *context, LLCL::Runtime &runtime,
-               const KGEN::CompilationOptions &options,
+               MLIRContext *context, const KGEN::CompilationOptions &options,
                function_ref<void(MojoParserContext &, int)> parserCallback,
                bool disableModuleCaching = false);
 
@@ -167,8 +162,7 @@ public:
   /// position.
   static std::optional<KGEN::Mojo::SignatureHelpResult>
   signatureHelp(llvm::MemoryBufferRef buffer, uint64_t position,
-                MLIRContext *context, LLCL::Runtime &runtime,
-                const KGEN::CompilationOptions &options);
+                MLIRContext *context, const KGEN::CompilationOptions &options);
 
   /// Returns the signature help result for the given buffer at the given
   /// position. The given callback is invoked with the parsing context, and
@@ -176,8 +170,7 @@ public:
   /// parser invocation.
   static std::optional<KGEN::Mojo::SignatureHelpResult>
   signatureHelp(llvm::MemoryBufferRef buffer, uint64_t position,
-                MLIRContext *context, LLCL::Runtime &runtime,
-                const KGEN::CompilationOptions &options,
+                MLIRContext *context, const KGEN::CompilationOptions &options,
                 function_ref<void(MojoParserContext &, int)> parserCallback,
                 bool disableModuleCaching = false);
 

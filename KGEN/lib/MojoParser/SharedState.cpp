@@ -33,7 +33,6 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 
 #include "Cache/CacheDialect/CachedTransform.h"
-#include "LLCL/Runtime/Algorithms.h"
 #include "Support/Buffer.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Configuration.h"
@@ -178,7 +177,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
             config.maxNotesPerDiagnostic),
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
-      parserListener(config.parserListener), runtime(config.runtime),
+      parserListener(config.parserListener),
       parsingStandardLibrary(config.parsingStandardLibrary),
       useBuiltinModule(config.useBuiltinModule),
       impl(std::make_unique<Impl>(*this)) {

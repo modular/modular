@@ -553,8 +553,8 @@ private:
 struct MojoDocument::Context {
   Context(MojoDocument &mainDoc)
       : mlirContext(MLIRContext::Threading::DISABLED),
-        parserConfig(&mlirContext, mainDoc.getRuntime(), compilationOptions),
-        symbolIndex(mainDoc), parserListener(mainDoc, symbolIndex) {
+        parserConfig(&mlirContext, compilationOptions), symbolIndex(mainDoc),
+        parserListener(mainDoc, symbolIndex) {
     parserConfig.parserListener = &parserListener;
 
     DialectRegistry registry;
@@ -1645,7 +1645,7 @@ MojoTextDocument::onCodeCompletionSyncImpl(SMLoc completeLoc) {
       completeLoc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
   return MojoParserContext::codeComplete(*buffer, rawCompletePos, &mlirContext,
-                                         getRuntime(), getCompilationOptions());
+                                         getCompilationOptions());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1692,8 +1692,8 @@ MojoTextDocument::onSignatureHelpSyncImpl(SMLoc loc) {
   // Query the mojo parser for potential help results.
   uint64_t rawPos = loc.getPointer() - buffer->getBuffer().data();
   MLIRContext mlirContext(MLIRContext::Threading::DISABLED);
-  return MojoParserContext::signatureHelp(
-      *buffer, rawPos, &mlirContext, getRuntime(), getCompilationOptions());
+  return MojoParserContext::signatureHelp(*buffer, rawPos, &mlirContext,
+                                          getCompilationOptions());
 }
 
 //===----------------------------------------------------------------------===//

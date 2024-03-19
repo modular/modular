@@ -88,14 +88,14 @@ int main(int argc, char *argv[]) {
         mlir::TimingScope ts;
         CompilationOptions options = clOptions.getCompilationOptions();
         options.searchPaths = parserSearchPaths.getValue();
-        LIT::ParserConfig config(context, *runtime, options);
+        LIT::ParserConfig config(context, options);
         config.useMLIRDiagnostics = useMLIRDiagnostics;
         config.warnMissingDocStrings = warnMissingDocStrings;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.parsingStandardLibrary = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
         OwningOpRef<ModuleOp> output =
-            LIT::importMojoFile(sourceMgr, config, ts);
+            LIT::importMojoFile(*runtime, sourceMgr, config, ts);
 
         if (output && !parserBytecodeOutput.getValue().empty()) {
           std::string message;

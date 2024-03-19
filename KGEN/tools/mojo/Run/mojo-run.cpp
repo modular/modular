@@ -282,7 +282,7 @@ static int run(const State &state) {
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
       options::OPT_D,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        return LIT::importMojoFile(sourceManager, parserConfig, ts);
+        return LIT::importMojoFile(*runtime, sourceManager, parserConfig, ts);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());

@@ -82,8 +82,8 @@ namespace {
 /// This class implements a listener that collects code completion results.
 struct CodeCompletionListener : public BaseCompletionListener {
   CodeCompletionListener(std::vector<CodeCompletionResult> &results,
-                         LLCL::Runtime &runtime, llvm::SourceMgr &sourceMgr)
-      : BaseCompletionListener(sourceMgr), runtime(runtime), results(results) {}
+                         llvm::SourceMgr &sourceMgr)
+      : BaseCompletionListener(sourceMgr), results(results) {}
   ~CodeCompletionListener() override = default;
 
   /// Returns true if the listener is interested in being notified for the given
@@ -107,8 +107,7 @@ struct CodeCompletionListener : public BaseCompletionListener {
       // Grab the documentation for the import. Do this out of the current
       // context to avoid pulling in a bunch of unwanted state.
       MLIRContext ctx;
-      ParserConfig config(&ctx, runtime,
-                          parserContext->getCompilationOptions());
+      ParserConfig config(&ctx, parserContext->getCompilationOptions());
       MojoParserContext importContext(sourceMgr, config);
       if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
         if (auto view = module.getView())
@@ -222,7 +221,6 @@ struct CodeCompletionListener : public BaseCompletionListener {
 
   /// The results that have been collected so far.
   DenseSet<ASTDecl *> addedResults;
-  LLCL::Runtime &runtime;
   std::vector<CodeCompletionResult> &results;
 };
 } // namespace
@@ -354,13 +352,11 @@ struct SignatureHelpListener : public BaseCompletionListener {
 
 /// Parse the given buffer for completion results using the given listener
 /// implementation.
-static void
-parseCompletionImpl(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-                    MLIRContext *context, LLCL::Runtime &runtime,
-                    const KGEN::CompilationOptions &options,
-                    function_ref<void(MojoParserContext &, int)> parserCallback,
-                    BaseCompletionListener &listener,
-                    bool disableModuleCaching) {
+static void parseCompletionImpl(
+    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+    MLIRContext *context, const KGEN::CompilationOptions &options,
+    function_ref<void(MojoParserContext &, int)> parserCallback,
+    BaseCompletionListener &listener, bool disableModuleCaching) {
   if (buffer.getBufferSize() < completionPosition)
     return;
   listener.sourceMgr.AddNewSourceBuffer(
@@ -371,7 +367,7 @@ parseCompletionImpl(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
   // emitted when grabbing completion results from a partial file.
   listener.sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
 
-  ParserConfig config(context, runtime, options);
+  ParserConfig config(context, options);
   config.parserListener = &listener;
 
   // Disable as much of the diagnostic machinery as possible, we don't care
@@ -410,26 +406,23 @@ parseCompletionImpl(llvm::MemoryBufferRef buffer, uint64_t completionPosition,
 //===----------------------------------------------------------------------===//
 // Code Completion
 
-std::vector<CodeCompletionResult>
-MojoParserContext::codeComplete(llvm::MemoryBufferRef buffer,
-                                uint64_t completionPosition,
-                                MLIRContext *context, LLCL::Runtime &runtime,
-                                const KGEN::CompilationOptions &options) {
+std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
+    llvm::MemoryBufferRef buffer, uint64_t completionPosition,
+    MLIRContext *context, const KGEN::CompilationOptions &options) {
   return codeComplete(
-      buffer, completionPosition, context, runtime, options,
+      buffer, completionPosition, context, options,
       [](MojoParserContext &ctx, int fileID) { ctx.parseFile(fileID); });
 }
 
 std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
     llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-    MLIRContext *context, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &options,
+    MLIRContext *context, const KGEN::CompilationOptions &options,
     function_ref<void(MojoParserContext &, int)> parserCallback,
     bool disableModuleCaching) {
   llvm::SourceMgr sourceMgr;
   std::vector<CodeCompletionResult> results;
-  CodeCompletionListener listener(results, runtime, sourceMgr);
-  parseCompletionImpl(buffer, completionPosition, context, runtime, options,
+  CodeCompletionListener listener(results, sourceMgr);
+  parseCompletionImpl(buffer, completionPosition, context, options,
                       parserCallback, listener, disableModuleCaching);
   return results;
 }
@@ -437,24 +430,24 @@ std::vector<CodeCompletionResult> MojoParserContext::codeComplete(
 //===----------------------------------------------------------------------===//
 // Signature Help
 
-std::optional<SignatureHelpResult> MojoParserContext::signatureHelp(
-    llvm::MemoryBufferRef buffer, uint64_t position, MLIRContext *context,
-    LLCL::Runtime &runtime, const KGEN::CompilationOptions &options) {
+std::optional<SignatureHelpResult>
+MojoParserContext::signatureHelp(llvm::MemoryBufferRef buffer,
+                                 uint64_t position, MLIRContext *context,
+                                 const KGEN::CompilationOptions &options) {
   return signatureHelp(
-      buffer, position, context, runtime, options,
+      buffer, position, context, options,
       [](MojoParserContext &ctx, int fileID) { ctx.parseFile(fileID); });
 }
 
 std::optional<SignatureHelpResult> MojoParserContext::signatureHelp(
     llvm::MemoryBufferRef buffer, uint64_t completionPosition,
-    MLIRContext *context, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &options,
+    MLIRContext *context, const KGEN::CompilationOptions &options,
     function_ref<void(MojoParserContext &, int)> parserCallback,
     bool disableModuleCaching) {
   llvm::SourceMgr sourceMgr;
   SignatureHelpResult result;
   SignatureHelpListener listener(sourceMgr, result);
-  parseCompletionImpl(buffer, completionPosition, context, runtime, options,
+  parseCompletionImpl(buffer, completionPosition, context, options,
                       parserCallback, listener, disableModuleCaching);
   return result.signatures.empty() ? std::nullopt : std::optional(result);
 }

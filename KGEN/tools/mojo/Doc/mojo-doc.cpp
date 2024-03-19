@@ -102,7 +102,7 @@ static int doc(const State &state) {
   mlir::MLIRContext context(registry);
 
   CompilationOptions compilationOptions;
-  LIT::ParserConfig parserConfig(&context, *runtime, compilationOptions);
+  LIT::ParserConfig parserConfig(&context, compilationOptions);
   parserConfig.warnMissingDocStrings =
       args.hasArg(options::OPT_warn_missing_dog_strings);
 

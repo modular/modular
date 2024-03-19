@@ -217,8 +217,9 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
 /// resultant IR, and the decl for the module or package. This abstracts away
 /// the shared setup between module and package parsing.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
-               SharedState &sharedState, mlir::TimingScope &ts,
+importMojoImpl(LLCL::Runtime &runtime, StringRef moduleIdentifier,
+               SourceMgr &sourceMgr, SharedState &sharedState,
+               mlir::TimingScope &ts,
                SmallVectorImpl<std::string> *includedFiles,
                function_ref<ASTDecl &(ModuleOp)> buildDeclFn) {
   MLIRContext *context = sharedState.getContext();
@@ -227,8 +228,7 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
       {"filename", fileLoc.getFilename().str()}};
   [[maybe_unused]] auto timeScope =
-      sharedState.runtime
-          .emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
           .createUInt64Timer<std::chrono::milliseconds>(
               "mojo.parser.compile.time", M::Telemetry::Level::L2, attrs);
 
@@ -272,15 +272,15 @@ importMojoImpl(StringRef moduleIdentifier, SourceMgr &sourceMgr,
 /// Parse the specified Mojo file into the specified MLIR context. Returns the
 /// resultant IR, and the decl for the module represented by the input file.
 static std::tuple<OwningOpRef<mlir::ModuleOp>, ASTDecl *>
-importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
-                   mlir::TimingScope &ts,
+importMojoFileImpl(LLCL::Runtime &runtime, SourceMgr &sourceMgr,
+                   SharedState &sharedState, mlir::TimingScope &ts,
                    SmallVectorImpl<std::string> *includedFiles = nullptr) {
   auto sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
   StringRef bufName = sourceBuf->getBufferIdentifier();
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
 
   return importMojoImpl(
-      bufName, sourceMgr, sharedState, ts, includedFiles,
+      runtime, bufName, sourceMgr, sharedState, ts, includedFiles,
       [&](ModuleOp module) -> ASTDecl & {
         Lexer lexer(sharedState.diags, sourceBuf);
         auto startSMLoc = lexer.getToken().getLoc();
@@ -310,9 +310,9 @@ importMojoFileImpl(SourceMgr &sourceMgr, SharedState &sharedState,
 }
 
 std::pair<OwningOpRef<ModuleOp>, PackageOp>
-LIT::importMojoPackage(StringRef path, StringRef packageName,
-                       llvm::SourceMgr &sourceMgr, ParserConfig &config,
-                       mlir::TimingScope &ts,
+LIT::importMojoPackage(LLCL::Runtime &runtime, StringRef path,
+                       StringRef packageName, llvm::SourceMgr &sourceMgr,
+                       ParserConfig &config, mlir::TimingScope &ts,
                        SmallVectorImpl<std::string> *includedFiles) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!Filesystem::isMojoSourcePackagePath(path.str())) {
@@ -325,7 +325,7 @@ LIT::importMojoPackage(StringRef path, StringRef packageName,
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
 
   auto [module, packageDecl] = importMojoImpl(
-      path, sourceMgr, sharedState, ts, includedFiles,
+      runtime, path, sourceMgr, sharedState, ts, includedFiles,
       [&](ModuleOp module) -> ASTDecl & {
         // Create the top-level outer decl, which will contain all things we
         // parse.
@@ -346,12 +346,12 @@ LIT::importMojoPackage(StringRef path, StringRef packageName,
 }
 
 OwningOpRef<mlir::ModuleOp>
-LIT::importMojoFile(llvm::SourceMgr &sourceMgr, ParserConfig &config,
-                    mlir::TimingScope &ts,
+LIT::importMojoFile(LLCL::Runtime &runtime, llvm::SourceMgr &sourceMgr,
+                    ParserConfig &config, mlir::TimingScope &ts,
                     SmallVectorImpl<std::string> *includedFiles) {
   SharedState sharedState(sourceMgr, config);
   auto [module, topLevelDecl] =
-      importMojoFileImpl(sourceMgr, sharedState, ts, includedFiles);
+      importMojoFileImpl(runtime, sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);
 }
 

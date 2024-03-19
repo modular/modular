@@ -118,8 +118,7 @@ struct MojoTypeSystem::Impl {
     compilationOptions.targetCpu = llvm::sys::getHostCPUName();
 
     // Configure the parser context.
-    LIT::ParserConfig parserConfig(&mlirContext, *ownedRuntime,
-                                   compilationOptions);
+    LIT::ParserConfig parserConfig(&mlirContext, compilationOptions);
     parserContext =
         std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
 

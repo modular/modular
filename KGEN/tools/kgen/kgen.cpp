@@ -229,10 +229,10 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   if (inputFileName.ends_with(".mojo") || inputFileName.ends_with(".🔥")) {
     TimingScope litScope = timing.nest("Import Mojo source");
-    LIT::ParserConfig config(ctx, *runtime, options);
+    LIT::ParserConfig config(ctx, options);
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     config.parsingStandardLibrary = clOptions.disablePrebuiltPackages;
-    theModule = importMojoFile(mgr, config, litScope, &includedFiles);
+    theModule = importMojoFile(*runtime, mgr, config, litScope, &includedFiles);
   } else if (options.getDebugInfoLevelForInput() >
              CompilationOptions::kSynthetic) {
     ctx->loadDialect<DebugInfo::DebugInfoDialect>();
