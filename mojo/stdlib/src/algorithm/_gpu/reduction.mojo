@@ -164,6 +164,7 @@ fn row_reduce[
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
+    accum_type: DType,
     type: DType,
     simd_width: Int,
     rank: Int,
@@ -172,7 +173,7 @@ fn row_reduce[
     axis: Int,
     init: Scalar[type],
     row_size: Int,
-) -> Scalar[type]:
+) -> Scalar[accum_type]:
     alias num_reductions = 1
 
     @always_inline
@@ -190,8 +191,10 @@ fn row_reduce[
         num_reductions,
         input_fn,
         reduce_wrapper,
+        accum_type,
         type,
         simd_width,
+        rank,
     ](row_coords, axis, init_tup, row_size)[0]
 
 
@@ -205,6 +208,7 @@ fn row_reduce[
     reduce_fn: fn[type: DType, width: Int, reduction_idx: Int] (
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
+    accum_type: DType,
     type: DType,
     simd_width: Int,
     rank: Int,
@@ -213,16 +217,18 @@ fn row_reduce[
     axis: Int,
     init: StaticTuple[Scalar[type], num_reductions],
     row_size: Int,
-) -> StaticTuple[Scalar[type], num_reductions]:
+) -> StaticTuple[Scalar[accum_type], num_reductions]:
     var num_tail_values = row_size % simd_width
     var rounded_row_size = row_size - num_tail_values
     var row_size_padded = align_up(row_size // simd_width, BLOCK_SIZE)
 
-    var accum = StaticTuple[SIMD[type, simd_width], num_reductions]()
+    var accum = StaticTuple[SIMD[accum_type, simd_width], num_reductions]()
+    var init_cast = StaticTuple[Scalar[accum_type], num_reductions]()
 
     @unroll
     for i in range(num_reductions):
-        accum[i] = init[i]
+        init_cast[i] = init[i].cast[accum_type]()
+        accum[i] = init_cast[i]
 
     var tid = ThreadIdx.x()
     for offset_in_row in range(0, row_size_padded, BLOCK_SIZE):
@@ -232,30 +238,32 @@ fn row_reduce[
             break
 
         row_coords[axis] = idx_in_padded_row
-        var val = input_fn[type, simd_width, rank](row_coords)
+        var val = input_fn[type, simd_width, rank](row_coords).cast[
+            accum_type
+        ]()
 
         @always_inline
         @__copy_capture(val)
         @parameter
         fn unrolled_reduce_wrapper[i: Int]():
-            accum[i] = reduce_fn[type, simd_width, i](val, accum[i])
+            accum[i] = reduce_fn[accum_type, simd_width, i](val, accum[i])
 
         unroll[unrolled_reduce_wrapper, num_reductions]()
 
     var scalar_accum = block_reduce[
-        BLOCK_SIZE, num_reductions, reduce_fn, type, simd_width
-    ](accum, init)
+        BLOCK_SIZE, num_reductions, reduce_fn, accum_type, simd_width
+    ](accum, init_cast)
 
     # handle trailing values
     for idx_in_padded_row in range(rounded_row_size, row_size):
         row_coords[axis] = idx_in_padded_row
-        var val = input_fn[type, 1, rank](row_coords)
+        var val = input_fn[type, 1, rank](row_coords).cast[accum_type]()
 
         @always_inline
         @__copy_capture(val)
         @parameter
         fn unrolled_scalar_reduce_wrapper[i: Int]():
-            scalar_accum[i] = reduce_fn[type, 1, i](val, scalar_accum[i])
+            scalar_accum[i] = reduce_fn[accum_type, 1, i](val, scalar_accum[i])
 
         unroll[unrolled_scalar_reduce_wrapper, num_reductions]()
 
@@ -278,6 +286,7 @@ fn reduce_kernel[
     ) capturing -> SIMD[ty, width],
     type: DType,
     simd_width: Int,
+    accum_type: DType = type,
 ](
     shape: StaticIntTuple[rank],
     axis: Int,
@@ -295,20 +304,26 @@ fn reduce_kernel[
     ):
         var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
 
-        var row_accum = StaticTuple[Scalar[type], num_reductions]()
-
-        row_accum = row_reduce[
+        var row_accum = row_reduce[
             BLOCK_SIZE,
             num_reductions,
             input_fn,
             reduce_fn,
+            accum_type,
             type,
             simd_width,
+            rank,
         ](row_coords, axis, init, row_size)
 
         if ThreadIdx.x() == 0:
+            var row_accum_cast = StaticTuple[Scalar[type], num_reductions]()
+
+            @unroll
+            for i in range(num_reductions):
+                row_accum_cast[i] = row_accum[i].cast[type]()
+
             row_coords[axis] = 0
-            output_fn[type, 1, rank](row_coords, row_accum)
+            output_fn[type, 1, rank](row_coords, row_accum_cast)
 
 
 fn reduce_launch[
@@ -332,7 +347,9 @@ fn reduce_launch[
 ) raises:
     alias BLOCK_SIZE = 128
     alias register_width = 32
-    alias packing_factor = register_width // bitwidthof[type]()
+
+    alias packing_factor = 1
+    alias accum_type = DType.float32 if type.is_bfloat16() or type.is_float16() else type
 
     var func = Function[
         fn (
