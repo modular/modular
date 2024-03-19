@@ -27,7 +27,7 @@ from buffer.buffer import (
 )
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 alias elementwise_epilogue_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]

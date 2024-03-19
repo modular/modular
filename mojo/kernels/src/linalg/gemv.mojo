@@ -10,7 +10,7 @@ from MatmulUtils import elementwise_epilogue_type
 
 from utils._optional import Optional
 from utils.index import Index
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 # Parallelized version of Gemv
 

@@ -24,7 +24,7 @@ from memory import stack_allocation
 from memory.unsafe import DTypePointer
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 @register_passable("trivial")

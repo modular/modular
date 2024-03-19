@@ -15,7 +15,7 @@ from Gemv import gemv, naive_gemv
 from Matmul import matmul
 
 from utils.index import Index, StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 alias alignment = 64
 

@@ -19,7 +19,7 @@ from MatmulUtils import (
 )
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 
 alias a_type = DType.uint8
 alias b_type = DType.int8

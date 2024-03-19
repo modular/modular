@@ -32,7 +32,7 @@ from runtime.llcl import Runtime
 
 from utils._optional import Optional
 from utils.index import StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 alias elementwise_epilogue_type = fn[c_type: DType, width: Int, rank: Int] (
     StaticIntTuple[rank], SIMD[c_type, width]

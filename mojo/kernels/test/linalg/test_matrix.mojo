@@ -11,7 +11,7 @@ from buffer import Buffer, NDBuffer
 from memory.unsafe import DTypePointer, Pointer
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn test(m: NDBuffer[DType.int32, 2, DimList(4, 4)]):

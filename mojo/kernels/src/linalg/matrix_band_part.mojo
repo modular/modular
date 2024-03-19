@@ -10,7 +10,7 @@ from buffer import NDBuffer
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 
 @always_inline

@@ -31,7 +31,7 @@ from memory import memcmp, memset_zero
 from memory.unsafe import DTypePointer, Pointer
 from Transpose import transpose, transpose_inplace
 
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 from utils.loop import unroll
 
 alias void = DType.invalid.value

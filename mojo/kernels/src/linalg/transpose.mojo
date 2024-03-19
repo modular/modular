@@ -16,7 +16,7 @@ from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 
 from utils.index import StaticIntTuple, StaticTuple
-from utils.list import DimList
+from buffer.list import DimList
 from utils.loop import unroll
 
 

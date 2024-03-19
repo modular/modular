@@ -11,7 +11,7 @@ from buffer import Buffer, NDBuffer
 from Matmul import pack_b
 
 from utils.index import StaticIntTuple
-from utils.list import Dim, DimList
+from buffer.list import Dim, DimList
 
 
 # CHECK-LABEL: test_prepack

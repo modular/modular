@@ -17,7 +17,7 @@ from buffer import NDBuffer
 from testing import *
 
 from utils.index import StaticIntTuple
-from utils.list import DimList
+from buffer.list import DimList
 
 
 fn fill_a(buf: NDBuffer):
