@@ -138,7 +138,7 @@ fn test_stencil_avg_pool():
     # CHECK: 17.0    18.0    19.0
     for i in range(0, output_heigh):
         for j in range(0, output_width):
-            print_no_newline(output[0, i, j, 0], "\t")
+            print(output[0, i, j, 0], "\t", end="")
         print("")
 
 
@@ -252,7 +252,7 @@ fn test_stencil_avg_pool_padded():
     # CHECK: 6.119999885559082       8.3999996185302734      10.800000190734863      8.880000114440918       6.8400001525878906
     for i in range(0, output_heigh):
         for j in range(0, output_width):
-            print_no_newline(output[0, i, j, 0], "\t")
+            print(output[0, i, j, 0], "\t", end="")
         print("")
 
 
@@ -363,7 +363,7 @@ fn test_stencil_avg_pool_stride_2():
     # CHECK: 37.0    39.0    41.0
     for i in range(0, output_heigh):
         for j in range(0, output_width):
-            print_no_newline(output[0, i, j, 0], "\t")
+            print(output[0, i, j, 0], "\t", end="")
         print("")
 
 
@@ -477,7 +477,7 @@ fn test_stencil_max_pool_dilation_2():
     # CHECK: 47.0    48.0    49.0
     for i in range(0, output_heigh):
         for j in range(0, output_width):
-            print_no_newline(output[0, i, j, 0], "\t")
+            print(output[0, i, j, 0], "\t", end="")
         print("")
 
 

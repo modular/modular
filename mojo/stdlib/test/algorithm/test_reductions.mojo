@@ -877,7 +877,7 @@ fn test_cumsum():
     # CHECK: ,9453.0 ,9591.0 ,9730.0 ,9870.0 ,10011.0 ,10153.0 ,10296.0 ,10440.0
     # CHECK: ,10585.0 ,10731.0 ,10878.0 ,11026.0 ,11175.0 ,11325.0 ,
     for i in range(cumsum_out1.__len__()):
-        print_no_newline(cumsum_out1[i], ",")
+        print(cumsum_out1[i], ",", end="")
 
     print()
 
@@ -900,7 +900,7 @@ fn test_cumsum():
     # CHECK: ,5995 ,6105 ,6216 ,6328 ,6441 ,6555 ,6670 ,6786 ,6903 ,7021 ,7140
     # CHECK: ,7260 ,7381 ,7503 ,7626 ,7750 ,7875 ,8001 ,8128 ,8256 ,
     for i in range(cumsum_out2.__len__()):
-        print_no_newline(cumsum_out2[i], ",")
+        print(cumsum_out2[i], ",", end="")
 
 
 fn main() raises:

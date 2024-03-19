@@ -455,10 +455,10 @@ fn test_quick_sort_repeated_val():
 
 
 fn test_partition_top_k(length: Int, k: Int):
-    print_no_newline("== test_partition_top_k_")
-    print_no_newline(length)
-    print_no_newline("_")
-    print_no_newline(k)
+    print("== test_partition_top_k_", end="")
+    print(length, end="")
+    print("_", end="")
+    print(k, end="")
     print("")
 
     var list = List[Float32](capacity=length)

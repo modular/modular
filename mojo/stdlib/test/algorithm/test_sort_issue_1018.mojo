@@ -17,11 +17,11 @@ fn sort_test[D: DType](size: Int, max: Int, name: StringLiteral) raises:
     for i in range(1, size - 1):
         if p[i] < p[i - 1]:
             print(name, "size:", size, "max:", max, "incorrect sort")
-            print_no_newline("p[")
-            print_no_newline(i - 1)
+            print("p[", end="")
+            print(i - 1, end="")
             print("] =", p.load(i - 1))
-            print_no_newline("p[")
-            print_no_newline(i)
+            print("p[", end="")
+            print(i, end="")
             print("] =", p.load(i))
             print()
             p.free()
