@@ -711,9 +711,16 @@ fn softmax_kernel[
     ):
         # Step 1: compute max in row
         var row_coords = _get_nd_indices_from_flat_index(row_idx, shape, axis)
-        var row_max = row_reduce[BLOCK_SIZE, input_fn, _max, type, 1](
-            row_coords, axis, Scalar[type].MIN, row_size
-        )
+        var row_max = row_reduce[
+            BLOCK_SIZE,
+            input_fn,
+            _max,
+            type,
+            type,
+            1,
+            rank,
+        ](row_coords, axis, Scalar[type].MIN, row_size)
+
         if ThreadIdx.x() == 0:
             max_buf[0] = row_max
         barrier()
@@ -728,6 +735,9 @@ fn softmax_kernel[
             row_coords[axis] = idx_in_padded_row
             # loads from input_fn twice
             var val = exp(input_fn[type, 1, rank](row_coords) - max_buf[0])
+
+            # TODO we're writing to and reading from global memory twice
+            # we can reduce the amount of reads by keeping values local here.
             output[row_coords] = val
             exp_sum += val
 
