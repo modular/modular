@@ -16,7 +16,7 @@ fn print_raw_major_tensor[
 ](tensor: LayoutTensor[layout, dtype]):
     for i in range(tensor.dim[0]()):
         for j in range(tensor.dim[1]()):
-            print_no_newline(tensor[i, j], "\t")
+            print(tensor[i, j], "\t", end="")
         print("")
 
 
@@ -25,7 +25,7 @@ fn print_tile_tensor[
 ](tensor: LayoutTensor[layout, dtype]):
     for i in range(tensor.dim[0]()):
         for j in range(tensor.dim[1]()):
-            print_no_newline(tensor[i, j], "\t")
+            print(tensor[i, j], "\t", end="")
         print("")
 
 
@@ -41,7 +41,7 @@ fn print_mode2_shape2_tensor[
     for i in range(product(layout.shape[0])):
         for j in range(product(layout.shape[1])):
             var idx = layout(IntTuple(i, j))
-            print_no_newline(tensor.ptr[idx], "\t")
+            print(tensor.ptr[idx], "\t", end="")
         print("")
 
 
@@ -338,9 +338,9 @@ fn test_copy_to_tile_major_layout():
     # CHECK: row: 3 data 12.0        13.0    14.0    15.0
     print("mat_4x4_row_major:")
     for i in range(4):
-        print_no_newline("row:", i, "data ")
+        print("row:", i, "data ", end="")
         for j in range(4):
-            print_no_newline(mat_4x4_row_major.ptr[i * 4 + j], "\t")
+            print(mat_4x4_row_major.ptr[i * 4 + j], "\t", end="")
         print("")
 
     # CHECK: mat_4x4_tiled_2x2:
@@ -350,9 +350,9 @@ fn test_copy_to_tile_major_layout():
     # CEHCK: row: 3 data 10.0        14.0    11.0    15.0
     print("mat_4x4_tiled_2x2:")
     for i in range(4):
-        print_no_newline("row:", i, "data ")
+        print("row:", i, "data ", end="")
         for j in range(4):
-            print_no_newline(mat_4x4_tiled_2x2.ptr[i * 4 + j], "\t")
+            print(mat_4x4_tiled_2x2.ptr[i * 4 + j], "\t", end="")
         print("")
 
 
