@@ -79,9 +79,18 @@ add_modular_library(KGENExecutionEngine
   LLCLRuntime
   MCache
   MSupport
-  LLVMPerfJITEvents
-  LLVMOrcTargetProcess
 )
+
+# TODO(#35115): Right now we assume linux always links with `perf` llvm plugin
+# in the future we should have more specific guards for these dependencies.
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+  target_link_libraries(KGENExecutionEngine
+    PUBLIC
+    LLVMPerfJITEvents
+    LLVMOrcTargetProcess
+  )
+endif()
+
 set_property(TARGET KGENExecutionEngine PROPERTY KGEN_ORC_RT_LIB "${ORC_LIB}")
 target_compile_definitions(KGENExecutionEngine PRIVATE KGEN_ASAN_LIB="${KGEN_ASAN_LIBRARY}")
 target_compile_definitions(KGENExecutionEngine PRIVATE KGEN_TSAN_LIB="${KGEN_TSAN_LIBRARY}")
