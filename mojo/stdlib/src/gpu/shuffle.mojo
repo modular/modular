@@ -15,6 +15,12 @@ alias _WIDTH_MASK = WARP_SIZE - 1
 # shfl.sync.up.b32 prepares this mask differently from other shuffle intrinsics
 alias _WIDTH_MASK_SHUFFLE_UP = 0
 
+
+@always_inline("nodebug")
+fn _is_half_like[type: DType]() -> Bool:
+    return type.is_bfloat16() or type.is_float16()
+
+
 # ===----------------------------------------------------------------------===#
 # shuffle_idx
 # ===----------------------------------------------------------------------===#
@@ -71,7 +77,8 @@ fn shuffle_idx[
       The value from the src_lane.
     """
     constrained[
-        type.is_bfloat16() or simd_width == 1, "Unsupported simd_width"
+        _is_half_like[type]() or simd_width == 1,
+        "Unsupported simd_width",
     ]()
 
     @parameter
@@ -83,7 +90,7 @@ fn shuffle_idx[
         return llvm_intrinsic["llvm.nvvm.shfl.sync.idx.i32", Scalar[type]](
             Int32(mask), val, UInt32(src_lane), Int32(_WIDTH_MASK)
         )
-    elif type.is_bfloat16():
+    elif _is_half_like[type]():
 
         @parameter
         if simd_width == 1:
@@ -157,7 +164,8 @@ fn shuffle_up[
       The value at the specified offset.
     """
     constrained[
-        type.is_bfloat16() or simd_width == 1, "Unsupported simd_width"
+        _is_half_like[type]() or simd_width == 1,
+        "Unsupported simd_width",
     ]()
 
     @parameter
@@ -169,7 +177,7 @@ fn shuffle_up[
         return llvm_intrinsic["llvm.nvvm.shfl.sync.up.i32", Scalar[type]](
             Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK_SHUFFLE_UP)
         )
-    elif type.is_bfloat16():
+    elif _is_half_like[type]():
 
         @parameter
         if simd_width == 1:
@@ -238,7 +246,8 @@ fn shuffle_down[
       The value at the specified offset.
     """
     constrained[
-        type.is_bfloat16() or simd_width == 1, "Unsupported simd_width"
+        _is_half_like[type]() or simd_width == 1,
+        "Unsupported simd_width",
     ]()
 
     @parameter
@@ -250,7 +259,7 @@ fn shuffle_down[
         return llvm_intrinsic["llvm.nvvm.shfl.sync.down.i32", Scalar[type]](
             Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
         )
-    elif type.is_bfloat16():
+    elif _is_half_like[type]():
 
         @parameter
         if simd_width == 1:
@@ -319,7 +328,8 @@ fn shuffle_xor[
       The value at the lane based on bitwise XOR of own lane id.
     """
     constrained[
-        type.is_bfloat16() or simd_width == 1, "Unsupported simd_width"
+        _is_half_like[type]() or simd_width == 1,
+        "Unsupported simd_width",
     ]()
 
     @parameter
@@ -331,7 +341,7 @@ fn shuffle_xor[
         return llvm_intrinsic["llvm.nvvm.shfl.sync.bfly.i32", Scalar[type]](
             Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
         )
-    elif type.is_bfloat16():
+    elif _is_half_like[type]():
 
         @parameter
         if simd_width == 1:
