@@ -7,8 +7,11 @@
 #ifndef KGEN_MOJOTESTING_TEST_H
 #define KGEN_MOJOTESTING_TEST_H
 
+#include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
 #include <filesystem>
 
@@ -46,6 +49,20 @@ public:
   /// Return the file path of the test.
   std::filesystem::path getFilePath() const;
 
+  /// Return the test suite component of the test ID, if present.
+  std::optional<StringRef> getTestSuite() const {
+    return testSuite.empty() ? std::nullopt : std::make_optional(testSuite);
+  }
+
+  /// Return the test component of the test ID, if present.
+  std::optional<StringRef> getTest() const {
+    return test.empty() ? std::nullopt : std::make_optional(test);
+  }
+
+  /// Return a new TestID using the path and test suite of this ID, but with
+  /// the provided test name.
+  TestID withTest(StringRef test) const;
+
 private:
   /// The id of test.
   std::string id;
@@ -73,12 +90,18 @@ public:
   /// Return the child tests nested within this test.
   ArrayRef<Test> getChildren() const { return children; }
 
+  /// Return the child referenced by the given ID, nullptr if not found.
+  const Test *getChild(StringRef test) const {
+    auto it = childrenMap.find(testID.withTest(test).strref());
+    return it == childrenMap.end() ? nullptr : &children[it->second];
+  }
+
   //===--------------------------------------------------------------------===//
   // Discovery
 
   /// Discover the test structure from the given Test ID. Returns nullopt if no
-  /// test or suite was discovered.
-  static std::optional<Test> discoverFromID(const TestID &testID);
+  /// test or suite was discovered, or error if an error occurred.
+  static ErrorOr<std::optional<Test>> discoverFromID(const TestID &testID);
 
   //===--------------------------------------------------------------------===//
   // Display
@@ -87,8 +110,11 @@ public:
   void print(raw_ostream &os) const;
 
 private:
-  Test(TestID testID, std::vector<Test> children = {})
-      : testID(std::move(testID)), children(std::move(children)) {}
+  Test(TestID testID, std::vector<Test> newChildren = {})
+      : testID(std::move(testID)), children(std::move(newChildren)) {
+    for (unsigned i = 0, e = children.size(); i != e; ++i)
+      childrenMap[children[i].getTestID().strref()] = i;
+  }
 
   /// A utility class used in the implementation of test discovery.
   struct TestDiscovery;
@@ -98,6 +124,7 @@ private:
 
   /// The nested tests of the test.
   std::vector<Test> children;
+  llvm::StringMap<unsigned> childrenMap;
 };
 raw_ostream &operator<<(raw_ostream &os, const Test &test);
 } // namespace M::KGEN::Mojo

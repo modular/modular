@@ -6,6 +6,17 @@
 
 // RUN: mojo test --co %S/inputs/ | FileCheck %s
 // RUN: mojo test --co %S/inputs/unit_suffix_test.mojo | FileCheck %s --check-prefix=CHECK-FILE
+// RUN: mojo test --co "%S/inputs/test_unit_prefix.mojo::test_fn()" | FileCheck %s --check-prefix=CHECK-TEST
+// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__" | FileCheck %s --check-prefix=CHECK-SUITE
+// RUN: mojo test --co "%S/inputs/doc.mojo@doc_fn(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__::0" | FileCheck %s --check-prefix=CHECK-SUITE-AND-TEST
+
+// RUN: not mojo test --co "%S/inputs/doc.mojo@doc_fn.::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-0
+// RUN: not mojo test --co "%S/inputs/doc.mojo@.doc_fn::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-1
+// RUN: not mojo test --co "%S/inputs/doc.mojo@\1::0" 2>&1 | FileCheck %s --check-prefix=CHECK-INVALID-SCOPE-2
+
+// CHECK-INVALID-SCOPE-0: error: empty scope in test name, expected name after '.'
+// CHECK-INVALID-SCOPE-1: error: empty scope in test name, expected name before '.'
+// CHECK-INVALID-SCOPE-2: error: invalid escape sequence in test name
 
 // CHECK-NOT: non_unit.mojo
 // CHECK: inputs
@@ -34,3 +45,10 @@
 // CHECK-FILE:   inputs/unit_suffix_test.mojo>
 // CHECK-FILE:     inputs/unit_suffix_test.mojo::test_fn()>
 // CHECK-FILE:     inputs/unit_suffix_test.mojo::fn_test()>
+
+// CHECK-TEST: inputs/test_unit_prefix.mojo::test_fn()>
+
+// CHECK-SUITE:  inputs/doc.mojo@doc_fn({{.*}}).__doc__>
+// CHECK-SUITE:    inputs/doc.mojo@doc_fn({{.*}}).__doc__::0>
+
+// CHECK-SUITE-AND-TEST: doc.mojo@doc_fn(stdlib\3A\3Abuiltin\3A\3Aint\3A\3AInt).__doc__::0
