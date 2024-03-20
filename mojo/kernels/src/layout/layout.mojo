@@ -139,6 +139,22 @@ fn MakeLayoutList(v0: Layout, v1: Layout) -> LayoutList:
     return layout_list
 
 
+fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
+    @parameter
+    fn num_tiles() -> Int:
+        return __mlir_op.`pop.variadic.size`(tile_sizes)
+
+    var layout_list = LayoutList(capacity=num_tiles())
+
+    @parameter
+    fn append_tile[i: Int]():
+        alias arg = tile_sizes[i]
+        layout_list.append(Layout(arg, 1))
+
+    unroll[append_tile, num_tiles()]()
+    return layout_list
+
+
 # Layout coalesce -- flatten and combine as many modes as possible while preserving the int-to-int function
 fn coalesce(layout: Layout) -> Layout:
     var result_shape = IntTuple(1)

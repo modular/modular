@@ -531,6 +531,74 @@ fn test_distribute_with_tile_size():
         tile.print()
 
 
+# CHECK-LABEL: test_vectorize_reads
+fn test_vectorize_reads():
+    print("== test_vectorize_reads")
+    var tensor = LayoutTensor[
+        Layout(IntTuple(8, 8), IntTuple(1, 8)), DType.float32
+    ].stack_allocation()
+    tensor.linspace()
+    var tensor_8_2_vec = tensor.vectorize[1, 4]()
+    # CHECK: ((8, 2):(1, 32))
+    print(tensor_8_2_vec.layout)
+    # CHECK: (4:8)
+    print(tensor_8_2_vec.element_layout)
+    # CHECK: [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0]
+    # CHECK: [8.0, 9.0, 10.0, 11.0] [12.0, 13.0, 14.0, 15.0]
+    # CHECK: [16.0, 17.0, 18.0, 19.0] [20.0, 21.0, 22.0, 23.0]
+    # CHECK: [24.0, 25.0, 26.0, 27.0] [28.0, 29.0, 30.0, 31.0]
+    # CHECK: [32.0, 33.0, 34.0, 35.0] [36.0, 37.0, 38.0, 39.0]
+    # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
+    # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
+    # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
+    tensor_8_2_vec.print()
+
+    var tensor_2_8_vec = tensor.vectorize[4, 1]()
+    # CHECK: ((2, 8):(4, 8))
+    print(tensor_2_8_vec.layout)
+    # CHECK: (4:1)
+    print(tensor_2_8_vec.element_layout)
+    # CHECK: [0.0, 8.0, 16.0, 24.0] [1.0, 9.0, 17.0, 25.0] [2.0, 10.0, 18.0, 26.0] [3.0, 11.0, 19.0, 27.0] [4.0, 12.0, 20.0, 28.0] [5.0, 13.0, 21.0, 29.0] [6.0, 14.0, 22.0, 30.0] [7.0, 15.0, 23.0, 31.0]
+    # CHECK: [32.0, 40.0, 48.0, 56.0] [33.0, 41.0, 49.0, 57.0] [34.0, 42.0, 50.0, 58.0] [35.0, 43.0, 51.0, 59.0] [36.0, 44.0, 52.0, 60.0] [37.0, 45.0, 53.0, 61.0] [38.0, 46.0, 54.0, 62.0] [39.0, 47.0, 55.0, 63.0]
+    tensor_2_8_vec.print()
+
+    var tensor_2_vec = tensor.vectorize[4, 4]()
+    # CHECK: ((2, 2):(4, 32))
+    print(tensor_2_vec.layout)
+    # CHECK: (4, 4):(1, 8))
+    print(tensor_2_vec.element_layout)
+    # CHECK: [0.0, 8.0, 16.0, 24.0, 1.0, 9.0, 17.0, 25.0, 2.0, 10.0, 18.0, 26.0, 3.0, 11.0, 19.0, 27.0] [4.0, 12.0, 20.0, 28.0, 5.0, 13.0, 21.0, 29.0, 6.0, 14.0, 22.0, 30.0, 7.0, 15.0, 23.0, 31.0]
+    # CHECK: [32.0, 40.0, 48.0, 56.0, 33.0, 41.0, 49.0, 57.0, 34.0, 42.0, 50.0, 58.0, 35.0, 43.0, 51.0, 59.0] [36.0, 44.0, 52.0, 60.0, 37.0, 45.0, 53.0, 61.0, 38.0, 46.0, 54.0, 62.0, 39.0, 47.0, 55.0, 63.0]
+    tensor_2_vec.print()
+
+
+# CHECK-LABEL: test_vectorize_writes
+fn test_vectorize_writes():
+    print("== test_vectorize_writes")
+    var tensor = LayoutTensor[
+        Layout(IntTuple(4, 4), IntTuple(1, 4)), DType.float32
+    ].stack_allocation()
+    tensor.fill(0)
+    var tensor_2x2 = tensor.vectorize[2, 2]()
+    tensor_2x2[0, 0] = rebind[tensor_2x2.element_type](
+        SIMD[DType.float32, 4](1)
+    )
+    tensor_2x2[0, 1] = rebind[tensor_2x2.element_type](
+        SIMD[DType.float32, 4](2)
+    )
+    tensor_2x2[1, 0] = rebind[tensor_2x2.element_type](
+        SIMD[DType.float32, 4](3)
+    )
+    tensor_2x2[1, 1] = rebind[tensor_2x2.element_type](
+        SIMD[DType.float32, 4](4)
+    )
+    # CHECK: 1.0 1.0 2.0 2.0
+    # CHECK: 1.0 1.0 2.0 2.0
+    # CHECK: 3.0 3.0 4.0 4.0
+    # CHECK: 3.0 3.0 4.0 4.0
+    tensor.print()
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -539,3 +607,5 @@ fn main():
     test_copy_to_tile_major_layout()
     test_distribute_tiled_layout()
     test_distribute_with_tile_size()
+    test_vectorize_reads()
+    test_vectorize_writes()

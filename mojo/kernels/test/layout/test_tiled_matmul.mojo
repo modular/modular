@@ -95,7 +95,8 @@ struct MMA_Vec(TiledOp):
                         m,
                         n,
                         dst.load[width](m, n)
-                        + lhs[m, k] * rhs.load[width](n, k),
+                        + rebind[Scalar[dtype]](lhs[m, k])
+                        * rhs.load[width](n, k),
                     )
 
                 vectorize[dot, width, size=K]()

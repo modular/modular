@@ -23,9 +23,13 @@ struct LayoutTensor[
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
+    element_layout: Layout = Layout(1, 1),
 ](CollectionElement):
     var ptr: DTypePointer[dtype, address_space]
     var owning: Bool
+
+    alias element_size = element_layout.size()
+    alias element_type = SIMD[dtype, Self.element_size]
 
     @always_inline
     fn __init__(
@@ -51,46 +55,91 @@ struct LayoutTensor[
     fn _offset(self, m: Int, n: Int) -> Int:
         return Self.stride[0]() * m + Self.stride[1]() * n
 
-    # FIXME: Without this __getitem__(m, n) gemm results are wrong
     @always_inline
-    fn __getitem__(self, m: Int, n: Int) -> Scalar[dtype]:
-        return self.ptr.load[width=1](self._offset(m, n))
+    fn __getitem__(self, *dims: Int) -> Self.element_type:
+        # FIXME: Enable debug_assert, now fails with INVALID_PTX
+        # debug_assert(
+        #     dims.__len__() == Self.rank(),
+        #     "getitem should have same number of indices as the rank",
+        # )
+        alias strides = Self._toStatic[flatten(layout.stride)]()
+        var vec_res = SIMD[dtype, Self.element_size]()
+
+        # TODO: We should vectorize the reads of contiguous loads this just stash
+        # scalar elements.
+        @parameter
+        fn fill_vec_res[idx: Int]():
+            alias element_offset = self.element_layout(idx)
+            vec_res[idx] = self.ptr.load[width=1](
+                Self._getOffset(strides, dims) + element_offset
+            )
+
+        unroll[fill_vec_res, Self.element_size]()
+
+        return vec_res
 
     @always_inline
-    fn __getitem__(self, *dims: Int) -> Scalar[dtype]:
-        # TODO: Static assert ranks are the same!
+    fn __setitem__(self, d0: Int, val: Self.element_type):
         alias strides = Self._toStatic[flatten(layout.stride)]()
-        return self.ptr.load[width=1](Self._getOffset(strides, dims))
+
+        # TODO: We should vectorize contiguous stores this just stash scalars.
+        @parameter
+        fn store_element[i: Int]():
+            alias element_offset = self.element_layout(i)
+            self.ptr.store(
+                Self._getOffset(strides, VariadicList[Int](d0))
+                + element_offset,
+                val[i],
+            )
+
+        unroll[store_element, Self.element_size]()
 
     @always_inline
-    fn __setitem__(self, d0: Int, val: Scalar[dtype]):
+    fn __setitem__(self, d0: Int, d1: Int, val: Self.element_type):
         alias strides = Self._toStatic[flatten(layout.stride)]()
-        self.ptr.store[width=1](
-            Self._getOffset(strides, VariadicList[Int](d0)), val
-        )
+
+        @parameter
+        fn store_element[i: Int]():
+            alias element_offset = self.element_layout(i)
+            self.ptr.store(
+                Self._getOffset(strides, VariadicList[Int](d0, d1))
+                + element_offset,
+                val[i],
+            )
+
+        unroll[store_element, Self.element_size]()
 
     @always_inline
-    fn __setitem__(self, d0: Int, d1: Int, val: Scalar[dtype]):
+    fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Self.element_type):
         alias strides = Self._toStatic[flatten(layout.stride)]()
-        self.ptr.store[width=1](
-            Self._getOffset(strides, VariadicList[Int](d0, d1)), val
-        )
 
-    @always_inline
-    fn __setitem__(self, d0: Int, d1: Int, d2: Int, val: Scalar[dtype]):
-        alias strides = Self._toStatic[flatten(layout.stride)]()
-        self.ptr.store[width=1](
-            Self._getOffset(strides, VariadicList[Int](d0, d1, d2)), val
-        )
+        @parameter
+        fn store_element[i: Int]():
+            alias element_offset = self.element_layout(i)
+            self.ptr.store(
+                Self._getOffset(strides, VariadicList[Int](d0, d1, d2))
+                + element_offset,
+                val[i],
+            )
+
+        unroll[store_element, Self.element_size]()
 
     @always_inline
     fn __setitem__(
-        self, d0: Int, d1: Int, d2: Int, d3: Int, val: Scalar[dtype]
+        self, d0: Int, d1: Int, d2: Int, d3: Int, val: Self.element_type
     ):
         alias strides = Self._toStatic[flatten(layout.stride)]()
-        self.ptr.store[width=1](
-            Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3)), val
-        )
+
+        @parameter
+        fn store_element[i: Int]():
+            alias element_offset = self.element_layout(i)
+            self.ptr.store(
+                Self._getOffset(strides, VariadicList[Int](d0, d1, d2, d3))
+                + element_offset,
+                val[i],
+            )
+
+        unroll[store_element, Self.element_size]()
 
     @always_inline
     fn load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
@@ -166,6 +215,11 @@ struct LayoutTensor[
 
     @always_inline
     @staticmethod
+    fn rank() -> Int:
+        return layout.shape.__len__()
+
+    @always_inline
+    @staticmethod
     fn shape[idx: Int]() -> Int:
         alias shape = Self._toStatic[layout.shape]()
         return shape[idx]
@@ -182,8 +236,8 @@ struct LayoutTensor[
         return Self.shape[idx]()
 
     @staticmethod
-    fn _compute_tile_layout[M: Int, N: Int]() -> Layout:
-        alias tiler = MakeLayoutList(Layout(M, 1), Layout(N, 1))
+    fn _compute_tile_layout[*tile_sizes: Int]() -> Layout:
+        alias tiler = MakeTileLayoutList[tile_sizes]()
         return zipped_divide(layout, tiler)
 
     @staticmethod
@@ -235,7 +289,10 @@ struct LayoutTensor[
             layout, threads_layout
         ](),
     ](self, thread_id: Int) -> LayoutTensor[
-        tiled_layout[1], dtype, address_space=address_space
+        tiled_layout[1],
+        dtype,
+        address_space=address_space,
+        element_layout=element_layout,
     ]:
         alias fragments_layout_stride = flatten(tiled_layout[0].stride)
 
@@ -255,7 +312,10 @@ struct LayoutTensor[
         unroll[compute_offset, len(fragments_layout_stride)]()
 
         return LayoutTensor[
-            tiled_layout[1], dtype, address_space=address_space
+            tiled_layout[1],
+            dtype,
+            address_space=address_space,
+            element_layout=element_layout,
         ](self.ptr.offset(offset))
 
     # Work around issue 34843
@@ -339,6 +399,23 @@ struct LayoutTensor[
         ](self.ptr.offset(offset))
 
     @always_inline
+    fn vectorize[
+        *tile_sizes: Int,
+        __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
+    ](self) -> LayoutTensor[
+        __tiled_layout[1],
+        dtype,
+        address_space=address_space,
+        element_layout = coalesce(__tiled_layout[0]),
+    ]:
+        return LayoutTensor[
+            __tiled_layout[1],
+            dtype,
+            address_space=address_space,
+            element_layout = coalesce(__tiled_layout[0]),
+        ](self.ptr)
+
+    @always_inline
     fn transpose[
         M: Int = Self.dim[0](),
         N: Int = Self.dim[1](),
@@ -347,10 +424,16 @@ struct LayoutTensor[
             Layout(IntTuple(N, M), IntTuple(M, 1)),
         ),
     ](self) -> LayoutTensor[
-        transposed_layout, dtype, address_space=address_space
+        transposed_layout,
+        dtype,
+        address_space=address_space,
+        element_layout=element_layout,
     ]:
         return LayoutTensor[
-            transposed_layout, dtype, address_space=address_space
+            transposed_layout,
+            dtype,
+            address_space=address_space,
+            element_layout=element_layout,
         ](self.ptr)
 
     @always_inline
@@ -358,10 +441,16 @@ struct LayoutTensor[
         dst_layout: Layout,
         reshaped_layout: Layout = composition(layout, dst_layout),
     ](self) -> LayoutTensor[
-        reshaped_layout, dtype, address_space=address_space
+        reshaped_layout,
+        dtype,
+        address_space=address_space,
+        element_layout=element_layout,
     ]:
         return LayoutTensor[
-            reshaped_layout, dtype, address_space=address_space
+            reshaped_layout,
+            dtype,
+            address_space=address_space,
+            element_layout=element_layout,
         ](self.ptr)
 
     @always_inline
@@ -369,7 +458,12 @@ struct LayoutTensor[
         other_layout: Layout
     ](
         self,
-        other: LayoutTensor[other_layout, dtype, address_space=address_space],
+        other: LayoutTensor[
+            other_layout,
+            dtype,
+            address_space=address_space,
+            element_layout=element_layout,  # TODO: Remove this assumtion.
+        ],
     ):
         for m in range(Self.dim[0]()):
 
@@ -392,11 +486,14 @@ struct LayoutTensor[
     # When source and destination address spaces differ
     @always_inline
     fn copy_from_numa[
-        other_layout: Layout, other_addr_space: AddressSpace
+        other_layout: Layout,
+        other_addr_space: AddressSpace,
     ](
         self,
         other: LayoutTensor[
-            other_layout, dtype, address_space=other_addr_space
+            other_layout,
+            dtype,
+            address_space=other_addr_space,
         ],
     ):
         @parameter
@@ -462,9 +559,9 @@ struct LayoutTensor[
             abort("LayoutTensor linspace only support rank 1-2 layouts.")
 
     fn fill(self, val: Scalar[dtype]):
-        for m in range(Self.dim[0]()):
-            for n in range(Self.dim[1]()):
-                self[m, n] = val
+        alias num_elements = layout.size() * Self.element_size
+        for i in range(num_elements):
+            self.ptr[i] = val
 
     fn print(self):
         """Print 2D tensor in 2D, otherwise print all values in column major
