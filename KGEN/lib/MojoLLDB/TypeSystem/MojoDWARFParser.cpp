@@ -354,24 +354,34 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
                            lldb_private::Type::ResolveState::Unresolved);
     break;
   }
-  case DW_TAG_unspecified_type:
+  case DW_TAG_unspecified_type: {
     // For clang, these are often `nullptr_t` or `decltype(nullptr)`. However,
     // if a different name is found, clang attempts to parse this unspecified as
     // a base type using its encoding, which might fail anyway. We follow that
     // approach.
+    CompilerType mojoType;
+    if (attrs.name == "kgen.dtype.invalid")
+      mojoType = typeSystem.createCompilerTypeFromDType(attrs.name);
+    else if ((attrs.name == "void" || attrs.name == "opaque"))
+      mojoType = typeSystem.getBuiltinTypeFromMLIRTypeName("!kgen.none");
 
-    if (attrs.name == "void" || attrs.name == "opaque") {
-      CompilerType mojoType =
-          typeSystem.getBuiltinTypeFromMLIRTypeName("!kgen.none");
-
+    if (mojoType.IsValid()) {
       type = dwarf->MakeType(
-          die.GetID(), attrs.name, attrs.byteSize.value_or(0), nullptr,
-          attrs.type.Reference().GetID(), lldb_private::Type::eEncodingIsUID,
-          &attrs.decl, mojoType, lldb_private::Type::ResolveState::Full);
+          die.GetID(), attrs.name,
+          attrs.byteSize.value_or(
+              mojoType.GetByteSize(/*exe_scope=*/nullptr).value_or(0)),
+          nullptr, attrs.type.Reference().GetID(),
+          lldb_private::Type::eEncodingIsUID, &attrs.decl, mojoType,
+          lldb_private::Type::ResolveState::Full);
       break;
     }
-
+    dwarf->GetObjectFile()->GetModule()->ReportError(
+        "[MojoDWARFParser::ParseTypeFromDWARF] Unexpected unspecified type. "
+        "Die = {0:x}, tag = {1}, name = '{2}'.",
+        die.GetOffset(), die.GetTagAsCString(), die.GetName());
     [[fallthrough]];
+  }
+
   case DW_TAG_base_type: {
     if (attrs.byteSize.value_or(0) == 0) {
       dwarf->GetObjectFile()->GetModule()->ReportError(
