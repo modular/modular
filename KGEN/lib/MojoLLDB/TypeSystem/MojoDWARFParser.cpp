@@ -498,8 +498,8 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
   default:
     dwarf->GetObjectFile()->GetModule()->ReportError(
         "[MojoDWARFParser::ParseTypeFromDWARF]: Unhandled type tag. "
-        "Die = {0:x}, tag = {1}.",
-        die.GetOffset(), tag, die.GetTagAsCString());
+        "Die = {0:x}, tag = {1}, name = {2}",
+        die.GetOffset(), tag, die.GetTagAsCString(), die.GetName());
     break;
   }
 
