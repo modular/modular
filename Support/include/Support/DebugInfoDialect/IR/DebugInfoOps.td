@@ -20,6 +20,22 @@ class DebugInfoOp<string mnemonic, list<Trait> traits = []>
     : Op<DebugInfoDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
+// KillOp
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_KillOp : DebugInfoOp<"kill"> {
+  let summary = "debug variable kill definition";
+  let description = [{
+    The `debuginfo.kill` operation indicates when a debug info variable does
+    not have a value. The variable may not have been initialized, or may have
+    been destroyed.
+  }];
+
+  let arguments = (ins DebugInfo_DILocalVariableAttr:$valueInfo);
+  let assemblyFormat = "$valueInfo attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // ValueOp
 //===----------------------------------------------------------------------===//
 

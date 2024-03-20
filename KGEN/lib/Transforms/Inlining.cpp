@@ -544,7 +544,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
 
   scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Erase `debuginfo.value` operations when inlining without debug info.
-    if (stripDebugInfo && isa<DebugInfo::ValueOp>(op)) {
+    if (stripDebugInfo && isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
       op->erase();
       return WalkResult::skip();
     }

@@ -356,6 +356,31 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
 }
 
 //===----------------------------------------------------------------------===//
+// KillOp
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct ConvertKillOp : public OpRewritePattern<KillOp> {
+  ConvertKillOp(MLIRContext *ctx, DIAttrTypeReplacer &replacer)
+      : OpRewritePattern<KillOp>(ctx), replacer(replacer) {}
+
+  LogicalResult matchAndRewrite(KillOp op,
+                                PatternRewriter &rewriter) const override {
+    auto undef = rewriter.create<LLVM::UndefOp>(
+        op.getLoc(), LLVM::LLVMStructType::getLiteral(getContext(), {}));
+    rewriter.create<LLVM::DbgValueOp>(
+        replacer.replace<mlir::LocationAttr>(op.getLoc()), undef,
+        replacer.replace<LLVM::DILocalVariableAttr>(op.getValueInfo()));
+    rewriter.eraseOp(op);
+    return success();
+  }
+
+  /// The replacer used to update attributes.
+  DIAttrTypeReplacer &replacer;
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // ValueOp
 //===----------------------------------------------------------------------===//
 
@@ -412,8 +437,8 @@ struct ConvertOpLocations : public mlir::RewritePattern {
 
 static void populateDebugInfoToLLVMPatterns(DIAttrTypeReplacer &replacer,
                                             RewritePatternSet &patterns) {
-  patterns.add<ConvertValueOp, ConvertOpLocations>(patterns.getContext(),
-                                                   replacer);
+  patterns.add<ConvertKillOp, ConvertValueOp, ConvertOpLocations>(
+      patterns.getContext(), replacer);
 }
 
 //===----------------------------------------------------------------------===//
@@ -833,17 +858,17 @@ static void preAdaptDebugValuesToLLVM(Operation *op) {
     for (Block &block : region.getBlocks()) {
       // The kill Debug Value Ops corresponding to the current line at each
       // inlined scope.
-      CallStackWith<SmallVector<ValueOp>> pendingKillsByLoc;
+      CallStackWith<SmallVector<Operation *>> pendingKillsByLoc;
       for (Operation &op : llvm::make_early_inc_range(block.getOperations())) {
         // Ops without a location follow the location of the previous op.
         const CallStack callStack(op.getLoc());
         if (!callStack.frames.empty()) {
-          SmallVector<SmallVector<ValueOp>> invalidated =
+          SmallVector<SmallVector<Operation *>> invalidated =
               pendingKillsByLoc.updateTo(callStack);
-          // This is the start of a new line. Move all invalidated kill debug
-          // values before this op.
-          for (SmallVector<ValueOp> &kills : invalidated)
-            for (ValueOp kill : kills)
+          // This is the start of a new line. Move all pending kill debug values
+          // before this op.
+          for (SmallVector<Operation *> &kills : invalidated)
+            for (Operation *kill : kills)
               kill->moveBefore(&op);
         }
 
@@ -852,10 +877,8 @@ static void preAdaptDebugValuesToLLVM(Operation *op) {
             dbgValue->erase();
             continue;
           }
-
-          if (!pendingKillsByLoc.isEmpty() &&
-              dbgValue.getValue().getDefiningOp<LLVM::UndefOp>())
-            pendingKillsByLoc.backData().push_back(dbgValue);
+        } else if (!pendingKillsByLoc.isEmpty() && isa<KillOp>(op)) {
+          pendingKillsByLoc.backData().push_back(&op);
         }
 
         preAdaptDebugValuesToLLVM(&op);

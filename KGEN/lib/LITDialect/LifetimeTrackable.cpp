@@ -422,7 +422,8 @@ OverallOpValueEffect LIT::getOperationEffects(
     SmallVectorImpl<TypedAttr> &lifetimes) {
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
-  if (isa<DebugInfo::ValueOp, RefStructGEROp, RebindOp, RefImmutOp>(op)) {
+  if (isa<DebugInfo::ValueOp, DebugInfo::KillOp, RefStructGEROp, RebindOp,
+          RefImmutOp>(op)) {
     if (op.getNumResults() == 1)
       results.push_back(ResultEffect::ignore);
     return {};

@@ -1928,7 +1928,7 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
     return processCallOp(node, call);
   } else if (auto evaluate = dyn_cast<ParamEvaluateOp>(op)) {
     return processEvaluateOp(node, evaluate);
-  } else if (isa<DebugInfo::ValueOp>(op)) {
+  } else if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
     // Delay elaboration of the DILocalVariableAttr until when locations are
     // elaborated.
     return ElaborationState::advance();
@@ -2171,9 +2171,9 @@ void ElaboratorImpl::specializeFromSource(ImplNode *inode, ParamNode *genNode,
           return WalkResult::interrupt();
 
         // Update the ValueInfo attr since they contain types.
-        if (auto value = dyn_cast<DebugInfo::ValueOp>(op)) {
-          value->setAttrs(
-              concretizeAttr(value->getAttrDictionary(), op->getLoc(), inode));
+        if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
+          op->setAttrs(
+              concretizeAttr(op->getAttrDictionary(), op->getLoc(), inode));
         }
 
         // To be defensive, we only concretize location attributes if we know

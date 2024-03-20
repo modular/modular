@@ -42,6 +42,17 @@ struct ValueOpInterpreterInterface
   }
 };
 
+struct KillOpInterpreterInterface
+    : public InterpreterOpInterface::ExternalModel<ValueOpInterpreterInterface,
+                                                   DebugInfo::KillOp> {
+  /// Implement the interpret hook for this operation. Since the operation has
+  /// no results, we cannot use the fold hook.
+  ErrorTreeOrSuccess interpret(Operation *op, ArrayRef<Attribute> operands,
+                               InterpreterState &state) const {
+    return success();
+  }
+};
+
 /// This dialect extension implements interpreter hooks for non-KGEN dialects.
 class InterpreterDialectExtension : public mlir::DialectExtensionBase {
 public:
@@ -53,6 +64,7 @@ public:
   void apply(MLIRContext *ctx,
              MutableArrayRef<Dialect *> dialects) const override {
     DebugInfo::ValueOp::attachInterface<ValueOpInterpreterInterface>(*ctx);
+    DebugInfo::KillOp::attachInterface<KillOpInterpreterInterface>(*ctx);
   }
 
   /// Clone the extension.

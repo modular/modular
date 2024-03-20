@@ -141,7 +141,8 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
   bool stripValues = !surroundingSubprogram.getSubprogramScope();
   body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     // Erase `debuginfo.value` operations when inlining without debug info.
-    if ((noDebug || stripValues) && isa<DebugInfo::ValueOp>(op)) {
+    if ((noDebug || stripValues) &&
+        isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
       op->erase();
       return WalkResult::skip();
     }
