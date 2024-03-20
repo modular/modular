@@ -734,17 +734,135 @@ static void convertDbgValueToDeclare(ModuleOp module) {
   }
 }
 
-/// LLVM does not yet support emitting DW_OP_LLVM_implicit_pointer to asm. If it
-/// is not yet optimized out by the time we emit to LLVM, it has to be removed.
-static void removeImplicitPointerDIExpr(Operation *op) {
-  op->walk([](DebugInfo::ValueOp op) {
-    auto walkResult =
-        op.getConversionExprAttr().walk([](DebugInfo::DIRefOfExprAttr refof) {
-          return WalkResult::interrupt();
-        });
-    if (walkResult.wasInterrupted())
-      op->erase();
-  });
+/// Returns whether this debug value is unsupported by LLVM.
+static bool isUnsupportedDebugValue(DebugInfo::ValueOp op) {
+  /// LLVM does not yet support emitting DW_OP_LLVM_implicit_pointer to asm. If
+  /// it is not yet optimized out by the time we emit to LLVM, it has to be
+  /// removed.
+  auto walkResult = op.getConversionExprAttr().walk(
+      [](DebugInfo::DIRefOfExprAttr refof) { return WalkResult::interrupt(); });
+  return walkResult.wasInterrupted();
+}
+
+namespace {
+/// A linearized canonical representation of an inline call stack (as opposed to
+/// a binary-tree-based representation used by CallSiteLoc) that allows easy
+/// ancestor-child comparison.
+class CallStack {
+public:
+  CallStack(Location overallLoc) {
+    walkLocation(overallLoc, LocWalkPolicy::CallerPriority, [&](Location loc) {
+      if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(loc)) {
+        if (fusedLoc.getLocations().size() != 1)
+          return WalkResult::advance();
+
+        if (auto fileLineCol =
+                dyn_cast<FileLineColLoc>(fusedLoc.getLocations().front()))
+          frames.emplace_back(fusedLoc.getMetadata(), fileLineCol.getLine());
+      }
+      return WalkResult::advance();
+    });
+  }
+
+  /// The call stack ordered from caller to callee.
+  /// Each frame encodes the scope of the location & the line number.
+  using Frame = std::pair<DIScopeAttr, unsigned>;
+  SmallVector<Frame> frames;
+};
+
+/// Maps each frame of a CallStack to some user-defined data `T`.
+template <typename T>
+class CallStackWith {
+public:
+  bool isEmpty() const { return dataFrames.empty(); }
+
+  /// Reference to the data value mapped to the last (innermost) frame.
+  T &backData() { return dataFrames.back().second; }
+
+  /// Update the internal call stack to represent `newStack` instead.
+  /// Any stack frame that will no longer exist is considered invalidated, and
+  /// will be returned in the order of their positions in the call stack.
+  /// Each newly added stack frame will come with a default-constructed `T`.
+  ///
+  /// For example, calling with
+  ///   dataFrames = [(L0, T0), (L1, T1), (L2, T2), (L3, T3)]
+  ///   newStack   = [L0, L1, L4, L5]
+  /// results in
+  ///   dataFrames = [(L0, T0), (L1, T1), (L4, T()), (L5, T())]
+  /// and returns [T2, T3].
+  SmallVector<T> updateTo(const CallStack &newStack) {
+    // Walk until `newStack.frames` & `dataFrames` diverge.
+    auto thisIter = dataFrames.begin();
+    auto newIter = newStack.frames.begin();
+    for (; thisIter != dataFrames.end() && newIter != newStack.frames.end();
+         ++thisIter, ++newIter)
+      if (thisIter->first != *newIter)
+        break;
+
+    SmallVector<T> invalidated;
+    // Diverged in the middle of `dataFrames`. Invalidate everything afterwards.
+    if (thisIter != dataFrames.end()) {
+      std::transform(thisIter, dataFrames.end(),
+                     std::back_inserter(invalidated),
+                     [](auto it) { return it.second; });
+      dataFrames.truncate(dataFrames.size() - invalidated.size());
+    }
+
+    // Append anything at or after `newIter` to `dataFrames`.
+    for (; newIter != newStack.frames.end(); ++newIter)
+      dataFrames.emplace_back(*newIter, T());
+
+    return invalidated;
+  }
+
+private:
+  /// The call stack ordered from caller to callee.
+  /// Each frame encodes both a location and a custom data `T`.
+  SmallVector<std::pair<CallStack::Frame, T>> dataFrames;
+};
+} // namespace
+
+/// Pre-Massaging to bridge the semantics between DebugInfo's DebugValues &
+/// LLVM's counterpart. Also removes unsupported cases.
+///
+/// - Sink kill Debug Value ops so that they are the last instructions from
+/// their source line. This way variables are guaranteed to be killed only at
+/// the end of the line.
+/// - Remove Debug Value ops that contain unsupported components by LLVM.
+static void preAdaptDebugValuesToLLVM(Operation *op) {
+  for (Region &region : op->getRegions()) {
+    for (Block &block : region.getBlocks()) {
+      // The kill Debug Value Ops corresponding to the current line at each
+      // inlined scope.
+      CallStackWith<SmallVector<ValueOp>> pendingKillsByLoc;
+      for (Operation &op : llvm::make_early_inc_range(block.getOperations())) {
+        // Ops without a location follow the location of the previous op.
+        const CallStack callStack(op.getLoc());
+        if (!callStack.frames.empty()) {
+          SmallVector<SmallVector<ValueOp>> invalidated =
+              pendingKillsByLoc.updateTo(callStack);
+          // This is the start of a new line. Move all invalidated kill debug
+          // values before this op.
+          for (SmallVector<ValueOp> &kills : invalidated)
+            for (ValueOp kill : kills)
+              kill->moveBefore(&op);
+        }
+
+        if (ValueOp dbgValue = dyn_cast<ValueOp>(op)) {
+          if (isUnsupportedDebugValue(dbgValue)) {
+            dbgValue->erase();
+            continue;
+          }
+
+          if (!pendingKillsByLoc.isEmpty() &&
+              dbgValue.getValue().getDefiningOp<LLVM::UndefOp>())
+            pendingKillsByLoc.backData().push_back(dbgValue);
+        }
+
+        preAdaptDebugValuesToLLVM(&op);
+      }
+    }
+  }
 }
 
 void DebugInfoToLLVMPass::runOnOperation() {
@@ -783,8 +901,8 @@ void DebugInfoToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   populateDebugInfoToLLVMPatterns(replacer, patterns);
 
-  // Remove unsupported cases.
-  removeImplicitPointerDIExpr(getOperation());
+  // Massage DebugValues before conversion.
+  preAdaptDebugValuesToLLVM(getOperation());
 
   if (failed(mlir::applyPartialConversion(getOperation(), target,
                                           std::move(patterns))))

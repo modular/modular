@@ -1,4 +1,4 @@
-// RUN: support-dialect-opt %s -convert-debuginfo-to-llvm -allow-unregistered-dialect -mlir-print-debuginfo | FileCheck %s
+// RUN: support-dialect-opt %s -convert-debuginfo-to-llvm -allow-unregistered-dialect -mlir-print-debuginfo -split-input-file | FileCheck %s
 
 #file = #debuginfo.file<"foo.c" in "/mlir/">
 #compile_unit = #debuginfo.compile_unit<
@@ -247,3 +247,139 @@ llvm.func @block_arguments() {
 }
 
 // CHECK: #[[LOC_UNKNOWN]] = loc(unknown)
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#subprogram = #debuginfo.subprogram<
+  file = #file,
+  scope = #file,
+  name = <"foo">
+> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#local_variable = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foo"
+> : !debuginfo.unresolved<i32>
+#loc0 = loc(fused<#subprogram>["foo.mlir":0:0])
+#loc1 = loc(fused<#subprogram>["foo.mlir":1:0])
+#loc2 = loc(fused<#subprogram>["foo.mlir":2:0])
+#loc3 = loc(fused<#subprogram>["foo.mlir":3:0])
+
+// CHECK-LABEL: func @sink_kill_debug_values
+func.func @sink_kill_debug_values() -> i32 {
+  // CHECK: llvm.mlir.undef
+  // CHECK: llvm.intr.dbg.value
+  // CHECK: "test.op"
+  // CHECK: llvm.intr.dbg.value
+  // CHECK: "test.op2"
+  // CHECK: "test.op3"
+  // CHECK: llvm.intr.dbg.value
+  // CHECK: "test.op4"
+  // CHECK: llvm.load
+  // CHECK: return
+
+  %undef1 = llvm.mlir.undef : i32 loc(#loc0)
+  debuginfo.value #local_variable = %undef1 : i32 loc(#loc0)
+  %value = "test.op"() : () -> i32 loc(#loc1)
+  debuginfo.value #local_variable = %value : i32 loc(#loc1)
+  %undef2 = llvm.mlir.undef : i32 loc(#loc2)
+  debuginfo.value #local_variable = %undef2 : i32 loc(#loc2)
+  %value2 = "test.op2"() : () -> i32 loc(#loc2)
+  %value3 = "test.op3"() : () -> i32 loc(#loc2)
+  %value4 = "test.op4"() : () -> i32 loc(#loc3)
+  return %value : i32  loc(#loc3)
+} loc(#loc0)
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#sp0 = #debuginfo.subprogram<
+  file = #file,
+  scope = #file,
+  name = <"sp0">
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#sp1 = #debuginfo.subprogram<
+  file = #file,
+  scope = #file,
+  name = <"sp1">
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#sp2 = #debuginfo.subprogram<
+  file = #file,
+  scope = #file,
+  name = <"sp2">
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+// CHECK-DAG: #[[VAR0:.*]] = #llvm.di_local_variable<{{.*}}name = "foo0"
+#var0 = #debuginfo.local_variable<
+  scope = #sp0,
+  name = "foo0"
+> : !debuginfo.unresolved<i32>
+// CHECK-DAG: #[[VAR1:.*]] = #llvm.di_local_variable<{{.*}}name = "foo1"
+#var1 = #debuginfo.local_variable<
+  scope = #sp1,
+  name = "foo1"
+> : !debuginfo.unresolved<i32>
+// CHECK-DAG: #[[VAR2:.*]] = #llvm.di_local_variable<{{.*}}name = "foo2"
+#var2 = #debuginfo.local_variable<
+  scope = #sp2,
+  name = "foo2"
+> : !debuginfo.unresolved<i32>
+
+#loc0 = loc(fused<#sp0>["foo.mlir":0:0])
+#loc1 = loc(fused<#sp0>["foo.mlir":1:0])
+#loc100 = loc(fused<#sp1>["foo.mlir":100:0])
+#loc101 = loc(fused<#sp1>["foo.mlir":101:0])
+#loc200 = loc(fused<#sp2>["foo.mlir":200:0])
+#loc201 = loc(fused<#sp2>["foo.mlir":201:0])
+
+// Inlined call stack: sp0 -> sp1 -> sp2
+#loc100at1 = loc(callsite(#loc100 at #loc1))
+#loc101at1 = loc(callsite(#loc101 at #loc1))
+#loc200at101at1 = loc(callsite(callsite(#loc200 at #loc101) at #loc1))
+// Linearized locations canonicalize away associativity of callsites.
+#loc201at101at1_ver0 = loc(callsite(callsite(#loc201 at #loc101) at #loc1))
+#loc201at101at1_ver1 = loc(callsite(#loc201 at callsite(#loc101 at #loc1)))
+
+
+// CHECK-LABEL: func @sink_kill_debug_values_inlined
+func.func @sink_kill_debug_values_inlined() -> i32 {
+  // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
+  // CHECK: "test.op0"
+  // CHECK: llvm.intr.dbg.value #[[VAR0]]
+  // CHECK: llvm.intr.dbg.value #[[VAR0]] {{.*}}= %[[UNDEF]]
+
+  // CHECK: "test.op1"
+  // CHECK: llvm.intr.dbg.value #[[VAR1]]
+
+  // CHECK: "test.op2"
+  // CHECK: llvm.intr.dbg.value #[[VAR2]]
+  // CHECK: "test.op3"
+  // CHECK: llvm.intr.dbg.value #[[VAR2]] {{.*}}= %[[UNDEF]]
+
+  // CHECK: "test.op4"
+  // CHECK: llvm.intr.dbg.value #[[VAR1]] {{.*}}= %[[UNDEF]]
+
+  // CHECK: return
+
+  %undef = llvm.mlir.undef : i32 loc(#loc0)
+
+  %v0 = "test.op0"() : () -> i32 loc(#loc0)
+  debuginfo.value #var0 = %v0 : i32 loc(#loc0)
+  debuginfo.value #var0 = %undef : i32 loc(#loc0)
+
+  //   Begin body of sp1 {
+  %v1 = "test.op1"() : () -> i32 loc(#loc100at1)
+  debuginfo.value #var1 = %v1 : i32 loc(#loc100at1)
+  debuginfo.value #var1 = %undef : i32 loc(#loc101at1)
+
+  //     Begin body of sp2 {
+  %v2 = "test.op2"() : () -> i32 loc(#loc200at101at1)
+  debuginfo.value #var2 = %v2 : i32 loc(#loc200at101at1)
+  debuginfo.value #var2 = %undef : i32 loc(#loc201at101at1_ver0)
+  %v3 = "test.op3"() : () -> i32 loc(#loc201at101at1_ver1)
+  //     } End body of sp2
+
+  %v4 = "test.op4"() : () -> i32 loc(#loc101at1)
+  //   } End body of sp1
+
+  return %v4 : i32  loc(#loc1)
+} loc(#loc0)
