@@ -21,11 +21,15 @@ def MDialect : Dialect {
     The `M` dialect contains core types and attributes that depend only on core
     MLIR and which can be shared across all Modular code. Conceptually, this
     dialect is like the `builtin` dialect.
+
+    This dialect also holds a general purpose context that has effective global
+    singletons within the Modular stack, such as the runtime.
   }];
 
   let cppNamespace = "::M";
 
   let extraClassDeclaration = [{
+  public:
     /// Register all dialect attributes.
     void registerAttributes();
     /// Register all dialect types.
@@ -33,6 +37,13 @@ def MDialect : Dialect {
     /// Inject any external type / attribute models.
     void injectTypeInterfaces();
     void injectAttrInterfaces();
+
+    /// Get the registered context.
+    context::ContextRef getInteral() { return context.copy(); }
+    /// Set the registered context.
+    void setInternal(context::ContextRef &&ref) { context = std::move(ref); }
+  private:
+    context::ContextRef context;
   }];
 
   let useDefaultAttributePrinterParser = 1;

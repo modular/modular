@@ -22,6 +22,9 @@ public:
   RCRef() : pointer(nullptr) {}
   RCRef(RCRef &&other) : pointer(other.pointer) { other.pointer = nullptr; }
 
+  // See below; prefer the `copy` method.
+  RCRef(const RCRef &other) : RCRef(std::move(other.copy())) {}
+
   /// This constructor forms a reference to the specified pointer, increasing
   /// the underlying reference count by 1.
   static RCRef copy(T *pointer) {
@@ -117,9 +120,10 @@ public:
   }
 
 private:
-  // Not implicitly copyable, use the copy() method for an explicit copy of
-  // this reference.
-  RCRef(const RCRef &) = delete;
+  // Per above, this type *is* implicitly copyable, as this is required for use
+  // in certain contexts where the parent type is copied. However, this is
+  // strongly discouraged, and we can disable at least the implicit copy
+  // assignment operator. The `copy` method is strongly preferred.
   RCRef &operator=(const RCRef &) = delete;
 
   T *pointer;

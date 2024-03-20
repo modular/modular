@@ -116,6 +116,23 @@ void MDialect::initialize() {
   addInterface<MDialectBytecodeInterface>();
 }
 
+void M::registerContext(mlir::DialectRegistry &registry,
+                        context::ContextRef &ref) {
+  registry.insert(mlir::TypeID::get<MDialect>(),
+                  MDialect::getDialectNamespace(),
+                  static_cast<mlir::DialectAllocatorFunction>(
+                      ([ref = ref.copy()](mlir::MLIRContext *ctx) {
+                        MDialect *dialect = ctx->getOrLoadDialect<MDialect>();
+                        dialect->setInternal(ref.copy());
+                        return dialect;
+                      })));
+}
+
+context::ContextRef M::loadContext(mlir::MLIRContext *ctx) {
+  StringRef name = MDialect::getDialectNamespace();
+  return static_cast<MDialect *>(ctx->getOrLoadDialect(name))->getInteral();
+}
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
