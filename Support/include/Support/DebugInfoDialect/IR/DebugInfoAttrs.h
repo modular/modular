@@ -146,19 +146,22 @@ private:
   DenseMap<KeyT, mlir::AttrTypeReplacer> replacers;
 };
 
-enum class ScopeWalkPolicy {
+enum class LocWalkPolicy {
   CalleeOnly,     // Walk only to the innermost callee.
   CallerOnly,     // Walk only to the outermost caller.
   CalleePriority, // Walk call-chain inside-out.
   CallerPriority  // Walk call-chain outside-in.
 };
 
-WalkResult walkScope(Location loc, ScopeWalkPolicy policy,
+WalkResult walkLocation(Location loc, LocWalkPolicy policy,
+                        function_ref<WalkResult(Location)> walkFn);
+
+WalkResult walkScope(Location loc, LocWalkPolicy policy,
                      function_ref<WalkResult(DIScopeAttr)> walkFn);
 
-/// Extract the first scope found in a location based on a ScopeWalkPolicy.
+/// Extract the first scope found in a location based on a LocWalkPolicy.
 template <typename ScopeT>
-ScopeT extractScopeFrom(Location loc, ScopeWalkPolicy policy) {
+ScopeT extractScopeFrom(Location loc, LocWalkPolicy policy) {
   ScopeT result;
   walkScope(loc, policy, [&result](DIScopeAttr scope) {
     return scope.walk<mlir::WalkOrder::PreOrder>([&result](ScopeT innerScope) {

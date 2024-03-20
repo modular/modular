@@ -394,7 +394,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   Region &asyncFnBody = asyncFn.getBody();
   asyncFnBody.takeBody(func.getBody());
   if (auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
-          asyncFn.getLoc(), DebugInfo::ScopeWalkPolicy::CalleePriority)) {
+          asyncFn.getLoc(), DebugInfo::LocWalkPolicy::CalleePriority)) {
     DebugInfo::updateSubprogram(
         asyncFn, asyncFn.getSymNameAttr(),
         DebugInfo::SourceNameAttr::get("async_function", scope.getName()));
@@ -582,7 +582,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   // If possible, we need to add a subprogram scope to the new function.
   auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
   auto scope = DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
-      op.getLoc(), DebugInfo::ScopeWalkPolicy::CalleePriority);
+      op.getLoc(), DebugInfo::LocWalkPolicy::CalleePriority);
   if (scope) {
     // Use unresolved types now for simplicity, these will get resolved during
     // compilation.

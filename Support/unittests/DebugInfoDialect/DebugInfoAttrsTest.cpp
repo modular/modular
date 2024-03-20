@@ -110,8 +110,8 @@ TEST_F(DIScopeAttrUtilTest, TestScopeWalk) {
         FusedLocWith<DISubprogramAttr>::get(&ctx, {loc}, sp.back()));
   }
 
-  auto getVisitedScopes =
-      [](Location loc, ScopeWalkPolicy policy) -> std::vector<DIScopeAttr> {
+  auto getVisitedScopes = [](Location loc,
+                             LocWalkPolicy policy) -> std::vector<DIScopeAttr> {
     std::vector<DIScopeAttr> visitedScopes;
     walkScope(loc, policy, [&](DIScopeAttr scope) {
       visitedScopes.push_back(scope);
@@ -124,13 +124,13 @@ TEST_F(DIScopeAttrUtilTest, TestScopeWalk) {
   // 2 -> 1 -> 0
   Location innerCallsite = CallSiteLoc::get(fused[0], fused[1]);
   Location callsite = CallSiteLoc::get(innerCallsite, fused[2]);
-  EXPECT_THAT(getVisitedScopes(callsite, ScopeWalkPolicy::CalleeOnly),
+  EXPECT_THAT(getVisitedScopes(callsite, LocWalkPolicy::CalleeOnly),
               ElementsAre(sp[0]));
-  EXPECT_THAT(getVisitedScopes(callsite, ScopeWalkPolicy::CallerOnly),
+  EXPECT_THAT(getVisitedScopes(callsite, LocWalkPolicy::CallerOnly),
               ElementsAre(sp[2]));
-  EXPECT_THAT(getVisitedScopes(callsite, ScopeWalkPolicy::CalleePriority),
+  EXPECT_THAT(getVisitedScopes(callsite, LocWalkPolicy::CalleePriority),
               ElementsAre(sp[0], sp[1], sp[2]));
-  EXPECT_THAT(getVisitedScopes(callsite, ScopeWalkPolicy::CallerPriority),
+  EXPECT_THAT(getVisitedScopes(callsite, LocWalkPolicy::CallerPriority),
               ElementsAre(sp[2], sp[1], sp[0]));
 }
 
@@ -154,30 +154,30 @@ TEST_F(DIScopeAttrUtilTest, TestExtractScopeFrom) {
   Location callsite = CallSiteLoc::get(innerCallsite, fused[2]);
 
   // Find top scope.
+  EXPECT_EQ(
+      extractScopeFrom<DILexicalBlockAttr>(callsite, LocWalkPolicy::CalleeOnly),
+      block[0]);
+  EXPECT_EQ(
+      extractScopeFrom<DILexicalBlockAttr>(callsite, LocWalkPolicy::CallerOnly),
+      block[2]);
   EXPECT_EQ(extractScopeFrom<DILexicalBlockAttr>(callsite,
-                                                 ScopeWalkPolicy::CalleeOnly),
+                                                 LocWalkPolicy::CalleePriority),
             block[0]);
   EXPECT_EQ(extractScopeFrom<DILexicalBlockAttr>(callsite,
-                                                 ScopeWalkPolicy::CallerOnly),
-            block[2]);
-  EXPECT_EQ(extractScopeFrom<DILexicalBlockAttr>(
-                callsite, ScopeWalkPolicy::CalleePriority),
-            block[0]);
-  EXPECT_EQ(extractScopeFrom<DILexicalBlockAttr>(
-                callsite, ScopeWalkPolicy::CallerPriority),
+                                                 LocWalkPolicy::CallerPriority),
             block[2]);
 
   // Find nested scope.
   EXPECT_EQ(
-      extractScopeFrom<DISubprogramAttr>(callsite, ScopeWalkPolicy::CalleeOnly),
+      extractScopeFrom<DISubprogramAttr>(callsite, LocWalkPolicy::CalleeOnly),
       sp[0]);
   EXPECT_EQ(
-      extractScopeFrom<DISubprogramAttr>(callsite, ScopeWalkPolicy::CallerOnly),
+      extractScopeFrom<DISubprogramAttr>(callsite, LocWalkPolicy::CallerOnly),
       sp[2]);
   EXPECT_EQ(extractScopeFrom<DISubprogramAttr>(callsite,
-                                               ScopeWalkPolicy::CalleePriority),
+                                               LocWalkPolicy::CalleePriority),
             sp[0]);
   EXPECT_EQ(extractScopeFrom<DISubprogramAttr>(callsite,
-                                               ScopeWalkPolicy::CallerPriority),
+                                               LocWalkPolicy::CallerPriority),
             sp[2]);
 }

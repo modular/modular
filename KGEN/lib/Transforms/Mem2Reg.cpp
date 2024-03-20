@@ -164,7 +164,7 @@ private:
   static DebugInfo::DISubprogramAttr
   extractPreInlineSubprogramScope(Location loc) {
     return DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
-        loc, DebugInfo::ScopeWalkPolicy::CalleeOnly);
+        loc, DebugInfo::LocWalkPolicy::CalleeOnly);
   }
 };
 } // namespace

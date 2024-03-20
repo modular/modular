@@ -386,49 +386,55 @@ ErrorOr<DIExprAttr> DebugInfo::DIExprLeafReplacer::apply(DIExprAttr expr) {
 // DI Scope Support
 //===----------------------------------------------------------------------===//
 
-WalkResult DebugInfo::walkScope(Location loc, ScopeWalkPolicy policy,
-                                function_ref<WalkResult(DIScopeAttr)> walkFn) {
+WalkResult DebugInfo::walkLocation(Location loc, LocWalkPolicy policy,
+                                   function_ref<WalkResult(Location)> walkFn) {
+  if (walkFn(loc).wasInterrupted())
+    return WalkResult::interrupt();
   return TypeSwitch<Location, WalkResult>(loc)
       .Case([&](mlir::CallSiteLoc callLoc) -> WalkResult {
         mlir::LocationAttr firstChoice, secondChoice;
         switch (policy) {
-        case ScopeWalkPolicy::CalleePriority:
+        case LocWalkPolicy::CalleePriority:
           secondChoice = callLoc.getCaller();
           LLVM_FALLTHROUGH;
-        case ScopeWalkPolicy::CalleeOnly:
+        case LocWalkPolicy::CalleeOnly:
           firstChoice = callLoc.getCallee();
           break;
-        case ScopeWalkPolicy::CallerPriority:
+        case LocWalkPolicy::CallerPriority:
           secondChoice = callLoc.getCallee();
           LLVM_FALLTHROUGH;
-        case ScopeWalkPolicy::CallerOnly:
+        case LocWalkPolicy::CallerOnly:
           firstChoice = callLoc.getCaller();
         }
-        if (walkScope(firstChoice, policy, walkFn).wasInterrupted())
+        if (walkLocation(firstChoice, policy, walkFn).wasInterrupted())
           return WalkResult::interrupt();
         if (secondChoice)
-          return walkScope(secondChoice, policy, walkFn);
+          return walkLocation(secondChoice, policy, walkFn);
         return WalkResult::advance();
       })
       .Case([&](FusedLoc fusedLoc) -> WalkResult {
-        if (auto metadata =
-                dyn_cast_or_null<DIScopeAttr>(fusedLoc.getMetadata()))
-          if (walkFn(metadata).wasInterrupted())
-            return WalkResult::interrupt();
-
         for (Location subLoc : fusedLoc.getLocations())
-          if (walkScope(subLoc, policy, walkFn).wasInterrupted())
+          if (walkLocation(subLoc, policy, walkFn).wasInterrupted())
             return WalkResult::interrupt();
-
         return WalkResult::advance();
       })
       .Case([&](mlir::NameLoc nameLoc) -> WalkResult {
-        return walkScope(nameLoc.getChildLoc(), policy, walkFn);
+        return walkLocation(nameLoc.getChildLoc(), policy, walkFn);
       })
       .Case([&](mlir::OpaqueLoc opaqueLoc) -> WalkResult {
-        return walkScope(opaqueLoc.getFallbackLocation(), policy, walkFn);
+        return walkLocation(opaqueLoc.getFallbackLocation(), policy, walkFn);
       })
       .Default(WalkResult::advance());
+}
+
+WalkResult DebugInfo::walkScope(Location loc, LocWalkPolicy policy,
+                                function_ref<WalkResult(DIScopeAttr)> walkFn) {
+  return walkLocation(loc, policy, [&](Location loc) {
+    if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(loc))
+      if (walkFn(fusedLoc.getMetadata()).wasInterrupted())
+        return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
 }
 
 DISubprogramAttr DebugInfo::extractScope(mlir::FunctionOpInterface funcOp) {
@@ -444,7 +450,7 @@ DIScopeAttr DebugInfo::extractScope(Operation *op) {
 
   // For other ops, we look for the scope recursively.
   return extractScopeFrom<DIScopeAttr>(op->getLoc(),
-                                       ScopeWalkPolicy::CalleePriority);
+                                       LocWalkPolicy::CalleePriority);
 }
 
 void DIAttrTypeReplacer::replaceElementsIn(Operation *op) {

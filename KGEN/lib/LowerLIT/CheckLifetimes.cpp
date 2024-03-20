@@ -73,7 +73,7 @@ insertDebugValueForVarDecl(VarDeclOp op,
     return nullptr;
 
   auto localScope = DebugInfo::extractScopeFrom<DebugInfo::DILocalScopeAttr>(
-      loc, DebugInfo::ScopeWalkPolicy::CalleePriority);
+      loc, DebugInfo::LocWalkPolicy::CalleePriority);
   if (!localScope)
     return nullptr;
 
