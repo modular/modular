@@ -161,22 +161,10 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
         return specializePackageLinkForPreElaborationLinking(
             packageLink, typeSystem->getRuntime(), compilationOptions);
       },
-
-// FIXME(#26419): workaround for error missing symbol __dso_handle on arm64 mac
-#if __APPLE__
       /*packageLinkHandlerFn=*/
       [](PackageLinkOp packageLink, TargetInfoAttr targetInfo) {
         return PackageArchiveAttr();
-      }
-#else
-      /*packageLinkHandlerFn=*/
-      [this](PackageLinkOp packageLink, TargetInfoAttr targetInfo) {
-        return loadAndElaborateBytecode(packageLink, targetInfo,
-                                        compilationOptions,
-                                        typeSystem->getRuntime());
-      }
-#endif
-  );
+      });
 
   // Create the compiler instance.
   auto compilerOr = ObjectCompiler::create(typeSystem->getRuntime(),
