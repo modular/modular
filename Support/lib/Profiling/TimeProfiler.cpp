@@ -228,7 +228,7 @@ ProfilingDetail::TimeTraceThreadProfiler::TimeTraceThreadProfiler(
     uint16_t threadIndex, uint64_t level)
     : tid(llvm::get_threadid()),
       nextId((static_cast<uint64_t>(threadIndex) << 48) + 1),
-      maxProfilingLevel(level) {
+      runtimeProfilingTypeMask(level) {
   llvm::get_thread_name(threadName);
 }
 
@@ -262,7 +262,7 @@ ProfilingDetail::ThreadProfilerContext::get() {
       instance.profiler =
           ctx->profilers
               .emplace_back(std::make_unique<TimeTraceThreadProfiler>(
-                  threadIndex, ctx->maxProfilingLevel))
+                  threadIndex, ctx->runtimeProfilingTypeMask))
               .get();
       ctx->threadProfilerContexts.insert(&instance);
     }
@@ -286,7 +286,7 @@ ProfilingDetail::GlobalProfilerContext::GlobalProfilerContext(
     : granularity(granularity), procName(name),
       pid(llvm::sys::Process::getProcessId()),
       beginningOfTime(system_clock::now()), startTime(ClockType::now()),
-      maxProfilingLevel(level) {}
+      runtimeProfilingTypeMask(level) {}
 
 std::vector<ProfilingDetail::CompletedEntry>
 ProfilingDetail::GlobalProfilerContext::getCompletedEntries() {
@@ -474,7 +474,7 @@ void ProfilingDetail::GlobalProfilerContext::writeTextTrace(
 
 TimeTraceProfiler::TimeTraceProfiler(unsigned timeTraceGranularity,
                                      StringRef procName,
-                                     uint64_t maxProfilingLevel) {
+                                     uint64_t runtimeProfilingTypeMask) {
   if constexpr (!ProfilingDetail::kProfilingEnabled) {
     llvm::dbgs() << "PROFILE: INFO: Profiling is not enabled at compile time, "
                     "only direct profiling entries will be captured\n";
@@ -493,7 +493,7 @@ TimeTraceProfiler::TimeTraceProfiler(unsigned timeTraceGranularity,
 
   auto *ctx = new ProfilingDetail::GlobalProfilerContext(
       std::chrono::microseconds(timeTraceGranularity),
-      llvm::sys::path::filename(procName), maxProfilingLevel);
+      llvm::sys::path::filename(procName), runtimeProfilingTypeMask);
   [[maybe_unused]] auto *prevCtx = Globals::exchangeGlobalProfilerContext(ctx);
   assert(prevCtx == nullptr && "profiler should not be initialized");
 
