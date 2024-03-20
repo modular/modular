@@ -13,6 +13,8 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/JSON.h"
+#include <chrono>
 #include <filesystem>
 
 namespace M::KGEN::Mojo {
@@ -63,7 +65,16 @@ public:
   /// the provided test name.
   TestID withTest(StringRef test) const;
 
+  /// Parse a scoped name, that is used within a test ID (either as the test
+  /// suite or test component), into the set of scopes it defines.
+  static ErrorOr<SmallVector<std::string>>
+  parseScopedName(StringRef scopedName);
+
 private:
+  friend bool fromJSON(const llvm::json::Value &value, TestID &result,
+                       llvm::json::Path path);
+  friend llvm::json::Value toJSON(const TestID &value);
+
   /// The id of test.
   std::string id;
 
@@ -71,6 +82,94 @@ private:
   StringRef path, testSuite, test;
 };
 raw_ostream &operator<<(raw_ostream &os, const TestID &testID);
+
+/// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &value, TestID &result,
+              llvm::json::Path path);
+llvm::json::Value toJSON(const TestID &value);
+
+//===----------------------------------------------------------------------===//
+// TestExecutionResult
+//===----------------------------------------------------------------------===//
+
+/// This class represents the result of executing a test.
+class TestExecutionResult {
+public:
+  enum Kind {
+    kInitializationError,
+    kExecutionError,
+    kSuccess,
+    kSkipped,
+  };
+
+  TestExecutionResult() = default;
+  TestExecutionResult(
+      Kind kind, TestID testID,
+      std::chrono::milliseconds duration = std::chrono::milliseconds(0),
+      std::string error = "", std::string stdOut = "", std::string stdErr = "")
+      : kind(kind), testID(std::move(testID)), duration(duration),
+        error(std::move(error)), stdOut(std::move(stdOut)),
+        stdErr(std::move(stdErr)) {}
+
+  //===--------------------------------------------------------------------===//
+  // Accessors
+  //===--------------------------------------------------------------------===//
+
+  /// Return the result kind.
+  Kind getKind() const { return kind; }
+
+  /// Return the ID of the test that was executed.
+  const TestID &getTestID() const { return testID; }
+
+  /// Return the duration of the test execution.
+  std::chrono::milliseconds getDuration() const { return duration; }
+
+  /// Return the various outputs of the test.
+  StringRef getError() const { return error; }
+  StringRef getStdOut() const { return stdOut; }
+  StringRef getStdErr() const { return stdErr; }
+
+  //===--------------------------------------------------------------------===//
+  // Construction
+  //===--------------------------------------------------------------------===//
+
+  /// Return an initialization error result.
+  static TestExecutionResult buildInitError(TestID testID, StringRef error) {
+    return {kInitializationError, std::move(testID),
+            std::chrono::milliseconds(0), error.str()};
+  }
+
+  /// Return a skip result.
+  static TestExecutionResult buildSkip(TestID testID) {
+    return {kSkipped, std::move(testID)};
+  }
+
+private:
+  friend bool fromJSON(const llvm::json::Value &value,
+                       TestExecutionResult &result, llvm::json::Path path);
+  friend llvm::json::Value toJSON(const TestExecutionResult &value);
+
+  /// The result of the test.
+  Kind kind = kSuccess;
+
+  /// The ID of the test that was executed.
+  TestID testID;
+
+  /// The duration of the execution of this test.
+  std::chrono::milliseconds duration = std::chrono::milliseconds(0);
+
+  /// The error emitted when executing this test, if any.
+  std::string error;
+
+  /// The output of the test when executed.
+  std::string stdOut;
+  std::string stdErr;
+};
+
+/// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &value, TestExecutionResult &result,
+              llvm::json::Path path);
+llvm::json::Value toJSON(const TestExecutionResult &value);
 
 //===----------------------------------------------------------------------===//
 // Test

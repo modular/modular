@@ -49,7 +49,7 @@ public:
   /// A function used to send code completion results to the Jupyter kernel.
   using CompletionFn = llvm::function_ref<void(StringRef)>;
 
-  MojoKernel(OutputFn outputFn);
+  MojoKernel(OutputFn outputFn, bool initializeMatPlotLib = true);
   ~MojoKernel();
 
   /// Initialize the kernel.
@@ -68,6 +68,13 @@ public:
   /// Check if the current expression has finished execution, also taking this
   /// time to flush any collected output.
   ExecutionFinishedState checkExecutionFinished();
+
+  /// Utility function to start and wait for the execution of the given cell
+  /// identifier and expression string. `storeHistory` indicates if variables
+  /// and state from this expression should be persisted. Returns the state of
+  /// the expression execution.
+  ExecutionFinishedState executeAndWait(StringRef cellId, StringRef expr,
+                                        bool storeHistory = true);
 
   /// Interrupt the currently running execution.
   void interruptExecution();

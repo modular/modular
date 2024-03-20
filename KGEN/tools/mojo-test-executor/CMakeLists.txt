@@ -4,18 +4,16 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(KGENInitAllDialects
-  InitAllDialects.cpp
+add_modular_tool(mojo-test-executor
+  main.cpp
 
   LINK_LIBS PUBLIC
-  DebugInfoDialect
-  HLCFDialect
-  KGENDialect
-  LITDialect
-  POPDialect
-  CacheDialect
-
-  MLIRIndexDialect
-  MLIRLLVMDialect
-  MLIRNVVMDialect
-  )
+  MLIRLspServerSupportLib
+  KGENCompilerRT
+  KGENSupport
+  LLCLRuntimeGlobals
+  MSupportGlobals
+  MojoJupyter
+  MojoParser
+  MojoTesting
+)

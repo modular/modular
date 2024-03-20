@@ -71,37 +71,9 @@ TestID TestID::withTest(StringRef test) const {
   return TestID(path, testSuite, test);
 }
 
-raw_ostream &KGEN::Mojo::operator<<(raw_ostream &os, const TestID &testID) {
-  return os << testID.strref();
-}
-
-//===----------------------------------------------------------------------===//
-// Test
-//===----------------------------------------------------------------------===//
-
-void Test::print(raw_ostream &os) const {
-  os << "<" << testID << ">";
-  if (children.empty())
-    return;
-  os << "\n";
-
-  mlir::raw_indented_ostream indentedOS(os);
-  llvm::interleave(children, indentedOS.indent(2), "\n");
-}
-
-raw_ostream &KGEN::Mojo::operator<<(raw_ostream &os, const Test &test) {
-  test.print(os);
-  return os;
-}
-
-//===----------------------------------------------------------------------===//
-// Test: Discovery
-
-/// Parse a scoped name, that is used within a test ID (either as the test suite
-/// or test component), into the set of scopes it defines.
-static ErrorOr<std::vector<std::string>>
-parseTestIDScopedName(StringRef scopedName) {
-  std::vector<std::string> result;
+ErrorOr<SmallVector<std::string>>
+TestID::parseScopedName(StringRef scopedName) {
+  SmallVector<std::string> result;
   while (!scopedName.empty()) {
     StringRef scope = scopedName;
     if (scopedName.contains(".")) {
@@ -138,6 +110,114 @@ parseTestIDScopedName(StringRef scopedName) {
     return Error("empty test name");
   return std::move(result);
 }
+
+raw_ostream &KGEN::Mojo::operator<<(raw_ostream &os, const TestID &testID) {
+  return os << testID.strref();
+}
+
+//===----------------------------------------------------------------------===//
+// JSON Serialization
+
+bool KGEN::Mojo::fromJSON(const llvm::json::Value &value, TestID &result,
+                          llvm::json::Path path) {
+  if (std::optional<StringRef> resultId = value.getAsString()) {
+    result = TestID(resultId->str());
+    return true;
+  }
+  return false;
+}
+
+llvm::json::Value KGEN::Mojo::toJSON(const TestID &value) {
+  return llvm::json::Value(value.id);
+}
+
+//===----------------------------------------------------------------------===//
+// TestExecutionResult
+//===----------------------------------------------------------------------===//
+
+/// Stringify a test execution result kind.
+static std::string stringifyResultKind(TestExecutionResult::Kind kind) {
+  switch (kind) {
+  case TestExecutionResult::kSuccess:
+    return "success";
+  case TestExecutionResult::kInitializationError:
+    return "initializationError";
+  case TestExecutionResult::kExecutionError:
+    return "executionError";
+  case TestExecutionResult::kSkipped:
+    return "skipped";
+  }
+  llvm_unreachable("unknown test execution result kind");
+}
+
+/// Parse a test execution result kind from a string.
+static std::optional<TestExecutionResult::Kind>
+parseResultKind(StringRef kind) {
+  return llvm::StringSwitch<std::optional<TestExecutionResult::Kind>>(kind)
+      .Case("success", TestExecutionResult::kSuccess)
+      .Case("initializationError", TestExecutionResult::kInitializationError)
+      .Case("executionError", TestExecutionResult::kExecutionError)
+      .Case("skipped", TestExecutionResult::kSkipped)
+      .Default(std::nullopt);
+}
+
+bool KGEN::Mojo::fromJSON(const llvm::json::Value &value,
+                          TestExecutionResult &result, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  if (!o)
+    return false;
+
+  // Parse the kind of the result.
+  std::string kindStr;
+  if (!o.map("kind", kindStr))
+    return false;
+  std::optional<TestExecutionResult::Kind> kind = parseResultKind(kindStr);
+  if (!kind)
+    return false;
+  result.kind = *kind;
+
+  // Parse the duration of the result.
+  int64_t duration;
+  if (!o.map("duration_ms", duration))
+    return false;
+  result.duration = std::chrono::milliseconds(duration);
+
+  return o.map("testID", result.testID) && o.map("error", result.error) &&
+         o.map("stdErr", result.stdErr) && o.map("stdOut", result.stdOut);
+}
+
+llvm::json::Value KGEN::Mojo::toJSON(const TestExecutionResult &value) {
+  return llvm::json::Object{
+      {"kind", stringifyResultKind(value.kind)},
+      {"duration_ms", value.duration.count()},
+      {"testID", value.testID},
+      {"error", value.error},
+      {"stdErr", value.stdErr},
+      {"stdOut", value.stdOut},
+  };
+}
+
+//===----------------------------------------------------------------------===//
+// Test
+//===----------------------------------------------------------------------===//
+
+void Test::print(raw_ostream &os) const {
+  os << "<" << testID << ">";
+  if (children.empty())
+    return;
+  os << "\n";
+
+  mlir::raw_indented_ostream indentedOS(os);
+  llvm::interleave(children, indentedOS.indent(2), "\n");
+}
+
+raw_ostream &KGEN::Mojo::operator<<(raw_ostream &os, const Test &test) {
+  test.print(os);
+  return os;
+}
+
+//===----------------------------------------------------------------------===//
+// Test: Discovery
 
 /// Return if the given operation defines a test suite.
 static bool definesTestSuite(Operation *op) {
@@ -354,8 +434,8 @@ struct Test::TestDiscovery {
 
       // Parse the scoped name into a list of decl names.
       bool isDocTestSuite = suiteName.consume_back(".__doc__");
-      ErrorOr<std::vector<std::string>> scopes =
-          parseTestIDScopedName(suiteName);
+      ErrorOr<SmallVector<std::string>> scopes =
+          TestID::parseScopedName(suiteName);
       if (scopes.isError())
         return scopes.takeError();
 
