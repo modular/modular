@@ -16,4 +16,5 @@ add_modular_testsuite(check-mojo-test-executor
 
   TOOLS
   mojo-test-executor
+  mojo-sdk
 )
