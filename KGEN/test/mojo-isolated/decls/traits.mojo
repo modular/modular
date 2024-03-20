@@ -856,3 +856,24 @@ fn test_implicit_conformance():
     alias bound6: Copyable = RegisterPassable
     # CHECK-NEXT: !ImplicitConformance = <[!RegisterPassable, {"implicit" {{.*}}@RegisterPassable::@"implicit{{.*}}_thunk"
     alias bound7: ImplicitConformance = RegisterPassable
+
+
+# COM: Issue https://github.com/modularml/modular/issues/33939
+# COM: Ensure parameter inference works between type value attributes.
+trait OtherEmptyTrait(EmptyTrait):
+    pass
+
+
+struct Bar[T: EmptyTrait]:
+    pass
+
+
+struct Foo[T: EmptyTrait]:
+    fn infer_sub_trait[OT: OtherEmptyTrait](inout self, existing: Bar[OT]):
+        pass
+
+
+# CHECK-LABEL: lit.func @"test_infer_sub_trait
+fn test_infer_sub_trait[T: OtherEmptyTrait](owned foo: Foo[T], bar: Bar[T]):
+    # CHECK: call {{.*}}@Foo::@"infer_sub_trait{{.*}}<:!EmptyTrait [!kgen.paramref<:!OtherEmptyTrait T>, {{.*}}], :!OtherEmptyTrait T>(%foo, %bar)
+    var copy = foo.infer_sub_trait(bar)

@@ -289,6 +289,12 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (actualAttr.getType() != expectedAttr.getType())
     matchTypes(actualAttr.getType(), expectedAttr.getType());
 
+  // If we are dealing with two type constants, we match their values.
+  auto actualTypeConst = dyn_cast<TypeConstantAttr>(actualAttr);
+  auto expectedTypeConst = dyn_cast<TypeConstantAttr>(expectedAttr);
+  if (actualTypeConst && expectedTypeConst)
+    return matchTypes(actualTypeConst.getValue(), expectedTypeConst.getValue());
+
   auto actualOp = dyn_cast<ParamOperatorAttr>(actualAttr);
   auto expectedOp = dyn_cast<ParamOperatorAttr>(expectedAttr);
   if (actualOp && expectedOp &&
