@@ -192,3 +192,37 @@ kgen.func @elif(%arg0: index, %arg1: index, %arg2: index) {
   kgen.return
 }
 
+// CHECK-LABEL:  kgen.func @elifWithArgs
+kgen.func @elifWithArgs(%arg0: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  // CHECK: [[V0:%*.]]:2 = hlcf.elif -> index, index {
+  // CHECK-NEXT:   [[V2:%*.]] = index.cmp eq(%arg0, %idx0)
+  // CHECK-NEXT:   hlcf.elif.yield [[V2]], %arg0, %arg0 : i1, index, index
+  // CHECK-NEXT: } then (%arg1: index, %arg2: index){
+  // CHECK-NEXT:   hlcf.yield %arg1, %arg1 : index, index
+  // CHECK-NEXT: } (%arg1: index, %arg2: index){
+  // CHECK-NEXT:   [[V2:%*.]] = index.cmp eq(%arg0, %idx1)
+  // CHECK-NEXT:   hlcf.elif.yield [[V2]], %arg1, %arg1 : i1, index, index
+  // CHECK-NEXT: } then (%arg1: index, %arg2: index){
+  // CHECK-NEXT:   hlcf.yield %arg1, %arg1 : index, index
+  // CHECK-NEXT: } else (%arg1: index, %arg2: index){
+  // CHECK-NEXT:   hlcf.yield %idx0, %arg1 : index, index
+  // CHECK-NEXT: }
+  %0:2 = hlcf.elif -> index, index {
+     %3 = index.cmp eq(%arg0, %idx0)
+     hlcf.elif.yield %3, %arg0, %arg0 : i1, index, index
+  } then (%arg1: index, %arg2: index) {
+     hlcf.yield %arg1, %arg1 : index, index
+  } (%arg1: index, %arg2: index) {
+     %4 = index.cmp eq(%arg0, %idx1)
+     hlcf.elif.yield %4, %arg1, %arg1 : i1, index, index
+  } then (%arg1: index, %arg2: index) {
+     hlcf.yield %arg1, %arg1 : index, index
+  } else (%arg1: index, %arg2: index) {
+     hlcf.yield %idx0, %arg1 : index, index
+  }
+  %1 = index.add %0#1, %0#0
+  kgen.return %1 : index
+}

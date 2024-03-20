@@ -632,22 +632,41 @@ static ParseResult
 parseElif(OpAsmParser &parser,
           SmallVectorImpl<std::unique_ptr<Region>> &elifRegionsRegions,
           Region &elseRegion) {
+  unsigned i = 0;
   do {
     // Parse condition region.
+    SmallVector<OpAsmParser::Argument> conditionArgs;
+    if (i > 0) {
+      if (failed(parser.parseArgumentList(
+              conditionArgs, AsmParser::Delimiter::OptionalParen, true, false)))
+        return failure();
+    }
+
     if (parser
             .parseRegion(
-                *elifRegionsRegions.emplace_back(std::make_unique<Region>()))
+                *elifRegionsRegions.emplace_back(std::make_unique<Region>()),
+                conditionArgs)
             .failed())
       return failure();
 
     // Parse result region.
     if (failed(parser.parseKeyword("then")))
       return failure();
-    if (failed(parser.parseRegion(
-            *elifRegionsRegions.emplace_back(std::make_unique<Region>()))))
+    SmallVector<OpAsmParser::Argument> thenArgs;
+    if (failed(parser.parseArgumentList(
+            thenArgs, AsmParser::Delimiter::OptionalParen, true, false)))
       return failure();
+    if (failed(parser.parseRegion(
+            *elifRegionsRegions.emplace_back(std::make_unique<Region>()),
+            thenArgs)))
+      return failure();
+    i++;
   } while (failed(parser.parseOptionalKeyword("else")));
-  if (failed(parser.parseRegion(elseRegion)))
+  SmallVector<OpAsmParser::Argument> elseArgs;
+  if (failed(parser.parseArgumentList(
+          elseArgs, AsmParser::Delimiter::OptionalParen, true, false)))
+    return failure();
+  if (failed(parser.parseRegion(elseRegion, elseArgs)))
     return failure();
   return success();
 }
@@ -655,17 +674,32 @@ parseElif(OpAsmParser &parser,
 static void printElif(OpAsmPrinter &printer, Operation *elifOp,
                       MutableArrayRef<Region> conditionalRegions,
                       Region &elseRegion) {
+  auto printArgumentList = [&](ArrayRef<BlockArgument> args) {
+    if (args.empty())
+      return;
+    printer << "(";
+    printer.printRegionArgument(args.front());
+    for (BlockArgument arg : args.slice(1)) {
+      printer << ", ";
+      printer.printRegionArgument(arg);
+    }
+    printer << ")";
+  };
   unsigned i = 0;
   assert(conditionalRegions.size() % 2 == 0);
   unsigned conditionCount = conditionalRegions.size() / 2;
   for (unsigned r = 0; r < conditionCount; r++) {
-    printer.printRegion(conditionalRegions[i++]);
+    if (i > 0)
+      printArgumentList(conditionalRegions[i].getArguments());
+    printer.printRegion(conditionalRegions[i++], /*printEntryBlockArgs=*/false);
     printer << " then ";
-    printer.printRegion(conditionalRegions[i++]);
+    printArgumentList(conditionalRegions[i].getArguments());
+    printer.printRegion(conditionalRegions[i++], /*printEntryBlockArgs=*/false);
     printer << " ";
   }
   printer << "else ";
-  printer.printRegion(elseRegion);
+  printArgumentList(elseRegion.getArguments());
+  printer.printRegion(elseRegion, /*printEntryBlockArgs=*/false);
 }
 
 LogicalResult ElifOp::verify() {
@@ -680,7 +714,7 @@ void ElifOp::getEntryTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.empty());
-  targets.push_back(std::optional<unsigned>(0));
+  targets.push_back(std::optional<unsigned>(1));
 }
 
 ValueRange ElifOp::getEntryArguments(std::optional<unsigned int> target) {
@@ -705,17 +739,26 @@ bool ElifYieldOp::isParentNode(Operation *op) { return isa<ElifOp>(op); }
 void ElifYieldOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == 1);
-  int myIndex = getOperation()->getParentRegion()->getRegionNumber() - 1;
-  int nextValueRegion = myIndex + 1;
-  int nextConditionRegionOrElse = nextValueRegion + 1;
+  // The first operand is the condition and the subsequent operands are likely
+  // stack values that were promoted to register values and thus now rely on
+  // block arguments.
+  assert(operands.size() >= 1);
+  unsigned myIndex = getOperation()->getParentRegion()->getRegionNumber();
+  unsigned nextValueRegion = myIndex + 1;
+  unsigned nextConditionRegion = nextValueRegion + 1;
+  unsigned numRegions =
+      getOperation()->getParentRegion()->getParentOp()->getNumRegions();
+  unsigned nextConditionRegionOrElse =
+      nextConditionRegion == numRegions ? 0 : nextConditionRegion;
+  ValueRange carryOver(getOperands().drop_front(1));
   if (auto constantResult = dyn_cast_or_null<BoolAttr>(operands.front())) {
-    targets.emplace_back(constantResult.getValue() ? nextValueRegion
-                                                   : nextConditionRegionOrElse);
+    targets.emplace_back(ControlFlowTarget(
+        constantResult.getValue() ? nextValueRegion : nextConditionRegionOrElse,
+        carryOver));
     return;
   }
-  targets.emplace_back(nextValueRegion);
-  targets.emplace_back(nextConditionRegionOrElse);
+  targets.emplace_back(nextValueRegion, carryOver);
+  targets.emplace_back(nextConditionRegionOrElse, carryOver);
 }
 
 ErrorTreeOrSuccess ElifYieldOp::interpret(ArrayRef<Attribute> operands,
