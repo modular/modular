@@ -623,14 +623,6 @@ public:
   MojoASTDeclRef getOrCreatePackageDecl(StringRef name,
                                         MojoASTDeclRef parentDeclRef);
 
-  /// Create a function decl given its mangled name unless it already exists.
-  /// If its mangled name includes nested modules or structs, then they are
-  /// created as well if needed.
-  ///
-  /// Return the decl of the function, or an invalid decl if the function name
-  /// couldn't be demangled.
-  MojoASTDeclRef getOrCreateFunctionDecl(StringRef mangledName);
-
   /// If the given `name` is parsable as a `SourceName`, traverse each decl
   /// and create it unless it's been created already.
   /// If `name` cannot be parsed, then the die tag is used as a fallback to
@@ -668,6 +660,15 @@ private:
   /// Return the decl of the module.
   MojoASTDeclRef getOrCreateModuleDecl(StringRef moduleName,
                                        MojoASTDeclRef parentDecl = {});
+
+  /// Create a function decl given its name under the given parentDecl. If the
+  /// parent decl already contains a function with that name, return it
+  /// instead.
+  /// If the parent decl is null, then the Mojo parser's top decl will be used.
+  ///
+  /// Return the decl of the funcction.
+  MojoASTDeclRef getOrCreateFunctionDecl(StringRef functionName,
+                                         MojoASTDeclRef parentDecl = {});
 
   /// Traverse each decl of the `SourceName` and create it unless it's been
   /// created already.
