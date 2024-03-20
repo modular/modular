@@ -68,6 +68,7 @@ add_subdirectory(tools/mojo-lsp-server)
 
 add_subdirectory(tools/mojo-jupyter-executor)
 add_subdirectory(tools/mojo-repl-entry-point)
+add_subdirectory(tools/mojo-test-executor)
 
 add_subdirectory(tools/mojo)
 add_subdirectory(tools/mojo-prime-package-cache)

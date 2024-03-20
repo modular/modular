@@ -119,10 +119,12 @@ struct MojoKernel::Impl {
     KernelCellState &cellState;
   };
 
-  Impl(OutputFn outputFn)
+  Impl(OutputFn outputFn, bool initializeMatPlotLib)
       : outputFn(std::move(outputFn)),
         mojoExpressionListener(
-            Listener::MakeListener("mojo-type-system.listener")) {}
+            Listener::MakeListener("mojo-type-system.listener")),
+        // If we aren't initialized matplot, just mark it as finished now.
+        matplotlibInitialized(!initializeMatPlotLib) {}
 
   ~Impl() {
     if (process->IsValid())
@@ -220,8 +222,8 @@ private:
   bool matplotlibInitialized = false;
 };
 
-MojoKernel::MojoKernel(OutputFn outputFn)
-    : impl(new Impl(std::move(outputFn))) {}
+MojoKernel::MojoKernel(OutputFn outputFn, bool initializeMatPlotLib)
+    : impl(new Impl(std::move(outputFn), initializeMatPlotLib)) {}
 MojoKernel::~MojoKernel() = default;
 
 LogicalResult MojoKernel::initialize(StringRef mojoReplExe,
@@ -238,6 +240,20 @@ ExecutionFinishedState MojoKernel::startExecution(StringRef cellId,
 
 ExecutionFinishedState MojoKernel::checkExecutionFinished() {
   return impl->checkExecutionFinished();
+}
+
+ExecutionFinishedState MojoKernel::executeAndWait(StringRef cellId,
+                                                  StringRef expr,
+                                                  bool storeHistory) {
+  if (startExecution(cellId, expr, storeHistory) == kFinishedError)
+    return kFinishedError;
+
+  // Wait for the execution to finish.
+  do {
+    ExecutionFinishedState result = checkExecutionFinished();
+    if (result != kNotFinished)
+      return result;
+  } while (true);
 }
 
 void MojoKernel::interruptExecution() { impl->interruptExecution(); }
