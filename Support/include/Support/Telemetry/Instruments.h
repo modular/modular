@@ -44,19 +44,21 @@ private:
 template <typename T>
 class Counter {
 public:
-  void add(T value) {
+  void
+  add(T value,
+      std::initializer_list<std::pair<llvm::StringRef, MetricAttributeValue>>
+          additionalAttributes = {}) {
     std::unordered_map<std::string, opentelemetry::common::AttributeValue>
         attrs;
     for (auto &attr : owned_attributes) {
       std::visit([&](auto &v) { attrs[attr.first] = v; }, attr.second);
     }
-    counter->Add(value, attrs);
-  }
 
-  // Allow overriding attributes and context.
-  template <class... TArgs>
-  void add(T value, TArgs &&...args) {
-    counter->Add(value, std::forward<TArgs>(args)...);
+    for (auto &attr : additionalAttributes) {
+      std::visit([&](auto &v) { attrs[attr.first.str()] = v; }, attr.second);
+    }
+
+    counter->Add(value, attrs);
   }
 
   Counter(Counter &&) = default;
@@ -107,19 +109,16 @@ private:
 template <typename T>
 class Histogram {
 public:
-  void record(T value) {
+  void
+  record(T value,
+         std::initializer_list<std::pair<llvm::StringRef, MetricAttributeValue>>
+             additionalAttributes = {}) {
     std::unordered_map<std::string, opentelemetry::common::AttributeValue>
         attrs;
     for (auto &attr : owned_attributes) {
       std::visit([&](auto &v) { attrs[attr.first] = v; }, attr.second);
     }
     histogram->Record(value, attrs, context);
-  }
-
-  // Allow overriding attributes and context.
-  template <class... TArgs>
-  void record(T value, TArgs &&...args) {
-    histogram->Record(value, std::forward<TArgs>(args)...);
   }
 
   Histogram(Histogram &&) = default;
