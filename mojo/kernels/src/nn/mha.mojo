@@ -150,7 +150,7 @@ fn fused_attention[
             var idx = rebind[StaticIntTuple[rank]](_out_coords)
             fused_val += mask.load[width=width](idx).cast[inner_type]()
 
-        score.simd_store[width](
+        score.store[width=width](
             rebind[StaticIntTuple[rank]](_out_coords),
             fused_val.cast[score_type](),
         )
@@ -1371,7 +1371,7 @@ fn _naive_attention[
         vec = vec + mask.load[width=width](
             Index(coords[_rank - 2], coords[_rank - 1])
         )
-        score.simd_store[width](rebind[StaticIntTuple[4]](coords), vec)
+        score.store[width=width](rebind[StaticIntTuple[4]](coords), vec)
 
     elementwise[scale_and_mask, simd_size, 4](score.dynamic_shape)
 

@@ -376,7 +376,7 @@ fn _concat_small[
                 var load = rebind[NDBuffer[type, rank]](input).load[
                     width=simd_width
                 ](in_index)
-                rebind[NDBuffer[type, rank]](output).simd_store[simd_width](
+                rebind[NDBuffer[type, rank]](output).store[width=simd_width](
                     out_index, load
                 )
                 return
