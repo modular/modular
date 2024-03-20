@@ -793,8 +793,8 @@ struct MatmulInnerLoopBPacked[
         @always_inline
         @parameter
         fn outer_body[idx0: Int, idx1: Int]():
-            c_local.aligned_simd_store[
-                simd_size, alignof[SIMD[c_type, simd_size]]()
+            c_local.store[
+                width=simd_size, alignment = alignof[SIMD[c_type, simd_size]]()
             ](
                 Index(idx0, idx1 * simd_size),
                 SIMD[c_type, simd_size](0),
@@ -1067,7 +1067,9 @@ struct MatmulInnerLoopBPacked[
                     idx1 * simd_size
                 ).cast[c_type]()
                 c_val = fma[c_type, simd_size](a_val, b_val, c_val)
-                c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
+                c_local.store[width=simd_size, alignment=alignment](
+                    c_idx, c_val
+                )
 
     fn _accumulate_vnni[
         is_tail: Bool
@@ -1176,7 +1178,9 @@ struct MatmulInnerLoopBPacked[
                     )
                 else:
                     c_val = dot_i8_to_i32_x86[simd_size](c_val, a_val, b_val)
-                c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
+                c_local.store[width=simd_size, alignment=alignment](
+                    c_idx, c_val
+                )
 
     fn _run_inner_loop_vnni(self):
         """Utility function on the inner loop. Run the inner kernel on the whole
@@ -1383,7 +1387,9 @@ struct MatmulInnerLoopBPacked[
                     c_idx
                 )
                 c_val = _neon_matmul(c_val, a_val, b_val)
-                c_local.aligned_simd_store[simd_size, alignment](c_idx, c_val)
+                c_local.store[width=simd_size, alignment=alignment](
+                    c_idx, c_val
+                )
 
     fn _run_inner_loop_i8mm(self):
         """Utility function on the inner loop. Run the inner kernel on the whole
@@ -2657,7 +2663,7 @@ fn sgemm_warp_tiling_kernel[
             var tmp = __nvvm_ldg_f4[b_type](
                 bb_ptr.offset(int((inner_row_b + offset) * N + inner_co_ib * 4))
             )
-            b_sram.aligned_simd_store[4, 16](
+            b_sram.store[width=4, alignment=16](
                 Index((inner_row_b + offset) * BN + inner_co_ib * 4),
                 tmp,
             )
@@ -2777,7 +2783,7 @@ fn sgemm_warp_tiling_kernel[
                             vec,
                         )
                     else:
-                        C_interim.aligned_simd_store[4, 16](int(c_idx), vec)
+                        C_interim.store[width=4, alignment=16](int(c_idx), vec)
 
 
 # Matrix-Column Vector Multiplication
