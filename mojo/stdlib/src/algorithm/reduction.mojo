@@ -202,13 +202,13 @@ fn map_reduce[
     var acc_unrolled_simd = SIMD[acc_type, unrolled_simd_width].splat(init)
     for i in range(0, unrolled_vector_end, unrolled_simd_width):
         var val_simd = input_gen_fn[type, unrolled_simd_width](i)
-        dst.simd_store(i, val_simd)
+        dst.store(i, val_simd)
         acc_unrolled_simd = reduce_vec_to_vec_fn(acc_unrolled_simd, val_simd)
 
     var acc_simd = SIMD[acc_type, simd_width].splat(init)
     for i in range(unrolled_vector_end, vector_end, simd_width):
         var val_simd = input_gen_fn[type, simd_width](i)
-        dst.simd_store(i, val_simd)
+        dst.store(i, val_simd)
         acc_simd = reduce_vec_to_vec_fn(acc_simd, val_simd)
 
     var acc = reduce_vec_to_scalar_fn[acc_type, unrolled_simd_width](
@@ -393,7 +393,7 @@ fn _reduce_3D[
                     StaticIntTuple[src.rank](i, j, idx)
                 )
                 accum = map_fn(accum, chunk)
-            dst.simd_store(StaticIntTuple[dst.rank](i, idx), accum)
+            dst.store(StaticIntTuple[dst.rank](i, idx), accum)
 
         vectorize[reduce_w_chunked, usimd_width](c)
 
@@ -1318,7 +1318,7 @@ fn mean[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
         fn normalize_integral[simd_width: Int](idx: Int):
             var elem = dst_1d.load[width=simd_width](idx)
             var to_store = elem // n
-            dst_1d.simd_store(idx, to_store)
+            dst_1d.store(idx, to_store)
 
         vectorize[normalize_integral, simd_width](len(dst_1d))
     else:
@@ -1330,7 +1330,7 @@ fn mean[reduce_axis: Int](src: NDBuffer, dst: NDBuffer[src.type, src.rank, _]):
         fn normalize_floating[simd_width: Int](idx: Int):
             var elem = dst_1d.load[width=simd_width](idx)
             var to_store = elem * n_recip
-            dst_1d.simd_store(idx, to_store)
+            dst_1d.store(idx, to_store)
 
         vectorize[normalize_floating, simd_width](len(dst_1d))
 
@@ -1980,7 +1980,7 @@ fn cumsum(dst: Buffer, src: __type_of(dst)):
             x_simd += x_simd.shift_right[2**idx]()
 
         unroll[loop_body, rep]()
-        dst.simd_store(i, x_simd)
+        dst.store(i, x_simd)
 
     # e.g., Assuming input buffer 1, 2, 3, 4, 5, 6, 7, 8 and simd_width = 4
     # The first outer iteration of the above would be the following;
@@ -2001,7 +2001,7 @@ fn cumsum(dst: Buffer, src: __type_of(dst)):
     # offset used in iteration 1: 10, 10, 10, 10
     for i in range(0, div_size, simd_width):
         var x_simd = dst.load[width=simd_width](i) + offset
-        dst.simd_store(i, x_simd)
+        dst.store(i, x_simd)
         offset = offset.splat(x_simd[simd_width - 1])
 
     # Handles the tail, i.e., num of elements at the end that don't

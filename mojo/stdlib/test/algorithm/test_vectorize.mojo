@@ -27,7 +27,7 @@ fn test_vectorize():
     @always_inline
     @parameter
     fn add_two[simd_width: Int](idx: Int):
-        vector.simd_store[simd_width](
+        vector.store[width=simd_width](
             idx, vector.load[width=simd_width](idx) + 2
         )
 
@@ -48,7 +48,7 @@ fn test_vectorize():
     @__copy_capture(vector)
     @parameter
     fn add[simd_width: Int](idx: Int):
-        vector.simd_store[simd_width](
+        vector.store[width=simd_width](
             idx,
             vector.load[width=simd_width](idx)
             + vector.load[width=simd_width](idx),
@@ -84,7 +84,7 @@ fn test_vectorize_unroll():
     @__copy_capture(buf)
     @parameter
     fn double_buf[simd_width: Int](idx: Int):
-        buf.simd_store[simd_width](
+        buf.store[width=simd_width](
             idx,
             buf.load[width=simd_width](idx) + buf.load[width=simd_width](idx),
         )
@@ -93,7 +93,7 @@ fn test_vectorize_unroll():
     @__copy_capture(vec)
     @always_inline
     fn double_vec[simd_width: Int](idx: Int):
-        vec.simd_store[simd_width](
+        vec.store[width=simd_width](
             idx,
             vec.load[width=simd_width](idx) + vec.load[width=simd_width](idx),
         )

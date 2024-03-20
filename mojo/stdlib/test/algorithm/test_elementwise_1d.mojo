@@ -38,7 +38,7 @@ fn test_elementwise_1d():
     fn func[simd_width: Int, rank: Int](idx: StaticIntTuple[rank]):
         var elem = vector.load[width=simd_width](idx[0])
         var val = exp(erf(tanh(elem + 1)))
-        vector.simd_store[simd_width](idx[0], val)
+        vector.store[width=simd_width](idx[0], val)
 
     elementwise[func, simdwidthof[DType.float32](), 1](
         StaticIntTuple[1](num_elements)
