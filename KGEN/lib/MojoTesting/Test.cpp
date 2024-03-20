@@ -67,6 +67,10 @@ std::filesystem::path TestID::getFilePath() const {
   return std::filesystem::weakly_canonical(path.str(), ec);
 }
 
+TestID TestID::withTest(StringRef test) const {
+  return TestID(path, testSuite, test);
+}
+
 raw_ostream &KGEN::Mojo::operator<<(raw_ostream &os, const TestID &testID) {
   return os << testID.strref();
 }
@@ -92,6 +96,48 @@ raw_ostream &KGEN::Mojo::operator<<(raw_ostream &os, const Test &test) {
 
 //===----------------------------------------------------------------------===//
 // Test: Discovery
+
+/// Parse a scoped name, that is used within a test ID (either as the test suite
+/// or test component), into the set of scopes it defines.
+static ErrorOr<std::vector<std::string>>
+parseTestIDScopedName(StringRef scopedName) {
+  std::vector<std::string> result;
+  while (!scopedName.empty()) {
+    StringRef scope = scopedName;
+    if (scopedName.contains(".")) {
+      std::tie(scope, scopedName) = scopedName.split('.');
+      if (scope.empty() || scopedName.empty()) {
+        StringRef expectedLoc = scope.empty() ? "before" : "after";
+        return Error("empty scope in test name, expected name " + expectedLoc +
+                     " '.'");
+      }
+    } else {
+      scopedName = {};
+    }
+
+    // If there are no escaped characters, we can use the name directly.
+    if (!scope.contains("\\")) {
+      result.emplace_back(scope.str());
+      continue;
+    }
+
+    // Otherwise, pull in characters and check for escaped characters.
+    std::string &unescaped = result.emplace_back();
+    for (unsigned i = 0, e = scope.size(); i != e; ++i) {
+      if (scope[i] == '\\') {
+        if ((i + 2) >= e)
+          return Error("invalid escape sequence in test name");
+        unsigned char c = llvm::hexDigitValue(scope[++i]);
+        unescaped.push_back((c << 4) | llvm::hexDigitValue(scope[++i]));
+      } else {
+        unescaped.push_back(scope[i]);
+      }
+    }
+  }
+  if (result.empty())
+    return Error("empty test name");
+  return std::move(result);
+}
 
 /// Return if the given operation defines a test suite.
 static bool definesTestSuite(Operation *op) {
@@ -283,8 +329,9 @@ struct Test::TestDiscovery {
     }
   }
 
-  std::optional<Test>
-  discoverTestsInMojoSource(const std::filesystem::path &path) {
+  ErrorOr<std::optional<Test>>
+  discoverTestsInMojoSource(const std::filesystem::path &path,
+                            StringRef suiteName = {}) {
     KGEN::CompilationOptions compilationOptions;
     ParserConfig parserConfig(&ctx, compilationOptions);
 
@@ -297,8 +344,44 @@ struct Test::TestDiscovery {
     if (!moduleDecl || !moduleDecl.getIfOperation())
       return std::nullopt;
 
+    // Process the case where we're looking for a specific test suite.
+    MojoASTDeclRef decl = moduleDecl;
+    if (!suiteName.empty()) {
+      // If this is a doc test suite for the top-level decl, handle that
+      // immediately.
+      if (suiteName == "__doc__")
+        return getDocTestSuiteFromDecl(path.string(), decl.getIfOperation());
+
+      // Parse the scoped name into a list of decl names.
+      bool isDocTestSuite = suiteName.consume_back(".__doc__");
+      ErrorOr<std::vector<std::string>> scopes =
+          parseTestIDScopedName(suiteName);
+      if (scopes.isError())
+        return scopes.takeError();
+
+      // If we're looking for a doc test suite, these can be very deep in a
+      // symbol stack, and kind of difficult to resolve via ASTDecl scopes.
+      // For these, use the symbol table for resolution.
+      if (isDocTestSuite) {
+        Operation *op = moduleDecl->getIfOperation();
+        mlir::SymbolTableCollection symbolTable;
+        for (StringRef it : *scopes)
+          if (!(op = symbolTable.lookupSymbolIn(op, StringAttr::get(&ctx, it))))
+            return std::nullopt;
+        return getDocTestSuiteFromDecl(path.string(), op);
+      }
+
+      // Otherwise, this is a normal test suite, for these we can resolve the
+      // decl directly from the ASTDecl scopes.
+      for (StringRef scope : *scopes) {
+        auto decls = decl->lookupInCurrentScope(scope);
+        if (decls.size() != 1)
+          return std::nullopt;
+        decl = decls.front();
+      }
+    }
     // If the decl doesn't define a test suite, we're done.
-    if (!definesTestSuite(moduleDecl.getIfOperation()))
+    if (!definesTestSuite(decl.getIfOperation()))
       return std::nullopt;
     // We only process unit tests for certain paths.
     std::string pathStem = path.stem().string();
@@ -307,19 +390,19 @@ struct Test::TestDiscovery {
 
     // Process the decl to discover tests.
     std::vector<Test> tests;
-    discoverTestsNestedInDecl(path.string(), moduleDecl,
+    discoverTestsNestedInDecl(path.string(), decl,
                               parserContext.getSharedState(), tests,
                               processUnitTests);
     if (tests.empty())
       return std::nullopt;
-    return Test(TestID(path.string()), std::move(tests));
+    return Test(TestID(path.string(), suiteName), std::move(tests));
   }
 
   //===--------------------------------------------------------------------===//
   // Discover: FileSystem
 
   /// Discovers tests defined within in the given directory.
-  std::optional<Test>
+  ErrorOr<std::optional<Test>>
   discoverTestsInDirectory(const std::filesystem::path &path) {
     // If the path is a mojo source package, we parse can directly parse out
     // the tests from the package.
@@ -335,11 +418,13 @@ struct Test::TestDiscovery {
         return std::nullopt;
 
       if (entry.is_directory(ec)) {
-        if (auto child = discoverTestsInDirectory(entry.path()))
-          children.emplace_back(std::move(*child));
+        auto child = discoverTestsInDirectory(entry.path());
+        if (!child.isError() && *child)
+          children.emplace_back(std::move(**child));
       } else if (Filesystem::isMojoSourceFile(entry.path())) {
-        if (auto child = discoverTestsInMojoSource(entry.path()))
-          children.emplace_back(std::move(*child));
+        auto child = discoverTestsInMojoSource(entry.path());
+        if (!child.isError() && *child)
+          children.emplace_back(std::move(**child));
       }
     }
 
@@ -360,7 +445,7 @@ struct Test::TestDiscovery {
   mlir::MLIRContext ctx;
 };
 
-std::optional<Test> Test::discoverFromID(const TestID &testID) {
+ErrorOr<std::optional<Test>> Test::discoverFromID(const TestID &testID) {
   std::filesystem::path path = testID.getFilePath();
 
   // Check that the path actually exists.
@@ -368,7 +453,32 @@ std::optional<Test> Test::discoverFromID(const TestID &testID) {
   if (!std::filesystem::exists(path, ec))
     return std::nullopt;
 
-  // Check if the path is a directory.
+  // Check if the test specifies a specific suite within the path. In this
+  // case the path should be some mojo source.
+  std::optional<StringRef> testSuiteName = testID.getTestSuite();
+  std::optional<StringRef> testName = testID.getTest();
+  if (testSuiteName || testName) {
+    // TODO: Support doc tests defined in jupyter notebooks.
+    if (!Filesystem::isMojoSourceFile(path) &&
+        !Filesystem::isMojoSourcePackagePath(path)) {
+      return std::nullopt;
+    }
+
+    // Read the test suite from the mojo source.
+    ErrorOr<std::optional<Test>> testSuite =
+        TestDiscovery().discoverTestsInMojoSource(path,
+                                                  testSuiteName.value_or(""));
+    if (testSuite.isError() || !*testSuite || !testName)
+      return testSuite;
+
+    // Validate that the test exists within the suite.
+    if (const Test *test = (*testSuite)->getChild(*testName))
+      return *test;
+    return std::nullopt;
+  }
+
+  // If not, the file path either refers to a test suite for a file or a
+  // directory.
   if (std::filesystem::is_directory(path, ec))
     return TestDiscovery().discoverTestsInDirectory(path);
 

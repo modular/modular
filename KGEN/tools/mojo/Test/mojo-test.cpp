@@ -92,12 +92,16 @@ static int test(const State &state) {
   } else {
     testID = TestID(std::filesystem::current_path().string());
   }
-  std::optional<Test> test = Test::discoverFromID(testID);
+  ErrorOr<std::optional<Test>> test = Test::discoverFromID(testID);
+  if (test.isError()) {
+    llvm::errs() << "error: " << test.getError() << "\n";
+    return 1;
+  }
 
   // If we're only collecting, exit early.
   if (args.hasArg(options::OPT_collect_only)) {
-    if (test)
-      llvm::outs() << *test << "\n";
+    if (*test)
+      llvm::outs() << **test << "\n";
     return 0;
   }
 
