@@ -24,7 +24,7 @@ fn apply[
 ](input: Buffer[type], output: Buffer[type]):
     @parameter
     fn _func[width: Int](idx: Int):
-        output.simd_store(idx, func(input.load[width=width](idx)))
+        output.store(idx, func(input.load[width=width](idx)))
 
     vectorize[_func, simdwidthof[type]()](len(input))
 

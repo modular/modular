@@ -240,7 +240,7 @@ fn mandelbrot[
             var cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
             var cy = min_y + row * scale_y
             var c = ComplexSIMD[float_type, simd_width](cx, cy)
-            out.simd_store[simd_width](
+            out.store[width=simd_width](
                 Index(row, col), mandelbrot_kernel[simd_width](c)
             )
 
