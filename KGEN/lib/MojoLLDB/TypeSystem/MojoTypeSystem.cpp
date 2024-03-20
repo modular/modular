@@ -946,10 +946,9 @@ MojoTypeSystem::getOrCreatePackageDecl(StringRef name,
       parentDecl.getCursor(), /*indentation=*/-1);
 }
 
-/// Generate a human readable version of the identifier of a struct along with
-/// its parameters given its SourceName.
-static std::string
-generateParametrizedNameForStruct(DebugInfo::SourceNameAttr attr) {
+/// Generate a human readable version of an identifier along with its parameters
+/// given a SourceName.
+static std::string generateParametrizedName(DebugInfo::SourceNameAttr attr) {
   ArrayRef<StringAttr> paramValues = attr.getParamValues();
   std::string displayName;
   llvm::raw_string_ostream os(displayName);
@@ -989,8 +988,11 @@ MojoASTDeclRef MojoTypeSystem::createDeclsFromSourceNameRecursive(
   case DebugInfo::SourceNameKind::Module:
     return getOrCreateModuleDecl(sourceName.getName(), parentDeclRef);
   case DebugInfo::SourceNameKind::Struct:
-    return getOrCreateStructDecl(generateParametrizedNameForStruct(sourceName),
+    return getOrCreateStructDecl(generateParametrizedName(sourceName),
                                  parentDeclRef);
+  case DebugInfo::SourceNameKind::Fn:
+    return getOrCreateFunctionDecl(generateParametrizedName(sourceName),
+                                   parentDeclRef);
   default:
     return {};
   }
@@ -1018,6 +1020,8 @@ MojoASTDeclRef MojoTypeSystem::getOrCreateDeclChainForDie(const DWARFDIE &die,
     return getOrCreateModuleDecl(effectiveName, MojoASTDeclRef{});
   case DW_TAG_structure_type: {
     return getOrCreateStructDecl(effectiveName, MojoASTDeclRef{});
+  case DW_TAG_subprogram:
+    return getOrCreateFunctionDecl(effectiveName, MojoASTDeclRef{});
   }
   default:
     return {};
@@ -1063,28 +1067,14 @@ MojoTypeSystem::getOrCreateModuleDecl(StringRef moduleName,
 }
 
 MojoASTDeclRef
-MojoTypeSystem::getOrCreateFunctionDecl(llvm::StringRef mangledName) {
-  auto mangled = StringAttr::get(getMLIRContext(), mangledName);
-  FailureOr<LIT::MangledSymbol> mangledSymbol =
-      LIT::MangledSymbol::demangle(mangled);
-  if (failed(mangledSymbol))
-    return {};
+MojoTypeSystem::getOrCreateFunctionDecl(StringRef functionName,
+                                        MojoASTDeclRef parentDecl) {
+  if (!parentDecl)
+    parentDecl = getOrCreateModuleDecl("__lldb_anonymous__");
 
-  // We traverse modules and structs creating them as needed.
-  LIT::ASTDecl *parentDecl = nullptr;
-  LIT::SharedState &sharedState = impl->parserContext->getSharedState();
+  StringAttr name = StringAttr::get(getMLIRContext(), functionName);
 
-  for (StringAttr moduleName : mangledSymbol->moduleNames)
-    parentDecl = &*getOrCreateModuleDecl(moduleName, parentDecl);
-
-  for (StringAttr structName : mangledSymbol->structNames)
-    parentDecl = &*getOrCreateStructDecl(structName, parentDecl);
-
-  assert(parentDecl != nullptr && "All functions must have a parent decl.");
-
-  StringAttr name = mangledSymbol->symName;
-
-  // We check if the function already exists, in which case we just return
+  // We first check if the function already exists, in which case we just return
   // its decl.
   auto &declsInScope = parentDecl->getDeclsInScope();
   if (auto it = declsInScope.find(name); it != declsInScope.end()) {
@@ -1093,6 +1083,7 @@ MojoTypeSystem::getOrCreateFunctionDecl(llvm::StringRef mangledName) {
     return it->second[0];
   }
 
+  LIT::SharedState &sharedState = impl->parserContext->getSharedState();
   auto builder = parentDecl->getDeclEndBuilder();
   auto fnType = builder.getFunctionType({}, {NoneType::get(getMLIRContext())});
   // We might need to fill in the full signature when expression evaluation is
@@ -1108,7 +1099,7 @@ MojoTypeSystem::getOrCreateFunctionDecl(llvm::StringRef mangledName) {
       sharedState.translateLocation(parentDecl->getLoc()), nameAttr, name,
       signature);
   return MojoASTDeclRef(&sharedState.declResolver->addDecl(
-      newFunction, parentDecl->getLoc(), name, parentDecl, {}, {}, -1));
+      newFunction, parentDecl->getLoc(), name, &*parentDecl, {}, {}, -1));
 }
 
 MojoASTDeclRef

@@ -227,7 +227,7 @@ MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
   }
   case DW_TAG_subprogram: {
     ParsedDWARFTypeAttributes attrs(die);
-    decl = typeSystem.getOrCreateFunctionDecl(attrs.linkageName);
+    decl = typeSystem.getOrCreateDeclChainForDie(die, attrs.name);
     break;
   }
   case DW_TAG_structure_type: {
