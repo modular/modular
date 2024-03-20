@@ -31,8 +31,8 @@ public:
   /// Wrapper around `MessageHandler::method` that provides an `LSPResponder` to
   /// the underlying implementation.
   template <typename Param, typename Result, typename ThisT>
-  void method2(llvm::StringLiteral method, ThisT *thisPtr,
-               void (ThisT::*handler)(const Param &, LSPResponder<Result>)) {
+  void method(llvm::StringLiteral method, ThisT *thisPtr,
+              void (ThisT::*handler)(const Param &, LSPResponder<Result>)) {
     struct Handler {
       void invoke(const Param &param, Callback<Result> reply) {
         (thisPtr->*handler)(param,
@@ -64,9 +64,10 @@ struct LSPServer {
   // Initialization
 
   void onInitialize(const InitializeParams &params,
-                    Callback<llvm::json::Value> reply);
+                    LSPResponder<llvm::json::Value> responder);
   void onInitialized(const InitializedParams &params);
-  void onShutdown(const NoParams &params, Callback<std::nullptr_t> reply);
+  void onShutdown(const NoParams &params,
+                  LSPResponder<std::nullptr_t> responder);
 
   //===--------------------------------------------------------------------===//
   // Document Change
@@ -79,41 +80,6 @@ struct LSPServer {
   void onNotebookDocumentDidClose(const DidCloseNotebookDocumentParams &params);
   void
   onNotebookDocumentDidChange(const DidChangeNotebookDocumentParams &params);
-
-  //===--------------------------------------------------------------------===//
-  // Code Action
-
-  void onCodeAction(const CodeActionParams &params,
-                    Callback<llvm::json::Value> reply);
-
-  //===--------------------------------------------------------------------===//
-  // Language Features
-
-  void onCompletion(const CompletionParams &params,
-                    Callback<CompletionList> reply);
-
-  void onDefinition(const TextDocumentPositionParams &params,
-                    Callback<llvm::json::Value> reply);
-
-  void onDocumentSymbol(const DocumentSymbolParams &params,
-                        Callback<std::vector<DocumentSymbol>> reply);
-
-  void onFoldingRange(const FoldingRangeParams &params,
-                      Callback<std::vector<FoldingRange>> reply);
-
-  void onInlayHint(const InlayHintsParams &params,
-                   Callback<std::vector<InlayHint>> reply);
-
-  void onReferences(const ReferenceParams &params,
-                    Callback<std::vector<mlir::lsp::Location>> reply);
-
-  void onSemanticTokens(const SemanticTokensParams &params,
-                        Callback<llvm::json::Value> reply);
-  void onSemanticTokensDelta(const SemanticTokensDeltaParams &params,
-                             Callback<llvm::json::Value> reply);
-
-  void onSignatureHelp(const TextDocumentPositionParams &params,
-                       Callback<SignatureHelp2> reply);
 
   //===--------------------------------------------------------------------===//
   // Fields
@@ -149,7 +115,7 @@ static std::vector<StringRef> semanticTokenModifiers() {
 }
 
 void LSPServer::onInitialize(const InitializeParams &params,
-                             Callback<llvm::json::Value> reply) {
+                             LSPResponder<llvm::json::Value> responder) {
   using JSONArray = llvm::json::Array;
   using JSONObject = llvm::json::Object;
 
@@ -216,13 +182,14 @@ void LSPServer::onInitialize(const InitializeParams &params,
       {{"serverInfo",
         llvm::json::Object{{"name", "mojo-lsp-server"}, {"version", "0.0.1"}}},
        {"capabilities", std::move(serverCaps)}}};
-  reply(std::move(result));
+  responder.reply(std::move(result));
 }
 void LSPServer::onInitialized(const InitializedParams &) {}
-void LSPServer::onShutdown(const NoParams &, Callback<std::nullptr_t> reply) {
+void LSPServer::onShutdown(const NoParams &,
+                           LSPResponder<std::nullptr_t> responder) {
   server.shutdown();
   shutdownRequestReceived = true;
-  reply(nullptr);
+  responder.reply(nullptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -271,133 +238,6 @@ void LSPServer::onNotebookDocumentDidChange(
 }
 
 //===----------------------------------------------------------------------===//
-// Code Action
-
-void LSPServer::onCodeAction(const CodeActionParams &params,
-                             Callback<llvm::json::Value> reply) {
-  URIForFile uri = params.textDocument.uri;
-
-  // Check whether a particular CodeActionKind is included in the response.
-  auto isKindAllowed = [only(params.context.only)](StringRef kind) {
-    if (only.empty())
-      return true;
-    return llvm::any_of(only, [&](StringRef base) {
-      return kind.consume_front(base) &&
-             (kind.empty() || kind.starts_with("."));
-    });
-  };
-
-  // We provide a code action for fixes on the specified diagnostics.
-  if (!isKindAllowed(CodeAction::kQuickFix))
-    return reply(std::vector<CodeAction>());
-
-  server.getCodeActions(
-      uri, params.range.start, params.context,
-      [reply = std::move(reply)](std::vector<CodeAction> actions) mutable {
-        reply(std::move(actions));
-      });
-}
-
-//===----------------------------------------------------------------------===//
-// Language Features
-
-void LSPServer::onCompletion(const CompletionParams &params,
-                             Callback<CompletionList> reply) {
-  server.onCodeCompletion(
-      params.textDocument.uri, params.position,
-      [reply = std::move(reply)](CompletionList list) mutable {
-        reply(std::move(list));
-      });
-}
-
-void LSPServer::onDefinition(const TextDocumentPositionParams &params,
-                             Callback<llvm::json::Value> reply) {
-  server.onDefinition(params.textDocument.uri, params.position,
-                      [reply = std::move(reply)](
-                          std::vector<mlir::lsp::Location> locations) mutable {
-                        reply(std::move(locations));
-                      });
-}
-
-void LSPServer::onDocumentSymbol(const DocumentSymbolParams &params,
-                                 Callback<std::vector<DocumentSymbol>> reply) {
-  server.onDocumentSymbol(
-      params.textDocument.uri,
-      [reply = std::move(reply)](std::vector<DocumentSymbol> symbols) mutable {
-        reply(std::move(symbols));
-      });
-}
-
-void LSPServer::onFoldingRange(const FoldingRangeParams &params,
-                               Callback<std::vector<FoldingRange>> reply) {
-  server.onFoldingRange(
-      params.textDocument.uri,
-      [reply = std::move(reply)](std::vector<FoldingRange> ranges) mutable {
-        reply(std::move(ranges));
-      });
-}
-
-void LSPServer::onInlayHint(const InlayHintsParams &params,
-                            Callback<std::vector<InlayHint>> reply) {
-  server.onInlayHint(
-      params.textDocument.uri, params.range,
-      [reply = std::move(reply)](std::vector<InlayHint> hints) mutable {
-        reply(std::move(hints));
-      });
-}
-
-void LSPServer::onReferences(const ReferenceParams &params,
-                             Callback<std::vector<mlir::lsp::Location>> reply) {
-  server.onReferences(params.textDocument.uri, params.position,
-                      params.context.includeDeclaration,
-                      [reply = std::move(reply)](
-                          std::vector<mlir::lsp::Location> locations) mutable {
-                        reply(std::move(locations));
-                      });
-}
-
-void LSPServer::onSemanticTokens(const SemanticTokensParams &params,
-                                 Callback<llvm::json::Value> reply) {
-  server.onSemanticTokens(
-      params.textDocument.uri,
-      [reply = std::move(reply)](std::optional<SemanticTokens> tokens) mutable {
-        reply(std::move(tokens));
-      });
-}
-
-void LSPServer::onSemanticTokensDelta(const SemanticTokensDeltaParams &params,
-                                      Callback<llvm::json::Value> reply) {
-  server.onSemanticTokensDelta(
-      params.textDocument.uri, params.previousResultId,
-      [reply = std::move(reply)](
-          std::optional<SemanticTokensOrDelta> tokens) mutable {
-        reply(std::move(tokens));
-      });
-}
-
-void LSPServer::onSignatureHelp(const TextDocumentPositionParams &params,
-                                Callback<SignatureHelp2> reply) {
-  server.getSignatureHelp(
-      params.textDocument.uri, params.position,
-      [repl = std::move(reply)](SignatureHelp help) mutable {
-        // TODO: Remove this when the changes to SignatureHelp are upstreamed.
-        SignatureHelp2 help2;
-        help2.activeParameter = help.activeParameter;
-        help2.activeSignature = help.activeSignature;
-        for (auto &sig : help.signatures) {
-          SignatureInformation2 sig2;
-          sig2.label = sig.label;
-          sig2.documentation =
-              MarkupContent{MarkupKind::Markdown, sig.documentation};
-          sig2.parameters = std::move(sig.parameters);
-          help2.signatures.push_back(sig2);
-        }
-
-        repl(std::move(help2));
-      });
-}
-
-//===----------------------------------------------------------------------===//
 // Entry Point
 //===----------------------------------------------------------------------===//
 
@@ -434,29 +274,29 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                               &LSPServer::onDocumentDidChange);
 
   // Code Action
-  messageHandler.method("textDocument/codeAction", &lspServer,
-                        &LSPServer::onCodeAction);
+  messageHandler.method("textDocument/codeAction", &server,
+                        &MojoServer::getCodeActions);
 
   // Language Features
-  messageHandler.method("textDocument/completion", &lspServer,
-                        &LSPServer::onCompletion);
-  messageHandler.method("textDocument/definition", &lspServer,
-                        &LSPServer::onDefinition);
-  messageHandler.method("textDocument/documentSymbol", &lspServer,
-                        &LSPServer::onDocumentSymbol);
-  messageHandler.method("textDocument/foldingRange", &lspServer,
-                        &LSPServer::onFoldingRange);
-  messageHandler.method2("textDocument/hover", &server, &MojoServer::onHover);
-  messageHandler.method("textDocument/inlayHint", &lspServer,
-                        &LSPServer::onInlayHint);
-  messageHandler.method("textDocument/references", &lspServer,
-                        &LSPServer::onReferences);
-  messageHandler.method("textDocument/semanticTokens/full", &lspServer,
-                        &LSPServer::onSemanticTokens);
-  messageHandler.method("textDocument/semanticTokens/full/delta", &lspServer,
-                        &LSPServer::onSemanticTokensDelta);
-  messageHandler.method("textDocument/signatureHelp", &lspServer,
-                        &LSPServer::onSignatureHelp);
+  messageHandler.method("textDocument/completion", &server,
+                        &MojoServer::onCodeCompletion);
+  messageHandler.method("textDocument/definition", &server,
+                        &MojoServer::onDefinition);
+  messageHandler.method("textDocument/documentSymbol", &server,
+                        &MojoServer::onDocumentSymbol);
+  messageHandler.method("textDocument/foldingRange", &server,
+                        &MojoServer::onFoldingRange);
+  messageHandler.method("textDocument/hover", &server, &MojoServer::onHover);
+  messageHandler.method("textDocument/inlayHint", &server,
+                        &MojoServer::onInlayHint);
+  messageHandler.method("textDocument/references", &server,
+                        &MojoServer::onReferences);
+  messageHandler.method("textDocument/semanticTokens/full", &server,
+                        &MojoServer::onSemanticTokens);
+  messageHandler.method("textDocument/semanticTokens/full/delta", &server,
+                        &MojoServer::onSemanticTokensDelta);
+  messageHandler.method("textDocument/signatureHelp", &server,
+                        &MojoServer::getSignatureHelp);
 
   // Run the main loop of the transport.
   if (llvm::Error error = transport.run(messageHandler)) {
