@@ -642,7 +642,7 @@ fn flash_attention_kernel[
         var vec = q_ptr.aligned_simd_load[simd_size, alignment](
             global_q_idx.to_int(),
         )
-        q_tile.aligned_simd_store[simd_size, alignment](
+        q_tile.store[width=simd_size, alignment=alignment](
             (row_in_tile * depth + loadq_col).to_int(), vec
         )
 
@@ -780,7 +780,7 @@ fn flash_attention_kernel[
 
                     @unroll
                     for j in range(0, TN, simd_size):
-                        p_tile.aligned_simd_store[simd_size, alignment](
+                        p_tile.store[width=simd_size, alignment=alignment](
                             (mm_row + i) * BK + mm_col - storep_col_start + j,
                             reg_result.load[width=simd_size](i * TN + j),
                         )
@@ -796,7 +796,7 @@ fn flash_attention_kernel[
                 var vec = v_ptr.aligned_simd_load[simd_size, alignment](
                     global_idx
                 )
-                kv_tile.aligned_simd_store[simd_size, alignment](
+                kv_tile.store[width=simd_size, alignment=alignment](
                     row_in_tile * depth + loadv_col, vec
                 )
             # Guard writing to p_tile and kv_tile.
@@ -833,7 +833,7 @@ fn flash_attention_kernel[
                 int(i * TN + offset)
             ) / rowsum.load(i)
 
-            output_ptr.aligned_simd_store[simd_size, alignment](
+            output_ptr.store[width=simd_size, alignment=alignment](
                 int(o_global_row_offset + mm_col + offset), vec
             )
         o_global_row_offset += row_stride
@@ -979,12 +979,12 @@ fn flash_attention_kernel_flexible_seqlen[
             var vec = q_ptr.aligned_simd_load[simd_size, alignment](
                 global_q_idx.to_int(),
             )
-            q_tile.aligned_simd_store[simd_size, alignment](
+            q_tile.store[width=simd_size, alignment=alignment](
                 (row_in_tile * depth + loadq_col).to_int(), vec
             )
         # The Q tile exceeds global Q buffer, pad with zeros.
         else:
-            q_tile.aligned_simd_store[simd_size, alignment](
+            q_tile.store[width=simd_size, alignment=alignment](
                 (row_in_tile * depth + loadq_col).to_int(),
                 SIMD[DType.float32, simd_size](0.0),
             )
@@ -1137,7 +1137,7 @@ fn flash_attention_kernel_flexible_seqlen[
 
             @unroll
             for j in range(0, TN, simd_size):
-                p_tile.aligned_simd_store[simd_size, alignment](
+                p_tile.store[width=simd_size, alignment=alignment](
                     ((mm_row + i) * BN + mm_col + j),
                     reg_result.load[width=simd_size]((i * TN + j)),
                 )
@@ -1164,11 +1164,11 @@ fn flash_attention_kernel_flexible_seqlen[
                     var vec = v_ptr.aligned_simd_load[simd_size, alignment](
                         global_idx.to_int()
                     )
-                    kv_tile.aligned_simd_store[simd_size, alignment](
+                    kv_tile.store[width=simd_size, alignment=alignment](
                         (row_in_tile * depth + loadv_col).to_int(), vec
                     )
                 else:
-                    kv_tile.aligned_simd_store[simd_size, alignment](
+                    kv_tile.store[width=simd_size, alignment=alignment](
                         (row_in_tile * depth + loadv_col).to_int(),
                         SIMD[DType.float32, simd_size](0.0),
                     )
@@ -1220,7 +1220,7 @@ fn flash_attention_kernel_flexible_seqlen[
                     int(i * TN + offset)
                 ) / rowsum.load(i)
 
-                output_ptr.aligned_simd_store[simd_size, alignment](
+                output_ptr.store[width=simd_size, alignment=alignment](
                     int(o_global_row_offset + mm_col + offset), vec
                 )
         o_global_row_offset += row_stride
