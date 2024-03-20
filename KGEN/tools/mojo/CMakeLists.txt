@@ -28,6 +28,7 @@ add_modular_tool(mojo
   Package/mojo-package.cpp
   REPL/mojo-repl.cpp
   Run/mojo-run.cpp
+  Test/mojo-test.cpp
 
   DEPENDS
   orc-rt-cas
@@ -81,6 +82,7 @@ add_subdirectory(Format)
 add_subdirectory(Package)
 add_subdirectory(REPL)
 add_subdirectory(Run)
+add_subdirectory(Test)
 
 # Copy all generated Markdown files to a convenient location.
 collect_driver_markdown(MojoDriverOptions)
