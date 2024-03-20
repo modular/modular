@@ -32,33 +32,34 @@ fn test_sync_raising_coro():
     # CHECK: == test_sync_raising_coro
     print("== test_sync_raising_coro")
 
-    @parameter
-    async fn might_throw(a: Int) raises -> Int:
-        if a > 10:
-            raise Error("oops")
-        return a + 1
+    # FIXME(#26008): Raising async functions do not work.
+    # @parameter
+    # async fn might_throw(a: Int) raises -> Int:
+    #    if a > 10:
+    #        raise Error("oops")
+    #    return a + 1
 
-    @parameter
-    async fn also_might_throw(a: Int) raises -> Int:
-        if a == 20:
-            raise Error("doh!")
-        return await might_throw(a) + 100
+    # @parameter
+    # async fn also_might_throw(a: Int) raises -> Int:
+    #    if a == 20:
+    #        raise Error("doh!")
+    #    return await might_throw(a) + 100
 
-    try:
-        print(also_might_throw(20)())
-    except e:
-        # CHECK-NEXT: doh!
-        print(e)
-    try:
-        print(also_might_throw(25)())
-    except e:
-        # CHECK-NEXT: oops
-        print(e)
-    try:
-        # CHECK-NEXT: 102
-        print(also_might_throw(1)())
-    except:
-        pass
+    # try:
+    #    print(also_might_throw(20)())
+    # except e:
+    #    # XCHECK-NEXT: doh!
+    #    print(e)
+    # try:
+    #    print(also_might_throw(25)())
+    # except e:
+    #    # XCHECK-NEXT: oops
+    #    print(e)
+    # try:
+    #    # XCHECK-NEXT: 102
+    #    print(also_might_throw(1)())
+    # except:
+    #    pass
 
 
 # CHECK-LABEL: test_runtime_task

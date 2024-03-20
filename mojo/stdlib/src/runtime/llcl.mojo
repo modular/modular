@@ -533,6 +533,30 @@ struct MojoCallTask:
 # ===----------------------------------------------------------------------===#
 
 
+# FIXME(#26008): async raising functions are temporarily disabled. Work around
+# this by returning an explicit result type.
+@register_passable
+struct _OptionalError:
+    alias type = __mlir_type[`!kgen.variant<`, Error, `, none>`]
+    var value: Self.type
+
+    fn __init__(inout self):
+        self.value = __mlir_op.`kgen.variant.create`[
+            _type = Self.type, index = Int(1).value
+        ](__mlir_attr.`#kgen.none`)
+
+    fn __init__(inout self, owned existing: Error):
+        self.value = __mlir_op.`kgen.variant.create`[
+            _type = Self.type, index = Int(0).value
+        ](existing ^)
+
+    fn is_error(self) -> Bool:
+        return __mlir_op.`kgen.variant.is`[index = Int(0).value](self.value)
+
+    fn consume_as_error(owned self) -> Error:
+        return __mlir_op.`kgen.variant.take`[index = Int(0).value](self.value)
+
+
 @register_passable
 struct _MojoCallRaisingTaskContext:
     """Coroutine context for calls to raising async Mojo kernels from the
@@ -540,21 +564,21 @@ struct _MojoCallRaisingTaskContext:
     """
 
     var callback: fn (
-        owned RaisingCoroutine[NoneType], MojoCallContextPtr
+        owned Coroutine[_OptionalError], MojoCallContextPtr
     ) -> None
     var payload: MojoCallContextPtr
 
     @staticmethod
     fn callback_impl(
-        owned coro: RaisingCoroutine[NoneType], ctx: MojoCallContextPtr
+        owned coro: Coroutine[_OptionalError], ctx: MojoCallContextPtr
     ):
         # Handle failure of the coroutine, which must be propagated back
         # by setting the chain to the error state.
-        try:
-            coro.get()
+        var err = coro.get()
+        if err.is_error():
+            ctx.set_to_error((err ^).consume_as_error())
+        else:
             ctx.complete()
-        except e:
-            ctx.set_to_error(e)
 
 
 @register_passable
@@ -563,11 +587,11 @@ struct MojoCallRaisingTask:
     C++ runtime's LLCL Chain AsyncValue.
     """
 
-    var coro: RaisingCoroutine[NoneType]
+    var coro: Coroutine[_OptionalError]
 
     @always_inline
     fn __init__(
-        owned coro: RaisingCoroutine[NoneType], ctx: MojoCallContextPtr
+        owned coro: Coroutine[_OptionalError], ctx: MojoCallContextPtr
     ) -> Self:
         var result = Self {coro: coro ^}
         result.coro._get_ctx[_MojoCallRaisingTaskContext]().store(
