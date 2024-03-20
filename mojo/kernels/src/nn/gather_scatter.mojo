@@ -20,7 +20,7 @@ from buffer.list import Dim, DimList
 from gpu.host.memory import _copy_device_to_device_async
 from gpu.host.stream import Stream
 from memory import memset_zero, stack_allocation
-from runtime.llcl import Runtime
+from runtime.llcl import Runtime, _OptionalError
 from runtime.tracing import Trace, TraceLevel
 
 from utils._optional import Optional
@@ -578,57 +578,61 @@ async fn async_gather[
     input_shape: StaticIntTuple[input_rank],
     indices_shape: StaticIntTuple[indices_rank],
     output_shape: StaticIntTuple[output_rank],
-) raises:
+) -> _OptionalError:
     """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
 
     Note that this is NOT the same as the default PyTorch gather (which is equivalent to
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
     """
-    gather_guards(axis, input_shape, indices_shape, output_shape)
-    with Trace[TraceLevel.OP]("mojo.gather") as t:
-        if (
-            input_shape.flattened_length() == 0
-            or indices_shape.flattened_length() == 0
-        ):
-            return
+    try:
+        gather_guards(axis, input_shape, indices_shape, output_shape)
+        with Trace[TraceLevel.OP]("mojo.gather") as t:
+            if (
+                input_shape.flattened_length() == 0
+                or indices_shape.flattened_length() == 0
+            ):
+                return _OptionalError()
 
-        @parameter
-        @always_inline
-        fn gather_elementwise_fn[
-            simd_width: Int, rank: Int
-        ](idx: StaticIntTuple[rank]):
-            gather_elementwise_fn_wrapper[
-                type,
-                input_rank,
-                indices_type,
-                indices_rank,
-                output_rank,
-                input_fn,
-                indices_fn,
-                output_fn,
-                simd_width=simd_width,
-                prefetch_fn=prefetch_fn,
-            ](axis, input_shape, indices_shape, output_shape, idx)
+            @parameter
+            @always_inline
+            fn gather_elementwise_fn[
+                simd_width: Int, rank: Int
+            ](idx: StaticIntTuple[rank]):
+                gather_elementwise_fn_wrapper[
+                    type,
+                    input_rank,
+                    indices_type,
+                    indices_rank,
+                    output_rank,
+                    input_fn,
+                    indices_fn,
+                    output_fn,
+                    simd_width=simd_width,
+                    prefetch_fn=prefetch_fn,
+                ](axis, input_shape, indices_shape, output_shape, idx)
 
-        # If we are gathering on the last dimension then we have to be scalar.
-        if int(axis) == input_rank - 1:
-            await _async_elementwise_impl[
-                gather_elementwise_fn,
-                1,
-                output_rank,
-                target=target,
-            ](
-                output_shape,
-            )
-        else:
-            await _async_elementwise_impl[
-                gather_elementwise_fn,
-                simdwidthof[type](),
-                output_rank,
-                target=target,
-            ](
-                output_shape,
-            )
+            # If we are gathering on the last dimension then we have to be scalar.
+            if int(axis) == input_rank - 1:
+                await _async_elementwise_impl[
+                    gather_elementwise_fn,
+                    1,
+                    output_rank,
+                    target=target,
+                ](
+                    output_shape,
+                )
+            else:
+                await _async_elementwise_impl[
+                    gather_elementwise_fn,
+                    simdwidthof[type](),
+                    output_rank,
+                    target=target,
+                ](
+                    output_shape,
+                )
+        return _OptionalError()
+    except e:
+        return _OptionalError(e ^)
 
 
 # ===----------------------------------------------------------------------===#
