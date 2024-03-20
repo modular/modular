@@ -20,7 +20,13 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.sync import syncwarp
-from Matmul import gemv_kernel, gevm_kernel, matmul_kernel, matmul_kernel_naive
+from Matmul import (
+    gemv_kernel,
+    gevm_kernel,
+    gemv_tc_kernel,
+    matmul_kernel,
+    matmul_kernel_naive,
+)
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index
@@ -33,7 +39,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     var stream = Stream()
     var a_host = Pointer[BFloat16].alloc(M * K)
     var b_host = Pointer[BFloat16].alloc(K * N)
-    var c_host = Pointer[BFloat16].alloc(M * N)
+    var c_host = Pointer[Float32].alloc(M * N)
     var a_host_n = Pointer[Float32].alloc(M * K)
     var b_host_n = Pointer[Float32].alloc(K * N)
     var c_host_n = Pointer[Float32].alloc(M * N)
@@ -54,7 +60,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
 
     var a_device = _malloc[BFloat16](M * K)
     var b_device = _malloc[BFloat16](K * N)
-    var c_device = _malloc[BFloat16](M * N)
+    var c_device = _malloc[Float32](M * N)
     var a_device_n = _malloc[Float32](M * K)
     var b_device_n = _malloc[Float32](K * N)
     var c_device_n = _malloc[Float32](M * N)
@@ -65,14 +71,14 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     alias WARPS_PER_BLOCK = 32
     var func_gemv = Function[
         fn (
-            DTypePointer[DType.bfloat16],
+            DTypePointer[DType.float32],
             DTypePointer[DType.bfloat16],
             DTypePointer[DType.bfloat16],
             Int,
             Int,
             Int,
-        ) capturing -> None, gemv_kernel[
-            DType.bfloat16,
+        ) capturing -> None, gemv_tc_kernel[
+            DType.float32,
             DType.bfloat16,
             DType.bfloat16,
         ]
@@ -159,7 +165,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     var errorTolerance = 0.1
     var failed = False
     for i in range(M * N):
-        var outVal = c_host.load(i).cast[DType.float32]()
+        var outVal = c_host.load(i)
         var outRef = c_host_n.load(i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
         if (
