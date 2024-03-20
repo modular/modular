@@ -923,12 +923,13 @@ std::optional<lsp::Diagnostic> MojoDocument::buildLspDiagnosticFromSMDiagnostic(
 void MojoDocument::getCodeActions(
     const lsp::URIForFile &uri, const lsp::Range &pos,
     const lsp::CodeActionContext &context,
-    OnResultFn<std::vector<lsp::CodeAction>> onActions) {
-  startTaskAfterParsing([uri, pos, context, onActions = std::move(onActions)](
+    LSPResponder<std::vector<lsp::CodeAction>> responder) {
+  startTaskAfterParsing([uri, pos, context, responder = std::move(responder)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
-      return onActions({});
-    onActions(doc.getCodeActionsSync(doc.getLocFromPos(uri, pos), context));
+      return responder.replyOutdatedRequest();
+    responder.reply(
+        doc.getCodeActionsSync(doc.getLocFromPos(uri, pos), context));
   });
 }
 
@@ -962,17 +963,16 @@ MojoDocument::getCodeActionsSync(SMRange range,
 
 void MojoDocument::onCodeCompletion(
     const lsp::URIForFile &uri, const lsp::Position &completePos,
-    OnResultFn<lsp::CompletionList> onCompletionFn) {
-  startTaskAfterParsing(
-      [uri, completePos,
-       onCompletionFn = std::move(onCompletionFn)](MojoDocument &doc) mutable {
-        if (doc.isInvalidated)
-          return onCompletionFn({});
-        SMLoc completeLoc = doc.getLocFromPos(uri, completePos);
-        if (!completeLoc.isValid())
-          return onCompletionFn({});
-        onCompletionFn(doc.onCodeCompletionSync(completeLoc));
-      });
+    LSPResponder<lsp::CompletionList> responder) {
+  startTaskAfterParsing([uri, completePos, responder = std::move(responder)](
+                            MojoDocument &doc) mutable {
+    if (doc.isInvalidated)
+      return responder.replyOutdatedRequest();
+    SMLoc completeLoc = doc.getLocFromPos(uri, completePos);
+    if (!completeLoc.isValid())
+      return responder.replyInvalidRequest();
+    responder.reply(doc.onCodeCompletionSync(completeLoc));
+  });
 }
 
 lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
@@ -1027,16 +1027,16 @@ lsp::CompletionList MojoDocument::onCodeCompletionSync(SMLoc completeLoc) {
 
 void MojoDocument::onDefinition(
     const lsp::URIForFile &uri, const lsp::Position &pos,
-    OnResultFn<std::vector<lsp::Location>> onDefinitionFn) {
-  startTaskAfterParsing([uri, pos, onDefinitionFn = std::move(onDefinitionFn)](
-                            MojoDocument &doc) mutable {
-    if (doc.isInvalidated)
-      return onDefinitionFn({});
-    SMLoc loc = doc.getLocFromPos(uri, pos);
-    if (!loc.isValid())
-      return onDefinitionFn({});
-    onDefinitionFn(doc.onDefinitionSync(loc));
-  });
+    LSPResponder<std::vector<lsp::Location>> responder) {
+  startTaskAfterParsing(
+      [uri, pos, responder = std::move(responder)](MojoDocument &doc) mutable {
+        if (doc.isInvalidated)
+          return responder.replyOutdatedRequest();
+        SMLoc loc = doc.getLocFromPos(uri, pos);
+        if (!loc.isValid())
+          return responder.replyInvalidRequest();
+        responder.reply(doc.onDefinitionSync(loc));
+      });
 }
 
 std::vector<lsp::Location> MojoDocument::onDefinitionSync(SMLoc loc) {
@@ -1130,12 +1130,12 @@ void MojoDocument::getDocumentSymbols(
 
 void MojoDocument::onDocumentSymbol(
     const lsp::URIForFile &uri,
-    OnResultFn<std::vector<lsp::DocumentSymbol>> onSymbolsFn) {
+    LSPResponder<std::vector<lsp::DocumentSymbol>> responder) {
   startTaskAfterParsing(
-      [uri, onSymbolsFn = std::move(onSymbolsFn)](MojoDocument &doc) mutable {
+      [uri, responder = std::move(responder)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
-          return onSymbolsFn({});
-        onSymbolsFn(doc.onDocumentSymbolSync(uri));
+          return responder.replyOutdatedRequest();
+        responder.reply(doc.onDocumentSymbolSync(uri));
       });
 }
 
@@ -1145,13 +1145,13 @@ void MojoDocument::onDocumentSymbol(
 
 void MojoDocument::onFoldingRange(
     const lsp::URIForFile &uri,
-    OnResultFn<std::vector<lsp::FoldingRange>> onFoldingRangeFn) {
-  startTaskAfterParsing([uri, onFoldingRangeFn = std::move(onFoldingRangeFn)](
-                            MojoDocument &doc) mutable {
-    if (doc.isInvalidated)
-      return onFoldingRangeFn({});
-    onFoldingRangeFn(doc.onFoldingRangeSync(uri));
-  });
+    LSPResponder<std::vector<lsp::FoldingRange>> responder) {
+  startTaskAfterParsing(
+      [uri, responder = std::move(responder)](MojoDocument &doc) mutable {
+        if (doc.isInvalidated)
+          return responder.replyOutdatedRequest();
+        responder.reply(doc.onFoldingRangeSync(uri));
+      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -1221,15 +1221,15 @@ std::optional<lsp::Hover> MojoDocument::onHoverSync(SMLoc loc) {
 
 void MojoDocument::onInlayHint(
     const lsp::URIForFile &uri, const lsp::Range &range,
-    OnResultFn<std::vector<lsp::InlayHint>> onInlayHint) {
-  startTaskAfterParsing([uri, range, onInlayHint = std::move(onInlayHint)](
+    LSPResponder<std::vector<lsp::InlayHint>> responder) {
+  startTaskAfterParsing([uri, range, responder = std::move(responder)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
-      return onInlayHint({});
+      return responder.replyOutdatedRequest();
     SMRange smRange = doc.getLocFromPos(uri, range);
     if (!smRange.isValid())
-      return onInlayHint({});
-    onInlayHint(doc.onInlayHintSync(smRange));
+      return responder.replyInvalidRequest();
+    responder.reply(doc.onInlayHintSync(smRange));
   });
 }
 
@@ -1254,16 +1254,16 @@ std::vector<lsp::InlayHint> MojoDocument::onInlayHintSync(SMRange range) {
 void MojoDocument::onReferences(
     const lsp::URIForFile &uri, const lsp::Position &position,
     bool includeDeclaration,
-    OnResultFn<std::vector<lsp::Location>> onReferences) {
+    LSPResponder<std::vector<lsp::Location>> responder) {
   startTaskAfterParsing(
       [uri, position, includeDeclaration,
-       onReferences = std::move(onReferences)](MojoDocument &doc) mutable {
+       responder = std::move(responder)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
-          return onReferences({});
+          return responder.replyOutdatedRequest();
         SMLoc smLoc = doc.getLocFromPos(uri, position);
         if (!smLoc.isValid())
-          return onReferences({});
-        onReferences(doc.onReferencesSync(smLoc, includeDeclaration));
+          return responder.replyInvalidRequest();
+        responder.reply(doc.onReferencesSync(smLoc, includeDeclaration));
       });
 }
 
@@ -1387,17 +1387,31 @@ MojoDocument::onSemanticTokensSync(SMRange range) {
 // MojoDocument: Signature Help
 //===----------------------------------------------------------------------===//
 
-void MojoDocument::onSignatureHelp(const lsp::URIForFile &uri,
-                                   const lsp::Position &pos,
-                                   OnResultFn<lsp::SignatureHelp> onHelpFn) {
+void MojoDocument::onSignatureHelp(
+    const lsp::URIForFile &uri, const lsp::Position &pos,
+    LSPResponder<lsp::SignatureHelp2> responder) {
   startTaskAfterParsing(
-      [uri, pos, onHelpFn = std::move(onHelpFn)](MojoDocument &doc) mutable {
+      [uri, pos, responder = std::move(responder)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
-          return onHelpFn({});
+          return responder.replyOutdatedRequest();
         SMLoc loc = doc.getLocFromPos(uri, pos);
         if (!loc.isValid())
-          return onHelpFn({});
-        onHelpFn(doc.onSignatureHelpSync(loc));
+          return responder.replyInvalidRequest();
+
+        lsp::SignatureHelp help = doc.onSignatureHelpSync(loc);
+        lsp::SignatureHelp2 help2;
+        help2.activeParameter = help.activeParameter;
+        help2.activeSignature = help.activeSignature;
+        for (auto &sig : help.signatures) {
+          lsp::SignatureInformation2 sig2;
+          sig2.label = sig.label;
+          sig2.documentation =
+              lsp::MarkupContent{lsp::MarkupKind::Markdown, sig.documentation};
+          sig2.parameters = std::move(sig.parameters);
+          help2.signatures.push_back(sig2);
+        }
+
+        responder.reply(std::move(help2));
       });
 }
 
@@ -2177,49 +2191,66 @@ void MojoServer::updateNotebookDocument(
 // Queries
 
 void MojoServer::getCodeActions(
-    const lsp::URIForFile &uri, const lsp::Range &pos,
-    const lsp::CodeActionContext &context,
-    OnResultFn<std::vector<lsp::CodeAction>> onActionsFn) {
+    const lsp::CodeActionParams &params,
+    LSPResponder<std::vector<lsp::CodeAction>> responder) {
+  lsp::URIForFile uri = params.textDocument.uri;
+
+  // Check whether a particular CodeActionKind is included in the response.
+  auto isKindAllowed = [only(params.context.only)](StringRef kind) {
+    if (only.empty())
+      return true;
+    return llvm::any_of(only, [&](StringRef base) {
+      return kind.consume_front(base) &&
+             (kind.empty() || kind.starts_with("."));
+    });
+  };
+
+  // We provide a code action for fixes on the specified diagnostics.
+  if (!isKindAllowed(lsp::CodeAction::kQuickFix))
+    return responder.reply(std::vector<lsp::CodeAction>());
+
   if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->getCodeActions(uri, pos, context, std::move(onActionsFn));
+    doc->getCodeActions(uri, params.range.start, params.context,
+                        std::move(responder));
   else
-    onActionsFn({});
+    responder.replyInvalidRequest();
 }
 
-void MojoServer::onCodeCompletion(
-    const lsp::URIForFile &uri, const lsp::Position &completePos,
-    OnResultFn<lsp::CompletionList> onCompletionFn) {
-  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onCodeCompletion(uri, completePos, std::move(onCompletionFn));
+void MojoServer::onCodeCompletion(const lsp::CompletionParams &params,
+                                  LSPResponder<lsp::CompletionList> responder) {
+  if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
+    doc->onCodeCompletion(params.textDocument.uri, params.position,
+                          std::move(responder));
   else
-    onCompletionFn({});
+    responder.replyInvalidRequest();
 }
 
 void MojoServer::onDefinition(
-    const lsp::URIForFile &uri, const lsp::Position &pos,
-    OnResultFn<std::vector<lsp::Location>> onDefinitionFn) {
-  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onDefinition(uri, pos, std::move(onDefinitionFn));
+    const lsp::TextDocumentPositionParams &params,
+    LSPResponder<std::vector<lsp::Location>> responder) {
+  if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
+    doc->onDefinition(params.textDocument.uri, params.position,
+                      std::move(responder));
   else
-    onDefinitionFn({});
+    responder.replyInvalidRequest();
 }
 
 void MojoServer::onDocumentSymbol(
-    const lsp::URIForFile &uri,
-    OnResultFn<std::vector<lsp::DocumentSymbol>> onSymbolsFn) {
-  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onDocumentSymbol(uri, std::move(onSymbolsFn));
+    const lsp::DocumentSymbolParams &params,
+    LSPResponder<std::vector<lsp::DocumentSymbol>> responder) {
+  if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
+    doc->onDocumentSymbol(params.textDocument.uri, std::move(responder));
   else
-    onSymbolsFn({});
+    responder.replyInvalidRequest();
 }
 
 void MojoServer::onFoldingRange(
-    const lsp::URIForFile &uri,
-    OnResultFn<std::vector<lsp::FoldingRange>> onFoldingRangeFn) {
-  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onFoldingRange(uri, std::move(onFoldingRangeFn));
+    const lsp::FoldingRangeParams &params,
+    LSPResponder<std::vector<lsp::FoldingRange>> responder) {
+  if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
+    doc->onFoldingRange(params.textDocument.uri, std::move(responder));
   else
-    onFoldingRangeFn({});
+    responder.replyInvalidRequest();
 }
 
 void MojoServer::onHover(
@@ -2233,23 +2264,23 @@ void MojoServer::onHover(
 }
 
 void MojoServer::onInlayHint(
-    const lsp::URIForFile &uri, const lsp::Range &range,
-    OnResultFn<std::vector<lsp::InlayHint>> onInlayHint) {
-  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onInlayHint(uri, range, std::move(onInlayHint));
+    const lsp::InlayHintsParams &params,
+    LSPResponder<std::vector<lsp::InlayHint>> responder) {
+  if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
+    doc->onInlayHint(params.textDocument.uri, params.range,
+                     std::move(responder));
   else
-    onInlayHint({});
+    responder.replyInvalidRequest();
 }
 
 void MojoServer::onReferences(
-    const lsp::URIForFile &uri, const lsp::Position &position,
-    bool includeDeclaration,
-    OnResultFn<std::vector<lsp::Location>> onReferences) {
-  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onReferences(uri, position, includeDeclaration,
-                      std::move(onReferences));
+    const lsp::ReferenceParams &params,
+    LSPResponder<std::vector<lsp::Location>> responder) {
+  if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
+    doc->onReferences(params.textDocument.uri, params.position,
+                      params.context.includeDeclaration, std::move(responder));
   else
-    onReferences({});
+    responder.replyInvalidRequest();
 }
 
 /// Increment a numeric string: "" -> 1 -> 2 -> ... -> 9 -> 10 -> 11 ...
@@ -2265,18 +2296,19 @@ static void incrementNumericString(std::string &str) {
 }
 
 void MojoServer::onSemanticTokens(
-    const lsp::URIForFile &uri,
-    OnResultFn<std::optional<lsp::SemanticTokens>> onSemanticTokens) {
-  MojoDocumentRef doc = impl->findDocument(uri.file());
+    const lsp::SemanticTokensParams &params,
+    LSPResponder<std::optional<lsp::SemanticTokens>> responder) {
+  MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file());
   if (!doc)
-    return onSemanticTokens({});
+    return responder.replyInvalidRequest();
 
   doc->onSemanticTokens(
-      uri, [this, uri = uri.file().str(),
-            onSemanticTokens = std::move(onSemanticTokens)](
-               std::optional<std::vector<SemanticToken>> tokens) mutable {
+      params.textDocument.uri,
+      [this, uri = params.textDocument.uri.file().str(),
+       responder = std::move(responder)](
+          std::optional<std::vector<SemanticToken>> tokens) mutable {
         if (!tokens)
-          return onSemanticTokens({});
+          return responder.reply({});
 
         lsp::SemanticTokens result(toLspSemanticTokens(*tokens));
         {
@@ -2288,23 +2320,24 @@ void MojoServer::onSemanticTokens(
           incrementNumericString(prevResult.resultId);
           result.resultId = prevResult.resultId;
         }
-        onSemanticTokens(std::move(result));
+        responder.reply(std::move(result));
       });
 }
 
 void MojoServer::onSemanticTokensDelta(
-    const lsp::URIForFile &uri, StringRef prevId,
-    OnResultFn<std::optional<lsp::SemanticTokensOrDelta>> onSemanticTokens) {
-  MojoDocumentRef doc = impl->findDocument(uri.file());
+    const lsp::SemanticTokensDeltaParams &params,
+    LSPResponder<std::optional<lsp::SemanticTokensOrDelta>> responder) {
+  MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file());
   if (!doc)
-    return onSemanticTokens({});
+    return responder.replyInvalidRequest();
 
   doc->onSemanticTokens(
-      uri, [this, uri = uri.file().str(), prevId = prevId.str(),
-            onSemanticTokens = std::move(onSemanticTokens)](
-               std::optional<std::vector<SemanticToken>> tokens) mutable {
+      params.textDocument.uri,
+      [this, uri = params.textDocument.uri.file().str(),
+       prevId = params.previousResultId, responder = std::move(responder)](
+          std::optional<std::vector<SemanticToken>> tokens) mutable {
         if (!tokens)
-          return onSemanticTokens({});
+          return responder.reply({});
         std::vector<lsp::SemanticToken> lspTokens =
             toLspSemanticTokens(*tokens);
 
@@ -2328,15 +2361,15 @@ void MojoServer::onSemanticTokensDelta(
           incrementNumericString(prevResult.resultId);
           result.resultId = prevResult.resultId;
         }
-        onSemanticTokens(std::move(result));
+        responder.reply(std::move(result));
       });
 }
 
-void MojoServer::getSignatureHelp(const lsp::URIForFile &uri,
-                                  const lsp::Position &pos,
-                                  OnResultFn<lsp::SignatureHelp> onHelpFn) {
-  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onSignatureHelp(uri, pos, std::move(onHelpFn));
+void MojoServer::getSignatureHelp(const lsp::TextDocumentPositionParams &params,
+                                  LSPResponder<lsp::SignatureHelp2> responder) {
+  if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
+    doc->onSignatureHelp(params.textDocument.uri, params.position,
+                         std::move(responder));
   else
-    onHelpFn({});
+    responder.replyInvalidRequest();
 }

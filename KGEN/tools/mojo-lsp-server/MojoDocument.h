@@ -204,41 +204,41 @@ public:
   //===--------------------------------------------------------------------===//
   // Code Actions
 
-  void getCodeActions(const mlir::lsp::URIForFile &uri,
-                      const mlir::lsp::Range &pos,
-                      const mlir::lsp::CodeActionContext &context,
-                      OnResultFn<std::vector<mlir::lsp::CodeAction>> onActions);
+  void
+  getCodeActions(const mlir::lsp::URIForFile &uri, const mlir::lsp::Range &pos,
+                 const mlir::lsp::CodeActionContext &context,
+                 LSPResponder<std::vector<mlir::lsp::CodeAction>> responder);
 
   //===--------------------------------------------------------------------===//
   // Language Features
 
   void onCodeCompletion(const mlir::lsp::URIForFile &uri,
                         const mlir::lsp::Position &completePos,
-                        OnResultFn<mlir::lsp::CompletionList> onCompletionFn);
+                        LSPResponder<mlir::lsp::CompletionList> responder);
 
-  void
-  onDefinition(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
-               OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn);
+  void onDefinition(const mlir::lsp::URIForFile &uri,
+                    const mlir::lsp::Position &pos,
+                    LSPResponder<std::vector<mlir::lsp::Location>> responder);
 
   void onDocumentSymbol(
       const mlir::lsp::URIForFile &uri,
-      OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn);
+      LSPResponder<std::vector<mlir::lsp::DocumentSymbol>> responder);
 
-  void onFoldingRange(
-      const mlir::lsp::URIForFile &uri,
-      OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn);
+  void
+  onFoldingRange(const mlir::lsp::URIForFile &uri,
+                 LSPResponder<std::vector<mlir::lsp::FoldingRange>> responder);
 
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
                LSPResponder<std::optional<mlir::lsp::Hover>> responder);
 
   void onInlayHint(const mlir::lsp::URIForFile &uri,
                    const mlir::lsp::Range &range,
-                   OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint);
+                   LSPResponder<std::vector<mlir::lsp::InlayHint>> responder);
 
   void onReferences(const mlir::lsp::URIForFile &uri,
                     const mlir::lsp::Position &position,
                     bool includeDeclaration,
-                    OnResultFn<std::vector<mlir::lsp::Location>> onReferences);
+                    LSPResponder<std::vector<mlir::lsp::Location>> responder);
 
   void onSemanticTokens(
       const mlir::lsp::URIForFile &uri,
@@ -246,7 +246,7 @@ public:
 
   void onSignatureHelp(const mlir::lsp::URIForFile &uri,
                        const mlir::lsp::Position &pos,
-                       OnResultFn<mlir::lsp::SignatureHelp> onHelpFn);
+                       LSPResponder<mlir::lsp::SignatureHelp2> responder);
 
 protected:
   MojoDocument(Kind kind, ArrayRef<mlir::lsp::URIForFile> uris, int64_t version,

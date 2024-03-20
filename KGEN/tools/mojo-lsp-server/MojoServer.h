@@ -83,62 +83,54 @@ public:
 
   /// Get the set of code actions within the file.
   void
-  getCodeActions(const mlir::lsp::URIForFile &uri, const mlir::lsp::Range &pos,
-                 const mlir::lsp::CodeActionContext &context,
-                 OnResultFn<std::vector<mlir::lsp::CodeAction>> onActionsFn);
+  getCodeActions(const mlir::lsp::CodeActionParams &params,
+                 LSPResponder<std::vector<mlir::lsp::CodeAction>> responder);
 
   /// Get the code completion list for the position within the given file.
-  void onCodeCompletion(const mlir::lsp::URIForFile &uri,
-                        const mlir::lsp::Position &completePos,
-                        OnResultFn<mlir::lsp::CompletionList> onCompletionFn);
+  void onCodeCompletion(const mlir::lsp::CompletionParams &params,
+                        LSPResponder<mlir::lsp::CompletionList> responder);
 
   /// Get the identifier location of the symbol declarations that contain the
   /// given position.
-  void
-  onDefinition(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
-               OnResultFn<std::vector<mlir::lsp::Location>> onDefinitionFn);
+  void onDefinition(const mlir::lsp::TextDocumentPositionParams &params,
+                    LSPResponder<std::vector<mlir::lsp::Location>> responder);
 
   /// Find all of the document symbols within the given file.
   void onDocumentSymbol(
-      const mlir::lsp::URIForFile &uri,
-      OnResultFn<std::vector<mlir::lsp::DocumentSymbol>> onSymbolsFn);
+      const mlir::lsp::DocumentSymbolParams &params,
+      LSPResponder<std::vector<mlir::lsp::DocumentSymbol>> responder);
 
   /// Find all of the folding ranges within the given file.
-  void onFoldingRange(
-      const mlir::lsp::URIForFile &uri,
-      OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn);
+  void
+  onFoldingRange(const mlir::lsp::FoldingRangeParams &params,
+                 LSPResponder<std::vector<mlir::lsp::FoldingRange>> responder);
 
   /// Get a `Hover` element corresponding to the given document position.
   void onHover(const mlir::lsp::TextDocumentPositionParams &params,
                LSPResponder<std::optional<mlir::lsp::Hover>> responder);
 
   /// Get inlay hints for the given document range.
-  void onInlayHint(const mlir::lsp::URIForFile &uri,
-                   const mlir::lsp::Range &range,
-                   OnResultFn<std::vector<mlir::lsp::InlayHint>> onInlayHint);
+  void onInlayHint(const mlir::lsp::InlayHintsParams &params,
+                   LSPResponder<std::vector<mlir::lsp::InlayHint>> responder);
 
   // Get the references of the symbol in the given location.
-  void onReferences(const mlir::lsp::URIForFile &uri,
-                    const mlir::lsp::Position &position,
-                    bool includeDeclaration,
-                    OnResultFn<std::vector<mlir::lsp::Location>> onReferences);
+  void onReferences(const mlir::lsp::ReferenceParams &params,
+                    LSPResponder<std::vector<mlir::lsp::Location>> responder);
 
   /// Get the semantic tokens for the given document.
   void onSemanticTokens(
-      const mlir::lsp::URIForFile &uri,
-      OnResultFn<std::optional<mlir::lsp::SemanticTokens>> onSemanticTokens);
+      const mlir::lsp::SemanticTokensParams &params,
+      LSPResponder<std::optional<mlir::lsp::SemanticTokens>> responder);
 
   /// Get the delta of semantic tokens for the given document compared to the
   /// tokens at the given identifier (representing a previous result).
   void onSemanticTokensDelta(
-      const mlir::lsp::URIForFile &uri, StringRef prevId,
-      OnResultFn<std::optional<mlir::lsp::SemanticTokensOrDelta>>
-          onSemanticTokens);
+      const mlir::lsp::SemanticTokensDeltaParams &params,
+      LSPResponder<std::optional<mlir::lsp::SemanticTokensOrDelta>> responder);
 
   /// Get the signature help for the position within the given document.
-  void getSignatureHelp(const mlir::lsp::URIForFile &uri,
-                        const mlir::lsp::Position &pos,
-                        OnResultFn<mlir::lsp::SignatureHelp> onHelpFn);
+  void getSignatureHelp(const mlir::lsp::TextDocumentPositionParams &params,
+                        LSPResponder<mlir::lsp::SignatureHelp2> responder);
 
 private:
   struct Impl;
