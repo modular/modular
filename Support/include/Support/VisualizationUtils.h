@@ -18,8 +18,6 @@
 
 namespace M {
 
-constexpr std::string_view kDefaultVisualizationFileName = "maxVizModel";
-
 std::string getFileNameWithExtension(const std::filesystem::path &inputPath,
                                      const std::string &defaultFileName);
 
@@ -29,8 +27,9 @@ std::filesystem::path getBasePath(const std::filesystem::path &inputPath);
 // TODO(#34233): Most of this function should move to MAX CLI code once set
 // up.
 ErrorOr<std::string> createFilepath(const std::filesystem::path &vizOutputPath,
-                                    std::string defaultFileName = std::string{
-                                        kDefaultVisualizationFileName});
+                                    const std::string &modelPath);
+
+ErrorOr<std::string> getDefaultFilename(const std::string &modelPath);
 
 } // namespace M
 
