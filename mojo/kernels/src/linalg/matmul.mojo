@@ -2773,7 +2773,7 @@ fn sgemm_warp_tiling_kernel[
                             vec,
                         )
                     else:
-                        C_interim.aligned_simd_store[4, 16](int(c_idx), vec)
+                        C_interim.store[width=4, alignment=16](int(c_idx), vec)
 
 
 # Matrix-Column Vector Multiplication
