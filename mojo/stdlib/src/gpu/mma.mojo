@@ -165,6 +165,45 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d[2] = rebind[Scalar[d.type]](r.get[2, Float32]())
         d[3] = rebind[Scalar[d.type]](r.get[3, Float32]())
 
+    elif (
+        d.type == DType.float32
+        and d.size == 4
+        and a.type == DType.bfloat16
+        and a.size == 8
+        and b.type == DType.bfloat16
+        and b.size == 4
+        and c.type == DType.float32
+        and c.size == 4
+    ):
+        var sa = _split(a)
+        var sa1 = _split(sa[0])
+        var sa2 = _split(sa[1])
+        var sb = _split(b)
+        var c0 = c
+
+        var c_ptr = Pointer.address_of(c0).bitcast[Float32]()
+
+        var r = llvm_intrinsic[
+            "llvm.nvvm.mma.m16n8k16.row.col.bf16",
+            (Float32, Float32, Float32, Float32),
+        ](
+            bitcast[DType.int32, 1](sa1[0]),
+            bitcast[DType.int32, 1](sa1[1]),
+            bitcast[DType.int32, 1](sa2[0]),
+            bitcast[DType.int32, 1](sa2[1]),
+            bitcast[DType.int32, 1](sb[0]),
+            bitcast[DType.int32, 1](sb[1]),
+            c_ptr[0],
+            c_ptr[1],
+            c_ptr[2],
+            c_ptr[3],
+        )
+
+        d[0] = rebind[Scalar[d.type]](r.get[0, Float32]())
+        d[1] = rebind[Scalar[d.type]](r.get[1, Float32]())
+        d[2] = rebind[Scalar[d.type]](r.get[2, Float32]())
+        d[3] = rebind[Scalar[d.type]](r.get[3, Float32]())
+
     # ===------------------------------------------------------------------===#
     # F32 = tf32 * tf32 + F32
     # ===------------------------------------------------------------------===#
