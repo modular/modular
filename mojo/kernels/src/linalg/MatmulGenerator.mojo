@@ -272,9 +272,9 @@ struct MatmulDynamicState[data_type: MatmulDataType]:
     fn get[
         matmul_config: MatmulConfig, data_layout: MatmulOperandLayout
     ](
-        c: NDBuffer[data_type.accum_type, 2, matmul_config.shape_c],
-        a: NDBuffer[data_type.value_type, 2, matmul_config.shape_a],
-        b: NDBuffer[data_type.value_type, 2, matmul_config.shape_b],
+        c: NDBuffer[data_type.accum_type, 2, matmul_config.c_shape],
+        a: NDBuffer[data_type.value_type, 2, matmul_config.a_shape],
+        b: NDBuffer[data_type.value_type, 2, matmul_config.b_shape],
         global_offset: GemmShape,
         valid_tile_bound: GemmShape,
     ) -> Self:
@@ -1187,9 +1187,9 @@ struct TiledMatmulGenerated[
 
     @staticmethod
     fn run(
-        c: NDBuffer[data_type.accum_type, 2, config.shape_c],
-        a: NDBuffer[data_type.value_type, 2, config.shape_a],
-        b: NDBuffer[data_type.value_type, 2, config.shape_b],
+        c: NDBuffer[data_type.accum_type, 2, config.c_shape],
+        a: NDBuffer[data_type.value_type, 2, config.a_shape],
+        b: NDBuffer[data_type.value_type, 2, config.b_shape],
         global_tile_offset: GemmShape,
         global_tile_shape: GemmShape,
     ):
@@ -1294,9 +1294,9 @@ struct TiledMatmulBiasGenerated[
 
     @staticmethod
     fn run(
-        c: NDBuffer[data_type.accum_type, 2, config.shape_c],
-        a: NDBuffer[data_type.value_type, 2, config.shape_a],
-        b: NDBuffer[data_type.value_type, 2, config.shape_b],
+        c: NDBuffer[data_type.accum_type, 2, config.c_shape],
+        a: NDBuffer[data_type.value_type, 2, config.a_shape],
+        b: NDBuffer[data_type.value_type, 2, config.b_shape],
         bias: NDBuffer[data_type.accum_type, 1, config.shape_bias],
         global_tile_offset: GemmShape,
         global_tile_shape: GemmShape,

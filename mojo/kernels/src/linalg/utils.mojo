@@ -38,13 +38,13 @@ struct MatmulConfig:
     """Static configuration of tiled matmul algorithms."""
 
     # Static shape info of Operand A.
-    var shape_a: DimList
+    var a_shape: DimList
 
     # Static shape info of Operand B.
-    var shape_b: DimList
+    var b_shape: DimList
 
     # Static shape info of Operand C.
-    var shape_c: DimList
+    var c_shape: DimList
 
     # Static packed shape info of the packed buffer.
     var packed_shape: DimList
@@ -79,9 +79,9 @@ struct MatmulConfig:
     fn __init__(
         inout self,
         *,
-        shape_a: DimList,
-        shape_b: DimList,
-        shape_c: DimList,
+        a_shape: DimList,
+        b_shape: DimList,
+        c_shape: DimList,
         packed_shape: DimList,
         shape_bias: DimList,
         simd_size: Int,
@@ -93,9 +93,9 @@ struct MatmulConfig:
         use_i8mm: Bool,
         saturated_vnni: Bool,
     ):
-        self.shape_a = shape_a
-        self.shape_b = shape_b
-        self.shape_c = shape_c
+        self.a_shape = a_shape
+        self.b_shape = b_shape
+        self.c_shape = c_shape
         self.packed_shape = packed_shape
         self.shape_bias = shape_bias
         self.simd_size = simd_size
@@ -171,16 +171,16 @@ struct GemmShape:
     fn get[
         transpose_a: Bool,
         transpose_b: Bool,
-        shape_c: DimList,
-        shape_a: DimList,
-        shape_b: DimList,
+        c_shape: DimList,
+        a_shape: DimList,
+        b_shape: DimList,
         a_type: DType,
         b_type: DType,
         c_type: DType,
     ](
-        c: NDBuffer[c_type, 2, shape_c],
-        a: NDBuffer[a_type, 2, shape_a],
-        b: NDBuffer[b_type, 2, shape_b],
+        c: NDBuffer[c_type, 2, c_shape],
+        a: NDBuffer[a_type, 2, a_shape],
+        b: NDBuffer[b_type, 2, b_shape],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -203,9 +203,9 @@ struct GemmShape:
         layout: MatmulOperandLayout,
         data_type: MatmulDataType,
     ](
-        c: NDBuffer[data_type.accum_type, 2, config.shape_c],
-        a: NDBuffer[data_type.value_type, 2, config.shape_a],
-        b: NDBuffer[data_type.value_type, 2, config.shape_b],
+        c: NDBuffer[data_type.accum_type, 2, config.c_shape],
+        a: NDBuffer[data_type.value_type, 2, config.a_shape],
+        b: NDBuffer[data_type.value_type, 2, config.b_shape],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -993,9 +993,9 @@ fn get_matmul_config[
     alias factor = 4 if use_i8mm_fn[a_type, b_type, c_type]() else simd_size
 
     return MatmulConfig(
-        shape_a=DimList.create_unknown[2](),
-        shape_b=DimList.create_unknown[2](),
-        shape_c=DimList.create_unknown[2](),
+        a_shape=DimList.create_unknown[2](),
+        b_shape=DimList.create_unknown[2](),
+        c_shape=DimList.create_unknown[2](),
         packed_shape=DimList.create_unknown[3](),
         shape_bias=DimList.create_unknown[1](),
         simd_size=simd_size,

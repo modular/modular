@@ -651,16 +651,16 @@ fn get_trace_information[
     adj_a: Bool,
     adj_b: Bool,
 ) -> String:
-    var shape_a: String
-    var shape_b: String
-    var shape_c: String
-    shape_a = String("x").join(a_matrix_shape)
-    shape_b = String("x").join(b_matrix_shape)
-    shape_c = String("x").join(c_matrix_shape)
+    var a_shape: String
+    var b_shape: String
+    var c_shape: String
+    a_shape = String("x").join(a_matrix_shape)
+    b_shape = String("x").join(b_matrix_shape)
+    c_shape = String("x").join(c_matrix_shape)
 
-    var a_description = String("A=") + shape_a
-    var b_description = String("B=") + shape_b
-    var c_description = String("C=") + shape_c
+    var a_description = String("A=") + a_shape
+    var b_description = String("B=") + b_shape
+    var c_description = String("C=") + c_shape
     var adj_a_description = String("adj_a=") + adj_a
     var adj_b_description = String("adj_b=") + adj_b
 
