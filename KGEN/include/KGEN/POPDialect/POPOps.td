@@ -1577,7 +1577,7 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     attr-dict
     custom<ParamValue>($assembly, "StringType::get($_ctxt)") `,`
     custom<ParamValue>($constraints, "StringType::get($_ctxt)")
-    operands `:` functional-type(operands, results)
+    `(` operands `)` `:` functional-type(operands, results)
    }];
 }
 
