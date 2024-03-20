@@ -200,7 +200,7 @@ fn sgemm_double_buffer[
         var vec = loada_smem_ptr.aligned_simd_load[simd_size_int, alignment](
             i * warp_dim_y
         )
-        a_reg.aligned_simd_store[simd_size_int, alignment]((0, i), vec)
+        a_reg.store[width=simd_size_int, alignment=alignment]((0, i), vec)
 
     # Load B fragments to the first buffer.
     @unroll
@@ -208,7 +208,7 @@ fn sgemm_double_buffer[
         var vec = loadb_smem_ptr.aligned_simd_load[simd_size_int, alignment](
             i * warp_dim_x
         )
-        b_reg.aligned_simd_store[simd_size_int, alignment]((0, i), vec)
+        b_reg.store[width=simd_size_int, alignment=alignment]((0, i), vec)
 
     var num_k_tiles = Scalar[itype](div_ceil(int(K), int(BK)))
 
@@ -249,7 +249,7 @@ fn sgemm_double_buffer[
                 var vec = loada_smem_ptr.aligned_simd_load[
                     simd_size_int, alignment
                 ](next_k * BM_padded + i * warp_dim_y)
-                a_reg.aligned_simd_store[simd_size_int, alignment](
+                a_reg.store[width=simd_size_int, alignment=alignment](
                     (next_buffer_id, i), vec
                 )
 
@@ -259,7 +259,7 @@ fn sgemm_double_buffer[
                 var vec = loadb_smem_ptr.aligned_simd_load[
                     simd_size_int, alignment
                 ](next_k * BN + i * warp_dim_x)
-                b_reg.aligned_simd_store[simd_size_int, alignment](
+                b_reg.store[width=simd_size_int, alignment=alignment](
                     (next_buffer_id, i), vec
                 )
 
@@ -302,7 +302,7 @@ fn sgemm_double_buffer[
                 var vec = loada_smem_ptr.aligned_simd_load[
                     simd_size_int, alignment
                 ](next_k * BM_padded + i * warp_dim_y)
-                a_reg.aligned_simd_store[simd_size_int, alignment](
+                a_reg.store[width=simd_size_int, alignment=alignment](
                     (next_buffer_id, i), vec
                 )
 
@@ -312,7 +312,7 @@ fn sgemm_double_buffer[
                 var vec = loadb_smem_ptr.aligned_simd_load[
                     simd_size_int, alignment
                 ](next_k * BN + i * warp_dim_x)
-                b_reg.aligned_simd_store[simd_size_int, alignment](
+                b_reg.store[width=simd_size_int, alignment=alignment](
                     (next_buffer_id, i), vec
                 )
 
