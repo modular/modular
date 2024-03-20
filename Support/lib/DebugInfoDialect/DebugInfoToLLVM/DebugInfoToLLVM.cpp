@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
-#include "Support/DebugInfoDialect/DebugInfoToLLVM/DIExpressionSimplifier.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -910,5 +909,4 @@ void DebugInfoToLLVMPass::runOnOperation() {
 
   // Clean up the generated LLVM.
   convertDbgValueToDeclare(getOperation());
-  simplifyLLVMDIExpressionRecursively(getOperation());
 }
