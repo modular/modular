@@ -247,7 +247,7 @@ fn test_aligned_load_store():
     print(matrix.aligned_simd_load[4, 16](3, 0))
 
     # CHECK: [0, 1, 2, 3]
-    matrix.aligned_simd_store[4, 32](Index(3, 0), iota[DType.index, 4]())
+    matrix.store[width=4, alignment=32](Index(3, 0), iota[DType.index, 4]())
     print(matrix.aligned_simd_load[4, 32](3, 0))
 
 

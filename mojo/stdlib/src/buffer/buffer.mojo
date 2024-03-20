@@ -65,6 +65,8 @@ struct Buffer[
     var dtype: DType
     """The dynamic data type of the buffer."""
 
+    alias _default_alignment = alignof[type]() if triple_is_nvidia_cuda() else 1
+
     @always_inline
     fn __init__(inout self):
         """Default initializer for Buffer. By default the fields are all
@@ -249,21 +251,8 @@ struct Buffer[
         self.store[width=1](idx, val)
 
     @always_inline
-    fn store[*, width: Int = 1](self, idx: Int, val: SIMD[type, width]):
-        """Stores a simd value into the buffer at the specified index.
-
-        Parameters:
-            width: The width of the simd vector.
-
-        Args:
-            idx: The index into the Buffer.
-            val: The value to store.
-        """
-        self.data.store[width=width](idx, val)
-
-    @always_inline
-    fn aligned_simd_store[
-        width: Int, alignment: Int
+    fn store[
+        *, width: Int = 1, alignment: Int = Self._default_alignment
     ](self, idx: Int, val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
@@ -636,6 +625,8 @@ struct NDBuffer[
     """The dynamic stride of the buffer."""
     var is_contiguous: Bool
     """True if the contents of the buffer are contiguous in memory."""
+
+    alias _default_alignment = alignof[type]() if triple_is_nvidia_cuda() else 1
 
     @always_inline
     fn __init__(inout self):
@@ -1286,47 +1277,7 @@ struct NDBuffer[
 
     @always_inline
     fn store[
-        *, width: Int = 1
-    ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
-        """Stores a simd value into the buffer at the specified index.
-
-        Constraints:
-            The buffer must be contiguous or width must be 1.
-
-        Parameters:
-            width: The width of the simd vector.
-
-        Args:
-            idx: The index into the Buffer.
-            val: The value to store.
-        """
-        self.store[width=width](idx.as_tuple(), val)
-
-    @always_inline
-    fn store[
-        *, width: Int = 1
-    ](self, idx: StaticTuple[Int, rank], val: SIMD[type, width]):
-        """Stores a simd value into the buffer at the specified index.
-
-        Constraints:
-            The buffer must be contiguous or width must be 1.
-
-        Parameters:
-            width: The width of the simd vector.
-
-        Args:
-            idx: The index into the Buffer.
-            val: The value to store.
-        """
-        debug_assert(
-            self.is_contiguous or width == 1,
-            "Function requires contiguous buffer.",
-        )
-        self._offset(idx).store[width=width](val)
-
-    @always_inline
-    fn aligned_simd_store[
-        width: Int, alignment: Int
+        *, width: Int = 1, alignment: Int = Self._default_alignment
     ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
@@ -1341,11 +1292,11 @@ struct NDBuffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.aligned_simd_store[width, alignment](idx.as_tuple(), val)
+        self.store[width=width, alignment=alignment](idx.as_tuple(), val)
 
     @always_inline
-    fn aligned_simd_store[
-        width: Int, alignment: Int
+    fn store[
+        *, width: Int = 1, alignment: Int = Self._default_alignment
     ](self, idx: StaticTuple[Int, rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
