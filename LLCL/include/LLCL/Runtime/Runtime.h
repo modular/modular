@@ -81,8 +81,24 @@ struct RuntimeOptions {
   size_t numThreads = 0;
   size_t maxThreads = 0;
   bool singleThreaded = false;
-  std::string profileFilename = {};
-  uint64_t maxProfilingLevel = Trace::kFullyEnabled;
+
+  /// Filepath to write profile to, which enables profiling only if set.
+  std::string profileFilename;
+
+  /// Runtime configurable filter for profiling types (`Trace::Type`).
+  /// Currently this only takes "type" into account and ignores "level".
+  /// So any non-zero value enables the level, in other words `11111` and
+  /// `22222` and `12121` all have the same effect. Set this in Runtime's ctor
+  /// via RuntimeOptions.runtimeProfilingTypeMask.
+  ///
+  /// For example:
+  ///
+  /// LLCL::RuntimeOptions rtOpt;
+  /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
+  /// auto rt = LLCL::createRuntimeIfNeeded(rtOpt);
+  ///
+  /// Creates a Runtime that will only record `kOther` type events.
+  uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled;
 
   // DO NOT CHANGE THIS.
 
@@ -310,7 +326,7 @@ public:
   /// and the profile JSON and text will be written to files with that prefix.
   Runtime(CompactRuntimePtr runtimePtr, std::unique_ptr<Allocator> allocator,
           std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
-          uint64_t maxProfilingLevel = Trace::kFullyEnabled,
+          uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled,
           RuntimeOptions::ProfilerDebuginfo profilerDebuginfo =
               RuntimeOptions::ProfilerDebuginfo::kNoProfiler);
   ~Runtime();

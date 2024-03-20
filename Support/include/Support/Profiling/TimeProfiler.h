@@ -684,7 +684,7 @@ struct TimeTraceThreadProfiler {
 
   /// Checks if the trace type has been disabled at runtime.
   bool isEnabled(Trace::Type type) const {
-    return (maxProfilingLevel >> Trace::typeBitshift(type)) &
+    return (runtimeProfilingTypeMask >> Trace::typeBitshift(type)) &
            Trace::kProfilingTypeBitmask;
   }
 
@@ -728,8 +728,20 @@ struct TimeTraceThreadProfiler {
   /// to unrelated children which just happen to run on the same thread.
   ProfilerEventId currentId = 0;
 
-  /// Runtime configurable analogue of MODULAR_LLCL_MAX_PROFILING_LEVEL.
-  uint64_t maxProfilingLevel;
+  /// Runtime configurable filter for profiling types (`Trace::Type`).
+  /// Currently this only takes "type" into account and ignores "level".
+  /// So any non-zero value enables the level, in other words `11111` and
+  /// `22222` and `12121` all have the same effect. Set this in Runtime's ctor
+  /// via RuntimeOptions.runtimeProfilingTypeMask.
+  ///
+  /// For example:
+  ///
+  /// LLCL::RuntimeOptions rtOpt;
+  /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
+  /// auto rt = LLCL::createRuntimeIfNeeded(rtOpt);
+  ///
+  /// Creates a Runtime that will only record `kOther` type events.
+  uint64_t runtimeProfilingTypeMask;
 };
 
 //===----------------------------------------------------------------------===//
@@ -800,8 +812,9 @@ struct GlobalProfilerContext {
 
   SmallVector<std::string> inputShapes;
 
-  // Runtime configurable analogue of MODULAR_LLCL_MAX_PROFILING_LEVEL.
-  uint64_t maxProfilingLevel;
+  /// Runtime configurable filter for profiling types (`Trace::Type`).
+  /// See TimeTraceThreadProfiler::runtimeProfilingTypeMask for detailed docs.
+  uint64_t runtimeProfilingTypeMask;
 };
 
 //===----------------------------------------------------------------------===//
@@ -855,10 +868,11 @@ private:
 struct TimeTraceProfiler {
   /// Initialize the time trace profiler. This should be constructed from the
   /// main thread.
-  /// `maxProfilingLevel` defaults to fully enabled, but can be set at runtime
-  /// to toggle trace types enabled with MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  /// `runtimeProfilingTypeMask` defaults to fully enabled, but can be set at
+  /// runtime to toggle trace types enabled with
+  /// MODULAR_LLCL_MAX_PROFILING_LEVEL.
   TimeTraceProfiler(unsigned timeTraceGranularity, StringRef procName,
-                    uint64_t maxProfilingLevel = Trace::kFullyEnabled);
+                    uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled);
 
   /// Destroy the time trace profiler. This should be destroyed from the
   /// main thread.
