@@ -277,7 +277,7 @@ struct Buffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.data.aligned_simd_store[width, alignment](idx, val)
+        self.data.store[width=width, alignment=alignment](idx, val)
 
     @always_inline
     fn simd_nt_store[width: Int](self, idx: Int, val: SIMD[type, width]):
@@ -1366,7 +1366,7 @@ struct NDBuffer[
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        self._offset(idx).aligned_simd_store[width, alignment](val)
+        self._offset(idx).store[width=width, alignment=alignment](val)
 
     @always_inline
     fn simd_nt_store[
