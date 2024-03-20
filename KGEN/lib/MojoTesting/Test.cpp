@@ -8,6 +8,7 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/ASTType.h"
+#include "KGEN/MojoParser/DocString.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
@@ -109,7 +110,8 @@ struct Test::TestDiscovery {
   // Utilities
 
   /// Return a TestID used for referencing the given decl.
-  static TestID getDeclTestID(StringRef path, Operation *op) {
+  static TestID getDeclTestID(StringRef path, Operation *op,
+                              bool isDocTestSuite = false) {
     auto printSymbol = [](StringRef symbol) {
       // Print the symbol name, escaping any characters that are not printable
       // or conflict with the ID schema.
@@ -125,17 +127,22 @@ struct Test::TestDiscovery {
     };
     mlir::SymbolOpInterface symOp = cast<mlir::SymbolOpInterface>(op);
 
-    // Collect the symbols making up the test name.
+    // Collect the symbols making up the test name if we're not defining a
+    // test suite.
     SmallVector<std::string> symbols;
-    do {
-      if (definesTestSuite(symOp))
-        break;
-      symbols.push_back(printSymbol(symOp.getNameAttr()));
-    } while ((symOp = symOp->getParentOfType<mlir::SymbolOpInterface>()));
+    if (!isDocTestSuite) {
+      do {
+        if (definesTestSuite(symOp))
+          break;
+        symbols.push_back(printSymbol(symOp.getNameAttr()));
+      } while ((symOp = symOp->getParentOfType<mlir::SymbolOpInterface>()));
+    }
     std::string testName = llvm::join(llvm::reverse(symbols), ".");
 
     // Collect the symbols making up the test suite name.
     symbols.clear();
+    if (isDocTestSuite)
+      symbols.push_back("__doc__");
     do {
       // The top-level id is already encoded in the path, no need to add it
       // to the test suite.
@@ -188,10 +195,38 @@ struct Test::TestDiscovery {
     return doesDeclDefineUnitTest(decl->getIfOperation(), *decl, shared);
   }
 
+  /// Return a doc test suite defined by the given decl, or nullopt if no doc
+  /// tests are defined.
+  static std::optional<Test> getDocTestSuiteFromDecl(StringRef filePath,
+                                                     Operation *declOp) {
+    auto astDeclOp = dyn_cast_if_present<ASTDeclInterface>(declOp);
+    if (!astDeclOp)
+      return std::nullopt;
+    DocStringAttr docStringAttr = astDeclOp.getDocStringAttr();
+    if (!docStringAttr)
+      return std::nullopt;
+    DocString docString(docStringAttr);
+    auto codeBlocks = docString.getCodeBlocks();
+    if (codeBlocks.empty())
+      return std::nullopt;
+    TestID testID(getDeclTestID(filePath, declOp, /*isDocTestSuite=*/true));
+
+    std::vector<Test> children;
+    for (size_t i : llvm::seq(docString.getCodeBlocks().size()))
+      children.emplace_back(Test(testID.strref() + "::" + Twine(i)));
+    return Test(testID, std::move(children));
+  }
+  static std::optional<Test> getDocTestSuiteFromDecl(StringRef filePath,
+                                                     MojoASTDeclRef decl) {
+    if (Operation *op = decl->getIfOperation())
+      return getDocTestSuiteFromDecl(filePath, op);
+    return std::nullopt;
+  }
+
   //===--------------------------------------------------------------------===//
   // Discover: Mojo Source
 
-  /// Discover tests defined within the given Mojo decl.
+  /// Discover tests defined by given Mojo decl.
   static void discoverTestsInDecl(StringRef path, MojoASTDeclRef ref,
                                   SharedState &shared, std::vector<Test> &tests,
                                   bool processUnitTests) {
@@ -199,22 +234,50 @@ struct Test::TestDiscovery {
     if (processUnitTests && doesDeclDefineUnitTest(ref, shared))
       tests.emplace_back(Test(getDeclTestID(path, ref)));
 
+    // Check for a doc test suite if this isn't a package (package doc strings
+    // are just a copy from their __init__).
+    if (!isa<PackageOp>(*ref)) {
+      if (std::optional<Test> test = getDocTestSuiteFromDecl(path, ref))
+        tests.emplace_back(std::move(*test));
+    }
+  }
+
+  /// Discover tests defined within the given Mojo decl.
+  static void discoverTestsNestedInDecl(StringRef path, MojoASTDeclRef ref,
+                                        SharedState &shared,
+                                        std::vector<Test> &tests,
+                                        bool processUnitTests) {
+    // Process tests in the decl.
+    discoverTestsInDecl(path, ref, shared, tests, processUnitTests);
+
+    // Process tests in the children of the decl.
     for (const MojoASTDeclRef::ChildEntry &child : ref.getChildren()) {
       for (MojoASTDeclRef decl : child.getDecls()) {
         // We only process direct children.
         if (decl->getParentDecl() != &*ref)
           continue;
 
-        // Check if the decl defines a new test suite.
-        if (definesTestSuite(decl.getIfOperation())) {
-          std::vector<Test> children;
-          discoverTestsInDecl(path, decl, shared, children, processUnitTests);
-          if (!children.empty()) {
-            tests.emplace_back(
-                Test(getDeclTestID(path, decl), std::move(children)));
+        // If the decl doesn't define a test suite, immediately process tests it
+        // defines.
+        if (!definesTestSuite(decl.getIfOperation())) {
+          // If the operation is still a container, recurse into it but don't
+          // start a new test suite.
+          if (isa<StructDeclOp, TraitDeclOp>(*decl)) {
+            discoverTestsNestedInDecl(path, decl, shared, tests,
+                                      processUnitTests);
+          } else {
+            discoverTestsInDecl(path, decl, shared, tests, processUnitTests);
           }
-        } else {
-          discoverTestsInDecl(path, decl, shared, tests, processUnitTests);
+          continue;
+        }
+
+        // Otherwise, collect all tests in the decl as a new test suite.
+        std::vector<Test> children;
+        discoverTestsNestedInDecl(path, decl, shared, children,
+                                  processUnitTests);
+        if (!children.empty()) {
+          tests.emplace_back(
+              Test(getDeclTestID(path, decl), std::move(children)));
         }
       }
     }
@@ -244,9 +307,9 @@ struct Test::TestDiscovery {
 
     // Process the decl to discover tests.
     std::vector<Test> tests;
-    discoverTestsInDecl(path.string(), moduleDecl,
-                        parserContext.getSharedState(), tests,
-                        processUnitTests);
+    discoverTestsNestedInDecl(path.string(), moduleDecl,
+                              parserContext.getSharedState(), tests,
+                              processUnitTests);
     if (tests.empty())
       return std::nullopt;
     return Test(TestID(path.string()), std::move(tests));
