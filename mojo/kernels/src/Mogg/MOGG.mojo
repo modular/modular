@@ -2122,6 +2122,7 @@ fn gather[
             rebind[StaticIntTuple[indices_rank]](coords)
         )
 
+    # FIXME(#26008): async raising functions are temporarily disabled.
     @parameter
     if single_thread_blocking_override:
         _gather[
