@@ -611,7 +611,7 @@ ExternFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 LogicalResult ExternFuncOp::verify() {
   DebugInfo::DISubprogramAttr subprogram =
       DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
-          getLoc(), DebugInfo::ScopeWalkPolicy::CalleePriority);
+          getLoc(), DebugInfo::LocWalkPolicy::CalleePriority);
   if (subprogram) {
     if (bitEnumContainsAny(subprogram.getSubprogramFlags(),
                            DebugInfo::SubprogramFlags::Definition))
