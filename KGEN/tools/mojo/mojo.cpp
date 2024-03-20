@@ -12,6 +12,7 @@
 #include "Package/mojo-package.h"
 #include "REPL/mojo-repl.h"
 #include "Run/mojo-run.h"
+#include "Test/mojo-test.h"
 
 #include "Config/Version.h"
 #include "KGEN/Support/Configuration.h"
@@ -67,6 +68,7 @@ int main(int argc, char **argv) {
   registerREPLSubcommand(registry);
   registerDebugSubcommand(registry);
   registerRunSubcommand(registry);
+  registerTestSubcommand(registry);
 
   // Configure the current python if it hasn't been set.
   ErrorOr<KGEN::MojoConfig> config = KGEN::MojoConfig::open();
