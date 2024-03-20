@@ -9,6 +9,14 @@
 
 // CHECK-NOT: non_unit.mojo
 // CHECK: inputs
+// CHECK:   inputs/doc.mojo>
+// CHECK:     inputs/doc.mojo@__doc__>
+// CHECK:       inputs/doc.mojo@__doc__::0>
+// CHECK:       inputs/doc.mojo@__doc__::1>
+// CHECK:     inputs/doc.mojo@doc_fn({{.*}}).__doc__>
+// CHECK:       inputs/doc.mojo@doc_fn({{.*}}).__doc__::0>
+// CHECK:     inputs/doc.mojo@Struct.doc_fn({{.*}}).__doc__>
+// CHECK:       inputs/doc.mojo@Struct.doc_fn({{.*}}).__doc__::0>
 // CHECK:   inputs/test_fire.🔥>
 // CHECK:     inputs/test_fire.🔥::test_fn()>
 // CHECK:     inputs/test_fire.🔥::fn_test()>
