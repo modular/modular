@@ -934,6 +934,13 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
   // result, which can can be different when memory only, when throwing, etc.
   ASTType fullResultType = resultType;
 
+  if (tcSignature.argList.effects.isAsync() &&
+      tcSignature.argList.effects.isThrows()) {
+    shared.emitError(resultLoc,
+                     "async functions that raise are not supported yet");
+    tcSignature.argList.effects.setAsync(false);
+  }
+
   // If it is memory-only, pass it indirectly as the last argument to the
   // function by-reference.
   TypeConvention rp = resultType.getRegisterPassability(resultLoc, shared);
