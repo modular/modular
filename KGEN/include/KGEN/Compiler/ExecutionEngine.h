@@ -393,9 +393,6 @@ private:
   /// List of buffers that contain archive files added to the JIT. This holds
   /// references to them so they aren't deallocated underneath our feet.
   SmallVector<BufferRef> archiveBuffers;
-
-  /// Should the ORC Jit output symbols for the `perf` command.
-  bool perfProfiling{false};
 };
 } // namespace M::KGEN
 
