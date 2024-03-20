@@ -63,7 +63,7 @@ fn run_elementwise[type: DType]() raises:
                 in_buffer.aligned_simd_load[simd_width, alignment](idx) + 42,
             )
         else:
-            out_buffer.simd_store[simd_width](
+            out_buffer.store[width=simd_width](
                 idx,
                 in_buffer.load[width=simd_width](idx) + 42,
             )
@@ -142,7 +142,7 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
                 in_buffer.aligned_simd_load[simd_width, alignment](idx) + 42,
             )
         else:
-            out_buffer.simd_store(
+            out_buffer.store[width=simd_width](
                 idx,
                 in_buffer.load[width=simd_width](idx) + 42,
             )
@@ -199,7 +199,7 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
     fn func[simd_width: Int, rank: Int](idx0: StaticIntTuple[rank]):
         var idx = rebind[StaticIntTuple[3]](idx0)
 
-        out_buffer.simd_store[simd_width](
+        out_buffer.store[width=simd_width](
             idx, in_buffer_transposed.load[width=simd_width](idx)
         )
 

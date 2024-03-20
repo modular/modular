@@ -276,7 +276,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     fn epilogue_fn[
         type: DType, width: Int
     ](idx: StaticIntTuple[2], val: SIMD[type, width]):
-        c_device_nd.simd_store[width](
+        c_device_nd.store[width=width](
             idx, rebind[SIMD[DType.float32, width]](val + 4.0)
         )
 
