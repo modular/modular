@@ -2813,6 +2813,7 @@ fn gemv_kernel[
                 return x + y
 
             val = warp_reduce[shuffle_down, reduce_add](val)
+
             if lane_id() == 0:
                 accum += val
 
@@ -2853,12 +2854,7 @@ fn gemv_tc_kernel[
                 val = a.load(warpId * k + idx) * b.load(idx).cast[a_type]()
 
             var out_val = Scalar[c_type]()
-
-            @parameter
-            if c_type == a_type:
-                out_val = (tc_reduce[a_type](val)).cast[c_type]()
-            else:
-                out_val = tc_reduce[c_type, a_type](val)
+            out_val = tc_reduce[c_type, a_type](val)
 
             if lane_id() == 0:
                 accum += out_val
