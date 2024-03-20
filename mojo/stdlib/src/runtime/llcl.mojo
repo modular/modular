@@ -397,9 +397,18 @@ struct TaskGroupTaskList[type: AnyRegType](Sized):
         )
         self.size += 1
 
-    fn __getitem__(self, i: Int) -> TaskGroupTask[type]:
+    fn __getitem__(self, i: Int) -> Pointer[TaskGroupTask[type]]:
+        """Returns a pointer to the TaskGroupTask at the specified index.
+
+        Note that the returned pointer can only be dereferenced while the
+        TaskGroupTaskList is in scope as the underlying tasks get destroyed
+        in the destructor of the TaskGroupTaskList.
+        Remove this implementation once #35168 lands since Lists should suffice
+        """
+        debug_assert(i < self.size, "index must be within bounds")
         var hdl = (__get_address_as_owned_value(self.data.offset(i).address))
-        return hdl ^
+        var ret_val = Pointer[TaskGroupTask[type]].address_of(hdl)
+        return ret_val
 
     fn __len__(self) -> Int:
         return self.size
