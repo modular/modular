@@ -136,7 +136,7 @@ fn _small_batched_matmul[
                 else:
                     # This will store only once as it is a 1D reduction.
                     # Just use the original [B, B1,...,BN, 0, 0] indices.
-                    c_buf.simd_store[width](indices, value.cast[c_type]())
+                    c_buf.store[width=width](indices, value.cast[c_type]())
 
             @always_inline
             @parameter
@@ -185,7 +185,7 @@ fn _small_batched_matmul[
 
                         var b_val = b_buf.load[width=simd_width](b_buf_index)
 
-                        c_buf.simd_store[simd_width](
+                        c_buf.store[width=simd_width](
                             indices,
                             c_buf.load[width=simd_width](indices)
                             + a_val.cast[c_type]() * b_val.cast[c_type](),
