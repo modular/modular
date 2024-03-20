@@ -52,5 +52,6 @@ RuntimeOptions::createRuntime(StringRef profileName) const {
     break;
   }
   runtimeOptions.profileFilename = profileName;
+  runtimeOptions.profilerDebuginfo = profilerDebuginfo;
   return LLCL::createUniqueRuntime(runtimeOptions);
 }
