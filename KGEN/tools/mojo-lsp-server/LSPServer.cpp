@@ -24,9 +24,12 @@ using namespace mlir::lsp;
 using namespace M;
 using namespace M::Mojo::LSP;
 
-class LSPMessageHandler : public MessageHandler {
+/// Wrapper around MessageHandler for handling requests using an `LSPResponder`.
+class LSPRequestHandler {
 public:
-  using MessageHandler::MessageHandler;
+  LSPRequestHandler(LSPTelemetryContext &lspTelemetryCtx,
+                    MessageHandler &messageHandler)
+      : messageHandler(messageHandler), lspTelemetryCtx(lspTelemetryCtx) {}
 
   /// Wrapper around `MessageHandler::method` that provides an `LSPResponder` to
   /// the underlying implementation.
@@ -35,20 +38,23 @@ public:
               void (ThisT::*handler)(const Param &, LSPResponder<Result>)) {
     struct Handler {
       void invoke(const Param &param, Callback<Result> reply) {
-        (thisPtr->*handler)(param,
-                            LSPResponder<Result>(method, std::move(reply)));
+        (thisPtr->*handler)(param, LSPResponder<Result>(lspTelemetryCtx, method,
+                                                        std::move(reply)));
       }
+      LSPTelemetryContext &lspTelemetryCtx;
       StringRef method;
       ThisT *thisPtr;
       void (ThisT::*handler)(const Param &, LSPResponder<Result>);
     };
-    auto *wrappedHandlerPtr =
-        new (allocator.Allocate<Handler>()) Handler{method, thisPtr, handler};
-    MessageHandler::method(method, wrappedHandlerPtr, &Handler::invoke);
+    auto *wrappedHandlerPtr = new (allocator.Allocate<Handler>())
+        Handler{lspTelemetryCtx, method, thisPtr, handler};
+    messageHandler.method(method, wrappedHandlerPtr, &Handler::invoke);
   }
 
 private:
   llvm::BumpPtrAllocator allocator;
+  MessageHandler &messageHandler;
+  LSPTelemetryContext &lspTelemetryCtx;
 };
 
 //===----------------------------------------------------------------------===//
@@ -245,19 +251,21 @@ mlir::LogicalResult
 M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                                bool waitOnShutdown,
                                ArrayRef<std::string> includeDirs) {
-  LSPMessageHandler messageHandler(transport);
+  MessageHandler messageHandler(transport);
   MojoServer server(
       singleThreaded, waitOnShutdown,
       messageHandler.outgoingNotification<PublishDiagnosticsParams>(
           "textDocument/publishDiagnostics"),
       includeDirs);
+  LSPRequestHandler requestHandler(server.getLSPTelemetryContext(),
+                                   messageHandler);
   LSPServer lspServer(server, transport);
 
   // Initialization
-  messageHandler.method("initialize", &lspServer, &LSPServer::onInitialize);
+  requestHandler.method("initialize", &lspServer, &LSPServer::onInitialize);
   messageHandler.notification("initialized", &lspServer,
                               &LSPServer::onInitialized);
-  messageHandler.method("shutdown", &lspServer, &LSPServer::onShutdown);
+  requestHandler.method("shutdown", &lspServer, &LSPServer::onShutdown);
 
   // Document Changes
   messageHandler.notification("notebookDocument/didOpen", &lspServer,
@@ -274,28 +282,28 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                               &LSPServer::onDocumentDidChange);
 
   // Code Action
-  messageHandler.method("textDocument/codeAction", &server,
+  requestHandler.method("textDocument/codeAction", &server,
                         &MojoServer::getCodeActions);
 
   // Language Features
-  messageHandler.method("textDocument/completion", &server,
+  requestHandler.method("textDocument/completion", &server,
                         &MojoServer::onCodeCompletion);
-  messageHandler.method("textDocument/definition", &server,
+  requestHandler.method("textDocument/definition", &server,
                         &MojoServer::onDefinition);
-  messageHandler.method("textDocument/documentSymbol", &server,
+  requestHandler.method("textDocument/documentSymbol", &server,
                         &MojoServer::onDocumentSymbol);
-  messageHandler.method("textDocument/foldingRange", &server,
+  requestHandler.method("textDocument/foldingRange", &server,
                         &MojoServer::onFoldingRange);
-  messageHandler.method("textDocument/hover", &server, &MojoServer::onHover);
-  messageHandler.method("textDocument/inlayHint", &server,
+  requestHandler.method("textDocument/hover", &server, &MojoServer::onHover);
+  requestHandler.method("textDocument/inlayHint", &server,
                         &MojoServer::onInlayHint);
-  messageHandler.method("textDocument/references", &server,
+  requestHandler.method("textDocument/references", &server,
                         &MojoServer::onReferences);
-  messageHandler.method("textDocument/semanticTokens/full", &server,
+  requestHandler.method("textDocument/semanticTokens/full", &server,
                         &MojoServer::onSemanticTokens);
-  messageHandler.method("textDocument/semanticTokens/full/delta", &server,
+  requestHandler.method("textDocument/semanticTokens/full/delta", &server,
                         &MojoServer::onSemanticTokensDelta);
-  messageHandler.method("textDocument/signatureHelp", &server,
+  requestHandler.method("textDocument/signatureHelp", &server,
                         &MojoServer::getSignatureHelp);
 
   // Run the main loop of the transport.

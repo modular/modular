@@ -34,6 +34,9 @@ public:
              ArrayRef<std::string> includeDirs);
   ~MojoServer();
 
+  // Get the telemetry context for this server.
+  LSPTelemetryContext &getLSPTelemetryContext();
+
   /// Begin the shutdown sequence for the server.
   void shutdown();
 

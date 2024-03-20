@@ -7,37 +7,55 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_SERVER_TRANSPORT_H
 #define KGEN_TOOLS_MOJO_LSP_SERVER_TRANSPORT_H
 
+#include "LSPTelemetryContext.h"
 #include "Protocol.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 
 namespace M::Mojo::LSP {
-/// Class used to dispatch a response to the client. It also helps creating
-/// responses for invalid inputs.
+/// Class used to dispatch a response to the client and perform telemetry at the
+/// request level. It also helps creating responses for invalid inputs and
+/// tracking them with telemetry.
 template <typename Result>
 class LSPResponder {
 public:
-  LSPResponder(StringRef request, mlir::lsp::Callback<Result> replyCallback)
-      : request(request), start(std::chrono::steady_clock::now()),
+  LSPResponder(LSPTelemetryContext &lspTelemetryCtx, StringRef request,
+               mlir::lsp::Callback<Result> replyCallback)
+      : lspTelemetryCtx(lspTelemetryCtx), request(request),
+        start(std::chrono::steady_clock::now()),
         replyCallback(std::move(replyCallback)){};
   LSPResponder(LSPResponder &&) = default;
 
   /// Used to reply to the client with the input data is invalid, e.g. the
   /// input location is not valid.
-  void replyInvalidRequest() { reply(Result{}); }
+  void replyInvalidRequest() {
+    reply(Result{});
+    lspTelemetryCtx.recordInvalidRequest(request);
+  }
 
   /// Used to reply to the client when the request has gone stale, e.g. the
   /// document has changed while the request was in the queue.
-  void replyOutdatedRequest() { reply(Result{}); }
+  void replyOutdatedRequest() {
+    reply(Result{});
+    lspTelemetryCtx.recordOutdatedRequest(request);
+  }
 
   /// Use to reply to the client when an actual response value was computed.
-  void reply(Result result) { replyCallback(std::move(result)); }
+  void reply(Result result) {
+    auto end = std::chrono::steady_clock::now();
+    replyCallback(std::move(result));
+
+    lspTelemetryCtx.recordResponseTime(
+        request,
+        std::chrono::duration_cast<std::chrono::microseconds>(end - start));
+  }
 
 private:
   LSPResponder(const LSPResponder &) = delete;
   LSPResponder &operator=(const LSPResponder &) = delete;
 
+  LSPTelemetryContext &lspTelemetryCtx;
   std::string request;
   std::chrono::steady_clock::time_point start;
   mlir::lsp::Callback<Result> replyCallback;
