@@ -236,7 +236,7 @@ struct Buffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.simd_store[1](idx, Scalar[type](val))
+        self.store[width=1](idx, Scalar[type](val))
 
     @always_inline
     fn __setitem__(self, idx: Int, val: Scalar[type]):
@@ -246,12 +246,10 @@ struct Buffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.simd_store[1](idx, val)
+        self.store[width=1](idx, val)
 
     @always_inline
-    fn simd_store[
-        width: Int,
-    ](self, idx: Int, val: SIMD[type, width]):
+    fn store[*, width: Int = 1](self, idx: Int, val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
         Parameters:
@@ -344,7 +342,7 @@ struct Buffer[
         @always_inline
         @parameter
         fn _fill[simd_width: Int](idx: Int):
-            self.simd_store[simd_width](idx, SIMD[type, simd_width].splat(val))
+            self.store[width=simd_width](idx, SIMD[type, simd_width].splat(val))
 
         vectorize[_fill, simd_width](len(self))
 
@@ -1284,11 +1282,11 @@ struct NDBuffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.simd_store[1](idx, val)
+        self.store[width=1](idx, val)
 
     @always_inline
-    fn simd_store[
-        width: Int
+    fn store[
+        *, width: Int = 1
     ](self, idx: StaticIntTuple[rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
@@ -1302,11 +1300,11 @@ struct NDBuffer[
             idx: The index into the Buffer.
             val: The value to store.
         """
-        self.simd_store[width](idx.as_tuple(), val)
+        self.store[width=width](idx.as_tuple(), val)
 
     @always_inline
-    fn simd_store[
-        width: Int
+    fn store[
+        *, width: Int = 1
     ](self, idx: StaticTuple[Int, rank], val: SIMD[type, width]):
         """Stores a simd value into the buffer at the specified index.
 
