@@ -34,15 +34,9 @@ trait AsyncTrait:
     async fn foobar(self):
         pass
 
-    async fn foobar_raise(self) raises -> Int:
-        pass
-
 
 struct AsyncStruct(AsyncTrait):
     async fn foobar(self):
-        pass
-
-    async fn foobar_raise(self) raises -> Int:
         pass
 
 
@@ -55,14 +49,6 @@ struct AsyncStructReg(AsyncTrait):
         # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
         # CHECK-NEXT: [[RES:%.*]] = lit.call {{.*}}__await__{{.*}}([[CORO]])
         # CHECK-NEXT: return [[RES]]
-        pass
-
-    async fn foobar_raise(self) raises -> Int:
-        # CHECK: [[POP_CORO:%.*]] = lit.async.call
-        # CHECK-NEXT: [[CORO:%.*]] = lit.call {{.*}}__init__{{.*}}([[POP_CORO]])
-        # CHECK-NEXT: [[RES_OR:%.*]] = lit.call {{.*}}__await__{{.*}}([[CORO]])
-        # CHECK-NEXT: [[RES:%.*]] = lit.handle_variant [[RES_OR]]
-        # CHECK: [[VAR:%.*]] = kgen.variant.create [[RES]]
         pass
 
 

@@ -1053,18 +1053,6 @@ struct StructWithAsync:
         _ = coroutine()
 
 
-# CHECK-LABEL: lit.func @"throwing_coroutine()"() throws|async|ownedresult -> !kgen.variant<!Error, !Int>
-async fn throwing_coroutine() raises -> Int:
-    raise Error {}
-
-
-# CHECK-LABEL: lit.func @"call_raising_coro()"
-fn call_raising_coro():
-    # CHECK: %[[CORO:.*]] = lit.async.call[{{.*}}throwing_coroutine
-    # CHECK-NEXT: call {{.*}}RaisingCoroutine::@"__init__{{.*}}<:type !Int>(%[[CORO]])
-    var coro = throwing_coroutine()
-
-
 # CHECK-LABEL: lit.func @"call_struct_async{{.*}}({{.*}}) async -> !kgen.none
 async fn call_struct_async(f: StructWithAsync):
     # CHECK-NEXT: lit.async.call[!lit.signature<[1]({{.*}}) async -> !kgen.none>: @{{.*}}](%f)
