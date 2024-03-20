@@ -5,16 +5,17 @@
 //===----------------------------------------------------------------------===//
 
 #include "LSPServer.h"
-#include "LLCL/Runtime/WorkQueue.h"
 #include "MojoServer.h"
 #include "Protocol.h"
 #include "SemanticTokens.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Transport.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/StringMap.h"
+#include <llvm/Support/Allocator.h>
 #include <optional>
 
 #define DEBUG_TYPE "mojo-lsp-server"
@@ -22,6 +23,33 @@
 using namespace mlir::lsp;
 using namespace M;
 using namespace M::Mojo::LSP;
+
+class LSPMessageHandler : public MessageHandler {
+public:
+  using MessageHandler::MessageHandler;
+
+  /// Wrapper around `MessageHandler::method` that provides an `LSPResponder` to
+  /// the underlying implementation.
+  template <typename Param, typename Result, typename ThisT>
+  void method2(llvm::StringLiteral method, ThisT *thisPtr,
+               void (ThisT::*handler)(const Param &, LSPResponder<Result>)) {
+    struct Handler {
+      void invoke(const Param &param, Callback<Result> reply) {
+        (thisPtr->*handler)(param,
+                            LSPResponder<Result>(method, std::move(reply)));
+      }
+      StringRef method;
+      ThisT *thisPtr;
+      void (ThisT::*handler)(const Param &, LSPResponder<Result>);
+    };
+    auto *wrappedHandlerPtr =
+        new (allocator.Allocate<Handler>()) Handler{method, thisPtr, handler};
+    MessageHandler::method(method, wrappedHandlerPtr, &Handler::invoke);
+  }
+
+private:
+  llvm::BumpPtrAllocator allocator;
+};
 
 //===----------------------------------------------------------------------===//
 // LSPServer
@@ -72,9 +100,6 @@ struct LSPServer {
 
   void onFoldingRange(const FoldingRangeParams &params,
                       Callback<std::vector<FoldingRange>> reply);
-
-  void onHover(const TextDocumentPositionParams &params,
-               Callback<llvm::json::Value> reply);
 
   void onInlayHint(const InlayHintsParams &params,
                    Callback<std::vector<InlayHint>> reply);
@@ -312,15 +337,6 @@ void LSPServer::onFoldingRange(const FoldingRangeParams &params,
       });
 }
 
-void LSPServer::onHover(const TextDocumentPositionParams &params,
-                        Callback<llvm::json::Value> reply) {
-  server.onHover(
-      params.textDocument.uri, params.position,
-      [reply = std::move(reply)](std::optional<Hover> hover) mutable {
-        reply(std::move(hover));
-      });
-}
-
 void LSPServer::onInlayHint(const InlayHintsParams &params,
                             Callback<std::vector<InlayHint>> reply) {
   server.onInlayHint(
@@ -389,7 +405,7 @@ mlir::LogicalResult
 M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                                bool waitOnShutdown,
                                ArrayRef<std::string> includeDirs) {
-  MessageHandler messageHandler(transport);
+  LSPMessageHandler messageHandler(transport);
   MojoServer server(
       singleThreaded, waitOnShutdown,
       messageHandler.outgoingNotification<PublishDiagnosticsParams>(
@@ -430,7 +446,7 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                         &LSPServer::onDocumentSymbol);
   messageHandler.method("textDocument/foldingRange", &lspServer,
                         &LSPServer::onFoldingRange);
-  messageHandler.method("textDocument/hover", &lspServer, &LSPServer::onHover);
+  messageHandler.method2("textDocument/hover", &server, &MojoServer::onHover);
   messageHandler.method("textDocument/inlayHint", &lspServer,
                         &LSPServer::onInlayHint);
   messageHandler.method("textDocument/references", &lspServer,

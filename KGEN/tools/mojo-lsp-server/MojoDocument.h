@@ -229,7 +229,7 @@ public:
       OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn);
 
   void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
-               OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
+               LSPResponder<std::optional<mlir::lsp::Hover>> responder);
 
   void onInlayHint(const mlir::lsp::URIForFile &uri,
                    const mlir::lsp::Range &range,

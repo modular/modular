@@ -9,6 +9,7 @@
 
 #include "Protocol.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Transport.h"
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace M::LLCL {
@@ -108,8 +109,8 @@ public:
       OnResultFn<std::vector<mlir::lsp::FoldingRange>> onFoldingRangeFn);
 
   /// Get a `Hover` element corresponding to the given document position.
-  void onHover(const mlir::lsp::URIForFile &uri, const mlir::lsp::Position &pos,
-               OnResultFn<std::optional<mlir::lsp::Hover>> onHoverFn);
+  void onHover(const mlir::lsp::TextDocumentPositionParams &params,
+               LSPResponder<std::optional<mlir::lsp::Hover>> responder);
 
   /// Get inlay hints for the given document range.
   void onInlayHint(const mlir::lsp::URIForFile &uri,

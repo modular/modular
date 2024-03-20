@@ -1191,16 +1191,17 @@ void MojoDocument::processDocStrings(MojoDocStrings &docStrings,
 // MojoDocument: Hover
 //===----------------------------------------------------------------------===//
 
-void MojoDocument::onHover(const lsp::URIForFile &uri, const lsp::Position &pos,
-                           OnResultFn<std::optional<lsp::Hover>> onHoverFn) {
+void MojoDocument::onHover(
+    const lsp::URIForFile &uri, const lsp::Position &pos,
+    LSPResponder<std::optional<mlir::lsp::Hover>> responder) {
   startTaskAfterParsing(
-      [uri, pos, onHoverFn = std::move(onHoverFn)](MojoDocument &doc) mutable {
+      [uri, pos, responder = std::move(responder)](MojoDocument &doc) mutable {
         if (doc.isInvalidated)
-          return onHoverFn({});
+          return responder.replyOutdatedRequest();
         SMLoc loc = doc.getLocFromPos(uri, pos);
         if (!loc.isValid())
-          return onHoverFn({});
-        onHoverFn(doc.onHoverSync(loc));
+          return responder.replyInvalidRequest();
+        responder.reply(doc.onHoverSync(loc));
       });
 }
 
@@ -2221,12 +2222,14 @@ void MojoServer::onFoldingRange(
     onFoldingRangeFn({});
 }
 
-void MojoServer::onHover(const lsp::URIForFile &uri, const lsp::Position &pos,
-                         OnResultFn<std::optional<lsp::Hover>> onHoverFn) {
-  if (MojoDocumentRef doc = impl->findDocument(uri.file()))
-    doc->onHover(uri, pos, std::move(onHoverFn));
+void MojoServer::onHover(
+    const lsp::TextDocumentPositionParams &params,
+    LSPResponder<std::optional<mlir::lsp::Hover>> responder) {
+  if (MojoDocumentRef doc = impl->findDocument(params.textDocument.uri.file()))
+    doc->onHover(params.textDocument.uri, params.position,
+                 std::move(responder));
   else
-    onHoverFn({});
+    responder.replyInvalidRequest();
 }
 
 void MojoServer::onInlayHint(
