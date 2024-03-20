@@ -56,6 +56,7 @@ add_subdirectory(lib/MojoTooling)
 
 add_subdirectory(lib/MojoLLDB)
 add_subdirectory(lib/MojoJupyter)
+add_subdirectory(lib/MojoTesting)
 
 add_subdirectory(tools/hash-mlir)
 add_subdirectory(tools/kgen)

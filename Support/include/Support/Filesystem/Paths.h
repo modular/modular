@@ -15,6 +15,9 @@ namespace M::Filesystem {
 /// directory that contains an `__init__.mojo` file).
 bool isMojoSourcePackagePath(const std::filesystem::path &path);
 
+/// Return if the given file path defines a mojo source file.
+bool isMojoSourceFile(const std::filesystem::path &path);
+
 } // namespace M::Filesystem
 
 #endif // SUPPORT_FILESYSTEM_PATHS_H
