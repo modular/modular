@@ -586,10 +586,9 @@ def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
     }
     ```
   }];
-  let arguments = (ins I1:$operand);
-  let assemblyFormat = [{
-    attr-dict $operand `:` type($operand)
-  }];
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
 }
 
 //===----------------------------------------------------------------------===//
@@ -625,8 +624,19 @@ def HLCF_ElifOp : HLCFParentOp<"elif"> {
       hlcf.yield %arg0 : index
     }
     ```
-  }];
 
+    Example:
+
+    ```mlir
+    %0 = hlcf.elif -> index {
+      hlcf.elif.yield %arg0 : i1
+    } then (%arg1 : index) {
+      hlcf.yield %arg1 : index
+    } else (%arg1 : index) {
+      hlcf.yield %arg1 : index
+    }
+    ```
+  }];
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$elseRegion, 
                         VariadicRegion<SizedRegion<1>>:$elifRegions);
