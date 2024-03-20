@@ -163,7 +163,7 @@ struct LayoutTensor[
     @always_inline
     fn aligned_store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
         alias alignment = alignof[SIMD[dtype, width]]()
-        return self.ptr.aligned_simd_store[width, alignment](
+        return self.ptr.store[width=width, alignment=alignment](
             self._offset(m, n), val
         )
 
