@@ -221,7 +221,8 @@ llvm::SMRange Diags::convertToSMRange(SourceRange range) const {
   // SourceRange typically represents the end of range in terms of the start
   // of the end location.  Convert to a SMRange with a byte-level end position
   // if needed.
-  if (!range.isByteLevel() && tokenEndPointAdjustmentFn)
+  if (!range.isByteLevel() && tokenEndPointAdjustmentFn &&
+      byteLevelRange.End.isValid())
     tokenEndPointAdjustmentFn(byteLevelRange.End);
   return byteLevelRange;
 }
@@ -401,7 +402,7 @@ FixIt FixIt::insertBeforeToken(SMLoc loc, const Twine &text) {
 /// at the specified location.
 FixIt FixIt::insertAfterToken(SMLoc loc, const Twine &text, Diags &diags) {
   // Find end of token if we have a token end point adjustment function.
-  if (diags.tokenEndPointAdjustmentFn)
+  if (diags.tokenEndPointAdjustmentFn && loc.isValid())
     diags.tokenEndPointAdjustmentFn(loc);
   return FixIt(SourceRange::getByteLevel(loc, loc), text);
 }
