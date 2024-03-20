@@ -105,6 +105,34 @@ void DebugInfoTypeConverter::applyRecursively(Operation *op) {
 //===----------------------------------------------------------------------===//
 
 namespace {
+class ConvertDebugKill : public mlir::OpConversionPattern<KillOp> {
+public:
+  ConvertDebugKill(TypeConverter &tc, DebugInfoTypeConverter &ditc,
+                   MLIRContext *ctx)
+      : OpConversionPattern(tc, ctx), ditc(ditc) {}
+
+  LogicalResult
+  matchAndRewrite(KillOp op, KillOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    DIType diType = ditc.convertDebugType(op.getValueInfo().getType());
+    if (!diType) {
+      return rewriter.notifyMatchFailure(op,
+                                         "failed to convert debuginfo type");
+    }
+    rewriter.modifyOpInPlace(op, [&] {
+      DILocalVariableAttr info = op.getValueInfo();
+      op.setValueInfoAttr(DILocalVariableAttr::get(
+          info.getScope(), info.getName(), info.getFile(), info.getLine(),
+          info.getArg(), info.getAlignInBits(), diType));
+    });
+    return success();
+  }
+
+private:
+  /// The converter for the local variable type.
+  DebugInfoTypeConverter &ditc;
+};
+
 class ConvertDebugValue : public mlir::OpConversionPattern<ValueOp> {
 public:
   ConvertDebugValue(TypeConverter &tc, DebugInfoTypeConverter &ditc,
@@ -138,6 +166,7 @@ private:
 void DebugInfo::populateTypeConversionPatterns(
     RewritePatternSet &patterns, DebugInfoTypeConverter &diConverter,
     TypeConverter &converter) {
+  patterns.add<ConvertDebugKill>(converter, diConverter, patterns.getContext());
   patterns.add<ConvertDebugValue>(converter, diConverter,
                                   patterns.getContext());
 }

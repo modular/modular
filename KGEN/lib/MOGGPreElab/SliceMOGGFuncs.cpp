@@ -1288,8 +1288,10 @@ public:
       // Strip all debug info. Its too annoying to maintain and there is no way
       // to actually debug the sliced kernel directly. Users would debug the
       // base kernel.
-      slicedComputeFunction.walk(
-          [](DebugInfo::ValueOp debug) { debug.erase(); });
+      slicedComputeFunction.walk([](Operation *op) {
+        if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op))
+          op->erase();
+      });
 
       // Clean up all the deconstructors. Not strictly needed as they will be
       // elaborated with the ref counting / allocation off.
@@ -1367,8 +1369,10 @@ public:
       // Strip all debug info. Its too annoying to maintain and there is no way
       // to actually debug the sliced kernel directly. Users would debug the
       // base kernel.
-      slicedComputeFunction.walk(
-          [](DebugInfo::ValueOp debug) { debug.erase(); });
+      slicedComputeFunction.walk([](Operation *op) {
+        if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op))
+          op->erase();
+      });
 
       // Add compute function part to the module, i.e the kernel sans
       // allocation.
