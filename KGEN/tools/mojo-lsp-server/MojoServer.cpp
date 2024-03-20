@@ -1916,6 +1916,8 @@ struct MojoServer::Impl {
             LLCL::createUniqueRuntime(LLCL::RuntimeOptions()
                                           .withSingleThreaded(singleThreaded)
                                           .withMainWillNotDonate())),
+        lspTelemetryContext(
+            runtime->emplaceContext<M::Telemetry::TelemetryContext>()),
         waitOnShutdown(waitOnShutdown),
         sendDiagnosticsFn(std::move(sendDiagnosticsFn)),
         includeDirs(includeDirs) {}
@@ -1954,6 +1956,9 @@ struct MojoServer::Impl {
   /// The runtime used when processing files.
   std::unique_ptr<LLCL::Runtime> runtime;
 
+  /// Manages the telemetry instance use to record metrics and events.
+  LSPTelemetryContext lspTelemetryContext;
+
   /// A flag indicating if the server should not invalidate requests on
   /// shutdown, and instead wait for them to complete.
   bool waitOnShutdown;
@@ -1985,6 +1990,10 @@ MojoServer::MojoServer(bool singleThreaded, bool waitOnShutdown,
     : impl(std::make_unique<Impl>(singleThreaded, waitOnShutdown,
                                   std::move(sendDiagnosticsFn), includeDirs)) {}
 MojoServer::~MojoServer() { shutdown(); }
+
+LSPTelemetryContext &MojoServer::getLSPTelemetryContext() {
+  return impl->lspTelemetryContext;
+}
 
 void MojoServer::shutdown() { impl->shutdown(); }
 
