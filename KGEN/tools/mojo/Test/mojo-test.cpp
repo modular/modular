@@ -9,6 +9,7 @@
 
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/MojoParser/EntryPoint.h"
+#include "KGEN/MojoTesting/Test.h"
 #include "KGEN/Package/Package.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
@@ -20,6 +21,7 @@
 
 using namespace M;
 using namespace mlir;
+using namespace M::KGEN::Mojo;
 
 //===----------------------------------------------------------------------===//
 // Command line argument parsing
@@ -45,8 +47,7 @@ static std::optional<int> parseArgs(const State &state,
   // argument.
   TestOptTable options;
   unsigned unused = 0;
-  llvm::opt::InputArgList allArgs =
-      options.ParseArgs(state.arguments, unused, unused);
+  args = options.ParseArgs(state.arguments, unused, unused);
 
   // If those arguments include `--help`, print help before checking any other
   // arguments.
@@ -83,7 +84,24 @@ static int test(const State &state) {
   // user-sensitive data.
   initializeTelemetry(telemetryCtx, state, args, /*privateArgs=*/{});
 
-  // TODO: Add support for discovering tests.
+  // If an input was provided, use that as the test id. Otherwise, fallback to
+  // the current working directory.
+  TestID testID;
+  if (args.hasArg(options::OPT_INPUT)) {
+    testID = TestID(args.getLastArgValue(options::OPT_INPUT));
+  } else {
+    testID = TestID(std::filesystem::current_path().string());
+  }
+  std::optional<Test> test = Test::discoverFromID(testID);
+
+  // If we're only collecting, exit early.
+  if (args.hasArg(options::OPT_collect_only)) {
+    if (test)
+      llvm::outs() << *test << "\n";
+    return 0;
+  }
+
+  // TODO: Add support for processing discovered tests.
   llvm::outs() << "Total Discovered Tests: 0\n";
   return 0;
 }

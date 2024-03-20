@@ -50,6 +50,7 @@ add_modular_tool(mojo
   MArchTarget
   MCrashReporting
   MojoParser
+  MojoTesting
   MojoTooling
   MSupportFilesystem
   MSupportDriver

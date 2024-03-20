@@ -1,0 +1,28 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+// RUN: mojo test --co %S/inputs/ | FileCheck %s
+// RUN: mojo test --co %S/inputs/unit_suffix_test.mojo | FileCheck %s --check-prefix=CHECK-FILE
+
+// CHECK-NOT: non_unit.mojo
+// CHECK: inputs
+// CHECK:   inputs/test_fire.🔥>
+// CHECK:     inputs/test_fire.🔥::test_fn()>
+// CHECK:     inputs/test_fire.🔥::fn_test()>
+// CHECK:   inputs/test_unit_prefix.mojo>
+// CHECK:     inputs/test_unit_prefix.mojo::test_fn()>
+// CHECK:     inputs/test_unit_prefix.mojo::fn_test()>
+// CHECK:     inputs/test_unit_prefix.mojo::test_someone\2Ecould\2Etechnically\2Edo\2Ethis()>
+// CHECK:     inputs/test_unit_prefix.mojo::test_def()>
+// CHECK:     inputs/test_unit_prefix.mojo::def_test()>
+// CHECK:   inputs/unit_suffix_test.mojo>
+// CHECK:     inputs/unit_suffix_test.mojo::test_fn()>
+// CHECK:     inputs/unit_suffix_test.mojo::fn_test()>
+
+// CHECK-FILE-NOT: test_unit_prefix
+// CHECK-FILE:   inputs/unit_suffix_test.mojo>
+// CHECK-FILE:     inputs/unit_suffix_test.mojo::test_fn()>
+// CHECK-FILE:     inputs/unit_suffix_test.mojo::fn_test()>
