@@ -112,6 +112,11 @@ public:
   const std::optional<MojoTypeDataLayout> &
   getOrCalculate(MojoASTTypeRef typeRef);
 
+  /// Invalidate the cached layout stored for the given type. This is not
+  /// recursive, i.e. invalidating a struct type doesn't automatically
+  /// invalidate its members.
+  void invalidateCache(MojoASTTypeRef typeRef);
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl;

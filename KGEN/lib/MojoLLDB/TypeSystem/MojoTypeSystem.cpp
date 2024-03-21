@@ -1134,8 +1134,10 @@ MojoTypeSystem::addFieldToStruct(MojoASTDeclRef structDecl, StringRef fieldName,
   auto newField = structDecl->getDeclEndBuilder().create<LIT::StructFieldOp>(
       getSharedState().translateLocation(structDecl->getLoc()), name,
       mlir::Type::getFromOpaquePointer(type), LIT::DocStringAttr());
-  return MojoASTDeclRef(&getSharedState().declResolver->addDecl(
+  auto fieldDecl = MojoASTDeclRef(&getSharedState().declResolver->addDecl(
       newField, structDecl->getLoc(), name, &*structDecl, {}, {}, -1));
+  impl->dataLayoutContext->invalidateCache(structDecl.getType());
+  return fieldDecl;
 }
 
 ConstString

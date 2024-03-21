@@ -199,3 +199,7 @@ const std::optional<MojoTypeDataLayout> &
 MojoTypeDataLayoutContext::getOrCalculate(MojoASTTypeRef type) {
   return impl->getOrCalculate(type);
 }
+
+void MojoTypeDataLayoutContext::invalidateCache(MojoASTTypeRef typeRef) {
+  impl->cache.erase(typeRef.getMLIRType());
+}
