@@ -79,13 +79,11 @@ public:
   }
 
   /// Return the current userID.
-  const ErrorOr<StringRef> userID() const;
+  ErrorOr<StringRef> userID() const;
 
   /// Return the path for the client keys and certificate.
   const std::filesystem::path &clientKeyPriv() const;
-  const std::filesystem::path &clientKeyPub() const;
   const std::filesystem::path &clientCert() const;
-  const std::filesystem::path &CRL() const;
 
   /// Refresh the settings if it's necessary to do so. This will refresh all
   /// configurations and the entitlement store. The user can configure a policy
