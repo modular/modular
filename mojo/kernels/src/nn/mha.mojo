@@ -469,7 +469,7 @@ fn _mm[
             for offset in range(0, TM, simd_size):
                 reg_m.store[width=simd_size](
                     offset,
-                    a.aligned_simd_load[simd_size, alignment](
+                    a.load[width=simd_size, alignment=alignment](
                         k * M + row + offset
                     ),
                 )
@@ -481,7 +481,7 @@ fn _mm[
 
         @unroll
         for offset in range(0, TN, simd_size):
-            var vec = b.aligned_simd_load[simd_size, alignment](
+            var vec = b.load[width=simd_size, alignment=alignment](
                 k * N + col + offset
             )
             reg_n.store(offset, vec)
@@ -639,7 +639,7 @@ fn flash_attention_kernel[
     for i in range(loadq_num_iters.to_int()):
         var row_in_tile: _uint32 = loadq_row + i * loadq_num_rows_per_iter
         var global_q_idx: _uint32 = global_q_offset + row_in_tile * row_stride + loadq_col
-        var vec = q_ptr.aligned_simd_load[simd_size, alignment](
+        var vec = q_ptr.load[width=simd_size, alignment=alignment](
             global_q_idx.to_int(),
         )
         q_tile.store[width=simd_size, alignment=alignment](
@@ -682,7 +682,7 @@ fn flash_attention_kernel[
             for i in range(loadk_num_iters.to_int()):
                 var row_in_tile: _uint32 = loadk_row + i * loadk_num_rows_per_iter
                 var global_idx: _uint32 = global_kv_offset + row_in_tile * row_stride + subtile_start_col + loadk_col
-                var vec = k_ptr.aligned_simd_load[simd_size, alignment](
+                var vec = k_ptr.load[width=simd_size, alignment=alignment](
                     global_idx.to_int()
                 )
 
@@ -719,9 +719,9 @@ fn flash_attention_kernel[
                 var idx = int(i * TN + j)
                 var vec = reg_result.load[width=simd_size](idx)
                 var mask_idx = int(mask_offset + i * seq_len + j)
-                var mask_vec = mask_ptr.aligned_simd_load[simd_size, alignment](
-                    mask_idx
-                )
+                var mask_vec = mask_ptr.load[
+                    width=simd_size, alignment=alignment
+                ](mask_idx)
                 reg_result.store(idx, vec * scale + mask_vec)
 
         # Online Softmax
@@ -793,7 +793,7 @@ fn flash_attention_kernel[
                 var global_idx: _uint32 = global_kv_offset + (
                     subtile_start_row + row_in_tile
                 ) * row_stride + loadv_col
-                var vec = v_ptr.aligned_simd_load[simd_size, alignment](
+                var vec = v_ptr.load[width=simd_size, alignment=alignment](
                     global_idx
                 )
                 kv_tile.store[width=simd_size, alignment=alignment](
@@ -976,7 +976,7 @@ fn flash_attention_kernel_flexible_seqlen[
         # The a row from Q in global memory.
         if row_in_tile + global_q_start_row < seq_len:
             var global_q_idx: _uint32 = global_q_offset + row_in_tile * row_stride + loadq_col
-            var vec = q_ptr.aligned_simd_load[simd_size, alignment](
+            var vec = q_ptr.load[width=simd_size, alignment=alignment](
                 global_q_idx.to_int(),
             )
             q_tile.store[width=simd_size, alignment=alignment](
@@ -1029,7 +1029,7 @@ fn flash_attention_kernel_flexible_seqlen[
                 var row_in_tile: _uint32 = loadk_row + i * loadk_num_rows_per_iter
                 if row_in_tile + kv_tile_start_row < num_keys:
                     var global_idx: _uint32 = global_kv_offset + row_in_tile * row_stride + subtile_start_col + loadk_col
-                    var vec = k_ptr.aligned_simd_load[simd_size, alignment](
+                    var vec = k_ptr.load[width=simd_size, alignment=alignment](
                         global_idx.to_int()
                     )
 
@@ -1161,7 +1161,7 @@ fn flash_attention_kernel_flexible_seqlen[
                     var global_idx: _uint32 = global_kv_offset + (
                         subtile_start_row + row_in_tile
                     ) * row_stride + loadv_col
-                    var vec = v_ptr.aligned_simd_load[simd_size, alignment](
+                    var vec = v_ptr.load[width=simd_size, alignment=alignment](
                         global_idx.to_int()
                     )
                     kv_tile.store[width=simd_size, alignment=alignment](
