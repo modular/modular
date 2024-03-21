@@ -1,0 +1,93 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+
+# RUN: not mojo test "%s" | FileCheck %s
+# RUN: not mojo test "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC
+# RUN: not mojo test "%s@doc_test_failure_first_cell().__doc__::1" | FileCheck %s --check-prefix=CHECK-DOC
+# RUN: not mojo test "%s::test_unit_failure()" | FileCheck %s --check-prefix=CHECK-UNIT
+
+from testing import assert_true
+
+# CHECK: Total Discovered Tests: 8
+# CHECK: Passed : 4
+# CHECK: Failed : 3
+# CHECK: Skipped: 1
+
+# CHECK: Failure: '{{.*}}test_execution.mojo@doc_test_failure_second_cell().__doc__::1'
+# CHECK: Unhandled exception caught during execution
+# CHECK: Error: AssertionError: condition was unexpectedly False
+
+# CHECK: Failure: '{{.*}}test_execution.mojo@doc_test_failure_first_cell().__doc__::0'
+# CHECK: Unhandled exception caught during execution
+# CHECK: Error: AssertionError: condition was unexpectedly False
+
+# CHECK: Failure: '{{.*}}test_execution.mojo::test_unit_failure()'
+# CHECK: Unhandled exception caught during execution
+# CHECK: Error: AssertionError: condition was unexpectedly False
+
+# CHECK-DOC: Total Discovered Tests: 2
+# CHECK-DOC: Passed : 0
+# CHECK-DOC: Failed : 1
+# CHECK-DOC: Skipped: 1
+
+# CHECK-UNIT: Total Discovered Tests: 1
+# CHECK-UNIT: Passed : 0
+# CHECK-UNIT: Failed : 1
+# CHECK-UNIT: Skipped: 0
+
+
+fn test_unit_failure() raises:
+    assert_true(False)
+    return
+
+
+fn test_unit_pass():
+    return
+
+
+fn doc_test_failure_first_cell():
+    """This is a doc string.
+
+    ```mojo
+    from testing import assert_true
+    assert_true(False)
+    ```
+
+    ```mojo
+    print("hello")
+    ```
+    """
+    return
+
+
+fn doc_test_failure_second_cell():
+    """This is a doc string.
+
+    ```mojo
+    var value = False
+    ```
+
+    ```mojo
+    from testing import assert_true
+    assert_true(value)
+    ```
+    """
+    return
+
+
+fn doc_test_pass():
+    """This is a doc string.
+
+    ```mojo
+    var value = True
+    ```
+
+    ```mojo
+    from testing import assert_true
+    assert_true(value)
+    ```
+    """
+    return

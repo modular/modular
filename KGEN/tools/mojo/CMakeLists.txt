@@ -128,4 +128,4 @@ add_custom_command(
 
 add_custom_target(mblack DEPENDS "${MBLACK_BIN}")
 
-add_dependencies(mojo mblack)
+add_dependencies(mojo mblack mojo-test-executor)
