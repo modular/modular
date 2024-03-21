@@ -4195,3 +4195,13 @@ fn mip_xor(x: Bool, y: Bool) -> Bool:
 @export
 fn mip_select[T: AnyRegType](cond: Bool, true: T, false: T) -> T:
     return true if cond else false
+
+
+@mogg_register("mip.nary.mul")
+@always_inline
+@export
+fn mip_nary_mul[constInt: Int](*vals: Int) -> Int:
+    var product = constInt
+    for val in vals:
+        product *= val
+    return product
