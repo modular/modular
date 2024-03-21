@@ -274,7 +274,7 @@ struct _Matmul[
                     var val = input_fn[_simd_width](k, n + idx)
                     output_ptr.offset(idx).store[width=_simd_width](val)
 
-                vectorize[packed_copy, simd_width](packed_n)
+                vectorize[packed_copy, simd_width](count_n)
 
                 if packed_n != count_n:
                     memset_zero(output_ptr.offset(count_n), packed_n - count_n)
