@@ -71,7 +71,7 @@ from Matmul import (
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
 )
-from MatmulUtils import GemmShape, get_trace_information, search_mm_config
+from MatmulUtils import GemmShape, get_trace_information
 from MatrixBandPart import matrix_band_part
 from MatrixSolve import matrix_solve, matrix_solve_shape
 from memory import memset_zero
