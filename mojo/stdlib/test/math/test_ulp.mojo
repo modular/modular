@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from math import inf, isinf, isnan, nan, ulp
-from math.limit import *
+from math import isinf, isnan, nan, ulp
+from math.limit import inf, max_finite
 
 from testing import *
 
