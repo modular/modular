@@ -13,7 +13,7 @@ from buffer.list import Dim
 ```
 """
 
-from utils._optional import Optional
+from collections import OptionalReg as Optional
 
 from . import StaticIntTuple, unroll
 
