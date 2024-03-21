@@ -79,6 +79,7 @@ void OutlineClosuresPass::runOnOperation() {
     uses.calculate(paramCache);
 
     bool hadError = false;
+    SmallVector<ParamDeclareRegionOp> regionsToErase;
     generator.walk([&](ParamDeclareRegionOp regionDecl) {
       LLVM_DEBUG(llvm::dbgs()
                  << "//===-----\nLifting closure: " << regionDecl << "\n");
@@ -261,11 +262,14 @@ void OutlineClosuresPass::runOnOperation() {
                                cast<TypedAttr>(bindSignature));
 
       // And we can drop the regionDecl now, we're done with it.
-      regionDecl->erase();
+      regionsToErase.push_back(regionDecl);
       varCounter += captures.size();
     });
     if (hadError)
       return signalPassFailure();
+
+    for (auto regionDecl : regionsToErase)
+      regionDecl->erase();
 
     LLVM_DEBUG(llvm::dbgs() << "Modified generator: " << generator << "\n");
   }
