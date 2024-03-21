@@ -81,9 +81,7 @@ add_modular_library(KGENExecutionEngine
   MSupport
 )
 
-# TODO(#35115): Right now we assume linux always links with `perf` llvm plugin
-# in the future we should have more specific guards for these dependencies.
-if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
+if (${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND TARGET LLVMPerfJITEvents)
   target_link_libraries(KGENExecutionEngine
     PUBLIC
     LLVMPerfJITEvents
