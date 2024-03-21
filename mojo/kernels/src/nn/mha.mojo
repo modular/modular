@@ -5,7 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import align_down, div_ceil, exp, iota, max, min, neginf, sqrt
+from math import align_down, div_ceil, exp, iota, max, min, sqrt
+from math.limit import neginf
 
 from algorithm import elementwise, unswitch
 from BatchedMatmul import batched_matmul
