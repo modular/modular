@@ -434,3 +434,60 @@ kgen.generator @nested_alloc_in_for(%arg0: index) -> index {
   // CHECK-DAG: kgen.return %[[V0]]
   kgen.return %v1 : index
 }
+
+// CHECK-LABEL: kgen.func @elif
+kgen.func @elif(%arg0 : index, %arg1: index, %arg2: index) -> index {
+  %varCondition = pop.stack_allocation 1 x index
+  pop.store %arg0, %varCondition : !kgen.pointer<index>
+
+  %varThen = pop.stack_allocation 1 x index
+  pop.store %arg1, %varThen : !kgen.pointer<index>
+
+  %varElse = pop.stack_allocation 1 x index
+  pop.store %arg2, %varElse : !kgen.pointer<index>
+
+  // CHECK-NEXT: %idx0
+  // CHECK:      %idx1
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  // CHECK-NEXT: %0:4 = hlcf.elif -> index, index, index, index {
+  // CHECK-NEXT:   [[V3:%*.]] = index.add %arg0, %idx1
+  // CHECK-NEXT:   [[V4:%*.]] = index.cmp eq([[V3]], %idx0)
+  // CHECK-NEXT:   hlcf.elif.yield [[V4]], [[V3]], %arg1, %arg2 : i1, index, index, index
+  // CHECK-NEXT: } then (%arg3: index, %arg4: index, %arg5: index){
+  // CHECK-NEXT:   [[W3:%*.]] = index.add %arg4, %idx1
+  // CHECK-NEXT:   hlcf.yield [[W3]], %arg3, [[W3]], %arg5 : index, index, index, index
+  // CHECK-NEXT: } else (%arg3: index, %arg4: index, %arg5: index){
+  // CHECK-NEXT:   [[U3:%*.]] = index.add %arg5, %idx1
+  // CHECK-NEXT:   hlcf.yield [[U3]], %arg3, %arg4, [[U3]] : index, index, index, index
+  // CHECK-NEXT: }
+  %0 = hlcf.elif -> index {
+    %1 = pop.load %varCondition : !kgen.pointer<index>
+    %var2 = index.add %1, %idx1
+    pop.store %var2, %varCondition : !kgen.pointer<index>
+    %c = index.cmp eq(%var2, %idx0)
+    hlcf.elif.yield %c : i1
+  } then {
+    %4 = pop.load %varThen : !kgen.pointer<index>
+    %var5 = index.add %4, %idx1
+    pop.store %var5, %varThen : !kgen.pointer<index>
+    hlcf.yield %var5 : index
+  } else {
+    %5 = pop.load %varElse : !kgen.pointer<index>
+    %var6 = index.add %5, %idx1
+    pop.store %var6, %varElse : !kgen.pointer<index>
+    hlcf.yield %var6 : index
+  }
+
+  %3 = pop.load %varCondition : !kgen.pointer<index>
+  %6 = pop.load %varThen : !kgen.pointer<index>
+  %7 = pop.load %varElse : !kgen.pointer<index>
+
+  // CHECK-NEXT: %1 = index.add %0#1, %0#2
+  // CHECK-NEXT: %2 = index.add %1, %0#3
+  // CHECK-NEXT: kgen.return %2 : index
+  %res1 = index.add %3, %6
+  %res2 = index.add %res1, %7
+  kgen.return %res2 : index
+}
