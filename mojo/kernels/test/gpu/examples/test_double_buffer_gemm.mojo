@@ -197,7 +197,7 @@ fn sgemm_double_buffer[
     # Load A fragments to the first buffer.
     @unroll
     for i in range(0, TM, simd_size_int):
-        var vec = loada_smem_ptr.aligned_simd_load[simd_size_int, alignment](
+        var vec = loada_smem_ptr.load[width=simd_size_int, alignment=alignment](
             i * warp_dim_y
         )
         a_reg.store[width=simd_size_int, alignment=alignment]((0, i), vec)
@@ -205,7 +205,7 @@ fn sgemm_double_buffer[
     # Load B fragments to the first buffer.
     @unroll
     for i in range(0, TN, simd_size_int):
-        var vec = loadb_smem_ptr.aligned_simd_load[simd_size_int, alignment](
+        var vec = loadb_smem_ptr.load[width=simd_size_int, alignment=alignment](
             i * warp_dim_x
         )
         b_reg.store[width=simd_size_int, alignment=alignment]((0, i), vec)
@@ -246,8 +246,8 @@ fn sgemm_double_buffer[
             # Fill the other A fragments buffer.
             @unroll
             for i in range(0, TM, simd_size_int):
-                var vec = loada_smem_ptr.aligned_simd_load[
-                    simd_size_int, alignment
+                var vec = loada_smem_ptr.load[
+                    width=simd_size_int, alignment=alignment
                 ](next_k * BM_padded + i * warp_dim_y)
                 a_reg.store[width=simd_size_int, alignment=alignment](
                     (next_buffer_id, i), vec
@@ -256,8 +256,8 @@ fn sgemm_double_buffer[
             # Fill the other B fragments buffer.
             @unroll
             for i in range(0, TN, simd_size_int):
-                var vec = loadb_smem_ptr.aligned_simd_load[
-                    simd_size_int, alignment
+                var vec = loadb_smem_ptr.load[
+                    width=simd_size_int, alignment=alignment
                 ](next_k * BN + i * warp_dim_x)
                 b_reg.store[width=simd_size_int, alignment=alignment](
                     (next_buffer_id, i), vec
@@ -299,8 +299,8 @@ fn sgemm_double_buffer[
             # Fill the other A fragments buffer.
             @unroll
             for i in range(0, TM, simd_size_int):
-                var vec = loada_smem_ptr.aligned_simd_load[
-                    simd_size_int, alignment
+                var vec = loada_smem_ptr.load[
+                    width=simd_size_int, alignment=alignment
                 ](next_k * BM_padded + i * warp_dim_y)
                 a_reg.store[width=simd_size_int, alignment=alignment](
                     (next_buffer_id, i), vec
@@ -309,8 +309,8 @@ fn sgemm_double_buffer[
             # Fill the other B fragments buffer.
             @unroll
             for i in range(0, TN, simd_size_int):
-                var vec = loadb_smem_ptr.aligned_simd_load[
-                    simd_size_int, alignment
+                var vec = loadb_smem_ptr.load[
+                    width=simd_size_int, alignment=alignment
                 ](next_k * BN + i * warp_dim_x)
                 b_reg.store[width=simd_size_int, alignment=alignment](
                     (next_buffer_id, i), vec
