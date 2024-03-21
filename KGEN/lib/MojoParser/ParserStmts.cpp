@@ -1578,23 +1578,13 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
     return success();
   };
 
-  auto emitIntoThenRegion = [&]() {
-    builder.createBlock(&paramIfOp.getThenRegion());
-  };
-
-  auto emitIntoElseRegion = [&]() {
-    builder.createBlock(&cast<ParamIfOp>(paramIfOp).getElseRegion());
-  };
-
-  auto createYield = [&](Location loc) { builder.create<ParamYieldOp>(loc); };
-  auto ifParseResult = parseCondAndTerminateElifCondition(ifLoc);
-  if (ifParseResult ||
+  if (parseCondAndTerminateElifCondition(ifLoc) ||
       parseToken(Token::colon, "expected ':' after 'if' expression"))
     return failure();
-  emitIntoThenRegion();
+  builder.createBlock(&paramIfOp.getThenRegion());
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
-  createYield(ifLoc);
+  builder.create<ParamYieldOp>(ifLoc);
 
   while (getToken().is(Token::kw_elif) &&
          isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true)) {
@@ -1603,21 +1593,20 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
       return failure();
 
     // Moves emission into "Condition" block if elif.
-    emitIntoElseRegion();
+    builder.createBlock(&cast<ParamIfOp>(paramIfOp).getElseRegion());
 
-    auto ifParseResult = parseCondAndTerminateElifCondition(elifLoc);
-    if (ifParseResult ||
+    if (parseCondAndTerminateElifCondition(elifLoc) ||
         parseToken(Token::colon, "expected ':' after 'elif' expression"))
       return failure();
 
-    createYield(elifLoc);
-    emitIntoThenRegion();
+    builder.create<ParamYieldOp>(elifLoc);
+    builder.createBlock(&paramIfOp.getThenRegion());
     if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
-    createYield(elifLoc);
+    builder.create<ParamYieldOp>(elifLoc);
   }
 
-  emitIntoElseRegion();
+  builder.createBlock(&cast<ParamIfOp>(paramIfOp).getElseRegion());
   if (isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
       consumeIf(Token::kw_else)) {
     if (parseToken(Token::colon, "expected ':' after else"))
@@ -1625,9 +1614,20 @@ ParseResult StmtParser::parseParamIf(Location ifLoc, LexerCursor startCursor,
     if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
   }
-  createYield(ifLoc);
+  builder.create<ParamYieldOp>(ifLoc);
   return success();
 }
+
+struct DeadCodeInfo {
+  /// The value of the constant condition.
+  bool conditionValue;
+
+  /// The location of the constant condition block.
+  Location location;
+
+  /// The index of the condition region within the ElifOp.
+  unsigned index;
+};
 
 ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
                                   size_t curIndent) {
@@ -1640,9 +1640,8 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
   elifOp.getElifRegions()[0].emplaceBlock();
   elifOp.getElifRegions()[1].emplaceBlock();
 
-  auto parseCondition = [&](Location loc)
-      -> std::tuple<ParseResult,
-                    std::optional<std::tuple<bool, Location, unsigned>>> {
+  auto parseCondition =
+      [&](Location loc) -> std::pair<ParseResult, std::optional<DeadCodeInfo>> {
     unsigned indexOfCondition = elifOp.getElifRegions().size() - 2;
     Block &conditionBlock = elifOp.getElifRegions()[indexOfCondition].front();
     builder.setInsertionPointToStart(&conditionBlock);
@@ -1657,10 +1656,10 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     if (!condI1RVal)
       return {failure(), {}};
     std::optional<bool> knownConditionForWarning = {};
-    if (PValue condI1PVal = condI1RVal.getIfPValue()) {
-      if (IntegerAttr asIntAttr =
-              dyn_cast_or_null<IntegerAttr>(condI1PVal.get()))
-        knownConditionForWarning = !asIntAttr.getValue().isZero();
+    if (PValue condI1PVal = condI1RVal.getIfPValue();
+        IntegerAttr asIntAttr =
+            dyn_cast_or_null<IntegerAttr>(condI1PVal.get())) {
+      knownConditionForWarning = !asIntAttr.getValue().isZero();
     }
     SRValue condRVal =
         emitter.emitSRValue({condI1RVal, condExp}, EC_BoolCondition);
@@ -1670,7 +1669,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     // Terminate the condition region of the current ElifOp.
     builder.create<HLCF::ElifYieldOp>(loc, condRVal);
 
-    std::optional<std::tuple<bool, Location, unsigned>> deadCodeInfo = {};
+    std::optional<DeadCodeInfo> deadCodeInfo = {};
     if (knownConditionForWarning.has_value()) {
       deadCodeInfo = {knownConditionForWarning.value(),
                       condExp->getLocation(emitter), indexOfCondition};
@@ -1702,11 +1701,9 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     elifOp = replacement;
   };
 
-  auto createYield = [&](Location loc) { builder.create<HLCF::YieldOp>(loc); };
-
   // Vector of unreachable code metadata.  After emitting code, these need to
   // raise warnings and be marked as dead.
-  SmallVector<std::tuple<bool, Location, unsigned>> ifOpsWithDeadCode;
+  SmallVector<DeadCodeInfo> ifOpsWithDeadCode;
   auto [ifParseResult, maybeDeadCodeInfo] = parseCondition(ifLoc);
   if (maybeDeadCodeInfo.has_value())
     ifOpsWithDeadCode.push_back(maybeDeadCodeInfo.value());
@@ -1717,7 +1714,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
   builder.setInsertionPointToStart(&elifOp.getElifRegions().back().front());
   if (failed(parseLocalScopeSuite(curIndent)))
     return failure();
-  createYield(ifLoc);
+  builder.create<HLCF::YieldOp>(ifLoc);
 
   // Parse Elif chain if it exists.
   while (getToken().is(Token::kw_elif) &&
@@ -1737,7 +1734,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     builder.setInsertionPointToStart(&elifOp.getElifRegions().back().front());
     if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
-    createYield(elifLoc);
+    builder.create<HLCF::YieldOp>(elifLoc);
   }
 
   builder.setInsertionPointToStart(&elifOp.getElseRegion().emplaceBlock());
@@ -1748,7 +1745,7 @@ ParseResult StmtParser::parseElif(Location ifLoc, LexerCursor startCursor,
     if (failed(parseLocalScopeSuite(curIndent)))
       return failure();
   }
-  createYield(ifLoc);
+  builder.create<HLCF::YieldOp>(ifLoc);
 
   // Process dead code.  Go backward to avoid needing to erase an already erased
   // IfOp.
@@ -1803,8 +1800,7 @@ ParseResult StmtParser::parseIfStmt(LexerCursor startCursor, size_t curIndent) {
     return failure();
   if (!isParamIf)
     return parseElif(ifLoc, startCursor, curIndent);
-  else
-    return parseParamIf(ifLoc, startCursor, curIndent);
+  return parseParamIf(ifLoc, startCursor, curIndent);
 }
 
 /// import_stmt     ::=  "from" relative_module "import" identifier
