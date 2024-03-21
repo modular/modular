@@ -241,14 +241,14 @@ fn test_aligned_load_store():
             matrix[Index(i1, j1)] = i1 * 4 + j1
 
     # CHECK: [0, 1, 2, 3]
-    print(matrix.aligned_simd_load[4, 16](0, 0))
+    print(matrix.load[width=4, alignment=16](0, 0))
 
     # CHECK: [12, 13, 14, 15]
-    print(matrix.aligned_simd_load[4, 16](3, 0))
+    print(matrix.load[width=4, alignment=16](3, 0))
 
     # CHECK: [0, 1, 2, 3]
     matrix.store[width=4, alignment=32](Index(3, 0), iota[DType.index, 4]())
-    print(matrix.aligned_simd_load[4, 32](3, 0))
+    print(matrix.load[width=4, alignment=32](3, 0))
 
 
 fn test_get_nd_index():

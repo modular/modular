@@ -192,24 +192,8 @@ struct Buffer[
         return self.load[width=1](idx)
 
     @always_inline
-    fn load[*, width: Int = 1](self, idx: Int) -> SIMD[type, width]:
-        """Loads a simd value from the buffer at the specified index.
-
-        Parameters:
-            width: The simd_width of the load.
-
-        Args:
-            idx: The index into the Buffer.
-
-        Returns:
-            The simd value starting at the `idx` position and ending at
-            `idx+width`.
-        """
-        return self.data.load[width=width](idx)
-
-    @always_inline
-    fn aligned_simd_load[
-        width: Int, alignment: Int
+    fn load[
+        *, width: Int = 1, alignment: Int = Self._default_alignment
     ](self, idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1080,98 +1064,8 @@ struct NDBuffer[
         return tile
 
     @always_inline
-    fn load[*, width: Int = 1](self, *idx: Int) -> SIMD[type, width]:
-        """Loads a simd value from the buffer at the specified index.
-
-        Constraints:
-            The buffer must be contiguous or width must be 1.
-
-        Parameters:
-            width: The simd_width of the load.
-
-        Args:
-            idx: The index into the NDBuffer.
-
-        Returns:
-            The simd value starting at the `idx` position and ending at
-            `idx+width`.
-        """
-        return self.load[width=width](idx)
-
-    @always_inline
     fn load[
-        *, width: Int = 1
-    ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
-        """Loads a simd value from the buffer at the specified index.
-
-        Constraints:
-            The buffer must be contiguous or width must be 1.
-
-        Parameters:
-            width: The simd_width of the load.
-
-        Args:
-            idx: The index into the NDBuffer.
-
-        Returns:
-            The simd value starting at the `idx` position and ending at
-            `idx+width`.
-        """
-        debug_assert(
-            self.is_contiguous or width == 1,
-            "Function requires contiguous buffer.",
-        )
-        return self._offset(idx).load[width=width]()
-
-    @always_inline
-    fn load[
-        *, width: Int = 1
-    ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
-        """Loads a simd value from the buffer at the specified index.
-
-        Constraints:
-            The buffer must be contiguous or width must be 1.
-
-        Parameters:
-            width: The simd_width of the load.
-
-        Args:
-            idx: The index into the NDBuffer.
-
-        Returns:
-            The simd value starting at the `idx` position and ending at
-            `idx+width`.
-        """
-        return self.load[width=width](idx.as_tuple())
-
-    @always_inline
-    fn load[
-        *, width: Int = 1
-    ](self, idx: StaticTuple[Int, rank]) -> SIMD[type, width]:
-        """Loads a simd value from the buffer at the specified index.
-
-        Constraints:
-            The buffer must be contiguous or width must be 1.
-
-        Parameters:
-            width: The simd_width of the load.
-
-        Args:
-            idx: The index into the NDBuffer.
-
-        Returns:
-            The simd value starting at the `idx` position and ending at
-            `idx+width`.
-        """
-        debug_assert(
-            self.is_contiguous or width == 1,
-            "Function requires contiguous buffer.",
-        )
-        return self._offset(idx).load[width=width]()
-
-    @always_inline
-    fn aligned_simd_load[
-        width: Int, alignment: Int
+        *, width: Int = 1, alignment: Int = Self._default_alignment
     ](self, *idx: Int) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1189,11 +1083,11 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.aligned_simd_load[width, alignment](idx)
+        return self.load[width=width, alignment=alignment](idx)
 
     @always_inline
-    fn aligned_simd_load[
-        width: Int, alignment: Int
+    fn load[
+        *, width: Int = 1, alignment: Int = Self._default_alignment
     ](self, idx: VariadicList[Int]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1218,8 +1112,8 @@ struct NDBuffer[
         return self._offset(idx).load[width=width, alignment=alignment]()
 
     @always_inline
-    fn aligned_simd_load[
-        width: Int, alignment: Int
+    fn load[
+        *, width: Int = 1, alignment: Int = Self._default_alignment
     ](self, idx: StaticIntTuple[rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
@@ -1237,11 +1131,11 @@ struct NDBuffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.aligned_simd_load[width, alignment](idx.as_tuple())
+        return self.load[width=width, alignment=alignment](idx.as_tuple())
 
     @always_inline
-    fn aligned_simd_load[
-        width: Int, alignment: Int
+    fn load[
+        *, width: Int = 1, alignment: Int = Self._default_alignment
     ](self, idx: StaticTuple[Int, rank]) -> SIMD[type, width]:
         """Loads a simd value from the buffer at the specified index.
 
