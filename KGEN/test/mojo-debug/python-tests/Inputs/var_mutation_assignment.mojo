@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from debug_test_utils import keep_alive
+
 
 fn main():
     var i = 5
@@ -18,3 +20,4 @@ fn main():
 
     i -= j
     print(i)  # breakpoint
+    keep_alive(i, j)

@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from utils.variant import Variant
+
 
 fn getFloat() -> Float32:
     return 4.125
@@ -52,6 +54,21 @@ struct ParamStruct[T: AnyRegType]:
         self.t = t
 
 
+alias AFloatOrBoolOrSimd = __mlir_type[
+    `!kgen.variant<`,
+    Float64,
+    `, `,
+    Bool,
+    `, `,
+    SIMD[DType.index, 2],
+    `>`,
+]
+
+
+fn keep_alive[*Ts: AnyType](*args: *Ts):
+    pass
+
+
 fn main():
     var a_var_index = __mlir_op.`index.constant`[
         value = __mlir_attr.`48:index`
@@ -91,18 +108,30 @@ fn main():
     var c_simd = SIMD[DType.index, 2](5, 6)
 
     var a_float_or_bool_or_simd = __mlir_op.`kgen.variant.create`[
-        _type = __mlir_type[
-            `!kgen.variant<`,
-            Float64,
-            `, `,
-            Bool,
-            `, `,
-            SIMD[DType.index, 2],
-            `>`,
-        ],
+        _type=AFloatOrBoolOrSimd,
         index = Int(2).value,
     ](c_simd)
 
     var none = None
 
     print("breakpoint")
+
+    keep_alive(
+        a_var_index,
+        a_register_passable_struct,
+        a_struct,
+        p_struct_int,
+        p_struct_stringref,
+        an_int,
+        a_literal_float,
+        a_float,
+        another_float,
+        `^ uncommon name`,
+        a_string_literal,
+        a_list,
+        a_simd,
+        b_simd,
+        c_simd,
+        a_float_or_bool_or_simd,
+        none,
+    )

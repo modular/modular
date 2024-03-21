@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from debug_test_utils import keep_alive
+
 
 @register_passable("trivial")
 struct Point(CollectionElement):
@@ -30,4 +32,4 @@ fn main():
 
     for i in range(0, 100):
         int_vec.append(i)
-    print(int_vec[0])  # breakpoint
+    keep_alive(int_vec)  # breakpoint
