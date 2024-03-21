@@ -53,6 +53,7 @@ fn run[
         stream = Stream()
     except e:
         print(e)
+        return Report()
 
     @parameter
     @always_inline
@@ -117,6 +118,7 @@ fn run[
         stream = Stream()
     except e:
         print(e)
+        return Report()
 
     @parameter
     @always_inline
@@ -180,6 +182,7 @@ fn run[
         stream = Stream()
     except e:
         print(e)
+        return Report()
 
     @parameter
     @always_inline
