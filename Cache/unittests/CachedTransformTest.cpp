@@ -89,12 +89,12 @@ TEST(CachedTransformTest, CacheHits) {
   std::unique_ptr<Runtime> runtime =
       createUniqueRuntime(RuntimeOptions().forDebug());
   auto regionBackendChainOr =
-      getLocalDefaultBackendChain(*runtime, tempDir.getPath() / "region");
+      getLocalDefaultBackendChain(tempDir.getPath() / "region");
   EXPECT_FALSE(failed(regionBackendChainOr));
   auto regionCache = RCRef<BlobCache<RegionCacheKey>>::create(
       regionBackendChainOr.takeValue());
   auto transformBackendChainOr =
-      getLocalDefaultBackendChain(*runtime, tempDir.getPath() / "xform");
+      getLocalDefaultBackendChain(tempDir.getPath() / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
   auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
       transformBackendChainOr.takeValue());
@@ -185,7 +185,7 @@ TEST(CachedTransformTest, BufferReturn) {
   TempDir tempDir = createTempDir();
   auto runtime = createRuntimeIfNeeded(RuntimeOptions().forDebug());
   auto transformBackendChainOr =
-      getLocalDefaultBackendChain(*runtime, tempDir.getPath() / "xform");
+      getLocalDefaultBackendChain(tempDir.getPath() / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
   auto transformCache = RCRef<BlobCache<TransformCacheKey>>::create(
       transformBackendChainOr.takeValue());

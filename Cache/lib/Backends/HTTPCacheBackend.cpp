@@ -12,11 +12,12 @@ using namespace M;
 using namespace Cache;
 using namespace std::chrono_literals;
 
-ErrorOrSuccess HTTPCacheBackend::insertImpl(StringRef keyHash, BufferRef obj) {
+ErrorOrSuccess HTTPCacheBackend::insertSyncImpl(StringRef keyHash,
+                                                BufferRef obj) {
   return Error::getStaticString("HTTP backend does not support insert");
 }
 
-ErrorOr<bool> HTTPCacheBackend::containsImpl(StringRef keyHash) const {
+ErrorOr<bool> HTTPCacheBackend::containsSyncImpl(StringRef keyHash) {
   auto findOr = requestImpl(keyHash, /*headOnly=*/true);
   if (findOr.isError())
     return findOr.takeError();
@@ -25,7 +26,7 @@ ErrorOr<bool> HTTPCacheBackend::containsImpl(StringRef keyHash) const {
 }
 
 ErrorOr<std::optional<BufferRef>>
-HTTPCacheBackend::findImpl(StringRef keyHash) const {
+HTTPCacheBackend::findSyncImpl(StringRef keyHash) {
   return requestImpl(keyHash, /*headOnly=*/false);
 }
 
@@ -101,8 +102,6 @@ HTTPCacheBackend::requestImpl(StringRef keyHash, bool headOnly) const {
 
 HTTPCacheBackendRef M::Cache::getHTTPCacheBackend(HTTPContextRef ctx,
                                                   std::string url,
-                                                  Runtime &runtime,
                                                   Progress *progress) {
-  return HTTPCacheBackendRef::create(std::move(ctx), std::move(url), runtime,
-                                     progress);
+  return HTTPCacheBackendRef::create(std::move(ctx), std::move(url), progress);
 }

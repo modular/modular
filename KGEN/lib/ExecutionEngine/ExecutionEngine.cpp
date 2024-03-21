@@ -322,26 +322,22 @@ static ErrorOr<std::optional<BufferRef>> extractRTFromCache(StringRef casID) {
   // Create a BlobCache ref.
   std::filesystem::path base = ".mojo_cache";
   base /= "orc";
-  RuntimeAndCache<ReadOnlyKey> runtimeAndCache(
-      /*cacheDir=*/base.string(),
-      /*optExistingRuntime=*/Runtime::getCurrentRuntimeOrNull());
-  if (auto err = runtimeAndCache.setup(KGEN_VERSION_STRING))
-    return err.takeError();
-
-  BlobCache<ReadOnlyKey> &cache = runtimeAndCache.getCache();
+  auto backendList = getDefaultBackendChain(base, KGEN_VERSION_STRING);
+  if (backendList.isError())
+    return backendList.takeError();
+  RCRef<BlobCache<ReadOnlyKey>> cache =
+      RCRef<BlobCache<ReadOnlyKey>>::create(std::move(*backendList));
 
   // Decode the base64 CAS ID to do the lookup with the raw bytes.
   std::vector<char> bytes;
   bytes.reserve(32);
   llvm::cantFail(llvm::decodeBase64(casID, bytes));
-  AsyncValueRef<std::optional<BufferRef>> rtBuf =
-      cache.find(StringRef(bytes.data(), bytes.size()));
-  // Await the runtime buffer.
-  LLCL::await(rtBuf);
+  ErrorOr<std::optional<BufferRef>> rtBuf =
+      cache->findSync(StringRef(bytes.data(), bytes.size()));
 
-  // Take the diagnostic.
+  // Check for errors.
   if (rtBuf.isError())
-    return std::move(rtBuf.takeDiagnostic().getMessage());
+    return rtBuf.takeError();
 
   return std::move(*rtBuf);
 }
