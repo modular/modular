@@ -94,6 +94,17 @@ public:
       llvm::function_ref<bool(std::chrono::system_clock::time_point from,
                               std::chrono::system_clock::time_point to)>;
 
+  enum EntitlementPolicy {
+    /// Always succeed regardless of underlying entitlements.
+    kAlwaysSucceed = 0,
+
+    /// Fail if no entitlement store is available (returning an error).
+    kRequiredNoPrompt = 1,
+
+    /// Prompt for authentication, prompting if this fails.
+    kRequiredWithPrompt = 2,
+  };
+
   /// Open the current configuration and entitlement store, refreshing if
   /// needed, and return a Settings object.
   ///
@@ -101,7 +112,7 @@ public:
   /// refresh the local entitlement store. It should only be called once
   /// at start-up, and then stored in a context for future reference.
   static ErrorOr<Settings> open(HTTPContextRef httpCtx,
-                                bool createIfMissing = false,
+                                EntitlementPolicy entitlements = kAlwaysSucceed,
                                 RefreshPolicy policy = nullptr);
 
 private:

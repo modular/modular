@@ -50,7 +50,8 @@ static ErrorOr<EntitlementStore> openEntitlementStore(HTTPContextRef httpCtx,
   return Error("unable to open store: try `modular auth`?");
 }
 
-ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx, bool createIfMissing,
+ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
+                                 EntitlementPolicy entitlements,
                                  RefreshPolicy policy) {
   // Open the config.
   auto cfgOr = Config::open();
@@ -72,9 +73,12 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx, bool createIfMissing,
   // If we have decided that we should not create a new one if it's missing,
   // then simply return an empty one. In the future, this may instead propagate
   // the error above, as entitlements are not available.
-  if (!createIfMissing)
+  if (entitlements == kAlwaysSucceed)
     return Settings(cfgOr.takeValue(),
                     EntitlementStore::alwaysOpen(httpCtx.copy(), llvm::errs()));
+
+  if (entitlements == kRequiredNoPrompt)
+    return storeOr.takeError();
 
   // Finally, we don't have one, and we've decided we must have one - generate
   // it.

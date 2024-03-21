@@ -464,6 +464,10 @@ private:
 // Runtime construction
 //===----------------------------------------------------------------------===//
 
+/// Creates a suitable allocator given the options.
+std::unique_ptr<Allocator>
+getAllocator(const RuntimeOptions &options = RuntimeOptions());
+
 /// Creates a runtime with the given options, on the assumption the caller
 /// is not within any outer runtime's thread (main or worker).
 ///

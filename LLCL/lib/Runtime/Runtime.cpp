@@ -112,7 +112,7 @@ void Runtime::restartFromCancellation() {
   AnyAsyncValueRef::take(value);
 }
 
-static std::unique_ptr<Allocator> getAllocator(const RuntimeOptions &options) {
+std::unique_ptr<Allocator> LLCL::getAllocator(const RuntimeOptions &options) {
   if (options.useAfterFreeAllocator) {
 #ifdef HAVE_MODULAR_USE_AFTER_FREE_ALLOCATOR
     return createUseAfterFreeAllocator();
