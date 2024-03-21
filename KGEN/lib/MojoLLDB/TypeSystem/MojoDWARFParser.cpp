@@ -225,7 +225,9 @@ MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
     decl = typeSystem.getOrCreateDeclChainForDie(die, name);
     break;
   }
-  case DW_TAG_subprogram: {
+  case DW_TAG_inlined_subroutine:
+  case DW_TAG_subprogram:
+  case DW_TAG_subroutine_type: {
     ParsedDWARFTypeAttributes attrs(die);
     decl = typeSystem.getOrCreateDeclChainForDie(die, attrs.name);
     break;
@@ -405,6 +407,8 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
 
     break;
   }
+  case DW_TAG_inlined_subroutine:
+  case DW_TAG_subroutine_type:
   case DW_TAG_subprogram: {
     if (MojoASTDeclRef decl = getDeclForDIE(die)) {
       CompilerType mojoType = typeSystem.createCompilerType(decl.getType());
