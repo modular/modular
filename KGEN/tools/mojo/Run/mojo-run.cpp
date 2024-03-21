@@ -233,7 +233,12 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
     return state.reportError("module does not define a `main` function");
 
   // Trigger compilation so we can pull out the archive.
-  ErrorOr<CompiledFunc> funcOr = engine->lookup(exports.front().first);
+  // Start with `main` because mojo-run should always have `main`, and this
+  // sets up OCR JIT first query to be pending on the root of the function call
+  // stack so that meterialization ordering is correct.
+  if (exports.find(StringAttr::get(&context, Twine("main"))) == exports.end())
+    return state.reportError("could not find a 'main' function to execute");
+  ErrorOr<CompiledFunc> funcOr = engine->lookup("main");
   if (failed(funcOr))
     return state.reportError(funcOr.getError());
 
