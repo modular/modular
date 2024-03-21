@@ -132,9 +132,13 @@ void OutlineClosuresPass::runOnOperation() {
 
       // Scan locations for captured parameters when in a debug build.
       if (debugBuild) {
-        regionDecl.walk([&](Operation *op) {
+        regionDecl.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+          // Since nested regions aren't being deleted, walk over them.
+          if (isa<ParamDeclareRegionOp>(op))
+            return WalkResult::skip();
           bool unused;
           collector.collectUsesFromAttr(op->getLoc(), capturedUses, unused);
+          return WalkResult::advance();
         });
       }
 
