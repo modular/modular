@@ -154,7 +154,9 @@ struct LayoutTensor[
     @always_inline
     fn aligned_load[width: Int](self, m: Int, n: Int) -> SIMD[dtype, width]:
         alias alignment = alignof[SIMD[dtype, width]]()
-        return self.ptr.aligned_simd_load[width, alignment](self._offset(m, n))
+        return self.ptr.load[width=width, alignment=alignment](
+            self._offset(m, n)
+        )
 
     @always_inline
     fn store[width: Int](self, m: Int, n: Int, val: SIMD[dtype, width]):
