@@ -81,7 +81,7 @@ struct Event:
     var _event: _EventImpl
 
     @always_inline
-    fn __init__(flags: Flag = Flag.DEFAULT) raises -> Self:
+    fn __init__(inout self, flags: Flag = Flag.DEFAULT) raises:
         """Creates an event for the current CUDA context."""
 
         var event = _EventImpl()
@@ -91,7 +91,7 @@ struct Event:
                 "cuEventCreate", fn (Pointer[_EventImpl], Flag) -> Result
             ]()(Pointer.address_of(event), flags)
         )
-        return Self {_event: event}
+        self._event = event
 
     @always_inline
     fn __del__(owned self):

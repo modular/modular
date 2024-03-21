@@ -363,6 +363,7 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
 
     @always_inline
     fn __init__(
+        inout self,
         debug: Bool = False,
         verbose: Bool = False,
         dump_ptx: Variant[Path, Bool] = False,
@@ -370,7 +371,7 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
-    ) raises -> Self:
+    ) raises:
         fn dump_q(val: Variant[Path, Bool]) -> Bool:
             if val.isa[Bool]():
                 return val.get[Bool]()[]
@@ -394,15 +395,13 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
             else:
                 print(llvm)
 
-        return Self {
-            info: _get_global_cache_info[func_type, func](
-                debug=debug,
-                verbose=verbose,
-                max_registers=max_registers.value() if max_registers else -1,
-                threads_per_block=threads_per_block.value() if threads_per_block else -1,
-                cache_config=cache_config.value().code if cache_config else -1,
-            )
-        }
+        self.info = _get_global_cache_info[func_type, func](
+            debug=debug,
+            verbose=verbose,
+            max_registers=max_registers.value() if max_registers else -1,
+            threads_per_block=threads_per_block.value() if threads_per_block else -1,
+            cache_config=cache_config.value().code if cache_config else -1,
+        )
 
     @always_inline
     fn __del__(owned self):
