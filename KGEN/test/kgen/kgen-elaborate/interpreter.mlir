@@ -410,3 +410,53 @@ kgen.generator export @constexpr_elif() -> index {
   %1 = kgen.param.constant = <apply(:(index, index) -> index @elif, 3, 5)>
   kgen.return %1 : index
 }
+
+// -----
+
+kgen.func @elifWithArgs(%arg0: index) -> index {
+  %idx3 = index.constant 3
+  %idx1 = index.constant 1
+  %0:2 = hlcf.elif -> index, index {
+    %2 = index.add %arg0, %idx1
+    %3 = index.cmp eq(%2, %idx3)
+    hlcf.elif.yield %3, %2 : i1, index
+  } then (%arg1 : index) {
+    hlcf.yield %arg1, %arg1 : index, index
+  } else (%arg1 : index) {
+    hlcf.yield %idx1, %idx1 : index, index
+  }
+  %1 = index.add %0#1, %0#0
+  kgen.return %1 : index
+}
+
+kgen.func @elifManyRegionsWithArgs(%arg0: index) -> index {
+  %idx3 = index.constant 3
+  %idx1 = index.constant 1
+  %idx4 = index.constant 4
+  %0:2 = hlcf.elif -> index, index {
+    %2 = index.add %arg0, %idx1
+    %3 = index.cmp eq(%2, %idx3)
+    hlcf.elif.yield %3, %2 : i1, index
+  } then (%arg1 : index) {
+    hlcf.yield %arg1, %arg1 : index, index
+  } (%arg1 : index) {
+    %4 = index.cmp eq(%arg0, %idx4)
+    %5 = index.add %arg1, %idx3
+    hlcf.elif.yield %4, %5 : i1, index
+  } then (%arg1 : index) {
+    hlcf.yield %arg1, %arg1 : index, index
+  } else (%arg1 : index) {
+    hlcf.yield %idx1, %idx1 : index, index
+  }
+  %1 = index.add %0#1, %0#0
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: kgen.func export @constexpr_elif
+kgen.generator export @constexpr_elif() -> index {
+  // CHECK: kgen.param.constant = <6>
+  %0 = kgen.param.constant = <apply(:(index) -> index @elifWithArgs, 2)>
+  // CHECK: kgen.param.constant = <16>
+  %1 = kgen.param.constant = <apply(:(index) -> index @elifManyRegionsWithArgs, 4)>
+  kgen.return %0 : index
+}
