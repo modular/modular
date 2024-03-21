@@ -111,9 +111,11 @@ struct MojoTypeSystem::Impl {
     // TODO: Populate cpu information properly here.
     if (archSpec.IsValid()) {
       compilationOptions.targetTriple = archSpec.GetTriple().str();
-      compilationOptions.relocModel = archSpec.GetTriple().isOSBinFormatMachO()
-                                          ? llvm::Reloc::PIC_
-                                          : llvm::Reloc::Static;
+      compilationOptions.relocModel =
+          (archSpec.GetTriple().isOSBinFormatMachO() ||
+           archSpec.GetTriple().isAArch64())
+              ? llvm::Reloc::PIC_
+              : llvm::Reloc::Static;
     }
     compilationOptions.targetCpu = llvm::sys::getHostCPUName();
 
