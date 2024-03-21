@@ -4160,3 +4160,38 @@ fn mip_min(x: Int, y: Int) -> Int:
 fn mip_mod(numerator: Int, denominator: Int) -> Int:
     debug_assert(denominator != 0, "mip.mod divide by zero")
     return numerator % denominator
+
+
+@mogg_register("mip.constant.bool")
+@always_inline
+@export
+fn mip_constant_bool[value: Bool]() -> Bool:
+    return value
+
+
+@mogg_register("mip.bool.and")
+@always_inline
+@export
+fn mip_and(x: Bool, y: Bool) -> Bool:
+    return x & y
+
+
+@mogg_register("mip.bool.or")
+@always_inline
+@export
+fn mip_or(x: Bool, y: Bool) -> Bool:
+    return x | y
+
+
+@mogg_register("mip.bool.xor")
+@always_inline
+@export
+fn mip_xor(x: Bool, y: Bool) -> Bool:
+    return x ^ y
+
+
+@mogg_register("mip.select")
+@always_inline
+@export
+fn mip_select[T: AnyRegType](cond: Bool, true: T, false: T) -> T:
+    return true if cond else false
