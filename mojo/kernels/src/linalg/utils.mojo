@@ -899,46 +899,71 @@ fn get_pack_data_size[type: DType]() -> Int:
 
 
 @always_inline
-fn search_mm_config[
+fn get_mm_config[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     b_packed: Bool,
     kernel_type: Bool,
     saturated_vnni: Bool,
 ]() -> MatmulConfig:
+    """Utility function to extract matmul configuration parameters for exported
+    Functions.
+        TODO: Add target dependent configuration parameters.
+    """
+    alias simd_size = simdwidthof[c_type]()
+
+    # number of k iterations to prefetch ahead on the
+    #   inner micro kernel loop.
+    alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
+    alias factor = 4 if use_i8mm_fn[a_type, b_type, c_type]() else simd_size
+
     alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
     ]()
-    alias mm_config1 = get_matmul_config[
-        a_type,
-        b_type,
-        c_type,
-        kernel_shape.a_row_size,
-        kernel_shape.pack_inner_size,
-        saturated_vnni,
-    ]()
-    return mm_config1
+
+    return MatmulConfig(
+        a_shape=a_shape,
+        b_shape=b_shape,
+        c_shape=c_shape,
+        packed_shape=DimList.create_unknown[3](),
+        shape_bias=DimList.create_unknown[1](),
+        simd_size=simd_size,
+        a_row_size=kernel_shape.a_row_size,
+        pack_inner_size=kernel_shape.pack_inner_size * factor,
+        pack_data_size=get_pack_data_size[b_type](),
+        prefetch_b_distance_k=prefetch_b_distance_k,
+        use_vnni=use_vnni_fn[a_type, b_type, c_type](),
+        use_i8mm=use_i8mm_fn[a_type, b_type, c_type](),
+        saturated_vnni=saturated_vnni,
+    )
 
 
 @always_inline
-fn search_mm_config[
+fn get_mm_config[
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
     b_packed: Bool,
     kernel_type: Bool,
 ]() -> MatmulConfig:
-    return search_mm_config[
-        a_type, b_type, c_type, b_packed, kernel_type, False
+    return get_mm_config[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        b_packed,
+        kernel_type,
+        False,
     ]()
-
-
-@always_inline
-fn search_mm_config[
-    type: DType, b_packed: Bool, kernel_type: Bool
-]() -> MatmulConfig:
-    return search_mm_config[type, type, type, b_packed, kernel_type, False]()
 
 
 @always_inline
@@ -970,42 +995,6 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
             or (a_type == DType.uint8 and b_type == DType.int8)
             or (a_type == DType.int8 and b_type == DType.int8)
         )
-    )
-
-
-fn get_matmul_config[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    a_row_size: Int,
-    pack_inner_size: Int,
-    saturated: Bool,
-]() -> MatmulConfig:
-    """Utility function to extract matmul configuration parameters for exported
-    Functions.
-        TODO: Add target dependent configuration parameters.
-    """
-    alias simd_size = simdwidthof[c_type]()
-
-    # number of k iterations to prefetch ahead on the
-    #   inner micro kernel loop.
-    alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
-    alias factor = 4 if use_i8mm_fn[a_type, b_type, c_type]() else simd_size
-
-    return MatmulConfig(
-        a_shape=DimList.create_unknown[2](),
-        b_shape=DimList.create_unknown[2](),
-        c_shape=DimList.create_unknown[2](),
-        packed_shape=DimList.create_unknown[3](),
-        shape_bias=DimList.create_unknown[1](),
-        simd_size=simd_size,
-        a_row_size=a_row_size,
-        pack_inner_size=pack_inner_size * factor,
-        pack_data_size=get_pack_data_size[b_type](),
-        prefetch_b_distance_k=prefetch_b_distance_k,
-        use_vnni=use_vnni_fn[a_type, b_type, c_type](),
-        use_i8mm=use_i8mm_fn[a_type, b_type, c_type](),
-        saturated_vnni=saturated,
     )
 
 

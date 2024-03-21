@@ -48,7 +48,7 @@ from MatmulUtils import (
     get_packB_unroll_factor,
     get_partitioned_matmul,
     packA_i8mm,
-    search_mm_config,
+    get_mm_config,
     use_i8mm_fn,
     use_vnni_fn,
 )
@@ -1820,8 +1820,12 @@ fn pack_matmul_b_shape_func_M[
     var k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
     var tile_n_k = StaticIntTuple[2]()
 
-    if get_kernel_type(kernel_type_m, n, k):
-        alias config = search_mm_config[a_type, b_type, c_type, True, True]()
+    @parameter
+    @always_inline
+    fn dispatch_on_kernel_type[kernel_type: Bool]():
+        alias config = get_mm_config[
+            a_type, a_shape, b_type, b_shape, c_type, c_shape, True, kernel_type
+        ]()
         tile_n_k = _get_tile_n_k[
             config,
             transpose_in_0,
@@ -1832,18 +1836,8 @@ fn pack_matmul_b_shape_func_M[
             c_type,
             c_shape,
         ](b_input)
-    else:
-        alias config2 = search_mm_config[a_type, b_type, c_type, True, False]()
-        tile_n_k = _get_tile_n_k[
-            config2,
-            transpose_in_0,
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-        ](b_input)
+
+    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
     @parameter
     if transpose_in_0:
@@ -2041,9 +2035,18 @@ fn _pack_b_ndbuffer_impl[
         # The config (in particular inner size and tile_k) needs to EXACTLY match the
         # values used in the matmul algorithm consuming this packed b matrix
 
-        if get_kernel_type(kernel_type_m, n, k):
-            alias config = search_mm_config[
-                a_type, b_type, c_type, True, True
+        @parameter
+        @always_inline
+        fn dispatch_on_kernel_type[kernel_type: Bool]():
+            alias config = get_mm_config[
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+                True,
+                kernel_type,
             ]()
             var tile_n_k = _get_tile_n_k[
                 config,
@@ -2065,30 +2068,8 @@ fn _pack_b_ndbuffer_impl[
                 src_shape=b_shape,
                 dst_shape = DimList.create_unknown[2](),
             ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
-        else:
-            alias config2 = search_mm_config[
-                a_type, b_type, c_type, True, False
-            ]()
-            var tile_n_k = _get_tile_n_k[
-                config2,
-                transposed,
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
-            ](b_input)
-            pack_b[
-                transposed,
-                config2.simd_size,
-                config2.pack_inner_size,
-                a_type,
-                b_type,
-                c_type,
-                src_shape=b_shape,
-                dst_shape = DimList.create_unknown[2](),
-            ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
+
+        dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
 @always_inline
@@ -3723,9 +3704,18 @@ fn _submatmul_sequential_sync[
     constrained[not transpose_a, "transpose_a not yet supported"]()
 
     @parameter
+    @always_inline
     fn dispatch_on_kernel_type[kernel_type: Bool]():
-        alias mm_config = search_mm_config[
-            a_type, b_type, c_type, b_packed, kernel_type, saturated_vnni
+        alias mm_config = get_mm_config[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            b_packed,
+            kernel_type,
+            saturated_vnni,
         ]()
 
         fn elementwise_closure(offset: GemmShape, shape: GemmShape):
