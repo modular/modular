@@ -142,7 +142,7 @@ bool Settings::set(StringRef key, StringRef value) {
 
 ErrorOrSuccess Settings::flush() { return config.flush(); }
 
-const ErrorOr<StringRef> Settings::userID() const {
+ErrorOr<StringRef> Settings::userID() const {
   return entitlementStore.getUserID();
 }
 
@@ -150,14 +150,6 @@ const std::filesystem::path &Settings::clientKeyPriv() const {
   return entitlementStore.clientKeyPrivPath;
 }
 
-const std::filesystem::path &Settings::clientKeyPub() const {
-  return entitlementStore.clientKeyPubPath;
-}
-
 const std::filesystem::path &Settings::clientCert() const {
   return entitlementStore.clientCertPath;
-}
-
-const std::filesystem::path &Settings::CRL() const {
-  return entitlementStore.crlPath;
 }

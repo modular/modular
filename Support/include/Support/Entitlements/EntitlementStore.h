@@ -39,8 +39,7 @@ class EntitlementStore {
 public:
   EntitlementStore(const std::filesystem::path &clientKeyPrivPath,
                    const std::filesystem::path &clientKeyPubPath,
-                   const std::filesystem::path &clientCertPath,
-                   const std::filesystem::path &crlPath);
+                   const std::filesystem::path &clientCertPath);
   ~EntitlementStore();
 
   /// EntitlementStore objects are non-copyable, but they are move-able.
@@ -165,15 +164,11 @@ private:
   /// Store the client keys. If these cannot be found, they'll be generated.
   Keypair clientKeys;
 
-  /// This is a local reference to the CRL. If we have it, it'll be PEM-encoded.
-  BufferRef crlPEM;
-
 public:
   /// Paths to use for on-disk keys.
   const std::filesystem::path clientKeyPrivPath;
   const std::filesystem::path clientKeyPubPath;
   const std::filesystem::path clientCertPath;
-  const std::filesystem::path crlPath;
 };
 } // namespace M
 

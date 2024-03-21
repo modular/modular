@@ -169,7 +169,7 @@ public:
   /// is provided (in PEM format) then it's used to check if any certificates in
   /// the chain have been revoked. The CRL PEM must include the null terminating
   /// byte at the end!
-  ErrorOrSuccess verify(Keypair &clientKeys, StringRef crlPEM);
+  ErrorOrSuccess verify(Keypair &clientKeys);
 
   /// Get the PEM buffer for this certificate chain.
   StringRef getPEM() const {
@@ -266,8 +266,7 @@ Detail::CertificateChain::fromPEM(mbedtls_x509_crt_ext_cb_t cb, void *ctx,
 // Detail::CertificateChain::verify
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess Detail::CertificateChain::verify(Keypair &clientKeys,
-                                                StringRef crlPEM) {
+ErrorOrSuccess Detail::CertificateChain::verify(Keypair &clientKeys) {
   // Find and open the root certs.
   mbedtls_x509_crt caCerts;
   mbedtls_x509_crt_init(&caCerts);
@@ -279,12 +278,6 @@ ErrorOrSuccess Detail::CertificateChain::verify(Keypair &clientKeys,
   mbedtls_x509_crl caCRL;
   mbedtls_x509_crl_init(&caCRL);
   auto freeCRL = llvm::make_scope_exit([&] { mbedtls_x509_crl_free(&caCRL); });
-  if (!crlPEM.empty()) {
-    int rc =
-        mbedtls_x509_crl_parse(&caCRL, crlPEM.bytes_begin(), crlPEM.size());
-    if (rc != 0)
-      return Error(mbedTLSErrorToString(rc));
-  }
 
   uint32_t flags = 0;
   // We use the expected next profile mbedTLS provides, but we disallow
@@ -624,12 +617,10 @@ static ErrorOrSuccess generateCSR(Keypair &keys, llvm::StringRef subject,
 EntitlementStore::EntitlementStore(
     const std::filesystem::path &clientKeyPrivPath,
     const std::filesystem::path &clientKeyPubPath,
-    const std::filesystem::path &clientCertPath,
-    const std::filesystem::path &crlPath)
-    : clientCert(nullptr), crlPEM(Buffer::get("")),
-      clientKeyPrivPath(clientKeyPrivPath), clientKeyPubPath(clientKeyPubPath),
-      clientCertPath(clientCertPath), crlPath(crlPath) {}
-EntitlementStore::~EntitlementStore() {}
+    const std::filesystem::path &clientCertPath)
+    : clientCert(nullptr), clientKeyPrivPath(clientKeyPrivPath),
+      clientKeyPubPath(clientKeyPubPath), clientCertPath(clientCertPath) {}
+EntitlementStore::~EntitlementStore() = default;
 EntitlementStore::EntitlementStore(M::EntitlementStore &&other) = default;
 
 //===----------------------------------------------------------------------===//
@@ -651,7 +642,7 @@ ErrorOr<StringRef> EntitlementStore::getUserID() const {
 // EntitlementStore::open
 //===----------------------------------------------------------------------===//
 
-static std::filesystem::path findClientFile(std::filesystem::path dir,
+static std::filesystem::path findClientFile(const std::filesystem::path &dir,
                                             StringRef cfgVal, StringRef name) {
   // Use the configuration file.
   if (!cfgVal.empty())
@@ -682,12 +673,9 @@ static ErrorOr<EntitlementStore> newEntitlementStore(Config &config) {
       "client_pub.pem");
   auto clientCertPath = findClientFile(
       *dataFolderOr, config.getValue("entitlements.client_cert"), "client.pem");
-  auto crlPath = findClientFile(*dataFolderOr,
-                                config.getValue("entitlements.crl"), "crl.pem");
 
   // Return the initialized store.
-  return EntitlementStore(clientKeyPrivPath, clientKeyPubPath, clientCertPath,
-                          crlPath);
+  return EntitlementStore(clientKeyPrivPath, clientKeyPubPath, clientCertPath);
 }
 
 ErrorOr<std::optional<EntitlementStore>>
@@ -870,79 +858,8 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
 // EntitlementStore::verifyAndFlushClientCert
 //===----------------------------------------------------------------------===//
 
-static ErrorOr<std::optional<BufferRef>>
-lazyLoadCRL(HTTPClient &client, const std::filesystem::path &path) {
-  // To avoid constantly hashing and checking this URL, we will check for the
-  // last modification and time and record an empty file.
-  std::error_code ec;
-  if (std::filesystem::exists(path, ec) && !ec) {
-    std::filesystem::file_time_type ftime =
-        std::filesystem::last_write_time(path, ec);
-    if (!ec) {
-      auto yesterday =
-          std::chrono::system_clock::now() - std::chrono::hours(24);
-      auto touchTime = std::chrono::duration_cast<std::chrono::seconds>(
-          ftime.time_since_epoch());
-      // Is it within 24hrs? If so, then we just read the file that's there.
-      if (touchTime >= std::chrono::duration_cast<std::chrono::seconds>(
-                           yesterday.time_since_epoch())) {
-        auto bufOr = Buffer::getFile(path.string());
-        if (bufOr.isError())
-          return bufOr.takeError();
-        return std::move(*bufOr);
-      }
-    }
-  }
-
-  // It doesn't exist / isn't fresh enough.
-  WriteableBufferRef crlBuf = WriteableBuffer::get(
-      /*size=*/0, /*alignment=*/std::nullopt, /*capacity=*/2048);
-
-  // No special privileges should be required to reach this URL, so we use
-  // an independent HTTPClient object, without any authentication.
-  client.noAuthNeeded();
-  HTTPRequest certificateRequest{"https://crl.modular.com"};
-  HTTPResponse response = client.executeRequest(certificateRequest, *crlBuf);
-  if (response.isSuccess()) {
-    // Flush it to the filesystem.
-    auto err = writeFileUnderLock(path, [&](llvm::raw_ostream &os) {
-      os << crlBuf->Buffer::getBuffer();
-      // Write a null-terminator explicitly - this is required by mbedTLS'
-      // PEM parsing functions.
-      os << '\0';
-    });
-    // Return if there is an error writing the file.
-    if (err.isError()) {
-      return err.takeError();
-    }
-    // We open the file, and check if it is completely empty. That's written
-    // below to ensure we don't continuely try to fetch an empty list.
-    auto bufOr = Buffer::getFile(path.string());
-    if (bufOr.isError())
-      return bufOr.takeError();
-    auto buf = std::move(*bufOr);
-    if (buf->getBufferSize() == 0)
-      return std::nullopt;
-  }
-
-  // If there is an error, then we just write an empty file.
-  auto err = writeFileUnderLock(path, [&](llvm::raw_ostream &os) {});
-  if (err.isError())
-    return err.takeError();
-  return std::nullopt; // Nothing fetched.
-}
-
 ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
-  // Load the CRL (but not too often).
-  auto pemOr = lazyLoadCRL(client, crlPath);
-  if (pemOr.isError())
-    return pemOr.takeError();
-  if (pemOr->has_value())
-    crlPEM = std::move(pemOr->value());
-
-  // Verify the certificate with the CRL on the system, if we have it.
-  if (auto err =
-          clientCert->verify(clientKeys, crlPEM ? crlPEM->getBuffer() : ""))
+  if (auto err = clientCert->verify(clientKeys))
     return err.takeError();
 
   // Flush the certificate to a local file now we know it's valid.
@@ -961,14 +878,14 @@ ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
 // EntitlementStore::parseCertificateChain
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::parseCertificateChain(BufferRef buf) {
+ErrorOrSuccess EntitlementStore::parseCertificateChain(BufferRef pem) {
   // Construct a MbedTLSCallbackContext to pass to the extension callback.
   MbedTLSCallbackContext ctx{entitlements, std::nullopt};
 
   // Parse the certificate, providing the callback to the CertificateChain
   // object to use while it's parsing.
   auto chainOr = Detail::CertificateChain::fromPEM(
-      (mbedtls_x509_crt_ext_cb_t)extensionCallback, &ctx, std::move(buf));
+      (mbedtls_x509_crt_ext_cb_t)extensionCallback, &ctx, std::move(pem));
   if (chainOr.isError()) {
     if (ctx.error)
       return std::move(*ctx.error);
