@@ -401,10 +401,25 @@ struct Test::TestDiscovery {
     return doesDeclDefineUnitTest(decl->getIfOperation(), *decl, shared);
   }
 
+  /// Return the source manager buffer id containing the given operation.
+  static std::optional<int> getBufferIDForOp(Operation *op,
+                                             SourceMgr &sourceMgr) {
+    if (auto loc = op->getLoc()->findInstanceOf<FileLineColLoc>()) {
+      for (int i = 1, e = sourceMgr.getNumBuffers(); i <= e; ++i) {
+        const llvm::MemoryBuffer *buffer = sourceMgr.getMemoryBuffer(i);
+        if (buffer->getBufferIdentifier() == loc.getFilename())
+          return i;
+      }
+    }
+    return std::nullopt;
+  }
+
   /// Return a doc test suite defined by the given decl, or nullopt if no doc
   /// tests are defined.
   static std::optional<Test> getDocTestSuiteFromDecl(StringRef filePath,
-                                                     Operation *declOp) {
+                                                     Operation *declOp,
+                                                     SourceMgr &sourceMgr,
+                                                     int bufId = 0) {
     auto astDeclOp = dyn_cast_if_present<ASTDeclInterface>(declOp);
     if (!astDeclOp)
       return std::nullopt;
@@ -417,33 +432,83 @@ struct Test::TestDiscovery {
       return std::nullopt;
     TestID testID(getDeclTestID(filePath, declOp, /*isDocTestSuite=*/true));
 
+    // Grab the location of the doc string in the source buffer.
+    SMLoc docStartLoc;
+    if (FileLineColLoc docLocAttr = docString.getLoc()) {
+      // If we don't have a buffer, try to find it from the operation location.
+      if (!bufId)
+        bufId = getBufferIDForOp(declOp, sourceMgr).value_or(0);
+      if (bufId) {
+        docStartLoc = sourceMgr.FindLocForLineAndColumn(
+            bufId, docLocAttr.getLine(), docLocAttr.getColumn());
+      }
+    }
+    StringRef rawDocStr = docStringAttr.getString();
+
     std::vector<Test> children;
-    for (size_t i : llvm::seq(docString.getCodeBlocks().size()))
-      children.emplace_back(Test(testID.strref() + "::" + Twine(i)));
-    return Test(testID, std::move(children));
+    for (auto [index, block] : llvm::enumerate(docString.getCodeBlocks())) {
+      // Compute the location for the code block. This involves mapping the
+      // code block location to the location in the decl buffer.
+      std::optional<Test::SourceRange> location;
+      if (docStartLoc.isValid()) {
+        StringRef code = block.getRawCode();
+        SMLoc blockLoc = SMLoc::getFromPointer(
+            docStartLoc.getPointer() + (code.data() - rawDocStr.data()));
+        SMLoc blockEndLoc =
+            SMLoc::getFromPointer(blockLoc.getPointer() + code.size() + 1);
+        auto [line, col] = sourceMgr.getLineAndColumn(blockLoc, bufId);
+        auto [endLine, endCol] = sourceMgr.getLineAndColumn(blockEndLoc, bufId);
+        if (line && col && endLine && endCol)
+          location.emplace(line - 1, col, endLine, endCol);
+      }
+      children.emplace_back(Test(testID.withTest(Twine(index).str()),
+                                 /*newChildren=*/{}, location));
+    }
+    return Test(TestID(testID), std::move(children));
   }
   static std::optional<Test> getDocTestSuiteFromDecl(StringRef filePath,
-                                                     MojoASTDeclRef decl) {
-    if (Operation *op = decl->getIfOperation())
-      return getDocTestSuiteFromDecl(filePath, op);
+                                                     MojoASTDeclRef decl,
+                                                     SourceMgr &sourceMgr) {
+    if (Operation *op = decl->getIfOperation()) {
+      return getDocTestSuiteFromDecl(
+          filePath, op, sourceMgr,
+          sourceMgr.FindBufferContainingLoc(decl->getLoc()));
+    }
     return std::nullopt;
   }
 
   //===--------------------------------------------------------------------===//
   // Discover: Mojo Source
 
+  /// Return a source range for the given decl.
+  static std::optional<Test::SourceRange>
+  getSourceRangeForDecl(MojoASTDeclRef decl, SourceMgr &sourceMgr) {
+    Operation *op = decl->getIfOperation();
+    if (!op)
+      return std::nullopt;
+    if (auto loc = op->getLoc()->findInstanceOf<FileLineColLoc>()) {
+      int line = loc.getLine(), col = loc.getColumn();
+      return Test::SourceRange{line, col, line, col};
+    }
+    return std::nullopt;
+  }
+
   /// Discover tests defined by given Mojo decl.
   static void discoverTestsInDecl(StringRef path, MojoASTDeclRef ref,
                                   SharedState &shared, std::vector<Test> &tests,
                                   bool processUnitTests) {
     // Check if the decl defines a unit test.
-    if (processUnitTests && doesDeclDefineUnitTest(ref, shared))
-      tests.emplace_back(Test(getDeclTestID(path, ref)));
+    if (processUnitTests && doesDeclDefineUnitTest(ref, shared)) {
+      tests.emplace_back(
+          Test(getDeclTestID(path, ref), /*newChildren=*/{},
+               getSourceRangeForDecl(ref, shared.getSourceMgr())));
+    }
 
     // Check for a doc test suite if this isn't a package (package doc strings
     // are just a copy from their __init__).
     if (!isa<PackageOp>(*ref)) {
-      if (std::optional<Test> test = getDocTestSuiteFromDecl(path, ref))
+      if (std::optional<Test> test =
+              getDocTestSuiteFromDecl(path, ref, shared.getSourceMgr()))
         tests.emplace_back(std::move(*test));
     }
   }
@@ -497,9 +562,9 @@ struct Test::TestDiscovery {
 
     // Process the mojo file, ignoring any diagnostics emitted along the way
     // (we don't care about emitting errors here, just discovering tests).
-    llvm::SourceMgr sourceManager;
-    sourceManager.setDiagHandler([](const llvm::SMDiagnostic &diag, void *) {});
-    MojoParserContext parserContext(sourceManager, parserConfig);
+    llvm::SourceMgr sourceMgr;
+    sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &diag, void *) {});
+    MojoParserContext parserContext(sourceMgr, parserConfig);
     MojoASTDeclRef moduleDecl = parserContext.parseFileOrPackage(path);
     if (!moduleDecl || !moduleDecl.getIfOperation())
       return std::nullopt;
@@ -510,7 +575,7 @@ struct Test::TestDiscovery {
       // If this is a doc test suite for the top-level decl, handle that
       // immediately.
       if (suiteName == "__doc__")
-        return getDocTestSuiteFromDecl(path.string(), decl.getIfOperation());
+        return getDocTestSuiteFromDecl(path.string(), decl, sourceMgr);
 
       // Parse the scoped name into a list of decl names.
       bool isDocTestSuite = suiteName.consume_back(".__doc__");
@@ -528,7 +593,7 @@ struct Test::TestDiscovery {
         for (StringRef it : *scopes)
           if (!(op = symbolTable.lookupSymbolIn(op, StringAttr::get(&ctx, it))))
             return std::nullopt;
-        return getDocTestSuiteFromDecl(path.string(), op);
+        return getDocTestSuiteFromDecl(path.string(), op, sourceMgr);
       }
 
       // Otherwise, this is a normal test suite, for these we can resolve the
@@ -922,13 +987,36 @@ bool KGEN::Mojo::fromJSON(const llvm::json::Value &value, Test &result,
   if (!o)
     return false;
 
+  Test::SourceRange location;
+  if (o.mapOptional("location", location))
+    result.location = std::make_optional(location);
   return o.mapOptional("children", result.children) &&
          o.map("id", result.testID);
+}
+
+bool KGEN::Mojo::fromJSON(const llvm::json::Value &value,
+                          Test::SourceRange &result, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("startLine", result.startLine) &&
+         o.map("startColumn", result.startColumn) &&
+         o.map("endLine", result.endLine) &&
+         o.map("endColumn", result.endColumn);
 }
 
 llvm::json::Value KGEN::Mojo::toJSON(const Test &value) {
   llvm::json::Object object{{"id", value.testID}};
   if (!value.children.empty())
     object["children"] = llvm::json::Value(value.children);
+  if (value.location)
+    object["location"] = llvm::json::Value(*value.location);
   return std::move(object);
+}
+
+llvm::json::Value KGEN::Mojo::toJSON(const Test::SourceRange &value) {
+  return llvm::json::Object{
+      {"startLine", value.startLine},
+      {"startColumn", value.startColumn},
+      {"endLine", value.endLine},
+      {"endColumn", value.endColumn},
+  };
 }

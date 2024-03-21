@@ -13,6 +13,7 @@ import {MojoDecoratorContext} from './decorations';
 import {registerFormatter} from './formatter';
 import {LoggingService} from './logging';
 import {MojoSDKManager} from './mojoSDK';
+import {MojoTestContext} from './testing/testing';
 import * as config from './utils/config';
 import {DisposableContext} from './utils/disposableContext';
 
@@ -55,6 +56,11 @@ export class MojoContext extends DisposableContext {
           this.dispose();
           await this.activate(/*launchAndDebugLanguageServer=*/ true);
         }));
+
+    // Initialize the testing support.
+    let testContext = new MojoTestContext(this);
+    testContext.activate();
+    this.pushSubscription(testContext);
 
     // This lambda is used to lazily start language clients for the given
     // document. It removes the need to pro-actively start language clients for
