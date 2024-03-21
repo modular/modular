@@ -333,3 +333,22 @@ kgen.generator @two_nested_closures(%arg0: index, %arg1: index) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: kgen.generator @feras_F() -> index
+// CHECK-LABEL: kgen.generator @feras_G<F: () -> index>() capturing
+// CHECK-LABEL: kgen.generator @feras()
+kgen.generator @feras() {
+  // CHECK-NEXT: declare F: () -> index = <@feras_F>
+  kgen.param.declare.region F = () -> index {
+    kgen.unreachable
+  }
+  // CHECK-NEXT: constant: array<apply(:() -> index F)
+  %0 = kgen.param.constant: array<apply(:() -> index F), index> = <?>
+  // CHECK-NEXT: global_store
+  // CHECK-NEXT: declare G: () capturing -> () = <@feras_G<:() -> index F>>
+  kgen.param.declare.region G = () capturing {
+    "use"(%0) : (!pop.array<apply(:() -> index F), index>) -> ()
+    kgen.return
+  }
+  kgen.return
+}

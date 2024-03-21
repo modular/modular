@@ -79,10 +79,8 @@ void OutlineClosuresPass::runOnOperation() {
     uses.calculate(paramCache);
 
     bool hadError = false;
-    SmallVector<ParamDeclareRegionOp> regionsToErase;
+    SmallVector<Operation *> toErase;
     generator.walk([&](ParamDeclareRegionOp regionDecl) {
-      LLVM_DEBUG(llvm::dbgs()
-                 << "//===-----\nLifting closure: " << regionDecl << "\n");
       StringRef regionName = regionDecl.getParamDecl().getName();
 
       // Value captures are easy (ish)
@@ -102,10 +100,6 @@ void OutlineClosuresPass::runOnOperation() {
         hadError = true;
         return;
       }
-
-      LLVM_DEBUG(llvm::dbgs() << "Found value captures: [";
-                 llvm::interleaveComma(captures, llvm::dbgs());
-                 llvm::dbgs() << "]\n");
 
       // We will use this builder to build the lifted generator.
       ImplicitLocOpBuilder b(regionDecl->getLoc(), regionDecl.getContext());
@@ -159,10 +153,6 @@ void OutlineClosuresPass::runOnOperation() {
           capturedParamValues.push_back(useFromAbove);
       }
 
-      LLVM_DEBUG(llvm::dbgs() << "Found parameter captures: [";
-                 llvm::interleaveComma(capturedParamDecls, llvm::dbgs());
-                 llvm::dbgs() << "]\n");
-
       // Create a wrapper that knows how to handle the global variable. It has
       // the same parameter signature as the lifted region, but it has the same
       // value signature as the original parameter region (no captures - those
@@ -208,14 +198,6 @@ void OutlineClosuresPass::runOnOperation() {
       DebugInfo::updateSubprogram(liftedWrapper,
                                   liftedWrapper.getSymNameAttr());
 
-      LLVM_DEBUG(llvm::dbgs()
-                 << "Created lifted region wrapper: " << liftedWrapper << "\n");
-
-      LLVM_DEBUG({
-        if (failed(mlir::verify(liftedWrapper)))
-          return signalPassFailure();
-      });
-
       Attribute bindSignature = wrapperSymbol;
       // If we have parameter captures, create a bind_signature operator.
       if (!capturedParamValues.empty()) {
@@ -227,9 +209,6 @@ void OutlineClosuresPass::runOnOperation() {
         // Ignore implicit lifetimes.
         for (Type paramType : regionDecl.getSignature().getInputParamTypes())
           partialBindings.push_back(UnboundAttr::get(paramType));
-        LLVM_DEBUG(llvm::dbgs() << "Partial bindings: [\n\t";
-                   llvm::interleave(partialBindings, llvm::dbgs(), ",\n\t");
-                   llvm::dbgs() << "\n]\n");
         bindSignature =
             ParamOperatorAttr::get(POC::BindSignature, partialBindings);
       }
@@ -266,16 +245,13 @@ void OutlineClosuresPass::runOnOperation() {
                                cast<TypedAttr>(bindSignature));
 
       // And we can drop the regionDecl now, we're done with it.
-      regionsToErase.push_back(regionDecl);
+      toErase.push_back(regionDecl);
       varCounter += captures.size();
     });
     if (hadError)
       return signalPassFailure();
 
-    for (auto regionDecl : regionsToErase)
-      regionDecl->erase();
-
-    LLVM_DEBUG(llvm::dbgs() << "Modified generator: " << generator << "\n");
+    for (Operation *op : toErase)
+      op->erase();
   }
-  LLVM_DEBUG(llvm::dbgs() << "Finished outlining closures\n");
 }
