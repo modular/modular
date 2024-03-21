@@ -417,6 +417,53 @@ struct LayoutTensor[
             element_layout = coalesce(__tiled_layout[0]),
         ](self.ptr)
 
+    @staticmethod
+    fn __get_slice_size(slice: Slice, dim: Int) -> Int:
+        var end = slice.end if slice._has_end() else int(Self.layout.shape[dim])
+        return end - slice.start
+
+    @staticmethod
+    fn __compute_slice_layout(d0_slice: Slice, d1_slice: Slice) -> Layout:
+        constrained[
+            layout.shape.__len__() == 2,
+            "Only rank-2 tensors slices are supported for now!",
+        ]()
+        return Layout(
+            IntTuple(
+                Self.__get_slice_size(d0_slice, 0),
+                Self.__get_slice_size(d1_slice, 1),
+            ),
+            layout.stride,
+        )
+
+    @always_inline
+    fn slice[
+        d0_slice: Slice,
+        d1_slice: Slice,
+        __slice_layout: Layout = Self.__compute_slice_layout(
+            d0_slice,
+            d1_slice,
+        ),
+    ](self) -> LayoutTensor[
+        __slice_layout,
+        dtype,
+        address_space=address_space,
+        element_layout=element_layout,
+    ]:
+        constrained[
+            d0_slice.step == 1 and d1_slice.step == 1,
+            "Slice should have no gaps",
+        ]()
+        alias stride_m = int(__slice_layout.stride[0])
+        alias stride_n = int(__slice_layout.stride[1])
+        var offset = d0_slice.start * stride_m + d1_slice.start * stride_n
+        return LayoutTensor[
+            __slice_layout,
+            dtype,
+            address_space=address_space,
+            element_layout=element_layout,
+        ](self.ptr.offset(offset))
+
     @always_inline
     fn transpose[
         M: Int = Self.dim[0](),

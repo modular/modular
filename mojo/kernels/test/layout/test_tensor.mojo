@@ -599,6 +599,48 @@ fn test_vectorize_writes():
     tensor.print()
 
 
+fn test_slice():
+    print("==test_slice")
+    var tensor = LayoutTensor[
+        Layout(IntTuple(4, 4), IntTuple(1, 4)), DType.float32
+    ].stack_allocation()
+    tensor.linspace()
+    # CHECK: row_slice_sub_column
+    # CHECK: 0.0 1.0
+    # CHECK: 4.0 5.0
+    # CHECK: 8.0 9.0
+    # CHECK: 12.0 13.0
+    print("row_slice_sub_column")
+    tensor.slice[:, :2]().print()
+    # CHECK: col_slice_sub_row
+    # CHECK: 0.0 1.0 2.0 3.0
+    # CHECK: 4.0 5.0 6.0 7.0
+    print("col_slice_sub_row")
+    tensor.slice[:2, :]().print()
+    # sub_slice
+    # 5.0 6.0
+    # 9.0 10.0
+    # 13.0 14.0
+    print("sub_slice")
+    tensor.slice[1:, 1:3]().print()
+    # CHECK: bottom_right
+    # CHECK: 10.0 11.0
+    # CHECK: 14.0 15.0
+    print("bottom_right")
+    tensor.slice[2:, 2:]().print()
+    # CHECK: top_left
+    # CHECK: 0.0 1.0
+    # CHECK: 4.0 5.0
+    print("top_left")
+    tensor.slice[:2, :2]().print()
+
+    print("slice_of_slice")
+    # CHECK: slice_of_slice
+    # CHECK: 6.0 7.0
+    # CHECK: 10.0 11.0
+    tensor.slice[1:, 1:]().slice[:2, 1:]().print()
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -609,3 +651,4 @@ fn main():
     test_distribute_with_tile_size()
     test_vectorize_reads()
     test_vectorize_writes()
+    test_slice()
