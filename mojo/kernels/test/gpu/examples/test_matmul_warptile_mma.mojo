@@ -27,7 +27,7 @@ from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 from tensor import Tensor
 
-from utils._optional import Optional
+from collections import OptionalReg as Optional
 from utils.index import Index
 
 
