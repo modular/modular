@@ -42,8 +42,16 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 namespace {
-
 #if defined(HAVE_LINUX_X86_SYSTEM_INFO)
+/// Function is very similar to what linux uses. We will mainly use
+/// this to detect P and E cores on x86.
+static inline void native_cpuid(unsigned int *eax, unsigned int *ebx,
+                                unsigned int *ecx, unsigned int *edx) {
+  /* ecx is often an input as well as an output. */
+  asm volatile("cpuid"
+               : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx)
+               : "0"(*eax), "2"(*ecx));
+}
 std::unique_ptr<llvm::MemoryBuffer> fileBuffer(StringRef path) {
   auto errOrBuf = llvm::MemoryBuffer::getFileAsStream(path);
   if (std::error_code ec = errOrBuf.getError()) {
@@ -364,8 +372,44 @@ size_t M::getNumPerformanceCores() {
       pcores > 0)
     return static_cast<size_t>(pcores);
   return M::getNumPhysicalCores();
-#endif
+#elif defined(HAVE_LINUX_X86_SYSTEM_INFO)
+  // Detect hybrid cores first.
+  // https://www.intel.com/content/www/us/en/developer/articles/guide/12th-gen-intel-core-processor-gamedev-guide.html
+  unsigned eax = 7, ecx = 0, ebx, edx;
+  native_cpuid(&eax, &ebx, &ecx, &edx);
+  if (((edx >> 15) & 0x1) == 0)
+    return M::getNumPhysicalCores();
+  cpu_set_t callersAffinity;
+  if (sched_getaffinity(0, sizeof(callersAffinity), &callersAffinity))
+    return M::getNumPhysicalCores();
+  auto sysInfo = (Detail::getLinuxX86CPUSystemInfo()).get();
+  int count = 0;
+  for (auto socket : sysInfo.sockets)
+    for (auto core : socket.physicalCores)
+      for (auto vc : core.virtualCores) {
+        cpu_set_t newAffinity;
+        CPU_ZERO(&newAffinity);
+        CPU_SET(vc.cpuID, &newAffinity);
+        if (sched_setaffinity(0, sizeof(newAffinity), &newAffinity)) {
+          sched_setaffinity(0, sizeof(callersAffinity), &callersAffinity);
+          return M::getNumPhysicalCores();
+        }
+        unsigned eax = 26, ecx = 0, ebx, edx;
+        native_cpuid(&eax, &ebx, &ecx, &edx);
+        // bits 24-31 of eax determine the coreType.
+        // https://www.intel.com/content/www/us/en/developer/articles/guide/12th-gen-intel-core-processor-gamedev-guide.html
+        if (((eax >> 24) & 0xFF) == 64) {
+          count++;
+          break;
+        }
+      }
+  sched_setaffinity(0, sizeof(callersAffinity), &callersAffinity);
+  if (count == 0)
+    return M::getNumPhysicalCores();
+  return count;
+#else
   return M::getNumPhysicalCores();
+#endif
 }
 
 void CPUSystemInfo::print(raw_ostream &os) const {

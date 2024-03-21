@@ -44,10 +44,17 @@ M::LLCL::getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
     //
     // Finally, if affinity is not set then use logical cores.
     if (performanceCores != physicalCores) {
+      // For popOS system we used for testing, the OS did not prioritize P cores
+      // over E cores and we saw significant performance regression because of
+      // this. Thus to be safe, we will also pin the threads to PCores in x86
+      // machines with P & E cores. We expect this to be a temporary fix and
+      // will eventually be removed in favor of fine grained parallelism.
+#if defined(__APPLE__)
       // If there is an imbalance in the system, we set the number of cores to
       // be the number of performance cores and allow the operating system to
       // schedule us.
       withAffinity = false;
+#endif
       numThreads = performanceCores;
     } else if (withAffinity) {
       numThreads = physicalCores;
