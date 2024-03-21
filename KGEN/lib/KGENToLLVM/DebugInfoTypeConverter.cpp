@@ -157,6 +157,10 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(StringType type) {
        DIMemberType::get("size", convertDebugType(IndexType::get(ctx)))});
 }
 
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(SignatureType type) {
+  return buildPointerType(buildDebugSubroutineType(type.getValues()));
+}
+
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(KGEN::VariantType type) {
   // This must be kept in sync with how KGEN VariantTypes are represented in
   // LLVM.
@@ -241,6 +245,7 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
   // Add direct debug info conversions.
   addConversion([&](IndexType type) { return buildDebugType(type); });
   addConversion([&](StringType type) { return buildDebugType(type); });
+  addConversion([&](SignatureType type) { return buildDebugType(type); });
   addConversion([&](KGEN::VariantType type) { return buildDebugType(type); });
   addConversion([&](KGEN::NoneType type) { return buildDebugType(type); });
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });

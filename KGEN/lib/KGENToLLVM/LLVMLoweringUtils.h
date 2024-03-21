@@ -27,6 +27,7 @@ class PackType;
 class PointerType;
 class VariantType;
 class NoneType;
+class SignatureType;
 class StringType;
 class StructType;
 namespace POP {
@@ -302,6 +303,7 @@ private:
   /// Build fully resolved debug type from kgen/pop types.
   DebugInfo::DIType buildDebugType(IndexType type);
   DebugInfo::DIType buildDebugType(StringType type);
+  DebugInfo::DIType buildDebugType(SignatureType type);
   DebugInfo::DIType buildDebugType(KGEN::VariantType type);
   DebugInfo::DIType buildDebugType(KGEN::NoneType type);
   DebugInfo::DIType buildDebugType(POP::ArrayType type);
