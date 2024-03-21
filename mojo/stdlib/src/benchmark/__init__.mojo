@@ -137,7 +137,19 @@ r = benchmark.run[sleeper](1, 2, 3, 4)
 Note that the min total time will take precedence over max iterations
 """
 
-from .bencher import *
-from .benchmark import *
+from .bencher import (
+    BenchConfig,
+    BenchId,
+    BenchmarkInfo,
+    Mode,
+    Bench,
+    Bencher,
+)
+from .benchmark import (
+    Batch,
+    Unit,
+    Report,
+    run,
+)
 from .compiler import keep
 from .memory import clobber_memory
