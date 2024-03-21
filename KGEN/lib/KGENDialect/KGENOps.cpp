@@ -467,7 +467,7 @@ void ReturnOp::getBranchTargets(
 LogicalResult ReturnOp::verify() {
   auto func = (*this)->getParentOfType<KGEN::FunctionLike>();
   if (!func)
-    return emitOpError("expected to be nested inside a `lit.func` operation");
+    return emitOpError("expected to be nested inside a function");
   return checkOperandTypes(*this, func.getResultTypes());
 }
 
