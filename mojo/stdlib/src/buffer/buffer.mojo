@@ -224,7 +224,7 @@ struct Buffer[
             The simd value starting at the `idx` position and ending at
             `idx+width`.
         """
-        return self.data.aligned_simd_load[width, alignment](idx)
+        return self.data.load[width=width, alignment=alignment](idx)
 
     @always_inline
     fn __setitem__(
@@ -1215,7 +1215,7 @@ struct NDBuffer[
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        return self._offset(idx).aligned_simd_load[width, alignment]()
+        return self._offset(idx).load[width=width, alignment=alignment]()
 
     @always_inline
     fn aligned_simd_load[
@@ -1263,7 +1263,7 @@ struct NDBuffer[
             self.is_contiguous or width == 1,
             "Function requires contiguous buffer.",
         )
-        return self._offset(idx).aligned_simd_load[width, alignment]()
+        return self._offset(idx).load[width=width, alignment=alignment]()
 
     @always_inline
     fn __setitem__(self, idx: StaticIntTuple[rank], val: Scalar[type]):
