@@ -60,7 +60,7 @@ fn run_elementwise[type: DType]() raises:
             alias alignment = alignof[SIMD[type, pack_size]]()
             out_buffer.store[width=simd_width, alignment=alignment](
                 idx,
-                in_buffer.aligned_simd_load[simd_width, alignment](idx) + 42,
+                in_buffer.load[width=simd_width, alignment=alignment](idx) + 42,
             )
         else:
             out_buffer.store[width=simd_width](
@@ -139,7 +139,7 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
             alias alignment = alignof[SIMD[type, pack_size]]()
             out_buffer.store[width=simd_width, alignment=alignment](
                 idx,
-                in_buffer.aligned_simd_load[simd_width, alignment](idx) + 42,
+                in_buffer.load[width=simd_width, alignment=alignment](idx) + 42,
             )
         else:
             out_buffer.store[width=simd_width](
