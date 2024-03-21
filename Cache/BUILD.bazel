@@ -7,19 +7,27 @@ package(
 
 cc_library(
     name = "Cache",
-    srcs = glob(["lib/Cache/*.cpp"]),
+    srcs = glob(["lib/*.cpp"]),
+    # TODO: I don't think we want a recursive glob here
     hdrs = glob(["include/Cache/**/*.h"]),
+    copts = [
+        # TODO(35394): This isn't what cmake is doing
+        '-DMODULAR_DERIVED_DIR=\\"/tmp/modularderived\\"',
+    ],
     strip_include_prefix = "include",
     deps = [
         "//LLCL:Runtime",
+        "//Support:Base64",
         "//Support:Buffer",
+        "//Support:Configuration",
+        "//Support:HMAC",
         "//Support:URI",
     ],
 )
 
 cc_library(
     name = "Backends",
-    srcs = glob(["lib/Cache/Backends/*.cpp"]),
+    srcs = glob(["lib/Backends/*.cpp"]),
     hdrs = glob(["include/Cache/Backends/*.h"]),
     strip_include_prefix = "include",
     deps = ["//Support:HTTP"],
@@ -140,7 +148,7 @@ td_library(
 )
 
 gentbl_cc_library(
-    name = "CachePasses",
+    name = "CachePassesTd",
     strip_include_prefix = "include",
     tbl_outs = [
         (
@@ -153,6 +161,20 @@ gentbl_cc_library(
     tblgen = "@llvm-project//mlir:mlir-tblgen",
     td_file = "include/Cache/CachePasses/CachePasses.td",
     deps = [":CachePassesTdFiles"],
+)
+
+cc_library(
+    name = "CachePasses",
+    srcs = ["lib/CachePasses/CachePasses.cpp"],
+    hdrs = ["include/Cache/CachePasses/CachePasses.h"],
+    strip_include_prefix = "include",
+    deps = [
+        ":CacheDialect",
+        ":CachePassesTd",
+        "//Support:Base",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:Pass",
+    ],
 )
 
 cc_library(
@@ -181,7 +203,8 @@ cc_test(
         ":Cache",
         ":CacheDialect",
         ":CachePasses",
-        "@com_google_googletest//:gtest_main",
+        "@com_github_google_googletest//:gtest_main",
+        "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:FuncDialect",
     ],
 )

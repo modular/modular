@@ -23,6 +23,7 @@ cc_library(
         "include/Support/Binary.h",
         "include/Support/BuildInfo.h",
         "include/Support/CommandLine.h",
+        "include/Support/Context.h",
         "include/Support/Error.h",
         "include/Support/ErrorOr.h",
         "include/Support/ForwardDecls.h",
@@ -222,7 +223,12 @@ cc_library(
 
 cc_library(
     name = "ADT",
-    srcs = glob(["lib/ADT/*.cpp"]),
+    srcs = glob([
+        "lib/ADT/*.cpp",
+    ]) + [
+        # TODO: This should be part of Base but has circular dependencies
+        "lib/TypeID.cpp",
+    ],
     hdrs = glob(["include/Support/ADT/*.h"]),
     strip_include_prefix = "include",
     deps = [
@@ -243,8 +249,8 @@ cc_test(
 
 cc_library(
     name = "Configuration",
-    srcs = glob(["lib/Configuration.cpp"]),
-    hdrs = glob(["include/Support/Configuration.h"]),
+    srcs = ["lib/Configuration.cpp"],
+    hdrs = ["include/Support/Configuration.h"],
     strip_include_prefix = "include",
     deps = [
         ":ADT",
@@ -591,14 +597,15 @@ cc_library(
     name = "Telemetry",
     srcs = glob(["lib/Telemetry/**/*.cpp"]),
     hdrs = glob(["include/Support/Telemetry/**/*.h"]),
+    copts = MODULAR_TELEMETRY_COPTS,
     defines = [
         # FIXME(amscanne): These configurations should be removed. We
         # unilaterally set sensible configurations for now.
         "MODULAR_ENABLE_TELEMETRY",
+        "HAVE_CPP_STDLIB",
         # This is for Opentelemetry, to use standard types.
         #"OPENTELEMETRY_STL_VERSION=2017",
     ],
-    copts = MODULAR_TELEMETRY_COPTS,
     strip_include_prefix = "include",
     deps = [
         ":Base",
@@ -784,16 +791,17 @@ cc_library(
     srcs = glob(["lib/MDialect/*.cpp"]),
     hdrs = glob([
         "include/Support/MDialect/*.h",
+    ]) + [
         # The dialect files include some files that belong to other logical
         # packages in an apparent set of ordering violations. These create
         # loops in the logical package structure. Just encode these explicit
         # exceptions for now.
         "include/Support/Compiler/MLIRDenseAttr.h",
-        "include/Support/Compiler/MLIRDenseAttrStorage.h",
         "include/Support/MArchTarget/Host.h",
-    ]),
+    ],
     strip_include_prefix = "include",
     deps = [
+        ":ADT",
         ":Base",
         ":DeviceSpecs",
         ":MAttrInterfaces",
@@ -804,15 +812,6 @@ cc_library(
         ":MTypes",
         "@llvm-project//llvm:MC",
         "@llvm-project//llvm:Target",
-    ],
-)
-
-cc_test(
-    name = "MDialectTest",
-    srcs = glob(["unittests/MDialect/*.cpp"]),
-    deps = [
-        ":MDialect",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -832,6 +831,8 @@ gentbl_cc_library(
         (
             [
                 "-gen-pass-decls",
+                "-name",
+                "DebugInfoToLLVM",
             ],
             "include/Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h.inc",
         ),
