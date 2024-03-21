@@ -148,18 +148,25 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
   buildGenerateLibraryPipeline(*fullCompilationPM, typeSystem->getRuntime(),
                                *compilationOptions);
+
+  // TODO(#33931) HACK, HACK, HACK!!!
+  // To make CompilationOptions being properly passed to KGEN compiler
+  // without breaking existing tests.
+  KGEN::CompilationOptions hackCompilationOptions;
+  hackCompilationOptions.disableLLVMModuleSplitting = true;
+
   populateElaborateModulePasses(
       *fullCompilationPM, typeSystem->getRuntime(), targetInfo,
-      compilationOptions,
+      hackCompilationOptions,
       /*evaluatorExecutorFn=*/
       [&](KGEN::FuncOp evaluator, const SymbolTable &symtab,
           TargetInfoAttr target, ArrayRef<KGEN::FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, target,
                                        specializations);
       },
-      [this](PackageLinkOp packageLink) {
+      [this, hackCompilationOptions](PackageLinkOp packageLink) {
         return specializePackageLinkForPreElaborationLinking(
-            packageLink, typeSystem->getRuntime(), compilationOptions);
+            packageLink, typeSystem->getRuntime(), hackCompilationOptions);
       },
       /*packageLinkHandlerFn=*/
       [](PackageLinkOp packageLink, TargetInfoAttr targetInfo) {
@@ -184,9 +191,15 @@ ErrorOr<OwningBinary<llvm::object::Archive>>
 MojoExpressionParser::Impl::compileFuncsToStandaloneArchive(
     const SymbolTable &symtab, ExportMap exports,
     ArrayRef<KGEN::FuncOp> funcsToCompile) {
+  // TODO(#33931) HACK, HACK, HACK!!!
+  // To make CompilationOptions being properly passed to KGEN compiler
+  // without breaking existing tests.
+  KGEN::CompilationOptions hackCompilationOptions;
+  hackCompilationOptions.disableLLVMModuleSplitting = true;
+
   // Create the target machine so we can run the optimizer.
   auto targetMachineOr =
-      KGEN::createTargetMachine(compilationOptions, /*isJIT=*/true);
+      KGEN::createTargetMachine(hackCompilationOptions, /*isJIT=*/true);
   if (targetMachineOr.isError()) {
     expressionLogger->errorLog(
         "[evaluateSpecializations] Failed to create the target machine: {0}",

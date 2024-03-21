@@ -294,7 +294,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       // FIXME(#25622): Disable module splitting for non-standalone archives.
       SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
       bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2 ||
-                         savingTemps || generatingPtx || !standalone;
+                         savingTemps || generatingPtx || !standalone ||
+                         options.disableLLVMModuleSplitting;
       if (noSplitting) {
         cacheResults.push_back(
             lowerLLVMModuleToObject(*llvmModule, op->getLoc()));
