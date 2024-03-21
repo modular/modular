@@ -9,7 +9,11 @@ include "DescriptionBase.td"
 def PackageDescription : MojoCommandDescription<
   "package", "Compiles a Mojo package.",
   "Compiles a directory of Mojo source files into a binary package suitable "
-  "to share and import into other Mojo programs and modules.\n"
+  "to share and import into other Mojo programs and modules. A Mojo package "
+  "is portable across different systems because it includes only "
+  "non-elaborated code (it's not an arch-specific package). "
+  "The code becomes an arch-specific executable only after it's imported into "
+  "a Mojo program that's then compiled with `mojo build`.\n"
   "\n"
   "To create a Mojo package, first add an `__init__.mojo` file to your "
   "package directory. Then pass that directory name to this "
