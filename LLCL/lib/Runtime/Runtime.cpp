@@ -43,7 +43,7 @@ CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
 // Runtime
 //===----------------------------------------------------------------------===//
 
-Runtime::Runtime(CompactRuntimePtr runtimePtr, context::ContextRef context,
+Runtime::Runtime(CompactRuntimePtr runtimePtr, ContextRef context,
                  std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue,
                  StringRef profileFilename, uint64_t runtimeProfilingTypeMask,
@@ -133,7 +133,7 @@ static std::unique_ptr<Allocator> getAllocator(const RuntimeOptions &options) {
 }
 
 static std::unique_ptr<Runtime>
-createRuntimeImpl(context::ContextRef context, const RuntimeOptions &options) {
+createRuntimeImpl(ContextRef context, const RuntimeOptions &options) {
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
   std::unique_ptr<Allocator> allocator = getAllocator(options);
   if (options.leakCheckedAllocator)
@@ -159,7 +159,7 @@ LLCL::createUniqueRuntime(const RuntimeOptions &options) {
   assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
          "creating a runtime from a thread already associated with an outer "
          "runtime");
-  return createRuntimeImpl(context::ContextRef::create(), options);
+  return createRuntimeImpl(ContextRef::create(), options);
 }
 
 std::unique_ptr<Runtime>
@@ -167,14 +167,13 @@ LLCL::createNestedRuntime(const RuntimeOptions &options) {
   if (auto runtime = Runtime::getCurrentRuntimeOrNull())
     return createRuntimeImpl(runtime->context.copy(), options);
   else
-    return createRuntimeImpl(context::ContextRef::create(), options);
+    return createRuntimeImpl(ContextRef::create(), options);
 }
 
 ConditionallyOwnedPointer<Runtime>
 LLCL::createRuntimeIfNeeded(const RuntimeOptions &options) {
   return ConditionallyOwnedPointer<Runtime>::takeIfNeeded(
       Runtime::getCurrentRuntimeOrNull(), [&options]() {
-        return createRuntimeImpl(context::ContextRef::create(), options)
-            .release();
+        return createRuntimeImpl(ContextRef::create(), options).release();
       });
 }

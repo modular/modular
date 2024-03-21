@@ -116,8 +116,7 @@ void MDialect::initialize() {
   addInterface<MDialectBytecodeInterface>();
 }
 
-void M::registerContext(mlir::DialectRegistry &registry,
-                        context::ContextRef &ref) {
+void M::registerContext(mlir::DialectRegistry &registry, ContextRef &ref) {
   registry.insert(mlir::TypeID::get<MDialect>(),
                   MDialect::getDialectNamespace(),
                   static_cast<mlir::DialectAllocatorFunction>(
@@ -128,7 +127,7 @@ void M::registerContext(mlir::DialectRegistry &registry,
                       })));
 }
 
-context::ContextRef M::loadContext(mlir::MLIRContext *ctx) {
+ContextRef M::loadContext(mlir::MLIRContext *ctx) {
   StringRef name = MDialect::getDialectNamespace();
   return static_cast<MDialect *>(ctx->getOrLoadDialect(name))->getInteral();
 }

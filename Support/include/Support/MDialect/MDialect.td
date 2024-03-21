@@ -39,11 +39,11 @@ def MDialect : Dialect {
     void injectAttrInterfaces();
 
     /// Get the registered context.
-    context::ContextRef getInteral() { return context.copy(); }
+    ContextRef getInteral() { return context.copy(); }
     /// Set the registered context.
-    void setInternal(context::ContextRef &&ref) { context = std::move(ref); }
+    void setInternal(ContextRef &&ref) { context = std::move(ref); }
   private:
-    context::ContextRef context;
+    ContextRef context;
   }];
 
   let useDefaultAttributePrinterParser = 1;

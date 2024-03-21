@@ -14,11 +14,11 @@
 namespace M {
 
 /// Registers a context in via the MDialect.
-void registerContext(mlir::DialectRegistry &registry, context::ContextRef &ref);
+void registerContext(mlir::DialectRegistry &registry, ContextRef &ref);
 
 /// Loads a context from the given MLIRContext. It must have been previously
 /// registered via a call to registerContext or this will trigger an assertion.
-context::ContextRef loadContext(mlir::MLIRContext *ctx);
+ContextRef loadContext(mlir::MLIRContext *ctx);
 
 } // namespace M
 
