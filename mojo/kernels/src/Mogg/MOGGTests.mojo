@@ -369,3 +369,23 @@ fn relative_rank_deduction[
     rank: Int,
 ](data: NDBuffer[type, rank], data2: NDBuffer[type, rank + 1]):
     pass
+
+
+@mogg_register("get_index")
+@export
+fn get_index() -> Int:
+    return 1
+
+
+@mogg_register("print_index")
+@export
+fn print_index(i: Int):
+    print("index = ", i)
+
+
+@mogg_register("test_type_parameter_deduction")
+@export
+fn test_type_parameter_deduction[
+    A: AnyRegType, B: AnyRegType
+](arg0: A, arg1: B) -> A:
+    return arg0
