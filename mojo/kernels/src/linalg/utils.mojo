@@ -37,11 +37,20 @@ alias elementwise_epilogue_type = fn[type: DType, width: Int] (
 struct MatmulConfig:
     """Static configuration of tiled matmul algorithms."""
 
+    # Static type info of Operand A.
+    var a_type: DType
+
     # Static shape info of Operand A.
     var a_shape: DimList
 
+    # Static type info of Operand B.
+    var b_type: DType
+
     # Static shape info of Operand B.
     var b_shape: DimList
+
+    # Static type info of Operand C.
+    var c_type: DType
 
     # Static shape info of Operand C.
     var c_shape: DimList
@@ -79,8 +88,11 @@ struct MatmulConfig:
     fn __init__(
         inout self,
         *,
+        a_type: DType,
         a_shape: DimList,
+        b_type: DType,
         b_shape: DimList,
+        c_type: DType,
         c_shape: DimList,
         packed_shape: DimList,
         shape_bias: DimList,
@@ -93,8 +105,11 @@ struct MatmulConfig:
         use_i8mm: Bool,
         saturated_vnni: Bool,
     ):
+        self.a_type = a_type
         self.a_shape = a_shape
+        self.b_type = b_type
         self.b_shape = b_shape
+        self.c_type = c_type
         self.c_shape = c_shape
         self.packed_shape = packed_shape
         self.shape_bias = shape_bias
@@ -926,8 +941,11 @@ fn get_mm_config[
     ]()
 
     return MatmulConfig(
+        a_type=a_type,
         a_shape=a_shape,
+        b_type=b_type,
         b_shape=b_shape,
+        c_type=c_type,
         c_shape=c_shape,
         packed_shape=DimList.create_unknown[3](),
         shape_bias=DimList.create_unknown[1](),
