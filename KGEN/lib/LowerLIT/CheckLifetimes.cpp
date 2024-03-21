@@ -340,6 +340,10 @@ struct ValueInfo {
   /// This is true if the value had a use-before-initialization error diagnosed.
   bool hasErrorDiagnosed;
 
+  /// If this value needs to be tracked by debug info, this is the information
+  /// about the source variable that created this value. Null otherwise.
+  DebugInfo::DILocalVariableAttr debugVariable;
+
   /// Return true if this value contains the specified bit.
   bool contains(unsigned bitNo) const {
     return startValueBit <= bitNo && bitNo < endValueBit;
@@ -465,7 +469,8 @@ struct ValueSet {
   ///  * whether the value is a by-ref to the underlying logical value
   ///  * whether the value starts out uninit or init at the function start
   ///  * whether the value is uninit or init at normal function return.
-  void addValue(Value val, const LifetimeTrackable &trackable) {
+  void addValue(Value val, const LifetimeTrackable &trackable,
+                DebugInfo::DILocalVariableAttr debugVariable = {}) {
     // Figure out how many bits to track for this value at the lifetime if mem.
     unsigned numValueBits;
     TypedAttr valueLifetime;
@@ -500,10 +505,11 @@ struct ValueSet {
     if (valueLifetime)
       lifetimeToValueIndex[valueLifetime] = valueInfos.size();
 
-    valueInfos.push_back(
-        {val, firstValueBit, firstValueBit + numValueBits,
-         trackable.startsUninit, trackable.endInitState, trackable.isIndirect,
-         trackable.isFullObjectLiveOnEntry, /*hasErrorDiagnosed=*/false});
+    valueInfos.push_back({val, firstValueBit, firstValueBit + numValueBits,
+                          trackable.startsUninit, trackable.endInitState,
+                          trackable.isIndirect,
+                          trackable.isFullObjectLiveOnEntry,
+                          /*hasErrorDiagnosed=*/false, debugVariable});
   }
 
   /// Return a reference to the entire value with the specified ID.
@@ -1438,15 +1444,12 @@ private:
   void emitDestructorCallAt(Value value, bool isIndirect,
                             mlir::ImplicitLocOpBuilder &builder,
                             Operation *opWithUse);
-  void emitDestructorCallAt(Value value, ValueRef valueRef,
-                            mlir::ImplicitLocOpBuilder &builder,
-                            Operation *opWithUse) {
-    // We are going to emit a destructor for the specified ValueRef, so all none
-    // of the things we are about to destroy should already be destroyed.
-    assert(valueRef.isAllMissing(consumedValues) &&
-           "cannot have partially consumed object");
-    emitDestructorCallAt(value, valueRef.isIndirect, builder, opWithUse);
-  }
+
+  /// Emit an end-of-life debug info if the value being destroyed is tracked
+  /// with debug info. Then emit a destructor call.
+  void emitEndOfLifeAndDestructorCallAt(Value value, ValueRef valueRef,
+                                        mlir::ImplicitLocOpBuilder &builder,
+                                        Operation *opWithUse);
 
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
@@ -2178,7 +2181,7 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
   // If a generic type or trivial, then emit a destructor call (or nothing).
   auto valueType = dyn_cast<DeclRefType>(valueRef.getValueType(value));
   if (!valueType) {
-    emitDestructorCallAt(value, valueRef, builder, opWithUse);
+    emitEndOfLifeAndDestructorCallAt(value, valueRef, builder, opWithUse);
     valueRef.markBits(consumedValues, true);
     return;
   }
@@ -2212,7 +2215,7 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     }
 
     // Ok, everything looks good - actually emit the dtor call here.
-    emitDestructorCallAt(value, valueRef, builder, opWithUse);
+    emitEndOfLifeAndDestructorCallAt(value, valueRef, builder, opWithUse);
     valueRef.markBits(consumedValues, true);
     return;
   }
@@ -2598,6 +2601,25 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
                               implicitLifetimes, valueToDestroy);
 }
 
+void DestructorInsertion::emitEndOfLifeAndDestructorCallAt(
+    Value value, ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder,
+    Operation *opWithUse) {
+  // We are going to emit a destructor for the specified ValueRef, so all none
+  // of the things we are about to destroy should already be destroyed.
+  assert(valueRef.isAllMissing(consumedValues) &&
+         "cannot have partially consumed object");
+
+  // Insert end-of-life debug value if full value is destroyed.
+  // TODO(#34115): Emit fragment end-of-life for partial destruction.
+  ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
+  if (info.debugVariable && valueRef.startBit == info.startValueBit &&
+      valueRef.endBit == info.endValueBit) {
+    builder.create<DebugInfo::KillOp>(info.debugVariable);
+  }
+
+  emitDestructorCallAt(value, valueRef.isIndirect, builder, opWithUse);
+}
+
 /// Destroy any values whose bits are indicated in the specified set.  Insert
 /// the destructor calls at the entry to the specified block.  This leaves the
 /// consumedValues set in an unpredictable state, and is not safe in dryRun
@@ -2711,11 +2733,14 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
       Value result = op->getResult(0);
       if (auto trackable = LifetimeTrackable(result)) {
         // Generate debug info for VarDecls if needed.
+        DebugInfo::DILocalVariableAttr debugVariable;
         if (genDebugInfo)
           if (auto varDecl = result.getDefiningOp<VarDeclOp>())
-            insertDebugValueForVarDecl(varDecl, funcSpAttr);
+            if (DebugInfo::ValueOp debugValue =
+                    insertDebugValueForVarDecl(varDecl, funcSpAttr))
+              debugVariable = debugValue.getValueInfo();
 
-        valueSet.addValue(result, trackable);
+        valueSet.addValue(result, trackable, debugVariable);
       }
     }
 

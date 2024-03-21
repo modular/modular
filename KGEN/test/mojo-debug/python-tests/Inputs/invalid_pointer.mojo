@@ -4,7 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from debug_test_utils import keep_alive
+
 
 fn main():
     var ptr = DTypePointer[DType.invalid](100)
-    print(ptr)  # breakpoint
+    keep_alive(ptr)  # breakpoint

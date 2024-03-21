@@ -1,39 +1,58 @@
 // RUN: kgen-opt -check-lifetimes -split-input-file -mlir-print-debuginfo %s | FileCheck %s
 
-// CHECK: ![[DI_PTR_TYPE:.*]] = !debuginfo.ti.ptr<index>
-// CHECK: ![[DI_INDEX_TYPE:.*]] = !debuginfo.unresolved<index>
+// CHECK: ![[DI_PTR_TYPE:.*]] = !debuginfo.ti.ptr<!lit.declref<@S>>
+// CHECK: ![[DI_S_TYPE:.*]] = !debuginfo.unresolved<!lit.declref<@S>>
 // CHECK: #[[DIEXPR_IRVALUE:.*]] = #debuginfo.expr.irvalue : ![[DI_PTR_TYPE]]
-// CHECK: #[[DIEXPR_DEREF:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE]]> : ![[DI_INDEX_TYPE]]
-// CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"varDecl">, linkageName = "varDecl", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
-// CHECK: #[[DIVAR:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "a", file = #{{.*}}, line = 10> : ![[DI_INDEX_TYPE]]
-
-// CHECK-NOT: #debuginfo.local_variable<scope = #[[DISP]], name = "b", file = #{{.*}}, line = 12> : ![[DI_INDEX_TYPE]]
-
-// CHECK-LABEL: lit.func @varDecl
-// CHECK-SAME: (%[[ARG0:.*]]: index loc
-// CHECK-NEXT:    %[[VAR_A:.*]] = lit.var.decl "a"
-// CHECK-NEXT:    debuginfo.value #[[DIVAR]] #[[DIEXPR_DEREF]] = %[[VAR_A]] : !lit.ref<index, mut life_a>
-// CHECK-NEXT:    %[[VAR_B:.*]] = lit.var.decl "b"
-// CHECK-NEXT:    kgen.return
-
-// CHECK: #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"fn">, linkageName = "fn", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
+// CHECK: #[[DIEXPR_DEREF:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE]]> : ![[DI_S_TYPE]]
+// CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"test">, linkageName = "test", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
+// CHECK: #[[DIVAR_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10> : ![[DI_S_TYPE]]
 
 #file = #debuginfo.file<"test.mlir" in "">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "LIT", isOptimized = true, emissionKind = Full>
-#sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = <"varDecl">, linkageName = "varDecl", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#module_sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = <"fn">, linkageName = "fn", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#loc = loc("test.mlir":10:6)
+#sp = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = <"test">, linkageName = "test", file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition"> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
-lit.struct.decl @Int {
-  lit.func @varDecl(%arg0: index) -> index {
-    %a = lit.var.decl "a" var : !lit.ref<index, mut life_a> loc(fused<#sp>["test.mlir":10:10])
-    %b = lit.var.decl "b" synth : !lit.ref<index, mut life_b> loc(fused<#sp>["test.mlir":12:10])
-    kgen.return %arg0 : index loc(fused<#sp>[#loc])
-  } loc(fused<#sp>[#loc])
+#locX = loc(fused<#sp>["test.mlir":10:10])
+#locUse = loc(fused<#sp>["test.mlir":12:10])
+#locY = loc(fused<#sp>["test.mlir":13:10])
+#locRet = loc(fused<#sp>["test.mlir":14:10])
+
+lit.struct.decl @S attributes {
+  destructor =
+    #kgen.symbol.constant<@S::@__del__> : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+
+  lit.struct.field a : index
+
+  lit.func @__init__(%self: !lit.ref<@S, mut selflife> init_self, %num: index) -> !kgen.none {
+    %0 = lit.ref.struct.ger %self[a] : <index, mut selflife> from @S
+    lit.ref.store %num, %0 : !lit.ref<index, mut selflife>
+
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
 }
 
-lit.file_module @module {
-  lit.func @fn() {
-    kgen.return loc(fused<#module_sp>[#loc])
-  } loc(fused<#module_sp>[#loc])
-}
+// CHECK-LABEL: lit.func @test
+lit.func @test() -> index {
+  // Create `x`.
+  // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
+  // CHECK-NEXT: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
+  %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
+  %0 = kgen.param.constant: index = <42> loc(#locX)
+  lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+
+  // Use `x.a`.
+  // CHECK: lit.ref.struct.ger {{.*}} loc(#[[LOC_USE:.*]])
+  // CHECK-NEXT: lit.ref.load
+  %x_a = lit.ref.struct.ger %x[a] : <index, mut *"x`0"> from @S loc(#locUse)
+  %x_a_val = lit.ref.load %x_a : <index, mut *"x`0"> loc(#locUse)
+
+  // `x` can be destroyed here.
+  // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]] loc(#[[LOC_USE]])
+  // CHECK-NEXT: lit.call @S::@__del__{{.*}}(%[[VAR_X]]) : {{.*}} loc(#[[LOC_USE]])
+
+  // `y` is a synthetic variable. Should not have any debuginfo generated.
+  %y = lit.var.decl "y"  synth : !lit.ref<@S, mut *"y`0"> loc(#locY)
+  // CHECK-NOT: debuginfo.{{(value)|(kill)}}
+
+  kgen.return %x_a_val : index loc(#locRet)
+} loc(fused<#sp>["test.mlir":10:10])

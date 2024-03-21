@@ -6,8 +6,9 @@
 
 # RUN: mojo build --debug-level full -O0 '%S/Inputs/builtin-types.mojo' -o %t
 
-# RUN: %debug -Xlldb -o -Xlldb 'b builtin-types.mojo:108' -Xlldb -o -Xlldb 'r' -Xlldb -o -Xlldb 'frame var' %t | FileCheck %s
+# RUN: %debug -Xlldb -o -Xlldb 'b builtin-types.mojo:117' -Xlldb -o -Xlldb 'r' -Xlldb -o -Xlldb 'frame var' %t | FileCheck %s
 
+# CHECK: (si64) a_var_index = 48
 # CHECK: (ARegisterPassableStruct) a_register_passable_struct = {
 # CHECK:   int = -101
 # CHECK:   f32 = ([0] = 24.125)
@@ -27,8 +28,18 @@
 # CHECK:     [2] = ([0] = 123.125)
 # CHECK:   }
 # CHECK: }
-# CHECK: (ParamStruct[_"stdlib::builtin::int::Int"]) p_struct_int = (t = 8)
+# CHECK: (ParamStruct[_"stdlib::{{.*}}::Int"]) p_struct_int = (t = 8)
+# CHECK: (ParamStruct[_"stdlib::{{.*}}::StringRef"]) p_struct_stringref = {
+# CHECK:   t = {
+# CHECK:     data =
+# CHECK:     length = 5
+# CHECK:   }
+# CHECK: }
+# CHECK: (si64) an_int = 123
+# CHECK: (scalar<f64>) a_literal_float = ([0] = 3.125)
+# CHECK: (scalar<f32>) a_float = ([0] = 3.125)
 # CHECK: (scalar<f32>) another_float = ([0] = 4.125)
+# CHECK: (si64) ^ uncommon name = 1123123
 # CHECK: (string) a_string_literal = "fofofo"
 # CHECK: (*index, scalar<f64>, index) a_list = {
 # CHECK:   [0] = 1
@@ -61,8 +72,3 @@
 # CHECK:   variant[2] = ([0] = 5, [1] = 6)
 # CHECK: }
 # CHECK: (None) none = None
-# CHECK: (si64) a_var_index = 48
-# CHECK: (si64) an_int = 123
-# CHECK: (scalar<f64>) a_literal_float = ([0] = 3.125)
-# CHECK: (scalar<f32>) a_float = ([0] = 3.125)
-# CHECK: (si64) ^ uncommon name = 1123123

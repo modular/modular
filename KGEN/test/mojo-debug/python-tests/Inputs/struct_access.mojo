@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from debug_test_utils import keep_alive
+
 
 struct MyPair:
     var first: Int
@@ -40,3 +42,5 @@ fn main():
 
     var pp = MyPairPair(5, 6, 7, 8)
     print(pp.second.first)  # breakpoint
+
+    keep_alive(p, pp)
