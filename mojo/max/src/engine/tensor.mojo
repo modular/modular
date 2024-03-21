@@ -173,7 +173,7 @@ struct EngineNumpyView:
     var _np: _Numpy
     var _obj: PythonObject
 
-    fn __init__(tensor: PythonObject) raises -> Self:
+    fn __init__(inout self, tensor: PythonObject) raises:
         """Creates a non-owning view of given numpy array.
 
         Args:
@@ -182,7 +182,8 @@ struct EngineNumpyView:
         Returns:
             An instance of EngineNumpyView of given array.
         """
-        return Self {_np: _Numpy(), _obj: tensor}
+        self._np = _Numpy()
+        self._obj = tensor
 
     fn data(self) raises -> DTypePointer[DType.invalid]:
         """Returns type erased pointer to the start of numpy array.
