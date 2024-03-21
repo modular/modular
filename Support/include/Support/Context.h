@@ -14,7 +14,6 @@
 #include "llvm/ADT/FunctionExtras.h"
 
 namespace M {
-namespace context {
 
 class Context : public ReferenceCounted<Context> {
 public:
@@ -62,7 +61,6 @@ private:
 /// Convenience definitions.
 using ContextRef = RCRef<Context>;
 
-} // namespace context
 } // namespace M
 
 #endif // SUPPORT_CONTEXT_H

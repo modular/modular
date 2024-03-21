@@ -324,7 +324,7 @@ public:
   ///
   /// If profileFilename is non-empty then time profiling will be activated
   /// and the profile JSON and text will be written to files with that prefix.
-  Runtime(CompactRuntimePtr runtimePtr, context::ContextRef context,
+  Runtime(CompactRuntimePtr runtimePtr, ContextRef context,
           std::unique_ptr<Allocator> allocator,
           std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
           uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled,
@@ -416,7 +416,7 @@ public:
   }
 
   /// Reference to our shared global context.
-  context::ContextRef context;
+  ContextRef context;
 
 private:
   Runtime(const Runtime &) = delete;
