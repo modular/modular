@@ -222,7 +222,7 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
 // FileModuleOp
 //===----------------------------------------------------------------------===//
 
-def FileModuleOp : LITOp<"file_module", [
+def LIT_FileModuleOp : LITOp<"file_module", [
     ASTDeclInterface, IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
     DeclareOpInterfaceMethods<DeclInterface>,
   ] # GraphRegionNoTerminator.traits> {
@@ -261,7 +261,7 @@ def FileModuleOp : LITOp<"file_module", [
 // PackageOp
 //===----------------------------------------------------------------------===//
 
-def PackageOp : LITOp<"package", [
+def LIT_PackageOp : LITOp<"package", [
     ASTDeclInterface, IsolatedFromAbove, NoRegionArguments, SymbolTable, Symbol,
     DeclareOpInterfaceMethods<DeclInterface>,
   ] # GraphRegionNoTerminator.traits> {
