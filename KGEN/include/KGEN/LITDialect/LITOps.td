@@ -1451,6 +1451,30 @@ def LIT_TransferMemOwnershipOp : LITOp<"transfer_mem_ownership", [
 }
 
 //===----------------------------------------------------------------------===//
+// OwnershipMarkInitialized
+//===----------------------------------------------------------------------===//
+
+def LIT_OwnershipMarkInitializedOp : LITOp<"ownership.mark_initialized"> {
+  let summary = "Mark an uninitialized value as being fully initialized";
+  let description = [{
+    The `lit.ownership.mark_initialized` operation informs CheckLifetimes that
+    the specified value is now fully initialized. Note that this marks all
+    subelements of the value as being initialized too, not just the fully-object
+    bit.
+
+    ```mlir
+    lit.ownership.mark_initialized %0 : !lit.ref<T, mut lt>
+    ```
+
+    The argument must be an indirectly lifetime-tracked value, because
+    CheckLifetimes isn't field sensitive for register passable values.
+  }];
+
+  let arguments = (ins LIT_RefType:$value);
+  let assemblyFormat = "$value `:` type($value) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // OwnershipMarkDestroyedOp
 //===----------------------------------------------------------------------===//
 
@@ -1471,7 +1495,6 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
   }];
 
   let arguments = (ins LIT_RefType:$value);
-  let results = (outs);
   let assemblyFormat = "$value `:` type($value) attr-dict";
 }
 

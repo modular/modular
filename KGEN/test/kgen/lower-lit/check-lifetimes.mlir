@@ -398,6 +398,13 @@ lit.struct.decl @HasMemFields attributes {destructor = #kgen.symbol.constant<@Ha
   }
 }
 
+// CHECK-LABEL: lit.func @mark_initialized
+lit.func @mark_initialized[mut lt](%arg: !lit.ref<@HasMemFields, mut lt> byref_result) {
+  // CHECK-NEXT: lit.ownership.mark_initialized %arg
+  lit.ownership.mark_initialized %arg : <@HasMemFields, mut lt>
+  kgen.return
+}
+
 // -----
 
 // COM: Verify that initialized values are masked out of the function value set.

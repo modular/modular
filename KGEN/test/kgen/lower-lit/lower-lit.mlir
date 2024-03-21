@@ -599,3 +599,16 @@ lit.func @testLifetimeOf2[imm *"a`"](%a: !lit.ref<!Mem, imm *"a`"> borrow_in_mem
   // CHECK-NEXT: kgen.return %1
   kgen.return %a : !lit.ref<!Mem, imm *"a`">
 }
+
+//===----------------------------------------------------------------------===//
+// Ownership
+//===----------------------------------------------------------------------===//
+
+// CHECK-LABEL: kgen.generator @ownership_ops
+lit.func @ownership_ops[mut lt](%a: !lit.ref<index, mut lt>) {
+  // CHECK-NOT: lit.ownership.
+  lit.ownership.mark_initialized %a : !lit.ref<index, mut lt>
+  lit.ownership.use %a : !lit.ref<index, mut lt>
+  lit.ownership.mark_destroyed %a : !lit.ref<index, mut lt>
+  kgen.return
+}

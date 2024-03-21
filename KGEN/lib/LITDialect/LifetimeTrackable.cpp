@@ -545,6 +545,11 @@ OverallOpValueEffect LIT::getOperationEffects(
     return OverallOpValueEffect::terminatorOp;
   }
 
+  if (auto mark = dyn_cast<OwnershipMarkInitializedOp>(op)) {
+    operands.push_back({mark.getOperand(), OperandEffect::memStoreOwned});
+    return {};
+  }
+
   if (auto mark = dyn_cast<OwnershipMarkDestroyedOp>(op)) {
     operands.push_back({mark.getOperand(), OperandEffect::memMarkDestroyed});
     return {};
