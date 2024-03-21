@@ -233,6 +233,10 @@ public:
   TestExecutionResult execute() const;
 
 private:
+  friend bool fromJSON(const llvm::json::Value &value, Test &result,
+                       llvm::json::Path path);
+  friend llvm::json::Value toJSON(const Test &value);
+
   Test(TestID testID, std::vector<Test> newChildren = {})
       : testID(std::move(testID)), children(std::move(newChildren)) {
     for (unsigned i = 0, e = children.size(); i != e; ++i)
@@ -250,6 +254,11 @@ private:
   llvm::StringMap<unsigned> childrenMap;
 };
 raw_ostream &operator<<(raw_ostream &os, const Test &test);
+
+/// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &value, Test &result,
+              llvm::json::Path path);
+llvm::json::Value toJSON(const Test &value);
 } // namespace M::KGEN::Mojo
 
 #endif // KGEN_MOJOTESTING_TEST_H

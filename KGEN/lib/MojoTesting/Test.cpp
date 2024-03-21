@@ -912,3 +912,23 @@ TestExecutionResult Test::execute() const {
     ;
   return result.takeResolvedResult();
 }
+
+//===----------------------------------------------------------------------===//
+// JSON Serialization
+
+bool KGEN::Mojo::fromJSON(const llvm::json::Value &value, Test &result,
+                          llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  if (!o)
+    return false;
+
+  return o.mapOptional("children", result.children) &&
+         o.map("id", result.testID);
+}
+
+llvm::json::Value KGEN::Mojo::toJSON(const Test &value) {
+  llvm::json::Object object{{"id", value.testID}};
+  if (!value.children.empty())
+    object["children"] = llvm::json::Value(value.children);
+  return std::move(object);
+}
