@@ -99,10 +99,23 @@ static int test(const State &state) {
   }
   std::optional<Test> test = std::move(*testOr);
 
+  // Utility functor used to format the output for a given result.
+  auto emitOutput = [&](const auto &result) {
+    if (args.hasArg(options::OPT_json)) {
+      llvm::json::OStream jsonOS(llvm::outs(), /*IndentSize=*/2);
+      jsonOS.value(toJSON(result));
+    } else {
+      result.print(llvm::outs());
+    }
+
+    llvm::outs() << "\n";
+  };
+
   // If we're only collecting, exit early.
   if (args.hasArg(options::OPT_collect_only)) {
-    if (test)
-      llvm::outs() << *test << "\n";
+    if (!test)
+      return 0;
+    emitOutput(*test);
     return 0;
   }
 
@@ -113,7 +126,7 @@ static int test(const State &state) {
 
   // Execute the test and print the results.
   TestExecutionResult result = test->execute();
-  result.print(llvm::outs());
+  emitOutput(result);
   return result.getKind() == TestExecutionResult::kSuccess ? 0 : 1;
 }
 

@@ -8,6 +8,7 @@
 # RUN: not mojo test "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC
 # RUN: not mojo test "%s@doc_test_failure_first_cell().__doc__::1" | FileCheck %s --check-prefix=CHECK-DOC
 # RUN: not mojo test "%s::test_unit_failure()" | FileCheck %s --check-prefix=CHECK-UNIT
+# RUN: not mojo test --json "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC-JSON
 
 from testing import assert_true
 
@@ -37,6 +38,17 @@ from testing import assert_true
 # CHECK-UNIT: Passed : 0
 # CHECK-UNIT: Failed : 1
 # CHECK-UNIT: Skipped: 0
+
+# CHECK-DOC-JSON:   "children": [
+# CHECK-DOC-JSON:       "error": "Unhandled exception caught during execution",
+# CHECK-DOC-JSON:       "kind": "executionError",
+# CHECK-DOC-JSON:       "stdOut": "Error: AssertionError: condition was unexpectedly False\r\n",
+# CHECK-DOC-JSON:       "testID": "{{.*}}test_execution.mojo@doc_test_failure_first_cell().__doc__::0"
+
+# CHECK-DOC-JSON:       "kind": "skipped",
+# CHECK-DOC-JSON:       "testID": "{{.*}}test_execution.mojo@doc_test_failure_first_cell().__doc__::1"
+# CHECK-DOC-JSON:   "kind": "executionError",
+# CHECK-DOC-JSON:   "testID": "{{.*}}test_execution.mojo@doc_test_failure_first_cell().__doc__"
 
 
 fn test_unit_failure() raises:
