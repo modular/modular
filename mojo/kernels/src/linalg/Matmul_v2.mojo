@@ -1060,10 +1060,10 @@ struct MatmulInnerLoopBPacked[
                 var c_idx = Index(idx0, idx1 * simd_size)
                 var a_val = a_ptr[idx0 * K].cast[c_type]()
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
-                var c_val = c_local.aligned_simd_load[simd_size, alignment](
+                var c_val = c_local.load[width=simd_size, alignment=alignment](
                     c_idx
                 )
-                var b_val = b_ptr.aligned_simd_load[simd_size, alignment](
+                var b_val = b_ptr.load[width=simd_size, alignment=alignment](
                     idx1 * simd_size
                 ).cast[c_type]()
                 c_val = fma[c_type, simd_size](a_val, b_val, c_val)
@@ -1156,12 +1156,12 @@ struct MatmulInnerLoopBPacked[
 
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 var c_idx = Index(idx0, idx1 * simd_size)
-                var c_val = c_local.aligned_simd_load[simd_size, alignment](
+                var c_val = c_local.load[width=simd_size, alignment=alignment](
                     c_idx
                 )
 
-                var b_val = b_ptr.offset(idx1 * simd_size).aligned_simd_load[
-                    simd_size, alignment
+                var b_val = b_ptr.offset(idx1 * simd_size).load[
+                    width=simd_size, alignment=alignment
                 ]()
 
                 @parameter
@@ -1379,11 +1379,11 @@ struct MatmulInnerLoopBPacked[
             for idx1 in range(pack_inner_size // simd_size):
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 var a_val = a_ptr.load[width=16](2 * idx0 * K)
-                var b_val = b_ptr.offset(16 * idx1).aligned_simd_load[
-                    16, alignment
+                var b_val = b_ptr.offset(16 * idx1).load[
+                    width=16, alignment=alignment
                 ]()
                 var c_idx = Index(idx0, 4 * idx1)
-                var c_val = c_local.aligned_simd_load[simd_size, alignment](
+                var c_val = c_local.load[width=simd_size, alignment=alignment](
                     c_idx
                 )
                 c_val = _neon_matmul(c_val, a_val, b_val)
@@ -2677,7 +2677,7 @@ fn sgemm_warp_tiling_kernel[
 
                 @unroll
                 for i in range(0, int(TM), 4):
-                    var vec = a_sram.aligned_simd_load[4, 16](
+                    var vec = a_sram.load[width=4, alignment=16](
                         int(
                             (dot_idx * BM_padded)
                             + warp_row * WM
@@ -2693,7 +2693,7 @@ fn sgemm_warp_tiling_kernel[
 
                 @unroll
                 for i in range(0, int(TN), 4):
-                    var vec = b_sram.aligned_simd_load[4, 16](
+                    var vec = b_sram.load[width=4, alignment=16](
                         int(
                             (dot_idx * BN)
                             + warp_col * WN
@@ -2758,11 +2758,9 @@ fn sgemm_warp_tiling_kernel[
                         )
                     )
 
-                    var vec = alpha * result_vec + beta * C_interim.aligned_simd_load[
-                        4, 16
-                    ](
-                        int(c_idx)
-                    )
+                    var vec = alpha * result_vec + beta * C_interim.load[
+                        width=4, alignment=16
+                    ](int(c_idx))
 
                     @parameter
                     if elementwise_lambda_fn:

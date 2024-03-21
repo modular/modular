@@ -1056,7 +1056,7 @@ struct MatmulInnerLoopBPacked[
                 var c_idx = Index(idx0, idx1 * simd_size)
                 var a_val = a_ptr[idx0 * K].cast[c_type]()
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
-                var c_val = c_local.aligned_simd_load[simd_size, alignment](
+                var c_val = c_local.load[width=simd_size, alignment=alignment](
                     c_idx
                 )
                 var b_val = b_ptr.load[width=simd_size, alignment=alignment](
@@ -1152,7 +1152,7 @@ struct MatmulInnerLoopBPacked[
 
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
                 var c_idx = Index(idx0, idx1 * simd_size)
-                var c_val = c_local.aligned_simd_load[simd_size, alignment](
+                var c_val = c_local.load[width=simd_size, alignment=alignment](
                     c_idx
                 )
 
@@ -1379,7 +1379,7 @@ struct MatmulInnerLoopBPacked[
                     width=16, alignment=alignment
                 ]()
                 var c_idx = Index(idx0, 4 * idx1)
-                var c_val = c_local.aligned_simd_load[simd_size, alignment](
+                var c_val = c_local.load[width=simd_size, alignment=alignment](
                     c_idx
                 )
                 c_val = _neon_matmul(c_val, a_val, b_val)
@@ -2654,7 +2654,7 @@ fn sgemm_warp_tiling_kernel[
 
                 @unroll
                 for i in range(0, int(TM), 4):
-                    var vec = a_sram.aligned_simd_load[4, 16](
+                    var vec = a_sram.load[width=4, alignment=16](
                         int(
                             (dot_idx * BM_padded)
                             + warp_row * WM
@@ -2670,7 +2670,7 @@ fn sgemm_warp_tiling_kernel[
 
                 @unroll
                 for i in range(0, int(TN), 4):
-                    var vec = b_sram.aligned_simd_load[4, 16](
+                    var vec = b_sram.load[width=4, alignment=16](
                         int(
                             (dot_idx * BN)
                             + warp_col * WN
