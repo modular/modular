@@ -21,7 +21,7 @@
 #include "LLCL/Runtime/CompactRuntimePtr.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/Chain.h"
-#include "Support/ADT/GenericUniquePtrSet.h"
+#include "Support/Context.h"
 #include "Support/STLExtras.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/DenseMap.h"
@@ -324,7 +324,8 @@ public:
   ///
   /// If profileFilename is non-empty then time profiling will be activated
   /// and the profile JSON and text will be written to files with that prefix.
-  Runtime(CompactRuntimePtr runtimePtr, std::unique_ptr<Allocator> allocator,
+  Runtime(CompactRuntimePtr runtimePtr, context::ContextRef context,
+          std::unique_ptr<Allocator> allocator,
           std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
           uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled,
           RuntimeOptions::ProfilerDebuginfo profilerDebuginfo =
@@ -414,47 +415,8 @@ public:
     return cancelValue.load(std::memory_order_acquire);
   }
 
-  //===--------------------------------------------------------------------===//
-  // Context Objects
-  //===--------------------------------------------------------------------===//
-
-  /// Transfers ptr into the context object set.
-  template <typename T>
-  void setContext(std::unique_ptr<T> ptr) {
-    contextObjects.set<T>(std::move(ptr));
-  }
-
-  /// Emplaces a new object of type T into the context object set and returns a
-  /// reference to it.
-  template <typename T, typename... Args>
-  T &emplaceContext(Args &&...args) {
-    return contextObjects.emplace<T, Args...>(std::forward<Args>(args)...);
-  }
-
-  /// Returns a reference to the object of type T held by the context object
-  /// set. If it does not contain such an object, emplaces a new object and
-  /// returns a reference to it.
-  template <typename T, typename... Args>
-  T &emplaceContextIfMissing(Args &&...args) {
-    return contextObjects.emplaceIfMissing<T, Args...>(
-        std::forward<Args>(args)...);
-  }
-
-  /// Returns a pointer to the object of type T held by the context object set.
-  /// If it does not contain such an object, calls the creator function to
-  /// create one and install. Returns any error the creator function returns.
-  template <typename T>
-  ErrorOr<T *> createContextIfMissing(
-      llvm::unique_function<ErrorOr<std::unique_ptr<T>>()> creator) {
-    return contextObjects.createIfMissing<T>(std::move(creator));
-  }
-
-  /// Returns a pointer to the context object of type T held by the context
-  /// object set, or nullptr if no such object exists.
-  template <typename T>
-  T *getContext() {
-    return contextObjects.get<T>();
-  }
+  /// Reference to our shared global context.
+  context::ContextRef context;
 
 private:
   Runtime(const Runtime &) = delete;
@@ -493,9 +455,6 @@ private:
   /// If execution is cancelled, this holds the error value to forward into the
   /// results of computations.
   std::atomic<AsyncValue *> cancelValue{nullptr};
-
-  /// Set of 'context objects' owned by this runtime.
-  GenericUniquePtrSet contextObjects;
 
   friend void checkUniqueRuntime(const Runtime &runtime);
   friend void checkKnownCallingThread(const Runtime &runtime);

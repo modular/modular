@@ -175,7 +175,7 @@ static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
   if (!moduleExportsMain(moduleOp, symtab))
     return Error("could not find a 'main' function to execute");
   [[maybe_unused]] auto timeScope =
-      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+      runtime.context->emplaceIfMissing<M::Telemetry::TelemetryContext>()
           .createUInt64Timer<std::chrono::milliseconds>(
               "mojo.run.time", M::Telemetry::Level::L2);
 
@@ -268,7 +268,7 @@ static int run(const State &state) {
   std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
 
   auto &telemetryCtx =
-      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
+      runtime->context->emplace<M::Telemetry::TelemetryContext>();
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.

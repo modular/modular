@@ -88,7 +88,7 @@ public:
 
 #ifdef MODULAR_ENABLE_TELEMETRY
       auto &telemetryCtx =
-          runtime.emplaceContext<M::Telemetry::TelemetryContext>();
+          runtime.context->emplace<M::Telemetry::TelemetryContext>();
       auto logger = telemetryCtx.getLogger("debugger");
       logger->emitL1Event(event, {{"interface", interface}});
 #endif

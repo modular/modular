@@ -1917,7 +1917,7 @@ struct MojoServer::Impl {
                                           .withSingleThreaded(singleThreaded)
                                           .withMainWillNotDonate())),
         lspTelemetryContext(
-            runtime->emplaceContext<M::Telemetry::TelemetryContext>()),
+            runtime->context->emplace<M::Telemetry::TelemetryContext>()),
         waitOnShutdown(waitOnShutdown),
         sendDiagnosticsFn(std::move(sendDiagnosticsFn)),
         includeDirs(includeDirs) {}

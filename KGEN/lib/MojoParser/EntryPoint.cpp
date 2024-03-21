@@ -228,7 +228,7 @@ importMojoImpl(LLCL::Runtime &runtime, StringRef moduleIdentifier,
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs = {
       {"filename", fileLoc.getFilename().str()}};
   [[maybe_unused]] auto timeScope =
-      runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+      runtime.context->emplaceIfMissing<M::Telemetry::TelemetryContext>()
           .createUInt64Timer<std::chrono::milliseconds>(
               "mojo.parser.compile.time", M::Telemetry::Level::L2, attrs);
 
