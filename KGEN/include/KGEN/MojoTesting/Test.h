@@ -196,6 +196,18 @@ llvm::json::Value toJSON(const TestExecutionResult &value);
 /// This class represents a test or test suite.
 class Test {
 public:
+  /// A simple range location within a source file. A line or column of '0'
+  /// represents an invalid location.
+  struct SourceRange {
+    SourceRange(int startLine = 0, int startColumn = 0, int endLine = 0,
+                int endColumn = 0)
+        : startLine(startLine), startColumn(startColumn), endLine(endLine),
+          endColumn(endColumn) {}
+
+    int startLine, startColumn;
+    int endLine, endColumn;
+  };
+
   Test() = default;
 
   //===--------------------------------------------------------------------===//
@@ -212,6 +224,9 @@ public:
     auto it = childrenMap.find(testID.withTest(test).strref());
     return it == childrenMap.end() ? nullptr : &children[it->second];
   }
+
+  /// Return the source range of the test within the source file, if present.
+  std::optional<SourceRange> getSourceRange() const { return location; }
 
   //===--------------------------------------------------------------------===//
   // Discovery
@@ -237,8 +252,10 @@ private:
                        llvm::json::Path path);
   friend llvm::json::Value toJSON(const Test &value);
 
-  Test(TestID testID, std::vector<Test> newChildren = {})
-      : testID(std::move(testID)), children(std::move(newChildren)) {
+  Test(TestID testID, std::vector<Test> newChildren = {},
+       std::optional<SourceRange> location = {})
+      : testID(std::move(testID)), children(std::move(newChildren)),
+        location(location) {
     for (unsigned i = 0, e = children.size(); i != e; ++i)
       childrenMap[children[i].getTestID().strref()] = i;
   }
@@ -252,13 +269,19 @@ private:
   /// The nested tests of the test.
   std::vector<Test> children;
   llvm::StringMap<unsigned> childrenMap;
+
+  /// An optional location of the test within the source file.
+  std::optional<SourceRange> location;
 };
 raw_ostream &operator<<(raw_ostream &os, const Test &test);
 
 /// Add support for JSON serialization.
 bool fromJSON(const llvm::json::Value &value, Test &result,
               llvm::json::Path path);
+bool fromJSON(const llvm::json::Value &value, Test::SourceRange &result,
+              llvm::json::Path path);
 llvm::json::Value toJSON(const Test &value);
+llvm::json::Value toJSON(const Test::SourceRange &value);
 } // namespace M::KGEN::Mojo
 
 #endif // KGEN_MOJOTESTING_TEST_H
