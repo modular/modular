@@ -92,22 +92,29 @@ static int test(const State &state) {
   } else {
     testID = TestID(std::filesystem::current_path().string());
   }
-  ErrorOr<std::optional<Test>> test = Test::discoverFromID(testID);
-  if (test.isError()) {
-    llvm::errs() << "error: " << test.getError() << "\n";
+  ErrorOr<std::optional<Test>> testOr = Test::discoverFromID(testID);
+  if (testOr.isError()) {
+    llvm::errs() << "error: " << testOr.getError() << "\n";
     return 1;
   }
+  std::optional<Test> test = std::move(*testOr);
 
   // If we're only collecting, exit early.
   if (args.hasArg(options::OPT_collect_only)) {
-    if (*test)
-      llvm::outs() << **test << "\n";
+    if (test)
+      llvm::outs() << *test << "\n";
     return 0;
   }
 
-  // TODO: Add support for processing discovered tests.
-  llvm::outs() << "Total Discovered Tests: 0\n";
-  return 0;
+  if (!test) {
+    llvm::outs() << "Total Discovered Tests: 0\n";
+    return 0;
+  }
+
+  // Execute the test and print the results.
+  TestExecutionResult result = test->execute();
+  result.print(llvm::outs());
+  return result.getKind() == TestExecutionResult::kSuccess ? 0 : 1;
 }
 
 void M::registerTestSubcommand(SubcommandRegistry &registry) {

@@ -92,6 +92,9 @@ public:
   /// Return the path to the REPL entry point executable in the mojo install.
   StringRef getREPLEntryPoint();
 
+  /// Return the path to the test executor executable in the mojo install.
+  StringRef getTestExecutorPath();
+
   /// Return the system libraries to link with Mojo when building a standalone
   /// binary.
   void getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs);

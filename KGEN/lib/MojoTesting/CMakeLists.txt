@@ -13,4 +13,5 @@ add_modular_library(MojoTesting
   KGENSupport
   LLCLRuntimeGlobals
   MSupportGlobals
+  MLIRLspServerSupportLib
 )

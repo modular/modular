@@ -85,6 +85,10 @@ StringRef MojoConfig::getREPLEntryPoint() {
   return config.getValue(STRINGIFY_MOJO_CONFIG(".repl_entry_point"));
 }
 
+StringRef MojoConfig::getTestExecutorPath() {
+  return config.getValue(STRINGIFY_MOJO_CONFIG(".test_executor_path"));
+}
+
 void MojoConfig::getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs) {
   StringRef systemLibsArg =
       config.getValue(STRINGIFY_MOJO_CONFIG(".system_libs"));

@@ -110,6 +110,11 @@ public:
       : kind(kind), testID(std::move(testID)), duration(duration),
         error(std::move(error)), stdOut(std::move(stdOut)),
         stdErr(std::move(stdErr)) {}
+  TestExecutionResult(Kind kind, TestID testID,
+                      std::chrono::milliseconds duration,
+                      std::vector<TestExecutionResult> children)
+      : kind(kind), testID(std::move(testID)), duration(duration),
+        children(std::move(children)) {}
 
   //===--------------------------------------------------------------------===//
   // Accessors
@@ -129,6 +134,9 @@ public:
   StringRef getStdOut() const { return stdOut; }
   StringRef getStdErr() const { return stdErr; }
 
+  /// Return the children results.
+  ArrayRef<TestExecutionResult> getChildren() const { return children; }
+
   //===--------------------------------------------------------------------===//
   // Construction
   //===--------------------------------------------------------------------===//
@@ -143,6 +151,13 @@ public:
   static TestExecutionResult buildSkip(TestID testID) {
     return {kSkipped, std::move(testID)};
   }
+
+  //===--------------------------------------------------------------------===//
+  // Display
+  //===--------------------------------------------------------------------===//
+
+  /// Print the result in a human readable form to the given stream.
+  void print(raw_ostream &os) const;
 
 private:
   friend bool fromJSON(const llvm::json::Value &value,
@@ -164,6 +179,9 @@ private:
   /// The output of the test when executed.
   std::string stdOut;
   std::string stdErr;
+
+  /// The nested results of the execution.
+  std::vector<TestExecutionResult> children;
 };
 
 /// Add support for JSON serialization.
@@ -207,6 +225,12 @@ public:
 
   /// Print the test and its children to the given stream.
   void print(raw_ostream &os) const;
+
+  //===--------------------------------------------------------------------===//
+  // Execution
+
+  /// Execute the test, returning all of the collected results.
+  TestExecutionResult execute() const;
 
 private:
   Test(TestID testID, std::vector<Test> newChildren = {})
