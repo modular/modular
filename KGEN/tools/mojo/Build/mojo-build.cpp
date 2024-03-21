@@ -380,7 +380,7 @@ static int build(const State &state) {
   std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
 
   auto &telemetryCtx =
-      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
+      runtime->context->emplace<M::Telemetry::TelemetryContext>();
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.

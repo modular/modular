@@ -37,7 +37,7 @@ static int repl(const State &state) {
 
   // Initialize telemetry.
   auto &telemetryCtx =
-      runtime->emplaceContext<M::Telemetry::TelemetryContext>();
+      runtime->context->emplace<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args);
 
   if (args.hasArg(options::OPT_help)) {

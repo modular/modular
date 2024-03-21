@@ -570,7 +570,7 @@ KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
   {
 
     [[maybe_unused]] auto timeScope =
-        runtime.emplaceContextIfMissing<M::Telemetry::TelemetryContext>()
+        runtime.context->emplaceIfMissing<M::Telemetry::TelemetryContext>()
             .createUInt64Timer<std::chrono::milliseconds>(
                 "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
 

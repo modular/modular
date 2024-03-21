@@ -44,14 +44,14 @@ std::unique_ptr<Runtime> createRuntime() {
 TEST(RuntimeTest, Contexts) {
   auto runtime = createRuntime();
 
-  ContextA &contextARef = runtime->emplaceContext<ContextA>(5);
-  runtime->emplaceContext<ContextB>();
+  ContextA &contextARef = runtime->context->emplace<ContextA>(5);
+  runtime->context->emplace<ContextB>();
 
   ++contextARef.i;
 
-  ContextA *contextAPtr = runtime->getContext<ContextA>();
-  ContextB *contextBPtr = runtime->getContext<ContextB>();
-  ContextC *contextCPtr = runtime->getContext<ContextC>();
+  ContextA *contextAPtr = runtime->context->get<ContextA>();
+  ContextB *contextBPtr = runtime->context->get<ContextB>();
+  ContextC *contextCPtr = runtime->context->get<ContextC>();
 
   ASSERT_NE(contextAPtr, nullptr);
   EXPECT_EQ(contextAPtr->i, 6);
@@ -60,7 +60,7 @@ TEST(RuntimeTest, Contexts) {
   EXPECT_EQ(contextCPtr, nullptr);
 
   bool created = false;
-  ErrorOr<ContextC *> contextCOr = runtime->createContextIfMissing<ContextC>(
+  ErrorOr<ContextC *> contextCOr = runtime->context->createIfMissing<ContextC>(
       [&created]() -> ErrorOr<std::unique_ptr<ContextC>> {
         created = true;
         return std::make_unique<ContextC>();
@@ -71,7 +71,7 @@ TEST(RuntimeTest, Contexts) {
 
   created = false;
   ErrorOr<ContextC *> contextCAgainOr =
-      runtime->createContextIfMissing<ContextC>(
+      runtime->context->createIfMissing<ContextC>(
           [&created]() -> ErrorOr<std::unique_ptr<ContextC>> {
             created = true;
             return std::make_unique<ContextC>();
@@ -85,9 +85,9 @@ TEST(RuntimeTest, Contexts) {
 TEST(RuntimeTest, Contexturations_ExpectDeath) {
   auto runtime = createRuntime();
 
-  runtime->emplaceContext<ContextA>();
+  runtime->context->emplace<ContextA>();
 
-  ASSERT_DEATH_IF_SUPPORTED(runtime->emplaceContext<ContextA>(),
+  ASSERT_DEATH_IF_SUPPORTED(runtime->context->emplace<ContextA>(),
                             "set already holds object of type");
 }
 #endif
