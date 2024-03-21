@@ -127,6 +127,12 @@ void M::registerContext(mlir::DialectRegistry &registry, ContextRef &ref) {
                       })));
 }
 
+void M::registerContext(mlir::MLIRContext &ctx, ContextRef &ref) {
+  DialectRegistry registry;
+  registerContext(registry, ref);
+  ctx.appendDialectRegistry(registry);
+}
+
 ContextRef M::loadContext(mlir::MLIRContext *ctx) {
   StringRef name = MDialect::getDialectNamespace();
   return static_cast<MDialect *>(ctx->getOrLoadDialect(name))->getInteral();

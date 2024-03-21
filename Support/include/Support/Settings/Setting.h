@@ -8,6 +8,7 @@
 #define SUPPORT_SETTINGS_SETTING_H
 
 #include "Support/ADT/GenericUniquePtr.h"
+#include "Support/ADT/SmartVariant.h"
 #include "llvm/Support/Casting.h"
 
 namespace M {
