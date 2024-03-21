@@ -1140,7 +1140,7 @@ def LIT_RaiseOp : LITOp<"raise"> {
 //===----------------------------------------------------------------------===//
 
 def LIT_LoopConditionOp : LITOp<"loop.condition", [
-    ParentOneOf<["LoopOp"]>, Terminator]> {
+    HasParent<"LoopOp">, Terminator]> {
   let summary = "Condition for the loop.";
   let description = [{
     The `lit.loop.condition` operation is a terminator. It yields the condition
@@ -1163,7 +1163,7 @@ def LIT_LoopConditionOp : LITOp<"loop.condition", [
 //===----------------------------------------------------------------------===//
 
 def LIT_LoopContinueOp : LITOp<"loop.continue", [
-    ParentOneOf<["LoopOp"]>, Terminator]> {
+    HasParent<"LoopOp">, Terminator]> {
 
   let summary = "Loop continue.";
   let description = [{
@@ -1186,7 +1186,7 @@ def LIT_LoopContinueOp : LITOp<"loop.continue", [
 //===----------------------------------------------------------------------===//
 
 def LIT_LoopYieldOp : LITOp<"loop.yield", [
-    ParentOneOf<["LoopOp"]>, Terminator]> {
+    HasParent<"LoopOp">, Terminator]> {
   let summary = "Loop yield.";
   let description = [{
     The `lit.loop.yield` operation is a terminator. The operation indicates
