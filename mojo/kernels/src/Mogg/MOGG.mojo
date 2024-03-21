@@ -142,7 +142,7 @@ from runtime.llcl import (
 )
 from runtime.tracing import Trace, TraceLevel
 
-from utils._optional import Optional
+from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple, product
 from utils.loop import unroll
 

@@ -16,7 +16,7 @@ from memory.unsafe import Pointer, bitcast
 from MOGGIntList import IntList
 from register import *
 
-from utils._optional import Optional
+from collections import OptionalReg as Optional
 
 
 @value
