@@ -9,7 +9,7 @@ from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from MatmulUtils import elementwise_epilogue_type
 
-from utils._optional import Optional
+from collections import OptionalReg as Optional
 from utils.index import Index
 
 # Parallelized version of Gemv

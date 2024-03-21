@@ -63,7 +63,7 @@ from runtime.llcl import Runtime
 from Transpose import transpose_inplace
 from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
-from utils._optional import Optional
+from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple

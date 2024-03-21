@@ -31,7 +31,7 @@ from MatmulUtils import (
 from memory import memset_zero
 from runtime.llcl import Runtime
 
-from utils._optional import Optional
+from collections import OptionalReg as Optional
 from utils.index import StaticIntTuple
 
 alias elementwise_epilogue_type = fn[c_type: DType, width: Int, rank: Int] (
