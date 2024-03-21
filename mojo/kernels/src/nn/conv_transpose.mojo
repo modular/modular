@@ -36,7 +36,7 @@ from memory.memory import memset_zero
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 
-from utils._optional import Optional
+from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 

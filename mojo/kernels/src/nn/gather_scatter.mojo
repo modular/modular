@@ -23,7 +23,7 @@ from memory import memset_zero, stack_allocation
 from runtime.llcl import Runtime, _OptionalError
 from runtime.tracing import Trace, TraceLevel
 
-from utils._optional import Optional
+from collections import OptionalReg as Optional
 from utils.index import StaticIntTuple
 from utils.loop import unroll
 
