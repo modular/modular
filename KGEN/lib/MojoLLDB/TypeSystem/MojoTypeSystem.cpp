@@ -119,6 +119,11 @@ struct MojoTypeSystem::Impl {
     }
     compilationOptions.targetCpu = llvm::sys::getHostCPUName();
 
+    // TODO(#33931) workaround to disable module splitting for REPL.
+    // TODO(#35345) workaround to LLVM Module splitting which works for ORC JIT
+    // but not always for MCJIT. Disable splitting for REPL.
+    compilationOptions.disableLLVMModuleSplitting = true;
+
     // Configure the parser context.
     LIT::ParserConfig parserConfig(&mlirContext, compilationOptions);
     parserContext =

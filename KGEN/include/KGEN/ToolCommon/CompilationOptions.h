@@ -96,6 +96,13 @@ public:
   std::string saveTempsPrefix = "";
   bool emitAllElaboratorDiags = false;
   std::string searchPaths = "";
+
+  // HACK: to disable llvm splitting for some cases if needed, e.g.:
+  // - mojo REPL (#35345)
+  // - graph compiler's compilation path where heuristics is needed for
+  // performance.
+  // - ...
+  bool disableLLVMModuleSplitting = false;
 };
 } // namespace M::KGEN
 
