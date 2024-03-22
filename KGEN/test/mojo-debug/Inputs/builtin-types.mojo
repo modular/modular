@@ -116,6 +116,5 @@ fn main():
         a_simd,
         b_simd,
         c_simd,
-        a_float_or_bool_or_simd,
         none,
     )
