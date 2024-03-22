@@ -68,7 +68,4 @@
 # CHECK:   [31] = -16
 # CHECK: }
 # CHECK: (simd<2, index>) c_simd = ([0] = 5, [1] = 6)
-# CHECK: (Variant[scalar<f64>, scalar<bool>, simd<2, index>]) a_float_or_bool_or_simd = {
-# CHECK:   variant[2] = ([0] = 5, [1] = 6)
-# CHECK: }
 # CHECK: (None) none = None

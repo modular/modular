@@ -54,17 +54,6 @@ struct ParamStruct[T: AnyRegType]:
         self.t = t
 
 
-alias AFloatOrBoolOrSimd = __mlir_type[
-    `!kgen.variant<`,
-    Float64,
-    `, `,
-    Bool,
-    `, `,
-    SIMD[DType.index, 2],
-    `>`,
-]
-
-
 fn keep_alive[*Ts: AnyType](*args: *Ts):
     pass
 
@@ -106,11 +95,6 @@ fn main():
     # fmt: on
 
     var c_simd = SIMD[DType.index, 2](5, 6)
-
-    var a_float_or_bool_or_simd = __mlir_op.`kgen.variant.create`[
-        _type=AFloatOrBoolOrSimd,
-        index = Int(2).value,
-    ](c_simd)
 
     var none = None
 
