@@ -475,7 +475,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
                        signature.getArgNames())) {
 
     // There is no provided operand for a by-ref result.
-    if (expectedConvention == ArgConvention::ByRefResult)
+    if (SignatureType::isResultSlot(expectedConvention))
       continue;
 
     if (signature.isKwVarArg(expectedArgIdx)) {
@@ -1319,27 +1319,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   // Check that the result didn't bind to a type that would require changing to
   // a different result convention.
-  for (Type outputType : signature.getResults()) {
+  for (Type outputType : signature.getResults())
     if (!ASTType(outputType).isRegisterPassable(callLoc, shared))
       return emitDiagFor.resultGenericMemType(outputType);
-    // `!kgen.variant` is a special case.  We use it to wrap the result
-    // type for functions that `raise`, and in the case of returning a
-    // parametric type we can't rule out a user trying to pass a memory-only
-    // type.  This came up in issue
-    // https://github.com/modularml/mojo/issues/910.  So we need a deep check
-    // to prevent memory-only types being used as parameters.
-    ASTDecl *decl = ASTType(outputType).getDecl(shared);
-    if (!decl) {
-      if (auto variant = dyn_cast<VariantType>(outputType)) {
-        auto isMemoryOnly = [&](Type variant) {
-          return ASTType(variant).getRegisterPassability(callLoc, shared) ==
-                 TypeConvention::MemoryOnly;
-        };
-        if (llvm::any_of(variant.getTypes(), isMemoryOnly))
-          return emitDiagFor.resultGenericMemType(outputType);
-      }
-    }
-  }
 
   // Binding the parameters would determine the type of pack varargs. Given
   // this, we need to check again if we have missing or too many arguments.
@@ -1390,6 +1372,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                        signature.getArgPassingKinds())) {
     // Ignore the return slot if present.
     Type expectedType = evaluator.refineType(unboundExpectedType);
+    if (expectedConvention == ArgConvention::ByRefError)
+      continue;
     if (expectedConvention == ArgConvention::ByRefResult) {
       numMismatchedConventions += ASTType(expectedType)
                                       .getReferenceElementType()

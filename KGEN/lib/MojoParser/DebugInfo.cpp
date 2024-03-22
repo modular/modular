@@ -57,7 +57,7 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
       paramTypes.push_back(getSourceName(type));
     for (auto [i, t, conv] :
          llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
-      if (conv == ArgConvention::ByRefResult)
+      if (SignatureType::isResultSlot(conv))
         continue;
       Type type = t;
       // Unwrap variadics pointers if necessary.

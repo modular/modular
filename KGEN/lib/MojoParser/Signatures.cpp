@@ -376,9 +376,11 @@ TypeCheckedParamList::TypeCheckedParamList(
       if ((!defaultPosParams.empty() &&
            arg.kwArgHandling != KWArgHandling::kKeywordOnly) ||
           !defaultKwOnlyParams.empty()) {
-        if (arg.kgenConvention != ArgConvention::ByRefResult)
+        if (arg.kgenConvention != ArgConvention::ByRefResult &&
+            arg.kgenConvention != ArgConvention::ByRefError) {
           emitOptionalAfterRequired(emitter, arg, "parameter")
               << arg.typeExpr->getRange();
+        }
       }
     }
 
@@ -933,6 +935,43 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
   // Now that we have the user's result type, compute the full type of the
   // result, which can can be different when memory only, when throwing, etc.
   ASTType fullResultType = resultType;
+  TypeConvention rp = resultType.getRegisterPassability(resultLoc, shared);
+
+  // If this function throws, add a result slot for the error that may be
+  // raised.
+  if (tcSignature.argList.effects.isThrows()) {
+    ASTType errorType =
+        shared.getBuiltinErrorType(tcSignature.paramList.declScope, resultLoc);
+
+    // Synthesize a ByRefError argument for the error.
+    ParsedArgument errArg;
+    errArg.loc = resultLoc;
+    errArg.name = StringAttr::get(shared.getContext(), "__error__");
+    errArg.convention = ParsedArgument::kConventionByRefResult;
+    errArg.kgenConvention = ArgConvention::ByRefError;
+    errArg.kwArgHandling = KWArgHandling::kKeywordOnly;
+    errArg.typeExpr = nullptr;
+    tcSignature.argList.parsedArgs.push_back(errArg);
+    tcSignature.argTypes.push_back(errorType);
+
+    RefType refType =
+        makeImplicitRefTypeForArg(errArg, 0, errorType, tcSignature);
+    tcSignature.fullArgTypes.push_back(refType);
+
+    // If this is for a lit.func declaration (as opposed to a function type),
+    // add a block argument for this.
+    if (fnDecl) {
+      Block &body = *cast<LIT::FuncOp>(fnDecl).getBody();
+      (void)body.addArgument(refType, shared.translateLocation(resultLoc));
+    }
+
+    // The ABI result type is an i1 indicating the error state.
+    fullResultType = Builder(shared.getContext()).getI1Type();
+    // The result value is always returned through memory. Initializers don't
+    // have formal results.
+    if (!fnInfo.isInitializer())
+      rp = TypeConvention::MemoryOnly;
+  }
 
   if (tcSignature.argList.effects.isAsync() &&
       tcSignature.argList.effects.isThrows()) {
@@ -943,7 +982,6 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
 
   // If it is memory-only, pass it indirectly as the last argument to the
   // function by-reference.
-  TypeConvention rp = resultType.getRegisterPassability(resultLoc, shared);
   if (rp == TypeConvention::MemoryOnly) {
     // FIXME(#26008): Async functions with memory-only do not work.
     if (tcSignature.argList.effects.isAsync()) {
@@ -978,17 +1016,12 @@ static void typeCheckResult(const ExprNode *resultTypeExpr, SMLoc resultLoc,
     }
 
     // We know the ABI register result will be None now, which is trivial.
-    fullResultType = shared.getNoneType();
+    if (!tcSignature.argList.effects.isThrows())
+      fullResultType = shared.getNoneType();
+
     rp = TypeConvention::RegisterPassableTrivial;
   }
 
-  if (tcSignature.argList.effects.isThrows()) {
-    Type errorType = shared.getBuiltinErrorType(declScope, resultLoc);
-    fullResultType = VariantType::get({errorType, fullResultType});
-    // The result is always owned because the function returns a variant
-    // containing an Error, which is nontrivial.
-    rp = TypeConvention::RegisterPassable;
-  }
   tcSignature.fullResultType = fullResultType;
 
   // If the result of the function is a non-trivial type, mark the function
@@ -1043,11 +1076,13 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
     bool selfIsRegPassable =
         selfType.isRegisterPassable(fnDecl->getLoc(), shared);
     if (selfIsRegPassable && resultTypeExpr) {
-#if 0 // TODO: Enable this to warn about `-> Self` syntax when ready.
-      shared.emitWarning(fnDecl->getLoc(), "'")
-           << fnInfo.name
-           << "' should take 'inout self' instead of returning 'Self'";
-#endif
+      // TODO: Error about `-> Self` for all initializers when ready.
+      if (argList.effects.isThrows()) {
+        shared.emitError(fnDecl->getLoc(), "'")
+            << fnInfo.name
+            << "' should take 'inout self' instead of returning 'Self'";
+        fnDecl->setErroneous();
+      }
       if (fnInfo.kind == SpecialFunctionKind::kCopyInit)
         fnInfo = SpecialFunctionInfo::get(SpecialFunctionKind::kCopyInitReg);
       else if (fnInfo.kind == SpecialFunctionKind::kInit)

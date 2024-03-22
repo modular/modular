@@ -645,18 +645,18 @@ def implicit_return_obj(p: Bool):
     # CHECK: if
     if p:
         # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
-        # CHECK: kgen.variant.create
-        # CHECK: return
+        # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+        # CHECK: return [[FALSE]]
         return
     # CHECK: else
     else:
         # CHECK: lit.call {{.*}}object::@"__init__{{.*}}%__result__
-        # CHECK: kgen.variant.create
-        # CHECK: return
+        # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+        # CHECK: return [[FALSE]]
         return 5
     # CHECK: lit.call {{.*}}object::@"__init__
-    # CHECK: kgen.variant.create
-    # CHECK: lit.return
+    # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK: return [[FALSE]]
     _ = 5
 
 
@@ -665,27 +665,30 @@ def implicit_return_obj(p: Bool):
 ##===----------------------------------------------------------------------===##
 
 
-# CHECK-LABEL: lit.func @"defAlwaysRaises()"() throws|ownedresult -> !kgen.variant<!Error, !Int> attributes {isDef
+# CHECK-LABEL: lit.func @"defAlwaysRaises()"[{{.*}}](?, %__error__: {{.*}}, %__result__: {{.*}}) throws -> i1 attributes {isDef
 def defAlwaysRaises() -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
-    # CHECK-NEXT: %1 = kgen.variant.create [[RESULT]]
-    # CHECK-NEXT: lit.return %1
+    # CHECK: lit.ref.store [[RESULT]], %__result__
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: lit.return [[FALSE]]
     return 0
 
 
-# CHECK-LABEL: lit.func @"fnThatRaises()"() throws|ownedresult -> !kgen.variant<!Error, !Int>
+# CHECK-LABEL: lit.func @"fnThatRaises()"{{.*}} throws -> i1
 fn fnThatRaises() raises -> Int:
     # CHECK: [[RESULT:%.*]] = kgen{{.*}}{0}
-    # CHECK-NEXT: %1 = kgen.variant.create [[RESULT]]
-    # CHECK-NEXT: lit.return %1
+    # CHECK-NEXT: lit.ref.store [[RESULT]], %__result__
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: lit.return [[FALSE]]
     return 0
 
 
-# CHECK-LABEL: lit.func @"raisesReturnsNone()"() throws|ownedresult -> !kgen.variant<!Error, none>
+# CHECK-LABEL: lit.func @"raisesReturnsNone()"{{.*}} throws -> i1
 fn raisesReturnsNone() raises:
     # CHECK-NEXT: %none = kgen.param.constant: none
-    # CHECK-NEXT: %0 = kgen.variant.create %none
-    # CHECK-NEXT: lit.return %0
+    # CHECK-NEXT: lit.ref.store %none, %__result__
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: lit.return [[FALSE]]
     # CHECK-NEXT: lit.end_func
     pass
 
@@ -699,11 +702,13 @@ fn raisesReturnsVariant() -> __mlir_type[`!kgen.variant<`, Error, `, index>`]:
     ](Int(1).value)
 
 
-# CHECK-LABEL: lit.func @"raise_and_return
-# CHECK-SAME: -> !kgen.variant<!Error, !Error>
+# CHECK-LABEL: lit.func @"raise_and_return{{.*}} throws -> i1
 fn raise_and_return(a: Error) raises -> Error:
-    # COM: Index 1 is the success index.
-    # CHECK: kgen.variant.create %{{.*}}, 1 : <!Error, !Error>
+    # COM: True result indicates an error.
+    # CHECK: [[ERR:%.*]] = kgen.param.materialize: !Error
+    # CHECK-NEXT: lit.ref.store [[ERR]], %__result__
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: lit.return [[FALSE]]
     return Error {}
 
 
@@ -1031,6 +1036,15 @@ struct RecursiveCopyable:
     # CHECK: lit.struct.field recurse
     # CHECK-SAME: "__copyinit__"
     var recurse: BoxCopyable[Node]
+
+
+# CHECK-LABEL: lit.struct.decl @RaisingMemberwiseInit
+@value
+struct RaisingMemberwiseInit:
+    var x: Int
+    # CHECK-LABEL: lit.func @"__init__{{.*}} throws
+    fn __init__(inout self, /, x: Int) raises:
+        pass
 
 
 ##===----------------------------------------------------------------------===##

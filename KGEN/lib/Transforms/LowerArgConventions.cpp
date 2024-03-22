@@ -23,6 +23,7 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
 
@@ -63,7 +64,8 @@ static Type lowerPointerType(Type type) {
 /// indices (on the input signature) that needed to be changed. A flag is also
 /// returned to indicate if the result of a signature with `byref_result` was
 /// changed, in which case the new signature will no longer have that argument.
-static std::tuple<SignatureType, SmallVector<size_t>, bool, bool>
+static std::tuple<SignatureType, SmallVector<size_t>, SmallVector<Type>, bool,
+                  bool, bool>
 lowerSignature(SignatureType sig) {
   ArrayRef<ArgConvention> oldConvs = sig.getArgConventions();
   SmallVector<ArgConvention> newConvs(oldConvs);
@@ -74,7 +76,8 @@ lowerSignature(SignatureType sig) {
   ArrayRef<Type> oldResTypes = sig.getResults();
   SmallVector<Type> newResTypes(oldResTypes);
 
-  bool changedInitSelf = false, changedByRefResult = false;
+  bool changedInitSelf = false, changedByRefResult = false,
+       changedByRefError = false;
   SmallVector<size_t> changedIndices;
   for (auto [idx, argTy, convention] :
        llvm::enumerate(sig.getArguments(), oldConvs)) {
@@ -87,23 +90,30 @@ lowerSignature(SignatureType sig) {
         changedIndices.push_back(idx);
       }
     } else if (convention == ArgConvention::ByRefResult ||
+               convention == ArgConvention::ByRefError ||
                convention == ArgConvention::InitSelf) {
       Type loweredByrefResTy = lowerPointerType(argTy);
       if (!loweredByrefResTy)
         continue;
       if (convention == ArgConvention::ByRefResult)
         changedByRefResult = true;
+      else if (convention == ArgConvention::ByRefError)
+        changedByRefError = true;
       else
         changedInitSelf = true;
 
-      Type oldResType = oldResTypes[0];
       if (sig.isThrows()) {
-        // If the function is throwing, replace the success type in the variant.
-        auto resVariant = cast<VariantType>(oldResType);
-        assert(resVariant.getNumTypes() == 2);
-        SmallVector<Type> variantTypes(resVariant.getTypes());
-        variantTypes[1] = loweredByrefResTy;
-        newResTypes[0] = VariantType::get(variantTypes);
+        // If the function is throwing, append the result type.
+        newResTypes.push_back(loweredByrefResTy);
+        // Make sure the error type comes first.
+        if (convention == ArgConvention::ByRefError && changedInitSelf)
+          std::swap(newResTypes[1], newResTypes[2]);
+        // If both the error and the result type are register-passable, then
+        // return a `!kgen.variant<ErrT, ValT>`.
+        if (changedByRefError && (changedInitSelf || changedByRefResult)) {
+          newResTypes.assign(
+              1, VariantType::get({newResTypes[1], newResTypes[2]}));
+        }
       } else {
         // If the function doesn't throw, we will return the lowered type.
         newResTypes[0] = loweredByrefResTy;
@@ -112,16 +122,30 @@ lowerSignature(SignatureType sig) {
   }
 
   SignatureType newSig;
-  if (changedByRefResult || changedInitSelf || !changedIndices.empty()) {
+  if (changedByRefResult || changedByRefError || changedInitSelf ||
+      !changedIndices.empty()) {
     auto newInputTypesAR = ArrayRef<Type>(newInputTypes);
     auto newConvAR = ArrayRef<ArgConvention>(newConvs);
     if (changedInitSelf) {
+      // Drop the first argument.
       newInputTypesAR = newInputTypesAR.drop_front();
       newConvAR = newConvAR.drop_front();
     }
     if (changedByRefResult) {
+      // Drop the last argument.
       newInputTypesAR = newInputTypesAR.drop_back();
       newConvAR = newConvAR.drop_back();
+    }
+    if (changedByRefError) {
+      // Drop the last argument.
+      newInputTypesAR = newInputTypesAR.drop_back();
+      newConvAR = newConvAR.drop_back();
+      // If we had but didn't change the byref_result, then we need to drop the
+      // second-last argument. Just swap the elements in the underlying vector.
+      if (!changedByRefResult && sig.hasMemoryOnlyResult()) {
+        std::swap(newInputTypes.end()[-2], newInputTypes.end()[-1]);
+        std::swap(newConvs.end()[-2], newConvs.end()[-1]);
+      }
     }
 
     auto newFnType =
@@ -130,61 +154,85 @@ lowerSignature(SignatureType sig) {
                                 sig.getMetadata());
   }
 
-  return std::make_tuple(newSig, std::move(changedIndices), changedInitSelf,
-                         changedByRefResult);
+  return std::make_tuple(newSig, std::move(changedIndices),
+                         std::move(newResTypes), changedInitSelf,
+                         changedByRefResult, changedByRefError);
 }
 
 /// Helper to perform the bulk of the lowering for `kgen.call` and
 /// `kgen.call_indirect` ops.
-static std::pair<SignatureType, SmallVector<Value>>
-lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
-                SignatureType oldSig) {
-  auto [newSig, changedIndices, changedInitSelf, changedByRefResult] =
-      lowerSignature(oldSig);
+static void lowerCallOpImpl(
+    Operation *op, Operation::operand_range oldOperands, SignatureType oldSig,
+    function_ref<void(Operation *, SignatureType, ValueRange)> updateArgs) {
+  auto [newSig, changedIndices, newResTypes, changedInitSelf,
+        changedByRefResult, changedByRefError] = lowerSignature(oldSig);
   if (!newSig)
-    return {newSig, {}};
+    return;
 
   // Calculate the new operands, accounting for a potentially promoted result.
   ImplicitLocOpBuilder b(op->getLoc(), op);
   SmallVector<Value> newOperands(
       oldOperands.drop_front(changedInitSelf).drop_back(changedByRefResult));
-  for (size_t idx : changedIndices)
+  if (changedByRefError)
+    newOperands.erase(
+        std::prev(newOperands.end(),
+                  1 + (!changedByRefResult && oldSig.hasMemoryOnlyResult())));
+  for (size_t idx : changedIndices) {
     newOperands[idx - changedInitSelf] =
         b.create<POP::LoadOp>(oldOperands[idx]);
+  }
 
-  // Update the result, if needed.
-  if (changedInitSelf || changedByRefResult) {
-    size_t oldOperandNo = changedInitSelf ? 0 : oldOperands.size() - 1;
+  // Now update the result, if needed.
+  if (changedInitSelf || changedByRefResult || changedByRefError) {
     b.setInsertionPointAfter(op);
 
     OpResult res = op->getResult(0);
     if (newSig.isThrows()) {
-      Type oldVariantTy = cast<KGEN::VariantType>(res.getType());
+      // If the callee throws and both error and result were rewritten into a
+      // variant, then we have to extract the relevant values from the variant.
+      if (changedByRefError && (changedByRefResult || changedInitSelf)) {
+        // Replace the i1 with a variant check.
+        res.setType(newSig.getResults()[0]);
+        auto isError = b.create<VariantIsOp>(res, 0);
+        res.replaceAllUsesExcept(isError, isError);
 
-      // We create an HCLF::IfOp, with a condition checking if there is no error
-      // (i.e. the then branch will handle normal return). Users of the old
-      // result (e.g. error handling) will now take the result of this IfOp.
-      auto cond = b.create<VariantIsOp>(res, 1);
-      auto ifOp = b.create<HLCF::IfOp>(oldVariantTy, cond);
-      res.replaceAllUsesExcept(ifOp.getResult(0), cond);
-      res.setType(newSig.getResults()[0]);
+        auto ifOp = b.create<HLCF::IfOp>(isError);
+        b.createBlock(&ifOp.getThenRegion());
+        b.create<POP::StoreOp>(
+            b.create<VariantTakeOp>(res, 0),
+            oldOperands.end()[-1 - oldSig.hasMemoryOnlyResult()]);
+        b.create<HLCF::YieldOp>();
 
-      // Populate the then branch (normal return).
-      Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
-      b.setInsertionPointToStart(thenBlock);
-      auto resVal = b.create<VariantTakeOp>(res, 1);
-      b.create<POP::StoreOp>(resVal, oldOperands[oldOperandNo]);
+        b.createBlock(&ifOp.getElseRegion());
+        b.create<POP::StoreOp>(
+            b.create<VariantTakeOp>(res, 1),
+            oldOperands[changedInitSelf ? 0 : oldOperands.size() - 1]);
+        b.create<HLCF::YieldOp>();
+      } else {
+        // In this case, we need to reallocate the operation with a different
+        // number of results.
+        OperationState state(op->getLoc(), op->getName(), op->getOperands(),
+                             newResTypes);
+        state.attributes = op->getAttrDictionary();
+        Operation *newOp = b.create(state);
+        res.replaceAllUsesWith(newOp->getResult(0));
 
-      auto none = b.create<ParamConstantOp>(b.getAttr<NoneAttr>());
-      Value thenRes = b.create<VariantCreateOp>(oldVariantTy, none, 1);
-      b.create<HLCF::YieldOp>(thenRes);
-
-      // Populate the else branch (error return).
-      Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
-      b.setInsertionPointToStart(elseBlock);
-      auto err = b.create<VariantTakeOp>(res, 0);
-      Value elseRes = b.create<VariantCreateOp>(oldVariantTy, err, 0);
-      b.create<HLCF::YieldOp>(elseRes);
+        // Store the relevant result in the branch in which it is known to have
+        // a valid value.
+        auto ifOp = b.create<HLCF::IfOp>(newOp->getResult(0));
+        Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
+        b.create<HLCF::YieldOp>();
+        Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
+        b.create<HLCF::YieldOp>();
+        b.setInsertionPointToStart(changedByRefError ? thenBlock : elseBlock);
+        b.create<POP::StoreOp>(
+            newOp->getResult(1),
+            changedByRefError
+                ? oldOperands.end()[-1 - oldSig.hasMemoryOnlyResult()]
+                : oldOperands[changedInitSelf ? 0 : oldOperands.size() - 1]);
+        op->erase();
+        op = newOp;
+      }
     } else {
       // If the callee doesn't throw, we simply make every use take a new none.
       if (!res.use_empty()) {
@@ -194,94 +242,90 @@ lowerCallOpImpl(Operation *op, Operation::operand_range oldOperands,
 
       // Then just store the new callee result into the old byref result.
       res.setType(newSig.getResults()[0]);
-      b.create<POP::StoreOp>(res, oldOperands[oldOperandNo]);
+      b.create<POP::StoreOp>(
+          res, oldOperands[changedInitSelf ? 0 : oldOperands.size() - 1]);
     }
   }
 
-  return {newSig, std::move(newOperands)};
+  // Update the callee type and the operands.
+  updateArgs(op, newSig, newOperands);
 }
 
 /// Lower the input conventions for a KGEN::CallOp if needed.
 static void lowerCallOp(CallOp callOp) {
-  auto [newSig, newOperands] = lowerCallOpImpl(callOp, callOp.getOperands(),
-                                               callOp.getCalleeSignature());
-  if (!newSig)
-    return;
-
-  callOp->setOperands(newOperands);
-  callOp.setCalleeAttr(
-      SymbolConstantAttr::get(callOp.getCallee().getSymbol(), newSig));
+  lowerCallOpImpl(
+      callOp, callOp.getOperands(), callOp.getCalleeSignature(),
+      [](Operation *op, SignatureType newSig, ValueRange newOperands) {
+        auto callOp = cast<CallOp>(op);
+        callOp->setOperands(newOperands);
+        callOp.setCalleeAttr(
+            SymbolConstantAttr::get(callOp.getCallee().getSymbol(), newSig));
+      });
 }
 
 /// Lower the input conventions for a KGEN::CallIndirectOp if needed.
 static void lowerCallIndirectOp(CallIndirectOp callOp) {
-  TypedValue<SignatureType> callee = callOp.getCallee();
-  SignatureType oldSig = callee.getType();
-  auto [newSig, newOperands] =
-      lowerCallOpImpl(callOp, callOp.getArguments(), oldSig);
-  if (!newSig)
-    return;
-
-  callOp->setOperands(1, oldSig.getNumArguments(), newOperands);
-  callee.setType(newSig);
+  SignatureType oldSig = callOp.getCallee().getType();
+  lowerCallOpImpl(
+      callOp, callOp.getArguments(), oldSig,
+      [&oldSig](Operation *op, SignatureType newSig, ValueRange newOperands) {
+        auto callOp = cast<CallIndirectOp>(op);
+        callOp->setOperands(1, oldSig.getNumArguments(), newOperands);
+        callOp.getCallee().setType(newSig);
+      });
 }
 
 /// Emit IR for repacking the returned variant in the body of a throwing
 /// function that we are currently lowering. This returns the new variant result
 /// of the give type `newVariantTy`.
 static Value repackFuncVariantResult(ReturnOp returnOp,
-                                     VariantType newVariantTy,
-                                     POP::StackAllocationOp newResPtr) {
+                                     VariantType newVariantTy, Value newResPtr,
+                                     Value newErrPtr) {
   Value oldRetVal = returnOp.getOperand(0);
   ImplicitLocOpBuilder b(returnOp.getLoc(), returnOp);
 
   // We check the result is coming from. If we can guarantee that it's either an
   // error or not, we can just repack the error or the valid result.
-  if (auto variantCreateOp =
-          dyn_cast_or_null<VariantCreateOp>(oldRetVal.getDefiningOp())) {
-    size_t idx = variantCreateOp.getIndex();
-    if (idx == 1) {
+  BoolAttr isError;
+  if (mlir::matchPattern(oldRetVal, mlir::m_Constant(&isError))) {
+    if (!isError.getValue()) {
       // This is guaranteed to be a normal return.
-      auto loadedRes = b.create<POP::LoadOp>(newResPtr);
-      return b.create<VariantCreateOp>(newVariantTy, loadedRes, 1);
+      return b.create<VariantCreateOp>(newVariantTy,
+                                       b.create<POP::LoadOp>(newResPtr), 1);
     }
-
     // This is guaranteed to be an error return.
-    assert(idx == 0 && "unexpected variant type creation");
-    Value err = variantCreateOp.getOperand();
-    return b.create<VariantCreateOp>(newVariantTy, err, 0);
+    return b.create<VariantCreateOp>(newVariantTy,
+                                     b.create<POP::LoadOp>(newErrPtr), 0);
   }
 
   // We can't guarantee what the result is, so we emit conditional variant
   // repacking. We create an HCLF::IfOp, with a condition checking if there is
   // no error (i.e. the then branch will handle normal return). The result of
   // this IfOp is what we will return.
-  auto cond = b.create<VariantIsOp>(oldRetVal, 1);
-  auto ifOp = b.create<HLCF::IfOp>(newVariantTy, cond);
-  Value newRetVal = ifOp.getResult(0);
+  auto ifOp = b.create<HLCF::IfOp>(newVariantTy, oldRetVal);
 
   // Populate the then branch (normal return).
   Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
   b.setInsertionPointToStart(thenBlock);
-  auto loadedRes = b.create<POP::LoadOp>(newResPtr);
-  Value thenRes = b.create<VariantCreateOp>(newVariantTy, loadedRes, 1);
+  Value thenRes = b.create<VariantCreateOp>(
+      newVariantTy, b.create<POP::LoadOp>(newErrPtr), 0);
   b.create<HLCF::YieldOp>(thenRes);
 
   // Populate the else branch (error return).
   Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
   b.setInsertionPointToStart(elseBlock);
-  auto err = b.create<VariantTakeOp>(oldRetVal, 0);
-  Value elseRes = b.create<VariantCreateOp>(newVariantTy, err, 0);
+  Value elseRes = b.create<VariantCreateOp>(
+      newVariantTy, b.create<POP::LoadOp>(newResPtr), 1);
   b.create<HLCF::YieldOp>(elseRes);
 
-  return newRetVal;
+  return ifOp.getResult(0);
 }
 
 /// Lower the input conventions for a KGEN::FuncOp if needed.
 static void lowerFuncOp(FuncOp funcOp) {
   SignatureType oldSig = funcOp.getSignature();
-  auto [newSig, changedIndices, changedInitSelf, changedByRefResult] =
-      lowerSignature(oldSig);
+  auto [newSig, changedIndices, newResTypes, changedInitSelf,
+        changedByRefResult, changedByRefError] = lowerSignature(oldSig);
   if (!newSig)
     return;
 
@@ -305,31 +349,56 @@ static void lowerFuncOp(FuncOp funcOp) {
     arg.replaceAllUsesExcept(ptr, storeOp);
   }
 
+  Value newResPtr, newErrPtr;
+  if (changedByRefError) {
+    BlockArgument byrefResArg =
+        body.getArguments().end()[-1 - oldSig.hasMemoryOnlyResult()];
+    newErrPtr = b.create<POP::StackAllocationOp>(addDI(byrefResArg.getLoc()),
+                                                 byrefResArg.getType(), 1);
+    byrefResArg.replaceAllUsesWith(newErrPtr);
+    body.eraseArgument(byrefResArg.getArgNumber());
+  }
   if (changedInitSelf || changedByRefResult) {
     size_t argNumber = changedInitSelf ? 0 : body.getArguments().size() - 1;
     BlockArgument byrefResArg = body.getArgument(argNumber);
-    auto newResPtr = b.create<POP::StackAllocationOp>(
-        addDI(byrefResArg.getLoc()), byrefResArg.getType(), 1);
+    newResPtr = b.create<POP::StackAllocationOp>(addDI(byrefResArg.getLoc()),
+                                                 byrefResArg.getType(), 1);
     byrefResArg.replaceAllUsesWith(newResPtr);
     body.eraseArgument(argNumber);
+  }
 
+  if (changedInitSelf || changedByRefResult || changedByRefError) {
     // Find all return sites in the function and rewrite them.
-    body.walk([&, newSig = newSig](ReturnOp returnOp) {
+    body.walk([&, newSig = newSig, changedByRefError = changedByRefError,
+               changedInitSelf = changedInitSelf,
+               changedByRefResult = changedByRefResult](ReturnOp returnOp) {
       b.setInsertionPoint(returnOp);
 
-      if (newSig.isThrows()) {
-        // If the function throws, we need to potentially unpack and repack the
-        // result/error variant.
-        auto newVariantTy = cast<VariantType>(newSig.getResults()[0]);
-        Value newRetVal =
-            repackFuncVariantResult(returnOp, newVariantTy, newResPtr);
-        returnOp.setOperand(0, newRetVal);
-      } else {
-        // If the function doesn't throw, we just load and return the new
-        // result.
+      // If the function doesn't throw, we just load and return the new
+      // result.
+      if (!newSig.isThrows()) {
         auto newRes = b.create<POP::LoadOp>(returnOp.getLoc(), newResPtr);
         returnOp.setOperand(0, newRes);
+        return;
       }
+
+      // If the function throws and we rewrote both the error and the
+      // byref_result, we need to potentially unpack and repack the
+      // result/error variant.
+      if (changedByRefError && (changedInitSelf || changedByRefResult)) {
+        auto newVariantTy = cast<VariantType>(newSig.getResults()[0]);
+        Value newRetVal = repackFuncVariantResult(returnOp, newVariantTy,
+                                                  newResPtr, newErrPtr);
+        returnOp.setOperand(0, newRetVal);
+        return;
+      }
+
+      // Otherwise, we load either the error or the result, depending on which
+      // got rewritten.
+      Value toLoad = changedByRefError ? newErrPtr : newResPtr;
+      assert(toLoad && "should have been rewritten");
+      Value newRes = b.create<POP::LoadOp>(returnOp.getLoc(), toLoad);
+      returnOp->insertOperands(1, newRes);
     });
   }
   funcOp.setSignature(newSig);
@@ -352,18 +421,17 @@ static void lowerArgConventions(Operation &op) {
     // would be lowered already).
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement([](SignatureType sig) {
-      auto [newSig, _, __, ___] = lowerSignature(sig);
+      SignatureType newSig = std::get<0>(lowerSignature(sig));
       return newSig ? newSig : sig;
     });
-    auto anyRegTypeType = TypeType::get(op.getContext());
+    auto metatype = TypeType::get(op.getContext());
     replacer.addReplacement([&](TypeConstantAttr type) {
       // Canonicalize metatypes.
-      return TypeConstantAttr::get(type.getValue(), anyRegTypeType);
+      return TypeConstantAttr::get(type.getValue(), metatype);
     });
     op.walk([&](Operation *op) {
       replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
-                                 /*replaceLocs=*/true,
-                                 /*replaceAttrs=*/true);
+                                 /*replaceLocs=*/true, /*replaceAttrs=*/true);
     });
   }
 }

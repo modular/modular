@@ -50,8 +50,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
 
   if (v.getDefiningOp<LoadConsumeOp>() ||
       v.getDefiningOp<LIT::StructCreateOp>() ||
-      v.getDefiningOp<ParamMaterializeOp>() ||
-      v.getDefiningOp<VariantCreateOp>()) {
+      v.getDefiningOp<ParamMaterializeOp>()) {
     name = StringAttr::get(v.getContext(), "(anonymous value)");
     isIndirect = false;
     startsUninit = true;
@@ -92,26 +91,6 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     isIndirect = true;
     startsUninit = refFromPtr.getEndUninit();
     endInitState = startsUninit ? EndsUninit : EndsInit;
-    return;
-  }
-
-  // HandleVariantOp is currently always idiomatically for throwing function
-  // results and owns the result.  When it is generalized for pattern matching
-  // etc, it should take a discriminator to indicate what the result is.
-  if (v.getDefiningOp<HandleVariantOp>()) {
-    name = StringAttr::get(v.getContext(), "(call result)");
-    isIndirect = false;
-    startsUninit = true;
-    endInitState = EndsUninit;
-    return;
-  }
-
-  // VariantTakeOp starts out initialized with its own value.
-  if (auto letReg = v.getDefiningOp<VariantTakeOp>()) {
-    name = StringAttr::get(v.getContext(), "(call result)");
-    isIndirect = false;
-    startsUninit = true; // Initialized at its definition point.
-    endInitState = EndsUninit;
     return;
   }
 
@@ -295,7 +274,8 @@ getCallOpEffects(Operation &op,
   /// Argument conventions cause a direct use of the register of pointee, and
   /// handling them specifically allows us to be field sensitive in cases where
   /// the access is directly attributable to a Value.
-  auto getOperandEffectForConvention = [](ArgConvention conv) -> OperandEffect {
+  auto getOperandEffectForConvention =
+      [throws = signature.isThrows()](ArgConvention conv) -> OperandEffect {
     switch (conv) {
     case ArgConvention::OwnedInReg:
       return OperandEffect::regConsume;
@@ -307,10 +287,12 @@ getCallOpEffects(Operation &op,
       return OperandEffect::memLoad;
     case ArgConvention::ByRef:
       return OperandEffect::memInOut;
-    case ArgConvention::ByRefResult:
     case ArgConvention::ByRefError:
+      return OperandEffect::memStoreConditional;
+    case ArgConvention::ByRefResult:
     case ArgConvention::InitSelf:
-      return OperandEffect::memStoreOwned;
+      return throws ? OperandEffect::memStoreConditional
+                    : OperandEffect::memStoreOwned;
     case ArgConvention::None:
       llvm_unreachable("none convention not permited in Mojo");
     }
@@ -468,12 +450,11 @@ OverallOpValueEffect LIT::getOperationEffects(
   }
 
   // These ops consume their operands, struct.create and param.materialize
-  // define a result. A yield from a HandleVariantOp consumes the operand.
-  if (isa<LIT::StructCreateOp, ParamMaterializeOp, YieldOp>(op)) {
-    for (auto o : op.getOperands())
+  // define a result.
+  if (isa<LIT::StructCreateOp, ParamMaterializeOp>(op)) {
+    for (Value o : op.getOperands())
       operands.push_back({o, OperandEffect::regConsume});
-    if (op.getNumResults()) // Not YieldOp.
-      results.push_back(ResultEffect::regDefine);
+    results.push_back(ResultEffect::regDefine);
     return {};
   }
 
@@ -494,15 +475,6 @@ OverallOpValueEffect LIT::getOperationEffects(
   if (auto transfer = dyn_cast<TransferMemOwnershipOp>(op)) {
     operands.push_back({transfer.getOperand(), OperandEffect::memConsume});
     results.push_back(ResultEffect::memDefineInitToUninit);
-    return {};
-  }
-
-  // kgen.variant.create/kgen.variant.take consumes and produces an owned
-  // value.
-  if (isa<VariantCreateOp, VariantTakeOp>(op)) {
-    assert(op.getNumOperands() == 1);
-    operands.push_back({op.getOperand(0), OperandEffect::regConsume});
-    results.push_back(ResultEffect::regDefine);
     return {};
   }
 
@@ -556,19 +528,11 @@ OverallOpValueEffect LIT::getOperationEffects(
   }
 
   // Local control flow ops.
-  if (isa<HLCF::BreakOp, HLCF::ContinueOp>(op))
+  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp>(op))
     return OverallOpValueEffect::localControlFlowOp;
-  if (isa<LIT::TryRaiseOp>(op)) {
-    for (auto o : op.getOperands())
-      operands.push_back({o, OperandEffect::regConsume});
-    return OverallOpValueEffect::localControlFlowOp;
-  }
 
   // If-like operations.
-  //
-  // Note that we don't express the result definition of HandleVariant here.
-  // that is because we need special processing in the dtor insertion pass.
-  if (isa<HLCF::IfOp, ParamIfOp, HandleVariantOp>(op)) {
+  if (isa<HLCF::IfOp, ParamIfOp>(op)) {
     // i1 value is never owned, and the markers are not used either.
     // TODO: IfOp could return an owned result.
     if (size_t num = op.getNumResults())

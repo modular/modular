@@ -199,9 +199,9 @@ lit.func @mismatched_return_types(%arg0: i64) -> i32 {
 
 // -----
 
-lit.func @does_not_throw(%err: !lit.declref<@Error>) {
-  // expected-error @below {{'lit.raise' op must be nested inside the 'try' region of a `lit.try` operation}}
-  lit.raise %err : <@Error>
+lit.func @does_not_throw() {
+  // expected-error @below {{'lit.raise' op must be nested inside the 'try' region of a `lit.try` operation or a throwing function}}
+  lit.raise
   lit.end_func
 }
 
@@ -299,43 +299,6 @@ lit.func @no_struct_decl(%a: index) {
 
 // -----
 
-lit.func @caller() -> !kgen.none attributes {isParametric} {
-  lit.try {
-    %i = index.constant 0
-    // expected-error @below {{'lit.handle_variant' op operand #0 must be A parametric variant type., but got 'index'}}
-    %4 = lit.handle_variant %i, %i : (index, index) -> !kgen.none {
-      kgen.unreachable
-    } else {
-      kgen.unreachable
-    }
-    lit.try.yield
-  } except (%arg0: !lit.declref<@Error>) {
-    lit.try.yield
-  } else {
-    lit.try.yield
-  }
-  %6 = kgen.param.constant: none = <#kgen.none>
-  kgen.return %6 : !kgen.none
-}
-
-// -----
-
-lit.func @throwing_caller(%0: !kgen.variant<@Error, index, !kgen.none>) throws -> !kgen.variant<@Error, none> attributes {isParametric} {
-    %y = lit.var.decl "y" var : !lit.ref<@MyStruct, mut *"lifetime">
-    %yp = lit.ref.to_pointer %y : !lit.ref<@MyStruct, mut *"lifetime">
-    // expected-error @below {{'lit.handle_variant' op expected the variant to have two types: a success type and an error type}}
-    %1 = lit.handle_variant %0, %yp : (!kgen.variant<@Error, index, !kgen.none>, !kgen.pointer<@MyStruct>) -> !kgen.none
-    {
-      kgen.unreachable
-    } else {
-      kgen.unreachable
-    }
-    %6 = kgen.param.constant: none = <#kgen.none>
-    kgen.return %6 : !kgen.none
-}
-
-// -----
-
 // expected-error@below {{expected external function body to contain a single `lit.extern_func`}}
 lit.func @post_elaboration() attributes {preCompiledModuleRef = @package} {
   lit.end_func
@@ -366,10 +329,10 @@ lit.func @declareWrongType() {
 
 // -----
 
-lit.func @wrong_error_return1(%arg0: i32) -> !kgen.variant<index> {
-  %var = kgen.variant.create %arg0, 0 : <i32>
-  // expected-error @below {{'lit.error_return' op expected two types in the variant: an error type and a success type}}
-  lit.error_return %var : !kgen.variant<i32>
+lit.func @wrong_error_return1(%arg0: i32) -> i1 {
+  %0 = kgen.param.constant = <0>
+  // expected-error @below {{'lit.error_return' op operand #0 has type 'index' but expected 'i1'}}
+  lit.error_return %0 : index
 }
 
 // -----

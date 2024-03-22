@@ -25,12 +25,12 @@ trait Trait:
     fn f2(inout self: Self):
         pass
 
-    # CHECK: lit.func @"f3($1)"[{{.*}}](%self: !lit.ref<{{.*}}> owned_in_mem, ?, %__result__: !lit.ref<!object, mut {{.*}}> byref_result)
+    # CHECK: lit.func @"f3($1)"[{{.*}}](%self: !lit.ref<{{.*}}> owned_in_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: lit.trait_func
     def f3(self: Self):
         pass
 
-    # CHECK: lit.func @"f4($1&)"[{{.*}}](%self: !lit.ref<{{.*}}> byref, ?, %__result__: !lit.ref<!object, mut {{.*}}> byref_result)
+    # CHECK: lit.func @"f4($1&)"[{{.*}}](%self: !lit.ref<{{.*}}> byref, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: lit.trait_func
     def f4(inout self: Self):
         pass
@@ -267,6 +267,9 @@ trait TraitForReg:
     fn may_throw() raises -> Self:
         ...
 
+    fn throwing_method(self) raises:
+        ...
+
 
 # ===----------------------------------------------------------------------=== #
 # Calling Convention / Register Passable
@@ -289,15 +292,26 @@ struct RegTraitType(TraitForReg):
         # CHECK: store %1, %self
         pass
 
-    # CHECK-LABEL: lit.func @"may_throw{{.*}}_thunk"
-    # CHECK-SAME: %__result__: !lit.ref<!RegTraitType, mut {{.*}}> byref_result
-    # CHECK-SAME: throws|ownedresult -> !kgen.variant<!Error, none> always_inline
     @staticmethod
     fn may_throw() raises -> Self:
-        # CHECK: %0 = lit.call {{.*}}@RegTraitType::@"may_throw()"
-        # CHECK: %1 = lit.handle_variant %0
-        # CHECK: store %1, %__result__
         pass
+
+    # CHECK-LABEL: lit.func @"throwing_method{{.*}}_thunk"
+    # CHECK-SAME: (%self: !lit.ref<!RegTraitType, {{.*}} borrow_in_mem, ?, %__error__{{.*}}, %__result__{{.*}})
+    fn throwing_method(self) raises:
+        # CHECK-NEXT: [[SELF_REG:%.*]] = lit.ref.load %self
+        # CHECK-NEXT: lit.call {{.*}}RegTraitType::@"throwing_method{{.*}}([[SELF_REG]], %__error__, %__result__)
+        # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+        # CHECK-NEXT: return [[FALSE]]
+        pass
+
+
+# CHECK-LABEL: lit.func @"raising_method
+fn raising_method[T: TraitForReg](x: T) raises:
+    # CHECK: lit.call[{{.*}}: get_type_method(:!TraitForReg T, "may_throw")][{{.*}}](%__error__, %anonymous
+    _ = T.may_throw()
+    # CHECK: lit.call[{{.*}}: get_type_method(:!TraitForReg T, "throwing_method")][{{.*}}](%{{.*}}, %__error__, %anonymous
+    x.throwing_method()
 
 
 trait CrazyTrait:

@@ -1,7 +1,5 @@
 // RUN: kgen-opt %s -lower-semantic-cf -verify-parameters -verify-diagnostics -allow-unregistered-dialect | FileCheck %s
 
-lit.struct.decl @Error {}
-
 // CHECK-LABEL: lit.struct.decl @SomeStruct
 lit.struct.decl @SomeStruct {
   // CHECK-LABEL: lit.func @dead_returns
@@ -29,27 +27,23 @@ lit.file_module @FileModule {
   // CHECK-LABEL: lit.struct.decl @SomeStruct
   lit.struct.decl @SomeStruct {
     // CHECK-LABEL: lit.func @try_and_raise
-    // CHECK-SAME:  -> !kgen.variant<@Error, i32>
-    lit.func @try_and_raise(%a: i32, %b: !lit.declref<@Error>) throws -> !kgen.variant<@Error, i32> {
+    lit.func @try_and_raise(%a: i32) throws {
       // CHECK-NEXT: lit.try
       lit.try {
-        // CHECK-NEXT: lit.try.raise %b
-        lit.raise %b : !lit.declref<@Error>
+        // CHECK-NEXT: lit.try.raise
+        lit.raise
         lit.try.yield
-      // CHECK-NEXT: except (%arg0:
-      } except (%err: !lit.declref<@Error>) {
-        // CHECK-NEXT: %[[R:.*]] = kgen.variant.create %arg0
-        // CHECK-NEXT: kgen.return %[[R]]
-        %tmp2 = kgen.variant.create %err, 0 : <@Error, i32>
-        lit.return %tmp2 : !kgen.variant<@Error, i32>
+      // CHECK-NEXT: except
+      } except {
+        // CHECK-NEXT: kgen.return
+        lit.return
         lit.try.yield
       // CHECK-NEXT: else
       } else {
         // CHECK-NEXT: kgen.unreachable
 
         // expected-warning @+1 {{'else' logic in 'try' is unreachable}}
-        %tmp3 = kgen.variant.create %a, 1 : <@Error, i32>
-        lit.return %tmp3 : !kgen.variant<@Error, i32>
+        lit.return
         lit.try.yield
       // CHECK-NEXT: }
       } finally {
@@ -58,8 +52,7 @@ lit.file_module @FileModule {
 
       // CHECK-NEXT: kgen.unreachable
       // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
-      %tmp1 = kgen.variant.create %a, 1 : <@Error, i32>
-      lit.return %tmp1 : !kgen.variant<@Error, i32>
+      lit.return
       lit.end_func
     }
   }
@@ -145,32 +138,31 @@ lit.func @while_true() -> index {
 }
 
 // CHECK-LABEL: lit.func @if_false_raise
-lit.func @if_false_raise() throws -> !kgen.variant<@Error, index> {
+lit.func @if_false_raise() throws -> i1 {
   %false = index.bool.constant false
   hlcf.if %false {
     hlcf.yield
+  // CHECK: else
   } else {
-    %err = lit.struct.create () : () -> !lit.declref<@Error>
-    %tmp = kgen.variant.create %err, 0 : <@Error, index>
-    lit.return %tmp : !kgen.variant<@Error, index>
+    // CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+    // CHECK-NEXT: lit.error_return [[TRUE]]
+    lit.raise
     hlcf.yield
   }
   lit.end_func
 }
 
 // CHECK-LABEL: lit.func @raise_raise
-lit.func @raise_raise() throws -> !kgen.variant<@Error, index> {
+lit.func @raise_raise() throws {
   // CHECK: lit.try
   lit.try {
-    %err = lit.struct.create () : () -> !lit.declref<@Error>
     // CHECK: lit.try.raise
-    lit.raise %err : <@Error>
+    lit.raise
     lit.try.yield
   // CHECK-NEXT: except
-  } except (%err: !lit.declref<@Error>) {
-    %tmp = kgen.variant.create %err, 0 : <@Error, index>
-    // CHECK: kgen.return
-    lit.return %tmp : !kgen.variant<@Error, index>
+  } except {
+    // CHECK-NEXT: kgen.return
+    lit.return
     lit.try.yield
   // CHECK-NEXT: else
   } else {
@@ -183,111 +175,100 @@ lit.func @raise_raise() throws -> !kgen.variant<@Error, index> {
   lit.end_func
 }
 
-// CHECK-LABEL: @no_return_throws
-// CHECK-SAME ) -> !kgen.variant<@Error, none>
-lit.func @no_return_throws() throws -> !kgen.variant<@Error, none> {
-  %0 = kgen.param.constant: none = <#kgen.none>
-  %tmp2 = kgen.variant.create %0, 1 : <@Error, none>
-  lit.return %tmp2 : !kgen.variant<@Error, none>
-  // CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-  // CHECK-NEXT: %0 = kgen.variant.create %none
-  // CHECK-NEXT: kgen.return %0
+// CHECK-LABEL: lit.func @throwing_func
+lit.func @throwing_func[mut elt, mut lt](
+    %0[*""]: !lit.ref<@Error, mut elt> byref_error,
+    %1[*""]: !lit.ref<none, mut *[0,1]> byref_result
+) throws -> i1 {
+  // CHECK-NEXT: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+  // CHECK-NEXT: lit.error_return [[TRUE]]
+  lit.raise
   lit.end_func
 }
 
-// CHECK-LABEL: lit.func @throws
-// CHECK-SAME:  -> !kgen.variant<@Error, index>
-lit.func @throws(%e: !lit.declref<@Error>) throws -> !kgen.variant<@Error, index> {
-  // CHECK-NEXT: kgen.variant.create %e
-  %tmp = kgen.variant.create %e, 0 : <@Error, index>
-  lit.return %tmp : !kgen.variant<@Error, index>
-  lit.end_func
-}
+lit.struct.decl @Error {}
 
-// CHECK-LABEL: lit.func @ref
-// CHECK-SAME: !kgen.signature<() throws -> !kgen.variant<@Error, none>>
-lit.func @ref(%e: !lit.declref<@Error>,
-              %f: !kgen.signature<() throws -> !kgen.variant<@Error, none>>) throws -> !kgen.variant<@Error, none> {
-  lit.try {
-    // CHECK: = kgen.call @throws
-    kgen.call @throws(%e) : !lit.signature<("e": !lit.declref<@Error>) throws -> !kgen.variant<@Error, index>>
+// CHECK-LABEL: lit.func @throwing_calls
+lit.func @throwing_calls(
+    %f: !lit.signature<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
+) throws -> i1 {
+  %err = lit.var.decl "err" synth : !lit.ref<@Error, mut elt>
+  %result = lit.var.decl "result" synth : !lit.ref<none, mut lt>
+
+  // CHECK:      [[IS_ERR:%.*]] = lit.call @throwing_func
+  // CHECK-NEXT: hlcf.if [[IS_ERR]] {
+  // CHECK-NEXT:   lit.ownership.mark_initialized %err
+  // CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+  // CHECK-NEXT:   lit.error_return [[TRUE]]
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT:   lit.ownership.mark_initialized %result
+  // CHECK-NEXT:   hlcf.yield
+  // CHECK-NEXT: }
+  lit.call @throwing_func[mut elt, mut lt](%err, %result) : !lit.signature<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
+
+  %error = lit.var.decl "error" synth : !lit.ref<@Error, mut tlt>
+  // CHECK: lit.try {
+  lit.try %error : !lit.ref<@Error, mut tlt> {
+    // CHECK-NEXT: [[IS_ERR:%.*]] = lit.call_indirect %f
+    // CHECK-NEXT: hlcf.if [[IS_ERR]] {
+    // CHECK-NEXT:   lit.ownership.mark_initialized %error
+    // CHECK-NEXT:   lit.try.raise
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT:   lit.ownership.mark_initialized %result
+    // CHECK-NEXT:   hlcf.yield
+    // CHECK-NEXT: }
+    lit.call_indirect %f[mut tlt, mut lt](%error, %result) :  !lit.signature<[2](!lit.ref<@Error, mut *[0,0]> byref_error, !lit.ref<none, mut *[0,1]> byref_result) throws -> i1>
     lit.try.yield
-  } except (%err: !lit.declref<@Error>) {
-    // CHECK: except (
-    // CHECK-NEXT: kgen.unreachable
-    // expected-warning @+1 {{'except' logic is unreachable, try doesn't raise an exception}}
-    %tmp = kgen.variant.create %err, 0 : <@Error, none>
-    lit.return %tmp : !kgen.variant<@Error, none>
+  } except {
     lit.try.yield
   } else {
-    // CHECK: %[[V:.*]] = kgen.param.constant: none
-    // CHECK-NEXT: %[[R:.*]] = kgen.variant.create %[[V]]
-    // CHECK-NEXT: kgen.return %[[R]]
-    %none = kgen.param.constant: none = <#kgen.none>
-    %tmp2 = kgen.variant.create %none, 1 : <@Error, none>
-    lit.return %tmp2 : !kgen.variant<@Error, none>
+    lit.try.yield
+  } finally {
+    lit.try.yield
+  }
+  kgen.unreachable
+}
+
+// CHECK-LABEL: lit.func @unreachable_try
+lit.func @unreachable_try() {
+  lit.try {
+    lit.try.yield
+  } except {
+    // expected-warning @+1 {{'except' logic is unreachable, try doesn't raise an exception}}
+    index.constant 0
+    lit.try.yield
+  } else {
+    lit.return
     lit.try.yield
   } finally {
     lit.try.yield
   }
   // CHECK: kgen.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
-  kgen.param.constant: (!lit.declref<@Error>) throws -> !kgen.variant<@Error, index> = <@throws>
+  index.constant 0
   lit.end_func
 }
 
 // CHECK-LABEL: lit.func @suppressed_try
-lit.func @suppressed_try() throws -> !kgen.none {
+lit.func @suppressed_try() {
   lit.try {
     lit.try.yield
-  } except (%err: !lit.declref<@Error>) {
-    // CHECK: except (
+  } except {
+    // CHECK: except
     // CHECK-NEXT: kgen.unreachable
-    %none = kgen.param.constant: none = <#kgen.none>
+    index.constant 0
     lit.try.yield
   } else {
-    %none = kgen.param.constant: none = <#kgen.none>
-    lit.return %none : !kgen.none
+    index.constant 0
+    lit.return
     lit.try.yield
   } finally {
     lit.try.yield
   } {"suppressWarnings" = true}
   // CHECK: kgen.unreachable
   // expected-warning @+1 {{unreachable code after try statement that doesn't fall through}}
-  kgen.param.constant: (!lit.declref<@Error>) throws -> !kgen.variant<@Error, index> = <@throws>
+  index.constant 0
   lit.end_func
-}
-
-// CHECK-LABEL: @parametric_throws
-// CHECK-SAME:  -> !kgen.variant<@Error, none>
-lit.func @parametric_throws<fn: () throws -> !kgen.variant<@Error, none>>() throws -> !kgen.variant<@Error, none> {
-  // CHECK-NEXT: %[[MAYBE_ERR:.*]] = kgen.call_param[() throws -> !kgen.variant<@Error, none>: fn]()
-  kgen.call_param[() throws -> !kgen.variant<@Error, none>: fn]()
-
-  %0 = kgen.param.constant: none = <#kgen.none>
-  %tmp2 = kgen.variant.create %0, 1 : <@Error, none>
-  lit.return %tmp2 : !kgen.variant<@Error, none>
-  lit.end_func
-}
-
-// CHECK-LABEL: lit.file_module @Module
-lit.file_module @Module {
-  // CHECK-LABEL: lit.struct.decl @Struct
-  lit.struct.decl @Struct {
-    // CHECK-NEXT: field x : !kgen.signature<() throws -> !kgen.variant<@Error, none>>
-    lit.struct.field x : !kgen.signature<() throws -> !kgen.variant<@Error, none>>
-
-    // CHECK-LABEL: lit.func @throws
-    lit.func @throws(%self: !lit.declref<@Module::@Struct>) throws -> !kgen.variant<@Error, none> {
-      // CHECK-NEXT: !kgen.signature<() throws -> !kgen.variant<@Error, none>>
-      %x = lit.struct.extract %self[x] : !kgen.signature<() throws -> !kgen.variant<@Error, none>>
-        from !lit.declref<@Module::@Struct>
-      %0 = kgen.param.constant: none = <#kgen.none>
-      %tmp2 = kgen.variant.create %0, 1 : <@Error, none>
-      lit.return %tmp2 : !kgen.variant<@Error, none>
-      lit.end_func
-    }
-  }
 }
 
 // CHECK-LABEL: lit.func @coroutine() async -> index
@@ -306,44 +287,6 @@ lit.func @call_coroutine<coro: () async -> !kgen.none>() async -> !kgen.none {
   lit.async.call[() async -> !kgen.none: coro]()
   %0 = kgen.param.constant: none = <#kgen.none>
   lit.return %0 :  !kgen.none
-  lit.end_func
-}
-
-// CHECK-LABEL: lit.func @throwing_coro
-// CHECK-SAME: -> !kgen.variant<@Error, index>
-lit.func @throwing_coro<cond: i1, a>(%err: !lit.declref<@Error>) async|throws -> !kgen.variant<@Error, index> {
-  %c = kgen.param.constant: i1 = <cond>
-  hlcf.if %c {
-    // CHECK: %[[A:.*]] = kgen.param.constant = <a>
-    %a = kgen.param.constant = <a>
-    // CHECK-NEXT: %[[RESULT:.*]] = kgen.variant.create %[[A]]
-    // CHECK-NEXT: kgen.return %[[RESULT]]
-    %tmp = kgen.variant.create %a, 1 : <@Error, index>
-    lit.return %tmp : !kgen.variant<@Error, index>
-    hlcf.yield
-  } else {
-    hlcf.yield
-  }
-  // CHECK: %[[ERR:.*]] = kgen.variant.create %err
-  // CHECK-NEXT: kgen.return %[[ERR]]
-
-  %tmp2 = kgen.variant.create %err, 0 : <@Error, index>
-  lit.return %tmp2 : !kgen.variant<@Error, index>
-  lit.end_func
-}
-
-// CHECK-LABEL: lit.func @call_throwing_coro({{.*}}) throws|async ->
-lit.func @call_throwing_coro(%err: !lit.declref<@Error>) async|throws -> !kgen.variant<@Error, none> {
-  // CHECK-NEXT: callee: !lit.signature<("err": !lit.declref<@Error>) throws|async -> !kgen.variant<@Error, index>>
-  // CHECK-SAME: = <@throwing_coro<:i1 1, 0>>
-  kgen.param.declare callee: !lit.signature<("err": !lit.declref<@Error>) async|throws -> !kgen.variant<@Error, index>>
-    = <@throwing_coro<:i1 1, 0>>
-  // CHECK: lit.async.call[!lit.signature<("err": !lit.declref<@Error>) throws|async -> !kgen.variant<@Error, index>>: callee](%err)
-  %hdl = lit.async.call[!lit.signature<("err": !lit.declref<@Error>) async|throws -> !kgen.variant<@Error, index>> : callee](%err)
-
-  %0 = kgen.param.constant: none = <#kgen.none>
-  %tmp2 = kgen.variant.create %0, 1 : <@Error, none>
-  lit.return %tmp2 : !kgen.variant<@Error, none>
   lit.end_func
 }
 
@@ -400,7 +343,7 @@ lit.func @coroutine2() async -> index {
 lit.func @pointlessTry() -> !kgen.none {
   lit.try { // expected-warning {{try body doesn't raise an exception}}
     lit.try.yield
-  } except (%err: !lit.declref<@Error>) {
+  } except {
     lit.try.yield
   } else {
     lit.try.yield
@@ -413,18 +356,18 @@ lit.func @pointlessTry() -> !kgen.none {
 }
 
 // CHECK-LABEL: lit.func @reraise_in_try
-lit.func @reraise_in_try(%err: !lit.declref<@Error>) {
+lit.func @reraise_in_try() {
   // CHECK-NEXT: lit.try
   lit.try {
     // CHECK-NEXT: lit.try
     lit.try {
-      // CHECK-NEXT: lit.try.raise %err
-      lit.raise %err : <@Error>
+      // CHECK-NEXT: lit.try.raise
+      lit.raise
       lit.try.yield
     // CHECK-NEXT: except
-    } except (%reraise: !lit.declref<@Error>) {
-      // CHECK-NEXT: lit.try.raise %arg0
-      lit.raise %reraise : <@Error>
+    } except {
+      // CHECK-NEXT: lit.try.raise
+      lit.raise
       lit.try.yield
     // CHECK-NEXT: else
     } else {
@@ -437,7 +380,7 @@ lit.func @reraise_in_try(%err: !lit.declref<@Error>) {
     // CHECK: unreachable
     lit.try.yield
   // CHECK-NEXT: except
-  } except (%arg0: !lit.declref<@Error>) {
+  } except {
     // CHECK-NEXT: yield
     lit.try.yield
   // CHECK-NEXT: else
@@ -602,15 +545,6 @@ lit.func @nested_try_finally() {
   kgen.return
 }
 
-// CHECK-LABEL: lit.func @throwing_func
-lit.func @throwing_func<T: type>() throws -> !kgen.variant<@Error, T> {
-  %0 = lit.struct.create() : () -> !lit.declref<@Error>
-  // CHECK: %1 = kgen.variant.create %0, 0 : <@Error, T>
-  // CHECK: lit.error_return %1 : <@Error, T>
-  lit.raise %0 : <@Error>
-  lit.end_func
-}
-
 // CHECK-LABEL: lit.func @try_in_loop
 lit.func @try_in_loop(%arg0: i1) {
   lit.loop cond {
@@ -719,8 +653,7 @@ lit.trait.decl @Trait {
 lit.func @loop_with_cond_raise(%cond: i1) {
   lit.try {
     hlcf.if %cond {
-      %0 = lit.struct.create() : () -> !lit.declref<@Error>
-      lit.raise %0 : <@Error>
+      lit.raise
       hlcf.yield
     } else {
       hlcf.yield
@@ -739,8 +672,8 @@ lit.func @loop_with_cond_raise(%cond: i1) {
       lit.loop.yield
     }
     lit.try.yield
-  // CHECK: } except (
-  } except (%err: !lit.declref<@Error>) {
+  // CHECK: } except {
+  } except {
     // CHECK-NEXT: kgen.return
     lit.return
     kgen.unreachable
@@ -862,7 +795,7 @@ lit.func @mangle_params_finally_1<x>(%c: i1 borrow) -> !kgen.none {
     }
     lit.try.yield
   // CHECK: } except
-  } except (%arg0: !lit.declref<@Error>) {
+  } except {
     // CHECK-NEXT: kgen.unreachable
     lit.try.yield
   // CHECK-NEXT: } else {
@@ -911,7 +844,7 @@ lit.func @mangle_params_finally_2<x>(%c: i1 borrow) -> !kgen.none {
     lit.return %none_0 : !kgen.none
     lit.try.yield
   // CHECK: } except
-  } except (%arg0: !lit.declref<@Error>) {
+  } except {
     // CHECK-NEXT: kgen.unreachable
     lit.try.yield
   // CHECK-NEXT: } else {
@@ -955,7 +888,7 @@ lit.func @mangle_params_finally_3<x>(%c: i1 borrow) -> !kgen.none {
       hlcf.yield
     }
     lit.try.yield
-  } except (%arg0: !lit.declref<@Error>) {
+  } except {
     lit.try.yield
   // CHECK: } else {
   } else {
@@ -1069,48 +1002,5 @@ lit.func @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   // CHECK-NEXT:    kgen.return %arg1 : index
   // CHECK-NEXT:  }
   // CHECK-NEXT: kgen.unreachable
-  lit.end_func
-}
-
-lit.func @raising(%i: i1 borrow) throws|ownedresult -> !kgen.variant<@Error, i1> {
-  %0 = kgen.variant.create %i, 1 : <@Error, i1>
-  lit.return %0 : !kgen.variant<@Error, i1>
-  lit.end_func
-}
-
-// CHECK-LABEL: lit.func @raiseInCondition
-lit.func @raiseInCondition(%arg0: i1, %arg1: i1, %arg2: i1) throws|ownedresult -> !kgen.variant<@Error, i1> {
-  // CHECK: [[V0:%*.]] = lit.call @raising(%arg2)
-  // CHECK-NEXT: [[V1:%*.]] = lit.handle_variant [[V0]] : (!kgen.variant<@Error, i1>) -> i1 {
-  // CHECK-NEXT:  [[V4:%*.]] = kgen.variant.take [[V0]], 1 : <@Error, i1>
-  // CHECK-NEXT:  lit.yield [[V4]] : i1
-  // CHECK-NEXT: } else {
-  // CHECK-NEXT:  [[V5:%*.]] = kgen.variant.take [[V0]], 0 : <@Error, i1>
-  // CHECK-NEXT:  [[V6:%*.]] = kgen.variant.create [[V5]], 0 : <@Error, i1>
-  // CHECK-NEXT:  lit.error_return [[V6]] : <@Error, i1>
-  // CHECK-NEXT:}
-  // CHECK-NEXT: [[V2:%*.]] = hlcf.if [[V1]] -> i1 {
-  // CHECK-NEXT:  hlcf.yield %arg0 : i1
-  // CHECK-NEXT:} else {
-  // CHECK-NEXT:  hlcf.yield %arg1 : i1
-  // CHECK-NEXT:}
-  %0 = hlcf.elif -> i1 {
-      %1 = lit.call @raising(%arg2) : !lit.signature<("i": i1 borrow) throws|ownedresult -> !kgen.variant<@Error, i1>>
-      %2 = lit.handle_variant %1 : (!kgen.variant<@Error, i1>) -> i1 {
-        %3 = kgen.variant.take %1, 1 : <@Error, i1>
-        lit.yield %3 : i1
-      } else {
-        %4 = kgen.variant.take %1, 0 : <@Error, i1>
-        lit.raise %4 : !lit.declref<@Error>
-        kgen.unreachable
-      }
-      hlcf.elif.yield %2 : i1
-  } then {
-    hlcf.yield %arg0 : i1
-  } else {
-    hlcf.yield %arg1 : i1
-  }
-  %5 = kgen.variant.create %0, 1 : <@Error, i1>
-  lit.return %5 : !kgen.variant<@Error, i1>
   lit.end_func
 }

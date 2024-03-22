@@ -84,17 +84,25 @@ fn if_examples(cond: __mlir_type.i1):
   d.noop()
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%d)
 
+fn use(err: Error):
+  pass
+
 # CHECK-LABEL: lit.func @"try_examples
 fn try_examples(cond: __mlir_type.i1, err: Error):
   # CHECK-NEXT: %a = lit.var.decl
   var a : MemExample
-  # CHECK-NEXT: lit.try {
+  # CHECK: lit.try
   # CHECK-NOT: %a
   try:
+    # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}Error::@"__copyinit__{{.*}}(%err)
+    # CHECK-NEXT: lit.ref.store [[ERR]], %__try_error__
     raise err
-  # CHECK: } except (%arg0:
+    # COM: The error value isn't used on the except branch, so it is immediately
+    # COM: destroyed.
+    # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load %__try_error__
+    # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}([[ERR]])
+  # CHECK: } except {
   except:
-    # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
     a = MemExample()
     # CHECK-NEXT: lit.try.yield
@@ -108,17 +116,21 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
 
   # CHECK-NEXT: %b = lit.var.decl
   var b : MemExample
+  # CHECK-NEXT: [[ERRSLOT:%.*]] = lit.var.decl "e"
   # CHECK-NEXT: lit.try {
   try:
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
     b = MemExample()
     # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
     raise err
-  # CHECK: } except (%arg0:
-  # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
+  # CHECK: } except {
+  # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
+  # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
+  # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
+  # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}([[ERR]])
   # CHECK-NEXT: lit.try.yield
-  except:
-    pass
+  except e:
+    use(e)
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   kgen.unreachable
   # CHECK-NEXT: }
@@ -129,17 +141,21 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
 
   # CHECK-NEXT: %c = lit.var.decl
   var c : MemExample
+  # CHECK-NEXT: [[ERRSLOT:%.*]] = lit.var.decl "e"
   # CHECK-NEXT: lit.try {
   try:
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
     c = MemExample()
     # CHECK-NOT: %c
     raise err
-  # CHECK: } except (%arg0:
-  # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
+  # CHECK: } except {
+  # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
+  # CHECK-NEXT: lit.call {{.*}}use{{.*}}([[ERR]])
+  # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load [[ERRSLOT]]
+  # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}([[ERR]])
   # CHECK-NEXT: lit.try.yield
-  except:
-    pass
+  except e:
+    use(e)
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   kgen.unreachable
   # CHECK-NEXT: }
@@ -150,16 +166,18 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
 
   # CHECK-NEXT: %d = lit.var.decl
   var d : MemExample
+  # CHECK-NEXT: [[ERRSLOT:%.*]] = lit.var.decl "e"
   # CHECK-NEXT: lit.try {
   try:
     # CHECK-NEXT:  hlcf.if %cond {
     if cond:
       raise err
     # CHECK-NOT: %d
-  # CHECK: } except (%arg0:
-  except:
-    # CHECK-NEXT: lit.call @{{.*}}Error::@"__del__{{.*}}"
-    # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
+  # CHECK: } except {
+  except e:
+    # CHECK: call {{.*}}Error::@"__del__
+    use(e)
+    # CHECK: lit.call @{{.*}}__init__{{.*}}(%d)
     d = MemExample()
     # CHECK-NEXT: lit.try.yield
   # CHECK-NEXT: } else {
@@ -179,7 +197,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
     var x : MemExample
     # CHECK: lit.try
     try:
-        # CHECK-NEXT: lit.try
+        # CHECK: lit.try
         try:
             # CHECK: hlcf.if
             if a:

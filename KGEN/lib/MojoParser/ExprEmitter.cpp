@@ -1776,17 +1776,20 @@ CValue ExprEmitter::emitMLIRIndex(const ExprNode *expr, ExprContext context) {
 //===----------------------------------------------------------------------===//
 // Return emission helpers.
 
-LogicalResult ExprEmitter::emitRaise(SRValue errorValue, Location raiseLoc) {
-  // Cannot raise in a parameter expression.
-  if (!builder)
-    return failure();
-  // If the raise is not in a try and the parent doesn't throw, it is not valid
-  // syntax.
-  if (!findOpProcessingRaise(builder->getInsertionBlock()))
-    return failure();
+MLValue ExprEmitter::findNearestErrorSlot() {
+  assert(builder && "cannot raise in a context without a builder");
+  Operation *opForRaise = findOpProcessingRaise(builder->getInsertionBlock());
+  // Return null to indicate that the current context cannot raise.
+  if (!opForRaise)
+    return {};
 
-  builder->create<LIT::RaiseOp>(raiseLoc, errorValue);
-  return success();
+  // In a raising function, the error slot is always the second last argument.
+  if (auto func = dyn_cast<LIT::FuncOp>(opForRaise)) {
+    return func.getArguments()[func.getNumArguments() -
+                               func.getSignature().getErrorSlotOffset()];
+  }
+  // Otherwise, the error slot is carried by the surrounding try op.
+  return cast<LIT::TryOp>(opForRaise).getErr();
 }
 
 void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,

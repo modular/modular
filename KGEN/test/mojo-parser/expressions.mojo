@@ -148,6 +148,15 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.return [[NONEVAL]]
   return v2
 
+struct DirectInit:
+  fn __init__(inout self):
+    pass
+
+fn direct_call_init():
+  var value: DirectInit
+  # COM: Make sure this doesn't warn about an unused result.
+  value.__init__()
+
 struct DummyFunc:
     fn __init__(inout self, f: def(Int)):
         pass
@@ -651,11 +660,11 @@ fn mvalueStructField():
   alias value = int.value
   alias foldToValue = Int(5).value
 
-# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !lit.ref<!object, mut {{.*}}> owned_in_mem)
+# CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !lit.ref<!object, mut {{.*}}> owned_in_mem,
 def defTests(a: Int, b: Int, untyped) -> None:
   # CHECK: %a_0 = lit.var.decl "a" imp
   # CHECK: lit.ref.store %a, %a_0
-  # CHECK: %b_1 = lit.var.decl "b" imp : !lit.ref<!Int, mut *"b`2">
+  # CHECK: %b_1 = lit.var.decl "b" imp
   # CHECK: lit.ref.store %b, %b_1
   # CHECK: %[[B:.*]] = lit.ref.load %b_1
   # CHECK-NEXT: lit.ref.store %[[B]], %a_0
@@ -1160,7 +1169,7 @@ fn function_types[
   # CHECK-SAME: p0: {{.*}}<<"a": !Int>(!lit.declref<#ParamType <:!Int *(0,0)>{{.*}}> borrow, |) -> !kgen.none
   p0: fn[a: Int](ParamType[a]) -> None,
 
-  # CHECK-SAME: p1: {{.*}}<<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>{{.*}}>() throws|ownedresult -> !kgen.variant<!Error, none>
+  # CHECK-SAME: p1: {{.*}}<[2]<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>(?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
   # CHECK-SAME: p2: {{.*}}<<"Ts": variadic<type> var>(!kgen.pack<*(0,0)> borrow_in_mem|pack) async -> !kgen.none
@@ -1181,13 +1190,13 @@ fn function_types[
   # CHECK-SAME: %{{.*}}: {{.*}}(!lit.ref<!Int, mut *[0,0]> byref, |) -> !kgen.none
   float4: fn(inout Int) -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) throws|ownedresult -> !kgen.variant<!Error, none>
+  # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |, ?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   float5: fn(Int) raises -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) async|capturing -> !kgen.none
   float6: async fn(Int) capturing -> None,
 
-  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!lit.ref<!Int, mut *[0,0]>, owned_in_mem> borrow|var) throws|ownedresult -> !kgen.variant<!Error, none>
+  # CHECK-SAME: %{{.*}}: {{.*}}(!kgen.variadic<!lit.ref<!Int, mut *[0,0]>, owned_in_mem> borrow|var, ?, {{.*}}) throws -> i1
   float7: def(*Int) -> None,
 
   # CHECK-SAME: %{{.*}}: {{.*}}<(!Int borrow = {10}, !StringLiteral borrow = {:string "foo"}, |) -> !kgen.none>

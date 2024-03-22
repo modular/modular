@@ -19,9 +19,9 @@ fn callRaisingFunction():
     # expected-note @below {{try surrounding the call in a 'try' block}}
     raisingFunction()
 
-fn cannotReRaise():
+fn cannotReRaise() raises:
     # expected-error @below {{no contextual error to reraise}}
-    # expected-note @below {{provide an error to raise or place 'raise'statement inside an except region}}
+    # expected-note @below {{provide an error to raise or place 'raise' statement inside an except region}}
     raise
 
 # expected-note @below {{or mark surrounding function as 'raises'}}

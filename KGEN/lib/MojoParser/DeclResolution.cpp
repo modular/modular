@@ -292,10 +292,10 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
     return shared.emitError(funcOp.getLoc(), message);
   };
 
-  // If the argument list has a byref result, ignore it for type checking
-  // purposes.
-  if (!parsedArgs.empty() &&
-      parsedArgs.back().convention == ParsedArgument::kConventionByRefResult) {
+  // If the argument list has a byref result or byref error, ignore it for type
+  // checking purposes.
+  while (!parsedArgs.empty() && parsedArgs.back().convention ==
+                                    ParsedArgument::kConventionByRefResult) {
     parsedArgs = parsedArgs.drop_back();
     argTypes = argTypes.drop_back();
   }
@@ -808,8 +808,10 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
 }
 
 PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
-  if (kgenConvention == ArgConvention::ByRefResult)
+  // Result slots are not handled through normal call argument resolution.
+  if (SignatureType::isResultSlot(kgenConvention))
     return PassingKind::Implicit;
+
   switch (kwArgHandling) {
   case KWArgHandling::kPositionalOnly:
     return PassingKind::PosOnly;
@@ -1102,8 +1104,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
        llvm::zip(funcSignature.getArgNames(), funcOp.getBody()->getArguments(),
                  funcSignature.getArgConventions())) {
     // Don't bind byref-result, it is handled specially by 'return'.
-    if (convention == ArgConvention::ByRefResult ||
-        convention == ArgConvention::ByRefError)
+    if (SignatureType::isResultSlot(convention))
       continue;
 
     // Figure out which decl corresponds to this argument so we can finish it.

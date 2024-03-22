@@ -233,14 +233,14 @@ StringRef DocString::CodeBlock::getRawCode() const {
 static ArrayRef<StringAttr> getFunctionArgumentNames(LIT::FuncOp funcOp) {
   // In general, each function argument must be documented, but exceptions are
   // pruned from the list below.
-  ArrayRef<StringAttr> argNames = funcOp.getSignature().getArgNames();
+  LITSignatureType sig = funcOp.getSignature();
+  ArrayRef<StringAttr> argNames = sig.getArgNames();
 
   // The compiler can insert an implicit `__result__` argument, which stores
   // memory-only results, at the end of an argument list.  Because these
   // arguments are hidden artifacts of the compiler, they don't need to be
   // documented.
-  if (funcOp.getSignature().hasMemoryOnlyResult())
-    argNames = argNames.drop_back();
+  argNames = argNames.drop_back(sig.hasMemoryOnlyResult() + sig.isThrows());
   // Methods take `self` as an explicit first argument, for which
   // documentation isn't required.
   if (isa<StructDeclOp, TraitDeclOp>(funcOp->getParentOp()) &&

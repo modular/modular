@@ -106,25 +106,6 @@ struct LITLowerer {
 };
 } // namespace
 
-static void lowerHandleVariant(HandleVariantOp handleVariantOp) {
-  TypedValue<VariantType> variantOperand = handleVariantOp.getVariant();
-  mlir::IRRewriter b{OpBuilder(handleVariantOp)};
-  Type successType = variantOperand.getType().getType(1);
-  auto variantIsOp =
-      b.create<VariantIsOp>(handleVariantOp.getLoc(), variantOperand, 1);
-  auto ifOp = b.create<HLCF::IfOp>(handleVariantOp.getLoc(),
-                                   TypeRange(successType), variantIsOp);
-  ifOp.getThenRegion().takeBody(handleVariantOp.getSuccessRegion());
-  ifOp.getElseRegion().takeBody(handleVariantOp.getErrorRegion());
-  if (auto litYield = dyn_cast<LIT::YieldOp>(
-          ifOp.getThenRegion().front().getTerminator())) {
-    mlir::IRRewriter b{OpBuilder(litYield)};
-    b.replaceOpWithNewOp<HLCF::YieldOp>(litYield, litYield->getOperands());
-  }
-  b.replaceAllUsesWith(handleVariantOp.getResult(0), ifOp->getResult(0));
-  handleVariantOp->erase();
-}
-
 /// Insert a cast of the specified value to the specified type, when `forceCast`
 /// is true, this inserts a cast even when the types agree.
 static Value castValue(Value v, Type ty, Location loc, OpBuilder &b,
@@ -212,8 +193,6 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       // get squashed by LowerLITTypes.
       b.replaceOpWithNewOp<mlir::UnrealizedConversionCastOp>(
           varDecl, ArrayRef<Type>(varDecl.getType()), allocOp.getResult());
-    } else if (auto handleVariant = dyn_cast<HandleVariantOp>(op)) {
-      lowerHandleVariant(handleVariant);
     } else if (auto returnOp = dyn_cast<ErrorReturnOp>(op)) {
       // The result type may be affected by implicit lifetime substitution.  If
       // so, insert a cast of the operand.  Get the nearest enclosing function.
@@ -223,7 +202,7 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       auto [implicitLifetimes, genParams, newFunctionType] =
           extractImplicitLifetimeParams(parentFunc);
       Value newOperand =
-          castValue(returnOp.getVariant(), newFunctionType.getResult(0),
+          castValue(returnOp.getResult(), newFunctionType.getResult(0),
                     returnOp.getLoc(), b);
       b.replaceOpWithNewOp<KGEN::ReturnOp>(returnOp, newOperand);
     } else if (auto returnOp = dyn_cast<KGEN::ReturnOp>(op)) {

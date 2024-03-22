@@ -1152,6 +1152,9 @@ void UninitializedValueScan::scanBlock(Block &block) {
       case OperandEffect::memMarkDestroyed:
         checkMarkDestroyed(operand, op);
         break;
+      case OperandEffect::memStoreConditional:
+        // This should have been handled by `checkIfLikeOp` above.
+        break;
       }
     }
 
@@ -1177,10 +1180,7 @@ void UninitializedValueScan::scanBlock(Block &block) {
 
       switch (effect) {
       case ResultEffect::ignore:
-        // HandleVariant has special handling of its result due to phase
-        // ordering in dtor insertion.
-        assert((!trackable || isa<HandleVariantOp>(op)) &&
-               "Lifetime trackable and CheckLifetimes disagree");
+        assert(!trackable && "Lifetime trackable and CheckLifetimes disagree");
         continue;
       case ResultEffect::regDefine:
         assert(trackable && !trackable.isIndirect && endsUninit &&
@@ -1301,24 +1301,20 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   liveValues.set();
 }
 
-/// This is HLCF::IfOp, ParamIfOp, or HandleVariantOp, which are all if-like.
+/// This is HLCF::IfOp, ParamIfOp, or a throwing call, which are all if-like.
 void UninitializedValueScan::checkIfLikeOp(Operation &op) {
   // 'if' operations treat the condition as a use but have live outs that are
   // the intersection of the live values produced by the then/else branches.
-  assert((isa<HLCF::IfOp, ParamIfOp, HandleVariantOp>(op)));
+  assert((isa<HLCF::IfOp, ParamIfOp>(op)));
   assert(op.getNumRegions() == 2 && op.getRegion(0).hasOneBlock() &&
          op.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
+
   BitVector liveValuesCopy = liveValues;
   scanBlock(op.getRegion(0).front());
   liveValuesCopy.swap(liveValues);
   scanBlock(op.getRegion(1).front());
   liveValues &= liveValuesCopy;
-
-  // HandleVariant defines an owned value as its result, it is produced by an
-  // enclosing lit.yield.  This is handled by the normal operand/result effects.
-  for (auto result : op.getResults())
-    checkDef(result, op, /*isDeref=*/false);
 }
 
 void UninitializedValueScan::checkLoopOp(HLCF::LoopOp loopOp) {
@@ -1372,12 +1368,6 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   bodySets.scanBlock(tryOp.getTryRegion().front());
 
   // The live-ins to the except block are the exceptSet.
-  assert(tryOp.getExceptRegion().getArguments().size() == 1 &&
-         "Should have a error value as the only argument");
-  if (ValueRef ref = valueSet.getDirectValueRef(
-          tryOp.getExceptRegion().getArgument(0), /*isDeref=*/false))
-    ref.markBits(exceptSet, true);
-
   liveValues = std::move(exceptSet);
   scanBlock(tryOp.getExceptRegion().front());
 
@@ -1538,7 +1528,7 @@ void DestructorInsertion::scanFunction(LIT::FuncOp func) {
   for (auto [argValue, conv] : llvm::zip(
            func.getArguments(), func.getSignature().getArgConventions())) {
     // Ignore undef-on-input values.
-    if (conv == ArgConvention::ByRefResult || conv == ArgConvention::InitSelf)
+    if (SignatureType::isResultSlot(conv) || conv == ArgConvention::InitSelf)
       continue;
 
     bool isIndirect = SignatureType::hasAddress(conv);
@@ -1657,6 +1647,9 @@ void DestructorInsertion::scanBlock(Block &block) {
              valueSet.getValueRefsForAccess(operand, /*isDeref=*/true))
           consumedValues.set(valueRef.endBit - 1);
         break;
+      case OperandEffect::memStoreConditional:
+        // This should have been handled by `checkIfLikeOp` above.
+        break;
       }
     }
 
@@ -1712,35 +1705,9 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
 /// resulting consume sets to make sure the upward propagated set of consumed
 /// values is consistent.
 void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
-  BitVector expectedConsumptionInThenNotElse(consumedValues.size());
-  // HandleVariant has a set of the byref-result and initself arguments that
-  // would be undefined when an error is thrown.  Make sure these are not
-  // assumed to be live in the error path.
-  if (auto handleVariantOp = dyn_cast<HandleVariantOp>(ifElseOp)) {
-    // This defines all of the results before doing anything else.
-    for (auto result : ifElseOp.getResults())
-      checkDef(result, ifElseOp, /*isDeref=*/false);
-
-    for (Value maybeInitValue : handleVariantOp.getMaybeInitializedValues()) {
-      // For each of the initialized values, is this the last reference?
-      // If so, generate a destructor call after this op.
-      checkUse(maybeInitValue, ifElseOp, /*isDeref=*/true);
-
-      // To prevent destructor calls from being generated for uninitialized
-      // values in the else block, we mark the exempt values in an expectation
-      // bit vector.
-      ValueRef uninitValueRef =
-          valueSet.getDirectValueRef(maybeInitValue, /*isDeref=*/true);
-      uninitValueRef.markBits(expectedConsumptionInThenNotElse, true);
-    }
-  }
-
   // Given an 'if' like operation (normal 'if' statement, parameter if, or a
-  // HandleVariant) perform dtor analysis for each side and insert destructors
+  // throwing call) perform dtor analysis for each side and insert destructors
   // at the top of the blocks to form a common upward-projected consume set.
-  //
-  // expectedConsumptionInThenNotElse is non-empty for HandleVariant ops - it
-  // includes a set of values that are not live in the else block.
   assert(ifElseOp.getNumRegions() == 2 && ifElseOp.getRegion(0).hasOneBlock() &&
          ifElseOp.getRegion(1).hasOneBlock() &&
          "if-like op should have two single-block regions");
@@ -1818,6 +1785,13 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
     if (valueInfo.isIndirect &&
         consumedValues[valueInfo.endValueBit - 1] !=
             thenConsumedValues[valueInfo.endValueBit - 1]) {
+      // If this is the init_self argument, its full object is consumed on an
+      // error return, so don't propagate that out of the conditional.
+      if (valueInfo.isFullObjectLiveOnEntry &&
+          isa<LIT::ErrorReturnOp>(ifElseOp.getRegion(0).front().back())) {
+        upwardConsumeSet.reset(valueInfo.endValueBit - 1);
+        continue;
+      }
       // If it is missing in one side or the other, then the upward set needs to
       // consume the entire object.
       upwardConsumeSet.set(valueInfo.startValueBit, valueInfo.endValueBit);
@@ -1841,12 +1815,6 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
   // needToConsumeInElse = upwardConsumeSet & ~consumedValues.
   BitVector needToConsumeInElse = upwardConsumeSet;
   needToConsumeInElse.reset(consumedValues);
-
-  // Filter out specific stuff for HandleVariant.  For normal if statements,
-  // this won't do anything because expectedConsumptionInThenNotElse will be
-  // empty.
-  //   needToConsumeInElse &= ~expectedConsumptionInThenNotElse
-  needToConsumeInElse.reset(expectedConsumptionInThenNotElse);
   destroyValuesAtEntry(needToConsumeInElse, ifElseOp.getRegion(1).front(),
                        ifElseOp.getLoc());
 
@@ -2092,13 +2060,6 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
   // in a field sensitive way.  The uninitialized checker verified that the
   // value is guaranteed live-in when nontrivial and indirect.
   if (!valueSet.isTrivial(value, isDeref) && !dryRun) {
-    // FIXME: we aren't tracking value sets completely right, so we end up with
-    // things like the __result__ slot in throwing functions that aren't
-    // tracked, but cannot be just destroyed here.  Refuse to do the right thing
-    // unless we see at least one thing that is indirect.  HACK HACK HACK.
-    if (valueSet.getValueRefsForAccess(value, isDeref).empty())
-      return;
-
     // Destructor call goes ahead of the mutation.
     mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
     emitDestructorCallAt(value, isDeref, builder, &op);

@@ -298,12 +298,10 @@ DeclResolver::aliasDeclsImpl(ArrayRef<ASTDecl *> decls, StringAttr name,
         auto getActualArgs =
             [](LITSignatureType signature) -> ArrayRef<mlir::Type> {
           ArrayRef<Type> inputTypes = signature.getArguments();
-          ArrayRef<ArgConvention> argConventions =
-              signature.getArgConventions();
-          // If there's a by-ref result type, it'll be the last argument.
-          if (!argConventions.empty() &&
-              argConventions.back() == ArgConvention::ByRefResult)
-            inputTypes = inputTypes.drop_back();
+          // Drop the trailing result slots. Memory-only functions and throwing
+          // functions each add a result slot.
+          inputTypes = inputTypes.drop_back(signature.hasMemoryOnlyResult() +
+                                            signature.isThrows());
           return inputTypes;
         };
 
@@ -704,7 +702,7 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   LIT::FuncOp userMainFn = cast<LIT::FuncOp>(funcDecl);
   LITSignatureType userMainSignature = userMainFn.getSignature();
   ASTDecl *containingDecl = funcDecl.getParentDecl();
-  Location loc = userMainFn.getLoc();
+  SMLoc loc = funcDecl.getLoc();
 
   // The type of main function described by the given func decl.
   enum MainKind {
@@ -728,8 +726,11 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
 
   // Process a main returning none.
   if (userResultType.isNoneType()) {
-    if (userMainSignature.isThrows())
+    if (userMainSignature.isThrows()) {
       mainKind = kRaisingNoneMain;
+      // Drop the error from the argument list.
+      argTypes = argTypes.drop_front(2);
+    }
 
     // Process a main returning object.
   } else if (userResultType.isEqualCanon(
@@ -742,8 +743,8 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     }
     mainKind = kRaisingObjectMain;
 
-    // Drop the result type from the argument list.
-    argTypes = argTypes.drop_front();
+    // Drop the result and error from the argument list.
+    argTypes = argTypes.drop_front(2);
 
     // Otherwise, this is an unrecognized main.
   } else {
@@ -879,8 +880,7 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
     ASTType argType = argTypeX;
 
     // We do not mangle byref results into the signature.
-    if (convention == ArgConvention::ByRefResult ||
-        convention == ArgConvention::ByRefError)
+    if (SignatureType::isResultSlot(convention))
       continue;
 
     // Update the mangled name for this argument.
