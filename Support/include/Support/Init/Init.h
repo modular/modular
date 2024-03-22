@@ -51,7 +51,7 @@ private:
   std::optional<LLCL::RuntimeOptions> runtimeOptions;
   Settings::RefreshPolicy refreshPolicy;
 
-  friend ErrorOr<ContextRef> CreateContext(StringRef, const Options &);
+  friend ErrorOr<ContextRef> createContext(StringRef, const Options &);
 };
 
 /// Create a new context, load all local configurations and entitlements,
@@ -61,7 +61,7 @@ private:
 /// The context will come loaded with a TelemetryContext, Settings and other
 /// basic common functionality. The function will also initialize crash
 /// reporting with the given programName.
-ErrorOr<ContextRef> CreateContext(StringRef programName,
+ErrorOr<ContextRef> createContext(StringRef programName,
                                   const Options &options = {});
 
 } // namespace Init
