@@ -170,7 +170,7 @@ fn test_fill():
     print(err)
 
     memset_zero(buf.data, buf.num_elements())
-    filled.simd_fill[4](0)
+    filled.fill(0)
     err = memcmp(buf.data, filled.data, filled.num_elements())
     # CHECK: 0
     print(err)

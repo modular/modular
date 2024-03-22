@@ -19,7 +19,7 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
 from algorithm import vectorize
 from buffer.list import Dim, DimList, _make_tuple
-from memory import stack_allocation
+from memory import stack_allocation, memset_zero
 from memory.unsafe import AddressSpace, DTypePointer, Pointer, _GPUAddressSpace
 
 from utils._serialize import _serialize
@@ -291,15 +291,10 @@ struct Buffer[
     @always_inline
     fn zero(self):
         """Sets all bytes of the Buffer to 0."""
-        llvm_intrinsic["llvm.memset", NoneType](
-            self.data.address,
-            UInt8(0).value,
-            self.bytecount().value,
-            (False).__mlir_i1__(),
-        )
+        memset_zero(self.data, len(self))
 
     @always_inline
-    fn simd_fill[simd_width: Int](self, val: Scalar[type]):
+    fn _simd_fill[simd_width: Int](self, val: Scalar[type]):
         """Assigns val to all elements in chunks of size simd_width.
 
         Parameters:
@@ -315,7 +310,7 @@ struct Buffer[
         @always_inline
         @parameter
         fn _fill[simd_width: Int](idx: Int):
-            self.store[width=simd_width](idx, SIMD[type, simd_width].splat(val))
+            self.store(idx, SIMD[type, simd_width].splat(val))
 
         vectorize[_fill, simd_width](len(self))
 
@@ -329,7 +324,7 @@ struct Buffer[
         Args:
             val: The value to store.
         """
-        self.simd_fill[simdwidthof[type]()](val)
+        self._simd_fill[simdwidthof[type]()](val)
 
     @always_inline
     fn tofile(self, path: Path) raises:
@@ -1347,7 +1342,7 @@ struct NDBuffer[
         memset_zero(self.data, len(self))
 
     @always_inline
-    fn simd_fill[simd_width: Int](self, val: Scalar[type]):
+    fn _simd_fill[simd_width: Int](self, val: Scalar[type]):
         """Assigns val to all elements in chunks of size simd_width.
 
         Parameters:
@@ -1359,7 +1354,7 @@ struct NDBuffer[
         if val == 0:
             self.zero()
             return
-        self.flatten().simd_fill[simd_width](val)
+        self.flatten()._simd_fill[simd_width](val)
 
     @always_inline
     fn tofile(self, path: Path) raises:
@@ -1382,7 +1377,7 @@ struct NDBuffer[
             val: The value to store.
         """
         debug_assert(self.is_contiguous, "Function requires contiguous buffer.")
-        self.simd_fill[simdwidthof[type]()](val)
+        self._simd_fill[simdwidthof[type]()](val)
 
     @staticmethod
     @always_inline("nodebug")
