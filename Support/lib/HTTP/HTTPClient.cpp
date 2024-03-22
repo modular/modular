@@ -294,6 +294,11 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
   CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list),
                    "set http header list");
 
+  // Set verbose mode if running in DEBUG mode
+  CHECK_CURL_ERROR(
+      curl_easy_setopt(curl, CURLOPT_VERBOSE, llvm::DebugFlag ? 1 : 0),
+      "set verbose mode");
+
   // Set the method.
   switch (request.method) {
   case HTTPRequest::GET:
