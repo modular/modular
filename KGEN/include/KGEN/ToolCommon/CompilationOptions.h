@@ -97,12 +97,12 @@ public:
   bool emitAllElaboratorDiags = false;
   std::string searchPaths = "";
 
-  // HACK: to disable llvm splitting for some cases if needed, e.g.:
+  // HACK: to disable llvm splitting for some cases.
   // - mojo REPL (#35345)
   // - graph compiler's compilation path where heuristics is needed for
   // performance.
   // - ...
-  bool disableLLVMModuleSplitting = false;
+  bool enableLLVMPerFunctionSplitting = true;
 };
 } // namespace M::KGEN
 

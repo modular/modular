@@ -57,11 +57,13 @@ private:
 /// to per function llvm compilation.
 class LLVMModulePerFunctionSplitterImpl {
 public:
-  explicit LLVMModulePerFunctionSplitterImpl(llvm::Module &module);
+  explicit LLVMModulePerFunctionSplitterImpl(llvm::Module &module,
+                                             size_t parallelismLevel);
 
   /// Split the LLVM module into multiple modules using the provided process
   /// function.
-  void split(llvm::function_ref<void(llvm::Module &, size_t idx)> processFn);
+  void
+  split(llvm::function_ref<void(llvm::Module *, size_t idx, bool)> processFn);
 
 private:
   struct ValueInfo {
@@ -89,6 +91,9 @@ private:
 
   /// The value info for each global value in the module.
   llvm::DenseMap<const llvm::Value *, ValueInfo> valueInfos;
+
+  /// Parallelism level to help guide control splitting concurrency.
+  size_t parallelismLevel;
 };
 } // namespace
 
@@ -106,9 +111,9 @@ void splitPerExported(
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
 void splitPerFunction(
-    llvm::Module &module,
-    function_ref<void(llvm::Module &, int64_t idx)> processFn) {
-  LLVMModulePerFunctionSplitterImpl impl(module);
+    llvm::Module &module, size_t parallelismLevel,
+    function_ref<void(llvm::Module *, int64_t idx, bool)> processFn) {
+  LLVMModulePerFunctionSplitterImpl impl(module, parallelismLevel);
   impl.split(processFn);
 }
 } // namespace M::KGEN
@@ -288,13 +293,13 @@ void LLVMModuleSplitterImpl::propagateUseInfo() {
 }
 
 LLVMModulePerFunctionSplitterImpl::LLVMModulePerFunctionSplitterImpl(
-    llvm::Module &module)
-    : mainModule(module) {}
+    llvm::Module &module, size_t parallelismLevel)
+    : mainModule(module), parallelismLevel(parallelismLevel) {}
 
 /// Split the LLVM module into multiple modules using the provided process
 /// function.
 void LLVMModulePerFunctionSplitterImpl::split(
-    llvm::function_ref<void(llvm::Module &, size_t idx)> processFn) {
+    llvm::function_ref<void(llvm::Module *, size_t idx, bool)> processFn) {
   // Compute the value info for each global in the module.
   auto computeUsers = [&](auto &value) { collectValueUsers(&value); };
   llvm::for_each(mainModule.functions(), computeUsers);
@@ -378,6 +383,7 @@ void LLVMModulePerFunctionSplitterImpl::split(
 
   int64_t totalSplit = 0;
   int64_t count = 0;
+  SmallVector<llvm::Value *> toSplit;
   for (auto &global : mainModule.globals()) {
     if (global.hasInternalLinkage())
       continue;
@@ -386,9 +392,7 @@ void LLVMModulePerFunctionSplitterImpl::split(
     // symbols into the same split.
     LLVM_DEBUG(llvm::dbgs()
                    << (count++) << ": split global: " << global << "\n";);
-    if (std::unique_ptr<llvm::Module> splitModule = splitValue(&global)) {
-      processFn(*splitModule, totalSplit++);
-    }
+    toSplit.emplace_back(&global);
   }
 
   for (auto &fn : mainModule.functions()) {
@@ -398,15 +402,24 @@ void LLVMModulePerFunctionSplitterImpl::split(
         fn.setLinkage(llvm::Function::LinkageTypes::WeakAnyLinkage);
       LLVM_DEBUG(llvm::dbgs()
                      << (count++) << ": split fn: " << fn.getName() << "\n";);
-      if (std::unique_ptr<llvm::Module> splitModule = splitValue(&fn)) {
-        processFn(*splitModule, totalSplit++);
-      }
+      toSplit.emplace_back(&fn);
     }
   }
 
+  for (auto [idx, value] : llvm::enumerate(toSplit)) {
+    // Synchronize incrementally to reduce pressuring memory to much for holding
+    // the cloned llvm modules.
+    bool sync = ((idx + 1) % (2 * parallelismLevel) == 0);
+    if (std::unique_ptr<llvm::Module> splitModule = splitValue(value))
+      processFn(splitModule.get(), totalSplit++, sync);
+  }
+
+  // Make sure sync happens when all values are processed.
+  processFn(nullptr, totalSplit, true);
+
   // If we had no functions to split, just process the main module.
   if (totalSplit == 0)
-    return processFn(mainModule, -1);
+    return processFn(&mainModule, -1, true);
 }
 
 // TODO(#33945) Special handling of coroutine related globals (hack, hack).
