@@ -82,17 +82,14 @@ struct IfYieldSelect : public OpRewritePattern<HLCF::IfOp> {
              domInfo.properlyDominates(value.getDefiningOp(), op);
     };
 
-    // If only one branch ends in a yield, then we can replace
-    // dominating results entirely with that yield.
+    // If only one branch ends in a yield, then we can replace dominating
+    // results entirely with that yield.
     if (!thenYield != !elseYield) {
       bool anyChanged = false;
       if (!thenYield)
         thenYield = elseYield;
       for (auto [result, operand] :
            llvm::zip(op.getResults(), thenYield.getOperands())) {
-        // Block arguments always dominate the IfOp, because it itself can never
-        // have block arguments. Otherwise, check dominance of the defining
-        // operation.
         if (dominatesIf(operand)) {
           b.replaceAllUsesWith(result, operand);
           anyChanged = true;
@@ -330,7 +327,8 @@ struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
 /// region and false in the 'else' region. Propagate this by replacing the
 /// condition with a constant in both regions.
 struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
-  using OpRewritePattern::OpRewritePattern;
+  ConditionPropagation(MLIRContext *ctx)
+      : OpRewritePattern(ctx, /*benefit=*/9) {}
 
   LogicalResult matchAndRewrite(HLCF::IfOp op,
                                 PatternRewriter &b) const override {

@@ -118,7 +118,8 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
 /// contents of the corresponding branch. If the block we're inserting doesn't
 /// end with YieldOp, operations following the original IfOp will be discarded.
 struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
-  using OpRewritePattern<IfOp>::OpRewritePattern;
+  RemoveStaticCondition(MLIRContext *ctx)
+      : OpRewritePattern(ctx, /*benefit=*/10) {}
 
   LogicalResult matchAndRewrite(IfOp op,
                                 PatternRewriter &rewriter) const override {
