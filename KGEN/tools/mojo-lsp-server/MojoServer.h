@@ -22,7 +22,8 @@ using SendDiagnosticsFn =
 using SendDiagnosticsFnRef =
     function_ref<void(const mlir::lsp::PublishDiagnosticsParams &)>;
 template <typename T>
-using OnResultFn = llvm::unique_function<void(T)>;
+using OnSemanticTokensResultFn =
+    llvm::unique_function<void(T result, bool outdated, bool invalid)>;
 
 /// This class implements all of the Mojo related functionality necessary for a
 /// language server. This class allows for keeping the Mojo specific logic
