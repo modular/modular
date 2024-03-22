@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "MojoLanguage.h"
-#include "../Utils/Errors.h"
 #include "Formatters/MojoDecoratorBasedTypeFormatter.h"
 #include "Formatters/MojoKGENVariantTypeFormatter.h"
 #include "Formatters/MojoListTypeFormatter.h"
@@ -127,7 +126,7 @@ popScalarBoolSummaryProvider(ValueObject &valobj, Stream &stream,
 static bool
 vectorLikeSummaryProvider(ValueObject &valobj, Stream &stream,
                           const TypeSummaryOptions &summaryOptions) {
-  auto numChildren = getExpectedValueOr(valobj.GetNumChildren(), 0u);
+  size_t numChildren = valobj.GetNumChildren();
   stream.Format("(size {0})", numChildren);
 
   // We'll limit the amount of characters to use when displaying children.
