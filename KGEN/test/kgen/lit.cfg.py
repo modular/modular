@@ -14,7 +14,7 @@ from lit.llvm import llvm_config
 config.name = "kgen"
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = [".mlir"]
+config.suffixes = [".mlir", ".mojo"]
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
