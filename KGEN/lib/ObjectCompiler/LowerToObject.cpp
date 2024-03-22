@@ -271,7 +271,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
     return failure();
 
   if (!options.saveTempsPrefix.empty()) {
-    std::string outPath = options.saveTempsPrefix + ".asm";
+    std::string outPath = saveTempsPrefix + ".asm";
     auto outFile = mlir::openOutputFile(outPath);
     if (!outFile)
       return failure();
