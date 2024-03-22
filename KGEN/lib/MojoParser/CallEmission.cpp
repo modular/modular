@@ -1331,13 +1331,6 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
     calleeRV = PValue(ParamOperatorAttr::get(POC::BindSignature, bindOperands));
   }
 
-  // If the indirect callee is an MRValue, make sure to emit it to an SRValue.
-  if (auto indirect = calleeRV.getIfMRValue()) {
-    calleeRV = emitSRValue({indirect, callExpr}, EC_CallCalleeValue);
-    if (!calleeRV)
-      return {};
-  }
-
   return emitCallUnchecked(calleeRV, callOperands, dest, callExpr);
 }
 
