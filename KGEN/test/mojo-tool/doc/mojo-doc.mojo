@@ -234,30 +234,6 @@ fn fn_with_implicit_params[p: Int](x: MyStruct):
     pass
 
 
-# CHECK:  "kind": "function",
-# CHECK:  "name": "fn_with_variant",
-# CHECK:  "overloads":
-# CHECK:      "args":
-# CHECK:          "description": "This is an argument."
-# CHECK:          "name": "arg"
-# CHECK:          "type": "Variant[Error, None]"
-# CHECK:      "signature": "fn_with_variant(arg: Variant[Error, None])"
-# CHECK:      "summary": "This is a function summary."
-
-
-fn fn_with_variant(
-    arg: __mlir_type[`!kgen.variant<`, Error, `, `, NoneType, `>`]
-):
-    """This is a function summary.
-
-    The is some kind of description.
-
-    Args:
-        arg: This is an argument.
-    """
-    return
-
-
 # CHECK:  "name": "pos_only_print",
 # CHECK:  "overloads":
 # CHECK:      "args":

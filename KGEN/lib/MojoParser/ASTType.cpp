@@ -614,13 +614,6 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     llvm::interleaveComma(fnType.getResults(), os,
                           [&](Type type) { ASTType(type).print(os, forDiag); });
     os << ")";
-  } else if (auto variantType = dyn_cast<VariantType>(type);
-             variantType && isa<VariadicAttr>(variantType.getVariadic())) {
-    os << "Variant[";
-    llvm::interleaveComma(variantType.getTypes(), os,
-                          [&](Type type) { ASTType(type).print(os, forDiag); });
-    os << "]";
-
   } else if (auto packType = dyn_cast<PackType>(type)) {
     // TODO: Remove this when packs switch to RefPackType
     os << '*';
