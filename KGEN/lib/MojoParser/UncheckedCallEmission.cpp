@@ -69,7 +69,7 @@ public:
       : emitter(emitter), callee(callee), callExpr(callExpr),
         loc(emitter.translateLocation(callExpr->getLoc())),
         evaluator(emitter.getDeclResolver()), dest(dest),
-        calleeSig(cast<SignatureType>(callee.getType().mlirType)),
+        calleeSig(cast<SignatureType>(callee.getRValueType())),
         afterCallActions(*this){};
 
   /// Emit IR for a single argument, according to its convention.
@@ -1005,7 +1005,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
                                       ValueDest &dest,
                                       const ExprNode *callExpr) {
   CallEmitter callEmitter(callee, callExpr, *this, dest);
-  auto calleeSig = cast<LITSignatureType>(callee.getType());
+  auto calleeSig = cast<LITSignatureType>(callee.getRValueType());
 
   // We first emit all the arguments.
   FailureOr<SmallVector<ASTExprAnd<AnyValue>>> argumentValuesOr =
@@ -1202,7 +1202,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       callEmitter.emitDirectCallWarnings(call, callOperands);
     }
   } else {
-    Value calleeVal = callee.getIfSRValue();
+    // If the callee isn't a PValue, it must be a dynamic callee.
+    Value calleeVal = emitSRValue({callee, callExpr}, EC_CallCalleeValue);
     assert(calleeVal && "don't have a callee of expected type");
     auto call = builder->create<CallIndirectOp>(loc, resultType, calleeVal,
                                                 implicitLifetimes, callArgs);
