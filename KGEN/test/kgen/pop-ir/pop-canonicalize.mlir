@@ -1013,3 +1013,12 @@ kgen.func @large_int_memory_leak() -> !pop.scalar<si128> {
   %1 = pop.cast_from_builtin %0 : si128 to !pop.scalar<si128>
   kgen.return %1 : !pop.scalar<si128>
 }
+
+// CHECK-LABEL: kgen.func @select_true_false
+kgen.func @select_true_false(%arg0: i1) -> i1 {
+  // CHECK-NEXT: return %arg0 : i1
+  %0 = kgen.param.constant: i1 = <1>
+  %1 = kgen.param.constant: i1 = <0>
+  %2 = pop.select %arg0, %0, %1 : i1
+  kgen.return %2 : i1
+}

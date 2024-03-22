@@ -921,6 +921,19 @@ OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
   if (auto cond = dyn_cast_if_present<BoolAttr>(adaptor.getCondition()))
     return cond.getValue() ? getTrueValue() : getFalseValue();
 
+  // Fold `select x, true, false -> x`.
+  auto trueAttr = dyn_cast_if_present<BoolAttr>(adaptor.getTrueValue());
+  auto falseAttr = dyn_cast_if_present<BoolAttr>(adaptor.getFalseValue());
+  if (trueAttr && falseAttr && trueAttr.getValue() == true &&
+      falseAttr.getValue() == false)
+    return getCondition();
+
+  // Fold `select x, undef, y -> y` and `select x, y, undef -> y`.
+  if (isa_and_nonnull<UnknownAttr>(adaptor.getTrueValue()))
+    return getFalseValue();
+  if (isa_and_nonnull<UnknownAttr>(adaptor.getFalseValue()))
+    return getTrueValue();
+
   // `x ? y : y -> y`.
   if (getTrueValue() == getFalseValue())
     return getTrueValue();

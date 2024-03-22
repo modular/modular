@@ -5,11 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
+#include "mlir/IR/Dominance.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Pass/Pass.h"
@@ -59,6 +61,63 @@ struct IfToSelect : public OpRewritePattern<HLCF::IfOp> {
 
     b.replaceOp(op, replacements);
     return success();
+  }
+};
+
+struct IfYieldSelect : public OpRewritePattern<HLCF::IfOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(HLCF::IfOp op,
+                                PatternRewriter &b) const override {
+    auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
+    auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
+    // Constructing dominance info is cheap because we have single-block
+    // regions.
+    mlir::DominanceInfo domInfo;
+    auto dominatesIf = [&](Value value) {
+      // Block arguments always dominate the IfOp, because it itself can never
+      // have block arguments. Otherwise, check dominance of the defining
+      // operation.
+      return isa<BlockArgument>(value) ||
+             domInfo.properlyDominates(value.getDefiningOp(), op);
+    };
+
+    // If only one branch ends in a yield, then we can replace
+    // dominating results entirely with that yield.
+    if (!thenYield != !elseYield) {
+      bool anyChanged = false;
+      if (!thenYield)
+        thenYield = elseYield;
+      for (auto [result, operand] :
+           llvm::zip(op.getResults(), thenYield.getOperands())) {
+        // Block arguments always dominate the IfOp, because it itself can never
+        // have block arguments. Otherwise, check dominance of the defining
+        // operation.
+        if (dominatesIf(operand)) {
+          b.replaceAllUsesWith(result, operand);
+          anyChanged = true;
+        }
+      }
+      return success(anyChanged);
+    }
+
+    // The end of the IfOp is unreachable.
+    if (!thenYield)
+      return failure();
+
+    // Both branches end in a yield. We can hoist each into a select.
+    bool anyChanged = false;
+    for (auto [result, trueVal, falseVal] :
+         llvm::zip(op.getResults(), thenYield.getOperands(),
+                   elseYield.getOperands())) {
+      if (dominatesIf(trueVal) && dominatesIf(falseVal)) {
+        Value select = b.create<POP::SelectOp>(op.getLoc(), op.getCond(),
+                                               trueVal, falseVal);
+        b.replaceAllUsesWith(result, select);
+        anyChanged = true;
+      }
+    }
+    return success(anyChanged);
   }
 };
 
@@ -316,8 +375,9 @@ struct Canonicalizer : public impl::CanonicalizerBase<Canonicalizer> {
     for (mlir::RegisteredOperationName op : context->getRegisteredOperations())
       op.getCanonicalizationPatterns(owningPatterns, context);
 
-    owningPatterns.insert<IfToSelect, IndexifyComparison, InvertComparison,
-                          SimplifyCompareSelect, ConditionPropagation>(context);
+    owningPatterns
+        .insert<IfToSelect, IfYieldSelect, IndexifyComparison, InvertComparison,
+                SimplifyCompareSelect, ConditionPropagation>(context);
 
     patterns = mlir::FrozenRewritePatternSet(std::move(owningPatterns));
     return success();
