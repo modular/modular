@@ -285,6 +285,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       CompilerTimeTraceScope traceScope("split-input-module");
       StringRef moduleName = llvmModule->getName();
 
+      // If we are saving the temp files we don't want to split.
+      bool savingTemps = !options.saveTempsPrefix.empty();
       // HACK HACK HACK https://github.com/modularml/modular/issues/22959
       // HACK: If we are generating PTX we don't want to split.
       bool generatingPtx =
