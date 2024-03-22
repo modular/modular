@@ -178,9 +178,6 @@ struct EngineNumpyView:
 
         Args:
             tensor: Numpy Array backing the view.
-
-        Returns:
-            An instance of EngineNumpyView of given array.
         """
         self._np = _Numpy()
         self._obj = tensor
