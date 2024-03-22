@@ -303,6 +303,8 @@ struct EngineTensorSpec(Stringable, CollectionElement):
                 dim = self[i]
             except err:
                 abort("unreachable condition")
+                while True:
+                    pass
 
             if not dim:
                 shape_list.append(None)
