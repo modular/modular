@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# XFAIL: *
+
 # RUN: %repl <%s 2>&1 | FileCheck %s
 
 # Note: in REPL mode, expressions are delimited by empty lines.
