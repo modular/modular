@@ -104,3 +104,48 @@ kgen.func @not_cmp(%arg0: index, %arg1: index) -> i1 {
   // CHECK-NEXT: return %0
   kgen.return %3 : i1
 }
+
+// CHECK-LABEL: kgen.func @select_variant_is_0
+kgen.func @select_variant_is_0(%var: !kgen.variant<index, i64>) -> (index, i64) {
+  %0 = kgen.param.constant = <*?>
+  %1 = kgen.param.constant: i64 = <*?>
+  %2 = kgen.variant.is %var, 0 : !kgen.variant<index, i64>
+  // CHECK-NEXT: [[A:%.*]] = kgen.variant.take %arg0, 0
+  // CHECK-NEXT: [[B:%.*]] = kgen.variant.take %arg0, 1
+  %3 = kgen.variant.take %var, 0 : !kgen.variant<index, i64>
+  %4 = kgen.variant.take %var, 1 : !kgen.variant<index, i64>
+  %5 = pop.select %2, %3, %0 : index
+  %6 = pop.select %2, %1, %4 : i64
+  // CHECK-NEXT: return [[A]], [[B]]
+  kgen.return %5, %6 : index, i64
+}
+
+// CHECK-LABEL: kgen.func @select_variant_is_1
+kgen.func @select_variant_is_1(%arg0: index, %c: i1) -> (index, index) {
+  // CHECK-NEXT: return %arg0, %arg0
+  %0 = kgen.param.constant = <*?>
+  %1 = pop.select %c, %0, %arg0 : index
+  %2 = pop.select %c, %arg0, %0 : index
+  kgen.return %1, %2 : index, index
+}
+
+// CHECK-LABEL: kgen.func @if_hoist_yield
+kgen.func @if_hoist_yield(%arg0: i1, %arg1: index) -> (index, index) {
+  %idx0 = index.constant 0
+  // CHECK: hlcf.if %arg0 {
+  %0 = hlcf.if %arg0 -> index {
+    hlcf.yield %idx0 : index
+  } else {
+    kgen.unreachable
+  }
+  // CHECK: [[SELECT:%.*]] = pop.select %arg0, %idx0, %arg1
+  // CHECK: hlcf.if %arg0 {
+  %2:2 = hlcf.if %arg0 -> index, index {
+    %1 = "something"() : () -> index
+    hlcf.yield %1, %idx0 : index, index
+  } else {
+    hlcf.yield %idx0, %arg1 : index, index
+  }
+  // CHECK: return %idx0, [[SELECT]]
+  kgen.return %0, %2#1 : index, index
+}
