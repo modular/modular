@@ -82,7 +82,13 @@ static int test(const State &state) {
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
-  initializeTelemetry(telemetryCtx, state, args, /*privateArgs=*/{});
+  initializeTelemetry(telemetryCtx, state, args,
+                      /*privateArgs=*/{options::OPT_I});
+
+  // Grab the additional import paths if they were provided.
+  std::vector<std::string> additionalImportPaths;
+  if (args.hasArg(options::OPT_I))
+    additionalImportPaths = args.getAllArgValues(options::OPT_I);
 
   // If an input was provided, use that as the test id. Otherwise, fallback to
   // the current working directory.
@@ -92,7 +98,8 @@ static int test(const State &state) {
   } else {
     testID = TestID(std::filesystem::current_path().string());
   }
-  ErrorOr<std::optional<Test>> testOr = Test::discoverFromID(testID);
+  ErrorOr<std::optional<Test>> testOr =
+      Test::discoverFromID(testID, additionalImportPaths);
   if (testOr.isError()) {
     llvm::errs() << "error: " << testOr.getError() << "\n";
     return 1;
@@ -125,7 +132,7 @@ static int test(const State &state) {
   }
 
   // Execute the test and print the results.
-  TestExecutionResult result = test->execute();
+  TestExecutionResult result = test->execute(additionalImportPaths);
   emitOutput(result);
   return result.getKind() == TestExecutionResult::kSuccess ? 0 : 1;
 }

@@ -87,6 +87,9 @@ public:
   /// Pop the last working directory from the parser context.
   void popWorkingDirectory();
 
+  /// Add a set of directories to the parser context's import directories.
+  void addImportDirectories(ArrayRef<std::string> directories);
+
   //===--------------------------------------------------------------------===//
   // Dumping
   //===--------------------------------------------------------------------===//

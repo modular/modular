@@ -57,6 +57,7 @@ public:
   /// If `lldbInitFile` is not empty, LLDB will silently execute all the
   /// commands in this file upon initialization of the kernel.
   LogicalResult initialize(StringRef mojoReplExe, StringRef workingDirectory,
+                           ArrayRef<std::string> additionalDirectories,
                            StringRef lldbInitFile);
 
   /// Start execution of the given cell identifier and expression string.

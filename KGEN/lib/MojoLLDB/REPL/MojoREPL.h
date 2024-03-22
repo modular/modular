@@ -37,10 +37,10 @@ public:
   static llvm::StringRef getPluginNameStatic() { return "Mojo REPL"; }
 
   /// Launch the entry point process that is used to JIT Mojo expressions.
-  MODULAR_VISIBILITY_EXPORT static llvm::Error
-  launchEntryPointProcess(lldb_private::Target &target,
-                          lldb_private::Debugger &debugger,
-                          StringRef workingDirectory = {});
+  MODULAR_VISIBILITY_EXPORT static llvm::Error launchEntryPointProcess(
+      lldb_private::Target &target, lldb_private::Debugger &debugger,
+      StringRef workingDirectory = {},
+      ArrayRef<std::string> additionalImportDirectories = {});
 
   /// Return the common help message to show in commands like `:help` or `:mojo
   /// help`.

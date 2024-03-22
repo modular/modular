@@ -28,3 +28,16 @@ def OutputOptionGroup : OptionGroup<"Output options">, Index<1>;
 def json : Flag<["--"], "json">,
   Group<OutputOptionGroup>, Index<0>,
   HelpText<"Format the output of the command as JSON.">;
+
+//===----------------------------------------------------------------------===//
+// Compilation Options
+//===----------------------------------------------------------------------===//
+
+def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<2>;
+
+// TODO: Remove this when we can infer additional import directories from the
+// test file's location.
+def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<0>,
+  MetaVarName<"PATH">,
+  HelpText<"Appends the given path to the list of directories to search for "
+           "imported Mojo files.">;

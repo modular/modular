@@ -9,7 +9,9 @@ import * as vscode from 'vscode';
 
 import {MojoContext} from '../mojoContext';
 import {MojoSDK} from '../mojoSDK';
+import * as config from '../utils/config';
 import {DisposableContext} from '../utils/disposableContext';
+
 import path = require('path');
 
 /**
@@ -216,8 +218,8 @@ export class MojoTestContext extends DisposableContext {
 
     // Invoke the `test` subcommand of the mojo tool to discover tests in the
     // document.
-    let result =
-        await this.runMojoTestCommand<MojoTestExecutionResult>(sdk, test.id);
+    let result = await this.runMojoTestCommand<MojoTestExecutionResult>(
+        sdk, test.id, workspaceFolder);
     if (!result) {
       markAllTestsErrored('fatal error: unable to process test execution');
       return;
@@ -263,8 +265,18 @@ export class MojoTestContext extends DisposableContext {
    * arguments. Returns the json output of running the command.
    */
   async runMojoTestCommand<Result>(sdk: MojoSDK, testId: string,
+                                   workspaceFolder: vscode.WorkspaceFolder|
+                                   undefined,
                                    args: string[] = []):
       Promise<Result|undefined> {
+    // Grab any additional include directories from the workspace settings.
+    const includeDirs = await config.get<string[]|undefined>("lsp.includeDirs",
+                                                             workspaceFolder) ||
+                        [];
+    for (const includeDir of includeDirs)
+      args.push("-I", includeDir);
+
+    // Build the command to run.
     var command = sdk.config.mojoDriverPath + " test --json " +
                   "'" + testId + "' " + args.join(' ');
     let env = process.env;
@@ -301,7 +313,7 @@ export class MojoTestContext extends DisposableContext {
     // Invoke the `test` subcommand of the mojo tool to discover tests in the
     // document.
     let mojoTestSuite = await this.runMojoTestCommand<MojoTest>(
-        sdk, document.uri.fsPath, [ '--co' ]);
+        sdk, document.uri.fsPath, workspaceFolder, [ '--co' ]);
     if (!mojoTestSuite || !mojoTestSuite.children) {
       this.controller.items.delete(document.uri.fsPath);
       return;
