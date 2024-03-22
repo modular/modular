@@ -306,7 +306,8 @@ static bool definesTestSuite(Operation *op) {
 
 /// This class is used to discover tests from within a specific Mojo file.
 struct Test::TestDiscovery {
-  TestDiscovery() {
+  TestDiscovery(ArrayRef<std::string> additionalImportPaths)
+      : additionalImportPaths(additionalImportPaths) {
     DialectRegistry registry;
     registerAllKGENDialects(registry);
     ctx.appendDialectRegistry(registry);
@@ -563,6 +564,7 @@ struct Test::TestDiscovery {
     // Process the mojo file, ignoring any diagnostics emitted along the way
     // (we don't care about emitting errors here, just discovering tests).
     llvm::SourceMgr sourceMgr;
+    sourceMgr.setIncludeDirs(additionalImportPaths);
     sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &diag, void *) {});
     MojoParserContext parserContext(sourceMgr, parserConfig);
     MojoASTDeclRef moduleDecl = parserContext.parseFileOrPackage(path);
@@ -668,15 +670,19 @@ struct Test::TestDiscovery {
   }
 
   mlir::MLIRContext ctx;
+  ArrayRef<std::string> additionalImportPaths;
 };
 
-ErrorOr<std::optional<Test>> Test::discoverFromID(const TestID &testID) {
+ErrorOr<std::optional<Test>>
+Test::discoverFromID(const TestID &testID,
+                     ArrayRef<std::string> additionalImportPaths) {
   std::filesystem::path path = testID.getFilePath();
 
   // Check that the path actually exists.
   std::error_code ec;
   if (!std::filesystem::exists(path, ec))
     return std::nullopt;
+  TestDiscovery testDiscovery(additionalImportPaths);
 
   // Check if the test specifies a specific suite within the path. In this
   // case the path should be some mojo source.
@@ -691,8 +697,8 @@ ErrorOr<std::optional<Test>> Test::discoverFromID(const TestID &testID) {
 
     // Read the test suite from the mojo source.
     ErrorOr<std::optional<Test>> testSuite =
-        TestDiscovery().discoverTestsInMojoSource(path,
-                                                  testSuiteName.value_or(""));
+        testDiscovery.discoverTestsInMojoSource(path,
+                                                testSuiteName.value_or(""));
     if (testSuite.isError() || !*testSuite || !testName)
       return testSuite;
 
@@ -705,11 +711,11 @@ ErrorOr<std::optional<Test>> Test::discoverFromID(const TestID &testID) {
   // If not, the file path either refers to a test suite for a file or a
   // directory.
   if (std::filesystem::is_directory(path, ec))
-    return TestDiscovery().discoverTestsInDirectory(path);
+    return testDiscovery.discoverTestsInDirectory(path);
 
   // The path is a mojo source file.
   if (Filesystem::isMojoSourceFile(path))
-    return TestDiscovery().discoverTestsInMojoSource(path);
+    return testDiscovery.discoverTestsInMojoSource(path);
 
   // TODO: Support doc tests defined in jupyter notebooks.
   return std::nullopt;
@@ -882,7 +888,9 @@ std::optional<TestExecutionResult> TestExecutionInstance::checkExecution() {
 //===----------------------------------------------------------------------===//
 
 /// Execute the given individual test, returning the result.
-static MaybeResolvedResult executeUnitOrDocTest(const TestID &test) {
+static MaybeResolvedResult
+executeUnitOrDocTest(const TestID &test,
+                     ArrayRef<std::string> additionalImportPaths) {
   auto emitInitError = [&](const Twine &error) {
     return processTestExecutorResults(
         test, {TestExecutionResult::buildInitError(test, error.str())});
@@ -914,9 +922,11 @@ static MaybeResolvedResult executeUnitOrDocTest(const TestID &test) {
       /*stdout=*/out,
       /*stderr=*/std::nullopt,
   };
-  auto processInfo = llvm::sys::ExecuteNoWait(
-      testExecutorPath, /*Args=*/{testExecutorPath, test.strref()}, /*Env=*/{},
-      redirects);
+  SmallVector<StringRef> args = {testExecutorPath, test.strref()};
+  for (StringRef path : additionalImportPaths)
+    llvm::append_range(args, ArrayRef<StringRef>{"-I", path});
+  auto processInfo =
+      llvm::sys::ExecuteNoWait(testExecutorPath, args, /*Env=*/{}, redirects);
 
   // Build an unresolved result that waits for the process to complete.
   auto instance = std::make_unique<TestExecutionInstance>(
@@ -927,21 +937,25 @@ static MaybeResolvedResult executeUnitOrDocTest(const TestID &test) {
 }
 
 /// Execute the given test or suite, returning the result.
-static MaybeResolvedResult executeTestOrSuite(const Test &test) {
+static MaybeResolvedResult
+executeTestOrSuite(const Test &test,
+                   ArrayRef<std::string> additionalImportPaths) {
   // If this is a test, execute it directly.
   const TestID &testID = test.getTestID();
   if (testID.getTest())
-    return executeUnitOrDocTest(testID);
+    return executeUnitOrDocTest(testID, additionalImportPaths);
   // If this is a doc test suite, we only need to execute the last test, each
   // of the other tests will be implicitly executed.
-  if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__"))
-    return executeUnitOrDocTest(test.getChildren().back().getTestID());
+  if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__")) {
+    return executeUnitOrDocTest(test.getChildren().back().getTestID(),
+                                additionalImportPaths);
+  }
 
   // Otherwise, this is a suite. Execute each of the children, and collect the
   // results.
   std::vector<MaybeResolvedResult> results;
   for (const Test &child : test.getChildren())
-    results.push_back(executeTestOrSuite(child));
+    results.push_back(executeTestOrSuite(child, additionalImportPaths));
 
   auto now = std::chrono::steady_clock::now();
   auto resolveFn = [&, now = now, results = std::move(results)]() mutable {
@@ -968,11 +982,12 @@ static MaybeResolvedResult executeTestOrSuite(const Test &test) {
   return MaybeResolvedResult(std::move(resolveFn));
 }
 
-TestExecutionResult Test::execute() const {
+TestExecutionResult
+Test::execute(ArrayRef<std::string> additionalImportPaths) const {
   // Execute this test and wait for it to resolve. We don't block here because
   // resolution of the result may involve communicating with multiple
   // test-executor processes.
-  MaybeResolvedResult result = executeTestOrSuite(*this);
+  MaybeResolvedResult result = executeTestOrSuite(*this, additionalImportPaths);
   while (failed(result.resolve()))
     ;
   return result.takeResolvedResult();

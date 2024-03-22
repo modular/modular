@@ -4,12 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not mojo test "%s" | FileCheck %s
-# RUN: not mojo test "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC
-# RUN: not mojo test "%s@doc_test_failure_first_cell().__doc__::1" | FileCheck %s --check-prefix=CHECK-DOC
-# RUN: not mojo test "%s::test_unit_failure()" | FileCheck %s --check-prefix=CHECK-UNIT
-# RUN: not mojo test --json "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC-JSON
+# RUN: not mojo test -I %S/inputs "%s" | FileCheck %s
+# RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC
+# RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__::1" | FileCheck %s --check-prefix=CHECK-DOC
+# RUN: not mojo test -I %S/inputs "%s::test_unit_failure()" | FileCheck %s --check-prefix=CHECK-UNIT
+# RUN: not mojo test -I %S/inputs --json "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC-JSON
 
+from imported_module import returns_false
 from testing import assert_true
 
 # CHECK: Total Discovered Tests: 8
@@ -52,7 +53,7 @@ from testing import assert_true
 
 
 fn test_unit_failure() raises:
-    assert_true(False)
+    assert_true(returns_false())
     return
 
 
@@ -65,7 +66,8 @@ fn doc_test_failure_first_cell():
 
     ```mojo
     from testing import assert_true
-    assert_true(False)
+    from imported_module import returns_false
+    assert_true(returns_false())
     ```
 
     ```mojo

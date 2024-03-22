@@ -233,7 +233,11 @@ public:
 
   /// Discover the test structure from the given Test ID. Returns nullopt if no
   /// test or suite was discovered, or error if an error occurred.
-  static ErrorOr<std::optional<Test>> discoverFromID(const TestID &testID);
+  /// `additionalImportPaths` is a list of additional include paths to use when
+  /// resolving mojo imports.
+  static ErrorOr<std::optional<Test>>
+  discoverFromID(const TestID &testID,
+                 ArrayRef<std::string> additionalImportPaths);
 
   //===--------------------------------------------------------------------===//
   // Display
@@ -245,7 +249,10 @@ public:
   // Execution
 
   /// Execute the test, returning all of the collected results.
-  TestExecutionResult execute() const;
+  /// `additionalImportPaths` is a list of additional include paths to use when
+  /// resolving mojo imports.
+  TestExecutionResult
+  execute(ArrayRef<std::string> additionalImportPaths) const;
 
 private:
   friend bool fromJSON(const llvm::json::Value &value, Test &result,

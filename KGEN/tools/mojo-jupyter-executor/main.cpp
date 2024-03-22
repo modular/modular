@@ -219,7 +219,8 @@ int main(int argc, char *argv[]) {
   MojoKernel kernel([](StringRef kind, StringRef msg) {
     llvm::outs() << "[" << kind << "] " << msg << "\n";
   });
-  if (failed(kernel.initialize(exePath, workingDirectory, lldbInitFile)))
+  if (failed(kernel.initialize(exePath, workingDirectory,
+                               /*additionalDirectories=*/{}, lldbInitFile)))
     return 1;
 
   // If we have a notebook path, execute it, otherwise run in REPL mode.

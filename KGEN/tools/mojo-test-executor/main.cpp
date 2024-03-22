@@ -57,6 +57,7 @@ emitInitializationError(ArrayRef<ExecutableTest> tests,
 
 /// Execute the given tests, emitting results to the given function.
 static void executeTests(StringRef workingDirectory,
+                         ArrayRef<std::string> includeDirs,
                          ArrayRef<ExecutableTest> tests,
                          function_ref<void(TestExecutionResult)> emitFn) {
   auto emitInitError = [&](StringRef error) {
@@ -82,7 +83,7 @@ static void executeTests(StringRef workingDirectory,
 
   // Initialize the kernel.
   MojoKernel kernel(outputFn, /*initializeMatPlotLib=*/false);
-  if (failed(kernel.initialize(exePath, workingDirectory,
+  if (failed(kernel.initialize(exePath, workingDirectory, includeDirs,
                                /*lldbInitFile=*/{})))
     return emitInitError("failed to initialize test executor kernel");
 
@@ -176,9 +177,10 @@ getUnitTest(const std::filesystem::path &path, const TestID &testID) {
 /// does not correspond to a valid test.
 static ErrorOr<std::vector<ExecutableTest>>
 getTestFromID(const std::filesystem::path &path, const TestID &id,
-              LLCL::Runtime &runtime) {
+              LLCL::Runtime &runtime, ArrayRef<std::string> includeDirs) {
   // Setup a source manager to handle diagnostics.
   llvm::SourceMgr sourceManager;
+  sourceManager.setIncludeDirs(includeDirs);
   std::string diagnosticBuffer;
   sourceManager.setDiagHandler(
       [](const llvm::SMDiagnostic &diag, void *rawBuffer) {
@@ -227,8 +229,10 @@ getTestFromID(const std::filesystem::path &path, const TestID &id,
   return getUnitTest(path, id);
 }
 
-static mlir::LogicalResult
-runTestExecutor(const TestID &id, LLCL::Runtime &runtime, bool prettyOutput) {
+static mlir::LogicalResult runTestExecutor(const TestID &id,
+                                           LLCL::Runtime &runtime,
+                                           bool prettyOutput,
+                                           ArrayRef<std::string> includeDirs) {
   JSONTransport transport(stdin, llvm::outs(), JSONStreamStyle::Standard,
                           prettyOutput);
   MessageHandler messageHandler(transport);
@@ -253,7 +257,8 @@ runTestExecutor(const TestID &id, LLCL::Runtime &runtime, bool prettyOutput) {
     return emitError("id does not correspond to a valid mojo source file");
 
   // Get the tests to execute.
-  ErrorOr<std::vector<ExecutableTest>> tests = getTestFromID(path, id, runtime);
+  ErrorOr<std::vector<ExecutableTest>> tests =
+      getTestFromID(path, id, runtime, includeDirs);
   if (tests.isError())
     return emitError(tests.getError());
 
@@ -261,7 +266,7 @@ runTestExecutor(const TestID &id, LLCL::Runtime &runtime, bool prettyOutput) {
   std::filesystem::path workingDirectory = path.parent_path();
   while (Filesystem::isMojoSourcePackagePath(workingDirectory))
     workingDirectory = workingDirectory.parent_path();
-  executeTests(workingDirectory.string(), *tests, onTestResultFn);
+  executeTests(workingDirectory.string(), includeDirs, *tests, onTestResultFn);
   return success();
 }
 
@@ -292,6 +297,9 @@ int main(int argc, char **argv) {
       llvm::cl::Positional,
       llvm::cl::desc("<Test ID>"),
   };
+  llvm::cl::list<std::string> includeDirs{
+      "I", llvm::cl::desc("Append directory to the search path list used to "
+                          "resolve imported modules in a test")};
   llvm::cl::ParseCommandLineOptions(argc, argv, "Mojo Test Executor");
 
   // Configure the logger.
@@ -299,5 +307,6 @@ int main(int argc, char **argv) {
 
   // Run the executor.
   auto runtime = LLCL::createUniqueRuntime(LLCL::RuntimeOptions());
-  return failed(runTestExecutor(TestID(testID), *runtime, prettyPrint));
+  return failed(
+      runTestExecutor(TestID(testID), *runtime, prettyPrint, includeDirs));
 }

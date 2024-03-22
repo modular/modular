@@ -295,6 +295,13 @@ void MojoTypeSystem::popWorkingDirectory() {
   impl->sourceMgr.setIncludeDirs(currentDirs);
 }
 
+void MojoTypeSystem::addImportDirectories(ArrayRef<std::string> directories) {
+  std::vector<std::string> currentDirs = impl->sourceMgr.getIncludeDirs();
+  currentDirs.insert(currentDirs.begin(), directories.begin(),
+                     directories.end());
+  impl->sourceMgr.setIncludeDirs(currentDirs);
+}
+
 //===----------------------------------------------------------------------===//
 // Type Queries
 //===----------------------------------------------------------------------===//

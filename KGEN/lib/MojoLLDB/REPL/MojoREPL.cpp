@@ -239,14 +239,13 @@ static llvm::Error createReplBreakpoint(Target &target) {
   return llvm::Error::success();
 }
 
-/// Launch the repl executable process within the target, and wait for the repl
-/// breakpoint to be hit.
-llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
-                                              Debugger &debugger,
-                                              StringRef workingDirectory) {
+llvm::Error MojoREPL::launchEntryPointProcess(
+    Target &target, Debugger &debugger, StringRef workingDirectory,
+    ArrayRef<std::string> additionalImportDirectories) {
   // Create a breakpoint in the target to anchor the REPL.
   if (llvm::Error error = createReplBreakpoint(target))
     return error;
+  MojoTypeSystem &typeSystem = getMojoTypeSystem(target);
 
   // The following disables a warning that is thrown when the entry-point is
   // built with optimizations. This warning pollutes the output and is not
@@ -262,8 +261,9 @@ llvm::Error MojoREPL::launchEntryPointProcess(Target &target,
     launchInfo.GetFlags().Set(lldb::eLaunchFlagDisableSTDIO);
   if (!workingDirectory.empty()) {
     launchInfo.SetWorkingDirectory(FileSpec(workingDirectory));
-    getMojoTypeSystem(target).pushWorkingDirectory(workingDirectory);
+    typeSystem.pushWorkingDirectory(workingDirectory);
   }
+  typeSystem.addImportDirectories(additionalImportDirectories);
 
   lldb::ModuleSP exeModule = target.GetExecutableModule();
 

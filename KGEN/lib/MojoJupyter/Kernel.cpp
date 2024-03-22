@@ -139,6 +139,7 @@ struct MojoKernel::Impl {
   /// If `lldbInitFile` is not empty, LLDB will silently execute all the
   /// commands in this file upon initialization of the kernel.
   LogicalResult initialize(StringRef mojoReplExe, StringRef workingDirectory,
+                           ArrayRef<std::string> additionalDirectories,
                            StringRef lldbInitFile);
 
   /// Start execution of the given cell identifier and expression string.
@@ -165,7 +166,8 @@ private:
   LogicalResult initializeTarget(StringRef mojoReplExe);
 
   /// Launch the mojo-repl-entry-point process.
-  LogicalResult launchReplProcess(StringRef workingDirectory);
+  LogicalResult launchReplProcess(StringRef workingDirectory,
+                                  ArrayRef<std::string> additionalDirectories);
 
   /// Initialize the inline matplotlib backend within the python interop.
   LogicalResult initializeMatplotlib();
@@ -226,10 +228,12 @@ MojoKernel::MojoKernel(OutputFn outputFn, bool initializeMatPlotLib)
     : impl(new Impl(std::move(outputFn), initializeMatPlotLib)) {}
 MojoKernel::~MojoKernel() = default;
 
-LogicalResult MojoKernel::initialize(StringRef mojoReplExe,
-                                     StringRef workingDirectory,
-                                     StringRef lldbInitFile) {
-  return impl->initialize(mojoReplExe, workingDirectory, lldbInitFile);
+LogicalResult
+MojoKernel::initialize(StringRef mojoReplExe, StringRef workingDirectory,
+                       ArrayRef<std::string> additionalDirectories,
+                       StringRef lldbInitFile) {
+  return impl->initialize(mojoReplExe, workingDirectory, additionalDirectories,
+                          lldbInitFile);
 }
 
 ExecutionFinishedState MojoKernel::startExecution(StringRef cellId,
@@ -274,7 +278,8 @@ EXPORT MojoKernel *initMojoKernel(RawOutputFn outputFn, const char *mojoReplExe,
       std::make_unique<MojoKernel>([=](StringRef type, StringRef output) {
         outputFn(type.data(), output.data());
       });
-  if (failed(kernel->initialize(mojoReplExe, workingDirectory, lldbInitFile)))
+  if (failed(kernel->initialize(mojoReplExe, workingDirectory,
+                                /*additionalDirectories=*/{}, lldbInitFile)))
     return nullptr;
   return kernel.release();
 }
@@ -361,9 +366,10 @@ static void runLLDBInitFile(Debugger &debugger, FileSpec lldbInitFile) {
   }
 }
 
-LogicalResult MojoKernel::Impl::initialize(StringRef mojoReplExe,
-                                           StringRef workingDirectory,
-                                           StringRef lldbInitFile) {
+LogicalResult
+MojoKernel::Impl::initialize(StringRef mojoReplExe, StringRef workingDirectory,
+                             ArrayRef<std::string> additionalDirectories,
+                             StringRef lldbInitFile) {
   // Initialize a new debugger instance.
   // We need to initialize with SBDebugger because that's the only way we can
   // support loading public plugins like MojoLLDB.
@@ -400,7 +406,7 @@ LogicalResult MojoKernel::Impl::initialize(StringRef mojoReplExe,
     return failure();
 
   // Launch the mojo-repl-entry-point process.
-  if (failed(launchReplProcess(workingDirectory)))
+  if (failed(launchReplProcess(workingDirectory, additionalDirectories)))
     return failure();
   process = target->GetProcessSP();
 
@@ -441,9 +447,10 @@ LogicalResult MojoKernel::Impl::initializeTarget(StringRef mojoReplExe) {
   return success();
 }
 
-LogicalResult MojoKernel::Impl::launchReplProcess(StringRef workingDirectory) {
-  if (llvm::Error err = MojoREPL::launchEntryPointProcess(*target, *debugger,
-                                                          workingDirectory)) {
+LogicalResult MojoKernel::Impl::launchReplProcess(
+    StringRef workingDirectory, ArrayRef<std::string> additionalDirectories) {
+  if (llvm::Error err = MojoREPL::launchEntryPointProcess(
+          *target, *debugger, workingDirectory, additionalDirectories)) {
     return reportKernelError(
         "Failed to launch `mojo-repl-entry-point` process: " +
         llvm::toString(std::move(err)));
