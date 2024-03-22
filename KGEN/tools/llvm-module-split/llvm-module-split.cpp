@@ -138,15 +138,10 @@ int main(int argc, char **argv) {
     }
   };
 
-  if (clOptions.perFunctionSplit) {
-    splitPerFunction(*module, 1,
-                     [&](llvm::Module *subModule, int64_t idx, bool) {
-                       if (subModule)
-                         outputLambda(*subModule, idx);
-                     });
-  } else {
+  if (clOptions.perFunctionSplit)
+    splitPerFunction(*module, outputLambda);
+  else
     splitPerExported(*module, outputLambda);
-  }
 
   if (output)
     output->keep();

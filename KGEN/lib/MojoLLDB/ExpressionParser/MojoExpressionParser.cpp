@@ -153,7 +153,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   // To make CompilationOptions being properly passed to KGEN compiler
   // without breaking existing tests.
   KGEN::CompilationOptions hackCompilationOptions;
-  hackCompilationOptions.enableLLVMPerFunctionSplitting = false;
+  hackCompilationOptions.disableLLVMModuleSplitting = true;
 
   populateElaborateModulePasses(
       *fullCompilationPM, typeSystem->getRuntime(), targetInfo,
@@ -195,7 +195,7 @@ MojoExpressionParser::Impl::compileFuncsToStandaloneArchive(
   // To make CompilationOptions being properly passed to KGEN compiler
   // without breaking existing tests.
   KGEN::CompilationOptions hackCompilationOptions;
-  hackCompilationOptions.enableLLVMPerFunctionSplitting = false;
+  hackCompilationOptions.disableLLVMModuleSplitting = true;
 
   // Create the target machine so we can run the optimizer.
   auto targetMachineOr =
