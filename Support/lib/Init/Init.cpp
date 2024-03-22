@@ -63,7 +63,7 @@ static void registerSignalHandler(StringRef programName) {
 
 Init::Options::Options() {}
 
-ErrorOr<ContextRef> Init::CreateContext(StringRef programName,
+ErrorOr<ContextRef> Init::createContext(StringRef programName,
                                         const Init::Options &options) {
   // Create the top-level context.
   ContextRef ctx = ContextRef::create();
