@@ -232,12 +232,17 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         llvm::raw_pwrite_stream &objStream,
                                         CompilationOptions &options,
                                         LLCL::Runtime &runtime,
-                                        bool emitAssembly) {
+                                        bool emitAssembly,
+                                        std::optional<size_t> moduleIdx) {
   CompilerTimeTraceScope traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
 
+  std::string saveTempsPrefix = options.saveTempsPrefix;
+  if (moduleIdx)
+    saveTempsPrefix += "." + std::to_string(moduleIdx.value());
+
   if (!options.saveTempsPrefix.empty()) {
-    std::string outPath = options.saveTempsPrefix + ".pre-opt.llvm.ir";
+    std::string outPath = saveTempsPrefix + ".pre-opt.ll";
     auto outFile = mlir::openOutputFile(outPath);
     if (!outFile)
       return failure();
@@ -249,7 +254,7 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
     return failure();
 
   if (!options.saveTempsPrefix.empty()) {
-    std::string outPath = options.saveTempsPrefix + ".post-opt.llvm.ir";
+    std::string outPath = saveTempsPrefix + ".post-opt.ll";
     auto outFile = mlir::openOutputFile(outPath);
     if (!outFile)
       return failure();

@@ -19,6 +19,7 @@
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Support/DebugStringHelper.h"
+#include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -35,6 +36,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/SplitModule.h"
@@ -294,16 +296,26 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       // FIXME(#25622): Disable module splitting for non-standalone archives.
       SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
       bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2 ||
-                         savingTemps || generatingPtx || !standalone ||
+                         generatingPtx || !standalone ||
                          options.disableLLVMModuleSplitting;
       if (noSplitting) {
         cacheResults.push_back(
             lowerLLVMModuleToObject(*llvmModule, op->getLoc()));
       } else {
+        if (!options.saveTempsPrefix.empty()) {
+          std::string outPath = options.saveTempsPrefix + ".pre-split.ll";
+          std::unique_ptr<llvm::ToolOutputFile> outFile =
+              mlir::openOutputFile(outPath);
+          if (outFile) {
+            outFile->os() << *llvmModule;
+            outFile->keep();
+          }
+        }
+
         splitPerExported(
             *llvmModule, [&](llvm::Module &inputModule, int64_t idx) {
               cacheResults.push_back(
-                  lowerLLVMModuleToObject(inputModule, op->getLoc()));
+                  lowerLLVMModuleToObject(inputModule, op->getLoc(), idx));
             });
       }
 
@@ -399,7 +411,8 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
 }
 
 LLCL::AnyAsyncValueRef
-ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
+ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
+                                        std::optional<size_t> moduleIdx) {
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "lowerLLVMModuleToObject(");
   *keyBuf << ")";
@@ -416,10 +429,10 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
   // This will enable some bare bones incremental compilation, as we will be
   // able to reuse object files for previously compiled slices.
   auto runTransformation =
-      [this, nonBitcodeKeySize, loc, keyBuf = keyBuf.copy()](
+      [this, nonBitcodeKeySize, loc, moduleIdx, keyBuf = keyBuf.copy()](
           WriteableBufferRef buf, LLCL::AnyAsyncValueRef chain) mutable {
         auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-        chain.andThenAsync([this, nonBitcodeKeySize, loc,
+        chain.andThenAsync([this, nonBitcodeKeySize, loc, moduleIdx,
                             output = output.copy(), keyBuf = std::move(keyBuf),
                             buf = buf.copy()]() mutable {
           // Extract out the bitcode from the key, as LLVM bitcode dies if the
@@ -459,7 +472,7 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc) {
 
           // Lower the LLVM to an object file.
           if (failed(compileLLVMToObject(*module, **machineOr, *buf, options,
-                                         runtime, emitAssembly))) {
+                                         runtime, emitAssembly, moduleIdx))) {
             return std::move(output).setToError(LLCL::getMLIRDiagnostic(
                 "failed to lower LLVM IR to object file", loc));
           }

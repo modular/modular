@@ -121,8 +121,9 @@ private:
                  CompilationOptions options, bool isJIT, bool isSearch);
 
   /// Lower the given LLVM module to an object file.
-  LLCL::AnyAsyncValueRef lowerLLVMModuleToObject(llvm::Module &module,
-                                                 Location loc);
+  LLCL::AnyAsyncValueRef
+  lowerLLVMModuleToObject(llvm::Module &module, Location loc,
+                          std::optional<size_t> moduleIdx = std::nullopt);
 
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
@@ -231,12 +232,12 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// Compile the given LLVM module to an object file and write it to objStream.
-LogicalResult compileLLVMToObject(llvm::Module &module,
-                                  llvm::TargetMachine &targetMachine,
-                                  llvm::raw_pwrite_stream &objStream,
-                                  CompilationOptions &options,
-                                  LLCL::Runtime &runtime,
-                                  bool emitAssembly = false);
+LogicalResult
+compileLLVMToObject(llvm::Module &module, llvm::TargetMachine &targetMachine,
+                    llvm::raw_pwrite_stream &objStream,
+                    CompilationOptions &options, LLCL::Runtime &runtime,
+                    bool emitAssembly = false,
+                    std::optional<size_t> moduleIdx = std::nullopt);
 } // namespace M::KGEN
 
 #endif // KGEN_COMPILER_OBJECTCOMPILER_H
