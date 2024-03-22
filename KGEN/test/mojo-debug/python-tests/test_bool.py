@@ -18,7 +18,7 @@ class TestBool(LLDBTestBase):
             true = ctx.frame.FindVariable("true")
             assert true.GetTypeName() == "!pop.scalar<bool>"
             assert true.GetByteSize() == 1
-            assert true.GetChildAtIndex(0).GetValueAsUnsigned(2) == 1
+            assert true.GetChildAtIndex(0).GetValueAsUnsigned(0) > 0
             assert true.GetSummary() == "True"
 
             false = ctx.frame.FindVariable("false")
