@@ -242,7 +242,8 @@ public:
 
   void onSemanticTokens(
       const mlir::lsp::URIForFile &uri,
-      OnResultFn<std::optional<std::vector<SemanticToken>>> onSemanticTokens);
+      OnSemanticTokensResultFn<std::optional<std::vector<SemanticToken>>>
+          onSemanticTokens);
 
   void onSignatureHelp(const mlir::lsp::URIForFile &uri,
                        const mlir::lsp::Position &pos,

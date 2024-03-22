@@ -1298,16 +1298,18 @@ MojoDocument::onReferencesSync(SMLoc smLoc, bool includeDeclaration) {
 
 void MojoDocument::onSemanticTokens(
     const lsp::URIForFile &uri,
-    OnResultFn<std::optional<std::vector<SemanticToken>>> onSemanticTokens) {
+    OnSemanticTokensResultFn<std::optional<std::vector<SemanticToken>>>
+        onSemanticTokens) {
   startTaskAfterParsing([uri, onSemanticTokens = std::move(onSemanticTokens)](
                             MojoDocument &doc) mutable {
     if (doc.isInvalidated)
-      return onSemanticTokens({});
+      return onSemanticTokens({}, /*outdated=*/true, /*invalid=*/false);
     // Get a document range for the given uri.
     SMRange range = doc.getFullRangeForURI(uri);
     if (!range.isValid())
-      return onSemanticTokens({});
-    onSemanticTokens(doc.onSemanticTokensSync(range));
+      return onSemanticTokens({}, /*outdated=*/false, /*invalid=*/true);
+    onSemanticTokens(doc.onSemanticTokensSync(range), /*outdated=*/false,
+                     /*invalid=*/false);
   });
 }
 
@@ -2320,7 +2322,12 @@ void MojoServer::onSemanticTokens(
       params.textDocument.uri,
       [this, uri = params.textDocument.uri.file().str(),
        responder = std::move(responder)](
-          std::optional<std::vector<SemanticToken>> tokens) mutable {
+          std::optional<std::vector<SemanticToken>> tokens, bool outdated,
+          bool invalid) mutable {
+        if (outdated)
+          return responder.replyOutdatedRequest();
+        if (invalid)
+          return responder.replyInvalidRequest();
         if (!tokens)
           return responder.reply({});
 
@@ -2349,7 +2356,12 @@ void MojoServer::onSemanticTokensDelta(
       params.textDocument.uri,
       [this, uri = params.textDocument.uri.file().str(),
        prevId = params.previousResultId, responder = std::move(responder)](
-          std::optional<std::vector<SemanticToken>> tokens) mutable {
+          std::optional<std::vector<SemanticToken>> tokens, bool outdated,
+          bool invalid) mutable {
+        if (outdated)
+          return responder.replyOutdatedRequest();
+        if (invalid)
+          return responder.replyInvalidRequest();
         if (!tokens)
           return responder.reply({});
         std::vector<lsp::SemanticToken> lspTokens =
