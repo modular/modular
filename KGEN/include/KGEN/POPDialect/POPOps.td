@@ -1120,7 +1120,7 @@ def POP_StackAllocationOp : POPOp<"stack_allocation",
 
   let builders = [
     OpBuilder<(ins "Type":$result,
-                   "int64_t":$count,
+                   CArg<"int64_t", "1">:$count,
                    CArg<"TypedAttr", "TypedAttr()">:$alignment,
                    CArg<"unsigned", "0">:$address_space)>,
     OpBuilder<(ins "Type":$result,

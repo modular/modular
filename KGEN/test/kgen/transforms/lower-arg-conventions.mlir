@@ -138,8 +138,8 @@ kgen.func @byref_throws(
   %__error__: !kgen.pointer<!Error> byref_error,
   %__result__: !kgen.pointer<index> byref_result
 ) throws -> i1 {
-  // CHECK: %[[ERROR:.*]] = pop.stack_allocation 1 x struct<(f32)>
   // CHECK: %[[VALUE:.*]] = pop.stack_allocation 1 x index
+  // CHECK: %[[ERROR:.*]] = pop.stack_allocation 1 x struct<(f32)>
 
   // CHECK: %[[COND:.*]] = kgen.param.constant: i1 = <?>
   %0 = kgen.param.constant: i1 = <?>

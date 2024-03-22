@@ -10,10 +10,10 @@
 //
 // 1. Move register passable types passed as `{owned,borrowed}_in_mem` to be
 //    passed in register.
-// 2. TODO(#20700): Promote register passable `byref_result` and `init_self`
-//    arguments to function results.
-//    - TODO(#20700): This also handles functions that throw.
-// 3. TODO(#20700):Sets all argument conventions to `none`, i.e. only `none`
+// 2. Promote register passable `byref_result` and `init_self` arguments to
+//    function results.
+//    - This also handles functions that throw.
+// 3. Sets all argument conventions to `none`, i.e. only `none`
 //    conventions are legal after this in the pipeline.
 //
 //===----------------------------------------------------------------------===//
@@ -60,25 +60,57 @@ static Type lowerPointerType(Type type) {
   return elType;
 }
 
+namespace {
+struct LoweredSignature {
+  SignatureType newSig;
+  SmallVector<size_t> changedIndices;
+  SmallVector<Type> newResTypes;
+
+  int valIdx = -1, errIdx = -1;
+  /// This enum indicates whether a byref_result/init_self argument and/or a
+  /// byref_error argument were promoted.
+  enum ABI { Neither, ErrorOnly, ValueOnly, Both };
+  int abiLowering = Neither;
+
+  /// Drop elements in a vector corresponding to the original input signature's
+  /// arguments.
+  template <typename T>
+  void dropOperandsFrom(SmallVectorImpl<T> &operands) {
+    // Drop error or result arguments that were dropped, starting with the
+    // greatermost so the indices remain valid.
+    int eIdx = errIdx, vIdx = valIdx;
+    if (eIdx > vIdx)
+      std::swap(eIdx, vIdx);
+    if (vIdx != -1)
+      operands.erase(operands.begin() + vIdx);
+    if (eIdx != -1)
+      operands.erase(operands.begin() + eIdx);
+  }
+
+  unsigned mapOperandIndex(unsigned index) {
+    if (valIdx != -1 && static_cast<unsigned>(valIdx) < index)
+      return index - 1;
+    return index;
+  }
+
+  bool isBoth() { return abiLowering == Both; }
+};
+}; // namespace
+
 /// Lowers the given signature if needed, and returns the non-result argument
 /// indices (on the input signature) that needed to be changed. A flag is also
 /// returned to indicate if the result of a signature with `byref_result` was
 /// changed, in which case the new signature will no longer have that argument.
-static std::tuple<SignatureType, SmallVector<size_t>, SmallVector<Type>, bool,
-                  bool, bool>
-lowerSignature(SignatureType sig) {
+static LoweredSignature lowerSignature(SignatureType sig) {
   ArrayRef<ArgConvention> oldConvs = sig.getArgConventions();
   SmallVector<ArgConvention> newConvs(oldConvs);
 
   ArrayRef<Type> oldInputTypes = sig.getArguments();
   SmallVector<Type> newInputTypes(oldInputTypes);
 
-  ArrayRef<Type> oldResTypes = sig.getResults();
-  SmallVector<Type> newResTypes(oldResTypes);
-
-  bool changedInitSelf = false, changedByRefResult = false,
-       changedByRefError = false;
-  SmallVector<size_t> changedIndices;
+  LoweredSignature s;
+  Type errType, valType;
+  s.newResTypes.assign(sig.getResults().begin(), sig.getResults().end());
   for (auto [idx, argTy, convention] :
        llvm::enumerate(sig.getArguments(), oldConvs)) {
     if (convention == ArgConvention::BorrowedInMem ||
@@ -87,76 +119,48 @@ lowerSignature(SignatureType sig) {
         // Update the info needed for the new signature.
         newConvs[idx] = ArgConvention::None;
         newInputTypes[idx] = newArgTy;
-        changedIndices.push_back(idx);
+        s.changedIndices.push_back(idx);
       }
-    } else if (convention == ArgConvention::ByRefResult ||
-               convention == ArgConvention::ByRefError ||
+    } else if (SignatureType::isResultSlot(convention) ||
                convention == ArgConvention::InitSelf) {
       Type loweredByrefResTy = lowerPointerType(argTy);
       if (!loweredByrefResTy)
         continue;
-      if (convention == ArgConvention::ByRefResult)
-        changedByRefResult = true;
-      else if (convention == ArgConvention::ByRefError)
-        changedByRefError = true;
-      else
-        changedInitSelf = true;
-
-      if (sig.isThrows()) {
-        // If the function is throwing, append the result type.
-        newResTypes.push_back(loweredByrefResTy);
-        // Make sure the error type comes first.
-        if (convention == ArgConvention::ByRefError && changedInitSelf)
-          std::swap(newResTypes[1], newResTypes[2]);
-        // If both the error and the result type are register-passable, then
-        // return a `!kgen.variant<ErrT, ValT>`.
-        if (changedByRefError && (changedInitSelf || changedByRefResult)) {
-          newResTypes.assign(
-              1, VariantType::get({newResTypes[1], newResTypes[2]}));
-        }
-      } else {
-        // If the function doesn't throw, we will return the lowered type.
-        newResTypes[0] = loweredByrefResTy;
-      }
+      bool isError = convention == ArgConvention::ByRefError;
+      s.abiLowering |=
+          isError ? LoweredSignature::ErrorOnly : LoweredSignature::ValueOnly;
+      (isError ? errType : valType) = loweredByrefResTy;
+      (isError ? s.errIdx : s.valIdx) = idx;
     }
   }
 
-  SignatureType newSig;
-  if (changedByRefResult || changedByRefError || changedInitSelf ||
-      !changedIndices.empty()) {
-    auto newInputTypesAR = ArrayRef<Type>(newInputTypes);
-    auto newConvAR = ArrayRef<ArgConvention>(newConvs);
-    if (changedInitSelf) {
-      // Drop the first argument.
-      newInputTypesAR = newInputTypesAR.drop_front();
-      newConvAR = newConvAR.drop_front();
+  if (s.abiLowering != LoweredSignature::Neither) {
+    if (!sig.isThrows()) {
+      s.newResTypes[0] = valType;
+    } else {
+      // Make sure the error type always comes first.
+      if (errType)
+        s.newResTypes.push_back(errType);
+      if (valType)
+        s.newResTypes.push_back(valType);
+      // If both are being rewritten, pack them into a variant.
+      if (s.isBoth())
+        s.newResTypes.assign(1, VariantType::get({errType, valType}));
     }
-    if (changedByRefResult) {
-      // Drop the last argument.
-      newInputTypesAR = newInputTypesAR.drop_back();
-      newConvAR = newConvAR.drop_back();
-    }
-    if (changedByRefError) {
-      // Drop the last argument.
-      newInputTypesAR = newInputTypesAR.drop_back();
-      newConvAR = newConvAR.drop_back();
-      // If we had but didn't change the byref_result, then we need to drop the
-      // second-last argument. Just swap the elements in the underlying vector.
-      if (!changedByRefResult && sig.hasMemoryOnlyResult()) {
-        std::swap(newInputTypes.end()[-2], newInputTypes.end()[-1]);
-        std::swap(newConvs.end()[-2], newConvs.end()[-1]);
-      }
-    }
+  }
+
+  if (s.abiLowering != LoweredSignature::Neither || !s.changedIndices.empty()) {
+    // Erase byref results promoted to register results from the argument list.
+    s.dropOperandsFrom(newInputTypes);
+    s.dropOperandsFrom(newConvs);
 
     auto newFnType =
-        FunctionType::get(sig.getContext(), newInputTypesAR, newResTypes);
-    newSig = SignatureType::get(newFnType, newConvAR, sig.getFnEffects(),
-                                sig.getMetadata());
+        FunctionType::get(sig.getContext(), newInputTypes, s.newResTypes);
+    s.newSig = SignatureType::get(newFnType, newConvs, sig.getFnEffects(),
+                                  sig.getMetadata());
   }
 
-  return std::make_tuple(newSig, std::move(changedIndices),
-                         std::move(newResTypes), changedInitSelf,
-                         changedByRefResult, changedByRefError);
+  return s;
 }
 
 /// Helper to perform the bulk of the lowering for `kgen.call` and
@@ -164,33 +168,29 @@ lowerSignature(SignatureType sig) {
 static void lowerCallOpImpl(
     Operation *op, Operation::operand_range oldOperands, SignatureType oldSig,
     function_ref<void(Operation *, SignatureType, ValueRange)> updateArgs) {
-  auto [newSig, changedIndices, newResTypes, changedInitSelf,
-        changedByRefResult, changedByRefError] = lowerSignature(oldSig);
+  LoweredSignature s = lowerSignature(oldSig);
+  SignatureType newSig = s.newSig;
   if (!newSig)
     return;
 
   // Calculate the new operands, accounting for a potentially promoted result.
   ImplicitLocOpBuilder b(op->getLoc(), op);
-  SmallVector<Value> newOperands(
-      oldOperands.drop_front(changedInitSelf).drop_back(changedByRefResult));
-  if (changedByRefError)
-    newOperands.erase(
-        std::prev(newOperands.end(),
-                  1 + (!changedByRefResult && oldSig.hasMemoryOnlyResult())));
-  for (size_t idx : changedIndices) {
-    newOperands[idx - changedInitSelf] =
+  SmallVector<Value> newOperands(oldOperands);
+  s.dropOperandsFrom(newOperands);
+  for (size_t idx : s.changedIndices) {
+    newOperands[s.mapOperandIndex(idx)] =
         b.create<POP::LoadOp>(oldOperands[idx]);
   }
 
   // Now update the result, if needed.
-  if (changedInitSelf || changedByRefResult || changedByRefError) {
+  if (s.abiLowering != LoweredSignature::Neither) {
     b.setInsertionPointAfter(op);
 
     OpResult res = op->getResult(0);
     if (newSig.isThrows()) {
       // If the callee throws and both error and result were rewritten into a
       // variant, then we have to extract the relevant values from the variant.
-      if (changedByRefError && (changedByRefResult || changedInitSelf)) {
+      if (s.isBoth()) {
         // Replace the i1 with a variant check.
         res.setType(newSig.getResults()[0]);
         auto isError = b.create<VariantIsOp>(res, 0);
@@ -198,21 +198,19 @@ static void lowerCallOpImpl(
 
         auto ifOp = b.create<HLCF::IfOp>(isError);
         b.createBlock(&ifOp.getThenRegion());
-        b.create<POP::StoreOp>(
-            b.create<VariantTakeOp>(res, 0),
-            oldOperands.end()[-1 - oldSig.hasMemoryOnlyResult()]);
+        b.create<POP::StoreOp>(b.create<VariantTakeOp>(res, 0),
+                               oldOperands[s.errIdx]);
         b.create<HLCF::YieldOp>();
 
         b.createBlock(&ifOp.getElseRegion());
-        b.create<POP::StoreOp>(
-            b.create<VariantTakeOp>(res, 1),
-            oldOperands[changedInitSelf ? 0 : oldOperands.size() - 1]);
+        b.create<POP::StoreOp>(b.create<VariantTakeOp>(res, 1),
+                               oldOperands[s.valIdx]);
         b.create<HLCF::YieldOp>();
       } else {
         // In this case, we need to reallocate the operation with a different
         // number of results.
         OperationState state(op->getLoc(), op->getName(), op->getOperands(),
-                             newResTypes);
+                             s.newResTypes);
         state.attributes = op->getAttrDictionary();
         Operation *newOp = b.create(state);
         res.replaceAllUsesWith(newOp->getResult(0));
@@ -224,12 +222,10 @@ static void lowerCallOpImpl(
         b.create<HLCF::YieldOp>();
         Block *elseBlock = b.createBlock(&ifOp.getElseRegion());
         b.create<HLCF::YieldOp>();
-        b.setInsertionPointToStart(changedByRefError ? thenBlock : elseBlock);
-        b.create<POP::StoreOp>(
-            newOp->getResult(1),
-            changedByRefError
-                ? oldOperands.end()[-1 - oldSig.hasMemoryOnlyResult()]
-                : oldOperands[changedInitSelf ? 0 : oldOperands.size() - 1]);
+        bool errorOnly = s.abiLowering == LoweredSignature::ErrorOnly;
+        b.setInsertionPointToStart(errorOnly ? thenBlock : elseBlock);
+        b.create<POP::StoreOp>(newOp->getResult(1),
+                               oldOperands[errorOnly ? s.errIdx : s.valIdx]);
         op->erase();
         op = newOp;
       }
@@ -242,8 +238,7 @@ static void lowerCallOpImpl(
 
       // Then just store the new callee result into the old byref result.
       res.setType(newSig.getResults()[0]);
-      b.create<POP::StoreOp>(
-          res, oldOperands[changedInitSelf ? 0 : oldOperands.size() - 1]);
+      b.create<POP::StoreOp>(res, oldOperands[s.valIdx]);
     }
   }
 
@@ -324,8 +319,8 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
 /// Lower the input conventions for a KGEN::FuncOp if needed.
 static void lowerFuncOp(FuncOp funcOp) {
   SignatureType oldSig = funcOp.getSignature();
-  auto [newSig, changedIndices, newResTypes, changedInitSelf,
-        changedByRefResult, changedByRefError] = lowerSignature(oldSig);
+  LoweredSignature s = lowerSignature(oldSig);
+  SignatureType newSig = s.newSig;
   if (!newSig)
     return;
 
@@ -340,38 +335,35 @@ static void lowerFuncOp(FuncOp funcOp) {
 
   Region &body = funcOp.getBodyRegion();
   auto b = OpBuilder::atBlockBegin(&body.front());
-  for (size_t idx : changedIndices) {
+  for (size_t idx : s.changedIndices) {
     BlockArgument arg = body.getArgument(idx);
     Location loc = addDI(arg.getLoc());
     auto ptr = b.create<POP::StackAllocationOp>(loc, arg.getType(), 1);
     auto storeOp = b.create<POP::StoreOp>(loc, arg, ptr);
-    arg.setType(newSig.getArguments()[idx - changedInitSelf]);
+    arg.setType(newSig.getArguments()[s.mapOperandIndex(idx)]);
     arg.replaceAllUsesExcept(ptr, storeOp);
   }
 
   Value newResPtr, newErrPtr;
-  if (changedByRefError) {
-    BlockArgument byrefResArg =
-        body.getArguments().end()[-1 - oldSig.hasMemoryOnlyResult()];
-    newErrPtr = b.create<POP::StackAllocationOp>(addDI(byrefResArg.getLoc()),
-                                                 byrefResArg.getType(), 1);
-    byrefResArg.replaceAllUsesWith(newErrPtr);
-    body.eraseArgument(byrefResArg.getArgNumber());
-  }
-  if (changedInitSelf || changedByRefResult) {
-    size_t argNumber = changedInitSelf ? 0 : body.getArguments().size() - 1;
-    BlockArgument byrefResArg = body.getArgument(argNumber);
-    newResPtr = b.create<POP::StackAllocationOp>(addDI(byrefResArg.getLoc()),
-                                                 byrefResArg.getType(), 1);
-    byrefResArg.replaceAllUsesWith(newResPtr);
-    body.eraseArgument(argNumber);
-  }
+  auto dropAlloca = [&b, &body, &addDI](std::pair<Value *, int> pair) {
+    if (pair.second == -1)
+      return;
+    BlockArgument arg = body.getArgument(pair.second);
+    *pair.first =
+        b.create<POP::StackAllocationOp>(addDI(arg.getLoc()), arg.getType());
+    arg.replaceAllUsesWith(*pair.first);
+    body.eraseArgument(pair.second);
+  };
+  std::pair<Value *, int> valPair{&newResPtr, s.valIdx},
+      errPair{&newErrPtr, s.errIdx};
+  if (errPair.second > valPair.second)
+    std::swap(errPair, valPair);
+  dropAlloca(valPair);
+  dropAlloca(errPair);
 
-  if (changedInitSelf || changedByRefResult || changedByRefError) {
+  if (s.abiLowering != LoweredSignature::Neither) {
     // Find all return sites in the function and rewrite them.
-    body.walk([&, newSig = newSig, changedByRefError = changedByRefError,
-               changedInitSelf = changedInitSelf,
-               changedByRefResult = changedByRefResult](ReturnOp returnOp) {
+    body.walk([&](ReturnOp returnOp) {
       b.setInsertionPoint(returnOp);
 
       // If the function doesn't throw, we just load and return the new
@@ -385,7 +377,7 @@ static void lowerFuncOp(FuncOp funcOp) {
       // If the function throws and we rewrote both the error and the
       // byref_result, we need to potentially unpack and repack the
       // result/error variant.
-      if (changedByRefError && (changedInitSelf || changedByRefResult)) {
+      if (s.isBoth()) {
         auto newVariantTy = cast<VariantType>(newSig.getResults()[0]);
         Value newRetVal = repackFuncVariantResult(returnOp, newVariantTy,
                                                   newResPtr, newErrPtr);
@@ -395,7 +387,7 @@ static void lowerFuncOp(FuncOp funcOp) {
 
       // Otherwise, we load either the error or the result, depending on which
       // got rewritten.
-      Value toLoad = changedByRefError ? newErrPtr : newResPtr;
+      Value toLoad = s.errIdx != -1 ? newErrPtr : newResPtr;
       assert(toLoad && "should have been rewritten");
       Value newRes = b.create<POP::LoadOp>(returnOp.getLoc(), toLoad);
       returnOp->insertOperands(1, newRes);
@@ -421,7 +413,7 @@ static void lowerArgConventions(Operation &op) {
     // would be lowered already).
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement([](SignatureType sig) {
-      SignatureType newSig = std::get<0>(lowerSignature(sig));
+      SignatureType newSig = lowerSignature(sig).newSig;
       return newSig ? newSig : sig;
     });
     auto metatype = TypeType::get(op.getContext());
