@@ -651,11 +651,18 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   ArrayRef<PassingKind> argPassingKinds =
       funcOp.getSignature().getArgPassingKinds();
 
-  // Check for a by-ref result type, which gets modeled as the first argument
+  // Check for a by-ref result type, which gets modeled as the last argument
   // (as it needs to be passed through memory), and we don't want to include
   // it in the normal argument list.
   if (!argConventions.empty() &&
       argConventions.back() == ArgConvention::ByRefResult) {
+    argTypes = argTypes.drop_back();
+    argNames = argNames.drop_back();
+    argConventions = argConventions.drop_back();
+    argPassingKinds = argPassingKinds.drop_back();
+  }
+  if (!argConventions.empty() &&
+      argConventions.back() == ArgConvention::ByRefError) {
     argTypes = argTypes.drop_back();
     argNames = argNames.drop_back();
     argConventions = argConventions.drop_back();

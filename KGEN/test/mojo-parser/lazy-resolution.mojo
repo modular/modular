@@ -10,7 +10,7 @@
 # gets pulled in.
 
 # CHECK: lit.func @"use_of_error_type
-# CHECK: except (%{{.*}}: !Error)
+# CHECK: lit.try %__try_error__ : !lit.ref<!Error,
 
 # CHECK: lit.package @builtin
 # CHECK: lit.file_module @error

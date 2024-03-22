@@ -139,16 +139,8 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
         llvm::unique_dyn_cast_or_null<FunctionDeclView>(parentDecl.getView());
     if (!functionView)
       return nullptr;
-
-    // As the function decl view doesn't store by-ref arguments, we need to
-    // adjust the arg index accordingly.
-    size_t index = bbArg.getArgNumber();
-    auto funcOp = cast<FuncOp>(parentDecl.getIfOperation());
-    if (funcOp.getSignature().getArgConvention(0) ==
-        KGEN::ArgConvention::ByRefResult)
-      --index;
     return std::make_unique<ArgumentDeclView>(
-        functionView->getArguments()[index]);
+        functionView->getArguments()[bbArg.getArgNumber()]);
   }
 
   // Now we inspect the IR checking for a parameter.

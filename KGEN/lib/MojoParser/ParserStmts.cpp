@@ -427,13 +427,14 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
       expr->kind == ExprNode::kAssign)
     return;
 
-  // If this type is a function with no arguments and an ignorable type, we
-  // emit a warning with a fix it hint suggesting that it get called.
+  // If this type is a function with no formal arguments and an ignorable type,
+  // we emit a warning with a fix it hint suggesting that it get called.
   // TODO: This is incorrect for default arguments and varargs.
   if (auto sig = dyn_cast<SignatureType>(valueType)) {
     // Get the result type without any error handling in the way.
     Type resultType = ASTType(sig).getSignatureUserResultType();
-    if (sig.getArguments().empty() && isImplicitlyIgnorableType(resultType)) {
+    if ((sig.getNumArguments() == sig.hasMemoryOnlyResult() + sig.isThrows()) &&
+        isImplicitlyIgnorableType(resultType)) {
       shared.emitWarning(expr->getLoc())
           << "function pointer was formed but not called, did you forget '()'s?"
           << expr->getRange()
@@ -704,16 +705,18 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   auto emitter = getEmitter();
 
   // Materialize the expression values into IR.
-  Value resultValue;
+  CValue resultValue;
   SignatureType declSig = decl.getSignature();
   if (declSig.hasMemoryOnlyResult()) {
     // If the result is memory-only, return into the result slot.
     ValueDest resultDest(MLValue(decl.getArguments().back()), EC_ReturnValue);
     if (!emitter.emitExpr(operandExpr, resultDest))
       return success();
-    // The register result is a None value.
-    resultValue = emitter.emitSRValue(
-        {PValue(shared.getNoneAttr()), operandExpr}, EC_ReturnValue);
+    // The register result is a None value, or false if it throws.
+    if (decl.isThrows())
+      resultValue = PValue(BoolAttr::get(getContext(), false));
+    else
+      resultValue = PValue(shared.getNoneAttr());
 
   } else {
     // Convert the returned value to the returned type of the function.
@@ -724,16 +727,14 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   if (!resultValue)
     return {};
 
-  auto mlirLoc = translateLocation(loc);
+  // The normal return type in a raising initializer is an i1.
+  if (declSig.hasInitSelfArg() && declSig.isThrows())
+    resultValue = PValue(BoolAttr::get(getContext(), false));
 
-  // If this function throws, we silently wrap the result value in the returned
-  // variant type.
-  ImplicitLocOpBuilder b(mlirLoc, builder);
-  if (decl.isThrows())
-    resultValue =
-        b.create<VariantCreateOp>(decl.getMLIRResultType(), resultValue, 1);
-
-  ExprEmitter::emitNormalReturn(b, resultValue, getParentDecl());
+  ImplicitLocOpBuilder b(translateLocation(loc), builder);
+  ExprEmitter::emitNormalReturn(
+      b, emitter.emitSRValue({resultValue, operandExpr}, EC_ReturnValue),
+      getParentDecl());
   return success();
 }
 
@@ -793,16 +794,22 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
   //      foo()   # rethrows the caught exception
   //
 
-  // If we had an error, emit it.
-  Value errorVal;
+  // Find the nearest error slot if the parser is in a context that can raise.
+  MLValue errSlot = getEmitter().findNearestErrorSlot();
+  if (!errSlot) {
+    InflightDiag diag =
+        emitError(loc.Start, "cannot raise error in this context") << loc;
+    diag.attachNote(loc.Start) << "try surrounding 'raise' in a 'try' block";
+    if (auto func =
+            getBlockParentOfType<LIT::FuncOp>(builder.getInsertionBlock()))
+      diag.attachNote(func.getLoc())
+          << "or mark surrounding function as 'raises'";
+    return success();
+  }
+  ValueDest dest(errSlot, EC_RaiseValue);
   if (errorExpr) {
-    ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), loc.Start);
-
-    // TODO: Support memory-only error values.
-    errorVal =
-        getEmitter().emitExprSRValue(errorExpr, EC_RaiseValue, errorType);
-    if (!errorVal)
-      return success();
+    // If we had an error, emit it.
+    getEmitter().emitExpr(errorExpr, dest);
   } else {
     // Figure it if we're in a try, and if so, which subregion.
     auto [tryOp, inExceptRegion] = findParentTry(builder.getInsertionBlock());
@@ -813,24 +820,17 @@ ParseResult StmtParser::parseRaiseStmt(size_t raiseIndent) {
     if (!inExceptRegion) {
       InflightDiag diag = emitError(loc.Start, "no contextual error to reraise")
                           << loc;
-      diag.attachNote(loc.Start) << "provide an error to raise or place 'raise'"
-                                    "statement inside an except region";
+      diag.attachNote(loc.Start) << "provide an error to raise or place "
+                                    "'raise' statement inside an except region";
+      dest.resetForError();
       return success();
     }
-    errorVal = tryOp.getExceptRegion().getArgument(0);
-  }
 
-  // Emit the logic to raise the error.
-  if (failed(getEmitter().emitRaise(errorVal, translateLocation(loc.Start)))) {
-    InflightDiag diag =
-        emitError(loc.Start, "cannot raise error in this context") << loc;
-    diag.attachNote(loc.Start) << "try surrounding 'raise' in a 'try' block";
-    if (auto func = getBlockParentOfType<LIT::FuncOp>(
-            getEmitter().builder->getInsertionBlock()))
-      diag.attachNote(func.getLoc())
-          << "or mark surrounding function as 'raises'";
+    // Re-raise the contextual exception.
+    getEmitter().emitResult(MRValue(tryOp.getErr()), SyntheticNode(loc.Start),
+                            dest);
   }
-
+  builder.create<LIT::RaiseOp>(translateLocation(loc.Start));
   return success();
 }
 
@@ -1095,11 +1095,15 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 /// try_stmt ::= "try" ":" suite "except" [identifier] ":" suite
 ///              ["else" suite]
 ParseResult StmtParser::parseTryStmt(size_t curIndent) {
-  Location loc = translateLocation(consumeToken(Token::kw_try).getLoc());
+  SMLoc smLoc = consumeToken(Token::kw_try).getLoc();
+  Location loc = translateLocation(smLoc);
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
-  auto tryOp = builder.create<TryOp>(loc);
+  ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
+  VarDeclOp errDecl = getEmitter().emitVarDecl("__try_error__", errorType, loc,
+                                               VarDeclKind::Synthesized);
+  auto tryOp = builder.create<TryOp>(loc, errDecl);
   if (parseToken(Token::colon, "expected ':' after 'try'"))
     return failure();
 
@@ -1110,12 +1114,6 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
   builder.create<TryYieldOp>(translateLocation(getToken().getLoc()));
 
   SMLoc errValLoc = getToken().getLoc();
-  ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), errValLoc);
-  if (!errorType.isRegisterPassable(errValLoc, shared)) {
-    emitError(errValLoc) << errorType << " is not a @register_passable type";
-    return failure();
-  }
-
   bool hasFinally = false;
   if (getToken().is(Token::kw_except)) {
     errValLoc = consumeToken().getLoc();
@@ -1128,27 +1126,18 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     if (parseToken(Token::colon, "expected ':' after 'except'"))
       return failure();
 
-    Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
-    Value errVal =
-        exceptBlock->addArgument(errorType, translateLocation(errValLoc));
+    builder.createBlock(&tryOp.getExceptRegion());
 
     // If an identifier was declared for the error value, add a declaration that
     // references it.
     SmallVector<ScopeDecl> decls;
     if (errName) {
-      auto func = dyn_cast<LIT::FuncOp>(parentDecl);
-      if (func && func.isDef()) {
-        // If we are parsing inside a 'def', create a mutable LValue to allow
-        // reassignment.
-        VarDeclOp varDecl = getEmitter().emitVarDecl(
-            errName, errVal.getType(), errVal.getLoc(), VarDeclKind::Implicit);
-        decls.push_back(ScopeDecl{DeclIRValue(varDecl), errValLoc, errName});
-        builder.create<RefStoreOp>(errVal.getLoc(), errVal, varDecl);
-      } else {
-        // If we are parsing inside an 'fn', the error declaration is an BValue,
-        // because any reference to it needs to copy/move out.
-        decls.push_back(ScopeDecl{SBValue(errVal), errValLoc, errName});
-      }
+      // If the user bound the error to a name, adjust the vardecl and add the
+      // declaration.
+      errDecl.setName(errName);
+      errDecl.setKind(VarDeclKind::Var);
+      errDecl->setLoc(translateLocation(errValLoc));
+      decls.push_back(ScopeDecl{DeclIRValue(errDecl), errValLoc, errName});
     }
 
     // Parse the except suite.
@@ -1172,11 +1161,13 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     if (!hasFinally)
       return emitTokenError("expected 'except' or 'finally' block");
     // Stub out the 'except' and 'else' regions.
-    Block *exceptBlock = builder.createBlock(&tryOp.getExceptRegion());
-    Value errVal =
-        exceptBlock->addArgument(errorType, translateLocation(errValLoc));
+    builder.createBlock(&tryOp.getExceptRegion());
     // Propagate the error if it is possible in this context.
-    (void)getEmitter().emitRaise(SRValue(errVal), loc);
+    if (MLValue errSlot = getEmitter().findNearestErrorSlot()) {
+      ValueDest dest(errSlot, EC_RaiseValue);
+      getEmitter().emitResult(MRValue(errDecl), SyntheticNode(smLoc), dest);
+      builder.create<LIT::RaiseOp>(loc);
+    }
     builder.create<TryYieldOp>(loc);
 
     builder.createBlock(&tryOp.getElseRegion());
@@ -1260,7 +1251,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // Determine whether we're in a region that is allowed to raise.  If so,
   // generate logic to deal with it.
-  bool inExceptRegion = findOpProcessingRaise(builder.getInsertionBlock());
+  MLValue errSlot = getEmitter().findNearestErrorSlot();
+  bool inExceptRegion = !!errSlot;
 
   // If this has a 'as TARGET' specifier, parse the name into targetName,
   // otherwise targetName will be null.
@@ -1366,32 +1358,23 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
       targetDeclResolved.setErroneous();
   }
 
-  // Lookup the error type if we're in an exception region.
-  ASTType errorType;
-  if (inExceptRegion) {
-    errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
-    if (!errorType.isRegisterPassable(smLoc, shared)) {
-      emitError(loc) << errorType << " is not a @register_passable type";
-      return failure();
-    }
-  } else {
-    // Pick any old type.
-    errorType = builder.getI1Type();
-  }
+  // Lookup the error type and emit a vardecl for the error.
+  ASTType errorType = shared.getBuiltinErrorType(getParentDecl(), smLoc);
+  VarDeclOp errDecl = getEmitter().emitVarDecl("__with_error__", errorType, loc,
+                                               VarDeclKind::Synthesized);
 
   // Restore the builder to its current insertion point after parsing.
   llvm::SaveAndRestore builderSaver(builder);
-  auto tryOp = builder.create<TryOp>(loc, /*suppressWarnings=*/true);
+  auto tryOp = builder.create<TryOp>(loc, errDecl, /*suppressWarnings=*/true);
   // Stub the 'except' and 'else' regions.
-  Block *parentExceptBlock = builder.createBlock(&tryOp.getExceptRegion());
-  Value exceptArg = parentExceptBlock->addArgument(errorType, loc);
+  builder.createBlock(&tryOp.getExceptRegion());
 
   // If the body of this try can throw, then the "except" block in it needs to
   // catch the current exception and then re-raise it.
   if (inExceptRegion) {
-    [[maybe_unused]] LogicalResult result =
-        getEmitter().emitRaise(SRValue(exceptArg), loc);
-    assert(succeeded(result) && "expected to be in except context");
+    ValueDest dest(errSlot, EC_RaiseValue);
+    getEmitter().emitResult(MRValue(errDecl), contextExp, dest);
+    builder.create<LIT::RaiseOp>(loc);
     builder.create<TryYieldOp>(loc);
   } else {
     // Otherwise it will be unreachable.
@@ -1479,7 +1462,10 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   }
 
   // Generate the nested try. Stub the 'else' and 'finally' regions.
-  auto nestedTryOp = builder.create<TryOp>(loc, /*suppressWarnings=*/true);
+  VarDeclOp nestedErrDecl = getEmitter().emitVarDecl(
+      "__inner_error__", errorType, loc, VarDeclKind::Synthesized);
+  auto nestedTryOp =
+      builder.create<TryOp>(loc, nestedErrDecl, /*suppressWarnings=*/true);
   builder.create<TryYieldOp>(loc);
   builder.createBlock(&nestedTryOp.getElseRegion());
   builder.create<TryYieldOp>(loc);
@@ -1496,8 +1482,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   //  except(%val : Error) {
   //    hlcf.if (
 
-  Block *exceptBlock = builder.createBlock(&nestedTryOp.getExceptRegion());
-  SRValue errorVal = exceptBlock->addArgument(errorType, loc);
+  builder.createBlock(&nestedTryOp.getExceptRegion());
 
   // Set the flag to 'False'.
   builder.create<RefStoreOp>(
@@ -1510,8 +1495,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   ValueDest exitResultDest(EC_WithExitResult);
   CValue exitResult = getEmitter().emitNamedMethodCall(
       "__exit__",
-      CallOperands(
-          {{MLValue(contextMgrDecl), contextExp}, {errorVal, contextExp}}),
+      CallOperands({{MLValue(contextMgrDecl), contextExp},
+                    {MBValue(nestedErrDecl), contextExp}}),
       exitResultDest, CallSyntax::kMethodCall, contextExp);
   RValue exitI1RVal =
       getEmitter().emitI1({exitResult, contextExp}, EC_WithExitResult);
@@ -1530,8 +1515,9 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
 
   // On false, we re-raise the error.
   builder.createBlock(&ifOp.getElseRegion());
-  [[maybe_unused]] LogicalResult result = getEmitter().emitRaise(errorVal, loc);
-  assert(succeeded(result) && "expected to be in except context");
+  ValueDest dest(MLValue(tryOp.getErr()), EC_RaiseValue);
+  getEmitter().emitResult(MRValue(nestedErrDecl), contextExp, dest);
+  builder.create<LIT::RaiseOp>(loc);
   builder.create<HLCF::YieldOp>(loc);
 
   // Emit the conditional call to __exit__.

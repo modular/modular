@@ -19,6 +19,7 @@
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/SourceMgr.h"
 
@@ -214,49 +215,60 @@ void StructEmitter::addTraitParent(StructDeclOp structOp, ASTDecl *traitDecl) {
 
 void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
   auto func = cast<LIT::FuncOp>(funcDecl);
+  LITSignatureType sig = func.getSignature();
   Block &body = *func.getBody();
   auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), &body);
 
-  auto makeNoneReturn = [&] {
-    // The function returns none.
-    Value retVal = b.create<ParamConstantOp>(shared.getNoneAttr());
+  // Insert the default end terminator.
+  auto terminate = llvm::make_scope_exit([&] { b.create<LIT::EndFuncOp>(); });
 
-    // Wrap the result value if necessary.
-    if (func.isThrows())
-      retVal = b.create<VariantCreateOp>(func.getMLIRResultType(), retVal, 1);
-    ExprEmitter::emitNormalReturn(b, retVal, funcDecl);
+  // If the function had an explicit return, just append the default end
+  // terminator.
+  if (!body.empty() && isa<LIT::ReturnOp, LIT::RaiseOp>(body.back()))
+    return;
+
+  auto makeNoneReturn = [&] {
+    // A none return either returns None through the SSA output or, in a
+    // throwing function, returns 0 as the error state.
+    if (sig.isThrows()) {
+      ExprEmitter::emitNormalReturn(
+          b, b.create<ParamConstantOp>(b.getBoolAttr(false)), funcDecl);
+    } else {
+      ExprEmitter::emitNormalReturn(
+          b, b.create<ParamConstantOp>(shared.getNoneAttr()), funcDecl);
+    }
   };
 
-  // If the function returns None, insert a "return None".
-  ASTType normalResult = func.getUserResultType();
-  if (normalResult.isNoneType() &&
-      // No default return needed if we ended in a return.
-      (body.empty() || !isa<LIT::ReturnOp>(body.back()))) {
-    makeNoneReturn();
-  } else if (func.isDef() && func.getSignature().hasMemoryOnlyResult()) {
-    // If this `def` returns an object but is missing a return, insert one
-    // automatically.
-    auto objType = shared.lookupObjectType(funcDecl, funcDecl.getLoc());
-    auto resultArg = func.getArguments().back();
-    if (objType && objType.isEqualCanon(
-                       cast<RefType>(resultArg.getType()).getElementType())) {
-      // Emit `object()` into the memory type return slot.
-      ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
-      emitter.builder = b;
-      ValueDest resultDest(MLValue(resultArg), EC_ReturnValue);
-      // Create a dummy node to pass down.
-      SyntheticNode locExpr(funcDecl.getLoc());
-      CValue result = emitter.emitConstructorCall(
-          objType, {}, locExpr, CallSyntax::kImplicitConvert, resultDest);
-      if (!result || !emitter.emitResult(result, locExpr, resultDest))
-        resultDest.resetForError();
-      else
-        makeNoneReturn();
-    }
+  // Initializers get a default return.
+  if (sig.hasInitSelfArg())
+    return makeNoneReturn();
+
+  ASTType resultType = func.getUserResultType();
+  ExprEmitter emitter(shared, funcDecl, EC_ReturnValue);
+  emitter.builder = b;
+  if (resultType.isNoneType()) {
+    if (!sig.hasMemoryOnlyResult())
+      return makeNoneReturn();
+
+    // Handle functions with memory-only results, which are returned through the
+    // result slot.
+    ValueDest resultDest(MLValue(func.getArguments().back()), EC_ReturnValue);
+    emitter.emitResult(PValue(shared.getNoneAttr()),
+                       SyntheticNode(funcDecl.getLoc()), resultDest);
+    return makeNoneReturn();
   }
 
-  // Insert the default end terminator.
-  b.create<LIT::EndFuncOp>();
+  // `def foo():` will return a None object by default.
+  if (func.isDef()) {
+    ASTType objType = shared.lookupObjectType(funcDecl, funcDecl.getLoc());
+    if (objType.isEqualCanon(resultType) && func.getNumArguments()) {
+      // Emit `object()` into the memory type return slot.
+      ValueDest resultDest(MLValue(func.getArguments().back()), EC_ReturnValue);
+      emitter.emitConstructorCall(objType, {}, SyntheticNode(funcDecl.getLoc()),
+                                  CallSyntax::kImplicitConvert, resultDest);
+      return makeNoneReturn();
+    }
+  }
 }
 
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
@@ -616,6 +628,10 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl,
       inputTypes = inputTypes.drop_front();
       convs = convs.drop_front();
     }
+    if (!convs.empty() && convs.back() == ArgConvention::ByRefError) {
+      inputTypes = inputTypes.drop_back();
+      convs = convs.drop_back();
+    }
     // TODO: Handle default arguments.
     if (inputTypes.size() != numFields)
       continue;
@@ -629,8 +645,7 @@ std::optional<ValueInfo> ValueInfo::createValueInfo(ASTDecl &structDecl,
          llvm::zip(inputTypes, convs, structOp.getFieldDecls())) {
       // Strip the pointer type if present.
       Type argType = type;
-      if (conv != ArgConvention::OwnedInReg &&
-          conv != ArgConvention::BorrowedInReg)
+      if (SignatureType::hasAddress(conv))
         argType = ASTType(argType).getReferenceElementType();
       StructFieldOp op = field;
       if (argType != op.getType()) {

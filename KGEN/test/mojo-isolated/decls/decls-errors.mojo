@@ -530,7 +530,7 @@ struct WrongType:
   def __init__(self): pass
 
   # expected-error @+1 {{'__init__' result type must be 'WrongType'}}
-  def __init__() -> Int: pass
+  fn __init__() -> Int: pass
 
   # expected-error @+1 {{existing value argument must be passed as borrowed}}
   fn __copyinit__(inout self, inout existing: Int): pass

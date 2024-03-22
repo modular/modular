@@ -229,6 +229,8 @@ def KGEN_SignatureType : KGENType<"Signature", "signature", [
     /// Determine whether an argument with the given input convention expects to
     /// have a pointer or reference type.
     static bool hasAddress(ArgConvention conv);
+    /// Return true if this is an automatically generated result slot.
+    static bool isResultSlot(ArgConvention conv);
 
     /// Return the number of input parameters.
     size_t getNumInputParams() { return getInputParamTypes().size(); }

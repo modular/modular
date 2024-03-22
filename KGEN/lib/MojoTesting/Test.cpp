@@ -387,15 +387,17 @@ struct Test::TestDiscovery {
     ASTType resultType(fn.getUserResultType());
     ArrayRef<Type> argTypes = fnSignature.getArguments();
 
-    // Check for a test of the form: `fn test()`.
-    if (resultType.isNoneType())
-      return argTypes.empty();
+    // Check for a test of the form: `fn test()` or `fn test() raises`.
+    if (resultType.isNoneType()) {
+      return argTypes.empty() ||
+             (fnSignature.isThrows() && argTypes.size() == 2);
+    }
 
     // Otherwise, check for a test of the form `def test()`. This form returns
     // an object and raises.
     return resultType.isEqualCanon(
                shared.lookupObjectType(context, context.getLoc())) &&
-           fnSignature.isThrows() && argTypes.size() == 1;
+           fnSignature.isThrows() && argTypes.size() == 2;
   }
 
   static bool doesDeclDefineUnitTest(MojoASTDeclRef decl, SharedState &shared) {

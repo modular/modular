@@ -64,6 +64,18 @@ Operation *LIT::findOpProcessingRaise(Block *currentBlock) {
   return nullptr;
 }
 
+LITSignatureType LIT::getCalleeType(Operation *op) {
+  if (auto call = dyn_cast<LIT::CallOp>(op))
+    return call.getCalleeType();
+  return cast<LIT::CallIndirectOp>(op).getCalleeType();
+}
+
+ValueRange LIT::getCalleeArguments(Operation *op) {
+  if (auto call = dyn_cast<LIT::CallOp>(op))
+    return call.getOperands();
+  return cast<LIT::CallIndirectOp>(op).getArguments();
+}
+
 SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
   SmallVector<FlatSymbolRefAttr> symbols;
   do {
@@ -80,13 +92,12 @@ SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
 
 Type LIT::getSignatureUserResultType(SignatureType sigType,
                                      ArrayRef<Type> argTypes, Type resultType) {
-  // If this function is a memory only type, return the by-ref result.
+  // If this function has an init_self argument, then it returns None.
+  if (sigType.hasInitSelfArg())
+    return KGEN::NoneType::get(sigType.getContext());
+  // If this function has a byref_result, return the reference element type.
   if (sigType.hasMemoryOnlyResult())
     return cast<RefType>(argTypes.back()).getElementType();
-
-  // Otherwise it is the normal result.
-  if (sigType.isThrows())
-    return cast<VariantType>(resultType).getType(1);
   return resultType;
 }
 
@@ -1576,12 +1587,6 @@ static void printRegionWithArgs(OpAsmPrinter &p, Operation *op,
   p.printRegion(region, /*printEntryBlockArgs=*/false);
 }
 
-LogicalResult TryOp::verify() {
-  if (getExceptRegion().getNumArguments() < 1)
-    return emitOpError("expected except region to have at least one argument");
-  return success();
-}
-
 void TryOp::getEntryTargets(ArrayRef<Attribute> operands,
                             SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.empty());
@@ -1890,64 +1895,10 @@ LogicalResult UnboundRegionOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// HandleVariantOp
-//===----------------------------------------------------------------------===//
-
-/// Return the range of values that should be mapped onto incoming values.
-ValueRange HandleVariantOp::getEntryArguments(std::optional<unsigned> target) {
-  // If there are no targets, then the target region is the region directly
-  // after this operation and the results of this op are the outgoing values to
-  // be bound to the incoming arguments of the subsequent region
-  if (!target)
-    return getResults();
-  assert(*target == 0 || *target == 1);
-  return {};
-}
-
-LogicalResult HandleVariantOp::verify() {
-  if (getVariant().getType().getNumTypes() != 2)
-    return emitOpError("expected the variant to have two types: a success type "
-                       "and an error type");
-  if (!getSuccessRegion().getArguments().empty())
-    return emitOpError("expected success region to have zero arguments");
-  if (!getErrorRegion().getArguments().empty())
-    return emitOpError("expected error region to have zero arguments");
-  return success();
-}
-
-/// The condition that determines which region is entered is dynamic; check both
-/// regions.
-void HandleVariantOp::getEntryTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  // TODO: Check for VariantAttr presence to prune targets.
-  targets.emplace_back(0);
-  targets.emplace_back(1);
-}
-
-//===----------------------------------------------------------------------===//
-// YieldOp
-//===----------------------------------------------------------------------===//
-
-bool YieldOp::isParentNode(Operation *op) { return isa<HandleVariantOp>(op); }
-
-void YieldOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  // Branch to after the parent operation.
-  targets.emplace_back(std::nullopt, getOperands());
-}
-
-//===----------------------------------------------------------------------===//
 // ErrorReturnOp
 //===----------------------------------------------------------------------===//
 
 LogicalResult ErrorReturnOp::verify() {
-  if (getVariant().getType().getNumTypes() != 2)
-    return emitOpError(
-        "expected two types in the variant: an error type and a success type.");
-
   auto func = (*this)->getParentOfType<LIT::FuncOp>();
   if (!func)
     return emitOpError("expected to be nested inside a `lit.func` operation");
@@ -1960,7 +1911,7 @@ void ErrorReturnOp::getBranchTargets(
     ArrayRef<Attribute> operands,
     SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
   assert(operands.size() == 1);
-  targets.emplace_back(std::nullopt, getVariant());
+  targets.emplace_back(std::nullopt, getResult());
 }
 
 //===----------------------------------------------------------------------===//

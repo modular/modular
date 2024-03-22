@@ -537,7 +537,9 @@ struct ExoticDelExample:
 # CHECK-LABEL: lit.func @"def_borrowed
 # CHECK-SAME: %a: !lit.ref<!MemExample, imm {{.*}}> borrow_in_mem
 def def_borrowed(borrowed a: MemExample) -> None:
-  # CHECK-NEXT: kgen.param.constant: none
+  # CHECK: lit.ref.store %none, %__result__
+  # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+  # CHECK-NEXT: return [[FALSE]]
   pass
 
 

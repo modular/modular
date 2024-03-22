@@ -331,7 +331,7 @@ lit.func @main(%a: !kgen.pointer<@module::@A>, %b: !lit.declref<@module::@B>) {
 lit.struct.decl @Error {}
 
 // CHECK-LABEL: @lexical_terminators
-lit.func @lexical_terminators(%cond: i1, %err: !lit.declref<@Error>) throws -> !kgen.variant<i32, i64> {
+lit.func @lexical_terminators(%cond: i1) throws -> !kgen.variant<i32, i64> {
   // CHECK: lit.loop
   lit.loop cond {
     lit.loop.condition %cond : i1
@@ -354,21 +354,10 @@ lit.func @lexical_terminators(%cond: i1, %err: !lit.declref<@Error>) throws -> !
 
   // CHECK: lit.try
   lit.try {
-    // CHECK-NEXT: lit.raise %err : <@Error>
-    lit.raise %err : <@Error>
+    // CHECK: lit.raise
+    lit.raise
     lit.try.yield
-  } except (%e: !lit.declref<@Error>) {
-    lit.try.yield
-  } else {
-    lit.try.yield
-  } finally {
-    lit.try.yield
-  }
-  // CHECK: lit.raise %err : <@Error>
-  lit.try {
-    lit.raise %err : <@Error>
-    lit.try.yield
-  } except (%e: !lit.declref<@Error>) {
+  } except {
     lit.try.yield
   } else {
     lit.try.yield
@@ -454,33 +443,13 @@ lit.struct.decl @FuncParamStruct<c: !lit.signature<<type>(!kgen.paramref<*(0,0)>
 
 // -----
 
-lit.func @throwing_caller() throws -> !kgen.variant<@Error, none> {
-  %y = lit.var.decl "y" var : !lit.ref<@MyStruct, mut *"life">
-  %none = kgen.param.constant: none = <#kgen.none>
-  %ret = kgen.param.constant: !kgen.variant<@Error, none> = <#kgen.variant<:!kgen.none #kgen.none, 1>>
-  // CHECK: [[YPTR:%.*]] = lit.ref.to_pointer
-  %yptr = lit.ref.to_pointer %y: !lit.ref<@MyStruct, mut *"life">
-  // CHECK: lit.handle_variant %variant, [[YPTR]] : (!kgen.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
-  %0 = lit.handle_variant %ret, %yptr : (!kgen.variant<@Error, none>, !kgen.pointer<@MyStruct>) -> !kgen.none {
-    // CHECK-NEXT: lit.yield %{{.*}} : !kgen.none
-    lit.yield %none : !kgen.none
-  // CHECK-NEXT: else
-  } else {
-    // CHECK-NEXT: return %variant
-    kgen.return %ret : !kgen.variant<@Error, none>
-  }
-  kgen.return %ret : !kgen.variant<@Error, none>
-}
-
-// -----
-
 lit.struct.decl @Error {}
 
-lit.func @throwing_func() throws -> !kgen.variant<@Error, none> {
-  %1 = lit.struct.create() : () -> !lit.declref<@Error>
-  %2 = kgen.variant.create %1, 0 : <@Error, none>
-  // CHECK: lit.error_return %{{.*}} : <@Error, none>
-  lit.error_return %2 : !kgen.variant<@Error, none>
+// CHECK-LABEL: lit.func @throwing_func
+lit.func @throwing_func() throws -> i1 {
+  %0 = kgen.param.constant: i1 = <0>
+  // CHECK: lit.error_return %0 : i1
+  lit.error_return %0 : i1
 }
 
 // CHECK: lit.globalvar.decl @global_var : !lit.declref<@Error> {
@@ -490,12 +459,6 @@ lit.globalvar.decl @global_var : !lit.declref<@Error> {
 // CHECK-NEXT: }, {
 }, {
 // CHECK-NEXT: }
-}
-
-// CHECK: lit.globalvar.decl @global_let : !lit.declref<@Error>
-lit.globalvar.decl @global_let : !lit.declref<@Error> {
-}, {
-  %0 = lit.globalvar.ref @global_let : <@Error, mut #lit.lifetime>
 }
 
 // -----

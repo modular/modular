@@ -19,7 +19,7 @@ fn simpleTryExcept():
         # CHECK: lit.ref.store
         a = 0
         # CHECK-NEXT: lit.try.yield
-    # CHECK-NEXT: except (%{{.*}}: !Error)
+    # CHECK-NEXT: except
     except:
         # CHECK-NEXT: lit.try.yield
         pass
@@ -47,31 +47,20 @@ fn eatError(err: Error):
     pass
 
 
-# CHECK-LABEL: lit.func @"tryExceptArg
-fn tryExceptArg():
-    try:
-        pass
-    # CHECK: except (%arg0: !Error)
-    except err:
-        # CHECK-NEXT: lit.call @"{{.*}}::@"eatError{{.*}}(%arg0)
-        eatError(err)
-
-
 # CHECK-LABEL: lit.func @"tryExceptArgDef
-def tryExceptArgDef():
+fn tryExceptArgDef():
     try:
         pass
-    # CHECK: except (%arg0: !Error)
+    # CHECK: except
     except err:
-        # CHECK-NEXT: lit.var.decl "err" imp
-        # CHECK: [[ERRVAL:%.*]] = lit.ref.load %err
-        # CHECK: eatError{{.*}}([[ERRVAL]])
+        # CHECK-NEXT: [[ERR:%.*]] = lit.ref.load %err
+        # CHECK-NEXT: eatError{{.*}}([[ERR]])
         eatError(err)
 
 
 # CHECK-LABEL: lit.func @"tryFinally
 fn tryFinally():
-    # CHECK-NEXT: lit.try
+    # CHECK: lit.try
     try:
         # CHECK-NEXT: lit.try.yield
         pass
@@ -81,14 +70,16 @@ fn tryFinally():
     finally:
         # CHECK: lit.return
         return
-    # CHECK: lit.try {
+    # CHECK: lit.try %__try_error___0
     try:
-        # CHECK-NEXT: lit.try
+        # CHECK: lit.try
         try:
             # CHECK-NEXT: lit.try.yield
             pass
-        # CHECK-NEXT: except (%arg0:
-        # CHECK-NEXT: lit.raise %arg0
+        # CHECK-NEXT: except
+        # CHECK-NEXT: [[ERR:%.*]] = lit.load.consume %__try_error__
+        # CHECK-NEXT: lit.ref.store [[ERR]], %__try_error__
+        # CHECK-NEXT: lit.raise
         finally:
             pass
     except:
@@ -102,17 +93,7 @@ def maybeRaises() -> Int:
 # CHECK-LABEL: lit.func @"propagateErrorInDef
 def propagateErrorInDef():
     # CHECK: %a = lit.var.decl "a"
-    # CHECK: %[[VALUE:.*]] = lit.call @"{{.*}}"::@"maybeRaises
-    # CHECK: %1 = lit.handle_variant %0 : (!kgen.variant<!Error, !Int>) -> !Int
-    # CHECK: {
-    # CHECK:    [[VAR:%.*]] = kgen.variant.take %0, 1 : <!Error, !Int>
-    # CHECK:    lit.yield [[VAR]] : !Int
-    # CHECK: } else {
-    # CHECK:    [[ERR:%.*]] = kgen.variant.take %0, 0 : <!Error, !Int>
-    # CHECK:    lit.raise [[ERR]] : !Error
-    # CHECK:    kgen.unreachable
-    # CHECK:  }
-    # CHECK-NEXT: lit.ref.store %1, %a
+    # CHECK: lit.call {{.*}}maybeRaises{{.*}}(%__error__, %a)
     a = maybeRaises()
 
 
@@ -120,17 +101,7 @@ def propagateErrorInDef():
 fn propagateErrorInRaisingFn() raises:
     # CHECK:  %a = lit.var.decl {{.*}} : !lit.ref<!Int,
     var a: Int
-    # CHECK:  %0 = lit.call {{.*}}::@"maybeRaises()"()
-    # CHECK:  %1 = lit.handle_variant %0 : (!kgen.variant<!Error, !Int>) -> !Int
-    # CHECK:  {
-    # CHECK:    [[ERR:%.*]] = kgen.variant.take %0
-    # CHECK:    lit.yield [[ERR]] : !Int
-    # CHECK:  } else {
-    # CHECK:    [[ERR:%.*]] = kgen.variant.take %0
-    # CHECK:    lit.raise [[ERR]] : !Error
-    # CHECK:    kgen.unreachable
-    # CHECK:  }
-    # CHECK:  lit.ref.store %1, %a
+    # CHECK:  lit.call {{.*}}maybeRaises{{.*}}(%__error__, %a)
     a = maybeRaises()
 
 
@@ -139,15 +110,7 @@ fn propagateErrorInTry():
     var a: Int
     # CHECK: lit.try
     try:
-        # CHECK: %0 = lit.call {{.*}}::@"maybeRaises()"()
-        # CHECK: %1 = lit.handle_variant %0 : (!kgen.variant<!Error, !Int>) -> !Int
-        # CHECK: {
-        # CHECK: } else {
-        # CHECK:   [[ERR:%.*]] = kgen.variant.take %0
-        # CHECK:   lit.raise [[ERR]] : !Error
-        # CHECK: }
-
-        # CHECK-NEXT: lit.ref.store %1, %a
+        # CHECK: %0 = lit.call {{.*}}maybeRaises{{.*}}(%__try_error__, %a)
         a = maybeRaises()
         # CHECK-NEXT: lit.try.yield
     except:
@@ -160,7 +123,8 @@ def raiseErrorInDef(err: Error):
     # CHECK: lit.ref.store %err, %err_0
     # CHECK: %[[ERRVAL:.*]] = lit.ref.load %err_0
     # CHECK: %[[ERRVALCOPY:.*]] = lit.call {{.*}}@Error::@"__copyinit__
-    # CHECK: lit.raise %[[ERRVALCOPY]] : !Error
+    # CHECK-NEXT: lit.ref.store %[[ERRVALCOPY]], %__error__
+    # CHECK-NEXT: lit.raise
     raise err
 
 
@@ -168,16 +132,19 @@ def raiseErrorInDef(err: Error):
 def raiseErrorInIf(cond: Bool, err: Error):
     # CHECK: hlcf.elif
     if cond:
-        # CHECK: lit.raise {{.*}} : !Error
+        # CHECK: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__
+        # CHECK-NEXT: lit.ref.store [[ERR]], %__error__
+        # CHECK-NEXT: lit.raise
         raise err
 
 
 # CHECK-LABEL: lit.func @"raiseErrorInTry
 fn raiseErrorInTry(err: Error):
-    # CHECK: lit.try {
+    # CHECK: lit.try %__try_error__
     try:
-        # CHECK-NEXT: = lit.call {{.*}}@Error::@"__copyinit__
-        # CHECK-NEXT: lit.raise {{.*}} : !Error
+        # CHECK-NEXT: [[ERR:%.*]] = lit.call {{.*}}@Error::@"__copyinit__{{.*}}(%err)
+        # CHECK-NEXT: lit.ref.store [[ERR]], %__try_error__
+        # CHECK-NEXT: lit.raise
         raise err
     except:
         pass
@@ -185,18 +152,20 @@ fn raiseErrorInTry(err: Error):
 
 # CHECK-LABEL: lit.func @"rethrowsToRethrow
 fn rethrowsToRethrow():
-    # CHECK: lit.try {
+    # CHECK: lit.try [[TRY_ERROR1:%.*]] :
     try:
-        # CHECK: lit.try {
+        # CHECK: lit.try [[TRY_ERROR2:%.*]] :
         try:
-            # CHECK:  lit.call {{.*}}::@"maybeRaises()"()
+            # CHECK: lit.call {{.*}}maybeRaises{{.*}}([[TRY_ERROR2]], %anonymous
             maybeRaises()  # expected-warning {{'Int' value is unused}}
-        # CHECK: } except (%arg0:
+        # CHECK: } except {
         except:
-            # CHECK: lit.raise %arg0
+            # CHECK: [[ERR:%.*]] = lit.load.consume [[TRY_ERROR2]]
+            # CHECK-NEXT: lit.ref.store [[ERR]], [[TRY_ERROR1]]
+            # CHECK-NEXT: lit.raise
             raise
         # CHECK: }
-    # CHECK: } except (%arg0: !Error)
+    # CHECK: } except {
     except:
         # CHECK: lit.return %none
         return
@@ -221,29 +190,14 @@ fn fail(str: StringRef) raises -> S:
 
 # CHECK-LABEL: lit.func @"call_raising
 fn call_raising():
-    # CHECK-NEXT: lit.try {
+    # CHECK: lit.try %e
     try:
-        # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail
-        # CHECK: [[VAR0:%.*]] = lit.handle_variant [[ERR]], %x
-        # CHECK:   [[VAR1:%.*]] = kgen.variant.take [[ERR]]
-        # CHECK:   lit.yield [[VAR1]] : !kgen.none
-        # CHECK: } else {
-        # CHECK:   [[VAR2:%.*]] = kgen.variant.take [[ERR]]
-        # CHECK:   lit.raise [[VAR2]]
-        # CHECK:   kgen.unreachable
-        # CHECK: }
+        # CHECK: [[ERR:%.*]] =  lit.call {{.*}}::@"fail{{.*}}, %e, %x)
         var x = fail("hello world")
         # CHECK: %y = lit.var.decl "y"
-        # CHECK: lit.call @{{.*}}__init__{{.*}}(%y)
-        # CHECK: [[VAR1:%.*]] = lit.handle_variant [[ERR:.*]], %y
-        # CHECK:   [[VAR2:%.*]] = kgen.variant.take [[ERR]]
-        # CHECK:   lit.yield [[VAR2]] : !kgen.none
-        # CHECK: } else {
-        # CHECK:   [[VAR2:%.*]] = kgen.variant.take [[ERR]]
-        # CHECK:   lit.raise [[VAR2]]
-        # CHECK:   kgen.unreachable
-        # CHECK: }
+        # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%y, %e)
         var y = S()
+        # CHECK-NEXT: lit.try.yield
     except e:
         pass
 
@@ -256,13 +210,9 @@ fn fail_register(str: StringRef) raises -> Int:
     return 0
 
 
+# CHECK-LABEL: lit.func @"fail_register_raises
 fn fail_register_raises(str: StringRef) raises -> Int:
-    # CHECK: %[[VAR0:.*]] = lit.handle_variant %0
-    # CHECK:   %[[VAR1:.*]] = kgen.variant.take %0
-    # CHECK:   lit.yield %[[VAR1]]
-    # CHECK: } else {
-    # CHECK:   %[[VAR2:.*]] = kgen.variant.take %0
-    # CHECK:   lit.raise %[[VAR2]]
-    # CHECK:   kgen.unreachable
-    # CHECK: }
+    # CHECK-NEXT: call {{.*}}fail_register{{.*}}(%str, %__error__, %__result__)
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: lit.return [[FALSE]]
     return fail_register(str)

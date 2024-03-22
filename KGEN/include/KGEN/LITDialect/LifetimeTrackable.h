@@ -129,6 +129,10 @@ enum class OperandEffect {
   /// This indicates that the full-object should be considered destroyed, but
   /// any fields within it are still valid.
   memMarkDestroyed,
+
+  /// This indicates that the value is conditionally initialized along one of
+  /// the branches of an ifLikeOp.
+  memStoreConditional,
 };
 
 /// This is the result value of `getOperationValueEffects`, indicating
@@ -147,7 +151,7 @@ enum class OverallOpValueEffect {
   /// perform local control flow.
   localControlFlowOp,
 
-  /// This is HLCF::IfOp, ParamIfOp, or HandleVariantOp, which are all if-like.
+  /// This is HLCF::IfOp, ParamIfOp, which are all if-like.
   ifLikeOp,
 
   /// This is HLCF::LoopOp.

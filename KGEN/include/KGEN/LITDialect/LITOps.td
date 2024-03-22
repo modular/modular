@@ -169,17 +169,20 @@ def LIT_CallOp : LITOp<"call", [
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
+  let hasVerifier = 1;
 
   let assemblyFormat = [{
     `` custom<CallOp>($callee, $implicitLifetimes, $operands,
                       type($operands), type($results)) attr-dict
   }];
 
-  let hasVerifier = 1;
-
   let extraClassDeclaration = [{
     /// Get the direct callee symbol if this is a direct call.
     SymbolRefAttr getDirectCallee();
+    /// Get the callee signature type.
+    LITSignatureType getCalleeType() {
+      return cast<LITSignatureType>(getCallee().getType());
+    }
   }];
 }
 
@@ -207,6 +210,7 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
     Variadic<AnyType>:$arguments
   );
   let results = (outs Variadic<AnyType>:$results);
+  let hasVerifier = 1;
 
   let assemblyFormat = [{
     $callee `` custom<LifetimeParams>($implicitLifetimes) `(` $arguments `)` `:`
@@ -215,7 +219,9 @@ def LIT_CallIndirectOp : LITOp<"call_indirect"> {
                         ref($implicitLifetimes))
   }];
 
-  let hasVerifier = 1;
+  let extraClassDeclaration = [{
+    LITSignatureType getCalleeType() { return getCallee().getType(); }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -661,21 +667,22 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
   }];
 
   let arguments = (ins
+    Optional<LIT_RefType>:$err,
     DefaultValuedOptionalAttr<BoolAttr, "false">:$suppressWarnings);
   let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
                         SizedRegion<1>:$elseRegion,
                         VariadicRegion<SizedRegion<1>>:$finallyRegions);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
-    (`->` type($results)^)? $tryRegion
+    ($err^ `:` type($err))? (`->` type($results)^)? $tryRegion
     `except` custom<RegionWithArgs>($exceptRegion)
     `else` custom<RegionWithArgs>($elseRegion)
     (`finally` $finallyRegions^)? attr-dict
   }];
 
   let builders = [
-    OpBuilder<(ins CArg<"bool", "false">:$suppressWarnings),
-      [{ build($_builder, $_state, {}, suppressWarnings, 1); }]>,
+    OpBuilder<(ins "Value":$err, CArg<"bool", "false">:$suppressWarnings),
+      [{ build($_builder, $_state, {}, err, suppressWarnings, 1); }]>,
   ];
 
   let extraClassDeclaration = [{
@@ -685,8 +692,6 @@ def LIT_TryOp : LITOp<"try", [DeclareOpInterfaceMethods<ControlFlowNode>]> {
     /// Return true if the finally block is trivial.
     bool hasTrivialFinally();
   }];
-
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -719,6 +724,10 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
 
   let arguments = (ins Variadic<AnyType>:$operands);
   let assemblyFormat = "($operands^ `:` type($operands))? attr-dict";
+
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1105,8 +1114,8 @@ def LIT_ErrorReturnOp : LITOp<"error_return", [Terminator, ReturnLike,
     ```
   }];
 
-  let arguments = (ins KGEN_VariantType:$variant);
-  let assemblyFormat = "$variant attr-dict `:` type($variant)";
+  let arguments = (ins AnyType:$result);
+  let assemblyFormat = "$result attr-dict `:` type($result)";
   let hasVerifier = 1;
 }
 
@@ -1118,20 +1127,17 @@ def LIT_RaiseOp : LITOp<"raise"> {
   let summary = "Lexical raise statement.";
   let description = [{
     The `lit.raise` operation is not a terminator. It corresponds to a raise
-    statement in Lit. It takes a single operand: the error to raise. This
-    operation is only allowed inside the 'try' region of a `lit.try` operation
-    or within a `lit.func` marked as `throws`.
+    statement in Lit. This operation is only allowed inside the 'try' region of
+    a `lit.try` operation or within a `lit.func` marked as `throws`.
 
     Example:
 
     ```mlir
-    lit.raise %err : !lit.declref<@Error>
+    lit.raise
     ```
   }];
 
-  let arguments = (ins KGEN_DeclRefType:$error);
-  let assemblyFormat = "$error attr-dict `:` type($error)";
-
+  let assemblyFormat = "attr-dict";
   let hasVerifier = 1;
 }
 
@@ -1496,94 +1502,6 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
 
   let arguments = (ins LIT_RefType:$value);
   let assemblyFormat = "$value `:` type($value) attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// HandleVariantOp
-//===----------------------------------------------------------------------===//
-
-def LIT_HandleVariantOp : LITOp<"handle_variant",
-    [DeclareOpInterfaceMethods<ControlFlowNode>]> {
-  let summary = "handle the return of a throwing function";
-  let description = [{
-    The `lit.handle_variant` op represents an if statement paired with a set of
-    conditionally initialized values. The success region of the
-    `lit.handle_variant` op is executed upon a successful initialization of all
-    values. The error region of the `lit.handle_variant` is executed otherwise.
-
-    The result value is an owned value that is consumed by the enclosing
-    lit.yield operation.
-
-    Example:
-
-    ```mlir
-    %0 = kgen.call @throwing_callee(%y) :
-      (!kgen.pointer<@MyStruct> byref_result) throws ->
-      !kgen.variant<@Error, none>
-    %1 = lit.handle_variant %0, %y : (!kgen.variant<@Error, none>,
-      !kgen.pointer<@MyStruct>) -> !kgen.none {
-      %7 = kgen.variant.take %0 :
-        !kgen.variant<@Error, none> as !kgen.none
-      lit.yield %7 : !kgen.none
-    } else {
-      %8 = kgen.variant.take %0, 0 : <@Error, none>
-      %9 = kgen.variant.create %8, 0 : <@Error, none>
-  	  kgen.return %9 : !kgen.variant<@Error, none>
-    }
-    ```
-  }];
-  let arguments = (ins
-    KGEN_VariantType:$variant,
-    Variadic<AnyType>:$maybeInitializedValues
-  );
-  let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$successRegion,
-                 SizedRegion<1>:$errorRegion);
-
-  let assemblyFormat = [{
-    $variant (`,` $maybeInitializedValues^)? `:`
-    functional-type(operands, results) $successRegion `else` $errorRegion
-    attr-dict
-  }];
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// YieldOp
-//===----------------------------------------------------------------------===//
-
-def LIT_YieldOp : LITOp<"yield", [Pure,
-  Terminator, HasParent<"LIT::HandleVariantOp">,
-  DeclareOpInterfaceMethods<ControlFlowTerminator>]> {
-  let summary = "conditional yield operation";
-  let description = [{
-    The `lit.yield` operation is a control-flow terminator that transfers
-    control-flow to after the parent `handle_variant` operation. The operation
-    expects its operand types to match the types of the results of that
-    operation, if there are any.
-
-    This operation consumes ownership of the SSA value, which is returned
-    through the enclosing HandleVariantOp.
-
-    Example:
-
-    ```mlir
-    %1 = lit.handle_variant %0, %x : (!kgen.variant<@Error, none>,
-      !kgen.pointer<@MyStruct>) -> !kgen.none {
-      %7 = kgen.variant.take %0, 1 : <@Error, none>
-      lit.yield %7 : !kgen.none
-    } else {
-      %8 = kgen.variant.take %0, 0 : <@Error, none>
-      lit.try.raise %8 : !lit.declref<@Error>
-    }
-    ```
-    This operation can always be marked pure because the control-flow edge from
-    this operation leads only to after the parent operation.
-  }];
-
-  let arguments = (ins Variadic<AnyType>:$operands);
-  let builders = [OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>];
-  let assemblyFormat = "attr-dict ($operands `:` type($operands)^)?";
 }
 
 //===----------------------------------------------------------------------===//

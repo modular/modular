@@ -244,6 +244,11 @@ bool SignatureType::hasAddress(ArgConvention conv) {
   llvm_unreachable("invalid argument convention");
 }
 
+bool SignatureType::isResultSlot(ArgConvention conv) {
+  return conv == ArgConvention::ByRefResult ||
+         conv == ArgConvention::ByRefError;
+}
+
 /// Return a signature with the specified parameter bindings substituted
 /// into it as happens in a call.  The types specified in the parameter
 /// bindings affects the type signature of the arguments and results, and
@@ -518,6 +523,10 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
        llvm::enumerate(values.getInputs(), argConventions)) {
     if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
       return emitError() << "'byref_result' argument must be the last argument";
+    if (conv == ArgConvention::ByRefError && !effects.isThrows()) {
+      return emitError()
+             << "signature with 'byref_error' argument must be 'throws'";
+    }
 
     Type type = argType;
     // Verify variadics.
@@ -542,30 +551,13 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     }
   }
 
-  // If the function throws an error, make sure it has one variant result.
-  size_t numResults = values.getNumResults();
-  if (effects.isThrows())
-    if (numResults != 1 || !::isa<VariantType>(values.getResult(0)))
-      return emitError() << "a throwing function should have 1 variant result";
-
+  // A non-throwing function with a byref result must have a single none result.
   if (!argConventions.empty() &&
-      argConventions[0] == ArgConvention::ByRefResult) {
-    if (effects.isThrows()) {
-      // We already checked this above
-      auto variantTy = ::cast<VariantType>(values.getResult(0));
-      if (variantTy.getNumTypes() != 2) {
-        return emitError() << "a throwing function with byref_result must have "
-                              "a variant result of 2 types";
-      }
-      if (!::isa<KGEN::NoneType>(variantTy.getType(1))) {
-        return emitError() << "a throwing function with byref_result must have "
-                              "a variant result with none as the second type";
-      }
-    } else {
-      if (numResults != 1 || !::isa<KGEN::NoneType>(values.getResult(0))) {
-        return emitError() << "a non-throwing function with byref_result must "
-                              "have 1 none result";
-      }
+      argConventions[0] == ArgConvention::ByRefResult && !effects.isThrows()) {
+    if (values.getNumResults() != 1 ||
+        !::isa<KGEN::NoneType>(values.getResult(0))) {
+      return emitError() << "a non-throwing function with byref_result must "
+                            "have 1 none result";
     }
   }
 

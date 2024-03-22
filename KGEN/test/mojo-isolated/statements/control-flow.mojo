@@ -162,12 +162,13 @@ fn if_try(p: Bool):
     # CHECK-NEXT:   [[TEST_P:%*.]] = lit.call @{{.*}}@"__mlir_i1__{{.*}}"(%p)
     # CHECK-NEXT:   hlcf.elif.yield [[TEST_P]] : i1
     # CHECK-NEXT: } then {
-    # CHECK-NEXT:   lit.try {
+    # CHECK-NEXT:   %e = lit.var.decl {{.*}} !lit.ref<!Error,
+    # CHECK-NEXT:   lit.try %e : {{.*}} {
     # CHECK-NEXT:     %b = lit.var.decl "b"  var
     # CHECK-NEXT:     kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT:     lit.ref.store
     # CHECK-NEXT:     lit.try.yield
-    # CHECK-NEXT:   } except (%arg0: !Error
+    # CHECK-NEXT:   } except {
     # CHECK-NEXT:     %c = lit.var.decl "c"
     # CHECK-NEXT:     kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT:     lit.ref.store

@@ -516,11 +516,9 @@ public:
   //===--------------------------------------------------------------------===//
   // Return emission helpers.
 
-  /// Emit the logic to raise from the current scope, returning failure (but NOT
-  /// emitting an error) if it is invalid to return from the current context,
-  /// or emitting a TryRaise/return if it is valid.
-  /// TODO: Generalize to support memory-only errors.
-  LogicalResult emitRaise(SRValue errorValue, Location raiseLoc);
+  /// Find the nearest error slot to use if the emitter is currently within a
+  /// context that can raise. Otherwise, return null.
+  MLValue findNearestErrorSlot();
 
   /// Emit a normal return (not a 'raise' return) out of the function, along
   /// with any special logic that goes with it.  `funcDecl` indicates the

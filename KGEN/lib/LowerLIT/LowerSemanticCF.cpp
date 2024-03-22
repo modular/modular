@@ -342,6 +342,41 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   return false;
 }
 
+/// Emit the semantic control-flow IR corresponding to a raise statement.
+static void emitRaise(ImplicitLocOpBuilder &b) {
+  Operation *opForRaise = LIT::findOpProcessingRaise(b.getInsertionBlock());
+  assert(opForRaise && "IR invalid, RaiseOp must only be in valid context");
+  if (isa<LIT::FuncOp>(opForRaise)) {
+    b.create<LIT::ErrorReturnOp>(
+        b.create<ParamConstantOp>(b.getBoolAttr(true)));
+  } else {
+    assert(isa<LIT::TryOp>(opForRaise));
+    b.create<LIT::TryRaiseOp>();
+  }
+}
+
+/// This function adds the error branch regions to a call operation to a
+/// throwing function. These are required by CheckLifetimes to understand
+/// conditional initialization of the byref results.
+static void addErrorRegions(Operation &op, LIT::LITSignatureType sig,
+                            ValueRange operands) {
+  // Clone the op and add the error regions.
+  ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(&op));
+  b.setInsertionPointAfter(&op);
+  auto ifOp = b.create<HLCF::IfOp>(op.getResult(0));
+
+  // In the error region, initialize the error value, then raise.
+  b.createBlock(&ifOp.getThenRegion());
+  b.create<LIT::OwnershipMarkInitializedOp>(
+      *std::prev(operands.end(), sig.getErrorSlotOffset()));
+  emitRaise(b);
+
+  b.createBlock(&ifOp.getElseRegion());
+  b.create<LIT::OwnershipMarkInitializedOp>(
+      sig.hasMemoryOnlyResult() ? operands.back() : operands.front());
+  b.create<HLCF::YieldOp>();
+}
+
 /// This recursive function transforms the specified block:
 ///   1) It transforms any semantic CF ops like lit.break into terminators like
 ///      hlcf.break.
@@ -364,18 +399,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
       doesRaise = true;
       auto b = handleSemanticTerminatorOp(op, "raise statement");
-      Operation *opForRaise = LIT::findOpProcessingRaise(b.getInsertionBlock());
-      assert(opForRaise && "IR invalid, RaiseOp must only be in valid context");
-      if (isa<LIT::FuncOp>(opForRaise)) {
-        LIT::FuncOp funcOp = raiseOp->getParentOfType<LIT::FuncOp>();
-        Type failedType = funcOp.getMLIRResultType();
-        assert(isa<VariantType>(failedType));
-        b.create<LIT::ErrorReturnOp>(
-            b.create<VariantCreateOp>(failedType, raiseOp.getError(), 0));
-      } else {
-        assert(isa<LIT::TryOp>(opForRaise));
-        b.create<LIT::TryRaiseOp>(raiseOp.getError());
-      }
+      emitRaise(b);
       op.erase();
       return;
     }
@@ -419,6 +443,15 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     // Notice self-recursive calls so we can check them out later.
     if (auto call = dyn_cast<LIT::CallOp>(op))
       hasRecursiveCalls |= call.getDirectCallee() == theFuncSymbol;
+
+    // Add error branches to calls to throwing functions.
+    if (isa<LIT::CallOp, LIT::CallIndirectOp>(op)) {
+      if (auto sig = LIT::getCalleeType(&op); sig.isThrows()) {
+        doesRaise = doesFallThrough = true;
+        addErrorRegions(op, sig, LIT::getCalleeArguments(&op));
+      }
+      continue;
+    }
 
     // Most ops don't have regions and are just fallthrough.
     // TODO: Add support for noreturn calls.
@@ -507,6 +540,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       tryFallsThrough &= finallyFallsThrough;
 
       // Modify the body of the try to implement 'finally' logic.
+      tryOp->setOperands({});
       tryOp = lowerTryFinally(tryOp);
 
       // If the try doesn't fall through, diagnose unreachable code after it.
@@ -535,7 +569,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
     }
 
     // Otherwise we must have an if operation.
-    assert((isa<HLCF::IfOp, ParamIfOp, LIT::HandleVariantOp>(op)) &&
+    assert((isa<HLCF::IfOp, ParamIfOp>(op)) &&
            "Unknown operation with regions");
 
     // If this is a dynamic `if False:` or @parameter if on known condition,
@@ -606,8 +640,8 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
   // If we fell off the bottom, then we have a fall-through terminator.
   assert((isa<HLCF::YieldOp, HLCF::ElifYieldOp, LIT::TryYieldOp, ParamYieldOp,
-              LIT::EndFuncOp, LIT::YieldOp, POP::CoroutineAwaitEndOp,
-              LIT::LoopConditionOp, LIT::LoopYieldOp>(block.back())));
+              LIT::EndFuncOp, POP::CoroutineAwaitEndOp, LIT::LoopConditionOp,
+              LIT::LoopYieldOp>(block.back())));
   doesFallThrough = true;
 }
 
@@ -649,7 +683,7 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // If we are already in conditional code, or if this is an 'if'-like
     // operation, then the subregions are executed conditionally.
     bool isSubregionConditional =
-        isConditional || isa<HLCF::IfOp, ParamIfOp, LIT::HandleVariantOp>(op);
+        isConditional || isa<HLCF::IfOp, ParamIfOp>(op);
     // Handle things like if statements, HLCF::Loop, try, etc.
     for (auto &region : op.getRegions()) {
       if (checkSelfRecursion(region.front(), isSubregionConditional))

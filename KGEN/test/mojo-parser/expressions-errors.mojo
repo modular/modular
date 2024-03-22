@@ -117,9 +117,6 @@ struct NonCopyable:
 # expected-note @+1 {{function declared here}}
 fn generic_on_type_bad[T: AnyRegType](a: T): pass
 
-# expected-note @+1 {{function declared here}}
-fn generic_on_type_bad_raises[T: AnyRegType]() raises -> T: pass
-
 fn generic_on_type_ok[T: AnyRegType](): pass
 
 def testLValuesRvalues() -> None:
@@ -154,10 +151,6 @@ def testLValuesRvalues() -> None:
 
   # expected-error @+1 {{invalid call to 'generic_on_type_bad': argument #0 cannot bind AnyRegType type to memory-only type 'MemoryOnlyPair'}}
   generic_on_type_bad[MemoryOnlyPair](mpPair)
-
-  # For issue https://github.com/modularml/mojo/issues/910
-  # expected-error @+1 {{invalid call to 'generic_on_type_bad_raises': result cannot bind AnyRegType type to memory-only type 'Variant[Error, MemoryOnlyPair]'}}
-  generic_on_type_bad_raises[MemoryOnlyPair]()
 
   # This should be allowed.
   generic_on_type_ok[MemoryOnlyPair]()

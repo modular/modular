@@ -6,7 +6,7 @@
 
 # RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
-# RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo --debug-level full -o /dev/null
+# RUN: kgen-translate -import-mojo %s --debug-level full -o /dev/null
 
 # Error Handling related CheckLifetimes tests.
 
@@ -22,12 +22,12 @@ struct RegExample:
         return RegExample {}
 
     # Test a raising constructor.
-    # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
-    fn __init__(a: MemExample, b: MemExample) raises -> Self:
-        # CHECK-NEXT: %0 = kgen.param.materialize: !RegExample
-        # CHECK-NEXT: %1 = kgen.variant.create %0
-        # CHECK-NEXT: kgen.return %1
-        return RegExample {}
+    # CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!RegExample, {{.*}}> init_self, |, %a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error) throws -> i1
+    fn __init__(inout self, a: MemExample, b: MemExample) raises:
+        # CHECK-NOT: __del__
+        # CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+        # CHECK-NEXT: kgen.return [[FALSE]]
+        return
 
     fn noop(self):
         pass
@@ -88,14 +88,15 @@ fn somethingThatRaises() raises:
 
 # CHECK-LABEL: lit.func @"thing_that_raises
 fn thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
-    # CHECK-NEXT: lit.call {{.*}}somethingThatRaises
-    # CHECK-NEXT: %1 = lit.handle_variant
-    # CHECK-NEXT:   %5 = kgen.variant.take
-    # CHECK-NEXT:   lit.yield %5
+    # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<none,
+    # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}somethingThatRaises{{.*}}(%__error__, [[RESULT]])
+    # CHECK-NEXT: hlcf.if [[IS_ERR]] {
+    # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
+    # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+    # CHECK-NEXT:   lit.error_return [[TRUE]]
     # CHECK-NEXT: } else {
-    # CHECK-NEXT:  %5 = kgen.variant.take %0, 0
-    # CHECK-NEXT:  %6 = kgen.variant.create %5, 0
-    # CHECK-NEXT:  lit.error_return %6
+    # CHECK-NEXT:   lit.ownership.mark_initialized [[RESULT]]
+    # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: }
     somethingThatRaises()
 
@@ -125,19 +126,22 @@ fn may_throw() raises -> RegExample:
 
 # CHECK-LABEL: lit.func @"propagate_reg_error
 fn propagate_reg_error() raises:
-    # CHECK-NEXT: %0 = lit.call {{.*}}may_throw
-    # CHECK-NEXT: %1 = lit.handle_variant %0
-    # CHECK-NEXT:   [[REG:%.*]] = kgen.variant.take %0, 1 : <!Error, !RegExample>
-    # CHECK-NEXT:   lit.yield [[REG]]
-    # CHECK-NEXT: } else {
-    #               .. stuff ..
+    # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!RegExample,
+    # CHECK-NEXT: %0 = lit.call {{.*}}may_throw{{.*}}(%__error__, [[RESULT]])
+    # CHECK-NEXT: hlcf.if %0 {
+    # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
     # CHECK:        lit.error_return
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT:   lit.ownership.mark_initialized [[RESULT]]
+    # CHECK-NEXT:   [[VALUE:%.*]] = lit.ref.load [[RESULT]]
+    # CHECK-NEXT:   lit.call {{.*}}@RegExample::@"__del__{{.*}}([[VALUE]])
+    # CHECK-NEXT:   hlcf.yield
     # CHECK-NEXT: }
-    # CHECK-NEXT: %2 = lit.call {{.*}}@RegExample::@"__del__{{.*}}(%1)
-    # CHECK-NEXT: kgen.param.constant: none
-    # CHECK-NEXT: kgen.variant.create %none, 1
-    # CHECK-NEXT: kgen.return
     _ = may_throw()
+    # CHECK-NEXT: %none = kgen.param.constant: none
+    # CHECK-NEXT: lit.ref.store %none, %__result__
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: kgen.return [[FALSE]]
 
 
 # CHECK-LABEL: lit.struct.decl @BigRegExample
@@ -148,13 +152,18 @@ struct BigRegExample:
 
     # Test a raising constructor.
     # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
-    fn __init__(a: MemExample, b: MemExample) raises -> Self:
-        # CHECK-NEXT: %0 = lit.call {{.*}}__init__{{.*}}()
-        # CHECK-NEXT: %1 = lit.call {{.*}}__init__{{.*}}()
-        # CHECK-NEXT: %2 = lit.struct.create(a=%0, b=%1)
-        # CHECK-NEXT: %3 = kgen.variant.create %2, 1
-        # CHECK-NEXT: kgen.return %3
-        return BigRegExample {a: RegExample(), b: RegExample()}
+    fn __init__(inout self, a: MemExample, b: MemExample) raises:
+        # CHECK-NEXT: [[SELF:%.*]] = kgen.rebind %self
+        # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}()
+        # CHECK-NEXT: [[A_REF:%.*]] = lit.ref.struct.ger [[SELF]][a]
+        # CHECK-NEXT: lit.ref.store [[A]], [[A_REF]]
+        self.a = RegExample()
+        # CHECK-NEXT: [[B:%.*]] = lit.call {{.*}}__init__{{.*}}()
+        # CHECK-NEXT: [[B_REF:%.*]] = lit.ref.struct.ger [[SELF]][b]
+        # CHECK-NEXT: lit.ref.store [[B]], [[B_REF]]
+        self.b = RegExample()
+        # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+        # CHECK-NEXT: kgen.return [[FALSE]]
 
 
 struct MyStringReturningCtx:
@@ -183,3 +192,109 @@ fn testErrorReturn() raises:
         input = "hello"
     # CHECK: except
     print(input)
+
+# COM: Test partial destruction of initialized fields upon an error return.
+struct Field:
+    fn __copyinit__(inout self, existing: Self):
+        pass
+
+# CHECK-LABEL: lit.struct.decl @DestructSome
+struct DestructSome:
+    var a: Field
+    var b: Field
+
+    # CHECK-LABEL: lit.func @"__init__
+    fn __init__(inout self, a: Field, b: Field) raises:
+        # CHECK: call {{.*}}somethingThatRaises
+        # CHECK-NEXT: hlcf.if
+        # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
+        # CHECK-NEXT:   kgen.param.constant
+        # CHECK-NEXT:   lit.error_return
+        somethingThatRaises()
+
+        # CHECK: [[FIELD:%.*]] = lit.ref.struct.ger %self[a]
+        # CHECK-NEXT: __copyinit__{{.*}}([[FIELD]], %a)
+        self.a = a
+
+        # CHECK: call {{.*}}somethingThatRaises
+        # CHECK-NEXT: hlcf.if
+        # CHECK-NEXT:   [[FIELD:%.*]] = lit.ref.struct.ger %self[a]
+        # CHECK-NEXT:   __del__{{.*}}([[FIELD]])
+        # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
+        # CHECK-NEXT:   kgen.param.constant
+        # CHECK-NEXT:   lit.error_return
+        somethingThatRaises()
+
+        # CHECK: [[FIELD:%.*]] = lit.ref.struct.ger %self[b]
+        # CHECK-NEXT: __copyinit__{{.*}}([[FIELD]], %b)
+        self.b = b
+
+        # CHECK: call {{.*}}somethingThatRaises
+        # CHECK-NEXT: hlcf.if
+        # CHECK-NEXT:   [[FIELD:%.*]] = lit.ref.struct.ger %self[a]
+        # CHECK-NEXT:   __del__{{.*}}([[FIELD]])
+        # CHECK-NEXT:   [[FIELD:%.*]] = lit.ref.struct.ger %self[b]
+        # CHECK-NEXT:   __del__{{.*}}([[FIELD]])
+        # CHECK-NEXT:   lit.ownership.mark_initialized %__error__
+        # CHECK-NEXT:   kgen.param.constant
+        # CHECK-NEXT:   lit.error_return
+        somethingThatRaises()
+
+
+fn borrow_and_return(value: MemExample) raises -> MemExample:
+    return value
+
+
+fn use(err: Error):
+    pass
+
+
+# CHECK-LABEL: lit.func @"raising_use
+fn raising_use(owned value: MemExample):
+    try:
+        # CHECK:      [[BORROW:%.*]] = lit.ref.immut %value
+        # CHECK-NEXT: [[VAL:%.*]] = lit.var.decl "anonymous*"
+        # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}borrow_and_return{{.*}}([[BORROW]], %__try_error__, [[VAL]])
+        # CHECK-NEXT: call {{.*}}@MemExample::@"__del__{{.*}}(%value)
+        # CHECK-NEXT: hlcf.if [[IS_ERR]]
+        # CHECK-NEXT:   lit.ownership.mark_initialized %__try_error__
+        # CHECK-NEXT:   [[ERR:%.*]] = lit.ref.load %__try_error__
+        # CHECK-NEXT:   call {{.*}}@Error::@"__del__{{.*}}([[ERR]])
+        # CHECK-NEXT:   lit.try.raise
+        # CHECK-NEXT: } else {
+        # CHECK-NEXT:   lit.ownership.mark_initialized [[VAL]]
+        # CHECK-NEXT:   call {{.*}}@MemExample::@"__del__{{.*}}([[VAL]])
+        _ = borrow_and_return(value)
+    except:
+        pass
+
+# CHECK-LABEL: lit.struct.decl @ThrowingSelfInit
+struct ThrowingSelfInit:
+    var x: Int
+
+    # CHECK-LABEL: lit.func @"__init__
+    fn __init__(inout self) raises:
+        self.x = 0
+
+    # CHECK-LABEL: lit.func @"__init__
+    fn __init__(inout self, x: Int) raises:
+        # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%self, %__error__)
+        # CHECK-NEXT: hlcf.if [[IS_ERR]]
+        # CHECK-NEXT:   mark_initialized %__error__
+        # CHECK-NEXT:   [[TRUE:%.*]] = kgen.param.constant
+        # CHECK-NEXT:   error_return [[TRUE]]
+        # CHECK-NEXT: else
+        # CHECK-NEXT:   mark_initialized %self
+        # CHECK-NEXT:   yield
+        self.__init__()
+
+    # CHECK-LABEL: lit.func @"__init__
+    fn __init__(inout self, x: Int, y: Int) raises:
+        # CHECK-NEXT: [[IS_ERR:%.*]] = lit.call {{.*}}__init__{{.*}}(%self, %__error__)
+        # CHECK:      else
+        # CHECK-NEXT:   mark_initialized %self
+        # CHECK-NEXT:   call {{.*}}__del__{{.*}}(%self)
+        # CHECK-NEXT:   yield
+        self.__init__()
+        # CHECK:      lit.call {{.*}}__init__{{.*}}(%self, %__error__)
+        self.__init__()

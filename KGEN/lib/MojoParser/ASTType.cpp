@@ -529,7 +529,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
                          sig.getArgNames(), sig.getArgPassingKinds())) {
       ASTType type = typeX;
       auto convention = conventionX;
-      if (convention == ArgConvention::ByRefResult)
+      if (SignatureType::isResultSlot(convention))
         continue; // Don't print result in argument list.
 
       if (i)

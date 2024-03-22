@@ -514,9 +514,9 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // If this is the return slot for a call, we need a temporary to emit into,
     // but don't know the type until the arguments (and their lifetimes) are all
     // emitted. Just skip over it for now.
-    if (convention == ArgConvention::ByRefResult && builder) {
-      assert(calleeSig.hasMemoryOnlyResult() &&
-             passingKind == PassingKind::Implicit);
+    if (builder && SignatureType::isResultSlot(convention)) {
+      assert(calleeSig.hasMemoryOnlyResult() ||
+             calleeSig.isThrows() && passingKind == PassingKind::Implicit);
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
     }
@@ -677,8 +677,9 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
   // Drop the last argument which is the return slot.
   ArrayRef<ArgConvention> argConventions = calleeSig.getArgConventions();
   assert(argConventions.back() == ArgConvention::ByRefResult);
-  argConventions = argConventions.drop_back();
-  argumentValues = argumentValues.drop_back();
+  unsigned numToDrop = 1 + calleeSig.isThrows();
+  argConventions = argConventions.drop_back(numToDrop);
+  argumentValues = argumentValues.drop_back(numToDrop);
 
   // Check to see if the destination provides a buffer.  If not, it is safe to
   // emit into it, but it doesn't actually matter.
@@ -1063,11 +1064,11 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // If this is a byref_result slot, we will have emitted a null value for
     // this.  We can't know the type of it until we emit all the operands and
     // collect their lifetimes.
-    if (convention == ArgConvention::ByRefResult) {
+    if (SignatureType::isResultSlot(convention)) {
       // Don't know the right thing yet, use a placeholder.
       callArgs.push_back(Value());
       implicitLifetimes.push_back(
-          LifetimeAttr::get(getContext(), /*isMutable*/ true));
+          LifetimeAttr::get(getContext(), /*isMutable=*/true));
       continue;
     }
 
@@ -1147,20 +1148,45 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
         cast<RefType>(callArgs.back().getType()).getLifetime();
   }
 
+  // If the callee throws, we can now also resolve the lifetime and value of the
+  // contextual error slot to provide the callee.
+  if (calleeSig.isThrows()) {
+    // The error slot is always the second last argument.
+    MLValue errSlot = findNearestErrorSlot();
+    if (!errSlot) {
+      InflightDiag diag =
+          emitError(callExpr->getLoc(), "cannot call function that may raise "
+                                        "in a context that cannot raise")
+          << callExpr->getRange();
+      diag.attachNote(callExpr->getLoc())
+          << "try surrounding the call in a 'try' block";
+      if (auto func =
+              getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock())) {
+        diag.attachNote(func.getLoc())
+            << "or mark surrounding function as 'raises'";
+      }
+      return {};
+    }
+    unsigned errSlotOffset = calleeSig.getErrorSlotOffset();
+    callArgs[callArgs.size() - errSlotOffset] = errSlot;
+    implicitLifetimes[implicitLifetimes.size() - errSlotOffset] =
+        cast<RefType>(errSlot.getType()).getLifetime();
+  }
+
   // Now that all of the arguments have been emitted, coerce them to the
   // expected type if needed.  We do this after the first pass above, because
   // there can be forward refefences from the result slot to the later
   // arguments' lifetimes.
-  for (auto [arg, expectedType] :
-       llvm::zip(callArgs, expectedCalleeType.getInputs())) {
+  for (auto [arg, conv, expectedType] :
+       llvm::zip(callArgs, conventions, expectedCalleeType.getInputs())) {
+    // Ignore the byref result slot - we know its lifetime differs but we're ok
+    // with that.
+    if (SignatureType::isResultSlot(conv))
+      continue;
+
     // Make sure the parameters of an argument line up by emitting a rebind
     // operation.
     if (arg.getType() == expectedType)
-      continue;
-
-    // Ignore the byref result slot - we know its lifetime differs but we're ok
-    // with that.
-    if (&arg == &callArgs.back() && calleeSig.hasMemoryOnlyResult())
       continue;
 
     // Insert a rebind.
@@ -1170,7 +1196,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   assert(expectedCalleeType.getResults().size() == 1 &&
          "All mojo functions return one value");
   Type resultType = expectedCalleeType.getResults()[0];
-  Value callResult;
+  CValue callResult;
   if (auto target = callee.getIfPValue()) {
     if (auto sig = dyn_cast<SignatureType>(target.getType());
         sig && sig.isAsync()) {
@@ -1195,7 +1221,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     } else {
       auto call = builder->create<CallOp>(loc, resultType, target.get(),
                                           implicitLifetimes, callArgs);
-      callResult = call.getResult(0);
+      callResult = SRValue(call.getResult(0));
 
       // If there are any callee-specific warnings to emit, do so after
       // successfully emitting the call.
@@ -1207,7 +1233,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     assert(calleeVal && "don't have a callee of expected type");
     auto call = builder->create<CallIndirectOp>(loc, resultType, calleeVal,
                                                 implicitLifetimes, callArgs);
-    callResult = call.getResult(0);
+    callResult = SRValue(call.getResult(0));
   }
 
   // If there were any writebacks to handle, emit them before handling raised
@@ -1220,41 +1246,6 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   else if (calleeSig.hasInitSelfArg())
     byRefResults.push_back(callArgs[0]);
 
-  // If the callee can raise an error, it will be represented as a variant: try
-  // to unwrap it. If the callee is async, the error is propagated later.
-  if (calleeSig.isThrows() && !calleeSig.isAsync()) {
-    // Put the insertion point back after we're done building the 'if'.
-    OpBuilder::InsertionGuard builderGuard(*builder);
-    auto callResultTy = cast<VariantType>(callResult.getType());
-    Type successType = callResultTy.getType(1);
-    auto handleVariant = builder->create<LIT::HandleVariantOp>(
-        loc, successType, callResult, ValueRange(byRefResults));
-    Block *successBlock =
-        builder->createBlock(&handleVariant.getSuccessRegion());
-    builder->setInsertionPointToStart(successBlock);
-    Value value = builder->create<VariantTakeOp>(loc, callResult, 1);
-    builder->create<LIT::YieldOp>(loc, value);
-
-    Block *errorBlock = builder->createBlock(&handleVariant.getErrorRegion());
-    builder->setInsertionPointToStart(errorBlock);
-    Value error = builder->create<VariantTakeOp>(loc, callResult, 0);
-    if (failed(emitRaise(error, loc))) {
-      InflightDiag diag =
-          emitError(callExpr->getLoc(), "cannot call function that may raise "
-                                        "in a context that cannot raise")
-          << callExpr->getRange();
-      diag.attachNote(callExpr->getLoc())
-          << "try surrounding the call in a 'try' block";
-      if (auto func =
-              getBlockParentOfType<LIT::FuncOp>(builder->getInsertionBlock()))
-        diag.attachNote(func.getLoc())
-            << "or mark surrounding function as 'raises'";
-      return {};
-    }
-    builder->create<UnreachableOp>(loc);
-    callResult = handleVariant.getResult(0);
-  }
-
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
   if (calleeSig.hasMemoryOnlyResult()) {
@@ -1264,7 +1255,11 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     return emitCResult(MRValue(callArgs.back()), callExpr, dest);
   }
 
+  // Raising initializers have an ABI result of 'i1' but actually return None.
+  if (calleeSig.isThrows() && calleeSig.hasInitSelfArg())
+    callResult = PValue(shared.getNoneAttr());
+
   // Otherwise, register-passable results are the call result which may need to
   // be emitted into a ValueDest.
-  return emitCResult(SRValue(callResult), callExpr, dest);
+  return emitCResult(callResult, callExpr, dest);
 }

@@ -81,8 +81,10 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
         // Rewrite InitSelf if  the type implements init in the deprecated way.
         // TODO: Remove this support.
         (conv == ArgConvention::InitSelf && isRegInit)) {
-      // Don't modify a byref result of an unrelated type.
-      if (ASTType(type).getReferenceElementType().mlirType != selfType) {
+      // Don't modify a byref result of an unrelated type. If the function
+      // raises, then the result is always returned through memory.
+      if (ASTType(type).getReferenceElementType().mlirType != selfType ||
+          traitSig.isThrows()) {
         argTypes.push_back(type);
         conventions.push_back(conv);
         continue;
@@ -96,19 +98,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
       if (!trivial)
         fnEffects.setOwnedRegisterResult();
       // Move the self type into the result.
-      if (!traitSig.isThrows()) {
-        // Just overwrite the none result type.
-        resultType = selfType;
-        continue;
-      }
-      // For a throwing function, we need to insert the type into the variant.
-      // The error type is the first type.
-      auto variant = cast<VariantType>(resultType);
-      resultType = VariantType::get({*variant.getTypes().begin(), selfType});
-
-      // The result is always owned because it includes a variant containing an
-      // error.
-      fnEffects.setOwnedRegisterResult();
+      resultType = selfType;
       continue;
     }
 
@@ -229,6 +219,7 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
       continue;
 
     case ArgConvention::ByRefResult:
+    case ArgConvention::ByRefError:
       continue; // Ignore this, it will be assigned to later.
 
     case ArgConvention::ByRef:
@@ -287,16 +278,12 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   ImplicitLocOpBuilder builder(shared.translateLocation(structDecl.getLoc()),
                                *emitter.builder);
   Value retVal;
-  if (hasRegisterResult) {
+  if (hasRegisterResult)
     retVal = emitter.emitSRValue({callResult, node}, EC_Trait);
-  } else {
-    retVal =
-        builder.create<ParamConstantOp>(KGEN::NoneAttr::get(b.getContext()));
-  }
-  if (memSig.isThrows()) {
-    retVal = builder.create<VariantCreateOp>(memSig.getResultType(), retVal,
-                                             /*index=*/1);
-  }
+  else if (memSig.isThrows())
+    retVal = builder.create<ParamConstantOp>(builder.getBoolAttr(false));
+  else
+    retVal = builder.create<ParamConstantOp>(shared.getNoneAttr());
   builder.create<KGEN::ReturnOp>(retVal);
 }
 

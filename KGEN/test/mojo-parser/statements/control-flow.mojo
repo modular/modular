@@ -37,8 +37,9 @@ fn return_new_line() -> Int:
 # CHECK-LABEL: lit.func @"return_impl_convert_raises
 fn return_impl_convert_raises() raises -> Int:
     # CHECK: %0 = kgen{{.*}}{4}
-    # CHECK: %1 = kgen.variant.create %0
-    # CHECK: lit.return %1 : !kgen.variant<!Error, !Int>
+    # CHECK-NEXT: lit.ref.store %0, %__result__
+    # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+    # CHECK-NEXT: return [[FALSE]]
     return 4  # Implicit conversion from literal to Int
 
 
