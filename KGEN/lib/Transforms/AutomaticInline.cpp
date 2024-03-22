@@ -364,9 +364,9 @@ uint64_t AutomaticInline::getInlineThreshold() {
   case 2:
     return 20;
   case 3:
-    return 50;
+    return 5000;
   default:
-    return 50;
+    return 5000;
   }
 }
 
