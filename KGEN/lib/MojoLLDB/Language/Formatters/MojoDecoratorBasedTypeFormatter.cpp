@@ -6,7 +6,6 @@
 
 #include "MojoDecoratorBasedTypeFormatter.h"
 #include "../../TypeSystem/MojoTypeSystem.h"
-#include "../../Utils/Errors.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "lldb/DataFormatters/DataVisualization.h"
@@ -29,13 +28,12 @@ public:
       : SyntheticValueProviderFrontEnd(backend) {}
 
   lldb::ValueObjectSP GetSyntheticValue() override {
-    if (!m_backend.MightHaveChildren() ||
-        getExpectedValueOr(m_backend.GetNumChildren(), 0u) == 0)
+    if (!m_backend.MightHaveChildren() || m_backend.GetNumChildren() == 0)
       return {};
     return m_backend.GetChildAtIndex(0, /*can_create=*/true);
   }
 
-  llvm::Expected<uint32_t> CalculateNumChildren() override {
+  uint32_t CalculateNumChildren() override {
     if (!MightHaveChildren())
       return 0;
     return GetSyntheticValue()->GetNumChildren();

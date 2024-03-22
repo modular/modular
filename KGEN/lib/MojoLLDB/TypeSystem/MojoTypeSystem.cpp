@@ -9,7 +9,6 @@
 #include "../ExpressionParser/MojoExpressionParser.h"
 #include "../ExpressionParser/MojoExpressionVariable.h"
 #include "../ExpressionParser/MojoUserExpression.h"
-#include "../Utils/Errors.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENDType.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -605,7 +604,7 @@ bool MojoTypeSystem::IsScalarType(lldb::opaque_compiler_type_t type) {
 // Type Navigation
 //===--------------------------------------------------------------------===//
 
-llvm::Expected<uint32_t>
+uint32_t
 MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
                                bool omitEmptyBaseClasses,
                                const lldb_private::ExecutionContext *exeCtx) {
@@ -658,8 +657,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
     return lldb_private::CompilerType();
 
   if (!ignoreArrayBounds &&
-      idx >= getExpectedValueOr(
-                 GetNumChildren(type, omitEmptyBaseClasses, exeCtx), 0u))
+      idx >= GetNumChildren(type, omitEmptyBaseClasses, exeCtx))
     return {};
 
   // Pointer only has one child, so just return the unwrapped pointer type

@@ -250,7 +250,7 @@ function(add_mojo_package target visibility)
   # generated elsewhere.
   else()
     add_mojo_package_doc(${target}-doc ${visibility} ${KGEN_PACKAGE_DIR}
-      ${KGEN_DOCS_DIR}/ DEPENDS ${KGEN_SOURCE_FILES})
+      ${KGEN_DOCS_DIR}/ DEPENDS ${KGEN_SOURCE_FILES} ${target})
   endif()
 endfunction()
 
