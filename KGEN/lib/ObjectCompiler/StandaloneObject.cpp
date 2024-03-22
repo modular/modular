@@ -273,7 +273,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
     chain.andThenSync([this, op, links = std::move(links),
                        linkMgr = std::move(linkMgr), output = output.copy(),
-                       buf = buf.copy()]() mutable {
+                       standalone, buf = buf.copy()]() mutable {
       // Process all the link directives now. We keep a set of
       // already-processed link directives, so we don't re-process
       // libraries.
@@ -308,8 +308,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       // Split the module into multiple slices and compile each in parallel.
       // FIXME(#25622): Disable module splitting for non-standalone archives.
       SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
-      bool noSplitting =
-          runtime.getWorkQueue()->getParallelismLevel() < 2 || generatingPtx;
+      bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2 ||
+                         generatingPtx || !standalone;
 
       auto processSync = [&]() {
         // If sync, await cacheResults so that the cloned sub-module
