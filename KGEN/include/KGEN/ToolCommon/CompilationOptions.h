@@ -102,7 +102,7 @@ public:
   // - graph compiler's compilation path where heuristics is needed for
   // performance.
   // - ...
-  bool enableLLVMPerFunctionSplitting = false;
+  bool enableLLVMPerFunctionSplitting = true;
 };
 } // namespace M::KGEN
 
