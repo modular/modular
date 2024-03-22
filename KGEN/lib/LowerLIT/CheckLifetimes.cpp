@@ -1444,10 +1444,11 @@ private:
   void emitDestructorCallAt(Value value, bool isIndirect,
                             mlir::ImplicitLocOpBuilder &builder,
                             Operation *opWithUse);
+  /// Emit a debug kill marker for the value if it is tracked with debug info.
+  void emitDebugKill(ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder);
 
-  /// Emit an end-of-life debug info if the value being destroyed is tracked
-  /// with debug info. Then emit a destructor call.
-  void emitEndOfLifeAndDestructorCallAt(Value value, ValueRef valueRef,
+  /// Emit both a debug kill & a destructor call.
+  void emitDebugKillAndDestructorCallAt(Value value, ValueRef valueRef,
                                         mlir::ImplicitLocOpBuilder &builder,
                                         Operation *opWithUse);
 
@@ -2181,7 +2182,7 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
   // If a generic type or trivial, then emit a destructor call (or nothing).
   auto valueType = dyn_cast<DeclRefType>(valueRef.getValueType(value));
   if (!valueType) {
-    emitEndOfLifeAndDestructorCallAt(value, valueRef, builder, opWithUse);
+    emitDebugKillAndDestructorCallAt(value, valueRef, builder, opWithUse);
     valueRef.markBits(consumedValues, true);
     return;
   }
@@ -2215,7 +2216,7 @@ void DestructorInsertion::destroyValueIfNeeded(Value value, ValueRef valueRef,
     }
 
     // Ok, everything looks good - actually emit the dtor call here.
-    emitEndOfLifeAndDestructorCallAt(value, valueRef, builder, opWithUse);
+    emitDebugKillAndDestructorCallAt(value, valueRef, builder, opWithUse);
     valueRef.markBits(consumedValues, true);
     return;
   }
@@ -2601,14 +2602,8 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
                               implicitLifetimes, valueToDestroy);
 }
 
-void DestructorInsertion::emitEndOfLifeAndDestructorCallAt(
-    Value value, ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder,
-    Operation *opWithUse) {
-  // We are going to emit a destructor for the specified ValueRef, so all none
-  // of the things we are about to destroy should already be destroyed.
-  assert(valueRef.isAllMissing(consumedValues) &&
-         "cannot have partially consumed object");
-
+void DestructorInsertion::emitDebugKill(ValueRef valueRef,
+                                        mlir::ImplicitLocOpBuilder &builder) {
   // Insert end-of-life debug value if full value is destroyed.
   // TODO(#34115): Emit fragment end-of-life for partial destruction.
   ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
@@ -2616,7 +2611,16 @@ void DestructorInsertion::emitEndOfLifeAndDestructorCallAt(
       valueRef.endBit == info.endValueBit) {
     builder.create<DebugInfo::KillOp>(info.debugVariable);
   }
+}
 
+void DestructorInsertion::emitDebugKillAndDestructorCallAt(
+    Value value, ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder,
+    Operation *opWithUse) {
+  // We are going to emit a destructor for the specified ValueRef, so all none
+  // of the things we are about to destroy should already be destroyed.
+  assert(valueRef.isAllMissing(consumedValues) &&
+         "cannot have partially consumed object");
+  emitDebugKill(valueRef, builder);
   emitDestructorCallAt(value, valueRef.isIndirect, builder, opWithUse);
 }
 
