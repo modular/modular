@@ -7,7 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from benchmark import Bench, Bencher, BenchId
-from benchmark.cuda import time_async_cuda_kernel
+from benchmark._cuda import time_async_cuda_kernel
 from gpu.host import Context, Dim, Function, Stream
 
 
