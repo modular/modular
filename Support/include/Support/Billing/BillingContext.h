@@ -8,6 +8,7 @@
 #define SUPPORT_BILLING_BILLINGCONTEXT_H
 
 #include <chrono>
+#include <condition_variable>
 #include <thread>
 
 #include "Support/ErrorOr.h"
