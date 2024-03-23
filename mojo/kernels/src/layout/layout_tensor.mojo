@@ -616,8 +616,11 @@ struct LayoutTensor[
         else:
             abort("LayoutTensor linspace only support rank 1-2 layouts.")
 
+    @always_inline
     fn fill(self, val: Scalar[dtype]):
         alias num_elements = layout.size() * Self.element_size
+
+        @unroll
         for i in range(num_elements):
             self.ptr[i] = val
 
