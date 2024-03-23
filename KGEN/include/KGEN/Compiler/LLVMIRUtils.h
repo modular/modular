@@ -26,8 +26,8 @@ void splitPerExported(
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
 void splitPerFunction(
-    llvm::Module &module,
-    function_ref<void(llvm::Module &, int64_t idx)> processFn);
+    llvm::Module &module, size_t parallelismLevel,
+    function_ref<void(llvm::Module *, int64_t idx, bool)> processFn);
 
 } // namespace M::KGEN
 

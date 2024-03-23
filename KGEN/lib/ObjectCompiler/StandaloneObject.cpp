@@ -273,7 +273,22 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
     chain.andThenSync([this, op, links = std::move(links),
                        linkMgr = std::move(linkMgr), output = output.copy(),
-                       buf = buf.copy(), standalone]() mutable {
+                       standalone, buf = buf.copy()]() mutable {
+      // Process all the link directives now. We keep a set of
+      // already-processed link directives, so we don't re-process
+      // libraries.
+      SmallVector<llvm::NewArchiveMember> archiveMembers;
+      DenseSet<StringAttr> processedNames;
+      SmallVector<BufferRef> archiveBuffers;
+
+      for (auto &[name, bytes] : links) {
+        if (auto err =
+                handleLink(name, bytes, processedNames, archiveMembers)) {
+          return std::move(output).setToError(
+              LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
+        }
+      }
+
       // Lower the module to LLVM.
       llvm::LLVMContext ctx;
       auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
@@ -285,8 +300,6 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       CompilerTimeTraceScope traceScope("split-input-module");
       StringRef moduleName = llvmModule->getName();
 
-      // If we are saving the temp files we don't want to split.
-      bool savingTemps = !options.saveTempsPrefix.empty();
       // HACK HACK HACK https://github.com/modularml/modular/issues/22959
       // HACK: If we are generating PTX we don't want to split.
       bool generatingPtx =
@@ -296,8 +309,28 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       // FIXME(#25622): Disable module splitting for non-standalone archives.
       SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
       bool noSplitting = runtime.getWorkQueue()->getParallelismLevel() < 2 ||
-                         generatingPtx || !standalone ||
-                         options.disableLLVMModuleSplitting;
+                         generatingPtx || !standalone;
+
+      auto processSync = [&]() {
+        // If sync, await cacheResults so that the cloned sub-module
+        // can be released before launching the next batch to reduce
+        // memory pressure.
+        await(cacheResults);
+
+        // If any of the cache results failed, propagate the error.
+        for (auto &result : cacheResults) {
+          if (result.isError())
+            return std::move(output).setToError(result.takeDiagnostic());
+        }
+        for (LLCL::AnyAsyncValueRef &result : cacheResults) {
+          // Move the result buffer to archiveBuffers so that we can
+          // concatenate them later together.
+          archiveBuffers.emplace_back(std::move(result.get<BufferRef>()));
+        }
+        // Clear cacheResults for next batch.
+        cacheResults.clear();
+      };
+
       if (noSplitting) {
         cacheResults.push_back(
             lowerLLVMModuleToObject(*llvmModule, op->getLoc()));
@@ -312,74 +345,106 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
           }
         }
 
-        splitPerExported(
-            *llvmModule, [&](llvm::Module &inputModule, int64_t idx) {
-              cacheResults.push_back(
-                  lowerLLVMModuleToObject(inputModule, op->getLoc(), idx));
-            });
+        if (options.enableLLVMPerFunctionSplitting) {
+          splitPerFunction(
+              *llvmModule, runtime.getWorkQueue()->getParallelismLevel(),
+              [&](llvm::Module *inputModule, int64_t idx, bool sync) {
+                if (inputModule) {
+                  cacheResults.push_back(
+                      lowerLLVMModuleToObject(*inputModule, op->getLoc(), idx));
+                }
+                if (sync)
+                  processSync();
+              });
+        } else {
+          // TODO: Keep this less aggressive splitting for:
+          // - REPL which has different object layout requirements layouts
+          // (#35345).
+          // - Other cases where aggressive splitting actually slow down
+          // compilation and needs better heuristics to improve.
+          splitPerExported(
+              *llvmModule, [&](llvm::Module &inputModule, int64_t idx) {
+                cacheResults.push_back(
+                    lowerLLVMModuleToObject(inputModule, op->getLoc(), idx));
+              });
+        }
       }
 
-      andThenSyncMoving(
-          cacheResults,
-          [moduleName = moduleName.str(), op, links = std::move(links),
-           linkMgr = std::move(linkMgr), buf = buf.copy(),
-           output = output.copy(),
-           generatingPtx](MutableArrayRef<AnyAsyncValueRef> values) mutable {
-            // If any of the cache results failed, propagate the error.
-            for (auto &result : values) {
-              if (result.isError())
-                return std::move(output).setToError(result.takeDiagnostic());
-            }
-            CompilerTimeTraceScope traceScope("concatenate-object-files");
-
-            if (generatingPtx) {
-              // If we're not splitting just copy directly to the output buffer.
-              assert(values.size() == 1 &&
-                     "should have one result if generating PTX");
-              *buf << values[0].get<BufferRef>()->getBuffer();
-              std::move(output).emplace(buf.copy());
-              return;
-            }
-
-            SmallVector<llvm::NewArchiveMember> archiveMembers;
-
-            // Process all the link directives now. We keep a set of
-            // already-processed link directives, so we don't re-process
-            // libraries.
-            DenseSet<StringAttr> processedNames;
-            for (auto &[name, bytes] : links) {
-              if (auto err =
-                      handleLink(name, bytes, processedNames, archiveMembers)) {
-                return std::move(output).setToError(
-                    LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
+      if (noSplitting || !options.enableLLVMPerFunctionSplitting) {
+        andThenSyncMoving(
+            cacheResults,
+            [moduleName = moduleName.str(), op, links = std::move(links),
+             archiveMembers = std::move(archiveMembers),
+             linkMgr = std::move(linkMgr), buf = buf.copy(),
+             output = output.copy(),
+             generatingPtx](MutableArrayRef<AnyAsyncValueRef> values) mutable {
+              // If any of the cache results failed, propagate the error.
+              for (auto &result : values) {
+                if (result.isError())
+                  return std::move(output).setToError(result.takeDiagnostic());
               }
-            }
+              CompilerTimeTraceScope traceScope("concatenate-object-files");
 
-            // Now that all the object files have been compiled, merge them
-            // all into a single archive.
-            SmallVector<std::string> archiveMemberNames(values.size());
-            for (auto [index, result] : llvm::enumerate(values)) {
-              auto &resultBuf = result.get<BufferRef>();
-              archiveMemberNames[index] =
-                  (moduleName + "." + Twine(index) + ".o").str();
-              archiveMembers.emplace_back(llvm::MemoryBufferRef(
-                  resultBuf->getBuffer(), archiveMemberNames[index]));
-            }
-            auto result = llvm::writeArchiveToBuffer(
-                archiveMembers,
-                /*WriteSymtab=*/llvm::SymtabWritingMode::NormalSymtab,
-                archiveMembers.front().detectKindFromObject(),
-                /*Deterministic=*/false, /*Thin=*/false);
-            if (!result) {
-              return std::move(output).setToError(LLCL::getMLIRDiagnostic(
-                  "failed to concatenate object files into archive",
-                  op->getLoc()));
-            }
+              if (generatingPtx) {
+                // If we're not splitting just copy directly to the output
+                // buffer.
+                assert(values.size() == 1 &&
+                       "should have one result if generating PTX");
+                *buf << values[0].get<BufferRef>()->getBuffer();
+                std::move(output).emplace(buf.copy());
+                return;
+              }
 
-            // Copy the result into the output buffer.
-            *buf << (*result)->getBuffer();
-            std::move(output).emplace(buf.copy());
-          });
+              // Now that all the object files have been compiled, merge them
+              // all into a single archive.
+              SmallVector<std::string> archiveMemberNames(values.size());
+              for (auto [index, result] : llvm::enumerate(values)) {
+                auto &resultBuf = result.get<BufferRef>();
+                archiveMemberNames[index] =
+                    (moduleName + "." + Twine(index) + ".o").str();
+                archiveMembers.emplace_back(llvm::MemoryBufferRef(
+                    resultBuf->getBuffer(), archiveMemberNames[index]));
+              }
+
+              auto result = llvm::writeArchiveToBuffer(
+                  archiveMembers,
+                  /*WriteSymtab=*/llvm::SymtabWritingMode::NormalSymtab,
+                  archiveMembers.front().detectKindFromObject(),
+                  /*Deterministic=*/false, /*Thin=*/false);
+              if (!result) {
+                return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+                    "failed to concatenate object files into archive",
+                    op->getLoc()));
+              }
+
+              // Copy the result into the output buffer.
+              *buf << (*result)->getBuffer();
+              std::move(output).emplace(buf.copy());
+            });
+      } else {
+        CompilerTimeTraceScope traceScope("concatenate-object-files");
+        // Now that all the object files have been compiled,
+        // merge them all into a single archive.
+        SmallVector<std::string> archiveMemberNames(archiveBuffers.size());
+        for (auto [index, resultBuf] : llvm::enumerate(archiveBuffers)) {
+          archiveMemberNames[index] =
+              (moduleName + "." + Twine(index) + ".o").str();
+          archiveMembers.emplace_back(llvm::MemoryBufferRef(
+              resultBuf->getBuffer(), archiveMemberNames[index]));
+        }
+        auto result = llvm::writeArchiveToBuffer(
+            archiveMembers,
+            /*WriteSymtab=*/llvm::SymtabWritingMode::NormalSymtab,
+            archiveMembers.front().detectKindFromObject(),
+            /*Deterministic=*/false, /*Thin=*/false);
+        if (!result) {
+          return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+              "failed to concatenate object files into archive", op->getLoc()));
+        }
+        // Copy the result into the output buffer.
+        *buf << (*result)->getBuffer();
+        std::move(output).emplace(buf.copy());
+      }
     });
     return output;
   };
@@ -387,7 +452,9 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
 
   WriteableBufferRef produceArchiveKey = WriteableBuffer::get();
   options.print(*produceArchiveKey << "produceArchive(");
-  *produceArchiveKey << ", isJIT=" << isJIT << ')';
+  *produceArchiveKey << ", isJIT=" << isJIT
+                     << ", enableLLVMPerFunctionSplitting="
+                     << options.enableLLVMPerFunctionSplitting << ')';
 
   auto output = cachedTransform(
       *slicedModule, transformCache.copy(),
