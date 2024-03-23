@@ -441,7 +441,11 @@ fn _compute_ndbuffer_offset[
         return 0
 
     @parameter
-    if triple_is_nvidia_cuda() and address_space == _GPUAddressSpace.SHARED:
+    if triple_is_nvidia_cuda() and (
+        address_space == _GPUAddressSpace.SHARED
+        or address_space == _GPUAddressSpace.LOCAL
+        or address_space == _GPUAddressSpace.CONSTANT
+    ):
         var result: Int32 = 0
 
         @unroll
