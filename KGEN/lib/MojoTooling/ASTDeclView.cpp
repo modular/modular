@@ -482,7 +482,7 @@ AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
 
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
-    description = llvm::join(docStr->getDescription(), "\n");
+    description = DocString::formatDescription(docStr->getDescription());
   }
 }
 
@@ -510,7 +510,7 @@ void FunctionDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
     }
   }
 
-  description = llvm::join(pureDescriptionLines, "\n");
+  description = DocString::formatDescription(pureDescriptionLines);
 }
 
 std::string FunctionDeclView::getDeclarationSnippet() const {
@@ -751,7 +751,7 @@ StructFieldDeclView::StructFieldDeclView(MojoASTDeclRef declRef)
 
   if (std::optional<DocString> docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
-    description = llvm::join(docStr->getDescription(), "\n");
+    description = DocString::formatDescription(docStr->getDescription());
   }
 }
 
@@ -847,7 +847,7 @@ TraitDeclView::TraitDeclView(MojoASTDeclRef declRef)
       decl(declRef) {
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();
-    description = llvm::join(docStr->getDescription(), "\n");
+    description = DocString::formatDescription(docStr->getDescription());
   }
 }
 
@@ -867,7 +867,7 @@ void StructDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
       pureDescriptionLines.push_back(desc[line]);
   }
 
-  description = llvm::join(pureDescriptionLines, "\n");
+  description = DocString::formatDescription(pureDescriptionLines);
 }
 
 std::string StructDeclView::getDeclarationSnippet() const {
@@ -981,7 +981,7 @@ ModuleDeclView::ModuleDeclView(MojoASTDeclRef declRef)
       decl(declRef) {
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();
-    description = llvm::join(docStr->getDescription(), "\n");
+    description = DocString::formatDescription(docStr->getDescription());
   }
 }
 
@@ -1017,6 +1017,6 @@ PackageDeclView::PackageDeclView(MojoASTDeclRef declRef)
       decl(declRef) {
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
-    description = llvm::join(docStr->getDescription(), "\n");
+    description = DocString::formatDescription(docStr->getDescription());
   }
 }

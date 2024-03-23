@@ -31,8 +31,12 @@ public:
   /// Return the summary of the doc string.
   StringRef getSummary() const { return summary; }
 
-  /// Return the fully body description of the doc string.
+  /// Return the full body description of the doc string.
   ArrayRef<StringRef> getDescription() const { return descriptionLines; }
+
+  /// Format the given set of description lines into a single string for
+  /// display as documentation, with each line separated by a newline character.
+  static std::string formatDescription(ArrayRef<StringRef> descriptionLines);
 
   /// Return the beginning location of the doc string, or nullptr if the doc
   /// string is not attached to a location.

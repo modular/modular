@@ -181,6 +181,48 @@ DocString::DocString(DocStringAttr rawDocStringAttr)
   descriptionLines.append(lines.begin() + line, lines.end());
 }
 
+std::string DocString::formatDescription(ArrayRef<StringRef> descriptionLines) {
+  std::string result;
+  llvm::raw_string_ostream os(result);
+
+  // If the iterator is currently in a code block, this is the indent of the
+  // code block.
+  std::optional<unsigned> codeBlockIndent;
+  for (const StringRef &line : descriptionLines) {
+    StringRef strippedLine = line.trim();
+
+    // Functor that determines if a line should be emitted.
+    auto shouldEmitLine = [&] {
+      // Check if we're in a code block currently.
+      if (codeBlockIndent) {
+        // Check for the end of the code block.
+        if (strippedLine == "```" &&
+            (line.size() - strippedLine.size()) == *codeBlockIndent) {
+          codeBlockIndent.reset();
+          return true;
+        }
+
+        // If the line is a REPL magic, strip it out.
+        if (line.starts_with("%"))
+          return false;
+        // Otherwise, just emit the line.
+        return true;
+      }
+
+      // Check for a new code block.
+      if (strippedLine == "```mojo")
+        codeBlockIndent = line.size() - strippedLine.size();
+      return true;
+    };
+    if (shouldEmitLine()) {
+      os << line;
+      if (&line != &descriptionLines.back())
+        os << "\n";
+    }
+  }
+  return result;
+}
+
 SmallVector<DocString::CodeBlock> DocString::getCodeBlocks() const {
   SmallVector<CodeBlock> codeBlocks;
 
@@ -197,10 +239,10 @@ SmallVector<DocString::CodeBlock> DocString::getCodeBlocks() const {
           (line.size() - strippedLine.size()) != curCodeBlock->indentLevel)
         continue;
       // Just ignore empty code blocks.
-      if (curCodeBlock->lineRange.first == i)
-        continue;
-      curCodeBlock->lineRange.second = i - 1;
-      codeBlocks.emplace_back(std::move(*curCodeBlock));
+      if (curCodeBlock->lineRange.first != i) {
+        curCodeBlock->lineRange.second = i - 1;
+        codeBlocks.emplace_back(std::move(*curCodeBlock));
+      }
       curCodeBlock.reset();
       continue;
     }

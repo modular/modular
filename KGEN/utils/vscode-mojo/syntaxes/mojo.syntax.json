@@ -23,6 +23,16 @@
     "statement": {
       "patterns": [
         {
+          "comment": "REPL Magic hide command",
+          "name": "comment.line.mojo",
+          "match": "^\\s*\\%\\#"
+        },
+        {
+          "comment": "REPL Magic commands",
+          "name": "entity.name.function.decorator.python",
+          "match": "^\\%[a-zA-Z0-9_]+"
+        },
+        {
           "include": "#import"
         },
         {
