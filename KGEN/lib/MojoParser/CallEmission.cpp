@@ -148,13 +148,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               Boundness boundness) const {
   size_t numParams = expectedParamTypes.size();
 
-  // Handle *_ if it is present, otherwise expanding posBindings into
-  // unpackedPosBindings.
+  // Handle *_ if it is present expanding posBindings into unpackedPosBindings.
   Fitness fitness{0, false};
   SmallVector<Binding> unpackedPosBindings;
   unpackedPosBindings.reserve(numParams);
-  std::optional<Binding> starUnderBinding;
-  ssize_t unpackedUnboundIdx = -1;
 
   for (auto [idx, binding] : llvm::enumerate(posBindings)) {
     if (!isa<UnpackedAttr>(binding.value)) {
@@ -162,30 +159,24 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       continue;
     }
 
-    // UnpackedAttr is aka "*_": it fills up all available positional slots,
-    // but can have parameters after it, so remember it.
-    if (unpackedUnboundIdx != -1) {
-      if (diagEmitter.emitMultipleUnboundPack)
-        diagEmitter.emitMultipleUnboundPack(binding);
+    // UnpackedAttr is aka "*_": it fills up all remaining positional slots and
+    // must be at the end of the parameter list.
+    if (idx != posBindings.size() - 1) {
+      if (diagEmitter.emitUnboundPackNotEnd)
+        diagEmitter.emitUnboundPackNotEnd(binding);
       return {{}, fitness};
     }
 
     // *_ doesn't work with variadic parameter lists.
+    // TODO: Why not? It should expand to a variadic on the enclosing context.
     if (!paramListAttr.getVariadicIndices().empty()) {
       if (diagEmitter.emitUnboundPackInVariadic)
         diagEmitter.emitUnboundPackInVariadic(binding);
       return {{}, fitness};
     }
 
-    // Otherwise, remember where it is.
-    unpackedUnboundIdx = unpackedPosBindings.size();
-    starUnderBinding = binding;
-  }
-
-  ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
-  size_t numPosPassable = countNumPositional(paramPassingKinds);
-  if (unpackedUnboundIdx != -1) {
-    // Check if we have too many parameters after unpacking
+    // Check if we have too many parameters after unpacking.
+    size_t numPosPassable = countNumPositional(paramListAttr.getPassingKinds());
     size_t numUnpackedPositionals = unpackedPosBindings.size();
     if (unpackedPosBindings.size() > numPosPassable) {
       if (diagEmitter.emitTooManyPositional) {
@@ -195,23 +186,15 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
       return {{}, fitness};
     }
 
-    // Now we can handle the unpacked unbound attributes if needed.
-
     // If missing at least one positional parameter, we inject some number of
     // UnboundAttr's, just like the user wrote the right number of _'s.
-    if (numUnpackedPositionals < numPosPassable) {
-      auto unboundAttr =
-          UnboundAttr::get(DiscardType::get(shared.getContext()));
-      Binding unboundBinding{starUnderBinding->expr, unboundAttr,
-                             starUnderBinding->typeChecked};
+    auto unboundAttr = UnboundAttr::get(DiscardType::get(shared.getContext()));
+    Binding unboundBinding{binding.expr, unboundAttr, binding.typeChecked};
 
-      // Calculate how many UnboundAttr's (_'s) we need to inject, and put them
-      // where the *_ was found.
-      ssize_t numUnbounds = numPosPassable - numUnpackedPositionals;
-      unpackedPosBindings.insert(unpackedPosBindings.begin() +
-                                     unpackedUnboundIdx,
-                                 numUnbounds, unboundBinding);
-    }
+    // Calculate how many UnboundAttr's (_'s) we need to inject, and put them
+    // where the *_ was found.
+    ssize_t numUnbounds = numPosPassable - numUnpackedPositionals;
+    unpackedPosBindings.append(numUnbounds, unboundBinding);
     assert(unpackedPosBindings.size() == numPosPassable);
   }
 
@@ -320,6 +303,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     return {};
   };
 
+  ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   for (auto [idx, sigType, paramName, passingKind] : llvm::enumerate(
            expectedParamTypes, paramListAttr.getNames(), paramPassingKinds)) {
     // This is the refined type expected by the signature.
@@ -573,10 +557,10 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         if (opLoc)
           diag.attachNote(*opLoc) << baseName << " declared here";
       },
-      /*emitMultipleUnboundPack=*/
+      /*emitUnboundPackNotEnd=*/
       [&](const Binding &binding) {
         InflightDiag diag = shared.emitError(binding.expr->getLoc());
-        diag << "multiple unbound pack symbols not allowed";
+        diag << "unbound pack must be at the end of the parameter list";
       },
       /*emitInferOnlyFailure=*/
       [&](size_t paramIdx) {

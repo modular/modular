@@ -16,7 +16,7 @@ fn takes_var_params[*a: int]():
 
 
 fn test_multiple_unbound_pack():
-    # expected-error @+1 {{multiple unbound pack symbols not allowed}}
+    # expected-error @+1 {{unbound pack must be at the end of the parameter list}}
     alias t = Parametric[*_, `1`, *_]
 
 # expected-note @+1 {{declared here}}
