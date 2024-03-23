@@ -1243,7 +1243,9 @@ fn _elementwise_impl[
 ](shape: StaticIntTuple[rank]):
     @parameter
     if target == "cuda":
-        _elementwise_impl_gpu[func, simd_width, rank, use_blocking_impl](shape)
+        _elementwise_impl_gpu[func, simd_width, rank](
+            shape, Stream.get_current_stream()
+        )
     else:
         constrained[target == "cpu", "unsupported target"]()
         alias impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
@@ -1599,8 +1601,7 @@ fn _elementwise_impl_gpu[
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
     rank: Int,
-    use_blocking_impl: Bool,
-](shape: StaticIntTuple[rank]):
+](shape: StaticIntTuple[rank], stream: Stream):
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
@@ -1608,10 +1609,10 @@ fn _elementwise_impl_gpu[
         func: The body function.
         simd_width: The SIMD vector width to use.
         rank: The rank of the buffer.
-        use_blocking_impl: If true this is a blocking op.
 
     Args:
         shape: The shape of the buffer.
+        stream: Stream on which to launch the kernel.
     """
 
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
@@ -1696,8 +1697,6 @@ fn _elementwise_impl_gpu[
         _elementwise_gpu_kernel[False]()
 
     try:
-        var stream = Stream.get_current_stream()
-
         # TODO cleanup after #26672
         alias func_type = fn () capturing -> None
         if shape[rank - 1] % simd_width == 0:
