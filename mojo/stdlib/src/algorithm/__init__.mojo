@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the closed source algorithm package."""
+"""Implements the algorithm package."""
 
 from .functional import (
     map,
