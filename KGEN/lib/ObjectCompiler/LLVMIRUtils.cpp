@@ -57,18 +57,19 @@ private:
 /// to per function llvm compilation.
 class LLVMModulePerFunctionSplitterImpl {
 public:
-  explicit LLVMModulePerFunctionSplitterImpl(llvm::Module &module);
+  explicit LLVMModulePerFunctionSplitterImpl(llvm::Module &module,
+                                             size_t parallelismLevel);
 
   /// Split the LLVM module into multiple modules using the provided process
   /// function.
-  void split(llvm::function_ref<void(llvm::Module &, size_t idx)> processFn);
+  void
+  split(llvm::function_ref<void(llvm::Module *, size_t idx, bool)> processFn);
 
 private:
   struct ValueInfo {
     const llvm::Value *value = nullptr;
     bool canBeSplit = true;
     llvm::SmallPtrSet<const llvm::Value *, 4> dependencies;
-    llvm::SmallPtrSet<const llvm::Value *, 4> asyncDependencies;
     llvm::SmallPtrSet<const llvm::Value *, 4> users;
   };
 
@@ -90,6 +91,9 @@ private:
 
   /// The value info for each global value in the module.
   llvm::DenseMap<const llvm::Value *, ValueInfo> valueInfos;
+
+  /// Parallelism level to help guide control splitting concurrency.
+  size_t parallelismLevel;
 };
 } // namespace
 
@@ -107,9 +111,9 @@ void splitPerExported(
 /// support for splitting an LLVM module into multiple parts with each part
 /// contains only one function (with exception for coroutine related functions.)
 void splitPerFunction(
-    llvm::Module &module,
-    function_ref<void(llvm::Module &, int64_t idx)> processFn) {
-  LLVMModulePerFunctionSplitterImpl impl(module);
+    llvm::Module &module, size_t parallelismLevel,
+    function_ref<void(llvm::Module *, int64_t idx, bool)> processFn) {
+  LLVMModulePerFunctionSplitterImpl impl(module, parallelismLevel);
   impl.split(processFn);
 }
 } // namespace M::KGEN
@@ -289,13 +293,13 @@ void LLVMModuleSplitterImpl::propagateUseInfo() {
 }
 
 LLVMModulePerFunctionSplitterImpl::LLVMModulePerFunctionSplitterImpl(
-    llvm::Module &module)
-    : mainModule(module) {}
+    llvm::Module &module, size_t parallelismLevel)
+    : mainModule(module), parallelismLevel(parallelismLevel) {}
 
 /// Split the LLVM module into multiple modules using the provided process
 /// function.
 void LLVMModulePerFunctionSplitterImpl::split(
-    llvm::function_ref<void(llvm::Module &, size_t idx)> processFn) {
+    llvm::function_ref<void(llvm::Module *, size_t idx, bool)> processFn) {
   // Compute the value info for each global in the module.
   auto computeUsers = [&](auto &value) { collectValueUsers(&value); };
   llvm::for_each(mainModule.functions(), computeUsers);
@@ -315,21 +319,31 @@ void LLVMModulePerFunctionSplitterImpl::split(
   // LLVM LTO style optimization may suffer a bit here since we don't have
   // the full callstack present anymore in each cloned module.
   llvm::DenseSet<const llvm::Value *> splitValues;
-  SmallVector<std::unique_ptr<llvm::Module>> splitModules;
-  auto splitValue = [&](const llvm::Value *root) {
+  auto splitValue =
+      [&](const llvm::Value *root) -> std::unique_ptr<llvm::Module> {
     // If the function is already split, e.g. if it was a dependency of
     // another function, skip it.
     if (splitValues.count(root))
-      return;
+      return nullptr;
 
     auto &valueInfo = valueInfos[root];
     llvm::ValueToValueMapTy valueMap;
+    SmallPtrSet<const llvm::Value *, 4> splitdDeps;
+
+    // llvm::CloneModule is not thread safe if the cloning is from the same
+    // original module because new cloned things will be added to the same
+    // llvm::LLVMContext which can have race condition.
+    // This is also true that cloned modules (with the same origin) cannot be
+    // destroyed in multi-threading without explict mutex because erasing things
+    // from the same llvm::LLVMContext is not protected.
     std::unique_ptr<llvm::Module> splitModule(llvm::CloneModule(
         mainModule, valueMap, [&](const llvm::GlobalValue *globalVal) {
           // Only clone root and the declaration of its dependencies.
-          if (globalVal == root ||
-              kgenCoroNamesCache.contains(globalVal->getName()))
+          if (globalVal == root) {
+            splitdDeps.insert(globalVal);
             return true;
+          }
+
           auto iter = valueInfos.find(globalVal);
           if (iter == valueInfos.end())
             return false;
@@ -337,8 +351,11 @@ void LLVMModulePerFunctionSplitterImpl::split(
               isa_and_nonnull<llvm::Function>(globalVal))
             return false;
 
-          return valueInfo.dependencies.contains(globalVal) ||
-                 valueInfo.asyncDependencies.contains(globalVal);
+          if (valueInfo.dependencies.contains(globalVal)) {
+            splitdDeps.insert(globalVal);
+            return true;
+          }
+          return false;
         }));
 
     if (splitModule->empty())
@@ -358,13 +375,15 @@ void LLVMModulePerFunctionSplitterImpl::split(
         globalVar.eraseFromParent();
     }
 
-    splitModules.emplace_back(std::move(splitModule));
-
     // Record the split values.
-    splitValues.insert(root);
+    splitValues.insert(splitdDeps.begin(), splitdDeps.end());
+
+    return splitModule;
   };
 
   int64_t totalSplit = 0;
+  int64_t count = 0;
+  SmallVector<llvm::Value *> toSplit;
   for (auto &global : mainModule.globals()) {
     if (global.hasInternalLinkage())
       continue;
@@ -372,8 +391,8 @@ void LLVMModulePerFunctionSplitterImpl::split(
     // `llvm.global_dtors`, because otherwise they end up tying almost all
     // symbols into the same split.
     LLVM_DEBUG(llvm::dbgs()
-                   << (totalSplit++) << ": split global: " << global << "\n";);
-    splitValue(&global);
+                   << (count++) << ": split global: " << global << "\n";);
+    toSplit.emplace_back(&global);
   }
 
   for (auto &fn : mainModule.functions()) {
@@ -381,19 +400,26 @@ void LLVMModulePerFunctionSplitterImpl::split(
         (valueInfos[&fn].canBeSplit || valueInfos[&fn].users.empty())) {
       if (fn.hasInternalLinkage())
         fn.setLinkage(llvm::Function::LinkageTypes::WeakAnyLinkage);
-      LLVM_DEBUG(llvm::dbgs() << (totalSplit++)
-                              << ": split fn: " << fn.getName() << "\n";);
-      splitValue(&fn);
+      LLVM_DEBUG(llvm::dbgs()
+                     << (count++) << ": split fn: " << fn.getName() << "\n";);
+      toSplit.emplace_back(&fn);
     }
   }
 
-  // If we had no functions to split, just process the main module.
-  if (splitModules.empty())
-    return processFn(mainModule, -1);
-
-  for (auto [idx, splitModule] : llvm::enumerate(splitModules)) {
-    processFn(*splitModule, idx);
+  for (auto [idx, value] : llvm::enumerate(toSplit)) {
+    // Synchronize incrementally to reduce pressuring memory to much for holding
+    // the cloned llvm modules.
+    bool sync = ((idx + 1) % (2 * parallelismLevel) == 0);
+    if (std::unique_ptr<llvm::Module> splitModule = splitValue(value))
+      processFn(splitModule.get(), totalSplit++, sync);
   }
+
+  // Make sure sync happens when all values are processed.
+  processFn(nullptr, totalSplit, true);
+
+  // If we had no functions to split, just process the main module.
+  if (totalSplit == 0)
+    return processFn(&mainModule, -1, true);
 }
 
 // TODO(#33945) Special handling of coroutine related globals (hack, hack).
@@ -449,13 +475,14 @@ void LLVMModulePerFunctionSplitterImpl::collectValueUsers(
 
               // Add these functions as true dependency so that
               // llvm::CoroSplit won't fail.
-              valueInfos[func].asyncDependencies.insert(argFunc);
               valueInfos[argFunc].canBeSplit = false;
             }
           }
         } else if (isAsyncClosureDependency(calledFuncName)) {
-          valueInfos[func].asyncDependencies.insert(userIt);
           valueInfos[userIt].canBeSplit = false;
+        } else if (kgenCoroNamesCache.contains(calledFuncName)) {
+          valueInfos[callBase->getCalledFunction()].canBeSplit = false;
+          valueInfos[userIt].dependencies.insert(callBase->getCalledFunction());
         }
       }
 
@@ -469,8 +496,14 @@ void LLVMModulePerFunctionSplitterImpl::collectValueUsers(
 
   // If the current value is a mutable global variable, then it can't be
   // split.
-  if (auto *global = dyn_cast<llvm::GlobalVariable>(value))
-    valueInfos[value].canBeSplit = global->isConstant();
+  if (auto *global = dyn_cast<llvm::GlobalVariable>(value)) {
+    if (!global->isConstant()) {
+      valueInfos[value].canBeSplit = false;
+    } else {
+      bool isAsyncDep = isAsyncClosureDependency(global->getName());
+      valueInfos[value].canBeSplit = !isAsyncDep;
+    }
+  }
 }
 
 /// Propagate use information through the module.
@@ -529,8 +562,9 @@ void LLVMModulePerFunctionSplitterImpl::propagateUseInfo() {
       }
     }
 
-    if (info->canBeSplit)
+    if (info->canBeSplit || isa_and_nonnull<llvm::GlobalValue>(info->value))
       continue;
+
     // If a value cannot be split, propagate its dependencies up to its
     // dependencies.
     for (const llvm::Value *dep : info->dependencies) {

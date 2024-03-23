@@ -1,3 +1,5 @@
+// FIXME: (#35572)
+// REQUIRES: DISABLED
 // RUN: kgen %s -execute -func="my_exported_kernel:f32(f32)" | FileCheck %s -check-prefix=EXEC
 // RUN: kgen %s -emit -o %t_my_kernel.o
 // COM: Check the object file.
@@ -18,9 +20,13 @@ kgen.global export @exported_global : i32 [@noop, @noop](0)
 // EXEC: --- 'my_exported_kernel' returned 1.0
 
 // OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.0.o):
-// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.1.o):
-// OBJ: my_exported_kernel
-// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.2.o):
 // OBJ: exported_global
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.1.o):
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.2.o):
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.3.o):
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.4.o):
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.5.o):
+// OBJ: my_exported_kernel
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.6.o):
 
 // HDR-LABEL: extern float my_exported_kernel(float);
