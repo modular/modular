@@ -12,6 +12,14 @@ class TestLifetime(LLDBTestBase):
         var = ctx.frame.FindVariable(name)
         assert "variable not available" in var.GetError().GetCString()
 
+    def simple_int(self):
+        """
+        Ensures that the lifetime for a very simple program that uses an Int
+        is correct."""
+        with self.build_and_launch("int.mojo") as ctx:
+            foo = ctx.frame.FindVariable("foo")
+            assert foo.GetValueAsUnsigned(-1) == 42
+
     def test_full_eager_destruction(self):
         """Ensures that if a variable is completely destroyed eagerly, the
         lifetime of the value is reflected in DWARF."""
