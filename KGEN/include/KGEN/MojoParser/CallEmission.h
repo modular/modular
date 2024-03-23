@@ -213,8 +213,8 @@ public:
     /// Emit diagnostics when an unbound pack (i.e. `*_`) appears in a variadic
     /// signature.
     std::function<void(const Binding &)> emitUnboundPackInVariadic;
-    /// Emit diagnostics when multiple unbound packs appear in parameter list.
-    std::function<void(const Binding &)> emitMultipleUnboundPack;
+    /// Emit diagnostic when unbound pack is not at the end of the param list.
+    std::function<void(const Binding &)> emitUnboundPackNotEnd;
     /// Emit diagnostics for failure to deduce an infer-only parameter.
     std::function<void(size_t)> emitInferOnlyFailure;
     /// Emit diagnostics for missing parameters (specified by their names).

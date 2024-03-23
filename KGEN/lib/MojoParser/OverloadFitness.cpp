@@ -1249,9 +1249,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
              << binding.expr->getRange();
         ;
       },
-      /*emitMultipleUnboundPack=*/
+      /*emitUnboundPackNotEnd=*/
       [&](const ParamBindings::Binding &binding) {
-        diag << "multiple unbound pack symbols not allowed"
+        diag << "unbound pack must be at the end of the parameter list"
              << binding.expr->getRange();
       },
       /*emitInferOnlyFailure=*/
