@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_subdirectory(ADT)
+add_subdirectory(Billing)
 add_subdirectory(Compiler)
 add_subdirectory(Cryptography)
 add_subdirectory(DebugInfoDialect)

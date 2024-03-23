@@ -89,4 +89,7 @@ add_subdirectory(Settings)
 add_subdirectory(Telemetry)
 add_subdirectory(CrashReporting)
 
+# Billing requires Telemetry and HTTP
+add_subdirectory(Billing)
+
 add_subdirectory(Frameworks)

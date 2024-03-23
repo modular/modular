@@ -4,18 +4,14 @@
 #
 ##===----------------------------------------------------------------------===##
 
-ignore_aws_compile_warnings()
+add_modular_library(MBilling
+  BillingContext.cpp
 
-add_modular_unittest(
-  SUITE_NAME
-  AWSBillingUnitTests
+  AWS/InstanceIdentifier.cpp
 
-  TEST_NAME
-  AWSBillingTests
-
-  BillingTest.cpp
-
-  LINK_LIBS PRIVATE
-  MAWSBilling
+  LINK_LIBS PUBLIC
   MSupport
+  MSupportHTTP
+  MThreading
+  libcurl
 )
