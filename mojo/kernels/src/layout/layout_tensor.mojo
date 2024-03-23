@@ -187,22 +187,29 @@ struct LayoutTensor[
         ]()
 
     @staticmethod
+    @always_inline("nodebug")
     fn _toStatic[t: IntTuple]() -> StaticIntTuple[len(t)]:
         var st = StaticIntTuple[len(t)]()
+
+        @unroll
         for i in range(len(t)):
             st[i] = int(t[i])
         return st
 
     @staticmethod
+    @always_inline("nodebug")
     fn _getOffset[
         rank: Int
     ](stride: StaticIntTuple[rank], vals: VariadicList[Int]) -> Int:
         var offset = 0
+
+        @unroll
         for i in range(rank):
             offset += vals[i] * stride[i]
         return offset
 
     @staticmethod
+    @always_inline("nodebug")
     fn _getOffset[
         rank_1: Int, rank_2: Int
     ](stride: StaticIntTuple[rank_1], vals: StaticIntTuple[rank_2]) -> Int:
@@ -211,6 +218,8 @@ struct LayoutTensor[
             rank_1 == rank_2, "shape and stride should be the same rank!"
         ]()
         var offset = 0
+
+        @unroll
         for i in range(rank_1):
             offset += vals[i] * stride[i]
         return offset
