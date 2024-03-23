@@ -48,9 +48,6 @@ using namespace M::LLCL;
 // Compile-time config
 //===----------------------------------------------------------------------===//
 
-/// Minimum task list capacity.
-constexpr size_t kMinTaskListCapacity = 128;
-
 /// Number of task list slots per thread.
 constexpr size_t kTaskListSlotsPerThread = 1024;
 
@@ -1310,8 +1307,8 @@ M::LLCL::createThreadPoolWorkQueue(CompactRuntimePtr runtimePtr,
   std::vector<size_t> cpuIDs = std::move(*cpuIDOr);
   assert(!cpuIDs.empty() && "no cpu ids");
 
-  size_t taskListCapacity =
-      std::max(kMinTaskListCapacity, cpuIDs.size() * kTaskListSlotsPerThread);
+  // cpuIDs.size() is guaranteed to be at least 1 here.
+  const size_t taskListCapacity = cpuIDs.size() * kTaskListSlotsPerThread;
   LLVM_DEBUG(llvm::dbgs()
              << "createThreadPoolWorkQueue: Task list has capacity of at least "
              << taskListCapacity << " slots.\n");
