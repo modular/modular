@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ModelServing/AWS/InstanceIdentifier.h"
+#include "Support/Billing/AWS/InstanceIdentifier.h"
 
-#include "llvm/Support/Debug.h"
+#include "Support/LLVMForwardDecls.h"
 
 #define DEBUG_TYPE "modular-billing"
 
-namespace M::ModelServing::Billing {
+namespace M::Billing {
 namespace {
 
 // The IMDS static endpoints are documented at:
@@ -88,8 +88,9 @@ ErrorOrSuccess InstanceIdentifier::fetchInfo(HTTPClient &client,
 ErrorOrSuccess InstanceIdentifier::fetchV1(HTTPClient &client) {
   if (auto resultV4 = fetchInfo(client, "", true); resultV4.isError()) {
     if (auto resultV6 = fetchInfo(client, "", false); resultV6.isError()) {
-      return Error(llvm::Twine("Could not reach the IMDSv1 API with errors: ") +
-                   resultV4.getError() + ", " + resultV6.getError());
+      return Error(
+          llvm::Twine("Could not reach the IMDSv1 API with errors: {") +
+          resultV4.getError() + " | " + resultV6.getError() + "}");
     }
   }
   return success();
@@ -104,8 +105,9 @@ ErrorOrSuccess InstanceIdentifier::fetchV2(HTTPClient &client) {
     isIPv4 = false;
     if (auto resultV6 = send(client, tokenRequest(kIPv6BaseUrl));
         resultV6.isError()) {
-      return Error(llvm::Twine("Could not reach the IMDSv2 API with errors: ") +
-                   resultV4.getError() + ", " + resultV6.getError());
+      return Error(
+          llvm::Twine("Could not reach the IMDSv2 API with errors: {") +
+          resultV4.getError() + " | " + resultV6.getError() + "}");
     } else
       token = *resultV6;
   } else
@@ -119,8 +121,8 @@ ErrorOrSuccess InstanceIdentifier::fetch() {
   client.noAuthNeeded();
   if (auto resultV2 = fetchV2(client); resultV2.isError()) {
     if (auto resultV1 = fetchV1(client); resultV1.isError()) {
-      return Error(llvm::Twine("Could not reach the IMDS API with errors: ") +
-                   resultV2.getError() + ", " + resultV1.getError());
+      return Error(llvm::Twine("Could not reach any IMDS API with errors: {") +
+                   resultV2.getError() + " | " + resultV1.getError() + "}");
     }
     LLVM_DEBUG(llvm::dbgs() << "IMDSv1 response: (" << region << ", "
                             << instanceType << ")\n");
@@ -131,4 +133,4 @@ ErrorOrSuccess InstanceIdentifier::fetch() {
   return success();
 }
 
-} // namespace M::ModelServing::Billing
+} // namespace M::Billing

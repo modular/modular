@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MODELSERVING_AWS_INSTANCEIDENTIFIER_H
-#define MODELSERVING_AWS_INSTANCEIDENTIFIER_H
+#ifndef SUPPORT_BILLING_AWS_INSTANCEIDENTIFIER_H
+#define SUPPORT_BILLING_AWS_INSTANCEIDENTIFIER_H
 
 #include "Support/HTTP/HTTPClient.h"
 
-namespace M::ModelServing::Billing {
+namespace M::Billing {
 
 /// Identifies AWS region and instance type by querying the IMDSv2 HTTP API.
 class InstanceIdentifier {
@@ -31,6 +31,6 @@ private:
   std::string instanceType;
 };
 
-} // namespace M::ModelServing::Billing
+} // namespace M::Billing
 
-#endif // MODELSERVING_AWS_INSTANCEIDENTIFIER_H
+#endif // SUPPORT_BILLING_AWS_INSTANCEIDENTIFIER_H

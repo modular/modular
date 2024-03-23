@@ -4,20 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_unittest(
-  SUITE_NAME
-  UnitCalculatorUnitTests
+# TODO: Move MAWSUtils here
+add_modular_library(MAWSBilling
+  AWSBillingContext.cpp
+  InstanceIdentifier.cpp
 
-  TEST_NAME
-  UnitCalculatorTests
-
-  UnitCalculatorTest.cpp
-
-  LINK_LIBS PRIVATE
-  MCUCalculator
+  LINK_LIBS PUBLIC
+  MBilling
+  MSupport
+  MSupportHTTP
   MThreading
+  libcurl
 )
-
-if(MODULAR_WITH_AWS_BILLING)
-  add_subdirectory(AWS)
-endif()

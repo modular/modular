@@ -19,3 +19,9 @@ add_subdirectory(tools/compare-timings)
 add_subdirectory(test)
 add_subdirectory(unittests)
 add_subdirectory(examples/greeter-cli)
+
+add_custom_target(modular-billing)
+add_dependencies(modular-billing
+  MBilling
+  BillingTests
+)

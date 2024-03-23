@@ -4,13 +4,19 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(MCUCalculator
-  UnitCalculator.cpp
+add_modular_unittest(
+  TOP_LEVEL_CHECK
+  check-support
 
-  LINK_LIBS PUBLIC
+  SUITE_NAME
+  BillingUnitTests
+
+  TEST_NAME
+  BillingTests
+
+  BillingTest.cpp
+
+  LINK_LIBS PRIVATE
+  MBilling
   MSupport
 )
-
-if(MODULAR_WITH_AWS_BILLING)
-  add_subdirectory(AWS)
-endif()
