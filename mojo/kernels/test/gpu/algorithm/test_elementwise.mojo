@@ -10,7 +10,7 @@ from math import exp
 from sys.info import triple_is_nvidia_cuda
 
 from algorithm.functional import _elementwise_impl
-from benchmark.cuda import run
+from benchmark._cuda import run
 from buffer import NDBuffer
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream

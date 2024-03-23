@@ -10,7 +10,7 @@ from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
 from sys.param_env import env_get_string
 
-from benchmark.cuda import run as benchmark_run
+from benchmark._cuda import run as benchmark_run
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
 from gpu.host.memory import (

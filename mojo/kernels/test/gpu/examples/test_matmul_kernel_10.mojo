@@ -10,7 +10,7 @@
 from math import div_ceil
 
 from benchmark import Bench, Bencher, BenchId
-from benchmark.cuda import time_async_cuda_kernel
+from benchmark._cuda import time_async_cuda_kernel
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
