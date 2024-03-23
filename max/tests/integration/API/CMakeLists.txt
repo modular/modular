@@ -45,6 +45,9 @@ add_modular_testsuite(check-max-engine-integration-tests
   is-cuda-available
   max-mojo
   kernels-register
+
+  TAGS
+  gpu
 )
 
 add_subdirectory(python)

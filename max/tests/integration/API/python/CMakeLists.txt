@@ -32,4 +32,7 @@ add_modular_pytest(max-engine
   mof
   is-cuda-available
   max-pybind-ext
+
+  TAGS
+  gpu
 )
