@@ -131,6 +131,26 @@ during the REPL session. Usage:
 - `%cd 'dir'`: change to directory `dir` and push it on the directory stack.
 - `%cd -`: pop the directory stack and change to the last visited directory.
 
+### `%#`
+
+Hide a source code line from generated documentation.
+
+When used within a doc string code block, the code line after the directive
+will be hidden from any generated documentation. For example:
+
+```mojo
+var value = 5
+%# print(value)
+```
+
+will generate documentation of the form:
+
+```mojo
+var value = 5
+```
+
+Hidden lines are processed as if they were normal code lines during execution.
+
 ## Limitations and Sharp Edges
 
 Mojo is still young and growing fast, and this also applies to the REPL

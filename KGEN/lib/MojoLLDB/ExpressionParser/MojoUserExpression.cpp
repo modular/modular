@@ -190,10 +190,18 @@ static LogicalResult processMagics(DiagnosticManager &diagnosticManager,
     magicName = magicName.drop_front(isCellMagic ? 2 : 1);
     magicArgs = magicArgs.trim();
 
+    // Handle "hidden" magic first. These are a bit special because they can
+    // appear anywhere in the cell.
+    if (!isCellMagic && magicName == "#") {
+      // We don't do anything special here, just move on, the processing of
+      // this is handled elsewhere.
+      continue;
+    }
+
     // We want to let the user know if we see a magic incorrectly placed the
     // middle in the expression without triggering the actual expression
-    // evaluation. We don't yet support any magics that we can process in the
-    // middle of an expression, so we just error out.
+    // evaluation. After processing the magics that may appear in the middle
+    // of an expression, error out on any others.
     if (hadNonMagic) {
       const char *errorFmt =
           "`%%{0}` can only be at the beginning of an expression.";

@@ -318,11 +318,19 @@ static void extractExpressionCode(StringRef exprText,
       break;
   }
 
-  // Remove the necessary indentation from the expression lines.
-  if (indent && indent != std::numeric_limits<size_t>::max()) {
-    for (StringRef &line : exprLines)
-      if (!line.empty())
-        line = line.drop_front(indent);
+  for (StringRef &line : exprLines) {
+    if (line.empty())
+      continue;
+    // Remove the necessary indentation from the expression lines.
+    if (indent && indent != std::numeric_limits<size_t>::max())
+      line = line.drop_front(indent);
+
+    // Handle the REPL magic that is used to control code showed as
+    // documentation. We handle it here to preserve the indentation/whitespace
+    // for location information. Handle empty hidden lines as well, by
+    // accounting for the magic indentation being optional.
+    if (line.consume_front("%#"))
+      line.consume_front(" ");
   }
 
   // The following code will consume chunks of code assigning them to either
