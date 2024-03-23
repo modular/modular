@@ -6,7 +6,7 @@
 
 """Provides utilities for working with static and variadic lists.
 
-You can import these APIs from the `utils` package. For example:
+You can import these APIs from the `buffer` package. For example:
 
 ```mojo
 from buffer.list import Dim

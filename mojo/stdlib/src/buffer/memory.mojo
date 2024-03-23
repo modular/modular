@@ -4,6 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+"""Implements parallel_memcpy.
+
+You can import these APIs from the `buffer` package. For example:
+
+```mojo
+from buffer import parallel_memcpy
+```
+"""
+
 from math import div_ceil, min
 
 from algorithm import sync_parallelize
