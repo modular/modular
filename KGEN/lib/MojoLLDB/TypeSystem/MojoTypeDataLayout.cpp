@@ -107,6 +107,9 @@ MojoTypeDataLayoutContext::Impl::calculateForPack(MojoASTTypeRef typeRef,
 std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculateForVariant(MojoASTTypeRef typeRef,
                                                      VariantType variantType) {
+  // FIXME(35592): We are disabling printing of variants for the time being,
+  // because they can't be introspected.
+  return {};
   std::optional<uint64_t> overallAlign = variantType.getTypeAlign(targetInfo);
   if (!overallAlign)
     return {};
