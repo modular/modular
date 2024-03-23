@@ -10,6 +10,8 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/Context.h"
+#include "Support/Init/Init.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/StringExtras.h"
@@ -161,7 +163,14 @@ int main(int argc, char **argv) {
   CLOptions clOptions(argc, argv);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  std::unique_ptr<Runtime> runtime = createUniqueRuntime();
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr =
+      Init::createContext("cache-mgr", Init::Options().withRuntimeOptions());
+  if (ctxOr.isError()) {
+    llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
+    return 1;
+  }
+  LLCL::Runtime &runtime = *(*ctxOr)->get<LLCL::Runtime>();
 
   auto backendPathOr = clOptions.getBackendPath();
   if (backendPathOr.isError())
@@ -188,8 +197,8 @@ int main(int argc, char **argv) {
     // If the key is specified, use it directly.
     std::string keyToFind =
         key.empty() ? BinaryBlobCacheKey::hashKey(*hash) : key;
-    auto result = cache->find(*runtime, keyToFind);
-    auto outCh = AsyncValueRef<BufferRef>::allocate(*runtime);
+    auto result = cache->find(runtime, keyToFind);
+    auto outCh = AsyncValueRef<BufferRef>::allocate(runtime);
     std::move(result).andThenSync(
         [outCh = outCh.copy(), input = Buffer::get(*hash)](
             AsyncValueRef<std::optional<BufferRef>> &&found) mutable {
@@ -225,7 +234,7 @@ int main(int argc, char **argv) {
         key.empty() ? BinaryBlobCacheKey::hashKey((*bufOr).copy()) : key;
     AsyncValueRef<std::string> outCh =
         putObjectsIntoCache(keyToWrite, (*bufOr).copy(), clOptions.input, cache,
-                            *runtime, clOptions.outputHex);
+                            runtime, clOptions.outputHex);
     await(outCh);
     if (outCh.isError()) {
       operationResult.getUnderlyingStorage().emplace<EncodedDiagnostic>(

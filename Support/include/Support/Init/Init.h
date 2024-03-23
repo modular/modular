@@ -35,7 +35,7 @@ public:
     resources = v;
     return *this;
   }
-  Options &withRuntimeOptions(const LLCL::RuntimeOptions &v) {
+  Options &withRuntimeOptions(const LLCL::RuntimeOptions &v = {}) {
     runtimeOptions.emplace(v);
     return *this;
   }
