@@ -21,4 +21,4 @@ def main():
         __type_of(func), func, emission_kind="llvm"
     ]()
 
-    assert_true(asm.__contains__("fadd"))
+    assert_true("fadd" in asm)
