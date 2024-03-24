@@ -17,8 +17,6 @@ def TypeCheckErrorType : DialectType<(type)>;
 
 def UnresolvedType : DialectType<(type)>;
 
-def DiscardType : DialectType<(type)>;
-
 def TypeSignatureType : DialectType<(type
   TypeArray:$paramTypes,
   ConcreteAttribute<"PogsAttr">:$paramListAttrs
@@ -66,7 +64,6 @@ def LITDialectTypes : DialectTypes<"lit"> {
   let elems = [
     TypeCheckErrorType,
     UnresolvedType,
-    DiscardType,
     TypeSignatureType,
     UnpackedType,
     DeclRefType,
