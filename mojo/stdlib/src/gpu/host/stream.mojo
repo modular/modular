@@ -29,11 +29,11 @@ fn _get_current_stream() -> DTypePointer[DType.invalid]:
 struct _StreamImpl(Boolable):
     var handle: DTypePointer[DType.invalid]
 
-    fn __init__() -> Self:
-        return Self {handle: DTypePointer[DType.invalid]()}
-
-    fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
-        return Self {handle: handle}
+    fn __init__(
+        inout self,
+        handle: DTypePointer[DType.invalid] = DTypePointer[DType.invalid](),
+    ):
+        self.handle = handle
 
     fn __bool__(self) -> Bool:
         return self.handle.__bool__()

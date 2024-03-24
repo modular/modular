@@ -540,8 +540,8 @@ struct Result(Stringable, EqualityComparable):
     """
 
     @always_inline("nodebug")
-    fn __init__(code: Int32) -> Self:
-        return Self {code: code}
+    fn __init__(inout self, code: Int32):
+        self.code = code
 
     @always_inline("nodebug")
     fn __eq__(self, other: Self) -> Bool:
