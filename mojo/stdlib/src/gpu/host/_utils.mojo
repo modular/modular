@@ -11,7 +11,6 @@ from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 from ._constants import CUDA_DRIVER_PATH
-from .nvml import Result as NVMLResult
 from .result import Result as DriverResult
 
 # ===----------------------------------------------------------------------===#
@@ -22,12 +21,6 @@ from .result import Result as DriverResult
 @always_inline
 fn _check_error(err: DriverResult) raises:
     if err != DriverResult.SUCCESS:
-        raise Error(err.__str__())
-
-
-@always_inline
-fn _check_error(err: NVMLResult) raises:
-    if err != NVMLResult.SUCCESS:
         raise Error(err.__str__())
 
 
