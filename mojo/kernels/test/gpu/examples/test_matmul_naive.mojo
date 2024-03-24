@@ -9,8 +9,6 @@
 
 from math import div_ceil
 from pathlib import Path
-from sys.info import triple_is_nvidia_cuda
-from sys.param_env import env_get_string
 
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -40,10 +38,6 @@ fn matmul(
     n: Int,
     k: Int,
 ):
-    @parameter
-    if not triple_is_nvidia_cuda():
-        return
-
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var y = BlockIdx.y() * BlockDim.y() + ThreadIdx.y()
 

@@ -8,8 +8,6 @@
 
 from math import div_ceil
 from pathlib import Path
-from sys.info import triple_is_nvidia_cuda
-from sys.param_env import env_get_string
 
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -42,10 +40,6 @@ fn matmul(
     n: Int,
     k: Int,
 ):
-    @parameter
-    if not triple_is_nvidia_cuda():
-        return
-
     var a = NDBuffer[DType.float32, 2](a_ptr, Index(m, k))
     var b = NDBuffer[DType.float32, 2](b_ptr, Index(k, n))
     var c = NDBuffer[DType.float32, 2](c_ptr, Index(m, n))

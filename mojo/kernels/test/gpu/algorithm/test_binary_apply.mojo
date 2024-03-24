@@ -8,7 +8,6 @@
 
 from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
-from sys.param_env import env_get_string
 
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize

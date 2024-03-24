@@ -7,8 +7,6 @@
 # RUN: %mojo %s | FileCheck %s
 
 from pathlib import Path
-from sys.info import triple_is_nvidia_cuda
-from sys.param_env import env_get_string
 
 from benchmark._cuda import run as benchmark_run
 from gpu import *

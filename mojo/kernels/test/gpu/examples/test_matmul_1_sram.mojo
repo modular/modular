@@ -8,8 +8,6 @@
 
 from math import align_down, div_ceil
 from pathlib import Path
-from sys.info import triple_is_nvidia_cuda
-from sys.param_env import env_get_string
 
 from algorithm.functional import tile_and_unswitch
 from buffer import NDBuffer
