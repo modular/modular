@@ -104,7 +104,7 @@ fn run_vec_add() raises:
     out_host.free()
 
     _ = module ^
-    _ = func ^
+    _ = func
 
 
 # CHECK-NOT: CUDA_ERROR
