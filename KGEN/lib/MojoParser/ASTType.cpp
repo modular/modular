@@ -486,10 +486,9 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
   if (auto declRef = dyn_cast<DeclRefType>(type)) {
     printUserType(declRef.getSymbol(), declRef.getParamValues());
   } else if (auto anyStruct = dyn_cast<AnyStructType>(type)) {
-    // TODO: Print metatypes more correctly.
-    // os << "AnyStruct[";
+    os << "AnyStruct[";
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues());
-    // os << "]";
+    os << "]";
   } else if (auto traitType = dyn_cast<TraitType>(type)) {
     printSymbol(os, traitType.getSymbol(), forDiag, /*isFunc=*/false);
   } else if (isNoneType()) {

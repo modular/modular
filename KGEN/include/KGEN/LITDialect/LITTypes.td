@@ -251,6 +251,9 @@ def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
   let extraClassDeclaration = [{
     SymbolRefAttr getSymbol() const;
 
+    /// Return the struct type this metatype corresponds to.
+    DeclRefType getStructType();
+
     /// Bind parameter values to the metatype.
     AnyStructType bind(ArrayRef<TypedAttr> values) const;
     /// Return whether the type is a metatype.
