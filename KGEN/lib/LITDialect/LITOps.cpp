@@ -1103,7 +1103,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
       evaluator.addInputValue(unbound.back());
     }
     return DeclRefType::get(symbol, unbound,
-                            MetaTypeType::get(symbol, unbound, sig));
+                            AnyStructType::get(symbol, unbound, sig));
   }
 
   // Compute the resultant signature.
@@ -1137,7 +1137,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
       getContext(), newParamTypes, newParamNames, newPassingKinds,
       newPosDefaults, newKwOnlyDefaults, newVariadicIndices);
   return DeclRefType::get(symbol, paramValues,
-                          MetaTypeType::get(symbol, paramValues, newSig));
+                          AnyStructType::get(symbol, paramValues, newSig));
 }
 
 /// Verify the debuginfo scope of an op that must be a top-level declaration.

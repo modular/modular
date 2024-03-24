@@ -1268,7 +1268,7 @@ buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
   };
 
   walker.addWalk([=](DeclRefType typeRef) { return visitTypeRef(typeRef); });
-  walker.addWalk([=](MetaTypeType typeRef) { return visitTypeRef(typeRef); });
+  walker.addWalk([=](AnyStructType typeRef) { return visitTypeRef(typeRef); });
   walker.addWalk([=](TraitType typeRef) { return visitTypeRef(typeRef); });
 
   return walker;

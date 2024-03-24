@@ -899,7 +899,7 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
 # CHECK-LABEL: lit.func @"test_default_param_struct_all_default()"
 fn test_default_param_struct_all_default():
-    # CHECK: lit.alias.decl *"T{{.*}}": metatype<{{.*}}#AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
+    # CHECK: lit.alias.decl *"T{{.*}}": anystruct<{{.*}}#AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int {0},
     # CHECK-SAME: :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
     alias T = AllDefaultParams[]
@@ -919,7 +919,7 @@ struct StructWithParametricDefaultValue[T: AnyRegType, N: Int = IntForType[T]()]
 
 # CHECK-LABEL: lit.func @"test_struct_with_parametric_default_value()"
 fn test_struct_with_parametric_default_value():
-    # CHECK: lit.alias.decl *"a{{.*}}": metatype<{{.*}}> = <@{{.*}}::@StructWithParametricDefaultValue<
+    # CHECK: lit.alias.decl *"a{{.*}}": anystruct<{{.*}}> = <@{{.*}}::@StructWithParametricDefaultValue<
     # CHECK-SAME: :type !Int
     # CHECK-SAME: :!Int apply(:!lit.signature<() -> !Int> @{{.*}}::@"IntForType[AnyRegType]()"{{.*}}<:type !Int>)>
     alias a = StructWithParametricDefaultValue[Int]
@@ -1019,7 +1019,7 @@ alias Scalar = SIMD[1, _]
 
 # CHECK-LABEL: lit.func @"scalar_type{{.*}}"<dt: !DType>
 fn scalar_type[dt: DType]():
-    # CHECK: alias.decl [[T:.*]]: metatype<{{.*}}SIMD<:!Int {1}, :!DType dt>
+    # CHECK: alias.decl [[T:.*]]: anystruct<{{.*}}SIMD<:!Int {1}, :!DType dt>
     alias T = Scalar[dt]
 
     #FIXME(29495): reenable.

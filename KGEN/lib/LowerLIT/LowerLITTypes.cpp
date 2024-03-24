@@ -268,7 +268,7 @@ Attribute LITTypeLowerer::replace(Attribute attr) {
   // Partially bound types never have uses in KGEN.
   // TODO: Need to codegen here when parametric traits are a thing.
   auto processBindType = [this](BindTypeAttr bind) {
-    MetaTypeType metatype = bind.getType();
+    AnyStructType metatype = bind.getType();
     return TypeConstantAttr::get(
         replace(DeclRefType::get(metatype.getSymbol(),
                                  metatype.getParamValues(), anyRegTypeType)),
@@ -354,7 +354,7 @@ Type LITTypeLowerer::replace(Type type) {
     result = processPointerType(ptr);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
     result = processDeclRefType(ref);
-  } else if (isa<MetaTypeType, TraitType>(type)) {
+  } else if (isa<AnyStructType, TraitType>(type)) {
     // Erase metatypes and reg-passable anytypes. Passability information is
     // encoded elsewhere so this won't be needed.
     result = anyRegTypeType;

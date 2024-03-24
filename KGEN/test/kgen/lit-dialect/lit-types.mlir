@@ -118,10 +118,11 @@ kgen.generator @ref_types(%arg0: !lit.ref<index, imm #lit.lifetime, 4>) {
   kgen.unreachable
 }
 
-// CHECK-LABEL: kgen.generator @escape_meta_type_param_names<type: metatype<@Trait>>()
-kgen.generator @escape_meta_type_param_names<type: metatype<@Trait>>() {
-  // CHECK: kgen.param.declare T: metatype<@Trait> = <*"type">
-  kgen.param.declare T: metatype<@Trait> = <*"type">
+// FIXME: This isn't valid IR!
+// CHECK-LABEL: kgen.generator @escape_meta_type_param_names<type: anystruct<@Trait>>()
+kgen.generator @escape_meta_type_param_names<type: anystruct<@Trait>>() {
+  // CHECK: kgen.param.declare T: anystruct<@Trait> = <*"type">
+  kgen.param.declare T: anystruct<@Trait> = <*"type">
   kgen.return
 }
 

@@ -59,20 +59,20 @@ Type ASTType::getMetaType() const {
 Type ASTType::getMetaTypeOrSelf() const {
   if (Type type = getMetaType())
     return type;
-  if (isa_and_nonnull<MetaTypeType, TraitType>(mlirType))
+  if (isa_and_nonnull<AnyStructType, TraitType>(mlirType))
     return mlirType;
   return {};
 }
 
 bool ASTType::hasMetaType(ASTType metaType) const {
-  if (auto metaTy = dyn_cast<MetaTypeType>(metaType))
+  if (auto metaTy = dyn_cast<AnyStructType>(metaType))
     return getMetaType() == metaTy;
   return false;
 }
 
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
   Type type = getMetaTypeOrSelf();
-  if (auto metaType = dyn_cast_or_null<MetaTypeType>(type))
+  if (auto metaType = dyn_cast_or_null<AnyStructType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(metaType.getSymbol());
   if (auto traitType = dyn_cast_or_null<TraitType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(traitType.getSymbol());
@@ -80,18 +80,18 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
 }
 
 ArrayRef<TypedAttr> ASTType::getParamBindings() const {
-  if (MetaTypeType metaType =
-          dyn_cast_or_null<MetaTypeType>(getMetaTypeOrSelf()))
+  if (AnyStructType metaType =
+          dyn_cast_or_null<AnyStructType>(getMetaTypeOrSelf()))
     return metaType.getParamValues();
   return {};
 }
 
 ArrayRef<Type> ASTType::getParameters() const {
   // Query the metatype for the parameter signature.
-  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(mlirType))
+  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(mlirType))
     return metaType.getSignature().getParamTypes();
-  if (MetaTypeType metaType =
-          dyn_cast_or_null<MetaTypeType>(getMetaTypeOrSelf()))
+  if (AnyStructType metaType =
+          dyn_cast_or_null<AnyStructType>(getMetaTypeOrSelf()))
     return metaType.getSignature().getParamTypes();
   return {};
 }
@@ -104,15 +104,15 @@ ASTType ASTType::getWithoutParameters() const {
     auto fixedMetatype = ASTType(declRef.getMetaType()).getWithoutParameters();
     return DeclRefType::get(declRef.getSymbol(), fixedMetatype);
   }
-  if (MetaTypeType metaType = dyn_cast_or_null<MetaTypeType>(mlirType))
-    return MetaTypeType::get(metaType.getSymbol(), metaType.getSignature());
+  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(mlirType))
+    return AnyStructType::get(metaType.getSymbol(), metaType.getSignature());
   return {};
 }
 
 ArrayRef<TypedAttr> ASTType::getDefaultPosParams() const {
   // Query the metatype for the parameter signature.
-  if (MetaTypeType metaType =
-          dyn_cast_or_null<MetaTypeType>(getMetaTypeOrSelf()))
+  if (AnyStructType metaType =
+          dyn_cast_or_null<AnyStructType>(getMetaTypeOrSelf()))
     return metaType.getSignature().getDefaultPosParams();
   return {};
 }
@@ -123,7 +123,7 @@ bool ASTType::isEqualCanon(ASTType other) const {
     return true;
   // Types with the same metatype are always equal. This is used to detect when
   // two type aliases refer to the same underlying type.
-  if (auto meta = dyn_cast_or_null<MetaTypeType>(getMetaType()))
+  if (auto meta = dyn_cast_or_null<AnyStructType>(getMetaType()))
     if (meta == other.getMetaType())
       return true;
   return false;
@@ -463,31 +463,33 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
   }
 
   Type type = mlirType;
-  auto printUserType = [&](auto declRef) {
-    SymbolRefAttr symbol = declRef.getSymbol();
+  auto printUserType = [&](SymbolRefAttr symbol, ArrayRef<TypedAttr> params) {
     // Only print the leaf reference when pretty printing types.
     printSymbol(os, symbol, forDiag, /*isFunc=*/false);
 
-    ArrayRef<TypedAttr> params = declRef.getParamValues();
-    if (!params.empty()) {
-      os << '[';
-      llvm::interleaveComma(params, os, [&](TypedAttr value) {
-        // If the parameter is a type, print it nicely.
-        auto val = PValue(value);
+    if (params.empty())
+      return;
 
-        if (ASTType type = val.getIfTypeValue())
-          if (!isa<ParamRefType>(type.mlirType))
-            return type.print(os, forDiag);
+    os << '[';
+    llvm::interleaveComma(params, os, [&](TypedAttr value) {
+      // If the parameter is a type, print it nicely.
+      auto val = PValue(value);
 
-        printParam(os, val, forDiag, demangleParams);
-      });
-      os << ']';
-    }
+      if (ASTType type = val.getIfTypeValue())
+        if (!isa<ParamRefType>(type.mlirType))
+          return type.print(os, forDiag);
+
+      printParam(os, val, forDiag, demangleParams);
+    });
+    os << ']';
   };
   if (auto declRef = dyn_cast<DeclRefType>(type)) {
-    printUserType(declRef);
-  } else if (auto metaType = dyn_cast<MetaTypeType>(type)) {
-    printUserType(metaType);
+    printUserType(declRef.getSymbol(), declRef.getParamValues());
+  } else if (auto anyStruct = dyn_cast<AnyStructType>(type)) {
+    // TODO: Print metatypes more correctly.
+    // os << "AnyStruct[";
+    printUserType(anyStruct.getSymbol(), anyStruct.getParamValues());
+    // os << "]";
   } else if (auto traitType = dyn_cast<TraitType>(type)) {
     printSymbol(os, traitType.getSymbol(), forDiag, /*isFunc=*/false);
   } else if (isNoneType()) {

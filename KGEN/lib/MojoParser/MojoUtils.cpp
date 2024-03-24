@@ -30,11 +30,11 @@ PackType LIT::getIfPackType(LITSignatureType sig, size_t index) {
 
 bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
                              ASTType toType) {
-  // Permit upcasting any `!lit.metatype` to `!kgen.type` or
+  // Permit upcasting any `!lit.anystruct` to `!kgen.type` or
   // `!kgen.anytype`.
   // FIXME(traits): Binding a Mojo type to an MLIR type is a hack. We should
   // forbid this when traits are fully operational.
-  if (isa<MetaTypeType, TraitType>(fromType) && isa<TypeType>(toType))
+  if (isa<AnyStructType, TraitType>(fromType) && isa<TypeType>(toType))
     return true;
 
   // Two types can be converted to each other if their metatypes can be as well.
@@ -45,7 +45,7 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
       return true;
     // If we hit this branch, we can allow downcasting to a trait type because
     // the conversion has already been checked and enabled.
-    if (isa<MetaTypeType>(fromType.getMetaType()) &&
+    if (isa<AnyStructType>(fromType.getMetaType()) &&
         isa<TraitType>(toType.getMetaType()))
       return true;
   }

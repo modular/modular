@@ -26,7 +26,7 @@ using namespace KGEN;
 using namespace LIT;
 
 bool LIT::isTypeExpr(TypedAttr attr) {
-  return isa<TypeType, MetaTypeType, TraitType, ParamRefType>(attr.getType());
+  return isa<TypeType, AnyStructType, TraitType, ParamRefType>(attr.getType());
 }
 
 //===----------------------------------------------------------------------===//

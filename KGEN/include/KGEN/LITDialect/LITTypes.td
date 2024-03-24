@@ -194,14 +194,14 @@ def KGEN_DeclRefType : LITType<"DeclRef", "declref", [
 }
 
 //===----------------------------------------------------------------------===//
-// MetaTypeType
+// AnyStructType
 //===----------------------------------------------------------------------===//
 
-def LIT_MetaTypeType : LITType<"MetaType", "metatype",
+def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
     [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
-  let summary = "Type of a type value.";
+  let summary = "Type of a struct value.";
   let description = [{
-    The `!lit.metatype` type represents the type of a type value (tongue
+    The `!lit.anystruct` type represents the type of a type value (tongue
     twister). The meta-type stores the prototype of a type value in its type so
     that member inspection can be performed through the type system during
     member lookup or implicit conversions to other meta-types.
@@ -209,7 +209,7 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
     Example:
 
     ```mlir
-    !lit.metatype<@SomeStruct>
+    !lit.anystruct<@SomeStruct>
     ```
 
     The meta-type is propagated through values by attaching itself to type
@@ -220,10 +220,10 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
     ```mlir
     // Concrete type value.
     #kgen.concretetype.constant<!lit.declref<@SomeStruct>>
-      : !lit.metatype<@SomeStruct>
+      : !lit.anystruct<@SomeStruct>
 
     // Parametric type value.
-    #kgen.param.decl.ref<"some_type"> : !lit.metatype<@SomeStruct>
+    #kgen.param.decl.ref<"some_type"> : !lit.anystruct<@SomeStruct>
     ```
   }];
 
@@ -252,7 +252,7 @@ def LIT_MetaTypeType : LITType<"MetaType", "metatype",
     SymbolRefAttr getSymbol() const;
 
     /// Bind parameter values to the metatype.
-    MetaTypeType bind(ArrayRef<TypedAttr> values) const;
+    AnyStructType bind(ArrayRef<TypedAttr> values) const;
     /// Return whether the type is a metatype.
     bool isMetaType() { return true; }
   }];

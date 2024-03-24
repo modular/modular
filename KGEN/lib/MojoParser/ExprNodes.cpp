@@ -140,7 +140,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       return "";
 
     // If this is a wrapper for a type, print it as such.
-    if (isa<TypeType, MetaTypeType>(indexVal.getType()))
+    if (isa<TypeType, AnyStructType>(indexVal.getType()))
       os << ASTType(indexVal).mlirType;
     else // Otherwise print it as an attribute.
       indexVal.get().print(os, elideType);
@@ -574,7 +574,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // If this is a module or package declaration, form a module reference.
   if (isa<FileModuleOp, PackageOp>(decl)) {
-    PValue result(ModuleAttr::get(MetaTypeType::get(
+    PValue result(ModuleAttr::get(AnyStructType::get(
         decl.getSymbolRef(), TypeSignatureType::get(emitter.getContext()))));
     return emitter.emitResult(result, this, dest);
   }
@@ -1074,7 +1074,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // If the field is a variable, emit a reference to it.
   if (auto fieldOp = dyn_cast<StructFieldOp>(memberDecl)) {
-    if (hasTypeBase || isa<MetaTypeType>(baseRVType)) {
+    if (hasTypeBase || isa<AnyStructType>(baseRVType)) {
       emitter.emitError(getLoc(), "cannot access instance field '")
           << spelling << "' without an instance of " << baseRVType
           << getRange();
@@ -1173,7 +1173,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         state.types.push_back(ASTType(type));
         return success();
       };
-      if (auto valueMetaType = dyn_cast<MetaTypeType>(value.getType())) {
+      if (auto valueMetaType = dyn_cast<AnyStructType>(value.getType())) {
         ASTType tupleType = emitter.shared.getBuiltinTupleType(
             emitter.declScope, call.getLoc());
         // If the _type field is a Tuple of types, then the operation
@@ -1181,7 +1181,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         // need to take apart the ListLiteral parameter value to get the types
         // from inside it.
         if (valueMetaType.getSymbol() ==
-            cast<MetaTypeType>(tupleType.getMetaType()).getSymbol()) {
+            cast<AnyStructType>(tupleType.getMetaType()).getSymbol()) {
           // Dig out the types from the tuple.  Tuple literals must always
           // have this particular shape.
           auto tca = cast<TypeConstantAttr>(value);
@@ -1519,7 +1519,7 @@ getBindingsForParameterOperands(ArrayRef<Operand> operands,
 static PValue substituteParametersIntoUserDefinedType(
     PValue typeValue, ArrayRef<Operand> operands, SMLoc loc, SMLoc lhsLoc,
     SMLoc rhsLoc, ExprEmitter &emitter) {
-  auto metaType = cast<MetaTypeType>(typeValue.getType());
+  auto metaType = cast<AnyStructType>(typeValue.getType());
   ASTDecl *typeDecl = ASTType(metaType).getDecl(emitter.shared);
   auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
   if (!structOp) {
@@ -1669,7 +1669,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If the sub-value is an unbound Type, try binding things to it!
   if (Type typeValue = baseValue.getIfTypeValue()) {
     // Handle user-defined types.
-    if (isa<MetaTypeType>(baseValue.getType())) {
+    if (isa<AnyStructType>(baseValue.getType())) {
       PValue result = substituteParametersIntoUserDefinedType(
           baseValue.getIfPValue(), operands, getLoc(), lsquareLoc, rsquareLoc,
           emitter);
