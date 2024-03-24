@@ -1529,27 +1529,26 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
 
       // Diagnose implicit conversions with a custom message.
       if (syntax == CallSyntax::kImplicitConvert) {
+        // Handle common type mismatches with tailored errors.
         auto diag = emitError(expr->getLoc());
 
-        // Handle common type mismatches with tailored errors.
+        // This is true if passing Int type to Int instead of Int() to Int.
         bool isConvertingTypeValue = type.hasMetaType(operandType);
-        if (dest.getContext() == EC_CallParamValue ||
-            dest.getContext() == EC_CallArgValue) {
-          diag << "cannot pass " << operandType
-               << (isConvertingTypeValue ? " type" : "") << " value, "
-               << ((dest.getContext() == EC_CallParamValue) ? "parameter"
-                                                            : "argument")
-               << " expected "
-               << (isConvertingTypeValue ? "an instance of " : "") << type;
-        } else {
-          diag << "cannot implicitly convert " << operandType
-               << (isConvertingTypeValue ? " type" : "") << " value to "
-               << (isConvertingTypeValue ? "an instance of " : "") << type
-               << getContextMessage(dest.getContext());
-        }
+
+        bool isImplConvert = dest.getContext() != EC_CallParamValue &&
+                             dest.getContext() != EC_CallArgValue;
+        diag << "cannot " << (isImplConvert ? "implicitly convert " : "pass ");
 
         if (isConvertingTypeValue)
-          diag << "; did you mean to instantiate " << operandType << "?";
+          diag << type << " type as a";
+        else
+          diag << operandType;
+        diag << " value" << (isImplConvert ? " to " : ", expected ");
+        diag << (isConvertingTypeValue ? "an instance of " : "") << type
+             << getContextMessage(dest.getContext());
+
+        if (isConvertingTypeValue)
+          diag << "; did you mean to instantiate " << type << "?";
         diag << expr->getRange();
         return {};
       }

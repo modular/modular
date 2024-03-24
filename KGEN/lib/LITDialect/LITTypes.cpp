@@ -422,6 +422,11 @@ LogicalResult AnyStructType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printTypeValue(p, value, *this);
 }
 
+/// Return the struct type this metatype corresponds to.
+DeclRefType AnyStructType::getStructType() {
+  return DeclRefType::get(getSymbol(), getParamValues(), *this);
+}
+
 AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   assert(getParamValues().size() == values.size() && "expected full value set");
 

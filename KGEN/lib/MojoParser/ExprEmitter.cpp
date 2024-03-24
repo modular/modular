@@ -1093,7 +1093,8 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
   if (auto anyStruct = dyn_cast<AnyStructType>(metaType)) {
     if (!anyStruct.getSignature().getParamTypes().empty()) {
       emitError(value.expr->getLoc(), "parametric type ")
-          << metaType << " cannot bind to trait with missing parameters"
+          << anyStruct.getStructType()
+          << " cannot bind to trait with missing parameters"
           << value.expr->getRange();
       return {};
     }

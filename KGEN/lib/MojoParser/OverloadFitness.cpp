@@ -93,7 +93,7 @@ void ParameterInferenceDiagnostics::emitSpecificNote(
     ASTType argParamType) {
   if (isa<TraitType>(paramType)) {
     if (auto anyStruct = dyn_cast<AnyStructType>(argParamType)) {
-      attachNote() << "argument type " << argParamType
+      attachNote() << "argument type " << anyStruct.getStructType()
                    << " does not conform to trait " << paramType;
       return;
     }
@@ -855,22 +855,26 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     diag << " cannot be converted from ";
     ASTType rValueType = getRValueType(operand);
     bool isConvertingTypeValue = ty.hasMetaType(rValueType);
-    if (rValueType)
-      diag << (isConvertingTypeValue ? "type value " : "") << rValueType;
-    else if (operand.ir.getIfInitializer())
+    if (rValueType) {
+      if (isConvertingTypeValue)
+        diag << "type value " << ty;
+      else
+        diag << rValueType;
+    } else if (operand.ir.getIfInitializer()) {
       diag << "initializer list";
-    else
+    } else {
       diag << "unknown overload";
+    }
     SourceRange payloadLoc = operand.expr->getRange();
     diag << " to " << (isConvertingTypeValue ? "an instance of " : "") << ty
          << payloadLoc;
     if (isConvertingTypeValue)
-      diag << "; did you mean to instantiate " << rValueType << "?";
+      diag << "; did you mean to instantiate " << ty << "?";
     addTypeConversionDetail(diag, payloadLoc, rValueType, ty);
     return diag;
   }
   default:
-    llvm_unreachable("");
+    llvm_unreachable("unexpected ArgTypeMismatchKind");
   }
 }
 

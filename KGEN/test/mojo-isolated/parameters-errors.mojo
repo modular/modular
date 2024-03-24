@@ -77,7 +77,7 @@ fn badReboundType[type: __mlir_type.`!kgen.dtype`,
   pass
 
 fn badCallReboundType[val: __mlir_type.`!pop.scalar<f32>`]():
-  # expected-error @+1 {{cannot pass 'scalar<f32>' value, parameter expected 'scalar<f64>'}}
+  # expected-error @+1 {{cannot pass 'scalar<f32>' value, expected 'scalar<f64>' in call parameter}}
   badReboundType[__mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`, val]()
 
 fn partialBindSignature[callable: fn[a: Int, b: Int]() -> None, a: __mlir_type.index]():
@@ -90,7 +90,7 @@ def generic_fn[a: FloatLiteral, b: Int](c : Int):
 
 def call_generic[dt: FloatLiteral]():
   generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 parameters, but 3 were specified}}
-  generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, parameter expected 'FloatLiteral'}}
+  generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, expected 'FloatLiteral' in call parameter}}
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}

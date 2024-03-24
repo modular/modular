@@ -19,7 +19,7 @@ fn bind_fat_to_thin_main():
     fn g(y: int) -> int:
         return x
 
-    # expected-error @below {{cannot pass 'fn(y: index) capturing -> index' value, parameter expected 'fn(y: index) -> index'}}
+    # expected-error @below {{cannot pass 'fn(y: index) capturing -> index' value, expected 'fn(y: index) -> index' in call parameter}}
     alias Bound = bind_fat_to_thin_target[g]
     Bound(3)
 
