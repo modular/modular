@@ -381,11 +381,13 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
     return emitter.emitResult(emitter.shared.getNoneAttr(), this, dest);
 
   if (kind == kDiscardLiteral) {
-    // If we have a contextual type to infer from, we create an implicitly
-    // declared value from that. Otherwise, we use a DiscardType as placeholder.
     ASTType initializerType = dest.getIfLValueInitializerType();
-    if (!initializerType)
-      initializerType = DiscardType::get(emitter.getContext());
+    // The discard pattern can only be used in case where we have an inferred
+    // type for the lvalue.
+    if (!initializerType) {
+      emitter.emitError(getLoc(), "cannot read from discard pattern '_'");
+      return {};
+    }
     DLValue result(RCRef<DiscardDLValue>::create(initializerType, this));
     return emitter.emitResult(result, this, dest);
   }
@@ -1484,14 +1486,29 @@ getBindingsForParameterOperands(ArrayRef<Operand> operands,
                                 ExprEmitter &emitter) {
   ParamBindings paramBindings(emitter);
   for (const Operand &operand : operands) {
-    auto pValue = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
-    if (!pValue)
-      return std::nullopt;
+    // _ and *_ in parameter expressions are magically treated as special syntax
+    // for unbound values, which get a special representation in a parameter
+    // list.  They are not general expressions, so don't emit them as such.
+    TypedAttr value;
+    if (operand.value->kind == ExprNode::kDiscardLiteral) {
+      value = PValue(UnboundAttr::get(DiscardType::get(emitter.getContext())));
+    } else if (operand.value->kind == ExprNode::kUnpack &&
+               cast<UnaryOpNode>(operand.value)->subExpr->kind ==
+                   ExprNode::kDiscardLiteral) {
+      // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
+      // specially.
+      value = PValue(UnpackedAttr::get(emitter.getContext()));
+    } else {
+      auto pValue = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
+      if (!pValue)
+        return std::nullopt;
+      value = pValue.get();
+    }
 
     if (operand.isKeywordOrUnpackedKeyword())
-      paramBindings.add(operand.value, pValue.get(), operand.name);
+      paramBindings.add(operand.value, value, operand.name);
     else
-      paramBindings.add(operand.value, pValue.get());
+      paramBindings.add(operand.value, value);
   }
   return std::move(paramBindings);
 }
@@ -2474,14 +2491,6 @@ AnyValue UnaryOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitTransfer(exprRep, dest, emitter);
 
   if (kind == kUnpack) {
-    // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
-    // specially.
-    // TODO: This isn't really a general expression with a real type, it would
-    // be better to handle this somehow else.
-    if (subExpr->kind == kDiscardLiteral) {
-      auto unpackedExpr = UnpackedAttr::get(emitter.getContext());
-      return emitter.emitResult(unpackedExpr, this, dest);
-    }
     emitter.emitError(getLoc(), "unsupported unpack operation") << getRange();
     return {};
   }

@@ -10,7 +10,6 @@
 struct Parametric[a: int]:
     pass
 
-# expected-note @+1 {{declared here}}
 fn takes_var_params[*a: int]():
     pass
 
@@ -27,7 +26,7 @@ struct VarParamStruct[*args: Int]:
 fn test_unbound_pack_with_variadic():
     # expected-error @+1 {{unbound pack syntax cannot be used where variadic parameters are expected}}
     VarParamStruct[*_]
-    # expected-error @+1 {{unbound pack syntax cannot be used where variadic parameters are expected}}
+    # expected-error @+1 {{cannot read from discard pattern '_'}}
     takes_var_params[*_]
 
 

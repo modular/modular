@@ -1854,8 +1854,9 @@ void ExprEmitter::emitNormalReturn(ImplicitLocOpBuilder &builder, Value value,
 //===----------------------------------------------------------------------===//
 
 CValue DiscardDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
-  // The `_` syntax stands for an unbound parameter.
-  return UnboundAttr::get(elementType);
+  emitter.emitError(expr->getLoc(), "cannot read from discard pattern '_'")
+      << expr->getRange();
+  return {};
 }
 
 void DiscardDLValue::emitStore(ASTExprAnd<CValue> value,
