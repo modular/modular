@@ -74,8 +74,9 @@ struct SomeTrivialStruct:
     var y: Int
 
     @always_inline
-    fn __init__() -> Self:
-        return Self {x: 3, y: 5}
+    fn __init__(inout self):
+        self.x = 3
+        self.y = 5
 
 
 # CHECK-LABEL: test_keep
