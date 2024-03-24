@@ -36,9 +36,6 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   // forbid this when traits are fully operational.
   if (isa<MetaTypeType, TraitType>(fromType) && isa<TypeType>(toType))
     return true;
-  // Discard types can be converted to anything.
-  if (isa<DiscardType>(fromType))
-    return true;
 
   // Two types can be converted to each other if their metatypes can be as well.
   if (isa<ParamRefType, DeclRefType>(fromType) &&

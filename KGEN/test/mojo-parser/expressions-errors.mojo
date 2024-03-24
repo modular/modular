@@ -199,6 +199,23 @@ def unused_values2():
   # expected-warning @+1 {{'IntLiteral' value is unused}}
   4+1
 
+def no_unused_values_in_def():
+  var x : Int = 42
+  4+4  # expected-warning {{'IntLiteral' value is unused}}
+  x    # expected-warning {{'Int' value is unused}}
+  x+1  # expected-warning {{'Int' value is unused}}
+  testLValuesRvalues # expected-warning {{function pointer was formed but not called, did you forget '()'s?}}
+
+  _ # expected-error {{cannot read from discard pattern '_'}}
+
+  # expected-error @+1 {{cannot read from discard pattern '_'}}
+  var abc = _
+
+  # expected-error @+1 {{cannot read from discard pattern '_'}}
+  var bcd = *_
+
+  _ = *x # expected-error {{unsupported unpack operation}}
+
 fn func_with_static_param[x: Int]() -> Int:
   return x
 

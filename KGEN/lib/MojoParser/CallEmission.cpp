@@ -125,6 +125,10 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
   // conversion if needed.
   expectedType = ASTType(evaluator.getReboundType(expectedType.mlirType));
 
+  // We don't typecheck the '_' magic parameter, we propagate it.
+  if (isa<UnboundAttr>(binding.value))
+    return PValue(UnboundAttr::get(expectedType));
+
   // If the parameter already has the right type, then we're good.
   PValue bindingPVal(binding.getValue());
   if (expectedType.isEqualCanon(bindingPVal.getType()))
@@ -411,6 +415,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         kwDiagNames.push_back(paramName);
         return UnboundAttr::get(expectedType);
       }
+
       PValue pValue = emitSingleParameterValue(binding, expectedType,
                                                fitness.numImplicitConversions,
                                                emitter, evaluator);
