@@ -13,7 +13,6 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 from memory.unsafe import Pointer
 
-from ._utils import _check_error
 
 # ===----------------------------------------------------------------------===#
 # Constants
@@ -251,6 +250,12 @@ struct Result(Stringable, EqualityComparable):
             return "NVML_GPU_NOT_FOUND"
 
         return "NVML_UNKNOWN"
+
+
+@always_inline
+fn _check_error(err: Result) raises:
+    if err != Result.SUCCESS:
+        raise str(err)
 
 
 # ===----------------------------------------------------------------------===#

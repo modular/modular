@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device, has_nvml
 # RUN: %mojo %s | FileCheck %s
 
-from gpu.host.nvml import Device
+from nvml import Device
 
 
 def main():
