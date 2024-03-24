@@ -96,15 +96,13 @@ struct _Rep16(Stringable, EqualityComparable):
     """Auxillary information about the shape."""
 
     @always_inline
-    fn __init__() -> Self:
+    fn __init__(inout self):
         """Default initializes the _Rep16 type."""
-        return Self {
-            dims: StaticTuple[Int16, 6](),
-            _unused: 0,
-            rep_kind: _RepKind.KIND_16,
-            rank: 0,
-            auxillary: 0,
-        }
+        self.dims = StaticTuple[Int16, 6]()
+        self._unused = 0
+        self.rep_kind = _RepKind.KIND_16
+        self.rank = 0
+        self.auxillary = 0
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -225,15 +223,13 @@ struct _Rep32(EqualityComparable):
     """Auxillary information about the shape."""
 
     @always_inline
-    fn __init__() -> Self:
+    fn __init__(inout self):
         """Default initializes the _Rep32 type."""
-        return Self {
-            dims012: StaticTuple[Int32, 3](),
-            dim3: 0,
-            rep_kind: _RepKind.KIND_32,
-            rank: 0,
-            auxillary: 0,
-        }
+        self.dims012 = StaticTuple[Int32, 3]()
+        self.dim3 = 0
+        self.rep_kind = _RepKind.KIND_32
+        self.rank = 0
+        self.auxillary = 0
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -371,7 +367,7 @@ struct _RepOutOfLine(EqualityComparable):
     """Auxillary information about the shape."""
 
     @always_inline
-    fn __init__() -> Self:
+    fn __init__(inout self):
         """Default initializes the _RepOutOfLine type."""
         constrained[
             is_little_endian(),
@@ -380,13 +376,11 @@ struct _RepOutOfLine(EqualityComparable):
                 " endian systems"
             ),
         ]()
-        return Self {
-            dims: DTypePointer[DType.index](),
-            _padding: StaticTuple[UInt8, Self._padding_size](),
-            rep_kind: _RepKind.KIND_OUT_OF_LINE,
-            rank: 0,
-            auxillary: 0,
-        }
+        self.dims = DTypePointer[DType.index]()
+        self._padding = StaticTuple[UInt8, Self._padding_size]()
+        self.rep_kind = _RepKind.KIND_OUT_OF_LINE
+        self.rank = 0
+        self.auxillary = 0
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
