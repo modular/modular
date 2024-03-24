@@ -324,15 +324,15 @@ def ModuleAttr : LITTypedAttr<"Module", "module"> {
     Example:
 
     ```mlir
-    #lit.module : !lit.metatype<@some_module>
+    #lit.module : !lit.anystruct<@some_module>
     ```
   }];
 
-  let parameters = (ins AttributeSelfTypeParameter<"", "MetaTypeType">:$type);
+  let parameters = (ins AttributeSelfTypeParameter<"", "AnyStructType">:$type);
   let assemblyFormat = "";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "MetaTypeType":$type),
+    AttrBuilderWithInferredContext<(ins "AnyStructType":$type),
                                    [{ return get(type.getContext(), type); }]>
   ];
 }
@@ -352,31 +352,31 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
     ```mlir
     // Fully unbound to fully bound.
     #lit.bind_type<
-      :metatype<@SIMD<:dtype #kgen.unbound, #kgen.unbound>, <dtype, index>>
-                @SIMD<:dtype #kgen.unbound, #kgen.unbound>,
+      :anystruct<@SIMD<:dtype #kgen.unbound, #kgen.unbound>, <dtype, index>>
+                 @SIMD<:dtype #kgen.unbound, #kgen.unbound>,
       [f32, 16]>
-      : !lit.metatype<@SIMD<:dtype f32, 16>>
+      : !lit.anystruct<@SIMD<:dtype f32, 16>>
 
     // Fully unbound to partially bound.
     #lit.bind_type<
-      :metatype<@SIMD<:dtype #kgen.unbound, #kgen.unbound>, <dtype, index>>
-                @SIMD<:dtype #kgen.unbound, #kgen.unbound>,
+      :anystruct<@SIMD<:dtype #kgen.unbound, #kgen.unbound>, <dtype, index>>
+                 @SIMD<:dtype #kgen.unbound, #kgen.unbound>,
       [#kgen.unbound, 16]>
-      : !lit.metatype<@SIMD<:dtype #kgen.unbound, 16>, <dtype>>
+      : !lit.anystruct<@SIMD<:dtype #kgen.unbound, 16>, <dtype>>
 
     // Partially unbound to fully bound with a default.
     #lit.bind_type<
-      :metatype<@SIMD<:dtype #kgen.unbound, 16>, <dtype = f32>>
-                @SIMD<:dtype #kgen.unbound, 16>,
+      :anystruct<@SIMD<:dtype #kgen.unbound, 16>, <dtype = f32>>
+                 @SIMD<:dtype #kgen.unbound, 16>,
       [si32, 16]>
-      : !lit.metatype<@SIMD<:dtype si32, 16>>
+      : !lit.anystruct<@SIMD<:dtype si32, 16>>
     ```
   }];
 
   let parameters = (ins
     "TypedAttr":$typeValue,
     ArrayRefParameter<"TypedAttr">:$values,
-    AttributeSelfTypeParameter<"", "MetaTypeType">:$type
+    AttributeSelfTypeParameter<"", "AnyStructType">:$type
   );
 
   let assemblyFormat = [{
@@ -390,7 +390,7 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
   let builders = [
     TypeBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
                                         "ArrayRef<TypedAttr>":$values,
-                                        "MetaTypeType":$type), [{
+                                        "AnyStructType":$type), [{
       return get(type.getContext(), typeValue, values, type);
     }], "TypedAttr">,
     TypeBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
@@ -399,7 +399,7 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
                  getBindTypeResultType(typeValue, values));
     }], "TypedAttr">,
     TypeBuilder<(ins "TypedAttr":$typeValue, "ArrayRef<TypedAttr>":$values,
-                     "MetaTypeType":$type), "", "TypedAttr">
+                     "AnyStructType":$type), "", "TypedAttr">
   ];
 }
 

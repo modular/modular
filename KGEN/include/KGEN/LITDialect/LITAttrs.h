@@ -18,7 +18,7 @@ class NoneType;
 namespace LIT {
 class DeclRefType;
 class LifetimeType;
-class MetaTypeType;
+class AnyStructType;
 class StructFieldOp;
 class UnpackedType;
 class FnMetadataAttr;

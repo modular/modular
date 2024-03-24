@@ -186,7 +186,7 @@ fn test_metatype_to_trait_vtable():
     # CHECK-SAME: "method" : !lit.signature<[1]("self": !lit.ref<!TraitStruct, imm {{.*}}> borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@TraitStruct::@"method
     # CHECK-SAME: "param_method" : !lit.signature<[1]<"x": index>("self": !lit.ref<!TraitStruct, imm {{.*}}> borrow_in_mem) -> !kgen.none> = {{.*}}@TraitStruct::@"param_method{{.*}}"<?>
     take_simple_trait[TraitStruct]()
-    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait [{{.*}}@ParametricTraitStruct<2> : metatype<{{.*}}>, {
+    # CHECK: call {{.*}}take_simple_trait{{.*}}<:!SimpleTrait [{{.*}}@ParametricTraitStruct<2> : anystruct<{{.*}}>, {
     # CHECK-SAME: "method" : !lit.signature<[1]("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem, "y": index borrow) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"method{{.*}}"<2>,
     # CHECK-SAME: "param_method" : !lit.signature<[1]<"x": index>("self": {{.*}}@ParametricTraitStruct<2>{{.*}} borrow_in_mem) -> !kgen.none> = {{.*}}@ParametricTraitStruct::@"param_method{{.*}}"<2, ?>
     take_simple_trait[ParametricTraitStruct[__mlir_attr.`2 : index`]]()
@@ -198,7 +198,7 @@ fn test_infer_trait(
 ):
     # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait [!TraitStruct,
     infer_trait(a)
-    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait [{{.*}}@ParametricTraitStruct<2> : metatype<{{.*}}>,
+    # CHECK: call {{.*}}infer_trait{{.*}}<:!SimpleTrait [{{.*}}@ParametricTraitStruct<2> : anystruct<{{.*}}>,
     infer_trait(b)
 
 

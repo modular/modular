@@ -31,7 +31,7 @@ void LITDialect::registerTypes() {
       >();
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
-  dialect->registerMnemonicType<MetaTypeType>();
+  dialect->registerMnemonicType<AnyStructType>();
   dialect->registerMnemonicType<TraitType>();
   dialect->registerMnemonicType<LifetimeType>();
 
@@ -46,8 +46,8 @@ void LITDialect::registerTypes() {
           if (parseKGENType(p, metatype))
             return failure();
         } else {
-          metatype = MetaTypeType::get(symbol, values,
-                                       TypeSignatureType::get(p.getContext()));
+          metatype = AnyStructType::get(symbol, values,
+                                        TypeSignatureType::get(p.getContext()));
         }
         return DeclRefType::get(symbol, values, metatype);
       });
@@ -293,7 +293,7 @@ void DeclRefType::printSymbol(AsmPrinter &p) const {
 
   p << getSymbol();
   printParameterValues(p, getParamValues());
-  if (auto mt = ::dyn_cast<MetaTypeType>(getMetaType()))
+  if (auto mt = ::dyn_cast<AnyStructType>(getMetaType()))
     if (mt.getSignature().getInputParamTypes().empty())
       return;
   p << " : ";
@@ -306,15 +306,15 @@ static ParseResult parseOptionalMetaType(AsmParser &p, Type &metatype,
   if (succeeded(p.parseOptionalComma()))
     return parseKGENType(p, metatype);
 
-  metatype = MetaTypeType::get(symbol.getValue(), paramValues,
-                               TypeSignatureType::get(p.getContext()));
+  metatype = AnyStructType::get(symbol.getValue(), paramValues,
+                                TypeSignatureType::get(p.getContext()));
   return success();
 }
 
 static void printOptionalMetaType(AsmPrinter &p, Type metatype,
                                   SymbolAttr symbol,
                                   ArrayRef<TypedAttr> paramValues) {
-  if (auto mt = dyn_cast<MetaTypeType>(metatype))
+  if (auto mt = dyn_cast<AnyStructType>(metatype))
     if (mt.getSignature().getInputParamTypes().empty())
       return;
   p << ", ";
@@ -322,7 +322,7 @@ static void printOptionalMetaType(AsmPrinter &p, Type metatype,
 }
 
 //===----------------------------------------------------------------------===//
-// MetaTypeType
+// AnyStructType
 //===----------------------------------------------------------------------===//
 
 static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
@@ -405,23 +405,24 @@ static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
   return success();
 }
 
-MetaTypeType MetaTypeType::get(SymbolRefAttr symbol, ArrayRef<TypedAttr> values,
-                               TypeSignatureType signature) {
+AnyStructType AnyStructType::get(SymbolRefAttr symbol,
+                                 ArrayRef<TypedAttr> values,
+                                 TypeSignatureType signature) {
   return get(symbol.getContext(), SymbolAttr::get(symbol), values, signature);
 }
 
-SymbolRefAttr MetaTypeType::getSymbol() const { return getValue().getValue(); }
+SymbolRefAttr AnyStructType::getSymbol() const { return getValue().getValue(); }
 
-OptionalParseResult MetaTypeType::parseValue(AsmParser &p,
-                                             TypedAttr &value) const {
+OptionalParseResult AnyStructType::parseValue(AsmParser &p,
+                                              TypedAttr &value) const {
   return parseTypeValue(p, value, *this);
 }
 
-LogicalResult MetaTypeType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult AnyStructType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printTypeValue(p, value, *this);
 }
 
-MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
+AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   assert(getParamValues().size() == values.size() && "expected full value set");
 
   TypeSignatureType sig = getSignature();
@@ -474,7 +475,7 @@ MetaTypeType MetaTypeType::bind(ArrayRef<TypedAttr> values) const {
                     /*packIndex=*/-1, ArgConvention::None);
   auto newSig =
       TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
-  return MetaTypeType::get(getSymbol(), values, newSig);
+  return AnyStructType::get(getSymbol(), values, newSig);
 }
 
 //===----------------------------------------------------------------------===//

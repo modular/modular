@@ -941,7 +941,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // Metatypes can implicitly convert to any trait type they implement.
   if (auto traitType = dyn_cast<TraitType>(requiredType)) {
     std::optional<InflightDiag> diag;
-    if (isa<MetaTypeType, TraitType>(rvType) &&
+    if (isa<AnyStructType, TraitType>(rvType) &&
         checkNominalTypeConformance(shared, traitType, rvType.getDecl(shared),
                                     value.expr->getLoc(), diag))
       return true;
@@ -1087,27 +1087,27 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
-  ASTType type(typeValue.getRValueType());
+  ASTType metaType(typeValue.getRValueType());
 
   // Cannot bind parametric types to traits.
-  if (auto metatype = dyn_cast<MetaTypeType>(type)) {
-    if (!metatype.getSignature().getParamTypes().empty()) {
+  if (auto anyStruct = dyn_cast<AnyStructType>(metaType)) {
+    if (!anyStruct.getSignature().getParamTypes().empty()) {
       emitError(value.expr->getLoc(), "parametric type ")
-          << type << " cannot bind to trait with missing parameters"
+          << metaType << " cannot bind to trait with missing parameters"
           << value.expr->getRange();
       return {};
     }
   }
 
   // Check that the struct implements the trait.
-  ASTDecl *typeDecl = type.getDecl(shared);
+  ASTDecl *metaTypeDecl = metaType.getDecl(shared);
   std::optional<InflightDiag> checkDiag;
-  if (!checkNominalTypeConformance(shared, trait, typeDecl,
+  if (!checkNominalTypeConformance(shared, trait, metaTypeDecl,
                                    value.expr->getLoc(), checkDiag)) {
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
-                        << type << " to trait " << ASTType(trait)
+                        << ASTType(typeValue) << " to trait " << ASTType(trait)
                         << value.expr->getRange();
-    diag.attachNote(typeDecl->getLoc()) << std::move(*checkDiag);
+    diag.attachNote(metaTypeDecl->getLoc()) << std::move(*checkDiag);
     return {};
   }
 
@@ -1120,21 +1120,21 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
   Type selfType;
   SmallVector<TypedAttr> selfParams;
   auto typeType = TypeType::get(getContext());
-  if (auto metatype = dyn_cast<MetaTypeType>(type)) {
+  if (auto anyStruct = dyn_cast<AnyStructType>(metaType)) {
     // When converting from a concrete type, construct the self type value as
     // a declref to the metatype.
-    selfType = DeclRefType::get(metatype.getSymbol(), metatype.getParamValues(),
-                                metatype);
+    selfType = DeclRefType::get(anyStruct.getSymbol(),
+                                anyStruct.getParamValues(), anyStruct);
     // Substitute the implicit trait parameters.
     selfParams.assign({TypeConstantAttr::get(typeType, typeType),
                        TypeConstantAttr::get(selfType, typeType)});
   } else {
     // Otherwise, we are converting from a trait. Just rebind the types.
     selfType = ParamRefType::get(typeValue);
-    selfParams.assign({TypeConstantAttr::get(type, typeType), typeValue});
+    selfParams.assign({TypeConstantAttr::get(metaType, typeType), typeValue});
   }
 
-  StructDeclOp structDeclOp = dyn_cast<StructDeclOp>(typeDecl);
+  StructDeclOp structDeclOp = dyn_cast<StructDeclOp>(metaTypeDecl);
   bool rpTrivial = false;
   bool regPassable = false;
   if (structDeclOp) {
@@ -1146,8 +1146,9 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
   for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
     if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
       continue;
-    LookupResult result = shared.lookupAndResolveDecl(
-        name, value.expr->getLoc(), *typeDecl, /*searchParentScopes=*/false);
+    LookupResult result =
+        shared.lookupAndResolveDecl(name, value.expr->getLoc(), *metaTypeDecl,
+                                    /*searchParentScopes=*/false);
     ArrayRef<ASTDecl *> typeFuncs = result.getIfSuccess();
     // Form an overload set of the functions and bind the type parameters.
     for (ASTDecl *expected : decls) {
@@ -1297,7 +1298,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       // Emit metatype conversions to trait types if the metatype implements the
       // specified trait.
       if (auto trait = dyn_cast<TraitType>(requiredType)) {
-        if (isa<MetaTypeType, TraitType>(rvalueType)) {
+        if (isa<AnyStructType, TraitType>(rvalueType)) {
           PValue result = emitMetaTypeConversion({cValue, expr}, trait);
           if (!result) {
             dest.resetForError();

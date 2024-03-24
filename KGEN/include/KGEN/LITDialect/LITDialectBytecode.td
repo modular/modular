@@ -30,7 +30,7 @@ def DeclRefType : DialectType<(type
   Type:$metaType
 )>;
 
-def MetaTypeType : DialectType<(type
+def AnyStructType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
   TypedAttrArray:$paramValues,
   ConcreteType<"TypeSignatureType">:$signature
@@ -67,7 +67,7 @@ def LITDialectTypes : DialectTypes<"lit"> {
     TypeSignatureType,
     UnpackedType,
     DeclRefType,
-    MetaTypeType,
+    AnyStructType,
     TraitType,
     LifetimeType,
     RefType,
@@ -113,13 +113,13 @@ def UnpackedAttr : DialectAttribute<(attr
 )>;
 
 def ModuleAttr : DialectAttribute<(attr
-  ConcreteType<"MetaTypeType">:$type
+  ConcreteType<"AnyStructType">:$type
 )>;
 
 def BindTypeAttr : DialectAttribute<(attr
   TypedAttr:$typeValue,
   TypedAttrArray:$values,
-  ConcreteType<"MetaTypeType">:$type
+  ConcreteType<"AnyStructType">:$type
 )>;
 
 def LifetimeAttr : DialectAttribute<(attr

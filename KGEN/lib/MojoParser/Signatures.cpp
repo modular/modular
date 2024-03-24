@@ -433,7 +433,7 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTDecl &declScope,
                                      ASTType type, const ParsedArgument &arg,
                                      TypeCheckedParamList &paramList) {
   // Check if the type has unbound parameters.
-  auto metatype = dyn_cast_or_null<MetaTypeType>(type.getMetaType());
+  auto metatype = dyn_cast_or_null<AnyStructType>(type.getMetaType());
   if (!metatype)
     return type;
   ArrayRef<Type> params = metatype.getSignature().getParamTypes();
@@ -571,7 +571,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   }
   Type elementType = paramVariadicType.getElementType();
-  if (!isa<MetaTypeType, TypeType, TraitType>(elementType)) {
+  if (!isa<AnyStructType, TypeType, TraitType>(elementType)) {
     emitter.emitError(arg.typeExpr->getLoc(),
                       "argument type list elements must be types")
         << arg.typeExpr->getRange();
@@ -811,7 +811,7 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     ASTType stringType = shared.getBuiltinStringType(declScope, arg.loc);
 
     auto dictDecl = cast<DeclRefType>(dictType.mlirType);
-    auto dictMetatype = cast<MetaTypeType>(dictDecl.getMetaType());
+    auto dictMetatype = cast<AnyStructType>(dictDecl.getMetaType());
     ArrayRef<Type> inputTypes =
         dictMetatype.getSignature().getInputParamTypes();
     if (inputTypes.size() != 2) {

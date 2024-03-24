@@ -92,7 +92,7 @@ void ParameterInferenceDiagnostics::emitSpecificNote(
     function_ref<InflightDiag &()> attachNote, ASTType paramType,
     ASTType argParamType) {
   if (isa<TraitType>(paramType)) {
-    if (isa<MetaTypeType>(argParamType)) {
+    if (auto anyStruct = dyn_cast<AnyStructType>(argParamType)) {
       attachNote() << "argument type " << argParamType
                    << " does not conform to trait " << paramType;
       return;
