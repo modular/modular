@@ -1491,7 +1491,8 @@ getBindingsForParameterOperands(ArrayRef<Operand> operands,
     // list.  They are not general expressions, so don't emit them as such.
     TypedAttr value;
     if (operand.value->kind == ExprNode::kDiscardLiteral) {
-      value = PValue(UnboundAttr::get(DiscardType::get(emitter.getContext())));
+      value =
+          PValue(UnboundAttr::get(UnresolvedType::get(emitter.getContext())));
     } else if (operand.value->kind == ExprNode::kUnpack &&
                cast<UnaryOpNode>(operand.value)->subExpr->kind ==
                    ExprNode::kDiscardLiteral) {

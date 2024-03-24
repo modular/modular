@@ -61,19 +61,6 @@ def LIT_UnresolvedType : LITType<"Unresolved", "unresolved"> {
 }
 
 //===----------------------------------------------------------------------===//
-// DiscardType
-//===----------------------------------------------------------------------===//
-
-def LIT_DiscardType : LITType<"Discard", "discard"> {
-  let summary = "Type placeholder used for explicitly unbound parameters";
-  let description = [{
-    When expressing explicitly unbound parameters using e.g. the `_` syntax, a
-    this type is uses to serve as placeholder in cases when the actualy type of
-    the parameter is not known yet.
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // TypeSignatureType
 //===----------------------------------------------------------------------===//
 

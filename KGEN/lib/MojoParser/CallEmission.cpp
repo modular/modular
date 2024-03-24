@@ -192,7 +192,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
     // If missing at least one positional parameter, we inject some number of
     // UnboundAttr's, just like the user wrote the right number of _'s.
-    auto unboundAttr = UnboundAttr::get(DiscardType::get(shared.getContext()));
+    auto unboundAttr =
+        UnboundAttr::get(UnresolvedType::get(shared.getContext()));
     Binding unboundBinding{binding.expr, unboundAttr, binding.typeChecked};
 
     // Calculate how many UnboundAttr's (_'s) we need to inject, and put them
