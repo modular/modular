@@ -246,6 +246,20 @@ struct LayoutTensor[
     fn dim[idx: Int]() -> Int:
         return Self.shape[idx]()
 
+    @always_inline
+    fn offset(inout self, distance: Int):
+        """Use layout tensor as a view and offset its pointer by the input
+        distance."""
+        self.ptr += distance
+
+    @always_inline
+    fn coalesce(
+        self,
+    ) -> LayoutTensor[coalesce(layout), dtype, address_space=address_space]:
+        return LayoutTensor[
+            coalesce(layout), dtype, address_space=address_space
+        ](self.ptr)
+
     @staticmethod
     fn _compute_tile_layout[*tile_sizes: Int]() -> Layout:
         alias tiler = MakeTileLayoutList[tile_sizes]()
