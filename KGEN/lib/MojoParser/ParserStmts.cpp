@@ -433,7 +433,8 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   if (auto sig = dyn_cast<SignatureType>(valueType)) {
     // Get the result type without any error handling in the way.
     Type resultType = ASTType(sig).getSignatureUserResultType();
-    if ((sig.getNumArguments() == sig.hasMemoryOnlyResult() + sig.isThrows()) &&
+    if ((sig.getNumArguments() ==
+         ((unsigned)sig.hasMemoryOnlyResult() + (unsigned)sig.isThrows())) &&
         isImplicitlyIgnorableType(resultType)) {
       shared.emitWarning(expr->getLoc())
           << "function pointer was formed but not called, did you forget '()'s?"

@@ -54,8 +54,15 @@ public:
   RCRef(RCRef<U> &&u) : pointer(u.release()) {}
 
   ~RCRef() {
-    if (pointer)
+    if (pointer) {
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
       pointer->dropRef();
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+    }
   }
 
   RCRef &operator=(RCRef &&other) {

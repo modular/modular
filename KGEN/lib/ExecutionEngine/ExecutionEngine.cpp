@@ -466,11 +466,10 @@ ExecutionEngine::create(ExecutionEngineOptions options,
   auto orcRTBuf = initializeOrcRT(cfg);
   if (orcRTBuf.isError())
     return orcRTBuf.takeError();
-  std::optional<BufferRef> rtBuf = std::move(*orcRTBuf);
-  bool haveOrcRT = rtBuf.has_value();
+  std::optional<BufferRef> rtBuf = orcRTBuf.takeValue();
 
   // Windows *requires* the orc runtime.
-  if (!haveOrcRT && tt.isOSBinFormatCOFF())
+  if (!rtBuf && tt.isOSBinFormatCOFF())
     return Error("unable to locate orc_rt");
 
   // Construct the object linking layer.

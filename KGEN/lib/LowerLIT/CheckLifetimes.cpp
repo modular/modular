@@ -1169,9 +1169,9 @@ void UninitializedValueScan::scanBlock(Block &block) {
       // the op could never be satisfied.
       bool endsUninit = false;
       if (trackable) {
-        assert(trackable.endInitState == LifetimeTrackable::EndsInit ||
-               trackable.endInitState == LifetimeTrackable::EndsUninit &&
-                   "invalid end init state for an op result");
+        assert((trackable.endInitState == LifetimeTrackable::EndsInit ||
+                trackable.endInitState == LifetimeTrackable::EndsUninit) &&
+               "invalid end init state for an op result");
         endsUninit = trackable.endInitState == LifetimeTrackable::EndsUninit;
         assert(trackable.startsUninit == endsUninit &&
                "op results must have same live in/out behavior");
