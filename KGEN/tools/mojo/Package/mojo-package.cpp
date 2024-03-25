@@ -19,6 +19,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Init/Init.h"
 
 #include "Support/Filesystem/Paths.h"
 #include "mlir/IR/MLIRContext.h"
@@ -381,12 +382,17 @@ static int package(const State &state) {
   if (auto err = parsePackageArgs(state, args, sourceMgr, packageArgs))
     return state.reportError(err.getError());
 
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
-  auto &telemetryCtx =
-      runtime->context->emplace<M::Telemetry::TelemetryContext>();
+  // Create our context (including the runtime).
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+  if (ctxOr.isError())
+    return state.reportError(ctxOr.getError());
+  ContextRef ctx = std::move(*ctxOr);
+  registerContext(packageArgs.ctx, ctx);
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args, /*privateArgs=*/
                       {options::OPT_D, options::OPT_I, options::OPT_o});
 
@@ -403,17 +409,18 @@ static int package(const State &state) {
 
   // Parse the input directory as a Mojo package. This returns a module op that
   // wraps the `lit.package` op, which represents the package contents.
+  LLCL::Runtime &runtime = *ctx->get<LLCL::Runtime>();
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &packageArgs.ctx);
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
-      state, args, packageArgs.compileOptions, &packageArgs.ctx, *runtime,
+      state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
       options::OPT_D,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
-            *runtime, packageArgs.inputPath, packageArgs.name, sourceMgr,
+            runtime, packageArgs.inputPath, packageArgs.name, sourceMgr,
             parserConfig, ts);
         return moduleOp;
       });
@@ -422,7 +429,7 @@ static int package(const State &state) {
 
   // Build a new package op based off of the parsed package op. This new op is
   // suitable for serialization as MLIR bytecode.
-  auto builtOrErr = buildPackage(packageArgs, **module, packageOp, *runtime);
+  auto builtOrErr = buildPackage(packageArgs, **module, packageOp, runtime);
   if (failed(builtOrErr))
     return state.reportError(builtOrErr.getError());
   auto [builtPackageModule, builtPackage] = builtOrErr.takeValue();

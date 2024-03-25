@@ -9,6 +9,7 @@
 #include "../Common/Telemetry.h"
 #include "KGEN/Support/Configuration.h"
 #include "RPCServer.h"
+#include "Support/Init/Init.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/Path.h"
 
@@ -89,13 +90,14 @@ static int debug(const State &state) {
   llvm::opt::InputArgList parsedArgs =
       options.ParseArgs(state.arguments, unused, unused);
 
-  // Initialize the LLCL runtime. We don't allow users to configure runtime
-  // options, such as the allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  if (ctxOr.isError())
+    return state.reportError(ctxOr.getError());
+  ContextRef ctx = std::move(*ctxOr);
 
   // Initialize telemetry.
-  auto &telemetryCtx =
-      runtime->context->emplace<M::Telemetry::TelemetryContext>();
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, parsedArgs);
 
   // LLVMOption treats all "positional arguments" (arguments that do not have a

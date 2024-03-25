@@ -7,6 +7,7 @@
 #include "mojo-repl.h"
 #include "../Common/LLDB.h"
 #include "../Common/Telemetry.h"
+#include "Support/Init/Init.h"
 #include "llvm/Option/ArgList.h"
 
 using namespace M;
@@ -31,13 +32,14 @@ static int repl(const State &state) {
   llvm::opt::InputArgList args =
       options.ParseArgs(state.arguments, unused, unused);
 
-  // Initialize the LLCL runtime. We don't allow users to configure runtime
-  // options, such as the allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  if (ctxOr.isError())
+    return state.reportError(ctxOr.getError());
+  ContextRef ctx = std::move(*ctxOr);
 
   // Initialize telemetry.
-  auto &telemetryCtx =
-      runtime->context->emplace<M::Telemetry::TelemetryContext>();
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args);
 
   if (args.hasArg(options::OPT_help)) {

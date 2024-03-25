@@ -47,7 +47,6 @@ int main(int argc, char **argv) {
   // Install LLVM signal handlers and convert `argc` and `argv` for Windows
   // hosts.
   llvm::InitLLVM initLLVM(argc, argv);
-  initCrashpadForProgram(argv[0], "mojo");
   llvm::setBugReportMsg(
       "Please submit a bug report to https://github.com/modularml/mojo/issues "
       "and include the crash backtrace along with all the relevant source "

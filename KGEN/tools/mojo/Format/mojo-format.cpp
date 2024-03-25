@@ -10,6 +10,7 @@
 #include "KGEN/Support/Configuration.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Init/Init.h"
 
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
@@ -55,13 +56,14 @@ static int format(const State &state) {
   if (!args.hasArg(options::OPT_INPUT))
     return state.reportError("no inputs provided");
 
-  // Initialize the LLCL runtime. We don't allow users to configure runtime
-  // options, such as the allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  if (ctxOr.isError())
+    return state.reportError(ctxOr.getError());
+  ContextRef ctx = std::move(*ctxOr);
 
   // Initialize telemetry.
-  auto &telemetryCtx =
-      runtime->context->emplace<M::Telemetry::TelemetryContext>();
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args);
 
   // Check that the inputs are all valid Mojo/Python files, or directories.

@@ -22,9 +22,11 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Init/Init.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/MDialect/MDialect.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -367,34 +369,37 @@ static int build(const State &state) {
   CompilationOptions options;
 
   // Parse arguments.
-  MLIRContext context;
+  MLIRContext mlirCtx;
   TargetInfoAttr target;
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceMgr;
   if (std::optional<int> exitCode =
-          parseArgs(state, args, sourceMgr, options, context, target))
+          parseArgs(state, args, sourceMgr, options, mlirCtx, target))
     return *exitCode;
 
-  // Initialize the LLCL runtime. We don't allow users to configure runtime
-  // options, such as the allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
-
-  auto &telemetryCtx =
-      runtime->context->emplace<M::Telemetry::TelemetryContext>();
+  // Create our context (including the runtime).
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+  if (ctxOr.isError())
+    return state.reportError(ctxOr.getError());
+  ContextRef ctx = std::move(*ctxOr);
+  registerContext(mlirCtx, ctx);
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args, /*privateArgs=*/
                       {options::OPT_D, options::OPT_I, options::OPT_o});
 
   // Lower the input file to an MLIR module.
-  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &context);
+  LLCL::Runtime &runtime = *ctx->get<LLCL::Runtime>();
+  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
-      state, args, options, &context, *runtime,
+      state, args, options, &mlirCtx, runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
       options::OPT_D,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        return LIT::importMojoFile(*runtime, sourceMgr, parserConfig, ts);
+        return LIT::importMojoFile(runtime, sourceMgr, parserConfig, ts);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
@@ -402,7 +407,7 @@ static int build(const State &state) {
   // Compile the module to a static archive.
   BufferRef archive;
   if (std::optional<int> exitCode = compileModuleToArchive(
-          state, *runtime, context, options, **moduleOp, target, archive))
+          state, runtime, mlirCtx, options, **moduleOp, target, archive))
     return *exitCode;
 
   // Link an executable from the archive.

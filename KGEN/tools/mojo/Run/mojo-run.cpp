@@ -23,9 +23,11 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Init/Init.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/MDialect/MDialect.h"
 #include "Support/Telemetry/Telemetry.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -262,32 +264,35 @@ static int run(const State &state) {
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceManager;
   CompilationOptions options;
-  MLIRContext context;
+  MLIRContext mlirCtx;
   TargetInfoAttr target;
   if (std::optional<int> exitCode = parseArgs(
-          state, args, sourceManager, options, context, target, optionsTable))
+          state, args, sourceManager, options, mlirCtx, target, optionsTable))
     return *exitCode;
 
-  // Initialize the LLCL runtime. We don't allow users to configure runtime
-  // options, such as the allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
-
-  auto &telemetryCtx =
-      runtime->context->emplace<M::Telemetry::TelemetryContext>();
+  // Create our context (including the runtime).
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+  if (ctxOr.isError())
+    return state.reportError(ctxOr.getError());
+  ContextRef ctx = std::move(*ctxOr);
+  registerContext(mlirCtx, ctx);
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args,
                       /*privateArgs=*/{options::OPT_D, options::OPT_I});
 
   // Lower the input file to an MLIR module.
-  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &context);
+  LLCL::Runtime &runtime = *ctx->get<LLCL::Runtime>();
+  mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &mlirCtx);
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
-      state, args, options, &context, *runtime,
+      state, args, options, &mlirCtx, runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
       options::OPT_D,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        return LIT::importMojoFile(*runtime, sourceManager, parserConfig, ts);
+        return LIT::importMojoFile(runtime, sourceManager, parserConfig, ts);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());
@@ -297,7 +302,7 @@ static int run(const State &state) {
 
   // Execute the Mojo program.
   return executeModule(
-      state, *runtime, context, options, **moduleOp, target,
+      state, runtime, mlirCtx, options, **moduleOp, target,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()));
 }
 

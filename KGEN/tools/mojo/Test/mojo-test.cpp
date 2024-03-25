@@ -13,6 +13,7 @@
 #include "KGEN/Package/Package.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Init/Init.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "llvm/Option/ArgList.h"
@@ -74,14 +75,15 @@ static int test(const State &state) {
   if (std::optional<int> exitCode = parseArgs(state, args))
     return *exitCode;
 
-  // Initialize the LLCL runtime. We don't allow users to configure runtime
-  // options, such as the allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
-  auto &telemetryCtx =
-      runtime->context->emplace<M::Telemetry::TelemetryContext>();
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  if (ctxOr.isError())
+    return state.reportError(ctxOr.getError());
+  ContextRef ctx = std::move(*ctxOr);
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args,
                       /*privateArgs=*/{options::OPT_I});
 
