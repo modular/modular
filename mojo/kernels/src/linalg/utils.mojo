@@ -76,6 +76,21 @@ struct MatmulConfig:
     # Prefetch distance for packed b vectors in micro kernels.
     var prefetch_b_distance_k: Int
 
+    # Indicates if the input matrix A is transposed.
+    var transpose_a: Bool
+
+    # Indicates if the input matrix B is transposed.
+    var transpose_b: Bool
+
+    # Indicates if the input matrix A is pre-packed.
+    var a_packed: Bool
+
+    # Indicates if the input matrix B is pre-packed.
+    var b_packed: Bool
+
+    # Enum of the kernel shape, only two shapes currently
+    var kernel_type: Bool
+
     # use AVX_VNNI or AVX512_VNNI
     var use_vnni: Bool
 
@@ -101,6 +116,11 @@ struct MatmulConfig:
         pack_inner_size: Int,
         pack_data_size: Int,
         prefetch_b_distance_k: Int,
+        transpose_a: Bool,
+        transpose_b: Bool,
+        a_packed: Bool,
+        b_packed: Bool,
+        kernel_type: Bool,
         use_vnni: Bool,
         use_i8mm: Bool,
         saturated_vnni: Bool,
@@ -118,20 +138,14 @@ struct MatmulConfig:
         self.pack_inner_size = pack_inner_size
         self.pack_data_size = pack_data_size
         self.prefetch_b_distance_k = prefetch_b_distance_k
+        self.transpose_a = transpose_a
+        self.transpose_b = transpose_b
+        self.a_packed = a_packed
+        self.b_packed = b_packed
+        self.kernel_type = kernel_type
         self.use_vnni = use_vnni
         self.use_i8mm = use_i8mm
         self.saturated_vnni = saturated_vnni
-
-
-@register_passable("trivial")
-struct MatmulDataType:
-    """Record describing the data types of the matrices in a matmul."""
-
-    # The data type of the result (matrix C), and the accumulator.
-    var accum_type: DType
-
-    # The data type of the operands (matrix A and B).
-    var value_type: DType
 
 
 @value
@@ -145,31 +159,6 @@ struct MicroKernelShape:
 
     fn __init__(height: Int, width: Int) -> MicroKernelShape:
         return MicroKernelShape {a_row_size: height, pack_inner_size: width}
-
-
-@register_passable("trivial")
-struct MatmulOperandLayout:
-    """Record describing the data layouts of the matmul operands as well as
-    intermediate matrices.
-    """
-
-    # Indicates if the input matrix A is transposed.
-    var transpose_a: Bool
-
-    # Indicates if the input matrix B is transposed.
-    var transpose_b: Bool
-
-    # Indicates if the input matrix A is pre-packed.
-    var a_packed: Bool
-
-    # Indicates if the input matrix B is pre-packed.
-    var b_packed: Bool
-
-    # The inner dimension size for packed A matrix if B is pre-packed.
-    var pack_a_inner_size: Int
-
-    # The inner dimension size for packed B matrix if B is pre-packed.
-    var pack_b_inner_size: Int
 
 
 @value
@@ -214,13 +203,11 @@ struct GemmShape:
 
     @staticmethod
     fn get[
-        config: MatmulConfig,
-        layout: MatmulOperandLayout,
-        data_type: MatmulDataType,
+        config: MatmulConfig
     ](
-        c: NDBuffer[data_type.accum_type, 2, config.c_shape],
-        a: NDBuffer[data_type.value_type, 2, config.a_shape],
-        b: NDBuffer[data_type.value_type, 2, config.b_shape],
+        c: NDBuffer[config.c_type, 2, config.c_shape],
+        a: NDBuffer[config.a_type, 2, config.a_shape],
+        b: NDBuffer[config.b_type, 2, config.b_shape],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -232,7 +219,7 @@ struct GemmShape:
         return GemmShape(
             c.dim[0](),
             c.dim[1](),
-            a.dim[0]() if layout.transpose_a else a.dim[1](),
+            a.dim[0]() if config.transpose_a else a.dim[1](),
         )
 
     @staticmethod
@@ -921,9 +908,13 @@ fn get_mm_config[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-    b_packed: Bool,
-    kernel_type: Bool,
-    saturated_vnni: Bool,
+    *,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    a_packed: Bool = False,
+    b_packed: Bool = False,
+    kernel_type: Bool = False,
+    saturated_vnni: Bool = False,
 ]() -> MatmulConfig:
     """Utility function to extract matmul configuration parameters for exported
     Functions.
@@ -954,34 +945,15 @@ fn get_mm_config[
         pack_inner_size=kernel_shape.pack_inner_size * factor,
         pack_data_size=get_pack_data_size[b_type](),
         prefetch_b_distance_k=prefetch_b_distance_k,
+        transpose_a=transpose_a,
+        transpose_b=transpose_b,
+        a_packed=a_packed,
+        b_packed=b_packed,
+        kernel_type=kernel_type,
         use_vnni=use_vnni_fn[a_type, b_type, c_type](),
         use_i8mm=use_i8mm_fn[a_type, b_type, c_type](),
         saturated_vnni=saturated_vnni,
     )
-
-
-@always_inline
-fn get_mm_config[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    b_packed: Bool,
-    kernel_type: Bool,
-]() -> MatmulConfig:
-    return get_mm_config[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        b_packed,
-        kernel_type,
-        False,
-    ]()
 
 
 @always_inline

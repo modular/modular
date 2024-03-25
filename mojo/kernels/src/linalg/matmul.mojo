@@ -34,8 +34,6 @@ from gpu.tensor_ops import tc_reduce
 from MatmulUtils import (
     GemmShape,
     MatmulConfig,
-    MatmulDataType,
-    MatmulOperandLayout,
     PartitionHeuristic,
     SubMatmulConfig,
     _get_tile_n_k,
@@ -1824,7 +1822,15 @@ fn pack_matmul_b_shape_func_M[
     @always_inline
     fn dispatch_on_kernel_type[kernel_type: Bool]():
         alias config = get_mm_config[
-            a_type, a_shape, b_type, b_shape, c_type, c_shape, True, kernel_type
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transpose_b=transpose_in_0,
+            b_packed=True,
+            kernel_type=kernel_type,
         ]()
         tile_n_k = _get_tile_n_k[
             config,
@@ -2045,8 +2051,9 @@ fn _pack_b_ndbuffer_impl[
                 b_shape,
                 c_type,
                 c_shape,
-                True,
-                kernel_type,
+                transpose_b=transposed,
+                b_packed=True,
+                kernel_type=kernel_type,
             ]()
             var tile_n_k = _get_tile_n_k[
                 config,
@@ -3713,9 +3720,11 @@ fn _submatmul_sequential_sync[
             b_shape,
             c_type,
             c_shape,
-            b_packed,
-            kernel_type,
-            saturated_vnni,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            b_packed=b_packed,
+            kernel_type=kernel_type,
+            saturated_vnni=saturated_vnni,
         ]()
 
         fn elementwise_closure(offset: GemmShape, shape: GemmShape):
