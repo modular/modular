@@ -13,6 +13,7 @@ add_modular_tool(mojo-test-executor
   KGENSupport
   LLCLRuntimeGlobals
   MSupportGlobals
+  MSupportInit
   MojoJupyter
   MojoParser
   MojoTesting
