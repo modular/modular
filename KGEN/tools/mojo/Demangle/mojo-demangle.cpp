@@ -12,6 +12,7 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Init/Init.h"
 #include "Support/LLVMForwardDecls.h"
 
 #include "mlir/IR/DialectRegistry.h"
@@ -62,13 +63,14 @@ static int demangle(const State &state) {
                       inputs[0], inputs[1]));
   }
 
-  // Initialize the LLCL runtime. We don't allow users to configure runtime
-  // options, such as the allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  if (ctxOr.isError())
+    return state.reportError(ctxOr.getError());
+  ContextRef ctx = std::move(*ctxOr);
 
   // Initialize telemetry.
-  auto &telemetryCtx =
-      runtime->context->emplace<M::Telemetry::TelemetryContext>();
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args);
 
   // Initialize the MLIR context with all of KGEN's dialects.

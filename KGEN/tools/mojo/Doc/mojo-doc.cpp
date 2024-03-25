@@ -19,6 +19,7 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Init/Init.h"
 
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Support/FileUtilities.h"
@@ -75,15 +76,15 @@ static int doc(const State &state) {
         inputs[1]));
   }
 
-  // We don't allow users to configure LLCL runtime options, such as the
-  // allocator or the work queue threading model.
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime();
-
-  auto &telemetryCtx =
-      runtime->context->emplace<M::Telemetry::TelemetryContext>();
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext("mojo", Init::Options());
+  if (ctxOr.isError())
+    return state.reportError(ctxOr.getError());
+  ContextRef ctx = std::move(*ctxOr);
 
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
   initializeTelemetry(telemetryCtx, state, args,
                       /*privateArgs=*/{options::OPT_I, options::OPT_o});
 

@@ -55,6 +55,7 @@ add_modular_tool(mojo
   MSupportFilesystem
   MSupportDriver
   MSupportGlobals
+  MSupportInit
   KGENExecutionEngine
   KGENCompiler
   KGENEmitObject
