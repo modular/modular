@@ -956,18 +956,16 @@ LogicalResult SelectOp::canonicalize(SelectOp op, PatternRewriter &rewriter) {
                                        "result type isn't !pop.scalar<bool>");
   }
 
-  auto trueConst = op.getTrueValue().getDefiningOp<KGEN::ParamConstantOp>();
-  auto falseConst = op.getFalseValue().getDefiningOp<KGEN::ParamConstantOp>();
-  if (!trueConst || !falseConst)
+  SIMDAttr trueVal, falseVal;
+  if (!mlir::matchPattern(op.getTrueValue(), mlir::m_Constant(&trueVal)) ||
+      !mlir::matchPattern(op.getFalseValue(), mlir::m_Constant(&falseVal)))
     return rewriter.notifyMatchFailure(op, "True/False value isn't constant");
 
-  auto isBoolAttr = [](TypedAttr attr, bool value) {
-    auto simdAttr = dyn_cast<POP::SIMDAttr>(attr);
-    return simdAttr && simdAttr.getValues().front().getBoolVal() == value;
+  auto isBoolAttr = [](SIMDAttr attr, bool value) {
+    return attr.getValues().front().getBoolVal() == value;
   };
 
-  if (isBoolAttr(trueConst.getValue(), true) &&
-      isBoolAttr(falseConst.getValue(), false)) {
+  if (isBoolAttr(trueVal, true) && isBoolAttr(falseVal, false)) {
     rewriter.replaceOpWithNewOp<POP::CastFromBuiltinOp>(op, op.getType(),
                                                         op.getCondition());
     return success();
