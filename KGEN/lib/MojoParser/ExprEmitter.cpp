@@ -1168,6 +1168,7 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
       }
       sig =
           sig.getSpecializedSignature(fnParams, value.expr->getLocation(*this));
+      assert(sig && "internal error substituting trait type");
 
       // Grab the matching function.
       OverloadSet ov(name, typeFuncs, std::move(bindings), value.expr,
@@ -1181,8 +1182,10 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
         if (canSynthesizeIfMissing(name, rpTrivial, regPassable))
           continue;
 
-        // The struct does not conform to the trait. Just silently return, since
-        // an error has already been emitted.
+        // The struct does not have the specified member and we cannot
+        // synthesize it. Re-emit the error to get a diagnostic.
+        (void)ov.filterOverloadSetForValueType(
+            sig, /*emitDiagnosticOnFailure=*/true);
         return {};
       }
       if (result.getType().mlirType != sig)
