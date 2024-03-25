@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
 # RUN: mojo package %mojo_user_pkg -o %t.mojopkg
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.mlir %t.mojopkg | FileCheck %s
+# RUN: %mojo -debug-level full %s %S/mo.mlir %t.mojopkg
 
 from max.engine import (
     InferenceSession,
@@ -15,6 +15,7 @@ from max.engine import (
 )
 from sys import argv
 from tensor import Tensor, TensorShape
+from testing import assert_equal
 from pathlib import Path
 
 
@@ -27,32 +28,25 @@ fn test_model_metadata() raises:
     var config = LoadOptions()
     config.set_custom_ops_path(Path(user_defined_ops_path))
     var compiled_model = session.load_model(Path(model_path), config)
-    # CHECK: 1
-    print(compiled_model.num_model_inputs())
+    assert_equal(compiled_model.num_model_inputs(), 1)
 
     var input_names = compiled_model.get_model_input_names()
-    # CHECK: input
     for name in input_names:
-        print(name[])
+        assert_equal(name[], "input")
 
-    # CHECK: input
-    print(input_names[0])
+    assert_equal(input_names[0], "input")
 
-    # CHECK: 1
-    print(compiled_model.num_model_outputs())
+    assert_equal(compiled_model.num_model_outputs(), 1)
 
     var output_names = compiled_model.get_model_output_names()
-    # CHECK: output
     for name in output_names:
-        print(name[])
+        assert_equal(name[], "output")
 
-    # CHECK: output
-    print(output_names[0])
+    assert_equal(output_names[0], "output")
 
 
 fn test_model() raises:
     var args = argv()
-    print(args[1])
 
     var model_path = args[1]
     var user_defined_ops_path = args[2]
@@ -73,8 +67,7 @@ fn test_model() raises:
     _ = input_tensor ^  # Keep inputs alive
     var output_tensor = outputs.get[DType.float32]("output")
 
-    # CHECK: 5xfloat32
-    print(output_tensor.spec().__str__())
+    assert_equal(str(output_tensor.spec()), "5xfloat32")
 
     # Verify our custom add op got replaced and called during execution
     # Our custom add op does x + y + 100 instead of the typical x + y.
@@ -82,8 +75,7 @@ fn test_model() raises:
         TensorShape(5), 104.0, 102.0, 95.0, 103.0, 106.0
     )
 
-    # CHECK: True
-    print(expected_output == output_tensor)
+    assert_equal(expected_output, output_tensor)
 
 
 fn main() raises:

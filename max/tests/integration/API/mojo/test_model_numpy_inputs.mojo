@@ -6,30 +6,27 @@
 # UNSUPPORTED: windows
 # UNSUPPORTED: address
 # REQUIRES: numpy
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.mlir | FileCheck %s
+# RUN: %mojo -debug-level full %s %S/mo.mlir
 
 from max.engine import (
     InferenceSession,
     TensorMap,
     EngineNumpyView,
 )
+from pathlib import Path
 from sys import argv
 from tensor import Tensor, TensorShape
+from testing import assert_equal
 from collections import List
 from python import Python
 
 
 fn test_model_numpy_input() raises:
-    # CHECK: test_model_numpy_input
-    print("====test_model_numpy_input")
-
     var args = argv()
 
-    # CHECK: 2
-    print(len(args))
+    assert_equal(len(args), 2)
 
-    # CHECK: mo.mlir
-    print(args[1])
+    assert_equal(args[1], "mo.mlir")
 
     var model_path = args[1]
     var session = InferenceSession()
@@ -46,11 +43,9 @@ fn test_model_numpy_input() raises:
     _ = input_np_tensor ^
     var output_np_tensor = np_outputs.get[DType.float32]("output")
 
-    # CHECK: 5xfloat32
-    print(output_np_tensor.spec().__str__())
+    assert_equal(str(output_np_tensor.spec()), "5xfloat32")
 
-    # CHECK: True
-    print(expected_output == output_np_tensor)
+    assert_equal(expected_output, output_np_tensor)
 
 
 fn main() raises:
