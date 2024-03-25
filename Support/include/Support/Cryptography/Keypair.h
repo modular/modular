@@ -7,6 +7,7 @@
 #ifndef SUPPORT_CRYPTOGRAPHY_KEYPAIR_H
 #define SUPPORT_CRYPTOGRAPHY_KEYPAIR_H
 
+#include "Support/Buffer.h"
 #include "Support/Configuration.h"
 #include "Support/ErrorOr.h"
 #include "mbedtls/pk.h"
@@ -24,16 +25,12 @@ public:
   /// Keypairs are move-able, but not copy-able.
   Keypair(const Keypair &other) = delete;
   Keypair &operator=(const Keypair &other) = delete;
-  Keypair(Keypair &&other) {
-    std::swap(ctx, other.ctx);
-    havePrivateKey = other.havePrivateKey;
-  }
+  Keypair(Keypair &&other) { std::swap(ctx, other.ctx); }
 
   /// Explicitly create the move assignment operator.
   Keypair &operator=(Keypair &&other) {
     if (this != &other) {
       std::swap(ctx, other.ctx);
-      havePrivateKey = other.havePrivateKey;
     }
 
     return *this;
@@ -42,22 +39,15 @@ public:
   /// Generate a new keypair using the system CSPRNG. This will initialize a
   /// keypair that has a private key. If a directory is provided, the keys will
   /// be written in DER form as <dir>/client_priv.der and <dir>/client_pub.der.
-  static ErrorOr<Keypair> generate(const std::filesystem::path &priv,
-                                   const std::filesystem::path &pub);
+  static ErrorOr<Keypair> generate(const std::filesystem::path &priv);
 
   /// Open the private key at `absolute`. This must be a full path to the
   /// private key.
-  static ErrorOr<Keypair> openPrivate(const std::filesystem::path &absolute);
+  static ErrorOr<Keypair> open(const std::filesystem::path &absolute);
 
-  /// Open the public key at `absolute`. This must be a full path to the public
-  /// key.
-  static ErrorOr<Keypair> openPublic(const std::filesystem::path &absolute);
-
-  /// Create a Keypair in memory, given a PEM string for a public key.. mbedTLS
-  /// requires a null-terminated string for PEM files, so we require an
-  /// std::string here since std::string::c_str() is guaranteed to return a
-  /// null-terminated string.
-  static ErrorOr<Keypair> publicFromPEM(const std::string &pem);
+  /// Open the private key from a buffer.
+  static ErrorOr<Keypair> open(const BufferRef buf, bool needsNull = true,
+                               bool publicKey = false);
 
   /// Validate the provided signature over the signed data. Performs absolutely
   /// no modifications to signedData before verifying the signature.
@@ -82,11 +72,10 @@ public:
   /// use the higher-level APIs.
   mbedtls_pk_context *getRawKey() { return &ctx; }
 
-  /// Check if this keypair has a private key available.
-  bool hasPrivateKey() const { return havePrivateKey; }
+  /// Return a buffer with the private key.
+  BufferRef getBuffer();
 
 private:
-  bool havePrivateKey = false;
   mbedtls_pk_context ctx = {};
 };
 } // namespace M

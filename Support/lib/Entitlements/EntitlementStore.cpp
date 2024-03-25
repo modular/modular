@@ -614,24 +614,49 @@ static ErrorOrSuccess generateCSR(Keypair &keys, llvm::StringRef subject,
 // EntitlementStore Constructor/Destructor
 //===----------------------------------------------------------------------===//
 
-EntitlementStore::EntitlementStore(
-    const std::filesystem::path &clientKeyPrivPath,
-    const std::filesystem::path &clientKeyPubPath,
-    const std::filesystem::path &clientCertPath)
-    : clientCert(nullptr), clientKeyPrivPath(clientKeyPrivPath),
-      clientKeyPubPath(clientKeyPubPath), clientCertPath(clientCertPath) {}
-EntitlementStore::~EntitlementStore() = default;
+EntitlementStore::EntitlementStore(Keypair &&clientKeys,
+                                   BufferRef &&clientKeyPriv,
+                                   BufferRef &&clientCert)
+    : clientKeys(std::move(clientKeys)),
+      clientKeyPriv(std::move(clientKeyPriv)),
+      clientCert(std::move(clientCert)) {}
 EntitlementStore::EntitlementStore(M::EntitlementStore &&other) = default;
+EntitlementStore::~EntitlementStore() = default;
+
+//===----------------------------------------------------------------------===//
+// EntitlementStore::create
+//===----------------------------------------------------------------------===//
+
+ErrorOr<EntitlementStore> EntitlementStore::create(BufferRef &&clientKeyPriv,
+                                                   BufferRef &&clientCert) {
+  // Open the private key.
+  auto privKeyOr = Keypair::open(clientKeyPriv);
+  if (privKeyOr.isError())
+    return privKeyOr.takeError();
+
+  // Parse all entitlements.
+  EntitlementStore out = EntitlementStore(
+      std::move(*privKeyOr), std::move(clientKeyPriv), std::move(clientCert));
+  if (auto err = out.parseCertificateChain())
+    return err.takeError();
+
+  // Parse the certificate chain. This is validating the store. The clientCert
+  // object will be stored by this and all entitlements updated.
+  if (auto err = out.parseCertificateChain())
+    return err.takeError();
+
+  return out;
+}
 
 //===----------------------------------------------------------------------===//
 // EntitlementStore::getUserID
 //===----------------------------------------------------------------------===//
 
 ErrorOr<StringRef> EntitlementStore::getUserID() const {
-  if (!clientCert)
+  if (!clientCertChain || !clientCertChain->isAvailable())
     return Error("no client certificate");
 
-  auto subjOr = clientCert->getSubject();
+  auto subjOr = clientCertChain->getSubject();
   if (subjOr.isError())
     return subjOr.takeError();
 
@@ -655,62 +680,33 @@ static std::filesystem::path findClientFile(const std::filesystem::path &dir,
   return dir / std::filesystem::path(std::string(name));
 }
 
-static ErrorOr<EntitlementStore> newEntitlementStore(Config &config) {
-  // Register all the entitlements we have.
-  registerAllEntitlements();
-
-  // Create a data folder for new keys.
-  auto dataFolderOr = M::Config::getModularDataFolderPath(true);
-  if (dataFolderOr.isError())
-    return dataFolderOr.takeError();
-
-  // Key files and certificate paths.
-  auto clientKeyPrivPath = findClientFile(
-      *dataFolderOr, config.getValue("entitlements.client_key_priv"),
-      "client_priv.pem");
-  auto clientKeyPubPath = findClientFile(
-      *dataFolderOr, config.getValue("entitlements.client_key_pub"),
-      "client_pub.pem");
-  auto clientCertPath = findClientFile(
-      *dataFolderOr, config.getValue("entitlements.client_cert"), "client.pem");
-
-  // Return the initialized store.
-  return EntitlementStore(clientKeyPrivPath, clientKeyPubPath, clientCertPath);
-}
-
 ErrorOr<std::optional<EntitlementStore>>
 EntitlementStore::open(Config &config, HTTPContextRef httpCtx) {
   std::unique_ptr<HTTPClient> client = httpCtx->client();
 
-  // Construct our store.
-  auto storeOr = newEntitlementStore(config);
-  if (storeOr.isError())
-    return storeOr.takeError();
-  EntitlementStore out = std::move(*storeOr);
+  // FIXME(mrterry): Shall we try creating from a token in the environment?
+  // Alas! This doesn't current exist. When it does, it should be right here.
 
-  // Read the certificate.
-  auto mbufOr = Buffer::getFile(out.clientCertPath.string());
-  if (mbufOr.isError()) {
-    return std::nullopt; // No certificate is available.
-  }
+  // Key files and certificate paths.
+  auto dataFolderOr = M::Config::getModularDataFolderPath(true);
+  if (dataFolderOr.isError())
+    return dataFolderOr.takeError();
+  auto clientKeyPrivPath = findClientFile(
+      *dataFolderOr, config.getValue("entitlements.client_key_priv"),
+      "client_priv.pem");
+  auto clientCertPath = findClientFile(
+      *dataFolderOr, config.getValue("entitlements.client_cert"), "client.pem");
 
-  // Parse the certificate chain. This will store the cert in this class.
-  if (auto err = out.parseCertificateChain(std::move(*mbufOr)))
-    return err.takeError();
+  // Attempt to load the buffers.
+  auto clientKeyPrivOr = Buffer::getFile(clientKeyPrivPath);
+  if (clientKeyPrivOr.isError())
+    return clientKeyPrivOr.takeError();
+  auto clientCertOr = Buffer::getFile(clientCertPath);
+  if (clientCertOr.isError())
+    return clientCertOr.takeError();
 
-  // Open the private key.
-  auto privKeyOr = Keypair::openPrivate(out.clientKeyPrivPath);
-  if (privKeyOr.isError())
-    return privKeyOr.takeError();
-  if (!privKeyOr->hasPrivateKey())
-    return Error("client keypair did not include a private key");
-  out.clientKeys = std::move(*privKeyOr);
-
-  // Validate the certificate.
-  if (auto err = out.verifyAndFlushClientCert(*client))
-    return err.takeError();
-
-  return out;
+  // Return the initialized store.
+  return create(std::move(*clientKeyPrivOr), std::move(*clientCertOr));
 }
 
 //===----------------------------------------------------------------------===//
@@ -721,21 +717,44 @@ ErrorOr<EntitlementStore> EntitlementStore::generate(Config &config,
                                                      HTTPContextRef httpCtx) {
   std::unique_ptr<HTTPClient> client = httpCtx->client();
 
-  // Construct our store.
-  auto storeOr = newEntitlementStore(config);
-  if (storeOr.isError())
-    return storeOr.takeError();
-  EntitlementStore out = std::move(*storeOr);
+  // Key files and certificate paths.
+  auto dataFolderOr = M::Config::getModularDataFolderPath(true);
+  if (dataFolderOr.isError())
+    return dataFolderOr.takeError();
+  auto clientKeyPrivPath = findClientFile(
+      *dataFolderOr, config.getValue("entitlements.client_key_priv"),
+      "client_priv.pem");
+  auto clientCertPath = findClientFile(
+      *dataFolderOr, config.getValue("entitlements.client_cert"), "client.pem");
+
+  // Generate client keys. The `generate` call here will write the file to
+  // disk, and then map it.
+  ErrorOr<Keypair> keysOr = Keypair::generate(clientKeyPrivPath);
+  if (keysOr.isError())
+    return keysOr.takeError();
 
   // Fetch the certificate.
-  if (auto err = out.authAndFetchCertificate(*client))
-    return err.takeError();
+  auto certOr = EntitlementStore::authAndFetchCertificate(*client, *keysOr);
+  if (certOr.isError())
+    return certOr.takeError();
 
-  // Validate the certificate.
-  if (auto err = out.verifyAndFlushClientCert(*client))
-    return err.takeError();
+  // Build our entitlement store; this will reparse the private key.
+  auto outOr =
+      EntitlementStore::create(keysOr->getBuffer(), std::move(*certOr));
+  if (outOr.isError())
+    return outOr.takeError();
 
-  return out;
+  // Flush the certificate to a local file now we know it's valid. This is
+  // still a fatal error, as `generate` should leave the certificate in place
+  // for next time.
+  auto writeErr =
+      writeFileUnderLock(clientCertPath, [&](llvm::raw_ostream &os) {
+        os << outOr->clientCertChain->getPEM();
+      });
+  if (writeErr.isError())
+    return writeErr.takeError();
+
+  return std::move(*outOr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -744,7 +763,6 @@ ErrorOr<EntitlementStore> EntitlementStore::generate(Config &config,
 
 EntitlementStore EntitlementStore::alwaysOpen(HTTPContextRef httpCtx,
                                               llvm::raw_ostream &warnStream) {
-
   // Open the configuration.
   //
   // N.B. This function is to be removed very shortly in the stack. We can no
@@ -755,28 +773,40 @@ EntitlementStore EntitlementStore::alwaysOpen(HTTPContextRef httpCtx,
   auto esOr = EntitlementStore::open(*cfgOr, std::move(httpCtx));
   if (!esOr.isError() && esOr->has_value())
     return std::move(esOr->value());
-  auto newOr = newEntitlementStore(*cfgOr);
-  assert(!newOr.isError());
-  return std::move(*newOr);
+
+  // Return a dummy entitlement store; no entitlements.
+  auto null = BufferRef::create(0, std::nullopt, std::nullopt);
+  return EntitlementStore(Keypair(), null.copy(), null.copy());
 }
 
 //===----------------------------------------------------------------------===//
 // EntitlementStore::refresh
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::refresh(HTTPContextRef httpCtx) {
+ErrorOrSuccess EntitlementStore::refresh(Config &config,
+                                         HTTPContextRef httpCtx) {
   std::unique_ptr<HTTPClient> client = httpCtx->client();
 
   // Parse the client certificate. It is an error to 'refresh' if we don't
   // already have one.
-  if (!clientCert->isAvailable())
+  if (!clientCertChain || !clientCertChain->isAvailable())
     return Error("no client certificate loaded");
+
+  // Figure out our appropriate key path.
+  auto dataFolderOr = M::Config::getModularDataFolderPath(true);
+  if (dataFolderOr.isError())
+    return dataFolderOr.takeError();
+  auto clientKeyPrivPath = findClientFile(
+      *dataFolderOr, config.getValue("entitlements.client_key_priv"),
+      "client_priv.pem");
+  auto clientCertPath = findClientFile(
+      *dataFolderOr, config.getValue("entitlements.client_cert"), "client.pem");
 
   // Step 2 - We do have a client cert, so we should use it to auth to the
   // endpoint to refresh the certificate.
 
   // Get the subject for the client certificate.
-  auto subjectOr = clientCert->getSubject();
+  auto subjectOr = clientCertChain->getSubject();
   if (subjectOr.isError())
     return subjectOr.takeError();
 
@@ -786,7 +816,7 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPContextRef httpCtx) {
     return err.takeError();
 
   // Rotate the client's keys on each refresh.
-  auto newKeysOr = Keypair::generate(clientKeyPrivPath, clientKeyPubPath);
+  auto newKeysOr = Keypair::generate(clientKeyPrivPath);
   if (newKeysOr.isError())
     return newKeysOr.takeError();
 
@@ -810,17 +840,34 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPContextRef httpCtx) {
 
   // Request the new certificate. This will populate the certificate in memory,
   // but won't verify the certificate.
-  if (auto err = requestCertificate(*client, buf->Buffer::getBuffer(), b64Sig,
-                                    /*isRefresh=*/true))
+  auto certOr = requestCertificate(*client, buf->Buffer::getBuffer(),
+                                   /*certChain=*/clientCertChain.get(), b64Sig,
+                                   /*isRefresh=*/true);
+  if (certOr.isError())
     // Include the original error and a helpful message here. It's possible
     // that they haven't actually run anything in a long time, and they are
     // hitting some kind of expiration.
     return Error(Twine("unable to refresh certificate, try `modular auth`: ") +
-                 err.getError());
+                 certOr.getError());
+
+  // Update the local certificate.
+  auto newCert = std::move(*certOr);
+  std::swap(newCert, clientCert);
+
+  // Reparse to update our set of entitlements.
+  auto parseErr = parseCertificateChain();
+  if (parseErr.isError()) {
+    std::swap(newCert, clientCert);
+    return parseErr.takeError();
+  }
 
   // Validate and flush the certificate we just got.
-  if (auto err = verifyAndFlushClientCert(*client))
-    return err.takeError();
+  auto writeErr =
+      writeFileUnderLock(clientCertPath, [&](llvm::raw_ostream &os) {
+        os << clientCertChain->getPEM();
+      });
+  if (writeErr.isError())
+    return writeErr.takeError();
 
   return success();
 }
@@ -830,7 +877,7 @@ ErrorOrSuccess EntitlementStore::refresh(HTTPContextRef httpCtx) {
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess EntitlementStore::refreshIfNecessary(
-    HTTPContextRef httpCtx,
+    Config &config, HTTPContextRef httpCtx,
     llvm::function_ref<bool(std::chrono::system_clock::time_point from,
                             std::chrono::system_clock::time_point to)>
         shouldRefresh) {
@@ -838,39 +885,19 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
 
   // It is an error to 'refresh' if we don't already have the client
   // certificate.
-  if (!clientCert || !clientCert->isAvailable())
+  if (!clientCertChain || !clientCertChain->isAvailable())
     return Error("no client certificate loaded");
 
   // Apply the `shouldRefresh` function to the validity period in the client
   // certificate.
-  auto shouldRefreshOr = clientCert->applyToValidity(
+  auto shouldRefreshOr = clientCertChain->applyToValidity(
       shouldRefresh ? shouldRefresh : defaultEntitlementRefreshPolicy);
   if (shouldRefreshOr.isError())
     return shouldRefreshOr.takeError();
 
   if (*shouldRefreshOr)
-    return refresh(std::move(httpCtx));
+    return refresh(config, std::move(httpCtx));
 
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// EntitlementStore::verifyAndFlushClientCert
-//===----------------------------------------------------------------------===//
-
-ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
-  if (auto err = clientCert->verify(clientKeys))
-    return err.takeError();
-
-  // Flush the certificate to a local file now we know it's valid.
-  auto err = writeFileUnderLock(clientCertPath, [&](llvm::raw_ostream &os) {
-    os << clientCert->getPEM();
-  });
-  if (err.isError())
-    return err.takeError();
-
-  // The certificate is valid, so the entitlements we parsed are also valid.
-  // Return the entitlement store.
   return success();
 }
 
@@ -878,23 +905,28 @@ ErrorOrSuccess EntitlementStore::verifyAndFlushClientCert(HTTPClient &client) {
 // EntitlementStore::parseCertificateChain
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::parseCertificateChain(BufferRef pem) {
+ErrorOrSuccess EntitlementStore::parseCertificateChain() {
+  registerAllEntitlements();
+
   // Construct a MbedTLSCallbackContext to pass to the extension callback.
   MbedTLSCallbackContext ctx{entitlements, std::nullopt};
 
   // Parse the certificate, providing the callback to the CertificateChain
   // object to use while it's parsing.
-  auto chainOr = Detail::CertificateChain::fromPEM(
-      (mbedtls_x509_crt_ext_cb_t)extensionCallback, &ctx, std::move(pem));
+  auto chainOr = M::Detail::CertificateChain::fromPEM(
+      (mbedtls_x509_crt_ext_cb_t)extensionCallback, &ctx, clientCert.copy());
   if (chainOr.isError()) {
     if (ctx.error)
       return std::move(*ctx.error);
-
     return chainOr.takeError();
   }
 
-  // All done, move it to this class (for storage) and return.
-  clientCert = std::move(*chainOr);
+  // Now that it has been parsed, verify the chain.
+  if (auto err = (*chainOr)->verify(clientKeys))
+    return err.takeError();
+
+  // Save the certificate chain internally.
+  clientCertChain = std::move(*chainOr);
   return success();
 }
 
@@ -971,7 +1003,9 @@ private:
 /// authentication and bootstrap the client certificate. Note that this does not
 /// validate the client certificate, since that validation will happen when the
 /// cert is read in EntitlementStore::refresh.
-ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
+ErrorOr<BufferRef>
+EntitlementStore::authAndFetchCertificate(HTTPClient &client,
+                                          Keypair &clientKeys) {
   auto jsonOr = requestDeviceCode(client);
   if (jsonOr.isError())
     return jsonOr.takeError();
@@ -1035,23 +1069,6 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
                  "returned ID token");
   }
 
-  // OK, we have a token now. This means we can auth to the CSR endpoint.
-  // Open or generate some keys and use them to generate our CSR.
-  auto keysOr = Keypair::openPrivate(clientKeyPrivPath);
-
-  // Couldn't find the default keys, so create new ones. This will ensure we
-  // have the keys on the filesystem at all times.
-  if (keysOr.isError()) {
-    keysOr = Keypair::generate(clientKeyPrivPath, clientKeyPubPath);
-  }
-
-  // Now if it's an error, it's a real error.
-  if (keysOr.isError())
-    return keysOr.takeError();
-
-  // Now we have our keys.
-  clientKeys = std::move(*keysOr);
-
   // Generate the CSR. This will be in PEM format.
   WriteableBufferRef csrBuf = WriteableBuffer::get();
   if (auto err = generateCSR(clientKeys, *subjectOr, csrBuf.copy()))
@@ -1061,17 +1078,18 @@ ErrorOrSuccess EntitlementStore::authAndFetchCertificate(HTTPClient &client) {
   // we aren't rotating the client keypair, we don't want to pass in a signature
   // from a previous key.
   return requestCertificate(client, csrBuf->Buffer::getBuffer(),
-                            /*prevKeySig=*/"", /*isRefresh=*/false);
+                            /*certChain=*/nullptr, /*prevKeySig=*/"",
+                            /*isRefresh=*/false);
 }
 
 //===----------------------------------------------------------------------===//
 // EntitlementStore::requestCertificate
 //===----------------------------------------------------------------------===//
 
-ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
-                                                    StringRef csr,
-                                                    StringRef prevKeySig,
-                                                    bool isRefresh) {
+ErrorOr<BufferRef> EntitlementStore::requestCertificate(
+    HTTPClient &client, StringRef csr,
+    M::Detail::CertificateChain *clientCertChain, StringRef prevKeySig,
+    bool isRefresh) {
   auto certURL = isRefresh ? modularAuthURL + "/v1/certificate/renew"
                            : modularAuthURL + "/v1/certificate/issue";
   HTTPRequest certificateRequest{certURL};
@@ -1080,7 +1098,7 @@ ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
 
   // Provide the CSR and certificate as PEM-encoded blobs.
   StringRef clientCertChainPEMRef =
-      clientCert ? clientCert->getPEM() : StringRef();
+      clientCertChain ? clientCertChain->getPEM() : StringRef();
   auto obj = llvm::json::Object({{"certificate_request", csr},
                                  {"certificate", clientCertChainPEMRef},
                                  {"previous_key_signature", prevKeySig}});
@@ -1100,7 +1118,7 @@ ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
       client.executeRequest(certificateRequest, *certBuf,
                             std::chrono::milliseconds::zero(), certMaxSize);
   if (certResponse.isError())
-    return certResponse.asError();
+    return Error(certResponse.asError().getError());
 
   // Parse the JSON response now.
   auto jsonOr = llvm::json::parse(certBuf->Buffer::getBuffer());
@@ -1115,10 +1133,5 @@ ErrorOrSuccess EntitlementStore::requestCertificate(HTTPClient &client,
   if (!certOr)
     return Error("expected certificate in the response");
 
-  // Parse the certificate chain we just received.
-  if (auto err = parseCertificateChain(Buffer::get(*certOr)))
-    return err.takeError();
-
-  // Success! We have the certificate chain now, so we're done.
-  return success();
+  return Buffer::get(*certOr);
 }

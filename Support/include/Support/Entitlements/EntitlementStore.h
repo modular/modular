@@ -8,6 +8,7 @@
 #define SUPPORT_ENTITLEMENTS_ENTITLEMENTSTORE_H
 
 #include "Support/ASN1/ObjectID.h"
+#include "Support/Buffer.h"
 #include "Support/Configuration.h"
 #include "Support/Cryptography/Keypair.h"
 #include "Support/Entitlements/Entitlement.h"
@@ -37,26 +38,21 @@ bool defaultEntitlementRefreshPolicy(std::chrono::system_clock::time_point from,
 /// current store.
 class EntitlementStore {
 public:
-  EntitlementStore(const std::filesystem::path &clientKeyPrivPath,
-                   const std::filesystem::path &clientKeyPubPath,
-                   const std::filesystem::path &clientCertPath);
   ~EntitlementStore();
 
   /// EntitlementStore objects are non-copyable, but they are move-able.
   EntitlementStore(const EntitlementStore &other) = delete;
   EntitlementStore(EntitlementStore &&other);
 
-  /// Move-assignment operator.
-  EntitlementStore &operator=(EntitlementStore &&other) {
-    if (&other != this)
-      new (this) EntitlementStore(std::move(other));
-
-    return *this;
-  }
-
   /// Get the current user ID. This is effectively a view over the Subject
   /// string in the certificate.
   ErrorOr<StringRef> getUserID() const;
+
+  /// Gets a copy of the current private key.
+  BufferRef getPrivateKey() { return clientKeyPriv.copy(); }
+
+  /// Gets a copy of the current certificate.
+  BufferRef getCertificate() { return clientCert.copy(); }
 
   /// Open the entitlements store. If the client certificate exists, this will
   /// return a valid and ready-to-use EntitlementStore. If the client
@@ -83,14 +79,14 @@ public:
   /// Refresh the entitlement store by refreshing the client certificate. This
   /// will also invalidate any entitlements that currently exist, even if the
   /// user's entitlements have not changed.
-  ErrorOrSuccess refresh(HTTPContextRef httpCtx);
+  ErrorOrSuccess refresh(Config &config, HTTPContextRef httpCtx);
 
   /// Refresh the entitlement store if it's necessary to do so. The user can
   /// configure a policy on when a refresh is 'necessary', using the validFrom
   /// and validTo values of the certificate, converted to system clock time
   /// points.
   ErrorOrSuccess refreshIfNecessary(
-      HTTPContextRef httpCtx,
+      Config &config, HTTPContextRef httpCtx,
       llvm::function_ref<bool(std::chrono::system_clock::time_point from,
                               std::chrono::system_clock::time_point to)>
           shouldRefresh = defaultEntitlementRefreshPolicy);
@@ -124,29 +120,39 @@ public:
   }
 
 private:
-  /// This will verify the client's certificate chain and flush it to disk if
-  /// and only if it's valid.
-  ErrorOrSuccess verifyAndFlushClientCert(HTTPClient &client);
+  /// Creates a new EntitlementStore. The given `clientKeys` must correspond
+  /// to the private key in `clientKeyPriv` and the associated certificate in
+  /// `clientClient`. The entitlement store is not generally complete, and
+  /// creation should always be driven the the `create` method.
+  EntitlementStore(Keypair &&clientKeys, BufferRef &&clientKeyPriv,
+                   BufferRef &&clientCert);
 
-  /// Given a PEM buffer with one or more certificates, parse them and take any
-  /// entitlements that might be encoded in the extensions and put them in the
-  /// store.
-  ErrorOrSuccess parseCertificateChain(BufferRef pem);
+  /// Create a store from the given key and certificate. They are validated.
+  static ErrorOr<EntitlementStore> create(BufferRef &&clientKeyPriv,
+                                          BufferRef &&clientCert);
+
+  /// Given the local certificate, parse them and take any entitlements that
+  /// might be encoded in the extensions and put them in the store. This is
+  /// called by `create` exclusively.
+  ErrorOrSuccess parseCertificateChain();
 
   /// Use the OAuth Device Authorization Flow to do initial authentication and
   /// bootstrap the client certificate. Note that this does not validate the
   /// client certificate, since that validation will happen when the cert is
   /// read in EntitlementStore::refresh. The client certificate will be stored
   /// in clientCertDER on successful completion.
-  ErrorOrSuccess authAndFetchCertificate(HTTPClient &client);
+  static ErrorOr<BufferRef> authAndFetchCertificate(HTTPClient &client,
+                                                    Keypair &clientKeys);
 
   /// Takes a CSR and requests a certificate. The certificate is returned in PEM
   /// form and decoded. Once the certificate is received, it is stored to
   /// `clientCertDER`. No validation is performed at this stage to avoid parsing
   /// the certificate into the mbedtls_x509 structure. The previous key
   /// signature may be empty if we aren't rotating the client keypair.
-  ErrorOrSuccess requestCertificate(HTTPClient &client, StringRef csr,
-                                    StringRef prevKeySig, bool isRefresh);
+  static ErrorOr<BufferRef>
+  requestCertificate(HTTPClient &client, StringRef csr,
+                     M::Detail::CertificateChain *chain, StringRef prevKeySig,
+                     bool isRefresh);
 
   /// This is a map of all the entitlements we have, indexed by their OID. This
   /// means that we can only have a single instance of a given entitlement at a
@@ -157,18 +163,16 @@ private:
   /// an entitlement by name rather than forcing us to know the OID.
   llvm::StringMap<ASN1::ObjectID> nameToOID;
 
-  /// This holds the client certificate chain. The implementation is hidden to
-  /// avoid leaking details through this abstraction.
-  std::unique_ptr<M::Detail::CertificateChain> clientCert;
-
-  /// Store the client keys. If these cannot be found, they'll be generated.
+  /// Store the client keys.
   Keypair clientKeys;
 
-public:
-  /// Paths to use for on-disk keys.
-  const std::filesystem::path clientKeyPrivPath;
-  const std::filesystem::path clientKeyPubPath;
-  const std::filesystem::path clientCertPath;
+  /// This holds the client certificate chain. The implementation is hidden to
+  /// avoid leaking details through this abstraction.
+  std::unique_ptr<M::Detail::CertificateChain> clientCertChain;
+
+  /// In-memory certificates.
+  BufferRef clientKeyPriv;
+  BufferRef clientCert;
 };
 } // namespace M
 
