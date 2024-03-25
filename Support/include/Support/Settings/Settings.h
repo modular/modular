@@ -14,6 +14,7 @@
 #include "Support/Settings/Setting.h"
 
 #include <filesystem>
+#include <mutex>
 
 namespace M {
 /// This class provides the collection of system settings. Users should use the
@@ -81,9 +82,11 @@ public:
   /// Return the current userID.
   ErrorOr<StringRef> userID() const;
 
-  /// Return the path for the client keys and certificate.
-  const std::filesystem::path &clientKeyPriv() const;
-  const std::filesystem::path &clientCert() const;
+  /// PEM-encoded client private key (not a path).
+  const std::string clientKeyPriv();
+
+  /// PEM-encoded client certificate (not a path).
+  const std::string clientCert();
 
   /// Refresh the settings if it's necessary to do so. This will refresh all
   /// configurations and the entitlement store. The user can configure a policy

@@ -107,7 +107,7 @@ Settings::refresh(HTTPContextRef httpCtx,
 
   // Simply refresh the entitlement store - it has all the logic necessary to
   // do that internally.
-  return entitlementStore.refreshIfNecessary(std::move(httpCtx),
+  return entitlementStore.refreshIfNecessary(config, std::move(httpCtx),
                                              shouldRefreshEntitlements);
 }
 
@@ -150,10 +150,16 @@ ErrorOr<StringRef> Settings::userID() const {
   return entitlementStore.getUserID();
 }
 
-const std::filesystem::path &Settings::clientKeyPriv() const {
-  return entitlementStore.clientKeyPrivPath;
+const std::string Settings::clientKeyPriv() {
+  auto ref = entitlementStore.getPrivateKey();
+  if (ref->getBufferSize() == 0)
+    return "";
+  return std::string(ref->getBufferStart(), ref->getBufferSize());
 }
 
-const std::filesystem::path &Settings::clientCert() const {
-  return entitlementStore.clientCertPath;
+const std::string Settings::clientCert() {
+  auto ref = entitlementStore.getCertificate();
+  if (ref->getBufferSize() == 0)
+    return "";
+  return std::string(ref->getBufferStart(), ref->getBufferSize());
 }

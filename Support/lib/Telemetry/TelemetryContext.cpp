@@ -586,8 +586,8 @@ TelemetryContext::TelemetryContext(
     // HTTP OTLP exporter.
     opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions
         otlpLogOptions;
-    otlpLogOptions.ssl_client_key_path = settings.clientKeyPriv();
-    otlpLogOptions.ssl_client_cert_path = settings.clientCert();
+    otlpLogOptions.ssl_client_key_string = settings.clientKeyPriv();
+    otlpLogOptions.ssl_client_cert_string = settings.clientCert();
 
     otlpLogOptions.url = (httpEndpoint + "/v1/logs").str();
     auto logExporter =

@@ -52,8 +52,7 @@ static int csprng(void *ctx, unsigned char *buf, size_t numBytes) {
   return 0;
 }
 
-ErrorOr<Keypair> Keypair::generate(const std::filesystem::path &priv,
-                                   const std::filesystem::path &pub) {
+ErrorOr<Keypair> Keypair::generate(const std::filesystem::path &priv) {
   // Set up the keypair for generation.
   Keypair out;
   int rc = mbedtls_pk_setup(out.getRawKey(),
@@ -80,112 +79,71 @@ ErrorOr<Keypair> Keypair::generate(const std::filesystem::path &priv,
   // Write the private key first.
   auto err = writeFileUnderLock(priv, [&](llvm::raw_ostream &os) {
     const char *pemData = (const char *)scratchBuf.data();
-    // Write the null terminator - we need it at parse time.
+    // Write the null terminator. When loading, we simply use this to load
+    // directly into the buffer as a sneaky trick.
     os.write(pemData, strlen(pemData) + 1);
   });
   if (err)
     return err.takeError();
 
-  // Then, write the public key.
-  rc = mbedtls_pk_write_pubkey_pem(out.getRawKey(), scratchBuf.data(),
-                                   scratchBuf.size());
-  if (rc != 0)
-    return Error("could not write the keypair to PEM");
-
-  err = writeFileUnderLock(pub.string(), [&](llvm::raw_ostream &os) {
-    const char *pemData = (const char *)scratchBuf.data();
-    // Write the null terminator - we need it at parse time.
-    os.write(pemData, strlen(pemData) + 1);
-  });
-  if (err)
-    return err.takeError();
-
-  // OK - now we're done, so return the keypair. We definitely have a private
-  // key, we just generated it.
-  out.havePrivateKey = true;
   return out;
 }
 
-ErrorOr<Keypair> Keypair::openPrivate(const std::filesystem::path &absolute) {
+BufferRef Keypair::getBuffer() {
+  // See above.
+  std::array<uint8_t, 512> scratchBuf = {};
+  int rc = mbedtls_pk_write_key_pem(getRawKey(), scratchBuf.data(),
+                                    scratchBuf.size());
+  if (rc != 0)
+    return BufferRef::create(0, std::nullopt, std::nullopt);
+  const char *str = reinterpret_cast<char *>(scratchBuf.data());
+  return Buffer::get(StringRef(str, strlen(str)));
+}
+
+ErrorOr<Keypair> Keypair::open(const std::filesystem::path &absolute) {
+  std::optional<ErrorOr<BufferRef>> fileBufOr;
+  auto err =
+      readFileUnderLock(absolute, [&](const std::filesystem::path &path) {
+        fileBufOr.emplace(Buffer::getFile(path));
+      });
+  if (err.isError())
+    return err.takeError();
+  if (fileBufOr->isError())
+    return fileBufOr->takeError();
+  return open(std::move(**fileBufOr), /*needsNull=*/false);
+}
+
+ErrorOr<Keypair> Keypair::open(const BufferRef data, bool needsNull,
+                               bool publicKey) {
   Keypair out;
 
   // Local copy of the contents of the file we read. This is for hardening, so
   // we get a snapshot of the file contents.
   std::vector<uint8_t> fileContents;
 
-  std::optional<Error> readErr;
-  auto err =
-      readFileUnderLock(absolute, [&](const std::filesystem::path &path) {
-        auto fileBufOr = Buffer::getFile(path);
-        if (fileBufOr.isError()) {
-          readErr = fileBufOr.takeError();
-          return;
-        }
+  // Copy the contents of the file into a useable form.
+  if (needsNull) {
+    fileContents.resize(data->getBufferSize() + 1);
+    fileContents[data->getBufferSize()] = 0;
+  } else {
+    fileContents.resize(data->getBufferSize());
+  }
+  llvm::copy(data->getBuffer(), fileContents.begin());
 
-        // Copy the contents of the file into memory.
-        fileContents.resize((*fileBufOr)->getBufferSize());
-        llvm::copy((*fileBufOr)->getBuffer(), fileContents.begin());
-      });
-  if (err.isError())
-    return err.takeError();
-
-  if (readErr)
-    return std::move(*readErr);
-
-  // We need this for blinding if we're reading the private key.
-  SecureRandomBytesGenerator rng;
-  int rc = mbedtls_pk_parse_key(out.getRawKey(), fileContents.data(),
-                                fileContents.size(), nullptr, 0, &csprng, &rng);
-  if (rc != 0)
-    return Error(mbedTLSErrorToString(rc));
-
-  out.havePrivateKey = true;
-
-  return out;
-}
-
-ErrorOr<Keypair> Keypair::openPublic(const std::filesystem::path &absolute) {
-  Keypair out;
-
-  // Local copy of the contents of the file we read. This is for hardening, so
-  // we get a snapshot of the file contents.
-  std::vector<uint8_t> fileContents;
-
-  std::optional<Error> readErr;
-  auto err =
-      readFileUnderLock(absolute, [&](const std::filesystem::path &path) {
-        auto fileBufOr = Buffer::getFile(path);
-        if (fileBufOr.isError()) {
-          readErr = fileBufOr.takeError();
-          return;
-        }
-
-        // Copy the contents of the file into memory.
-        fileContents.resize((*fileBufOr)->getBufferSize());
-        llvm::copy((*fileBufOr)->getBuffer(), fileContents.begin());
-      });
-  if (err.isError())
-    return err.takeError();
-
-  if (readErr)
-    return std::move(*readErr);
-
-  int rc = mbedtls_pk_parse_public_key(out.getRawKey(), fileContents.data(),
-                                       fileContents.size());
-  if (rc != 0)
-    return Error(mbedTLSErrorToString(rc));
-
-  return out;
-}
-
-ErrorOr<Keypair> Keypair::publicFromPEM(const std::string &pem) {
-  Keypair out;
-  // The length of the string must include the terminating null byte, and
-  // std::string::size() doesn't include that.
-  int rc = mbedtls_pk_parse_public_key(
-      out.getRawKey(), (const uint8_t *)pem.c_str(), pem.size() + 1);
-  if (rc != 0)
-    return Error(mbedTLSErrorToString(rc));
+  if (publicKey) {
+    int rc = mbedtls_pk_parse_public_key(out.getRawKey(), fileContents.data(),
+                                         fileContents.size());
+    if (rc != 0)
+      return Error(mbedTLSErrorToString(rc));
+  } else {
+    // We need this for blinding if we're reading the private key.
+    SecureRandomBytesGenerator rng;
+    int rc =
+        mbedtls_pk_parse_key(out.getRawKey(), fileContents.data(),
+                             fileContents.size(), nullptr, 0, &csprng, &rng);
+    if (rc != 0)
+      return Error(mbedTLSErrorToString(rc));
+  }
 
   return out;
 }

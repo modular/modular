@@ -90,9 +90,8 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     registerSignalHandler(programName);
   }
 
-  // Move everything into the context.
+  // Move everything into the context. Construct here may used the settings.
   ctx->emplace<HTTPContextRef>(std::move(httpCtx));
-  ctx->emplace<Settings>(std::move(settings));
   ctx->emplace<TelemetryContext>(settings, options.resources);
 
   // Create a new runtime (if needed).
@@ -122,6 +121,9 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
                           options.runtimeOptions->runtimeProfilingTypeMask,
                           options.runtimeOptions->profilerDebuginfo);
   }
+
+  // Finally move the settings.
+  ctx->emplace<Settings>(std::move(settings));
 
   // Return the useable context.
   return std::move(ctx);

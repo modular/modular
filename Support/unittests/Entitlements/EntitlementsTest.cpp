@@ -409,7 +409,7 @@ TEST(TestEntitlementStore, Refresh) {
   auto e = storeOr->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
 
-  auto err = storeOr->refresh(httpCtx.copy());
+  auto err = storeOr->refresh(config, httpCtx.copy());
   ASSERT_FALSE(err.isError()) << err.getError();
 
   e = storeOr->getEntitlement<TestEntitlement>();

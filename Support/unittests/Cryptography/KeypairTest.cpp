@@ -15,15 +15,11 @@ using namespace M;
 TEST(TestKeypair, RoundtripSignature) {
   constexpr llvm::StringLiteral dataToSign = "hello, world";
   ErrorOr<TempFile> keyFileOr = TempFile::create("clientKey.XXXXXX");
-  ErrorOr<TempFile> certFileOr = TempFile::create("clientCert.XXXXXX");
   ASSERT_FALSE(keyFileOr.isError()) << keyFileOr.getError();
-  ASSERT_FALSE(certFileOr.isError()) << certFileOr.getError();
   keyFileOr->close();
   keyFileOr->remove();
-  certFileOr->close();
-  certFileOr->remove();
 
-  auto keysOr = Keypair::generate(keyFileOr->getPath(), certFileOr->getPath());
+  auto keysOr = Keypair::generate(keyFileOr->getPath());
   ASSERT_FALSE(keysOr.isError()) << keysOr.getError();
 
   auto sigOr = keysOr->sign(dataToSign);
