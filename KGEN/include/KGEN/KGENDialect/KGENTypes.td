@@ -592,7 +592,6 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
     A `!kgen.variant` type is a structural variant type that represents a value
     that is one of a list of types (discriminated union).
 
-    The type is always canonicalized to remove duplicate possible variant types.
     Variants of zero types or one type are allowed, e.g. `!kgen.variant<i32>`,
     and all variant operations are defined on the even though they aren't
     particularly useful types.
