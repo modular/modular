@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
 from math import align_down, align_up, div_ceil, fma, min
 from sys.info import (
     alignof,
@@ -2589,9 +2588,9 @@ fn sgemm_warp_tiling_kernel[
     var aa_ptr = mat_a._offset(Index(c_row * BM, 0))
     var bb_ptr = mat_b._offset(Index(0, c_col * BN))
     # Move C_ptr to warp's output tile
-    var cc_ptr = mat_c._offset(
-        Index(c_row * BM + warp_row * WM, c_col * BN + warp_col * WN)
-    )
+    var M_offset_warp = c_row * BM + warp_row * WM
+    var N_offset_warp = c_col * BN + warp_col * WN
+    var cc_ptr = mat_c._offset(Index(M_offset_warp, N_offset_warp))
 
     # Calculate the indices that this thread will load into SMEM.
     # We load 128bit / 32bit = 4 elements per thread at each step.
@@ -2721,8 +2720,10 @@ fn sgemm_warp_tiling_kernel[
         @unroll
         for w_sub_col_idx in range(WNITER):
             # Move C pointer to current warp subtile.
+            var M_offset_subtile = w_sub_row_idx * w_sub_m
+            var N_offset_subtile = w_sub_col_idx * w_sub_n
             var C_interim = cc_ptr.offset(
-                int((w_sub_row_idx * w_sub_m) * N + w_sub_col_idx * w_sub_n)
+                int((M_offset_subtile) * N + N_offset_subtile)
             )
 
             @unroll
@@ -2730,9 +2731,9 @@ fn sgemm_warp_tiling_kernel[
 
                 @unroll
                 for res_idx_n in range(0, int(TN), 4):
-                    var c_idx = (
-                        thread_row_in_warp * TM + res_idx_m
-                    ) * N + thread_col_in_warp * TN + res_idx_n
+                    var M_offset_val = thread_row_in_warp * TM + res_idx_m
+                    var N_offset_val = thread_col_in_warp * TN + res_idx_n
+                    var c_idx = M_offset_val * N + N_offset_val
                     var result_vec = thread_results.load[width=4](
                         Index(
                             w_sub_row_idx,
@@ -2751,16 +2752,8 @@ fn sgemm_warp_tiling_kernel[
                         alias elementwise_lambda = elementwise_lambda_fn.value()
                         elementwise_lambda[c_type, 4](
                             Index(
-                                int(
-                                    thread_row_in_warp * TM
-                                    + res_idx_m
-                                    + w_sub_row_idx * w_sub_m
-                                ),
-                                int(
-                                    thread_col_in_warp * TN
-                                    + res_idx_n
-                                    + w_sub_col_idx * w_sub_n
-                                ),
+                                M_offset_warp + M_offset_subtile + M_offset_val,
+                                N_offset_warp + N_offset_subtile + N_offset_val,
                             ),
                             vec,
                         )
@@ -2945,7 +2938,6 @@ fn matmul_kernel[
     (N/tile_size, M/tile_size, 1). N is the first dimension for coalesced
     access.
     """
-
     var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
     var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
     var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
@@ -3301,7 +3293,6 @@ fn _matmul_gpu_dispatch[
             alias TN = 4
             alias TM = 8
             alias WMITER = (WM * WN) // (WARP_SIZE * TM * TN * WNITER)
-            alias NUM_WARPS = NUM_THREADS / WARP_SIZE
             alias mm = sgemm_warp_tiling_kernel[
                 c_type,
                 c_shape,
