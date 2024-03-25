@@ -602,7 +602,7 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
       if (exists(source = entry.path() / "__init__.mojo", ec) &&
           exists(emoji = entry.path() / "__init__.🔥", ec))
         emitConflictError();
-      return entry.path();
+      return weakly_canonical(entry.path(), ec);
     }
 
     path ext = entry.path().filename().extension();
@@ -611,13 +611,13 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
                  ec) &&
           exists(emoji = path(entry.path()).replace_extension("📦"), ec))
         emitConflictError();
-      return entry.path();
+      return weakly_canonical(entry.path(), ec);
     }
     if (ext == ".mojo" || ext == ".🔥") {
       if (exists(source = path(entry.path()).replace_extension("mojo"), ec) &&
           exists(emoji = path(entry.path()).replace_extension("🔥"), ec))
         emitConflictError();
-      return entry.path();
+      return weakly_canonical(entry.path(), ec);
     }
   }
 
