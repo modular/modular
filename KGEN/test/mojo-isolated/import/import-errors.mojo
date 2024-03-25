@@ -117,3 +117,18 @@ from imported_module import imported_fn as already_defined_fn
 
 # expected-error @below {{ambiguous import}}
 from test_bad_package.extension_dup import getExtension
+
+# // -----
+
+import imported_module
+import test_package
+
+fn baz():
+    # expected-error @below {{module 'imported_module' is not callable; did you mean to call imported_module.imported_module?}}
+    imported_module()
+    # expected-error @below {{module 'imported_module' is not subscriptable; did you mean to subscript imported_module.imported_module?}}
+    imported_module[`0`]
+    # expected-error @below {{module 'test_package' is not callable}}
+    test_package()
+    # expected-error @below {{module 'test_package' is not subscriptable}}
+    test_package[`0`]

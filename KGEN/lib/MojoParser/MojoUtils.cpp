@@ -307,3 +307,19 @@ void LIT::emitTooManyPositional(InflightDiag &diag, size_t numMaxAllowed,
 std::string LIT::nameForPosOnly(size_t idx, const Twine &argOrParam) {
   return ("positional-only " + argOrParam + " #" + Twine(idx)).str();
 }
+
+void LIT::emitModuleCallSubscriptDiag(InflightDiag &diag,
+                                      AnyStructType metaType,
+                                      const Twine &callOrSubscript, SMLoc loc,
+                                      SharedState &shared) {
+  StringAttr name = metaType.getSymbol().getLeafReference();
+  diag << "module " << name << " is not " << callOrSubscript << "able";
+
+  LookupResult lookupResult = shared.lookupAndResolveDecl(
+      name, loc, metaType, /*searchParentScopes=*/false);
+  if (ArrayRef<ASTDecl *> resDecls = lookupResult.getIfSuccess();
+      !resDecls.empty()) {
+    diag << "; did you mean to " << callOrSubscript << ' ' << name.strref()
+         << '.' << name.strref() << '?';
+  }
+}
