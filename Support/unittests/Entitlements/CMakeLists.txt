@@ -23,6 +23,7 @@ add_modular_unittest(
   SupportEntitlementTests
 
   EntitlementsTest.cpp
+  EntitlementTokenTest.cpp
 
   LINK_LIBS PRIVATE
   MSupportEntitlements
