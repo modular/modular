@@ -1523,8 +1523,15 @@ static PValue substituteParametersIntoUserDefinedType(
   ASTDecl *typeDecl = ASTType(metaType).getDecl(emitter.shared);
   auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
   if (!structOp) {
-    emitter.emitError(loc, "unknown parameterized type ")
-        << ASTType(typeValue) << SourceRange{loc, rhsLoc};
+    auto diag = emitter.emitError(loc);
+    if (isa<FileModuleOp, PackageOp>(typeDecl)) {
+      // Emit helpful error message when user tried to subscript a module.
+      emitModuleCallSubscriptDiag(diag, metaType, "subscript", loc,
+                                  emitter.shared);
+    } else {
+      diag << "unknown parameterized type " << ASTType(typeValue)
+           << SourceRange{loc, rhsLoc};
+    }
     return {};
   }
 

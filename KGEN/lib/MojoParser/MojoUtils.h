@@ -26,6 +26,7 @@ class PackType;
 namespace M::KGEN::LIT {
 class ASTType;
 class LITSignatureType;
+class AnyStructType;
 class SharedState;
 enum class SpecialFunctionKind : uint8_t;
 
@@ -100,6 +101,11 @@ void emitTooManyPositional(InflightDiag &diag, size_t numMaxAllowed,
 
 /// Return a printable name for an anonymous positional-only argument/parameter.
 std::string nameForPosOnly(size_t idx, const Twine &argOrParam);
+
+/// Emit diagnostics when the user tries to call or subscript a module.
+void emitModuleCallSubscriptDiag(InflightDiag &diag, AnyStructType metaType,
+                                 const Twine &callOrSubscript, llvm::SMLoc loc,
+                                 SharedState &shared);
 
 } // namespace M::KGEN::LIT
 

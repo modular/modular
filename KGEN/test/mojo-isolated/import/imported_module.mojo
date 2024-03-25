@@ -14,3 +14,8 @@ fn imported_fn():
 
 fn _ignored_wildcard_fn():
     return
+
+
+# Intentionally the same name as the package.
+fn imported_module():
+    pass

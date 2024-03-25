@@ -1562,6 +1562,18 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
              << " must be created with an MLIR operation, not constructor "
                 "syntax";
       } else {
+        // Emit helpful error message when user tried to call a module.
+        if (auto refType = dyn_cast<ParamRefType>(type)) {
+          if (auto moduleAttr = dyn_cast<LIT::ModuleAttr>(refType.getParam())) {
+            auto metaType = cast<AnyStructType>(moduleAttr.getType());
+            emitModuleCallSubscriptDiag(diag, metaType, "call", expr->getLoc(),
+                                        shared);
+            diag << expr->getRange();
+            return {};
+          }
+        }
+
+        // If the callee is not a module, emit generic message.
         diag << type << " does not implement any '__init__' methods";
       }
       diag << getContextMessage(dest.getContext()) << expr->getRange();
