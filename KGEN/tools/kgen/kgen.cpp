@@ -22,6 +22,7 @@
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/Transforms/SnapshotDebugInfo.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Init/Init.h"
 #include "Support/MArchTarget/MArchTarget.h"
 #include "Support/Process.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -188,6 +189,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   registerAllKGENDialects(registry);
   registerKGENToLLVMTranslation(registry);
 
+  // Create our context, with a runtime; this should not fail.
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "kgen", Init::Options().withRuntimeOptions(
+                  LLCL::RuntimeOptions().withCPUAffinity(false)));
+  if (ctxOr.isError())
+    return failure();
+  registerContext(registry, *ctxOr);
+  LLCL::Runtime &runtime = *(*ctxOr)->get<LLCL::Runtime>();
+
   // Set up the dialects in the context.
   ctx->appendDialectRegistry(registry);
 
@@ -219,10 +229,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
                                        clOptions.enableLocalMLIRReproducer);
   }
 
-  // Set up the runtime.
-  std::unique_ptr<LLCL::Runtime> runtime =
-      clOptions.withMainWillNotDonate().createRuntime();
-
   // The set of files included during processing, used to generate the
   // dependency file.
   SmallVector<std::string> includedFiles;
@@ -232,7 +238,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     LIT::ParserConfig config(ctx, options);
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     config.parsingStandardLibrary = clOptions.disablePrebuiltPackages;
-    theModule = importMojoFile(*runtime, mgr, config, litScope, &includedFiles);
+    theModule = importMojoFile(runtime, mgr, config, litScope, &includedFiles);
   } else if (options.getDebugInfoLevelForInput() >
              CompilationOptions::kSynthetic) {
     ctx->loadDialect<DebugInfo::DebugInfoDialect>();
@@ -319,7 +325,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Generate a library file or go all the way through elaboration.
   if (clOptions.cmd == Command::kGenLibraryFile) {
-    buildGenerateLibraryPipeline(pm, *runtime, options);
+    buildGenerateLibraryPipeline(pm, runtime, options);
     if (failed(pm.run(*theModule)))
       return failure(clOptions.reportError("compilation failed"));
     return emitModuleIR(*theModule, clOptions);
@@ -333,7 +339,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   eeOptions.crossCompiling = options.targetCpu != llvm::sys::getHostCPUName();
 
   auto engineOr = initializeExecutionEngine(
-      *runtime, pm, options, std::move(eeOptions),
+      runtime, pm, options, std::move(eeOptions),
       /*isJIT=*/clOptions.cmd == Command::kExecute, target);
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));
@@ -344,13 +350,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   // This currently compiles the module, so we don't need to try to look
   // anything up.
   auto packageGenLibFn = [&](PackageLinkOp packageLink) {
-    return specializePackageLinkForPreElaborationLinking(packageLink, *runtime,
+    return specializePackageLinkForPreElaborationLinking(packageLink, runtime,
                                                          options);
   };
   auto packageLinkHandlerFn = [&](PackageLinkOp packageLink,
                                   TargetInfoAttr targetInfo) {
-    return loadAndElaborateBytecode(
-        packageLink, targetInfo, clOptions.getCompilationOptions(), *runtime);
+    return loadAndElaborateBytecode(packageLink, targetInfo,
+                                    clOptions.getCompilationOptions(), runtime);
   };
   if (ErrorOrSuccess err = compileLayer.add("exec", *theModule, packageGenLibFn,
                                             packageLinkHandlerFn))

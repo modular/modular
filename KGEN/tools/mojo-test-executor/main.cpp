@@ -15,6 +15,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Filesystem/Paths.h"
+#include "Support/Init/Init.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 #include "llvm/Support/CommandLine.h"
@@ -177,7 +178,7 @@ getUnitTest(const std::filesystem::path &path, const TestID &testID) {
 /// does not correspond to a valid test.
 static ErrorOr<std::vector<ExecutableTest>>
 getTestFromID(const std::filesystem::path &path, const TestID &id,
-              LLCL::Runtime &runtime, ArrayRef<std::string> includeDirs) {
+              ContextRef ctx, ArrayRef<std::string> includeDirs) {
   // Setup a source manager to handle diagnostics.
   llvm::SourceMgr sourceManager;
   sourceManager.setIncludeDirs(includeDirs);
@@ -189,10 +190,11 @@ getTestFromID(const std::filesystem::path &path, const TestID &id,
       },
       &diagnosticBuffer);
 
-  // Parse the file
-  MLIRContext ctx;
+  // Parse the file.
+  MLIRContext mlirCtx;
+  registerContext(mlirCtx, ctx);
   KGEN::CompilationOptions compilationOptions;
-  ParserConfig parserConfig(&ctx, compilationOptions);
+  ParserConfig parserConfig(&mlirCtx, compilationOptions);
   MojoParserContext parserContext(sourceManager, parserConfig);
   MojoASTDeclRef moduleDecl = parserContext.parseFileOrPackage(path);
   if (!moduleDecl || !moduleDecl.getIfOperation())
@@ -216,7 +218,7 @@ getTestFromID(const std::filesystem::path &path, const TestID &id,
 
     // Resolve the operation defining the test suite.
     for (StringRef it : *scopes)
-      if (!(op = symbolTable.lookupSymbolIn(op, StringAttr::get(&ctx, it))))
+      if (!(op = symbolTable.lookupSymbolIn(op, StringAttr::get(&mlirCtx, it))))
         return Error("id does not reference a valid test suite");
 
     return getDocTestFromDecl(id, op);
@@ -224,13 +226,12 @@ getTestFromID(const std::filesystem::path &path, const TestID &id,
 
   // If we're not looking for a specific test suite, we're looking for a unit
   // test defined in the module itself.
-  if (!symbolTable.lookupSymbolIn(op, StringAttr::get(&ctx, *id.getTest())))
+  if (!symbolTable.lookupSymbolIn(op, StringAttr::get(&mlirCtx, *id.getTest())))
     return Error("id does not reference a valid test");
   return getUnitTest(path, id);
 }
 
-static mlir::LogicalResult runTestExecutor(const TestID &id,
-                                           LLCL::Runtime &runtime,
+static mlir::LogicalResult runTestExecutor(const TestID &id, ContextRef ctx,
                                            bool prettyOutput,
                                            ArrayRef<std::string> includeDirs) {
   JSONTransport transport(stdin, llvm::outs(), JSONStreamStyle::Standard,
@@ -258,7 +259,7 @@ static mlir::LogicalResult runTestExecutor(const TestID &id,
 
   // Get the tests to execute.
   ErrorOr<std::vector<ExecutableTest>> tests =
-      getTestFromID(path, id, runtime, includeDirs);
+      getTestFromID(path, id, ctx, includeDirs);
   if (tests.isError())
     return emitError(tests.getError());
 
@@ -305,8 +306,15 @@ int main(int argc, char **argv) {
   // Configure the logger.
   Logger::setLogLevel(logLevel);
 
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo-test-executor", Init::Options().withRuntimeOptions());
+  if (ctxOr.isError()) {
+    llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
+    return 1;
+  }
+
   // Run the executor.
-  auto runtime = LLCL::createUniqueRuntime(LLCL::RuntimeOptions());
   return failed(
-      runTestExecutor(TestID(testID), *runtime, prettyPrint, includeDirs));
+      runTestExecutor(TestID(testID), ctxOr->copy(), prettyPrint, includeDirs));
 }

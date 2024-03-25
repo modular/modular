@@ -26,6 +26,7 @@ add_modular_tool(kgen
   LLCLRuntimeGlobals
   MArchTarget
   MSupportGlobals
+  MSupportInit
   MVersion
   MojoParser
 
