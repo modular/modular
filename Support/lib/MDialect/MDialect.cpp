@@ -117,14 +117,11 @@ void MDialect::initialize() {
 }
 
 void M::registerContext(mlir::DialectRegistry &registry, ContextRef &ref) {
-  registry.insert(mlir::TypeID::get<MDialect>(),
-                  MDialect::getDialectNamespace(),
-                  static_cast<mlir::DialectAllocatorFunction>(
-                      ([ref = ref.copy()](mlir::MLIRContext *ctx) {
-                        MDialect *dialect = ctx->getOrLoadDialect<MDialect>();
-                        dialect->setInternal(ref.copy());
-                        return dialect;
-                      })));
+  std::function<void(MLIRContext * ctx, MDialect * dialect)> fn =
+      [ref = ref.copy()](MLIRContext *ctx, MDialect *dialect) {
+        dialect->setInternal(ref.copy());
+      };
+  registry.addExtension<MDialect>(std::move(fn));
 }
 
 void M::registerContext(mlir::MLIRContext &ctx, ContextRef &ref) {
