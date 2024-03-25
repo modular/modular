@@ -28,8 +28,8 @@ int main(int argc, char **argv) {
 
   // Create our context.
   ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "cache-opt", Init::Options().withRuntimeOptions(
-                       LLCL::RuntimeOptions().withLeakCheckedAllocator()));
+      "cache-opt",
+      Init::Options().withRuntimeOptions(LLCL::RuntimeOptions().forDebug()));
   if (ctxOr.isError()) {
     llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;
