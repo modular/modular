@@ -761,6 +761,7 @@ fn non_copyable_trait[T: CFMTrait](value: T):
 fn trait_fn_infer[T: CFMTrait](x: T): # expected-note {{function declared here}}
     pass
 
+# expected-error @+1 {{no 'f1' candidates have type 'fn(self: CFMStructFail) -> None'}}
 fn dont_crash_pvalue_convert(x: CFMStructFail):
     trait_fn_infer(x) # expected-error {{invalid call to 'trait_fn_infer': callee expects 1 parameter, but 0 were specified}}
 
