@@ -15,6 +15,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "REPL/MojoREPL.h"
 #include "Support/CrashReporting.h"
+#include "Support/Init/Init.h"
 #include "Support/SymbolExport.h"
 #include "TypeSystem/MojoTypeSystem.h"
 #include "lldb/API/SBCommandInterpreter.h"
@@ -29,12 +30,18 @@ using namespace M::KGEN::Mojo;
 // Plugin Initialization
 //===--------------------------------------------------------------===//
 
-/// Get the global LLCL runtime to be used inside the plugin.
-static LLCL::Runtime &getOrCreateGlobalRuntime() {
-  static ConditionallyOwnedPointer<LLCL::Runtime> runtime =
-      LLCL::createRuntimeIfNeeded(
-          LLCL::RuntimeOptions().withMainWillNotDonate());
-  return *runtime;
+static ErrorOr<ContextRef> getOrCreateGlobalContext() {
+  // Disable crash reporting because this is being loaded as a plugin to
+  // another process. It is difficult to guarantee this is problem-free.
+  static ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo-lldb-plugin", Init::Options()
+                              .withRuntimeOptions(LLCL::RuntimeOptions()
+                                                      .withCPUAffinity(false)
+                                                      .withMainWillNotDonate())
+                              .withForceDisableCrashReporting(true));
+  if (ctxOr.isError())
+    return Error(ctxOr.getError());
+  return ctxOr->copy();
 }
 
 /// LLDB has two different types of plugin initialization, we support them both
@@ -54,9 +61,12 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   llvm::InitializeAllAsmPrinters();
   LLVMLinkInMCJIT();
 
-  // We need to create a global runtime for the bits to work with. This is a
-  // bit strange, but there's no better place for it.
-  getOrCreateGlobalRuntime();
+  // Ensure we have a legitimate context.
+  auto ctxOr = getOrCreateGlobalContext();
+  if (ctxOr.isError()) {
+    llvm::errs() << "context error: " << ctxOr.getError() << "\n";
+    return false;
+  }
 
   // Initialize the various plugin components.
   MojoTypeSystem::Initialize();
@@ -101,7 +111,7 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
   if (!LLDBPluginInitialize())
     return false;
 
-  registerMojoCommands(debugger, getOrCreateGlobalRuntime());
+  registerMojoCommands(debugger, *getOrCreateGlobalContext());
   registerLLVMDebugCommands(debugger);
   // We enable JIT debugging here so that this feature doesn't depend on
   // lldb init files or how LLDB was launched.

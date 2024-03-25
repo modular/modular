@@ -72,7 +72,7 @@ https://github.com/modularml/mojo/issues.
 //===----------------------------------------------------------------------===//
 class CommandStats : public SBCommandPluginInterface {
 public:
-  CommandStats(LLCL::Runtime &runtime) : runtime(runtime) {}
+  CommandStats(ContextRef ctx) : ctx(std::move(ctx)) {}
 
   bool DoExecute(SBDebugger debugger, char **command,
                  SBCommandReturnObject &result) override {
@@ -86,12 +86,9 @@ public:
       StringRef event = args[1];
       StringRef interface = args[2];
 
-#ifdef MODULAR_ENABLE_TELEMETRY
-      auto &telemetryCtx =
-          runtime.context->emplace<M::Telemetry::TelemetryContext>();
+      auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
       auto logger = telemetryCtx.getLogger("debugger");
       logger->emitL1Event(event, {{"interface", interface}});
-#endif
       result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
       return true;
     }
@@ -99,18 +96,17 @@ public:
     return false;
   }
 
-  LLCL::Runtime &runtime;
+  ContextRef ctx;
 };
 
 } // namespace
 
-void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger,
-                                         LLCL::Runtime &runtime) {
+void M::KGEN::Mojo::registerMojoCommands(SBDebugger debugger, ContextRef ctx) {
   SBCommandInterpreter interpreter = debugger.GetCommandInterpreter();
   SBCommand root = interpreter.AddMultiwordCommand(
       "mojo", "Commands related to the Mojo language support.");
 
-  root.AddCommand("statistics", new CommandStats(runtime),
+  root.AddCommand("statistics", new CommandStats(ctx),
                   "Commands related to statistics of Mojo");
 
   SBCommand help = root.AddMultiwordCommand(
