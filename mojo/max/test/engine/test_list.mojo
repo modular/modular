@@ -4,40 +4,33 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s | FileCheck %s
+# RUN: %mojo -debug-level full %s
 
 from max.engine import EngineTensorView, InferenceSession
 from tensor import Tensor, TensorShape
+from testing import assert_equal, assert_false, assert_true
 from utils.index import Index
 from python import Python
 
 
 fn test_list_value() raises:
-    # CHECK-LABEL: ====test_list_value
-    print("====test_list_value")
-
     var session = InferenceSession()
     var list_value = session.new_list_value()
     var list = list_value.as_list()
 
-    # CHECK: 0
-    print(len(list))
+    assert_equal(len(list), 0)
 
     var false_value = session.new_bool_value(False)
     var true_value = session.new_bool_value(True)
 
     list.append(false_value)
-    # CHECK: 1
-    print(len(list))
+    assert_equal(len(list), 1)
 
     list.append(true_value)
-    # CHECK: 2
-    print(len(list))
+    assert_equal(len(list), 2)
 
-    # CHECK: False
-    # CHECK: True
-    print(list[0].as_bool())
-    print(list[1].as_bool())
+    assert_false(list[0].as_bool())
+    assert_true(list[1].as_bool())
 
     _ = list_value ^
 

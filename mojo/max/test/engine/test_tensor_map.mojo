@@ -4,17 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# RUN: %mojo -I %engine_pkg_dir %s | FileCheck %s
+# RUN: %mojo -debug-level full %s
 
 from max.engine import InferenceSession
 from tensor import TensorSpec, Tensor, TensorShape
+from testing import assert_equal, assert_true
 from utils.index import Index
 
 
 fn test_tensor_map() raises:
-    # CHECK-LABEL: ====test_tensor_map
-    print("====test_tensor_map")
-
     var t1 = Tensor[DType.float32](TensorShape(2, 3))
 
     for i in range(2):
@@ -24,31 +22,23 @@ fn test_tensor_map() raises:
     var session = InferenceSession()
     var map = session.new_tensor_map()
 
-    # CHECK: 0
-    print(len(map))
+    assert_equal(len(map), 0)
 
     map.borrow("tensor", t1)
 
-    # CHECK: 1
-    print(len(map))
+    assert_equal(len(map), 1)
     var t2 = map.get[DType.float32]("tensor")
 
-    # CHECK: 1
-    print(len(map))
+    assert_equal(len(map), 1)
 
     var t3 = map.get[DType.float32]("tensor")
 
-    # CHECK: True
-    print(t1 == t2)
+    assert_equal(t1, t2)
 
-    # CHECK: True
-    print(t1 == t3)
+    assert_equal(t1, t3)
 
 
 fn test_tensor_map_value() raises:
-    # CHECK-LABEL: ====test_tensor_map_value
-    print("====test_tensor_map_value")
-
     var t1 = Tensor[DType.float32](TensorShape(2, 3))
 
     for i in range(2):
@@ -59,22 +49,18 @@ fn test_tensor_map_value() raises:
     var map = session.new_tensor_map()
     var t1_value = session.new_borrowed_tensor_value(t1)
 
-    # CHECK: 0
-    print(len(map))
+    assert_equal(len(map), 0)
 
     map.borrow("tensor", t1_value)
 
-    # CHECK: 1
-    print(len(map))
+    assert_equal(len(map), 1)
 
     var t2 = map.get[DType.float32]("tensor")
-    # CHECK: True
-    print(t1 == t2)
+    assert_equal(t1, t2)
 
     var t3_value = map.get_value("tensor")
     var t3 = t3_value.as_tensor_copy[DType.float32]()
-    # CHECK: True
-    print(t1 == t3)
+    assert_equal(t1, t3)
 
     _ = map ^
     _ = t1_value ^

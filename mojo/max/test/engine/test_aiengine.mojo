@@ -4,26 +4,21 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# RUN: %mojo -I %engine_pkg_dir %s | FileCheck %s
+# RUN: %mojo -debug-level full %s
 
 from max.engine import (
     get_version,
     InferenceSession,
 )
+from testing import assert_true
 
 
 fn test_engine_version() raises:
-    # CHECK: test_version
-    print("====test_version")
-
-    # CHECK: Version: {{.*}}
-    print("Version:", get_version())
+    var version_str = get_version()
+    assert_true(version_str)
 
 
 fn test_session() raises:
-    # CHECK: test_session
-    print("====test_session")
-
     var session = InferenceSession()
 
 

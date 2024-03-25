@@ -12,12 +12,10 @@ from max.engine import (
 )
 from tensor import TensorSpec
 from collections.optional import Optional
-from testing import assert_false, assert_equal, assert_true
+from testing import assert_equal, assert_false, assert_true
 
 
 fn test_tensor_spec_basic() raises:
-    print("==== test_tensor_spec_basic")
-
     var session = InferenceSession()
     var spec = TensorSpec(DType.float32, 1, 2, 3)
     var engine_spec = session.get_as_engine_tensor_spec("tensor", spec)
@@ -58,8 +56,6 @@ fn test_tensor_spec_basic() raises:
 
 
 fn test_engine_tensor_spec_static_dim_copy() raises:
-    print("==== test_engine_tensor_spec_static_dim_copy")
-
     var session = InferenceSession()
     var spec = TensorSpec(DType.float32, 1, 2, 3)
     var static_engine_spec = session.get_as_engine_tensor_spec("tensor", spec)
@@ -82,8 +78,6 @@ fn test_engine_tensor_spec_static_dim_copy() raises:
 
 
 fn test_engine_tensor_spec_dynamic_dim_copy() raises:
-    print("==== test_engine_tensor_spec_dynamic_dim_copy")
-
     var session = InferenceSession()
     var dynamic_dim_shape = List[Optional[Int64]]()
     dynamic_dim_shape.append(None)

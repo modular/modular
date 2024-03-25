@@ -6,23 +6,21 @@
 # UNSUPPORTED: windows
 # UNSUPPORTED: address
 # REQUIRES: numpy
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s | FileCheck %s
+# RUN: %mojo -debug-level full %s
 
 from max.engine import EngineNumpyView
 from python import Python
+from testing import assert_equal
 
 
 fn test_numpy_view() raises:
-    # CHECK: test_numpy_view
-    print("====test_numpy_view")
     var np = Python.import_module("numpy")
 
     var n1 = np.array([1, 2, 3]).astype(np.float32)
 
     var n1_view = EngineNumpyView(n1)
 
-    # CHECK: 3xfloat32
-    print(n1_view.spec().__str__())
+    assert_equal(str(n1_view.spec()), "3xfloat32")
 
     _ = n1 ^
 
