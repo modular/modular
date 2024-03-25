@@ -8,7 +8,7 @@
 
 from math import div_ceil
 from pathlib import Path
-
+from random import random_float64
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
@@ -19,7 +19,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from Matmul import matmul as _matmul, matmul_kernel_naive
+from Matmul import matmul as _matmul, matmul_kernel_naive, matmul_kernel
 from memory import memset_zero, stack_allocation
 from tensor import Tensor
 from math import isclose
@@ -173,7 +173,6 @@ fn run_matmul() raises:
 
 
 fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
-    print("== run_matmul")
     var stream = Stream()
 
     var a_host = Tensor[type](M, K)
@@ -267,12 +266,138 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     _ = stream ^
 
 
+fn run_matmul_from_mogg_interface_with_epilogue[
+    M: Int, K: Int, N: Int, type: DType
+]() raises:
+    var stream = Stream()
+
+    var a_host = Tensor[type](M, K)
+    var b_host = Tensor[type](K, N)
+    var c_host = Tensor[type](M, N)
+    var c_host_ref = Tensor[type](M, N)
+
+    for i in range(M):
+        for j in range(K):
+            a_host[Index(i, j)] = random_float64(-10, 10)
+
+    for i in range(K):
+        for j in range(N):
+            b_host[Index(i, j)] = random_float64(-10, 10)
+
+    for i in range(M):
+        for j in range(N):
+            c_host[Index(i, j)] = 0
+            c_host_ref[Index(i, j)] = 0
+
+    var a_device = _malloc[Scalar[type]](M * K)
+    var b_device = _malloc[Scalar[type]](K * N)
+    var c_device = _malloc[Scalar[type]](M * N)
+    var c_device_ref = _malloc[Scalar[type]](M * N)
+
+    alias a_shape = DimList(M, K)
+    var a_device_nd = NDBuffer[type, 2, a_shape](a_device, Index(M, K))
+    alias b_shape = DimList(K, N)
+    var b_device_nd = NDBuffer[type, 2, b_shape](b_device, Index(K, N))
+    alias c_shape = DimList(M, N)
+    var c_device_nd = NDBuffer[type, 2, c_shape](c_device, Index(M, N))
+    var c_device_ref_nd = NDBuffer[type, 2, c_shape](c_device_ref, Index(M, N))
+    _copy_host_to_device(a_device, a_host.data(), M * K)
+    _copy_host_to_device(b_device, b_host.data(), K * N)
+    _copy_host_to_device(c_device, c_host.data(), M * N)
+    _copy_host_to_device(c_device_ref, c_host_ref.data(), M * N)
+
+    alias some_constant = 20
+
+    @parameter
+    @always_inline
+    @__copy_capture(c_device_nd)
+    fn epilogue_fn[
+        _type: DType, width: Int
+    ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
+        c_device_nd.store(idx, rebind[SIMD[type, width]](val + some_constant))
+
+    @parameter
+    @always_inline
+    @__copy_capture(c_device_ref_nd)
+    fn naive_epilogue_fn[
+        _type: DType, width: Int
+    ](idx: StaticIntTuple[2], val: SIMD[_type, width]) capturing -> None:
+        c_device_ref_nd.store(
+            idx, rebind[SIMD[type, width]](val + some_constant)
+        )
+
+    _matmul[
+        type,
+        a_shape,
+        type,
+        b_shape,
+        type,
+        c_shape,
+        target="cuda",
+        elementwise_lambda_fn=epilogue_fn,
+    ](c_device_nd, a_device_nd, b_device_nd)
+    synchronize()
+    _copy_device_to_host(c_host.data(), c_device, M * N)
+
+    alias BLOCK_DIM = 16
+    var func_naive = Function[
+        fn (
+            DTypePointer[type],
+            DTypePointer[type],
+            DTypePointer[type],
+            Int,
+            Int,
+            Int,
+        ) capturing -> None, matmul_kernel_naive[
+            type, type, type, BLOCK_DIM, elementwise_lambda_fn=naive_epilogue_fn
+        ]
+    ]()
+
+    func_naive(
+        c_device_ref,
+        a_device,
+        b_device,
+        M,
+        N,
+        K,
+        grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+        block_dim=(BLOCK_DIM, BLOCK_DIM),
+        stream=stream,
+    )
+
+    synchronize()
+    _copy_device_to_host(c_host_ref.data(), c_device_ref, M * N)
+
+    for i in range(M):
+        for j in range(N):
+            assert_true(isclose(c_host_ref[i, j], c_host[i, j]))
+
+    _free(a_device)
+    _free(b_device)
+    _free(c_device)
+    _free(c_device_ref)
+
+    _ = a_host
+    _ = b_host
+    _ = c_host
+    _ = c_host_ref
+
+    _ = func_naive ^
+    _ = stream ^
+
+
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
         with Context() as ctx:
             run_matmul()
-            run_matmul_from_mogg_interface[1024, 3072, 3072, DType.float32]()
-            run_matmul_from_mogg_interface[1024, 3072, 3072, DType.bfloat16]()
+            run_matmul_from_mogg_interface[1024, 3072, 5120, DType.float32]()
+            run_matmul_from_mogg_interface[1024, 12288, 3072, DType.float32]()
+            run_matmul_from_mogg_interface_with_epilogue[
+                1024, 3072, 5120, DType.float32
+            ]()
+            run_matmul_from_mogg_interface_with_epilogue[
+                1024, 3072, 5120, DType.bfloat16
+            ]()
     except e:
         print("CUDA_ERROR:", e)
