@@ -45,12 +45,9 @@ std::filesystem::path getBasePath(const std::filesystem::path &inputPath) {
 // TODO(#34233): Most of this function should move to MAX CLI code once set
 // up.
 ErrorOr<std::string> createFilepath(const std::filesystem::path &vizOutputPath,
-                                    const std::string &modelPath) {
+                                    std::string defaultFileName) {
 
-  auto defaultFileName = getDefaultFilename(modelPath);
-
-  auto filename =
-      getFileNameWithExtension(vizOutputPath, defaultFileName.get());
+  auto filename = getFileNameWithExtension(vizOutputPath, defaultFileName);
   auto basePath = getBasePath(vizOutputPath);
 
   std::filesystem::path fullPath = filename;
@@ -69,11 +66,6 @@ ErrorOr<std::string> createFilepath(const std::filesystem::path &vizOutputPath,
     return Error("Unable to create output directory");
 
   return fullPath.string(); // Return the string version of the path.
-}
-
-ErrorOr<std::string> getDefaultFilename(const std::string &modelPath) {
-  std::filesystem::path p(modelPath);
-  return p.stem().string();
 }
 
 } // namespace M
