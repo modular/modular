@@ -516,7 +516,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // emitted. Just skip over it for now.
     if (builder && SignatureType::isResultSlot(convention)) {
       assert(calleeSig.hasMemoryOnlyResult() ||
-             calleeSig.isThrows() && passingKind == PassingKind::Implicit);
+             (calleeSig.isThrows() && passingKind == PassingKind::Implicit));
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
     }
