@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-The entry point to Max Engine and can be used to load models
+The entry point to MAX Engine and can be used to load models
 for inference.
 """
 from collections import List
@@ -252,7 +252,14 @@ struct _Specs(CollectionElement):
 @value
 struct LoadOptions(CollectionElement):
     """
-    Configuration options to load model with Max Engine.
+    Configuration options to load model with MAX Engine.
+
+    If you're loading a TorchScript model, you must create an instance of this
+    type and then call `add_input_spec()` or `add_input_specs()`, depending on
+    whether your model has one or multiple inputs (you must specify an
+    input spec for every input). Then, pass this `LoadOptions`
+    along with your TorchScript model to
+    [`Session.load_model()`](/engine/reference/mojo/engine/session#load_model).
     """
 
     var _source: Optional[ModelSource]
@@ -268,12 +275,12 @@ struct LoadOptions(CollectionElement):
         self._input_specs = List[_Specs]()
 
     fn _set_model_source(inout self, module: Module):
-        """Specifies the Max Graph Module to load model from.
+        """Specifies the MAX Graph Module to load model from.
            Use either this function or `set_model_path` function
            to specify model source.
 
         Args:
-            module: Max Graph module.
+            module: MAX Graph module.
         """
         var mlir_module = module._module
         self._source = ModelSource(mlir_module.c.ptr, FrameworkFormat.MAXGraph)
@@ -298,11 +305,17 @@ struct LoadOptions(CollectionElement):
         self._custom_ops_path = path
 
     fn add_input_spec(inout self, spec: TensorSpec):
-        """Add valid input specs for model to be given at compile time.
-           Only applicable for PyTorch.
+        """Add specifications for one input tensor, as a
+           [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
+           Only applicable for TorchScript models.
+
+           If an input supports dynamic shapes, use `None` for that dimension
+           size in the `TensorSpec`.
 
         Args:
-            spec: Spec for the input.
+            spec: Spec for the input. This is the standard library
+                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
+
         """
         self._input_specs.append(_Specs(spec))
 
@@ -311,12 +324,16 @@ struct LoadOptions(CollectionElement):
         shape: _Specs.dynamic_type,
         dtype: DType,
     ):
-        """Add valid input specs for model to be given at compile time.
-           Only applicable for PyTorch.
+        """Add specifications for one input tensor, as a list of integers.
+           Only applicable for TorchScript models.
+
+           If an input supports dynamic shapes, use `None` for that dimension
+           size.
 
         Args:
-            shape: Shape of the input.
-            dtype: Datatype of the input.
+            shape: Shape of the input, as a list of integers.
+            dtype: Datatype of the input, from the standard library
+                   [`DType`](/mojo/stdlib/builtin/dtype#dtype).
         """
         self._input_specs.append(_Specs(shape, dtype))
 
@@ -324,11 +341,16 @@ struct LoadOptions(CollectionElement):
         inout self,
         specs: List[TensorSpec],
     ) raises:
-        """Add valid input specs for model to be given at compile time.
-           Only applicable for PyTorch.
+        """Add specifications for multiple input tensors, as a list of
+           [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec) objects.
+           Only applicable for TorchScript models.
+
+           If an input supports dynamic shapes, use `None` for that dimension
+           size in the `TensorSpec`.
 
         Args:
-            specs: Specs for the input.
+            specs: A list of specs for the inputs. This is the standard library
+                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
         """
 
         for i in range(len(specs)):
@@ -339,12 +361,18 @@ struct LoadOptions(CollectionElement):
         shapes: List[_Specs.dynamic_type],
         dtypes: InlinedFixedVector[DType],
     ) raises:
-        """Add valid input specs for model to be given at compile time.
-           Only applicable for PyTorch.
+        """Add specifications for multiple input tensors, using lists of
+           integers. Only applicable for TorchScript models.
+
+           If an input supports dynamic shapes, use `None` for that dimension
+           size.
 
         Args:
-            shapes: Shapes of the input.
-            dtypes: Datatypes of the input.
+            shapes: A list of input shapes, in which each input shape is
+                    specified as a list if integers.
+            dtypes: Datatypes of the inputs, as a collection of
+                   [`DType`](/mojo/stdlib/builtin/dtype#dtype) values in an
+                   [`InlinedFixedVector`](/mojo/stdlib/collections/vector#inlinedfixedvector).
         """
         for i in range(len(shapes)):
             self._input_specs.append(_Specs(shapes[i], dtypes[i]))
@@ -369,7 +397,7 @@ struct SessionOptions:
 @value
 struct InferenceSession:
     """
-    Holds the context of Max Engine and can be used for
+    Holds the context of MAX Engine and can be used for
     loading models.
     """
 
@@ -388,11 +416,16 @@ struct InferenceSession:
     fn load_model(
         self, path: Path, config: Optional[LoadOptions] = None
     ) raises -> Model:
-        """Compile and Initialize AI model with Max
-           engine with given path and config.
+        """Compile and initialize a model in MAX Engine, with the given
+           model path and config.
 
         Note: PyTorch models must be in TorchScript format, and TensorFlow
         models must be in SavedModel format. Or pass any ONNX model.
+
+        If you're loading a TorchScript model, you must specify the `config`
+        argument with an instance of
+        [`LoadOptions`](/engine/reference/mojo/engine/session#loadoptions) that
+        specifies the model's input specs (which may have dynamic shapes).
 
         Args:
             path: Location of model in filesystem.
@@ -413,11 +446,11 @@ struct InferenceSession:
     fn load_model(
         self, graph: Graph, config: Optional[LoadOptions] = None
     ) raises -> Model:
-        """Compile and Initialize AI model with Max
-           engine with given Max `Graph` and config.
+        """Compile and initialize a model in MAX Engine, with the given
+           [`Graph`](/engine/reference/mojo/graph/graph#graph) and config.
 
         Args:
-            graph: Max `Graph` module.
+            graph: MAX `Graph` module.
             config: Configurations need for compiling model.
 
         Returns:
@@ -429,11 +462,11 @@ struct InferenceSession:
     fn load_model(
         self, module: Module, config: Optional[LoadOptions] = None
     ) raises -> Model:
-        """Compile and Initialize AI model with Max
-           engine with given Max Graph module and config.
+        """Compile and initialize a model in MAX Engine, with the given
+           [`Module`](/engine/reference/mojo/graph/module#module) and config.
 
         Args:
-            module: Max Graph module.
+            module: MAX Graph module.
             config: Configurations need for compiling model.
 
         Returns:
@@ -451,14 +484,14 @@ struct InferenceSession:
     fn get_as_engine_tensor_spec(
         self, name: String, spec: TensorSpec
     ) raises -> EngineTensorSpec:
-        """Gets a TensorSpec compatible with Max Engine.
+        """Gets a TensorSpec compatible with MAX Engine.
 
         Args:
             name: Name of the Tensor.
             spec: Tensor specification in Mojo TensorSpec format.
 
         Returns:
-           EngineTensorSpec to be used with Max Engine APIs.
+           EngineTensorSpec to be used with MAX Engine APIs.
 
         """
         return self._ptr[].get_as_engine_tensor_spec(name, spec, self)
@@ -469,7 +502,7 @@ struct InferenceSession:
         shape: Optional[List[Optional[Int64]]],
         dtype: DType,
     ) raises -> EngineTensorSpec:
-        """Gets a TensorSpec compatible with Max Engine.
+        """Gets a TensorSpec compatible with MAX Engine.
 
         Args:
             name: Name of the Tensor.
@@ -479,7 +512,7 @@ struct InferenceSession:
             dtype: DataType of the Tensor.
 
         Returns:
-            EngineTensorSpec to be used with Max Engine APIs.
+            EngineTensorSpec to be used with MAX Engine APIs.
         """
         return self._ptr[].get_as_engine_tensor_spec(name, shape, dtype, self)
 
