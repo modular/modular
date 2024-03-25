@@ -40,12 +40,15 @@ class TensorFlowLoadOptions:
 
 @dataclass
 class TorchLoadOptions:
-    """Configures how to load PyTorch models."""
+    """Configures how to load TorchScript models."""
 
     input_specs: List["TorchInputSpec"] = field(default_factory=list)
     """The tensor specifications (shape and data type) for each of the
     model inputs. This is required when loading serialized TorchScript models
     because they do not include type and shape annotations.
+
+    If the model supports an input with dynamic shapes, use ``None`` for that
+    dimension size.
 
     For example:
 
