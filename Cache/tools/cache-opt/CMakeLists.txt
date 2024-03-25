@@ -14,6 +14,8 @@ add_modular_tool(cache-opt
   MCache
   MSupport
   MSupportGlobals
+  MSupportInit
+  MDialect
   MLIRFuncDialect
   MLIRArithDialect
   MLIROptLib

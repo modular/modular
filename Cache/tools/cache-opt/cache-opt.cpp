@@ -8,7 +8,10 @@
 #include "Cache/CachePasses/CachePasses.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/Context.h"
+#include "Support/Init/Init.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/MDialect/MDialect.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
@@ -23,10 +26,17 @@ int main(int argc, char **argv) {
                   Cache::CacheDialect>();
   mlir::registerCanonicalizer();
 
-  std::unique_ptr<Runtime> runtime =
-      createUniqueRuntime(RuntimeOptions().forDebug());
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "cache-opt", Init::Options().withRuntimeOptions(
+                       LLCL::RuntimeOptions().withLeakCheckedAllocator()));
+  if (ctxOr.isError()) {
+    llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
+    return 1;
+  }
+  registerContext(registry, *ctxOr);
 
-  Cache::registerCachePasses(*runtime);
+  Cache::registerCachePasses(*(*ctxOr)->get<LLCL::Runtime>());
 
   return failed(mlir::MlirOptMain(argc, argv, "cache-opt", registry));
 }

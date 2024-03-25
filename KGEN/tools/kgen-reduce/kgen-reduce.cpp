@@ -12,6 +12,8 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/Walkers.h"
 #include "PreOrderRegionIterator.h"
+#include "Support/Context.h"
+#include "Support/Init/Init.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
@@ -398,19 +400,26 @@ ErrorOrSuccess Reducer::tryDCE(IRState &curState) {
 int main(int argc, char **argv) {
   DialectRegistry registry;
   registerAllKGENDialects(registry);
-  MLIRContext ctx;
-  ctx.allowUnregisteredDialects();
-  ctx.appendDialectRegistry(registry);
+  MLIRContext mlirCtx;
+  mlirCtx.allowUnregisteredDialects();
+  mlirCtx.appendDialectRegistry(registry);
 
-  Reducer reducer(&ctx);
+  Reducer reducer(&mlirCtx);
 
   llvm::InitLLVM y(argc, argv);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  LLCL::RuntimeOptions llclOpts;
-  llclOpts.withLeakCheckedAllocator();
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime(llclOpts);
-  KGEN::registerDefaultKGENPasses(*runtime);
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "kgen-reduce", Init::Options().withRuntimeOptions(
+                         LLCL::RuntimeOptions().withLeakCheckedAllocator()));
+  if (ctxOr.isError()) {
+    llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
+    return 1;
+  }
+  registerContext(mlirCtx, *ctxOr);
+
+  KGEN::registerDefaultKGENPasses(*(*ctxOr)->get<LLCL::Runtime>());
 
   if (auto err = reducer.run()) {
     llvm::errs() << "ERROR: " << err.getError() << "\n";
