@@ -21,8 +21,10 @@
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
+#include "Support/Context.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "Support/Init/Init.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/Passes.h"
@@ -310,14 +312,21 @@ int main(int argc, char **argv) {
   mlir::PassRegistration<TestGeneratePreElaboratedBody>{};
   mlir::PassRegistration<TestAlwaysFailPass>{};
 
+  // Create our context.
   LLCL::RuntimeOptions llclOpts;
   llclOpts.withLeakCheckedAllocator();
   if (llclSingleThread)
     llclOpts.withSingleThreaded();
-  std::unique_ptr<LLCL::Runtime> runtime = LLCL::createUniqueRuntime(llclOpts);
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "kgen-opt", Init::Options().withRuntimeOptions(llclOpts));
+  if (ctxOr.isError()) {
+    llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
+    return 1;
+  }
+  registerContext(registry, *ctxOr);
 
   // Register passes.
-  KGEN::registerDefaultKGENPasses(*runtime);
+  KGEN::registerDefaultKGENPasses(*(*ctxOr)->get<LLCL::Runtime>());
 
   // Register cl options.
   static llvm::cl::opt<bool> dummyOpt{"llcl-single-thread"};
