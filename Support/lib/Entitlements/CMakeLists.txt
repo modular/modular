@@ -30,6 +30,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR}/RootCertificates)
 add_modular_library(MSupportEntitlements
   Entitlement.cpp
   EntitlementStore.cpp
+  EntitlementToken.cpp
 
   LINK_LIBS PUBLIC
   MSupport
