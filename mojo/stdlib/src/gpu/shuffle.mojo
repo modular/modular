@@ -16,9 +16,61 @@ alias _WIDTH_MASK = WARP_SIZE - 1
 alias _WIDTH_MASK_SHUFFLE_UP = 0
 
 
+# ===----------------------------------------------------------------------===#
+# utilities
+# ===----------------------------------------------------------------------===#
+
+
 @always_inline("nodebug")
 fn _is_half_like[type: DType]() -> Bool:
     return type.is_bfloat16() or type.is_float16()
+
+
+@always_inline("nodebug")
+fn _shuffle[
+    f32_intrinsic_name: StringLiteral,
+    i32_intrinsic_name: StringLiteral,
+    type: DType,
+    simd_width: Int,
+    *,
+    WIDTH_MASK: Int,
+](mask: Int, val: SIMD[type, simd_width], offset: Int) -> SIMD[
+    type, simd_width
+]:
+    constrained[
+        _is_half_like[type]() or simd_width == 1,
+        "Unsupported simd_width",
+    ]()
+
+    @parameter
+    if type.is_float32():
+        return llvm_intrinsic[f32_intrinsic_name, Scalar[type]](
+            Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK)
+        )
+    elif type.is_int32():
+        return llvm_intrinsic[i32_intrinsic_name, Scalar[type]](
+            Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK)
+        )
+    elif _is_half_like[type]():
+
+        @parameter
+        if simd_width == 1:
+            # splat and recurse to meet 32 bitwidth requirements
+            var splatted_val = SIMD[type, 2](rebind[Scalar[type]](val))
+            return _shuffle[
+                f32_intrinsic_name, i32_intrinsic_name, WIDTH_MASK=WIDTH_MASK
+            ](mask, splatted_val, offset)[0]
+        else:
+            # bitcast and recurse to use i32 intrinsic
+            var packed_val = bitcast[DType.int32, 1](val)
+            var result_packed = _shuffle[
+                f32_intrinsic_name, i32_intrinsic_name, WIDTH_MASK=WIDTH_MASK
+            ](mask, packed_val, offset)
+            return bitcast[type, simd_width](result_packed)
+
+    else:
+        constrained[False, "unhandled type"]()
+        return 0
 
 
 # ===----------------------------------------------------------------------===#
@@ -29,7 +81,7 @@ fn _is_half_like[type: DType]() -> Bool:
 @always_inline("nodebug")
 fn shuffle_idx[
     type: DType, simd_width: Int
-](val: SIMD[type, simd_width], src_lane: Int) -> SIMD[type, simd_width]:
+](val: SIMD[type, simd_width], offset: Int) -> SIMD[type, simd_width]:
     """Copies a value from a source lane to other lanes in a warp.
 
     Broadcasts a value from a source thread in a warp to all the participating
@@ -41,23 +93,20 @@ fn shuffle_idx[
 
     Args:
       val: The value to be shuffled.
-      src_lane: The offset warp lane ID.
+      offset: The offset warp lane ID.
 
     Returns:
-      The value from the src_lane.
+      The value from the offset.
     """
-    return shuffle_idx(0xFFFFFFFF, val, src_lane)
+    return shuffle_idx(0xFFFFFFFF, val, offset)
 
 
 @always_inline("nodebug")
 fn shuffle_idx[
     type: DType, simd_width: Int
-](
-    mask: Int,
-    val: SIMD[type, simd_width],
-    src_lane: Int,
-    width: Int = WARP_SIZE - 1,
-) -> SIMD[type, simd_width]:
+](mask: Int, val: SIMD[type, simd_width], offset: Int) -> SIMD[
+    type, simd_width
+]:
     """Copies a value from a source lane to other lanes in a warp.
 
     Broadcasts a value from a source thread in a warp to all the participating
@@ -70,42 +119,16 @@ fn shuffle_idx[
     Args:
       mask: The mask of the warp lanes.
       val: The value to be shuffled.
-      src_lane: The source warp lane ID.
-      width: The warp width which must be a power of 2.
+      offset: The source warp lane ID.
 
     Returns:
-      The value from the src_lane.
+      The value from the offset.
     """
-    constrained[
-        _is_half_like[type]() or simd_width == 1,
-        "Unsupported simd_width",
-    ]()
-
-    @parameter
-    if type.is_float32():
-        return llvm_intrinsic["llvm.nvvm.shfl.sync.idx.f32", Scalar[type]](
-            Int32(mask), val, UInt32(src_lane), Int32(_WIDTH_MASK)
-        )
-    elif type.is_int32():
-        return llvm_intrinsic["llvm.nvvm.shfl.sync.idx.i32", Scalar[type]](
-            Int32(mask), val, UInt32(src_lane), Int32(_WIDTH_MASK)
-        )
-    elif _is_half_like[type]():
-
-        @parameter
-        if simd_width == 1:
-            # splat and recurse to meet 32 bitwidth requirements
-            var splatted_val = SIMD[type, 2](rebind[SIMD[type, 1]](val))
-            return shuffle_idx(mask, splatted_val, src_lane, width)[0]
-        else:
-            # bitcast and recurse to use i32 intrinsic
-            var packed_val = bitcast[DType.int32, 1](val)
-            var result_packed = shuffle_idx(mask, packed_val, src_lane, width)
-            return bitcast[type, simd_width](result_packed)
-
-    else:
-        constrained[False, "unhandled type"]()
-        return 0
+    return _shuffle[
+        "llvm.nvvm.shfl.sync.idx.f32",
+        "llvm.nvvm.shfl.sync.idx.i32",
+        WIDTH_MASK=_WIDTH_MASK,
+    ](mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
@@ -139,12 +162,9 @@ fn shuffle_up[
 @always_inline("nodebug")
 fn shuffle_up[
     type: DType, simd_width: Int
-](
-    mask: Int,
-    val: SIMD[type, simd_width],
-    offset: Int,
-    width: Int = WARP_SIZE - 1,
-) -> SIMD[type, simd_width]:
+](mask: Int, val: SIMD[type, simd_width], offset: Int) -> SIMD[
+    type, simd_width
+]:
     """Copies values from other lanes in the warp.
 
     Exchange a value between threads within a warp by copying from a thread with
@@ -158,40 +178,15 @@ fn shuffle_up[
       mask: The mask of the warp lanes.
       val: The value to be shuffled.
       offset: The offset warp lane ID.
-      width: The warp width which must be a power of 2.
 
     Returns:
       The value at the specified offset.
     """
-    constrained[
-        _is_half_like[type]() or simd_width == 1,
-        "Unsupported simd_width",
-    ]()
-
-    @parameter
-    if type.is_float32():
-        return llvm_intrinsic["llvm.nvvm.shfl.sync.up.f32", Scalar[type]](
-            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK_SHUFFLE_UP)
-        )
-    elif type.is_int32():
-        return llvm_intrinsic["llvm.nvvm.shfl.sync.up.i32", Scalar[type]](
-            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK_SHUFFLE_UP)
-        )
-    elif _is_half_like[type]():
-
-        @parameter
-        if simd_width == 1:
-            # splat and recurse to meet 32 bitwidth requirements
-            var splatted_val = SIMD[type, 2](rebind[SIMD[type, 1]](val))
-            return shuffle_up(mask, splatted_val, offset, width)[0]
-        else:
-            # bitcast and recurse to use i32 intrinsic
-            var packed_val = bitcast[DType.int32, 1](val)
-            var result_packed = shuffle_up(mask, packed_val, offset, width)
-            return bitcast[type, simd_width](result_packed)
-    else:
-        constrained[False, "unhandled type"]()
-        return 0
+    return _shuffle[
+        "llvm.nvvm.shfl.sync.up.f32",
+        "llvm.nvvm.shfl.sync.up.i32",
+        WIDTH_MASK=_WIDTH_MASK_SHUFFLE_UP,
+    ](mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
@@ -245,35 +240,11 @@ fn shuffle_down[
     Returns:
       The value at the specified offset.
     """
-    constrained[
-        _is_half_like[type]() or simd_width == 1,
-        "Unsupported simd_width",
-    ]()
-
-    @parameter
-    if type.is_float32():
-        return llvm_intrinsic["llvm.nvvm.shfl.sync.down.f32", Scalar[type]](
-            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
-        )
-    elif type.is_int32():
-        return llvm_intrinsic["llvm.nvvm.shfl.sync.down.i32", Scalar[type]](
-            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
-        )
-    elif _is_half_like[type]():
-
-        @parameter
-        if simd_width == 1:
-            # splat and recurse to meet 32 bitwidth requirements
-            var splatted_val = SIMD[type, 2](rebind[SIMD[type, 1]](val))
-            return shuffle_down(mask, splatted_val, offset)[0]
-        else:
-            # bitcast and recurse to use i32 intrinsic:
-            var packed_val = bitcast[DType.int32, 1](val)
-            var result_packed = shuffle_down(mask, packed_val, offset)
-            return bitcast[type, simd_width](result_packed)
-    else:
-        constrained[False, "unhandled type"]()
-        return 0
+    return _shuffle[
+        "llvm.nvvm.shfl.sync.down.f32",
+        "llvm.nvvm.shfl.sync.down.i32",
+        WIDTH_MASK=_WIDTH_MASK,
+    ](mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
@@ -327,35 +298,11 @@ fn shuffle_xor[
     Returns:
       The value at the lane based on bitwise XOR of own lane id.
     """
-    constrained[
-        _is_half_like[type]() or simd_width == 1,
-        "Unsupported simd_width",
-    ]()
-
-    @parameter
-    if type.is_float32():
-        return llvm_intrinsic["llvm.nvvm.shfl.sync.bfly.f32", Scalar[type]](
-            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
-        )
-    elif type.is_int32():
-        return llvm_intrinsic["llvm.nvvm.shfl.sync.bfly.i32", Scalar[type]](
-            Int32(mask), val, UInt32(offset), Int32(_WIDTH_MASK)
-        )
-    elif _is_half_like[type]():
-
-        @parameter
-        if simd_width == 1:
-            # splat and recurse to meet 32 bitwidth requirements
-            var splatted_val = SIMD[type, 2](rebind[SIMD[type, 1]](val))
-            return shuffle_xor(mask, splatted_val, offset)[0]
-        else:
-            # bitcast and recurse to use i32 intrinsic:
-            var packed_val = bitcast[DType.int32, 1](val)
-            var result_packed = shuffle_xor(mask, packed_val, offset)
-            return bitcast[type, simd_width](result_packed)
-    else:
-        constrained[False, "unhandled type"]()
-        return 0
+    return _shuffle[
+        "llvm.nvvm.shfl.sync.bfly.f32",
+        "llvm.nvvm.shfl.sync.bfly.i32",
+        WIDTH_MASK=_WIDTH_MASK,
+    ](mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
