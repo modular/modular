@@ -36,6 +36,7 @@ export class MojoDecoratorContext extends DisposableContext {
           // Hide the decoration, we only care about the "after" content.
           opacity : "0"
         });
+    this.pushSubscription(this.docStringDecorationType);
 
     this.pushSubscription(vscode.workspace.onDidOpenTextDocument(
         event => { this.decorateDocument(event); }));
