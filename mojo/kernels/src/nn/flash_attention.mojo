@@ -85,28 +85,39 @@ struct _MatmulAccumulators[
 struct _MatmulConfig:
     var col_sizes: VariadicList[Int]
     var row_sizes: VariadicList[Int]
+    var gemv_sizes: VariadicList[Int]
 
     fn __init__(
         inout self,
         *,
         col_sizes: VariadicList[Int],
         row_sizes: VariadicList[Int],
+        gemv_sizes: VariadicList[Int],
     ):
         self.col_sizes = col_sizes
         self.row_sizes = row_sizes
+        self.gemv_sizes = gemv_sizes
 
     @staticmethod
     fn _get_matmul_config() -> _MatmulConfig:
         @parameter
-        if has_neon() or has_avx512f():
+        if has_neon():
             return _MatmulConfig(
                 col_sizes=VariadicList[Int](4, 3, 2, 1),
                 row_sizes=VariadicList[Int](6, 4, 1),
+                gemv_sizes=VariadicList[Int](32, 4, 1),
+            )
+        elif has_avx512f():
+            return _MatmulConfig(
+                col_sizes=VariadicList[Int](4, 3, 2, 1),
+                row_sizes=VariadicList[Int](6, 4, 1),
+                gemv_sizes=VariadicList[Int](64, 16, 4, 1),
             )
         else:
             return _MatmulConfig(
                 col_sizes=VariadicList[Int](3, 2, 1),
                 row_sizes=VariadicList[Int](4, 1),
+                gemv_sizes=VariadicList[Int](64, 16, 4, 1),
             )
 
 
@@ -115,6 +126,10 @@ struct _Matmul[
     simd_width: Int,
 ]:
     alias _matmul_config = _MatmulConfig._get_matmul_config()
+
+    alias _input_fn_type = fn[simd_width: Int] (
+        x: Int, y: Int
+    ) capturing -> SIMD[type, simd_width]
 
     @always_inline
     @staticmethod
@@ -201,7 +216,7 @@ struct _Matmul[
 
     @no_inline
     @staticmethod
-    fn _matmul(
+    fn _matmul_packed(
         M: Int,
         N: Int,
         K: Int,
@@ -254,10 +269,8 @@ struct _Matmul[
     @no_inline
     @staticmethod
     fn _pack_buffer[
-        input_fn: fn[simd_width: Int] (k: Int, n: Int) capturing -> SIMD[
-            type, simd_width
-        ],
-    ](packed_ptr: DTypePointer[type], K: Int, N: Int):
+        input_b_fn: Self._input_fn_type,
+    ](packed_ptr: DTypePointer[type], N: Int, K: Int):
         var output_ptr = packed_ptr
 
         @parameter
@@ -271,7 +284,7 @@ struct _Matmul[
                 @always_inline
                 @parameter
                 fn packed_copy[_simd_width: Int](idx: Int):
-                    var val = input_fn[_simd_width](k, n + idx)
+                    var val = input_b_fn[_simd_width](n + idx, k)
                     output_ptr.offset(idx).store[width=_simd_width](val)
 
                 vectorize[packed_copy, simd_width](count_n)
@@ -284,6 +297,74 @@ struct _Matmul[
         tile[process_cols, Self._matmul_config.col_sizes](
             0, div_ceil(N, simd_width)
         )
+
+    @no_inline
+    @staticmethod
+    fn _gemv[
+        input_b_fn: Self._input_fn_type,
+    ](
+        N: Int,
+        K: Int,
+        a_ptr: DTypePointer[type],
+        c_ptr: DTypePointer[type],
+        accumulate: Bool = False,
+    ):
+        var cn_ptr = c_ptr
+
+        @parameter
+        fn process_cols[_simd_width: Int](n: Int):
+            var accum = SIMD[type, _simd_width]()
+
+            for k in range(K):
+                var b_data = input_b_fn[_simd_width](n, k)
+                accum = b_data.fma(a_ptr[k], accum)
+
+            if accumulate:
+                accum += cn_ptr.load[width=_simd_width]()
+
+            cn_ptr.store(accum)
+            cn_ptr = cn_ptr.offset(_simd_width)
+
+        tile[process_cols, Self._matmul_config.gemv_sizes](0, N)
+
+    @no_inline
+    @staticmethod
+    fn _matmul[
+        input_b_fn: Self._input_fn_type,
+    ](
+        M: Int,
+        N: Int,
+        K: Int,
+        a_ptr: DTypePointer[type],
+        a_stride: Int,
+        packed_ptr: DTypePointer[type],
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        accumulate: Bool = False,
+    ):
+        if M == 1:
+            Self._gemv[input_b_fn](
+                N,
+                K,
+                a_ptr,
+                c_ptr,
+                accumulate=accumulate,
+            )
+
+        else:
+            Self._pack_buffer[input_b_fn](packed_ptr, N, K)
+
+            Self._matmul_packed(
+                M,
+                align_up(N, simd_width),
+                K,
+                a_ptr,
+                a_stride,
+                packed_ptr,
+                c_ptr,
+                c_stride,
+                accumulate=accumulate,
+            )
 
 
 struct _FlashAttention[
@@ -422,8 +503,11 @@ struct _FlashAttention[
             var max_vals = Buffer[type, Dim(block_m)]().stack_allocation()
             var sum_vals = Buffer[type, Dim(block_m)]().stack_allocation()
 
-            var packed_ptr = DTypePointer[type].alloc(
-                vn_packed * kn_packed, alignment=64
+            var packed_ptr = DTypePointer[
+                type
+            ]() if seq_len == 1 else DTypePointer[type].alloc(
+                vn_packed * kn_packed,
+                alignment=alignof[SIMD[type, simd_width]](),
             )
 
             var block_range = partition_work(
@@ -457,8 +541,6 @@ struct _FlashAttention[
                 var count_m = min(block_m, seq_len - m)
                 var count_n = min(block_n, depth_dim - n)
 
-                var aligned_count_n = align_up(count_n, simd_width)
-
                 var o_ptr = output._offset(get_nd_index(m, n))
                 var q_ptr = q._offset(get_nd_index(m, 0))
 
@@ -467,24 +549,19 @@ struct _FlashAttention[
 
                 for kv_seq_idx in range(0, kv_seq_len, block_n):
                     var kv_seq_cnt = min(kv_seq_len - kv_seq_idx, block_n)
-                    var aligned_kv_seq_cnt = align_up(kv_seq_cnt, simd_width)
 
                     @parameter
                     @always_inline
                     fn input_k_2d_fn[
                         _simd_width: Int
-                    ](k: Int, n: Int) -> SIMD[type, _simd_width]:
+                    ](_n: Int, _k: Int) -> SIMD[type, _simd_width]:
                         return input_k_fn[_simd_width, rank](
-                            get_nd_index(k, n + kv_seq_idx)
+                            get_nd_index(_k, _n + kv_seq_idx)
                         )
 
-                    Self._matmul._pack_buffer[input_k_2d_fn](
-                        packed_ptr, depth_dim, kv_seq_cnt
-                    )
-
-                    Self._matmul._matmul(
+                    Self._matmul._matmul[input_k_2d_fn](
                         count_m,
-                        aligned_kv_seq_cnt,
+                        kv_seq_cnt,
                         depth_dim,
                         q_ptr,
                         depth_dim,
@@ -517,18 +594,14 @@ struct _FlashAttention[
                     @always_inline
                     fn input_v_2d_fn[
                         _simd_width: Int
-                    ](k: Int, n: Int) -> SIMD[type, _simd_width]:
+                    ](_n: Int, _k: Int) -> SIMD[type, _simd_width]:
                         return input_v_fn[_simd_width, rank](
-                            get_nd_index(k + kv_seq_idx, n)
+                            get_nd_index(_k + kv_seq_idx, _n)
                         )
 
-                    Self._matmul._pack_buffer[input_v_2d_fn](
-                        packed_ptr, kv_seq_cnt, depth_dim
-                    )
-
-                    Self._matmul._matmul(
+                    Self._matmul._matmul[input_v_2d_fn](
                         count_m,
-                        aligned_count_n,
+                        count_n,
                         kv_seq_cnt,
                         qk_block_ptr,
                         block_n,
@@ -555,7 +628,8 @@ struct _FlashAttention[
                     o_ptr = o_ptr.offset(depth_dim)
                     oz_ptr = oz_ptr.offset(block_n)
 
-            packed_ptr.free()
+            if packed_ptr:
+                packed_ptr.free()
 
         sync_parallelize[task_func](num_threads)
 
