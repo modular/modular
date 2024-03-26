@@ -7,25 +7,6 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
-// DeflateSymbols
-//===----------------------------------------------------------------------===//
-
-def DeflateSymbols : Pass<"deflate-symbols", "mlir::ModuleOp"> {
-  let summary = "Deflate symbols and put them in the cache.";
-  let description = [{
-    This pass deflates symbols by eliding their regions, storing said regions
-    in the cache.
-  }];
-
-  let options = [
-    Option<"cacheDir", "cache-dir", "std::string", "",
-           "The cache directory to use.">,
-  ];
-
-  let dependentDialects = ["CacheDialect", "mlir::func::FuncDialect"];
-}
-
-//===----------------------------------------------------------------------===//
 // InflateSymbols
 //===----------------------------------------------------------------------===//
 
