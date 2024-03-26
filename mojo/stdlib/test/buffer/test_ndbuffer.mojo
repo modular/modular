@@ -297,7 +297,7 @@ fn test_print():
     var buffer = NDBuffer[DType.index, 3, DimList(2, 2, 3)](tensor.data())
 
     print(str(buffer))
-    _ = tensor ^
+    _ = tensor^
 
 
 # CHECK-LABEL: test_ndbuffer
