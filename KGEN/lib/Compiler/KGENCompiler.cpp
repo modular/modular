@@ -563,8 +563,7 @@ KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
   if (fileLine)
     attrs["filename"] = fileLine.getFilename().str();
 
-  // Run the passes as a cached transform. Don't deflate the op as part of this
-  // - we don't want that cost right now.
+  // Run the passes as a cached transform.
   {
 
     [[maybe_unused]] auto timeScope =
@@ -574,7 +573,7 @@ KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
 
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
         theModule, regionCache.copy(), transformCache.copy(),
-        runtime.getReadyChain().copy(), pm, /*deflateTarget=*/false);
+        runtime.getReadyChain().copy(), pm);
     LLCL::await(ready);
     if (ready.isError())
       return ready.takeDiagnostic().getMessage().copy();

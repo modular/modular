@@ -116,7 +116,7 @@ TEST(CachedTransformTest, CacheHits) {
   // Parse the source string
   mlir::OwningOpRef<ModuleOp> module1 =
       mlir::parseSourceString<ModuleOp>(mlirString, ParserConfig{&ctx});
-  // Do the transform. This will deflate the module.
+  // Do the transform.
   TestPassDiagnosticValidator xform1DiagValidator(&ctx);
   auto xform =
       cachedTransform(*module1, regionCache.copy(), transformCache.copy(),
