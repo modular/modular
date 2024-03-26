@@ -61,7 +61,7 @@ struct Context:
             abort(e.__str__())
 
     fn __enter__(owned self) -> Self:
-        return self ^
+        return self^
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ctx = existing.ctx
