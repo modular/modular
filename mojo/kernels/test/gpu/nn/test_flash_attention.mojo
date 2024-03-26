@@ -264,7 +264,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
     if succeed:
         print("Succeed")
 
-    _ = stream ^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

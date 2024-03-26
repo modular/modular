@@ -259,8 +259,8 @@ fn scatter_nd[
 
     ptr.free()
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 fn linear_fill[type: DType](t: Tensor[type], elems: VariadicList[Scalar[type]]):

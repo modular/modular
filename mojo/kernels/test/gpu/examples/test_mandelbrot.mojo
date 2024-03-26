@@ -125,8 +125,8 @@ fn run_mandelbrot() raises:
 
     _ = out_host
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

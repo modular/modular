@@ -102,8 +102,8 @@ fn run_elementwise[type: DType]() raises:
                 expected_vals[i * 8 + j],
             )
 
-    _ = in_host ^
-    _ = out_host ^
+    _ = in_host^
+    _ = out_host^
 
     _free(in_device)
     _free(out_device)
@@ -165,8 +165,8 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
                 expected_vals[i * 3 + j],
             )
 
-    _ = in_host ^
-    _ = out_host ^
+    _ = in_host^
+    _ = out_host^
 
     _free(in_device)
     _free(out_device)
@@ -259,8 +259,8 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
                     expected_vals[i * 2 * 5 + j * 5 + k],
                 )
 
-    _ = in_host ^
-    _ = out_host ^
+    _ = in_host^
+    _ = out_host^
 
     _free(in_device)
     _free(out_device)

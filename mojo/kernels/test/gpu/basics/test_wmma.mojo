@@ -398,9 +398,9 @@ fn run_mma_fp32_tf32(
     _ = a_host_ref
     _ = c_host_ref
 
-    _ = func_mma ^
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_mma^
+    _ = func_naive^
+    _ = stream^
 
 
 fn run_mma_fp32_bf16(
@@ -567,9 +567,9 @@ fn run_mma_fp32_bf16(
     _ = a_host_ref
     _ = c_host_ref
 
-    _ = func_mma ^
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_mma^
+    _ = func_naive^
+    _ = stream^
 
 
 fn run_mma_fp32_bf16_2(
@@ -736,9 +736,9 @@ fn run_mma_fp32_bf16_2(
     _ = a_host_ref
     _ = c_host_ref
 
-    _ = func_mma ^
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_mma^
+    _ = func_naive^
+    _ = stream^
 
 
 fn run_mma_fp32_fp16(
@@ -905,9 +905,9 @@ fn run_mma_fp32_fp16(
     _ = a_host_ref
     _ = c_host_ref
 
-    _ = func_mma ^
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_mma^
+    _ = func_naive^
+    _ = stream^
 
 
 fn run_mma_fp16_fp16(
@@ -1075,9 +1075,9 @@ fn run_mma_fp16_fp16(
     _ = a_host_ref
     _ = c_host_ref
 
-    _ = func_mma ^
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_mma^
+    _ = func_naive^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

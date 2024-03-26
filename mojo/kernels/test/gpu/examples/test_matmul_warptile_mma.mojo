@@ -613,8 +613,8 @@ fn run_matmul_mma_warptiling() raises:
     _ = c_host
     _ = c_host_naive
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

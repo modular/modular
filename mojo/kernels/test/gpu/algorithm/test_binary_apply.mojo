@@ -108,8 +108,8 @@ fn run_binary_add(capture: Float32) raises:
     in1_host.free()
     out_host.free()
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

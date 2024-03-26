@@ -551,9 +551,9 @@ fn test() raises:
     a_host.free()
     b_host.free()
 
-    _ = func ^
-    _ = func_naive ^
-    _ = stream ^
+    _ = func^
+    _ = func_naive^
+    _ = stream^
 
 
 def main():

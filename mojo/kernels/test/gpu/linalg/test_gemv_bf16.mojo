@@ -202,9 +202,9 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     _ = b_host_n
     _ = c_host_n
 
-    _ = func_gemv ^
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_gemv^
+    _ = func_naive^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

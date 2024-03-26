@@ -161,8 +161,8 @@ fn run_matmul() raises:
     _ = b_host
     _ = c_host
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

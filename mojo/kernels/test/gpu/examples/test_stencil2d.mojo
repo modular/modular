@@ -190,8 +190,8 @@ fn run_stencil2d[smem: Bool]() raises:
     _ = a_host
     _ = b_host
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

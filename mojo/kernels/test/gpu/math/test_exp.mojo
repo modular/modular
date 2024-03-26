@@ -81,8 +81,8 @@ def run_elementwise[type: DType]():
             rtol=1e-05 if type == DType.float32 else 1e-03,
         )
 
-    _ = in_host ^
-    _ = out_host ^
+    _ = in_host^
+    _ = out_host^
 
     _free(in_device)
     _free(out_device)

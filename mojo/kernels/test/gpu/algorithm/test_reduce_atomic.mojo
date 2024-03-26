@@ -77,8 +77,8 @@ fn run_reduce() raises:
 
     _ = vec_host
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

@@ -123,7 +123,7 @@ fn fused_reduce_inner_test[
     _ = res_host0
     _ = res_host1
 
-    _ = stream ^
+    _ = stream^
 
 
 fn reduce_inner_test[
@@ -214,7 +214,7 @@ fn reduce_inner_test[
     _ = vec_host
     _ = res_host
 
-    _ = stream ^
+    _ = stream^
 
 
 def main():

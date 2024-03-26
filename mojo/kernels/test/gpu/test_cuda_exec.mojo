@@ -103,7 +103,7 @@ fn run_vec_add() raises:
     in1_host.free()
     out_host.free()
 
-    _ = module ^
+    _ = module^
     _ = func
 
 

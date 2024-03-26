@@ -94,9 +94,9 @@ fn test_batched_matmul() raises:
     # CHECK-NEXT: 606.0, 660.0
     print(dst_host)
 
-    _ = lhs_host ^
-    _ = rhs_host ^
-    _ = dst_host ^
+    _ = lhs_host^
+    _ = rhs_host^
+    _ = dst_host^
 
 
 # CHECK-NOT: CUDA_ERROR

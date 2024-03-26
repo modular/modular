@@ -77,8 +77,8 @@ def run_add_constant():
     in_host.free()
     out_host.free()
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

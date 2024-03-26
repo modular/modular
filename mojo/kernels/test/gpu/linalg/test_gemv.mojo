@@ -230,10 +230,10 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
     _ = c_host
     _ = c_host_naive
 
-    _ = func_gemv ^
-    _ = func_gevm ^
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_gemv^
+    _ = func_gevm^
+    _ = func_naive^
+    _ = stream^
 
 
 fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
@@ -458,9 +458,9 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
     _ = c_host
     _ = c_host_naive
 
-    _ = func_gevm ^
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_gevm^
+    _ = func_naive^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

@@ -168,8 +168,8 @@ fn run_matmul() raises:
     _ = b_host
     _ = c_host
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
@@ -262,8 +262,8 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     _ = c_host
     _ = c_host_ref
 
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_naive^
+    _ = stream^
 
 
 fn run_matmul_from_mogg_interface_with_epilogue[
@@ -382,8 +382,8 @@ fn run_matmul_from_mogg_interface_with_epilogue[
     _ = c_host
     _ = c_host_ref
 
-    _ = func_naive ^
-    _ = stream ^
+    _ = func_naive^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

@@ -278,8 +278,8 @@ fn bench_matmuls(inout m: Bench) raises:
     _ = c_host
     _ = c_host_naive
 
-    _ = func ^
-    _ = stream ^
+    _ = func^
+    _ = stream^
 
 
 # CHECK-NOT: CUDA_ERROR

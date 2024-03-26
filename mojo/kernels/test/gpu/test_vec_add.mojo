@@ -99,7 +99,7 @@ fn run_vec_add() raises:
     in1_host.free()
     out_host.free()
 
-    _ = func ^
+    _ = func^
 
 
 # CHECK-NOT: CUDA_ERROR
