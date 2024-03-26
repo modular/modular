@@ -28,8 +28,7 @@ fn _is_half_like[type: DType]() -> Bool:
 
 @always_inline("nodebug")
 fn _shuffle[
-    f32_intrinsic_name: StringLiteral,
-    i32_intrinsic_name: StringLiteral,
+    mnemonic: StringLiteral,
     type: DType,
     simd_width: Int,
     *,
@@ -44,28 +43,28 @@ fn _shuffle[
 
     @parameter
     if type.is_float32():
-        return llvm_intrinsic[f32_intrinsic_name, Scalar[type]](
-            Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK)
-        )
+        return llvm_intrinsic[
+            "llvm.nvvm.shfl.sync." + mnemonic + ".f32", Scalar[type]
+        ](Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK))
     elif type.is_int32():
-        return llvm_intrinsic[i32_intrinsic_name, Scalar[type]](
-            Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK)
-        )
+        return llvm_intrinsic[
+            "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[type]
+        ](Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK))
     elif _is_half_like[type]():
 
         @parameter
         if simd_width == 1:
             # splat and recurse to meet 32 bitwidth requirements
             var splatted_val = SIMD[type, 2](rebind[Scalar[type]](val))
-            return _shuffle[
-                f32_intrinsic_name, i32_intrinsic_name, WIDTH_MASK=WIDTH_MASK
-            ](mask, splatted_val, offset)[0]
+            return _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
+                mask, splatted_val, offset
+            )[0]
         else:
             # bitcast and recurse to use i32 intrinsic
             var packed_val = bitcast[DType.int32, 1](val)
-            var result_packed = _shuffle[
-                f32_intrinsic_name, i32_intrinsic_name, WIDTH_MASK=WIDTH_MASK
-            ](mask, packed_val, offset)
+            var result_packed = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](
+                mask, packed_val, offset
+            )
             return bitcast[type, simd_width](result_packed)
 
     else:
@@ -125,8 +124,7 @@ fn shuffle_idx[
       The value from the offset.
     """
     return _shuffle[
-        "llvm.nvvm.shfl.sync.idx.f32",
-        "llvm.nvvm.shfl.sync.idx.i32",
+        "idx",
         WIDTH_MASK=_WIDTH_MASK,
     ](mask, val, offset)
 
@@ -182,11 +180,7 @@ fn shuffle_up[
     Returns:
       The value at the specified offset.
     """
-    return _shuffle[
-        "llvm.nvvm.shfl.sync.up.f32",
-        "llvm.nvvm.shfl.sync.up.i32",
-        WIDTH_MASK=_WIDTH_MASK_SHUFFLE_UP,
-    ](mask, val, offset)
+    return _shuffle["up", WIDTH_MASK=_WIDTH_MASK_SHUFFLE_UP](mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
@@ -240,11 +234,7 @@ fn shuffle_down[
     Returns:
       The value at the specified offset.
     """
-    return _shuffle[
-        "llvm.nvvm.shfl.sync.down.f32",
-        "llvm.nvvm.shfl.sync.down.i32",
-        WIDTH_MASK=_WIDTH_MASK,
-    ](mask, val, offset)
+    return _shuffle["down", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
@@ -298,11 +288,7 @@ fn shuffle_xor[
     Returns:
       The value at the lane based on bitwise XOR of own lane id.
     """
-    return _shuffle[
-        "llvm.nvvm.shfl.sync.bfly.f32",
-        "llvm.nvvm.shfl.sync.bfly.i32",
-        WIDTH_MASK=_WIDTH_MASK,
-    ](mask, val, offset)
+    return _shuffle["bfly", WIDTH_MASK=_WIDTH_MASK](mask, val, offset)
 
 
 # ===----------------------------------------------------------------------===#
