@@ -851,7 +851,7 @@ def POP_SelectOp : POPOp<"select", [Pure,
   }];
 
   let hasFolder = 1;
-  let hasCanonicalizeMethod = 1;
+  let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
