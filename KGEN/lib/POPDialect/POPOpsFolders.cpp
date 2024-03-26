@@ -978,11 +978,40 @@ struct SelectTrueFalseScalarBool : OpRewritePattern<SelectOp> {
     return b.notifyMatchFailure(op, "failed to match true/false constants");
   }
 };
+
+/// Canonicalize `select x, (select x, a, b), c` into `select x, a, c` or
+/// `select x, a, (select x, b, c)` into `select x, a, c`.
+struct SelectOfSelect : OpRewritePattern<SelectOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SelectOp op,
+                                PatternRewriter &b) const override {
+    bool knownCondition;
+    SelectOp branchSelect;
+    if ((branchSelect = op.getTrueValue().getDefiningOp<SelectOp>())) {
+      knownCondition = true;
+    } else if ((branchSelect = op.getFalseValue().getDefiningOp<SelectOp>())) {
+      knownCondition = false;
+    } else {
+      return b.notifyMatchFailure(
+          op.getLoc(), "true or false value not defined by a select");
+    }
+    if (branchSelect.getCondition() != op.getCondition()) {
+      return b.notifyMatchFailure(op.getLoc(),
+                                  "branch select condition is not the same");
+    }
+    Value foldedValue = knownCondition ? branchSelect.getTrueValue()
+                                       : branchSelect.getFalseValue();
+    b.modifyOpInPlace(
+        op, [&] { op->setOperand(1 + (knownCondition ? 0 : 1), foldedValue); });
+    return success();
+  }
+};
 } // namespace
 
 void SelectOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                            MLIRContext *context) {
-  results.add<SelectTrueFalseScalarBool>(context);
+  results.add<SelectTrueFalseScalarBool, SelectOfSelect>(context);
 }
 
 //===----------------------------------------------------------------------===//

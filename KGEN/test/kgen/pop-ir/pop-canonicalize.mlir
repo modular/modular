@@ -1022,3 +1022,15 @@ kgen.func @select_true_false(%arg0: i1) -> i1 {
   %2 = pop.select %arg0, %0, %1 : i1
   kgen.return %2 : i1
 }
+
+// CHECK-LABEL: kgen.func @select_of_select
+kgen.func @select_of_select(%arg0: i1, %arg1: index, %arg2: index, %arg3: index) -> (index, index) {
+  // CHECK-NEXT: %0 = pop.select %arg0, %arg1, %arg3
+  %0 = pop.select %arg0, %arg1, %arg2 : index
+  %1 = pop.select %arg0, %0, %arg3 : index
+  // CHECK-NEXT: %1 = pop.select %arg0, %arg1, %arg3
+  %2 = pop.select %arg0, %arg2, %arg3 : index
+  %3 = pop.select %arg0, %arg1, %2 : index
+  // CHECK-NEXT: return %0, %1
+  kgen.return %1, %3 : index, index
+}
