@@ -24,8 +24,8 @@ fn main():
     point_vec.append(p1)
     point_vec.append(p2)
     point_vec.append(p3)
-    var len0 = len(point_vec)  # breakpoint
-    print(len0)
+    var value = point_vec[0].x  # breakpoint
+    print(value)
 
     var int_vec = List[Int](capacity=3)
     int_vec.append(1)
