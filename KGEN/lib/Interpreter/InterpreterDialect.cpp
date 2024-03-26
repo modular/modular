@@ -6,6 +6,7 @@
 
 #include "KGEN/Interpreter/InterpreterDialect.h"
 #include "KGEN/Interpreter/InterpreterAttrs.h"
+#include "Support/Compiler/Bytecode.h"
 #include "mlir/Bytecode/BytecodeImplementation.h"
 #include "mlir/IR/DialectResourceBlobManager.h"
 #include "llvm/ADT/SetVector.h"
@@ -213,53 +214,36 @@ private:
 using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
 using mlir::get;
+using mlir::readResourceHandle;
 
-static LogicalResult readMemoryBlobs(DialectBytecodeReader &reader,
-                                     SmallVectorImpl<MemoryBlob> &blobs) {
-  uint64_t size;
-  if (failed(reader.readVarInt(size)))
-    return failure();
-  blobs.reserve(size);
-
-  auto readPointerRegion = [&](MemoryBlob::PointerRegion &region) {
+static LogicalResult
+readPointerRegions(DialectBytecodeReader &reader,
+                   SmallVectorImpl<PointerRegion> &regions) {
+  auto readPointerRegion = [&](PointerRegion &region) {
     int64_t offset, blobIndex, blobOffset;
     if (failed(reader.readSignedVarInt(offset)) ||
         failed(reader.readSignedVarInt(blobIndex)) ||
         failed(reader.readSignedVarInt(blobOffset)))
       return failure();
-    region = MemoryBlob::PointerRegion{offset, blobIndex, blobOffset};
+    region = PointerRegion{offset, blobIndex, blobOffset};
     return LogicalResult::success();
   };
 
-  for (unsigned i = 0; i < size; ++i) {
-    FailureOr<MemoryHandle> hdl = reader.readResourceHandle<MemoryHandle>();
-    uint64_t kind;
-    if (failed(hdl) || failed(reader.readVarInt(kind)))
-      return failure();
-    SmallVector<MemoryBlob::PointerRegion> regions;
-    if (failed(reader.readList(regions, readPointerRegion)))
-      return failure();
-    blobs.emplace_back(*hdl, static_cast<MemoryKind>(kind), std::move(regions));
-  }
+  if (failed(reader.readList(regions, readPointerRegion)))
+    return failure();
 
   return success();
 }
 
-static void writeMemoryBlobs(DialectBytecodeWriter &writer,
-                             ArrayRef<MemoryBlob> blobs) {
-  writer.writeVarInt(blobs.size());
-
-  auto writePointerRegion = [&](const MemoryBlob::PointerRegion &region) {
+static void writePointerRegions(DialectBytecodeWriter &writer,
+                                ArrayRef<PointerRegion> regions) {
+  auto writePointerRegion = [&](const PointerRegion &region) {
     writer.writeSignedVarInt(region.offset);
     writer.writeSignedVarInt(region.blobIndex);
     writer.writeSignedVarInt(region.blobOffset);
   };
 
-  for (const MemoryBlob &blob : blobs) {
-    writer.writeResourceHandle(blob.getHandle());
-    writer.writeVarInt(static_cast<uint64_t>(blob.getKind()));
-    writer.writeList(blob.getPointerRegions(), writePointerRegion);
-  }
+  writer.writeList(regions, writePointerRegion);
 }
 
 namespace {

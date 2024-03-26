@@ -24,47 +24,45 @@ void InterpreterDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-// MemorySpaceAttr
+// MemoryBlobAttr
 //===----------------------------------------------------------------------===//
 
-namespace mlir {
-template <>
-struct FieldParser<MemoryBlob> {
-  static FailureOr<MemoryBlob> parse(AsmParser &p) {
-    if (p.parseLParen())
-      return failure();
-    FailureOr<MemoryHandle> hdl = p.parseResourceHandle<MemoryHandle>();
-    if (failed(hdl))
-      return failure();
-    StringRef kindStr;
-    SmallVector<MemoryBlob::PointerRegion> pointerRegions;
-    if (p.parseComma() || p.parseKeyword(&kindStr) || p.parseComma() ||
-        p.parseCommaSeparatedList(
-            AsmParser::Delimiter::Square,
-            [&] {
-              MemoryBlob::PointerRegion &region = pointerRegions.emplace_back();
-              return failure(
-                  p.parseLParen() || p.parseInteger(region.offset) ||
-                  p.parseComma() || p.parseInteger(region.blobIndex) ||
-                  p.parseComma() || p.parseInteger(region.blobOffset) ||
-                  p.parseRParen());
-            }) ||
-        p.parseRParen())
-      return failure();
-    MemoryKind kind = llvm::StringSwitch<MemoryKind>(kindStr)
-                          .Case("stack", MemoryKind::Stack)
-                          .Case("heap", MemoryKind::Heap)
-                          .Case("const_global", MemoryKind::ConstGlobal)
-                          .Case("persistent", MemoryKind::Persistent);
-    return MemoryBlob(*hdl, kind, std::move(pointerRegions));
-  }
-};
+Attribute MemoryBlobAttr::parse(AsmParser &p, Type type) {
+  if (p.parseLParen())
+    return {};
+  FailureOr<MemoryHandle> hdl = p.parseResourceHandle<MemoryHandle>();
+  if (failed(hdl))
+    return {};
+  StringRef kindStr;
+  SmallVector<PointerRegion> pointerRegions;
 
-static AsmPrinter &operator<<(AsmPrinter &p, const MemoryBlob &blob) {
+  auto parsePointerRegion = [&] {
+    PointerRegion &region = pointerRegions.emplace_back();
+    return failure(p.parseLParen() || p.parseInteger(region.offset) ||
+                   p.parseComma() || p.parseInteger(region.blobIndex) ||
+                   p.parseComma() || p.parseInteger(region.blobOffset) ||
+                   p.parseRParen());
+  };
+
+  if (p.parseComma() || p.parseKeyword(&kindStr) || p.parseComma() ||
+      p.parseCommaSeparatedList(AsmParser::Delimiter::Square,
+                                parsePointerRegion) ||
+      p.parseRParen())
+    return {};
+
+  MemoryKind kind = llvm::StringSwitch<MemoryKind>(kindStr)
+                        .Case("stack", MemoryKind::Stack)
+                        .Case("heap", MemoryKind::Heap)
+                        .Case("const_global", MemoryKind::ConstGlobal)
+                        .Case("persistent", MemoryKind::Persistent);
+  return get(*hdl, kind, pointerRegions);
+}
+
+void MemoryBlobAttr::print(AsmPrinter &p) const {
   p << '(';
-  p.printResourceHandle(blob.getHandle());
+  p.printResourceHandle(getHandle());
   p << ", ";
-  switch (blob.getKind()) {
+  switch (getKind()) {
   case MemoryKind::Stack:
     p << "stack";
     break;
@@ -79,49 +77,38 @@ static AsmPrinter &operator<<(AsmPrinter &p, const MemoryBlob &blob) {
     break;
   }
   p << ", [";
-  llvm::interleaveComma(blob.getPointerRegions(), p,
-                        [&](const MemoryBlob::PointerRegion &region) {
+  llvm::interleaveComma(getPointerRegions(), p,
+                        [&](const PointerRegion &region) {
                           p << '(' << region.offset << ", " << region.blobIndex
                             << ", " << region.blobOffset << ')';
                         });
   p << "])";
-  return p;
 }
-} // namespace mlir
 
 namespace M {
-static llvm::hash_code hash_value(const MemoryBlob &b) {
-  return llvm::hash_combine(b.getHandle(), b.getKind(), b.getPointerRegions());
-}
-
-static bool operator==(const MemoryBlob &lhs, const MemoryBlob &rhs) {
-  return std::make_tuple(lhs.getHandle(), lhs.getKind(),
-                         lhs.getPointerRegions()) ==
-         std::make_tuple(rhs.getHandle(), rhs.getKind(),
-                         rhs.getPointerRegions());
-}
-
-static llvm::hash_code hash_value(const MemoryBlob::PointerRegion &region) {
+static llvm::hash_code hash_value(const PointerRegion &region) {
   return llvm::hash_combine(region.offset, region.blobIndex, region.blobOffset);
 }
-
-static bool operator==(const MemoryBlob::PointerRegion &lhs,
-                       const MemoryBlob::PointerRegion &rhs) {
+static bool operator==(const PointerRegion &lhs, const PointerRegion &rhs) {
   return std::make_tuple(lhs.offset, lhs.blobIndex, lhs.blobOffset) ==
          std::make_tuple(rhs.offset, rhs.blobIndex, rhs.blobOffset);
 }
 } // namespace M
 
+//===----------------------------------------------------------------------===//
+// MemorySpaceAttr
+//===----------------------------------------------------------------------===//
+
 LogicalResult
 MemorySpaceAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                        ArrayRef<MemoryBlob> blobs) {
+                        ArrayRef<MemoryBlobAttr> blobs) {
   for (auto [i, blob] : llvm::enumerate(blobs)) {
     if (blob.getKind() == MemoryKind::ConstGlobal &&
         !blob.getPointerRegions().empty()) {
       return emitError() << "const_global blob #" << i
                          << " cannot have pointer regions";
     }
-    for (const MemoryBlob::PointerRegion &region : blob.getPointerRegions()) {
+    for (const PointerRegion &region : blob.getPointerRegions()) {
       if (region.blobIndex < 0 ||
           static_cast<size_t>(region.blobIndex) >= blobs.size()) {
         return emitError() << "blob #" << i << " pointer at offset "
