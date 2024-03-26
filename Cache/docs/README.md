@@ -4,9 +4,6 @@
 
 `CAS` - **C**ontent **A**ddressible **S**tore
 
-`deflate` - Elide a constant or IR by storing it in the cache and replacing it
-with a CAS reference.
-
 `inflate` - Replace an elided constant or IR by reading the referred-to object
 from the CAS.
 

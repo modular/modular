@@ -140,20 +140,17 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
                                         RCRef<RegionCache> regionCache,
                                         RCRef<TransformCache> transformCache,
                                         AnyAsyncValueRef chain,
-                                        mlir::PassManager &pm,
-                                        bool deflateTarget) {
+                                        mlir::PassManager &pm) {
   auto keyBuf = WriteableBuffer::get();
   pm.printAsTextualPipeline(*keyBuf);
-  *keyBuf << "deflate=" << deflateTarget;
 
   // Callback that runs the pass manager and puts the correct region hash attr
   // on the op.
-  auto runTransform = [&pm, regionCache = regionCache.copy(), deflateTarget](
+  auto runTransform = [&pm, regionCache = regionCache.copy()](
                           Operation *op, WriteableBufferRef buf,
                           AnyAsyncValueRef chain) -> AsyncValueRef<Chain> {
     TimeTraceScope traceScope(CacheProfilerEntry::create(
-        "Cache::cachedTransform(Operation *)::runTransform",
-        deflateTarget ? StringLiteral("(deflated)") : StringLiteral("")));
+        "Cache::cachedTransform(Operation *)::runTransform"));
     // Allocate a space to put the result of the pass manager (the emitted
     // diagnostics). We'll chain off that for the deflation.
     auto pmResult =
@@ -183,61 +180,31 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
     });
 
     auto out = AsyncValueRef<Chain>::allocate(pmResult.getRuntime());
-    // If we aren't deflating the target, then we need to just write the
-    // bytecode and return.
-    if (!deflateTarget) {
-      std::move(pmResult).andThenSync(
-          [op, buf = std::move(buf), out = out.copy()](
-              AsyncValueRef<std::vector<Diagnostic>> &&pmResult) mutable {
-            if (pmResult.isError())
-              return std::move(out).setToError(pmResult.takeDiagnostic());
+    // Just write the bytecode and return.
+    std::move(pmResult).andThenSync(
+        [op, buf = std::move(buf), out = out.copy()](
+            AsyncValueRef<std::vector<Diagnostic>> &&pmResult) mutable {
+          if (pmResult.isError())
+            return std::move(out).setToError(pmResult.takeDiagnostic());
 
-            // Write out the bytecode.
-            TimeTraceScope traceScope(
-                CacheProfilerEntry::create("writeBytecodeToFile"));
-            if (failed(mlir::writeBytecodeToFile(op, *buf))) {
-              return std::move(out).setToError(getMLIRDiagnostic(
-                  "failed to write bytecode file", op->getLoc()));
-            }
-
-            // Write out the diagnostics.
-            uint64_t bufSize = buf->getBuffer().size();
-            encodeDiagnostics(*pmResult, buf.copy());
-
-            // Write out the bytecode size as a footer so that we can step
-            // over it when reading the diagnostics. We encode this at the end
-            // to make sure that the bytecode is still aligned.
-            llvm::support::endian::Writer(*buf, llvm::endianness::little)
-                .write(bufSize);
-
-            std::move(out).emplace();
-          });
-      return out;
-    }
-
-    // Hang the deflation off the pass manager result chain.
-    auto deflate = deflateOp(op, regionCache.copy(), pmResult.copy());
-    // Once deflation has gone through, we can get the new region hash and
-    // store it in the cache.
-    std::move(deflate).andThenSync(
-        [op, buf = std::move(buf), out = out.copy(),
-         pmResult = pmResult.copy()](AsyncValueRef<Chain> &&deflate) mutable {
-          // Get the new region hashes and stuff them in the
-          // cache.
-          auto resultRegionHashes =
-              op->getAttrOfType<RegionHashArrayAttr>(getRegionHashAttrName());
-          if (!resultRegionHashes) {
+          // Write out the bytecode.
+          TimeTraceScope traceScope(
+              CacheProfilerEntry::create("writeBytecodeToFile"));
+          if (failed(mlir::writeBytecodeToFile(op, *buf))) {
             return std::move(out).setToError(getMLIRDiagnostic(
-                Error("could not find region hashes"), op->getLoc()));
+                "failed to write bytecode file", op->getLoc()));
           }
 
-          // Encode the diagnostics.
+          // Write out the diagnostics.
+          uint64_t bufSize = buf->getBuffer().size();
           encodeDiagnostics(*pmResult, buf.copy());
 
-          // Encode the region hashes.
-          *buf << resultRegionHashes;
-          // TODO: This currently requires a null terminator (MLIR bug #58964)
-          buf->write((char)0);
+          // Write out the bytecode size as a footer so that we can step
+          // over it when reading the diagnostics. We encode this at the end
+          // to make sure that the bytecode is still aligned.
+          llvm::support::endian::Writer(*buf, llvm::endianness::little)
+              .write(bufSize);
+
           std::move(out).emplace();
         });
     return out;
@@ -245,11 +212,9 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
 
   // Callback that on a cache hit reads the region hashes out of the cache and
   // places them on the operation.
-  auto onCacheHit = [deflateTarget](Operation *op,
-                                    BufferRef buf) -> ErrorOrSuccess {
+  auto onCacheHit = [](Operation *op, BufferRef buf) -> ErrorOrSuccess {
     TimeTraceScope traceScope(CacheProfilerEntry::create(
-        "Cache::cachedTransform(Operation *)::onCacheHit",
-        deflateTarget ? StringLiteral("(deflated)") : StringLiteral("")));
+        "Cache::cachedTransform(Operation *)::onCacheHit"));
     StringRef buffer = buf->getBuffer();
     MLIRContext *ctx = op->getContext();
 
@@ -262,24 +227,6 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
         ctx->getDiagEngine().emit(std::move(diag));
       return success();
     };
-
-    if (deflateTarget) {
-      // Read in the encoded diagnostics.
-      if (auto err = readDiagnostics(buffer))
-        return err;
-
-      // TODO: This currently requires a null terminator (MLIR bug #58964)
-      StringRef attrStr = buffer.drop_back();
-      Attribute newHashes = mlir::parseAttribute(attrStr, ctx);
-      if (!newHashes || !isa<RegionHashArrayAttr>(newHashes))
-        return Error("failed to parse the region hashes");
-
-      // Otherwise, replace the region hash array attr on the target, and
-      // we're done.
-      op->setAttr(getRegionHashAttrName(),
-                  cast<RegionHashArrayAttr>(newHashes));
-      return success();
-    }
 
     // Read in the cached diagnostics encoded after the bytecode. The footer
     // of the buffer contains the size of the bytecode section.
