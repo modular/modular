@@ -45,19 +45,7 @@ fn async_copy[
     # TODO: Constrained on device capability.
     constrained[size == 4 or size == 8 or size == 16]()
 
-    @parameter
-    if size == 4:
-        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.4", NoneType](
-            dst, src
-        )
-    elif size == 8:
-        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.8", NoneType](
-            dst, src
-        )
-    else:
-        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.16", NoneType](
-            dst, src
-        )
+    return async_copy[size](src.address, dst.address)
 
 
 @always_inline
