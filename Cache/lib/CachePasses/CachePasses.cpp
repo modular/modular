@@ -19,15 +19,9 @@ using namespace Cache;
 using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
-// DeflateSymbolsPass
+// Utilities
 //===----------------------------------------------------------------------===//
 
-namespace M::Cache {
-#define GEN_PASS_DEF_DEFLATESYMBOLS
-#include "Cache/CachePasses/CachePasses.h.inc"
-} // namespace M::Cache
-
-namespace {
 template <typename T>
 static ErrorOr<RCRef<BlobCache<T>>> createCache(StringRef cacheDir) {
   auto uriOr = URI::parse(cacheDir);
@@ -36,52 +30,7 @@ static ErrorOr<RCRef<BlobCache<T>>> createCache(StringRef cacheDir) {
   auto errOr = getDefaultBackendChain(*uriOr);
   if (errOr.isError())
     return errOr.takeError();
-  return RCRef<BlobCache<T>>::create(std::move(*errOr));
-}
-
-class DeflateSymbolsPass : public impl::DeflateSymbolsBase<DeflateSymbolsPass> {
-public:
-  /// Construct an instance of this pass with the provided runtime.
-  DeflateSymbolsPass(Runtime &rt) : Base::Base(), runtime(&rt) {}
-
-  /// Construct an instance of this pass without a runtime - the pass will
-  /// construct its own.
-  using Base::Base;
-
-  void runOnOperation() override {
-    auto cacheOr = createCache<RegionCacheKey>(cacheDir.getValue());
-    if (cacheOr.isError()) {
-      getOperation()->emitError() << cacheOr.getError();
-      signalPassFailure();
-      return;
-    }
-
-    // Deflate each symbol.
-    SmallVector<AnyAsyncValueRef> results;
-    getOperation().walk([&](Operation *op) {
-      if (!op->hasAttr(SymbolTable::getSymbolAttrName()))
-        return;
-
-      results.push_back(deflateOp(op, cacheOr->copy(),
-                                  AsyncValueRef<Chain>::createReady(*runtime)));
-      // Gotta wait cause it could be nested.
-      await(results.back());
-    });
-
-    for (auto &r : results)
-      if (r.isError()) {
-        getOperation()->emitError() << r.getDiagnostic().getMessage();
-        signalPassFailure();
-      }
-  }
-
-private:
-  Runtime *runtime = nullptr;
-};
-} // namespace
-
-std::unique_ptr<mlir::Pass> M::Cache::createDeflateSymbolsPass(Runtime &rt) {
-  return std::make_unique<DeflateSymbolsPass>(rt);
+  return RCRef<BlobCache<T>>::create(errOr.takeValue());
 }
 
 //===----------------------------------------------------------------------===//
@@ -195,7 +144,6 @@ std::unique_ptr<mlir::Pass> M::Cache::createInflateConstantsPass(Runtime &rt) {
 void M::Cache::registerCachePasses(Runtime &rt) {
   // Register the passes with the correct constructor - one that takes the
   // runtime as an argument.
-  mlir::registerPass([&]() { return Cache::createDeflateSymbolsPass(rt); });
   mlir::registerPass([&]() { return Cache::createInflateSymbolsPass(rt); });
   mlir::registerPass([&]() { return Cache::createInflateConstantsPass(rt); });
 }
