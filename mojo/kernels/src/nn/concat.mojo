@@ -1313,6 +1313,26 @@ fn _concat_gpu_elementwise[
     inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
     stream: Stream,
 ) raises:
+    # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel
+    @parameter
+    fn dispatch[idx: Int]() raises:
+        if idx == axis:
+            return _concat_gpu_elementwise[axis=idx](output, inputs, stream)
+
+    unroll[dispatch, rank]()
+
+
+@always_inline
+fn _concat_gpu_elementwise[
+    axis: Int,
+    rank: Int,
+    type: DType,
+    num_inputs: Int,
+](
+    output: NDBuffer[type, rank],
+    inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
+    stream: Stream,
+) raises:
     @parameter
     @always_inline
     fn per_output_elem[
@@ -1321,17 +1341,18 @@ fn _concat_gpu_elementwise[
         var in_index = out_index
         in_index[axis] = out_index[axis]
 
-        # can use binary search here to reduce num iters to log2(num_inputs)
+        @unroll
         for i in range(num_inputs):
             var input = inputs[i]
+            var input_shape = input.get_shape()
 
-            if in_index[axis] < input.get_shape()[axis]:
+            if in_index[axis] < input_shape[axis]:
                 output[rebind[StaticIntTuple[rank]](out_index)] = input[
                     rebind[StaticIntTuple[rank]](in_index)
                 ]
                 return
 
-            in_index[axis] -= input.get_shape()[axis]
+            in_index[axis] -= input_shape[axis]
 
     # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
     # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
@@ -1413,6 +1434,4 @@ fn _concat_gpu[
                 stream=stream,
             )
 
-    _concat_gpu_elementwise[rank, type, num_inputs](
-        output, axis, inputs, stream
-    )
+    _concat_gpu_elementwise(output, axis, inputs, stream)
