@@ -240,7 +240,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             x.data = Pointer[Int].alloc(length)
             for i in range(length):
                 x.data[i] = 0
-        return x ^
+        return x^
 
     fn print(self):
         var str: String = "("

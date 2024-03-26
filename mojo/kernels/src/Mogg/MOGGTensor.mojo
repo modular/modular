@@ -76,7 +76,7 @@ fn _get_start_indices_of_nth_subvolume[
             out[i] = curr_index % shape[i]
             curr_index //= shape[i]
 
-    return out ^
+    return out^
 
 
 fn _static_strides_from_shape[static_shape: DimList]() -> DimList:

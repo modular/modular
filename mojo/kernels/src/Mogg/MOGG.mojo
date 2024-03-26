@@ -629,8 +629,8 @@ fn elementwise_wrapper[
             ](
                 buffer.dynamic_shape,
             )
-            var task = MojoCallTask(coro ^, ctx)
-            (task ^)()
+            var task = MojoCallTask(coro^, ctx)
+            (task^)()
 
 
 # ===----------------------------------------------------------------------===#
@@ -2156,8 +2156,8 @@ fn gather[
             indices.dynamic_shape,
             output_shape,
         )
-        var task = MojoCallRaisingTask(coro ^, ctx)
-        (task ^)()
+        var task = MojoCallRaisingTask(coro^, ctx)
+        (task^)()
 
 
 # ===----------------------------------------------------------------------===#
