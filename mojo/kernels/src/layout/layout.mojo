@@ -56,10 +56,12 @@ struct Layout(Sized, Stringable, CollectionElement, EqualityComparable):
     var shape: IntTuple
     var stride: IntTuple
 
+    @always_inline
     fn __init__(inout self):
         self.shape = IntTuple()
         self.stride = IntTuple()
 
+    @always_inline
     fn __init__(inout self, shape: IntTuple, stride: IntTuple = IntTuple()):
         self.shape = shape
         if len(stride) == 0:
@@ -254,6 +256,7 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
     return coalesce(Layout(result_shape, result_stride))
 
 
+@always_inline
 fn apply_tiler[
     func: fn (Layout, Layout) -> Layout
 ](layout_a: Layout, tiler: LayoutList) -> Layout:

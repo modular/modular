@@ -59,8 +59,6 @@ fn is_tuple(t: IntTuple) -> Bool:
 
 # Python-style reduce functions
 # FIXME: Can we unify the two versions?
-
-
 fn reduce[
     T: AnyRegType, func: fn (owned a: T, b: IntTuple) capturing -> T
 ](t: IntTuple, initializer: T) -> T:
@@ -82,6 +80,7 @@ fn reduce[
 # IntTuple operations
 
 
+@always_inline
 fn flatten(t: IntTuple) -> IntTuple:
     @always_inline
     @parameter
@@ -136,6 +135,7 @@ fn sum(t: IntTuple) -> Int:
     return reduce[Int, reducer](t, 0)
 
 
+@always_inline
 fn product(t: IntTuple) -> Int:
     @always_inline
     @parameter
@@ -332,6 +332,7 @@ fn compatible(a: IntTuple, b: IntTuple) -> Bool:
 #    there exists a Shape C congruent to A such that compatible(elem_scale(A,C), B)
 # weakly_compatible is a partial order on A and B: A <= B
 #
+@always_inline
 fn weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
     fn predicate(a: IntTuple, b: IntTuple) -> Bool:
         return size(b) % int(a) == 0
@@ -413,6 +414,7 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
 # c2 = (idx / (s0 * s1)) % s2
 # ...
 #
+@always_inline
 fn idx2crd(
     idx: IntTuple, shape: IntTuple, _stride: IntTuple = IntTuple()
 ) -> IntTuple:
