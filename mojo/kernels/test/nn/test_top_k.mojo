@@ -69,7 +69,7 @@ fn test_case[
         sorted,
     )
 
-    var xxx_no_lifetimes = input ^  # intentionally bad name
+    var xxx_no_lifetimes = input^  # intentionally bad name
 
     for i in range(out_vals.storage.size):
         print(out_vals.storage[i], end="")

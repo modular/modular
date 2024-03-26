@@ -632,7 +632,7 @@ async fn async_gather[
                 )
         return _OptionalError()
     except e:
-        return _OptionalError(e ^)
+        return _OptionalError(e^)
 
 
 # ===----------------------------------------------------------------------===#
