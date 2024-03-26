@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
 # REQUIRES: cuda
-# RUN: %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.mlir | FileCheck %s
+# RUN: %mojo %s %S/mo.mlir
 
 from max.engine import (
     InferenceSession,
@@ -16,60 +16,45 @@ from max.engine import (
 from max.engine._context import _Device
 from sys import argv
 from tensor import Tensor, TensorShape
+from testing import assert_equal, assert_true
 from pathlib import Path
 
 
 fn test_model_metadata() raises:
-    # CHECK: test_model_metadata
-    print("====test_model_metadata")
-
     var args = argv()
 
-    # CHECK: 2
-    print(len(args))
+    assert_equal(len(args), 2)
 
-    # CHECK: mo.mlir
-    print(args[1])
+    assert_true("mo.mlir" in args[1])
 
     var model_path = args[1]
     var options = SessionOptions()
     options._set_device(_Device.CUDA)
     var session = InferenceSession(options)
     var compiled_model = session.load_model(Path(model_path))
-    # CHECK: 1
-    print(compiled_model.num_model_inputs())
+    assert_equal(compiled_model.num_model_inputs(), 1)
 
     var input_names = compiled_model.get_model_input_names()
-    # CHECK: input
     for name in input_names:
-        print(name[])
+        assert_equal(name[], "input")
 
-    # CHECK: input
-    print(input_names[0])
+    assert_equal(input_names[0], "input")
 
-    # CHECK: 1
-    print(compiled_model.num_model_outputs())
+    assert_equal(compiled_model.num_model_outputs(), 1)
 
     var output_names = compiled_model.get_model_output_names()
-    # CHECK: output
     for name in output_names:
-        print(name[])
+        assert_equal(name[], "output")
 
-    # CHECK: output
-    print(output_names[0])
+    assert_equal(output_names[0], "output")
 
 
 fn test_model() raises:
-    # CHECK: test_model
-    print("====test_model")
-
     var args = argv()
 
-    # CHECK: 2
-    print(len(args))
+    assert_equal(len(args), 2)
 
-    # CHECK: mo.mlir
-    print(args[1])
+    assert_true("mo.mlir" in args[1])
 
     var model_path = args[1]
 
@@ -89,14 +74,12 @@ fn test_model() raises:
     _ = input_tensor ^  # Keep inputs alive
     var output_tensor = outputs.get[DType.float32]("output")
 
-    # CHECK: 5xfloat32
-    print(output_tensor.spec().__str__())
+    assert_equal(str(output_tensor.spec()), "5xfloat32")
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), 4.0, 2.0, -5.0, 3.0, 6.0
     )
-    # CHECK: True
-    print(expected_output == output_tensor)
+    assert_equal(expected_output, output_tensor)
 
 
 fn main() raises:

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
 # REQUIRES: mtorch
-# RUN: %mojo %s %torchscript_relu_model | FileCheck %s
+# RUN: %mojo -debug-level full %s %torchscript_relu_model
 
 from max.engine import (
     InferenceSession,
@@ -21,9 +21,6 @@ from pathlib import Path
 
 
 fn test_pytorch_model() raises:
-    # CHECK: test_pytorch_model
-    print("====test_pytorch_model")
-
     var args = argv()
     var model_path = args[1]
 
@@ -32,25 +29,18 @@ fn test_pytorch_model() raises:
     config.add_input_spec(TensorSpec(DType.float32, 3, 100, 100))
     var compiled_model = session.load_model(Path(model_path), config)
 
-    # CHECK: 1
-    print(compiled_model.num_model_inputs())
+    assert_equal(compiled_model.num_model_inputs(), 1)
 
     var input_names = compiled_model.get_model_input_names()
-    # CHECK: x
     for name in input_names:
-        print(name[])
+        assert_equal(name[], "x")
 
-    # CHECK: x
-    print(input_names[0])
+    assert_equal(input_names[0], "x")
 
-    # CHECK: 1
-    print(compiled_model.num_model_outputs())
+    assert_equal(compiled_model.num_model_outputs(), 1)
 
 
 fn test_pytorch_model2() raises:
-    # CHECK: test_pytorch_model2
-    print("====test_pytorch_model2")
-
     var args = argv()
     var model_path = args[1]
 
@@ -63,25 +53,18 @@ fn test_pytorch_model2() raises:
     config.add_input_spec(shape, DType.float32)
     var compiled_model = session.load_model(Path(model_path), config)
 
-    # CHECK: 1
-    print(compiled_model.num_model_inputs())
+    assert_equal(compiled_model.num_model_inputs(), 1)
 
     var input_names = compiled_model.get_model_input_names()
-    # CHECK: x
     for name in input_names:
-        print(name[])
+        assert_equal(name[], "x")
 
-    # CHECK: x
-    print(input_names[0])
+    assert_equal(input_names[0], "x")
 
-    # CHECK: 1
-    print(compiled_model.num_model_outputs())
+    assert_equal(compiled_model.num_model_outputs(), 1)
 
 
 fn test_model_execute() raises:
-    # CHECK: test_pytorch_model2
-    print("====test_pytorch_model2")
-
     var args = argv()
     var model_path = args[1]
 

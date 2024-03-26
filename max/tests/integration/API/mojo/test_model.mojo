@@ -16,7 +16,7 @@
 # RUN: mkdir -p %t/bin
 # RUN: printf '#!/bin/bash\nexec "%%s" "$@"\n' %pyexe > %t/bin/python3
 # RUN: chmod +x %t/bin/python3
-# RUN: env "PATH=%t/bin:$PATH" %mojo -I %engine_pkg_dir -I %test_utils_pkg_dir %s %S/mo.mlir %S/model_different_input_output.mlir %S/model_different_dtypes.mlir | FileCheck %s
+# RUN: env "PATH=%t/bin:$PATH" %mojo -debug-level full %s %S/mo.mlir %S/model_different_input_output.mlir %S/model_different_dtypes.mlir
 
 from max.engine import (
     InferenceSession,
@@ -26,47 +26,40 @@ from max.engine import (
 )
 from sys import argv
 from tensor import Tensor, TensorShape
+from testing import assert_equal, assert_false, assert_true
 from collections import List
 from pathlib import Path
 from python import Python
 
 
-# CHECK-LABEL: ==== test_model_num_io_and_names
 fn test_model_num_io_and_names() raises:
-    print("==== test_model_num_io_and_names")
-
     var args = argv()
     var model_path = args[1]
 
     var session = InferenceSession()
     var compiled_model = session.load_model(Path(model_path))
-    # CHECK: 1
-    print(compiled_model.num_model_inputs())
+    assert_equal(compiled_model.num_model_inputs(), 1)
 
     var input_names = compiled_model.get_model_input_names()
-    # CHECK: input
+    assert_equal(len(input_names), 1)
+
     for name in input_names:
-        print(name[])
+        assert_equal(name[], "input")
 
-    # CHECK: input
-    print(input_names[0])
+    assert_equal(input_names[0], "input")
 
-    # CHECK: 1
-    print(compiled_model.num_model_outputs())
+    assert_equal(compiled_model.num_model_outputs(), 1)
 
     var output_names = compiled_model.get_model_output_names()
-    # CHECK: output
+    assert_equal(len(output_names), 1)
+
     for name in output_names:
-        print(name[])
+        assert_equal(name[], "output")
 
-    # CHECK: output
-    print(output_names[0])
+    assert_equal(output_names[0], "output")
 
 
-# CHECK-LABEL: ==== test_model_metadata
 fn test_model_metadata() raises:
-    print("==== test_model_metadata")
-
     var args = argv()
     var model_path = args[1]
 
@@ -76,69 +69,51 @@ fn test_model_metadata() raises:
     var input_metadata = compiled_model.get_model_input_metadata()
     var num_inputs = len(input_metadata)
 
-    # CHECK: 1
-    print(num_inputs)
+    assert_equal(num_inputs, 1)
 
-    # CHECK: input
-    # CHECK: float32
     for input in input_metadata:
-        print(input[].get_name())
-        print(input[].get_dtype())
+        assert_equal(input[].get_name(), "input")
+        assert_equal(str(input[].get_dtype()), "float32")
 
     var output_metadata = compiled_model.get_model_output_metadata()
     var num_outputs = len(output_metadata)
 
-    # CHECK: 1
-    print(num_outputs)
+    assert_equal(num_outputs, 1)
 
-    # CHECK: output
-    # CHECK: float32
     for output in output_metadata:
-        print(output[].get_name())
-        print(output[].get_dtype())
+        assert_equal(output[].get_name(), "output")
+        assert_equal(str(output[].get_dtype()), "float32")
 
 
-# CHECK-LABEL: ==== test_model_mismatched_input_output_count
 fn test_model_mismatched_input_output_count() raises:
-    print("==== test_model_mismatched_input_output_count")
-
     var args = argv()
     var model_path = args[2]
 
     var session = InferenceSession()
     var compiled_model = session.load_model(Path(model_path))
-    # CHECK: 2
-    print(compiled_model.num_model_inputs())
+    assert_equal(compiled_model.num_model_inputs(), 2)
 
     var input_names = compiled_model.get_model_input_names()
 
-    # CHECK: 2
-    print(len(input_names))
+    assert_equal(len(input_names), 2)
 
-    # CHECK: input0
-    # CHECK: input1
+    var count = 0
     for name in input_names:
-        print(name[])
+        assert_equal(name[], "input" + str(count))
+        count += 1
 
-    # CHECK: input1
-    print(input_names[1])
+    assert_equal(input_names[1], "input1")
 
-    # CHECK: 1
-    print(compiled_model.num_model_outputs())
+    assert_equal(compiled_model.num_model_outputs(), 1)
 
     var output_names = compiled_model.get_model_output_names()
-    # CHECK: output
     for name in output_names:
-        print(name[])
+        assert_equal(name[], "output")
 
-    # CHECK: output
-    print(output_names[0])
+    assert_equal(output_names[0], "output")
 
 
-# CHECK-LABEL: ==== test_model
 fn test_model() raises:
-    print("==== test_model")
-
     var args = argv()
     var model_path = args[1]
 
@@ -156,20 +131,15 @@ fn test_model() raises:
     _ = input_tensor ^  # Keep inputs alive
     var output_tensor = outputs.get[DType.float32]("output")
 
-    # CHECK: 5xfloat32
-    print(output_tensor.spec().__str__())
+    assert_equal(str(output_tensor.spec()), "5xfloat32")
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), 4.0, 2.0, -5.0, 3.0, 6.0
     )
-    # CHECK: True
-    print(expected_output == output_tensor)
+    assert_equal(expected_output, output_tensor)
 
 
-# CHECK-LABEL: ==== test_model_tuple_input
 fn test_model_tuple_input() raises:
-    print("==== test_model_tuple_input")
-
     var args = argv()
     var model_path = args[1]
 
@@ -183,20 +153,15 @@ fn test_model_tuple_input() raises:
     var outputs = model.execute(NamedTensor("input", input_tensor ^))
     var output_tensor = outputs.get[DType.float32]("output")
 
-    # CHECK: 5xfloat32
-    print(output_tensor.spec().__str__())
+    assert_equal(str(output_tensor.spec()), "5xfloat32")
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), List[Float32](4.0, 2.0, -5.0, 3.0, 6.0)
     )
-    # CHECK: True
-    print(expected_output == output_tensor)
+    assert_equal(expected_output, output_tensor)
 
 
-# CHECK-LABEL: ==== test_model_tuple_input_different_dtypes
 fn test_model_tuple_input_different_dtypes() raises:
-    print("==== test_model_tuple_input_different_dtypes")
-
     var args = argv()
     var model_path = args[3]
 
@@ -215,17 +180,12 @@ fn test_model_tuple_input_different_dtypes() raises:
     )
     var output_tensor = outputs.get[DType.int32]("output")
 
-    # CHECK: 5xint32
-    print(output_tensor.spec())
+    assert_equal(output_tensor.spec(), "5xint32")
 
-    # CHECK: True
-    print(input_tensor_int == output_tensor)
+    assert_equal(input_tensor_int, output_tensor)
 
 
-# CHECK-LABEL: ==== test_model_tuple_input_dynamic
 fn test_model_tuple_input_dynamic() raises:
-    print("==== test_model_tuple_input_dynamic")
-
     var args = argv()
     var model_path = args[1]
 
@@ -241,20 +201,15 @@ fn test_model_tuple_input_dynamic() raises:
     var outputs = model.execute(NamedTensor(tensor_name, input_tensor ^))
     var output_tensor = outputs.get[DType.float32]("output")
 
-    # CHECK: 5xfloat32
-    print(str(output_tensor.spec()))
+    assert_equal(str(output_tensor.spec()), "5xfloat32")
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), List[Float32](4.0, 2.0, -5.0, 3.0, 6.0)
     )
-    # CHECK: True
-    print(expected_output == output_tensor)
+    assert_equal(expected_output, output_tensor)
 
 
-# CHECK-LABEL: ==== test_model_py_dict_execute
 fn test_model_py_dict_execute() raises:
-    print("==== test_model_py_dict_execute")
-
     var model_path = Path(argv()[1])
     var session = InferenceSession()
     var model = session.load_model(model_path)
@@ -264,14 +219,12 @@ fn test_model_py_dict_execute() raises:
     var outputs = model.execute(inputs)
     var output_tensor = outputs.get[DType.float32]("output")
 
-    # CHECK: 5xfloat32
-    print(str(output_tensor.spec()))
+    assert_equal(str(output_tensor.spec()), "5xfloat32")
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), List[Float32](3.0, 2.0, -4.0, 5.0, 9.0)
     )
-    # CHECK: True
-    print(expected_output == output_tensor)
+    assert_equal(expected_output, output_tensor)
 
 
 fn main() raises:
