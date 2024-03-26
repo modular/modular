@@ -12,6 +12,7 @@ from sys.info import simdwidthof, sizeof
 
 from algorithm.functional import (
     _elementwise_impl,
+    _elementwise_impl_gpu,
     _get_start_indices_of_nth_subvolume,
     sync_parallelize,
 )
@@ -1302,6 +1303,49 @@ fn _concat_inner_most_single_dim[
 
 
 @always_inline
+fn _concat_gpu_elementwise[
+    rank: Int,
+    type: DType,
+    num_inputs: Int,
+](
+    output: NDBuffer[type, rank],
+    axis: Int,
+    inputs: StaticTuple[NDBuffer[type, rank], num_inputs],
+    stream: Stream,
+) raises:
+    @parameter
+    @always_inline
+    fn per_output_elem[
+        simd_width: Int, _rank: Int
+    ](out_index: StaticIntTuple[_rank]):
+        var in_index = out_index
+        in_index[axis] = out_index[axis]
+
+        # can use binary search here to reduce num iters to log2(num_inputs)
+        for i in range(num_inputs):
+            var input = inputs[i]
+
+            if in_index[axis] < input.get_shape()[axis]:
+                output[rebind[StaticIntTuple[rank]](out_index)] = input[
+                    rebind[StaticIntTuple[rank]](in_index)
+                ]
+                return
+
+            in_index[axis] -= input.get_shape()[axis]
+
+    # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
+    # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
+    # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
+    # Because the inner dim is contiguous we will get coalesced memory access
+    # using the elementwise generator with simd_width=1.
+    _elementwise_impl_gpu[
+        per_output_elem,
+        1,
+        rank,
+    ](output.get_shape(), stream)
+
+
+@always_inline
 fn _concat_gpu[
     rank: Int,
     type: DType,
@@ -1340,26 +1384,6 @@ fn _concat_gpu[
     if outer_dims == 1:
         return _concat_buffers_contiguously()
 
-    @parameter
-    @always_inline
-    fn per_output_elem[
-        simd_width: Int, _rank: Int
-    ](out_index: StaticIntTuple[_rank]):
-        var in_index = out_index
-        in_index[axis] = out_index[axis]
-
-        # can use binary search here to reduce num iters to log2(num_inputs)
-        for i in range(num_inputs):
-            var input = inputs[i]
-
-            if in_index[axis] < input.get_shape()[axis]:
-                output[rebind[StaticIntTuple[rank]](out_index)] = input[
-                    rebind[StaticIntTuple[rank]](in_index)
-                ]
-                return
-
-            in_index[axis] -= input.get_shape()[axis]
-
     if axis == rank - 1:
         var inner_most_unit_dim = True
         for i in range(num_inputs):
@@ -1389,15 +1413,6 @@ fn _concat_gpu[
                 stream=stream,
             )
 
-    # Can picture output reshaped to 3D: output_reshape = reshape(output, dims=[-1, concat_dim, -1])
-    # where concat_dim = inputs[0][axis] + ... + inputs[n-1][axis].
-    # Slices of the innermost dim of output_reshape are contiguous in the corresponding input.
-    # Because the inner dim is contiguous we will get coalesced memory access
-    # using the elementwise generator with simd_width=1.
-    _elementwise_impl[
-        per_output_elem,
-        1,
-        rank,
-        use_blocking_impl=False,
-        target="cuda",
-    ](output.get_shape())
+    _concat_gpu_elementwise[rank, type, num_inputs](
+        output, axis, inputs, stream
+    )
