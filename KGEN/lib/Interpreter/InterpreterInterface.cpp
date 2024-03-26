@@ -345,13 +345,13 @@ InterpreterState::externalizeMemory(Region &entry,
     }
 
     // Now unmap the memory.
-    std::vector<M::MemoryBlob> blobs;
+    std::vector<MemoryBlobAttr> blobs;
     for (const MemoryTable &table : memory) {
       for (const MemoryBlob &blob : table.blobs) {
         if (blob.isFreed())
           continue;
 
-        SmallVector<M::MemoryBlob::PointerRegion> pointerRegions;
+        SmallVector<PointerRegion> pointerRegions;
         if (blob.pointerRegions) {
           assert(blob.isOwned() && "const memory cannot have pointers");
           int index = -1;
@@ -367,8 +367,8 @@ InterpreterState::externalizeMemory(Region &entry,
             if (mem.isError())
               continue;
             auto [memBlob, offset] = mem.takeValue();
-            pointerRegions.push_back(M::MemoryBlob::PointerRegion{
-                index, blobIndices.at(&memBlob), offset});
+            pointerRegions.push_back(
+                PointerRegion{index, blobIndices.at(&memBlob), offset});
           }
         }
 
@@ -378,7 +378,7 @@ InterpreterState::externalizeMemory(Region &entry,
             blob.isOwned() ? blobMgr.getOrAddBlobResource(blob.getOwned(),
                                                           blob.size, blob.align)
                            : blob.getHandle();
-        blobs.emplace_back(hdl, table.kind, std::move(pointerRegions));
+        blobs.push_back(MemoryBlobAttr::get(hdl, table.kind, pointerRegions));
       }
     }
     interpreterMemorySpace = MemorySpaceAttr::get(ctx, blobs);
@@ -424,7 +424,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
       return it->second;
     // Process and intern the blobs.
     InternedMemorySpace map;
-    for (const M::MemoryBlob &blob : space.getValue()) {
+    for (MemoryBlobAttr blob : space.getValue()) {
       MemoryTable &table = getTable(blob.getKind());
 
       // Constant global is mapped directly into the interpreter.
@@ -446,7 +446,7 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
 
     // Now that all the blobs have been processed, map any pointer values.
     for (auto [blob, tabIdx] : llvm::zip(space.getValue(), map.blobs)) {
-      for (const M::MemoryBlob::PointerRegion &ptr : blob.getPointerRegions()) {
+      for (const PointerRegion &ptr : blob.getPointerRegions()) {
         auto [tab, blobIdx] = tabIdx;
         MemoryBlob *interned = &tab->blobs[blobIdx];
         assert(interned->isOwned() && "const memory cannot have pointers");

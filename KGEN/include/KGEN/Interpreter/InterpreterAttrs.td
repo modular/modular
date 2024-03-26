@@ -10,6 +10,7 @@
 include "KGEN/Interpreter/InterpreterDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/OpAsmInterface.td"
 
 class InterpreterAttr<string attrName, string attrMnemonic,
                       list<Trait> traits = []>
@@ -71,11 +72,43 @@ def StoreToMemAttr : InterpreterAttr<"StoreToMem", "store_to_mem",
 }
 
 //===----------------------------------------------------------------------===//
+// MemoryBlobAttr
+//===----------------------------------------------------------------------===//
+
+def MemoryBlobAttr : InterpreterAttr<"MemoryBlob", "memory_blob"> {
+  let summary = "represents a single interpreter memory blob";
+  let description = [{
+    The `#interp.memory_blob` attribute represents a single interpreter memory
+    blob, which backs a single allocation. It contains a reference to the
+    underlying resource that contains the memory value, the kind of allocation,
+    and the tracked pointer regions inside the blob.
+  }];
+
+  let parameters = (ins
+    ResourceHandleParameter<"MemoryHandle">:$handle,
+    "MemoryKind":$kind,
+    ArrayRefParameter<"PointerRegion">:$pointerRegions
+  );
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+        "MemoryHandle":$handle,
+        "MemoryKind":$kind,
+        "ArrayRef<PointerRegion>":$pointerRegions), [{
+      return $_get(handle.getDialect()->getContext(), handle, kind,
+                   pointerRegions);
+    }]>
+  ];
+
+  let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // MemorySpaceAttr
 //===----------------------------------------------------------------------===//
 
 def MemorySpaceAttr : ArrayOfAttr<InterpreterDialect, "MemorySpace",
-                                  "memory_space", "MemoryBlob"> {
+                                  "memory_space", "MemoryBlobAttr"> {
   let summary = "IR reprsentation of a memory space and values";
   let description = [{
     The `#interp.memory_space` attribute describes an abstract memory space

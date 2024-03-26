@@ -630,7 +630,7 @@ InterpreterMemoryConverter::MaterializationScope::getOrMaterialize(
   auto ptrType = LLVM::LLVMPointerType::get(b.getContext());
 
   // First emit the allocations and the memcpy's.
-  for (const MemoryBlob &blob : space) {
+  for (MemoryBlobAttr blob : space) {
     if (blob.getKind() == MemoryKind::ConstGlobal) {
       materialized.emplace_back(
           imc.getOrCreateGlobal(b.getLoc(), blob.getHandle()));
