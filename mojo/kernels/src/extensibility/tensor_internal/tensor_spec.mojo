@@ -74,7 +74,7 @@ struct TensorSpec(Stringable, CollectionElement, EqualityComparable):
           type: The dtype of the specification.
           shape: The shapes to initialize the shape with.
         """
-        var owned_shape = shape ^
+        var owned_shape = shape^
         var rep = _as_rep16(owned_shape._rep)
         # Set to null so dims won't get freed for RepOutOfLine.
         owned_shape._rep.ptr = DTypePointer[DType.invalid]()
@@ -99,7 +99,7 @@ struct TensorSpec(Stringable, CollectionElement, EqualityComparable):
         Args:
             existing: The spec to move.
         """
-        self.shape = existing.shape ^
+        self.shape = existing.shape^
         existing.shape = TensorShape()
 
     @always_inline

@@ -223,7 +223,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         Args:
           shape: The tensor shape.
         """
-        self = Tensor[dtype](TensorSpec(dtype, shape ^))
+        self = Tensor[dtype](TensorSpec(dtype, shape^))
 
     @always_inline
     fn __init__(inout self, owned spec: TensorSpec):
@@ -248,7 +248,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           ptr: The data pointer.
           shape: The tensor shapes.
         """
-        self = Tensor[dtype](ptr, TensorSpec(dtype, shape ^))
+        self = Tensor[dtype](ptr, TensorSpec(dtype, shape^))
 
     @always_inline
     fn __init__(
@@ -261,7 +261,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           ptr: The data pointer.
           spec: The tensor spec.
         """
-        self._spec = spec ^
+        self._spec = spec^
         self._ptr = ptr
 
     @always_inline
@@ -336,7 +336,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         Args:
             existing: The tensor to move.
         """
-        self._spec = existing._spec ^
+        self._spec = existing._spec^
         self._ptr = existing._ptr
         existing._spec = TensorSpec()
         existing._ptr = DTypePointer[dtype]()
@@ -1070,7 +1070,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
                     pass
             else:
                 output_shape.append(self.dim(i))
-        return output_shape ^
+        return output_shape^
 
     fn argmax(self, *, axis: Int = -1) raises -> Self:
         """
@@ -1246,7 +1246,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         if spec.num_elements() == 0:
             return tensor
         memcpy(tensor.data(), bitcast[dtype](data), spec.num_elements())
-        _ = bytes ^
+        _ = bytes^
         return tensor
 
 
@@ -1278,7 +1278,7 @@ fn _serialize_as_tensor[
     alias size = sizeof[type]()
     var bytes = Tensor[DType.int8](size)
     memcpy(bytes.data(), DTypePointer[DType.int8](self_ptr.address), size)
-    return bytes ^
+    return bytes^
 
 
 fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
