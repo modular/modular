@@ -104,13 +104,15 @@ MemoryHandle DialectResourceManager::getOrAddResource(ArrayRef<char> data,
   ResourceEntry *entry =
       resources.modify([&](llvm::StringMap<ResourceEntry> &entries) {
         auto it = entries.try_emplace(key, ResourceEntry());
-        if (it.second) {
-          it.first->getValue().key = it.first->getKey();
-          it.first->getValue().updateValue(
-              kind,
-              mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(data, align));
+        ResourceEntry &entry = it.first->getValue();
+        if (it.second)
+          entry.key = it.first->getKey();
+        if (!entry.getBlob()) {
+          mlir::AsmResourceBlob blob =
+              mlir::HeapAsmResourceBlob::allocateAndCopyWithAlign(data, align);
+          entry.updateValue(kind, std::move(blob));
         }
-        return &it.first->second;
+        return &entry;
       });
   if (!entry->getBlob()) {
     llvm::report_fatal_error("failed to emplace interpreter blob for: " +
