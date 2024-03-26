@@ -9,7 +9,7 @@ Holds the input and output tensors for a model.
 from buffer import Buffer
 from memory.unsafe import bitcast, DTypePointer
 from sys.ffi import DLHandle
-from tensor import Tensor, TensorShape
+from tensor import Tensor, TensorShape, TensorSpec
 from .session import InferenceSession
 from ._context import CRuntimeContext
 from ._utils import call_dylib_func, exchange
@@ -108,6 +108,33 @@ struct TensorMap(SizedRaising):
             bitcast[DType.invalid](value.data()), spec, self._lib
         )
         key._strref_keepalive()
+
+    fn borrow[
+        type: DType
+    ](self, key: String, spec: TensorSpec, ptr: DTypePointer[type]) raises:
+        """Borrow the given pointer into the map at the key location.
+           User needs to make sure the backing array is alive for
+           the duration of map.
+
+        Parameters:
+            type: DType of tensor being borrowed.
+
+        Args:
+            key: Name of tensor in map.
+            spec: The tensor spec.
+            ptr: The tensor pointer.
+        """
+        var tensor_spec = EngineTensorSpec(
+            key._strref_dangerous(),
+            spec,
+            self._lib,
+            self._session,
+        )
+        self._ptr.borrow_tensor_by_name(
+            ptr.bitcast[DType.invalid](),
+            tensor_spec,
+            self._lib,
+        )
 
     fn borrow(self, key: String, value: EngineTensorView) raises:
         """Borrow the given tensor view into the map at the key location.

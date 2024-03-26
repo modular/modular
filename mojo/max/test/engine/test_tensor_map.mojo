@@ -25,17 +25,25 @@ fn test_tensor_map() raises:
     assert_equal(len(map), 0)
 
     map.borrow("tensor", t1)
+    map.borrow(
+        "tensor2",
+        t1.spec(),
+        t1.data(),
+    )
 
-    assert_equal(len(map), 1)
+    assert_equal(len(map), 2)
     var t2 = map.get[DType.float32]("tensor")
 
-    assert_equal(len(map), 1)
+    assert_equal(len(map), 2)
 
     var t3 = map.get[DType.float32]("tensor")
 
     assert_equal(t1, t2)
-
     assert_equal(t1, t3)
+
+    var t4 = map.get[DType.float32]("tensor2")
+
+    assert_equal(t1, t4)
 
 
 fn test_tensor_map_value() raises:
