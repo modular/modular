@@ -45,25 +45,6 @@ def InflateSymbols : Pass<"inflate-symbols", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// DeflateConstants
-//===----------------------------------------------------------------------===//
-
-def DeflateConstants : Pass<"deflate-constants", "mlir::ModuleOp"> {
-  let summary = "Deflate constants and put them in the cache.";
-  let description = [{
-    This pass deflates constants by taking their resources and putting them
-    into the cache.
-  }];
-
-  let options = [
-    Option<"cacheDir", "cache-dir", "std::string", "",
-           "The cache directory to use.">,
-  ];
-
-  let dependentDialects = ["CacheDialect", "mlir::arith::ArithDialect"];
-}
-
-//===----------------------------------------------------------------------===//
 // InflateConstants
 //===----------------------------------------------------------------------===//
 

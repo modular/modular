@@ -140,71 +140,6 @@ std::unique_ptr<mlir::Pass> M::Cache::createInflateSymbolsPass(Runtime &rt) {
 }
 
 //===----------------------------------------------------------------------===//
-// DeflateConstantsPass
-//===----------------------------------------------------------------------===//
-
-namespace M::Cache {
-#define GEN_PASS_DEF_DEFLATECONSTANTS
-#include "Cache/CachePasses/CachePasses.h.inc"
-} // namespace M::Cache
-
-namespace {
-class DeflateConstantsPass
-    : public impl::DeflateConstantsBase<DeflateConstantsPass> {
-public:
-  /// Create pass when options and runtime are known.
-  DeflateConstantsPass(const DeflateConstantsOptions &opts, Runtime &rt)
-      : Base::Base(opts), runtime(&rt) {}
-
-  /// For testing tools: Create pass with given runtime, options will be
-  /// assigned by MLIR pass machinery.
-  DeflateConstantsPass(Runtime &rt) : runtime(&rt) {}
-
-  /// For testing tools: Create poss which will create and destroy its own
-  /// runtime.
-  using Base::Base;
-
-  void runOnOperation() override {
-    auto cacheOr = createCache<DataCacheKey>(cacheDir.getValue());
-    if (cacheOr.isError()) {
-      getOperation()->emitError() << cacheOr.getError();
-      signalPassFailure();
-      return;
-    }
-
-    // Deflate each constant.
-    SmallVector<AnyAsyncValueRef> results;
-    getOperation().walk([&](Operation *op) {
-      if (op->hasTrait<OpTrait::ConstantLike>())
-        results.push_back(deflateConstant(
-            op, cacheOr->copy(), AsyncValueRef<Chain>::createReady(*runtime)));
-    });
-
-    await(results);
-    for (auto &r : results)
-      if (r.isError()) {
-        getOperation()->emitError() << r.getDiagnostic().getMessage();
-        signalPassFailure();
-      }
-  }
-
-private:
-  Runtime *runtime = nullptr;
-};
-} // namespace
-
-std::unique_ptr<mlir::Pass>
-M::Cache::createDeflateConstantsPass(const DeflateConstantsOptions &opts,
-                                     LLCL::Runtime &rt) {
-  return std::make_unique<DeflateConstantsPass>(opts, rt);
-}
-
-std::unique_ptr<mlir::Pass>
-M::Cache::createDeflateConstantsPass(LLCL::Runtime &rt) {
-  return std::make_unique<DeflateConstantsPass>(rt);
-}
-
-//===----------------------------------------------------------------------===//
 // InflateSymbolsPass
 //===----------------------------------------------------------------------===//
 
@@ -262,6 +197,5 @@ void M::Cache::registerCachePasses(Runtime &rt) {
   // runtime as an argument.
   mlir::registerPass([&]() { return Cache::createDeflateSymbolsPass(rt); });
   mlir::registerPass([&]() { return Cache::createInflateSymbolsPass(rt); });
-  mlir::registerPass([&]() { return Cache::createDeflateConstantsPass(rt); });
   mlir::registerPass([&]() { return Cache::createInflateConstantsPass(rt); });
 }

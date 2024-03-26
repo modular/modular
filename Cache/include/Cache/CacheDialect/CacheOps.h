@@ -32,13 +32,6 @@ struct DataCacheKey {
 /// Convenience typedef to reduce typing.
 using DataCache = BlobCache<DataCacheKey>;
 
-/// Store large constant attrs on `constant` in the cache. Currently, this is
-/// done by outlining the DenseResourceElementsAttrs on `constant` and replacing
-/// them with a ConstantHashAttr with the same type.
-LLCL::AsyncValueRef<LLCL::Chain> deflateConstant(Operation *constant,
-                                                 RCRef<DataCache> cache,
-                                                 LLCL::AnyAsyncValueRef chain);
-
 /// Pull cached constants represented by `ConstantHashAttr` from the cache and
 /// replace them on `constant`.
 LLCL::AsyncValueRef<LLCL::Chain> inflateConstant(Operation *constant,
