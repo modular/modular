@@ -61,7 +61,7 @@ fn bench_concat[
         @parameter
         @always_inline
         fn kernel_launch(stream: Stream) raises:
-            _concat_gpu_elementwise[rank, type](output, axis, inputs, stream)
+            _concat_gpu_elementwise(output, axis, inputs, stream)
 
         b.iter_custom[time_async_cuda_kernel[kernel_launch]]()
 
