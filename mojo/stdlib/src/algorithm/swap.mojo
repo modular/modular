@@ -25,6 +25,6 @@ fn swap[T: Movable](inout lhs: T, inout rhs: T):
         lhs: Argument value swapped with rhs.
         rhs: Argument value swapped with lhs.
     """
-    var tmp = lhs ^
-    lhs = rhs ^
-    rhs = tmp ^
+    var tmp = lhs^
+    lhs = rhs^
+    rhs = tmp^

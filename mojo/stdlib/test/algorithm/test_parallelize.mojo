@@ -53,7 +53,7 @@ fn test_async_parallelize():
     )
 
     with Runtime() as rt:
-        rt.run[NoneType](coro ^)
+        rt.run[NoneType](coro^)
 
     # CHECK-NOT: ERROR
     for i in range(len(vector)):

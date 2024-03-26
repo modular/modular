@@ -360,10 +360,10 @@ async fn async_parallelize[
     var tg = TaskGroup(rt)
     for i in range(num_work_items):
         var task = tg.create_task[NoneType](task_fn(i))
-        tasks.add(task ^)
+        tasks.add(task^)
 
     await tg
-    _ = tasks ^
+    _ = tasks^
 
 
 @always_inline
@@ -450,11 +450,11 @@ fn sync_parallelize[
     for i in range(num_per_lq_tasks):
         for j in range(num_threads):
             var task = tg.create_task[NoneType](task_fn(count), j)
-            tasks.add(task ^)
+            tasks.add(task^)
             count += 1
     for k in range(num_global_queue_tasks):
         var task = tg.create_task[NoneType](task_fn(count))
-        tasks.add(task ^)
+        tasks.add(task^)
         count += 1
 
     # execute Nth task inline. When using local queues, we need to know
@@ -462,7 +462,7 @@ fn sync_parallelize[
     # This involves plumbing workerIDTLS from the threadpool. It may be
     # worth to do this. Until then we schedule all tasks through addTask
     tg.wait()
-    _ = tasks ^
+    _ = tasks^
 
 
 @always_inline
