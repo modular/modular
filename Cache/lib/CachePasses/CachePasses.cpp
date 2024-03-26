@@ -88,62 +88,8 @@ std::unique_ptr<mlir::Pass> M::Cache::createInflateSymbolsPass(Runtime &rt) {
   return std::make_unique<InflateSymbolsPass>(rt);
 }
 
-//===----------------------------------------------------------------------===//
-// InflateSymbolsPass
-//===----------------------------------------------------------------------===//
-
-namespace M::Cache {
-#define GEN_PASS_DEF_INFLATECONSTANTS
-#include "Cache/CachePasses/CachePasses.h.inc"
-} // namespace M::Cache
-
-namespace {
-class InflateConstantsPass
-    : public impl::InflateConstantsBase<InflateConstantsPass> {
-public:
-  /// Construct an instance of this pass with the provided runtime.
-  InflateConstantsPass(Runtime &rt) : Base::Base(), runtime(&rt) {}
-
-  /// Construct an instance of this pass without a runtime - the pass will
-  /// construct its own.
-  using Base::Base;
-
-  void runOnOperation() override {
-    auto cacheOr = createCache<DataCacheKey>(cacheDir.getValue());
-    if (cacheOr.isError()) {
-      getOperation()->emitError() << cacheOr.getError();
-      signalPassFailure();
-      return;
-    }
-
-    // Inflate each constant.
-    SmallVector<AnyAsyncValueRef> results;
-    getOperation().walk([&](Operation *op) {
-      if (op->hasTrait<OpTrait::ConstantLike>())
-        results.push_back(inflateConstant(
-            op, cacheOr->copy(), AsyncValueRef<Chain>::createReady(*runtime)));
-    });
-
-    await(results);
-    for (auto &r : results)
-      if (r.isError()) {
-        getOperation()->emitError() << r.getDiagnostic().getMessage();
-        signalPassFailure();
-      }
-  }
-
-private:
-  Runtime *runtime = nullptr;
-};
-} // namespace
-
-std::unique_ptr<mlir::Pass> M::Cache::createInflateConstantsPass(Runtime &rt) {
-  return std::make_unique<InflateConstantsPass>(rt);
-}
-
 void M::Cache::registerCachePasses(Runtime &rt) {
   // Register the passes with the correct constructor - one that takes the
   // runtime as an argument.
   mlir::registerPass([&]() { return Cache::createInflateSymbolsPass(rt); });
-  mlir::registerPass([&]() { return Cache::createInflateConstantsPass(rt); });
 }

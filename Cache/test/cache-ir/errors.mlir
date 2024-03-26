@@ -1,4 +1,4 @@
-// RUN: cache-opt -inflate-symbols -inflate-constants -split-input-file -verify-diagnostics
+// RUN: cache-opt -inflate-symbols -split-input-file -verify-diagnostics
 
 // expected-error-re@below {{hash '[a-zA-Z+=/]+' could not be found in the cache}}
 func.func private @no_symbols(i32) attributes {region_hashes = #cache<regions[<"KZjGvTfYCCkbb9PgvO+mUGyo+jhy1GVXoPxy+BWmww==">]>}
