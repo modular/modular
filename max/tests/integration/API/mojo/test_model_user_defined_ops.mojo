@@ -54,7 +54,7 @@ fn test_model() raises:
     var session = InferenceSession()
     var config = LoadOptions()
     config.set_custom_ops_path(Path(user_defined_ops_path))
-    var model = session.load_model(Path(model_path), config ^)
+    var model = session.load_model(Path(model_path), config^)
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
@@ -64,7 +64,7 @@ fn test_model() raises:
     var input_map = session.new_tensor_map()
     input_map.borrow("input", input_tensor)
     var outputs = model.execute(input_map)
-    _ = input_tensor ^  # Keep inputs alive
+    _ = input_tensor^  # Keep inputs alive
     var output_tensor = outputs.get[DType.float32]("output")
 
     assert_equal(str(output_tensor.spec()), "5xfloat32")

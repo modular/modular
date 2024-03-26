@@ -128,7 +128,7 @@ fn test_model() raises:
     var input_map = session.new_tensor_map()
     input_map.borrow("input", input_tensor)
     var outputs = model.execute(input_map)
-    _ = input_tensor ^  # Keep inputs alive
+    _ = input_tensor^  # Keep inputs alive
     var output_tensor = outputs.get[DType.float32]("output")
 
     assert_equal(str(output_tensor.spec()), "5xfloat32")
@@ -150,7 +150,7 @@ fn test_model_tuple_input() raises:
 
     var session = InferenceSession()
     var model = session.load_model(Path(model_path))
-    var outputs = model.execute(NamedTensor("input", input_tensor ^))
+    var outputs = model.execute(NamedTensor("input", input_tensor^))
     var output_tensor = outputs.get[DType.float32]("output")
 
     assert_equal(str(output_tensor.spec()), "5xfloat32")
@@ -175,7 +175,7 @@ fn test_model_tuple_input_different_dtypes() raises:
     var session = InferenceSession()
     var model = session.load_model(Path(model_path))
     var outputs = model.execute(
-        NamedTensor("input0", input_tensor_float ^),
+        NamedTensor("input0", input_tensor_float^),
         NamedTensor("input1", input_tensor_int),
     )
     var output_tensor = outputs.get[DType.int32]("output")
@@ -198,7 +198,7 @@ fn test_model_tuple_input_dynamic() raises:
     var model = session.load_model(Path(model_path))
     var tensor_name: String = "input"
 
-    var outputs = model.execute(NamedTensor(tensor_name, input_tensor ^))
+    var outputs = model.execute(NamedTensor(tensor_name, input_tensor^))
     var output_tensor = outputs.get[DType.float32]("output")
 
     assert_equal(str(output_tensor.spec()), "5xfloat32")
