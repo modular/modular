@@ -21,9 +21,7 @@ namespace M::Cache {
 // Operation Transformations
 //===----------------------------------------------------------------------===//
 
-/// Transformation and cache functions that operate on a given operation. The
-/// Operation provided to the TransformFn is NOT pre-inflated by the caller -
-/// that is the responsibility of the TransformFn if so desired.
+/// Transformation and cache functions that operate on a given operation.
 using OpTransformFn = llvm::unique_function<LLCL::AnyAsyncValueRef(
     Operation *, WriteableBufferRef, LLCL::AnyAsyncValueRef)>;
 using OpCacheHitFn =
@@ -35,10 +33,7 @@ LogicalResult writeOperationToCacheKey(Operation *op, WriteableBufferRef key);
 /// Run the specified transform on the target operation. The transform must have
 /// a key of some kind that can be associated with the operation. The semantics
 /// of `cachedTransform` are that it will combine the input IR with the name of
-/// the transform to map to a cached result. If deflation/inflation is desired,
-/// the user should either deflate before calling this function, or
-/// deflate/inflate as part of the provided transform. See the PassManager
-/// overload below for an example.
+/// the transform to map to a cached result.
 ///
 /// When the transform is run, the result AnyAsyncValueRef is resolved to the
 /// result of the transform. If the transform is *not* run, then the result

@@ -46,14 +46,6 @@ using RegionCache = BlobCache<RegionCacheKey>;
 /// Return the name used to denote that an op's regions have been cached.
 inline llvm::StringLiteral getRegionHashAttrName() { return "region_hashes"; }
 
-/// This function allows the user to inflate a cached op into its original
-/// form by pulling the regions attached to it from the cache and re-attaching
-/// them to the op. If the op is not deflated, this is a no-op. The inflation is
-/// implemented as an `andThenSync` on `chain` - this is to simplify calling
-/// code which is also likely async.
-LLCL::AsyncValueRef<LLCL::Chain> inflateOp(Operation *cached,
-                                           RCRef<RegionCache> cache,
-                                           LLCL::AnyAsyncValueRef chain);
 } // namespace M::Cache
 
 //===----------------------------------------------------------------------===//

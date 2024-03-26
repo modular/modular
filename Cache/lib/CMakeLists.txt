@@ -23,4 +23,3 @@ target_compile_definitions(MCache PRIVATE
   "MODULAR_DERIVED_DIR=\"${MODULAR_DERIVED_DIR}\"")
 
 add_subdirectory(CacheDialect)
-add_subdirectory(CachePasses)

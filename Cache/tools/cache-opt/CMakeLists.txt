@@ -9,7 +9,6 @@ add_modular_tool(cache-opt
 
   LINK_LIBS PRIVATE
   CacheDialect
-  CachePasses
   LLCLRuntimeGlobals
   MCache
   MSupport

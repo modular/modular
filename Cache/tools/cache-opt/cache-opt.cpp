@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheDialect/CacheDialect.h"
-#include "Cache/CachePasses/CachePasses.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Context.h"
@@ -35,8 +34,6 @@ int main(int argc, char **argv) {
     return 1;
   }
   registerContext(registry, *ctxOr);
-
-  Cache::registerCachePasses(*(*ctxOr)->get<LLCL::Runtime>());
 
   return failed(mlir::MlirOptMain(argc, argv, "cache-opt", registry));
 }
