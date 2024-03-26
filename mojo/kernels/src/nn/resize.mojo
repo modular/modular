@@ -258,8 +258,9 @@ fn _resize[
     rank: Int,
     type: DType,
 ](input: NDBuffer[type, rank], output: NDBuffer[type, rank],):
+    if input.get_shape() == output.get_shape():
+        return memcpy(output.data, input.data, input.size())
     var scales = StaticTuple[Float32, rank]()
-
     var resize_dims = InlinedFixedVector[Int, size=rank](rank)
     var tmp_dims = StaticIntTuple[rank](0)
     for i in range(rank):

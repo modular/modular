@@ -384,3 +384,28 @@ def main():
     # CHECK-LABEL: test_downsample_sizes_linear_antialias
     # CHECK-NOT: ASSERT ERROR
     test_downsample_sizes_linear_antialias()
+
+    fn test_no_resize() raises:
+        print("== test_no_resize")
+        alias type = DType.float32
+        var input = Tensor[type](
+            TensorShape(1, 1, 2, 2),
+            List[Scalar[type]](1, 1, 1, 1),
+        )
+        var output = Tensor[type](1, 1, 2, 2)
+
+        var reference = Tensor[type](
+            TensorShape(1, 1, 2, 2),
+            List[Scalar[type]](
+                1.0000,
+                1.0000,
+                1.0000,
+                1.0000,
+            ),
+        )
+
+        test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
+            input, output, reference
+        )
+
+    test_no_resize()
