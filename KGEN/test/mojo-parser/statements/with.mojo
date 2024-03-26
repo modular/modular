@@ -212,7 +212,7 @@ struct CMWithoutExit:
 
     # This context manager consumes itself and returns it as the value.
     fn __enter__(owned self) -> Self:
-        return self ^
+        return self^
 
     fn method(self):
         pass

@@ -48,9 +48,9 @@ fn test_owned(owned x: RegPassable, owned y: MemOnly):
     owned_generic(y)
 
     # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%arg0)
-    owned_generic(x ^)
+    owned_generic(x^)
     # CHECK: kgen.call @"{{.*}}owned_generic{{.*}}"(%arg1)
-    owned_generic(y ^)
+    owned_generic(y^)
 
 
 # CHECK: kgen.func export @test_borrowed(

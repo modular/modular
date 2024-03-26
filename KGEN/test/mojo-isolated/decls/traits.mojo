@@ -252,7 +252,7 @@ fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: [[VI:%.*]] = kgen.rebind %value {{.*}}#lit.invalid.ref.lifetime
     # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership [[VI]]
     # CHECK-NEXT: call[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value28transfer29)
-    return value ^
+    return value^
 
 
 # COM: Just check that conformance checking succeeds.

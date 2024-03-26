@@ -60,7 +60,7 @@ STATEMENT: Final = {
     syms.classdef,
     syms.match_stmt,
     syms.case_block,
-    syms.var_stmt
+    syms.var_stmt,
 }
 STANDALONE_COMMENT: Final = 153
 token.tok_name[STANDALONE_COMMENT] = "STANDALONE_COMMENT"
@@ -194,11 +194,14 @@ class Visitor(Generic[T]):
                 yield from self.visit(child)
 
 
-def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
+def whitespace(
+    leaf: Leaf, *, complex_subscript: bool, is_mojo: bool = False
+) -> str:  # noqa: C901
     """Return whitespace prefix if needed for the given `leaf`.
 
     `complex_subscript` signals whether the given leaf is part of a subscription
-    which has non-trivial arguments, like arithmetic expressions or function calls.
+    which has non-trivial arguments, like arithmetic expressions or function
+    calls. `is_mojo` indicates if we are using mojo grammar (e.g. for `^`).
     """
     NO: Final = ""
     SPACE: Final = " "
@@ -283,6 +286,26 @@ def whitespace(leaf: Leaf, *, complex_subscript: bool) -> str:  # noqa: C901
 
     elif prev.type in OPENING_BRACKETS:
         return NO
+
+    # The ownership transfer operator is tricky, we deal with it separately.
+    if is_mojo and p.type == syms.xor_expr:
+        if prev:
+            if t == token.DOT and prev.type == token.CIRCUMFLEX:
+                return NO
+
+            prev2 = prev.prev_sibling
+            if t == token.NAME and prev2 and prev2.type == token.CIRCUMFLEX:
+                return NO
+
+        next_ = leaf.next_sibling
+        if t == token.CIRCUMFLEX:
+            # No space before trailing ^
+            if not next_ or next_.type in (
+                token.DOT,
+                token.CIRCUMFLEX,
+                *CLOSING_BRACKETS,
+            ):
+                return NO
 
     if p.type in {syms.parameters, syms.arglist}:
         # untyped function signatures or calls

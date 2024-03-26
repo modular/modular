@@ -41,7 +41,7 @@ fn test_owned(owned x: RegPassable):
 
     # CHECK: [[XMOVED:%.*]] = lit.transfer_mem_ownership [[XVAR]]
     # CHECK: lit.call @{{.*}}::@"owned_generic{{.*}}<{{.*}}>([[XMOVED]])
-    owned_generic(x ^)
+    owned_generic(x^)
 
 
 # CHECK-LABEL: lit.func @"test_borrowed{{.*}}"(%x: !RegPassable borrow)

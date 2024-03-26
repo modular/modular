@@ -103,7 +103,7 @@ fn test_owned_varargs():
         # CHECK-NEXT: after last use
         print("after last use")
 
-    handle_owned_mem(v1 ^, v2 ^, v3 ^)
+    handle_owned_mem(v1^, v2^, v3^)
 
     # CHECK-NEXT: after call
     print("after call")
@@ -130,7 +130,7 @@ fn test_owned_reg_varargs():
         # CHECK-NEXT: after last use
         print("after last use")
 
-    handle_owned_reg(v1 ^, v2 ^, v3 ^)
+    handle_owned_reg(v1^, v2^, v3^)
 
     # CHECK-NEXT: after call
     print("after call")

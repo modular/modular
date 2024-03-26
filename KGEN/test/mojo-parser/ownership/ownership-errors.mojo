@@ -6,6 +6,7 @@
 
 # RUN: kgen-translate -import-mojo %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-diagnostics
 
+
 struct Empty:
     fn __init__(inout self):
         pass
@@ -19,19 +20,32 @@ struct MemExample:
     var y: Int
 
     # expected-error @+1 {{'self.x' is uninitialized at the implicit return from this function}}
-    fn __init__(inout self): # expected-note {{'self' declared here}}
+    fn __init__(inout self):  # expected-note {{'self' declared here}}
         pass
 
-    # expected-error @+1 {{'self.y' is uninitialized at the implicit return from this function}}
-    fn __copyinit__(inout self, existing: Self): # expected-note {{'self' declared here}}
+    # expected-error @below {{'self.y' is uninitialized at the implicit return from this function}}
+    fn __copyinit__(
+        inout self,  # expected-note {{'self' declared here}}
+        existing: Self,
+    ):
         self.x = existing.x
 
-    fn noop(self): pass
-    fn consume(owned self): pass
-    fn __del__(owned self): pass
+    fn noop(self):
+        pass
 
-fn use(x: MemExample): pass
-fn use_inout(inout x: MemExample): pass
+    fn consume(owned self):
+        pass
+
+    fn __del__(owned self):
+        pass
+
+
+fn use(x: MemExample):
+    pass
+
+
+fn use_inout(inout x: MemExample):
+    pass
 
 
 @register_passable
@@ -111,14 +125,14 @@ fn uninit_lvalue_int():
 
 
 # Return-specific errors.
-fn return_error1(inout a: MemExample): # expected-note {{'a' declared here}}
-    _ = a ^
+fn return_error1(inout a: MemExample):  # expected-note {{'a' declared here}}
+    _ = a^
     return  # expected-error {{'a' is uninitialized at return from this function}}
 
 
 # expected-error @+1 {{'a' is uninitialized at the implicit return from this function}}
-fn return_error2(inout a: RegExample): # expected-note {{'a' declared here}}
-    _ = a ^
+fn return_error2(inout a: RegExample):  # expected-note {{'a' declared here}}
+    _ = a^
 
 
 ##===----------------------------------------------------------------------===##
@@ -269,11 +283,10 @@ fn testClosure(a: Bool):
 fn disableDtor(owned x: MoreComplexExample):
     _ = x.mem^
 
+
 fn badMarkDestroyed(owned x: MoreComplexExample):
     # expected-error @+1 {{cannot mark subobjects destroyed}}
-    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](
-        Reference(x.mem).value
-    )
+    __mlir_op.`lit.ownership.mark_destroyed`[_type=None](Reference(x.mem).value)
 
 
 # expected-error @+3 {{field 'x.mem' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
@@ -283,25 +296,25 @@ fn fieldConsumeError(
     owned y: MoreComplexExample,
     owned z: MoreComplexExample,  # expected-note {{'z' declared here}}
 ):
-    _ = x.mem ^  # Error diagnosed above.
+    _ = x.mem^  # Error diagnosed above.
 
     # This is ok because we replace the mem field.
-    _ = y.mem ^
+    _ = y.mem^
     y.mem = MemExample()
 
-    _ = z.mem ^
-    _ = z.mem ^  # expected-error {{use of uninitialized value 'z.mem'}}
+    _ = z.mem^
+    _ = z.mem^  # expected-error {{use of uninitialized value 'z.mem'}}
     z.mem = MemExample()
 
-    _ = w.mem ^
+    _ = w.mem^
     use(w)  # expected-error {{use of uninitialized value 'w.mem'}}
 
     # expected-error @+1 {{field 'twoRegsRP.reg1' destroyed out of the middle of a value, preventing the overall value from being destroyed}}
     var twoRegsRP = TwoRegsRP()
-    _ = twoRegsRP.reg1 ^
+    _ = twoRegsRP.reg1^
 
     var single1 = MemExample()  # expected-note {{'single1' declared here}}
-    _ = single1 ^
+    _ = single1^
     _ = single1  # expected-error {{use of uninitialized value 'single1'}}
 
 
@@ -317,68 +330,83 @@ fn consume(owned x: SimpleStructNoDtor):
 
 fn issue15404():
     var c = SimpleStructNoDtor()  # expected-note {{'c' declared here}}
-    consume(c ^)
-    consume(c ^)  # expected-error {{use of uninitialized value 'c'}}
+    consume(c^)
+    consume(c^)  # expected-error {{use of uninitialized value 'c'}}
 
 
 ##===----------------------------------------------------------------------===##
 # incorrect warnings
 ##===----------------------------------------------------------------------===##
 
+
 # Consumption of struct works only on definition of __del__
 # https://github.com/modularml/mojo/issues/734
 struct StructWithNoDel:
     var x: Int
+
     fn __init__(inout self, a: Int):
         self.x = a
-fn take(owned x: StructWithNoDel): pass
+
+
+fn take(owned x: StructWithNoDel):
+    pass
+
+
 fn testStructWithNoDel():
     var l = StructWithNoDel(100)
-    take(l^)  # expected-error {{value 'l' cannot be consumed, because 'l.x' is used later}}
+    # expected-error @below {{value 'l' cannot be consumed, because 'l.x' is used later}}
+    take(l^)
     l.x = 10
 
 
 # expected-note @+1 {{'x' declared here}}
 fn inout_restored_at_throw(inout x: MemExample, err: Error) raises:
-   # x is uninit after this point, needs to be restored if an
-   # error is thrown.
-   _ = x^
-   raise err # expected-error {{use of uninitialized value 'x'}}
+    # x is uninit after this point, needs to be restored if an
+    # error is thrown.
+    _ = x^
+    raise err  # expected-error {{use of uninitialized value 'x'}}
+
 
 # Invalid error field 'w.x.y' destroyed out of the middle of a value, preventing the overall value from being destroyed
 # https://github.com/modularml/mojo/issues/1535
 @value
 struct NestedInt:
     var y: Int
+
+
 @value
 struct WrapperNestedInt:
     var x: NestedInt
+
+
 fn testWrapperNestedInt():
     var w = WrapperNestedInt(NestedInt(0))
     for i in range(0, 1):
         w.x.y = 0
 
+
 # ===----------------------------------------------------------------------=== #
 # More complex references
 # ===----------------------------------------------------------------------=== #
 
+
 fn testConditionalImmut(cond: __mlir_type.i1):
-  var a = MemExample()
-  var b : MemExample # expected-note {{'b' declared here}}
+    var a = MemExample()
+    var b: MemExample  # expected-note {{'b' declared here}}
 
-  var aref = Reference(a).value
-  # expected-error @+1 {{use of uninitialized value 'b'}}
-  var bref = Reference(b).value
-  var cref = aref if cond else bref
+    var aref = Reference(a).value
+    # expected-error @+1 {{use of uninitialized value 'b'}}
+    var bref = Reference(b).value
+    var cref = aref if cond else bref
 
+    Reference(cref)[].noop()
 
-  Reference(cref)[].noop()
 
 fn testConditionalMut(cond: __mlir_type.i1):
-  var a = MemExample()
-  var b : MemExample # expected-note {{'b' declared here}}
+    var a = MemExample()
+    var b: MemExample  # expected-note {{'b' declared here}}
 
-  # expected-error @+1 {{use of uninitialized value 'b'}}
-  var cref = Reference(a).value if cond else Reference(b).value
+    # expected-error @+1 {{use of uninitialized value 'b'}}
+    var cref = Reference(a).value if cond else Reference(b).value
 
-  Reference(cref)[] = MemExample()
+    Reference(cref)[] = MemExample()
