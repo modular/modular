@@ -155,7 +155,7 @@ struct RuntimeContext:
         if status:
             print(status.__str__())
             self.ptr = DTypePointer[DType.invalid]()
-        _ = config ^
+        _ = config^
         self.lib = lib
 
     fn __moveinit__(inout self, owned existing: Self):

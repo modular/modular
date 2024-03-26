@@ -43,9 +43,9 @@ struct NamedTensor:
             name: Name of the tensor.
             tensor: Tensor to take ownership of.
         """
-        self.name = name ^
+        self.name = name^
 
-        var tensor_arc = Arc(tensor ^)
+        var tensor_arc = Arc(tensor^)
 
         # Get an lvalue reference to the heap-allocated Tensor data, and
         # construct an EngineTensorView from that.

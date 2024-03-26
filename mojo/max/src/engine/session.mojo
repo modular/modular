@@ -46,12 +46,12 @@ struct _InferenceSessionImpl(Movable):
     ):
         self.engine = _EngineImpl(lib_path)
         var config = RuntimeConfig(self.engine.lib, device)
-        self.context = RuntimeContext(config ^, self.engine.lib)
+        self.context = RuntimeContext(config^, self.engine.lib)
         self.ref_count = 1
 
     fn __moveinit__(inout self, owned existing: Self):
-        self.engine = existing.engine ^
-        self.context = existing.context ^
+        self.engine = existing.engine^
+        self.context = existing.context^
         self.ref_count = existing.ref_count.fetch_add(0)
 
     fn _compile_model_from_config(
@@ -107,19 +107,17 @@ struct _InferenceSessionImpl(Movable):
         if status:
             raise status.__str__()
 
-        var model = CompiledModel(
-            compiled_model_ptr, self.engine.lib, session ^
-        )
-        _ = compile_config ^
+        var model = CompiledModel(compiled_model_ptr, self.engine.lib, session^)
+        _ = compile_config^
 
         # We could borrow config and don't do this,
         # but internally C APi will take ownership of compile_config ptr
         # and mutates it to null. This will convey the intention that we are
         # mutating something we own. There is no need for caller of this
         # to have the mutated value now. That negates the need for inout.
-        _ = config ^
+        _ = config^
 
-        return model ^
+        return model^
 
     fn _init_model(
         self,
@@ -143,10 +141,10 @@ struct _InferenceSessionImpl(Movable):
             self.context.borrow_ptr(),
             model_ptr,
             self.engine.lib,
-            session ^,
-            compiled_model ^,
+            session^,
+            compiled_model^,
         )
-        return model ^
+        return model^
 
     fn load_model(
         self,
@@ -156,9 +154,9 @@ struct _InferenceSessionImpl(Movable):
         """
         Compiles and initializes the model.
         """
-        var compiled_model = self._compile_model_from_config(config ^, session)
+        var compiled_model = self._compile_model_from_config(config^, session)
 
-        return self._init_model(compiled_model ^, session ^)
+        return self._init_model(compiled_model^, session^)
 
     fn get_as_engine_tensor_spec(
         self,
@@ -169,7 +167,7 @@ struct _InferenceSessionImpl(Movable):
         var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create tensor spec"
-        return EngineTensorSpec(name, spec, self.engine.lib, session ^)
+        return EngineTensorSpec(name, spec, self.engine.lib, session^)
 
     fn get_as_engine_tensor_spec(
         self,
@@ -181,7 +179,7 @@ struct _InferenceSessionImpl(Movable):
         var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create tensor spec"
-        return EngineTensorSpec(name, shape, dtype, self.engine.lib, session ^)
+        return EngineTensorSpec(name, shape, dtype, self.engine.lib, session^)
 
     fn new_tensor_map(
         self, owned session: InferenceSession
@@ -189,7 +187,7 @@ struct _InferenceSessionImpl(Movable):
         var context = self.context.borrow_ptr()
         if not context.ptr:
             raise "failed to create tensor map"
-        return TensorMap(self.context.borrow_ptr(), self.engine.lib, session ^)
+        return TensorMap(self.context.borrow_ptr(), self.engine.lib, session^)
 
     fn new_borrowed_tensor_value[
         type: DType
@@ -201,7 +199,7 @@ struct _InferenceSessionImpl(Movable):
         if not context.ptr:
             raise "failed to create tensor value"
         return Value._new_borrowed_tensor[type](
-            self.context.borrow_ptr(), self.engine.lib, session ^, tensor
+            self.context.borrow_ptr(), self.engine.lib, session^, tensor
         )
 
     fn new_bool_value(
@@ -211,7 +209,7 @@ struct _InferenceSessionImpl(Movable):
         if not context.ptr:
             raise "failed to create bool value"
         return Value._new_bool(
-            self.context.borrow_ptr(), self.engine.lib, session ^, value
+            self.context.borrow_ptr(), self.engine.lib, session^, value
         )
 
     fn new_list_value(self, owned session: InferenceSession) raises -> Value:
@@ -219,7 +217,7 @@ struct _InferenceSessionImpl(Movable):
         if not context.ptr:
             raise "failed to create list value"
         return Value._new_list(
-            self.context.borrow_ptr(), self.engine.lib, session ^
+            self.context.borrow_ptr(), self.engine.lib, session^
         )
 
 
@@ -441,7 +439,7 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_path(path)
-        return self._ptr[].load_model(load_config ^, self)
+        return self._ptr[].load_model(load_config^, self)
 
     fn load_model(
         self, graph: Graph, config: Optional[LoadOptions] = None
@@ -479,7 +477,7 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_source(module)
-        return self._ptr[].load_model(load_config ^, self)
+        return self._ptr[].load_model(load_config^, self)
 
     fn get_as_engine_tensor_spec(
         self, name: String, spec: TensorSpec

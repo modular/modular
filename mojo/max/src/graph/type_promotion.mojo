@@ -120,7 +120,7 @@ fn _promotion_semilattice() -> Dict[DType, List[DType]]:
 
     promotes_to(DType.float64)
 
-    return semilattice ^
+    return semilattice^
 
 
 fn _minumum[
@@ -179,7 +179,7 @@ fn _greater_subset[
                 results.add(e[])
                 queue.add(e[])
 
-    return results ^
+    return results^
 
 
 fn _join[
@@ -205,7 +205,7 @@ fn _join[
     var gte = _greater_subset(semilattice, e0)
     for e in elements:
         gte &= _greater_subset(semilattice, e[])
-    var _minumum_gte = _minumum(semilattice, gte ^)
+    var _minumum_gte = _minumum(semilattice, gte^)
     if not _minumum_gte:
         raise "no unique join"
     return _minumum_gte.value()

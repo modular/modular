@@ -22,7 +22,7 @@ fn test_numpy_view() raises:
 
     assert_equal(str(n1_view.spec()), "3xfloat32")
 
-    _ = n1 ^
+    _ = n1^
 
 
 fn main() raises:

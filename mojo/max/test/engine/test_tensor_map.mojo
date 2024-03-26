@@ -62,9 +62,9 @@ fn test_tensor_map_value() raises:
     var t3 = t3_value.as_tensor_copy[DType.float32]()
     assert_equal(t1, t3)
 
-    _ = map ^
-    _ = t1_value ^
-    _ = t1 ^
+    _ = map^
+    _ = t1_value^
+    _ = t1^
 
 
 fn main() raises:

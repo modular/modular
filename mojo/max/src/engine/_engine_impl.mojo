@@ -58,7 +58,7 @@ struct _EngineImpl:
         return version.__str__()
 
     fn __enter__(owned self) -> Self:
-        return self ^
+        return self^
 
     fn __del__(owned self):
         if self.can_close_lib:

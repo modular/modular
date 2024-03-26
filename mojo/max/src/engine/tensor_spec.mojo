@@ -52,7 +52,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         """
         self._ptr = existing._ptr
         self._lib = existing._lib
-        self._session = existing._session ^
+        self._session = existing._session^
 
     fn __init__(
         inout self,
@@ -72,7 +72,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         """
         self._ptr = ptr
         self._lib = lib
-        self._session = session ^
+        self._session = session^
 
     fn __init__(
         inout self,
@@ -109,7 +109,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         _ = name
         _ = shape
         self._lib = lib
-        self._session = session ^
+        self._session = session^
 
     fn __init__(
         inout self,
@@ -194,7 +194,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
                 EngineDType(dtype),
                 name_str,
             )
-            _ = adjusted_shape ^
+            _ = adjusted_shape^
         else:
             self._ptr = call_dylib_func[CTensorSpec](
                 lib,
@@ -207,7 +207,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         _ = name
         _ = shape
         self._lib = lib
-        self._session = session ^
+        self._session = session^
 
     fn __getitem__(self, idx: Int) raises -> Optional[Int]:
         """Get the dimension at the given index.
@@ -344,4 +344,4 @@ struct EngineTensorSpec(Stringable, CollectionElement):
     fn __del__(owned self):
         """Destructor for EngineTensorSpec."""
         self._ptr.free(self._lib)
-        _ = self._session ^
+        _ = self._session^

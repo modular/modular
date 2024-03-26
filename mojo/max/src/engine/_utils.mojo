@@ -243,7 +243,7 @@ struct OwningVector[T: Movable](Sized):
 
     fn emplace_back(inout self, owned value: T):
         if self.size < self.capacity:
-            (self.ptr + self.size).emplace_value(value ^)
+            (self.ptr + self.size).emplace_value(value^)
             self.size += 1
             return
 
@@ -253,7 +253,7 @@ struct OwningVector[T: Movable](Sized):
             (new_ptr + i).emplace_value((self.ptr + i).take_value())
         self.ptr.free()
         self.ptr = new_ptr
-        self.emplace_back(value ^)
+        self.emplace_back(value^)
 
     fn get(self, idx: Int) raises -> AnyPointer[T]:
         if idx >= self.size:

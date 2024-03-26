@@ -53,7 +53,7 @@ struct CTensor:
         var spec = call_dylib_func[CTensorSpec](
             lib, Self.GetTensorSpecFnName, self
         )
-        return EngineTensorSpec(spec, lib, session ^)
+        return EngineTensorSpec(spec, lib, session^)
 
     fn free(self, borrowed lib: DLHandle):
         """
@@ -75,14 +75,14 @@ struct EngineTensor(Sized):
     ):
         self.ptr = ptr
         self.lib = lib
-        self.session = session ^
+        self.session = session^
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CTensor](
             existing.ptr, DTypePointer[DType.invalid]()
         )
         self.lib = existing.lib
-        self.session = existing.session ^
+        self.session = existing.session^
 
     fn __len__(self) -> Int:
         return self.ptr.size(self.lib)
@@ -117,11 +117,11 @@ struct EngineTensor(Sized):
             self.data[type](),
             len(self),
         )
-        return tensor ^
+        return tensor^
 
     fn __del__(owned self):
         self.ptr.free(self.lib)
-        _ = self.session ^
+        _ = self.session^
 
 
 @value

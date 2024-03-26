@@ -153,7 +153,7 @@ struct TorchInputSpec(Movable):
                     CTensorSpec.get_dynamic_dimension_value(engine_lib)
                 )
 
-        self.shape = converted_shape ^
+        self.shape = converted_shape^
         self.dtype = dtype
         var ptr = call_dylib_func[CTorchInputSpec](
             lib,
@@ -185,7 +185,7 @@ struct TorchInputSpec(Movable):
         self.torch_lib = lib
 
     fn __moveinit__(inout self, owned existing: Self):
-        self.shape = existing.shape ^
+        self.shape = existing.shape^
         self.dtype = existing.dtype
         self.ptr = existing.ptr
         self.torch_lib = existing.torch_lib
@@ -236,7 +236,7 @@ struct CompileConfig:
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = existing.ptr
         self.lib = existing.lib
-        self.input_specs = existing.input_specs ^
+        self.input_specs = existing.input_specs^
         self.torch_lib = existing.torch_lib
 
     fn set_model_source(self, model_source: ModelSource):
@@ -396,7 +396,7 @@ struct CompiledModel:
             existing.ptr, DTypePointer[DType.invalid].get_null()
         )
         self.lib = existing.lib
-        self.session = existing.session ^
+        self.session = existing.session^
 
     fn num_model_inputs(self) raises -> Int:
         """Gets the number of inputs of the model."""
@@ -442,7 +442,7 @@ struct CompiledModel:
             var input_spec = self.ptr.get_model_input_spec_by_name(
                 input_tensor_name[], self.lib, self.session
             )
-            input_metadata.append(input_spec ^)
+            input_metadata.append(input_spec^)
         return input_metadata
 
     fn get_model_output_metadata(self) raises -> List[EngineTensorSpec]:
@@ -455,7 +455,7 @@ struct CompiledModel:
             var output_spec = self.ptr.get_model_output_spec_by_name(
                 output_tensor_name[], self.lib, self.session
             )
-            output_metadata.append(output_spec ^)
+            output_metadata.append(output_spec^)
         return output_metadata
 
     fn borrow_ptr(self) -> CCompiledModel:
@@ -463,4 +463,4 @@ struct CompiledModel:
 
     fn __del__(owned self):
         self.ptr.free(self.lib)
-        _ = self.session ^
+        _ = self.session^

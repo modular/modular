@@ -48,8 +48,8 @@ struct Model:
             existing._ptr, DTypePointer[DType.invalid].get_null()
         )
         self._lib = existing._lib
-        self._session = existing._session ^
-        self._compiled_model = existing._compiled_model ^
+        self._session = existing._session^
+        self._compiled_model = existing._compiled_model^
 
     fn execute(self, inputs: TensorMap) raises -> TensorMap:
         """Execute model with given inputs.
@@ -145,7 +145,7 @@ struct Model:
 
         var result = self.execute(input_map)
 
-        return result ^
+        return result^
 
     fn execute(
         self, *inputs: Tuple[StringLiteral, EngineNumpyView]
@@ -368,5 +368,5 @@ struct Model:
     fn __del__(owned self):
         """Destructor for Model."""
         self._ptr.free(self._lib)
-        _ = self._compiled_model ^
-        _ = self._session ^
+        _ = self._compiled_model^
+        _ = self._session^

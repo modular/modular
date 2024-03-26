@@ -51,7 +51,7 @@ struct TensorMap(SizedRaising):
             lib, Self._NewTensorMapFnName, ctx
         )
         self._lib = lib
-        self._session = session ^
+        self._session = session^
 
     fn __init__(
         inout self,
@@ -72,7 +72,7 @@ struct TensorMap(SizedRaising):
         """
         self._ptr = ptr
         self._lib = lib
-        self._session = session ^
+        self._session = session^
 
     fn __moveinit__(inout self, owned existing: Self):
         """Move contructor for TensorMap.
@@ -84,7 +84,7 @@ struct TensorMap(SizedRaising):
             existing._ptr, DTypePointer[DType.invalid]()
         )
         self._lib = existing._lib
-        self._session = existing._session ^
+        self._session = existing._session^
 
     fn borrow[type: DType](self, key: String, value: Tensor[type]) raises:
         """Borrow the given tensor into the map at the key location.
@@ -178,7 +178,7 @@ struct TensorMap(SizedRaising):
         key._strref_keepalive()
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
         var tensor = mof_tensor.tensor[type]()
-        return tensor ^
+        return tensor^
 
     fn buffer[type: DType](self, key: String) raises -> Buffer[type]:
         """Gets a buffer to the tensor pointed by the key.
@@ -227,4 +227,4 @@ struct TensorMap(SizedRaising):
     fn __del__(owned self):
         """Destructor for the tensor map."""
         self._ptr.free(self._lib)
-        _ = self._session ^
+        _ = self._session^

@@ -51,7 +51,7 @@ fn execute_nullary_list[
     var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
         results.append(engine_list[i].as_tensor_copy[outtype]())
-    _ = result_map ^
+    _ = result_map^
     return results
 
 
@@ -78,7 +78,7 @@ fn execute_unary_list[
     var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
         results.append(engine_list[i].as_tensor_copy[outtype]())
-    _ = result_map ^
+    _ = result_map^
     return results
 
 
@@ -105,7 +105,7 @@ fn execute_no_args(
     var input_map = session.new_tensor_map()
     var result_map = model.execute(input_map)
 
-    return result_map ^
+    return result_map^
 
 
 fn execute_n_args[
@@ -133,7 +133,7 @@ fn execute_n_args[
 
     var result_map = model.execute(input_map)
 
-    return result_map ^
+    return result_map^
 
 
 fn execute_base(
@@ -150,4 +150,4 @@ fn execute_base(
 
     var result_map = model.execute(input_map)
 
-    return result_map ^
+    return result_map^

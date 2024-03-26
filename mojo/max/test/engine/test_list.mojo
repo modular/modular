@@ -32,7 +32,7 @@ fn test_list_value() raises:
     assert_false(list[0].as_bool())
     assert_true(list[1].as_bool())
 
-    _ = list_value ^
+    _ = list_value^
 
 
 fn main() raises:

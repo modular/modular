@@ -43,7 +43,7 @@ struct Value:
         """
         self._ptr = ptr
         self._lib = lib
-        self._session = session ^
+        self._session = session^
 
     fn __moveinit__(inout self, owned existing: Self):
         """Take ownership of the value contained in another `Value`.
@@ -55,12 +55,12 @@ struct Value:
             existing._ptr, DTypePointer[DType.invalid]()
         )
         self._lib = existing._lib
-        self._session = existing._session ^
+        self._session = existing._session^
 
     fn __del__(owned self):
         """Dispose of this reference to this value."""
         self._ptr.free(self._lib)
-        _ = self._session ^
+        _ = self._session^
 
     @staticmethod
     fn _new_borrowed_tensor[
@@ -79,8 +79,8 @@ struct Value:
             spec._borrow_ptr(),
             ctx,
         )
-        _ = spec ^
-        return Self(ptr, lib, session ^)
+        _ = spec^
+        return Self(ptr, lib, session^)
 
     fn _as_engine_tensor(self) raises -> EngineTensor:
         var ptr = self._ptr.get_c_tensor(self._lib)
@@ -111,7 +111,7 @@ struct Value:
         value: Bool,
     ) raises -> Self:
         var ptr = call_dylib_func[CValue](lib, Self._NewBoolFnName, value, ctx)
-        return Self(ptr, lib, session ^)
+        return Self(ptr, lib, session^)
 
     fn as_bool(self) -> Bool:
         """Get the boolean contained in this value.
@@ -128,7 +128,7 @@ struct Value:
         ctx: CRuntimeContext, lib: DLHandle, owned session: InferenceSession
     ) raises -> Self:
         var ptr = call_dylib_func[CValue](lib, Self._NewListFnName, ctx)
-        return Self(ptr, lib, session ^)
+        return Self(ptr, lib, session^)
 
     fn as_list(self) raises -> List:
         """Borrow the list contained in this value.
@@ -179,7 +179,7 @@ struct List(Sized):
         """
         self._ptr = ptr
         self._lib = lib
-        self._session = session ^
+        self._session = session^
 
     fn __moveinit__(inout self, owned existing: Self):
         """Create a new List pointing at the internals of another List.
@@ -196,7 +196,7 @@ struct List(Sized):
             existing._ptr, DTypePointer[DType.invalid]()
         )
         self._lib = existing._lib
-        self._session = existing._session ^
+        self._session = existing._session^
 
     fn __del__(owned self):
         """Release the handle to this list.
@@ -205,7 +205,7 @@ struct List(Sized):
         List was obtained.
         """
         self._ptr.free(self._lib)
-        _ = self._session ^
+        _ = self._session^
 
     fn __len__(self) -> Int:
         """Get the length of the list.
