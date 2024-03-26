@@ -215,10 +215,10 @@ struct Runtime:
         _init_llcl_chain(self, AsyncContext.get_chain(ctx))
         ctx[].callback = AsyncContext.complete
         _async_execute[type](handle._handle, self, desired_worker_id)
-        return Task[type](handle ^)
+        return Task[type](handle^)
 
     fn run[type: AnyRegType](self, owned handle: Coroutine[type]) -> type:
-        var t = self.create_task(handle ^)
+        var t = self.create_task(handle^)
         var result = t.wait()
         return result
 
@@ -232,7 +232,7 @@ struct Task[type: AnyRegType]:
     var handle: Coroutine[type]
 
     fn __init__(inout self, owned handle: Coroutine[type]):
-        self.handle = handle ^
+        self.handle = handle^
 
     fn get(self) -> type:
         """Get the task's result value."""
@@ -245,7 +245,7 @@ struct Task[type: AnyRegType]:
         var ctx: Pointer[AsyncContext] = self.handle._get_ctx[AsyncContext]()
         var chainPtr: Pointer[Chain] = AsyncContext.get_chain(ctx)
         _del_llcl_chain(chainPtr)
-        _ = self.handle ^
+        _ = self.handle^
 
     @always_inline
     fn __await__(self) -> type:
@@ -296,7 +296,7 @@ struct TaskGroupTask[type: AnyRegType]:
     var handle: Coroutine[type]
 
     fn __init__(owned handle: Coroutine[type]) -> Self:
-        return Self {handle: handle ^}
+        return Self {handle: handle^}
 
     fn get(self) -> type:
         """Get the task's result value. This should only be called once the
@@ -351,7 +351,7 @@ struct TaskGroup:
             }
         )
         _async_execute[type](task._handle, self.rt, desired_worker_id)
-        return task ^
+        return task^
 
     @staticmethod
     fn await_body_impl(
@@ -393,7 +393,7 @@ struct TaskGroupTaskList[type: AnyRegType](Sized):
 
     fn add(inout self, owned hdl: TaskGroupTask[type]):
         __get_address_as_uninit_lvalue(self.data.offset(self.size).address) = (
-            hdl ^
+            hdl^
         )
         self.size += 1
 
@@ -510,14 +510,14 @@ struct MojoCallTask:
     fn __init__(
         owned coro: Coroutine[NoneType], ctx: MojoCallContextPtr
     ) -> Self:
-        var result = Self {coro: coro ^}
+        var result = Self {coro: coro^}
         # Set the callback and payload.
         result.coro._get_ctx[_MojoCallTaskContext]().store(
             _MojoCallTaskContext {
                 callback: _MojoCallTaskContext.callback_impl, payload: ctx.ptr
             }
         )
-        return result ^
+        return result^
 
     @always_inline
     fn __call__(owned self):
@@ -530,7 +530,7 @@ struct MojoCallTask:
         # callback, which receives `Task` as owned. Both of these must be 'var'
         # definitions, despite the resulting warning.
         var self_lit_ref = Reference(self).value
-        var coro = self.coro ^
+        var coro = self.coro^
         var hdl = coro._handle
         __mlir_op.`lit.ownership.mark_destroyed`(Reference(coro).value)
         __mlir_op.`lit.ownership.mark_destroyed`(self_lit_ref)
@@ -557,7 +557,7 @@ struct _OptionalError:
     fn __init__(inout self, owned existing: Error):
         self.value = __mlir_op.`kgen.variant.create`[
             _type = Self.type, index = Int(0).value
-        ](existing ^)
+        ](existing^)
 
     fn is_error(self) -> Bool:
         return __mlir_op.`kgen.variant.is`[index = Int(0).value](self.value)
@@ -585,7 +585,7 @@ struct _MojoCallRaisingTaskContext:
         # by setting the chain to the error state.
         var err = coro.get()
         if err.is_error():
-            ctx.set_to_error((err ^).consume_as_error())
+            ctx.set_to_error((err^).consume_as_error())
         else:
             ctx.complete()
 
@@ -602,14 +602,14 @@ struct MojoCallRaisingTask:
     fn __init__(
         owned coro: Coroutine[_OptionalError], ctx: MojoCallContextPtr
     ) -> Self:
-        var result = Self {coro: coro ^}
+        var result = Self {coro: coro^}
         result.coro._get_ctx[_MojoCallRaisingTaskContext]().store(
             _MojoCallRaisingTaskContext {
                 callback: _MojoCallRaisingTaskContext.callback_impl,
                 payload: ctx.ptr,
             }
         )
-        return result ^
+        return result^
 
     @always_inline
     fn __call__(owned self):
@@ -622,7 +622,7 @@ struct MojoCallRaisingTask:
         # callback, which receives `Task` as owned. Both of these must be 'var'
         # definitions, despite the resulting warning.
         var self_lit_ref = Reference(self).value
-        var coro = self.coro ^
+        var coro = self.coro^
         var hdl = coro._handle
         __mlir_op.`lit.ownership.mark_destroyed`(Reference(coro).value)
         __mlir_op.`lit.ownership.mark_destroyed`(self_lit_ref)
