@@ -67,7 +67,7 @@ fn bench_add[
     b.bench_with_input[__type_of(shape), bench_func](
         BenchId("add", str(shape)),
         shape,
-        throughput_elems=size * sizeof[DType.float32]() * 3,
+        throughput_elems=size * sizeof[type]() * 3,
     )
 
     _copy_device_to_host(output_ptr_host, output_ptr, size)
