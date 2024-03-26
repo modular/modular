@@ -76,7 +76,7 @@ fn run[
         )
     )
     _ = (
-        stream ^
+        stream^
     )  # without this stream is deleted before last use of benchmark_fn
     return stats
 
@@ -142,7 +142,7 @@ fn run[
     )
 
     _ = (
-        stream ^
+        stream^
     )  # without this stream is deleted before last use of benchmark_fn
     return stats
 
@@ -209,7 +209,7 @@ fn run[
     )
 
     _ = (
-        stream ^
+        stream^
     )  # without this stream is deleted before last use of benchmark_fn
     return stats
 
