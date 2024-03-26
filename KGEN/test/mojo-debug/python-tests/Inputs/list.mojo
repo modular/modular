@@ -23,12 +23,15 @@ fn main():
     var p3 = Point(3, -3)
     point_vec.append(p1)
     point_vec.append(p2)
-    point_vec.append(p3)  # breakpoint
+    point_vec.append(p3)
+    var len0 = len(point_vec)  # breakpoint
+    print(len0)
 
     var int_vec = List[Int](capacity=3)
     int_vec.append(1)
     int_vec.append(2)
-    int_vec.append(3)  # breakpoint
+    int_vec.append(3)
+    print(len(int_vec))  # breakpoint
 
     for i in range(0, 100):
         int_vec.append(i)
