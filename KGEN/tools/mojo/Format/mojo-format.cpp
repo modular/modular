@@ -108,6 +108,9 @@ static int format(const State &state) {
     }
   }
 
+  // Check for additional options.
+  bool isQuiet = args.hasArg(options::OPT_quiet);
+
   // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
 
@@ -135,7 +138,7 @@ static int format(const State &state) {
   // If we're formatting stdin, we need to tell mblack to expect a Mojo file.
   if (hasStdin)
     llvm::append_range(mblackArgs, ArrayRef<StringRef>{"-t", "mojo"});
-  if (args.hasArg(options::OPT_quiet))
+  if (isQuiet)
     mblackArgs.push_back("-q");
   llvm::append_range(mblackArgs, inputs);
   return llvm::sys::ExecuteAndWait(mblack, mblackArgs);
