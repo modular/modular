@@ -173,7 +173,7 @@ struct MyStringReturningCtx:
         self.s = "hey"
 
     fn __enter__(owned self) -> Self:
-        return self ^
+        return self^
 
     fn __moveinit__(inout self, owned existing: Self):
         self.s = existing.s
@@ -193,10 +193,12 @@ fn testErrorReturn() raises:
     # CHECK: except
     print(input)
 
+
 # COM: Test partial destruction of initialized fields upon an error return.
 struct Field:
     fn __copyinit__(inout self, existing: Self):
         pass
+
 
 # CHECK-LABEL: lit.struct.decl @DestructSome
 struct DestructSome:
@@ -267,6 +269,7 @@ fn raising_use(owned value: MemExample):
         _ = borrow_and_return(value)
     except:
         pass
+
 
 # CHECK-LABEL: lit.struct.decl @ThrowingSelfInit
 struct ThrowingSelfInit:

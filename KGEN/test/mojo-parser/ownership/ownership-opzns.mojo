@@ -70,7 +70,7 @@ struct MemoryUniqueMovable:
         # CHECK-NEXT: %other28transfer29 = lit.transfer_mem_ownership %0
         # CHECK-NEXT: %1 = lit.ref.struct.ger %self[state]
         # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%1, %other28transfer29)
-        self.state = other.state ^
+        self.state = other.state^
 
         # CHECK-NEXT: kgen.param.constant: none
         # CHECK-NEXT: lit.ownership.mark_destroyed %other
@@ -87,7 +87,7 @@ struct MemoryMovableCopyable:
 
     fn __moveinit__(inout self, owned existing: Self):
         # Mercilessly steal 'existing's state which could be interesting.
-        self.state = existing.state ^
+        self.state = existing.state^
 
     fn __copyinit__(inout self, existing: Self):
         self.state = existing.state
@@ -102,7 +102,7 @@ fn result_mem1(owned a: MemoryUniqueMovable) -> MemoryUniqueMovable:
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer29)
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
-    return a ^
+    return a^
 
 
 # CHECK-LABEL: lit.func @"result_mem3
@@ -111,7 +111,7 @@ fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
     # CHECK-NEXT: lit.call {{.*}}__moveinit__{{.*}}(%__result__, %a28transfer29){{.*}}init_self{{.*}} owned_in_mem
     # CHECK-NEXT: kgen.param.constant: none
     # CHECK-NEXT: kgen.return
-    return a ^
+    return a^
 
 
 @register_passable
@@ -142,7 +142,7 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
     # CHECK-NEXT: [[EOL:%.*]] = lit.transfer_mem_ownership %a
     # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
     # CHECK-NEXT: kgen.return [[AVAL]]
-    return a ^
+    return a^
 
 
 # CHECK-LABEL: lit.func @"result_reg2
@@ -161,7 +161,7 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
     # CHECK-NEXT: kgen.return [[A]]
-    return a ^
+    return a^
 
 
 # CHECK-LABEL: lit.func @"result_reg4
@@ -173,12 +173,12 @@ fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
     # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
     # CHECK-NEXT: lit.ref.store [[A]], %x
-    var x = a ^
+    var x = a^
 
     # CHECK-NEXT: [[X:%.*]] = lit.transfer_mem_ownership %x
     # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[X]]
     # CHECK-NEXT: kgen.return [[RES]]
-    return x ^
+    return x^
 
 
 fn takeOwnedInt(owned x: Int):
@@ -330,6 +330,7 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[TMP]])
     # CHECK-NEXT: kgen.param.constant: none
 
+
 # This is an integration test for elideCopyDestroyPair
 # CHECK-LABEL: lit.func @"optimize_copies
 fn optimize_copies() -> MemExample:
@@ -348,8 +349,10 @@ fn optimize_copies() -> MemExample:
     # CHECK: lit.call {{.*}}__moveinit__{{.*}}(%__result__,
     return z
 
+
 # This is not optimized, because there are no destructors for CheckLifetimes
 # to insert, so it is a different optimization.
+
 
 # CHECK-LABEL: lit.func @"optimize_transfers
 # Issue #34138

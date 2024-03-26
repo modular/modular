@@ -173,7 +173,7 @@ comparison: expr (comp_op expr)*
 comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
 star_expr: '*' expr
 expr: xor_expr ('|' xor_expr)*
-xor_expr: and_expr ('^' [and_expr])*
+xor_expr: and_expr ('^' [and_expr | '.' NAME trailer* ['**' factor]])*
 and_expr: shift_expr ('&' shift_expr)*
 shift_expr: arith_expr (('<<'|'>>') arith_expr)*
 arith_expr: term (('+'|'-') term)*

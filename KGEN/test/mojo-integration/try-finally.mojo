@@ -76,7 +76,7 @@ fn chris_lifetime_example(a: Bool, b: Bool):
                 print("early")
                 return
     except:
-        _ = x ^
+        _ = x^
     print("normal")
 
 

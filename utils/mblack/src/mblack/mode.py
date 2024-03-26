@@ -208,6 +208,7 @@ class Mode:
     string_normalization: bool = True
     is_pyi: bool = False
     is_ipynb: bool = False
+    is_mojo: bool = False
     skip_source_first_line: bool = False
     magic_trailing_comma: bool = True
     experimental_string_processing: bool = False

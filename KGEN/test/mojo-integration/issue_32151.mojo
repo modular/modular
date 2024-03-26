@@ -26,7 +26,7 @@ struct MTuple[T: CollectionElement](CollectionElement, Stringable):
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
-        self.elts = existing.elts ^
+        self.elts = existing.elts^
 
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
