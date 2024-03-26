@@ -4,9 +4,6 @@
 
 `CAS` - **C**ontent **A**ddressible **S**tore
 
-`inflate` - Replace an elided constant or IR by reading the referred-to object
-from the CAS.
-
 `delegate` - Higher-level cache backend to fault to. For example, the delegate
 for the in-memory backend is often the filesystem backend.
 
@@ -194,20 +191,9 @@ mlir::OwningOpRef<ModuleOp> module1 =
 // deflate the target op, in this case, `*module1`.
 auto xform = cachedTransform(*module1, regionCache, transformCache,
                              std::move(readyChain), pm);
-// Check the result of the transform by first inflating the module. This is
-// chained off the transform AsyncValue - we can't inflate before the transform
-// has completed.
-auto inflate = inflateOp(*module1, regionCache, std::move(xform));
-inflate.andThenSync([]() {
-  // Do something with the inflated + transformed module.
-});
 ```
 
 This example runs a set of provided passes, caches the result, and at the end,
-inflates the module so a subsequent transform can take place. Because deflation
-is reversible, this works with no changes required in the pass manager. The
-user must simply be sure to inflate before running non-cache-aware passes and
-is free to deflate after the passes have finished.
 
 The most complex part of caching a transform is understanding what the cache
 key needs to include. In the case of the MLIR pass pipeline, the cache key
