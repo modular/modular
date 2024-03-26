@@ -528,6 +528,10 @@ public:
   // Queries
 
   bool shouldPersistVariable(StringRef name, mlir::Type type) override {
+    // Ignore non-user variables.
+    if (MojoParserContext::isHiddenPersistentVariable(name))
+      return false;
+
     auto [it, inserted] =
         nameToVariable.insert({name, newPersistentVariables.size()});
     if (inserted)
@@ -538,7 +542,6 @@ public:
   }
 
 private:
-  StringRef currentModuleName;
   llvm::StringMap<unsigned> nameToVariable;
   SmallVectorImpl<std::pair<StringRef, mlir::Type>> &newPersistentVariables;
 
@@ -1521,6 +1524,7 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
   SmallVector<std::pair<StringRef, mlir::Type>> persistentVariables;
   MojoParserContext &ctx = mainDoc.getParserContext();
   MojoASTDeclRef prevDecl = curReplDecl;
+  LSPMojoREPLListener listener(sourceMgr, persistentVariables);
   for (const auto &block : docString->getCodeBlocks()) {
     StringRef blockContents = block.getRawCode();
     const char *blockStartLoc = translateLoc(blockContents.data());
@@ -1545,7 +1549,6 @@ void MojoDocStrings::addDocString(MojoDocument &mainDoc, MojoASTDeclRef decl,
             mainDocContents, persistentVariables, block.getRawIndentLevel()));
 
     // Parse the code block.
-    LSPMojoREPLListener listener(sourceMgr, persistentVariables);
     auto [moduleDecl, exprFnDecl] = ctx.parseREPLExpression(
         listener, bufferId, contents, "__mojo_repl_lsp_main",
         persistentVariables, prevDecl);

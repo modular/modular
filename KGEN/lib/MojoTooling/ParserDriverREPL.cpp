@@ -856,6 +856,10 @@ void MojoParserContext::removeLastREPLExpression() {
   impl->replModuleDecls.pop_back();
 }
 
+bool MojoParserContext::isHiddenPersistentVariable(StringRef name) {
+  return name.starts_with("__mojo_repl_expr");
+}
+
 //===----------------------------------------------------------------------===//
 // Code Completion/Signature Help
 //===----------------------------------------------------------------------===//

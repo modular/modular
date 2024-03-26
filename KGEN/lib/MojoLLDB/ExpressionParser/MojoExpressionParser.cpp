@@ -599,7 +599,7 @@ public:
   bool shouldPersistVariable(StringRef name, mlir::Type type) override {
     auto canPersist = [&] {
       // We always persist internal repl variables used for execution state.
-      if (name.starts_with("__mojo_repl_expr"))
+      if (MojoParserContext::isHiddenPersistentVariable(name))
         return true;
       // Check if we were requested not to persist anything.
       if (options.GetSuppressPersistentResult())
