@@ -46,7 +46,6 @@ class CacheDialect;
 
 /// Create an instance of the pass with the given LLCL::Runtime.
 std::unique_ptr<mlir::Pass> createInflateSymbolsPass(LLCL::Runtime &rt);
-std::unique_ptr<mlir::Pass> createInflateConstantsPass(LLCL::Runtime &rt);
 
 /// Register the cache passes - their constructors require the LLCL::Runtime
 /// provided.

@@ -32,12 +32,6 @@ struct DataCacheKey {
 /// Convenience typedef to reduce typing.
 using DataCache = BlobCache<DataCacheKey>;
 
-/// Pull cached constants represented by `ConstantHashAttr` from the cache and
-/// replace them on `constant`.
-LLCL::AsyncValueRef<LLCL::Chain> inflateConstant(Operation *constant,
-                                                 RCRef<DataCache> cache,
-                                                 LLCL::AnyAsyncValueRef chain);
-
 /// The Cache dialect can store the region of an op - this struct defines the
 /// cache key. It can be a region (indicating that we need to hash the region)
 /// or a string (indicating that we already know the hash).
