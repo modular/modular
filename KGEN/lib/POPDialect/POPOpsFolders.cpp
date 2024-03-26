@@ -941,38 +941,48 @@ OpFoldResult SelectOp::fold(FoldAdaptor adaptor) {
   return {};
 }
 
-LogicalResult SelectOp::canonicalize(SelectOp op, PatternRewriter &rewriter) {
-  // Fold the following pattern
-  //   %cond: i1
-  //   %true  = kgen.param.constant: scalar<bool> = <true>
-  //   %false = kgen.param.constant: scalar<bool> = <false>
-  //   %res   = pop.select %cond, %true, %false : !pop.scalar<bool>
-  // Into
-  //   %res   = pop.cast_from_builtin %cond i1 to !pop.scalar<bool>
-  auto simdTy = dyn_cast<POP::SIMDType>(op.getType());
-  if (!simdTy || !simdTy.isScalar() ||
-      simdTy.getResolvedDType() != KGENDType::kBool) {
-    return rewriter.notifyMatchFailure(op,
-                                       "result type isn't !pop.scalar<bool>");
+namespace {
+/// Fold the following pattern
+///   %cond: i1
+///   %true  = kgen.param.constant: scalar<bool> = <true>
+///   %false = kgen.param.constant: scalar<bool> = <false>
+///   %res   = pop.select %cond, %true, %false : !pop.scalar<bool>
+/// Into
+///   %res   = pop.cast_from_builtin %cond i1 to !pop.scalar<bool>
+struct SelectTrueFalseScalarBool : OpRewritePattern<SelectOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(SelectOp op,
+                                PatternRewriter &b) const override {
+    auto simdTy = dyn_cast<POP::SIMDType>(op.getType());
+    if (!simdTy || !simdTy.isScalar() ||
+        simdTy.getResolvedDType() != KGENDType::kBool) {
+      return b.notifyMatchFailure(op, "result type isn't !pop.scalar<bool>");
+    }
+
+    SIMDAttr trueVal, falseVal;
+    if (!mlir::matchPattern(op.getTrueValue(), mlir::m_Constant(&trueVal)) ||
+        !mlir::matchPattern(op.getFalseValue(), mlir::m_Constant(&falseVal)))
+      return b.notifyMatchFailure(op, "True/False value isn't constant");
+
+    auto isBoolAttr = [](SIMDAttr attr, bool value) {
+      return attr.getValues().front().getBoolVal() == value;
+    };
+
+    if (isBoolAttr(trueVal, true) && isBoolAttr(falseVal, false)) {
+      b.replaceOpWithNewOp<POP::CastFromBuiltinOp>(op, op.getType(),
+                                                   op.getCondition());
+      return success();
+    }
+
+    return b.notifyMatchFailure(op, "failed to match true/false constants");
   }
+};
+} // namespace
 
-  SIMDAttr trueVal, falseVal;
-  if (!mlir::matchPattern(op.getTrueValue(), mlir::m_Constant(&trueVal)) ||
-      !mlir::matchPattern(op.getFalseValue(), mlir::m_Constant(&falseVal)))
-    return rewriter.notifyMatchFailure(op, "True/False value isn't constant");
-
-  auto isBoolAttr = [](SIMDAttr attr, bool value) {
-    return attr.getValues().front().getBoolVal() == value;
-  };
-
-  if (isBoolAttr(trueVal, true) && isBoolAttr(falseVal, false)) {
-    rewriter.replaceOpWithNewOp<POP::CastFromBuiltinOp>(op, op.getType(),
-                                                        op.getCondition());
-    return success();
-  }
-
-  return rewriter.notifyMatchFailure(op,
-                                     "failed to match true/false constants");
+void SelectOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                           MLIRContext *context) {
+  results.add<SelectTrueFalseScalarBool>(context);
 }
 
 //===----------------------------------------------------------------------===//
