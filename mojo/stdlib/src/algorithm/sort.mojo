@@ -46,6 +46,7 @@ fn _insertion_sort[
         array[j] = value
 
 
+@always_inline
 fn _partition[
     type: AnyRegType, cmp_fn: _cmp_fn_type
 ](array: Pointer[type], start: Int, end: Int) -> Int:
