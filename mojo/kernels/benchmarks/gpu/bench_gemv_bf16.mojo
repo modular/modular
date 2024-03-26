@@ -156,8 +156,8 @@ fn bench_gemv_tc(inout bencher: Bencher, spec: GemvSpec) raises:
     _ = b_host
     _ = c_host
 
-    _ = func_gemv ^
-    _ = stream ^
+    _ = func_gemv^
+    _ = stream^
 
 
 fn bench_gemv_ws(inout bencher: Bencher, spec: GemvSpec) raises:
@@ -228,8 +228,8 @@ fn bench_gemv_ws(inout bencher: Bencher, spec: GemvSpec) raises:
     _ = b_host
     _ = c_host
 
-    _ = func_gemv ^
-    _ = stream ^
+    _ = func_gemv^
+    _ = stream^
 
 
 fn bench_gemv_naive(inout bencher: Bencher, spec: GemvSpec) raises:
@@ -302,8 +302,8 @@ fn bench_gemv_naive(inout bencher: Bencher, spec: GemvSpec) raises:
     _ = b_host
     _ = c_host
 
-    _ = func_gemv ^
-    _ = stream ^
+    _ = func_gemv^
+    _ = stream^
 
 
 @value
