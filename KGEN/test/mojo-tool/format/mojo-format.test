@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo format - < %s 2>&1 | FileCheck %s
+# RUN: mojo format --quiet - < %s 2>&1 | FileCheck %s
 
 # CHECK: fn function() -> Int:
 # CHECK: return 10
