@@ -224,9 +224,9 @@ fn test_sram_blocked_matmul() raises:
     synchronize()
     mat_c.tensor.print()
 
-    _ = mat_a ^
-    _ = mat_b ^
-    _ = mat_c ^
+    _ = mat_a^
+    _ = mat_b^
+    _ = mat_c^
 
 
 fn single_warp_mma_sync_m16n8k8[
@@ -334,9 +334,9 @@ fn test_single_warp_tf32_m16n8k8_matmul() raises:
     synchronize()
     mat_c.tensor.print()
 
-    _ = mat_a ^
-    _ = mat_b ^
-    _ = mat_c ^
+    _ = mat_a^
+    _ = mat_b^
+    _ = mat_c^
 
 
 fn main() raises:

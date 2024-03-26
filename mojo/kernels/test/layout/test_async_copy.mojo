@@ -67,7 +67,7 @@ fn test_async_copy() raises:
     synchronize()
     input.tensor.print()
 
-    _ = input ^
+    _ = input^
 
 
 fn main() raises:

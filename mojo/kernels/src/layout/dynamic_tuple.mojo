@@ -102,7 +102,7 @@ struct DynamicTupleBase[
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
-        self._elements = existing._elements ^
+        self._elements = existing._elements^
 
     @always_inline
     fn __copyinit__(inout self: Self, existing: Self):
@@ -242,7 +242,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn __moveinit__(inout self: Self, owned value: Self):
-        self._value = value._value ^
+        self._value = value._value^
 
     # FIXME: We should have a single variadic constructor (https://github.com/modularml/modular/issues/32000)
     # @always_inline

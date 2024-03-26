@@ -106,7 +106,7 @@ fn test_basic_tensor_ops():
             var tile_2x2 = transposed_tensor.tile[2, 2](tile_i, tile_j)
             print_tile_tensor(tile_2x2)
 
-    _ = managed_tensor ^
+    _ = managed_tensor^
 
 
 # CHECK-LABEL: test_tesnsor_fragments
@@ -154,7 +154,7 @@ fn test_tesnsor_fragments():
         var fragment_4x2 = tensor.distribute[Layout(IntTuple(2, 2))](th_i)
         print_tile_tensor(fragment_4x2)
 
-    _ = managed_tensor ^
+    _ = managed_tensor^
 
 
 # CHECK-LABEL: test_tensor_tile_and_distribute
@@ -249,7 +249,7 @@ fn test_tensor_tile_and_distribute():
                 )
                 print("----fragments-data[", th_i, "]----")
                 print_tile_tensor(fragment_2x2)
-    _ = managed_tensor ^
+    _ = managed_tensor^
 
 
 # CHECK-LABEL: test_tensor_tile_and_distribute_custom_layout
@@ -298,7 +298,7 @@ fn test_tensor_tile_and_distribute_custom_layout():
         print("----fragments-data[", th_i, "]----")
         fragments_1x2.print()
 
-    _ = managed_tensor ^
+    _ = managed_tensor^
 
 
 # CHECK-LABEL: test_copy_to_tile_major_layout

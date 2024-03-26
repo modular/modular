@@ -71,8 +71,8 @@ struct Layout(Sized, Stringable, CollectionElement, EqualityComparable):
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
-        self.shape = existing.shape ^
-        self.stride = existing.stride ^
+        self.shape = existing.shape^
+        self.stride = existing.stride^
 
     @always_inline
     fn __copyinit__(inout self, existing: Self):
