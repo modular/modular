@@ -960,11 +960,14 @@ fn broadcast_to_shape[
 
     # move the output shape from buffer into a static int tuple
     var output_shape = StaticIntTuple[output_rank]()
+
+    @unroll
     for axis in range(output_rank):
         output_shape[axis] = int(target_shape_buf[axis])
 
     # Validate the compatibility between input and output shapes
     # NOTE we don't need to check the padded dims
+    @unroll
     for i in range(input_rank):
         var input_axis = input_rank - i - 1
         var output_axis = output_rank - i - 1
@@ -973,7 +976,7 @@ fn broadcast_to_shape[
         if input_dim != 1 and input_dim != output_dim:
             raise Error(
                 "[broadcast_to] input dim must be either 1 or equal to"
-                " corresponding output dim"
+                " corresponding output dim starting from the rightmost dim"
             )
     return output_shape
 
