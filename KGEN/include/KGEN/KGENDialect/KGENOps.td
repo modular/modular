@@ -38,8 +38,7 @@ class KGENOp<string mnemonic, list<Trait> traits = []> :
 
 def KGEN_FuncOp : KGENOp<"func", [
     HasParent<"mlir::ModuleOp">, FunctionOpInterface, Symbol, IsolatedFromAbove,
-    SingleBlock, DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-    DeclInterface, FuncInterface, FunctionLike, ExportInterface]> {
+    SingleBlock, DeclInterface, FuncInterface, FunctionLike, ExportInterface]> {
   let summary = "Concrete function definition.";
   let description = [{
     The `kgen.func` operation represents a concrete KGEN function. It has no

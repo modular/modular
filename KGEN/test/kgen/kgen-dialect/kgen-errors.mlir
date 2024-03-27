@@ -284,20 +284,6 @@ kgen.generator @caller<DT: dtype>(%arg0: !pop.scalar<DT>) {
 
 // -----
 
-// Reject uses of parameters in kgen.func since the elaborator should remove them.
-kgen.func @test() {  // expected-note {{within kgen.func 'test'}}
-  // Declaring parameters in a kernel is ok.
-  kgen.param.declare someParam = <42>
-
-  // Using them is not.
-  // expected-error@+1 {{invalid use of parameter "someParam" in kgen.func}}
-  "someop" () {} : () -> !pop.simd<someParam, f32>
-
-  kgen.return
-}
-
-// -----
-
 // kgen.func isn't allowed to call generators that take parameters,
 // but they are allowed to call generators with no parameters.
 
