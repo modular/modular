@@ -214,7 +214,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         Args:
           dims: The tensor dimensions.
         """
-        self = Tensor[dtype](TensorSpec(dtype, dims))
+        self = Self(TensorSpec(dtype, dims))
 
     @always_inline
     fn __init__(inout self, owned shape: TensorShape):
@@ -223,7 +223,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         Args:
           shape: The tensor shape.
         """
-        self = Tensor[dtype](TensorSpec(dtype, shape^))
+        self = Self(TensorSpec(dtype, shape^))
 
     @always_inline
     fn __init__(inout self, owned spec: TensorSpec):
@@ -239,27 +239,27 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
 
     @always_inline
     fn __init__(
-        inout self, owned ptr: DTypePointer[dtype], owned shape: TensorShape
+        inout self, owned shape: TensorShape, owned ptr: DTypePointer[dtype]
     ):
         """Initializes a Tensor from the pointer and shape provided. The caller
         relinquishes the ownership of the pointer being passed in.
 
         Args:
-          ptr: The data pointer.
           shape: The tensor shapes.
+          ptr: The data pointer.
         """
-        self = Tensor[dtype](ptr, TensorSpec(dtype, shape^))
+        self = Self(TensorSpec(dtype, shape^), ptr)
 
     @always_inline
     fn __init__(
-        inout self, owned ptr: DTypePointer[dtype], owned spec: TensorSpec
+        inout self, owned spec: TensorSpec, owned ptr: DTypePointer[dtype]
     ):
         """Initializes a Tensor from the pointer and shape provided. The caller
         relinquishes the ownership of the pointer being passed in.
 
         Args:
-          ptr: The data pointer.
           spec: The tensor spec.
+          ptr: The data pointer.
         """
         self._spec = spec^
         self._ptr = ptr
@@ -276,7 +276,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         var ptr = DTypePointer[dtype].alloc(len(data))
         for i in range(len(data)):
             ptr[i] = data[i]
-        self.__init__(ptr, shape)
+        self = Self(shape, ptr)
 
     @always_inline
     fn __init__(
@@ -291,11 +291,11 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         # Store the list length before we do a wiping take from it
         var list_len = len(list)
 
-        var data_anyptr: AnyPointer[Scalar[dtype]] = list.steal_data()
+        var data_anyptr = list.steal_data()
         var data_ptr = Pointer[Scalar[dtype]].__from_index(int(data_anyptr))
-        var data_dptr: DTypePointer[dtype] = DTypePointer[dtype](data_ptr)
+        var data_dptr = DTypePointer[dtype](data_ptr)
 
-        self = Tensor[dtype](data_dptr, shape)
+        self = Self(shape, data_dptr)
 
     @always_inline
     fn __init__(inout self, owned list: List[Scalar[dtype]]):
@@ -307,11 +307,11 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         # Store the list length before we do a wiping take from it
         var list_len = len(list)
 
-        var data_anyptr: AnyPointer[Scalar[dtype]] = list.steal_data()
+        var data_anyptr = list.steal_data()
         var data_ptr = Pointer[Scalar[dtype]].__from_index(int(data_anyptr))
-        var data_dptr: DTypePointer[dtype] = DTypePointer[dtype](data_ptr)
+        var data_dptr = DTypePointer[dtype](data_ptr)
 
-        self = Tensor[dtype](data_dptr, TensorShape(list_len))
+        self = Self(TensorShape(list_len), data_dptr)
 
     @always_inline
     fn __del__(owned self):
@@ -1181,9 +1181,9 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         """
         var byte_tensor = Tensor[DType.int8](path.read_bytes())
         var num_elements = byte_tensor.num_elements()
-        return Tensor(
-            bitcast[dtype](byte_tensor._steal_ptr()),
+        return Self(
             num_elements // dtype.sizeof(),
+            bitcast[dtype](byte_tensor._steal_ptr()),
         )
 
     fn save(self, path: Path) raises:
@@ -1242,7 +1242,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         if dtype != spec.dtype():
             raise "requested type doesn't match the dtype in serialized tensor."
         var data = spec_ptr + sizeof[TensorSpec]()
-        var tensor = Tensor[dtype](spec)
+        var tensor = Self(spec)
         if spec.num_elements() == 0:
             return tensor
         memcpy(tensor.data(), bitcast[dtype](data), spec.num_elements())
