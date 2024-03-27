@@ -24,7 +24,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "Support/Threading/ThreadLocalCache.h"
+#include "Support/Compiler/Threading.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
 #include "mlir/IR/Threading.h"
@@ -220,23 +220,17 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
     // Sum the number of deduplicated operators over all work items.
     std::atomic<unsigned> totNumDedupedApplies = 0;
 
-    // Give each thread a copy of the parameter cache, rather than each work
-    // item.
-    ThreadLocalCache<ParameterCollector::Analysis> threadCaches(
-        paramCache, getContext().isMultithreadingEnabled()
-                        ? getContext().getThreadPool().getMaxConcurrency()
-                        : 1);
-
-    auto workFunc = [&threadCaches, &totNumDedupedApplies](GeneratorOp func) {
+    auto workFunc = [&totNumDedupedApplies](auto &cache, GeneratorOp func) {
       ParameterUseDefGraph graph(func.getBodyRegion());
-      ParameterCollector::Analysis &cache = threadCaches.getThreadLocalCache();
       graph.calculate(cache);
       unsigned numDedupedApplies = 0;
       liftAndFoldApply(&func.getBodyRegion(), cache, graph, numDedupedApplies);
       totNumDedupedApplies += numDedupedApplies;
     };
-    mlir::parallelForEach(&getContext(), getOperation().getOps<GeneratorOp>(),
-                          workFunc);
+
+    std::vector<GeneratorOp> work;
+    llvm::append_range(work, getOperation().getOps<GeneratorOp>());
+    parallelForEach(&getContext(), work, workFunc, paramCache);
 
     markAllAnalysesPreserved();
     numDedupedApplies = totNumDedupedApplies;

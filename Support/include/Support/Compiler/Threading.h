@@ -73,6 +73,28 @@ LogicalResult failableParallelForEach(MLIRContext *ctx, RangeT &&range,
   consolidate(cache, workerCaches);
   return failure(processingFailed);
 }
+
+/// This version of the function has a no-op consolidate function.
+template <typename RangeT, typename FuncT, typename CacheT>
+LogicalResult failableParallelForEach(MLIRContext *ctx, RangeT &&range,
+                                      FuncT &&func, CacheT &cache) {
+  return failableParallelForEach(ctx, std::forward<RangeT>(range),
+                                 std::forward<FuncT>(func), cache,
+                                 [](auto &&...) {});
+}
+
+/// This version of the function is not failable.
+template <typename RangeT, typename FuncT, typename CacheT>
+void parallelForEach(MLIRContext *ctx, RangeT &&range, FuncT &&func,
+                     CacheT &cache) {
+  (void)failableParallelForEach(
+      ctx, std::forward<RangeT>(range),
+      [&](CacheT &cache, auto &&arg) {
+        return func(cache, std::forward<decltype(arg)>(arg)), success();
+      },
+      cache, [](auto &&...) {});
+}
+
 } // namespace M
 
 #endif // SUPPORT_COMPILER_THREADING_H
