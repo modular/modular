@@ -311,7 +311,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     ptr.store(y, x)
 
     var transpose_indices = g.constant(
-        Tensor[DType.int64](ptr, TensorShape(input_type.rank()))
+        Tensor[DType.int64](TensorShape(input_type.rank()), ptr)
     )
 
     return g.op(
