@@ -16,7 +16,7 @@ from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 
 from memory.unsafe import Pointer
 
-alias cublasLtContext = NoneType
+alias Context = NoneType
 
 # ===----------------------------------------------------------------------===#
 # Library Load
@@ -62,7 +62,7 @@ fn _get_dylib_function[
 
 fn cublasLtMatmulAlgoConfigSetAttribute(
     algo: Pointer[MatmulAlgorithm],
-    attr: cublasLtMatmulAlgoConfigAttributes_t,
+    attr: AlgorithmConfig,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
 ) raises -> Result:
@@ -81,7 +81,7 @@ fn cublasLtMatmulAlgoConfigSetAttribute(
         "cublasLtMatmulAlgoConfigSetAttribute",
         fn (
             Pointer[MatmulAlgorithm],
-            cublasLtMatmulAlgoConfigAttributes_t,
+            AlgorithmConfig,
             Pointer[NoneType],
             Int,
         ) raises -> Result,
@@ -89,16 +89,16 @@ fn cublasLtMatmulAlgoConfigSetAttribute(
 
 
 fn cublasLtCreate(
-    light_handle: Pointer[Pointer[cublasLtContext]],
+    light_handle: Pointer[Pointer[Context]],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLtCreate",
-        fn (Pointer[Pointer[cublasLtContext]]) raises -> Result,
+        fn (Pointer[Pointer[Context]]) raises -> Result,
     ]()(light_handle)
 
 
 fn cublasLtMatrixTransformDescCreate(
-    transform_desc: Pointer[Pointer[cublasLtMatrixTransformDescOpaque_t]],
+    transform_desc: Pointer[Pointer[Transform]],
     scale_type: DataType,
 ) raises -> Result:
     """Create new matrix transform operation descriptor.
@@ -109,7 +109,7 @@ fn cublasLtMatrixTransformDescCreate(
     return _get_dylib_function[
         "cublasLtMatrixTransformDescCreate",
         fn (
-            Pointer[Pointer[cublasLtMatrixTransformDescOpaque_t]],
+            Pointer[Pointer[Transform]],
             DataType,
         ) raises -> Result,
     ]()(transform_desc, scale_type)
@@ -179,8 +179,8 @@ struct Order:
 
 
 fn cublasLtMatrixLayoutSetAttribute(
-    mat_layout: Pointer[cublasLtMatrixLayoutOpaque_t],
-    attr: cublasLtMatrixLayoutAttribute_t,
+    mat_layout: Pointer[MatrixLayout],
+    attr: LayoutAttribute,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
 ) raises -> Result:
@@ -198,8 +198,8 @@ fn cublasLtMatrixLayoutSetAttribute(
     return _get_dylib_function[
         "cublasLtMatrixLayoutSetAttribute",
         fn (
-            Pointer[cublasLtMatrixLayoutOpaque_t],
-            cublasLtMatrixLayoutAttribute_t,
+            Pointer[MatrixLayout],
+            LayoutAttribute,
             Pointer[NoneType],
             Int,
         ) raises -> Result,
@@ -211,7 +211,7 @@ fn cublasLtMatrixLayoutSetAttribute(
 struct ClusterShape:
     """Thread Block Cluster size.
 
-    Typically dimensioned similar to cublasLtMatmulTile_t, with the third coordinate unused at this time.
+    Typically dimensioned similar to Tile, with the third coordinate unused at this time.
     ."""
 
     var _value: Int8
@@ -506,21 +506,21 @@ struct MatmulAlgorithmCapability:
 
     var _value: Int8
     alias SPLITK_SUPPORT = MatmulAlgorithmCapability(0)
-    """support for split K, see CUBLASLT_ALGO_CONFIG_SPLITK_NUM
+    """support for split K, see SPLITK_NUM
 
     int32_t, 0 means no support, supported otherwise.
     """
     alias REDUCTION_SCHEME_MASK = MatmulAlgorithmCapability(1)
-    """reduction scheme mask, see cublasLtReductionScheme_t; shows supported reduction schemes, if reduction scheme is
+    """reduction scheme mask, see ReductionScheme; shows supported reduction schemes, if reduction scheme is
     not masked out it is supported.
 
-    e.g. int isReductionSchemeComputeTypeSupported ? (reductionSchemeMask & CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE) ==
-    CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE ? 1 : 0;
+    e.g. int isReductionSchemeComputeTypeSupported ? (reductionSchemeMask & COMPUTE_TYPE) ==
+    COMPUTE_TYPE ? 1 : 0;
 
     uint32_t.
     """
     alias CTA_SWIZZLING_SUPPORT = MatmulAlgorithmCapability(2)
-    """support for cta swizzling, see CUBLASLT_ALGO_CONFIG_CTA_SWIZZLING
+    """support for cta swizzling, see CTA_SWIZZLING
 
     uint32_t, 0 means no support, 1 means supported value of 1, other values are reserved.
     """
@@ -540,8 +540,8 @@ struct MatmulAlgorithmCapability:
     int32_t, 0 means no support, supported otherwise.
     """
     alias TILE_IDS = MatmulAlgorithmCapability(6)
-    """tile ids possible to use, see cublasLtMatmulTile_t; if no tile ids are supported use
-    CUBLASLT_MATMUL_TILE_UNDEFINED
+    """tile ids possible to use, see Tile; if no tile ids are supported use
+    TILE_UNDEFINED
 
     use cublasLtMatmulAlgoCapGetAttribute() with sizeInBytes=0 to query actual count
 
@@ -549,7 +549,7 @@ struct MatmulAlgorithmCapability:
     """
     alias CUSTOM_OPTION_MAX = MatmulAlgorithmCapability(7)
     """custom option range is from 0 to CUSTOM_OPTION_MAX (inclusive), see
-    CUBLASLT_ALGO_CONFIG_CUSTOM_OPTION
+    CUSTOM_OPTION
 
     int32_t.
     """
@@ -562,16 +562,16 @@ struct MatmulAlgorithmCapability:
     alias POINTER_MODE_MASK = MatmulAlgorithmCapability(9)
     """bitmask enumerating pointer modes algorithm supports
 
-    uint32_t, see cublasLtPointerModeMask_t.
+    uint32_t, see PointerModeMask.
     """
     alias EPILOGUE_MASK = MatmulAlgorithmCapability(10)
     """bitmask enumerating kinds of postprocessing algorithm supports in the epilogue
 
-    uint32_t, see cublasLtEpilogue_t.
+    uint32_t, see Epilogue.
     """
     alias STAGES_IDS = MatmulAlgorithmCapability(11)
-    """stages ids possible to use, see cublasLtMatmulStages_t; if no stages ids are supported use
-    CUBLASLT_MATMUL_STAGES_UNDEFINED
+    """stages ids possible to use, see Stages; if no stages ids are supported use
+    STAGES_UNDEFINED
 
     use cublasLtMatmulAlgoCapGetAttribute() with sizeInBytes=0 to query actual count
 
@@ -727,7 +727,7 @@ struct PointerMode:
 
 
 fn cublasLtMatmulDescGetAttribute(
-    matmul_desc: Pointer[cublasLtMatmulDescOpaque_t],
+    matmul_desc: Pointer[Descriptor],
     attr: cublasLtMatmulDescAttributes_t,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
@@ -750,7 +750,7 @@ fn cublasLtMatmulDescGetAttribute(
     return _get_dylib_function[
         "cublasLtMatmulDescGetAttribute",
         fn (
-            Pointer[cublasLtMatmulDescOpaque_t],
+            Pointer[Descriptor],
             cublasLtMatmulDescAttributes_t,
             Pointer[NoneType],
             Int,
@@ -761,22 +761,20 @@ fn cublasLtMatmulDescGetAttribute(
 
 # Opaque descriptor for matrix memory layout
 # .
-alias cublasLtMatrixLayout_t = Pointer[cublasLtMatrixLayoutOpaque_t]
+alias cublasLtMatrixLayout_t = Pointer[MatrixLayout]
 
 # Opaque descriptor for cublasLtMatrixTransform() operation details
 # .
-alias cublasLtMatrixTransformDesc_t = Pointer[
-    cublasLtMatrixTransformDescOpaque_t
-]
+alias cublasLtMatrixTransformDesc_t = Pointer[Transform]
 
 
 fn cublasLtMatmulAlgoCheck(
-    light_handle: Pointer[cublasLtContext],
-    operation_desc: Pointer[cublasLtMatmulDescOpaque_t],
-    _adesc: Pointer[cublasLtMatrixLayoutOpaque_t],
-    _bdesc: Pointer[cublasLtMatrixLayoutOpaque_t],
-    _cdesc: Pointer[cublasLtMatrixLayoutOpaque_t],
-    _ddesc: Pointer[cublasLtMatrixLayoutOpaque_t],
+    light_handle: Pointer[Context],
+    operation_desc: Pointer[Descriptor],
+    _adesc: Pointer[MatrixLayout],
+    _bdesc: Pointer[MatrixLayout],
+    _cdesc: Pointer[MatrixLayout],
+    _ddesc: Pointer[MatrixLayout],
     algo: Pointer[MatmulAlgorithm],
     result: Pointer[cublasLtMatmulHeuristicResult_t],
 ) raises -> Result:
@@ -800,12 +798,12 @@ fn cublasLtMatmulAlgoCheck(
     return _get_dylib_function[
         "cublasLtMatmulAlgoCheck",
         fn (
-            Pointer[cublasLtContext],
-            Pointer[cublasLtMatmulDescOpaque_t],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
+            Pointer[Context],
+            Pointer[Descriptor],
+            Pointer[MatrixLayout],
+            Pointer[MatrixLayout],
+            Pointer[MatrixLayout],
+            Pointer[MatrixLayout],
             Pointer[MatmulAlgorithm],
             Pointer[cublasLtMatmulHeuristicResult_t],
         ) raises -> Result,
@@ -823,27 +821,27 @@ fn cublasLtMatmulAlgoCheck(
 
 @value
 @register_passable("trivial")
-struct cublasLtMatmulSearch_t:
+struct Search:
     """Matmul heuristic search mode
     ."""
 
     var _value: Int8
-    alias CUBLASLT_SEARCH_BEST_FIT = cublasLtMatmulSearch_t(0)
+    alias BEST_FIT = Search(0)
     """ask heuristics for best algo for given usecase.
     """
-    alias CUBLASLT_SEARCH_LIMITED_BY_ALGO_ID = cublasLtMatmulSearch_t(1)
+    alias LIMITED_BY_ALGO_ID = Search(1)
     """only try to find best config for preconfigured algo id.
     """
-    alias CUBLASLT_SEARCH_RESERVED_02 = cublasLtMatmulSearch_t(2)
+    alias RESERVED_02 = Search(2)
     """reserved for future use.
     """
-    alias CUBLASLT_SEARCH_RESERVED_03 = cublasLtMatmulSearch_t(3)
+    alias RESERVED_03 = Search(3)
     """reserved for future use.
     """
-    alias CUBLASLT_SEARCH_RESERVED_04 = cublasLtMatmulSearch_t(4)
+    alias RESERVED_04 = Search(4)
     """reserved for future use.
     """
-    alias CUBLASLT_SEARCH_RESERVED_05 = cublasLtMatmulSearch_t(5)
+    alias RESERVED_05 = Search(5)
     """reserved for future use.
     """
 
@@ -857,19 +855,19 @@ struct cublasLtMatmulSearch_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.CUBLASLT_SEARCH_BEST_FIT:
-            return "CUBLASLT_SEARCH_BEST_FIT"
-        if self == Self.CUBLASLT_SEARCH_LIMITED_BY_ALGO_ID:
-            return "CUBLASLT_SEARCH_LIMITED_BY_ALGO_ID"
-        if self == Self.CUBLASLT_SEARCH_RESERVED_02:
-            return "CUBLASLT_SEARCH_RESERVED_02"
-        if self == Self.CUBLASLT_SEARCH_RESERVED_03:
-            return "CUBLASLT_SEARCH_RESERVED_03"
-        if self == Self.CUBLASLT_SEARCH_RESERVED_04:
-            return "CUBLASLT_SEARCH_RESERVED_04"
-        if self == Self.CUBLASLT_SEARCH_RESERVED_05:
-            return "CUBLASLT_SEARCH_RESERVED_05"
-        return abort[String]("invalid cublasLtMatmulSearch_t entry")
+        if self == Self.BEST_FIT:
+            return "BEST_FIT"
+        if self == Self.LIMITED_BY_ALGO_ID:
+            return "LIMITED_BY_ALGO_ID"
+        if self == Self.RESERVED_02:
+            return "RESERVED_02"
+        if self == Self.RESERVED_03:
+            return "RESERVED_03"
+        if self == Self.RESERVED_04:
+            return "RESERVED_04"
+        if self == Self.RESERVED_05:
+            return "RESERVED_05"
+        return abort[String]("invalid Search entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
@@ -877,25 +875,25 @@ struct cublasLtMatmulSearch_t:
 
 @value
 @register_passable("trivial")
-struct cublasLtReductionScheme_t:
+struct ReductionScheme:
     """Reduction scheme for portions of the dot-product calculated in parallel (a. k. a. "split - K").
     ."""
 
     var _value: Int8
-    alias CUBLASLT_REDUCTION_SCHEME_NONE = cublasLtReductionScheme_t(0)
+    alias NONE = ReductionScheme(0)
     """No reduction scheme, dot-product shall be performed in one sequence.
     """
-    alias CUBLASLT_REDUCTION_SCHEME_INPLACE = cublasLtReductionScheme_t(1)
+    alias INPLACE = ReductionScheme(1)
     """Reduction is performed "in place" - using the output buffer (and output data type) and counters (in workspace) to
     guarantee the sequentiality.
     """
-    alias CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE = cublasLtReductionScheme_t(2)
+    alias COMPUTE_TYPE = ReductionScheme(2)
     """Intermediate results are stored in compute type in the workspace and reduced in a separate step.
     """
-    alias CUBLASLT_REDUCTION_SCHEME_OUTPUT_TYPE = cublasLtReductionScheme_t(3)
+    alias OUTPUT_TYPE = ReductionScheme(3)
     """Intermediate results are stored in output type in the workspace and reduced in a separate step.
     """
-    alias CUBLASLT_REDUCTION_SCHEME_MASK = cublasLtReductionScheme_t(4)
+    alias MASK = ReductionScheme(4)
     """Intermediate results are stored in output type in the workspace and reduced in a separate step.
     """
 
@@ -909,17 +907,17 @@ struct cublasLtReductionScheme_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.CUBLASLT_REDUCTION_SCHEME_NONE:
-            return "CUBLASLT_REDUCTION_SCHEME_NONE"
-        if self == Self.CUBLASLT_REDUCTION_SCHEME_INPLACE:
-            return "CUBLASLT_REDUCTION_SCHEME_INPLACE"
-        if self == Self.CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE:
-            return "CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE"
-        if self == Self.CUBLASLT_REDUCTION_SCHEME_OUTPUT_TYPE:
-            return "CUBLASLT_REDUCTION_SCHEME_OUTPUT_TYPE"
-        if self == Self.CUBLASLT_REDUCTION_SCHEME_MASK:
-            return "CUBLASLT_REDUCTION_SCHEME_MASK"
-        return abort[String]("invalid cublasLtReductionScheme_t entry")
+        if self == Self.NONE:
+            return "NONE"
+        if self == Self.INPLACE:
+            return "INPLACE"
+        if self == Self.COMPUTE_TYPE:
+            return "COMPUTE_TYPE"
+        if self == Self.OUTPUT_TYPE:
+            return "OUTPUT_TYPE"
+        if self == Self.MASK:
+            return "MASK"
+        return abort[String]("invalid ReductionScheme entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
@@ -954,8 +952,8 @@ fn cublasLtGetVersion() raises -> Int:
 
 
 fn cublasLtMatrixLayoutGetAttribute(
-    mat_layout: Pointer[cublasLtMatrixLayoutOpaque_t],
-    attr: cublasLtMatrixLayoutAttribute_t,
+    mat_layout: Pointer[MatrixLayout],
+    attr: LayoutAttribute,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
     size_written: Pointer[Int],
@@ -977,8 +975,8 @@ fn cublasLtMatrixLayoutGetAttribute(
     return _get_dylib_function[
         "cublasLtMatrixLayoutGetAttribute",
         fn (
-            Pointer[cublasLtMatrixLayoutOpaque_t],
-            cublasLtMatrixLayoutAttribute_t,
+            Pointer[MatrixLayout],
+            LayoutAttribute,
             Pointer[NoneType],
             Int,
             Pointer[Int],
@@ -987,7 +985,7 @@ fn cublasLtMatrixLayoutGetAttribute(
 
 
 @register_passable("trivial")
-struct cublasLtMatmulPreferenceOpaque_t:
+struct PreferenceOpaque:
     """Semi-opaque descriptor for cublasLtMatmulPreference() operation details
     ."""
 
@@ -1042,19 +1040,19 @@ struct cublasLtMatmulDescAttributes_t:
     int32_t, default: CUBLAS_FILL_MODE_FULL.
     """
     alias CUBLASLT_MATMUL_DESC_EPILOGUE = cublasLtMatmulDescAttributes_t(7)
-    """Epilogue function, see cublasLtEpilogue_t.
+    """Epilogue function, see Epilogue.
 
-    uint32_t, default: CUBLASLT_EPILOGUE_DEFAULT.
+    uint32_t, default: DEFAULT.
     """
     alias CUBLASLT_MATMUL_DESC_BIAS_POINTER = cublasLtMatmulDescAttributes_t(8)
     """Bias or bias gradient vector pointer in the device memory.
 
-    Bias case. See CUBLASLT_EPILOGUE_BIAS.
+    Bias case. See BIAS.
     For bias data type see CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE.
 
     Bias vector length must match matrix D rows count.
 
-    Bias gradient case. See CUBLASLT_EPILOGUE_DRELU_BGRAD and CUBLASLT_EPILOGUE_DGELU_BGRAD.
+    Bias gradient case. See DRELU_BGRAD and DGELU_BGRAD.
     Bias gradient vector elements are the same type as the output elements
     (Ctype) with the exception of IMMA kernels (see above).
 
@@ -1069,7 +1067,7 @@ struct cublasLtMatmulDescAttributes_t:
     )
     """Batch stride for bias or bias gradient vector.
 
-    Used together with CUBLASLT_MATMUL_DESC_BIAS_POINTER when matrix D's CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT > 1.
+    Used together with CUBLASLT_MATMUL_DESC_BIAS_POINTER when matrix D's BATCH_COUNT > 1.
 
     int64_t, default: 0.
     """
@@ -1078,15 +1076,15 @@ struct cublasLtMatmulDescAttributes_t:
     )
     """Pointer for epilogue auxiliary buffer.
 
-    - Output vector for ReLu bit-mask in forward pass when CUBLASLT_EPILOGUE_RELU_AUX
-     or CUBLASLT_EPILOGUE_RELU_AUX_BIAS epilogue is used.
+    - Output vector for ReLu bit-mask in forward pass when RELU_AUX
+     or RELU_AUX_BIAS epilogue is used.
     - Input vector for ReLu bit-mask in backward pass when
-     CUBLASLT_EPILOGUE_DRELU_BGRAD epilogue is used.
+     DRELU_BGRAD epilogue is used.
 
     - Output of GELU input matrix in forward pass when
-     CUBLASLT_EPILOGUE_GELU_AUX_BIAS epilogue is used.
+     GELU_AUX_BIAS epilogue is used.
     - Input of GELU input matrix for backward pass when
-     CUBLASLT_EPILOGUE_DGELU_BGRAD epilogue is used.
+     DGELU_BGRAD epilogue is used.
 
     For aux data type see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_DATA_TYPE.
 
@@ -1104,11 +1102,11 @@ struct cublasLtMatmulDescAttributes_t:
     """Leading dimension for epilogue auxiliary buffer.
 
     - ReLu bit-mask matrix leading dimension in elements (i.e. bits)
-     when CUBLASLT_EPILOGUE_RELU_AUX, CUBLASLT_EPILOGUE_RELU_AUX_BIAS or CUBLASLT_EPILOGUE_DRELU_BGRAD epilogue is
+     when RELU_AUX, RELU_AUX_BIAS or DRELU_BGRAD epilogue is
     used. Must be divisible by 128 and be no less than the number of rows in the output matrix.
 
     - GELU input matrix leading dimension in elements
-     when CUBLASLT_EPILOGUE_GELU_AUX_BIAS or CUBLASLT_EPILOGUE_DGELU_BGRAD epilogue used.
+     when GELU_AUX_BIAS or DGELU_BGRAD epilogue used.
      Must be divisible by 8 and be no less than the number of rows in the output matrix.
 
     int64_t, default: 0.
@@ -1119,11 +1117,11 @@ struct cublasLtMatmulDescAttributes_t:
     """Batch stride for epilogue auxiliary buffer.
 
     - ReLu bit-mask matrix batch stride in elements (i.e. bits)
-     when CUBLASLT_EPILOGUE_RELU_AUX, CUBLASLT_EPILOGUE_RELU_AUX_BIAS or CUBLASLT_EPILOGUE_DRELU_BGRAD epilogue is
+     when RELU_AUX, RELU_AUX_BIAS or DRELU_BGRAD epilogue is
     used. Must be divisible by 128.
 
     - GELU input matrix batch stride in elements
-     when CUBLASLT_EPILOGUE_GELU_AUX_BIAS or CUBLASLT_EPILOGUE_DGELU_BGRAD epilogue used.
+     when GELU_AUX_BIAS or DGELU_BGRAD epilogue used.
      Must be divisible by 8.
 
     int64_t, default: 0.
@@ -1134,7 +1132,7 @@ struct cublasLtMatmulDescAttributes_t:
     """Batch stride for alpha vector.
 
     Used together with ALPHA_DEVICE_VECTOR_BETA_HOST when matrix D's
-    CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT > 1. If ALPHA_DEVICE_VECTOR_BETA_ZERO is set then
+    BATCH_COUNT > 1. If ALPHA_DEVICE_VECTOR_BETA_ZERO is set then
     CUBLASLT_MATMUL_DESC_ALPHA_VECTOR_BATCH_STRIDE must be set to 0 as this mode doesnt supported batched alpha vector.
 
     int64_t, default: 0.
@@ -1275,7 +1273,7 @@ struct cublasLtMatmulDescAttributes_t:
     )
     """Type of bias or bias gradient vector in the device memory.
 
-    Bias case: see CUBLASLT_EPILOGUE_BIAS.
+    Bias case: see BIAS.
 
     Bias vector elements are the same type as the elements of output matrix (Dtype) with the following exceptions:
     - IMMA kernels with computeType=CUDA_R_32I and Ctype=CUDA_R_8I where the bias vector elements
@@ -1389,7 +1387,7 @@ struct cublasLtMatmulDescAttributes_t:
 
 
 fn cublasLtMatrixTransformDescInit_internal(
-    transform_desc: Pointer[cublasLtMatrixTransformDescOpaque_t],
+    transform_desc: Pointer[Transform],
     size: Int,
     scale_type: DataType,
 ) raises -> Result:
@@ -1397,14 +1395,12 @@ fn cublasLtMatrixTransformDescInit_internal(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescInit_internal",
-        fn (
-            Pointer[cublasLtMatrixTransformDescOpaque_t], Int, DataType
-        ) raises -> Result,
+        fn (Pointer[Transform], Int, DataType) raises -> Result,
     ]()(transform_desc, size, scale_type)
 
 
 fn cublasLtMatrixLayoutDestroy(
-    mat_layout: Pointer[cublasLtMatrixLayoutOpaque_t],
+    mat_layout: Pointer[MatrixLayout],
 ) raises -> Result:
     """Destroy matrix layout descriptor.
 
@@ -1412,32 +1408,32 @@ fn cublasLtMatrixLayoutDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixLayoutDestroy",
-        fn (Pointer[cublasLtMatrixLayoutOpaque_t]) raises -> Result,
+        fn (Pointer[MatrixLayout]) raises -> Result,
     ]()(mat_layout)
 
 
 # Opaque descriptor for cublasLtMatmul() operation details
 # .
-alias cublasLtMatmulDesc_t = Pointer[cublasLtMatmulDescOpaque_t]
+alias cublasLtMatmulDesc_t = Pointer[Descriptor]
 
 # Opaque descriptor for cublasLtMatmulAlgoGetHeuristic() configuration
 # .
-alias cublasLtMatmulPreference_t = Pointer[cublasLtMatmulPreferenceOpaque_t]
+alias cublasLtMatmulPreference_t = Pointer[PreferenceOpaque]
 
 
 fn cublasLtMatmul(
-    light_handle: Pointer[cublasLtContext],
-    compute_desc: Pointer[cublasLtMatmulDescOpaque_t],
+    light_handle: Pointer[Context],
+    compute_desc: Pointer[Descriptor],
     alpha: Pointer[NoneType],
     _a: Pointer[NoneType],
-    _adesc: Pointer[cublasLtMatrixLayoutOpaque_t],
+    _adesc: Pointer[MatrixLayout],
     _b: Pointer[NoneType],
-    _bdesc: Pointer[cublasLtMatrixLayoutOpaque_t],
+    _bdesc: Pointer[MatrixLayout],
     beta: Pointer[NoneType],
     _c: Pointer[NoneType],
-    _cdesc: Pointer[cublasLtMatrixLayoutOpaque_t],
+    _cdesc: Pointer[MatrixLayout],
     _d: Pointer[NoneType],
-    _ddesc: Pointer[cublasLtMatrixLayoutOpaque_t],
+    _ddesc: Pointer[MatrixLayout],
     algo: Pointer[MatmulAlgorithm],
     workspace: Pointer[NoneType],
     workspace_size_in_bytes: Int,
@@ -1458,18 +1454,18 @@ fn cublasLtMatmul(
     return _get_dylib_function[
         "cublasLtMatmul",
         fn (
-            Pointer[cublasLtContext],
-            Pointer[cublasLtMatmulDescOpaque_t],
+            Pointer[Context],
+            Pointer[Descriptor],
             Pointer[NoneType],
             Pointer[NoneType],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
+            Pointer[MatrixLayout],
             Pointer[NoneType],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
+            Pointer[MatrixLayout],
             Pointer[NoneType],
             Pointer[NoneType],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
+            Pointer[MatrixLayout],
             Pointer[NoneType],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
+            Pointer[MatrixLayout],
             Pointer[MatmulAlgorithm],
             Pointer[NoneType],
             Int,
@@ -1496,7 +1492,7 @@ fn cublasLtMatmul(
 
 
 fn cublasLtMatrixTransformDescDestroy(
-    transform_desc: Pointer[cublasLtMatrixTransformDescOpaque_t],
+    transform_desc: Pointer[Transform],
 ) raises -> Result:
     """Destroy matrix transform operation descriptor.
 
@@ -1504,7 +1500,7 @@ fn cublasLtMatrixTransformDescDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatrixTransformDescDestroy",
-        fn (Pointer[cublasLtMatrixTransformDescOpaque_t]) raises -> Result,
+        fn (Pointer[Transform]) raises -> Result,
     ]()(transform_desc)
 
 
@@ -1518,7 +1514,7 @@ fn cublasLtMatmulAlgoCapGetAttribute(
     """Get algo capability attribute.
 
     E.g. to get list of supported Tile IDs:
-        cublasLtMatmulTile_t tiles[CUBLASLT_MATMUL_TILE_END];
+        Tile tiles[TILE_END];
         size_t num_tiles, size_written;
         if (cublasLtMatmulAlgoCapGetAttribute(algo, TILE_IDS, tiles, sizeof(tiles), size_written) ==
     CUBLAS_STATUS_SUCCESS) { num_tiles = size_written / sizeof(tiles[0]);
@@ -1549,7 +1545,7 @@ fn cublasLtMatmulAlgoCapGetAttribute(
 
 
 fn cublasLtMatmulDescSetAttribute(
-    matmul_desc: Pointer[cublasLtMatmulDescOpaque_t],
+    matmul_desc: Pointer[Descriptor],
     attr: cublasLtMatmulDescAttributes_t,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
@@ -1568,7 +1564,7 @@ fn cublasLtMatmulDescSetAttribute(
     return _get_dylib_function[
         "cublasLtMatmulDescSetAttribute",
         fn (
-            Pointer[cublasLtMatmulDescOpaque_t],
+            Pointer[Descriptor],
             cublasLtMatmulDescAttributes_t,
             Pointer[NoneType],
             Int,
@@ -1577,8 +1573,8 @@ fn cublasLtMatmulDescSetAttribute(
 
 
 fn cublasLtMatmulPreferenceSetAttribute(
-    pref: Pointer[cublasLtMatmulPreferenceOpaque_t],
-    attr: cublasLtMatmulPreferenceAttributes_t,
+    pref: Pointer[PreferenceOpaque],
+    attr: Preference,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
 ) raises -> Result:
@@ -1596,8 +1592,8 @@ fn cublasLtMatmulPreferenceSetAttribute(
     return _get_dylib_function[
         "cublasLtMatmulPreferenceSetAttribute",
         fn (
-            Pointer[cublasLtMatmulPreferenceOpaque_t],
-            cublasLtMatmulPreferenceAttributes_t,
+            Pointer[PreferenceOpaque],
+            Preference,
             Pointer[NoneType],
             Int,
         ) raises -> Result,
@@ -1612,7 +1608,7 @@ alias cublasLtLoggerCallback_t = fn (
 
 
 fn cublasLtMatrixLayoutInit_internal(
-    mat_layout: Pointer[cublasLtMatrixLayoutOpaque_t],
+    mat_layout: Pointer[MatrixLayout],
     size: Int,
     type: DataType,
     rows: UInt64,
@@ -1624,7 +1620,7 @@ fn cublasLtMatrixLayoutInit_internal(
     return _get_dylib_function[
         "cublasLtMatrixLayoutInit_internal",
         fn (
-            Pointer[cublasLtMatrixLayoutOpaque_t],
+            Pointer[MatrixLayout],
             Int,
             DataType,
             UInt64,
@@ -1636,37 +1632,29 @@ fn cublasLtMatrixLayoutInit_internal(
 
 @value
 @register_passable("trivial")
-struct cublasLtMatmulPreferenceAttributes_t:
+struct Preference:
     """Algo search preference to fine tune the heuristic function. ."""
 
     var _value: Int8
-    alias CUBLASLT_MATMUL_PREF_SEARCH_MODE = cublasLtMatmulPreferenceAttributes_t(
-        0
-    )
-    """Search mode, see cublasLtMatmulSearch_t.
+    alias SEARCH_MODE = Preference(0)
+    """Search mode, see Search.
 
-    uint32_t, default: CUBLASLT_SEARCH_BEST_FIT.
+    uint32_t, default: BEST_FIT.
     """
-    alias CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES = cublasLtMatmulPreferenceAttributes_t(
-        1
-    )
+    alias MAX_WORKSPACE_BYTES = Preference(1)
     """Maximum allowed workspace size in bytes.
 
     uint64_t, default: 0 - no workspace allowed.
     """
-    alias CUBLASLT_MATMUL_PREF_REDUCTION_SCHEME_MASK = cublasLtMatmulPreferenceAttributes_t(
-        2
-    )
-    """Reduction scheme mask, see cublasLtReductionScheme_t. Filters heuristic result to only include algo configs that
+    alias REDUCTION_SCHEME_MASK = Preference(2)
+    """Reduction scheme mask, see ReductionScheme. Filters heuristic result to only include algo configs that
     use one of the required modes.
 
     E.g. mask value of 0x03 will allow only INPLACE and COMPUTE_TYPE reduction schemes.
 
-    uint32_t, default: CUBLASLT_REDUCTION_SCHEME_MASK (allows all reduction schemes).
+    uint32_t, default: MASK (allows all reduction schemes).
     """
-    alias CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_A_BYTES = cublasLtMatmulPreferenceAttributes_t(
-        3
-    )
+    alias MIN_ALIGNMENT_A_BYTES = Preference(3)
     """Minimum buffer alignment for matrix A (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix A that is not as strictly aligned
@@ -1674,9 +1662,7 @@ struct cublasLtMatmulPreferenceAttributes_t:
 
     uint32_t, default: 256.
     """
-    alias CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_B_BYTES = cublasLtMatmulPreferenceAttributes_t(
-        4
-    )
+    alias MIN_ALIGNMENT_B_BYTES = Preference(4)
     """Minimum buffer alignment for matrix B (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix B that is not as strictly aligned
@@ -1684,9 +1670,7 @@ struct cublasLtMatmulPreferenceAttributes_t:
 
     uint32_t, default: 256.
     """
-    alias CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_C_BYTES = cublasLtMatmulPreferenceAttributes_t(
-        5
-    )
+    alias MIN_ALIGNMENT_C_BYTES = Preference(5)
     """Minimum buffer alignment for matrix C (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix C that is not as strictly aligned
@@ -1694,9 +1678,7 @@ struct cublasLtMatmulPreferenceAttributes_t:
 
     uint32_t, default: 256.
     """
-    alias CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_D_BYTES = cublasLtMatmulPreferenceAttributes_t(
-        6
-    )
+    alias MIN_ALIGNMENT_D_BYTES = Preference(6)
     """Minimum buffer alignment for matrix D (in bytes).
 
     Selecting a smaller value will exclude algorithms that can not work with matrix D that is not as strictly aligned
@@ -1704,9 +1686,7 @@ struct cublasLtMatmulPreferenceAttributes_t:
 
     uint32_t, default: 256.
     """
-    alias CUBLASLT_MATMUL_PREF_MAX_WAVES_COUNT = cublasLtMatmulPreferenceAttributes_t(
-        7
-    )
+    alias MAX_WAVES_COUNT = Preference(7)
     """Maximum wave count.
 
     See cublasLtMatmulHeuristicResult_t::wavesCount.
@@ -1715,9 +1695,7 @@ struct cublasLtMatmulPreferenceAttributes_t:
 
     float, default: 0.0f.
     """
-    alias CUBLASLT_MATMUL_PREF_IMPL_MASK = cublasLtMatmulPreferenceAttributes_t(
-        8
-    )
+    alias IMPL_MASK = Preference(8)
     """Numerical implementation details mask, see cublasLtNumericalImplFlags_t. Filters heuristic result to only include
     algorithms that use the allowed implementations.
 
@@ -1734,27 +1712,25 @@ struct cublasLtMatmulPreferenceAttributes_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.CUBLASLT_MATMUL_PREF_SEARCH_MODE:
-            return "CUBLASLT_MATMUL_PREF_SEARCH_MODE"
-        if self == Self.CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES:
-            return "CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES"
-        if self == Self.CUBLASLT_MATMUL_PREF_REDUCTION_SCHEME_MASK:
-            return "CUBLASLT_MATMUL_PREF_REDUCTION_SCHEME_MASK"
-        if self == Self.CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_A_BYTES:
-            return "CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_A_BYTES"
-        if self == Self.CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_B_BYTES:
-            return "CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_B_BYTES"
-        if self == Self.CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_C_BYTES:
-            return "CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_C_BYTES"
-        if self == Self.CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_D_BYTES:
-            return "CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_D_BYTES"
-        if self == Self.CUBLASLT_MATMUL_PREF_MAX_WAVES_COUNT:
-            return "CUBLASLT_MATMUL_PREF_MAX_WAVES_COUNT"
-        if self == Self.CUBLASLT_MATMUL_PREF_IMPL_MASK:
-            return "CUBLASLT_MATMUL_PREF_IMPL_MASK"
-        return abort[String](
-            "invalid cublasLtMatmulPreferenceAttributes_t entry"
-        )
+        if self == Self.SEARCH_MODE:
+            return "SEARCH_MODE"
+        if self == Self.MAX_WORKSPACE_BYTES:
+            return "MAX_WORKSPACE_BYTES"
+        if self == Self.REDUCTION_SCHEME_MASK:
+            return "REDUCTION_SCHEME_MASK"
+        if self == Self.MIN_ALIGNMENT_A_BYTES:
+            return "MIN_ALIGNMENT_A_BYTES"
+        if self == Self.MIN_ALIGNMENT_B_BYTES:
+            return "MIN_ALIGNMENT_B_BYTES"
+        if self == Self.MIN_ALIGNMENT_C_BYTES:
+            return "MIN_ALIGNMENT_C_BYTES"
+        if self == Self.MIN_ALIGNMENT_D_BYTES:
+            return "MIN_ALIGNMENT_D_BYTES"
+        if self == Self.MAX_WAVES_COUNT:
+            return "MAX_WAVES_COUNT"
+        if self == Self.IMPL_MASK:
+            return "IMPL_MASK"
+        return abort[String]("invalid Preference entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
@@ -1776,72 +1752,58 @@ alias cublasLtNumericalImplFlags_t = UInt64
 
 @value
 @register_passable("trivial")
-struct cublasLtMatmulAlgoConfigAttributes_t:
+struct AlgorithmConfig:
     """Algo Configuration Attributes that can be set according to the Algo capabilities
     ."""
 
     var _value: Int8
-    alias CUBLASLT_ALGO_CONFIG_ID = cublasLtMatmulAlgoConfigAttributes_t(0)
+    alias ID = AlgorithmConfig(0)
     """algorithm index, see cublasLtMatmulAlgoGetIds()
 
     readonly, set by cublasLtMatmulAlgoInit()
     int32_t.
     """
-    alias CUBLASLT_ALGO_CONFIG_TILE_ID = cublasLtMatmulAlgoConfigAttributes_t(1)
-    """tile id, see cublasLtMatmulTile_t
+    alias TILE_ID = AlgorithmConfig(1)
+    """tile id, see Tile
 
-    uint32_t, default: CUBLASLT_MATMUL_TILE_UNDEFINED.
+    uint32_t, default: TILE_UNDEFINED.
     """
-    alias CUBLASLT_ALGO_CONFIG_SPLITK_NUM = cublasLtMatmulAlgoConfigAttributes_t(
-        2
-    )
+    alias SPLITK_NUM = AlgorithmConfig(2)
     """Number of K splits. If the number of K splits is greater than one, SPLITK_NUM parts
     of matrix multiplication will be computed in parallel. The results will be accumulated
-    according to CUBLASLT_ALGO_CONFIG_REDUCTION_SCHEME
+    according to REDUCTION_SCHEME
 
     int32_t, default: 1.
     """
-    alias CUBLASLT_ALGO_CONFIG_REDUCTION_SCHEME = cublasLtMatmulAlgoConfigAttributes_t(
-        3
-    )
-    """reduction scheme, see cublasLtReductionScheme_t
+    alias REDUCTION_SCHEME = AlgorithmConfig(3)
+    """reduction scheme, see ReductionScheme
 
-    uint32_t, default: CUBLASLT_REDUCTION_SCHEME_NONE.
+    uint32_t, default: NONE.
     """
-    alias CUBLASLT_ALGO_CONFIG_CTA_SWIZZLING = cublasLtMatmulAlgoConfigAttributes_t(
-        4
-    )
+    alias CTA_SWIZZLING = AlgorithmConfig(4)
     """cta swizzling, change mapping from CUDA grid coordinates to parts of the matrices
 
     possible values: 0, 1, other values reserved
 
     uint32_t, default: 0.
     """
-    alias CUBLASLT_ALGO_CONFIG_CUSTOM_OPTION = cublasLtMatmulAlgoConfigAttributes_t(
-        5
-    )
+    alias CUSTOM_OPTION = AlgorithmConfig(5)
     """custom option, each algorithm can support some custom options that don't fit description of the other config
     attributes, see CUSTOM_OPTION_MAX to get accepted range for any specific case
 
     uint32_t, default: 0.
     """
-    alias CUBLASLT_ALGO_CONFIG_STAGES_ID = cublasLtMatmulAlgoConfigAttributes_t(
-        6
-    )
-    """stages id, see cublasLtMatmulStages_t
+    alias STAGES_ID = AlgorithmConfig(6)
+    """stages id, see Stages
 
-    uint32_t, default: CUBLASLT_MATMUL_STAGES_UNDEFINED.
+    uint32_t, default: STAGES_UNDEFINED.
     """
-    alias CUBLASLT_ALGO_CONFIG_INNER_SHAPE_ID = cublasLtMatmulAlgoConfigAttributes_t(
-        7
-    )
+    alias INNER_SHAPE_ID = AlgorithmConfig(7)
     """inner shape id, see InnerShape
 
     uint16_t, default: 0 (UNDEFINED).
     """
-    alias CUBLASLT_ALGO_CONFIG_CLUSTER_SHAPE_ID = cublasLtMatmulAlgoConfigAttributes_t(
-        8
-    )
+    alias CLUSTER_SHAPE_ID = AlgorithmConfig(8)
     """Thread Block Cluster shape id, see ClusterShape. Defines cluster size to use.
 
     uint16_t, default: 0 (SHAPE_AUTO).
@@ -1857,34 +1819,32 @@ struct cublasLtMatmulAlgoConfigAttributes_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.CUBLASLT_ALGO_CONFIG_ID:
-            return "CUBLASLT_ALGO_CONFIG_ID"
-        if self == Self.CUBLASLT_ALGO_CONFIG_TILE_ID:
-            return "CUBLASLT_ALGO_CONFIG_TILE_ID"
-        if self == Self.CUBLASLT_ALGO_CONFIG_SPLITK_NUM:
-            return "CUBLASLT_ALGO_CONFIG_SPLITK_NUM"
-        if self == Self.CUBLASLT_ALGO_CONFIG_REDUCTION_SCHEME:
-            return "CUBLASLT_ALGO_CONFIG_REDUCTION_SCHEME"
-        if self == Self.CUBLASLT_ALGO_CONFIG_CTA_SWIZZLING:
-            return "CUBLASLT_ALGO_CONFIG_CTA_SWIZZLING"
-        if self == Self.CUBLASLT_ALGO_CONFIG_CUSTOM_OPTION:
-            return "CUBLASLT_ALGO_CONFIG_CUSTOM_OPTION"
-        if self == Self.CUBLASLT_ALGO_CONFIG_STAGES_ID:
-            return "CUBLASLT_ALGO_CONFIG_STAGES_ID"
-        if self == Self.CUBLASLT_ALGO_CONFIG_INNER_SHAPE_ID:
-            return "CUBLASLT_ALGO_CONFIG_INNER_SHAPE_ID"
-        if self == Self.CUBLASLT_ALGO_CONFIG_CLUSTER_SHAPE_ID:
-            return "CUBLASLT_ALGO_CONFIG_CLUSTER_SHAPE_ID"
-        return abort[String](
-            "invalid cublasLtMatmulAlgoConfigAttributes_t entry"
-        )
+        if self == Self.ID:
+            return "ID"
+        if self == Self.TILE_ID:
+            return "TILE_ID"
+        if self == Self.SPLITK_NUM:
+            return "SPLITK_NUM"
+        if self == Self.REDUCTION_SCHEME:
+            return "REDUCTION_SCHEME"
+        if self == Self.CTA_SWIZZLING:
+            return "CTA_SWIZZLING"
+        if self == Self.CUSTOM_OPTION:
+            return "CUSTOM_OPTION"
+        if self == Self.STAGES_ID:
+            return "STAGES_ID"
+        if self == Self.INNER_SHAPE_ID:
+            return "INNER_SHAPE_ID"
+        if self == Self.CLUSTER_SHAPE_ID:
+            return "CLUSTER_SHAPE_ID"
+        return abort[String]("invalid AlgorithmConfig entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
 
 
 fn cublasLtMatmulPreferenceDestroy(
-    pref: Pointer[cublasLtMatmulPreferenceOpaque_t],
+    pref: Pointer[PreferenceOpaque],
 ) raises -> Result:
     """Destroy matmul heuristic search preference descriptor.
 
@@ -1892,18 +1852,18 @@ fn cublasLtMatmulPreferenceDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceDestroy",
-        fn (Pointer[cublasLtMatmulPreferenceOpaque_t]) raises -> Result,
+        fn (Pointer[PreferenceOpaque]) raises -> Result,
     ]()(pref)
 
 
 # fn cublasLtMatmulAlgoGetHeuristic(
-#     light_handle: Pointer[cublasLtContext],
-#     operation_desc: Pointer[cublasLtMatmulDescOpaque_t],
-#     _adesc: Pointer[cublasLtMatrixLayoutOpaque_t],
-#     _bdesc: Pointer[cublasLtMatrixLayoutOpaque_t],
-#     _cdesc: Pointer[cublasLtMatrixLayoutOpaque_t],
-#     _ddesc: Pointer[cublasLtMatrixLayoutOpaque_t],
-#     preference: Pointer[cublasLtMatmulPreferenceOpaque_t],
+#     light_handle: Pointer[Context],
+#     operation_desc: Pointer[Descriptor],
+#     _adesc: Pointer[MatrixLayout],
+#     _bdesc: Pointer[MatrixLayout],
+#     _cdesc: Pointer[MatrixLayout],
+#     _ddesc: Pointer[MatrixLayout],
+#     preference: Pointer[PreferenceOpaque],
 #     requested_algo_count: Int16,
 #     heuristic_results_array: UNKNOWN,
 #     return_algo_count: Pointer[Int16],
@@ -1934,13 +1894,13 @@ fn cublasLtMatmulPreferenceDestroy(
 #     return _get_dylib_function[
 #         "cublasLtMatmulAlgoGetHeuristic",
 #         fn (
-#             Pointer[cublasLtContext],
-#             Pointer[cublasLtMatmulDescOpaque_t],
-#             Pointer[cublasLtMatrixLayoutOpaque_t],
-#             Pointer[cublasLtMatrixLayoutOpaque_t],
-#             Pointer[cublasLtMatrixLayoutOpaque_t],
-#             Pointer[cublasLtMatrixLayoutOpaque_t],
-#             Pointer[cublasLtMatmulPreferenceOpaque_t],
+#             Pointer[Context],
+#             Pointer[Descriptor],
+#             Pointer[MatrixLayout],
+#             Pointer[MatrixLayout],
+#             Pointer[MatrixLayout],
+#             Pointer[MatrixLayout],
+#             Pointer[PreferenceOpaque],
 #             Int16,
 #             UNKNOWN,
 #             Pointer[Int16],
@@ -2006,60 +1966,56 @@ struct InnerShape:
 
 @value
 @register_passable("trivial")
-struct cublasLtMatrixLayoutAttribute_t:
+struct LayoutAttribute:
     """Attributes of memory layout ."""
 
     var _value: Int8
-    alias CUBLASLT_MATRIX_LAYOUT_TYPE = cublasLtMatrixLayoutAttribute_t(0)
+    alias TYPE = LayoutAttribute(0)
     """Data type, see cudaDataType.
 
     uint32_t.
     """
-    alias CUBLASLT_MATRIX_LAYOUT_ORDER = cublasLtMatrixLayoutAttribute_t(1)
+    alias ORDER = LayoutAttribute(1)
     """Memory order of the data, see Order.
 
     int32_t, default: COL.
     """
-    alias CUBLASLT_MATRIX_LAYOUT_ROWS = cublasLtMatrixLayoutAttribute_t(2)
+    alias ROWS = LayoutAttribute(2)
     """Number of rows.
 
     Usually only values that can be expressed as int32_t are supported.
 
     uint64_t.
     """
-    alias CUBLASLT_MATRIX_LAYOUT_COLS = cublasLtMatrixLayoutAttribute_t(3)
+    alias COLS = LayoutAttribute(3)
     """Number of columns.
 
     Usually only values that can be expressed as int32_t are supported.
 
     uint64_t.
     """
-    alias CUBLASLT_MATRIX_LAYOUT_LD = cublasLtMatrixLayoutAttribute_t(4)
+    alias LD = LayoutAttribute(4)
     """Matrix leading dimension.
 
     For COL this is stride (in elements) of matrix column, for more details and documentation for
     other memory orders see documentation for Order values.
 
     Currently only non-negative values are supported, must be large enough so that matrix memory locations are not
-    overlapping (e.g. greater or equal to CUBLASLT_MATRIX_LAYOUT_ROWS in case of COL).
+    overlapping (e.g. greater or equal to ROWS in case of COL).
 
     int64_t;.
     """
-    alias CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT = cublasLtMatrixLayoutAttribute_t(
-        5
-    )
+    alias BATCH_COUNT = LayoutAttribute(5)
     """Number of matmul operations to perform in the batch.
 
     See also STRIDED_BATCH_SUPPORT
 
     int32_t, default: 1.
     """
-    alias CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET = cublasLtMatrixLayoutAttribute_t(
-        6
-    )
+    alias STRIDED_BATCH_OFFSET = LayoutAttribute(6)
     """Stride (in elements) to the next matrix for strided batch operation.
 
-    When matrix type is planar-complex (CUBLASLT_MATRIX_LAYOUT_PLANE_OFFSET != 0), batch stride
+    When matrix type is planar-complex (PLANE_OFFSET != 0), batch stride
     is interpreted by cublasLtMatmul() in number of real valued sub-elements. E.g. for data of type CUDA_C_16F,
     offset of 1024B is encoded as a stride of value 512 (since each element of the real and imaginary matrices
     is a 2B (16bit) floating point type).
@@ -2071,9 +2027,7 @@ struct cublasLtMatrixLayoutAttribute_t:
 
     int64_t, default: 0.
     """
-    alias CUBLASLT_MATRIX_LAYOUT_PLANE_OFFSET = cublasLtMatrixLayoutAttribute_t(
-        7
-    )
+    alias PLANE_OFFSET = LayoutAttribute(7)
     """Stride (in bytes) to the imaginary plane for planar complex layout.
 
     int64_t, default: 0 - 0 means that layout is regular (real and imaginary parts of complex numbers are interleaved
@@ -2090,31 +2044,31 @@ struct cublasLtMatrixLayoutAttribute_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.CUBLASLT_MATRIX_LAYOUT_TYPE:
-            return "CUBLASLT_MATRIX_LAYOUT_TYPE"
-        if self == Self.CUBLASLT_MATRIX_LAYOUT_ORDER:
-            return "CUBLASLT_MATRIX_LAYOUT_ORDER"
-        if self == Self.CUBLASLT_MATRIX_LAYOUT_ROWS:
-            return "CUBLASLT_MATRIX_LAYOUT_ROWS"
-        if self == Self.CUBLASLT_MATRIX_LAYOUT_COLS:
-            return "CUBLASLT_MATRIX_LAYOUT_COLS"
-        if self == Self.CUBLASLT_MATRIX_LAYOUT_LD:
-            return "CUBLASLT_MATRIX_LAYOUT_LD"
-        if self == Self.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT:
-            return "CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT"
-        if self == Self.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET:
-            return "CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET"
-        if self == Self.CUBLASLT_MATRIX_LAYOUT_PLANE_OFFSET:
-            return "CUBLASLT_MATRIX_LAYOUT_PLANE_OFFSET"
-        return abort[String]("invalid cublasLtMatrixLayoutAttribute_t entry")
+        if self == Self.TYPE:
+            return "TYPE"
+        if self == Self.ORDER:
+            return "ORDER"
+        if self == Self.ROWS:
+            return "ROWS"
+        if self == Self.COLS:
+            return "COLS"
+        if self == Self.LD:
+            return "LD"
+        if self == Self.BATCH_COUNT:
+            return "BATCH_COUNT"
+        if self == Self.STRIDED_BATCH_OFFSET:
+            return "STRIDED_BATCH_OFFSET"
+        if self == Self.PLANE_OFFSET:
+            return "PLANE_OFFSET"
+        return abort[String]("invalid LayoutAttribute entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
 
 
-fn cublasLtDestroy(light_handle: Pointer[cublasLtContext]) raises -> Result:
+fn cublasLtDestroy(light_handle: Pointer[Context]) raises -> Result:
     return _get_dylib_function[
-        "cublasLtDestroy", fn (Pointer[cublasLtContext]) raises -> Result
+        "cublasLtDestroy", fn (Pointer[Context]) raises -> Result
     ]()(light_handle)
 
 
@@ -2126,7 +2080,7 @@ fn cublasLtGetCudartVersion() raises -> Int:
 
 fn cublasLtMatmulAlgoConfigGetAttribute(
     algo: Pointer[MatmulAlgorithm],
-    attr: cublasLtMatmulAlgoConfigAttributes_t,
+    attr: AlgorithmConfig,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
     size_written: Pointer[Int],
@@ -2149,7 +2103,7 @@ fn cublasLtMatmulAlgoConfigGetAttribute(
         "cublasLtMatmulAlgoConfigGetAttribute",
         fn (
             Pointer[MatmulAlgorithm],
-            cublasLtMatmulAlgoConfigAttributes_t,
+            AlgorithmConfig,
             Pointer[NoneType],
             Int,
             Pointer[Int],
@@ -2212,49 +2166,49 @@ fn cublasLtLoggerSetLevel(level: Int16) raises -> Result:
 
 @value
 @register_passable("trivial")
-struct cublasLtMatmulStages_t:
+struct Stages:
     """Size and number of stages in which elements are read into shared memory.
 
     General order of stages IDs is sorted by stage size first and by number of stages second.
     ."""
 
     var _value: Int8
-    alias CUBLASLT_MATMUL_STAGES_UNDEFINED = cublasLtMatmulStages_t(0)
-    alias CUBLASLT_MATMUL_STAGES_16x1 = cublasLtMatmulStages_t(1)
-    alias CUBLASLT_MATMUL_STAGES_16x2 = cublasLtMatmulStages_t(2)
-    alias CUBLASLT_MATMUL_STAGES_16x3 = cublasLtMatmulStages_t(3)
-    alias CUBLASLT_MATMUL_STAGES_16x4 = cublasLtMatmulStages_t(4)
-    alias CUBLASLT_MATMUL_STAGES_16x5 = cublasLtMatmulStages_t(5)
-    alias CUBLASLT_MATMUL_STAGES_16x6 = cublasLtMatmulStages_t(6)
-    alias CUBLASLT_MATMUL_STAGES_32x1 = cublasLtMatmulStages_t(7)
-    alias CUBLASLT_MATMUL_STAGES_32x2 = cublasLtMatmulStages_t(8)
-    alias CUBLASLT_MATMUL_STAGES_32x3 = cublasLtMatmulStages_t(9)
-    alias CUBLASLT_MATMUL_STAGES_32x4 = cublasLtMatmulStages_t(10)
-    alias CUBLASLT_MATMUL_STAGES_32x5 = cublasLtMatmulStages_t(11)
-    alias CUBLASLT_MATMUL_STAGES_32x6 = cublasLtMatmulStages_t(12)
-    alias CUBLASLT_MATMUL_STAGES_64x1 = cublasLtMatmulStages_t(13)
-    alias CUBLASLT_MATMUL_STAGES_64x2 = cublasLtMatmulStages_t(14)
-    alias CUBLASLT_MATMUL_STAGES_64x3 = cublasLtMatmulStages_t(15)
-    alias CUBLASLT_MATMUL_STAGES_64x4 = cublasLtMatmulStages_t(16)
-    alias CUBLASLT_MATMUL_STAGES_64x5 = cublasLtMatmulStages_t(17)
-    alias CUBLASLT_MATMUL_STAGES_64x6 = cublasLtMatmulStages_t(18)
-    alias CUBLASLT_MATMUL_STAGES_128x1 = cublasLtMatmulStages_t(19)
-    alias CUBLASLT_MATMUL_STAGES_128x2 = cublasLtMatmulStages_t(20)
-    alias CUBLASLT_MATMUL_STAGES_128x3 = cublasLtMatmulStages_t(21)
-    alias CUBLASLT_MATMUL_STAGES_128x4 = cublasLtMatmulStages_t(22)
-    alias CUBLASLT_MATMUL_STAGES_128x5 = cublasLtMatmulStages_t(23)
-    alias CUBLASLT_MATMUL_STAGES_128x6 = cublasLtMatmulStages_t(24)
-    alias CUBLASLT_MATMUL_STAGES_32x10 = cublasLtMatmulStages_t(25)
-    alias CUBLASLT_MATMUL_STAGES_8x4 = cublasLtMatmulStages_t(26)
-    alias CUBLASLT_MATMUL_STAGES_16x10 = cublasLtMatmulStages_t(27)
-    alias CUBLASLT_MATMUL_STAGES_8x5 = cublasLtMatmulStages_t(28)
-    alias CUBLASLT_MATMUL_STAGES_8x3 = cublasLtMatmulStages_t(29)
-    alias CUBLASLT_MATMUL_STAGES_8xAUTO = cublasLtMatmulStages_t(30)
-    alias CUBLASLT_MATMUL_STAGES_16xAUTO = cublasLtMatmulStages_t(31)
-    alias CUBLASLT_MATMUL_STAGES_32xAUTO = cublasLtMatmulStages_t(32)
-    alias CUBLASLT_MATMUL_STAGES_64xAUTO = cublasLtMatmulStages_t(33)
-    alias CUBLASLT_MATMUL_STAGES_128xAUTO = cublasLtMatmulStages_t(34)
-    alias CUBLASLT_MATMUL_STAGES_END = cublasLtMatmulStages_t(35)
+    alias STAGES_UNDEFINED = Stages(0)
+    alias STAGES_16x1 = Stages(1)
+    alias STAGES_16x2 = Stages(2)
+    alias STAGES_16x3 = Stages(3)
+    alias STAGES_16x4 = Stages(4)
+    alias STAGES_16x5 = Stages(5)
+    alias STAGES_16x6 = Stages(6)
+    alias STAGES_32x1 = Stages(7)
+    alias STAGES_32x2 = Stages(8)
+    alias STAGES_32x3 = Stages(9)
+    alias STAGES_32x4 = Stages(10)
+    alias STAGES_32x5 = Stages(11)
+    alias STAGES_32x6 = Stages(12)
+    alias STAGES_64x1 = Stages(13)
+    alias STAGES_64x2 = Stages(14)
+    alias STAGES_64x3 = Stages(15)
+    alias STAGES_64x4 = Stages(16)
+    alias STAGES_64x5 = Stages(17)
+    alias STAGES_64x6 = Stages(18)
+    alias STAGES_128x1 = Stages(19)
+    alias STAGES_128x2 = Stages(20)
+    alias STAGES_128x3 = Stages(21)
+    alias STAGES_128x4 = Stages(22)
+    alias STAGES_128x5 = Stages(23)
+    alias STAGES_128x6 = Stages(24)
+    alias STAGES_32x10 = Stages(25)
+    alias STAGES_8x4 = Stages(26)
+    alias STAGES_16x10 = Stages(27)
+    alias STAGES_8x5 = Stages(28)
+    alias STAGES_8x3 = Stages(29)
+    alias STAGES_8xAUTO = Stages(30)
+    alias STAGES_16xAUTO = Stages(31)
+    alias STAGES_32xAUTO = Stages(32)
+    alias STAGES_64xAUTO = Stages(33)
+    alias STAGES_128xAUTO = Stages(34)
+    alias STAGES_END = Stages(35)
 
     fn __init__(inout self, value: Int):
         self._value = value
@@ -2266,86 +2220,86 @@ struct cublasLtMatmulStages_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.CUBLASLT_MATMUL_STAGES_UNDEFINED:
-            return "CUBLASLT_MATMUL_STAGES_UNDEFINED"
-        if self == Self.CUBLASLT_MATMUL_STAGES_16x1:
-            return "CUBLASLT_MATMUL_STAGES_16x1"
-        if self == Self.CUBLASLT_MATMUL_STAGES_16x2:
-            return "CUBLASLT_MATMUL_STAGES_16x2"
-        if self == Self.CUBLASLT_MATMUL_STAGES_16x3:
-            return "CUBLASLT_MATMUL_STAGES_16x3"
-        if self == Self.CUBLASLT_MATMUL_STAGES_16x4:
-            return "CUBLASLT_MATMUL_STAGES_16x4"
-        if self == Self.CUBLASLT_MATMUL_STAGES_16x5:
-            return "CUBLASLT_MATMUL_STAGES_16x5"
-        if self == Self.CUBLASLT_MATMUL_STAGES_16x6:
-            return "CUBLASLT_MATMUL_STAGES_16x6"
-        if self == Self.CUBLASLT_MATMUL_STAGES_32x1:
-            return "CUBLASLT_MATMUL_STAGES_32x1"
-        if self == Self.CUBLASLT_MATMUL_STAGES_32x2:
-            return "CUBLASLT_MATMUL_STAGES_32x2"
-        if self == Self.CUBLASLT_MATMUL_STAGES_32x3:
-            return "CUBLASLT_MATMUL_STAGES_32x3"
-        if self == Self.CUBLASLT_MATMUL_STAGES_32x4:
-            return "CUBLASLT_MATMUL_STAGES_32x4"
-        if self == Self.CUBLASLT_MATMUL_STAGES_32x5:
-            return "CUBLASLT_MATMUL_STAGES_32x5"
-        if self == Self.CUBLASLT_MATMUL_STAGES_32x6:
-            return "CUBLASLT_MATMUL_STAGES_32x6"
-        if self == Self.CUBLASLT_MATMUL_STAGES_64x1:
-            return "CUBLASLT_MATMUL_STAGES_64x1"
-        if self == Self.CUBLASLT_MATMUL_STAGES_64x2:
-            return "CUBLASLT_MATMUL_STAGES_64x2"
-        if self == Self.CUBLASLT_MATMUL_STAGES_64x3:
-            return "CUBLASLT_MATMUL_STAGES_64x3"
-        if self == Self.CUBLASLT_MATMUL_STAGES_64x4:
-            return "CUBLASLT_MATMUL_STAGES_64x4"
-        if self == Self.CUBLASLT_MATMUL_STAGES_64x5:
-            return "CUBLASLT_MATMUL_STAGES_64x5"
-        if self == Self.CUBLASLT_MATMUL_STAGES_64x6:
-            return "CUBLASLT_MATMUL_STAGES_64x6"
-        if self == Self.CUBLASLT_MATMUL_STAGES_128x1:
-            return "CUBLASLT_MATMUL_STAGES_128x1"
-        if self == Self.CUBLASLT_MATMUL_STAGES_128x2:
-            return "CUBLASLT_MATMUL_STAGES_128x2"
-        if self == Self.CUBLASLT_MATMUL_STAGES_128x3:
-            return "CUBLASLT_MATMUL_STAGES_128x3"
-        if self == Self.CUBLASLT_MATMUL_STAGES_128x4:
-            return "CUBLASLT_MATMUL_STAGES_128x4"
-        if self == Self.CUBLASLT_MATMUL_STAGES_128x5:
-            return "CUBLASLT_MATMUL_STAGES_128x5"
-        if self == Self.CUBLASLT_MATMUL_STAGES_128x6:
-            return "CUBLASLT_MATMUL_STAGES_128x6"
-        if self == Self.CUBLASLT_MATMUL_STAGES_32x10:
-            return "CUBLASLT_MATMUL_STAGES_32x10"
-        if self == Self.CUBLASLT_MATMUL_STAGES_8x4:
-            return "CUBLASLT_MATMUL_STAGES_8x4"
-        if self == Self.CUBLASLT_MATMUL_STAGES_16x10:
-            return "CUBLASLT_MATMUL_STAGES_16x10"
-        if self == Self.CUBLASLT_MATMUL_STAGES_8x5:
-            return "CUBLASLT_MATMUL_STAGES_8x5"
-        if self == Self.CUBLASLT_MATMUL_STAGES_8x3:
-            return "CUBLASLT_MATMUL_STAGES_8x3"
-        if self == Self.CUBLASLT_MATMUL_STAGES_8xAUTO:
-            return "CUBLASLT_MATMUL_STAGES_8xAUTO"
-        if self == Self.CUBLASLT_MATMUL_STAGES_16xAUTO:
-            return "CUBLASLT_MATMUL_STAGES_16xAUTO"
-        if self == Self.CUBLASLT_MATMUL_STAGES_32xAUTO:
-            return "CUBLASLT_MATMUL_STAGES_32xAUTO"
-        if self == Self.CUBLASLT_MATMUL_STAGES_64xAUTO:
-            return "CUBLASLT_MATMUL_STAGES_64xAUTO"
-        if self == Self.CUBLASLT_MATMUL_STAGES_128xAUTO:
-            return "CUBLASLT_MATMUL_STAGES_128xAUTO"
-        if self == Self.CUBLASLT_MATMUL_STAGES_END:
-            return "CUBLASLT_MATMUL_STAGES_END"
-        return abort[String]("invalid cublasLtMatmulStages_t entry")
+        if self == Self.STAGES_UNDEFINED:
+            return "STAGES_UNDEFINED"
+        if self == Self.STAGES_16x1:
+            return "STAGES_16x1"
+        if self == Self.STAGES_16x2:
+            return "STAGES_16x2"
+        if self == Self.STAGES_16x3:
+            return "STAGES_16x3"
+        if self == Self.STAGES_16x4:
+            return "STAGES_16x4"
+        if self == Self.STAGES_16x5:
+            return "STAGES_16x5"
+        if self == Self.STAGES_16x6:
+            return "STAGES_16x6"
+        if self == Self.STAGES_32x1:
+            return "STAGES_32x1"
+        if self == Self.STAGES_32x2:
+            return "STAGES_32x2"
+        if self == Self.STAGES_32x3:
+            return "STAGES_32x3"
+        if self == Self.STAGES_32x4:
+            return "STAGES_32x4"
+        if self == Self.STAGES_32x5:
+            return "STAGES_32x5"
+        if self == Self.STAGES_32x6:
+            return "STAGES_32x6"
+        if self == Self.STAGES_64x1:
+            return "STAGES_64x1"
+        if self == Self.STAGES_64x2:
+            return "STAGES_64x2"
+        if self == Self.STAGES_64x3:
+            return "STAGES_64x3"
+        if self == Self.STAGES_64x4:
+            return "STAGES_64x4"
+        if self == Self.STAGES_64x5:
+            return "STAGES_64x5"
+        if self == Self.STAGES_64x6:
+            return "STAGES_64x6"
+        if self == Self.STAGES_128x1:
+            return "STAGES_128x1"
+        if self == Self.STAGES_128x2:
+            return "STAGES_128x2"
+        if self == Self.STAGES_128x3:
+            return "STAGES_128x3"
+        if self == Self.STAGES_128x4:
+            return "STAGES_128x4"
+        if self == Self.STAGES_128x5:
+            return "STAGES_128x5"
+        if self == Self.STAGES_128x6:
+            return "STAGES_128x6"
+        if self == Self.STAGES_32x10:
+            return "STAGES_32x10"
+        if self == Self.STAGES_8x4:
+            return "STAGES_8x4"
+        if self == Self.STAGES_16x10:
+            return "STAGES_16x10"
+        if self == Self.STAGES_8x5:
+            return "STAGES_8x5"
+        if self == Self.STAGES_8x3:
+            return "STAGES_8x3"
+        if self == Self.STAGES_8xAUTO:
+            return "STAGES_8xAUTO"
+        if self == Self.STAGES_16xAUTO:
+            return "STAGES_16xAUTO"
+        if self == Self.STAGES_32xAUTO:
+            return "STAGES_32xAUTO"
+        if self == Self.STAGES_64xAUTO:
+            return "STAGES_64xAUTO"
+        if self == Self.STAGES_128xAUTO:
+            return "STAGES_128xAUTO"
+        if self == Self.STAGES_END:
+            return "STAGES_END"
+        return abort[String]("invalid Stages entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
 
 
 fn cublasLtMatmulDescDestroy(
-    matmul_desc: Pointer[cublasLtMatmulDescOpaque_t],
+    matmul_desc: Pointer[Descriptor],
 ) raises -> Result:
     """Destroy matmul operation descriptor.
 
@@ -2353,13 +2307,13 @@ fn cublasLtMatmulDescDestroy(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulDescDestroy",
-        fn (Pointer[cublasLtMatmulDescOpaque_t]) raises -> Result,
+        fn (Pointer[Descriptor]) raises -> Result,
     ]()(matmul_desc)
 
 
 fn cublasLtMatrixTransformDescSetAttribute(
-    transform_desc: Pointer[cublasLtMatrixTransformDescOpaque_t],
-    attr: cublasLtMatrixTransformDescAttributes_t,
+    transform_desc: Pointer[Transform],
+    attr: TransformDescriptor,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
 ) raises -> Result:
@@ -2377,8 +2331,8 @@ fn cublasLtMatrixTransformDescSetAttribute(
     return _get_dylib_function[
         "cublasLtMatrixTransformDescSetAttribute",
         fn (
-            Pointer[cublasLtMatrixTransformDescOpaque_t],
-            cublasLtMatrixTransformDescAttributes_t,
+            Pointer[Transform],
+            TransformDescriptor,
             Pointer[NoneType],
             Int,
         ) raises -> Result,
@@ -2386,8 +2340,8 @@ fn cublasLtMatrixTransformDescSetAttribute(
 
 
 fn cublasLtMatmulPreferenceGetAttribute(
-    pref: Pointer[cublasLtMatmulPreferenceOpaque_t],
-    attr: cublasLtMatmulPreferenceAttributes_t,
+    pref: Pointer[PreferenceOpaque],
+    attr: Preference,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
     size_written: Pointer[Int],
@@ -2409,8 +2363,8 @@ fn cublasLtMatmulPreferenceGetAttribute(
     return _get_dylib_function[
         "cublasLtMatmulPreferenceGetAttribute",
         fn (
-            Pointer[cublasLtMatmulPreferenceOpaque_t],
-            cublasLtMatmulPreferenceAttributes_t,
+            Pointer[PreferenceOpaque],
+            Preference,
             Pointer[NoneType],
             Int,
             Pointer[Int],
@@ -2419,7 +2373,7 @@ fn cublasLtMatmulPreferenceGetAttribute(
 
 
 fn cublasLtMatmulAlgoInit(
-    light_handle: Pointer[cublasLtContext],
+    light_handle: Pointer[Context],
     compute_type: ComputeType,
     scale_type: DataType,
     _atype: DataType,
@@ -2438,7 +2392,7 @@ fn cublasLtMatmulAlgoInit(
     return _get_dylib_function[
         "cublasLtMatmulAlgoInit",
         fn (
-            Pointer[cublasLtContext],
+            Pointer[Context],
             ComputeType,
             DataType,
             DataType,
@@ -2463,80 +2417,80 @@ fn cublasLtMatmulAlgoInit(
 
 @value
 @register_passable("trivial")
-struct cublasLtEpilogue_t:
+struct Epilogue:
     """Postprocessing options for the epilogue
     ."""
 
     var _value: Int8
-    alias CUBLASLT_EPILOGUE_DEFAULT = cublasLtEpilogue_t(0)
+    alias DEFAULT = Epilogue(0)
     """No special postprocessing, just scale and quantize results if necessary.
     """
-    alias CUBLASLT_EPILOGUE_RELU = cublasLtEpilogue_t(1)
+    alias RELU = Epilogue(1)
     """ReLu, apply ReLu point-wise transform to the results (x:=max(x, 0)).
     """
-    alias CUBLASLT_EPILOGUE_RELU_AUX = cublasLtEpilogue_t(2)
+    alias RELU_AUX = Epilogue(2)
     """ReLu, apply ReLu point-wise transform to the results (x:=max(x, 0)).
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias CUBLASLT_EPILOGUE_BIAS = cublasLtEpilogue_t(3)
+    alias BIAS = Epilogue(3)
     """Bias, apply (broadcasted) Bias from bias vector. Bias vector length must match matrix D rows, it must be packed
     (stride between vector elements is 1). Bias vector is broadcasted to all columns and added before applying final
     postprocessing.
     """
-    alias CUBLASLT_EPILOGUE_RELU_BIAS = cublasLtEpilogue_t(4)
+    alias RELU_BIAS = Epilogue(4)
     """ReLu and Bias, apply Bias and then ReLu transform.
     """
-    alias CUBLASLT_EPILOGUE_RELU_AUX_BIAS = cublasLtEpilogue_t(5)
+    alias RELU_AUX_BIAS = Epilogue(5)
     """ReLu and Bias, apply Bias and then ReLu transform
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias CUBLASLT_EPILOGUE_DRELU = cublasLtEpilogue_t(6)
+    alias DRELU = Epilogue(6)
     """ReLu and Bias, apply Bias and then ReLu transform
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias CUBLASLT_EPILOGUE_DRELU_BGRAD = cublasLtEpilogue_t(7)
+    alias DRELU_BGRAD = Epilogue(7)
     """ReLu and Bias, apply Bias and then ReLu transform
 
     This epilogue mode produces an extra output, a ReLu bit-mask matrix,
     see CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias CUBLASLT_EPILOGUE_GELU = cublasLtEpilogue_t(8)
+    alias GELU = Epilogue(8)
     """GELU, apply GELU point-wise transform to the results (x:=GELU(x)).
     """
-    alias CUBLASLT_EPILOGUE_GELU_AUX = cublasLtEpilogue_t(9)
+    alias GELU_AUX = Epilogue(9)
     """GELU, apply GELU point-wise transform to the results (x:=GELU(x)).
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias CUBLASLT_EPILOGUE_GELU_BIAS = cublasLtEpilogue_t(10)
+    alias GELU_BIAS = Epilogue(10)
     """GELU and Bias, apply Bias and then GELU transform.
     """
-    alias CUBLASLT_EPILOGUE_GELU_AUX_BIAS = cublasLtEpilogue_t(11)
+    alias GELU_AUX_BIAS = Epilogue(11)
     """GELU and Bias, apply Bias and then GELU transform
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias CUBLASLT_EPILOGUE_DGELU = cublasLtEpilogue_t(12)
+    alias DGELU = Epilogue(12)
     """GELU and Bias, apply Bias and then GELU transform
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias CUBLASLT_EPILOGUE_DGELU_BGRAD = cublasLtEpilogue_t(13)
+    alias DGELU_BGRAD = Epilogue(13)
     """GELU and Bias, apply Bias and then GELU transform
 
     This epilogue mode outputs GELU input as a separate matrix (useful for training).
     See CUBLASLT_MATMUL_DESC_EPILOGUE_AUX_POINTER.
     """
-    alias CUBLASLT_EPILOGUE_BGRADA = cublasLtEpilogue_t(14)
+    alias BGRADA = Epilogue(14)
     """Bias gradient based on the input matrix A.
 
     The bias size corresponds to the number of rows of the matrix D.
@@ -2545,7 +2499,7 @@ struct cublasLtEpilogue_t:
     Stores Bias gradient in the auxiliary output
     (see CUBLASLT_MATMUL_DESC_BIAS_POINTER).
     """
-    alias CUBLASLT_EPILOGUE_BGRADB = cublasLtEpilogue_t(15)
+    alias BGRADB = Epilogue(15)
     """Bias gradient based on the input matrix B.
 
     The bias size corresponds to the number of columns of the matrix D.
@@ -2565,46 +2519,46 @@ struct cublasLtEpilogue_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.CUBLASLT_EPILOGUE_DEFAULT:
-            return "CUBLASLT_EPILOGUE_DEFAULT"
-        if self == Self.CUBLASLT_EPILOGUE_RELU:
-            return "CUBLASLT_EPILOGUE_RELU"
-        if self == Self.CUBLASLT_EPILOGUE_RELU_AUX:
-            return "CUBLASLT_EPILOGUE_RELU_AUX"
-        if self == Self.CUBLASLT_EPILOGUE_BIAS:
-            return "CUBLASLT_EPILOGUE_BIAS"
-        if self == Self.CUBLASLT_EPILOGUE_RELU_BIAS:
-            return "CUBLASLT_EPILOGUE_RELU_BIAS"
-        if self == Self.CUBLASLT_EPILOGUE_RELU_AUX_BIAS:
-            return "CUBLASLT_EPILOGUE_RELU_AUX_BIAS"
-        if self == Self.CUBLASLT_EPILOGUE_DRELU:
-            return "CUBLASLT_EPILOGUE_DRELU"
-        if self == Self.CUBLASLT_EPILOGUE_DRELU_BGRAD:
-            return "CUBLASLT_EPILOGUE_DRELU_BGRAD"
-        if self == Self.CUBLASLT_EPILOGUE_GELU:
-            return "CUBLASLT_EPILOGUE_GELU"
-        if self == Self.CUBLASLT_EPILOGUE_GELU_AUX:
-            return "CUBLASLT_EPILOGUE_GELU_AUX"
-        if self == Self.CUBLASLT_EPILOGUE_GELU_BIAS:
-            return "CUBLASLT_EPILOGUE_GELU_BIAS"
-        if self == Self.CUBLASLT_EPILOGUE_GELU_AUX_BIAS:
-            return "CUBLASLT_EPILOGUE_GELU_AUX_BIAS"
-        if self == Self.CUBLASLT_EPILOGUE_DGELU:
-            return "CUBLASLT_EPILOGUE_DGELU"
-        if self == Self.CUBLASLT_EPILOGUE_DGELU_BGRAD:
-            return "CUBLASLT_EPILOGUE_DGELU_BGRAD"
-        if self == Self.CUBLASLT_EPILOGUE_BGRADA:
-            return "CUBLASLT_EPILOGUE_BGRADA"
-        if self == Self.CUBLASLT_EPILOGUE_BGRADB:
-            return "CUBLASLT_EPILOGUE_BGRADB"
-        return abort[String]("invalid cublasLtEpilogue_t entry")
+        if self == Self.DEFAULT:
+            return "DEFAULT"
+        if self == Self.RELU:
+            return "RELU"
+        if self == Self.RELU_AUX:
+            return "RELU_AUX"
+        if self == Self.BIAS:
+            return "BIAS"
+        if self == Self.RELU_BIAS:
+            return "RELU_BIAS"
+        if self == Self.RELU_AUX_BIAS:
+            return "RELU_AUX_BIAS"
+        if self == Self.DRELU:
+            return "DRELU"
+        if self == Self.DRELU_BGRAD:
+            return "DRELU_BGRAD"
+        if self == Self.GELU:
+            return "GELU"
+        if self == Self.GELU_AUX:
+            return "GELU_AUX"
+        if self == Self.GELU_BIAS:
+            return "GELU_BIAS"
+        if self == Self.GELU_AUX_BIAS:
+            return "GELU_AUX_BIAS"
+        if self == Self.DGELU:
+            return "DGELU"
+        if self == Self.DGELU_BGRAD:
+            return "DGELU_BGRAD"
+        if self == Self.BGRADA:
+            return "BGRADA"
+        if self == Self.BGRADB:
+            return "BGRADB"
+        return abort[String]("invalid Epilogue entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
 
 
 @register_passable("trivial")
-struct cublasLtMatmulDescOpaque_t:
+struct Descriptor:
     """Semi-opaque descriptor for cublasLtMatmul() operation details
     ."""
 
@@ -2612,7 +2566,7 @@ struct cublasLtMatmulDescOpaque_t:
 
 
 fn cublasLtMatrixLayoutCreate(
-    mat_layout: Pointer[Pointer[cublasLtMatrixLayoutOpaque_t]],
+    mat_layout: Pointer[Pointer[MatrixLayout]],
     type: DataType,
     rows: UInt64,
     cols: UInt64,
@@ -2626,7 +2580,7 @@ fn cublasLtMatrixLayoutCreate(
     return _get_dylib_function[
         "cublasLtMatrixLayoutCreate",
         fn (
-            Pointer[Pointer[cublasLtMatrixLayoutOpaque_t]],
+            Pointer[Pointer[MatrixLayout]],
             DataType,
             UInt64,
             UInt64,
@@ -2637,25 +2591,20 @@ fn cublasLtMatrixLayoutCreate(
 
 @value
 @register_passable("trivial")
-struct cublasLtPointerModeMask_t:
+struct PointerModeMask:
     """Mask to define pointer mode capability ."""
 
     var _value: Int8
-    alias MASK_HOST = cublasLtPointerModeMask_t(0)
-    """see HOST.
-    """
-    alias MASK_DEVICE = cublasLtPointerModeMask_t(1)
-    """see DEVICE.
-    """
-    alias MASK_DEVICE_VECTOR = cublasLtPointerModeMask_t(2)
-    """see DEVICE_VECTOR.
-    """
-    alias MASK_ALPHA_DEVICE_VECTOR_BETA_ZERO = cublasLtPointerModeMask_t(3)
-    """see ALPHA_DEVICE_VECTOR_BETA_ZERO.
-    """
-    alias MASK_ALPHA_DEVICE_VECTOR_BETA_HOST = cublasLtPointerModeMask_t(4)
-    """see ALPHA_DEVICE_VECTOR_BETA_HOST.
-    """
+    alias HOST = PointerModeMask(0)
+    """see HOST."""
+    alias DEVICE = PointerModeMask(1)
+    """see DEVICE."""
+    alias DEVICE_VECTOR = PointerModeMask(2)
+    """see DEVICE_VECTOR."""
+    alias ALPHA_DEVICE_VECTOR_BETA_ZERO = PointerModeMask(3)
+    """see ALPHA_DEVICE_VECTOR_BETA_ZERO."""
+    alias ALPHA_DEVICE_VECTOR_BETA_HOST = PointerModeMask(4)
+    """see ALPHA_DEVICE_VECTOR_BETA_HOST."""
 
     fn __init__(inout self, value: Int):
         self._value = value
@@ -2667,24 +2616,24 @@ struct cublasLtPointerModeMask_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.MASK_HOST:
-            return "MASK_HOST"
-        if self == Self.MASK_DEVICE:
-            return "MASK_DEVICE"
-        if self == Self.MASK_DEVICE_VECTOR:
-            return "MASK_DEVICE_VECTOR"
-        if self == Self.MASK_ALPHA_DEVICE_VECTOR_BETA_ZERO:
-            return "MASK_ALPHA_DEVICE_VECTOR_BETA_ZERO"
-        if self == Self.MASK_ALPHA_DEVICE_VECTOR_BETA_HOST:
-            return "MASK_ALPHA_DEVICE_VECTOR_BETA_HOST"
-        return abort[String]("invalid cublasLtPointerModeMask_t entry")
+        if self == Self.HOST:
+            return "HOST"
+        if self == Self.DEVICE:
+            return "DEVICE"
+        if self == Self.DEVICE_VECTOR:
+            return "DEVICE_VECTOR"
+        if self == Self.ALPHA_DEVICE_VECTOR_BETA_ZERO:
+            return "ALPHA_DEVICE_VECTOR_BETA_ZERO"
+        if self == Self.ALPHA_DEVICE_VECTOR_BETA_HOST:
+            return "ALPHA_DEVICE_VECTOR_BETA_HOST"
+        return abort[String]("invalid PointerModeMask entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
 
 
 @register_passable("trivial")
-struct cublasLtMatrixLayoutOpaque_t:
+struct MatrixLayout:
     """Semi-opaque descriptor for matrix memory layout
     ."""
 
@@ -2692,7 +2641,7 @@ struct cublasLtMatrixLayoutOpaque_t:
 
 
 fn cublasLtMatmulDescCreate(
-    matmul_desc: Pointer[Pointer[cublasLtMatmulDescOpaque_t]],
+    matmul_desc: Pointer[Pointer[Descriptor]],
     compute_type: ComputeType,
     scale_type: DataType,
 ) raises -> Result:
@@ -2704,7 +2653,7 @@ fn cublasLtMatmulDescCreate(
     return _get_dylib_function[
         "cublasLtMatmulDescCreate",
         fn (
-            Pointer[Pointer[cublasLtMatmulDescOpaque_t]],
+            Pointer[Pointer[Descriptor]],
             ComputeType,
             DataType,
         ) raises -> Result,
@@ -2713,50 +2662,50 @@ fn cublasLtMatmulDescCreate(
 
 @value
 @register_passable("trivial")
-struct cublasLtMatmulTile_t:
+struct Tile:
     """Tile size (in C/D matrix Rows x Cols).
 
     General order of tile IDs is sorted by size first and by first dimension second.
     ."""
 
     var _value: Int8
-    alias CUBLASLT_MATMUL_TILE_UNDEFINED = cublasLtMatmulTile_t(0)
-    alias CUBLASLT_MATMUL_TILE_8x8 = cublasLtMatmulTile_t(1)
-    alias CUBLASLT_MATMUL_TILE_8x16 = cublasLtMatmulTile_t(2)
-    alias CUBLASLT_MATMUL_TILE_16x8 = cublasLtMatmulTile_t(3)
-    alias CUBLASLT_MATMUL_TILE_8x32 = cublasLtMatmulTile_t(4)
-    alias CUBLASLT_MATMUL_TILE_16x16 = cublasLtMatmulTile_t(5)
-    alias CUBLASLT_MATMUL_TILE_32x8 = cublasLtMatmulTile_t(6)
-    alias CUBLASLT_MATMUL_TILE_8x64 = cublasLtMatmulTile_t(7)
-    alias CUBLASLT_MATMUL_TILE_16x32 = cublasLtMatmulTile_t(8)
-    alias CUBLASLT_MATMUL_TILE_32x16 = cublasLtMatmulTile_t(9)
-    alias CUBLASLT_MATMUL_TILE_64x8 = cublasLtMatmulTile_t(10)
-    alias CUBLASLT_MATMUL_TILE_32x32 = cublasLtMatmulTile_t(11)
-    alias CUBLASLT_MATMUL_TILE_32x64 = cublasLtMatmulTile_t(12)
-    alias CUBLASLT_MATMUL_TILE_64x32 = cublasLtMatmulTile_t(13)
-    alias CUBLASLT_MATMUL_TILE_32x128 = cublasLtMatmulTile_t(14)
-    alias CUBLASLT_MATMUL_TILE_64x64 = cublasLtMatmulTile_t(15)
-    alias CUBLASLT_MATMUL_TILE_128x32 = cublasLtMatmulTile_t(16)
-    alias CUBLASLT_MATMUL_TILE_64x128 = cublasLtMatmulTile_t(17)
-    alias CUBLASLT_MATMUL_TILE_128x64 = cublasLtMatmulTile_t(18)
-    alias CUBLASLT_MATMUL_TILE_64x256 = cublasLtMatmulTile_t(19)
-    alias CUBLASLT_MATMUL_TILE_128x128 = cublasLtMatmulTile_t(20)
-    alias CUBLASLT_MATMUL_TILE_256x64 = cublasLtMatmulTile_t(21)
-    alias CUBLASLT_MATMUL_TILE_64x512 = cublasLtMatmulTile_t(22)
-    alias CUBLASLT_MATMUL_TILE_128x256 = cublasLtMatmulTile_t(23)
-    alias CUBLASLT_MATMUL_TILE_256x128 = cublasLtMatmulTile_t(24)
-    alias CUBLASLT_MATMUL_TILE_512x64 = cublasLtMatmulTile_t(25)
-    alias CUBLASLT_MATMUL_TILE_64x96 = cublasLtMatmulTile_t(26)
-    alias CUBLASLT_MATMUL_TILE_96x64 = cublasLtMatmulTile_t(27)
-    alias CUBLASLT_MATMUL_TILE_96x128 = cublasLtMatmulTile_t(28)
-    alias CUBLASLT_MATMUL_TILE_128x160 = cublasLtMatmulTile_t(29)
-    alias CUBLASLT_MATMUL_TILE_160x128 = cublasLtMatmulTile_t(30)
-    alias CUBLASLT_MATMUL_TILE_192x128 = cublasLtMatmulTile_t(31)
-    alias CUBLASLT_MATMUL_TILE_128x192 = cublasLtMatmulTile_t(32)
-    alias CUBLASLT_MATMUL_TILE_128x96 = cublasLtMatmulTile_t(33)
-    alias CUBLASLT_MATMUL_TILE_32x256 = cublasLtMatmulTile_t(34)
-    alias CUBLASLT_MATMUL_TILE_256x32 = cublasLtMatmulTile_t(35)
-    alias CUBLASLT_MATMUL_TILE_END = cublasLtMatmulTile_t(36)
+    alias TILE_UNDEFINED = Tile(0)
+    alias TILE_8x8 = Tile(1)
+    alias TILE_8x16 = Tile(2)
+    alias TILE_16x8 = Tile(3)
+    alias TILE_8x32 = Tile(4)
+    alias TILE_16x16 = Tile(5)
+    alias TILE_32x8 = Tile(6)
+    alias TILE_8x64 = Tile(7)
+    alias TILE_16x32 = Tile(8)
+    alias TILE_32x16 = Tile(9)
+    alias TILE_64x8 = Tile(10)
+    alias TILE_32x32 = Tile(11)
+    alias TILE_32x64 = Tile(12)
+    alias TILE_64x32 = Tile(13)
+    alias TILE_32x128 = Tile(14)
+    alias TILE_64x64 = Tile(15)
+    alias TILE_128x32 = Tile(16)
+    alias TILE_64x128 = Tile(17)
+    alias TILE_128x64 = Tile(18)
+    alias TILE_64x256 = Tile(19)
+    alias TILE_128x128 = Tile(20)
+    alias TILE_256x64 = Tile(21)
+    alias TILE_64x512 = Tile(22)
+    alias TILE_128x256 = Tile(23)
+    alias TILE_256x128 = Tile(24)
+    alias TILE_512x64 = Tile(25)
+    alias TILE_64x96 = Tile(26)
+    alias TILE_96x64 = Tile(27)
+    alias TILE_96x128 = Tile(28)
+    alias TILE_128x160 = Tile(29)
+    alias TILE_160x128 = Tile(30)
+    alias TILE_192x128 = Tile(31)
+    alias TILE_128x192 = Tile(32)
+    alias TILE_128x96 = Tile(33)
+    alias TILE_32x256 = Tile(34)
+    alias TILE_256x32 = Tile(35)
+    alias TILE_END = Tile(36)
 
     fn __init__(inout self, value: Int):
         self._value = value
@@ -2768,81 +2717,81 @@ struct cublasLtMatmulTile_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.CUBLASLT_MATMUL_TILE_UNDEFINED:
-            return "CUBLASLT_MATMUL_TILE_UNDEFINED"
-        if self == Self.CUBLASLT_MATMUL_TILE_8x8:
-            return "CUBLASLT_MATMUL_TILE_8x8"
-        if self == Self.CUBLASLT_MATMUL_TILE_8x16:
-            return "CUBLASLT_MATMUL_TILE_8x16"
-        if self == Self.CUBLASLT_MATMUL_TILE_16x8:
-            return "CUBLASLT_MATMUL_TILE_16x8"
-        if self == Self.CUBLASLT_MATMUL_TILE_8x32:
-            return "CUBLASLT_MATMUL_TILE_8x32"
-        if self == Self.CUBLASLT_MATMUL_TILE_16x16:
-            return "CUBLASLT_MATMUL_TILE_16x16"
-        if self == Self.CUBLASLT_MATMUL_TILE_32x8:
-            return "CUBLASLT_MATMUL_TILE_32x8"
-        if self == Self.CUBLASLT_MATMUL_TILE_8x64:
-            return "CUBLASLT_MATMUL_TILE_8x64"
-        if self == Self.CUBLASLT_MATMUL_TILE_16x32:
-            return "CUBLASLT_MATMUL_TILE_16x32"
-        if self == Self.CUBLASLT_MATMUL_TILE_32x16:
-            return "CUBLASLT_MATMUL_TILE_32x16"
-        if self == Self.CUBLASLT_MATMUL_TILE_64x8:
-            return "CUBLASLT_MATMUL_TILE_64x8"
-        if self == Self.CUBLASLT_MATMUL_TILE_32x32:
-            return "CUBLASLT_MATMUL_TILE_32x32"
-        if self == Self.CUBLASLT_MATMUL_TILE_32x64:
-            return "CUBLASLT_MATMUL_TILE_32x64"
-        if self == Self.CUBLASLT_MATMUL_TILE_64x32:
-            return "CUBLASLT_MATMUL_TILE_64x32"
-        if self == Self.CUBLASLT_MATMUL_TILE_32x128:
-            return "CUBLASLT_MATMUL_TILE_32x128"
-        if self == Self.CUBLASLT_MATMUL_TILE_64x64:
-            return "CUBLASLT_MATMUL_TILE_64x64"
-        if self == Self.CUBLASLT_MATMUL_TILE_128x32:
-            return "CUBLASLT_MATMUL_TILE_128x32"
-        if self == Self.CUBLASLT_MATMUL_TILE_64x128:
-            return "CUBLASLT_MATMUL_TILE_64x128"
-        if self == Self.CUBLASLT_MATMUL_TILE_128x64:
-            return "CUBLASLT_MATMUL_TILE_128x64"
-        if self == Self.CUBLASLT_MATMUL_TILE_64x256:
-            return "CUBLASLT_MATMUL_TILE_64x256"
-        if self == Self.CUBLASLT_MATMUL_TILE_128x128:
-            return "CUBLASLT_MATMUL_TILE_128x128"
-        if self == Self.CUBLASLT_MATMUL_TILE_256x64:
-            return "CUBLASLT_MATMUL_TILE_256x64"
-        if self == Self.CUBLASLT_MATMUL_TILE_64x512:
-            return "CUBLASLT_MATMUL_TILE_64x512"
-        if self == Self.CUBLASLT_MATMUL_TILE_128x256:
-            return "CUBLASLT_MATMUL_TILE_128x256"
-        if self == Self.CUBLASLT_MATMUL_TILE_256x128:
-            return "CUBLASLT_MATMUL_TILE_256x128"
-        if self == Self.CUBLASLT_MATMUL_TILE_512x64:
-            return "CUBLASLT_MATMUL_TILE_512x64"
-        if self == Self.CUBLASLT_MATMUL_TILE_64x96:
-            return "CUBLASLT_MATMUL_TILE_64x96"
-        if self == Self.CUBLASLT_MATMUL_TILE_96x64:
-            return "CUBLASLT_MATMUL_TILE_96x64"
-        if self == Self.CUBLASLT_MATMUL_TILE_96x128:
-            return "CUBLASLT_MATMUL_TILE_96x128"
-        if self == Self.CUBLASLT_MATMUL_TILE_128x160:
-            return "CUBLASLT_MATMUL_TILE_128x160"
-        if self == Self.CUBLASLT_MATMUL_TILE_160x128:
-            return "CUBLASLT_MATMUL_TILE_160x128"
-        if self == Self.CUBLASLT_MATMUL_TILE_192x128:
-            return "CUBLASLT_MATMUL_TILE_192x128"
-        if self == Self.CUBLASLT_MATMUL_TILE_128x192:
-            return "CUBLASLT_MATMUL_TILE_128x192"
-        if self == Self.CUBLASLT_MATMUL_TILE_128x96:
-            return "CUBLASLT_MATMUL_TILE_128x96"
-        if self == Self.CUBLASLT_MATMUL_TILE_32x256:
-            return "CUBLASLT_MATMUL_TILE_32x256"
-        if self == Self.CUBLASLT_MATMUL_TILE_256x32:
-            return "CUBLASLT_MATMUL_TILE_256x32"
-        if self == Self.CUBLASLT_MATMUL_TILE_END:
-            return "CUBLASLT_MATMUL_TILE_END"
-        return abort[String]("invalid cublasLtMatmulTile_t entry")
+        if self == Self.TILE_UNDEFINED:
+            return "TILE_UNDEFINED"
+        if self == Self.TILE_8x8:
+            return "TILE_8x8"
+        if self == Self.TILE_8x16:
+            return "TILE_8x16"
+        if self == Self.TILE_16x8:
+            return "TILE_16x8"
+        if self == Self.TILE_8x32:
+            return "TILE_8x32"
+        if self == Self.TILE_16x16:
+            return "TILE_16x16"
+        if self == Self.TILE_32x8:
+            return "TILE_32x8"
+        if self == Self.TILE_8x64:
+            return "TILE_8x64"
+        if self == Self.TILE_16x32:
+            return "TILE_16x32"
+        if self == Self.TILE_32x16:
+            return "TILE_32x16"
+        if self == Self.TILE_64x8:
+            return "TILE_64x8"
+        if self == Self.TILE_32x32:
+            return "TILE_32x32"
+        if self == Self.TILE_32x64:
+            return "TILE_32x64"
+        if self == Self.TILE_64x32:
+            return "TILE_64x32"
+        if self == Self.TILE_32x128:
+            return "TILE_32x128"
+        if self == Self.TILE_64x64:
+            return "TILE_64x64"
+        if self == Self.TILE_128x32:
+            return "TILE_128x32"
+        if self == Self.TILE_64x128:
+            return "TILE_64x128"
+        if self == Self.TILE_128x64:
+            return "TILE_128x64"
+        if self == Self.TILE_64x256:
+            return "TILE_64x256"
+        if self == Self.TILE_128x128:
+            return "TILE_128x128"
+        if self == Self.TILE_256x64:
+            return "TILE_256x64"
+        if self == Self.TILE_64x512:
+            return "TILE_64x512"
+        if self == Self.TILE_128x256:
+            return "TILE_128x256"
+        if self == Self.TILE_256x128:
+            return "TILE_256x128"
+        if self == Self.TILE_512x64:
+            return "TILE_512x64"
+        if self == Self.TILE_64x96:
+            return "TILE_64x96"
+        if self == Self.TILE_96x64:
+            return "TILE_96x64"
+        if self == Self.TILE_96x128:
+            return "TILE_96x128"
+        if self == Self.TILE_128x160:
+            return "TILE_128x160"
+        if self == Self.TILE_160x128:
+            return "TILE_160x128"
+        if self == Self.TILE_192x128:
+            return "TILE_192x128"
+        if self == Self.TILE_128x192:
+            return "TILE_128x192"
+        if self == Self.TILE_128x96:
+            return "TILE_128x96"
+        if self == Self.TILE_32x256:
+            return "TILE_32x256"
+        if self == Self.TILE_256x32:
+            return "TILE_256x32"
+        if self == Self.TILE_END:
+            return "TILE_END"
+        return abort[String]("invalid Tile entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
@@ -2855,7 +2804,7 @@ fn cublasLtGetStatusName(status: Result) raises -> Pointer[Int8]:
 
 
 fn cublasLtMatmulPreferenceCreate(
-    pref: Pointer[Pointer[cublasLtMatmulPreferenceOpaque_t]],
+    pref: Pointer[Pointer[PreferenceOpaque]],
 ) raises -> Result:
     """Create new matmul heuristic search preference descriptor.
 
@@ -2864,9 +2813,7 @@ fn cublasLtMatmulPreferenceCreate(
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceCreate",
-        fn (
-            Pointer[Pointer[cublasLtMatmulPreferenceOpaque_t]],
-        ) raises -> Result,
+        fn (Pointer[Pointer[PreferenceOpaque]],) raises -> Result,
     ]()(pref)
 
 
@@ -2880,7 +2827,7 @@ struct cublasLtMatmulHeuristicResult_t:
     # Matmul algorithm descriptor.
     #
     # Must be initialized with cublasLtMatmulAlgoInit() if preferences' CUBLASLT_MATMUL_PERF_SEARCH_MODE is set to
-    # CUBLASLT_SEARCH_LIMITED_BY_ALGO_ID
+    # LIMITED_BY_ALGO_ID
     # .
     var algo: MatmulAlgorithm
     # Actual size of workspace memory required.
@@ -2923,16 +2870,16 @@ fn cublasLtLoggerOpenFile(log_file: Pointer[Int8]) raises -> Result:
 
 
 fn cublasLtMatrixTransform(
-    light_handle: Pointer[cublasLtContext],
-    transform_desc: Pointer[cublasLtMatrixTransformDescOpaque_t],
+    light_handle: Pointer[Context],
+    transform_desc: Pointer[Transform],
     alpha: Pointer[NoneType],
     _a: Pointer[NoneType],
-    _adesc: Pointer[cublasLtMatrixLayoutOpaque_t],
+    _adesc: Pointer[MatrixLayout],
     beta: Pointer[NoneType],
     _b: Pointer[NoneType],
-    _bdesc: Pointer[cublasLtMatrixLayoutOpaque_t],
+    _bdesc: Pointer[MatrixLayout],
     _c: Pointer[NoneType],
-    _cdesc: Pointer[cublasLtMatrixLayoutOpaque_t],
+    _cdesc: Pointer[MatrixLayout],
     stream: Pointer[Stream],
 ) raises -> Result:
     """Matrix layout conversion helper (C = alpha * op(A) + beta * op(B)).
@@ -2951,16 +2898,16 @@ fn cublasLtMatrixTransform(
     return _get_dylib_function[
         "cublasLtMatrixTransform",
         fn (
-            Pointer[cublasLtContext],
-            Pointer[cublasLtMatrixTransformDescOpaque_t],
+            Pointer[Context],
+            Pointer[Transform],
             Pointer[NoneType],
             Pointer[NoneType],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
+            Pointer[MatrixLayout],
             Pointer[NoneType],
             Pointer[NoneType],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
+            Pointer[MatrixLayout],
             Pointer[NoneType],
-            Pointer[cublasLtMatrixLayoutOpaque_t],
+            Pointer[MatrixLayout],
             Pointer[Stream],
         ) raises -> Result,
     ]()(
@@ -2998,12 +2945,12 @@ fn cublasLtLoggerSetMask(mask: Int16) raises -> Result:
 
 # Opaque structure holding CUBLASLT context
 # .
-alias cublasLtHandle_t = Pointer[cublasLtContext]
+alias cublasLtHandle_t = Pointer[Context]
 
 
 fn cublasLtMatrixTransformDescGetAttribute(
-    transform_desc: Pointer[cublasLtMatrixTransformDescOpaque_t],
-    attr: cublasLtMatrixTransformDescAttributes_t,
+    transform_desc: Pointer[Transform],
+    attr: TransformDescriptor,
     buf: Pointer[NoneType],
     size_in_bytes: Int,
     size_written: Pointer[Int],
@@ -3025,8 +2972,8 @@ fn cublasLtMatrixTransformDescGetAttribute(
     return _get_dylib_function[
         "cublasLtMatrixTransformDescGetAttribute",
         fn (
-            Pointer[cublasLtMatrixTransformDescOpaque_t],
-            cublasLtMatrixTransformDescAttributes_t,
+            Pointer[Transform],
+            TransformDescriptor,
             Pointer[NoneType],
             Int,
             Pointer[Int],
@@ -3035,7 +2982,7 @@ fn cublasLtMatrixTransformDescGetAttribute(
 
 
 fn cublasLtMatmulDescInit_internal(
-    matmul_desc: Pointer[cublasLtMatmulDescOpaque_t],
+    matmul_desc: Pointer[Descriptor],
     size: Int,
     compute_type: ComputeType,
     scale_type: DataType,
@@ -3045,7 +2992,7 @@ fn cublasLtMatmulDescInit_internal(
     return _get_dylib_function[
         "cublasLtMatmulDescInit_internal",
         fn (
-            Pointer[cublasLtMatmulDescOpaque_t],
+            Pointer[Descriptor],
             Int,
             ComputeType,
             DataType,
@@ -3054,18 +3001,18 @@ fn cublasLtMatmulDescInit_internal(
 
 
 fn cublasLtMatmulPreferenceInit_internal(
-    pref: Pointer[cublasLtMatmulPreferenceOpaque_t], size: Int
+    pref: Pointer[PreferenceOpaque], size: Int
 ) raises -> Result:
     """Internal. Do not use directly.
     ."""
     return _get_dylib_function[
         "cublasLtMatmulPreferenceInit_internal",
-        fn (Pointer[cublasLtMatmulPreferenceOpaque_t], Int) raises -> Result,
+        fn (Pointer[PreferenceOpaque], Int) raises -> Result,
     ]()(pref, size)
 
 
 @register_passable("trivial")
-struct cublasLtMatrixTransformDescOpaque_t:
+struct Transform:
     """Semi-opaque descriptor for cublasLtMatrixTransform() operation details
     ."""
 
@@ -3074,36 +3021,28 @@ struct cublasLtMatrixTransformDescOpaque_t:
 
 @value
 @register_passable("trivial")
-struct cublasLtMatrixTransformDescAttributes_t:
+struct TransformDescriptor:
     """Matrix transform descriptor attributes to define details of the operation.
     ."""
 
     var _value: Int8
-    alias CUBLASLT_MATRIX_TRANSFORM_DESC_SCALE_TYPE = cublasLtMatrixTransformDescAttributes_t(
-        0
-    )
+    alias SCALE_TYPE = TransformDescriptor(0)
     """Scale type, see cudaDataType. Inputs are converted to scale type for scaling and summation and results are then
     converted to output type to store in memory.
 
     int32_t.
     """
-    alias CUBLASLT_MATRIX_TRANSFORM_DESC_POINTER_MODE = cublasLtMatrixTransformDescAttributes_t(
-        1
-    )
+    alias POINTER_MODE = TransformDescriptor(1)
     """Pointer mode of alpha and beta, see PointerMode.
 
     int32_t, default: HOST.
     """
-    alias CUBLASLT_MATRIX_TRANSFORM_DESC_TRANSA = cublasLtMatrixTransformDescAttributes_t(
-        2
-    )
+    alias TRANSA = TransformDescriptor(2)
     """Transform of matrix A, see cublasOperation_t.
 
     int32_t, default: CUBLAS_OP_N.
     """
-    alias CUBLASLT_MATRIX_TRANSFORM_DESC_TRANSB = cublasLtMatrixTransformDescAttributes_t(
-        3
-    )
+    alias TRANSB = TransformDescriptor(3)
     """Transform of matrix B, see cublasOperation_t.
 
     int32_t, default: CUBLAS_OP_N.
@@ -3119,24 +3058,22 @@ struct cublasLtMatrixTransformDescAttributes_t:
         return not (self == other)
 
     fn __str__(self) raises -> String:
-        if self == Self.CUBLASLT_MATRIX_TRANSFORM_DESC_SCALE_TYPE:
-            return "CUBLASLT_MATRIX_TRANSFORM_DESC_SCALE_TYPE"
-        if self == Self.CUBLASLT_MATRIX_TRANSFORM_DESC_POINTER_MODE:
-            return "CUBLASLT_MATRIX_TRANSFORM_DESC_POINTER_MODE"
-        if self == Self.CUBLASLT_MATRIX_TRANSFORM_DESC_TRANSA:
-            return "CUBLASLT_MATRIX_TRANSFORM_DESC_TRANSA"
-        if self == Self.CUBLASLT_MATRIX_TRANSFORM_DESC_TRANSB:
-            return "CUBLASLT_MATRIX_TRANSFORM_DESC_TRANSB"
-        return abort[String](
-            "invalid cublasLtMatrixTransformDescAttributes_t entry"
-        )
+        if self == Self.SCALE_TYPE:
+            return "SCALE_TYPE"
+        if self == Self.POINTER_MODE:
+            return "POINTER_MODE"
+        if self == Self.TRANSA:
+            return "TRANSA"
+        if self == Self.TRANSB:
+            return "TRANSB"
+        return abort[String]("invalid TransformDescriptor entry")
 
     fn __int__(self) raises -> Int:
         return int(self._value)
 
 
 # fn cublasLtMatmulAlgoGetIds(
-#     light_handle: Pointer[cublasLtContext],
+#     light_handle: Pointer[Context],
 #     compute_type: ComputeType,
 #     scale_type: DataType,
 #     _atype: DataType,
@@ -3160,7 +3097,7 @@ struct cublasLtMatrixTransformDescAttributes_t:
 #     return _get_dylib_function[
 #         "cublasLtMatmulAlgoGetIds",
 #         fn (
-#             Pointer[cublasLtContext],
+#             Pointer[Context],
 #             ComputeType,
 #             DataType,
 #             DataType,
