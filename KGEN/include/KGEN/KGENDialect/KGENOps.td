@@ -73,10 +73,6 @@ def KGEN_FuncOp : KGENOp<"func", [
     The presence of this attribute means that the function was already compiled
     all the way to an object file once, so we should avoid doing it again.
 
-    If the function has already been precompiled, `precompiledBodyRef` will
-    reference a `kgen.link` operation containing the static archive in which
-    the precompiled body lies.
-
     The function can contain opaque metadata to pass onto LLVM in its
     `llvmMetadata` dictionary attribute. Note that this is not the same as LLVM
     function attributes, which is contained in the `llvmAttrs` dictionary
@@ -119,49 +115,6 @@ def KGEN_FuncOp : KGENOp<"func", [
   ];
 
   let hasCustomAssemblyFormat = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// ExternFuncOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ExternFuncOp : KGENOp<"extern.func", [
-    HasParent<"mlir::ModuleOp">, Symbol, DeclInterface, FuncInterface,
-    ExportInterface, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "External function declaration.";
-  let description = [{
-    The `kgen.extern.func` operation represents a concrete KGEN function that
-    is defined in an external library. It has no body. It cannot represent any
-    parametric functions.
-
-    Example:
-
-    ```mlir
-    kgen.link "libsomelib.a" as @importedLib
-
-    kgen.extern.func @someFn(%arg0: index) -> index from @importedLib
-    ```
-  }];
-
-  let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<KGEN_SignatureType>:$signature,
-                       KGEN_ExportKindAttr:$exportKind,
-                       OptionalAttr<SymbolRefAttr>:$importedFrom);
-
-  let extraClassDeclaration = [{
-    InlineLevel getInlineLevel() { return InlineLevel::Never; }
-    ArrayRef<ParamDeclAttr> getInputParams() { return {}; }
-    ArrayRef<ParamDeclAttr> getResultParams() { return {}; }
-    FunctionType getFunctionType() { return getSignature().getValues(); }
-  }];
-
-  let assemblyFormat = [{
-    `` custom<SymbolExport>($exportKind) $sym_name ``
-    custom<Signature>($signature) (`from` $importedFrom^)?
-    attr-dict-with-keyword
-  }];
-
-  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1236,47 +1189,6 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
     (`pre_elaboration` `(` $preElaborationModule^ `)`)?
     (`post_parse` `(` $postParseModule^ `)`)?
     attr-dict-with-keyword
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// LinkOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_LinkOp : KGENOp<"link", [Symbol]> {
-  let summary = "Link directive.";
-  let description = [{
-    The `kgen.link` operation defines a symbol that can be used to import
-    C functions from other libraries. The `kgen.link` directives are uniqued
-    by their symbol name - it is illegal to attempt to link more than one
-    library as a given symbol name.
-
-    If a linked library has transitive depencies -- in other words, that library
-    depends in turn on other libraries -- those dependencies must be included in
-    the list of dependencies defined on the link op.
-
-    Example:
-
-    ```mlir
-    kgen.link dense_resource<musl_libc> : tensor<1xui8> as @libc
-
-    kgen.link dense_resource<a862fa> : tensor<92xui8> as @ffmpeg, dependencies([
-      <dense_resource<c95292> : tensor<659xui8> as "libavcodec">,
-      <dense_resource<e062d0> : tensor<861xui8> as "libavutil">
-    ])
-    ```
-  }];
-
-  let arguments = (ins
-    SymbolNameAttr:$sym_name,
-    Builtin_DenseResourceElementsAttr:$linkBytes,
-    OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies
-  );
-
-  let assemblyFormat = [{
-    $linkBytes `as` $sym_name
-    (`,` `dependencies` `(` $dependencies^ `)`)?
-    attr-dict
   }];
 }
 

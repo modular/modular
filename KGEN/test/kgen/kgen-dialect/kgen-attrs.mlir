@@ -82,19 +82,6 @@ kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() 
   kgen.return
 }
 
-// CHECK: #kgen.link.dependency<dense_resource<a862fa0> : tensor<422xui8> as "ffmpeg">
-"some.op"() {
-  a = #kgen.link.dependency<dense_resource<a862fa0> : tensor<422xui8> as "ffmpeg">
-} : () -> ()
-
-// CHECK: #kgen<link.dependencies[
-// CHECK-SAME: <dense_resource<c95292> : tensor<659xui8> as "libavcodec">,
-// CHECK-SAME: <dense_resource<e062d0> : tensor<861xui8> as "libavutil">]>
-"some.op"() {a = #kgen<link.dependencies[
-  <dense_resource<c95292> : tensor<659xui8> as "libavcodec">,
-  <dense_resource<e062d0> : tensor<861xui8> as "libavutil">
-]>} : () -> ()
-
 kgen.generator @entry1() -> index {
   %0 = index.constant 1
   kgen.return %0 : index

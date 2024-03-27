@@ -238,8 +238,5 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createLowerLoops());
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
-  // At the end of the pipeline, externalize any functions that have been
-  // precompiled so that they aren't sent to LLVM again.
-  pm.addPass(createExternalizePrecompiledFunctions());
   pm.addPass(createEliminateDeadSymbols());
 }

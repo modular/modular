@@ -2527,38 +2527,6 @@ TypedAttr KGEN::emitMLIROperationCall(
 }
 
 //===----------------------------------------------------------------------===//
-// LinkDependencyAttr
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-LinkDependencyAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                           StringAttr name, DenseResourceElementsAttr bytes) {
-  if (bytes.empty())
-    return emitError() << "bytes cannot be empty";
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// LinkDependencyArrayAttr
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-LinkDependencyArrayAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                                ArrayRef<LinkDependencyAttr> value) {
-  if (value.empty())
-    return emitError() << "dependencies cannot be empty";
-
-  DenseSet<StringAttr> names;
-  for (LinkDependencyAttr dependency : value)
-    if (!names.insert(dependency.getName()).second)
-      return emitError() << "two dependencies cannot use the same name, '"
-                         << dependency.getName().strref() << "'";
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

@@ -142,100 +142,6 @@ ObjectCompiler::produceStandaloneModule(const SymbolTable &symtab,
   return singleModule;
 }
 
-/// For each external call, find the `kgen.link` op that it references, and add
-/// that op's linked bytes to the `links` collection.
-static void
-collectLinks(ModuleOp theModule, const SymbolTable &symtab,
-             llvm::MapVector<StringAttr, DenseResourceElementsAttr> &links) {
-  auto addLinkOp = [&](SymbolRefAttr linkRef, StringRef user) {
-    auto link =
-        symtab.lookup<LinkOp>(cast<FlatSymbolRefAttr>(linkRef).getAttr());
-    assert(link && "There wasn't a valid LinkOp?");
-
-    // First, add the bytes of the libraries that the linked library depends
-    // upon, if any.
-    if (std::optional<ArrayRef<LinkDependencyAttr>> dependencies =
-            link.getDependencies())
-      for (LinkDependencyAttr dependency : *dependencies)
-        links[dependency.getName()] = dependency.getBytes();
-
-    // Then, add the linked library bytes.
-    links[link.getSymNameAttr()] = link.getLinkBytesAttr();
-  };
-
-  // Get all LinkOps that were actually used. They're always referenced from
-  // kgen.extern.func.
-  for (Operation &op : theModule.getOps()) {
-    if (auto func = dyn_cast<ExternFuncOp>(op)) {
-      if (SymbolRefAttr ref = func.getImportedFromAttr())
-        addLinkOp(ref, func.getSymName());
-    } else if (auto func = dyn_cast<FuncOp>(op)) {
-      if (SymbolRefAttr ref = func.getPrecompiledBodyRefAttr())
-        addLinkOp(ref, func.getLinkageNameAttr());
-    }
-  }
-}
-
-/// Given a binary in `bufferRef`, add all the required pieces of it to the list
-/// of archive members. This is effectively a very dumb static linker.
-static ErrorOrSuccess
-addBinaryToArchive(llvm::MemoryBufferRef bufferRef,
-                   SmallVectorImpl<llvm::NewArchiveMember> &archiveMembers) {
-  // Create the binary.
-  auto binaryOr = toModularErrorOr(llvm::object::createBinary(bufferRef));
-  if (binaryOr.isError())
-    return binaryOr.takeError();
-  std::unique_ptr<llvm::object::Binary> binary = std::move(*binaryOr);
-
-  // TODO: Ensure the binary is the correct type.
-
-  // If the binary is an object file, add it to the archive members directly.
-  if (binary->isObject()) {
-    archiveMembers.emplace_back(bufferRef);
-    return success();
-  }
-
-  // Otherwise, expand the archive and add its children to the new member list.
-  auto *archive = cast<llvm::object::Archive>(binary.get());
-
-  // Add all the children in the archive to the new output archive.
-  llvm::Error err = llvm::Error::success();
-  for (auto &child : archive->children(err)) {
-    if (err)
-      return toModularError(std::move(err));
-
-    auto refOr = toModularErrorOr(child.getMemoryBufferRef());
-    if (refOr.isError())
-      return refOr.takeError();
-
-    LLVM_DEBUG(llvm::dbgs() << "Adding object to archive: '"
-                            << refOr->getBufferIdentifier() << "'\n");
-    archiveMembers.emplace_back(*refOr);
-  }
-  // Handle all errors - we didn't hit anything.
-  llvm::handleAllErrors(std::move(err));
-
-  return success();
-}
-
-/// Take the bytes provided, interpret them as a static archive, and add the
-/// archive members to the provided list.
-static ErrorOrSuccess
-handleLink(StringAttr name, DenseResourceElementsAttr bytes,
-           DenseSet<StringAttr> &processed,
-           SmallVectorImpl<llvm::NewArchiveMember> &archiveMembers) {
-  // Only pull in each library once. Libraries are uniqued by their given name.
-  if (!processed.insert(name).second)
-    return success();
-
-  // Create the llvm memory buffer ref.
-  ArrayRef<char> rawBytes = bytes.getRawHandle().getBlob()->getData();
-  llvm::MemoryBufferRef byteBuffer(StringRef(rawBytes.begin(), rawBytes.size()),
-                                   bytes.getRawHandle().getKey());
-
-  return addBinaryToArchive(byteBuffer, archiveMembers);
-}
-
 //===----------------------------------------------------------------------===//
 // produceArchive
 //===----------------------------------------------------------------------===//
@@ -250,44 +156,15 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
   OwningOpRef<ModuleOp> slicedModule =
       produceStandaloneModule(symtab, exportedSymbols);
 
-  // Collect a mapping from library names to their object code bytes, to add as
-  // members of the archive.
-  llvm::MapVector<StringAttr, DenseResourceElementsAttr> links;
-  llvm::SourceMgr linkMgr;
-  if (standalone) {
-    // When producing standalone archives, `kgen.link`ed libraries are pulled in
-    // only when the module makes use of symbols in those libraries (such as by
-    // calling a function defined in a linked library). We analyze these
-    // references and collect the linked library bytes here, before lowering to
-    // LLVM (`kgen.link` ops are removed during lowering).
-    collectLinks(*slicedModule, symtab, links);
-
-    // Set up a SourceMgr that we can use to find link files.
-    linkMgr.setIncludeDirs(options.linkDirs);
-  }
-
   // Perform a cache aware transformation to translate the module to an archive
   // file.
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                LLCL::AnyAsyncValueRef chain) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-    chain.andThenSync([this, op, links = std::move(links),
-                       linkMgr = std::move(linkMgr), output = output.copy(),
-                       standalone, buf = buf.copy()]() mutable {
-      // Process all the link directives now. We keep a set of
-      // already-processed link directives, so we don't re-process
-      // libraries.
+    chain.andThenSync([this, op, output = output.copy(), standalone,
+                       buf = buf.copy()]() mutable {
       SmallVector<llvm::NewArchiveMember> archiveMembers;
-      DenseSet<StringAttr> processedNames;
       SmallVector<BufferRef> archiveBuffers;
-
-      for (auto &[name, bytes] : links) {
-        if (auto err =
-                handleLink(name, bytes, processedNames, archiveMembers)) {
-          return std::move(output).setToError(
-              LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
-        }
-      }
 
       // Lower the module to LLVM.
       llvm::LLVMContext ctx;
@@ -373,9 +250,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       if (noSplitting || !options.enableLLVMPerFunctionSplitting) {
         andThenSyncMoving(
             cacheResults,
-            [moduleName = moduleName.str(), op, links = std::move(links),
-             archiveMembers = std::move(archiveMembers),
-             linkMgr = std::move(linkMgr), buf = buf.copy(),
+            [moduleName = moduleName.str(), op,
+             archiveMembers = std::move(archiveMembers), buf = buf.copy(),
              output = output.copy(),
              generatingPtx](MutableArrayRef<AnyAsyncValueRef> values) mutable {
               // If any of the cache results failed, propagate the error.

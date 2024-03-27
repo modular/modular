@@ -594,37 +594,6 @@ LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 //===----------------------------------------------------------------------===//
-// ExternFuncOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-ExternFuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  if (SymbolRefAttr importedFrom = getImportedFromAttr()) {
-    // Find the link op that we're being imported from.
-    if (!symbolTable.lookupNearestSymbolFrom<LinkOp>(*this, importedFrom))
-      return emitError("expected '")
-             << importedFrom << "' to reference a valid kgen.link directive";
-  }
-  return success();
-}
-
-LogicalResult ExternFuncOp::verify() {
-  DebugInfo::DISubprogramAttr subprogram =
-      DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
-          getLoc(), DebugInfo::LocWalkPolicy::CalleePriority);
-  if (subprogram) {
-    if (bitEnumContainsAny(subprogram.getSubprogramFlags(),
-                           DebugInfo::SubprogramFlags::Definition))
-      return emitError("extern functions cannot have debug scope with "
-                       "'DebugInfo::SubprogramFlags::Definition' flag");
-    if (subprogram.getCompileUnit())
-      return emitError(
-          "extern functions cannot have debug scope with a compile unit");
-  }
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // ExternGeneratorOp
 //===----------------------------------------------------------------------===//
 

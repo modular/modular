@@ -88,8 +88,6 @@ public:
 
   SmallVector<std::string> includePaths;
 
-  std::vector<std::string> linkPaths;
-
   SmallVector<std::string> defines;
 
   bool enableMLIRCrashReproducer{false};
@@ -139,8 +137,7 @@ public:
       debugAt = debugAtLevel;
     return CompilationOptions(enableSearch, optLevel, debugInfoLevel, debugAt,
                               sanitizerOptions, enableXRayInstrumentation,
-                              targetTriple, targetCpu, targetFeatures,
-                              linkPaths);
+                              targetTriple, targetCpu, targetFeatures);
   }
 
   bool optLevel0{false};
@@ -215,11 +212,6 @@ private:
   M::cl::MListOpt<std::string, SmallVector<std::string>> includePaths{
       "I", cl::desc("Path to use to search for included files."),
       llvm::cl::location(options.includePaths),
-      llvm::cl::cat(KGENOptionsCategory)};
-
-  M::cl::MListOpt<std::string, std::vector<std::string>> linkPaths{
-      "L", cl::desc("Path to use to search for linked libraries/objects."),
-      llvm::cl::location(options.linkPaths),
       llvm::cl::cat(KGENOptionsCategory)};
 
   M::cl::MListOpt<std::string, SmallVector<std::string>> defines{

@@ -1,8 +1,5 @@
 // RUN: kgen-opt -lower-calling-convention -allow-unregistered-dialect %s | FileCheck %s
 
-// CHECK-LABEL: kgen.extern.func @none_extern_func() -> i32
-kgen.extern.func @none_extern_func() -> (!kgen.none, i32, !kgen.none)
-
 // CHECK-LABEL: kgen.func @none_func() {
 kgen.func @none_func() -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>

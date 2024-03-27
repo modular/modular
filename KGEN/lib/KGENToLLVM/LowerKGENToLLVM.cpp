@@ -324,43 +324,6 @@ struct ConvertKGENFunc : public ConvertSymbolOpToLLVM<FuncOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENExternFunc
-//===----------------------------------------------------------------------===//
-
-struct ConvertKGENExternFunc : public ConvertSymbolOpToLLVM<ExternFuncOp> {
-  using ConvertSymbolOpToLLVM::ConvertSymbolOpToLLVM;
-
-  LogicalResult
-  matchAndRewrite(ExternFuncOp func, ExternFuncOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
-    // Convert the func signature.
-    FunctionType signature = func.getFunctionType();
-    TypeConverter::SignatureConversion result(signature.getNumInputs());
-    Type funcType = getTypeConverter()->convertFunctionSignature(
-        signature, /*isVariadic=*/false,
-        getTypeConverter()->getOptions().useBarePtrCallConv, result);
-    if (!funcType)
-      return emitError(func.getLoc(), "failed to convert func signature");
-
-    auto funcOp = createLLVMFunc(
-        rewriter, getTypeConverter()->getTarget(), func.getLoc(),
-        func.getNameAttr(), funcType,
-        getLinkageKind(func.getExportKind(), /*isExternFunc=*/true));
-
-    // Drop empty struct arguments.
-    dropEmptyStructArguments(funcOp, rewriter);
-
-    // Remove the function.
-    symtab.remove(func);
-    Block::iterator insertPt(func->getNextNode());
-    funcOp->remove();
-    symtab.insert(funcOp, insertPt);
-    rewriter.eraseOp(func);
-    return success();
-  }
-};
-
-//===----------------------------------------------------------------------===//
 // ConvertKGENCall
 //===----------------------------------------------------------------------===//
 
@@ -841,11 +804,6 @@ struct ConvertKGENVariantGet : ConvertPOPToLLVMPattern<VariantTakeOp> {
 // Pattern Population
 //===----------------------------------------------------------------------===//
 
-static LogicalResult removeLinkOps(LinkOp linkOp, PatternRewriter &rewriter) {
-  rewriter.eraseOp(linkOp);
-  return success();
-}
-
 static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
                                        mlir::RewritePatternSet &patterns,
                                        SymbolTable &symtab,
@@ -872,14 +830,11 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       >(typeConverter);
   patterns.insert<
       // clang-format off
-      ConvertKGENFunc,
-      ConvertKGENExternFunc
+      ConvertKGENFunc
       // clang-format on
       >(typeConverter, symtab);
   patterns.insert<ConvertKGENParamConstant, ConvertKGENParamMaterialize>(
       typeConverter, imc);
-  // Just remove LinkOps.
-  patterns.add(removeLinkOps);
 }
 
 //===----------------------------------------------------------------------===//
