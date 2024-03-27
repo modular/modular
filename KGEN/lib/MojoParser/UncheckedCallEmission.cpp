@@ -635,6 +635,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
          "typechecking confirmed we have no **kwargs");
 
   // Fill the **kwargs dict with values.
+  ValueDest kwargsDest(EC_KWArgsArgument);
   for (auto [name, operand] : variadicKwOperands) {
     SMLoc loc = operand.expr->getLoc();
 
@@ -645,19 +646,19 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
         StringAttr::get(name.strref(), StringType::get(emitter.getContext()));
     CValue literalKey = emitter.emitConstructorCall(
         stringLiteralType, CallOperands({{PValue(nameAttr), operand.expr}}),
-        callExpr, CallSyntax::kImplicitConvert, dest);
+        callExpr, CallSyntax::kImplicitConvert, kwargsDest);
     ASTType stringType =
         emitter.shared.getBuiltinStringType(emitter.declScope, loc);
     CValue key = emitter.emitConstructorCall(
         stringType, CallOperands({{literalKey, operand.expr}}), callExpr,
-        CallSyntax::kImplicitConvert, dest);
+        CallSyntax::kImplicitConvert, kwargsDest);
 
     // Then we set the element with the given key and the operand as value.
     emitter.emitNamedMethodCall(
         "__setitem__",
         CallOperands(
             {{MLValue(kwargsDict), callExpr}, {key, operand.expr}, operand}),
-        dest, CallSyntax::kImplicitConvert, callExpr);
+        kwargsDest, CallSyntax::kImplicitConvert, callExpr);
   }
 
   return argumentValues;
@@ -1239,12 +1240,6 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // If there were any writebacks to handle, emit them before handling raised
   // errors.
   callEmitter.emitAfterCallActions();
-
-  SmallVector<Value, 1> byRefResults;
-  if (calleeSig.hasMemoryOnlyResult())
-    byRefResults.push_back(callArgs.back());
-  else if (calleeSig.hasInitSelfArg())
-    byRefResults.push_back(callArgs[0]);
 
   // If there is a memory result slot, the value we filled in is our MRValue
   // result and we've already handled the ValueDest by emitting into it.
