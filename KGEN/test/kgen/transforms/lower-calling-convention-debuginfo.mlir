@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-calling-convention %s -mlir-print-debuginfo | FileCheck %s
+// RUN: kgen-opt -lower-calling-conventions %s -mlir-print-debuginfo | FileCheck %s
 
 #subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (!kgen.none): DW_CC_normal>
 
