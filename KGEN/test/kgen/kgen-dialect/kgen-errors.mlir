@@ -771,24 +771,6 @@ kgen.generator @variant_constant<value: i32>() {
 
 // -----
 
-// expected-error @below {{elaborated module cannot be empty}}
-"someop"() {a = #kgen.package.archive<
-  target = #M.target<triple = "", arch="">,
-  elaboratedModule = dense_resource<abc> : tensor<0xui8>,
-  archive = dense_resource<def> : tensor<0xui8>
->} : () -> ()
-
-// -----
-
-// expected-error @below {{archive cannot be empty}}
-"someop"() {a = #kgen.package.archive<
-  target = #M.target<triple = "", arch="">,
-  elaboratedModule = dense_resource<abc> : tensor<1xui8>,
-  archive = dense_resource<def> : tensor<0xui8>
->} : () -> ()
-
-// -----
-
 // expected-error @below {{bytes cannot be empty}}
 "someop"() {a = #kgen.link.dependency<dense_resource<a862fa01d> : tensor<0xui8> as "ffmpeg">} : () -> ()
 

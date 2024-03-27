@@ -149,12 +149,7 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
     return specializePackageLinkForPreElaborationLinking(packageLink, runtime,
                                                          options);
   };
-  auto packageLinkHandlerFn = [&](PackageLinkOp packageLink,
-                                  TargetInfoAttr targetInfo) {
-    return loadAndElaborateBytecode(packageLink, targetInfo, options, runtime);
-  };
-  if (ErrorOrSuccess err = compilerLayer.add("exec", moduleOp, packageGenLibFn,
-                                             packageLinkHandlerFn))
+  if (ErrorOrSuccess err = compilerLayer.add("exec", moduleOp, packageGenLibFn))
     return state.reportError(err.getError());
 
   // Generate a symbol table and an export map for the module post-compile.

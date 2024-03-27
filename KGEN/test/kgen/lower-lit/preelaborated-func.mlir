@@ -28,7 +28,6 @@ lit.func @caller() -> index attributes {test.target.0 = #module_target, doNotExt
 // built. When this occurs, their `export` attribute is removed by the
 // `-materialize-packages` pass.
 // ATTACH: kgen.package.link @link_exported_func
-// ATTACH-SAME: archives([<target = {{.*}}, elaboratedModule = dense_resource<exported_func_generated_comp_attr>
 // ATTACH-LABEL: lit.func export @exported_func
 // ATTACH-SAME: preCompiledModuleRef = @link_exported_func
 
@@ -46,7 +45,6 @@ lit.func export @exported_func(%arg0: index) -> index attributes {
 }
 
 // ATTACH: kgen.package.link @link_precompiled_func
-// ATTACH-SAME: archives([<target = {{.*}}, elaboratedModule = dense_resource<precompiled_func_generated_comp_attr>
 // ATTACH-LABEL: lit.func @precompiled_func
 // ATTACH-SAME: preCompiledModuleRef = @link_precompiled_func
 
@@ -63,7 +61,6 @@ lit.func @precompiled_func(%arg0: index) -> index attributes {
 }
 
 // ATTACH: kgen.package.link @link_different_precompiled_func
-// ATTACH-SAME: archives([<target = {{.*}}, elaboratedModule = dense_resource<different_precompiled_func_generated_comp_attr>
 // ATTACH-LABEL: lit.func @different_precompiled_func
 // ATTACH-SAME: preCompiledModuleRef = @link_different_precompiled_func
 

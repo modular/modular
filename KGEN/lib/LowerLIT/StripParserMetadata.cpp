@@ -28,7 +28,6 @@ struct StripParserMetadataPass
       if (auto package = dyn_cast<LIT::PackageOp>(op)) {
         // Strip precompiled packages.
         package.removePostParseModuleAttr();
-        package.setArchives({});
       }
     });
   }

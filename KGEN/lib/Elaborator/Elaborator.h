@@ -38,16 +38,12 @@ using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
 using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
     TargetInfoAttr, EmissionKind)>;
-using PackageLinkHandlerFnRef =
-    function_ref<ErrorOr<PackageArchiveAttr>(PackageLinkOp, TargetInfoAttr)>;
 
 struct ElaboratorCallbacks {
   /// The functor used for evaluating generator specializations.
   EvaluatorExecutorFnRef evaluateFn;
   /// The functor used to compile a module to assembly.
   ElaboratorCompileAsmFnRef compileAsmFn;
-  /// The functor used to process a package reference.
-  PackageLinkHandlerFnRef packageHandlerFn;
 };
 
 class Elaborator {

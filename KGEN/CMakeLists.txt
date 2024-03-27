@@ -156,7 +156,7 @@ add_dependencies(mojo-sdk mojo mojo-lsp-server MojoJupyter)
 # having too many search paths.
 function(add_mojo_package target visibility)
   cmake_parse_arguments(KGEN
-                        "STDLIB;DISABLE_PRIME_CODEGEN_CACHE;DISABLE_PRIME_CACHE"
+                        "STDLIB;DISABLE_PRIME_CACHE"
                         "PACKAGE_DIR;PACKAGE_OUTPUT_DIR;OUTPUT_NAME;DOCS_DIR"
                         "LINK_LIBS;LINK_DIRS;DEPENDS" ${ARGN})
 
@@ -217,14 +217,9 @@ function(add_mojo_package target visibility)
   # ensures that in the common case for development we have an archive for the
   # current target already compiled.
   if (NOT KGEN_DISABLE_PRIME_CACHE)
-    set(KGEN_PRIME_DISABLE_FLAG "")
-    if (KGEN_DISABLE_PRIME_CODEGEN_CACHE)
-      set(KGEN_PRIME_DISABLE_FLAG "--disable-codegen-priming")
-    endif ()
-
     add_custom_command(OUTPUT ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}.prime
       COMMAND $<TARGET_FILE:mojo-prime-package-cache> ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}
-              ${KGEN_INCLUDE_FLAGS} ${KGEN_PRIME_DISABLE_FLAG}
+              ${KGEN_INCLUDE_FLAGS}
       COMMAND ${CMAKE_COMMAND} -E touch ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}.prime
       DEPENDS ${package_file_name} mojo-prime-package-cache
     )

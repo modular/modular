@@ -413,8 +413,7 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
 void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     const CompilationOptions &options, EvaluatorExecutorFn evaluatorExecutorFn,
-    PackageGenLibraryFn packageGenLibraryFn,
-    PackageLinkHandlerFn packageLinkHandlerFn) {
+    PackageGenLibraryFn packageGenLibraryFn) {
   buildElaborateModulePipeline(
       pm, runtime, target, options, std::move(evaluatorExecutorFn),
       /*compileAsmFn=*/
@@ -424,14 +423,14 @@ void KGEN::populateElaborateModulePasses(
         return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
                                     emissionKind, options);
       },
-      std::move(packageGenLibraryFn), std::move(packageLinkHandlerFn));
+      std::move(packageGenLibraryFn));
   buildPostElaborationPipeline(pm, runtime, options);
 }
 
 void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    const CompilationOptions &options, PackageGenLibraryFn packageGenLibraryFn,
-    PackageLinkHandlerFn packageLinkHandlerFn) {
+    const CompilationOptions &options,
+    PackageGenLibraryFn packageGenLibraryFn) {
   populateElaborateModulePasses(
       pm, runtime, target, options,
       /*evaluatorExecutorFn=*/
@@ -440,7 +439,7 @@ void KGEN::populateElaborateModulePasses(
         return evaluateSpecializations(evaluator, symtab, runtime, target,
                                        options, specializations);
       },
-      std::move(packageGenLibraryFn), std::move(packageLinkHandlerFn));
+      std::move(packageGenLibraryFn));
 }
 
 //===----------------------------------------------------------------------===//
@@ -535,10 +534,8 @@ KGENCompilerLayer::KGENCompilerLayer(
       RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend));
 }
 
-ErrorOrSuccess
-KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
-                       PackageGenLibraryFn packageGenLibraryFn,
-                       PackageLinkHandlerFn packageLinkHandlerFn) {
+ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
+                                      PackageGenLibraryFn packageGenLibraryFn) {
   CompilerTimeTraceScope traceScope("KGENCompilerLayer::add(" + libName.str() +
                                     ")");
   auto dylibOr = getOrCreateDylib(libName);
@@ -555,8 +552,7 @@ KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
   // Populate the passes.
   buildGenerateLibraryPipeline(pm, runtime, options);
   populateElaborateModulePasses(pm, runtime, target, options,
-                                std::move(packageGenLibraryFn),
-                                std::move(packageLinkHandlerFn));
+                                std::move(packageGenLibraryFn));
 
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
   auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();

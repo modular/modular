@@ -101,20 +101,6 @@ TypedAttr emitMLIROperationCall(
     StringRef opName,
     ArrayRef<std::pair<StringAttr (*)(mlir::OperationName), Attribute>> attrs,
     ArrayRef<TypedAttr> operands, Type resultType);
-
-/// Parse a custom MLIR assembly format for a package archive array.
-///
-/// If the result is successful, `archives` is set to a valid
-/// `PackageArchiveArrayAttr`. The custom format is approximately
-/// "(`[` $archives^ `]`)?".
-ParseResult parsePackageArchiveArray(OpAsmParser &p,
-                                     PackageArchiveArrayAttr &archives);
-/// Print custom MLIR assembly to represent a package archive array.
-///
-/// The custom format is approximately "(`[` $archives^ `]`)?".
-void printPackageArchiveArray(OpAsmPrinter &p, Operation *,
-                              PackageArchiveArrayAttr archives);
-
 } // namespace M::KGEN
 
 #endif // KGEN_KGENDIALECT_KGENATTRS_H

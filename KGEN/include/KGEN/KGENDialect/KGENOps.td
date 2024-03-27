@@ -1228,15 +1228,13 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
 
-    KGEN_EnvAttr:$compiledEnv,
-    KGEN_PackageArchiveArrayAttr:$archives
+    KGEN_EnvAttr:$compiledEnv
   );
 
   let assemblyFormat = [{
     $sym_name
     (`pre_elaboration` `(` $preElaborationModule^ `)`)?
     (`post_parse` `(` $postParseModule^ `)`)?
-    `archives` `(` custom<PackageArchiveArray>($archives) `)`
     attr-dict-with-keyword
   }];
 }

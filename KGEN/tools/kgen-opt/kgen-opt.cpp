@@ -181,15 +181,9 @@ struct TestGeneratePreElaboratedBody
 
       // Generate a package link to the fake module.
       OpBuilder linkBuilder(func);
-      SmallVector<KGEN::PackageArchiveAttr> archives;
-      for (TargetInfoAttr target : targets) {
-        archives.push_back(KGEN::PackageArchiveAttr::get(
-            target, postElabBytecode, postElabBytecode));
-      }
       linkBuilder.create<KGEN::PackageLinkOp>(
           func.getLoc(), linkName, postParseBytecode, preElabBytecode,
-          KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
-          KGEN::PackageArchiveArrayAttr::get(func.getContext(), archives));
+          KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue());
     }
   }
 };
@@ -253,15 +247,9 @@ struct TestMaterializePackages
       OpBuilder linkBuilder(func);
       auto bytecodeBufferAttr = createResourceAttr(
           &getContext(), buffer, funcName + "_generated_body_attr");
-      SmallVector<KGEN::PackageArchiveAttr> archives;
-      for (TargetInfoAttr target : targets) {
-        archives.push_back(KGEN::PackageArchiveAttr::get(
-            target, bytecodeBufferAttr, bytecodeBufferAttr));
-      }
       linkBuilder.create<KGEN::PackageLinkOp>(
           func.getLoc(), linkName, bytecodeBufferAttr, bytecodeBufferAttr,
-          KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue(),
-          KGEN::PackageArchiveArrayAttr::get(func.getContext(), archives));
+          KGEN::EnvAttr::parseDefines(func.getContext(), {}).takeValue());
     }
   }
 };

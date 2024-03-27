@@ -65,11 +65,6 @@ public:
   M::cl::MListOpt<std::string, SmallVector<std::string>> includePaths{
       "I", cl::desc("Path to use to search for included files."),
       llvm::cl::location(parser.includePaths)};
-
-  M::cl::MOpt<bool> disableCodegenPriming{
-      "disable-codegen-priming",
-      cl::desc("Disable priming the cache for the codegen archive."),
-      llvm::cl::init(false)};
 };
 } // namespace
 
@@ -77,8 +72,7 @@ public:
 static ErrorOrSuccess
 primeCacheForPackage(KGEN::LIT::PackageOp packageOp, TargetInfoAttr targetInfo,
                      LLCL::Runtime &runtime,
-                     const KGEN::CompilationOptions &options,
-                     bool disableCodegenPriming) {
+                     const KGEN::CompilationOptions &options) {
   // Build a package link that we'll use to call into the compilation methods.
   OpBuilder builder(packageOp.getContext());
   OwningOpRef<KGEN::PackageLinkOp> packageLink =
@@ -86,8 +80,7 @@ primeCacheForPackage(KGEN::LIT::PackageOp packageOp, TargetInfoAttr targetInfo,
           packageOp->getLoc(), packageOp.getNameAttr(),
           packageOp.getPostParseModuleAttr(),
           /*preElaborationModule=*/DenseResourceElementsAttr(),
-          packageOp.getCompiledEnvAttr(),
-          /*archives=*/ArrayRef<KGEN::PackageArchiveAttr>());
+          packageOp.getCompiledEnvAttr());
 
   // First specialize the module up to the pre-elaboration phase.
   ErrorOr<DenseResourceElementsAttr> preElabOr =
@@ -95,14 +88,6 @@ primeCacheForPackage(KGEN::LIT::PackageOp packageOp, TargetInfoAttr targetInfo,
                                                     options);
   if (preElabOr.isError())
     return preElabOr.takeError();
-  if (disableCodegenPriming)
-    return success();
-
-  // Next, compile for the current target.
-  ErrorOr<KGEN::PackageArchiveAttr> archiveOr = KGEN::loadAndElaborateBytecode(
-      *packageLink, targetInfo, options, runtime);
-  if (archiveOr.isError())
-    return archiveOr.takeError();
   return success();
 }
 
@@ -136,8 +121,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     LLCL::addTask(*runtime, [&, out = out.copy(),
                              options = std::move(options)]() mutable {
       ErrorOrSuccess resultOr =
-          primeCacheForPackage(*packageOp, *targetInfoOr, *runtime, options,
-                               clOptions.disableCodegenPriming);
+          primeCacheForPackage(*packageOp, *targetInfoOr, *runtime, options);
       if (resultOr.isError())
         std::move(out).setToError(
             LLCL::getMLIRDiagnostic(resultOr.takeError(), packageOp->getLoc()));
