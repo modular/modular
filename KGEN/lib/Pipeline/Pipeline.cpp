@@ -131,6 +131,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
 
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());
+  pm.addNestedPass<FuncOp>(createLowerCallingConvention());
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
   // Run the ForceInline pass with an inner function pass pipeline.
@@ -237,6 +238,5 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createLowerLoops());
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
-  pm.addPass(createLowerCallingConvention());
   pm.addPass(createEliminateDeadSymbols());
 }
