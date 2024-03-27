@@ -639,25 +639,25 @@ void DeadArgumentElimination::print() {
 void DeadArgumentElimination::run() {
   // SurveyFunctions to determine liveliness for arguments and result values.
   // This loop needs to run before rewriting happens.
-  for (CallGraphNode &node : llvm::make_second_range(callGraph.nodes))
-    surveyFunction(node.func);
+  std::vector<CallGraphNode *> nodes;
+  nodes.reserve(callGraph.nodes.size());
+  for (auto &[func, node] : callGraph.nodes) {
+    surveyFunction(func);
+    nodes.push_back(&node);
+  }
 
   LLVM_DEBUG(print());
 
   // Remove arguments and return values and dead operations within a function
   // in parallel.
-  auto removeDeadStuffFromFunctionWrapper = [&](CallGraphNode &node) {
-    removeDeadStuffFromFunction(&node);
-  };
-  mlir::parallelForEach(context, llvm::make_second_range(callGraph.nodes),
-                        std::move(removeDeadStuffFromFunctionWrapper));
+  mlir::parallelForEach(context, nodes, [&](CallGraphNode *node) {
+    removeDeadStuffFromFunction(node);
+  });
 
   // Rewrite callsites if callee's signature changed (in parallel).
-  auto rewriteCalleesFromFunctionWrapper = [&](CallGraphNode &node) {
-    rewriteCalleesFromFunction(&node);
-  };
-  mlir::parallelForEach(context, llvm::make_second_range(callGraph.nodes),
-                        std::move(rewriteCalleesFromFunctionWrapper));
+  mlir::parallelForEach(context, nodes, [&](CallGraphNode *node) {
+    rewriteCalleesFromFunction(node);
+  });
 
   // Erase old functions.
   // callGraph.nodes map will be invalid after this.
