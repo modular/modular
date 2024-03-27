@@ -122,15 +122,6 @@ kgen.func @cyclic() {
   kgen.return
 }
 
-// COM: Just don't crash.
-
-kgen.extern.func @external() -> ()
-
-kgen.func @call_external() {
-  kgen.call @external() : () -> ()
-  kgen.return
-}
-
 // -----
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="p:64:64", simd_bit_width=128>} {

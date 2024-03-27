@@ -171,26 +171,3 @@ kgen.func @foo() {
   kgen.return
 // CHECK: foo.mlir:44:1: error: 'kgen.func' op must contain only file/line/col location
 } loc(fused<#subprogram>[#loc3])
-
-// -----
-
-// CHECK: extern functions cannot have debug scope with 'DebugInfo::SubprogramFlags::Definition' flag
-kgen.extern.func @precompiled() -> () loc(#loc0)
-
-!subroutine = !debuginfo.subroutine<() -> (!kgen.none): DW_CC_normal>
-#name = #debuginfo.source_name<(fn)"precompiled">
-#file = #debuginfo.file<"foo" in "/">
-#subprogram = #debuginfo.subprogram<scope = #file, name = #name, file = #file, line = 1, scopeLine = 1, subprogramFlags = "Definition|Optimized"> : !subroutine
-#loc0 = loc(fused<#subprogram>["foo":1:1])
-
-// -----
-
-// CHECK: extern functions cannot have debug scope with a compile unit
-kgen.extern.func @precompiled1() -> () loc(#loc1)
-
-!subroutine = !debuginfo.subroutine<() -> (!kgen.none): DW_CC_normal>
-#name = #debuginfo.source_name<(fn)"precompiled">
-#file = #debuginfo.file<"foo" in "/">
-#cu = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "Mojo", isOptimized = true, emissionKind = Full>
-#subprogram1 = #debuginfo.subprogram<compileUnit = #cu, name = #name, file = #file, line = 1, scopeLine = 1, subprogramFlags = "Optimized"> : !subroutine
-#loc1 = loc(fused<#subprogram1>["foo":1:1])

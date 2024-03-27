@@ -728,11 +728,6 @@ kgen.global @global_var : i32 [@global_ctor, @global_dtor](2)
 
 // -----
 
-// expected-error @below {{expected '@nonExistent' to reference a valid kgen.link directive}}
-kgen.extern.func @imported() -> () from @nonExistent
-
-// -----
-
 // expected-error @below {{environment value "value" is an integer not of `index` type}}
 module attributes {kgen.env = #kgen.env<{value = 1}>} {}
 
@@ -768,24 +763,6 @@ kgen.generator @variant_constant<value: i32>() {
   // expected-error @below {{variant attribute value type 'i32' does not match type at index 0 which is 'f32'}}
   %0 = kgen.param.constant: variant<f32, f64> = <#kgen.variant<:i32 value, 0>>
 }
-
-// -----
-
-// expected-error @below {{bytes cannot be empty}}
-"someop"() {a = #kgen.link.dependency<dense_resource<a862fa01d> : tensor<0xui8> as "ffmpeg">} : () -> ()
-
-// -----
-
-// expected-error @below {{dependencies cannot be empty}}
-"some.op"() {a = #kgen<link.dependencies[]>} : () -> ()
-
-// -----
-
-// expected-error @below {{two dependencies cannot use the same name, 'libavcodec'}}
-"some.op"() {a = #kgen<link.dependencies[
-  <dense_resource<avcodec_1> : tensor<8xui8> as "libavcodec">,
-  <dense_resource<avcodec_2> : tensor<9xui8> as "libavcodec">
-]>} : () -> ()
 
 // -----
 

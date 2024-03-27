@@ -539,9 +539,6 @@ def LowerCallingConvention : Pass<"lower-calling-convention", "ModuleOp"> {
     lower calling conventions on parametric IR. This pass will:
 
     1. Replace `!kgen.none` function results with no results.
-
-    FIXME: This should be a function pass, but we also have to rewrite
-    `kgen.extern.func`, so use intra-pass parallelism instead.
   }];
 }
 
@@ -918,22 +915,6 @@ def LowerLoops: Pass<"lower-loops", "KGEN::FuncOp"> {
   }];
 
   let dependentDialects = ["HLCF::HLCFDialect"];
-}
-
-//===----------------------------------------------------------------------===//
-// ExternalizePrecompiledFunctions
-//===----------------------------------------------------------------------===//
-
-def ExternalizePrecompiledFunctions:
-    Pass<"externalize-precompiled-functions"> {
-  let summary = "Externalize precompiled functions.";
-  let description = [{
-    The `externalize-precompiled-funcs` pass will find precompiled functions,
-    and replace them with kgen.extern.func.
-
-    When used in conjunction with packages, this should greatly reduce the
-    amount of code passed to LLVM.
-  }];
 }
 
 //===----------------------------------------------------------------------===//

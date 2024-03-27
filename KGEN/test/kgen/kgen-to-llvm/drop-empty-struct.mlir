@@ -30,7 +30,4 @@ kgen.func @complex_empty_types(
     kgen.return
 }
 
-// CHECK-LABEL: llvm.func @extern_func_none_type(i64)
-kgen.extern.func @extern_func_none_type (!kgen.none, index) -> ()
-
 }

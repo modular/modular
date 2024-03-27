@@ -26,7 +26,6 @@ void KGEN::registerDefaultKGENPasses(LLCL::Runtime &runtime) {
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
   KGEN::registerEliminateDeadSymbols();
-  KGEN::registerExternalizePrecompiledFunctions();
   KGEN::registerFoldGlobalConstLoads();
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();

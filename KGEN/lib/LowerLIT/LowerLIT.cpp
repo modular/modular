@@ -434,7 +434,7 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
   return success();
 }
 
-/// Add a kgen.link directive that shadows the package's name if the package was
+/// Add a link directive that shadows the package's name if the package was
 /// precompiled. If this package is a source package, do nothing.
 static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
                                              SymbolTable &symtab) {
@@ -491,7 +491,7 @@ LogicalResult LITLowerer::lowerModuleDecl(Block *moduleBody,
                                          parentPrefix + op.getName() + "::")))
                 return failure();
 
-              // If the package has already been compiled, insert a kgen.link
+              // If the package has already been compiled, insert a link
               // directive.
               if constexpr (std::is_same_v<decltype(op), LIT::PackageOp>)
                 if (failed(addPackageLinkDirective(op, symbolTable)))

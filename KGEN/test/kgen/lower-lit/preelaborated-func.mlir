@@ -80,10 +80,8 @@ lit.func @different_precompiled_func(%arg0: index) -> index attributes {
 }
 
 // Check that we can still compile the module if none of the targets are
-// correct, by using the pre-elaborated module. We don't generate a link in this
-// case, given the module is going to be fully compiled.
+// correct, by using the pre-elaborated module.
 
-// CHECK-NOT: kgen.link dense_resource<compile_invalid_target_generated_body_attr> {{.*}} as @compile_invalid_target
 // CHECK-LABEL: kgen.generator @compile_invalid_target
 lit.func @compile_invalid_target(%arg0: index) -> index attributes {
   test.target.0 = #M.target<triple="", arch="", features="", data_layout="",
