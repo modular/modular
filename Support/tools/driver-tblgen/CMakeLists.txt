@@ -44,11 +44,16 @@ macro(add_driver_option_tablegen prefix input)
   cmake_parse_arguments(ARG
     ""
     "MANUAL_NAME;MARKDOWN_NAME"
-    "EXTRA_INCLUDES"
+    "EXTRA_DEFINITIONS;EXTRA_INCLUDES"
     ${ARGN})
+  # Create lists of `-D` and `-I`, filtering out any empty items.
+  set(tblgen_definitions)
+  list(APPEND tblgen_definitions ${ARG_EXTRA_DEFINITIONS})
+  list(REMOVE_ITEM tblgen_definitions "")
+  list(TRANSFORM tblgen_definitions PREPEND -D)
+
   set(tblgen_includes)
   list(APPEND tblgen_includes ${ARG_EXTRA_INCLUDES})
-  # Filter out empty items before prepending each entry with -I
   list(REMOVE_ITEM tblgen_includes "")
   list(TRANSFORM tblgen_includes PREPEND -I)
 
@@ -59,14 +64,14 @@ macro(add_driver_option_tablegen prefix input)
 
   # 1. Option parser definitions
   set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(LLVM "${name}.inc" -gen-opt-parser-defs
+  tablegen(LLVM "${name}.inc" -gen-opt-parser-defs ${tblgen_definitions}
     EXTRA_INCLUDES ${ARG_EXTRA_INCLUDES})
   add_public_tablegen_target("${prefix}Driver${name}")
   add_dependencies(${target} "${prefix}Driver${name}")
 
   # 2. Help text
   set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(DRIVER "${name}HelpText.inc" -gen-help-text
+  tablegen(DRIVER "${name}HelpText.inc" -gen-help-text ${tblgen_definitions}
     EXTRA_INCLUDES ${ARG_EXTRA_INCLUDES})
   add_public_tablegen_target("${prefix}${name}HelpText")
   add_dependencies(${target} "${prefix}${name}HelpText")
@@ -79,7 +84,7 @@ macro(add_driver_option_tablegen prefix input)
     string(TOLOWER "${name}.1" manual_name)
   endif()
   set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(DRIVER "${manual_name}" -gen-man-page
+  tablegen(DRIVER "${manual_name}" -gen-man-page ${tblgen_definitions}
     EXTRA_INCLUDES ${ARG_EXTRA_INCLUDES})
   add_public_tablegen_target("${prefix}${name}GenerateManPage")
 
@@ -101,7 +106,7 @@ macro(add_driver_option_tablegen prefix input)
     set(markdown_name "${name}.md")
   endif()
   set(LLVM_TARGET_DEFINITIONS "${input}")
-  tablegen(DRIVER "${markdown_name}" -gen-markdown
+  tablegen(DRIVER "${markdown_name}" -gen-markdown ${tblgen_definitions}
     EXTRA_INCLUDES ${ARG_EXTRA_INCLUDES})
   add_public_tablegen_target("${prefix}${name}Markdown")
 
