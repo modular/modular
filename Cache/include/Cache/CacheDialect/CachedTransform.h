@@ -7,16 +7,34 @@
 #ifndef CACHE_CACHEDTRANSFORM_H
 #define CACHE_CACHEDTRANSFORM_H
 
-#include "Cache/CacheDialect/CacheOps.h"
+#include "Cache/BlobCache.h"
 #include "Cache/CachedTransform.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
+#include "Support/Buffer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/LogicalResult.h"
+#include "mlir/IR/OpDefinition.h"
 
 namespace mlir {
 class PassManager;
 }
 
 namespace M::Cache {
+/// Profiler entry for compile-time cache transforms.
+using CacheProfilerEntry =
+    ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 1), Trace::kCompiler>;
+
+/// The Cache dialect can store the region of an op - this struct defines the
+/// cache key. It can be a region (indicating that we need to hash the region)
+/// or a string (indicating that we already know the hash).
+struct RegionCacheKey {
+  using KeyTy = std::variant<Region *, StringRef>;
+  static std::string hashKey(KeyTy key);
+};
+
+/// Convenience typedef to reduce typing.
+using RegionCache = BlobCache<RegionCacheKey>;
+
 //===----------------------------------------------------------------------===//
 // Operation Transformations
 //===----------------------------------------------------------------------===//

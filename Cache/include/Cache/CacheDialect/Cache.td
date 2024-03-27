@@ -8,6 +8,5 @@
 #define CACHE_TD
 
 include "Cache/CacheDialect/CacheDialect.td"
-include "Cache/CacheDialect/CacheOps.td"
 
 #endif // CACHE_TD

@@ -6,7 +6,7 @@
 
 #include "Cache/CacheDialect/CacheDialect.h"
 
-void M::Cache::CacheDialect::initialize() { registerOps(); }
+void M::Cache::CacheDialect::initialize() {}
 
 //===----------------------------------------------------------------------===//
 // Generated Definitions

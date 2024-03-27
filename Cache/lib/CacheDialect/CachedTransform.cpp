@@ -5,8 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheDialect/CachedTransform.h"
-#include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
-#include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
