@@ -21,7 +21,7 @@ from gpu import (
     barrier,
     lane_id,
 )
-from gpu.host import Context, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize, CacheConfig
 from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -43,9 +43,111 @@ fn is_benchmark() -> Bool:
     return False
 
 
-alias MMA_M = 16
-alias MMA_N = 8
-alias MMA_K = 8
+@always_inline
+fn loada[
+    itype: DType,
+    BM: Scalar[itype],
+    BN: Scalar[itype],
+    BK: Scalar[itype],
+    NUM_THREADS: Scalar[itype],
+    atype: DType,
+](
+    M: Scalar[itype],
+    N: Scalar[itype],
+    K: Scalar[itype],
+    warp_id: Scalar[itype],
+    lane_id: Scalar[itype],
+    gptr: DTypePointer[atype, address_space = AddressSpace.GLOBAL],
+    sptr: DTypePointer[atype, address_space = AddressSpace.SHARED],
+):
+    alias MMA_M = Scalar[itype](16)
+    alias MMA_N = Scalar[itype](8)
+    alias MMA_K = Scalar[itype](8)
+    alias num_warps = NUM_THREADS // 32
+
+    # Configure loading A.
+    alias num_loada_tiles_m = BM // MMA_M
+    alias num_loada_tiles_k = BK // MMA_K
+    # Each thread load 1 elment each time.
+    alias num_loada_iters = BM * BK // NUM_THREADS
+    # Each mma tile uses 4 warps to for loading.
+    alias num_loada_tiles_per_iter = num_warps // 4
+    var warp_id_in_tile = warp_id % 4
+    # Point to the current buffer
+
+    # Load A from global memory to shared memory.
+    @unroll
+    for i in range(num_loada_iters):
+        var mma_tile_id = warp_id // 4 + i * num_loada_tiles_per_iter
+        var mma_tile_x = mma_tile_id // num_loada_tiles_m
+        var mma_tile_y = mma_tile_id % num_loada_tiles_m
+        var gmem_ptr = gptr + mma_tile_y * MMA_M * K + mma_tile_x * MMA_K + warp_id_in_tile * 2 * K
+        # t0  t1  t2  t3  t4  t5  t6  t7    <- e.g. 1st row in mma tile
+        # t16 t17 t18 t19 t20 t21 t22 t23   <- e.g. 2nd row
+        # ...
+        # t8  t9  t10 t11 t12 t13 t14 t15   <- e.g. 8th row
+        # t24 t25 t26 t27 t28 t29 t30 t31   <- e.g. 9th row
+        gmem_ptr += (
+            (lane_id % 16 // 8) * 8 * K + (lane_id // 16) * K + lane_id % 8
+        )
+        # t0  t4  t8  t12 | t1  t5  t9  t13 | t2  t6  t10 t14 | t3  t7  t11 t15
+        # t16 t20 t24 t28 | t17 t21 t25 t29 | t18 t22 t26 t30 | t19 t23 t27 t31
+        var smem_ptr = sptr + mma_tile_id * MMA_M * MMA_K + warp_id_in_tile * WARP_SIZE
+        smem_ptr += lane_id // 16 * 16 + lane_id % 4 * 4 + lane_id // 4 % 4
+        async_copy[4](gmem_ptr, smem_ptr)
+
+
+@always_inline
+fn loadb[
+    itype: DType,
+    BM: Scalar[itype],
+    BN: Scalar[itype],
+    BK: Scalar[itype],
+    NUM_THREADS: Scalar[itype],
+    btype: DType,
+](
+    M: Scalar[itype],
+    N: Scalar[itype],
+    K: Scalar[itype],
+    warp_id: Scalar[itype],
+    lane_id: Scalar[itype],
+    gptr: DTypePointer[btype, address_space = AddressSpace.GLOBAL],
+    sptr: DTypePointer[btype, address_space = AddressSpace.SHARED],
+):
+    alias MMA_M = Scalar[itype](16)
+    alias MMA_N = Scalar[itype](8)
+    alias MMA_K = Scalar[itype](8)
+    alias num_warps = NUM_THREADS // 32
+
+    # Configure loading B.
+    alias num_loadb_tiles_k = BK // MMA_K
+    alias num_loadb_tiles_n = BN // MMA_N
+    # Each thread load 1 elment each time.
+    alias num_loadb_iters = BK * BN // NUM_THREADS // 2
+    # Each mma tile is loaded by 1 warp.
+    alias num_loadb_tiles_per_iter = num_warps
+
+    # Load B from global memory to shared memory.
+    @unroll
+    for i in range(num_loadb_iters):
+        var mma_tile_id = warp_id + i * num_loadb_tiles_per_iter
+        var mma_tile_x = mma_tile_id % num_loadb_tiles_n
+        var mma_tile_y = mma_tile_id // num_loadb_tiles_n
+        var gmem_ptr = gptr + mma_tile_y * MMA_K * N + mma_tile_x * MMA_N
+        # t0  t1  t2  t3  t4  t5  t6  t7
+        # t8  t9  t10 t11 t12 t13 t14 t15
+        # t16 t17 t18 t19 t20 t21 t22 t23
+        # t24 t25 t26 t27 t28 t29 t30 t31
+        gmem_ptr += lane_id // 8 * N + lane_id % 8
+        # t0, ,t8, ,t16, ,t24, ,t1, ,t9, ,t17, ,t25, ...
+        var smem_ptr = sptr + mma_tile_id * MMA_K * MMA_N
+        smem_ptr += lane_id % 8 * 8 + lane_id // 8 * 2
+        async_copy[4](gmem_ptr, smem_ptr)
+        # Load next 4 rows.
+        # , ,t0, ,t8, ,t16, ,t24, ,t1, ,t9, ,t17, ,t25, ...
+        gmem_ptr += 4 * N
+        smem_ptr += 1
+        async_copy[4](gmem_ptr, smem_ptr)
 
 
 fn sgemm_double_buffer[
@@ -61,20 +163,28 @@ fn sgemm_double_buffer[
     BK: Scalar[itype],
     WM: Scalar[itype],
     WN: Scalar[itype],
-    TM: Scalar[itype],
-    TN: Scalar[itype],
     NUM_THREADS: Scalar[itype],
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
 ):
+    constrained[
+        NUM_THREADS == 128 or NUM_THREADS == 256,
+        "Only support 128 or 256 threads",
+    ]()
+
     alias _uint = Scalar[itype]
+
+    alias MMA_M = Scalar[itype](16)
+    alias MMA_N = Scalar[itype](8)
+    alias MMA_K = Scalar[itype](8)
 
     var M = Scalar[itype](c.dim[0]())
     var N = Scalar[itype](c.dim[1]())
     var K = Scalar[itype](a.dim[1]())
 
+    alias num_warps = NUM_THREADS // WARP_SIZE
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
 
@@ -86,43 +196,15 @@ fn sgemm_double_buffer[
     var warp_x = warp_id % num_warps_n
     var warp_y = warp_id // num_warps_n
 
-    # Warp shape in 2D.
-    alias warp_dim_x = WN // TN
-    alias warp_dim_y = WM // TM
-    constrained[
-        warp_dim_x * warp_dim_y == WARP_SIZE,
-        "Warp 2d shape doesn't match 32 threads",
-    ]()
-
-    # Pad BM to avoid back conflict
-    alias pad_avoid_bank_conflict = Scalar[itype](4)
-    alias BM_padded = BM + pad_avoid_bank_conflict
-
     # Double buffer in shared memory.
+    alias a_smem_size = BM * BK
+    alias b_smem_size = BN * BK
     var a_tile = stack_allocation[
-        int(2 * BM_padded * BK), a_type, address_space = AddressSpace.SHARED
+        int(2 * a_smem_size), a_type, address_space = AddressSpace.SHARED
     ]()
     var b_tile = stack_allocation[
-        int(2 * BK * BN), b_type, address_space = AddressSpace.SHARED
+        int(2 * b_smem_size), b_type, address_space = AddressSpace.SHARED
     ]()
-
-    # Configure the load for A.
-    # Each thread load one elements from A.
-    alias num_iters_loada = (BM * BK) // NUM_THREADS
-    alias num_rows_per_iter_loada = NUM_THREADS // BK
-    # Current thread loads (loada_x, loada_y)
-    var loada_x = tid % BK
-    var loada_y = tid // BK
-
-    # Configure the load for B.
-    # Each threads load 4 elements from B using float4.
-    alias simd_size_int = simdwidthof[c_type]()
-    alias simd_size = Scalar[itype](simd_size_int)
-    alias num_iters_loadb = (BK * BN) // NUM_THREADS // simd_size
-    alias num_rows_per_iter_loadb = (NUM_THREADS * simd_size) // BN
-    # Current thread loads vector at (loadb_x, loadb_y)
-    var loadb_x = tid * simd_size % BN
-    var loadb_y = tid * simd_size // BN
 
     # Cast pointers from generic to global.
     var a_gmem_ptr = a.data.address.address_space_cast[AddressSpace.GLOBAL]()
@@ -135,109 +217,67 @@ fn sgemm_double_buffer[
     var a_gmem_tile = a_gmem_ptr + c_row * K
     var b_gmem_tile = b_gmem_ptr + c_col
 
-    # K tile base in A and B
-    var loada_gmem_ptr = a_gmem_tile + loada_y * K + loada_x
-    var loadb_gmem_ptr = b_gmem_tile + loadb_y * N + loadb_x
+    # Point to the current buffer
+    var storea_smem_ptr = a_tile
+    var storeb_smem_ptr = b_tile
 
-    # Thread's loading position in A and B shared memory tile.
-    var storea_smem_ptr = a_tile + (tid % BK) * BM_padded + tid // BK
-    var storeb_smem_ptr = b_tile + tid * simd_size
-
-    # Load A's first tile in K to shared memory. Transpose it while loading.
-    @unroll
-    for i in range(num_iters_loada):
-        async_copy[4](
-            loada_gmem_ptr + i * num_rows_per_iter_loada * K,
-            storea_smem_ptr + i * num_rows_per_iter_loada,
-        )
-
-    # Load B's first tile in K to shared memory.
-    @unroll
-    for i in range(num_iters_loadb):
-        async_copy[16](
-            loadb_gmem_ptr + i * num_rows_per_iter_loadb * N,
-            storeb_smem_ptr + i * num_rows_per_iter_loadb * BN,
-        )
+    # Load A and B's first shared memory buffer.
+    loada[itype, BM, BN, BK, NUM_THREADS, a_type](
+        M, N, K, warp_id, lane_id, a_gmem_tile, storea_smem_ptr
+    )
+    loadb[itype, BM, BN, BK, NUM_THREADS, b_type](
+        M, N, K, warp_id, lane_id, b_gmem_tile, storeb_smem_ptr
+    )
 
     async_copy_wait_all()
     barrier()
 
     # Shifts for switching buffer
-    alias a_smem_shift = BM_padded * BK
-    alias b_smem_shift = BN * BK
     alias a_gmem_shift = BK
     var b_gmem_shift = N * BK
-
-    # Advance A and B to next k tile.
-    loada_gmem_ptr += a_gmem_shift
-    loadb_gmem_ptr += b_gmem_shift
+    a_gmem_tile += a_gmem_shift
+    b_gmem_tile += b_gmem_shift
 
     # Alternate share memory buffer for loading.
-    storea_smem_ptr += a_smem_shift
-    storeb_smem_ptr += b_smem_shift
-
-    constrained[num_iters_loada <= MMA_K]()
-    constrained[num_iters_loadb <= MMA_K]()
+    storea_smem_ptr += a_smem_size
+    storeb_smem_ptr += b_smem_size
 
     alias num_mma_n = WN // MMA_N
     alias num_mma_m = WM // MMA_M
     alias num_mma = num_mma_m * num_mma_n
 
-    # Thread id for thread swizzling
-    var group_id = lane_id >> 2
-    var thread_id_in_group = lane_id % 4
-    # A smem tile is transposed
-    var row_a0 = thread_id_in_group
-    var row_a2 = thread_id_in_group + 4
-    var row_a1 = thread_id_in_group
-    var row_a3 = thread_id_in_group + 4
-    var col_a0 = group_id
-    var col_a1 = group_id + 8
-    var col_a2 = group_id
-    var col_a3 = group_id + 8
-    var row_b0 = thread_id_in_group
-    var row_b1 = thread_id_in_group + 4
-    var col_b0_b1 = group_id
-    var row_c0_c1 = group_id
-    var row_c2_c3 = group_id + 8
-    var col_c0 = (thread_id_in_group * 2) + (0 & 0x1)
-    var col_c1 = (thread_id_in_group * 2) + (1 & 0x1)
-    var col_c2 = (thread_id_in_group * 2) + (2 & 0x1)
-    var col_c3 = (thread_id_in_group * 2) + (3 & 0x1)
-
     # Double buffer in registers (fragments in nvidia terms).
-    var a_reg = NDBuffer[
-        a_type, 2, DimList(2, num_mma_m * 4)
-    ].stack_allocation()
-    var b_reg = NDBuffer[
-        b_type, 2, DimList(2, num_mma_n * 2)
-    ].stack_allocation()
-    var c_reg = NDBuffer[
-        c_type, 3, DimList(num_mma_m, num_mma_n, 4)
-    ].stack_allocation()
+    # fmt: off
+    var a_reg = NDBuffer[a_type, 2, DimList(2, num_mma_m * 4)].stack_allocation()
+    var b_reg = NDBuffer[b_type, 2, DimList(2, num_mma_n * 2)].stack_allocation()
+    var c_reg = NDBuffer[c_type, 3, DimList(num_mma_m, num_mma_n, 4)].stack_allocation()
     c_reg.zero()
+    # fmt: on
 
     # Load address in shared memory for fma.
-    var loada_smem_ptr = a_tile + warp_y * WM  # + mma_y * simd_size
-    var loadb_smem_ptr = b_tile + warp_x * WN  # + mma_x * simd_size
+    var loada_smem_ptr = a_tile + warp_y * WM * MMA_K
+    var loadb_smem_ptr = b_tile + warp_x * WN * MMA_K
 
-    alias alignment = alignof[SIMD[c_type, simd_size_int]]()
+    alias align4 = alignof[SIMD[c_type, 4]]()
+    alias align2 = alignof[SIMD[c_type, 2]]()
 
     # Load A fragments to the first buffer.
     @unroll
     for i in range(num_mma_m):
-        var a0 = loada_smem_ptr.load(row_a0 * BM_padded + col_a0 + i * MMA_M)
-        var a1 = loada_smem_ptr.load(row_a1 * BM_padded + col_a1 + i * MMA_M)
-        var a2 = loada_smem_ptr.load(row_a2 * BM_padded + col_a2 + i * MMA_M)
-        var a3 = loada_smem_ptr.load(row_a3 * BM_padded + col_a3 + i * MMA_M)
-        a_reg.store[width=4]((0, i * 4), SIMD[a_type, 4](a0, a1, a2, a3))
+        var vec = loada_smem_ptr.load[width=4, alignment=align4](
+            i * MMA_M * MMA_K + lane_id * 4
+        )
+        a_reg.store[width=4, alignment=align4](
+            (0, i * 4), SIMD[a_type, 4](vec[0], vec[2], vec[1], vec[3])
+        )
 
     # Load B fragments to the first buffer.
     @unroll
     for i in range(num_mma_n):
-        var b0 = loadb_smem_ptr.load(row_b0 * BN + col_b0_b1 + i * MMA_N)
-        var b1 = loadb_smem_ptr.load(row_b1 * BN + col_b0_b1 + i * MMA_N)
-        b_reg.store[width=2]((0, i * 2), SIMD[b_type, 2](b0, b1))
+        var vec = loadb_smem_ptr.load[width=2, alignment=align2](
+            i * MMA_K * MMA_N + lane_id * 2
+        )
+        b_reg.store[width=2, alignment=align2]((0, i * 2), vec)
 
     var num_k_tiles = Scalar[itype](div_ceil(int(K), int(BK)))
 
@@ -258,70 +298,51 @@ fn sgemm_double_buffer[
 
                 # fmt: off
                 # Switch shared memory buffer.
-                loada_smem_ptr = loada_smem_ptr + a_smem_shift if (k_tile_id % 2 == 0) \
-                    else loada_smem_ptr - a_smem_shift
-                storea_smem_ptr = storea_smem_ptr - a_smem_shift if (k_tile_id % 2 == 0) \
-                    else storea_smem_ptr + a_smem_shift
-                loadb_smem_ptr = loadb_smem_ptr + b_smem_shift if (k_tile_id % 2 == 0) \
-                    else loadb_smem_ptr - b_smem_shift
-                storeb_smem_ptr = storeb_smem_ptr - b_smem_shift if (k_tile_id % 2 == 0) \
-                    else storeb_smem_ptr + b_smem_shift
+                loada_smem_ptr = loada_smem_ptr + a_smem_size if (k_tile_id % 2 == 0) \
+                    else loada_smem_ptr - a_smem_size
+                storea_smem_ptr = storea_smem_ptr - a_smem_size if (k_tile_id % 2 == 0) \
+                    else storea_smem_ptr + a_smem_size
+                loadb_smem_ptr = loadb_smem_ptr + b_smem_size if (k_tile_id % 2 == 0) \
+                    else loadb_smem_ptr - b_smem_size
+                storeb_smem_ptr = storeb_smem_ptr - b_smem_size if (k_tile_id % 2 == 0) \
+                    else storeb_smem_ptr + b_smem_size
                 # fmt: on
 
                 # Advance to the next k tile.
-                loada_gmem_ptr += BK
-                loadb_gmem_ptr += BK * N
+                a_gmem_tile += BK
+                b_gmem_tile += BK * N
 
             # Fill the other A fragments buffer.
             @unroll
             for i in range(num_mma_m):
-                var a0 = loada_smem_ptr.load(
-                    (next_k + row_a0) * BM_padded + col_a0 + i * MMA_M
+                var vec = loada_smem_ptr.load[width=4, alignment=align4](
+                    next_k * BM + i * MMA_M * MMA_K + lane_id * 4
                 )
-                var a1 = loada_smem_ptr.load(
-                    (next_k + row_a1) * BM_padded + col_a1 + i * MMA_M
-                )
-                var a2 = loada_smem_ptr.load(
-                    (next_k + row_a2) * BM_padded + col_a2 + i * MMA_M
-                )
-                var a3 = loada_smem_ptr.load(
-                    (next_k + row_a3) * BM_padded + col_a3 + i * MMA_M
-                )
-                a_reg.store[width=4](
-                    (next_buffer_id, i * 4), SIMD[a_type, 4](a0, a1, a2, a3)
+                a_reg.store[width=4, alignment=align4](
+                    (next_buffer_id, i * 4),
+                    SIMD[a_type, 4](vec[0], vec[2], vec[1], vec[3]),
                 )
 
             # Fill the other B fragments buffer.
             @unroll
             for i in range(num_mma_n):
-                var b0 = loadb_smem_ptr.load(
-                    (next_k + row_b0) * BN + col_b0_b1 + i * MMA_N
+                var vec = loadb_smem_ptr.load[width=2, alignment=align2](
+                    next_k * BN + i * MMA_K * MMA_N + lane_id * 2
                 )
-                var b1 = loadb_smem_ptr.load(
-                    (next_k + row_b1) * BN + col_b0_b1 + i * MMA_N
-                )
-                b_reg.store[width=2](
-                    (next_buffer_id, i * 2), SIMD[b_type, 2](b0, b1)
+                b_reg.store[width=2, alignment=align2](
+                    (next_buffer_id, i * 2), vec
                 )
 
             # Load next k tile from global memory to shared memory.
             # if k < int(num_iters_loada):
             if k == 0:
+                loada[itype, BM, BN, BK, NUM_THREADS, a_type](
+                    M, N, K, warp_id, lane_id, a_gmem_tile, storea_smem_ptr
+                )
 
-                @unroll
-                for kk in range(num_iters_loada):
-                    async_copy[4](
-                        loada_gmem_ptr + kk * num_rows_per_iter_loada * K,
-                        storea_smem_ptr + kk * num_rows_per_iter_loada,
-                    )
-                # if k < int(num_iters_loadb):
-
-                @unroll
-                for kk in range(num_iters_loadb):
-                    async_copy[16](
-                        loadb_gmem_ptr + kk * num_rows_per_iter_loadb * N,
-                        storeb_smem_ptr + kk * num_rows_per_iter_loadb * BN,
-                    )
+                loadb[itype, BM, BN, BK, NUM_THREADS, b_type](
+                    M, N, K, warp_id, lane_id, b_gmem_tile, storeb_smem_ptr
+                )
 
             @unroll
             for i in range(num_mma_m):
@@ -350,32 +371,21 @@ fn sgemm_double_buffer[
 
             @unroll
             for i in range(num_mma_m):
-                var a0 = loada_smem_ptr.load(
-                    (next_k + row_a0) * BM_padded + col_a0 + i * MMA_M
+                var vec = loada_smem_ptr.load[width=4, alignment=align4](
+                    next_k * BM + i * MMA_M * MMA_K + lane_id * 4
                 )
-                var a1 = loada_smem_ptr.load(
-                    (next_k + row_a1) * BM_padded + col_a1 + i * MMA_M
-                )
-                var a2 = loada_smem_ptr.load(
-                    (next_k + row_a2) * BM_padded + col_a2 + i * MMA_M
-                )
-                var a3 = loada_smem_ptr.load(
-                    (next_k + row_a3) * BM_padded + col_a3 + i * MMA_M
-                )
-                a_reg.store[width=4](
-                    (next_buffer_id, i * 4), SIMD[a_type, 4](a0, a1, a2, a3)
+                a_reg.store[width=4, alignment=align4](
+                    (next_buffer_id, i * 4),
+                    SIMD[a_type, 4](vec[0], vec[2], vec[1], vec[3]),
                 )
 
             @unroll
             for i in range(num_mma_n):
-                var b0 = loadb_smem_ptr.load(
-                    (next_k + row_b0) * BN + col_b0_b1 + i * MMA_N
+                var vec = loadb_smem_ptr.load[width=2, alignment=align2](
+                    next_k * BN + i * MMA_K * MMA_N + lane_id * 2
                 )
-                var b1 = loadb_smem_ptr.load(
-                    (next_k + row_b1) * BN + col_b0_b1 + i * MMA_N
-                )
-                b_reg.store[width=2](
-                    (next_buffer_id, i * 2), SIMD[b_type, 2](b0, b1)
+                b_reg.store[width=2, alignment=align2](
+                    (next_buffer_id, i * 2), vec
                 )
 
         @unroll
@@ -406,11 +416,13 @@ fn sgemm_double_buffer[
         @unroll
         for j in range(num_mma_n):
             var c_mma_tile = c_gmem_ptr + (i * MMA_M) * N + j * MMA_N
-            c_mma_tile.store[width=2](
-                int(row_c0_c1 * N + col_c0), c_reg.load[width=2]((i, j, 0))
+            c_mma_tile.store[width=2, alignment=align2](
+                int((lane_id // 4) * N + lane_id % 4 * 2),
+                c_reg.load[width=2, alignment=align2]((i, j, 0)),
             )
-            c_mma_tile.store[width=2](
-                int(row_c2_c3 * N + col_c2), c_reg.load[width=2]((i, j, 2))
+            c_mma_tile.store[width=2, alignment=align2](
+                int((lane_id // 4 + 8) * N + lane_id % 4 * 2),
+                c_reg.load[width=2, alignment=align2]((i, j, 2)),
             )
 
 
@@ -419,13 +431,11 @@ fn test() raises:
     alias M = 8192
     alias N = 8192
     alias K = 128
-    alias BM = 128
+    alias BM = 256
     alias BN = 128
     alias BK = 16
-    alias WM = 32
+    alias WM = 64
     alias WN = 64
-    alias TM = 8
-    alias TN = 8
 
     var stream = Stream()
 
@@ -465,12 +475,11 @@ fn test() raises:
         BK,
         WM,
         WN,
-        TM,
-        TN,
         NUM_THREADS,
     ]
     var func = Function[__type_of(gemm), gemm](
-        threads_per_block=NUM_THREADS, dump_ptx=Path("./mm.ptx")
+        threads_per_block=NUM_THREADS,  # dump_ptx=Path("./mm.ptx")
+        cache_config=CacheConfig.PREFER_SHARED,
     )
 
     if is_benchmark():
