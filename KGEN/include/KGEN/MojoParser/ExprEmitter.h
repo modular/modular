@@ -229,6 +229,7 @@ private:
                Operation *, ASTType, LValueInitializerType>
       representation;
   ExprContext context;
+  friend raw_ostream &operator<<(raw_ostream &os, const ValueDest &value);
 };
 
 //===----------------------------------------------------------------------===//
