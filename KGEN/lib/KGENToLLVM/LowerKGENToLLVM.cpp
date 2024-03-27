@@ -4,8 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/ToolCommon/KGENPasses.h"
-
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
@@ -15,9 +13,11 @@
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/NameMangling.h"
+#include "KGEN/ToolCommon/KGENPasses.h"
 #include "LLVMLoweringUtils.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -1210,16 +1210,15 @@ void LowerKGENToLLVMPass::runOnOperation() {
         return FlatSymbolRefAttr::get(it->second);
       return symbol;
     });
-    ThreadLocalCache<mlir::AttrTypeReplacer> replacers(
-        replacer, getContext().isMultithreadingEnabled()
-                      ? getContext().getNumThreads()
-                      : 1);
-    auto workFn = [&replacers](Operation &op) {
-      replacers.getThreadLocalCache().recursivelyReplaceElementsIn(
-          &op, /*replaceAttrs=*/true, /*replaceLocs*/ false,
-          /*replaceTypes=*/false);
+    auto workFn = [](mlir::AttrTypeReplacer &replacer, Operation *op) {
+      replacer.recursivelyReplaceElementsIn(op, /*replaceAttrs=*/true,
+                                            /*replaceLocs=*/false,
+                                            /*replaceTypes=*/false);
     };
-    mlir::parallelForEach(&getContext(), getOperation().getOps(), workFn);
+    std::vector<Operation *> work;
+    for (Operation &op : getOperation().getOps())
+      work.push_back(&op);
+    parallelForEach(&getContext(), work, workFn, replacer);
   }
 
   POPToLLVMTypeConverter typeConverter(targetInfo);
