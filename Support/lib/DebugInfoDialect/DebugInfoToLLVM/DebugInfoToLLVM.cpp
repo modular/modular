@@ -239,7 +239,7 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIArrayType type) {
       type.getContext(), builder.getI64IntegerAttr(type.getElementCount()),
       /*lowerBound=*/nullptr, /*upperBound=*/nullptr, /*stride=*/nullptr);
   return LLVM::DICompositeTypeAttr::get(
-      type.getContext(), llvm::dwarf::DW_TAG_array_type,
+      type.getContext(), llvm::dwarf::DW_TAG_array_type, {},
       StringAttr::get(type.getContext()), nullptr, /*line=*/0,
       /*scope=*/nullptr, convertType(type.getElementType()),
       LLVM::DIFlags::Zero, type.getSizeInBits(),
@@ -256,7 +256,7 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIPointerType type) {
   return LLVM::DIDerivedTypeAttr::get(
       type.getContext(), llvm::dwarf::DW_TAG_pointer_type,
       /*name=*/nullptr, convertType(type.getElementType()),
-      type.getSizeInBits(), type.getAlignInBits(), /*offsetInBits=*/0);
+      type.getSizeInBits(), type.getAlignInBits(), /*offsetInBits=*/0, {});
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
@@ -276,7 +276,8 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
 
     elementTypes.push_back(LLVM::DIDerivedTypeAttr::get(
         member.getContext(), llvm::dwarf::DW_TAG_member, member.getName(),
-        convertType(member.getType()), sizeInBits, alignInBits, offsetInBits));
+        convertType(member.getType()), sizeInBits, alignInBits, offsetInBits,
+        {}));
   }
 
   // Pad the struct size to the largest element alignment.
@@ -284,7 +285,7 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIStructType type) {
     structSize = llvm::alignTo(structSize, structAlign);
 
   return LLVM::DICompositeTypeAttr::get(
-      type.getContext(), llvm::dwarf::DW_TAG_structure_type, type.getName(),
+      type.getContext(), llvm::dwarf::DW_TAG_structure_type, {}, type.getName(),
       /*file=*/nullptr, /*line=*/0, /*scope=*/nullptr, /*baseType=*/nullptr,
       LLVM::DIFlags::Zero, structSize, structAlign, elementTypes);
 }
@@ -331,14 +332,14 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVariantType type) {
     LLVM::DITypeAttr memberType = LLVM::DIDerivedTypeAttr::get(
         context, llvm::dwarf::DW_TAG_member, member.getName(),
         convertType(member.getType()), member.getSizeInBits(),
-        member.getAlignInBits(), 0);
+        member.getAlignInBits(), 0, {});
     variantTypes.push_back(memberType);
   }
 
   // TODO(#30619): add discriminator field to the DW_TAG_variant_part entry once
   // upstream is ready.
   return LLVM::DICompositeTypeAttr::get(
-      context, llvm::dwarf::DW_TAG_variant_part, StringAttr::get(context),
+      context, llvm::dwarf::DW_TAG_variant_part, {}, StringAttr::get(context),
       nullptr, 0, nullptr, nullptr, LLVM::DIFlags::Zero, type.getSizeInBits(),
       type.getAlignInBits(), variantTypes);
 }
@@ -349,7 +350,7 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
       type.getContext(), builder.getI64IntegerAttr(type.getElementCount()),
       /*lowerBound=*/nullptr, /*upperBound=*/nullptr, /*stride=*/nullptr);
   return LLVM::DICompositeTypeAttr::get(
-      type.getContext(), llvm::dwarf::DW_TAG_array_type, type.getName(),
+      type.getContext(), llvm::dwarf::DW_TAG_array_type, {}, type.getName(),
       nullptr, /*line=*/0, /*scope=*/nullptr,
       convertType(type.getElementType()), LLVM::DIFlags::Vector,
       type.getSizeInBits(), /*alignInBits=*/0, element);

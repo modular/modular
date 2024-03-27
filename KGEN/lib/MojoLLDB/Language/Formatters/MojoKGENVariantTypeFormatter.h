@@ -18,7 +18,7 @@ public:
 
   ~MojoKGENVariantTypeSyntheticFrontEnd() override = default;
 
-  uint32_t CalculateNumChildren() override;
+  llvm::Expected<uint32_t> CalculateNumChildren() override;
 
   lldb::ValueObjectSP GetChildAtIndex(uint32_t idx) override;
 
