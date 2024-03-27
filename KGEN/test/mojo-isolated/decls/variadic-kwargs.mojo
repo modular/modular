@@ -97,3 +97,20 @@ fn test_variadic_kwargs_param_inference():
     # CHECK: %[[S_PASSED:.*]] = lit.ref.immut %s
     # CHECK: lit.call {{.*}}@Dict::@"__setitem__{{.*}}(%[[DICT_VAR]], %[[Z_KEY]], %[[S_PASSED]])
     infers_param_from_kwargs(y=MemOnly(), z=s)
+
+
+# COM: test that the inferred type of variables is correct when the initializer
+# COM: expression has variadic keyword arguments.
+# COM: Issue https://github.com/modularml/modular/issues/35215
+fn takes_kw(**kwargs: MemOnly) -> int:
+    return `0`
+
+
+# CHECK-LABEL: lit.func @"test_takes_kw_in_assignment
+fn test_takes_kw_in_assignment(x: MemOnly):
+    # CHECK: %b = lit.var.decl "b" var : !lit.ref<index,
+    # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
+    # CHECK-SAME: @Dict<:!KeyElement #[[STRING_TYPE]], :!CollectionElement #[[MEM_ONLY]]>
+    # CHECK: %[[RES:.*]] = lit.call {{.*}}@"takes_kw{{.*}}(%[[DICT_VAR]])
+    # CHECK: lit.ref.store %[[RES]], %b
+    var b = takes_kw(y=x, z=x)
