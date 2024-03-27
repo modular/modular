@@ -14,12 +14,12 @@ add_modular_library(KGENElaborator
 
   LINK_LIBS PUBLIC
   DebugInfoDialect
-  CacheDialect
-  KGENDialect
-  LITDialect
   InterpreterInterface
-  MArchTarget
+  KGENDialect
   KGENSupport
+  LITDialect
+  MArchTarget
+  MCache
 
   MLIRIndexDialect
   MLIRSupport

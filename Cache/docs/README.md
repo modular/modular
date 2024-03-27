@@ -131,21 +131,6 @@ The `BlobCache` assumes overwrite semantics on `insert`, so it is incumbent on
 the user to provide a strong hash function - the region and transform caches
 use SHA-256 as a hash function currently.
 
-## CacheDialect
-
-This dialect contains attributes and operations that we use to assist in
-caching IR regions. For attribute-specific documentation, see the nested
-dialect documentation.
-
-We have made the decision to only cache the things that are worth caching, in
-the case of IR this generally means regions and constants. The memory footprint
-of most programs is almost entirely in the body of isolated-from-above
-operations like the function - caching their bodies provides a large win. The
-other worthwhile thing to cache is large constants. Removing the constant from
-the IR means that now the IR can be easily sent over the network and/or
-serialized with much lower overhead, while the constant can always be recovered
-from the cache.
-
 ## Transform Caching
 
 The principle behind transform caching is also quite simple - as long as the

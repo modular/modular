@@ -32,7 +32,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 
-#include "Cache/CacheDialect/CachedTransform.h"
+#include "Cache/CachedTransform.h"
 #include "Support/Buffer.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Configuration.h"

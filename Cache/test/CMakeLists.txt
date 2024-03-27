@@ -13,5 +13,4 @@ configure_lit_site_cfg(
 
 add_modular_testsuite(check-cache
   TOOLS
-  cache-opt
   cache-mgr)

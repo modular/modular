@@ -7,7 +7,7 @@
 #ifndef KGEN_ELABORATOR_ELABORATOR_H
 #define KGEN_ELABORATOR_ELABORATOR_H
 
-#include "Cache/CacheDialect/CachedTransform.h"
+#include "Cache/CachedTransform.h"
 #include "IREvaluator.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"

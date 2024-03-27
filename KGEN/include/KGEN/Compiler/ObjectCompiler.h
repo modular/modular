@@ -8,7 +8,7 @@
 #define KGEN_COMPILER_OBJECTCOMPILER_H
 
 #include "Cache/BlobCache.h"
-#include "Cache/CacheDialect/CachedTransform.h"
+#include "Cache/CachedTransform.h"
 #include "KGEN/Compiler/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"

@@ -19,7 +19,6 @@ add_modular_unittest(
   KeyTest.cpp
 
   LINK_LIBS PRIVATE
-  CacheDialect
   LLCLRuntime
   LLCLRuntimeGlobals
   LLCLSupport
