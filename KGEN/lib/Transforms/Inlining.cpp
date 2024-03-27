@@ -18,6 +18,7 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
 #include "Support/Threading/ThreadLocalCache.h"
@@ -889,17 +890,14 @@ void InlineParametricPass::runOnOperation() {
         return apply.getOperand(1);
       });
   // The replacers have an internal cache, so make sure to share them correctly.
-  ThreadLocalCache<mlir::AttrTypeReplacer> replacers(
-      replacer, getContext().isMultithreadingEnabled()
-                    ? getContext().getNumThreads()
-                    : 1);
-  auto substTrivialFuncs = [&replacers](Operation &op) {
-    replacers.getThreadLocalCache().recursivelyReplaceElementsIn(
-        &op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
-        /*replaceTypes=*/true);
+  auto substTrivialFuncs = [](mlir::AttrTypeReplacer &replacer, Operation *op) {
+    replacer.recursivelyReplaceElementsIn(
+        op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
   };
-  mlir::parallelForEach(&getContext(), getOperation().getOps(),
-                        std::move(substTrivialFuncs));
+  std::vector<Operation *> ops;
+  for (Operation &op : getOperation().getOps())
+    ops.push_back(&op);
+  parallelForEach(&getContext(), ops, substTrivialFuncs, replacer);
 
   // Create a runtime instance if needed.
   auto rt =
