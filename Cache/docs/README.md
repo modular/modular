@@ -146,32 +146,6 @@ the IR means that now the IR can be easily sent over the network and/or
 serialized with much lower overhead, while the constant can always be recovered
 from the cache.
 
-## Region Caching
-
-The principle behind region caching is simple - we can write an MLIR region
-to bytecode and cache it. The hash of the code itself is the cache key. This
-scheme is simple, but has some flaws - there are some attributes that we don't
-want as part of the cache key. These attributes also should be introspectable
-even without re-inflating the region. The basic concept is therefore to
-parametrize the hash attribute that we place on deflated ops with these
-attributes. The attributes we currently care about keeping outside the deflated
-region are `SymbolRefAttr` and `ConstantHashAttr`. Both of these have relevant
-analyses that can be performed without inflating the body of the operation.
-
-Keeping the `SymbolRefAttr` out of the deflated body preserves the call graph
-even while the top level operations have been deflated. This way, we can check
-the callees before blindly recompiling a caller; if a callee changes in a way
-that doesn't affect the caller - rename, changes to a comment, or even changes
-to the internals of a function that is not inlined - the caller does not need
-to be recompiled. This should dramatically increase the cache hit rate.
-
-Keeping the `ConstantHashAttr` out of the deflated body serves largely the same
-purpose. Consider an ML model - the architecture of the model itself is largely
-static but the weights might be updated offline as the model is trained. Because
-we keep the constant hashes outside the deflated body, updating weights is as
-simple as updating the corresponding hash attribute with the new hash. On
-inflation, the updated hash will be chosen.
-
 ## Transform Caching
 
 The principle behind transform caching is also quite simple - as long as the
@@ -187,8 +161,7 @@ mlir::PassManager pm(&ctx);
 // Parse the source string.
 mlir::OwningOpRef<ModuleOp> module1 =
   mlir::parseSourceString<ModuleOp>(mlirString, ParserConfig{&ctx});
-// Run the pass manager on the module. This version of `cachedTransform` will
-// deflate the target op, in this case, `*module1`.
+// Run the pass manager on the module.
 auto xform = cachedTransform(*module1, regionCache, transformCache,
                              std::move(readyChain), pm);
 ```

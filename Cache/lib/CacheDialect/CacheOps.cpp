@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheDialect/CacheOps.h"
-#include "Cache/CacheDialect/CacheAttrs.h"
 #include "Cache/CacheDialect/CacheDialect.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 
