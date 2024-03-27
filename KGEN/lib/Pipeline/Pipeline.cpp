@@ -130,8 +130,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addPass(createResolveCompilerPromises(runtime));
 
   // We lower argument input conventions.
-  // FIXME: This should be parallelized on FuncOp.
-  pm.addPass(createLowerArgConventions());
+  pm.addNestedPass<FuncOp>(createLowerArgConventions());
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
   // Run the ForceInline pass with an inner function pass pipeline.
