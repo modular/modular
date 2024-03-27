@@ -26,7 +26,7 @@ fn test_pytorch_model() raises:
 
     var session = InferenceSession()
     var config = LoadOptions()
-    config.add_input_spec(TensorSpec(DType.float32, 3, 100, 100))
+    config.add_input_spec(TensorSpec(DType.float32, 1, 3, 100, 100))
     var compiled_model = session.load_model(Path(model_path), config)
 
     assert_equal(compiled_model.num_model_inputs(), 1)
@@ -47,6 +47,7 @@ fn test_pytorch_model2() raises:
     var session = InferenceSession()
     var config = LoadOptions()
     var shape = List[Optional[Int64]]()
+    shape.append(Int64(1))
     shape.append(Int64(3))
     shape.append(Int64(100))
     shape.append(Int64(100))
@@ -70,13 +71,13 @@ fn test_model_execute() raises:
 
     var session = InferenceSession()
     var config = LoadOptions()
-    config.add_input_spec(TensorSpec(DType.float32, 3, 100, 100))
+    config.add_input_spec(TensorSpec(DType.float32, 1, 3, 100, 100))
     var model = session.load_model(Path(model_path), config)
-    var input_tensor = Tensor[DType.float32](3, 100, 100)
+    var input_tensor = Tensor[DType.float32](1, 3, 100, 100)
     input_tensor._to_buffer().fill(-1)
     var outputs = model.execute("x", input_tensor)
     var output_tensor = outputs.get[DType.float32]("result0")
-    var expected_output = Tensor[DType.float32](3, 100, 100)
+    var expected_output = Tensor[DType.float32](1, 3, 100, 100)
     expected_output._to_buffer().fill(0)
     assert_equal(output_tensor, expected_output)
 
