@@ -18,13 +18,7 @@ def CacheDialect : Dialect {
 
   let summary = "Cache dialect";
   let description = [{
-    The `Cache` dialect contains types and operations required for generic
-    caching.
-  }];
-
-  let extraClassDeclaration = [{
-    /// Register all dialect ops.
-    void registerOps();
+    The `Cache` dialect contains transforms required for generic caching.
   }];
 
   let dependentDialects = ["::M::MDialect"];

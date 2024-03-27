@@ -6,7 +6,6 @@
 
 add_modular_dialect_library(CacheDialect
   CacheDialect.cpp
-  CacheOps.cpp
   CachedTransform.cpp
 
   DEPENDS
