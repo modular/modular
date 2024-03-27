@@ -8,7 +8,6 @@
 #define CACHE_CACHEDIALECT_CACHEOPS_H
 
 #include "Cache/BlobCache.h"
-#include "Cache/CacheDialect/CacheAttrs.h"
 #include "LLCL/Support/Chain.h"
 #include "Support/Buffer.h"
 #include "Support/LLVMCompilerForwardDecls.h"

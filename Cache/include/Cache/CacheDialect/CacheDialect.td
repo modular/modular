@@ -18,23 +18,18 @@ def CacheDialect : Dialect {
 
   let summary = "Cache dialect";
   let description = [{
-    The `Cache` dialect contains types, attributes, and operations required
-    for generic caching.
+    The `Cache` dialect contains types and operations required for generic
+    caching.
   }];
 
   let extraClassDeclaration = [{
-    /// Register all dialect attributes.
-    void registerAttributes();
     /// Register all dialect ops.
     void registerOps();
-    /// Inject attribute interfaces.
-    void injectAttrInterfaces();
   }];
 
   let dependentDialects = ["::M::MDialect"];
 
   let cppNamespace = "::M::Cache";
-  let useDefaultAttributePrinterParser = 1;
   // TODO: Remove this once dialects have been updated to use properties.
   let usePropertiesForAttributes = 0;
 }
