@@ -9,7 +9,6 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "mlir/AsmParser/AsmParser.h"
-#include "mlir/Bytecode/BytecodeReader.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/DebugStringHelper.h"
