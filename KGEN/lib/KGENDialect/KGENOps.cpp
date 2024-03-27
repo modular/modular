@@ -551,48 +551,6 @@ void FuncOp::print(OpAsmPrinter &p) {
   printGeneratorOrFunc(p, *this);
 }
 
-LogicalResult FuncOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
-  // In a kgen.func, parameters are allowed to be defined (e.g. by calls with
-  // output parameters), but not used.  This is because the elaborator must
-  // already have been run, lowering these to concrete attribute values.
-  mlir::AttrTypeWalker walker;
-  ParamDeclRefAttr invalidRef;
-  Operation *usingOp = nullptr;
-  walker.addWalk([&](ParamDeclRefAttr ref) {
-    invalidRef = ref;
-    return WalkResult::interrupt();
-  });
-  WalkResult result = walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    auto walkTypes = [&](TypeRange types) -> LogicalResult {
-      for (Type type : types) {
-        if (walker.walk(type).wasInterrupted()) {
-          usingOp = op;
-          return failure();
-        }
-      }
-      return success();
-    };
-    if (failed(walkTypes(op->getResultTypes())))
-      return WalkResult::interrupt();
-    for (Region &region : op->getRegions())
-      if (failed(walkTypes(region.getArgumentTypes())))
-        return WalkResult::interrupt();
-    if (walker.walk(op->getAttrDictionary()).wasInterrupted()) {
-      usingOp = op;
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
-  if (!result.wasInterrupted())
-    return success();
-  assert(invalidRef && usingOp && "expected an invalid reference");
-  auto diag = usingOp->emitError("invalid use of parameter ")
-              << invalidRef.getName() << " in kgen.func";
-  diag.attachNote(getLoc()) << "within kgen.func '" << getName() << "'";
-
-  return failure();
-}
-
 //===----------------------------------------------------------------------===//
 // ExternGeneratorOp
 //===----------------------------------------------------------------------===//
