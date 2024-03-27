@@ -128,9 +128,8 @@ void CallGraphBase<DerivedT, NodeT>::build(ModuleOp module,
 
   // Build the graph by walking all the calls in each function and adding edges
   // as appropriate.
-  auto workFn = [this, &symtab](std::pair<FuncOpT, NodeT> &value) {
-    auto &[func, node] = value;
-    NodeT *callerNode = &node;
+  auto workFn = [this, &symtab](NodeT *callerNode) {
+    FuncOpT func = callerNode->func;
     func.getBodyRegion().walk([&](CallOpT call) {
       Operation *calleeOp = symtab.lookup(
           cast<FlatSymbolRefAttr>(
@@ -156,7 +155,11 @@ void CallGraphBase<DerivedT, NodeT>::build(ModuleOp module,
       }
     });
   };
-  mlir::parallelForEach(module.getContext(), nodes, workFn);
+  std::vector<NodeT *> work;
+  work.reserve(nodes.size());
+  for (auto &[_, node] : nodes)
+    work.push_back(&node);
+  mlir::parallelForEach(module.getContext(), work, workFn);
 }
 
 template <typename DerivedT, typename NodeT>
