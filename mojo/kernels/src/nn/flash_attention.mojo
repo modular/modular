@@ -417,6 +417,9 @@ struct _FlashAttention[
                     val * scale.cast[type]() + mask
                 )
 
+            # Update the row with the scale and mask. Find the maximum value
+            # of the row to bias the exponential function below for numeric
+            # stability.
             var max_val = map_reduce[
                 simd_width,
                 Dim(),
@@ -435,6 +438,8 @@ struct _FlashAttention[
                 var val = qk_row_ptr.load[width=_simd_width](idx)
                 return rebind[SIMD[_type, _simd_width]](exp(val - max_val))
 
+            # Update the row with the exponential of each value and accumulate
+            # the result.
             var accum_val = map_reduce[
                 simd_width,
                 Dim(),
@@ -447,6 +452,7 @@ struct _FlashAttention[
 
             var fixup_val = exp(max_vals[m] - max_val)
 
+            # Update the running maximum and sum for the row.
             max_vals[m] = max_val
             sum_vals[m] = sum_vals[m] * fixup_val + accum_val
 
@@ -596,7 +602,7 @@ struct _FlashAttention[
                         _simd_width: Int
                     ](_n: Int, _k: Int) -> SIMD[type, _simd_width]:
                         return input_v_fn[_simd_width, rank](
-                            get_nd_index(_k + kv_seq_idx, _n)
+                            get_nd_index(_k + kv_seq_idx, n + _n)
                         )
 
                     Self._matmul._matmul[input_v_2d_fn](
