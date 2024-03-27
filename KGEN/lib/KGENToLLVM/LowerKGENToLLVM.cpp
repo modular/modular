@@ -19,7 +19,6 @@
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
-#include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
