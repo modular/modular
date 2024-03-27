@@ -74,7 +74,7 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
                                           type.getArgumentTypes(), newTypes);
 }
 
-static void rewriteCallingConventions(Operation &op) {
+void LowerCallingConventionPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement(lowerResult);
   replacer.addReplacement(removeDINoneResults);
@@ -153,10 +153,5 @@ static void rewriteCallingConventions(Operation &op) {
       return;
     }
   };
-  op.walk(walkFn);
-}
-
-void LowerCallingConventionPass::runOnOperation() {
-  mlir::parallelForEach(&getContext(), getOperation().getOps(),
-                        rewriteCallingConventions);
+  getOperation().walk(walkFn);
 }
