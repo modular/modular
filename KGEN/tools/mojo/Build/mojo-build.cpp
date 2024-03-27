@@ -71,15 +71,12 @@ static std::optional<int> parseArgs(const State &state,
                                     llvm::SourceMgr &sourceManager,
                                     CompilationOptions &compilationOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target) {
-  // First, parse all arguments, in order to find the index of the input
-  // argument.
   BuildOptTable options;
   unsigned missingIndex = 0;
   unsigned missingCount = 0;
   args = options.ParseArgs(state.arguments, missingIndex, missingCount);
 
-  // If those arguments include `--help`, print help before checking any other
-  // arguments.
+  // If `--help` was specified, print help before checking any other arguments.
   if (args.hasArg(options::OPT_help)) {
     return state.printHelp(
 #include "Build/BuildOptionsHelpText.inc"
