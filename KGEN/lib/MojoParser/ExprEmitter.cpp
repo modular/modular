@@ -140,10 +140,12 @@ ValueDest::ValueDest(VarDeclOp dest, ExprContext context)
 ValueDest::ValueDest(GlobalVarDeclOp dest, ExprContext context)
     : representation(dest.getOperation()), context(context) {}
 
-void ValueDest::dump() const {
-  auto &os = llvm::errs() << "ValueDest context=" << (int)context
-                          << " destination = ";
+void ValueDest::dump() const { llvm::errs() << *this; }
 
+raw_ostream &LIT::operator<<(raw_ostream &os, const ValueDest &value) {
+  os << "ValueDest context=" << (int)value.context << " destination = ";
+
+  auto &representation = value.representation;
   if (isa<NullRepresentation>(representation)) {
     os << "NullRepresentation";
   } else if (auto lv = dyn_cast<LValue>(representation)) {
@@ -168,6 +170,7 @@ void ValueDest::dump() const {
     os << "UNKNOWN VALUE DEST!";
   }
   os << '\n';
+  return os;
 }
 
 /// Inspect the ValueDest to see if it implies a specific type for the value
