@@ -560,28 +560,120 @@ struct LayoutTensor[
     fn copy_from_numa[
         other_layout: Layout,
         other_addr_space: AddressSpace,
+        other_element_layout: Layout,
     ](
         self,
         other: LayoutTensor[
             other_layout,
             dtype,
             address_space=other_addr_space,
+            element_layout=other_element_layout,
         ],
     ):
-        @parameter
-        fn copy_element[i: Int]():
-            alias src_idx = other_layout(i)
-            alias dst_idx = self.layout(i)
-            self.ptr[dst_idx] = other.ptr[src_idx]
-
         alias dst_size = layout.size()
         alias src_size = other_layout.size()
+
+        alias dst_element_size = int(self.element_size)
+        alias src_element_size = int(other.element_size)
 
         constrained[
             dst_size == src_size, "copy_from should move data of the same size"
         ]()
 
-        unroll[copy_element, dst_size]()
+        constrained[
+            dst_element_size == src_element_size, "copy_from should move"
+        ]()
+
+        # Vectorize 1-D element read/writes.
+        @parameter
+        if (
+            other_element_layout.rank() == 1
+            and other_element_layout.stride[0] == 1
+            and self.element_layout.rank() == 1
+            and self.element_layout.stride[0] == 1
+        ):
+
+            @parameter
+            fn copy_vector_to_vector[i: Int]():
+                alias src_idx = make_layout(other.element_layout, other_layout)(
+                    i * src_element_size
+                )
+                alias dst_idx = make_layout(self.element_layout, self.layout)(
+                    i * dst_element_size
+                )
+                var src_vec = rebind[self.element_type](
+                    other.ptr.load[width=src_element_size](src_idx)
+                )
+                self.ptr.store[width = self.element_size](dst_idx, src_vec)
+
+            unroll[copy_vector_to_vector, dst_size]()
+        # Vector read scalar writes.
+        elif (
+            other_element_layout.rank() == 1
+            and other_element_layout.stride[0] == 1
+            and self.element_layout.rank() == 1
+            and self.element_layout.stride[0] != 1
+        ):
+
+            @parameter
+            fn copy_vector_to_scalars[i: Int]():
+                alias src_idx = make_layout(other.element_layout, other_layout)(
+                    i * src_element_size
+                )
+
+                var src_vec = rebind[self.element_type](
+                    other.ptr.load[width=src_element_size](src_idx)
+                )
+
+                @parameter
+                fn store_vector[e_i: Int]():
+                    alias dst_idx = make_layout(
+                        self.element_layout, self.layout
+                    )(i * dst_element_size + e_i)
+                    self.ptr.store[width=1](dst_idx, src_vec[e_i])
+
+                unroll[store_vector, src_element_size]()
+
+            unroll[copy_vector_to_scalars, src_size]()
+        # Vector write scalar reads.
+        elif (
+            other_element_layout.rank() == 1
+            and other_element_layout.stride[0] != 1
+            and self.element_layout.rank() == 1
+            and self.element_layout.stride[0] == 1
+        ):
+
+            @parameter
+            fn copy_scalars_to_vectors[i: Int]():
+                alias dst_idx = make_layout(self.element_layout, self.layout)(
+                    i * dst_element_size
+                )
+
+                var src_vec = self.element_type()
+
+                @parameter
+                fn fill_vector[e_i: Int]():
+                    alias src_idx = make_layout(
+                        other_element_layout, other.layout
+                    )(i * src_element_size + e_i)
+                    src_vec[e_i] = other.ptr.load[width=1](src_idx)
+
+                unroll[fill_vector, src_element_size]()
+                self.ptr.store[width = self.element_size](dst_idx, src_vec)
+
+            unroll[copy_scalars_to_vectors, dst_size]()
+        else:
+
+            @parameter
+            fn copy_element[i: Int]():
+                alias src_idx = make_layout(other.element_layout, other_layout)(
+                    i
+                )
+                alias dst_idx = make_layout(self.element_layout, self.layout)(i)
+
+                self.ptr[dst_idx] = other.ptr[src_idx]
+
+            unroll[copy_element, dst_size * dst_element_size]()
 
     @always_inline
     fn copy_from_async[
