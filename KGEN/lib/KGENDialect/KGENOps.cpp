@@ -1927,6 +1927,11 @@ floatLiteralConvertOpHelper(FloatLiteralSpecialValues special,
     exponentLength = 5;
     bias = 15;
     semantics = llvm::APFloatBase::S_IEEEhalf;
+  } else if (outType.isBF16()) {
+    totalLength = 16;
+    exponentLength = 8;
+    bias = 127;
+    semantics = llvm::APFloatBase::S_BFloat;
   } else if (outType.isF32()) {
     totalLength = 32;
     exponentLength = 8;
