@@ -21,17 +21,6 @@ namespace M::Cache {
 using CacheProfilerEntry =
     ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 1), Trace::kCompiler>;
 
-/// The Cache dialect can store a large constant - this struct defines the cache
-/// key. It can be an Attribute (indicating that we should hash the data itself)
-/// or a string (indicating we already know the hash).
-struct DataCacheKey {
-  using KeyTy = std::variant<Attribute, StringRef>;
-  static std::string hashKey(KeyTy key);
-};
-
-/// Convenience typedef to reduce typing.
-using DataCache = BlobCache<DataCacheKey>;
-
 /// The Cache dialect can store the region of an op - this struct defines the
 /// cache key. It can be a region (indicating that we need to hash the region)
 /// or a string (indicating that we already know the hash).

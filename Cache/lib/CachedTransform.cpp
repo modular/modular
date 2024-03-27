@@ -5,12 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CachedTransform.h"
-#include "LLCL/Runtime/Algorithms.h"
 #include "llvm/Support/BLAKE3.h"
 
 using namespace M;
 using namespace Cache;
-using namespace LLCL;
 
 //===----------------------------------------------------------------------===//
 // Generic Transformations
