@@ -531,10 +531,10 @@ def FoldGlobalConstLoads : Pass<"fold-global-const-loads", "KGEN::FuncOp"> {
 // LowerCallingConvention
 //===----------------------------------------------------------------------===//
 
-def LowerCallingConvention : Pass<"lower-calling-convention", "ModuleOp"> {
+def LowerCallingConvention : Pass<"lower-calling-conventions", "ModuleOp"> {
   let summary = "Lower calling convention after elaboration.";
   let description = [{
-    The `lower-calling-convention` pass performs any calling convention
+    The `lower-calling-conventions` pass performs any calling convention
     transformation. This pass runs on concrete IR, because it is not possible to
     lower calling conventions on parametric IR. This pass will:
 

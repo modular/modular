@@ -21,9 +21,6 @@ void M::KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
                                        const LowerToLLVMOptions &options) {
   using mlir::LLVM::LLVMFuncOp;
 
-  // Lower calling conventions, which changes function ABIs.
-  pm.addPass(createLowerCallingConvention());
-
   // Run all LLVM lowering passes.
   pm.addPass(createLowerKGENToLLVM(LowerKGENToLLVMOptions{
       options.globalCtorFnName, options.globalDtorFnName}));

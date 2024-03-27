@@ -15,7 +15,7 @@ fn use(lhs: Int, rhs: Int) -> Int:
 # COM: Verify that the Closure Impl defined in `main` copies the captures x, y on the heap in the init and frees in the del.
 
 # CHECK: kgen.func @"{{.*}}::`_CI_{{.*}}::__del__{{.*}}"
-# CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> owned_in_mem) -> !kgen.none {
+# CHECK-SAME: (%arg0: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> owned_in_mem) {
 # CHECK:      [[CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg0[0]
 # CHECK-NEXT: [[CAPTURE_FIELD_PTR:%.*]] = pop.load [[CAPTURE_FIELD_ADD]]
 # CHECK-NEXT: pop.aligned_free [[CAPTURE_FIELD_PTR]]
@@ -26,8 +26,7 @@ fn use(lhs: Int, rhs: Int) -> Int:
 # CHECK:  kgen.func @"{{.*}}::`_CI_{{.*}}::__init__{{.*}}"
 # CHECK-SAME: (%arg0: index, %arg1: index,
 # CHECK-SAME: %arg2: !kgen.pointer<struct<(pointer<none>, index) memoryOnly>> init_self,
-# CHECK-SAME: %arg3: index borrow) capturing -> !kgen.none {
-# CHECK-NEXT:    %none = kgen.param.constant: none = <#kgen.none>
+# CHECK-SAME: %arg3: index borrow) capturing {
 
 # CHECK:         [[MY_CAPTURE_FIELD_ADD:%.*]] = kgen.struct.gep %arg2[0]
 # CHECK-NEXT:    [[HEAP_CAPTURE_LISTS_PTR:%.*]] = pop.aligned_alloc %idx8, %idx16 : <struct<(index, index)>>
@@ -41,7 +40,7 @@ fn use(lhs: Int, rhs: Int) -> Int:
 # CHECK-NEXT:    pop.store [[OPAQUE_CAPTURE_LIST]], [[MY_CAPTURE_FIELD_ADD]]
 # CHECK-NEXT:    [[NONPARAMETRIC_CAPTURE_ADD:%.*]] = kgen.struct.gep %arg2[1]
 # CHECK-NEXT:    pop.store %arg3, [[NONPARAMETRIC_CAPTURE_ADD]] : !kgen.pointer<index>
-# CHECK-NEXT:    kgen.return %none : !kgen.none
+# CHECK-NEXT:    kgen.return
 
 
 @no_inline

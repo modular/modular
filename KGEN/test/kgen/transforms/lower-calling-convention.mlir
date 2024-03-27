@@ -1,4 +1,4 @@
-// RUN: kgen-opt -lower-calling-convention -allow-unregistered-dialect %s | FileCheck %s
+// RUN: kgen-opt -lower-calling-conventions -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: kgen.func @none_func() {
 kgen.func @none_func() -> !kgen.none {
