@@ -235,11 +235,8 @@ struct LiftAndFoldApplyPass : impl::LiftAndFoldApplyBase<LiftAndFoldApplyPass> {
       liftAndFoldApply(&func.getBodyRegion(), cache, graph, numDedupedApplies);
       totNumDedupedApplies += numDedupedApplies;
     };
-    for (auto op : getOperation().getOps<GeneratorOp>())
-      workFunc(op);
-    // mlir::parallelForEach(&getContext(),
-    // getOperation().getOps<GeneratorOp>(),
-    //                       workFunc);
+    mlir::parallelForEach(&getContext(), getOperation().getOps<GeneratorOp>(),
+                          workFunc);
 
     markAllAnalysesPreserved();
     numDedupedApplies = totNumDedupedApplies;

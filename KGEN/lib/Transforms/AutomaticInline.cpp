@@ -16,7 +16,6 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "Support/STLExtras.h"
-#include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/CallGraph.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/IRMapping.h"
