@@ -12,8 +12,8 @@ add_modular_library(KGENInitAllDialects
   HLCFDialect
   KGENDialect
   LITDialect
+  MCache
   POPDialect
-  CacheDialect
 
   MLIRIndexDialect
   MLIRLLVMDialect

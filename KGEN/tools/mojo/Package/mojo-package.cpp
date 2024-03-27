@@ -8,7 +8,7 @@
 #include "../Common/Compilation.h"
 #include "../Common/Telemetry.h"
 
-#include "Cache/CacheDialect/CachedTransform.h"
+#include "Cache/CachedTransform.h"
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"

@@ -4,9 +4,8 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_subdirectory(include/Cache/CacheDialect)
+
 add_subdirectory(lib)
-add_subdirectory(tools/cache-opt)
 add_subdirectory(tools/cache-mgr)
 add_subdirectory(test)
 add_subdirectory(unittests)

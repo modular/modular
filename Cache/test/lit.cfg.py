@@ -33,7 +33,7 @@ tool_dirs = [
     config.mlir_tools_dir,
     config.llvm_tools_dir,
 ]
-tools = ["cache-opt", "cache-mgr"]
+tools = ["cache-mgr"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 

@@ -6,7 +6,6 @@
 
 #include "KGEN/ToolCommon/InitAllDialects.h"
 
-#include "Cache/CacheDialect/CacheDialect.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/Interpreter/InterpreterDialect.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
@@ -114,7 +113,6 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
       POP::POPDialect,
       MDialect,
       DebugInfo::DebugInfoDialect,
-      Cache::CacheDialect,
       mlir::index::IndexDialect,
       mlir::LLVM::LLVMDialect,
       mlir::NVVM::NVVMDialect
@@ -135,7 +133,6 @@ void M::preloadAllKGENDialects(MLIRContext *ctx) {
       POP::POPDialect,
       MDialect,
       DebugInfo::DebugInfoDialect,
-      Cache::CacheDialect,
       mlir::index::IndexDialect,
       mlir::LLVM::LLVMDialect,
       mlir::NVVM::NVVMDialect

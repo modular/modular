@@ -4,8 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Cache/CacheDialect/CachedTransform.h"
-#include "Cache/CacheDialect/CacheDialect.h"
+#include "Cache/CachedTransform.h"
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"

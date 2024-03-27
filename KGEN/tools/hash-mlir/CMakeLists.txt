@@ -12,4 +12,5 @@ add_modular_tool(hash-mlir
   MSupportGlobals
   MLIRIR
   LLCLRuntimeGlobals
+  MLIRBytecodeWriter
 )

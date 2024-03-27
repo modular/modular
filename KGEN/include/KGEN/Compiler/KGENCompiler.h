@@ -7,7 +7,7 @@
 #ifndef KGEN_COMPILER_KGENCOMPILER_H
 #define KGEN_COMPILER_KGENCOMPILER_H
 
-#include "Cache/CacheDialect/CachedTransform.h"
+#include "Cache/CachedTransform.h"
 #include "KGEN/Compiler/ExecutionEngine.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
