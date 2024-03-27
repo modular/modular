@@ -9,7 +9,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
-#include "Support/Threading/ThreadLocalCache.h"
+#include "Support/Compiler/Threading.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Threading.h"
@@ -145,26 +145,22 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
   using VerifyParametersBase::VerifyParametersBase;
 
   void runOnOperation() override {
+    using ParamCache = ParameterCollector::Analysis;
+
     auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
     mlir::LockedSymbolTableCollection sharedSymtabs(analysis.getSymbolTables());
-    auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
-
-    // Give each thread a copy of the parameter cache, rather than each work
-    // item.
-    ThreadLocalCache<ParameterCollector::Analysis> threadCaches(
-        paramCache, getContext().isMultithreadingEnabled()
-                        ? getContext().getThreadPool().getMaxConcurrency()
-                        : 1);
+    auto &paramCache = getAnalysis<ParamCache>();
+    bool emptyCache = paramCache.parameterLess.empty();
 
     std::vector<Region *> declRegions;
     for (auto decl : getOperation().getOps<DeclInterface>())
       for (Region &region : decl->getRegions())
         declRegions.push_back(&region);
-    auto workFunc = [&sharedSymtabs, &threadCaches,
-                     simplify = bool(simplifyParameters)](Region *declRegion) {
+
+    auto workFunc = [&sharedSymtabs, simplify = bool(simplifyParameters)](
+                        ParamCache &paramCache, Region *declRegion) {
       ParameterUseDefGraph graph(*declRegion);
-      if (failed(
-              graph.verify(sharedSymtabs, threadCaches.getThreadLocalCache())))
+      if (failed(graph.verify(sharedSymtabs, paramCache)))
         return failure();
       if (simplify) {
         CompilerTimeTraceScope traceScope("propagateTrivialParameters");
@@ -173,22 +169,25 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
       }
       return mlir::success();
     };
-    if (failed(mlir::failableParallelForEach(&getContext(), declRegions,
-                                             workFunc)))
-      return signalPassFailure();
 
-    // Consolidate the caches, but only when the original cache is empty. In
-    // reality, the cache does not grow much after the first run of this pass on
-    // an input IR, so consolidation is only worthwhile on the first run of the
-    // pass, when the cache is empty.
-    if (paramCache.parameterLess.empty()) {
-      threadCaches.consolidate(
-          [](ParameterCollector::Analysis &original,
-             const ParameterCollector::Analysis &threadCache) {
-            original.parameterLess.insert(threadCache.parameterLess.begin(),
-                                          threadCache.parameterLess.end());
-          });
-    }
+    auto consolidateFn = [emptyCache](ParamCache &original,
+                                      ArrayRef<ParamCache> threadCaches) {
+      // Consolidate the caches, but only when the original cache is empty.
+      // In reality, the cache does not grow much after the first run of
+      // this pass on an input IR, so consolidation is only worthwhile on
+      // the first run of the pass, when the cache is empty.
+      if (emptyCache)
+        return;
+      for (const ParamCache &threadCache : threadCaches) {
+        original.parameterLess.insert(threadCache.parameterLess.begin(),
+                                      threadCache.parameterLess.end());
+      }
+    };
+
+    if (failed(failableParallelForEach(&getContext(), declRegions,
+                                       std::move(workFunc), paramCache,
+                                       consolidateFn)))
+      return signalPassFailure();
 
     // This pass does not modify any IR, so mark all analyses as preserved. In
     // addition, this signals the pass manager that the MLIR verifier need not
