@@ -546,7 +546,7 @@ def LowerCallingConvention : Pass<"lower-calling-convention", "ModuleOp"> {
 // LowerArgConventions
 //===----------------------------------------------------------------------===//
 
-def LowerArgConventions : Pass<"lower-arg-conventions", "ModuleOp"> {
+def LowerArgConventions : Pass<"lower-arg-conventions", "FuncOp"> {
   let summary = "Lower argument argument conventions after elaboration.";
   let description = [{
     This pass performs the lowering of argument input conventions of concrete

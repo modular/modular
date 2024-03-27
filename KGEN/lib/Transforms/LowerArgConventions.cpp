@@ -396,39 +396,33 @@ static void lowerFuncOp(FuncOp funcOp) {
   funcOp.setSignature(newSig);
 }
 
-static void lowerArgConventions(Operation &op) {
-  if (auto funcOp = dyn_cast<FuncOp>(op)) {
-    lowerFuncOp(funcOp);
-
-    // Lower the ops in the function body.
-    op.walk([](Operation *op) {
-      if (auto callOp = dyn_cast<CallOp>(op))
-        return lowerCallOp(callOp);
-      if (auto callOp = dyn_cast<CallIndirectOp>(op))
-        return lowerCallIndirectOp(callOp);
-    });
-
-    // We must do this in a second pass, otherwise ops like kgen.call_indirect
-    // would be difficult to identify for lowering (since their argument types
-    // would be lowered already).
-    mlir::AttrTypeReplacer replacer;
-    replacer.addReplacement([](SignatureType sig) {
-      SignatureType newSig = lowerSignature(sig).newSig;
-      return newSig ? newSig : sig;
-    });
-    auto metatype = TypeType::get(op.getContext());
-    replacer.addReplacement([&](TypeConstantAttr type) {
-      // Canonicalize metatypes.
-      return TypeConstantAttr::get(type.getValue(), metatype);
-    });
-    op.walk([&](Operation *op) {
-      replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
-                                 /*replaceLocs=*/true, /*replaceAttrs=*/true);
-    });
-  }
-}
-
 void LowerArgConventionsPass::runOnOperation() {
-  mlir::parallelForEach(&getContext(), getOperation().getOps(),
-                        lowerArgConventions);
+  FuncOp func = getOperation();
+  lowerFuncOp(func);
+
+  // Lower the ops in the function body.
+  func.walk([](Operation *op) {
+    if (auto callOp = dyn_cast<CallOp>(op))
+      return lowerCallOp(callOp);
+    if (auto callOp = dyn_cast<CallIndirectOp>(op))
+      return lowerCallIndirectOp(callOp);
+  });
+
+  // We must do this in a second pass, otherwise ops like kgen.call_indirect
+  // would be difficult to identify for lowering (since their argument types
+  // would be lowered already).
+  mlir::AttrTypeReplacer replacer;
+  replacer.addReplacement([](SignatureType sig) {
+    SignatureType newSig = lowerSignature(sig).newSig;
+    return newSig ? newSig : sig;
+  });
+  auto metatype = TypeType::get(&getContext());
+  replacer.addReplacement([&](TypeConstantAttr type) {
+    // Canonicalize metatypes.
+    return TypeConstantAttr::get(type.getValue(), metatype);
+  });
+  func.walk([&](Operation *op) {
+    replacer.replaceElementsIn(op, /*replaceAttrs=*/true,
+                               /*replaceLocs=*/true, /*replaceAttrs=*/true);
+  });
 }
