@@ -98,8 +98,8 @@ fn non_max_suppression[
     # by the shape, but that is OK since the tensor.__del__() frees the pointer
     var output_shape = TensorShape(len(output_predictions) // 3, 3)
     return Tensor[DType.int64](
-        rebind[DTypePointer[DType.int64]](output_predictions.steal_data()),
         output_shape,
+        rebind[DTypePointer[DType.int64]](output_predictions.steal_data()),
     )
 
 
