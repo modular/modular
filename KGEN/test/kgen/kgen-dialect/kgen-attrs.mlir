@@ -82,26 +82,6 @@ kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() 
   kgen.return
 }
 
-// CHECK: #kgen.package.archive<target = {{.*}}, elaboratedModule = {{.*}}, archive = {{.*}}>
-"some.op"() {a = #kgen.package.archive<
-  target = #M.target<triple = "arm64-apple-darwin21.6.0", arch="apple-m1">,
-  elaboratedModule = dense_resource<foo> : tensor<42xui8>,
-  archive = dense_resource<bar> : tensor<13xui8>,
-  dependencies = [
-    <dense_resource<baz> : tensor<29xui8> as "libBaz">
-  ]
->} : () -> ()
-
-// CHECK: #kgen<package.archives[<{{.*}}>, <{{.*}}>]>
-"some.op"() {a = #kgen<package.archives[
-  <target = #M.target<triple = "", arch="">,
-   elaboratedModule = dense_resource<a> : tensor<1xui8>,
-   archive = dense_resource<b> : tensor<2xui8>>,
-  <target = #M.target<triple = "", arch="">,
-   elaboratedModule = dense_resource<c> : tensor<3xui8>,
-   archive = dense_resource<d> : tensor<4xui8>>
-]>} : () -> ()
-
 // CHECK: #kgen.link.dependency<dense_resource<a862fa0> : tensor<422xui8> as "ffmpeg">
 "some.op"() {
   a = #kgen.link.dependency<dense_resource<a862fa0> : tensor<422xui8> as "ffmpeg">

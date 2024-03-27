@@ -10,10 +10,6 @@
 # RUN: cat %t.0.mlir | FileCheck %s --check-prefix=GENLIB
 # RUN: kgen-opt %t.0.mlir -materialize-packages -o %t.1.mlir
 # RUN: cat %t.1.mlir | FileCheck %s --check-prefix=MATER
-# RUN: kgen-opt %t.1.mlir -elaborate-generators -o %t.2.mlir
-# RUN: cat %t.2.mlir | FileCheck %s --check-prefix=ELAB
-# RUN: kgen-opt %t.2.mlir -externalize-precompiled-functions -o %t.3.mlir
-# RUN: cat %t.3.mlir | FileCheck %s --check-prefix=LAST
 
 from target_dep_package.module import target_dep_function
 from test_package.module import exported_func
@@ -28,12 +24,6 @@ from test_package.module import exported_func
 # MATER: kgen.generator export @top
 # MATER: call @exported_func()
 # MATER: call [[TARGET_FN:@.*target_dep_function.*]]() : ()
-# ELAB: kgen.func export @top
-# ELAB: call @exported_func()
-# ELAB: call [[TARGET_FN:@.*target_dep_function.*]]() : ()
-# LAST: kgen.func export @top
-# LAST: call @exported_func()
-# LAST: call [[TARGET_FN:@.*target_dep_function.*]]() : ()
 @export
 fn top() -> Int:
     exported_func()
@@ -45,18 +35,9 @@ fn top() -> Int:
 # MATER: kgen.generator [[TARGET_FN]]
 # MATER-SAME: preCompiledModuleRef = [[PKG:@.*target_dep_package.*]],
 # MATER-NEXT: kgen.param.if
-# ELAB: kgen.func [[TARGET_FN]]
-# ELAB-SAME: precompiledBodyRef = [[PKG:@.*target_dep_package.*]]}
-# LAST: kgen.extern.func [[TARGET_FN]]
-# LAST-SAME: from [[PKG:@.*target_dep_package.*]]
 
-# GENLIB: kgen.package.link [[PKG]] post_parse(dense_resource<{{.*}}) archives()
-# MATER: kgen.package.link [[PKG]] pre_elaboration(dense_resource<{{.*}}) archives()
+# GENLIB: kgen.package.link [[PKG]] post_parse(dense_resource<{{.*}})
+# MATER: kgen.package.link [[PKG]] pre_elaboration(dense_resource<{{.*}})
 
 # GENLIB: kgen.extern.generator export @exported_func()
 # MATER: kgen.generator @exported_func()
-# ELAB: kgen.func @exported_func()
-# LAST: kgen.extern.func @exported_func()
-
-# ELAB: kgen.link dense_resource<{{.*}} as [[PKG]]
-# LAST: kgen.link dense_resource<{{.*}} as [[PKG]]

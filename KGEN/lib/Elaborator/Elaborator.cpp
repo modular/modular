@@ -2286,61 +2286,8 @@ void ElaboratorImpl::loadPackageState(PackageState *state,
   assert(link && "package reference does not refer to a package link op");
   state->link = link;
 
-  auto setToError = [state = state](Error err) {
-    // Given an error, propagate it to the package state so that waiters can
-    // read it.
-    state->error = std::move(err);
-    // The package is done processing.
-    state->ch.copy().emplace();
-  };
-
-  PackageArchiveAttr archive;
-
-  // If the package link supplies a precompiled package, use it.
-  if (std::optional<PackageArchiveAttr> maybeArchive =
-          link.getArchivesAttr().getTargetArchive(target))
-    archive = *maybeArchive;
-  if (!archive) {
-    // Otherwise, invoke the package handler callback to attempt on-demand
-    // compilation. The callback is at liberty to modify the link op, and only
-    // one thread can access each link op at a time.
-    ErrorOr<PackageArchiveAttr> result =
-        callbacks.packageHandlerFn(link, target);
-    if (result.isError())
-      return setToError(result.takeError());
-    archive = result.takeValue();
-  }
-
-  // Set up the package reader.
-  if (!archive) {
-    // No bytecode is avaiable. Just signal waiters to call into
-    // `specializeFromSource`.
-    state->ch.copy().emplace();
-    return;
-  } else {
-    // Add the concretized link op into the concrete module.
-    OpBuilder b(link.getContext());
-    auto newLink =
-        b.create<LinkOp>(link.getLoc(), link.getSymNameAttr(),
-                         archive.getArchive(), archive.getDependencies());
-    newSymTab.modify([newLink, this](SymbolTable &symtab) {
-      symtab.insert(newLink);
-      deferredSymbols.push_back(newLink);
-    });
-  }
-
-  mlir::AsmResourceBlob *blob =
-      archive.getElaboratedModule().getRawHandle().getBlob();
-  if (!blob)
-    return setToError("unable to find the post-elaboration module blob");
-
-  // Prepare the package state for bytecode reading.
-  auto reader = std::make_unique<PackageReaderState>(link.getContext(), blob);
-  if (failed(reader->initialize()))
-    return setToError("failed to read top-level bytecode module");
-  state->reader = std::move(reader);
-
-  // This package state is ready to be read.
+  // No bytecode is avaiable. Just signal waiters to call into
+  // `specializeFromSource`.
   state->ch.copy().emplace();
 }
 
@@ -2782,12 +2729,10 @@ public:
                           LLCL::Runtime *runtime = nullptr,
                           TargetInfoAttr target = nullptr,
                           EvaluatorExecutorFn evaluatorExecutorFn = {},
-                          ElaboratorCompileAsmFn compileAsmFn = {},
-                          PackageLinkHandlerFn packageHandlerFn = {})
+                          ElaboratorCompileAsmFn compileAsmFn = {})
       : ElaborateGeneratorsBase(options), runtime(runtime), target(target),
         evaluatorExecutorFn(std::move(evaluatorExecutorFn)),
-        compileAsmFn(std::move(compileAsmFn)),
-        packageHandlerFn(std::move(packageHandlerFn)) {}
+        compileAsmFn(std::move(compileAsmFn)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
     // Default to the host target if one was not specified
@@ -2812,12 +2757,6 @@ public:
                          const SymbolTable &, TargetInfoAttr, EmissionKind) {
         return Error("internal error: cannot compile assembly without a JIT");
       };
-    }
-
-    // Default package handler does nothing.
-    if (!packageHandlerFn) {
-      packageHandlerFn =
-          +[](PackageLinkOp, TargetInfoAttr) { return PackageArchiveAttr(); };
     }
     return success();
   }
@@ -2875,8 +2814,7 @@ public:
                          EnvAttr::get(DictionaryAttr::get(&getContext())));
     }
 
-    ElaboratorCallbacks callbacks{evaluatorExecutorFn, compileAsmFn,
-                                  packageHandlerFn};
+    ElaboratorCallbacks callbacks{evaluatorExecutorFn, compileAsmFn};
     ElaborateGeneratorsOptions config{enableSearch, allowMultiplePrimaryImpls,
                                       maxDepth, elaborateDebugInfo,
                                       diagAllFailures};
@@ -2894,8 +2832,6 @@ private:
   EvaluatorExecutorFn evaluatorExecutorFn;
   /// The functor used to compile a module to assembly.
   ElaboratorCompileAsmFn compileAsmFn;
-  /// The functor used to on-demand compile a package.
-  PackageLinkHandlerFn packageHandlerFn;
 };
 } // namespace
 
@@ -2903,9 +2839,8 @@ std::unique_ptr<mlir::Pass>
 KGEN::createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                                 const ElaborateGeneratorsOptions &options,
                                 EvaluatorExecutorFn evaluatorExecutorFn,
-                                ElaboratorCompileAsmFn compileAsmFn,
-                                PackageLinkHandlerFn packageHandlerFn) {
+                                ElaboratorCompileAsmFn compileAsmFn) {
   return std::make_unique<ElaborateGeneratorsPass>(
       options, &runtime, target, std::move(evaluatorExecutorFn),
-      std::move(compileAsmFn), std::move(packageHandlerFn));
+      std::move(compileAsmFn));
 }

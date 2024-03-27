@@ -298,9 +298,7 @@ def LIT_PackageOp : LITOp<"package", [
     // compiled.
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
 
-    OptionalAttr<KGEN_EnvAttr>:$compiledEnv,
-    // Zero or more precompiled archives for the package.
-    KGEN_PackageArchiveArrayAttr:$archives
+    OptionalAttr<KGEN_EnvAttr>:$compiledEnv
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 
@@ -312,10 +310,7 @@ def LIT_PackageOp : LITOp<"package", [
   let builders = [
     OpBuilder<(ins "StringAttr":$name)>
   ];
-  let assemblyFormat = [{
-    $sym_name `` custom<PackageArchiveArray>($archives) attr-dict-with-keyword
-    $bodyRegion
-  }];
+  let assemblyFormat = "$sym_name attr-dict-with-keyword $bodyRegion";
   let skipDefaultBuilders = 1;
   let hasVerifier = 1;
 }

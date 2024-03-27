@@ -33,6 +33,3 @@ add_modular_unittest(
   MSupportGlobals
   test_kernels
 )
-
-add_subdirectory(KGENDialect)
-add_subdirectory(Package)

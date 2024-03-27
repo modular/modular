@@ -182,8 +182,6 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getResultParams() { return {}; }
 void PackageOp::build(OpBuilder &builder, OperationState &state,
                       StringAttr name) {
   state.addAttribute(getSymNameAttrName(state.name), name);
-  state.addAttribute(getArchivesAttrName(state.name),
-                     PackageArchiveArrayAttr::get(name.getContext(), {}));
   state.addRegion()->push_back(new Block());
 }
 

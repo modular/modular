@@ -27,29 +27,6 @@ namespace M::KGEN {
 class CompilationOptions;
 class PackageLinkOp;
 
-/// Given the symbol table of an elaborated module for a Mojo package, as well
-/// as that package's name, returns either an attribute to store the module
-/// bytecode, or an error.
-ErrorOr<DenseResourceElementsAttr>
-createElaboratedBytecodeAttr(const SymbolTable &symtab,
-                             FlatSymbolRefAttr packageName);
-
-/// Given the symbol table of an elaborated module for a Mojo package, compiles
-/// that module to a static archive, and if successful returns an archive
-/// attribute. If unsuccessful, returns an error.
-ErrorOr<PackageArchiveAttr> createPackageArchive(
-    const SymbolTable &symtab, const ExportMap &exportedSymbols,
-    TargetInfoAttr targetInfo, DenseResourceElementsAttr elaboratedBytecode,
-    const CompilationOptions &compileOptions, LLCL::Runtime &runtime);
-
-/// Loads the serialized MLIR bytecode representing a pre-elaborated module for
-/// package off of the given `packageLink` op, elaborates it, and generates a
-/// static archive. If successful, an archive will be set on the given op.
-ErrorOr<PackageArchiveAttr>
-loadAndElaborateBytecode(PackageLinkOp packageLink, TargetInfoAttr targetInfo,
-                         const CompilationOptions &compileOptions,
-                         LLCL::Runtime &runtime);
-
 /// Loads the serialized MLIR bytecode representing a post-parser module in
 /// `bytecodeAttr`, and prepare to link it directly into another module. Returns
 /// the module if successful, or an error.

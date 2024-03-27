@@ -189,17 +189,6 @@ def ExportKindAttr : DialectAttribute<(attr
   EnumAttr<"ExportKind">:$value
 )>;
 
-def PackageArchiveAttr : DialectAttribute<(attr
-  ConcreteAttribute<"TargetInfoAttr">:$target,
-  ConcreteAttribute<"DenseResourceElementsAttr">:$elaboratedModule,
-  ConcreteAttribute<"DenseResourceElementsAttr">:$archive,
-  ConcreteOptionalAttribute<"LinkDependencyArrayAttr">:$dependencies
-)>;
-
-def PackageArchiveArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"PackageArchiveAttr">:$value
-)>;
-
 def StructAttr : DialectAttribute<(attr
   TypedAttrArray:$values,
   ConcreteType<"StructType">:$type
@@ -255,8 +244,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     MLIROpAttr,
     DecoratorsAttr,
     ExportKindAttr,
-    PackageArchiveAttr,
-    PackageArchiveArrayAttr,
     StructAttr,
     StructExtractAttr,
     PackAttr,

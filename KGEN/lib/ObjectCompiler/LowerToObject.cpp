@@ -20,6 +20,7 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/ExecutionEngine/Orc/ObjectFileInterface.h"
+#include "llvm/ExecutionEngine/Orc/Shared/OrcError.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -534,19 +535,18 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
     if (itf.isError())
       return itf.takeError();
 
-    // Get all new symbols defined by the object file by removing the existing
-    // symbols from the MU's symbol map.
-    SmallVector<llvm::orc::SymbolFlagsMap::value_type> existing;
-    for (auto &[symbol, flags] : mr.getSymbols()) {
-      if (itf->SymbolFlags.erase(symbol))
-        existing.emplace_back(symbol, flags);
-    }
-
     // Ask the MR to define the new symbols as materializing. The MR may reject
     // some of the symbols.
-    if (auto err = toModularErrorOr(mr.defineMaterializing(itf->SymbolFlags)))
-      return err.takeError();
-    itf->SymbolFlags.insert(existing.begin(), existing.end());
+    for (auto &[symbol, flags] : itf->SymbolFlags) {
+      if (llvm::Error err = mr.defineMaterializing({{symbol, flags}})) {
+        // We don't error out for duplicate symbols, just ignore them.
+        if (err.isA<llvm::orc::DuplicateDefinition>()) {
+          llvm::consumeError(std::move(err));
+          continue;
+        }
+        return toModularErrorOr(std::move(err));
+      }
+    }
 
     // Construct a set of all symbols in the object file that were not rejected
     // by the MR, and then delegate them from the MR.

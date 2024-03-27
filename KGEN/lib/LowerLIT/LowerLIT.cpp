@@ -452,7 +452,7 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
       package.getLoc(), package.getSymNameAttr(),
       package.getPostParseModuleAttr(),
       /*preElaborationModule=*/mlir::DenseResourceElementsAttr(),
-      package.getCompiledEnvAttr(), package.getArchivesAttr());
+      package.getCompiledEnvAttr());
 
   // Insert the link op into the symbol table right where the package was. Don't
   // erase the package op cause we need to do some cleanup still, but we do

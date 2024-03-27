@@ -167,10 +167,6 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
       [this, hackCompilationOptions](PackageLinkOp packageLink) {
         return specializePackageLinkForPreElaborationLinking(
             packageLink, typeSystem->getRuntime(), hackCompilationOptions);
-      },
-      /*packageLinkHandlerFn=*/
-      [](PackageLinkOp packageLink, TargetInfoAttr targetInfo) {
-        return PackageArchiveAttr();
       });
 
   // Create the compiler instance.

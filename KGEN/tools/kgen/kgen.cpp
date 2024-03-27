@@ -353,13 +353,8 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     return specializePackageLinkForPreElaborationLinking(packageLink, runtime,
                                                          options);
   };
-  auto packageLinkHandlerFn = [&](PackageLinkOp packageLink,
-                                  TargetInfoAttr targetInfo) {
-    return loadAndElaborateBytecode(packageLink, targetInfo,
-                                    clOptions.getCompilationOptions(), runtime);
-  };
-  if (ErrorOrSuccess err = compileLayer.add("exec", *theModule, packageGenLibFn,
-                                            packageLinkHandlerFn))
+  if (ErrorOrSuccess err =
+          compileLayer.add("exec", *theModule, packageGenLibFn))
     return failure(clOptions.reportError(err.getError()));
 
   // If all we're doing is generating a library file or elaborating, we're done
