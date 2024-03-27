@@ -63,7 +63,7 @@ struct _POpenHandle:
             res += StringRef(line, read)
 
         if line:
-            external_call["free", NoneType](line)
+            external_call["free", NoneType](line.address.bitcast[NoneType]())
 
         return res.rstrip()
 
