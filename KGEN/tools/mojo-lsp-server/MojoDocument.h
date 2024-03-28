@@ -110,6 +110,12 @@ public:
     return isDocumentParsed.copy();
   }
 
+  /// Return a chain that will be ready when currently scheduled tasks are done.
+  AnyAsyncValueRef getQuiescentChain() {
+    std::lock_guard lk(isDocumentParsedMutex);
+    return isQuiescent.copy();
+  }
+
   //===--------------------------------------------------------------------===//
   // RTTI Utilities
   //===--------------------------------------------------------------------===//
@@ -296,12 +302,19 @@ private:
   /// Mark the current document as being finished parsing.
   void markDocumentParsed();
 
+  /// Get a new chain for a new task to mark when finished.
+  AsyncValueRef<Chain> newTaskChain();
+
   /// Start a task that depends on the document being parsed.
   template <typename FnT>
   void startTaskAfterParsing(FnT &&fn) {
-    isDocumentParsed.andThenAsync(
-        [doc = RCRef<MojoDocument>::copy(this),
-         fn = std::forward<FnT>(fn)]() mutable { fn(*doc); });
+    AsyncValueRef<Chain> done = newTaskChain();
+    isDocumentParsed.andThenAsync([doc = RCRef<MojoDocument>::copy(this),
+                                   fn = std::forward<FnT>(fn),
+                                   done = std::move(done)]() mutable {
+      fn(*doc);
+      std::move(done).emplace();
+    });
   }
 
   //===--------------------------------------------------------------------===//
@@ -379,8 +392,10 @@ private:
   /// The following fields are only available after the document has been
   /// parsed, when `isDocumentParsed` is ready.
 
-  /// An async value readied when the document is parsed.
+  /// An async value readied when the document is parsed, and one that is
+  /// signaled when all asynchronous jobs are completed.
   AsyncValueRef<Chain> isDocumentParsed;
+  AsyncValueRef<Chain> isQuiescent;
   std::mutex isDocumentParsedMutex;
 
   /// A set of fixits for diagnostics emitted for the current version of the

@@ -18,6 +18,7 @@ add_modular_tool(mojo-lsp-server
   LLCLRuntimeGlobals
   MArchTarget
   MSupportGlobals
+  MSupportInit
   MojoParser
   MojoTooling
   MLIRLspServerSupportLib

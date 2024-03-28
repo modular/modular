@@ -22,6 +22,8 @@
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "SemanticTokens.h"
+#include "Support/Context.h"
+#include "Support/Init/Init.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/ReferenceCounted.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -592,7 +594,8 @@ MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            ArrayRef<std::string> includeDirs)
     : kind(kind), uris(uris), version(version),
       sendDiagnosticsFn(sendDiagnosticsFn), runtime(runtime),
-      isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)) {
+      isDocumentParsed(AsyncValueRef<Chain>::allocate(runtime)),
+      isQuiescent(runtime.getReadyChain().copy()) {
   // Add the parent directory of the main uri as an available include directory.
   std::string parentDir =
       std::filesystem::path(uris[0].file().str()).parent_path().string();
@@ -744,6 +747,25 @@ void MojoDocument::markDocumentParsed() {
   std::lock_guard<std::mutex> lock(isDocumentParsedMutex);
   if (!isDocumentParsed.isReady())
     isDocumentParsed.copy().emplace();
+}
+
+AsyncValueRef<Chain> MojoDocument::newTaskChain() {
+  std::lock_guard<std::mutex> lock(isDocumentParsedMutex);
+  // Join these two tasks into one chain.
+  AsyncValueRef<Chain> n =
+      AsyncValueRef<Chain>::allocate(isQuiescent.getRuntime());
+  AsyncValueRef<Chain> rval =
+      AsyncValueRef<Chain>::allocate(isQuiescent.getRuntime());
+  llvm::SmallVector<AnyAsyncValueRef> refs;
+  refs.emplace_back(std::move(isQuiescent));
+  refs.emplace_back(rval.copy());
+  LLCL::andThenSyncCopying(
+      llvm::ArrayRef<AnyAsyncValueRef>(refs),
+      [n = n.copy()](llvm::ArrayRef<AnyAsyncValueRef> elems) mutable {
+        std::move(n).emplace();
+      });
+  isQuiescent = std::move(n);
+  return rval;
 }
 
 void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
@@ -1920,37 +1942,42 @@ MojoNotebookDocument::onSignatureHelpSyncImpl(SMLoc loc) {
 //===----------------------------------------------------------------------===//
 
 struct MojoServer::Impl {
-  Impl(bool singleThreaded, bool waitOnShutdown,
-       SendDiagnosticsFn sendDiagnosticsFn, ArrayRef<std::string> includeDirs)
-      : runtime(
-            LLCL::createUniqueRuntime(LLCL::RuntimeOptions()
-                                          .withSingleThreaded(singleThreaded)
-                                          .withMainWillNotDonate())),
-        lspTelemetryContext(
-            runtime->context->emplace<M::Telemetry::TelemetryContext>()),
+  Impl(ContextRef ctx, bool waitOnShutdown, SendDiagnosticsFn sendDiagnosticsFn,
+       ArrayRef<std::string> includeDirs)
+      : ctx(ctx.copy()),
+        lspTelemetryContext(*ctx->get<M::Telemetry::TelemetryContext>()),
         waitOnShutdown(waitOnShutdown),
         sendDiagnosticsFn(std::move(sendDiagnosticsFn)),
         includeDirs(includeDirs) {}
 
   /// Begin the shutdown process for the server.
   void shutdown() {
-    if (isShuttingDown())
+    if (shuttingDown.exchange(true))
       return;
+
     // Invalidate all of the current documents if we aren't waiting for
-    // shutdown, otherwise wait for them to parse and resolve actions.
-    for (auto &it : files) {
+    // shutdown, otherwise wait for them to parse and resolve actions. The
+    // document ready chain is set and all related notifications are fired
+    // synchronously.
+    for (auto &[filename, file] : files) {
       if (waitOnShutdown)
-        LLCL::await(it.second->getDocumentReadyChain());
+        LLCL::await(file->getDocumentReadyChain());
       else
-        it.second->invalidate();
+        file->invalidate();
     }
+
+    // We always need to block on outstanding tasks, they may simple have been
+    // cancelled above and we can expect them to finish quickly.
+    for (auto &[filename, file] : files) {
+      LLCL::await(file->getQuiescentChain());
+    }
+
     files.clear();
     notebookCellToFile.clear();
-    runtime.reset();
   }
 
   /// Return if the server is shutting down.
-  bool isShuttingDown() const { return !runtime; }
+  bool isShuttingDown() const { return shuttingDown; }
 
   /// Retrieve the document that matches completely the given filename. Return
   /// `nullptr` if no document is found.
@@ -1963,11 +1990,15 @@ struct MojoServer::Impl {
                                           : MojoDocumentRef();
   }
 
-  /// The runtime used when processing files.
-  std::unique_ptr<LLCL::Runtime> runtime;
+  /// The global context.
+  ContextRef ctx;
 
   /// Manages the telemetry instance use to record metrics and events.
   LSPTelemetryContext lspTelemetryContext;
+
+  /// Records whether we are shutting down. Note that we can't clear
+  /// the context, as this may teardown the associated telemetry.
+  std::atomic<bool> shuttingDown = false;
 
   /// A flag indicating if the server should not invalidate requests on
   /// shutdown, and instead wait for them to complete.
@@ -1994,18 +2025,35 @@ struct MojoServer::Impl {
 // MojoServer
 //===----------------------------------------------------------------------===//
 
-MojoServer::MojoServer(bool singleThreaded, bool waitOnShutdown,
-                       SendDiagnosticsFn sendDiagnosticsFn,
-                       ArrayRef<std::string> includeDirs)
-    : impl(std::make_unique<Impl>(singleThreaded, waitOnShutdown,
-                                  std::move(sendDiagnosticsFn), includeDirs)) {}
+MojoServer::MojoServer(std::unique_ptr<Impl> &&impl) : impl(std::move(impl)) {}
+MojoServer::MojoServer(MojoServer &&) = default;
+
+ErrorOr<MojoServer> MojoServer::create(bool singleThreaded, bool waitOnShutdown,
+                                       SendDiagnosticsFn sendDiagnosticsFn,
+                                       ArrayRef<std::string> includeDirs) {
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo-lsp-server",
+      Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()
+                                             .withSingleThreaded(singleThreaded)
+                                             .withMainWillNotDonate()));
+  if (ctxOr.isError())
+    return ctxOr.takeError();
+  auto impl = std::make_unique<Impl>(ctxOr->copy(), waitOnShutdown,
+                                     std::move(sendDiagnosticsFn), includeDirs);
+  MojoServer server(std::move(impl));
+  return server;
+}
+
 MojoServer::~MojoServer() { shutdown(); }
 
 LSPTelemetryContext &MojoServer::getLSPTelemetryContext() {
   return impl->lspTelemetryContext;
 }
 
-void MojoServer::shutdown() { impl->shutdown(); }
+void MojoServer::shutdown() {
+  if (impl)
+    impl->shutdown();
+}
 
 //===----------------------------------------------------------------------===//
 // Document Management
@@ -2018,7 +2066,8 @@ void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
   auto [it, _] = impl->files.try_emplace(uri.file(), MojoDocumentRef());
 
   // If a document already exists, invalidate that version.
-  AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(*impl->runtime);
+  LLCL::Runtime &runtime = *impl->ctx->get<LLCL::Runtime>();
+  AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(runtime);
   if (it->second) {
     it->second->invalidate();
 
@@ -2027,9 +2076,9 @@ void MojoServer::addDocument(const lsp::URIForFile &uri, std::string &&contents,
   }
 
   // Create a new document.
-  it->second = MojoTextDocumentRef::create(
-      uri, std::move(contents), version, impl->sendDiagnosticsFn,
-      *impl->runtime, std::move(chain), impl->includeDirs);
+  it->second = MojoTextDocumentRef::create(uri, std::move(contents), version,
+                                           impl->sendDiagnosticsFn, runtime,
+                                           std::move(chain), impl->includeDirs);
 }
 
 void MojoServer::updateDocument(
@@ -2086,7 +2135,8 @@ void MojoServer::addNotebookDocument(
   MojoDocumentRef &file = impl->files[uri.file()];
 
   // If a document already exists, invalidate that version.
-  AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(*impl->runtime);
+  LLCL::Runtime &runtime = *impl->ctx->get<LLCL::Runtime>();
+  AnyAsyncValueRef chain = AsyncValueRef<Chain>::createReady(runtime);
   if (file) {
     file->invalidate();
 
@@ -2100,9 +2150,9 @@ void MojoServer::addNotebookDocument(
     docURIs.push_back(cell.uri);
 
   // Create a new document.
-  file = MojoNotebookDocumentRef::create(
-      docURIs, version, cells, cellDocuments, impl->sendDiagnosticsFn,
-      *impl->runtime, std::move(chain), impl->includeDirs);
+  file = MojoNotebookDocumentRef::create(docURIs, version, cells, cellDocuments,
+                                         impl->sendDiagnosticsFn, runtime,
+                                         std::move(chain), impl->includeDirs);
   for (const lsp::TextDocumentItem &cell : cellDocuments)
     impl->notebookCellToFile[cell.uri.file()] = file.copy();
 }
