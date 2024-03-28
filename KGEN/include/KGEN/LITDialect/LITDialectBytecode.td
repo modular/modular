@@ -40,6 +40,10 @@ def TraitType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol
 )>;
 
+def AnyTraitType : DialectType<(type
+  ConcreteAttribute<"SymbolRefAttr">:$symbol
+)>;
+
 def LifetimeType : DialectType<(type
   TypedAttr:$isMutable
 )>;

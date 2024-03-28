@@ -201,10 +201,10 @@ def LIT_AnyStructType : LITType<"AnyStruct", "anystruct",
     [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Type of a struct value.";
   let description = [{
-    The `!lit.anystruct` type represents the type of a type value (tongue
-    twister). The meta-type stores the prototype of a type value in its type so
-    that member inspection can be performed through the type system during
-    member lookup or implicit conversions to other meta-types.
+    The `!lit.anystruct` type represents the metatype of a struct, e.g.
+    `typeof(Int)`.  The meta-type stores the prototype of a type value in its
+    type so that member inspection can be performed through the type system
+    during member lookup or implicit conversions to other meta-types.
 
     Example:
 
@@ -288,6 +288,68 @@ def LIT_TraitType: LITType<"Trait", "trait",
   ];
 
   let extraClassDeclaration = [{
+    /// Return whether the type is a metatype.
+    bool isMetaType() { return true; }
+
+    /// Return the metatype for this this trait as a value.
+    AnyTraitType getMetaType();
+
+    /// Return a TypeConstantAttr for a reference to this trait as a value, e.g.
+    /// uttering 'Stringable' in code.
+    TypedAttr getPValue();
+  }];
+}
+
+
+//===----------------------------------------------------------------------===//
+// AnyTraitType
+//===----------------------------------------------------------------------===//
+
+def LIT_AnyTraitType : LITType<"AnyTrait", "anytrait",
+    [DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  let summary = "Type of a trait value.";
+  let description = [{
+    The `!lit.anytrait` type represents the type of a trait value, e.g. the
+    result of `typeof(Stringable)`. The meta-type stores the prototype of a type
+    value in its type so that member inspection can be performed through the type system during
+    member lookup or implicit conversions to other meta-types.
+
+    Example:
+
+    ```mlir
+    !lit.anytrait<@Stringable>
+    ```
+
+    The meta-type is propagated through values by attaching itself to type
+    values.
+
+    Example:
+
+    ```mlir
+    // Concrete type value for 'Int' converted for use as Stringable value.
+    #kgen.concretetype.constant<!lit.declref<@Int>>
+      : !lit.anytrait<@Stringable>
+
+    // Parametric type value.
+    #kgen.param.decl.ref<"some_type"> : !lit.anytrait<@Stringable>
+    ```
+  }];
+
+  let parameters = (ins "SymbolAttr":$value);
+  let assemblyFormat = "`<` $value `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
+      return get(symbol.getContext(), SymbolAttr::get(symbol));
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    SymbolRefAttr getSymbol() const;
+
+    /// Return the trait type this metatype corresponds to.
+    TraitType getTraitType();
+
     /// Return whether the type is a metatype.
     bool isMetaType() { return true; }
   }];

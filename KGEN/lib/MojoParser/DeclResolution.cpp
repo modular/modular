@@ -2114,8 +2114,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   }
 
   // Insert the implicit trait parameters:
-  // - MT: an TypeType which points to the struct that implements this
-  // trait.
+  // - MT: an TypeType which points to the struct that implements this trait.
   // - T: a ParamRef to MT which is the type of MT.
   // TODO: build AnyType instead
   auto mt = ParamDeclAttr::get(decl.mangleParamName("MT"),

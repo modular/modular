@@ -34,7 +34,8 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
   // `!kgen.anytype`.
   // FIXME(traits): Binding a Mojo type to an MLIR type is a hack. We should
   // forbid this when traits are fully operational.
-  if (isa<AnyStructType, TraitType>(fromType) && isa<TypeType>(toType))
+  if (isa<AnyStructType, AnyTraitType, TraitType>(fromType) &&
+      isa<TypeType>(toType))
     return true;
 
   // Two types can be converted to each other if their metatypes can be as well.

@@ -354,7 +354,7 @@ Type LITTypeLowerer::replace(Type type) {
     result = processPointerType(ptr);
   } else if (auto ref = dyn_cast<DeclRefType>(type)) {
     result = processDeclRefType(ref);
-  } else if (isa<AnyStructType, TraitType>(type)) {
+  } else if (isa<AnyStructType, AnyTraitType, TraitType>(type)) {
     // Erase metatypes and reg-passable anytypes. Passability information is
     // encoded elsewhere so this won't be needed.
     result = anyRegTypeType;
