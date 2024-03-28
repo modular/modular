@@ -221,7 +221,7 @@ struct VariadicListMem[
     lifetime: __mlir_type[`!lit.lifetime<`, elt_is_mutable, `>`],
 ]:
     alias mlir_ref_type = __mlir_type[
-        `!lit.ref<:`, AnyType, ` `, element_type, `, `, lifetime, `, 0>`
+        `!lit.ref<`, element_type, `, `, lifetime, `, 0>`
     ]
 
     fn __init__(
