@@ -51,6 +51,21 @@ def mo_custom_ops_model_path(modular_path: Path) -> Path:
 
 
 @pytest.fixture
+def sdk_test_inputs_path(modular_path: Path) -> Path:
+    return modular_path / "SDK" / "integration-test" / "EngineAPI" / "Inputs"
+
+
+@pytest.fixture
+def relu_onnx_model_path(sdk_test_inputs_path: Path) -> Path:
+    return sdk_test_inputs_path / "relu3x100x100.onnx"
+
+
+@pytest.fixture
+def relu_torchscript_model_path(sdk_test_inputs_path: Path) -> Path:
+    return sdk_test_inputs_path / "relu3x100x100.torchscript"
+
+
+@pytest.fixture
 def custom_ops_package_path(request) -> Path:
     return Path(request.config.getoption("--custom-ops-path"))
 
@@ -77,6 +92,29 @@ def test_execute_success(mo_model_path: Path):
         output["output"],
         np.array([4.0, 2.0, -5.0, 3.0, 6.0]).astype(np.float32),
     )
+
+
+# Skip this test if we're running the GPU flow, which doesn't
+# have libmtorch.so yet.
+@pytest.mark.skipif(
+    run("is-cuda-available").returncode == 0,
+    reason="Pytorch models are not supported on GPU",
+)
+def test_execute_multi_framework(
+    relu_onnx_model_path: Path, relu_torchscript_model_path: Path
+):
+    session = me.InferenceSession()
+    trch_options = me.TorchLoadOptions()
+    trch_options.input_specs = [
+        me.TorchInputSpec(shape=[1, 3, 100, 100], dtype=me.DType.float32)
+    ]
+    onnx_model = session.load(relu_onnx_model_path)
+    trch_model = session.load(relu_torchscript_model_path, trch_options)
+    np_input = np.ones((1, 3, 100, 100))
+    np_input[:, 1, :, :] *= -1
+    onnx_output = onnx_model.execute(x=np_input)["result0"]
+    trch_output = trch_model.execute(x=np_input)["result0"]
+    assert np.allclose(onnx_output, trch_output)
 
 
 def test_execute_gpu(mo_model_path: Path):
