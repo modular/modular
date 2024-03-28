@@ -279,11 +279,16 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         if len(data) == 1:
             var data0 = data[0]
 
-            @parameter
-            fn splat_val[simd_width: Int](idx: Int):
-                ptr.store[width=simd_width](idx, data0)
+            if data0:
 
-            vectorize[splat_val, simdwidthof[dtype]()](num_elements)
+                @parameter
+                fn splat_val[simd_width: Int](idx: Int):
+                    ptr.store[width=simd_width](idx, data0)
+
+                vectorize[splat_val, simdwidthof[dtype]()](num_elements)
+
+            else:
+                memset_zero(ptr, num_elements)
         else:
             for i in range(len(data)):
                 ptr[i] = data[i]
