@@ -11,7 +11,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CompilerRT/Registration.h"
-#include "LLCL/Runtime/Runtime.h"
+#include "Support/Context.h"
+#include "Support/Init/Init.h"
 #include "llvm/Support/raw_ostream.h"
 
 #if defined(_WIN32)
@@ -71,12 +72,24 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine,
 #else
 int main() {
 #endif
-  // Create a runtime for the entry-point. Mojo allocators assume that a global
-  // runtime already exists for simplicity, so we must create one at the top
-  // level here.
-  auto rt = LLCL::createUniqueRuntime(LLCL::RuntimeOptions());
   forceLinkExportedSymbols();
   forceLinkCompilerRT();
   KGEN_CompilerRT_Python_SetPythonPath();
+
+  // Create our context for execution.
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo-repl", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+  if (ctxOr.isError()) {
+    llvm::errs() << "unable to create context: " << ctxOr.getError() << "\n";
+    return 1;
+  }
+  ContextRef ctx = std::move(*ctxOr);
+  LLCL::Runtime *runtime = ctx->get<LLCL::Runtime>();
+
+  // In order to ensure that mojo has a runtime for execution, inject
+  // a global value. Normally this would be set by Mojo during startup,
+  // but given that we are skipping that dance we can set it here.
+  KGEN_CompilerRT_InsertGlobal("Runtime", static_cast<void *>(runtime));
+
   return mojo_repl_main();
 }

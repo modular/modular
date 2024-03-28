@@ -12,6 +12,8 @@ add_modular_tool(mojo-repl-entry-point
   CUDASupportGlobals
   LLCLRuntimeGlobals
   MSupportGlobals
+  MSupport
+  MSupportInit
 )
 
 # The entry point is a win32 executable, and uses WinMain instead of main. This
