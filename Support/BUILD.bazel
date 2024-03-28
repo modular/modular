@@ -1109,3 +1109,20 @@ cc_test(
         "@com_github_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "Init",
+    srcs = [
+        "lib/Init/Init.cpp",
+    ],
+    hdrs = [
+        "include/Support/Init/Init.h",
+    ],
+    strip_include_prefix = "include",
+    deps = [
+        "//LLCL:Runtime",
+        ":Settings",
+        ":Telemetry",
+        ":CrashReporting",
+    ],
+)
