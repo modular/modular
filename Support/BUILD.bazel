@@ -11,6 +11,7 @@ cc_library(
     srcs = [
         "lib/AlignedAlloc.cpp",
         "lib/BuildInfo.cpp",
+        "lib/Config.cpp",
         "lib/Error.cpp",
         "lib/ErrorOr.cpp",
         "lib/Process.cpp",
@@ -24,6 +25,7 @@ cc_library(
         "include/Support/Binary.h",
         "include/Support/BuildInfo.h",
         "include/Support/CommandLine.h",
+        "include/Support/Config.h",
         "include/Support/Context.h",
         "include/Support/Error.h",
         "include/Support/ErrorOr.h",
@@ -49,6 +51,7 @@ cc_library(
     strip_include_prefix = "include",
     deps = [
         "//Config",
+        "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:Support",
     ],
 )
@@ -1138,13 +1141,24 @@ cc_binary(
 
 td_library(
     name = "DriverCommandTdFiles",
-    srcs = glob([
-        "include/Support/Driver/*.td",
-    ]),
+    srcs = glob(
+        [
+            "include/Support/Driver/*.td",
+        ],
+        exclude = [
+            "include/Support/Driver/OptTable.inc",
+        ],
+    ),
     includes = ["include"],
     deps = [
         "@llvm-project//llvm:OptParserTdFiles",
     ],
+)
+
+td_library(
+    name = "OptTableTdFiles",
+    srcs = ["include/Support/Driver/OptTable.inc"],
+    includes = ["include"],
 )
 
 cc_library(
