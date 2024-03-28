@@ -10,6 +10,7 @@ cc_binary(
         "//Cache",
         "//LLCL:Runtime",
         "//Support:CommonCLOptions",
+        "//Support:Init",
         "@llvm-project//mlir:Support",
     ],
 )
