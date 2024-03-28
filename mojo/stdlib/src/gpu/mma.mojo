@@ -15,7 +15,7 @@ fn _split(
     x: SIMD,
 ) -> StaticTuple[SIMD[x.type, x.size // 2], 2]:
     return StaticTuple[SIMD[x.type, x.size // 2], 2](
-        x.slice[x.size // 2](), x.slice[x.size // 2](x.size // 2)
+        x.slice[x.size // 2](), x.slice[x.size // 2, offset = x.size // 2]()
     )
 
 
