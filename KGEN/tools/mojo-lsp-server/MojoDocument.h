@@ -112,7 +112,7 @@ public:
 
   /// Return a chain that will be ready when currently scheduled tasks are done.
   AnyAsyncValueRef getQuiescentChain() {
-    std::lock_guard lk(isDocumentParsedMutex);
+    std::lock_guard<std::mutex> lk(isDocumentParsedMutex);
     return isQuiescent.copy();
   }
 
