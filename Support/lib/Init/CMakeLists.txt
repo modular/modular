@@ -9,7 +9,6 @@ add_modular_library(MSupportInit
 
   LINK_LIBS PUBLIC
   LLCLRuntime
-  LLCLRuntimeGlobals
   MCrashReporting
   MSupport
   MSupportEntitlements

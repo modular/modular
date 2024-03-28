@@ -17,14 +17,15 @@ using namespace M;
 //===----------------------------------------------------------------------===//
 
 Settings::Settings(Config &&cfg, EntitlementStore &&store)
-    : config(std::move(cfg)), entitlementStore(std::move(store)) {
+    : config(std::move(cfg)), entitlementStore(std::move(store)),
+      settings(std::make_unique<impl>()) {
   // Set the user ID first up. This should come from the entitlement store,
   // not from the config.
   auto userIDOr = entitlementStore.getUserID();
   // TODO(#27787): This should become a hard error if the entitlement store
   //               doesn't have a value once certificates are rolled-out.
   if (!userIDOr.isError())
-    settings.try_emplace("user.id", Setting{*userIDOr});
+    settings->map.try_emplace("user.id", Setting{*userIDOr});
 
   // Populate any env overrides we might have.
   config.populateEnvOverrides();
@@ -34,7 +35,7 @@ Settings::Settings(Config &&cfg, EntitlementStore &&store)
   // to be read greedily, but the entitlements we can populate lazily as
   // they're requested.
   for (const auto &[k, v] : config.getAllValues())
-    settings.try_emplace(k, Setting{v});
+    settings->map.try_emplace(k, Setting{v});
 }
 
 static ErrorOr<EntitlementStore> openEntitlementStore(HTTPContextRef httpCtx,
@@ -92,10 +93,11 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
 ErrorOrSuccess
 Settings::refresh(HTTPContextRef httpCtx,
                   Settings::RefreshPolicy shouldRefreshEntitlements) {
+  std::lock_guard lk(settings->mu);
 
   // Clear out all settings - this is crucial because any stored references to
   // entitlements or configs may be invalidated.
-  settings.clear();
+  settings->map.clear();
 
   // Populate any env overrides we might have.
   config.populateEnvOverrides();
@@ -103,7 +105,7 @@ Settings::refresh(HTTPContextRef httpCtx,
   // Refresh the config values. This will re-read any env variables if
   // necessary.
   for (const auto &[k, v] : config.getAllValues())
-    settings.try_emplace(k, Setting{v});
+    settings->map.try_emplace(k, Setting{v});
 
   // Simply refresh the entitlement store - it has all the logic necessary to
   // do that internally.
@@ -112,37 +114,50 @@ Settings::refresh(HTTPContextRef httpCtx,
 }
 
 const Setting *Settings::get(StringRef key) {
+  std::lock_guard lk(settings->mu);
+
   // Try to find the setting in the config map.
-  auto found = settings.find(key);
-  if (found != settings.end())
+  auto found = settings->map.find(key);
+  if (found != settings->map.end())
     return &found->second;
 
   // Try to look it up in the entitlement store if we didn't find it already.
   if (auto *e = entitlementStore.getEntitlement(key)) {
     // Cache the entitlement in the settings map.
-    auto [iter, _] = settings.try_emplace(key, Setting{e});
+    auto [iter, _] = settings->map.try_emplace(key, Setting{e});
     return &iter->second;
   }
 
-  // Didn't find anything, return nullptr.
+  // Finally, this may be in the environment and something that we don't
+  // know about already. In that case, we populate the setting as well.
+  auto value = config.getValue(key);
+  if (!value.empty()) {
+    auto [iter, _] = settings->map.try_emplace(key, Setting{value});
+    return &iter->second;
+  }
+
   return nullptr;
 }
 
 bool Settings::set(StringRef key, StringRef value) {
+  std::lock_guard lk(settings->mu);
+
   // Set the same value to appear both internally and within the
   // configuration. First we must assert that either: a) the value doesn't
   // exist locally, or b) is it a configuration value, not an entitlement.
-  auto found = settings.find(key);
-  if (found != settings.end()) {
+  auto found = settings->map.find(key);
+  if (found != settings->map.end()) {
     if (!llvm::isa_and_present<StringRef>(&found->second))
       return false; // Is not a configuration value.
   }
 
   // Replace or insert this false.
   config.setValue(key, value);
-  settings.try_emplace(key, Setting{value});
+  settings->map.try_emplace(key, Setting{value});
   return true;
 }
+
+bool Settings::clear(StringRef key) { return set(key, ""); }
 
 ErrorOrSuccess Settings::flush() { return config.flush(); }
 
