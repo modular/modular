@@ -1,4 +1,5 @@
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -310,31 +311,21 @@ cc_test(
     ],
 )
 
-genrule(
+expand_root_cert_inc(
     name = "CertificatesHeader",
-    srcs = select({
-        "//:ProdBuild": glob([
-            "lib/Entitlements/RootCertificates/RootCert.inc.in",
-            "lib/Entitlements/RootCertificates/prod/*",
-        ]),
-        "//:DevBuild": glob([
-            "lib/Entitlements/RootCertificates/RootCert.inc.in",
-            "lib/Entitlements/RootCertificates/dev/*",
-        ]),
+    cert_pem = select({
+        "//:ProdBuild": "lib/Entitlements/RootCertificates/prod/cert.pem",
+        "//:DevBuild": "lib/Entitlements/RootCertificates/local/cert.pem",
     }),
-    outs = ["RootCert.inc"],
-    # FIXME: This will be broken when we actually have prod certificates, this
-    # logic is complex enough that we should probably do it properly and encode
-    # it into a Starlark rule. It should also go in its own directory. The rule
-    # to support this is quite trivial with `actions.expand_template` [1], we
-    # would just need to enumerate and read the inputs properly.
-    # [1] https://github.com/bazelbuild/examples/blob/main/rules/expand_template/hello.bzl
-    cmd = "cert=$$(cat $$(echo $(SRCS) | tr ' ' '\\n' | grep /cert.pem) | sed -e 's/[\\&]/\\&/g' | awk '{printf \"%s\\\\n\", $$0}') && " +
-          "key=$$(cat $$(echo $(SRCS) | tr ' ' '\\n' | grep /key.pem) | sed -e 's/[\\&]/\\&/g' | awk '{printf \"%s\\\\n\", $$0}') && " +
-          "cat $(location lib/Entitlements/RootCertificates/RootCert.inc.in) | " +
-          "sed -e \"s|@CERTIFICATE_PEM@|$${cert}|g\" | " +
-          "sed -e \"s|@KEY_PEM@|$${key}|g\" | " +
-          "cat > $@",
+    endpoint = select({
+        "//:ProdBuild": "lib/Entitlements/RootCertificates/prod/endpoint.txt",
+        "//:DevBuild": "lib/Entitlements/RootCertificates/local/endpoint.txt",
+    }),
+    key_pem = select({
+        "//:ProdBuild": "lib/Entitlements/RootCertificates/prod/key.pem",
+        "//:DevBuild": "lib/Entitlements/RootCertificates/local/key.pem",
+    }),
+    source = "lib/Entitlements/RootCertificates/RootCert.inc.in",
 )
 
 cc_library(
