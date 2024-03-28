@@ -1,4 +1,6 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -538,7 +540,7 @@ gentbl_cc_library(
 )
 
 cc_library(
-    name = "MOGGreElab",
+    name = "MOGGPreElab",
     srcs = glob([
         "lib/MOGGPreElab/*.cpp",
         "lib/MOGGPreElab/*.h",
@@ -600,6 +602,19 @@ cc_library(
         "//Support:DebugInfoDialect",
         "//Support:IPInt",
         "//Support:IPRational",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_library(
+    name = "HLCFDialectAnalysis",
+    srcs = glob(["lib/HLCFDialect/Analysis/*.cpp"]),
+    hdrs = glob([
+        "include/KGEN/HLCFDialect/Analysis/*.h",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":HLCFDialect",
         "@llvm-project//mlir:IR",
     ],
 )
@@ -813,6 +828,7 @@ cc_library(
         ":LITTypesIncGen",
         ":POPDialectIncGen",
         ":POPEnumsIncGen",
+        ":POPIncGen",
         ":POPTypesIncGen",
         "//Support:Base",
         "//Support:DebugInfoDialect",
@@ -1041,10 +1057,33 @@ cc_library(
 # For now, just hard code some values.
 genrule(
     name = "kgen_version_gen",
-    outs = ["include/KGEN/KGENVersion/KGENVersion.h"],
+    outs = ["KGENVersion.h"],
     # TODO: Properly generate a version using shared variables. See Version.h.in
     #       for all the macro magic to generate versions.
     cmd = "echo '#define KGEN_VERSION_STRING \"1.0.0\"' >> $@\n",
+)
+
+cc_library(
+    name = "VersionHeader",
+    hdrs = [":kgen_version_gen"],
+    include_prefix = "KGEN/KGENVersion",
+)
+
+_TOOL_COMMON_HEADERS = [
+    "include/KGEN/ToolCommon/CLOptions.h",
+    "include/KGEN/ToolCommon/CompilationOptions.h",
+    "include/KGEN/ToolCommon/KGENPasses.h",
+]
+
+# NOTE: Broken out to break circular dependencies
+cc_library(
+    name = "ToolCommonHeaders",
+    hdrs = _TOOL_COMMON_HEADERS,
+    strip_include_prefix = "include",
+    deps = [
+        ":KGENPassesIncGen",
+        "//Support:CommonCLOptions",
+    ],
 )
 
 cc_library(
@@ -1052,18 +1091,15 @@ cc_library(
     srcs = glob(["lib/Compiler/*.cpp"]),
     hdrs = glob([
         "include/KGEN/Compiler/*.h",
-    ]) + [
-        "include/KGEN/KGENVersion/KGENVersion.h",
-    ],
+    ]),
     strip_include_prefix = "include",
     deps = [
         ":KGENDialect",
         ":KGENInterfacesIncGen",
-        ":KGENPassesIncGen",
         ":KGENTypesIncGen",
-        ":ToolCommon",
-        ":kgen_version_gen",
-        "//Cache:CacheDialect",
+        ":Pipeline",
+        ":ToolCommonHeaders",
+        ":VersionHeader",
         "//Support:DebugInfoTransforms",
         "//Support:Telemetry",
         "@llvm-project//llvm:OrcJIT",
@@ -1094,11 +1130,9 @@ cc_library(
         ":KGENInterfacesIncGen",
         ":KGENPassesIncGen",
         ":KGENTypesIncGen",
-        ":ToolCommon",
-        ":kgen_version_gen",
+        ":VersionHeader",
         "//CUDASupport",
         "//CUDASupport:Globals",
-        "//Cache:CacheDialect",
         "//Support:DebugInfoTransforms",
         "//Support:Telemetry",
         "@llvm-project//llvm:OrcJIT",
@@ -1129,6 +1163,88 @@ cc_library(
 )
 
 cc_library(
+    name = "LowerLIT",
+    srcs = glob(["lib/LowerLIT/*.cpp"]),
+    hdrs = glob(["include/KGEN/LowerLIT/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":KGENDialect",
+        ":LITDialect",
+        ":ToolCommonHeaders",
+        "//Support:DebugInfoTransforms",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_library(
+    name = "KGENToLLVM",
+    srcs = glob([
+        "lib/KGENToLLVM/*.cpp",
+        "lib/KGENToLLVM/*.h",
+    ]),
+    hdrs = glob(["include/KGEN/KGENToLLVM/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":HLCFDialectAnalysis",
+        ":KGENDialect",
+        ":ToolCommon",
+        "//Support:DebugInfoTransforms",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+cc_library(
+    name = "Transforms",
+    srcs = glob(["lib/Transforms/*.cpp"]),
+    hdrs = glob(["include/KGEN/Transforms/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":HLCFDialect",
+        ":HLCFDialectAnalysis",
+        ":ToolCommonHeaders",
+        ":TransformUtils",
+        "//LLCL:Runtime",
+        "//Support:DebugInfoDialect",
+        "//Support:DebugInfoTransforms",
+        "@llvm-project//mlir:TransformUtils",
+    ],
+)
+
+cc_library(
+    name = "Elaborator",
+    srcs = glob([
+        "lib/Elaborator/*.cpp",
+        "lib/Elaborator/*.h",
+    ]),
+    hdrs = glob(["include/KGEN/Elaborator/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":KGENDialect",
+        ":LITDialect",
+        ":ToolCommonHeaders",
+        ":VersionHeader",
+        "//Cache",
+    ],
+)
+
+cc_library(
+    name = "Pipeline",
+    srcs = glob(["lib/Pipeline/*.cpp"]),
+    hdrs = glob(["include/KGEN/Pipeline/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Elaborator",
+        ":KGENPassesIncGen",
+        ":LowerLIT",
+        ":MOGGPreElab",
+        ":Transforms",
+        "//Support:DebugInfoToLLVM",
+        "//Support:DebugInfoTransforms",
+        "@llvm-project//mlir:TransformUtils",
+    ],
+)
+
+cc_library(
     name = "TransformUtils",
     srcs = glob(["lib/TransformUtils/*.cpp"]),
     hdrs = glob(["include/KGEN/TransformUtils/*.h"]),
@@ -1143,29 +1259,425 @@ cc_library(
 )
 
 cc_library(
-    name = "ToolCommon",
+    name = "ObjectCompiler",
     srcs = glob([
-        "lib/ToolCommon/*.cpp",
-        # TODO: Package should be a separate library but has a circular dependency
+        "lib/ObjectCompiler/*.cpp",
+        "lib/ObjectCompiler/*.h",
+    ]),
+    hdrs = glob(["include/KGEN/ObjectCompiler/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Compiler",
+        ":KGENToLLVM",
+        ":Pipeline",
+        "@llvm-project//mlir:BytecodeWriter",
+    ],
+)
+
+cc_library(
+    name = "MojoParser",
+    srcs = glob([
+        "lib/MojoParser/*.cpp",
+        "lib/MojoParser/*.h",
+    ]),
+    hdrs = glob([
+        "include/KGEN/MojoParser/*.h",
+        "include/KGEN/MojoParser/*.def",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Compiler",
+        ":ToolCommon",
+    ],
+)
+
+cc_library(
+    name = "MojoTooling",
+    srcs = glob([
+        "lib/MojoTooling/*.cpp",
+        "lib/MojoTooling/*.h",
+    ]),
+    hdrs = glob([
+        "include/KGEN/MojoTooling/*.h",
+        "include/KGEN/MojoTooling/*.def",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":MojoParser",
+    ],
+)
+
+cc_library(
+    name = "MojoTesting",
+    srcs = glob([
+        "lib/MojoTesting/*.cpp",
+        "lib/MojoTesting/*.h",
+    ]),
+    hdrs = glob([
+        "include/KGEN/MojoTesting/*.h",
+        "include/KGEN/MojoTesting/*.def",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":MojoParser",
+        ":MojoTooling",
+        ":ToolCommon",
+        "@llvm-project//mlir:MlirLspServerSupportLib",
+    ],
+)
+
+genrule(
+    name = "FakeCASIDHeadersGen",
+    outs = [
+        "COMPILERRTCASID.h",
+        "ORCCASID.h",
+    ],
+    cmd = """
+touch $(location :ORCCASID.h)
+echo '
+
+#ifndef BAZEL_CAS_SIDESTEP
+#define BAZEL_CAS_SIDESTEP
+#include "llvm/ADT/StringRef.h"
+
+namespace M::CASID {
+
+inline constexpr llvm::StringLiteral kCompilerRT = "bazel not support this yet";
+inline constexpr llvm::StringLiteral kOrcRT = "bazel not support this yet";
+}  // namespace M::CASID
+
+#endif
+' > $(location :COMPILERRTCASID.h)
+""",
+)
+
+cc_library(
+    name = "FakeCASIDHeaders",
+    hdrs = [":FakeCASIDHeadersGen"],
+    include_prefix = "KGEN/ExecutionEngine",
+)
+
+cc_library(
+    name = "ExecutionEngine",
+    srcs = glob([
+        "lib/ExecutionEngine/*.cpp",
+        "lib/ExecutionEngine/*.h",
+    ]),
+    hdrs = glob([
+        "include/KGEN/ExecutionEngine/*.h",
+        "include/KGEN/ExecutionEngine/*.def",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":FakeCASIDHeaders",
+        ":MojoParser",
+        ":MojoTooling",
+        ":VersionHeader",
+        "@llvm-project//llvm:OrcDebugging",
+        "@llvm-project//mlir:MlirLspServerSupportLib",
+    ],
+)
+
+cc_library(
+    name = "Package",
+    srcs = glob([
         "lib/Package/*.cpp",
     ]),
     hdrs = glob([
-        "include/KGEN/ToolCommon/*.h",
-        "include/KGEN/Compiler/*.h",
         "include/KGEN/Package/*.h",
     ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Compiler",
+        ":KGENDialect",
+        "@llvm-project//mlir:BytecodeWriter",
+    ],
+)
+
+cc_library(
+    name = "ToolCommon",
+    srcs = glob([
+        "lib/ToolCommon/**/*.cpp",
+    ]),
+    hdrs = glob(
+        [
+            "include/KGEN/ToolCommon/*.h",
+            "include/KGEN/Compiler/*.h",
+        ],
+        exclude = _TOOL_COMMON_HEADERS,
+    ),
     strip_include_prefix = "include",
     deps = [
         ":HLCFDialect",
         ":KGENPassesIncGen",
         ":LITDialect",
-        ":MOGGreElab",
+        ":MOGGPreElab",
         ":POPDialect",
-        "//Cache:CacheDialect",
+        ":Package",
         "//Support:CommonCLOptions",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
+        "@llvm-project//mlir:BytecodeWriter",
+    ],
+)
+
+cc_binary(
+    name = "hash-mlir",
+    srcs = glob(["tools/hash-mlir/*.cpp"]),
+    deps = [
+        ":ToolCommon",
+        "@llvm-project//mlir:BytecodeWriter",
+    ],
+)
+
+cc_binary(
+    name = "kgen",
+    srcs = glob(["tools/kgen/*.cpp"]),
+    deps = [
+        ":Compiler",
+        ":CompilerRT",
+        ":ExecutionEngine",
+        ":MojoParser",
+        ":ObjectCompiler",
+        ":Pipeline",
+        "//Support:Init",
+        "@llvm-project//mlir:BytecodeWriter",
+    ],
+)
+
+cc_binary(
+    name = "kgen-opt",
+    srcs = glob(["tools/kgen-opt/*.cpp"]),
+    deps = [
+        ":Compiler",
+        ":CompilerRT",
+        ":ExecutionEngine",
+        ":MojoParser",
+        ":ObjectCompiler",
+        ":Pipeline",
+        "//Support:Init",
+        "@llvm-project//mlir:MlirOptLib",
+    ],
+)
+
+cc_binary(
+    name = "kgen-reduce",
+    srcs = glob([
+        "tools/kgen-reduce/*.cpp",
+        "tools/kgen-reduce/*.h",
+    ]),
+    deps = [
+        ":Compiler",
+        ":CompilerRT",
+        ":ExecutionEngine",
+        ":MojoParser",
+        ":ObjectCompiler",
+        ":Pipeline",
+        "//Support:Init",
+        "@llvm-project//mlir:MlirOptLib",
+    ],
+)
+
+cc_binary(
+    name = "kgen-translate",
+    srcs = glob([
+        "tools/kgen-translate/*.cpp",
+        "tools/kgen-translate/*.h",
+    ]),
+    deps = [
+        ":Compiler",
+        ":CompilerRT",
+        ":ExecutionEngine",
+        ":MojoParser",
+        ":ObjectCompiler",
+        ":Pipeline",
+        "@llvm-project//mlir:MlirTranslateMain",
+    ],
+)
+
+cc_binary(
+    name = "llvm-module-split",
+    srcs = glob([
+        "tools/llvm-module-split/*.cpp",
+    ]),
+    deps = [
+        ":ObjectCompiler",
+        ":ToolCommon",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+cc_binary(
+    name = "mojo-lsp-server",
+    srcs = glob([
+        "tools/mojo-lsp-server/*.cpp",
+        "tools/mojo-lsp-server/*.h",
+    ]),
+    deps = [
+        ":MojoParser",
+        ":MojoTooling",
+        ":ObjectCompiler",
+        ":Pipeline",
+        ":ToolCommon",
+        "//Support:Init",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:MlirLspServerLib",
+    ],
+)
+
+# TODO: Missing some compiler flags from cmake
+cc_binary(
+    name = "mojo-repl-entry-point",
+    srcs = glob([
+        "tools/mojo-repl-entry-point/*.cpp",
+        "tools/mojo-repl-entry-point/*.h",
+    ]),
+    deps = [
+        ":CompilerRT",
+        ":MojoParser",
+        ":MojoTooling",
+        ":ObjectCompiler",
+        ":Pipeline",
+        ":ToolCommon",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:MlirLspServerLib",
+    ],
+)
+
+cc_binary(
+    name = "mojo-prime-package-cache",
+    srcs = glob([
+        "tools/mojo-prime-package-cache/*.cpp",
+        "tools/mojo-prime-package-cache/*.h",
+    ]),
+    deps = [
+        ":CompilerRT",
+        ":ExecutionEngine",
+        ":MojoParser",
+        ":MojoTooling",
+        ":ObjectCompiler",
+        ":Package",
+        ":Pipeline",
+        ":ToolCommon",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:MlirLspServerLib",
+    ],
+)
+
+expand_template(
+    name = "MojoDebugHeaderGen",
+    out = "MojoDebug.h",
+    substitutions = select({
+        "@platforms//os:macos": {
+            "@CMAKE_SHARED_LIBRARY_PREFIX@": "lib",
+            "@CMAKE_SHARED_LIBRARY_SUFFIX@": ".dylib",
+        },
+        "@platforms//os:linux": {
+            "@CMAKE_SHARED_LIBRARY_PREFIX@": "lib",
+            "@CMAKE_SHARED_LIBRARY_SUFFIX@": ".so",
+        },
+    }),
+    template = "tools/mojo/Debug/MojoDebug.h.in",
+)
+
+cc_library(
+    name = "MojoDebugHeader",
+    hdrs = [":MojoDebugHeaderGen"],
+    include_prefix = "Debug",
+)
+
+cc_binary(
+    name = "mojo",
+    srcs = glob([
+        "tools/mojo/**/*.h",
+        "tools/mojo/**/*.cpp",
+    ]),
+    includes = ["tools/mojo"],
+    deps = [
+        ":Build.inc_files",
+        ":BuildProject.inc_files",
+        ":Compiler",
+        ":Debug.inc_files",
+        ":Demangle.inc_files",
+        ":Doc.inc_files",
+        ":ExecutionEngine",
+        ":Format.inc_files",
+        ":Index.inc_files",
+        ":MojoDebugHeader",
+        ":MojoParser",
+        ":MojoTesting",
+        ":MojoTooling",
+        ":ObjectCompiler",
+        ":Package",
+        ":Package.inc_files",
+        ":REPL.inc_files",
+        ":Run.inc_files",
+        ":Test.inc_files",
+        "//Support:CrashReporting",
+        "//Support:Driver",
+        "//Support:Init",
+    ],
+)
+
+[
+    driver_option_tablegen(
+        name = command,
+        srcs = glob(["tools/mojo/{}/*.td".format(command)]),
+        includes = ["tools/mojo"],
+        manual_name = "mojo-{}".format(command.lower()),
+        markdown_name = command.lower(),
+        td_file = "tools/mojo/{command}/{command}Options.td".format(command = command),
+        deps = [
+            ":MojoDescriptionTdFiles",
+        ],
+    )
+    for command in [
+        "Build",
+        "BuildProject",
+        "Debug",
+        "Demangle",
+        "Doc",
+        "Format",
+        "Package",
+        "REPL",
+        "Run",
+        "Test",
+    ]
+]
+
+driver_option_tablegen(
+    name = "Index",
+    srcs = ["tools/mojo/DriverOptions.td"],
+    manual_name = "mojo",
+    markdown_name = "index",
+    td_file = "tools/mojo/DriverOptions.td",
+    deps = [
+        ":Build.td_library",
+        ":BuildProject.td_library",
+        ":Debug.td_library",
+        ":Demangle.td_library",
+        ":Doc.td_library",
+        ":Format.td_library",
+        ":MojoDescriptionTdFiles",
+        ":Package.td_library",
+        ":REPL.td_library",
+        ":Run.td_library",
+        ":Test.td_library",
+    ],
+)
+
+td_library(
+    name = "MojoDescriptionTdFiles",
+    srcs = glob([
+        "tools/mojo/*.td",
+        "tools/mojo/BuildProject/*.td",
+        "tools/mojo/Common/*.td",
+    ]),
+    includes = ["tools/mojo"],
+    deps = [
+        "//Support:DriverCommandTdFiles",
+        "//Support:OptTableTdFiles",
     ],
 )
