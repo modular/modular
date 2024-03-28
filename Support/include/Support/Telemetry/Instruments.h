@@ -146,6 +146,10 @@ class Timer {
   using TimePointType = std::chrono::time_point<ClockType>;
 
 public:
+  void setAttribute(const std::string &key, const MetricAttributeValue &value) {
+    owned_attributes[key] = value;
+  }
+
   ~Timer() {
     // The histogram pointer in the destructor may be null if the Timer was
     // moved.
