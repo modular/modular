@@ -933,19 +933,19 @@ struct MatmulInnerLoopBPacked[
                 ):
                     c_ptr.offset(
                         self.c_stride * (2 * idx0 + 0) + 2 * idx1
-                    ).store[width=2](c_data.slice[2](0))
+                    ).store[width=2](c_data.slice[2]())
 
                     @parameter
                     if not single_row_i8mm:
                         c_ptr.offset(
                             self.c_stride * (2 * idx0 + 1) + 2 * idx1
-                        ).store[width=2](c_data.slice[2](2))
+                        ).store[width=2](c_data.slice[2, offset=2]())
                 elif idx1 * 2 <= self.c_bound[1]:
                     partial_simd_store(
                         c_ptr.offset(self.c_stride * (2 * idx0 + 0) + 2 * idx1),
                         0,
                         self.c_bound[1] - tile_n_idx - idx1 * 2,
-                        c_data.slice[2](0),
+                        c_data.slice[2](),
                     )
 
                     @parameter
@@ -956,7 +956,7 @@ struct MatmulInnerLoopBPacked[
                             ),
                             0,
                             self.c_bound[1] - tile_n_idx - idx1 * 2,
-                            c_data.slice[2](2),
+                            c_data.slice[2, offset=2](),
                         )
 
             unroll[body_i8mm, a_row_size, pack_inner_size // simd_size]()

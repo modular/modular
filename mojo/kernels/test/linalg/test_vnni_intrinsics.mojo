@@ -54,22 +54,20 @@ fn main():
     else:
         # split the vectors into high and low
         var cv8ul = dot_i8_to_i32_AVX2[8](
-            c.data.load[width=8](), av16u.slice[8](0), bv16.slice[8](0)
+            c.data.load[width=8](), av16u.slice[8](), bv16.slice[8]()
         )
         var cv8sl = dot_i8_to_i32_saturated_AVX2[8](
-            c.data.load[width=8](),
-            av16s.slice[8](0),
-            bv16.slice[8](0),
+            c.data.load[width=8](), av16s.slice[8](), bv16.slice[8]()
         )
         var cv8uh = dot_i8_to_i32_AVX2[8](
             c.data.offset(8).load[width=8](),
-            av16u.slice[8](8),
-            bv16.slice[8](8),
+            av16u.slice[8, offset=8](),
+            bv16.slice[8, offset=8](),
         )
         var cv8sh = dot_i8_to_i32_saturated_AVX2[8](
             c.data.offset(8).load[width=8](),
-            av16s.slice[8](8),
-            bv16.slice[8](8),
+            av16s.slice[8, offset=8](),
+            bv16.slice[8, offset=8](),
         )
         cv16u = cv8ul.join(cv8uh)
         cv16s = cv8sl.join(cv8sh)
