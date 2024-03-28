@@ -492,17 +492,13 @@ z
 
 # CHECK-LABEL: lit.func @"listValues()"
 fn listValues():
-  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__
-  # CHECK: lit.ref.store %[[LIST:.*]], %a
+  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
   var a = [1, 2, 2+1]
-  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__
-  # CHECK: lit.ref.store %[[LIST:.*]], %a
+  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
   a = [1, 2, 2+1,]
-  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__
-  # CHECK: lit.ref.store %[[LIST:.*]], %a
+  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%a
   a = [1, 2, 2+1]
-  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__
-  # CHECK: lit.ref.store %[[LIST:.*]], %b
+  # CHECK: %[[LIST:.*]] = lit.call {{.*}}@ListLiteral::@"__init__{{.*}}(%b
   var b = []
 
 # CHECK-LABEL: lit.func @"initializers
@@ -1226,8 +1222,7 @@ struct TwoParamsStruct[a: Int, b: Int]:
 # CHECK-LABEL: lit.func @"variadic_subscript{{.*}}"<idx: !Int, a: variadic<!Int> var>
 fn variadic_subscript[idx: Int, *a: Int](*b: Int):
     # CHECK-NEXT: %b_0 = lit.var.decl
-    # CHECK-NEXT: %0 = lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b)
-    # CHECK-NEXT: lit.ref.store %0, %b_0
+    # CHECK-NEXT: lit.call {{.*}}VariadicList{{.*}}__init__{{.*}}(%b_0, %b)
     # CHECK: lit.alias.decl *"v0{{.*}}": {{.*}}Int = <variadic_get(:variadic<!Int> a, 2)>
     alias v0 = a[2]
 
