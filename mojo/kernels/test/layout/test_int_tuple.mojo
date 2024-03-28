@@ -362,6 +362,14 @@ fn test_weakly_compatible() raises:
     assert_false(weakly_compatible(a3, a2))
 
 
+fn test_fill_like() raises:
+    print("test_fill_like")
+    alias t1 = IntTuple(2, IntTuple(2, 2), IntTuple(1))
+    alias t2 = IntTuple(IntTuple(3, 4), 2, IntTuple(3))
+    assert_equal(fill_like(t1, 0), IntTuple(0, IntTuple(0, 0), IntTuple(0)))
+    assert_equal(fill_like(t2, 1), IntTuple(IntTuple(1, 1), 1, IntTuple(1)))
+
+
 def main():
     test_tuple_basic()
     test_tuple_slicing()
@@ -378,3 +386,4 @@ def main():
 
     test_weakly_congruent()
     test_weakly_compatible()
+    test_fill_like()

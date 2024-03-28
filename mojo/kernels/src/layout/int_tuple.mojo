@@ -479,3 +479,14 @@ fn crd2idx(
             return result + crd2idx(int_crd, shape[-1], stride[-1])
         else:  # "int" "int" "int"
             return int_crd * int(stride)
+
+
+# Returns an IntTuple with same strcture as src filled with val.
+#
+fn fill_like(src: IntTuple, val: Int) -> IntTuple:
+    if is_tuple(src):
+        var res = IntTuple()
+        for elem in src:
+            res.append(fill_like(elem, val))
+        return res
+    return val
