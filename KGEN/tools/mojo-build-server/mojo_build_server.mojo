@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from sys import exit
+
 
 fn main():
-    external_call["KGEN_CompilerRT_Initialize", NoneType]()
-    print("mojo-build-server - OK")
+    exit(external_call["mojoBuildServerMain", Int]())

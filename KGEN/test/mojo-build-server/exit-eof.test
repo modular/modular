@@ -1,0 +1,10 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+// RUN: not mojo-build-server < %s 2> %t.err
+// RUN: FileCheck %s < %t.err
+
+// CHECK: Transport error:

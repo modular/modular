@@ -15,4 +15,5 @@ add_modular_tool(mojo-build-server
   LINK_LIBS PRIVATE
   mojo-build-server-static
   KGENCompilerRT-static
+  MojoBuild
 )
