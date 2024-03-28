@@ -534,11 +534,9 @@ struct CompletedEntry {
 
   CompletedEntry() = default;
 
-  explicit CompletedEntry(const BeginEvent &beginEvent,
-                          const EndEvent &endEvent, uint64_t endTid)
+  explicit CompletedEntry(const BeginEvent &beginEvent)
       : flavor(kBegin), seqNum(beginEvent.seqNum), id(beginEvent.id),
-        parentId(beginEvent.parentId), tid(endTid), start(beginEvent.start),
-        end(endEvent.end), dur(endEvent.end - beginEvent.start),
+        parentId(beginEvent.parentId), start(beginEvent.start),
         name(beginEvent.name.toString()), detail(beginEvent.detail.toString()) {
   }
 
@@ -554,6 +552,12 @@ struct CompletedEntry {
   CompletedEntry(uint64_t tid, const DebugEvent &debugEvent)
       : flavor(kDebug), seqNum(debugEvent.seqNum), tid(tid),
         start(debugEvent.stamp), end(debugEvent.stamp), name(debugEvent.msg) {}
+
+  /// Update this begin entry with details from end event.
+  void mergeEndIntoBegin(uint64_t endTid, const EndEvent &endEvent);
+
+  /// Update this end entry with details from begin entry.
+  void mergeBeginIntoEnd(const CompletedEntry &beginEntry);
 
   /// Update this entry to include the name and details from all of parents.
   void prependParents(ArrayRef<const CompletedEntry *> parents);
