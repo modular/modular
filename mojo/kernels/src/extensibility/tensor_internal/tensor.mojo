@@ -1083,7 +1083,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
                 output_shape.append(self.dim(i))
         return output_shape^
 
-    fn argmax(self, *, axis: Int = -1) raises -> Self:
+    fn argmax(self, *, axis: Int = -1) raises -> Tensor[DType.index]:
         """
         Finds the indices of the maximum element along the specified axis.
 
@@ -1102,7 +1102,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
             )
 
         var output_shape = self._truncate_axis_dim(axis)
-        var output = Self(output_shape)
+        var output = Tensor[DType.index](output_shape)
 
         @parameter
         @always_inline
@@ -1117,11 +1117,13 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
 
         unroll[rank_dispatch, ARGMAX_MAX_TENSOR_RANK]()
 
-        return output.reshape(
+        output.ireshape(
             TensorShape(self._truncate_axis_dim(axis, keep_dims=False))
         )
 
-    fn argmin(self, *, axis: Int = -1) raises -> Self:
+        return output
+
+    fn argmin(self, *, axis: Int = -1) raises -> Tensor[DType.index]:
         """
         Finds the indices of the minimum element along the specified axis.
 
@@ -1139,7 +1141,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
             )
 
         var output_shape = self._truncate_axis_dim(axis)
-        var output = Self(output_shape)
+        var output = Tensor[DType.index](output_shape)
 
         @parameter
         @always_inline
@@ -1154,9 +1156,11 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
 
         unroll[rank_dispatch, ARGMIN_MAX_TENSOR_RANK]()
 
-        return output.reshape(
+        output.ireshape(
             TensorShape(self._truncate_axis_dim(axis, keep_dims=False))
         )
+
+        return output
 
     @always_inline
     fn tofile(self, path: Path) raises:
