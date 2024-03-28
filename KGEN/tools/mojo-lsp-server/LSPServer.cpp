@@ -15,7 +15,8 @@
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/StringMap.h"
-#include <llvm/Support/Allocator.h>
+#include "llvm/Support/Allocator.h"
+#include "llvm/Support/Error.h"
 #include <optional>
 
 #define DEBUG_TYPE "mojo-lsp-server"
@@ -252,11 +253,19 @@ M::KGEN::LIT::runMojoLSPServer(JSONTransport &transport, bool singleThreaded,
                                bool waitOnShutdown,
                                ArrayRef<std::string> includeDirs) {
   MessageHandler messageHandler(transport);
-  MojoServer server(
+  ErrorOr<MojoServer> serverOr = MojoServer::create(
       singleThreaded, waitOnShutdown,
       messageHandler.outgoingNotification<PublishDiagnosticsParams>(
           "textDocument/publishDiagnostics"),
       includeDirs);
+  if (serverOr.isError()) {
+    auto error = llvm::make_error<llvm::StringError>(
+        serverOr.getError(), llvm::inconvertibleErrorCode());
+    Logger::error("Server creation error: {0}", error);
+    llvm::consumeError(std::move(error));
+    return failure();
+  }
+  MojoServer server(serverOr.takeValue());
   LSPRequestHandler requestHandler(server.getLSPTelemetryContext(),
                                    messageHandler);
   LSPServer lspServer(server, transport);

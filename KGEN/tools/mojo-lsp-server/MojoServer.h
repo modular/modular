@@ -8,6 +8,7 @@
 #define KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H
 
 #include "Protocol.h"
+#include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Transport.h"
 #include "llvm/ADT/FunctionExtras.h"
@@ -29,11 +30,17 @@ using OnSemanticTokensResultFn =
 /// language server. This class allows for keeping the Mojo specific logic
 /// separate from the logic that involves LSP server/client communication.
 class MojoServer {
+  struct Impl;
+
 public:
-  MojoServer(bool singleThreaded, bool waitOnShutdown,
-             SendDiagnosticsFn sendDiagnosticsFn,
-             ArrayRef<std::string> includeDirs);
+  MojoServer(MojoServer &) = delete;
+  MojoServer(MojoServer &&);
   ~MojoServer();
+
+  /// Create a new MojoServer instance.
+  static ErrorOr<MojoServer> create(bool singleThreaded, bool waitOnShutdown,
+                                    SendDiagnosticsFn sendDiagnosticsFn,
+                                    ArrayRef<std::string> includeDirs);
 
   // Get the telemetry context for this server.
   LSPTelemetryContext &getLSPTelemetryContext();
@@ -137,7 +144,7 @@ public:
                         LSPResponder<mlir::lsp::SignatureHelp2> responder);
 
 private:
-  struct Impl;
+  MojoServer(std::unique_ptr<Impl> &&);
   std::unique_ptr<Impl> impl;
 };
 
