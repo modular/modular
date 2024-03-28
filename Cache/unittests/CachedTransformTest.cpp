@@ -88,7 +88,8 @@ func.func private @someFunc() {
 // on a cache miss and output of cacheHitFn on cache hit.
 TEST(CachedTransformTest, BufferReturn) {
   TempDir tempDir = createTempDir();
-  auto runtime = createRuntimeIfNeeded(RuntimeOptions().forDebug());
+  std::unique_ptr<Runtime> runtime =
+      createUniqueRuntime(RuntimeOptions().forDebug());
   auto transformBackendChainOr =
       getLocalDefaultBackendChain(tempDir.getPath() / "xform");
   EXPECT_FALSE(failed(transformBackendChainOr));
