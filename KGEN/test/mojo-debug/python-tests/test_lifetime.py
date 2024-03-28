@@ -51,3 +51,39 @@ class TestLifetime(LLDBTestBase):
             self.assert_var_not_available(ctx, "text")
             self.assert_var_not_available(ctx, "number")
             self.assert_var_not_available(ctx, "simd")
+
+            # `text_moved` should be alive when breaking on the call.
+            ctx = ctx.resume()
+            assert ctx
+            text_moved = ctx.frame.FindVariable("text_moved")
+            assert text_moved.GetSummary()
+
+            # `text_moved` should be dead now.
+            # `text_copied` should be alive when breaking on the call.
+            ctx = ctx.resume()
+            assert ctx
+            self.assert_var_not_available(ctx, "text_moved")
+            text_copied = ctx.frame.FindVariable("text_copied")
+            assert text_copied.GetSummary()
+
+            # `text_copied` should be dead now.
+            # `text_before` should be dead after the move.
+            ctx = ctx.resume()
+            assert ctx
+            self.assert_var_not_available(ctx, "text_copied")
+            self.assert_var_not_available(ctx, "text_before")
+            text_after = ctx.frame.FindVariable("text_after")
+            assert text_after.GetSummary()
+
+            # `text_after` should be dead now.
+            # `number2` should be alive when breaking on the call.
+            ctx = ctx.resume()
+            assert ctx
+            self.assert_var_not_available(ctx, "text_after")
+            number2 = ctx.frame.FindVariable("number2")
+            assert number2.GetValueAsSigned(0) == 8
+
+            # Everything should be dead at the last print statement.
+            ctx = ctx.resume()
+            assert ctx
+            self.assert_var_not_available(ctx, "number2")

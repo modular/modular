@@ -13,6 +13,14 @@ fn get_number() -> Int:
     return 8
 
 
+fn take_string(owned s: String):
+    print(s)
+
+
+fn take_number(owned i: Int):
+    print(i)
+
+
 fn main():
     var text = get_string()
     print(text)  # breakpoint
@@ -27,3 +35,17 @@ fn main():
         print(simd)
     else:
         print(0)  # breakpoint
+
+    var text_moved = get_string()
+    take_string(text_moved^)  # breakpoint
+
+    var text_copied = get_string()
+    take_string(text_copied)  # breakpoint
+
+    var text_before = get_string()
+    var text_after = text_before^
+    print(text_after)  # breakpoint
+
+    var number2 = get_number()
+    take_number(number2)  # breakpoint
+    print(0)  # breakpoint

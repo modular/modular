@@ -1978,6 +1978,11 @@ void DestructorInsertion::checkConsume(Value value, Operation &op,
   }
 
   valueRef.markBits(consumedValues, true);
+
+  if (!dryRun) {
+    mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
+    emitDebugKill(valueRef, builder);
+  }
 }
 
 /// This operation uses whatever fields are being referenced.  Iff this is the
@@ -2565,6 +2570,7 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
 
 void DestructorInsertion::emitDebugKill(ValueRef valueRef,
                                         mlir::ImplicitLocOpBuilder &builder) {
+  assert(!dryRun && "shouldn't be called in a dry run");
   // Insert end-of-life debug value if full value is destroyed.
   // TODO(#34115): Emit fragment end-of-life for partial destruction.
   ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
