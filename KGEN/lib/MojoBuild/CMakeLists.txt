@@ -5,6 +5,8 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MojoBuild
+  BSPServer.cpp
+  Protocol.cpp
   Server.cpp
 
   LINK_LIBS PUBLIC

@@ -1,0 +1,16 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+// RUN: mojo-build-server < %s | FileCheck %s --strict-whitespace
+
+{"jsonrpc":"2.0","id":0,"method":"build/initialize","params":{"displayName":"build-initialize.test"}}
+//      CHECK: "id": 0,
+// CHECK-NEXT: "jsonrpc": "2.0",
+// CHECK-NEXT: "result": {
+// CHECK-NEXT:   "displayName": "mojo-build-server"
+// CHECK-NEXT: }
+// -----
+{"jsonrpc":"2.0","method":"exit"}
