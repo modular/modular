@@ -124,12 +124,12 @@ fn test_slice():
     print(val.slice[2]())
 
     # CHECK: [2, 3]
-    print(val.slice[2](2))
+    print(val.slice[2, offset=2]())
 
     var s2 = iota[DType.int32, 2](0)
 
     # CHECK: 0
-    print(s2.slice[1](0))
+    print(s2.slice[1]())
 
 
 # CHECK-LABEL: test_pow
