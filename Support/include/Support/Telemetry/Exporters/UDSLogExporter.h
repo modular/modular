@@ -26,9 +26,7 @@ class UDSLogExporter : public opentelemetry::sdk::logs::LogRecordExporter {
 public:
   explicit UDSLogExporter(const std::string &socketName,
                           const std::string &logsUrl = "http://v1/logs/")
-      : socketName(socketName), logsUrl(logsUrl), client(HTTPContext::init()) {
-    client.noAuthNeeded();
-  }
+      : socketName(socketName), logsUrl(logsUrl), client(HTTPContext::init()) {}
 
   /// Note that we need to hide the protobuf by patching otel with a function
   /// that returns a recordable instance

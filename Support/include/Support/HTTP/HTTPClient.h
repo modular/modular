@@ -37,6 +37,9 @@ public:
   /// Initialize an HTTP context.
   static HTTPContextRef init(ClientConstructor cc = nullptr);
 
+  /// Set up the auth for this HTTP client. This can be set as often as desired.
+  void setupAuth(std::string clientKey, std::string clientCert);
+
   std::unique_ptr<HTTPClient> client();
   void setUserAgent(std::string userAgent);
   void setShouldVerifyTLSPeer(bool verifyTLSPeer);
@@ -56,6 +59,12 @@ private:
   /// User agent to use for all requests.
   std::string userAgent;
 
+  /// Client key for all requests.
+  std::string clientKey;
+
+  /// Client cert for all requests.
+  std::string clientCert;
+
   /// Used to disable HTTPS vertification. Typically used to test with self
   /// signed certicates.
   bool verifyTLSPeer = true;
@@ -72,6 +81,9 @@ struct HTTPRequest {
 
   /// Request URL.
   std::string URL;
+
+  /// An optional bearer token.
+  std::optional<std::string> accessToken;
 
   /// UDS path if applicable - empty means disabled
   std::string udsName;
@@ -221,17 +233,6 @@ public:
   HTTPClient(HTTPContextRef ctx);
   virtual ~HTTPClient();
 
-  /// This function just sets authSetup to `true` for the case where we don't
-  /// actually need to set up auth. This should *ONLY* be used if you can
-  /// articulate *why* this is being used.
-  void noAuthNeeded();
-
-  /// Set up the auth for this HTTP client. This can be set as often as desired.
-  /// If no token is provided, we will use the default client certificate and
-  /// keypair from the filesystem. This must be called at least once before
-  /// calling `executeRequest`.
-  ErrorOrSuccess setupAuth(std::optional<std::string> tok = std::nullopt);
-
   /// Blocking call that executes the HTTPRequest and writes the response to the
   /// provided ostream. Returns a HTTPResponse.
   ///
@@ -255,9 +256,6 @@ protected:
 private:
   HTTPContextRef context;
   void *curl = nullptr;
-  /// False if we haven't set up the auth on the connection yet, true if we
-  /// have. We assert that the auth must be set up before executing any request.
-  bool authSetup = false;
 };
 } // namespace M
 

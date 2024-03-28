@@ -118,7 +118,6 @@ ErrorOrSuccess InstanceIdentifier::fetchV2(HTTPClient &client) {
 
 ErrorOrSuccess InstanceIdentifier::fetch() {
   HTTPClient client(ctx.copy());
-  client.noAuthNeeded();
   if (auto resultV2 = fetchV2(client); resultV2.isError()) {
     if (auto resultV1 = fetchV1(client); resultV1.isError()) {
       return Error(llvm::Twine("Could not reach any IMDS API with errors: {") +
