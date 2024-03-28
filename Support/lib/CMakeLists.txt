@@ -14,6 +14,7 @@ add_modular_library(MSupport
   BuildInfo.cpp
   CPUCache.cpp
   CommonCLOptions.cpp
+  Config.cpp
   Configuration.cpp
   DeviceSpecs.cpp
   DynamicLibrary.cpp

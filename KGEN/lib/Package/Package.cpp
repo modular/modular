@@ -11,6 +11,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
+#include "Support/Config.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
@@ -45,6 +46,7 @@ static ErrorOr<OwningOpRef<ModuleOp>> specializeModuleForPreElaboration(
   // Generate a library from the module, processing the pipeline up to the
   // elaboration phase.
   mlir::PassManager genLibPM(packageModuleOr->getContext());
+  configurePassManager(genLibPM);
   buildGenerateLibraryPipeline(genLibPM, runtime, compileOptions);
   genLibPM.addPass(
       createMaterializePackagesWithDefaultGen(runtime, compileOptions));

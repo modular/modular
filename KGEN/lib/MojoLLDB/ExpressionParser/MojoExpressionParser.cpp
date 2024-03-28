@@ -746,8 +746,10 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   mlir::IRMapping mapping;
   OwningOpRef<ModuleOp> module =
       KGEN::LIT::cloneDeclModuleForCompilation(*result.moduleDecl, mapping);
+#ifndef MODULAR_PRODUCTION
   if (failed(mlir::verify(*module)))
     return returnErrorCleanup();
+#endif // MODULAR_PRODUCTION
   setTargetInfo(*module, impl->typeSystem->GetTargetInfo());
 
   // Set the environment (defines) for the module.

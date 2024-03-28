@@ -17,6 +17,7 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
+#include "Support/Config.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -48,6 +49,7 @@ KGEN::evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
     return Error("cross-compilation execution in search is not yet supported");
 
   mlir::PassManager mgr(target.getContext());
+  configurePassManager(mgr);
   ExecutionEngineOptions eeOptions;
   if (options.debugLevel != CompilationOptions::kNoDebug)
     eeOptions.registerDebugPlugins = true;
@@ -283,6 +285,7 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
 
   // Initialize the object compiler.
   mlir::PassManager compilerPm(target.getContext());
+  configurePassManager(compilerPm);
   ErrorOr<ObjectCompiler> compilerOr = ObjectCompiler::create(
       runtime, compilerPm, ".mojo_cache", options, /*isJIT=*/false);
   if (compilerOr.isError())
@@ -328,6 +331,7 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   mlir::PassManager pm(target.getContext());
+  configurePassManager(pm);
   pm.addPass(createElaborateGenerators(
       runtime, target, elaboratorOptions,
       [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
