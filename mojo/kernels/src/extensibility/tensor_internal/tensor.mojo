@@ -41,7 +41,7 @@ import math
 from collections import List
 from pathlib import Path
 
-from algorithm.functional import elementwise
+from algorithm.functional import elementwise, vectorize
 from algorithm.reduction import argmax, argmin
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim
@@ -266,16 +266,27 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
 
     @always_inline
     fn __init__(inout self, shape: TensorShape, *data: Scalar[dtype]):
-        """Initializes a Tensor from the shape and data provided.
-        The caller assumes ownership of the new tensor data.
+        """Initializes a Tensor from the shape and data provided. If a single
+        scalar is passed in, then the scalar is splatted to all elements in the
+        tensor.
 
         Args:
           shape: The tensor shape.
           data: Elements to place into the created tensor.
         """
-        var ptr = DTypePointer[dtype].alloc(len(data))
-        for i in range(len(data)):
-            ptr[i] = data[i]
+        var num_elements = shape.num_elements()
+        var ptr = DTypePointer[dtype].alloc(num_elements)
+        if len(data) == 1:
+            var data0 = data[0]
+
+            @parameter
+            fn splat_val[simd_width: Int](idx: Int):
+                ptr.store[width=simd_width](idx, data0)
+
+            vectorize[splat_val, simdwidthof[dtype]()](num_elements)
+        else:
+            for i in range(len(data)):
+                ptr[i] = data[i]
         self = Self(shape, ptr)
 
     @always_inline
