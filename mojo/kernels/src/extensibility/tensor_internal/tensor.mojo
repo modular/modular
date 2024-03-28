@@ -285,7 +285,9 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
                 fn splat_val[simd_width: Int](idx: Int):
                     ptr.store[width=simd_width](idx, data0)
 
-                vectorize[splat_val, simdwidthof[dtype]()](num_elements)
+                vectorize[splat_val, simdwidthof[dtype](), unroll_factor=8](
+                    num_elements
+                )
 
             else:
                 memset_zero(ptr, num_elements)
