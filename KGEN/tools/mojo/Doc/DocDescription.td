@@ -14,4 +14,4 @@ def DocDescription : MojoCommandDescription<
   "This output format is subject to change.\n"
   "\n"
   "The input must be the path to a single Mojo source file.",
-  [UsageInfo<"options", "path", /*variadicInput=*/false>]>, Index<6>;
+  [UsageInfo<"options", "path", /*variadicInput=*/false>]>, Index<7>;

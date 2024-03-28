@@ -21,4 +21,4 @@ def PackageDescription : MojoCommandDescription<
   "\n"
   "For more information, see [Mojo modules and "
   "packages](https://docs.modular.com/mojo/manual/packages)." ,
-  [UsageInfo<"options", "path", /*variadicInput=*/false>]>, Index<4>;
+  [UsageInfo<"options", "path", /*variadicInput=*/false>]>, Index<5>;

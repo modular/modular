@@ -14,7 +14,7 @@ find_package(Python3 COMPONENTS Development)
 include(AddPython)
 modular_find_python3_development()
 
-add_modular_tool(mojo
+set(sources
   mojo.cpp
   Build/mojo-build.cpp
   Common/Compilation.cpp
@@ -28,7 +28,20 @@ add_modular_tool(mojo
   Package/mojo-package.cpp
   REPL/mojo-repl.cpp
   Run/mojo-run.cpp
-  Test/mojo-test.cpp
+  Test/mojo-test.cpp)
+
+# The `mojo build-project` subcommand and its documentation is only
+# conditionally configured and built for now. We don't wish for external users
+# of Mojo to read its documentation while it's under internal development.
+set(tablegen_definitions)
+if (MODULAR_RELEASE_PACKAGE_BUILD)
+  list(APPEND tablegen_definitions MODULAR_PRODUCTION)
+else()
+  set(sources ${sources} BuildProject/mojo-build-project.cpp)
+endif()
+
+add_modular_tool(mojo
+  ${sources}
 
   DEPENDS
   orc-rt-cas
@@ -74,6 +87,7 @@ add_custom_target(MojoDriverOptions)
 add_driver_option_tablegen(Mojo DriverOptions.td
   MANUAL_NAME mojo
   MARKDOWN_NAME index
+  EXTRA_DEFINITIONS ${tablegen_definitions}
   EXTRA_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR})
 # Each subcommand generates its own option definitions.
 add_subdirectory(Build)
@@ -85,6 +99,9 @@ add_subdirectory(Package)
 add_subdirectory(REPL)
 add_subdirectory(Run)
 add_subdirectory(Test)
+if(NOT MODULAR_RELEASE_PACKAGE_BUILD)
+  add_subdirectory(BuildProject)
+endif()
 
 # Copy all generated Markdown files to a convenient location.
 collect_driver_markdown(MojoDriverOptions)
