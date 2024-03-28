@@ -140,8 +140,13 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
       return "";
 
     // If this is a wrapper for a type, print it as such.
-    if (isa<TypeType, AnyStructType, TraitType, AnyTraitType>(
-            indexVal.getType()))
+    if (isa<TraitType>(indexVal.getType())) {
+      // values of trait type are printed in a kgen compatible way, e.g.
+      // "":!lit.trait<@stdlib::@builtin::@stubs::@AnyType> someParamValue"
+      if (!elideType)
+        os << ":" << ASTType(indexVal.getType()).mlirType << " ";
+      os << ASTType(indexVal).mlirType;
+    } else if (isa<TypeType, AnyStructType, AnyTraitType>(indexVal.getType()))
       os << ASTType(indexVal).mlirType;
     else // Otherwise print it as an attribute.
       indexVal.get().print(os, elideType);
