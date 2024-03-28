@@ -40,6 +40,10 @@ void registerGlobals(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs);
 } // namespace M::KGEN
 
+/// Allow parts of the execution engine to inject globals.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_InsertGlobal(llvm::StringRef name, void *value);
+
 //===----------------------------------------------------------------------===//
 // InitIntelAMX.cpp
 //===----------------------------------------------------------------------===//
