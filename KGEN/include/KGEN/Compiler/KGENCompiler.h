@@ -62,11 +62,8 @@ class ObjectCompilerLayer;
 /// the pass manager, and on materialization, it will run compilation and then
 /// delegate the rest to the base layer. Under the hood it also defines a
 /// MaterializationUnit and uses that to emit symbols on-demand.
-class KGENCompilerLayer
-    : public llvm::RTTIExtends<KGENCompilerLayer, MaterializationLayer> {
+class KGENCompilerLayer : public MaterializationLayer {
 public:
-  static char ID;
-
   KGENCompilerLayer(mlir::PassManager &pm, LLCL::Runtime &runtime,
                     TargetInfoAttr target, const CompilationOptions &options,
                     ObjectCompilerLayer &base,
@@ -85,6 +82,10 @@ public:
   /// ObjectCompilerLayer with the result.
   void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
             SymbolTable &symtab, const ExportMap &exportMap);
+
+  static bool classof(const MaterializationLayer *layer) {
+    return layer->getKind() == LayerKind::kKGENCompilerLayer;
+  }
 
 private:
   /// Conform to the ORC's interface and return a map of the exported symbols.

@@ -518,8 +518,6 @@ private:
 // KGENCompilerLayer
 //===----------------------------------------------------------------------===//
 
-char KGENCompilerLayer::ID;
-
 KGENCompilerLayer::KGENCompilerLayer(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     const CompilationOptions &options, ObjectCompilerLayer &base,
@@ -527,8 +525,8 @@ KGENCompilerLayer::KGENCompilerLayer(
     RCRef<Cache::BlobCacheBackend> regionCacheBackend,
     llvm::orc::ExecutionSession &sess, const llvm::DataLayout &dl,
     MaterializationLayer::AddToSearchOrderFn add)
-    : llvm::RTTIExtends<KGENCompilerLayer, MaterializationLayer>(
-          sess, dl, std::move(add)),
+    : MaterializationLayer(LayerKind::kKGENCompilerLayer, sess, dl,
+                           std::move(add)),
       pm(pm), runtime(runtime), target(target), options(options),
       baseLayer(base) {
   // Construct the caches.

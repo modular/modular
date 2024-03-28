@@ -166,11 +166,8 @@ LogicalResult runLLVMOptPasses(llvm::Module &module,
 /// Provide an ExecutionEngine layer for the ObjectCompiler. This simply wraps
 /// up the ObjectCompiler in the correct APIs - under the hood it also defines a
 /// MaterializationUnit and uses that to emit symbols on-demand.
-class ObjectCompilerLayer
-    : public llvm::RTTIExtends<ObjectCompilerLayer, MaterializationLayer> {
+class ObjectCompilerLayer : public MaterializationLayer {
 public:
-  static char ID;
-
   ObjectCompilerLayer(ObjectCompiler &&objCompiler,
                       llvm::orc::ObjectLayer &base,
                       llvm::orc::ExecutionSession &sess,
@@ -204,6 +201,10 @@ public:
   /// Provide access to the underlying ObjectCompiler so that users can call its
   /// methods directly if desired (for example, to emit asm or LLVM).
   ObjectCompiler &getRawCompiler() { return objectCompiler; }
+
+  static bool classof(const MaterializationLayer *layer) {
+    return layer->getKind() == LayerKind::kObjectCompilerLayer;
+  }
 
 private:
   /// Emit a given module. This will immediately run the materialization.

@@ -44,12 +44,12 @@ using namespace Cache;
 // MaterializationLayer
 //===----------------------------------------------------------------------===//
 
-char MaterializationLayer::ID;
-
-MaterializationLayer::MaterializationLayer(llvm::orc::ExecutionSession &sess,
+MaterializationLayer::MaterializationLayer(LayerKind kind,
+                                           llvm::orc::ExecutionSession &sess,
                                            const llvm::DataLayout &dl,
                                            AddToSearchOrderFn add)
-    : session(sess), dataLayout(dl), addToSearchOrder(std::move(add)) {}
+    : session(sess), dataLayout(dl), addToSearchOrder(std::move(add)),
+      kind(kind) {}
 
 ErrorOr<llvm::orc::JITDylib *>
 MaterializationLayer::getOrCreateDylib(StringRef libName) {
@@ -80,13 +80,11 @@ MaterializationLayer::mangleAndIntern(StringRef name) {
 // StaticSymbolLayer
 //===----------------------------------------------------------------------===//
 
-char StaticSymbolLayer::ID;
-
 StaticSymbolLayer::StaticSymbolLayer(llvm::orc::ExecutionSession &sess,
                                      const llvm::DataLayout &dl,
                                      AddToSearchOrderFn add)
-    : llvm::RTTIExtends<StaticSymbolLayer, MaterializationLayer>(
-          sess, dl, std::move(add)) {}
+    : MaterializationLayer(MaterializationLayer::LayerKind::kStaticSymbolLayer,
+                           sess, dl, std::move(add)) {}
 
 ErrorOrSuccess StaticSymbolLayer::add(StringRef libName, StringRef funcName,
                                       void *fn) {
@@ -142,14 +140,12 @@ public:
 // StaticArchiveMaterializationLayer
 //===----------------------------------------------------------------------===//
 
-char StaticArchiveLayer::ID;
-
 StaticArchiveLayer::StaticArchiveLayer(llvm::orc::ObjectLayer &objLayer,
                                        llvm::orc::ExecutionSession &sess,
                                        const llvm::DataLayout &dl,
                                        AddToSearchOrderFn add)
-    : llvm::RTTIExtends<StaticArchiveLayer, MaterializationLayer>(
-          sess, dl, std::move(add)),
+    : MaterializationLayer(LayerKind::kStaticArchiveLayer, sess, dl,
+                           std::move(add)),
       objectLayer(objLayer) {}
 
 ErrorOrSuccess StaticArchiveLayer::add(StringRef libName, BufferRef archive) {
