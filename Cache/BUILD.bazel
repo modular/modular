@@ -13,11 +13,14 @@ cc_library(
     ],
     strip_include_prefix = "include",
     deps = [
+        "//LLCL:CompilerSupport",
         "//LLCL:Runtime",
         "//Support:Base64",
         "//Support:Buffer",
+        "//Support:Compiler",
         "//Support:Configuration",
         "//Support:HMAC",
+        "//Support:HTTPHeaders",
         "//Support:URI",
     ],
 )
