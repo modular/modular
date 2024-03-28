@@ -8,10 +8,16 @@
 #define SUPPORT_CONFIG_H
 
 namespace mlir {
+class MLIRContext;
 class PassManager;
 } // namespace mlir
 
 namespace M {
+/// This function configures the MLIR context according to the current build
+/// configuration. In modular production builds, it disables IR dumps in
+/// diagnostics.
+void configureMLIRContext(mlir::MLIRContext &ctx);
+
 /// This function configures the MLIR pass manager according to the current
 /// build configuration. In modular production builds, it disables verification
 /// after all passes.

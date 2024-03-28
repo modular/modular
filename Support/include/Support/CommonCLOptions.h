@@ -8,6 +8,7 @@
 #define SUPPORT_COMMONCLOPTIONS_H
 
 #include "Support/CommandLine.h"
+#include "Support/Config.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "mlir/IR/Diagnostics.h"
@@ -150,6 +151,8 @@ public:
   LogicalResult configureMLIRContextAndExecute(llvm::SourceMgr &sourceMgr,
                                                BodyFn &&bodyFn) const {
     mlir::MLIRContext context;
+    configureMLIRContext(context);
+
     if (verifyDiagnostics) {
       mlir::SourceMgrDiagnosticVerifierHandler sourceMgrHandler(sourceMgr,
                                                                 &context);
