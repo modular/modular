@@ -10,6 +10,7 @@
 #include "Support/Globals/Globals.h"
 #include "Support/MArchTarget/Host.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Path.h"
@@ -19,9 +20,9 @@
 #include <cassert>
 #include <chrono>
 #include <mutex>
-#include <numeric>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using namespace M;
@@ -136,6 +137,25 @@ static void prepend(const std::string &lhs, std::string &rhs) {
     return;
   }
   rhs = lhs + "/" + rhs;
+}
+
+void ProfilingDetail::CompletedEntry::mergeEndIntoBegin(
+    uint64_t endTid, const EndEvent &endEvent) {
+  assert(flavor == kBegin);
+  assert(id == endEvent.id);
+  tid = endTid;
+  end = endEvent.end;
+  dur = endEvent.end - start;
+}
+
+void ProfilingDetail::CompletedEntry::mergeBeginIntoEnd(
+    const CompletedEntry &beginEntry) {
+  assert(flavor == kEnd);
+  assert(id == beginEntry.id);
+  parentId = beginEntry.parentId;
+  dur = beginEntry.dur;
+  name = beginEntry.name;
+  detail = beginEntry.detail;
 }
 
 void ProfilingDetail::CompletedEntry::prependParents(
@@ -274,108 +294,88 @@ ProfilingDetail::GlobalProfilerContext::getCompletedEntries() {
   std::lock_guard<std::mutex> guard(lock);
   auto derefedProfilers = llvm::make_pointee_range(profilers);
 
-  // Sums number of profiler events over all per-thread profilers.
-  auto sumProfEvents =
-      [&derefedProfilers](
-          llvm::function_ref<int64_t(int64_t, const TimeTraceThreadProfiler &)>
-              binaryOp) {
-        return std::accumulate(derefedProfilers.begin(), derefedProfilers.end(),
-                               (int64_t)0, binaryOp);
-      };
-
   assert(llvm::all_of(
              derefedProfilers,
              [](const auto &profiler) { return profiler.stack.empty(); }) &&
          "all profiler sections should be ended when calling write");
 
-  // Pre-compute the total number of completed entries.
-  int64_t numBeginEvents =
-      sumProfEvents([](int64_t n, const TimeTraceThreadProfiler &profiler) {
-        return n + profiler.beginEvents.size();
-      });
-  int64_t numEndEvents =
-      sumProfEvents([](int64_t n, const TimeTraceThreadProfiler &profiler) {
-        return n + profiler.endEvents.size();
-      });
-  assert(numBeginEvents == numEndEvents && "expected all begun events to end");
+  std::unordered_map<ProfilerEventId, CompletedEntry> beginEntryMap;
+  std::unordered_map<ProfilerEventId, CompletedEntry> endEntryMap;
 
-  int64_t numSampleDebugEvents =
-      sumProfEvents([](int64_t n, const TimeTraceThreadProfiler &profiler) {
-        return n + profiler.sampleEvents.size() + profiler.debugEvents.size();
-      });
-
-  std::vector<CompletedEntry> completedEntries;
-  completedEntries.reserve(numBeginEvents + numSampleDebugEvents);
-
-  // Collect `BeginEvent`s sorted by their `ProfilerEventId`.
-  SmallVector<const BeginEvent *> beginEvents;
-  beginEvents.reserve(numBeginEvents);
+  // Collect the BeginEvents.
   for (TimeTraceThreadProfiler &profiler : derefedProfilers) {
-    profiler.beginEvents.enumerate([&beginEvents](const BeginEvent &event) {
-      beginEvents.emplace_back(&event);
+    profiler.beginEvents.enumerate([&beginEntryMap](const BeginEvent &event) {
+      beginEntryMap.insert({event.id, CompletedEntry(event)});
     });
   }
-  llvm::sort(beginEvents, [](const BeginEvent *lhs, const BeginEvent *rhs) {
-    return lhs->id < rhs->id;
-  });
 
-  // Collect `EndEvent`s sorted by their `ProfilerEventId`.
-  // Also track the thread id that created the end event, which becomes the
-  // `CompletedEntry`'s tid.
-  SmallVector<std::pair<const EndEvent *, uint64_t>> endEvents;
-  endEvents.reserve(numEndEvents);
-  for (TimeTraceThreadProfiler &profiler : derefedProfilers) {
-    profiler.endEvents.enumerate(
-        [&profiler, &endEvents](const EndEvent &event) {
-          endEvents.emplace_back(std::pair(&event, profiler.tid));
-        });
-  }
-  llvm::sort(endEvents, [](const std::pair<const EndEvent *, uint64_t> &lhs,
-                           const std::pair<const EndEvent *, uint64_t> &rhs) {
-    return lhs.first->id < rhs.first->id;
-  });
-
-  // Create a completed entry corresponding to each (BeginEvent, EndEvent) pair.
-  for (const auto &[beginEvent, endEvent] : llvm::zip(beginEvents, endEvents))
-    completedEntries.emplace_back(*beginEvent, *endEvent.first,
-                                  endEvent.second);
-
-  for (CompletedEntry &entry : completedEntries) {
-    // Update the name and details of the new CompletedEntry with those of its
-    // parents.
-    const CompletedEntry *curr = &entry;
+  // Prepend parent names and descriptions.
+  for (auto &pair : beginEntryMap) {
     SmallVector<const CompletedEntry *> parents;
+    CompletedEntry *orig = &pair.second;
+    CompletedEntry *curr = orig;
     for (size_t i = 0; curr->parentId && i < kMaxParentChain; ++i) {
-      auto iter = llvm::lower_bound(
-          completedEntries, curr->parentId,
-          [](const CompletedEntry &lhs, ProfilerEventId parentId) {
-            return lhs.id < parentId;
-          });
-      assert(iter != completedEntries.end() && "invalid parent id");
-
-      curr = &*iter;
+      auto itr = beginEntryMap.find(curr->parentId);
+      if (itr == beginEntryMap.end()) {
+        llvm::dbgs() << "PROFILING: WARNING: BeginEvent " << curr->id << " '"
+                     << curr->name << "' has invalid parent id "
+                     << curr->parentId << "\n";
+        break;
+      }
+      curr = &itr->second;
       parents.push_back(curr);
     }
-
-    entry.prependParents(parents);
+    if (curr->parentId) {
+      llvm::dbgs() << "PROFILING: WARNING: BeginEvent " << orig->id << " '"
+                   << orig->name << "' has more than " << kMaxParentChain
+                   << " parents\n";
+    }
+    pair.second.prependParents(parents);
   }
+
+  // Collect the EndEvents, and cross-reference them to the BeginEvents.
+  for (TimeTraceThreadProfiler &profiler : derefedProfilers) {
+    profiler.endEvents.enumerate([&profiler, &beginEntryMap,
+                                  &endEntryMap](const EndEvent &event) {
+      auto itr = beginEntryMap.find(event.id);
+      if (itr == beginEntryMap.end()) {
+        llvm::dbgs() << "PROFILING: WARNING: EndEvent " << event.id
+                     << " has no matching BeginEvent\n";
+        return;
+      }
+      itr->second.mergeEndIntoBegin(profiler.tid, event);
+      auto itr2 =
+          endEntryMap.insert({event.id, CompletedEntry(profiler.tid, event)})
+              .first;
+      itr2->second.mergeBeginIntoEnd(itr->second);
+    });
+  }
+
+  // Gather all the completed entries so far.
+  std::vector<CompletedEntry> result;
+  for (auto &pair : beginEntryMap)
+    result.emplace_back(std::move(pair.second));
+  beginEntryMap.clear();
+  for (auto &pair : endEntryMap)
+    result.emplace_back(std::move(pair.second));
+  endEntryMap.clear();
 
   // Gather the SampleEvents and DebugEvents.
   for (TimeTraceThreadProfiler &profiler : derefedProfilers) {
     profiler.sampleEvents.enumerate(
-        [&profiler, &completedEntries](const SampleEvent &event) {
-          completedEntries.emplace_back(profiler.tid, event);
+        [&profiler, &result](const SampleEvent &event) {
+          result.emplace_back(profiler.tid, event);
         });
     profiler.debugEvents.enumerate(
-        [&profiler, &completedEntries](const DebugEvent &event) {
-          completedEntries.emplace_back(profiler.tid, event);
+        [&profiler, &result](const DebugEvent &event) {
+          result.emplace_back(profiler.tid, event);
         });
   }
 
-  // Put the result in total sorted order based on start time with tie breaks.
-  llvm::sort(completedEntries);
+  // Place everything in total order.
+  std::sort(result.begin(), result.end());
 
-  return completedEntries;
+  return result;
 }
 
 void ProfilingDetail::GlobalProfilerContext::writeJsonTrace(
@@ -385,7 +385,7 @@ void ProfilingDetail::GlobalProfilerContext::writeJsonTrace(
   jsonOS.attributeBegin("traceEvents");
   jsonOS.arrayBegin();
 
-  // Emit all events for the main flame chart.
+  // Emit all events for the main flame graph.
   for (const auto &entry : entries)
     entry.print(jsonOS, startTime, pid, granularity);
 
@@ -446,8 +446,8 @@ void ProfilingDetail::GlobalProfilerContext::writeJsonTrace(
     // it.
     auto hostMachineInfoOr = getHostMachineInfo();
     if (hostMachineInfoOr.isError()) {
-      llvm::dbgs() << "PROFILE: WARNING: unable to retrieve system-info for "
-                      "tracefile\n";
+      llvm::dbgs()
+          << "PROFILE: WARNING: unable to retrieve system-info for tracefile\n";
     } else {
       jsonOS.attributeBegin("hostMachineInfo");
       hostMachineInfoOr.takeValue().print(jsonOS);
