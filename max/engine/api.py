@@ -47,8 +47,8 @@ class TorchLoadOptions:
     model inputs. This is required when loading serialized TorchScript models
     because they do not include type and shape annotations.
 
-    If the model supports an input with dynamic shapes, use ``None`` for that
-    dimension size.
+    If the model supports an input with dynamic shapes, use ``None`` as the
+    dimension size in ``shape``.
 
     For example:
 
@@ -331,9 +331,12 @@ class TensorSpec:
 
 class TorchInputSpec:
     """
-    Specify valid input specification of a torch model.
+    Specifies valid input specification for a TorchScript model.
 
-    For usage examples, see :obj:`TorchLoadOptions`.
+    Before you load a TorchScript model, you must create an instance of this class
+    for each input tensor, and pass it to :obj:`TorchLoadOptions`.
+
+    For example code, see :obj:`TorchLoadOptions`.
     """
 
     _impl: _TorchInputSpec
@@ -364,8 +367,8 @@ class TorchInputSpec:
     def shape(self) -> Optional[List[int]]:
         """The shape of the torch input tensor as a list of integers.
 
-        If a dimension size is unknown/dynamic (such as the batch size), its
-        value is ``None``."""
+        If a dimension size is unknown/dynamic (such as the batch size), the
+        `shape` should be ``None``."""
         return self._impl.shape
 
     @property
