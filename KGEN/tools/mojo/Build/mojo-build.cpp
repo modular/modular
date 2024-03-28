@@ -19,6 +19,7 @@
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "Support/Config.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
@@ -133,6 +134,7 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
                        ModuleOp moduleOp, TargetInfoAttr target,
                        BufferRef &archive) {
   mlir::PassManager pm(&context);
+  configurePassManager(pm);
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
       initializeExecutionEngine(runtime, pm, options, ExecutionEngineOptions(),
                                 /*isJIT=*/false, target);

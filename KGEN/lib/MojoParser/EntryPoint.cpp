@@ -252,13 +252,15 @@ importMojoImpl(LLCL::Runtime &runtime, StringRef moduleIdentifier,
   if (sharedState.diags.isErrorEmitted())
     return {nullptr, nullptr};
 
+#ifndef MODULAR_PRODUCTION
   // Make sure the parse module has no other structural problems detected by
   // the verifier.
   {
     auto verificationTimer = ts.nest("Verify module");
-    if (failed(verify(*module)))
+    if (failed(mlir::verify(*module)))
       return {};
   }
+#endif // MODULAR_PRODUCTION
 
   eraseUnreachableDecls(moduleDecl.getIfOperation(), *module);
   sortValueUses(*module);

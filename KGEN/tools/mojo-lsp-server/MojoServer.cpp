@@ -22,6 +22,7 @@
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "SemanticTokens.h"
+#include "Support/Config.h"
 #include "Support/Context.h"
 #include "Support/Init/Init.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -784,6 +785,7 @@ void MojoDocument::checkModuleSemantics(MojoASTDeclRef decl) {
 
   // Run the high level verification pipeline.
   mlir::PassManager pm(tempModuleOp->getContext());
+  configurePassManager(pm);
   buildCheckLITPipeline(pm, getRuntime(), getCompilationOptions());
   if (failed(pm.run(*tempModuleOp))) {
     lsp::Logger::debug("The 'check' pipeline failed to run on the module {0}",

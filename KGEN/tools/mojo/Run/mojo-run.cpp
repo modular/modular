@@ -20,6 +20,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Config.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Init/Init.h"
@@ -200,6 +201,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
                          TargetInfoAttr target,
                          ArrayRef<const char *> arguments) {
   mlir::PassManager pm(&context);
+  configurePassManager(pm);
 
   ExecutionEngineOptions eeOptions;
   if (options.debugLevel != CompilationOptions::kNoDebug)

@@ -18,6 +18,7 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
+#include "Support/Config.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Init/Init.h"
 
@@ -341,6 +342,7 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   // Run various check passes now to propagate warnings and errors up to the
   // user.
   mlir::PassManager pm(theModule.getContext());
+  configurePassManager(pm);
   buildCheckLITPipeline(pm, runtime, packageArgs.compileOptions);
   if (failed(pm.run(theModule)))
     return Error("errors occurred during compilation");
