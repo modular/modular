@@ -85,9 +85,7 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// Provides a base class we can use to store pointers to Layers in the
-/// ExecutionEngine. We use the llvm::RTTIExtends helper to get a semi-open
-/// hierarchy - we want other modules to be able to extend this without having
-/// to put the definitions here.
+/// ExecutionEngine.
 ///
 /// Layers must implement an `add` function that the ExecutionEngine can use:
 ///
@@ -96,10 +94,14 @@ private:
 /// The base class doesn't have a virtual method to override largely because
 /// each class will have its own requirements for what needs to be passed into
 /// `add`.
-class MaterializationLayer
-    : public llvm::RTTIExtends<MaterializationLayer, llvm::RTTIRoot> {
+class MaterializationLayer {
 public:
-  static char ID;
+  enum LayerKind {
+    kStaticSymbolLayer,
+    kStaticArchiveLayer,
+    kObjectCompilerLayer,
+    kKGENCompilerLayer
+  };
   virtual ~MaterializationLayer() = default;
 
   /// Nothing in this class hierarchy is copyable.
@@ -107,6 +109,8 @@ public:
 
   /// Check if this layer has an error.
   bool hasError() const { return error.has_value(); }
+
+  LayerKind getKind() const { return kind; }
 
   /// Take the error from this layer.
   Error takeError() {
@@ -118,7 +122,7 @@ protected:
   using AddToSearchOrderFn =
       llvm::unique_function<ErrorOrSuccess(StringRef, llvm::orc::JITDylib *)>;
 
-  MaterializationLayer(llvm::orc::ExecutionSession &sess,
+  MaterializationLayer(LayerKind kind, llvm::orc::ExecutionSession &sess,
                        const llvm::DataLayout &dl, AddToSearchOrderFn add);
 
   /// Get or create a dylib with name `libName`. Subclasses should always use
@@ -146,6 +150,9 @@ protected:
   /// later. This is necessary because the MaterializationUnit may call into a
   /// function in the layer that has no other way to report that error.
   std::optional<Error> error = std::nullopt;
+
+private:
+  LayerKind kind;
 };
 
 //===----------------------------------------------------------------------===//
@@ -155,11 +162,8 @@ protected:
 /// This layer provides a way to add a static symbol to the ExecutionEngine. The
 /// symbol must have a static name (which is mangled for you) and resolve to an
 /// address within the binary.
-class StaticSymbolLayer
-    : public llvm::RTTIExtends<StaticSymbolLayer, MaterializationLayer> {
+class StaticSymbolLayer : public MaterializationLayer {
 public:
-  static char ID;
-
   /// The StaticSymbolLayer doesn't require anything extra to construct, just
   /// the `MaterializationLayer` arguments.
   StaticSymbolLayer(llvm::orc::ExecutionSession &sess,
@@ -168,6 +172,10 @@ public:
   /// Add a function named `funcName` with address `fn` to the library
   /// `libName`.
   ErrorOrSuccess add(StringRef libName, StringRef funcName, void *fn);
+
+  static bool classof(const MaterializationLayer *layer) {
+    return layer->getKind() == LayerKind::kStaticSymbolLayer;
+  }
 };
 
 //===----------------------------------------------------------------------===//
@@ -176,11 +184,8 @@ public:
 
 /// This layer provides a way to add a static archive to the ExecutionEngine.
 /// All symbols in the archive are made available for use and lookup.
-class StaticArchiveLayer
-    : public llvm::RTTIExtends<StaticArchiveLayer, MaterializationLayer> {
+class StaticArchiveLayer : public MaterializationLayer {
 public:
-  static char ID;
-
   /// The StaticArchiveLayer needs a reference to the base object linking layer
   /// so it can feed the archive bytes into the linker.
   StaticArchiveLayer(llvm::orc::ObjectLayer &objLayer,
@@ -191,6 +196,10 @@ public:
   /// to `archive` inside the class to ensure its lifetime matches the lifetime
   /// of the ExecutionEngine.
   ErrorOrSuccess add(StringRef libName, BufferRef archive);
+
+  static bool classof(const MaterializationLayer *layer) {
+    return layer->getKind() == LayerKind::kStaticArchiveLayer;
+  }
 
 private:
   llvm::orc::ObjectLayer &objectLayer;

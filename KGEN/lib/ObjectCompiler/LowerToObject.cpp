@@ -351,15 +351,13 @@ public:
 // ObjectCompilerLayer
 //===----------------------------------------------------------------------===//
 
-char ObjectCompilerLayer::ID;
-
 ObjectCompilerLayer::ObjectCompilerLayer(ObjectCompiler &&objCompiler,
                                          llvm::orc::ObjectLayer &base,
                                          llvm::orc::ExecutionSession &sess,
                                          const llvm::DataLayout &dl,
                                          AddToSearchOrderFn add)
-    : llvm::RTTIExtends<ObjectCompilerLayer, MaterializationLayer>(
-          sess, dl, std::move(add)),
+    : MaterializationLayer(LayerKind::kObjectCompilerLayer, sess, dl,
+                           std::move(add)),
       objectCompiler(std::move(objCompiler)), baseLayer(base) {}
 
 ErrorOrSuccess ObjectCompilerLayer::add(StringRef libName,
