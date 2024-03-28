@@ -27,14 +27,20 @@ LSPTelemetryContext::LSPTelemetryContext(Telemetry::TelemetryContext &ctx)
 
 void LSPTelemetryContext::recordResponseTime(
     StringRef request, std::chrono::microseconds microseconds) {
+#ifdef MODULAR_ENABLE_TELEMETRY
   responseTimeHistogram.record(microseconds.count(),
                                {{"request", request.str()}});
+#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 void LSPTelemetryContext::recordInvalidRequest(StringRef request) {
+#ifdef MODULAR_ENABLE_TELEMETRY
   invalidRequestCounter.add(1, {{"request", request.str()}});
+#endif // MODULAR_ENABLE_TELEMETRY
 }
 
 void LSPTelemetryContext::recordOutdatedRequest(StringRef request) {
+#ifdef MODULAR_ENABLE_TELEMETRY
   outdatedRequestCounter.add(1, {{"request", request.str()}});
+#endif // MODULAR_ENABLE_TELEMETRY
 }
