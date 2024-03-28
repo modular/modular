@@ -59,10 +59,6 @@ std::unique_ptr<HTTPClient> HTTPContext::client() {
   return std::make_unique<HTTPClient>(HTTPContextRef::copy(this));
 }
 
-void HTTPContext::setShouldVerifyTLSPeer(bool verifyTLSPeer) {
-  this->verifyTLSPeer = verifyTLSPeer;
-}
-
 void HTTPContext::setUserAgent(std::string userAgent) {
   this->userAgent = std::move(userAgent);
 }
@@ -70,6 +66,10 @@ void HTTPContext::setUserAgent(std::string userAgent) {
 void HTTPContext::setupAuth(std::string clientKey, std::string clientCert) {
   this->clientKey = clientKey;
   this->clientCert = clientCert;
+}
+
+void HTTPContext::setCAInfo(std::string caInfo) {
+  this->caInfo = std::move(caInfo);
 }
 
 HTTPContext::~HTTPContext() {
@@ -337,10 +337,14 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
   // Allow transport compression. Empty string means all supported.
   CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, ""),
                    "set accept encoding");
-  // Verify SSL certificate against peers
-  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER,
-                                    context->verifyTLSPeer ? 1 : 0),
+  // Verify SSL certificate against peers.
+  CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1),
                    "set ssl verify peer");
+  // Set the CA info if appropriate.
+  if (!context->caInfo.empty())
+    CHECK_CURL_ERROR(
+        curl_easy_setopt(curl, CURLOPT_CAINFO, context->caInfo.c_str()),
+        "set ssl cainfo");
   // Let the server know who we are.
   CHECK_CURL_ERROR(
       curl_easy_setopt(curl, CURLOPT_USERAGENT, context->userAgent.c_str()),

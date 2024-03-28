@@ -64,6 +64,9 @@ public:
   /// to check the return value; this will fail if the value is not settable.
   bool set(StringRef key, StringRef value);
 
+  /// Clear deletes a value from the underlying config only. See `set`.
+  bool clear(StringRef key);
+
   /// Flushes the configuration. An error will be raised here if a set failed
   /// previously (and e.g. conflicted with an entitlement).
   ErrorOrSuccess flush();
@@ -127,7 +130,11 @@ private:
 
   Config config;
   EntitlementStore entitlementStore;
-  llvm::StringMap<Setting> settings;
+  struct impl {
+    std::mutex mu;
+    llvm::StringMap<Setting> map;
+  };
+  std::unique_ptr<impl> settings;
 };
 } // namespace M
 

@@ -83,6 +83,11 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     return settingsOr.takeError();
   Settings settings = std::move(*settingsOr);
 
+  // If we have a certificate authority, set that on the HTTPContext.
+  StringRef caInfo = settings.get<StringRef>("ssl.cainfo");
+  if (!caInfo.empty())
+    httpCtx->setCAInfo(std::string(caInfo));
+
   // Setup authentication on the HTTP client.
   httpCtx->setupAuth(settings.clientKeyPriv(), settings.clientCert());
 

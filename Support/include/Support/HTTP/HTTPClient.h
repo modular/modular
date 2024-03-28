@@ -42,7 +42,7 @@ public:
 
   std::unique_ptr<HTTPClient> client();
   void setUserAgent(std::string userAgent);
-  void setShouldVerifyTLSPeer(bool verifyTLSPeer);
+  void setCAInfo(std::string caInfo);
 
 protected:
   /// Allow access to protected constructor.
@@ -65,9 +65,8 @@ private:
   /// Client cert for all requests.
   std::string clientCert;
 
-  /// Used to disable HTTPS vertification. Typically used to test with self
-  /// signed certicates.
-  bool verifyTLSPeer = true;
+  /// caInfo contains certificate information (if non-empty).
+  std::string caInfo;
 };
 
 /// Represents an HTTP Request.
