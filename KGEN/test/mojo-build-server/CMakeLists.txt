@@ -17,4 +17,3 @@ add_modular_testsuite(check-mojo-build-server
   TOOLS
   mojo-build-server
 )
-

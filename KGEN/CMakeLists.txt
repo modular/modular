@@ -54,6 +54,7 @@ add_subdirectory(lib/Package)
 add_subdirectory(lib/MojoParser)
 add_subdirectory(lib/MojoTooling)
 
+add_subdirectory(lib/MojoBuild)
 add_subdirectory(lib/MojoLLDB)
 add_subdirectory(lib/MojoJupyter)
 add_subdirectory(lib/MojoTesting)
