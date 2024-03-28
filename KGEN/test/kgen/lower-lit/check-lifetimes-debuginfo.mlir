@@ -6,6 +6,7 @@
 // CHECK: #[[DIEXPR_DEREF:.*]] = #debuginfo.expr.deref<#[[DIEXPR_IRVALUE]]> : ![[DI_S_TYPE]]
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"test">, linkageName = "test", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 // CHECK: #[[DIVAR_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10> : ![[DI_S_TYPE]]
+// CHECK: #[[DIVAR_Y:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "y", file = #{{.*}}, line = 13> : ![[DI_S_TYPE]]
 
 #file = #debuginfo.file<"test.mlir" in "">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "LIT", isOptimized = true, emissionKind = Full>
@@ -55,4 +56,33 @@ lit.func @test() -> index {
   // CHECK-NOT: debuginfo.{{(value)|(kill)}}
 
   kgen.return %x_a_val : index loc(#locRet)
+} loc(fused<#sp>["test.mlir":10:10])
+
+// CHECK-LABEL: lit.func @test_consumed
+lit.func @test_consumed() -> index {
+  // Create `x`.
+  // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var
+  // CHECK-NEXT: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]]
+  %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
+  %0 = kgen.param.constant: index = <42> loc(#locX)
+  lit.call @S::@__init__(%x, %0) : !lit.signature<("self": !lit.ref<@S, mut xlife> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+
+  // Create `y`.
+  // CHECK: %[[VAR_Y:.*]] = lit.var.decl "y" var
+  // CHECK: debuginfo.value #[[DIVAR_Y]] #[[DIEXPR_DEREF]] = %[[VAR_Y]]
+  %y = lit.var.decl "y"  var : !lit.ref<@S, mut ylife> loc(#locY)
+
+  // Move `x` into `y`.
+  // CHECK: debuginfo.kill #[[DIVAR_X]] loc(#[[LOC_USE:.*]])
+  // CHECK: lit.transfer_mem_ownership {{.*}} loc(#[[LOC_USE]])
+  // CHECK: lit.call @S::@__moveinit__{{.*}} loc(#[[LOC_USE]])
+  %x_moved = lit.transfer_mem_ownership %x : !lit.ref<@S, mut xlife> -> !lit.ref<@S, mut xlifetrans> {paramDecl = #kgen<param.decl xlifetrans : !lit.lifetime<1>>} loc(#locUse)
+  lit.call @S::@__moveinit__(%y, %x_moved) : !lit.signature<(!lit.ref<@S, mut ylife> init_self, !lit.ref<@S, mut xlifetrans> owned_in_mem) -> !kgen.none> loc(#locUse)
+
+  // Last use of `y`.
+  // CHECK: lit.ref.struct.ger {{.*}} loc(#[[LOC_RET:.*]])
+  // CHECK: debuginfo.kill #[[DIVAR_Y]] loc(#[[LOC_RET]])
+  %y_a = lit.ref.struct.ger %y[a] : <index, mut ylife> from @S loc(#locRet)
+  %y_a_val = lit.ref.load %y_a : <index, mut ylife> loc(#locRet)
+  kgen.return %y_a_val : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
