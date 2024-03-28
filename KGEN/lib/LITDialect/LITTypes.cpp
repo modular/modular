@@ -496,6 +496,31 @@ LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
   return printTypeValue(p, value, *this);
 }
 
+/// Return the metatype for this this trait as a value.
+AnyTraitType TraitType::getMetaType() { return AnyTraitType::get(getSymbol()); }
+
+/// Return a TypeConstantAttr for a reference to this trait as a value, e.g.
+/// uttering 'Stringable' in code.
+TypedAttr TraitType::getPValue() {
+  return TypeConstantAttr::get(*this, getMetaType());
+}
+
+//===----------------------------------------------------------------------===//
+// AnyTraitType
+//===----------------------------------------------------------------------===//
+
+SymbolRefAttr AnyTraitType::getSymbol() const { return getValue().getValue(); }
+
+TraitType AnyTraitType::getTraitType() { return TraitType::get(getSymbol()); }
+
+OptionalParseResult AnyTraitType::parseValue(AsmParser &p,
+                                             TypedAttr &value) const {
+  return parseTypeValue(p, value, *this);
+}
+
+LogicalResult AnyTraitType::printValue(AsmPrinter &p, TypedAttr value) const {
+  return printTypeValue(p, value, *this);
+}
 //===----------------------------------------------------------------------===//
 // LifetimeType
 //===----------------------------------------------------------------------===//

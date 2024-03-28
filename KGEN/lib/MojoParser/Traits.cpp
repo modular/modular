@@ -28,7 +28,7 @@ using namespace LIT;
 /// expected struct method with the current struct type.
 static std::pair<LITSignatureType, ParamBindings>
 getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
-                          ASTType structSelfType) {
+                          ASTType structSelfType, TraitType trait) {
   LITSignatureType signature = traitFn.getFullSignature();
   SmallVector<TypedAttr> params;
   ArrayRef<Type> paramTypes = signature.getParamTypes();
@@ -37,12 +37,13 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   // FIXME(generics): We aren't propagating metatypes into pointer types, so
   // just pass a generic metatype here.
   auto anyRegTypeType = TypeType::get(traitFn.getContext());
-  params.push_back(TypeConstantAttr::get(anyRegTypeType, anyRegTypeType));
+  params.push_back(TypeConstantAttr::get(trait, anyRegTypeType));
   // Add trait's T replacement.
-  params.push_back(TypeConstantAttr::get(structSelfType, anyRegTypeType));
+  params.push_back(TypeConstantAttr::get(structSelfType, trait));
   ParameterEvaluator evaluator(params);
   auto bindings = ParamBindings::getForDeclaredType(
       emitter.declScope, emitter.shared, structSelfType.getMetaType());
+  // Leave the rest alone.
   for (Type type : paramTypes.drop_front(2)) {
     params.push_back(UnboundAttr::get(type));
     evaluator.addInputValue(params.back());
@@ -448,7 +449,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
       }
 
       auto [newSignature, bindings] =
-          getTraitFunctionSignature(emitter, traitFn, selfType);
+          getTraitFunctionSignature(emitter, traitFn, selfType, trait);
       // Match against the transformed calling convention if the struct is
       // register-passable.
       LITSignatureType traitSignature = newSignature;

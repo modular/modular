@@ -52,6 +52,8 @@ Type ASTType::getMetaType() const {
     return declRef.getMetaType();
   if (auto paramRef = dyn_cast<ParamRefType>(mlirType))
     return paramRef.getParam().getType();
+  if (auto traitRef = dyn_cast<TraitType>(mlirType))
+    return traitRef.getMetaType();
   // This is some generic MLIR type.
   return {};
 }
@@ -72,10 +74,12 @@ bool ASTType::hasMetaType(ASTType metaType) const {
 
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
   Type type = getMetaTypeOrSelf();
-  if (auto metaType = dyn_cast_or_null<AnyStructType>(type))
-    return &shared.declResolver->getDeclForTypeSymbol(metaType.getSymbol());
+  if (auto anyStruct = dyn_cast_or_null<AnyStructType>(type))
+    return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
   if (auto traitType = dyn_cast_or_null<TraitType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(traitType.getSymbol());
+  if (auto anyTrait = dyn_cast_or_null<AnyTraitType>(type))
+    return &shared.declResolver->getDeclForTypeSymbol(anyTrait.getSymbol());
   return nullptr;
 }
 
@@ -90,8 +94,7 @@ ArrayRef<Type> ASTType::getParameters() const {
   // Query the metatype for the parameter signature.
   if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(mlirType))
     return metaType.getSignature().getParamTypes();
-  if (AnyStructType metaType =
-          dyn_cast_or_null<AnyStructType>(getMetaTypeOrSelf()))
+  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(getMetaType()))
     return metaType.getSignature().getParamTypes();
   return {};
 }
@@ -156,7 +159,7 @@ static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,
   if (!decl) {
     // If this is a generic type, use the default specification.
     if (auto paramRefTy = dyn_cast<ParamRefType>(type.mlirType))
-      if (isa<ParamRefType>(paramRefTy.getParam().getType()))
+      if (isa<ParamRefType, AnyTraitType>(paramRefTy.getParam().getType()))
         return genericDefault;
 
     // MLIR types are assumed to be register-passable + Trivial.
@@ -488,9 +491,13 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
   } else if (auto anyStruct = dyn_cast<AnyStructType>(type)) {
     os << "AnyStruct[";
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues());
-    os << "]";
+    os << ']';
   } else if (auto traitType = dyn_cast<TraitType>(type)) {
     printSymbol(os, traitType.getSymbol(), forDiag, /*isFunc=*/false);
+  } else if (auto anyTrait = dyn_cast<AnyTraitType>(type)) {
+    os << "AnyTrait[";
+    printSymbol(os, anyTrait.getSymbol(), forDiag, /*isFunc=*/false);
+    os << ']';
   } else if (isNoneType()) {
     os << "None";
   } else if (auto sig = dyn_cast<LITSignatureType>(type)) {

@@ -944,6 +944,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // Metatypes can implicitly convert to any trait type they implement.
   if (auto traitType = dyn_cast<TraitType>(requiredType)) {
     std::optional<InflightDiag> diag;
+    // Struct types and Trait types can conform to traits.
     if (isa<AnyStructType, TraitType>(rvType) &&
         checkNominalTypeConformance(shared, traitType, rvType.getDecl(shared),
                                     value.expr->getLoc(), diag))
@@ -951,6 +952,9 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     if (diag)
       diag->abandon();
 
+    // MLIR types can conform to traits that have limited requirements.
+    // AnyTraitType (the type of all traits) conforms to traits with only a
+    // destructor (e.g. AnyType) since all traits have that.
     if (isa<TypeType>(rvType) &&
         checkMLIRTypeConformance(shared, value.expr->getLoc(), traitType))
       return true;
@@ -1090,7 +1094,7 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
-  ASTType metaType(typeValue.getRValueType());
+  ASTType metaType = typeValue.getRValueType();
 
   // Cannot bind parametric types to traits.
   if (auto anyStruct = dyn_cast<AnyStructType>(metaType)) {
@@ -1121,27 +1125,26 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
   if (failed(getDeclResolver().resolveFully(*traitDecl, value.expr->getLoc())))
     return {};
 
-  Type selfType;
-  SmallVector<TypedAttr> selfParams;
-  auto typeType = TypeType::get(getContext());
-  if (auto anyStruct = dyn_cast<AnyStructType>(metaType)) {
-    // When converting from a concrete type, construct the self type value as
-    // a declref to the metatype.
-    selfType = DeclRefType::get(anyStruct.getSymbol(),
-                                anyStruct.getParamValues(), anyStruct);
-    // Substitute the implicit trait parameters.
-    selfParams.assign({TypeConstantAttr::get(typeType, typeType),
-                       TypeConstantAttr::get(selfType, typeType)});
-  } else {
-    // Otherwise, we are converting from a trait. Just rebind the types.
-    selfType = ParamRefType::get(typeValue);
-    selfParams.assign({TypeConstantAttr::get(metaType, typeType), typeValue});
-  }
+  ASTType selfType = ASTType(typeValue);
 
-  StructDeclOp structDeclOp = dyn_cast<StructDeclOp>(metaTypeDecl);
+  // Bind the two implicit parameters on trait members.  The first is the
+  // metatype of the type, the second is the type.  This is needed because
+  // traits can bind to different kinds of metatypes.
+
+  // FIXME: Should be PValue(metaType) but struct and traits have a different
+  // metatype type AnyStruct vs AnyTrait and we don't want to have to also
+  // abstract over that.
+  SmallVector<TypedAttr> selfParams;
+  selfParams.push_back(
+      TypeConstantAttr::get(metaType, TypeType::get(getContext())));
+  selfParams.push_back(typeValue);
+
+  // Determine if the conforming value is trivial or register passable.  If so,
+  // this will affect the methods we can synthesize in conformance.  Values of
+  // trait type will already have been erased to a memory type.
   bool rpTrivial = false;
   bool regPassable = false;
-  if (structDeclOp) {
+  if (auto structDeclOp = dyn_cast<StructDeclOp>(metaTypeDecl)) {
     rpTrivial = structDeclOp.isRegisterPassable();
     regPassable = structDeclOp.isRegisterPassableTrivial();
   }
