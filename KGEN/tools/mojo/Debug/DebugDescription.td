@@ -45,4 +45,4 @@ def DebugDescription : MojoCommandDescription<
   "Finally, it is worth mentioning that this debugger can debug programs "
   "written in other standard native languages like C and C++, as it is based "
   "on LLDB.",
-  [UsageInfo<"debug-options", "", /*variadicInput=*/false>]>, Index<3>;
+  [UsageInfo<"debug-options", "", /*variadicInput=*/false>]>, Index<4>;
