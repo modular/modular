@@ -339,13 +339,15 @@ struct Q4sym[
         @parameter
         if are_nibbles_reversed:
             var lower_elements = qdata.slice[group_size // 2]() << 4
-            var upper_elements = qdata.slice[group_size // 2](group_size // 2)
+            var upper_elements = qdata.slice[
+                group_size // 2, offset = group_size // 2
+            ]()
             return lower_elements | upper_elements
         else:
             var lower_elements = qdata.slice[group_size // 2]()
-            var upper_elements = qdata.slice[group_size // 2](
-                group_size // 2
-            ) << 4
+            var upper_elements = qdata.slice[
+                group_size // 2, offset = group_size // 2
+            ]() << 4
             return lower_elements | upper_elements
 
     @always_inline
@@ -641,21 +643,32 @@ fn _matmul_int4_dotprod[
             )
             return c_local
 
-        @unroll
-        for idx in range(4):
+        @parameter
+        @always_inline
+        fn fill_c_local[idx: Int]():
             c_local += (
-                a.slice[simd_width](idx * simd_width).cast[DType.int32]()
-                * b_s8.slice[simd_width](idx * simd_width).cast[DType.int32]()
+                a.slice[simd_width, offset = idx * simd_width]().cast[
+                    DType.int32
+                ]()
+                * b_s8.slice[simd_width, offset = idx * simd_width]().cast[
+                    DType.int32
+                ]()
             )
+
+        unroll[fill_c_local, 4]()
         return c_local
 
     var c = SIMD[DType.int32, simd_width](0)
 
-    @unroll
-    for idx in range(0, group_size, simd_width * 4):
-        var a_slice = a.slice[simd_width * 4](idx)
-        var b_slice = b.slice[simd_width * 4](idx)
+    @parameter
+    @always_inline
+    fn unroll_fn[i: Int]():
+        alias idx = i * simd_width * 4
+        var a_slice = a.slice[simd_width * 4, offset=idx]()
+        var b_slice = b.slice[simd_width * 4, offset=idx]()
         c = dotprod(a_slice, b_slice, c)
+
+    unroll[unroll_fn, div_ceil(group_size, simd_width * 4)]()
 
     return c
 
