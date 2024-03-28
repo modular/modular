@@ -39,7 +39,6 @@ public:
         opentelemetry::v1::exporter::otlp::ConvertGenericMessageToProtoExported(
             data);
     HTTPRequest req{metricsUrl};
-    client.noAuthNeeded();
     req.udsName = socketName;
     req.method = HTTPRequest::POST;
     req.bodyLen = protoBin.size();

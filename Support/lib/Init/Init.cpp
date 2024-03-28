@@ -83,6 +83,9 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
     return settingsOr.takeError();
   Settings settings = std::move(*settingsOr);
 
+  // Setup authentication on the HTTP client.
+  httpCtx->setupAuth(settings.clientKeyPriv(), settings.clientCert());
+
   // Enable crash logging, if appropriate.
   if (!options.forceDisableCrashReporting &&
       settings.getBool("crash_reporting.enabled", true)) {

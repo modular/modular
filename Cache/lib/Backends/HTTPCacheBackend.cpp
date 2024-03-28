@@ -53,8 +53,6 @@ HTTPCacheBackend::requestImpl(StringRef keyHash, bool headOnly) const {
   int retryCount = 0;
   while (true) {
     HTTPClient client(ctx.copy());
-    // No auth needed for now.
-    client.noAuthNeeded();
 
     // Execute the request. This is a blocking request on this thread.
     HTTPResponse response = client.executeRequest(

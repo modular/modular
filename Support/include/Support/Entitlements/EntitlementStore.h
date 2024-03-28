@@ -152,7 +152,7 @@ private:
   static ErrorOr<BufferRef>
   requestCertificate(HTTPClient &client, StringRef csr,
                      M::Detail::CertificateChain *chain, StringRef prevKeySig,
-                     bool isRefresh);
+                     bool isRefresh, std::optional<std::string> accessToken);
 
   /// This is a map of all the entitlements we have, indexed by their OID. This
   /// means that we can only have a single instance of a given entitlement at a

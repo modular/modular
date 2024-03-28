@@ -67,6 +67,11 @@ void HTTPContext::setUserAgent(std::string userAgent) {
   this->userAgent = std::move(userAgent);
 }
 
+void HTTPContext::setupAuth(std::string clientKey, std::string clientCert) {
+  this->clientKey = clientKey;
+  this->clientCert = clientCert;
+}
+
 HTTPContext::~HTTPContext() {
   // Flush/free all caches and close persistant connections
   curl_global_cleanup();
@@ -111,71 +116,6 @@ HTTPClient::~HTTPClient() {
   }
 }
 
-/// Clean out any auth settings we may have set already.
-static void cleanupAuth(void *curl) {
-  curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
-  curl_easy_setopt(curl, CURLOPT_XOAUTH2_BEARER, nullptr);
-  curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, nullptr);
-  curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
-  curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, nullptr);
-  curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
-}
-
-void HTTPClient::noAuthNeeded() {
-  cleanupAuth(curl);
-  authSetup = true;
-}
-
-ErrorOrSuccess HTTPClient::setupAuth(std::optional<std::string> tok) {
-  // Clean out anything we already had. This means just resetting to the
-  // defaults so that we don't accidentally use an outdated token, for example.
-  cleanupAuth(curl);
-
-  // Short-circuit if we're using bearer token authorization. This way, libcurl
-  // will add the headers *for* us.
-  if (tok) {
-    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BEARER);
-    curl_easy_setopt(curl, CURLOPT_XOAUTH2_BEARER, tok->c_str());
-    authSetup = true;
-    return success();
-  }
-
-  auto clientCert = findModularFile("client.pem");
-  if (!clientCert)
-    return Error("could not find the client certificate");
-
-  auto certBufOr = Buffer::getFile(*clientCert);
-  if (certBufOr.isError())
-    return certBufOr.takeError();
-
-  // Set the client certificate on the context.
-  curl_blob blob = {};
-  blob.data = const_cast<void *>((const void *)(*certBufOr)->getBufferStart());
-  blob.len = (*certBufOr)->getBufferSize();
-  blob.flags = CURL_BLOB_COPY;
-  curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, &blob);
-  curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
-
-  auto clientKey = findModularFile("client_priv.pem");
-  if (!clientKey)
-    return Error("could not find the client private key");
-
-  auto clientKeyBufOr = Buffer::getFile(*clientKey);
-  if (clientKeyBufOr.isError())
-    return clientKeyBufOr.takeError();
-
-  // Now set the client key on the request - used to sign the request.
-  blob.data =
-      const_cast<void *>((const void *)(*clientKeyBufOr)->getBufferStart());
-  blob.len = (*clientKeyBufOr)->getBufferSize();
-  curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, &blob);
-  curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
-
-  // All done!
-  authSetup = true;
-  return success();
-}
-
 struct RequestStreamReturn {
   llvm::raw_ostream *os;
   size_t limit = 0;
@@ -207,9 +147,6 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
                                         raw_ostream &os,
                                         std::chrono::milliseconds timeout,
                                         size_t maxLength) {
-  if (!authSetup)
-    llvm::report_fatal_error("auth must be setup before executing a request");
-
   return executeRequestImpl(request, os, timeout, maxLength);
 }
 
@@ -293,6 +230,41 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
   // Set the headers.
   CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list),
                    "set http header list");
+
+  // Set the token, if provided.
+  if (request.accessToken) {
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_BEARER);
+    curl_easy_setopt(curl, CURLOPT_XOAUTH2_BEARER,
+                     request.accessToken->c_str());
+  } else {
+    curl_easy_setopt(curl, CURLOPT_HTTPAUTH, CURLAUTH_ANY);
+    curl_easy_setopt(curl, CURLOPT_XOAUTH2_BEARER, nullptr);
+  }
+
+  // Setup the key; note the CURL_BLOB_COPY means that it will not touch this
+  // data, and the const cast is harmless.
+  if (context->clientKey.size() > 0) {
+    curl_blob blob = {};
+    blob.data = const_cast<void *>((const void *)(context->clientKey.c_str()));
+    blob.len = context->clientKey.size();
+    blob.flags = CURL_BLOB_COPY;
+    curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, &blob);
+    curl_easy_setopt(curl, CURLOPT_SSLKEYTYPE, "PEM");
+  } else {
+    curl_easy_setopt(curl, CURLOPT_SSLKEY_BLOB, nullptr);
+  }
+
+  // Setup the cert; see above re: const_cast.
+  if (context->clientCert.size() > 0) {
+    curl_blob blob = {};
+    blob.data = const_cast<void *>((const void *)(context->clientCert.c_str()));
+    blob.len = context->clientCert.size();
+    blob.flags = CURL_BLOB_COPY;
+    curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, &blob);
+    curl_easy_setopt(curl, CURLOPT_SSLCERTTYPE, "PEM");
+  } else {
+    curl_easy_setopt(curl, CURLOPT_SSLCERT_BLOB, nullptr);
+  }
 
   // Set verbose mode if running in DEBUG mode
   CHECK_CURL_ERROR(

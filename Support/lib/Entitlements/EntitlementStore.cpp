@@ -431,8 +431,7 @@ static ErrorOr<llvm::json::Value> requestDeviceCode(HTTPClient &client) {
   // Get the JSON object back.
   size_t maxSize = 1024;
   WriteableBufferRef responseBuf = WriteableBuffer::get();
-  // This request is to an endpoint that requires no auth.
-  client.noAuthNeeded();
+
   // Execute the request!
   auto response = client.executeRequest(
       request, *responseBuf, std::chrono::milliseconds::zero(), maxSize);
@@ -810,11 +809,6 @@ ErrorOrSuccess EntitlementStore::refresh(Config &config,
   if (subjectOr.isError())
     return subjectOr.takeError();
 
-  // Set up auth - this will read the certificate from the filesystem and use
-  // that. This should still use the old keys for now.
-  if (auto err = client->setupAuth())
-    return err.takeError();
-
   // Rotate the client's keys on each refresh.
   auto newKeysOr = Keypair::generate(clientKeyPrivPath);
   if (newKeysOr.isError())
@@ -840,9 +834,10 @@ ErrorOrSuccess EntitlementStore::refresh(Config &config,
 
   // Request the new certificate. This will populate the certificate in memory,
   // but won't verify the certificate.
-  auto certOr = requestCertificate(*client, buf->Buffer::getBuffer(),
-                                   /*certChain=*/clientCertChain.get(), b64Sig,
-                                   /*isRefresh=*/true);
+  auto certOr =
+      requestCertificate(*client, buf->Buffer::getBuffer(),
+                         /*certChain=*/clientCertChain.get(), b64Sig,
+                         /*isRefresh=*/true, /*accessToken=*/std::nullopt);
   if (certOr.isError())
     // Include the original error and a helpful message here. It's possible
     // that they haven't actually run anything in a long time, and they are
@@ -1051,11 +1046,6 @@ EntitlementStore::authAndFetchCertificate(HTTPClient &client,
     return toksOr.takeError();
   auto [accessToken, idToken] = std::move(*toksOr);
 
-  // Set up the auth provider with the access token. This will set up auth for
-  // all further usage of this client.
-  if (auto err = client.setupAuth(accessToken))
-    return err.takeError();
-
   // Now, parse the ID token to get the user ID.
   auto jwtOr = JWT::parse(idToken);
   if (jwtOr.isError())
@@ -1079,7 +1069,7 @@ EntitlementStore::authAndFetchCertificate(HTTPClient &client,
   // from a previous key.
   return requestCertificate(client, csrBuf->Buffer::getBuffer(),
                             /*certChain=*/nullptr, /*prevKeySig=*/"",
-                            /*isRefresh=*/false);
+                            /*isRefresh=*/false, /*accessToken=*/accessToken);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1089,12 +1079,14 @@ EntitlementStore::authAndFetchCertificate(HTTPClient &client,
 ErrorOr<BufferRef> EntitlementStore::requestCertificate(
     HTTPClient &client, StringRef csr,
     M::Detail::CertificateChain *clientCertChain, StringRef prevKeySig,
-    bool isRefresh) {
+    bool isRefresh, std::optional<std::string> accessToken) {
   auto certURL = isRefresh ? modularAuthURL + "/v1/certificate/renew"
                            : modularAuthURL + "/v1/certificate/issue";
   HTTPRequest certificateRequest{certURL};
   certificateRequest.method = HTTPRequest::Method::POST;
   certificateRequest.headers.try_emplace("content-type", "application/json");
+  if (accessToken)
+    certificateRequest.accessToken.emplace(std::move(*accessToken));
 
   // Provide the CSR and certificate as PEM-encoded blobs.
   StringRef clientCertChainPEMRef =
