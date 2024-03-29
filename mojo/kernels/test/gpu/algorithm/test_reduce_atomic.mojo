@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
 
@@ -62,7 +62,7 @@ fn run_reduce() raises:
         res_device,
         vec_device,
         n,
-        grid_dim=(div_ceil(n, BLOCK_SIZE),),
+        grid_dim=(ceildiv(n, BLOCK_SIZE),),
         block_dim=(BLOCK_SIZE,),
         stream=stream,
     )

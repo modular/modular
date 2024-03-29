@@ -7,7 +7,7 @@
 # TODO(#31429): Restore `--debug-level full` here
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 from pathlib import Path
 
 from buffer import NDBuffer
@@ -96,7 +96,7 @@ fn run_matmul() raises:
         m,
         n,
         k,
-        grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+        grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
         stream=stream,
     )

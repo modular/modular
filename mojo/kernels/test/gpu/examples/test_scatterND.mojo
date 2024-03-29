@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -243,7 +243,7 @@ fn scatter_nd[
         num_indices,
         last_shape_of_indices,
         num_updates_elements,
-        grid_dim=(div_ceil(num_indices, MAX_THREADS_PER_BLOCK)),
+        grid_dim=(ceildiv(num_indices, MAX_THREADS_PER_BLOCK)),
         block_dim=(MAX_THREADS_PER_BLOCK),
         stream=stream,
     )
