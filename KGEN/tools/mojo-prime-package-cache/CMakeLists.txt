@@ -24,6 +24,7 @@ add_modular_tool(mojo-prime-package-cache
   MSupportGlobals
   MVersion
   MojoParser
+  MojoToolsCommon
 
   MLIRBytecodeWriter
   MLIRParser
