@@ -15,5 +15,9 @@ add_modular_tool(system-info
 
   LINK_LIBS PRIVATE
   MSupport
+  LLCLRuntime
+  LLCLRuntimeGlobals
+  MProfiling
+  MSupportGlobals
   MArchTarget
 )

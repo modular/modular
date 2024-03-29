@@ -13,3 +13,4 @@ add_modular_library(LLCLCompilerSupport
   LLCLSupport
   MLIRIR
 )
+target_link_libraries(MDialect PRIVATE LLCLCompilerSupport)
