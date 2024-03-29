@@ -54,6 +54,12 @@ public:
     return storage.get<T>();
   }
 
+  /// Removes an object from the object.
+  template <typename T>
+  bool remove() {
+    return storage.remove<T>();
+  }
+
 private:
   GenericUniquePtrSet storage;
 };

@@ -103,6 +103,14 @@ public:
     return itr->second.template get<T>();
   }
 
+  /// Removes an object from the set.
+  template <typename T>
+  bool remove() {
+    std::lock_guard<std::recursive_mutex> lock(mu);
+    auto denseIndex = TypeID::get<T>().getDenseIndex();
+    return map.erase(denseIndex);
+  }
+
 private:
   /// Protects map. Recursive so that the creator in createIfMissing may also
   /// add pointer objects.
