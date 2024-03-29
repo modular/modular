@@ -11,7 +11,7 @@ from math import (
     ceil,
     cos,
     div,
-    div_ceil,
+    ceildiv,
     equal,
     erf,
     exp,
@@ -3904,7 +3904,7 @@ fn quantize_Q4sym_g8_shape_func[
 ](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     new_shape[rank - 1] = (
-        div_ceil(new_shape[rank - 1], 8) * sizeof[Q4sym[8, type]]()
+        ceildiv(new_shape[rank - 1], 8) * sizeof[Q4sym[8, type]]()
     )
     return new_shape
 
@@ -3950,7 +3950,7 @@ fn quantize_Q4sym_g16_shape_func[
 ](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     new_shape[rank - 1] = (
-        div_ceil(new_shape[rank - 1], 16) * sizeof[Q4sym[16, type]]()
+        ceildiv(new_shape[rank - 1], 16) * sizeof[Q4sym[16, type]]()
     )
     return new_shape
 
@@ -3996,7 +3996,7 @@ fn quantize_Q4sym_g32_shape_func[
 ](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     new_shape[rank - 1] = (
-        div_ceil(new_shape[rank - 1], 32) * sizeof[Q4sym[32, type]]()
+        ceildiv(new_shape[rank - 1], 32) * sizeof[Q4sym[32, type]]()
     )
     return new_shape
 
@@ -4117,9 +4117,9 @@ fn mip_div(numerator: Int, denominator: Int) -> Int:
 @mogg_register("mip.div.ceil")
 @always_inline
 @export
-fn mip_div_ceil(numerator: Int, denominator: Int) -> Int:
+fn mip_ceildiv(numerator: Int, denominator: Int) -> Int:
     debug_assert(denominator != 0, "mip.div.ceil divide by zero")
-    return div_ceil(numerator, denominator)
+    return ceildiv(numerator, denominator)
 
 
 @mogg_register("mip.cmp.eq")
