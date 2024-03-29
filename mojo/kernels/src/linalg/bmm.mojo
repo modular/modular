@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv, gcd, max, min
+from math import align_up, div_ceil, gcd, max, min
 from sys.info import simdwidthof
 
 from algorithm import sync_parallelize, vectorize
@@ -297,7 +297,7 @@ fn _batched_matmul_cpu[
     var num_threads = Runtime().parallelism_level()
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
-        ceildiv(m * n * k * batch_size, get_min_task_size()), batch_size
+        div_ceil(m * n * k * batch_size, get_min_task_size()), batch_size
     )
     # Prevent parallelizing matmul with too many threads.
     var max_num_tasks_matmul = get_matmul_num_tasks[
@@ -544,8 +544,8 @@ fn _batched_matmul_gpu[
             b_buf_reshaped,
             c_buf.dynamic_shape,
             grid_dim=(
-                ceildiv(n, BLOCK_DIM),
-                ceildiv(m, BLOCK_DIM),
+                div_ceil(n, BLOCK_DIM),
+                div_ceil(m, BLOCK_DIM),
                 batch_size,
             ),
             block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
