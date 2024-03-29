@@ -368,7 +368,7 @@ static int build(const State &state) {
   CompilationOptions options;
 
   // Parse arguments.
-  MLIRContext mlirCtx;
+  MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
   TargetInfoAttr target;
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceMgr;

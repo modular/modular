@@ -115,7 +115,7 @@ int main(int argc, char **argv) {
     llvm::InitializeAllAsmParsers();
     llvm::InitializeAllAsmPrinters();
 
-    MLIRContext ctx;
+    MLIRContext ctx{MLIRContext::Threading::DISABLED};
     ctx.loadDialect<MDialect>();
     std::string cpu = cli.cpu;
     if (cpu.empty())

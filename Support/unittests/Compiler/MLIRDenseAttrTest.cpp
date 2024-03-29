@@ -13,7 +13,7 @@ using namespace M;
 using namespace mlir;
 
 TEST(MLIRDenseAttr, createResourceAttr) {
-  MLIRContext ctx;
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
   DenseResourceElementsAttr attr;
   {
     // The underlying string is released, but the resource attribute copies it.

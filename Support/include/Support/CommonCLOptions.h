@@ -150,7 +150,7 @@ public:
   template <typename BodyFn>
   LogicalResult configureMLIRContextAndExecute(llvm::SourceMgr &sourceMgr,
                                                BodyFn &&bodyFn) const {
-    mlir::MLIRContext context;
+    mlir::MLIRContext context{mlir::MLIRContext::Threading::DISABLED};
     configureMLIRContext(context);
 
     if (verifyDiagnostics) {

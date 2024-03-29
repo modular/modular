@@ -671,7 +671,7 @@ struct Test::TestDiscovery {
     return Test(TestID(path.string()), std::move(children));
   }
 
-  mlir::MLIRContext ctx;
+  mlir::MLIRContext ctx{mlir::MLIRContext::Threading::DISABLED};
   ArrayRef<std::string> additionalImportPaths;
 };
 

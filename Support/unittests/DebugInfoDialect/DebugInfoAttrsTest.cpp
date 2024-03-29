@@ -23,7 +23,7 @@ using namespace testing;
 namespace {
 class SourceNameAttrTest : public Test {
 protected:
-  MLIRContext ctx;
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
 
   SourceNameAttrTest() { ctx.loadDialect<DebugInfoDialect>(); }
 };
@@ -86,7 +86,7 @@ TEST_F(SourceNameAttrTest, TestEncodeDecode) {
 namespace {
 class DIScopeAttrUtilTest : public Test {
 protected:
-  MLIRContext ctx;
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
 
   DIScopeAttrUtilTest() { ctx.loadDialect<DebugInfoDialect>(); }
 

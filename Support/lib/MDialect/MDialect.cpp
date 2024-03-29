@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/MDialect/MDialect.h"
+#include "LLCL/CompilerSupport/LLVMThreadPool.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/Bytecode/BytecodeImplementation.h"
@@ -125,9 +127,30 @@ void M::registerContext(mlir::DialectRegistry &registry, ContextRef &ref) {
 }
 
 void M::registerContext(mlir::MLIRContext &ctx, ContextRef &ref) {
+  // In any execution setting where an LLCL runtime may be available, do not
+  // allow MLIR contexts to have their own threading enabled -- it must go
+  // through LLCL.
+  if (LLVM_UNLIKELY(ctx.isMultithreadingEnabled())) {
+    llvm::report_fatal_error(
+        "default MLIR threading must be disabled; please construct the "
+        "MLIRContext with MLIRContext::Threading::DISABLED");
+  }
+
   DialectRegistry registry;
   registerContext(registry, ref);
   ctx.appendDialectRegistry(registry);
+
+  // This function should be called once per MLIR context, but may be called
+  // multiple times per Modular context. Guard against that by checking for an
+  // existing thread pool.
+  LLCL::LLVMThreadPool *tp = ref->get<LLCL::LLVMThreadPool>();
+  if (!tp) {
+    if (LLCL::Runtime *runtime = ref->get<LLCL::Runtime>())
+      tp = &ref->emplace<LLCL::LLVMThreadPool>(*runtime);
+  }
+  // If the runtime is available, enable threading in MLIR with it.
+  if (tp)
+    ctx.setThreadPool(*tp);
 }
 
 ContextRef M::loadContext(mlir::MLIRContext *ctx) {

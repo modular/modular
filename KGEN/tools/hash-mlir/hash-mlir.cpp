@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
   llvm::InitLLVM y(argc, argv);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  MLIRContext ctx;
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
   ctx.appendDialectRegistry(registry);
 
   OwningOpRef<ModuleOp> module = mlir::parseSourceFile<ModuleOp>(
