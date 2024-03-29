@@ -17,8 +17,7 @@ namespace M {
 /// redacted from telemetry events. By default, all input arguments are
 /// private.
 void initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
-                         const State &state,
-                         const llvm::opt::InputArgList &args,
+                         StringRef message, const llvm::opt::InputArgList &args,
                          ArrayRef<unsigned> privateArgs = {});
 } // namespace M
 

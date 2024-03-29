@@ -84,7 +84,7 @@ static int test(const State &state) {
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
   auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, state, args,
+  initializeTelemetry(telemetryCtx, StringRef(state.subcommand), args,
                       /*privateArgs=*/{options::OPT_I});
 
   // Grab the additional import paths if they were provided.
