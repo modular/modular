@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# XFAIL: asan
+# UNSUPPORTED: asan
 
 # RUN: not mojo test -I %S/inputs "%s" | FileCheck %s
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC
