@@ -57,6 +57,8 @@ defm debug_level : CommandOption<["--", "-"], "debug-level",
     "that there are issues when generating debug info for some Mojo programs "
     "that have yet to be addressed."
   >>;
+def : Flag<["-"], "g">, Group<ExperimentalCompilationOptionGroup>, Index<1>,
+  Alias<debug_level>, AliasArgs<["full"]>;
 
 defm sanitize : CommandOption<["--", "-"], "sanitize",
   ExperimentalCompilationOptionGroup, Index<1>, MetaVarName<"CHECK">,

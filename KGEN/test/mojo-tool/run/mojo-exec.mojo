@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo -g %s | FileCheck %s
 
 
 fn main():
