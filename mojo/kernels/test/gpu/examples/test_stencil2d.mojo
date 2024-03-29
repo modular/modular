@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import ceildiv
+from math import div_ceil
 
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -158,8 +158,8 @@ fn run_stencil2d[smem: Bool]() raises:
             coeff3,
             coeff4,
             grid_dim=(
-                ceildiv(num_rows, BLOCK_DIM),
-                ceildiv(num_cols, BLOCK_DIM),
+                div_ceil(num_rows, BLOCK_DIM),
+                div_ceil(num_cols, BLOCK_DIM),
             ),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,

@@ -7,7 +7,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs, ceildiv, iota
+from math import abs, div_ceil, iota
 from sys.info import simdwidthof
 
 from algorithm import vectorize
@@ -101,7 +101,7 @@ fn run_mandelbrot() raises:
     fn run_mandelbrot(stream: Stream) raises:
         func(
             NDBuffer[int_type, 2, DimList(height, width)](out_device),
-            grid_dim=(ceildiv(height, BLOCK_SIZE),),
+            grid_dim=(div_ceil(height, BLOCK_SIZE),),
             block_dim=(BLOCK_SIZE,),
             stream=stream,
         )

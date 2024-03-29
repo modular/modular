@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import ceildiv
+from math import div_ceil
 from pathlib import Path
 
 from buffer import NDBuffer
@@ -141,7 +141,7 @@ fn run_matmul() raises:
         m,
         n,
         k,
-        grid_dim=(ceildiv(m, TILE_SZ_A), ceildiv(n, TILE_SZ_B)),
+        grid_dim=(div_ceil(m, TILE_SZ_A), div_ceil(n, TILE_SZ_B)),
         block_dim=(TILE_SZ_A, 1),
         stream=stream,
     )

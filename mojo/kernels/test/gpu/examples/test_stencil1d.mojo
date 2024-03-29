@@ -7,7 +7,7 @@
 # TODO(#31429): Restore `--debug-level full` here
 # RUN: %mojo %s | FileCheck %s
 
-from math import ceildiv
+from math import div_ceil
 
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -114,7 +114,7 @@ fn run_stencil1d[smem: Bool]() raises:
             coeff0,
             coeff1,
             coeff2,
-            grid_dim=(ceildiv(m, BLOCK_DIM)),
+            grid_dim=(div_ceil(m, BLOCK_DIM)),
             block_dim=(BLOCK_DIM),
             stream=stream,
         )

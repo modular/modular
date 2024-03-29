@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s
 
-from math import ceildiv, isclose, isnan
+from math import div_ceil, isclose, isnan
 from buffer import NDBuffer
 from buffer.list import DimList
 from memory.unsafe import DTypePointer
@@ -218,7 +218,7 @@ fn sgemm_double_buffer[
     ](int(lane_id))
     b_reg0.copy_from_numa(thread_loadb_smem_frags)
 
-    var num_k_tiles = Scalar[itype](ceildiv(int(K), int(BK)))
+    var num_k_tiles = Scalar[itype](div_ceil(int(K), int(BK)))
 
     # Update (num_k_tile - 1) tiles while switching buffers.
     for k_tile_id in range(num_k_tiles - 1):
@@ -433,7 +433,7 @@ fn test() raises:
                     c_tensor,
                     a_tensor,
                     b_tensor,
-                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
+                    grid_dim=(div_ceil(N, BN), div_ceil(M, BM), 1),
                     block_dim=(NUM_THREADS, 1, 1),
                     stream=stream,
                 )
@@ -451,7 +451,7 @@ fn test() raises:
         c_tensor,
         a_tensor,
         b_tensor,
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
+        grid_dim=(div_ceil(N, BN), div_ceil(M, BM), 1),
         block_dim=(NUM_THREADS, 1, 1),
         stream=stream,
     )
@@ -476,7 +476,7 @@ fn test() raises:
         M,
         N,
         K,
-        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
+        grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 

@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import ceildiv, max, min
+from math import div_ceil, max, min
 
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -523,7 +523,7 @@ fn run_matmul_mma_warptiling() raises:
             c_buffer,
             a_buffer,
             b_buffer,
-            grid_dim=(ceildiv(N, K10_BN), ceildiv(M, K10_BM)),
+            grid_dim=(div_ceil(N, K10_BN), div_ceil(M, K10_BM)),
             block_dim=(K10_NUM_THREADS,),
             stream=stream,
         )
@@ -570,7 +570,7 @@ fn run_matmul_mma_warptiling() raises:
             M,
             N,
             K,
-            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )

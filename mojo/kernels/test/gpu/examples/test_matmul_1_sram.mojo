@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import align_down, ceildiv
+from math import align_down, div_ceil
 from pathlib import Path
 
 from algorithm.functional import tile_and_unswitch
@@ -181,7 +181,7 @@ fn run_matmul() raises:
         M,
         N,
         K,
-        grid_dim=(ceildiv(N, tile_size), ceildiv(M, tile_size)),
+        grid_dim=(div_ceil(N, tile_size), div_ceil(M, tile_size)),
         block_dim=(tile_size, tile_size),
         stream=stream,
     )
