@@ -58,6 +58,17 @@ getValueAsOptionalIndex(const llvm::Record *record) {
 }
 
 //===----------------------------------------------------------------------===//
+// CommandAlias
+//===----------------------------------------------------------------------===//
+
+std::vector<StringRef> CommandAlias::getAliasArguments() const {
+  const llvm::RecordVal *aliasArgsRecord = record->getValue("AliasArgs");
+  if (!aliasArgsRecord || !aliasArgsRecord->getValue())
+    return {};
+  return record->getValueAsListOfStrings("AliasArgs");
+}
+
+//===----------------------------------------------------------------------===//
 // CommandDescription
 //===----------------------------------------------------------------------===//
 
@@ -349,11 +360,12 @@ bool CommandOption::isHidden(const llvm::Record *option) {
       [](llvm::Record *flag) { return flag->getName() == "HelpHidden"; });
 }
 
-LogicalResult CommandOption::addAlias(const llvm::Record *alias) {
-  assert(alias->isSubClassOf("Option") && "unexpected record class");
+LogicalResult CommandOption::addAlias(const llvm::Record *aliasRecord) {
+  CommandAlias alias(aliasRecord);
 
   bool invalid = false;
-  std::optional<int64_t> aliasIndex = getValueAsOptionalIndex(alias);
+  std::optional<int64_t> aliasIndex =
+      getValueAsOptionalIndex(alias.getRecord());
   auto it = llvm::lower_bound(aliases, alias, LessIndex());
   if (it != aliases.end()) {
     // If the alias already exists in the collection, no need to insert it.
@@ -362,23 +374,23 @@ LogicalResult CommandOption::addAlias(const llvm::Record *alias) {
 
     // If we're inserting an alias behind another, they may have the same
     // index value. If so, emit a warning.
-    if (std::optional<int64_t> index = getValueAsOptionalIndex(*it))
+    if (std::optional<int64_t> index = getValueAsOptionalIndex(it->getRecord()))
       if (aliasIndex && aliasIndex == *index)
         invalid |= printError(
-            alias->getLoc(),
+            aliasRecord->getLoc(),
             llvm::formatv("alias '{0}' has index {1}, which has already been "
                           "used; it will appear in a non-deterministic order",
-                          alias->getValueAsString("Name"), *aliasIndex));
+                          aliasRecord->getValueAsString("Name"), *aliasIndex));
   }
 
   // Now that we're adding this alias for the first time, perform some
   // validation.
   if (!aliasIndex)
     invalid |= printError(
-        alias->getLoc(),
+        aliasRecord->getLoc(),
         llvm::formatv("alias '{0}' has no index with which to order it by; "
                       "it will appear in a non-deterministic order",
-                      alias->getValueAsString("Name")));
+                      aliasRecord->getValueAsString("Name")));
 
   aliases.insert(it, alias);
   return success(/*isSuccess=*/!invalid);

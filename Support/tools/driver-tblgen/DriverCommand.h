@@ -21,6 +21,38 @@ namespace M {
 
 class CommandOption;
 
+/// A convenience wrapper for an `Alias` TableGen record. This provides
+/// getters for the record's values, as well as other helper functions.
+class CommandAlias {
+public:
+  /// Compare this alias with another alias for equality.
+  bool operator==(const CommandAlias &other) const {
+    return record == other.record;
+  }
+
+  /// Return the alias's optional metavar name, if one is defined.
+  std::optional<StringRef> getMetaVarName() const {
+    return record->getValueAsOptionalString("MetaVarName");
+  }
+
+  /// Return the underlying LLVM `alias` record.
+  const llvm::Record *getRecord() const { return record; }
+
+  /// Return the alias arguments for the alias.
+  std::vector<StringRef> getAliasArguments() const;
+
+private:
+  /// Initializes the wrapper with the given `Alias` record.
+  CommandAlias(const llvm::Record *record) : record(record) {
+    assert(record->isSubClassOf("Alias") && "unexpected record class");
+  }
+
+  friend class CommandOption;
+
+  /// The underlying alias record.
+  const llvm::Record *record;
+};
+
 /// A convenience wrapper for a `CommandDescription` TableGen record. This
 /// provides getters for the record's values, as well as other helper functions.
 ///
@@ -165,10 +197,10 @@ public:
   /// Add an LLVM `Option` to the sorted list of aliases for this option.
   /// If an alias is newly added and is not valid, returns a failure. Otherwise,
   /// returns success.
-  LogicalResult addAlias(const llvm::Record *alias);
+  LogicalResult addAlias(const llvm::Record *aliasRecord);
 
   /// Return all the aliases of this option.
-  ArrayRef<const llvm::Record *> getAliases() const { return aliases; }
+  ArrayRef<CommandAlias> getAliases() const { return aliases; }
 
   /// Whether the given option is hidden from help text.
   static bool isHidden(const llvm::Record *option);
@@ -194,7 +226,7 @@ private:
   CommandOptionGroup::findOrCreateOption(const llvm::Record *);
 
   const llvm::Record *option;
-  SmallVector<const llvm::Record *> aliases;
+  SmallVector<CommandAlias> aliases;
 };
 
 /// A comparator that can be used to sort option groups and options, based on
@@ -202,6 +234,9 @@ private:
 struct LessIndex {
   bool operator()(const llvm::Record *lhs, const llvm::Record *rhs) const;
 
+  bool operator()(const CommandAlias &lhs, const CommandAlias &rhs) const {
+    return operator()(lhs.getRecord(), rhs.getRecord());
+  }
   bool operator()(const CommandOptionGroup &lhs,
                   const CommandOptionGroup &rhs) const {
     return operator()(lhs.getGroup(), rhs.getGroup());

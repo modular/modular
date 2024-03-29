@@ -35,13 +35,15 @@ def : CommandDescription<
 // CHECK: ### First Options
 def FirstOptionGroup : OptionGroup<"First Options">, Index<0>;
 
-// CHECK: #### `--foo <FOO>`, `-F<ALSO-FOO>`
+// CHECK: #### `--foo <FOO>`, `-F<ALSO-FOO>`, `-F1 (FOO=1)`
 // CHECK: Takes a foo and does something with it.
 defm foo : CommandOption<["--", "-"], "foo", FirstOptionGroup,
   Index<0>, MetaVarName<"FOO">,
   HelpText<"Takes a foo and does something with it.">>;
 def : Joined<["-"], "F">, Group<FirstOptionGroup>, Index<1>,
   MetaVarName<"ALSO-FOO">, Alias<foo>;
+def : Joined<["-"], "F1">, Group<FirstOptionGroup>, Index<2>,
+  Alias<foo>, AliasArgs<["1"]>;
 
 // Values do not make their way into Markdown output.
 // CHECK: #### `--bar <BAR>`
