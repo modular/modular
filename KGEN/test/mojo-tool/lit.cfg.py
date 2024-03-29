@@ -24,7 +24,7 @@ config.test_exec_root = os.path.join(
 )
 
 # Exclude directories that define Mojo packages; these are used as test inputs.
-config.excludes = ["test_package", "inputs"]
+config.excludes = ["test_package", "test_package_with_main", "inputs"]
 
 tool_dirs = [
     config.modular_tools_dir,

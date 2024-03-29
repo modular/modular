@@ -756,6 +756,14 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
     return;
   }
 
+  // Validate that we aren't in a package, defining a `main` within a package
+  // is not fully supported.
+  if (userMainFn->getParentOfType<PackageOp>()) {
+    shared.emitError(loc,
+                     "defining 'main' within a package is not yet supported");
+    return;
+  }
+
   // Utility for resolving a decl within the Startup module.
   ASTDecl &startupModule = shared.importModule(
       "builtin._startup", /*currentPackage=*/nullptr, funcDecl.getLoc());
