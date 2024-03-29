@@ -44,9 +44,12 @@ static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd) {
       os << " [" << options << ']';
 
     StringRef input = usage->getValueAsString("inputName");
-    if (!input.empty())
+    if (!input.empty()) {
       os << " <" << input
          << (usage->getValueAsBit("variadicInput") ? "..." : "") << '>';
+      if (usage->getValueAsBit("inputHasArguments"))
+        os << " [" << input << "-arguments...]";
+    }
     os << '\n';
   }
   os << "```\n\n";

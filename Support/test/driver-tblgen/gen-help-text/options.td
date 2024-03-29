@@ -12,7 +12,7 @@
 
 include "Support/Driver/DriverCommand.td"
 
-// CHECK: driver-tblgen-test [options] <inputs...>
+// CHECK: driver-tblgen-test [options] <inputs...> [inputs-arguments...]
 // CHECK-NEXT: driver-tblgen-test <input>
 // CHECK-NEXT: driver-tblgen-test
 def : CommandDescription<
@@ -20,7 +20,7 @@ def : CommandDescription<
   "Test that options are output in help text.",
   "This command contains an option group with options.",
   [
-    UsageInfo<"options", "inputs", /*variadicInput=*/true>,
+    UsageInfo<"options", "inputs", /*variadicInput=*/true, /*inNameHasArgs=*/true>,
     UsageInfo<"", "input", /*variadicInput=*/false>,
     UsageInfo<"", "", /*variadicInput=*/false>
   ]>;
