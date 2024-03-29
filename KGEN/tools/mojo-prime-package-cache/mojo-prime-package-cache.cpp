@@ -8,6 +8,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "../common/Telemetry.h"
 #include "Config/Version.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -20,6 +21,8 @@
 #include "LLCL/Runtime/RuntimeCLOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
+#include "Support/Driver/DriverSupport.h"
+#include "Support/Init/Init.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Parser/Parser.h"
@@ -27,6 +30,7 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Option/ArgList.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/TargetParser/Host.h"
@@ -94,7 +98,31 @@ primeCacheForPackage(KGEN::LIT::PackageOp packageOp, TargetInfoAttr targetInfo,
 /// Execute the tool pipeline to prime the different caches for the input
 /// package.
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
-                                     Options &clOptions) {
+                                     Options &clOptions, int argc,
+                                     char **argv) {
+
+  SmallVector<const char *, 256> argvStorage(argv, argv + argc);
+  const char *programName = argvStorage.front();
+  ArrayRef<const char *> arguments = ArrayRef(argvStorage).slice(1);
+
+  // Create our context (including the runtime).
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      programName, Init::Options().withRuntimeOptions(
+                       LLCL::RuntimeOptions().withCPUAffinity(false)));
+
+  if (ctxOr.isError())
+    return failure(clOptions.reportError(ctxOr.getError()));
+
+  ContextRef ctxRef = std::move(*ctxOr);
+  registerContext(*ctx, ctxRef);
+
+  // Initialize telemetry, making sure to redact any arguments that may contain
+  // user-sensitive data.
+  llvm::opt::InputArgList args(arguments.begin(), arguments.end());
+
+  auto &telemetryCtx = *ctxRef->get<M::Telemetry::TelemetryContext>();
+  initializeTelemetry(telemetryCtx, "mojo-prime-package-cache", args);
+
   // Read the input package.
   mlir::ParserConfig parserConfig(ctx, /*verifyAfterParse=*/false);
   OwningOpRef<KGEN::LIT::PackageOp> packageOp =
@@ -110,18 +138,19 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       ctx, options.targetTriple, options.targetCpu, options.targetFeatures);
   if (targetInfoOr.isError())
     return targetInfoOr.takeError();
-  std::unique_ptr<LLCL::Runtime> runtime =
-      clOptions.withMainWillNotDonate().createRuntime();
+
+  LLCL::Runtime &runtime = *ctxRef->get<LLCL::Runtime>();
+
   std::vector<AnyAsyncValueRef> asyncValues;
 
   // Helper functor used to enqueue priming the cache for a specific
   // compilation.
   auto addCompilation = [&](KGEN::CompilationOptions options) {
-    auto out = AsyncValueRef<Chain>::allocate(*runtime);
-    LLCL::addTask(*runtime, [&, out = out.copy(),
-                             options = std::move(options)]() mutable {
+    auto out = AsyncValueRef<Chain>::allocate(runtime);
+    LLCL::addTask(runtime, [&, out = out.copy(),
+                            options = std::move(options)]() mutable {
       ErrorOrSuccess resultOr =
-          primeCacheForPackage(*packageOp, *targetInfoOr, *runtime, options);
+          primeCacheForPackage(*packageOp, *targetInfoOr, runtime, options);
       if (resultOr.isError())
         std::move(out).setToError(
             LLCL::getMLIRDiagnostic(resultOr.takeError(), packageOp->getLoc()));
@@ -199,6 +228,6 @@ int main(int argc, char **argv) {
         ctx->appendDialectRegistry(registry);
         ctx->loadAllAvailableDialects();
 
-        return runToolPipeline(ctx, sourceManager, clOptions);
+        return runToolPipeline(ctx, sourceManager, clOptions, argc, argv);
       }));
 }
