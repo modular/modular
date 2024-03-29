@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, align_up
+from math import ceildiv, align_up
 from random import rand
 from sys import argv
 from sys.param_env import env_get_string, env_get_int
@@ -64,7 +64,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
     @unroll
     for i in range(spec.static_info.rank):
         packed_filter_shape[i + 1] = output_dims[i]
-    packed_filter_shape[0] = spec.num_groups * div_ceil(
+    packed_filter_shape[0] = spec.num_groups * ceildiv(
         f_per_group, micro_kernel_f_size
     )
     packed_filter_shape[spec.static_info.rank + 1] = spec.c
@@ -87,7 +87,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
     var size_per_copy = input_alloc_size * sizeof[
         input_type
     ]() + filter_alloc_size * sizeof[filter_type]()
-    var num_copies = div_ceil(4 * L3_cache, size_per_copy)
+    var num_copies = ceildiv(4 * L3_cache, size_per_copy)
 
     # Allocate input and output buffers.
     var input_ptr = DTypePointer[input_type].alloc(

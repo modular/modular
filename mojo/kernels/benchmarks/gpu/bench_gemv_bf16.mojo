@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil, max, min
+from math import ceildiv, max, min
 
 from benchmark import *
 from buffer import NDBuffer
@@ -140,7 +140,7 @@ fn bench_gemv_tc(inout bencher: Bencher, spec: GemvSpec) raises:
             M,
             N,
             K,
-            grid_dim=div_ceil(M, WARPS_PER_BLOCK),
+            grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
             stream=stream,
         )
@@ -212,7 +212,7 @@ fn bench_gemv_ws(inout bencher: Bencher, spec: GemvSpec) raises:
             M,
             N,
             K,
-            grid_dim=div_ceil(M, WARPS_PER_BLOCK),
+            grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
             stream=stream,
         )
@@ -286,7 +286,7 @@ fn bench_gemv_naive(inout bencher: Bencher, spec: GemvSpec) raises:
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, WARPS_PER_BLOCK), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, WARPS_PER_BLOCK), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )
