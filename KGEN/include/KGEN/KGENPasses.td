@@ -528,10 +528,10 @@ def FoldGlobalConstLoads : Pass<"fold-global-const-loads", "KGEN::FuncOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerCallingConvention
+// LowerCallingConventions
 //===----------------------------------------------------------------------===//
 
-def LowerCallingConvention : Pass<"lower-calling-conventions", "FuncOp"> {
+def LowerCallingConventions : Pass<"lower-calling-conventions", "FuncOp"> {
   let summary = "Lower calling convention after elaboration.";
   let description = [{
     The `lower-calling-conventions` pass performs any calling convention

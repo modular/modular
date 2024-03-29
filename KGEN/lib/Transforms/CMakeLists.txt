@@ -18,6 +18,7 @@ add_modular_library(KGENTransforms
   LowerClosures.cpp
   LowerLoops.cpp
   LowerArgConventions.cpp
+  LowerCallingConventions.cpp
   MaterializePackages.cpp
   Mem2Reg.cpp
   OutlineClosures.cpp

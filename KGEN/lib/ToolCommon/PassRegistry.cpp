@@ -30,7 +30,7 @@ void KGEN::registerDefaultKGENPasses(LLCL::Runtime &runtime) {
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();
   KGEN::registerLoopUnrolling();
-  KGEN::registerLowerCallingConvention();
+  KGEN::registerLowerCallingConventions();
   KGEN::registerLowerClosures();
   KGEN::registerLowerControlFlow();
   KGEN::registerLowerGlobalPOPToLLVM();

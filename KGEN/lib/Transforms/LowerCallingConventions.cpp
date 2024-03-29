@@ -16,13 +16,13 @@ using namespace M;
 using namespace KGEN;
 
 namespace M::KGEN {
-#define GEN_PASS_DEF_LOWERCALLINGCONVENTION
+#define GEN_PASS_DEF_LOWERCALLINGCONVENTIONS
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
 namespace {
-struct LowerCallingConventionPass
-    : KGEN::impl::LowerCallingConventionBase<LowerCallingConventionPass> {
+struct LowerCallingConventionsPass
+    : KGEN::impl::LowerCallingConventionsBase<LowerCallingConventionsPass> {
   void runOnOperation() override;
 };
 } // namespace
@@ -74,7 +74,7 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
                                           type.getArgumentTypes(), newTypes);
 }
 
-void LowerCallingConventionPass::runOnOperation() {
+void LowerCallingConventionsPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement(lowerResult);
   replacer.addReplacement(removeDINoneResults);

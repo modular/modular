@@ -131,7 +131,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
 
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());
-  pm.addNestedPass<FuncOp>(createLowerCallingConvention());
+  pm.addNestedPass<FuncOp>(createLowerCallingConventions());
   pm.addNestedPass<FuncOp>(createMem2Reg());
 
   // Run the ForceInline pass with an inner function pass pipeline.
