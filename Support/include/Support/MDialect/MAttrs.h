@@ -326,12 +326,6 @@ SmallVector<float> getFloatBlob(FloatArrayElementsAttr floatElemsAttr);
 // TargetInfoAttr
 //===----------------------------------------------------------------------===//
 
-/// Returns a string literal that represents the given relocation model.
-StringLiteral stringifyRelocationModel(llvm::Reloc::Model model);
-/// If the given string maps to one used to represent an `llvm::Reloc::Model`,
-/// returns that model. Otherwise, returns null.
-std::optional<llvm::Reloc::Model> symbolizeRelocationModel(StringRef str);
-
 /// Look for a target info specification inside the provided module. Returns
 /// null if there is not one.
 TargetInfoAttr getTargetInfo(ModuleOp module);
@@ -345,10 +339,10 @@ TargetInfoAttr lookupTargetInfo(Operation *from);
 /// present to begin with.
 void eraseTargetInfo(ModuleOp module);
 /// Get the target info for the specified target.
-ErrorOr<TargetInfoAttr>
-getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
-                 StringRef features, StringRef tuneCpu = "",
-                 llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_);
+ErrorOr<TargetInfoAttr> getTargetInfoFor(MLIRContext *ctx,
+                                         StringRef targetTriple, StringRef arch,
+                                         StringRef features,
+                                         StringRef tuneCpu = "");
 
 /// Returns runtime representation of target info attribute.
 ErrorOr<TargetInfo> toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr);
