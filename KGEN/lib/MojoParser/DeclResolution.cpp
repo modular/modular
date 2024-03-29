@@ -1851,7 +1851,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
     ASTDecl *copyCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
     if (failed(structEmitter.populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
-      copyCtr.erase();
+      shared.deleteDecl(*copyCtrDecl);
     else
       declOp.setCopyInitAttr(ref);
   }
@@ -1860,7 +1860,7 @@ void StructBodyDecorators::processValueDecorator(SMLoc decoratorLoc,
     ASTDecl *moveCtrDecl =
         getDeclResolver().getDeclForFuncSymbol(ref.getSymbol());
     if (failed(structEmitter.populateMoveCopy(*moveCtrDecl, /*isMove=*/true)))
-      moveCtr.erase();
+      shared.deleteDecl(*moveCtrDecl);
     else
       declOp.setMoveInitAttr(ref);
   }
