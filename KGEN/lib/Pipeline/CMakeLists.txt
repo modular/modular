@@ -15,7 +15,6 @@ add_modular_mlir_library(KGENPipeline
   DebugInfoToLLVM
   DebugInfoTransforms
   KGENElaborator
-  KGENToLLVM
   KGENTransforms
   MOGGPreElabPasses
   LowerLIT
