@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import add, ceildiv, max, min
+from math import add, div_ceil, max, min
 from math.limit import neginf
 from sys.info import simdwidthof
 

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.vector import InlinedFixedVector
-from math import align_down, align_up, ceildiv, max, min
+from math import align_down, align_up, div_ceil, max, min
 from sys import external_call
 from sys._build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof
@@ -128,7 +128,7 @@ fn _concat_parallel[
 
     alias KB = 1024
     alias parallel_chunk_size = 64 * KB  # TODO autotune
-    var num_chunks = ceildiv(total_output_bytes, parallel_chunk_size)
+    var num_chunks = div_ceil(total_output_bytes, parallel_chunk_size)
 
     @__copy_capture(
         total_output_bytes, output_h, output_c, output_data, output_wc

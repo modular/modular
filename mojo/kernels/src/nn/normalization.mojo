@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, min, sqrt
+from math import div_ceil, min, sqrt
 
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import sync_parallelize
@@ -147,7 +147,7 @@ fn layer_norm[
         var num_workers = min(
             Runtime().parallelism_level(), prod_all_but_last_dim
         )
-        var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
+        var chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
 
         @__copy_capture(
             chunk_size, prod_all_but_last_dim, last_dim, output_buf, eps

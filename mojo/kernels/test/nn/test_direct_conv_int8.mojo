@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs, ceildiv, isclose, min
+from math import abs, div_ceil, isclose, min
 from random import rand
 from sys import external_call
 from sys.info import num_physical_cores, simdwidthof
@@ -98,7 +98,7 @@ fn test[
 
     # Rounded C and F size for pre-packed filter.
     alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
+    var rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
     var packed_filter_ptr = DTypePointer[filter_type].alloc(
         R * S * C * rounded_F
     )
@@ -108,7 +108,7 @@ fn test[
     var packed_filter = NDBuffer[filter_type, 5](
         packed_filter_ptr,
         Index(
-            ceildiv(F, micro_kernel_width * simd_size),
+            div_ceil(F, micro_kernel_width * simd_size),
             R,
             S,
             C,

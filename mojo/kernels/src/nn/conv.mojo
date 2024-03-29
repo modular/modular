@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_down_residual, ceildiv, fma, max, min
+from math import align_down, align_down_residual, div_ceil, fma, max, min
 from sys.info import (
     alignof,
     has_avx2,
@@ -1189,7 +1189,7 @@ struct ConvDirectNHWC[
         # [0, left_pad_impact_end)
         # [left_pad_impact_end, right_pad_impact_start)
         # [right_pad_impact_start, WO)
-        var left_pad_impact_end = ceildiv(
+        var left_pad_impact_end = div_ceil(
             self.conv_shape.pad_w[0], self.conv_shape.stride[input_rank - 3]
         )
         var right_pad_impact_start = (
@@ -1795,7 +1795,7 @@ struct ConvDirectNHWC[
                 # The first left_adjust x micro_kernel_width registers are
                 # ignored because they fall in padding.
                 alias left_adjust = max(
-                    ceildiv(
+                    div_ceil(
                         conv_attr.pad_left() - s * conv_attr.dilations()[1],
                         conv_attr.strides()[1],
                     ),
@@ -2495,7 +2495,7 @@ fn pack_filter_shape_impl[
     var F_per_group = F // num_groups
 
     var output_shape = StaticIntTuple[6]()
-    output_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
+    output_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
     output_shape[1] = Q
     output_shape[2] = R
     output_shape[3] = S
@@ -2539,7 +2539,7 @@ fn pack_conv_filter_shape[
 
     # FRSCf layout.
     var packed_shape = StaticIntTuple[filter.rank + 1]()
-    packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
+    packed_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
     packed_shape[filter.rank] = micro_kernel_f_size
 
     @always_inline
@@ -2603,7 +2603,7 @@ fn pack_filter_shape[
 
     # FSCf/FRSCf/FQRSCf layout.
     var packed_shape = StaticIntTuple[filter.rank + 1]()
-    packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
+    packed_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
     packed_shape[filter.rank] = micro_kernel_f_size
 
     @always_inline
@@ -2622,7 +2622,7 @@ fn _get_group_filter_base(
 ) -> DTypePointer[packed_filter.type, packed_filter.address_space]:
     """Returns the pointer of the input group's start in the packed filter."""
     # Each group is zero padded to
-    #     ceildiv(F_per_group, micro_kernel_width)
+    #     div_ceil(F_per_group, micro_kernel_width)
     #   * filter_window_size
     #   * C
     #   * micro_kernel_f_width
@@ -2644,7 +2644,7 @@ fn _get_group_filter_base(
 
     # Size of one group's packed filter.
     # fmt: off
-    var group_size = ceildiv(f_per_group , micro_kernel_f_size) \
+    var group_size = div_ceil(f_per_group , micro_kernel_f_size) \
                    * filter_window_size * packed_filter.dim[rank-2]() \
                    * micro_kernel_f_size
     # fmt: on
@@ -2728,7 +2728,7 @@ fn pack_filter[
 
     # Each group is zero padded to
     #
-    #                   ceildiv(F_per_group, micro_kernel_f_size)
+    #                   div_ceil(F_per_group, micro_kernel_f_size)
     #                 * outer_dims_prod
     #                 * micro_kernel_f_size.
     #

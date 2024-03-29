@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_down_residual, ceildiv, fma, max, min
+from math import align_down, align_down_residual, div_ceil, fma, max, min
 from sys.info import (
     alignof,
     has_avx2,
@@ -334,7 +334,7 @@ fn get_num_partitions[
 
     var num_batches_and_groups = conv_shape.n * conv_shape.num_groups
 
-    var max_f_tasks = ceildiv(conv_shape.f, micro_kernel_f_size)
+    var max_f_tasks = div_ceil(conv_shape.f, micro_kernel_f_size)
 
     var num_partitions = StaticIntTuple[4](1)
 
@@ -679,7 +679,7 @@ struct ConvTransposedPacked[
         # [0, left_pad_impact_end)
         # [left_pad_impact_end, right_pad_impact_start)
         # [right_pad_impact_start, WO)
-        var left_pad_impact_end = ceildiv(
+        var left_pad_impact_end = div_ceil(
             self.conv_shape.pad_w[0], self.conv_shape.stride[input_rank - 3]
         )
         var right_pad_impact_start = (
@@ -1215,7 +1215,7 @@ fn pack_filter_shape(
 
     # FRSCf layout.
     var packed_shape = StaticIntTuple[filter.rank + 1]()
-    packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
+    packed_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
     packed_shape[filter.rank] = micro_kernel_f_size
     # Input channel
     packed_shape[filter.rank - 1] = filter.dim[filter.rank - 1]()
@@ -1256,7 +1256,7 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
 
     # Each group is zero padded to
     #
-    #                   ceildiv(F_per_group, micro_kernel_f_size)
+    #                   div_ceil(F_per_group, micro_kernel_f_size)
     #                 * outer_dims_prod
     #                 * micro_kernel_f_size.
     #

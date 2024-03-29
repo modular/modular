@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs, ceildiv, isclose, min
+from math import abs, div_ceil, isclose, min
 from random import rand
 from sys.info import has_avx2, has_avx512f, simdwidthof
 
@@ -88,7 +88,7 @@ fn test[
     # Pre-packed filter for dynamic shapes.
     alias micro_kernel_width_default = get_direct_conv_micro_kernel_width()
     alias micro_kernel_f_size_default = micro_kernel_width_default * simd_size
-    var rounded_F_dynamic = ceildiv(
+    var rounded_F_dynamic = div_ceil(
         F, micro_kernel_f_size_default
     ) * micro_kernel_f_size_default
     var packed_filter_ptr_dynamic = DTypePointer[type].alloc(
@@ -97,7 +97,7 @@ fn test[
     var packed_filter_dynamic = NDBuffer[type, 5](
         packed_filter_ptr_dynamic,
         Index(
-            ceildiv(F, micro_kernel_f_size_default),
+            div_ceil(F, micro_kernel_f_size_default),
             R,
             S,
             C,
@@ -140,7 +140,7 @@ fn test[
         2, WO, F, conv_attr_static, simd_size
     ]()
     alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
-    alias num_f_micro_tiles = ceildiv(F, micro_kernel_f_size)
+    alias num_f_micro_tiles = div_ceil(F, micro_kernel_f_size)
     alias rounded_F_static = num_f_micro_tiles * micro_kernel_f_size
     alias packed_filter_shape = DimList(
         num_f_micro_tiles, R, S, C, micro_kernel_f_size

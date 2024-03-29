@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from math import div_ceil
 
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer

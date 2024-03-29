@@ -7,7 +7,7 @@
 
 # Use `kgen --emit-asm %s -o %t.asm` to exam the assembly code.
 
-from math import ceildiv
+from math import div_ceil
 from sys.info import simdwidthof
 
 from buffer import NDBuffer
@@ -55,7 +55,7 @@ alias micro_kernel_shape = get_micro_kernel_shape[
 ]()
 # alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 alias micro_kernel_f_size = micro_kernel_shape[1] * simd_size
-alias num_micro_tile = ceildiv(F, micro_kernel_f_size)
+alias num_micro_tile = div_ceil(F, micro_kernel_f_size)
 
 
 @export(ABI="C")
