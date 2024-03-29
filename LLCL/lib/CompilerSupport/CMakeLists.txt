@@ -6,6 +6,7 @@
 
 add_modular_library(LLCLCompilerSupport
   AsyncSideEffectMap.cpp
+  LLVMThreadPool.cpp
   MLIRLocationDecoder.cpp
 
   LINK_LIBS PUBLIC
