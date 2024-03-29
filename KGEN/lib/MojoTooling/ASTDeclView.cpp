@@ -642,14 +642,13 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_FunctionDeclView,
                declRef.getName().value_or(StringRef{})) {
   auto funcOp = cast<LIT::FuncOp>(declRef.getIfOperation());
+  LITSignatureType signature = funcOp.getSignature();
 
   ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
-  ArrayRef<StringAttr> argNames = funcOp.getSignature().getArgNames();
-  ArrayRef<ArgConvention> argConventions =
-      funcOp.getSignature().getArgConventions();
+  ArrayRef<StringAttr> argNames = signature.getArgNames();
+  ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
   ASTType resultType = funcOp.getUserResultType();
-  ArrayRef<PassingKind> argPassingKinds =
-      funcOp.getSignature().getArgPassingKinds();
+  ArrayRef<PassingKind> argPassingKinds = signature.getArgPassingKinds();
 
   // Check for a by-ref result type, which gets modeled as the last argument
   // (as it needs to be passed through memory), and we don't want to include
@@ -688,13 +687,17 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   }
 
   // Grab the types of the parameters to the function.
-  size_t numImplicitLifetimes =
-      funcOp.getSignature().getNumImplicitLifetimeDecls();
-  for (ParamDeclAttr param :
-       funcOp.getInputParams().drop_front(numImplicitLifetimes))
+  size_t numImplicitLifetimes = signature.getNumImplicitLifetimeDecls();
+  auto params = funcOp.getInputParams().drop_front(numImplicitLifetimes);
+  auto paramPassingKinds = signature.getParamPassingKinds();
+  for (auto [param, passingKind] : llvm::zip(params, paramPassingKinds)) {
+    // Ignore implicitly passed parameters.
+    if (passingKind == PassingKind::Implicit)
+      continue;
     parameters.push_back(
         ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
                           generateTypeString(param.getType(), selfType)));
+  }
 
   // Grab the result type, if it's non-none.
   if (!resultType.isNoneType())
