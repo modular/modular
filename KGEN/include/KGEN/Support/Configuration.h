@@ -86,6 +86,9 @@ public:
   /// Return the path to the Mojo LSP server.
   StringRef getLSPServerPath();
 
+  /// Return the path to the Mojo build server.
+  StringRef getBuildServerPath();
+
   /// Return the path to the mblack executable in the mojo install.
   StringRef getMBlackPath();
 

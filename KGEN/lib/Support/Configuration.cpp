@@ -85,6 +85,10 @@ StringRef MojoConfig::getLSPServerPath() {
   return config.getValue(STRINGIFY_MOJO_CONFIG(".lsp_server_path"));
 }
 
+StringRef MojoConfig::getBuildServerPath() {
+  return config.getValue(STRINGIFY_MOJO_CONFIG(".build_server_path"));
+}
+
 StringRef MojoConfig::getMBlackPath() {
   return config.getValue(STRINGIFY_MOJO_CONFIG(".mblack_path"));
 }
