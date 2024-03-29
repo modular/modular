@@ -98,12 +98,13 @@ static void genSubcommandsSection(raw_ostream &os,
 
 /// Output the given LLVM `Option` record's prefix and name, followed by its
 /// `MetaVarName` if present.
-static void genOptionName(raw_ostream &os, const llvm::Record *option) {
+static void genOptionName(raw_ostream &os, const llvm::Record *option,
+                          std::optional<StringRef> metaVarName) {
   os << escape(llvm::formatv("\\fB{0}{1}\\fR",
                              CommandOption::getPreferredPrefix(option),
                              option->getValueAsString("Name")));
 
-  if (auto metaVarName = option->getValueAsOptionalString("MetaVarName")) {
+  if (metaVarName) {
     if (option->getValueAsDef("Kind")->getValueAsString("Name") != "Joined")
       os << ' ';
     os << "\\fI" << escape(*metaVarName) << "\\fR";
@@ -135,14 +136,27 @@ static void genOptionsSection(raw_ostream &os,
         continue;
 
       // Print the option's name, and then the names of its aliases.
-      genOptionName(os, option.getOption());
-      for (const llvm::Record *option : option.getAliases()) {
+      std::optional<StringRef> metaVarName = option.getMetaVarName();
+      genOptionName(os, option.getOption(), metaVarName);
+      for (const CommandAlias &option : option.getAliases()) {
         // Skip any hidden aliases.
-        if (CommandOption::isHidden(option))
+        if (CommandOption::isHidden(option.getRecord()))
           continue;
 
         os << ", ";
-        genOptionName(os, option);
+        genOptionName(os, option.getRecord(), option.getMetaVarName());
+
+        std::vector<StringRef> aliasArgs = option.getAliasArguments();
+        if (!aliasArgs.empty()) {
+          os << " (";
+          if (metaVarName)
+            os << "\\fI" << escape(*metaVarName) << "\\fR=";
+          llvm::interleave(
+              aliasArgs, os,
+              [&](StringRef arg) { os << "\\fI" << escape(arg) << "\\fR"; },
+              ",");
+          os << ")";
+        }
       }
       os << '\n';
 
