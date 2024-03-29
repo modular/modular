@@ -12,6 +12,10 @@ add_modular_tool(support-dialect-opt
   DebugInfoToLLVM
   MDialect
   MSupport
+  LLCLRuntime
+  LLCLRuntimeGlobals
+  MProfiling
+  MSupportGlobals
   MLIRFuncDialect
   MLIRIndexDialect
   MLIROptLib
