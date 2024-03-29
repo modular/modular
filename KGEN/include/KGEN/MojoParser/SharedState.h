@@ -177,6 +177,10 @@ public:
   /// not get used in the future.
   Block &getArgumentOwningBlock();
 
+  /// Delete this decl and the operation associated with it. Handles all the
+  /// related bookkeeping.
+  void deleteDecl(ASTDecl &decl);
+
   //===--------------------------------------------------------------------===//
   // Name Lookup
 
@@ -254,7 +258,7 @@ public:
   void buildArgDebugInfo(OpBuilder &builder, BlockArgument arg, StringRef name);
   /// Generate a debug subprogram for this function and set it in its location.
   void setLocationDebugScope(LIT::FuncOp funcOp);
-  /// Get the debug source name for a function.
+  /// Get the debug source name for a symbol.
   DebugInfo::SourceNameAttr getSourceName(mlir::SymbolOpInterface op);
 
   //===--------------------------------------------------------------------===//

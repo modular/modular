@@ -257,6 +257,32 @@ Block &SharedState::getArgumentOwningBlock() {
   return impl->argumentOwningBlock;
 }
 
+void SharedState::deleteDecl(ASTDecl &decl) {
+  std::optional<StringRef> name = decl.getNameIfOperation();
+  if (!name)
+    return;
+  Operation *op = decl.getIfOperation();
+
+  // Remove from parent decl.
+  TinyPtrVector<ASTDecl *> decls =
+      decl.getParentDecl()->declsInScope[StringAttr::get(getContext(), *name)];
+  llvm::erase_if(decls, [&](ASTDecl *entry) { return entry == &decl; });
+
+  // Remove from global maps.
+  // Func needs a special case since it may or may not be a symbol.
+  if (auto func = dyn_cast<FuncOp>(op)) {
+    if (SymbolRefAttr sym = decl.getSymbolRef())
+      declResolver->declForFuncSymbol.erase(sym);
+    impl->sourceNames.forgetSourceName(func);
+  } else if (auto symbolDecl = dyn_cast<mlir::SymbolOpInterface>(op)) {
+    if (SymbolRefAttr sym = decl.getSymbolRef())
+      declResolver->declForTypeSymbol.erase(sym);
+    impl->sourceNames.forgetSourceName(symbolDecl);
+    impl->symbolTables.getSymbolTable(op->getParentOp()).remove(op);
+  }
+  op->erase();
+}
+
 ASTDecl &SharedState::getTopLevelDecl() { return *impl->topLevelDecl; }
 
 InflightDiag SharedState::emitError(Location loc, const Twine &message) {

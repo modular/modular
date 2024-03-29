@@ -608,13 +608,13 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Try to create a closure copy constructor if possible.
   if (failed(populateMoveCopy(*copyCtrDecl, /*isMove=*/false)))
-    copyCtr.erase();
+    shared.deleteDecl(*copyCtrDecl);
   else
     declOp.setCopyInitAttr(copyCtrRef);
 
   // Try to create a closure move constructor if possible.
   if (failed(populateMoveCopy(*moveCtrDecl, true)))
-    moveCtr.erase();
+    shared.deleteDecl(*moveCtrDecl);
   else
     declOp.setMoveInitAttr(moveCtrRef);
 
@@ -711,7 +711,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
            "Capture body rewrite problem");
     replaceAllUsesInRegionWith(captureValue, target, callFunc.getBodyRegion());
   }
-  nestedFn->erase();
+  shared.deleteDecl(nestedFnDecl);
   return declOp;
 }
 

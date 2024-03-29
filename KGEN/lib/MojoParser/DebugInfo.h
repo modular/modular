@@ -19,6 +19,9 @@ struct SourceNames : public SharedStateUser {
   DebugInfo::SourceNameAttr getSourceName(mlir::SymbolOpInterface op);
   /// Get the source name of a type.
   DebugInfo::SourceNameAttr getSourceName(Type type);
+  /// Forget that any source name was assigned to this op. Does not modify the
+  /// op itself, only the internal source name cache.
+  void forgetSourceName(mlir::SymbolOpInterface op) { names.erase(op); }
 
   /// Computed source names.
   DenseMap<mlir::SymbolOpInterface, DebugInfo::SourceNameAttr> names;
