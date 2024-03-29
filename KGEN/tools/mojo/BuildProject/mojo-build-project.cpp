@@ -77,23 +77,23 @@ static int buildProject(const State &state) {
   // Build server communication
   //===--------------------------------------------------------------------===//
 
-  auto serverPathOrErr = getMojoBuildServerPath(state.programName);
-  if (serverPathOrErr.isError())
-    return state.reportError(serverPathOrErr.getError());
-  std::string serverPath = *serverPathOrErr;
+  auto serverPathOr = getMojoBuildServerPath(state.programName);
+  if (serverPathOr.isError())
+    return state.reportError(serverPathOr.getError());
+  std::string serverPath = *serverPathOr;
 
   // For now, as a proof of concept, send delimited messages to the build
   // server.
-  auto inOrErr = writeTempFile(
+  auto inOr = writeTempFile(
       "mojo-build-project-%%%%%%.json", [](llvm::raw_ostream &in) {
         in << "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"build/initialize\","
            << "\"params\":{\"displayName\":\"mojo-build-project\"}}\n";
         in << "// -----\n";
         in << "{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}\n";
       });
-  if (inOrErr.isError())
-    return state.reportError(inOrErr.getError());
-  TempFile in = std::move(*inOrErr);
+  if (inOr.isError())
+    return state.reportError(inOr.getError());
+  TempFile in = std::move(*inOr);
 
   return llvm::sys::ExecuteAndWait(
       serverPath, {serverPath},
