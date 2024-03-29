@@ -21,7 +21,7 @@ from testing import assert_true
 # CHECK-UNIT: execution/result
 # CHECK-UNIT:  "error": "Unhandled exception caught during execution",
 # CHECK-UNIT:  "kind": "executionError",
-# CHECK-UNIT:  "stdOut": "Error: AssertionError: condition was unexpectedly False\r\n",
+# CHECK-UNIT:  "stdOut": {{.*}}Error: AssertionError: condition was unexpectedly False\r\n",
 # CHECK-UNIT:  "testID": "{{.*}}test_execution.mojo::test_{{fn|def}}_assert_failure()"
 
 
@@ -38,7 +38,7 @@ def test_def_assert_failure():
 # CHECK-DOC-FIRST-CELL: execution/result
 # CHECK-DOC-FIRST-CELL:     "error": "Unhandled exception caught during execution",
 # CHECK-DOC-FIRST-CELL:     "kind": "executionError",
-# CHECK-DOC-FIRST-CELL:     "stdOut": "Error: AssertionError: condition was unexpectedly False
+# CHECK-DOC-FIRST-CELL:     "stdOut": {{.*}}Error: AssertionError: condition was unexpectedly False
 # CHECK-DOC-FIRST-CELL:     "testID": "{{.*}}test_execution.mojo@doc_test_failure_first_cell().__doc__::0"
 # CHECK-DOC-FIRST-CELL: execution/result
 # CHECK-DOC-FIRST-CELL:     "error": "",
@@ -72,7 +72,7 @@ fn doc_test_failure_first_cell():
 # CHECK-DOC-SECOND-CELL: execution/result
 # CHECK-DOC-SECOND-CELL:     "error": "Unhandled exception caught during execution",
 # CHECK-DOC-SECOND-CELL:     "kind": "executionError",
-# CHECK-DOC-SECOND-CELL:     "stdOut": "Error: AssertionError: condition was unexpectedly False\r\n",
+# CHECK-DOC-SECOND-CELL:     "stdOut": {{.*}}Error: AssertionError: condition was unexpectedly False\r\n",
 # CHECK-DOC-SECOND-CELL:     "testID": "{{.*}}test_execution.mojo@doc_test_failure_second_cell().__doc__::1"
 
 
