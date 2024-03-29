@@ -292,6 +292,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   auto [funcOp, _] = synthesizeMethodInStruct(
       "__init__", argTypes, argConventions, argListAttrs, resultType,
       structDecl, specialFnId);
+  funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
 
   // Set up the body.
   ImplicitLocOpBuilder builder =
@@ -523,6 +524,7 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
 
   // Finish off the function with a return + lit.endfunc.
   appendDefaultReturnAndEndOp(*funcDecl);
+  funcOp.setInlineLevel(InlineLevel::AlwaysNoDebug);
   return funcOp;
 }
 

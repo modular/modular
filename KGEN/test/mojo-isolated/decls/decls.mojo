@@ -859,6 +859,7 @@ struct ValueMem:
 # CHECK: lit.func @"__moveinit__(
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
 # CHECK-SAME:  %other: !lit.ref<!ValueMem, mut {{.*}}> owned_in_mem, |)
+# CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
 # CHECK-NEXT: %2 = lit.load.consume %1
@@ -871,6 +872,7 @@ struct ValueMem:
 # CHECK: lit.func @"__copyinit__(
 # CHECK-SAME:  %self: !lit.ref<!ValueMem, mut {{.*}}> init_self,
 # CHECK-SAME:  %other: !lit.ref<!ValueMem, imm {{.*}}> borrow_in_mem, |)
+# CHECK-SAME: -> !kgen.none always_inline_no_debug attributes
 # CHECK-NEXT: %0 = lit.ref.struct.ger %self[a]
 # CHECK-NEXT: %1 = lit.ref.struct.ger %other[a]
 # CHECK-NEXT: %2 = lit.ref.load %1
@@ -885,7 +887,7 @@ struct ValueMem:
 # CHECK-SAME:  %[[SELF:.*]][*""]: !lit.ref<!ValueMem, mut {{.*}}> init_self,
 # CHECK-SAME:  %a: !Int borrow,
 # CHECK-SAME:  %b: !StructExample
-# CHECK-SAME: ) -> !kgen.none attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
+# CHECK-SAME: ) -> !kgen.none always_inline_no_debug attributes {isSynthetic, sourceName = "__init__", specialFnKind = 2 : i8} {
 # CHECK-NEXT: %[[PA:.*]] = lit.ref.struct.ger %[[SELF]][a]
 # CHECK-NEXT: lit.ref.store %a, %[[PA]]
 # CHECK-NEXT: %[[PB:.*]] = lit.ref.struct.ger %[[SELF]][b]
@@ -1042,6 +1044,7 @@ struct RecursiveCopyable:
 @value
 struct RaisingMemberwiseInit:
     var x: Int
+
     # CHECK-LABEL: lit.func @"__init__{{.*}} throws
     fn __init__(inout self, /, x: Int) raises:
         pass
