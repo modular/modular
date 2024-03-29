@@ -88,6 +88,7 @@ public:
   std::string targetTriple = llvm::sys::getDefaultTargetTriple();
   std::string targetCpu = llvm::sys::getHostCPUName().str();
   std::string targetFeatures = getHostCPUFeatures();
+  llvm::Reloc::Model relocModel = llvm::Reloc::Model::PIC_;
   DebugInfoLanguage debugInfoLanguage = kLangMojo;
 
   std::string saveTempsPrefix = "";

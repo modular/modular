@@ -281,6 +281,7 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();
   options.targetFeatures = target.getFeatures();
+  options.relocModel = target.getRelocationModel();
 
   // Initialize the object compiler.
   mlir::PassManager compilerPm(target.getContext());
