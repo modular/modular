@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from math import ceildiv, min
+from math import div_ceil, min
 
 from algorithm import async_parallelize, map, parallelize, sync_parallelize
 from buffer import Buffer
@@ -46,7 +46,7 @@ fn test_async_parallelize():
     for i in range(len(vector)):
         vector[i] = i
 
-    var chunk_size = ceildiv(len(vector), num_work_items)
+    var chunk_size = div_ceil(len(vector), num_work_items)
 
     var coro = test_async_parallelize_wrapper(
         vector, chunk_size, num_work_items
@@ -73,7 +73,7 @@ fn test_sync_parallelize():
     for i in range(len(vector)):
         vector[i] = i
 
-    var chunk_size = ceildiv(len(vector), num_work_items)
+    var chunk_size = div_ceil(len(vector), num_work_items)
 
     @always_inline
     @__copy_capture(vector, chunk_size)
@@ -110,7 +110,7 @@ fn test_parallelize():
     for i in range(len(vector)):
         vector[i] = i
 
-    var chunk_size = ceildiv(len(vector), num_work_items)
+    var chunk_size = div_ceil(len(vector), num_work_items)
 
     @parameter
     @__copy_capture(vector, chunk_size)
