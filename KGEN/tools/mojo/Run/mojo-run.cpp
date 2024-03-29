@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-run.h"
+#include "../../common/Telemetry.h"
 #include "../Common/Compilation.h"
-#include "../Common/Telemetry.h"
 
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/Compiler/ObjectCompiler.h"

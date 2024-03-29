@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-test.h"
-#include "../Common/Telemetry.h"
+#include "../../common/Telemetry.h"
 
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/MojoParser/EntryPoint.h"

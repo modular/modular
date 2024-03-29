@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-doc.h"
-#include "../Common/Telemetry.h"
+#include "../../common/Telemetry.h"
 
 #include "Config/Version.h"
 #include "KGEN/MojoParser/EntryPoint.h"

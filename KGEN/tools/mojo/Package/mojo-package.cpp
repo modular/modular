@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-package.h"
+#include "../../common/Telemetry.h"
 #include "../Common/Compilation.h"
-#include "../Common/Telemetry.h"
 
 #include "Cache/CachedTransform.h"
 #include "KGEN/Compiler/KGENCompiler.h"

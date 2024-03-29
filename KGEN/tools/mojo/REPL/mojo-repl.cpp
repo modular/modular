@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-repl.h"
+#include "../../common/Telemetry.h"
 #include "../Common/LLDB.h"
-#include "../Common/Telemetry.h"
 #include "Support/Init/Init.h"
 #include "llvm/Option/ArgList.h"
 
