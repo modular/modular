@@ -69,6 +69,8 @@ static void genSynopsisSection(raw_ostream &os, const CommandDescription &cmd) {
     if (!input.empty()) {
       os << " \\fI" << input
          << (usage->getValueAsBit("variadicInput") ? "..." : "") << "\\fR";
+      if (usage->getValueAsBit("inputHasArguments"))
+        os << " [\\fI" << input << "-arguments...\\fR]";
     }
     os << "\n.br\n";
   }

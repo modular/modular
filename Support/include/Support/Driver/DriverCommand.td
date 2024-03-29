@@ -64,7 +64,8 @@ multiclass CommandOptionWithValues<list<string> prefixes, string name,
 
 // A collection of information related to a command's input, which is used to
 // generate usage strings for a command.
-class UsageInfo<string optName, string inName, bit varIn> {
+class UsageInfo<string optName, string inName, bit varIn,
+                bit inNameHasArgs = 0> {
   // The name to display for options, or an empty string if no options should be
   // displayed.
   string optionsName = optName;
@@ -74,6 +75,9 @@ class UsageInfo<string optName, string inName, bit varIn> {
   string inputName = inName;
   // Whether to append a "..." to the positional input argument name.
   bit variadicInput = varIn;
+  // Whether the input takes arguments. This appends a `[path-options]` suffix
+  // to the input name in the usage string.
+  bit inputHasArguments = inNameHasArgs;
 }
 
 // A description of a command line executable, or subcommand of a top-level

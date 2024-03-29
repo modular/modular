@@ -12,7 +12,7 @@
 
 include "Support/Driver/DriverCommand.td"
 
-// CHECK: \fBdriver\-tblgen\-test\fR [\fIoptions\fR] \fIinputs...\fR
+// CHECK: \fBdriver\-tblgen\-test\fR [\fIoptions\fR] \fIinputs...\fR [\fIinputs-arguments...\fR]
 // CHECK-NEXT: .br
 // CHECK-NEXT: \fBdriver\-tblgen\-test\fR \fIinput\fR
 // CHECK-NEXT: .br
@@ -24,7 +24,7 @@ def : CommandDescription<
   "This command contains several option groups, each of which has several "
   "options, along with aliases.",
   [
-    UsageInfo<"options", "inputs", /*variadicInput=*/true>,
+    UsageInfo<"options", "inputs", /*variadicInput=*/true, /*inNameHasArgs=*/true>,
     UsageInfo<"", "input", /*variadicInput=*/false>,
     UsageInfo<"", "", /*variadicInput=*/false>
   ]>;
