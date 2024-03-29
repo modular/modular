@@ -229,10 +229,15 @@ static int linkExecutable(const State &state,
   if (!std::filesystem::exists(compilerRTPath.str(), ec) || ec)
     return state.reportError("unable to locate Mojo CompilerRT library");
 
-  // Build a default output name based on the input file.
+  // Build a default output name based on the input file and the current working
+  // directory.
   StringRef inputName = args.getLastArgValue(options::OPT_INPUT);
   std::string defaultOutputName =
-      (inputName.rsplit('.').first + binaryExt).str();
+      std::filesystem::path((inputName.rsplit('.').first + binaryExt).str())
+          .filename();
+  std::filesystem::path cwd = std::filesystem::current_path(ec);
+  if (!ec)
+    defaultOutputName = cwd.append(defaultOutputName);
 
   // Invoke the system linker to link the archive into an executable. The
   // checked linked depends on the target platform.
