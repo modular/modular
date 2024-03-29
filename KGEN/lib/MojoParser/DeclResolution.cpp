@@ -1796,10 +1796,14 @@ preprocessValueDecorator(SharedState &shared, ASTDecl &structDecl) {
           break;
         StructEmitter emitter(shared);
         LIT::FuncOp moveFunc, copyFunc;
-        if (!declOp.isRegisterPassable() && !info->hasMove())
+        if (!declOp.isRegisterPassable() && !info->hasMove()) {
           moveFunc = emitter.synthesizeEmptyMoveInit(structDecl);
-        if (!declOp.isRegisterPassableTrivial() && !info->hasCopy())
+          moveFunc.setInlineLevel(InlineLevel::AlwaysNoDebug);
+        }
+        if (!declOp.isRegisterPassableTrivial() && !info->hasCopy()) {
           copyFunc = emitter.synthesizeEmptyCopyInit(structDecl);
+          copyFunc.setInlineLevel(InlineLevel::AlwaysNoDebug);
+        }
         return {moveFunc, copyFunc};
       }
     }
