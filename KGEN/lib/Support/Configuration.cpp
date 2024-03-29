@@ -77,6 +77,14 @@ StringRef MojoConfig::getDriverPath() {
   return config.getValue(STRINGIFY_MOJO_CONFIG(".driver_path"));
 }
 
+StringRef MojoConfig::getJupyterPath() {
+  return config.getValue(STRINGIFY_MOJO_CONFIG(".jupyter_path"));
+}
+
+StringRef MojoConfig::getLSPServerPath() {
+  return config.getValue(STRINGIFY_MOJO_CONFIG(".lsp_server_path"));
+}
+
 StringRef MojoConfig::getMBlackPath() {
   return config.getValue(STRINGIFY_MOJO_CONFIG(".mblack_path"));
 }
