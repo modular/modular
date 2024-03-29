@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import abs, ceil, div_ceil, iota
+from math import abs, ceil, ceildiv, iota
 from sys.info import simdwidthof
 
 from buffer import NDBuffer

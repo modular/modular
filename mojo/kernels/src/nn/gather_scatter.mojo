@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, div_ceil, max, min
+from math import align_down, ceildiv, max, min
 from sys.info import has_neon, sizeof
 from sys.intrinsics import PrefetchOptions
 
@@ -119,7 +119,7 @@ fn gather_reduce[
     alias MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
     var num_threads = Runtime().parallelism_level()
     var num_tasks = min(
-        div_ceil(
+        ceildiv(
             indices.dim[0]()
             * indices.dim[1]()
             * input.dim[1]()
@@ -129,7 +129,7 @@ fn gather_reduce[
         num_threads,
     )
 
-    var out_vecs_per_thread = div_ceil(indices.dim[0](), num_tasks)
+    var out_vecs_per_thread = ceildiv(indices.dim[0](), num_tasks)
 
     var output_2d_dims = StaticIntTuple[2](output.dim[0](), output.dim[1]())
 

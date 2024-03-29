@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, clamp, div_ceil, max, min, sqrt
+from math import align_down, clamp, ceildiv, max, min, sqrt
 from sys._build import is_debug_build
 from sys.info import (
     has_avx2,
@@ -755,7 +755,7 @@ fn get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
                    * conv_shape.matmul_K()
     # fmt: on
     # Ensure at most one task per thread.
-    return min(div_ceil(complexity, min_task_size), num_threads)
+    return min(ceildiv(complexity, min_task_size), num_threads)
 
 
 fn get_conv_num_partitions[
@@ -797,7 +797,7 @@ fn get_conv_num_partitions[
     # The ideal partition in theory is to balance the cost of memory access in
     # M and N dimensions using square sub-matrix (after applying the bias).
     var ideal_num_col_tasks = sqrt(
-        div_ceil(matmul_N * max_num_tasks, matmul_M_biased)
+        ceildiv(matmul_N * max_num_tasks, matmul_M_biased)
     )
     var num_row_tasks = max_num_tasks // ideal_num_col_tasks
     var num_col_tasks = ideal_num_col_tasks
@@ -805,7 +805,7 @@ fn get_conv_num_partitions[
     # There must at least have enough elements to support a micro kernel.
     # Do not partition F when num_groups > 1.
     var max_num_col_tasks = min(
-        div_ceil(matmul_N, micro_kernel_f), max_num_tasks
+        ceildiv(matmul_N, micro_kernel_f), max_num_tasks
     )
     if ideal_num_col_tasks > max_num_col_tasks:
         num_col_tasks = max_num_col_tasks
@@ -814,7 +814,7 @@ fn get_conv_num_partitions[
     # Check for alternative factorizations use the most threads.
     elif max_num_tasks % ideal_num_col_tasks != 0:
         # Set 20% deviation.
-        var eps = div_ceil(2 * ideal_num_col_tasks, 10)
+        var eps = ceildiv(2 * ideal_num_col_tasks, 10)
         max_num_col_tasks = min(max_num_col_tasks, ideal_num_col_tasks + eps)
         var num_col_tasks_tmp = max(ideal_num_col_tasks - eps, 1)
         var num_threads_used = (

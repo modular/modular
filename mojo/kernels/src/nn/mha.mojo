@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import align_down, div_ceil, exp, iota, max, min, sqrt
+from math import align_down, ceildiv, exp, iota, max, min, sqrt
 from math.limit import neginf
 
 from algorithm import elementwise, unswitch
@@ -361,7 +361,7 @@ fn flash_attention[
                 batch_size,
                 seq_len,
                 grid_dim=(
-                    div_ceil(int(seq_len), 32),
+                    ceildiv(int(seq_len), 32),
                     int(num_heads),
                     int(batch_size),
                 ),
@@ -405,7 +405,7 @@ fn flash_attention[
                 seq_len,
                 num_keys,
                 grid_dim=(
-                    div_ceil(int(seq_len), 32),
+                    ceildiv(int(seq_len), 32),
                     int(num_heads),
                     int(batch_size),
                 ),
@@ -960,7 +960,7 @@ fn flash_attention_kernel_flexible_seqlen[
     )
     alias loadq_num_rows_per_iter = (num_threads * simd_size) // depth
     var loadq_num_rows = min(BM, seq_len - global_q_start_row)
-    var loadq_num_iters: _uint32 = div_ceil(
+    var loadq_num_iters: _uint32 = ceildiv(
         int(loadq_num_rows), int(loadq_num_rows_per_iter)
     )
     # alias loadq_num_iters = BM // loadq_num_rows_per_iter
@@ -1020,7 +1020,7 @@ fn flash_attention_kernel_flexible_seqlen[
         # multiply with the corresponding Q slice of shape [BM, BK].
         alias loadk_num_rows_per_iter = (num_threads * simd_size) // BK
         var loadk_num_rows = min(BN, num_keys - kv_tile_start_row)
-        var loadk_num_iters: _uint32 = div_ceil(
+        var loadk_num_iters: _uint32 = ceildiv(
             int(loadk_num_rows), int(loadk_num_rows_per_iter)
         )
         alias BN_padded = BN + smem_pad

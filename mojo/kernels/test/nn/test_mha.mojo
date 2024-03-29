@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s
 
-from math import abs, div_ceil, isclose, min, rsqrt
+from math import abs, ceildiv, isclose, min, rsqrt
 from random import rand
 
 from BatchedMatmul import batched_matmul

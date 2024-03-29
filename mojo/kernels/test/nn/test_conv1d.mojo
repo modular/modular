@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs, div_ceil, isclose, min
+from math import abs, ceildiv, isclose, min
 from random import rand, seed
 from sys import external_call
 from sys.info import simdwidthof
@@ -84,7 +84,7 @@ fn test[
     alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    var rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
+    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Buffers for direct conv.
     var input = NDBuffer[type, 3](input_ptr, Index(N, W, C))
