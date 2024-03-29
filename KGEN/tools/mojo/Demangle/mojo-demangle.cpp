@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-demangle.h"
-#include "../Common/Telemetry.h"
+#include "../../common/Telemetry.h"
 
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"

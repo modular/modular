@@ -19,7 +19,6 @@ set(sources
   Build/mojo-build.cpp
   Common/Compilation.cpp
   Common/LLDB.cpp
-  Common/Telemetry.cpp
   Demangle/mojo-demangle.cpp
   Doc/mojo-doc.cpp
   Format/mojo-format.cpp
@@ -62,6 +61,7 @@ add_modular_tool(mojo
   LLCLRuntimeGlobals
   MArchTarget
   MCrashReporting
+  MojoToolsCommon
   MojoParser
   MojoTesting
   MojoTooling

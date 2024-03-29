@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-debug.h"
+#include "../../common/Telemetry.h"
 #include "../Common/LLDB.h"
-#include "../Common/Telemetry.h"
 #include "KGEN/Support/Configuration.h"
 #include "RPCServer.h"
 #include "Support/Init/Init.h"

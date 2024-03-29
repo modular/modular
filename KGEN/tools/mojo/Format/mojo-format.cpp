@@ -6,7 +6,7 @@
 
 #include "mojo-format.h"
 
-#include "../Common/Telemetry.h"
+#include "../../common/Telemetry.h"
 #include "KGEN/Support/Configuration.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
