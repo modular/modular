@@ -40,7 +40,7 @@ struct MyStruct[a: int, b: int]:
 
 
 # CHECK-LABEL: lit.func @"test_implicit_parameters
-# CHECK-SAME: [imm *"x`2", imm *"y`5"]<?, *"x`", *"x`1", *"y`3", *"y`4">
+# CHECK-SAME: [imm *"x`2", imm *"y`5"]<?, *"a`", *"b`1", *"a`3", *"b`4">
 fn test_implicit_parameters(x: MyStruct, y: MyStruct):
     pass
 

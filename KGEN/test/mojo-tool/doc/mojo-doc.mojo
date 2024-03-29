@@ -206,22 +206,22 @@ struct MyStruct[x: Int]:
 
 
 # CHECK: "name": "fn_with_implicit_params",
+# CHECK: "args":
+# CHECK: {
+# CHECK:     "name": "arg",
+# CHECK:     "type": "MyStruct[x]"
+# CHECK: }
 # CHECK: "parameters":
 # CHECK: {
 # CHECK:     "description": "Explicitly declared function parameter.",
 # CHECK:     "kind": "parameter",
 # CHECK:     "name": "p",
 # CHECK:     "type": "Int"
-# CHECK: },
-# CHECK: {
-# CHECK:     "description": "",
-# CHECK:     "kind": "parameter",
-# CHECK:     "name": "x",
-# CHECK:     "type": "Int"
 # CHECK: }
+# CHECK: "signature": "fn_with_implicit_params[p: Int](arg: MyStruct[x])"
 
 
-fn fn_with_implicit_params[p: Int](x: MyStruct):
+fn fn_with_implicit_params[p: Int](arg: MyStruct):
     """
     An autoparameterized function with documentation.
 
@@ -229,7 +229,7 @@ fn fn_with_implicit_params[p: Int](x: MyStruct):
       p: Explicitly declared function parameter.
 
     Args:
-      x: An argument whose declared type induces an implicit parameter.
+      arg: An argument whose declared type induces an implicit parameter.
     """
     pass
 
