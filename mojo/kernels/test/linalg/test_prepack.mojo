@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
@@ -26,8 +26,8 @@ fn test_prepack():
     alias tile_n = 8
     alias type = DType.float32
 
-    alias k_padded = div_ceil(k, tile_k) * tile_k
-    alias n_padded = div_ceil(n, tile_n) * tile_n
+    alias k_padded = ceildiv(k, tile_k) * tile_k
+    alias n_padded = ceildiv(n, tile_n) * tile_n
 
     alias src_shape_dyn = DimList.create_unknown[2]()
     alias dst_shape_dyn = DimList.create_unknown[2]()

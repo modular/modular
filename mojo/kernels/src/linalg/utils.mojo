@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_up, div_ceil, max, min, sqrt
+from math import align_down, align_up, ceildiv, max, min, sqrt
 from sys._build import is_debug_build
 from sys.info import (
     has_avx2,
@@ -334,7 +334,7 @@ fn calculate_tile_n_k[
 
     # Calculate number of InnerSize to fit in tile_n dimension,
     var max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
-    var full_data_tile_n_in_inner_size = div_ceil(n, pack_inner_size)
+    var full_data_tile_n_in_inner_size = ceildiv(n, pack_inner_size)
     var tile_n_in_inner_size = min(
         max_tile_n_in_inner_size, full_data_tile_n_in_inner_size
     )
@@ -461,7 +461,7 @@ fn get_matmul_num_tasks[
 
     # The min tasks complexity is from MLAS.
     # TODO: We can fine-tune this based on mojo.matmul's scaling.
-    var num_tasks = div_ceil(m * n * k, get_min_task_size())
+    var num_tasks = ceildiv(m * n * k, get_min_task_size())
     num_tasks = min(num_tasks, max_num_tasks)
 
     # Limit num_tasks by row-wise and column-wise partition because we don't
@@ -471,8 +471,8 @@ fn get_matmul_num_tasks[
     alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
     ]()
-    var max_row_tasks = div_ceil(m, 2 * kernel_shape.a_row_size)
-    var max_col_tasks = div_ceil(n, kernel_shape.pack_inner_size * simd_size)
+    var max_row_tasks = ceildiv(m, 2 * kernel_shape.a_row_size)
+    var max_col_tasks = ceildiv(n, kernel_shape.pack_inner_size * simd_size)
     num_tasks = min(num_tasks, max_row_tasks * max_col_tasks)
 
     return num_tasks
@@ -515,7 +515,7 @@ struct PartitionHeuristic:
 fn partition_work(
     task_id: Int, num_tasks: Int, work: Int, work_block_size: Int
 ) -> StaticIntTuple[2]:
-    var num_work_blocks = div_ceil(work, work_block_size)
+    var num_work_blocks = ceildiv(work, work_block_size)
     var blocks_per_task = num_work_blocks // num_tasks
     var blocks_per_task_extra = num_work_blocks % num_tasks
 
@@ -634,8 +634,8 @@ fn get_partitioned_matmul_mojo_shape[
 
     var min_work = m * n
 
-    var num_packs_m = div_ceil(m, micro_kernel_m)
-    var num_packs_n = div_ceil(n, micro_kernel_n)
+    var num_packs_m = ceildiv(m, micro_kernel_m)
+    var num_packs_n = ceildiv(n, micro_kernel_n)
     var max_num_packs_m = num_packs_m
     var max_num_packs_n = num_packs_n
     if (use_i8mm and 2 * m > n) or m > n:
@@ -648,7 +648,7 @@ fn get_partitioned_matmul_mojo_shape[
         # get the minimum work in n
         var worki = micro_kernel_n * max((num_packs_n // num_tasks), 1)
         # ensure the work in m is not much smaller than in n
-        var num_packs_m2 = div_ceil(m, align_down(worki, micro_kernel_m))
+        var num_packs_m2 = ceildiv(m, align_down(worki, micro_kernel_m))
         if num_packs_n * num_packs_m2 >= num_tasks:
             max_num_packs_m = min(max_num_packs_m, num_packs_m2)
 
@@ -656,9 +656,9 @@ fn get_partitioned_matmul_mojo_shape[
     max_num_packs_n = min(max_num_packs_n, num_tasks)
     # Loop over all possible partitions and find the the partition that balances the work best.
     for j in range(max_num_packs_m, 0, -1):
-        var workj = micro_kernel_m * div_ceil(num_packs_m, j) if j != 1 else m
+        var workj = micro_kernel_m * ceildiv(num_packs_m, j) if j != 1 else m
         for i in range(min(num_tasks // j, max_num_packs_n), 0, -1):
-            var worki = micro_kernel_n * div_ceil(
+            var worki = micro_kernel_n * ceildiv(
                 num_packs_n, i
             ) if i != 1 else n
             var work = workj * worki
@@ -687,12 +687,12 @@ fn get_partitioned_matmul_im2col[
     var m_biased = m * bias
     # The ideal partition in theory is to balance the cost of memory access in
     # M and N dimensions using square sub-matrix (after applying the bias).
-    var ideal_num_col_tasks = sqrt(div_ceil(n * num_tasks, m_biased))
+    var ideal_num_col_tasks = sqrt(ceildiv(n * num_tasks, m_biased))
     var num_row_tasks = num_tasks // ideal_num_col_tasks
     var num_col_tasks = ideal_num_col_tasks
 
     # Prioritize having at least two packs in N so that A is reused.
-    var max_num_col_tasks = min(div_ceil(n, 2 * micro_kernel_n), num_tasks)
+    var max_num_col_tasks = min(ceildiv(n, 2 * micro_kernel_n), num_tasks)
     if ideal_num_col_tasks > max_num_col_tasks:
         num_col_tasks = max_num_col_tasks
         num_row_tasks = num_tasks // num_col_tasks
@@ -701,7 +701,7 @@ fn get_partitioned_matmul_im2col[
     elif num_tasks % ideal_num_col_tasks != 0:
         # Set 20% deviation.
         # TODO: Make this tuning parameter a function parameter/argument.
-        var eps = div_ceil(2 * ideal_num_col_tasks, 10)
+        var eps = ceildiv(2 * ideal_num_col_tasks, 10)
         max_num_col_tasks = min(max_num_col_tasks, ideal_num_col_tasks + eps)
         var num_col_tasks_tmp = max(ideal_num_col_tasks - eps, 1)
         var num_threads_used = (

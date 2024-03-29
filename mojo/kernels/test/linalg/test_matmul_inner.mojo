@@ -6,7 +6,7 @@
 # UNSUPPORTED: asan
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 from sys.info import has_neon, simdwidthof
 
 from buffer import NDBuffer

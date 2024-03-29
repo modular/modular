@@ -8,7 +8,7 @@
 # See:
 # https://www.notion.so/modularai/Ingredients-for-Matmul-Rewrite-on-CPUs-8f631d688c6049e3a267ec0d9c66634c
 
-from math import align_down, align_up, div_ceil, fma, min
+from math import align_down, align_up, ceildiv, fma, min
 from sys.info import (
     alignof,
     has_avx2,
@@ -502,7 +502,7 @@ struct PackMatrixCols[
         var nc = self.valid_data_dim[1]
         alias column_inner_size2 = column_inner_size // 2
         for i in range(0, align_up(kc, 8), 8):
-            for j in range(div_ceil(nc, column_inner_size2)):
+            for j in range(ceildiv(nc, column_inner_size2)):
                 for p in range(0, column_inner_size2, 2):
                     for i2 in range(8):
                         for p2 in range(2):
@@ -1857,8 +1857,8 @@ fn pack_matmul_b_shape_func_M[
         output[0] = b_input.dim(0)
         output[1] = b_input.dim(1)
 
-    output[0] = div_ceil(output[0], tile_n_k[1]) * tile_n_k[1]
-    output[1] = div_ceil(output[1], tile_n_k[0]) * tile_n_k[0]
+    output[0] = ceildiv(output[0], tile_n_k[1]) * tile_n_k[1]
+    output[1] = ceildiv(output[1], tile_n_k[0]) * tile_n_k[0]
 
     return output
 
@@ -2804,7 +2804,7 @@ fn gemv_kernel[
 
     if warpId < m:
         # Every warp processes a single row of the resultant vector
-        for i in range(div_ceil(k, WARP_SIZE)):
+        for i in range(ceildiv(k, WARP_SIZE)):
             var idx = i * WARP_SIZE + int(lane_id())
             var val = SIMD[c_type, 1]()
             if idx < k:
@@ -2863,7 +2863,7 @@ fn gevm_kernel[
     ]()
 
     # Every block computes warp size length of output values
-    for i in range(div_ceil(k, warpsPerBlock)):
+    for i in range(ceildiv(k, warpsPerBlock)):
         var val = SIMD[c_type, 1]()
         var row = i * warpsPerBlock + warpId
         if lane_id() == 0:
@@ -3200,7 +3200,7 @@ fn _matmul_gpu_dispatch[
                 m,
                 n,
                 k,
-                grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
                 stream=stream,
             )
@@ -3275,7 +3275,7 @@ fn _matmul_gpu_dispatch[
                 b,
                 1,
                 0,
-                grid_dim=(div_ceil(n, BN), div_ceil(m, BM)),
+                grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
                 block_dim=(NUM_THREADS),
                 stream=stream,
             )
@@ -3303,7 +3303,7 @@ fn _matmul_gpu_dispatch[
                 m,
                 n,
                 k,
-                grid_dim=div_ceil(m, WARPS_PER_BLOCK),
+                grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 stream=stream,
             )
@@ -3333,7 +3333,7 @@ fn _matmul_gpu_dispatch[
                 m,
                 n,
                 k,
-                grid_dim=div_ceil(n, WARPS_PER_BLOCK),
+                grid_dim=ceildiv(n, WARPS_PER_BLOCK),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 stream=stream,
             )
@@ -3366,7 +3366,7 @@ fn _matmul_gpu_dispatch[
                     m,
                     n,
                     k,
-                    grid_dim=(div_ceil(n, tile_size), div_ceil(m, tile_size)),
+                    grid_dim=(ceildiv(n, tile_size), ceildiv(m, tile_size)),
                     block_dim=(tile_size, tile_size),
                     stream=stream,
                 )
@@ -3395,7 +3395,7 @@ fn _matmul_gpu_dispatch[
                     m,
                     n,
                     k,
-                    grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+                    grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
                     stream=stream,
                 )
@@ -3469,7 +3469,7 @@ fn _matmul_cpu[
     else:
         var complexity = m * n * k
         var num_tasks = min(
-            div_ceil(complexity, get_min_task_size()),
+            ceildiv(complexity, get_min_task_size()),
             num_threads if num_threads > 0 else Runtime().parallelism_level(),
         )
 
