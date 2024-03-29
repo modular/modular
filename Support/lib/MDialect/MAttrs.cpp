@@ -1007,6 +1007,35 @@ int32_t DataLayout::getVectorABIAlign(int32_t numElts,
 /// The dialect attribute name used to attached target info to a module.
 static constexpr llvm::StringLiteral targetInfoAttrName = "M.target_info";
 
+StringLiteral M::stringifyRelocationModel(llvm::Reloc::Model model) {
+  switch (model) {
+  case llvm::Reloc::Static:
+    return "static";
+  case llvm::Reloc::PIC_:
+    return "pic";
+  case llvm::Reloc::DynamicNoPIC:
+    return "dynamic-no-pic";
+  case llvm::Reloc::ROPI:
+    return "ropi";
+  case llvm::Reloc::RWPI:
+    return "rwpi";
+  case llvm::Reloc::ROPI_RWPI:
+    return "ropi-rwpi";
+  }
+  llvm_unreachable("invalid relocation model");
+}
+
+std::optional<llvm::Reloc::Model> M::symbolizeRelocationModel(StringRef str) {
+  return llvm::StringSwitch<std::optional<llvm::Reloc::Model>>(str)
+      .Case("static", llvm::Reloc::Static)
+      .Case("pic", llvm::Reloc::PIC_)
+      .Case("dynamic-no-pic", llvm::Reloc::DynamicNoPIC)
+      .Case("ropi", llvm::Reloc::ROPI)
+      .Case("rwpi", llvm::Reloc::RWPI)
+      .Case("ropi-rwpi", llvm::Reloc::ROPI_RWPI)
+      .Default(std::nullopt);
+}
+
 TargetInfoAttr M::getTargetInfo(ModuleOp module) {
   return module->getAttrOfType<TargetInfoAttr>(targetInfoAttrName);
 }
@@ -1033,7 +1062,8 @@ void M::eraseTargetInfo(ModuleOp module) {
 ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
                                             StringRef targetTriple,
                                             StringRef arch, StringRef features,
-                                            StringRef tuneCpu) {
+                                            StringRef tuneCpu,
+                                            llvm::Reloc::Model relocModel) {
   std::string errorMessage;
   const llvm::Target *target =
       llvm::TargetRegistry::lookupTarget(targetTriple.str(), errorMessage);
@@ -1042,7 +1072,7 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
 
   std::unique_ptr<llvm::TargetMachine> machine(
       target->createTargetMachine(targetTriple, arch, features, /*Options=*/{},
-                                  /*RM=*/{}));
+                                  /*RM=*/relocModel));
   if (!machine)
     return Error("failed to create target machine for data layout lookup");
 
@@ -1052,8 +1082,8 @@ ErrorOr<TargetInfoAttr> M::getTargetInfoFor(MLIRContext *ctx,
 
   // Return a TargetInfoAttr built for the host.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), arch, features,
-                             std::move(*dl), simdWidthFromFeatures(features),
-                             tuneCpu);
+                             std::move(*dl), machine->getRelocationModel(),
+                             simdWidthFromFeatures(features), tuneCpu);
 }
 
 ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
@@ -1072,12 +1102,12 @@ ErrorOr<TargetInfo> M::toRuntimeTargetInfo(TargetInfoAttr targetInfoAttr) {
 /// Returns attribute representing runtime target info.
 TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
                                         const TargetInfo &runtimeTargetInfo) {
-  return TargetInfoAttr::get(ctx, runtimeTargetInfo.triple,
-                             runtimeTargetInfo.arch,
-                             encodeFeatures(runtimeTargetInfo.features),
-                             /*data_layout=*/{},
-                             /*simd_bit_width=*/0,
-                             /*tune_cpu=*/{});
+  return TargetInfoAttr::get(
+      ctx, runtimeTargetInfo.triple, runtimeTargetInfo.arch,
+      encodeFeatures(runtimeTargetInfo.features),
+      /*data_layout=*/{}, /*relocation_model=*/llvm::Reloc::Static,
+      /*simd_bit_width=*/0,
+      /*tune_cpu=*/{});
 }
 
 namespace mlir {
@@ -1107,6 +1137,20 @@ struct FieldParser<M::DataLayout> {
   }
 };
 
+/// Allow `llvm::Reloc::Model` to be parsed by MLIR.
+template <>
+struct FieldParser<llvm::Reloc::Model> {
+  static FailureOr<llvm::Reloc::Model> parse(AsmParser &p) {
+    std::string str;
+    if (failed(p.parseString(&str)))
+      return failure();
+
+    std::optional<llvm::Reloc::Model> model = symbolizeRelocationModel(str);
+    if (!model)
+      return failure();
+    return *model;
+  }
+};
 } // namespace mlir
 
 namespace llvm {
@@ -1120,6 +1164,10 @@ static raw_ostream &operator<<(raw_ostream &os, const llvm::Triple &triple) {
   return os << '"' << triple.normalize() << '"';
 }
 
+/// Allow the attribute printer to print a relocation model.
+static raw_ostream &operator<<(raw_ostream &os, llvm::Reloc::Model model) {
+  return os << '"' << stringifyRelocationModel(model) << '"';
+}
 } // namespace llvm
 
 //===----------------------------------------------------------------------===//

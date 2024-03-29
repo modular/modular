@@ -73,6 +73,8 @@ void CompilationOptions::print(raw_ostream &os) const {
   if (enableXRayInstrumentation)
     os << ", enableXRayInstrumentation";
 
+  os << ", relocModel: " << stringifyRelocationModel(relocModel);
+
   os << ", debugInfoLang: " << debugInfoLanguage;
   os << " }";
 }
