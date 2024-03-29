@@ -79,18 +79,11 @@ def LLVMTriple :
 
 def DataLayout : Custom<"DataLayout">;
 
-def LLVMRelocModel :
-  WithParser<"succeeded(parseRelocModel($_reader, $_var))",
-  WithBuilder<"$_args",
-  WithPrinter<"printRelocModel($_name.getContext(), $_writer, $_getter)",
-  WithType<"llvm::Reloc::Model">>>>;
-
 def TargetInfoAttr : DialectAttribute<(attr
   LLVMTriple:$triple,
   String:$arch,
   String:$features,
   Custom<"DataLayout">:$data_layout,
-  LLVMRelocModel:$relocation_model,
   SignedVarInt:$simd_bit_width,
   String:$tune_cpu
 )>;

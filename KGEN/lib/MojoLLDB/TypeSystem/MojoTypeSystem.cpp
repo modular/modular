@@ -109,14 +109,8 @@ struct MojoTypeSystem::Impl {
     compilationOptions.targetTriple = archSpec.GetTriple().str();
 
     // TODO: Populate cpu information properly here.
-    if (archSpec.IsValid()) {
+    if (archSpec.IsValid())
       compilationOptions.targetTriple = archSpec.GetTriple().str();
-      compilationOptions.relocModel =
-          (archSpec.GetTriple().isOSBinFormatMachO() ||
-           archSpec.GetTriple().isAArch64())
-              ? llvm::Reloc::PIC_
-              : llvm::Reloc::Static;
-    }
     compilationOptions.targetCpu = llvm::sys::getHostCPUName();
 
     // TODO(#33931) workaround to disable module splitting for REPL.
@@ -132,7 +126,7 @@ struct MojoTypeSystem::Impl {
     auto targetInfoOr = M::getTargetInfoFor(
         &mlirContext, compilationOptions.targetTriple,
         compilationOptions.targetCpu, compilationOptions.targetFeatures,
-        /*tuneCpu=*/"", compilationOptions.relocModel);
+        /*tuneCpu=*/"");
     if (succeeded(targetInfoOr))
       targetInfo = *targetInfoOr;
 

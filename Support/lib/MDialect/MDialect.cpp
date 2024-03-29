@@ -56,26 +56,6 @@ static void writeDataLayout(DialectBytecodeWriter &writer,
   writer.writeOwnedString(dl.toString());
 }
 
-static LogicalResult parseRelocModel(DialectBytecodeReader &reader,
-                                     llvm::Reloc::Model &model) {
-  StringRef modelStr;
-  if (failed(reader.readString(modelStr)))
-    return failure();
-
-  std::optional<llvm::Reloc::Model> result = symbolizeRelocationModel(modelStr);
-  if (!result)
-    return failure();
-
-  model = *result;
-  return success();
-}
-
-static void printRelocModel(MLIRContext *ctx, DialectBytecodeWriter &writer,
-                            llvm::Reloc::Model model) {
-  writer.writeOwnedString(
-      StringAttr::get(ctx, stringifyRelocationModel(model)));
-}
-
 namespace {
 #include "Support/MDialect/MDialectBytecode.cpp.inc"
 
