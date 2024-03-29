@@ -76,7 +76,7 @@ static int demangle(const State &state) {
   // Initialize the MLIR context with all of KGEN's dialects.
   DialectRegistry registry;
   registerAllKGENDialects(registry);
-  mlir::MLIRContext context(registry);
+  mlir::MLIRContext context{registry};
 
   // If no name was provided on the command-line, read one from stdin.
   std::string name =

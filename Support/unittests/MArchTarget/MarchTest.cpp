@@ -21,7 +21,7 @@ TEST(ArchTarget, GetFeatures) {
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllAsmPrinters();
 
-  MLIRContext ctx;
+  MLIRContext ctx{MLIRContext::Threading::DISABLED};
   ctx.loadDialect<MDialect>();
 #if defined(__linux__) && defined(MODULAR_X86_64)
   auto targetInfo = M::getMArchFeatures(&ctx, "skylake-avx512", "generic", "");

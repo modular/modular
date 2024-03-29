@@ -294,7 +294,7 @@ static int run(const State &state) {
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceManager;
   CompilationOptions options;
-  MLIRContext mlirCtx;
+  MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
   TargetInfoAttr target;
   if (std::optional<int> exitCode = parseArgs(
           state, args, sourceManager, options, mlirCtx, target, optionsTable))

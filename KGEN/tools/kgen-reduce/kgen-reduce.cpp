@@ -400,7 +400,7 @@ ErrorOrSuccess Reducer::tryDCE(IRState &curState) {
 int main(int argc, char **argv) {
   DialectRegistry registry;
   registerAllKGENDialects(registry);
-  MLIRContext mlirCtx;
+  MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
   mlirCtx.allowUnregisteredDialects();
   mlirCtx.appendDialectRegistry(registry);
 

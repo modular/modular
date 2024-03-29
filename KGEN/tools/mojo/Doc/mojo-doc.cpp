@@ -100,7 +100,7 @@ static int doc(const State &state) {
 
   DialectRegistry registry;
   registerAllKGENDialects(registry);
-  mlir::MLIRContext context(registry);
+  mlir::MLIRContext context{registry};
 
   CompilationOptions compilationOptions;
   LIT::ParserConfig parserConfig(&context, compilationOptions);

@@ -241,7 +241,7 @@ struct PackageArgs {
   /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
   /// The MLIR context used for compilation.
-  mlir::MLIRContext ctx;
+  mlir::MLIRContext ctx{MLIRContext::Threading::DISABLED};
   /// A set of `-D` compile-time parameter definition.
   EnvAttr env;
 };

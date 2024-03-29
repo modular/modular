@@ -191,7 +191,7 @@ getTestFromID(const std::filesystem::path &path, const TestID &id,
       &diagnosticBuffer);
 
   // Parse the file.
-  MLIRContext mlirCtx;
+  MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
   registerContext(mlirCtx, ctx);
   KGEN::CompilationOptions compilationOptions;
   ParserConfig parserConfig(&mlirCtx, compilationOptions);
