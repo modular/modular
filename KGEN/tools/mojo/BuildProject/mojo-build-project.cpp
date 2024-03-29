@@ -6,13 +6,14 @@
 
 #include "mojo-build-project.h"
 
+#include "KGEN/Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
 
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
-#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Program.h"
 
 #include <optional>
@@ -32,19 +33,13 @@ struct BuildProjectOptTable : public llvm::opt::PrecomputedOptTable {
 
 /// Returns the path to the `mojo-build-server` executable, or an error if none
 /// could be found.
-static ErrorOr<std::string> getMojoBuildServerPath(const char *programName) {
-  std::string executable = llvm::sys::fs::getMainExecutable(
-      programName, (void *)getMojoBuildServerPath);
-  if (executable.empty())
-    return Error("could not determine `mojo` path");
-
-  // For now, `mojo-build-server` is found relative to `mojo` -- it exists in
-  // the same directory. In the future, its path will be stored in the Modular
-  // config file.
-  std::string path = std::filesystem::path(executable).parent_path().string();
-  return toModularErrorOr(
-      llvm::sys::findProgramByName("mojo-build-server",
-                                   /*Paths=*/ArrayRef<StringRef>(path)));
+static ErrorOr<std::string> getMojoBuildServerPath(KGEN::MojoConfig &config) {
+  std::error_code ec;
+  StringRef path = config.getBuildServerPath();
+  if (!std::filesystem::exists(path.str(), ec) || ec)
+    return Error(llvm::formatv(
+        "unable to resolve the mojo-build-server path at '{0}'", path));
+  return path.str();
 }
 
 /// For now, this simply launches a `mojo-build-server` executable and sends it
@@ -77,7 +72,15 @@ static int buildProject(const State &state) {
   // Build server communication
   //===--------------------------------------------------------------------===//
 
-  auto serverPathOr = getMojoBuildServerPath(state.programName);
+  // Find the path to the mojo-build-server executable.
+  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
+  if (failed(configOr)) {
+    return state.reportError(Twine("failed to read 'modular.cfg': ") +
+                             configOr.getError());
+  }
+  KGEN::MojoConfig config = std::move(*configOr);
+
+  auto serverPathOr = getMojoBuildServerPath(config);
   if (serverPathOr.isError())
     return state.reportError(serverPathOr.getError());
   std::string serverPath = *serverPathOr;
