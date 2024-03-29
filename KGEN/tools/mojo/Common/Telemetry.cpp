@@ -12,7 +12,7 @@
 using namespace M;
 
 void M::initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
-                            const State &state,
+                            StringRef message,
                             const llvm::opt::InputArgList &args,
                             ArrayRef<unsigned> privateArgs) {
 
@@ -49,6 +49,5 @@ void M::initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
       " ");
   // Notify an invocation event of the current subcommand and arguments.
   auto logger = telemetryCtx.getLogger("mojo");
-  logger->emitL1Event("invoke." + StringRef(state.subcommand).str(),
-                      {{"args", s}});
+  logger->emitL1Event("invoke." + message.str(), {{"args", s}});
 }

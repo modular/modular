@@ -395,7 +395,8 @@ static int package(const State &state) {
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
   auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, state, args, /*privateArgs=*/
+  initializeTelemetry(telemetryCtx, StringRef(state.subcommand),
+                      args, /*privateArgs=*/
                       {options::OPT_D, options::OPT_I, options::OPT_o});
 
   //===--------------------------------------------------------------------===//

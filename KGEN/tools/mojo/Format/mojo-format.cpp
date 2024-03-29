@@ -64,7 +64,7 @@ static int format(const State &state) {
 
   // Initialize telemetry.
   auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, state, args);
+  initializeTelemetry(telemetryCtx, StringRef(state.subcommand), args);
 
   // Check that the inputs are all valid Mojo/Python files, or directories.
   std::error_code ec;
