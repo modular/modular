@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from math import abs, ceil, div_ceil, max
+from math import abs, ceil, ceildiv, max
 from sys.info import alignof, sizeof
 
 from buffer import NDBuffer
@@ -142,7 +142,7 @@ fn _read_write_to_tensors[
 
     # Tensor to store the packed data
     constrained[num_elements % group_size == 0]()
-    alias num_blocks = div_ceil(num_elements, group_size)
+    alias num_blocks = ceildiv(num_elements, group_size)
     alias block_size = sizeof[Q4sym[group_size]]()
     var packed_blob = NDBuffer[
         DType.uint8, rank, DimList(num_blocks * block_size)

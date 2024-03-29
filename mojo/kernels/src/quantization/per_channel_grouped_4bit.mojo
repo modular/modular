@@ -7,7 +7,7 @@ from math import (
     abs,
     align_down,
     ceil,
-    div_ceil,
+    ceildiv,
     floor,
     is_power_of_2,
     max,
@@ -477,7 +477,7 @@ struct Q4sym[
         # as we support only inner-most dim, treat like rank-2 tensor
         var outer_stride = prod_dims[0, rank - 1](input_tensor)
         var input_inner_stride = input_shape[rank - 1]
-        var output_inner_stride = div_ceil(input_shape[rank - 1], group_size)
+        var output_inner_stride = ceildiv(input_shape[rank - 1], group_size)
 
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_stride):
@@ -536,7 +536,7 @@ struct Q4sym[
         var outer_dim = prod_dims[0, rank - 1](output_tensor)
 
         # Note: this is calculated assuming a pointer of Q5Sym's
-        var input_inner_dim = div_ceil(output_inner_dim, group_size)
+        var input_inner_dim = ceildiv(output_inner_dim, group_size)
 
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_dim):
@@ -668,7 +668,7 @@ fn _matmul_int4_dotprod[
         var b_slice = b.slice[simd_width * 4, offset=idx]()
         c = dotprod(a_slice, b_slice, c)
 
-    unroll[unroll_fn, div_ceil(group_size, simd_width * 4)]()
+    unroll[unroll_fn, ceildiv(group_size, simd_width * 4)]()
 
     return c
 
@@ -778,7 +778,7 @@ fn matmul_int4[
     _block_quantize_a[group_size](a, a_quant, a_scale)
 
     alias grain_size = 8
-    var num_workers = div_ceil(M, grain_size)
+    var num_workers = ceildiv(M, grain_size)
 
     @__copy_capture(M, a_quant, a_scale)
     @parameter
