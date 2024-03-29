@@ -1,4 +1,7 @@
 // RUN: mojo package -D fire="🔥" %S/test_package -o - | kgen-opt | FileCheck %s
+// RUN: not mojo package %S/test_package_with_main -o - 2>&1 | FileCheck %s --check-prefix=MAIN_IN_PACKAGE
+
+// MAIN_IN_PACKAGE: defining 'main' within a package is not yet supported
 
 // CHECK-DAG: #local_variable{{[0-9]+}} =
 // CHECK-DAG: !subroutine{{[0-9]+}} =
