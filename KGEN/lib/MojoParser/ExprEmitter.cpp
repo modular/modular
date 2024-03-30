@@ -817,45 +817,6 @@ PValue ExprEmitter::emitPValue(ASTExprAnd<AnyValue> value, ExprContext context,
 //===----------------------------------------------------------------------===//
 // Type conversion helpers.
 
-/// Return true if the given type explicitly implements the trait.
-static bool checkNominalTypeConformance(SharedState &shared, TraitType trait,
-                                        ASTDecl *typeDecl, SMLoc loc,
-                                        std::optional<InflightDiag> &diag) {
-  ArrayRef<TypeLineageAttr> parentTypes;
-  auto structOp = dyn_cast<StructDeclOp>(typeDecl);
-  if (structOp)
-    parentTypes = structOp.getParentTypes();
-  else
-    parentTypes = cast<TraitDeclOp>(typeDecl).getParentTypes();
-
-  // Check if the type explicitly conforms to the trait.
-  if (llvm::find_if(parentTypes, [trait](TypeLineageAttr type) {
-        return type.getType() == trait;
-      }) != parentTypes.end())
-    return true;
-
-  // Only structs can implicitly conform to traits.
-  if (!structOp)
-    return false;
-
-  if (failed(shared.declResolver->resolveFully(*typeDecl, loc)))
-    return false;
-
-  // Check if the type implicitly conforms to the trait.
-  ASTDecl &traitDecl =
-      shared.declResolver->getDeclForTypeSymbol(trait.getSymbol());
-  SmallVector<TypeLineageAttr> newParentTypes =
-      llvm::to_vector(structOp.getParentTypes());
-  unsigned curNumParents = newParentTypes.size();
-  StructEmitter::appendTraits(newParentTypes, &traitDecl);
-  for (TypeLineageAttr newParent :
-       llvm::drop_begin(newParentTypes, curNumParents))
-    if (failed(verifyConformance(*typeDecl, newParent, shared, diag)))
-      return false;
-  structOp.setParentTypes(newParentTypes);
-  return true;
-}
-
 /// Return true if the MLIR type can implicitly conform to the trait.
 static bool checkMLIRTypeConformance(SharedState &shared, SMLoc loc,
                                      TraitType trait) {
@@ -941,13 +902,14 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       canZeroCostConvert(shared, rvType, requiredType))
     return true;
 
-  // Metatypes can implicitly convert to any trait type they implement.
+  // Values of known {struct/trait/mlir} type can convert to any trait type they
+  // implement.
   if (auto traitType = dyn_cast<TraitType>(requiredType)) {
     std::optional<InflightDiag> diag;
     // Struct types and Trait types can conform to traits.
     if (isa<AnyStructType, TraitType>(rvType) &&
-        checkNominalTypeConformance(shared, traitType, rvType.getDecl(shared),
-                                    value.expr->getLoc(), diag))
+        rvType.getDecl(shared)->doesNominalTypeConformsTo(traitType, diag,
+                                                          shared))
       return true;
     if (diag)
       diag->abandon();
@@ -1109,13 +1071,16 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
 
   // Check that the struct implements the trait.
   ASTDecl *metaTypeDecl = metaType.getDecl(shared);
+  if (!metaTypeDecl)
+    return {}; // erroneous
+
   std::optional<InflightDiag> checkDiag;
-  if (!checkNominalTypeConformance(shared, trait, metaTypeDecl,
-                                   value.expr->getLoc(), checkDiag)) {
+  if (!metaTypeDecl->doesNominalTypeConformsTo(trait, checkDiag, shared)) {
     InflightDiag diag = emitError(value.expr->getLoc(), "cannot bind type ")
                         << ASTType(typeValue) << " to trait " << ASTType(trait)
                         << value.expr->getRange();
-    diag.attachNote(metaTypeDecl->getLoc()) << std::move(*checkDiag);
+    if (checkDiag)
+      diag.attachNote(metaTypeDecl->getLoc()) << std::move(*checkDiag);
     return {};
   }
 

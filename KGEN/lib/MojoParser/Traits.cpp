@@ -504,3 +504,51 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
     synthesizeSpecialFunction(structDecl, shared, kind);
   return success();
 }
+
+/// Given a decl for a struct or trait type, return true if this type conforms
+/// to the specified trait type.  On failure, this may set 'diag' to an inflight
+/// diagnostic that explains why this doesn't conform.  It can be reported or
+/// abandoned based on the client's needs.
+bool ASTDecl::doesNominalTypeConformsTo(TraitType trait,
+                                        std::optional<InflightDiag> &diag,
+                                        SharedState &shared) {
+  assert((::isa<StructDeclOp, TraitDeclOp>(*this)) && "Invalid decl kind");
+
+  if (failed(shared.declResolver->resolveFully(*this, getLoc())))
+    return false; // Error emitted.
+
+  ArrayRef<TypeLineageAttr> parentTypes;
+  auto structOp = dyn_cast<StructDeclOp>(*this);
+  if (structOp)
+    parentTypes = structOp.getParentTypes();
+  else
+    parentTypes = cast<TraitDeclOp>(*this).getParentTypes();
+
+  // Check if the type explicitly conforms to the trait.
+  if (llvm::find_if(parentTypes, [trait](TypeLineageAttr type) {
+        return type.getType() == trait;
+      }) != parentTypes.end())
+    return true;
+
+  // Only structs can implicitly conform to traits.
+  if (!structOp)
+    return false;
+
+  // Check if the type *implicitly* conforms to the trait.
+  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
+  if (!traitDecl)
+    return false; // Erroneous.
+
+  SmallVector<TypeLineageAttr> newParentTypes =
+      llvm::to_vector(structOp.getParentTypes());
+  unsigned curNumParents = newParentTypes.size();
+  StructEmitter::appendTraits(newParentTypes, traitDecl);
+  for (TypeLineageAttr newParent :
+       llvm::drop_begin(newParentTypes, curNumParents))
+    if (failed(verifyConformance(*this, newParent, shared, diag)))
+      return false;
+
+  // If we succeeded, remember this so we don't check again.
+  structOp.setParentTypes(newParentTypes);
+  return true;
+}
