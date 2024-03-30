@@ -4,11 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# XFAIL: *
-
 # RUN: mojo build --debug-level full -O0 '%S/Inputs/builtin-types.mojo' -o %t
 
-# RUN: %debug -Xlldb -o -Xlldb 'b builtin-types.mojo:117' -Xlldb -o -Xlldb 'r' -Xlldb -o -Xlldb 'frame var' %t | FileCheck %s
+# RUN: %debug -Xlldb -o -Xlldb 'b builtin-types.mojo:101' -Xlldb -o -Xlldb 'r' -Xlldb -o -Xlldb 'frame var' %t | FileCheck %s
 
 # CHECK: (si64) a_var_index = 48
 # CHECK: (ARegisterPassableStruct) a_register_passable_struct = {

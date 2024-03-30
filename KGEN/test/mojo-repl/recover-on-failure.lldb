@@ -27,3 +27,7 @@ fn foo() -> Int:
 fn foo() -> Int:
     return 0
 # CHECK-STDERR-NOT: return expected at end of function with results
+
+# Test declaration of an uninitialized value.
+var some_uninit : String
+# CHECK-STDERR: Expression [7]{{.*}}: 'some_uninit' is uninitialized at the implicit return from this function
