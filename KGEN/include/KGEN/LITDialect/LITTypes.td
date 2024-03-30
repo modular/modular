@@ -335,21 +335,16 @@ def LIT_AnyTraitType : LITType<"AnyTrait", "anytrait",
     ```
   }];
 
-  let parameters = (ins "SymbolAttr":$value);
-  let assemblyFormat = "`<` $value `>`";
+  let parameters = (ins "TraitType":$traitType);
+  let assemblyFormat = "`<` $traitType `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "SymbolRefAttr":$symbol), [{
-      return get(symbol.getContext(), SymbolAttr::get(symbol));
+    TypeBuilderWithInferredContext<(ins "TraitType":$traitType), [{
+      return get(traitType.getContext(), traitType);
     }]>
   ];
 
   let extraClassDeclaration = [{
-    SymbolRefAttr getSymbol() const;
-
-    /// Return the trait type this metatype corresponds to.
-    TraitType getTraitType();
-
     /// Return whether the type is a metatype.
     bool isMetaType() { return true; }
   }];

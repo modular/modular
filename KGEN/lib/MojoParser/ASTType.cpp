@@ -79,7 +79,8 @@ ASTDecl *ASTType::getDecl(SharedState &shared) const {
   if (auto traitType = dyn_cast_or_null<TraitType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(traitType.getSymbol());
   if (auto anyTrait = dyn_cast_or_null<AnyTraitType>(type))
-    return &shared.declResolver->getDeclForTypeSymbol(anyTrait.getSymbol());
+    return &shared.declResolver->getDeclForTypeSymbol(
+        anyTrait.getTraitType().getSymbol());
   return nullptr;
 }
 
@@ -496,7 +497,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     printSymbol(os, traitType.getSymbol(), forDiag, /*isFunc=*/false);
   } else if (auto anyTrait = dyn_cast<AnyTraitType>(type)) {
     os << "AnyTrait[";
-    printSymbol(os, anyTrait.getSymbol(), forDiag, /*isFunc=*/false);
+    ASTType(anyTrait.getTraitType()).print(os, forDiag, demangleParams);
     os << ']';
   } else if (isNoneType()) {
     os << "None";
