@@ -345,7 +345,6 @@ fn calculate_tile_n_k[
     return Index(tile_n, tile_k)
 
 
-@always_inline
 fn calculate_tile_n_k[
     # Max number of element to cache.
     pack_cache_size: Int,
@@ -622,7 +621,6 @@ fn get_partitioned_matmul_mojo[
     )
 
 
-@always_inline
 fn get_partitioned_matmul_mojo_shape[
     a_type: DType,
     b_type: DType,
@@ -900,7 +898,6 @@ fn get_trace_information(
     )
 
 
-@always_inline
 fn dispatch_get_kernel_type[
     func: fn[x: Bool] () capturing -> None,
 ](m: Int, n: Int, k: Int):

@@ -512,7 +512,6 @@ struct PackMatrixCols[
                                 val,
                             )
 
-    @always_inline
     fn _pack_default(self):
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
@@ -739,7 +738,6 @@ struct MatmulInnerLoopBPacked[
         self.c_bound = c_bound
 
     @staticmethod
-    @always_inline
     fn run(
         c: NDBuffer[c_type, 2, c_shape],
         a: NDBuffer[a_type, 2, a_shape],
@@ -770,7 +768,6 @@ struct MatmulInnerLoopBPacked[
         )
         instance._run_inner_loop()
 
-    @always_inline
     fn _initialize_c_tile(
         self,
         c_local: NDBuffer[
@@ -1240,7 +1237,6 @@ struct MatmulInnerLoopBPacked[
 
             self._store_c_tile(c_local, idx_n)
 
-    @always_inline
     fn _accumulate_lane[
         a_col_size: Int
     ](
@@ -1300,7 +1296,6 @@ struct MatmulInnerLoopBPacked[
 
             b_ptr = b_ptr.offset(pack_inner_size)
 
-    @always_inline
     fn _run_inner_loop_neon(self):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
@@ -1412,7 +1407,6 @@ struct MatmulInnerLoopBPacked[
                 self._accumulate_i8mm(c_local, Index(idx_n, idx_k))
             self._store_c_tile(c_local, idx_n)
 
-    @always_inline
     fn _run_inner_loop(self):
         @parameter
         if Self.use_i8mm:
@@ -1469,7 +1463,6 @@ struct TiledMatmul[
 
     # Interface method
     @staticmethod
-    @always_inline
     fn run(
         c: NDBuffer[c_type, 2, config.c_shape],
         a: NDBuffer[a_type, 2, config.a_shape],
@@ -1494,7 +1487,6 @@ struct TiledMatmul[
         )
 
     @staticmethod
-    @always_inline
     fn run(
         c: NDBuffer[c_type, 2, config.c_shape],
         a: NDBuffer[a_type, 2, config.a_shape],
@@ -1518,7 +1510,6 @@ struct TiledMatmul[
 
     # Interface method
     @staticmethod
-    @always_inline
     fn run(
         c: NDBuffer[c_type, 2, config.c_shape],
         a: NDBuffer[a_type, 2, config.a_shape],
@@ -1573,7 +1564,6 @@ struct TiledMatmul[
 
         matmul._outer_k_loop()
 
-    @always_inline
     fn _outer_m_loop[
         last_n_tile: Bool,
         last_k_tile: Bool,
@@ -1749,7 +1739,6 @@ struct TiledMatmul[
             )
 
     # Iterate over the K dimension of the gemm space.
-    @always_inline
     fn _outer_k_loop(
         self,
     ):
@@ -1899,7 +1888,6 @@ fn pack_matmul_b_shape_func[
     ](b_input, kernel_type_m)
 
 
-@always_inline
 fn pack_b[
     transpose_b: Bool,
     simd_size: Int,
@@ -2134,7 +2122,6 @@ fn pack_b_ndbuffer_M[
     ](b_input, output_buffer, kernel_type_m)
 
 
-@always_inline
 fn pack_b_ndbuffer[
     a_type: DType,
     a_shape: DimList,
@@ -2271,7 +2258,6 @@ struct BTileGenerator[
             b, b_tile_stack_ptr, tile_n_k
         )
 
-    @always_inline
     fn get_tile[
         inner_size: Int
     ](
