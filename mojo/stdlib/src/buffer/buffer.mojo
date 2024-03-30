@@ -1394,6 +1394,13 @@ struct NDBuffer[
         Returns:
             Constructed NDBuffer with the allocated space.
         """
+        constrained[
+            shape.all_known[rank](),
+            (
+                "the shape of the NDBuffer must be known to allow for stack"
+                " allocation"
+            ),
+        ]()
         var data_pointer = stack_allocation[
             shape.product[rank]().get(),
             type,
