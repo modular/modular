@@ -141,6 +141,14 @@ public:
   /// Return the parsed `DocString` for this decl if available.
   std::optional<DocString> getParsedDocString() const;
 
+  /// Given a decl for a struct or trait type, return true if this type conforms
+  /// to the specified trait type.  On failure, this *might* set 'diag' to an
+  /// inflight diagnostic that explains why this doesn't conform.  It can be
+  /// reported or abandoned based on the client's needs.
+  bool doesNominalTypeConformsTo(TraitType trait,
+                                 std::optional<InflightDiag> &diag,
+                                 SharedState &shared);
+
   //===--------------------------------------------------------------------===//
   // Name lookup
   //===--------------------------------------------------------------------===//

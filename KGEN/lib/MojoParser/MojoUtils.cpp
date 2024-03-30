@@ -44,11 +44,23 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
     if (canZeroCostConvert(shared, fromType.getMetaType(),
                            toType.getMetaType()))
       return true;
-    // If we hit this branch, we can allow downcasting to a trait type because
-    // the conversion has already been checked and enabled.
-    if (isa<AnyStructType>(fromType.getMetaType()) &&
-        isa<TraitType>(toType.getMetaType()))
-      return true;
+  }
+
+  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base] trivially.
+  if (auto toAnyTrait = dyn_cast<AnyTraitType>(toType)) {
+    if (auto fromAnyTrait = dyn_cast<AnyTraitType>(fromType)) {
+      auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared);
+      if (!fromDecl)
+        return false;
+
+      std::optional<InflightDiag> diag;
+      if (fromDecl->doesNominalTypeConformsTo(toAnyTrait.getTraitType(), diag,
+                                              shared))
+        return true;
+      if (diag)
+        diag->abandon();
+      return false;
+    }
   }
 
   // Check for closure structs and dig out their underlying signature types to

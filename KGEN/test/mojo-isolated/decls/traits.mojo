@@ -147,14 +147,12 @@ fn generic_trait_fn[T: Trait](x: T):
 fn existential_arg(x: Trait):
     pass
 
-
 trait SimpleTrait:
     fn method(self, y: int):
         ...
 
     fn param_method[x: int](self):
         ...
-
 
 struct TraitStruct(SimpleTrait):
     fn method(self, y: int):
@@ -891,3 +889,40 @@ struct Foo[T: EmptyTrait]:
 fn test_infer_sub_trait[T: OtherEmptyTrait](owned foo: Foo[T], bar: Bar[T]):
     # CHECK: call {{.*}}@Foo::@"infer_sub_trait{{.*}}<:!EmptyTrait [!kgen.paramref<:!OtherEmptyTrait T>, {{.*}}], :!OtherEmptyTrait T>(%foo, %bar)
     var copy = foo.infer_sub_trait(bar)
+
+
+# AnyTrait subtyping.
+
+# CHECK-LABEL: lit.func @"test_anytrait_subtyping
+# CHECK-SAME: <ty: !lit.anytrait<!AnyType>>
+fn test_anytrait_subtyping[ty: __mlir_type[`!lit.anytrait<`, AnyType, `>`]]():
+  # Call !lit.anytrait subtyping.
+  # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !AnyType>()
+  test_anytrait_subtyping[AnyType]()
+  # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !SimpleTrait>()
+  test_anytrait_subtyping[SimpleTrait]()
+
+# CHECK-LABEL: lit.func @"take_many_things_of_specified_trait
+# CHECK-SAME: <element_type: !lit.anytrait<!AnyType>,
+# CHECK-SAME: element_types: variadic<:!lit.anytrait<!AnyType> element_type> var>()
+fn take_many_things_of_specified_trait[
+    element_type: __mlir_type[`!lit.anytrait<`, AnyType, `>`],
+    *element_types: element_type]():
+  pass
+
+
+# CHECK-LABEL: lit.func @"call_many_things_of_specified_trait
+fn call_many_things_of_specified_trait(a: TraitStruct):
+  # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
+  # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> {{.}}[!TraitStruct
+  take_many_things_of_specified_trait[AnyType, TraitStruct]()
+
+  # Int is movable.
+  # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
+  # CHECK-SAME: <:!lit.anytrait<!AnyType> !Movable, :variadic<!Movable> {{.}}[!Int
+  take_many_things_of_specified_trait[Movable, Int]()
+
+  # TraitStruct conforms to SimpleTrait.
+  # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
+  # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :variadic<!SimpleTrait> {{.}}[!TraitStruct
+  take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
