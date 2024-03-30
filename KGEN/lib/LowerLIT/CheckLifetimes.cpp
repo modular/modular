@@ -1268,6 +1268,13 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
       if (isUninitializedAtExit(valueInfo, op))
         continue;
 
+      // If this is the hacky RefFromPointerREPLOp op (used by the REPL
+      // only!) and if this is an error path, then we look the other way at
+      // indiscretions.
+      if (valueInfo.value.getDefiningOp<RefFromPointerREPLOp>() &&
+          isa<LIT::ErrorReturnOp>(op))
+        continue;
+
       // Otherwise, it must be live at return/raise.
       checkUse(valueInfo.value, op, /*isDeref=*/valueInfo.isIndirect);
     }

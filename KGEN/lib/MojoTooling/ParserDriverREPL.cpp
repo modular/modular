@@ -550,10 +550,17 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     TypedAttr lifetime = varOp.getType().getLifetime();
     builder.create<ParamDeclareOp>(varOp.getParamDecl(),
                                    LifetimeAttr::get(lifetime.getType()));
-    mallocCast = builder
-                     .create<mlir::UnrealizedConversionCastOp>(
-                         RefType::get(elementType, lifetime), mallocCast)
-                     .getResult(0);
+
+    // Create an untracked reference from this.
+    // FIXME: this should really use RefFromPointerOp to make sure that
+    // CheckLifetimes is enagaged.  Unfortunately the way the REPL is modeling
+    // this breaks throwing functions, because CheckLifetimes (correctly)
+    // detects that the reference doesn't get initialized if a function throws.
+    //
+    // Workaround this for now by using hacky RefFromPointerREPLOp.
+    // NOTE: DO NOT ADOPT THIS ANYWHERE ELSE!
+    mallocCast = builder.create<LIT::RefFromPointerREPLOp>(
+        varOp.getType(), mallocCast, varOp.getNameAttr());
     return MRValue(mallocCast);
   };
 

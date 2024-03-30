@@ -94,6 +94,15 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
   }
 
+  // This is a horrible hack for the REPL. :-(
+  if (auto refFromPtr = v.getDefiningOp<RefFromPointerREPLOp>()) {
+    name = refFromPtr.getNameAttr();
+    isIndirect = true;
+    startsUninit = true;
+    endInitState = EndsInit;
+    return;
+  }
+
   /// Owned results of function calls are tracked as being initialized when
   /// defined but needing to be destroyed by the end of function.
   if (OpResult res = dyn_cast<OpResult>(v)) {

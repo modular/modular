@@ -1583,6 +1583,25 @@ def LIT_RefFromPointerOp : LITOp<"ref.from_pointer",
   ];
 }
 
+
+//===----------------------------------------------------------------------===//
+// RefFromPointerREPLOp
+//===----------------------------------------------------------------------===//
+
+def LIT_RefFromPointerREPLOp : LITOp<"ref.from_pointer.repl",
+                                     [RefPointerType<"ref", "ptr">]> {
+  let summary = "Create an untracked reference from a pointer value";
+  let description = [{
+    This op is like `lit.ref.from_pointer` is a HACK that is only intended to be
+    used in one place in the REPL as a stop-gap, do not perpetuate this!
+  }];
+
+  let arguments = (ins PointerType:$ptr, StrAttr:$name);
+  let results = (outs LIT_RefType:$ref);
+  let assemblyFormat = "$ptr `:` type($ref) attr-dict";
+}
+
+
 //===----------------------------------------------------------------------===//
 // RefStructGEROp
 //===----------------------------------------------------------------------===//
