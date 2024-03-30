@@ -33,7 +33,7 @@ set(sources
 # conditionally configured and built for now. We don't wish for external users
 # of Mojo to read its documentation while it's under internal development.
 set(tablegen_definitions)
-if (MODULAR_RELEASE_PACKAGE_BUILD)
+if (MODULAR_PRODUCTION)
   list(APPEND tablegen_definitions MODULAR_PRODUCTION)
 else()
   set(sources ${sources} BuildProject/mojo-build-project.cpp)
@@ -99,7 +99,7 @@ add_subdirectory(Package)
 add_subdirectory(REPL)
 add_subdirectory(Run)
 add_subdirectory(Test)
-if(NOT MODULAR_RELEASE_PACKAGE_BUILD)
+if(NOT MODULAR_PRODUCTION)
   add_subdirectory(BuildProject)
 endif()
 
