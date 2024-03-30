@@ -168,8 +168,7 @@ inline size_t rawSizeToRuntimeSizeOrDefault(uint64_t rawSize,
     return defaultSize;
   assert(rawSize <= static_cast<uint64_t>(std::numeric_limits<size_t>::max()) &&
          "size in raw form too large to represent in runtime form");
-  size_t runtimeSize = static_cast<size_t>(rawSize);
-  assert(runtimeSize != kRuntimeUnknownSize &&
+  assert(static_cast<size_t>(rawSize) != kRuntimeUnknownSize &&
          "cannot represent raw size in runtime form");
   return static_cast<size_t>(rawSize);
 }
