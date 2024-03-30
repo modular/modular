@@ -93,7 +93,7 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
 ErrorOrSuccess
 Settings::refresh(HTTPContextRef httpCtx,
                   Settings::RefreshPolicy shouldRefreshEntitlements) {
-  std::lock_guard lk(settings->mu);
+  std::lock_guard<std::mutex> lk(settings->mu);
 
   // Clear out all settings - this is crucial because any stored references to
   // entitlements or configs may be invalidated.
@@ -114,7 +114,7 @@ Settings::refresh(HTTPContextRef httpCtx,
 }
 
 const Setting *Settings::get(StringRef key) {
-  std::lock_guard lk(settings->mu);
+  std::lock_guard<std::mutex> lk(settings->mu);
 
   // Try to find the setting in the config map.
   auto found = settings->map.find(key);
@@ -140,7 +140,7 @@ const Setting *Settings::get(StringRef key) {
 }
 
 bool Settings::set(StringRef key, StringRef value) {
-  std::lock_guard lk(settings->mu);
+  std::lock_guard<std::mutex> lk(settings->mu);
 
   // Set the same value to appear both internally and within the
   // configuration. First we must assert that either: a) the value doesn't
