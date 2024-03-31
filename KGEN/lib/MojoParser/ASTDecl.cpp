@@ -202,6 +202,7 @@ Type ASTDecl::computeSelfTypeForStruct(StructDeclOp structOp) {
 }
 
 Type ASTDecl::computeSelfTypeForTrait(TraitDeclOp traitOp) {
-  return ParamRefType::get(
-      ParamDeclRefAttr::get(traitOp.getParamsAttr().back()));
+  // The last parameter to the trait is the 'T' parameter which (when everything
+  // gets instantiated) resolves to the final type the trait is instantiated on.
+  return ASTType(ParamDeclRefAttr::get(traitOp.getParamsAttr().back()));
 }
