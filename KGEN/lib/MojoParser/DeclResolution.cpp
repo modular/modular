@@ -2110,10 +2110,10 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
 
   // Make every trait inherit from `AnyType`, except itself.
   if (parentTypes.empty() && traitOp.getSymName() != "AnyType") {
-    if (ASTDecl *anyType = shared.lookupBuiltinTrait(
+    if (ASTDecl *anyTypeDecl = shared.lookupBuiltinTrait(
             "AnyType", decl.getParentDecl(), decl.getLoc())) {
-      parentTypes.push_back(
-          TypeLineageAttr::get(cast<TraitDeclOp>(anyType).bindReference()));
+      TraitType anyType = cast<TraitDeclOp>(anyTypeDecl).bindReference();
+      parentTypes.push_back(TypeLineageAttr::get(anyType));
     }
   }
 
