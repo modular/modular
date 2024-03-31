@@ -42,7 +42,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   params.push_back(TypeConstantAttr::get(structSelfType, trait));
   ParameterEvaluator evaluator(params);
   auto bindings = ParamBindings::getForDeclaredType(
-      emitter.declScope, emitter.shared, structSelfType.getMetaType());
+      emitter.declScope, emitter.shared, structSelfType);
   // Leave the rest alone.
   for (Type type : paramTypes.drop_front(2)) {
     params.push_back(UnboundAttr::get(type));

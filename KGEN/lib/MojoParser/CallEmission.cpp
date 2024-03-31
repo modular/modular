@@ -69,7 +69,7 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
   paramBindings.defaultTypeParams = type.getDefaultPosParams();
 
   // When binding a trait function, add the self type bindings.
-  if (auto trait = dyn_cast<TraitType>(type.getMetaTypeOrSelf())) {
+  if (auto trait = dyn_cast_or_null<TraitType>(type.getMetaType())) {
     paramBindings.addPrechecked(
         TypeConstantAttr::get(trait, TypeType::get(trait.getContext())));
     paramBindings.addPrechecked(TypeConstantAttr::get(type, trait));
@@ -1533,8 +1533,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
         auto diag = emitError(expr->getLoc());
 
         // This is true if passing Int type to Int instead of Int() to Int.
-        bool isConvertingTypeValue = type.hasMetaType(operandType);
-
+        bool isConvertingTypeValue = type.getMetaType() == operandType;
         bool isImplConvert = dest.getContext() != EC_CallParamValue &&
                              dest.getContext() != EC_CallArgValue;
         diag << "cannot " << (isImplConvert ? "implicitly convert " : "pass ");

@@ -58,35 +58,29 @@ Type ASTType::getMetaType() const {
   return {};
 }
 
-Type ASTType::getMetaTypeOrSelf() const {
-  if (Type type = getMetaType())
-    return type;
-  if (isa_and_nonnull<AnyStructType, TraitType>(mlirType))
-    return mlirType;
-  return {};
-}
-
-bool ASTType::hasMetaType(ASTType metaType) const {
-  if (auto metaTy = dyn_cast<AnyStructType>(metaType))
-    return getMetaType() == metaTy;
-  return false;
-}
-
 ASTDecl *ASTType::getDecl(SharedState &shared) const {
-  Type type = getMetaTypeOrSelf();
-  if (auto anyStruct = dyn_cast_or_null<AnyStructType>(type))
+  Type type = getMetaType();
+  if (!type) {
+    // FIXME: we currently support references directly to the metatype as a way
+    // to look up the decl.  This is pretty weird.
+    if (isa_and_nonnull<AnyStructType>(mlirType))
+      type = mlirType;
+    else
+      return nullptr;
+  }
+
+  if (auto anyStruct = dyn_cast<AnyStructType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(anyStruct.getSymbol());
-  if (auto traitType = dyn_cast_or_null<TraitType>(type))
+  if (auto traitType = dyn_cast<TraitType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(traitType.getSymbol());
-  if (auto anyTrait = dyn_cast_or_null<AnyTraitType>(type))
+  if (auto anyTrait = dyn_cast<AnyTraitType>(type))
     return &shared.declResolver->getDeclForTypeSymbol(
         anyTrait.getTraitType().getSymbol());
   return nullptr;
 }
 
 ArrayRef<TypedAttr> ASTType::getParamBindings() const {
-  if (AnyStructType metaType =
-          dyn_cast_or_null<AnyStructType>(getMetaTypeOrSelf()))
+  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(getMetaType()))
     return metaType.getParamValues();
   return {};
 }
@@ -115,8 +109,7 @@ ASTType ASTType::getWithoutParameters() const {
 
 ArrayRef<TypedAttr> ASTType::getDefaultPosParams() const {
   // Query the metatype for the parameter signature.
-  if (AnyStructType metaType =
-          dyn_cast_or_null<AnyStructType>(getMetaTypeOrSelf()))
+  if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(getMetaType()))
     return metaType.getSignature().getDefaultPosParams();
   return {};
 }
