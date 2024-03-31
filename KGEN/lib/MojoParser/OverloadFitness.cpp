@@ -854,7 +854,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     describeArgumentNo(diag, argIdx);
     diag << " cannot be converted from ";
     ASTType rValueType = getRValueType(operand);
-    bool isConvertingTypeValue = ty.hasMetaType(rValueType);
+    bool isConvertingTypeValue = ty.getMetaType() == rValueType;
     if (rValueType) {
       if (isConvertingTypeValue)
         diag << "type value " << ty;
