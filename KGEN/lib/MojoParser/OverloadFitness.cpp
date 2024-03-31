@@ -152,9 +152,18 @@ private:
 } // namespace
 
 void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
+  // If the types trivially match then there is no inference to do.
+  if (actualType == expectedType)
+    return;
+
   // If the expected type is a parameter ref, then we're binding the specified
   // type to an attribute parameter.
   if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType)) {
+    if (auto actualParamRef = dyn_cast<ParamRefType>(actualType)) {
+      matchParams(actualParamRef.getParam(), expectedParamRef.getParam());
+      return;
+    }
+
     ASTType type = actualType;
     if (ASTType nmTarget = type.getNonmaterializableTarget(shared))
       type = nmTarget;
@@ -169,10 +178,6 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
     }
     return;
   }
-
-  // If the types trivially match then there is no inference to do.
-  if (actualType == expectedType)
-    return;
 
   // Handle when both are DeclRefTypes.
   if (auto actualDRT = dyn_cast<DeclRefType>(actualType)) {

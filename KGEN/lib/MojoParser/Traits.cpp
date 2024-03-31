@@ -530,15 +530,20 @@ bool ASTDecl::doesNominalTypeConformsTo(TraitType trait,
       }) != parentTypes.end())
     return true;
 
+  // Check to see if this is already literally this trait.
+  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
+  if (!traitDecl)
+    return false; // Erroneous.
+
+  // Self conformance.
+  if (traitDecl == this)
+    return true;
+
   // Only structs can implicitly conform to traits.
   if (!structOp)
     return false;
 
   // Check if the type *implicitly* conforms to the trait.
-  ASTDecl *traitDecl = ASTType(trait).getDecl(shared);
-  if (!traitDecl)
-    return false; // Erroneous.
-
   SmallVector<TypeLineageAttr> newParentTypes =
       llvm::to_vector(structOp.getParentTypes());
   unsigned curNumParents = newParentTypes.size();

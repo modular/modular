@@ -247,15 +247,19 @@ struct VariadicListMem[
         pass
 
 
+alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
+
+
 @register_passable
 struct VariadicPack[
     elt_is_mutable: __mlir_type.i1,
     lifetime: __mlir_type[`!lit.lifetime<`, elt_is_mutable, `>`],
-    *element_types: AnyType,
+    element_trait: _AnyTypeMetaType,
+    *element_types: element_trait,
 ]:
     alias _mlir_pack_type = __mlir_type[
         `!lit.ref.pack<:variadic<`,
-        AnyType,
+        element_trait,
         `> `,
         element_types,
         `, `,
