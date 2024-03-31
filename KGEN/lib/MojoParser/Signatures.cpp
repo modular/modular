@@ -591,7 +591,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   RefType refType =
       makeImplicitRefTypeForArg(arg, argIdx, elementType, tcSignature);
 
-  // Form a VariadicPack[isMutable, lifetime, elementTypes] type.
+  // Form a VariadicPack type.
   ASTType variadicPackType =
       emitter.shared.getBuiltinVariadicPackType(emitter.declScope, arg.loc);
 
@@ -600,19 +600,20 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   auto packStruct = dyn_cast_if_present<StructDeclOp>(
       variadicPackType.getDecl(emitter.shared));
-  if (!packStruct || packStruct.getParams().size() != 3 ||
+  if (!packStruct || packStruct.getParams().size() != 4 ||
       !packStruct.getParams()[0].getType().isInteger(1) ||
       !isa<LifetimeType>(packStruct.getParams()[1].getType()) ||
-      !isa<VariadicType>(packStruct.getParams()[2].getType())) {
+      !isa<AnyTraitType>(packStruct.getParams()[2].getType()) ||
+      !isa<VariadicType>(packStruct.getParams()[3].getType())) {
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
 
-  // Bind the VariadicPack[isMutable, lifetime, element_types, addr_space]
-  // parameters.
+  // Bind the VariadicPack[isMutable, lifetime, element_trait, element_types,
+  // /*TODO*/ addr_space] parameters.
   // TODO: Support addr_space in VariadicPack! refType.getAddressSpace()
-  return packStruct.bindReference(
-      {refType.isMutable(), refType.getLifetime(), param.get()});
+  return packStruct.bindReference({refType.isMutable(), refType.getLifetime(),
+                                   PValue(elementType).get(), param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default

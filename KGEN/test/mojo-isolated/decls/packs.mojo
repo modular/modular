@@ -25,6 +25,8 @@ struct SomeReg(SomeTrait):
 # ===----------------------------------------------------------------------=== #
 
 # This function takes a pack of owned values by Trait.
+fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
+  pass
 
 # Test mangling:
 # CHECK-LABEL: lit.func @"takeOwnedAnyTypePack[*stdlib::builtin::stubs::AnyType](*$0)"
@@ -33,9 +35,16 @@ struct SomeReg(SomeTrait):
 # CHECK-SAME: [mut *"rest`"]<Ts: variadic<!AnyType> var>
 
 # Check the argument pack.
-# CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`", :variadic<!AnyType> Ts>> owned_in_mem|pack)
-fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
+# CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
+# CHECK-SAME: :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>> owned_in_mem|pack)
+
+# Check the argument pack.
+# CHECK-LABEL: lit.func @"takeOwnedSomeTraitPack
+# CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
+# CHECK-SAME: :!lit.anytrait<!SomeTrait> !SomeTrait, :variadic<!SomeTrait> Ts>> owned_in_mem|pack)
+fn takeOwnedSomeTraitPack[*Ts: SomeTrait](owned *rest: *Ts):
   pass
+
 
 # CHECK-LABEL: lit.func @"test_owned_trait
 fn test_owned_trait():

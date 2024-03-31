@@ -311,13 +311,14 @@ ASTType ASTType::getVariadicElementType() const {
 /// Return the RefPackType that corresponds to the VariadicPack instance.
 RefPackType ASTType::getVariadicPackInfo() const {
   auto bindings = getParamBindings();
-  assert(bindings.size() == 3 && bindings[0].getType().isInteger(1) &&
+  assert(bindings.size() == 4 && bindings[0].getType().isInteger(1) &&
          isa<LifetimeType>(bindings[1].getType()) &&
-         isa<VariadicType>(bindings[2].getType()) &&
+         isa<AnyTraitType>(bindings[2].getType()) &&
+         isa<VariadicType>(bindings[3].getType()) &&
          "Not a VariadicPack struct?");
 
   return RefPackType::get(
-      /*variadicList*/ bindings[2], /*lifetime*/ bindings[1],
+      /*variadicList*/ bindings[3], /*lifetime*/ bindings[1],
       // TODO: VariadicPack should support address space.
       IntegerAttr::get(IndexType::get(bindings[1].getContext()), 0));
 }

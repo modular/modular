@@ -934,7 +934,8 @@ verifyVariadicPtrMap(ArrayRef<TypedAttr> operands, Type type,
     return emitError() << "'variadic_ptr_map' requires 2 operands";
 
   auto srcVariadic = dyn_cast<VariadicType>(operands[0].getType());
-  if (!srcVariadic || !isa<TypeType>(srcVariadic.getElementType()) ||
+  if (!srcVariadic ||
+      !isa<TypeType, ParamRefType>(srcVariadic.getElementType()) ||
       type != srcVariadic)
     return emitError() << "'variadic_ptr_map' operand should have "
                           "!kgen.variadic<!kgen.type> type, not "
