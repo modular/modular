@@ -5,10 +5,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-build-project.h"
+#include "../../common/Telemetry.h"
 
 #include "KGEN/Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Init/Init.h"
+#include "Support/MDialect/MDialect.h"
 
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
@@ -47,13 +50,25 @@ static ErrorOr<std::string> getMojoBuildServerPath(KGEN::MojoConfig &config) {
 /// that result in the compilation of a Mojo project.
 static int buildProject(const State &state) {
   //===--------------------------------------------------------------------===//
-  // Command line argument parsing
+  // Command line argument parsing & process initialization
   //===--------------------------------------------------------------------===//
+
   BuildProjectOptTable options;
   unsigned missingIndex = 0;
   unsigned missingCount = 0;
   llvm::opt::InputArgList args =
       options.ParseArgs(state.arguments, missingIndex, missingCount);
+
+  // Initialize crash reporting, etc.
+  ErrorOr<ContextRef> ctxOrErr = Init::createContext(
+      "mojo", Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()));
+  if (ctxOrErr.isError())
+    return state.reportError(ctxOrErr.getError());
+  ContextRef ctx = std::move(*ctxOrErr);
+
+  // Initialize telemetry.
+  auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
+  initializeTelemetry(telemetryCtx, state.programName, args);
 
   // If `--help` appears anywhere within the arguments, print help text.
   if (args.hasArg(options::OPT_help)) {
