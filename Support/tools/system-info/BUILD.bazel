@@ -3,6 +3,7 @@ cc_binary(
     srcs = glob(["*.cpp"]),
     visibility = ["//visibility:public"],
     deps = [
+        "//LLCL:CompilerSupport",
         "//Support:Base",
         "//Support:MArchTarget",
         "//Support:MDialect",

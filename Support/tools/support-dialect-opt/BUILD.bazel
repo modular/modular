@@ -4,6 +4,7 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         "//LLCL:Runtime",
+        "//LLCL:CompilerSupport",
         "//Support:Base",
         "//Support:DebugInfoToLLVM",
         "//Support:MDialect",
