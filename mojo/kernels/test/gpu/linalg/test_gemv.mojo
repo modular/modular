@@ -390,7 +390,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
             DType.float32,
             DType.float32,
             BLOCK_DIM,
-            epilogue_fn,
+            elementwise_lambda_fn=epilogue_fn,
         ]
     ]()
 
