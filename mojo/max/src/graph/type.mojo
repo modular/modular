@@ -301,6 +301,20 @@ struct Dim(CollectionElement):
             var dim = self.value.get[StaticDim]()[].dim
             return _c.dim_new_static(ctx, dim)
 
+    fn __str__(self) -> String:
+        """Creates a string representation of the dimension.
+
+        Returns:
+            A human-readable string of the dimension.
+        """
+        if self.value.isa[DynamicDim]():
+            return "?"
+        elif self.value.isa[SymbolicDim]():
+            return self.value.get[SymbolicDim]()[].name
+        else:
+            debug_assert(self.value.isa[StaticDim](), "variant cases")
+            return str(self.value.get[StaticDim]()[].dim)
+
 
 trait MOType:
     """An internal helper trait for _mlir construction.
