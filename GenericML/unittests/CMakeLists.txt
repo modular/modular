@@ -11,10 +11,7 @@ add_subdirectory(GraphCompiler/Matchers)
 add_subdirectory(GraphCompiler/MODialect)
 add_subdirectory(GraphCompiler/RMODialect)
 add_subdirectory(EngineCLI)
-
-if (TARGET max-pybind-ext)
-  add_subdirectory(API)
-endif()
+add_subdirectory(API)
 
 add_modular_unittest(
   TOP_LEVEL_CHECK
