@@ -8,29 +8,29 @@
 
 
 # CHECK-LABEL: lit.trait.decl @Trait
-# CHECK-SAME: <?, [[MT:.*]]: type, [[T:.*]]: !kgen.paramref<[[MT]]>>
+# CHECK-SAME: <?, [[T:.*]]: !Trait>
 trait Trait:
-    # CHECK: lit.func @"f0($1)"[{{.*}}](%self: !lit.ref<:!kgen.paramref<[[MT]]> [[T]], imm {{.*}}> borrow_in_mem) -> !kgen.none
+    # CHECK: lit.func @"f0{{.*}}(%self: !lit.ref<:!Trait [[T]], imm {{.*}}> borrow_in_mem) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
     fn f0(self: Self):
         ...
 
-    # CHECK: lit.func @"f1($1&)"{{.*}}(%self: !lit.ref<{{.*}}> byref) -> !kgen.none
+    # CHECK: lit.func @"f1{{.*}}(%self: !lit.ref<{{.*}}> byref) -> !kgen.none
     # CHECK-NEXT: lit.trait_func
     fn f1(inout self: Self):
         ...
 
-    # CHECK: lit.func @"f2($1&)"{{.*}}(%self: !lit.ref<{{.*}}> byref) -> !kgen.none attributes
+    # CHECK: lit.func @"f2{{.*}}(%self: !lit.ref<{{.*}}> byref) -> !kgen.none attributes
     # CHECK-NEXT: lit.trait_func
     fn f2(inout self: Self):
         pass
 
-    # CHECK: lit.func @"f3($1)"[{{.*}}](%self: !lit.ref<{{.*}}> owned_in_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
+    # CHECK: lit.func @"f3{{.*}}(%self: !lit.ref<{{.*}}> owned_in_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: lit.trait_func
     def f3(self: Self):
         pass
 
-    # CHECK: lit.func @"f4($1&)"[{{.*}}](%self: !lit.ref<{{.*}}> byref, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
+    # CHECK: lit.func @"f4{{.*}}(%self: !lit.ref<{{.*}}> byref, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<!object, {{.*}}> byref_result) throws -> i1
     # CHECK-NEXT: lit.trait_func
     def f4(inout self: Self):
         pass
@@ -55,9 +55,9 @@ trait EmptyTrait:
 
 
 # CHECK-LABEL: lit.trait.decl @Trait1
-# CHECK-SAME: <?, [[MT:.*]]: type, [[T:.*]]: !kgen.paramref<[[MT]]>>
+# CHECK-SAME: <?, [[T:.*]]: !Trait1_>
 trait Trait1:
-    # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<{{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<:!kgen.paramref<[[MT]]> [[T]], mut {{.*}}> byref_result) -> !kgen.none
+    # CHECK: lit.func @"f{{.*}}(%self: !lit.ref<{{.*}}> borrow_in_mem, ?, %__result__: !lit.ref<:!Trait1_ [[T]], mut {{.*}}> byref_result) -> !kgen.none
     fn f(self: Self) -> Self:
         ...
 

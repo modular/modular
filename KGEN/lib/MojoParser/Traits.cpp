@@ -33,18 +33,13 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   SmallVector<TypedAttr> params;
   ArrayRef<Type> paramTypes = signature.getParamTypes();
 
-  // Add trait's MT replacement.
-  // FIXME(generics): We aren't propagating metatypes into pointer types, so
-  // just pass a generic metatype here.
-  auto anyRegTypeType = TypeType::get(traitFn.getContext());
-  params.push_back(TypeConstantAttr::get(trait, anyRegTypeType));
   // Add trait's T replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, trait));
   ParameterEvaluator evaluator(params);
   auto bindings = ParamBindings::getForDeclaredType(
       emitter.declScope, emitter.shared, structSelfType);
   // Leave the rest alone.
-  for (Type type : paramTypes.drop_front(2)) {
+  for (Type type : paramTypes.drop_front()) {
     params.push_back(UnboundAttr::get(type));
     evaluator.addInputValue(params.back());
     bindings.addPrechecked(params.back());

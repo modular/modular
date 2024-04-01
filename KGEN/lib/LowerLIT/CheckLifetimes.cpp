@@ -211,10 +211,9 @@ TypedAttr TypeDeclInfo::getDestructorForType(Type type) const {
                                   .getDtorSig()
                                   .value_or(SignatureType());
       if (dtorSig) {
-        auto traitWithMD =
-            TypeConstantAttr::get(trait, TypeType::get(type.getContext()));
-        auto specSig =
-            dtorSig.getSpecializedSignature({traitWithMD, generic.getParam()});
+        // Bind the *(0,0) parameter to a concrete type we're using in this
+        // context.
+        auto specSig = dtorSig.getSpecializedSignature({generic.getParam()});
         auto delStr =
             StringAttr::get("__del__", StringType::get(type.getContext()));
         return ParamOperatorAttr::get(POC::GetTypeMethod,
