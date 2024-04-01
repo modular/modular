@@ -20,6 +20,16 @@ class TestLifetime(LLDBTestBase):
             foo = ctx.frame.FindVariable("foo")
             assert foo.GetValueAsUnsigned(-1) == 42
 
+    def test_inlined_user(self):
+        """
+        Ensures that the lifetime for a variable with an inlined last user is
+        correct."""
+        with self.build_and_launch(
+            "eager_destruction_inlined_user.mojo"
+        ) as ctx:
+            foo = ctx.frame.FindVariable("foo")
+            assert foo.GetSummary() == '"42"'
+
     def test_full_eager_destruction(self):
         """Ensures that if a variable is completely destroyed eagerly, the
         lifetime of the value is reflected in DWARF."""
