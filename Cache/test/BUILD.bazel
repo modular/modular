@@ -1,3 +1,11 @@
 load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
 
-lit_tests()
+lit_tests(
+    srcs = glob(["**/*.test"]),
+    data = glob([
+        "**/*.txt",
+    ]),
+    tools = [
+        "//Cache/tools/cache-mgr",
+    ],
+)
