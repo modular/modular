@@ -14,6 +14,8 @@ import max.engine as me
 import numpy as np
 import pytest
 
+DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
+
 
 @pytest.fixture
 def modular_path() -> Path:
@@ -22,6 +24,12 @@ def modular_path() -> Path:
     assert modular_path is not None
 
     return Path(modular_path)
+
+
+# This path is used in skipif clauses rather than tests, so we can neither mark
+# it as a fixture nor can we call other fixtures.
+def modular_lib_path() -> Path:
+    return Path(os.getenv("MODULAR_PATH")) / ".derived" / "build" / "lib"
 
 
 @pytest.fixture
@@ -53,6 +61,11 @@ def mo_custom_ops_model_path(modular_path: Path) -> Path:
 @pytest.fixture
 def sdk_test_inputs_path(modular_path: Path) -> Path:
     return modular_path / "SDK" / "integration-test" / "EngineAPI" / "Inputs"
+
+
+@pytest.fixture
+def relu_tf_model_path(sdk_test_inputs_path: Path) -> Path:
+    return sdk_test_inputs_path / "relu3x100x100-tf"
 
 
 @pytest.fixture
@@ -94,26 +107,36 @@ def test_execute_success(mo_model_path: Path):
     )
 
 
-# Skip this test if we're running the GPU flow, which doesn't
-# have libmtorch.so yet.
+# Skip this test if we don't have all three framework libs available.
 @pytest.mark.skipif(
-    run("is-cuda-available").returncode == 0,
-    reason="Pytorch models are not supported on GPU",
+    not os.path.exists(modular_lib_path() / f"libtf.{DYLIB_FILE_EXTENSION}")
+    or not os.path.exists(
+        modular_lib_path() / f"libmonnx.{DYLIB_FILE_EXTENSION}"
+    )
+    or not os.path.exists(
+        modular_lib_path() / f"libmtorch.{DYLIB_FILE_EXTENSION}"
+    ),
+    reason="One or more missing framework libs",
 )
 def test_execute_multi_framework(
-    relu_onnx_model_path: Path, relu_torchscript_model_path: Path
+    relu_tf_model_path: Path,
+    relu_onnx_model_path: Path,
+    relu_torchscript_model_path: Path,
 ):
     session = me.InferenceSession()
     trch_options = me.TorchLoadOptions()
     trch_options.input_specs = [
         me.TorchInputSpec(shape=[1, 3, 100, 100], dtype=me.DType.float32)
     ]
+    tf_model = session.load(relu_tf_model_path)
     onnx_model = session.load(relu_onnx_model_path)
     trch_model = session.load(relu_torchscript_model_path, trch_options)
     np_input = np.ones((1, 3, 100, 100))
     np_input[:, 1, :, :] *= -1
+    tf_output = tf_model.execute(inputs=np_input)["output_0"]
     onnx_output = onnx_model.execute(x=np_input)["result0"]
     trch_output = trch_model.execute(x=np_input)["result0"]
+    assert np.allclose(onnx_output, tf_output)
     assert np.allclose(onnx_output, trch_output)
 
 
