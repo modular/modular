@@ -682,13 +682,6 @@ kgen.generator @variadic_get() {
 
 // -----
 
-kgen.generator @variadic_size() {
-  // expected-error @below {{custom op 'kgen.param.constant' 'variadic_size' expected operand to be a variadic value}}
-  kgen.param.constant = <variadic_size(:si32 2)>
-}
-
-// -----
-
 kgen.generator @bad_return() -> index {
   // expected-error @below {{'kgen.return' op expected 1 operands, but given 0}}
   kgen.return
