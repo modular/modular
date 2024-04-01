@@ -715,26 +715,6 @@ def relu(value: Symbol) -> Symbol:
     return _unary_op["mo.relu"](value)
 
 
-def softmax(value: Symbol) -> Symbol:
-    """Computes the elementwise softmax of a symbolic tensor.
-
-    Creates a new op node to compute the elementwise softmax of a
-    symbolic tensor and adds it to the graph, returning the symbolic result.
-
-    Args:
-        value: The symbolic tensor to use as the input to the softmax
-            computation.
-
-    Returns:
-        A new symbolic tensor value representing the output of the absolute
-            value computation.
-
-    Raises:
-        If the symbol doesn't represent a tensor value.
-    """
-    return _unary_op["mo.softmax"](value)
-
-
 def sigmoid(value: Symbol) -> Symbol:
     """Computes the elementwise sigmoid of a symbolic tensor.
 
@@ -775,6 +755,26 @@ def silu(value: Symbol) -> Symbol:
         If the symbol doesn't represent a tensor value.
     """
     return mul(value, sigmoid(value))
+
+
+def softmax(value: Symbol) -> Symbol:
+    """Computes the elementwise softmax of a symbolic tensor.
+
+    Creates a new op node to compute the elementwise softmax of a
+    symbolic tensor and adds it to the graph, returning the symbolic result.
+
+    Args:
+        value: The symbolic tensor to use as the input to the softmax
+            computation.
+
+    Returns:
+        A new symbolic tensor value representing the output of the absolute
+            value computation.
+
+    Raises:
+        If the symbol doesn't represent a tensor value.
+    """
+    return _unary_op["mo.softmax"](value)
 
 
 def cos(value: Symbol) -> Symbol:
