@@ -1,0 +1,10 @@
+cc_binary(
+    name = "crash-report-path-info",
+    srcs = glob(["*.cpp"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//Support:Base",
+        "//Support:Configuration",
+        "//Support:CrashReporting",
+    ],
+)

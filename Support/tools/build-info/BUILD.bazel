@@ -1,0 +1,8 @@
+cc_binary(
+    name = "build-info",
+    srcs = glob(["*.cpp"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//Support:Base",
+    ],
+)

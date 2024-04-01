@@ -1,0 +1,9 @@
+cc_binary(
+    name = "crash-test-dummy",
+    srcs = glob(["*.cpp"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//Support:Base",
+        "//Support:CrashReporting",
+    ],
+)
