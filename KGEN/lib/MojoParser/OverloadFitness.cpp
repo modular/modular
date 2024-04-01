@@ -1065,7 +1065,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     }
 
     // Argument name mismatches don't count as implicit conversions.
-    if (canZeroCostConvert(shared, argType, expectedType))
+    if (canConvertWithRebind(argType, expectedType, shared))
       return {kValidType, expectedType};
 
     // If implicit conversions are possible and one will work, then we succeed
@@ -1090,7 +1090,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
       if (ASTType(argType).isEqualCanon(expectedRef.getElementType()) &&
           argVal.isMValue()) {
         auto argRefType = cast<RefType>(argVal.getMValueReference().getType());
-        if (canZeroCostConvert(shared, argRefType, expectedRef))
+        if (canConvertWithRebind(argRefType, expectedRef, shared))
           break;
       }
     }

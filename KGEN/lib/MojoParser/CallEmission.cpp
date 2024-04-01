@@ -974,7 +974,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     }
 
     return functionType.isEqualCanon(candidateType) ||
-           canZeroCostConvert(getShared(), candidateType, functionType);
+           canConvertWithRebind(candidateType, functionType, getShared());
   };
 
   // Evaluate the fitness of each candidate in our overload set.
