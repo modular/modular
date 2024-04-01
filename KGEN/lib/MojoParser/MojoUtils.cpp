@@ -44,22 +44,30 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
       isa<TypeType>(toType))
     return true;
 
-  // A value of parametric type or a result of parametric type can be rebind to
-  // each other if the have the same struct metatype, because there is exactly
-  // one type that implements it - the parameter must resolve to that struct.
-  //
-  // Note that this is not safe to do with traits or classes - just because a
-  // parameter expression implements the same metatype it doesn't mean it is
-  // dynamically the same type.  This needs to be invalid for example because
-  // T and U can be different types:
-  //
-  //   fn different_traits[T: Copyable, U: Copyable](x: T) -> U:
-  //      return x   # Cannot convert from related types T to U.
-  //
+  // Handle conversions of values that have parametric type.
   if (isa<ParamRefType>(fromType) || isa<ParamRefType>(toType)) {
     if (auto fromMT = fromType.getMetaType()) {
       if (auto toMT = toType.getMetaType()) {
+        // A value of parametric type or a result of parametric type can be
+        // rebind to each other if the have the same struct metatype, because
+        // there is exactly one type that implements it - the parameter must
+        // resolve to that struct.
         if (isa<AnyStructType>(fromMT) && ASTType(fromMT).isEqualCanon(toMT))
+          return true;
+
+        // Allow conversion from parametric value of AnyTrait[SomeTrait]
+        // metatype to SomeTrait. We don't know what trait type the parametric
+        // value will resolve to, but we know that it conforms to SomeTrait.
+        //
+        // Note that it is not safe to allow conversions *TO* parametric
+        // types, even if they have the same AnyTrait type.  This is because
+        // post-elaboration they will resolve to a concrete type, not an erased
+        // type, and the types may disagree.  For example, this needs to be
+        // invalid because 'T' and 'U' can elaborate to different types:
+        //
+        //   fn different_traits[T: Copyable, U: Copyable](x: T) -> U:
+        //      return x   # Cannot convert from related types T to U.
+        if (isa<TraitType>(toType) && ASTType(fromMT).isEqualCanon(toMT))
           return true;
       }
     }
