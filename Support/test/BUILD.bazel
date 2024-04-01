@@ -1,0 +1,25 @@
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+lit_tests(
+    srcs = glob([
+        "**/*.mlir",
+        "**/*.td",
+    ]),
+    custom_substitutions = {
+        "%driver-tblgen": "$(rlocationpath //Support:driver-tblgen) -I $(dirname $(dirname $(dirname ../../../../$(location //Support:include/Support/Driver/DriverCommand.td)))) -I $(dirname $(dirname $(dirname ../../../../$(location @llvm-project//llvm:include/llvm/Option/OptParser.td))))",
+    },
+    data = [
+        "//Support:DriverCommandTdFiles",
+        "//Support:include/Support/Driver/DriverCommand.td",
+        "@llvm-project//llvm:include/llvm/Option/OptParser.td",
+    ],
+    tools = [
+        "//Support:driver-tblgen",
+        "//Support/tools/build-info",
+        "//Support/tools/crash-report-path-info",
+        "//Support/tools/crash-test-dummy",
+        "//Support/tools/support-dialect-opt",
+        "//Support/tools/system-info",
+        "@crashpad//:modular-crashpad-handler",
+    ],
+)
