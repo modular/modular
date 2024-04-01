@@ -99,9 +99,7 @@ private:
 
 class DylibBackendConfig {
 public:
-  enum ConfigKind {
-    kS3,
-  };
+  enum ConfigKind {};
 
   DylibBackendConfig(ConfigKind kind) : kind(kind) {}
 
@@ -230,32 +228,6 @@ getFilesystemBackend(const std::filesystem::path &basePath = "",
 ErrorOr<RCRef<BlobCacheBackend>>
 getFilesystemBackend(const std::filesystem::path &cacheDir,
                      const std::string &version);
-
-class S3BackendConfig : public DylibBackendConfig {
-public:
-  S3BackendConfig(std::string bucket, std::string prefix,
-                  size_t numIOThreads = 0)
-      : DylibBackendConfig(ConfigKind::kS3), bucket(std::move(bucket)),
-        prefix(std::move(prefix)), numIOThreads(numIOThreads) {}
-  static bool classof(const DylibBackendConfig *config) {
-    return config->getKind() == ConfigKind::kS3;
-  }
-  /// Bucket name.
-  std::string bucket;
-  /// Bucket region.
-  std::string region;
-  /// Prefix in S3 bucket for cache.
-  std::string prefix;
-  /// AWS thread pool size (number of threads to use for S3 IO). If 0,
-  /// the S3 backend will decide (right now it will pick double the
-  /// number of LLCL threads).
-  size_t numIOThreads;
-};
-
-/// Returns a BlobCacheBackend that uses S3 for storage. This accepts the S3
-/// config (which includes the bucket, region and prefix to use inside the
-/// bucket for cached objects).
-ErrorOr<RCRef<BlobCacheBackend>> getS3Backend(const S3BackendConfig &config);
 
 /// Returns a chain of pre-setup backends that represent the default chain,
 /// inMemory->filesystem. The `cacheDir` is used to derive a path for use
