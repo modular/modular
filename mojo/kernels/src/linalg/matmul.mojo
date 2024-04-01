@@ -3032,6 +3032,7 @@ fn matmul_kernel_naive[
     a_type: DType,
     b_type: DType,
     BLOCK_DIM: Int,
+    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_ptr: DTypePointer[c_type],
@@ -3051,16 +3052,16 @@ fn matmul_kernel_naive[
     var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
     var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
 
-    var accum = SIMD[c_type, 1]()
+    var accum = SIMD[s_type, 1]()
     for i in range(k):
-        accum = a[x, i].cast[c_type]() * b[i, y].cast[c_type]() + accum
+        accum = a[x, i].cast[s_type]() * b[i, y].cast[s_type]() + accum
 
     @parameter
     if elementwise_lambda_fn:
         alias elementwise_lambda = elementwise_lambda_fn.value()
-        elementwise_lambda[c_type, 1](Index(x, y), accum)
+        elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
     else:
-        c[Index(x, y)] = accum
+        c[Index(x, y)] = accum.cast[c_type]()
 
 
 @always_inline
@@ -3195,63 +3196,35 @@ fn _matmul_gpu_dispatch[
             or b_type == DType.bfloat16
             or c_type == DType.bfloat16
         ):
-            if n == 1:
-                alias WARPS_PER_BLOCK = 32
-                var gpu_func = Function[
-                    fn (
-                        DTypePointer[c_type],
-                        DTypePointer[a_type],
-                        DTypePointer[b_type],
-                        Int,
-                        Int,
-                        Int,
-                    ) capturing -> None, gemv_kernel[
-                        c_type,
-                        a_type,
-                        b_type,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                gpu_func(
-                    c.data,
-                    a.data,
-                    b.data,
-                    m,
-                    n,
-                    k,
-                    grid_dim=div_ceil(m, WARPS_PER_BLOCK),
-                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                    stream=stream,
-                )
-            else:
-                alias BLOCK_DIM = 16
-                var gpu_func = Function[
-                    fn (
-                        DTypePointer[a_type],
-                        DTypePointer[b_type],
-                        DTypePointer[c_type],
-                        Int,
-                        Int,
-                        Int,
-                    ) capturing -> None, matmul_kernel_naive[
-                        a_type,
-                        b_type,
-                        c_type,
-                        BLOCK_DIM,
-                        elementwise_lambda_fn=elementwise_lambda_fn,
-                    ]
-                ]()
-                gpu_func(
-                    c.data,
-                    a.data,
-                    b.data,
-                    m,
-                    n,
-                    k,
-                    grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
-                    block_dim=(BLOCK_DIM, BLOCK_DIM),
-                    stream=stream,
-                )
+            alias BLOCK_DIM = 16
+            var gpu_func = Function[
+                fn (
+                    DTypePointer[a_type],
+                    DTypePointer[b_type],
+                    DTypePointer[c_type],
+                    Int,
+                    Int,
+                    Int,
+                ) capturing -> None, matmul_kernel_naive[
+                    a_type,
+                    b_type,
+                    c_type,
+                    BLOCK_DIM,
+                    DType.float32,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+            ]()
+            gpu_func(
+                c.data,
+                a.data,
+                b.data,
+                m,
+                n,
+                k,
+                grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+                stream=stream,
+            )
             return
 
         constrained[
