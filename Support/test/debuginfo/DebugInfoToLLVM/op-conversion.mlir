@@ -377,3 +377,19 @@ func.func @sink_kill_debug_values_inlined() -> i32 {
 
   return %v4 : i32  loc(#loc1)
 } loc(#loc0)
+
+// CHECK-LABEL: func @sink_kill_debug_values_block_end
+func.func @sink_kill_debug_values_block_end() -> i32 {
+  // CHECK: "test.op0"
+  // CHECK: llvm.intr.dbg.value #[[VAR0]]
+  // CHECK: "test.op1"
+  // CHECK: %[[UNDEF0:.*]] = llvm.mlir.undef
+  // CHECK: llvm.intr.dbg.value #[[VAR0]] {{.*}}= %[[UNDEF0]]
+  // CHECK: return
+
+  %v0 = "test.op0"() : () -> i32 loc(#loc0)
+  debuginfo.value #var0 = %v0 : i32 loc(#loc0)
+  debuginfo.kill #var0 loc(#loc1)
+  %v1 = "test.op1"() : () -> i32 loc(#loc1)
+  return %v0 : i32  loc(#loc1)
+} loc(#loc0)

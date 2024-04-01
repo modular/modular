@@ -775,6 +775,7 @@ namespace {
 /// ancestor-child comparison.
 class CallStack {
 public:
+  CallStack() = default;
   CallStack(Location overallLoc) {
     walkLocation(overallLoc, LocWalkPolicy::CallerPriority, [&](Location loc) {
       if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(loc)) {
@@ -799,7 +800,7 @@ public:
 template <typename T>
 class CallStackWith {
 public:
-  bool isEmpty() const { return dataFrames.empty(); }
+  bool empty() const { return dataFrames.empty(); }
 
   /// Reference to the data value mapped to the last (innermost) frame.
   T &backData() { return dataFrames.back().second; }
@@ -878,11 +879,21 @@ static void preAdaptDebugValuesToLLVM(Operation *op) {
             dbgValue->erase();
             continue;
           }
-        } else if (!pendingKillsByLoc.isEmpty() && isa<KillOp>(op)) {
+        } else if (!pendingKillsByLoc.empty() && isa<KillOp>(op)) {
           pendingKillsByLoc.backData().push_back(&op);
         }
 
         preAdaptDebugValuesToLLVM(&op);
+      }
+
+      // Any still pending kills can be moved before the last op of the block.
+      if (!pendingKillsByLoc.empty()) {
+        Operation *lastOp = &block.back();
+        SmallVector<SmallVector<Operation *>> invalidated =
+            pendingKillsByLoc.updateTo({});
+        for (SmallVector<Operation *> &kills : invalidated)
+          for (Operation *kill : kills)
+            kill->moveBefore(lastOp);
       }
     }
   }
