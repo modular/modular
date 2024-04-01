@@ -8,10 +8,10 @@
 #define SUPPORT_ADT_GENERICUNIQUEPTRSET_H
 
 #include "Support/ADT/GenericUniquePtr.h"
-
 #include "Support/ErrorOr.h"
 #include "Support/ReferenceCounted.h"
-#include "llvm/ADT/DenseMap.h"
+
+#include "llvm/ADT/MapVector.h"
 
 #include <mutex>
 
@@ -25,7 +25,12 @@ namespace M {
 class GenericUniquePtrSet {
 public:
   GenericUniquePtrSet() = default;
-  ~GenericUniquePtrSet() = default;
+
+  /// Tears down in reverse order.
+  ~GenericUniquePtrSet() {
+    while (map.size() > 0)
+      map.pop_back();
+  }
 
   /// Transfers ptr into set. The set may hold at most one object per T.
   template <typename T>
@@ -103,14 +108,6 @@ public:
     return itr->second.template get<T>();
   }
 
-  /// Removes an object from the set.
-  template <typename T>
-  bool remove() {
-    std::lock_guard<std::recursive_mutex> lock(mu);
-    auto denseIndex = TypeID::get<T>().getDenseIndex();
-    return map.erase(denseIndex);
-  }
-
 private:
   /// Protects map. Recursive so that the creator in createIfMissing may also
   /// add pointer objects.
@@ -119,7 +116,7 @@ private:
   /// A map from globally unique type identifiers TypeID::get<T>() (using
   /// their 'dense index' form) to GenericUniquePtr holding an object of
   /// type T.
-  DenseMap<size_t, GenericUniquePtr> map;
+  llvm::MapVector<size_t, GenericUniquePtr> map;
 };
 
 /// An RCRef-compatible version of GenericUniquePtrSet.
