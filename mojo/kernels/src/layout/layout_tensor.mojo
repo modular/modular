@@ -247,12 +247,6 @@ struct LayoutTensor[
         return Self.shape[idx]()
 
     @always_inline
-    fn offset(inout self, distance: Int):
-        """Use layout tensor as a view and offset its pointer by the input
-        distance."""
-        self.ptr += distance
-
-    @always_inline
     fn coalesce(
         self,
     ) -> LayoutTensor[coalesce(layout), dtype, address_space=address_space]:
@@ -756,19 +750,22 @@ struct TensorBuilder[
     M: Int,
     N: Int,
     dtype: DType,
+    address_space: AddressSpace = AddressSpace.GENERIC,
     layout: Layout = Layout(IntTuple(M, N), IntTuple(N, 1)),
 ]:
-    alias Type = LayoutTensor[layout, dtype]
+    alias Type = LayoutTensor[layout, dtype, address_space=address_space]
     alias AlignedType = LayoutTensor[Self._aligned_layout(), dtype]
 
     @staticmethod
-    fn Wrap(ptr: DTypePointer[dtype]) -> Self.Type:
+    fn Wrap(ptr: DTypePointer[dtype, address_space]) -> Self.Type:
         return Self.Type(ptr)
 
     @staticmethod
     fn Build() -> Self.Type:
         return Self.Type(
-            DTypePointer[dtype].alloc(M * N, alignment=alignof[SIMD[dtype]]()),
+            DTypePointer[dtype, address_space].alloc(
+                M * N, alignment=alignof[SIMD[dtype]]()
+            ),
             owning=True,
         )
 
