@@ -34,7 +34,7 @@ from sys import argv
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor
+from layout.layout_tensor import LayoutTensor, TensorBuilder
 from gpu.device_print import _printf
 from pathlib import Path
 
@@ -66,14 +66,14 @@ fn sgemm_double_buffer[
     b_type: DType,
     b_layout: Layout,
     itype: DType,
-    BM: Scalar[itype],
-    BN: Scalar[itype],
-    BK: Scalar[itype],
-    WM: Scalar[itype],
-    WN: Scalar[itype],
-    TM: Scalar[itype],
-    TN: Scalar[itype],
-    NUM_THREADS: Scalar[itype],
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    TM: Int,
+    TN: Int,
+    NUM_THREADS: Int,
 ](
     c: LayoutTensor[c_layout, c_type],
     a: LayoutTensor[a_layout, a_type],
@@ -81,17 +81,16 @@ fn sgemm_double_buffer[
 ):
     alias _uint = Scalar[itype]
 
-    alias simd_size_int = simdwidthof[c_type]()
-    alias simd_size = Scalar[itype](simd_size_int)
+    alias simd_size = simdwidthof[c_type]()
 
-    var M = Scalar[itype](c.dim[0]())
-    var N = Scalar[itype](c.dim[1]())
-    var K = Scalar[itype](a.dim[1]())
+    var M = c.dim[0]()
+    var N = c.dim[1]()
+    var K = a.dim[1]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
 
-    var tid = Scalar[itype](ThreadIdx.x())
+    var tid = ThreadIdx.x()
     var warp_id = tid // WARP_SIZE
     var lane_id = tid % WARP_SIZE
 
@@ -108,55 +107,42 @@ fn sgemm_double_buffer[
     ]()
 
     # Pad BM to avoid back conflict
-    alias pad_avoid_bank_conflict = Scalar[itype](4)
+    alias pad_avoid_bank_conflict = 4
     alias BM_padded = BM + pad_avoid_bank_conflict
 
     # Double buffer in shared memory.
-    alias a_smem_size = int(BK * BM_padded)
-    var a_smem_ptr = stack_allocation[
-        2 * a_smem_size, a_type, address_space = AddressSpace.SHARED
-    ]()
-    alias b_smem_size = int(BK * BN)
-    var b_smem_ptr = stack_allocation[
-        2 * b_smem_size, b_type, address_space = AddressSpace.SHARED
-    ]()
-    var a_smem_tile0 = LayoutTensor[
-        Layout(IntTuple(int(BK), int(BM)), IntTuple(int(BM_padded), 1)),
-        a_type,
-        address_space = AddressSpace.SHARED,
-    ](a_smem_ptr)
-    var a_smem_tile1 = LayoutTensor[
-        Layout(IntTuple(int(BK), int(BM)), IntTuple(int(BM_padded), 1)),
-        a_type,
-        address_space = AddressSpace.SHARED,
-    ](a_smem_ptr + a_smem_size)
-    var b_smem_tile0 = LayoutTensor[
-        Layout(IntTuple(int(BK), int(BN)), IntTuple(int(BN), 1)),
-        b_type,
-        address_space = AddressSpace.SHARED,
-    ](b_smem_ptr)
-    var b_smem_tile1 = LayoutTensor[
-        Layout(IntTuple(int(BK), int(BN)), IntTuple(int(BN), 1)),
-        b_type,
-        address_space = AddressSpace.SHARED,
-    ](b_smem_ptr + b_smem_size)
+    alias a_smem_size = BK * BM_padded
+    var a_smem_base = TensorBuilder[
+        2 * BK, BM_padded, a_type, AddressSpace.SHARED
+    ].OnStack()
+    var a_smem_tile = StaticTuple[_, 2](
+        a_smem_base.tile[BK, BM](0, 0), a_smem_base.tile[BK, BM](1, 0)
+    )
+
+    alias b_smem_size = BK * BN
+    var b_smem_base = TensorBuilder[
+        2 * BK, BN, b_type, AddressSpace.SHARED
+    ].OnStack()
+    var b_smem_tile = StaticTuple[_, 2](
+        b_smem_base.tile[BK, BN](0, 0), b_smem_base.tile[BK, BN](1, 0)
+    )
 
     # Global memory tile.
-    var a_gmem_tile = a.tile[int(BM), int(BK)](BlockIdx.y(), 0)
-    var b_gmem_tile = b.tile[int(BK), int(BN)](0, BlockIdx.x())
+    var a_gmem_tile = a.tile[BM, BK](BlockIdx.y(), 0)
+    var b_gmem_tile = b.tile[BK, BN](0, BlockIdx.x())
 
     # Load A tile from global memory to shared.
     # Row major thread layout for coalesced access.
     alias thread_loada_gmem_layout = Layout(
-        IntTuple(int(NUM_THREADS // BK), int(BK)), IntTuple(int(BK), 1)
+        IntTuple(NUM_THREADS // BK, BK), IntTuple(BK, 1)
     )
     alias thread_storea_smem_layout = Layout(
-        IntTuple(int(BK), int(NUM_THREADS // BK)), IntTuple(1, int(BK))
+        IntTuple(BK, NUM_THREADS // BK), IntTuple(1, BK)
     )
     var thread_loada_gmem_frags = a_gmem_tile.distribute[
         thread_loada_gmem_layout
     ](ThreadIdx.x())
-    var thread_storea_smem_frags = a_smem_tile0.distribute[
+    var thread_storea_smem_frags = a_smem_tile[0].distribute[
         thread_storea_smem_layout
     ](ThreadIdx.x())
     thread_storea_smem_frags.copy_from_async(thread_loada_gmem_frags)
@@ -164,30 +150,30 @@ fn sgemm_double_buffer[
     # Load B tile from global memory to shared.
     # Row major thread layout for coalesced access.
     alias thread_layout_loadb = Layout(
-        IntTuple(int(NUM_THREADS // BN), int(BN)), IntTuple(int(BN), 1)
+        IntTuple(NUM_THREADS // BN, BN), IntTuple(BN, 1)
     )
     var thread_loadb_gmem_frags = b_gmem_tile.distribute[thread_layout_loadb](
         ThreadIdx.x()
     )
-    var thread_storeb_smem_frags = b_smem_tile0.distribute[thread_layout_loadb](
-        ThreadIdx.x()
-    )
+    var thread_storeb_smem_frags = b_smem_tile[0].distribute[
+        thread_layout_loadb
+    ](ThreadIdx.x())
     thread_storeb_smem_frags.copy_from_async(thread_loadb_gmem_frags)
 
     async_copy_wait_all()
     barrier()
 
     # Advance A and B to next k tile.
-    a_gmem_tile = a.tile[int(BM), int(BK)](BlockIdx.y(), 1)
-    b_gmem_tile = b.tile[int(BK), int(BN)](1, BlockIdx.x())
+    a_gmem_tile = a.tile[BM, BK](BlockIdx.y(), 1)
+    b_gmem_tile = b.tile[BK, BN](1, BlockIdx.x())
 
     # Double buffer in registers (fragments in nvidia terms).
-    var a_reg0 = LayoutTensor[Layout(int(TM)), a_type].stack_allocation()
-    var a_reg1 = LayoutTensor[Layout(int(TM)), a_type].stack_allocation()
-    var b_reg0 = LayoutTensor[Layout(int(TN)), b_type].stack_allocation()
-    var b_reg1 = LayoutTensor[Layout(int(TN)), b_type].stack_allocation()
+    var a_reg0 = LayoutTensor[Layout(TM), a_type].stack_allocation()
+    var a_reg1 = LayoutTensor[Layout(TM), a_type].stack_allocation()
+    var b_reg0 = LayoutTensor[Layout(TN), b_type].stack_allocation()
+    var b_reg1 = LayoutTensor[Layout(TN), b_type].stack_allocation()
     var c_reg = LayoutTensor[
-        Layout(IntTuple(int(TM), int(TN)), IntTuple(int(TN), 1)), c_type
+        Layout(IntTuple(TM, TN), IntTuple(TN, 1)), c_type
     ].stack_allocation()
     c_reg.fill(0)
 
@@ -203,88 +189,74 @@ fn sgemm_double_buffer[
     )
 
     # Load A fragments to the first buffer.
-    var a_smem_warp_tile = a_smem_tile0.tile[int(BK), int(WM)](0, int(warp_y))
-    var a_smem_warp_row = a_smem_warp_tile.tile[1, int(WM)](0, 0).coalesce()
+    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
+    var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
     var thread_loada_smem_frags = a_smem_warp_row.distribute[
-        thread_layout, tile_size=simd_size_int, axis=0
-    ](int(lane_id))
+        thread_layout, tile_size=simd_size, axis=0
+    ](lane_id)
     a_reg0.copy_from_numa(thread_loada_smem_frags)
 
     # Load B fragments to the first buffer.
-    var b_smem_warp_tile = b_smem_tile0.tile[int(BK), int(WN)](0, int(warp_x))
-    var b_smem_warp_row = b_smem_warp_tile.tile[1, int(WN)](0, 0).coalesce()
+    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
+    var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
     var thread_loadb_smem_frags = b_smem_warp_row.distribute[
-        thread_layout, tile_size=simd_size_int, axis=1
-    ](int(lane_id))
+        thread_layout, tile_size=simd_size, axis=1
+    ](lane_id)
     b_reg0.copy_from_numa(thread_loadb_smem_frags)
 
-    var num_k_tiles = Scalar[itype](div_ceil(int(K), int(BK)))
+    var num_k_tiles = Scalar[itype](div_ceil(K, BK))
 
     # Update (num_k_tile - 1) tiles while switching buffers.
     for k_tile_id in range(num_k_tiles - 1):
+        # The shared memory buffer to be prefetched
+        var prefetch_id = 1 if k_tile_id % 2 == 0 else 0
 
         @unroll
         for k in range(BK):
-            var next_k = (k + 1) % int(BK)
+            var next_k = (k + 1) % BK
 
-            if k == int(BK - 1):
+            if k == BK - 1:
                 async_copy_wait_all()
                 barrier()
 
-                # Switch shared memory buffer.
-                var shift = a_smem_size if k_tile_id % 2 == 0 else -a_smem_size
-                a_smem_tile0.offset(shift)
-                a_smem_tile1.offset(-shift)
-                shift = b_smem_size if k_tile_id % 2 == 0 else -b_smem_size
-                b_smem_tile0.offset(shift)
-                b_smem_tile1.offset(-shift)
-
-                a_smem_warp_tile = a_smem_tile0.tile[int(BK), int(WM)](
-                    0, int(warp_y)
+                a_smem_warp_tile = a_smem_tile[prefetch_id].tile[BK, WM](
+                    0, warp_y
                 )
-                b_smem_warp_tile = b_smem_tile0.tile[int(BK), int(WN)](
-                    0, int(warp_x)
+                b_smem_warp_tile = b_smem_tile[prefetch_id].tile[BK, WN](
+                    0, warp_x
                 )
 
             # Fill the other A fragments buffer using the next row in A.
-            a_smem_warp_row = a_smem_warp_tile.tile[1, int(WM)](
-                next_k, 0
-            ).coalesce()
+            a_smem_warp_row = a_smem_warp_tile.tile[1, WM](next_k, 0).coalesce()
             thread_loada_smem_frags = a_smem_warp_row.distribute[
-                thread_layout, tile_size=simd_size_int, axis=0
-            ](int(lane_id))
+                thread_layout, tile_size=simd_size, axis=0
+            ](lane_id)
             a_reg1.copy_from_numa(thread_loada_smem_frags)
 
-            b_smem_warp_row = b_smem_warp_tile.tile[1, int(WN)](
-                next_k, 0
-            ).coalesce()
+            b_smem_warp_row = b_smem_warp_tile.tile[1, WN](next_k, 0).coalesce()
             thread_loadb_smem_frags = b_smem_warp_row.distribute[
-                thread_layout, tile_size=simd_size_int, axis=1
-            ](int(lane_id))
+                thread_layout, tile_size=simd_size, axis=1
+            ](lane_id)
             b_reg1.copy_from_numa(thread_loadb_smem_frags)
 
             # Load next k tile from global memory to shared memory.
             if k == 0:
-                a_gmem_tile = a.tile[int(BM), int(BK)](
-                    BlockIdx.y(), k_tile_id + 1
-                )
-                b_gmem_tile = b.tile[int(BK), int(BN)](
-                    k_tile_id + 1, BlockIdx.x()
-                )
+                a_gmem_tile = a.tile[BM, BK](BlockIdx.y(), k_tile_id + 1)
+                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, BlockIdx.x())
                 var thread_loada_gmem_frags = a_gmem_tile.distribute[
                     thread_loada_gmem_layout
                 ](ThreadIdx.x())
-                var thread_loada_smem_frags = a_smem_tile1.distribute[
-                    thread_storea_smem_layout
-                ](ThreadIdx.x())
+                var thread_loada_smem_frags = a_smem_tile[
+                    prefetch_id
+                ].distribute[thread_storea_smem_layout](ThreadIdx.x())
                 thread_loada_smem_frags.copy_from_async(thread_loada_gmem_frags)
 
                 var thread_loadb_gmem_frags = b_gmem_tile.distribute[
                     thread_layout_loadb
                 ](ThreadIdx.x())
-                var thread_loadb_smem_frags = b_smem_tile1.distribute[
-                    thread_layout_loadb
-                ](ThreadIdx.x())
+                var thread_loadb_smem_frags = b_smem_tile[
+                    prefetch_id
+                ].distribute[thread_layout_loadb](ThreadIdx.x())
                 thread_loadb_smem_frags.copy_from_async(thread_loadb_gmem_frags)
 
             # FFMA loop
@@ -304,25 +276,21 @@ fn sgemm_double_buffer[
     # Last k tile.
     @unroll
     for k in range(BK):
-        var next_k = (k + 1) % int(BK)
+        var next_k = (k + 1) % BK
 
-        if k < int(BK - 1):
+        if k < BK - 1:
             # Fill the other A fragments buffer.
-            a_smem_warp_row = a_smem_warp_tile.tile[1, int(WM)](
-                next_k, 0
-            ).coalesce()
+            a_smem_warp_row = a_smem_warp_tile.tile[1, WM](next_k, 0).coalesce()
             thread_loada_smem_frags = a_smem_warp_row.distribute[
-                thread_layout, tile_size=simd_size_int, axis=0
-            ](int(lane_id))
+                thread_layout, tile_size=simd_size, axis=0
+            ](lane_id)
             a_reg1.copy_from_numa(thread_loada_smem_frags)
 
             # Fill the other B fragments buffer.
-            b_smem_warp_row = b_smem_warp_tile.tile[1, int(WN)](
-                next_k, 0
-            ).coalesce()
+            b_smem_warp_row = b_smem_warp_tile.tile[1, WN](next_k, 0).coalesce()
             thread_loadb_smem_frags = b_smem_warp_row.distribute[
-                thread_layout, tile_size=simd_size_int, axis=1
-            ](int(lane_id))
+                thread_layout, tile_size=simd_size, axis=1
+            ](lane_id)
             b_reg1.copy_from_numa(thread_loadb_smem_frags)
 
         # FFMA loop
@@ -338,16 +306,12 @@ fn sgemm_double_buffer[
         swap_ptr(a_reg0, a_reg1)
         swap_ptr(b_reg0, b_reg1)
 
-    var c_gmem_tile = c.tile[int(BM), int(BN)](BlockIdx.y(), BlockIdx.x())
-    var c_gmem_warp_tile = c_gmem_tile.tile[int(WM), int(WN)](
-        int(warp_y), int(warp_x)
-    )
+    var c_gmem_tile = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
     var c_gmem_thread_tile = c_gmem_warp_tile.distribute[
-        thread_layout, tile_size = IntTuple(simd_size_int, simd_size_int)
+        thread_layout, tile_size = IntTuple(simd_size, simd_size)
     ](ThreadIdx.x())
-    alias c_tiled_layout = c_reg._compute_tile_layout[
-        simd_size_int, simd_size_int
-    ]()
+    alias c_tiled_layout = c_reg._compute_tile_layout[simd_size, simd_size]()
     var c_reg_reshaped = LayoutTensor[
         c_tiled_layout, c_type, address_space = c_reg.address_space
     ](c_reg.ptr)
