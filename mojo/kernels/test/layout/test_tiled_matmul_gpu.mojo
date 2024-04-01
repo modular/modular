@@ -14,6 +14,7 @@ from gpu.sync import barrier
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import int
+from gpu.device_print import _printf
 
 
 fn naive_matmul[
@@ -152,23 +153,33 @@ fn sram_blocked_matmul[
 
         # Distribute thread layout into rows of l.h.s and cols of r.h.s
         # to perform dot mma instruction.
-        alias TH_ROWS = int(thread_layout.shape[0])
-        alias TH_COLS = int(thread_layout.shape[1])
-        var lhs_sram_local = lhs_sram_tile.distribute[
-            Layout(IntTuple(TH_ROWS, 1), IntTuple(1, 1))
-        ](ThreadIdx.x() % TH_ROWS)
-        var rhs_sram_local = rhs_sram_tile.distribute[
-            Layout(IntTuple(1, TH_COLS), IntTuple(1, 1))
-        ](ThreadIdx.x() // TH_ROWS)
+        var lhs_sram_local = lhs_sram_tile.vectorize[1, BK]().distribute[
+            thread_layout, axis=0
+        ](ThreadIdx.x())
+        var rhs_sram_local = rhs_sram_tile.vectorize[BK, 1]().distribute[
+            thread_layout, axis=1
+        ](ThreadIdx.x())
+
+        @parameter
+        fn dot[
+            v1: Int, v2: Int
+        ](
+            lhs: SIMD[DType.float32, v1], rhs: SIMD[DType.float32, v2]
+        ) -> Float32:
+            constrained[v1 == v2, "Expecting same vector length"]()
+            var res = Float32(0)
+            for i in range(v1):
+                res += lhs[i] * rhs[i]
+            return res
 
         # Iterate over fragments of each thread.
         for m_i in range(dst_register_tile.shape[0]()):
             for n_i in range(dst_register_tile.shape[1]()):
                 # Accumlate into the register tile.
-                for ki in range(BK):
-                    dst_register_tile[m_i, n_i] += (
-                        lhs_sram_local[m_i, ki] * rhs_sram_local[ki, n_i]
-                    )
+                dst_register_tile[m_i, n_i] += dot(
+                    lhs_sram_local[m_i, 0],
+                    rhs_sram_local[0, n_i],
+                )
 
     # Move data from register tile to DRAM
     dst_local_tile.copy_from(dst_register_tile)
@@ -190,7 +201,7 @@ fn test_sram_blocked_matmul() raises:
     alias layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
     alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
-    alias thread_layout = Layout(IntTuple(TH_N, TH_M))
+    alias thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
 
     var mat_a = ManagedLayoutTensor[
         layout_a, DType.float32, gpu_managed_alloc, gpu_free

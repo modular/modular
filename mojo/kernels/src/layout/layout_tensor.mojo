@@ -12,8 +12,42 @@ from gpu.memory import async_copy, async_copy_wait_all
 from memory import memcpy
 from memory.unsafe import AddressSpace, DTypePointer, _GPUAddressSpace
 
-from .int_tuple import flatten, idx2crd, int, product
+from .int_tuple import flatten, idx2crd, int, product, fill_like
 from .layout import *
+
+
+# Distribute thread_layout into data_layout, if axis is provided
+# distribute into threads_layout projected into this axis.
+#
+fn _compute_distribute_layout[
+    data_layout: Layout,
+    threads_layout: Layout,
+    axis: Optional[Int] = None,
+]() -> Layout:
+    var thread_tile = LayoutList()
+
+    @parameter
+    if axis:
+        for i in range(len(threads_layout.shape)):
+            var shape_i = threads_layout.shape[i]
+            if i == axis.value():
+                thread_tile.append(Layout(shape_i))
+            else:
+                thread_tile.append(Layout(1))
+
+        return zipped_divide(data_layout, thread_tile)
+
+    for dim in threads_layout.shape:
+        thread_tile.append(Layout(dim))
+    return zipped_divide(data_layout, thread_tile)
+
+
+# Returns an IntTuple with all ones except axis same as input t.
+#
+fn _project_on_axis[axis: Int](t: IntTuple) -> IntTuple:
+    var p_t = fill_like(t, 0)
+    p_t[axis] = fill_like(t[axis], 1)
+    return p_t
 
 
 @register_passable
@@ -304,9 +338,10 @@ struct LayoutTensor[
     @always_inline
     fn distribute[
         threads_layout: Layout,
-        tiled_layout: Layout = Self._compute_distribute_layout[
+        tiled_layout: Layout = _compute_distribute_layout[
             layout, threads_layout
         ](),
+        axis: Optional[Int] = None,
     ](self, thread_id: Int) -> LayoutTensor[
         tiled_layout[1],
         dtype,
@@ -318,15 +353,23 @@ struct LayoutTensor[
         alias threads_layout_shape = flatten(threads_layout.shape)
         alias threads_layout_stride = flatten(threads_layout.stride)
 
+        # Selected projection axes 0-1 constant.
+        alias projection_const = flatten(
+            _project_on_axis[axis.value()](
+                threads_layout.shape
+            ) if axis else fill_like(threads_layout.shape, 1)
+        )
+
         var offset = 0
 
         @parameter
         fn compute_offset[i: Int]():
+            alias p_axis = int(projection_const[i])
             alias shape_i = int(threads_layout_shape[i])
             alias stride_i = int(threads_layout_stride[i])
             var coords_i = (thread_id // stride_i) % shape_i
             alias fragments_stride_i = int(fragments_layout_stride[i])
-            offset += coords_i * fragments_stride_i
+            offset += p_axis * coords_i * fragments_stride_i
 
         unroll[compute_offset, len(fragments_layout_stride)]()
 

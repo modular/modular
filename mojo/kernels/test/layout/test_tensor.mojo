@@ -743,6 +743,123 @@ fn test_distribute_vectorized():
         fragments.print()
 
 
+fn test_distribute_axis_projection():
+    var tensor_4x4 = LayoutTensor[
+        Layout(IntTuple(4, 4), IntTuple(4, 1)), DType.float32
+    ].stack_allocation()
+    tensor_4x4.linspace()
+
+    # CHECK: th_id 0
+    # CHECK: [0.0, 1.0, 2.0, 3.0]
+    # CHECK: =====
+    # CHECK: th_id 1
+    # CHECK: [0.0, 1.0, 2.0, 3.0]
+    # CHECK: =====
+    # CHECK: th_id 2
+    # CHECK: [0.0, 1.0, 2.0, 3.0]
+    # CHECK: =====
+    # CHECK: th_id 3
+    # CHECK: [0.0, 1.0, 2.0, 3.0]
+    # CHECK: =====
+    # CHECK: th_id 4
+    # CHECK: [4.0, 5.0, 6.0, 7.0]
+    # CHECK: =====
+    # CHECK: th_id 5
+    # CHECK: [4.0, 5.0, 6.0, 7.0]
+    # CHECK: =====
+    # CHECK: th_id 6
+    # CHECK: [4.0, 5.0, 6.0, 7.0]
+    # CHECK: =====
+    # CHECK: th_id 7
+    # CHECK: [4.0, 5.0, 6.0, 7.0]
+    # CHECK: =====
+    # CHECK: th_id 8
+    # CHECK: [8.0, 9.0, 10.0, 11.0]
+    # CHECK: =====
+    # CHECK: th_id 9
+    # CHECK: [8.0, 9.0, 10.0, 11.0]
+    # CHECK: =====
+    # CHECK: th_id 10
+    # CHECK: [8.0, 9.0, 10.0, 11.0]
+    # CHECK: =====
+    # CHECK: th_id 11
+    # CHECK: [8.0, 9.0, 10.0, 11.0]
+    # CHECK: =====
+    # CHECK: th_id 12
+    # CHECK: [12.0, 13.0, 14.0, 15.0]
+    # CHECK: =====
+    # CHECK: th_id 13
+    # CHECK: [12.0, 13.0, 14.0, 15.0]
+    # CHECK: =====
+    # CHECK: th_id 14
+    # CHECK: [12.0, 13.0, 14.0, 15.0]
+    # CHECK: =====
+    # CHECK: th_id 15
+    # CHECK: [12.0, 13.0, 14.0, 15.0]
+    for th_id in range(16):
+        print("th_id", th_id)
+        var tensor = tensor_4x4.vectorize[1, 4]().distribute[
+            Layout(IntTuple(4, 4), IntTuple(4, 1)), axis=0
+        ](th_id)
+        tensor.print()
+        print("=====")
+
+    # CHECK: th_id 0
+    # CHECK: [0.0, 4.0, 8.0, 12.0]
+    # CHECK: =====
+    # CHECK: th_id 1
+    # CHECK: [1.0, 5.0, 9.0, 13.0]
+    # CHECK: =====
+    # CHECK: th_id 2
+    # CHECK: [2.0, 6.0, 10.0, 14.0]
+    # CHECK: =====
+    # CHECK: th_id 3
+    # CHECK: [3.0, 7.0, 11.0, 15.0]
+    # CHECK: =====
+    # CHECK: th_id 4
+    # CHECK: [0.0, 4.0, 8.0, 12.0]
+    # CHECK: =====
+    # CHECK: th_id 5
+    # CHECK: [1.0, 5.0, 9.0, 13.0]
+    # CHECK: =====
+    # CHECK: th_id 6
+    # CHECK: [2.0, 6.0, 10.0, 14.0]
+    # CHECK: =====
+    # CHECK: th_id 7
+    # CHECK: [3.0, 7.0, 11.0, 15.0]
+    # CHECK: =====
+    # CHECK: th_id 8
+    # CHECK: [0.0, 4.0, 8.0, 12.0]
+    # CHECK: =====
+    # CHECK: th_id 9
+    # CHECK: [1.0, 5.0, 9.0, 13.0]
+    # CHECK: =====
+    # CHECK: th_id 10
+    # CHECK: [2.0, 6.0, 10.0, 14.0]
+    # CHECK: =====
+    # CHECK: th_id 11
+    # CHECK: [3.0, 7.0, 11.0, 15.0]
+    # CHECK: =====
+    # CHECK: th_id 12
+    # CHECK: [0.0, 4.0, 8.0, 12.0]
+    # CHECK: =====
+    # CHECK: th_id 13
+    # CHECK: [1.0, 5.0, 9.0, 13.0]
+    # CHECK: =====
+    # CHECK: th_id 14
+    # CHECK: [2.0, 6.0, 10.0, 14.0]
+    # CHECK: =====
+    # CHECK: th_id 15
+    # CHECK: [3.0, 7.0, 11.0, 15.0]
+    for th_id in range(16):
+        print("th_id", th_id)
+        var tensor = tensor_4x4.vectorize[4, 1]().distribute[
+            Layout(IntTuple(4, 4), IntTuple(4, 1)), axis=1
+        ](th_id)
+        tensor.print()
+        print("=====")
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -756,3 +873,4 @@ fn main():
     test_slice()
     test_copy_vectorized()
     test_distribute_vectorized()
+    test_distribute_axis_projection()
