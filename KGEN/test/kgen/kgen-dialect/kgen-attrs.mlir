@@ -60,18 +60,6 @@ kgen.generator @pack_constants<Ts: variadic<i32>>() {
   kgen.return
 }
 
-// CHECK-LABEL: @variadic_size
-kgen.generator @variadic_size<args: variadic<si32>>() {
-  // CHECK: kgen.param.constant = <0>
-  %0 = kgen.param.constant = <variadic_size(:variadic<si32> [])>
-  // CHECK: kgen.param.constant = <2>
-  %1 = kgen.param.constant = <variadic_size(:variadic<si32> [1, 2])>
-  // CHECK: kgen.param.constant = <variadic_size(:variadic<si32> args)>
-  %2 = kgen.param.constant = <variadic_size(:variadic<si32> args)>
-  kgen.return
-}
-
-
 
 // CHECK-LABEL: @variant_constants
 kgen.generator @variant_constants<T: type, U: type, value: !kgen.paramref<T>>() {
