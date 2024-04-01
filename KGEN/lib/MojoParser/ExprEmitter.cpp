@@ -899,7 +899,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   // If it already matches, then we're done.
   ASTType rvType = value.ir.getRValueType();
   if (rvType.isEqualCanon(requiredType) ||
-      canZeroCostConvert(shared, rvType, requiredType))
+      canConvertWithRebind(rvType, requiredType, shared))
     return true;
 
   // Values of known {struct/trait/mlir} type can convert to any trait type they
@@ -1277,8 +1277,8 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     }
 
     if (!requiredType.isEqualCanon(rvalueType)) {
-      if (canZeroCostConvert(shared, rvalueType, requiredType)) {
-        // If we are dealing with signatures that differ only in argument names,
+      if (canConvertWithRebind(rvalueType, requiredType, shared)) {
+        // If we are dealing with types that differ only pre-elaboration,
         // we insert a rebind.
         if (cValue.isMValue()) {
           requiredType =

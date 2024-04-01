@@ -42,15 +42,17 @@ inline const char *plural(size_t value, const char *one = "",
 /// therwise, returns null.
 PackType getIfPackType(LITSignatureType sig, size_t index);
 
-/// Returns whether the two signatures match, i.e. if they only differ in
-/// argument or parameter names.
-bool canZeroCostConvert(SharedState &shared, ASTType fromType, ASTType toType);
+/// Returns if a value of the specified type can be coerced to the other type
+/// with a rebind.  This means that values of the two types have exactly the
+/// same representation post-elaboration.
+bool canConvertWithRebind(ASTType fromType, ASTType toType,
+                          SharedState &shared);
 
 /// Returns a type if there is a shared supertype for the two specified types,
 /// e.g. two derived classes may have the same base class even if neither is
 /// convertible to the other.  This returns null if there is no common type.
-ASTType getZeroCostCommonType(SharedState &shared, ASTType type1,
-                              ASTType type2);
+ASTType getZeroCostCommonType(ASTType type1, ASTType type2,
+                              SharedState &shared);
 
 /// Certain special methods have type-specific restrictions or need special
 /// handling. This function returns true if a given method can be synthesized

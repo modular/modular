@@ -28,8 +28,14 @@ PackType LIT::getIfPackType(LITSignatureType sig, size_t index) {
                                  : nullptr;
 }
 
-bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
-                             ASTType toType) {
+/// Returns if a value of the specified type can be coerced to the other type
+/// with a rebind.  This means that values of the two types have exactly the
+/// same representation post-elaboration.
+bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
+                               SharedState &shared) {
+  if (fromType.isEqualCanon(toType))
+    return true; // No rebind needed!
+
   // Permit upcasting any `!lit.anystruct` to `!kgen.type` or
   // `!kgen.anytype`.
   // FIXME(traits): Binding a Mojo type to an MLIR type is a hack. We should
@@ -38,15 +44,29 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
       isa<TypeType>(toType))
     return true;
 
-  // Two types can be converted to each other if their metatypes can be as well.
-  if (isa<ParamRefType, DeclRefType>(fromType) &&
-      isa<ParamRefType, DeclRefType>(toType)) {
-    if (canZeroCostConvert(shared, fromType.getMetaType(),
-                           toType.getMetaType()))
-      return true;
+  // A value of parametric type or a result of parametric type can be rebind to
+  // each other if the have the same struct metatype, because there is exactly
+  // one type that implements it - the parameter must resolve to that struct.
+  //
+  // Note that this is not safe to do with traits or classes - just because a
+  // parameter expression implements the same metatype it doesn't mean it is
+  // dynamically the same type.  This needs to be invalid for example because
+  // T and U can be different types:
+  //
+  //   fn different_traits[T: Copyable, U: Copyable](x: T) -> U:
+  //      return x   # Cannot convert from related types T to U.
+  //
+  if (isa<ParamRefType>(fromType) || isa<ParamRefType>(toType)) {
+    if (auto fromMT = fromType.getMetaType()) {
+      if (auto toMT = toType.getMetaType()) {
+        if (isa<AnyStructType>(fromMT) && ASTType(fromMT).isEqualCanon(toMT))
+          return true;
+      }
+    }
   }
 
-  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base] trivially.
+  // We can convert from AnyTraitType[Derived] to AnyTraitType[Base] with a
+  // rebind.
   if (auto toAnyTrait = dyn_cast<AnyTraitType>(toType)) {
     if (auto fromAnyTrait = dyn_cast<AnyTraitType>(fromType)) {
       auto *fromDecl = ASTType(fromAnyTrait.getTraitType()).getDecl(shared);
@@ -74,7 +94,7 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
       // Compare the specialized signatures.
       fromSig = fromSig.getSpecializedSignature(fromType.getParamBindings());
       toSig = toSig.getSpecializedSignature(toType.getParamBindings());
-      return canZeroCostConvert(shared, fromSig, toSig);
+      return canConvertWithRebind(fromSig, toSig, shared);
     }
     return false;
   }
@@ -101,8 +121,8 @@ bool LIT::canZeroCostConvert(SharedState &shared, ASTType fromType,
       // of the lifetime, which contains its mutability specifier.
       auto toLifetimeType = toRef.getLifetimeType();
       if (fromRef.getLifetimeType() != toLifetimeType &&
-          !canZeroCostConvert(shared, fromRef.getLifetimeType(),
-                              toLifetimeType))
+          !canConvertWithRebind(fromRef.getLifetimeType(), toLifetimeType,
+                                shared))
         return false;
 
       // We can convert lifetime subset to a lifetimes superset.
@@ -199,12 +219,12 @@ static ASTType getZeroCostCommonTypeImpl(SharedState &shared, ASTType type1,
 /// Returns a type if there is a shared supertype for the two specified types,
 /// e.g. two derived classes may have the same base class even if neither is
 /// convertible to the other.  This returns null if there is no common type.
-ASTType LIT::getZeroCostCommonType(SharedState &shared, ASTType type1,
-                                   ASTType type2) {
+ASTType LIT::getZeroCostCommonType(ASTType type1, ASTType type2,
+                                   SharedState &shared) {
   if (auto result = getZeroCostCommonTypeImpl(shared, type1, type2)) {
     // Make sure we can always convert to the common type!
-    assert(canZeroCostConvert(shared, type1, result) &&
-           canZeroCostConvert(shared, type2, result) &&
+    assert(canConvertWithRebind(type1, result, shared) &&
+           canConvertWithRebind(type2, result, shared) &&
            "cannot convert to common type?");
     return result;
   }
