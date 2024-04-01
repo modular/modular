@@ -19,4 +19,5 @@ add_modular_testsuite(check-mojo-integration
   kgen
   kgen-translate
   kgen-opt
+  llvm-module-split
 )
