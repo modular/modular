@@ -246,40 +246,6 @@ void ParamDeclareRegionOp::collectParameterUses(
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForkOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseParamForkOpValue(OpAsmParser &p,
-                                         ParamDeclAttr &paramDecl,
-                                         TypedAttr &value) {
-  StringAttr name;
-  Type valTy;
-
-  if (parseParamName(p, name) || parseColonTypeOrIndex(p, valTy) ||
-      p.parseEqual() || p.parseLess() ||
-      parseParamValue(p, value, VariadicType::get(valTy)) || p.parseGreater())
-    return failure();
-
-  paramDecl = ParamDeclAttr::get(name, valTy);
-  return success();
-}
-
-static void printParamForkOpValue(OpAsmPrinter &p, Operation *,
-                                  ParamDeclAttr paramDecl, TypedAttr value) {
-  printParamName(p, paramDecl.getName());
-  printColonTypeOrIndex(p,
-                        cast<VariadicType>(value.getType()).getElementType());
-  p << " = <";
-  printParamValue(p, value);
-  p << ">";
-}
-
-void ParamForkOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  walkDef(getParamDecl(), getValuesAttr());
-}
-
-//===----------------------------------------------------------------------===//
 // ParamApplyOp
 //===----------------------------------------------------------------------===//
 

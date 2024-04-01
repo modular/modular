@@ -4,6 +4,14 @@ kgen.generator @unbound_fn<p0>() {
   kgen.return
 }
 
+kgen.generator @callee_simd<size, dt: dtype, value: simd<size, dt>>() {
+  kgen.return
+}
+
+kgen.generator @callee_fn<f: () -> ()>() {
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @param_prop
 kgen.generator @param_prop<p0, p1 -> p2>() {
   // CHECK-NOT: declare a0 = <p0>
@@ -46,13 +54,13 @@ kgen.generator @param_prop<p0, p1 -> p2>() {
   kgen.param.declare dt: dtype = <si8>
   // CHECK: F2 = <c0, c1:  simd<c0, si8>>(%arg0: !pop.simd<c0, si8> loc({{.*}}))
   kgen.param.declare.region F2 = <c0, c1: simd<c0, dt>>(%arg0: !pop.simd<c0, dt>) {
-    // CHECK-NEXT: fork f0: simd<c0, si8> = <[c1]>
-    kgen.param.fork f0: simd<c0, dt> = <[c1]>
+    // CHECK-NEXT: <c0, :dtype si8, :simd<c0, si8> c1>
+    kgen.call @callee_simd<c0, :dtype dt, :simd<c0, dt> c1>() : () -> ()
     kgen.return
   }
 
-  // CHECK: bound: () -> () = <[@unbound_fn<2>]>
-  kgen.param.fork bound: () -> () = <[@unbound_fn<a2>]>
+  // CHECK: :() -> () @unbound_fn<2>
+  kgen.call @callee_fn<:() -> () @unbound_fn<a2>>() : () -> ()
 
   // CHECK: result_bind<2>
   kgen.param.result_bind<a2>

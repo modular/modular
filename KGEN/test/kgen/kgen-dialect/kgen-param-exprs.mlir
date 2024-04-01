@@ -717,25 +717,6 @@ kgen.generator @f2() {
   kgen.return
 }
 
-// CHECK-LABEL: kgen.generator @checkGetAllImpls
-kgen.generator @checkGetAllImpls() -> index {
-  // CHECK: kgen.param.declare impls: variadic<() -> index> = <get_all_impls(@multipleImplsFn)>
-  kgen.param.declare impls: variadic<() -> index> = <get_all_impls(@multipleImplsFn)>
-
-  // CHECK-NEXT: kgen.param.fork oneImpl: () -> index = <impls>
-  kgen.param.fork oneImpl: () -> index = <impls>
-  %ret = kgen.call_param[() -> index: oneImpl]()
-  kgen.return %ret : index
-}
-
-// CHECK-LABEL: kgen.generator @multipleImplsFn
-kgen.generator @multipleImplsFn() -> index {
-  // CHECK: fork p = <[1, 2, 3]>
-  kgen.param.fork p = <[1, 2, 3]>
-  %ret = kgen.param.constant = <p>
-  kgen.return %ret : index
-}
-
 lit.struct.decl @IndexParams0<a, b: f32> {}
 lit.struct.decl @IndexParams1<a: i32, b: i64, c: f32, d: i8> {}
 
