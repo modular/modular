@@ -413,7 +413,8 @@ public:
 
   /// Emit a metatype conversion to a trait type by materializing the type's
   /// witness table for the trait.
-  PValue emitMetaTypeConversion(ASTExprAnd<CValue> value, TraitType trait);
+  PValue emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
+                                       TraitType trait);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.

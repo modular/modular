@@ -1047,8 +1047,37 @@ PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
                                VTableAttr::get(getContext(), vtable));
 }
 
-PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
-                                           TraitType trait) {
+namespace {
+
+/// The signature for a trait requirement will have a Self parameter first whose
+/// type is a TraitType for the trait it was found in.  We want to force
+/// substitute a new parameter for the Self references even though it has a
+/// different metatype.  This doesn't remove the parameter, that will be done
+/// later.
+struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
+  TypedAttr selfValue;
+
+  TraitSelfBinder(TypedAttr selfValue) : selfValue(selfValue) {}
+
+  // CRTP methods.
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    // Replace a reference to $(0,0) with the new selfValue.
+    auto paramRef = dyn_cast<ParamIndexRefAttr>(attr);
+    if (!paramRef || paramRef.getIsResult() || paramRef.getIndex() != 0)
+      return {};
+    if (paramRef.getDepth() + 1 != depth)
+      return {};
+    return selfValue;
+  }
+  Type tryReplace(Type type, size_t depth) { return {}; }
+};
+} // end anonymous namespace
+
+PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
+                                                  TraitType trait) {
+  assert((isa<AnyStructType, TraitType>(value.ir.getType())) &&
+         "should only be called on metatypes");
+
   // Only static vtables are supported right now.
   PValue typeValue = value.ir.getIfPValue();
   if (!typeValue) {
@@ -1056,6 +1085,8 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
     return {};
   }
 
+  // Get the AnyStructType or the TraitType of the value that we're checking for
+  // conversion to the trait type.
   ASTType metaType = typeValue.getRValueType();
 
   // Cannot bind parametric types to traits.
@@ -1069,7 +1100,7 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
     }
   }
 
-  // Check that the struct implements the trait.
+  // Check that the struct or super trait implements the trait.
   ASTDecl *metaTypeDecl = metaType.getDecl(shared);
   if (!metaTypeDecl)
     return {}; // erroneous
@@ -1090,20 +1121,6 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
   if (failed(getDeclResolver().resolveFully(*traitDecl, value.expr->getLoc())))
     return {};
 
-  ASTType selfType = ASTType(typeValue);
-
-  // Bind the two implicit parameters on trait members.  The first is the
-  // metatype of the type, the second is the type.  This is needed because
-  // traits can bind to different kinds of metatypes.
-
-  // FIXME: Should be PValue(metaType) but struct and traits have a different
-  // metatype type AnyStruct vs AnyTrait and we don't want to have to also
-  // abstract over that.
-  SmallVector<TypedAttr> selfParams;
-  selfParams.push_back(
-      TypeConstantAttr::get(metaType, TypeType::get(getContext())));
-  selfParams.push_back(typeValue);
-
   // Determine if the conforming value is trivial or register passable.  If so,
   // this will affect the methods we can synthesize in conformance.  Values of
   // trait type will already have been erased to a memory type.
@@ -1114,39 +1131,67 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
     regPassable = structDeclOp.isRegisterPassableTrivial();
   }
 
+  // Bind each trait requirement into vtable entries.
   SmallVector<VTableEntryAttr> vtable;
-  for (auto &[name, decls] : traitDecl->getDeclsInScope()) {
-    if (decls.empty() || !isa<LIT::FuncOp>(decls.front()))
+  for (auto &[name, requirementDecls] : traitDecl->getDeclsInScope()) {
+    // Each entry can have multiple overloads in 'decls'.
+    if (requirementDecls.empty() || !isa<LIT::FuncOp>(requirementDecls.front()))
       continue;
+
+    // Find candidates in the implementing type (either a struct or trait) which
+    // also may have multiple overloads.
     LookupResult result =
         shared.lookupAndResolveDecl(name, value.expr->getLoc(), *metaTypeDecl,
                                     /*searchParentScopes=*/false);
-    ArrayRef<ASTDecl *> typeFuncs = result.getIfSuccess();
-    // Form an overload set of the functions and bind the type parameters.
-    for (ASTDecl *expected : decls) {
-      auto traitFn = cast<LIT::FuncOp>(expected);
+    ArrayRef<ASTDecl *> implFuncs = result.getIfSuccess();
 
-      // Bind away the self type parameter.
-      SmallVector<TypedAttr> fnParams = selfParams;
-      LITSignatureType sig = traitFn.getFullSignature();
-      ParameterEvaluator evaluator(selfParams);
-      auto bindings = ParamBindings::getForDeclaredType(declScope, shared,
-                                                        ASTType(typeValue));
-      for (Type type : sig.getParamTypes().drop_front(2)) {
-        fnParams.push_back(UnboundAttr::get(evaluator.getReboundType(type)));
-        evaluator.addInputValue(fnParams.back());
-        bindings.addPrechecked(fnParams.back());
+    // Each requirement may be overloaded, resolve each individually.
+    for (ASTDecl *expected : requirementDecls) {
+      auto requirementFn = cast<LIT::FuncOp>(expected);
+
+      // For any given requirement, the implementing type may have multiple
+      // overloads.  Resolve which one we're using by forming an overload set
+      // and filtering it.  Start by finding a set of param bindings in the
+      // implementing function that get bound, including the self type if the
+      // conforming type is a trait.
+
+      // The requirement will have a Self parameter whose type will be of the
+      // current trait.  In order to get types to line up, we need to force it
+      // to the implementation type.  This changes the parameter value, but also
+      // changes the metatype of the value.  To support this, we use a custom
+      // replacer.
+      LITSignatureType requirementSig =
+          TraitSelfBinder(typeValue).replace(requirementFn.getFullSignature());
+
+      // Form a set of bindings to plow into the impl signature.
+      auto implBindings = ParamBindings::getForDeclaredType(declScope, shared,
+                                                            ASTType(typeValue));
+
+      // Bind the implicit T parameter on trait members to something with the
+      // right metatype to keep the remapper happy.  We already replaced all
+      // uses of the attr with TraitSelfBinder.
+      SmallVector<TypedAttr> requirementParams;
+      requirementParams.push_back(
+          // NOTE: This is an UnknownAttr not an UnboundAttr.
+          UnknownAttr::get(requirementSig.getParamTypes()[0]));
+
+      ParameterEvaluator evaluator(requirementParams);
+      for (Type type : requirementSig.getParamTypes().drop_front()) {
+        auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
+        requirementParams.push_back(unbound);
+        evaluator.addInputValue(unbound);
+        implBindings.addPrechecked(unbound);
       }
-      sig =
-          sig.getSpecializedSignature(fnParams, value.expr->getLocation(*this));
-      assert(sig && "internal error substituting trait type");
+      requirementSig = requirementSig.getSpecializedSignature(
+          requirementParams, value.expr->getLocation(*this));
+      assert(requirementSig && "internal error substituting trait type");
 
       // Grab the matching function.
-      OverloadSet ov(name, typeFuncs, std::move(bindings), value.expr,
+      OverloadSet ov(name, implFuncs, std::move(implBindings), value.expr,
                      CallSyntax::kMethodCallSynthetic);
       ov.baseType = ASTType(typeValue);
       auto result = ov.filterOverloadSetForValueType(
-          sig, /*emitDiagnosticOnFailure=*/false);
+          requirementSig, /*emitDiagnosticOnFailure=*/false);
       if (!result) {
         // Don't error out if name is for the thunk functions that will be
         // synthesized when conformance check happens.
@@ -1156,17 +1201,18 @@ PValue ExprEmitter::emitMetaTypeConversion(ASTExprAnd<CValue> value,
         // The struct does not have the specified member and we cannot
         // synthesize it. Re-emit the error to get a diagnostic.
         (void)ov.filterOverloadSetForValueType(
-            sig, /*emitDiagnosticOnFailure=*/true);
+            requirementSig, /*emitDiagnosticOnFailure=*/true);
         return {};
       }
-      if (result.getType().mlirType != sig)
-        result = ParamOperatorAttr::get(POC::Rebind, result.get(), sig);
+      if (result.getType().mlirType != requirementSig)
+        result =
+            ParamOperatorAttr::get(POC::Rebind, result.get(), requirementSig);
       vtable.push_back(VTableEntryAttr::get(name, result));
     }
   }
 
   // Create the new type value with the vtable and the trait metatype.
-  return TypeConstantAttr::get(selfType, trait,
+  return TypeConstantAttr::get(ASTType(typeValue), trait,
                                VTableAttr::get(getContext(), vtable));
 }
 
@@ -1274,7 +1320,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       // specified trait.
       if (auto trait = dyn_cast<TraitType>(requiredType)) {
         if (isa<AnyStructType, TraitType>(rvalueType)) {
-          PValue result = emitMetaTypeConversion({cValue, expr}, trait);
+          PValue result = emitMetaTypeToTraitConversion({cValue, expr}, trait);
           if (!result) {
             dest.resetForError();
             return {};

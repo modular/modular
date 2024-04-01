@@ -69,11 +69,8 @@ ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
   paramBindings.defaultTypeParams = type.getDefaultPosParams();
 
   // When binding a trait function, add the self type bindings.
-  if (auto trait = dyn_cast_or_null<TraitType>(type.getMetaType())) {
-    paramBindings.addPrechecked(
-        TypeConstantAttr::get(trait, TypeType::get(trait.getContext())));
-    paramBindings.addPrechecked(TypeConstantAttr::get(type, trait));
-  }
+  if (auto trait = dyn_cast_or_null<TraitType>(type.getMetaType()))
+    paramBindings.addPrechecked(PValue(type).get());
 
   ArrayRef<TypedAttr> paramValues = type.getParamBindings();
   for (TypedAttr value : paramValues)
@@ -644,14 +641,8 @@ TypedAttr ParamBindings::getBoundConstAttrFor(ASTType baseType,
                                               LIT::FuncOp funcOp,
                                               StringRef baseName,
                                               const ExprNode *expr) const {
-  // Try to dig out a trait base value.
-  auto getIfTrait = [](ASTType type) -> ASTType {
-    if (isa_and_nonnull<TraitType>(type.getMetaType()))
-      return type;
-    return {};
-  };
-  ASTType trait = getIfTrait(baseType);
-  if (!trait) {
+
+  if (!isa_and_nonnull<TraitType>(baseType.getMetaType())) {
     // If there are no parameters specified and if we allow unbound symbols,
     // just return the unbound symbol.
     if (empty())
@@ -668,24 +659,28 @@ TypedAttr ParamBindings::getBoundConstAttrFor(ASTType baseType,
     return funcOp.getBoundReference(newBindings);
   }
 
-  // When referencing at trait function, bind the reference using a parameter
-  // expression instead of the direct reference. Drop the implicit trait
-  // parameters.
-  // FIXME(#25492): The implicit trait parameters probably need a rethink.
+  // When referencing a trait function, bind the reference using a parameter
+  // expression instead of the direct reference and drop the implicit trait
+  // parameter.
   LITSignatureType signature = funcOp.getFullSignature();
   ParamBindings bindings = *this;
-  assert(bindings.posBindings.size() >= 2);
+  assert(bindings.posBindings.size() >= 1);
+  SmallVector<TypedAttr> paramValues;
+  paramValues.push_back(bindings.posBindings.front().value);
+
   auto it = bindings.posBindings.begin();
-  SmallVector<TypedAttr> paramValues({it->value, (it + 1)->value});
-  bindings.posBindings.erase(it, it + 2);
-  for (Type type : signature.getParamTypes().drop_front(2))
+  bindings.posBindings.erase(it, it + 1);
+  for (Type type : signature.getParamTypes().drop_front())
     paramValues.push_back(UnboundAttr::get(type));
-  auto loc = shared.translateLocation(expr->getLoc());
-  signature = signature.getSpecializedSignature(paramValues, loc);
+  signature = signature.getSpecializedSignature(paramValues, [&]() {
+    return mlir::emitError(shared.translateLocation(expr->getLoc()))
+           << "internal error: ";
+  });
+  assert(signature && "Error binding trait Self type");
 
   TypedAttr fnRef = ParamOperatorAttr::get(
       POC::GetTypeMethod,
-      {PValue(trait),
+      {PValue(baseType),
        StringAttr::get(baseName, StringType::get(funcOp.getContext()))},
       signature);
   if (bindings.empty())
@@ -695,9 +690,11 @@ TypedAttr ParamBindings::getBoundConstAttrFor(ASTType baseType,
       signature, baseName, expr->getLoc(), funcOp.getLoc());
   if (!newBindings)
     return {};
-  SmallVector<TypedAttr> operands{fnRef};
-  llvm::append_range(operands, newBindings);
-  return ParamOperatorAttr::get(POC::BindSignature, operands);
+
+  SmallVector<TypedAttr> bindSigOperands;
+  bindSigOperands.push_back(fnRef);
+  llvm::append_range(bindSigOperands, newBindings);
+  return ParamOperatorAttr::get(POC::BindSignature, bindSigOperands);
 }
 
 /// Resolve the callee into a single PValue callee.

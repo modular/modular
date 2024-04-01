@@ -2117,25 +2117,20 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
     }
   }
 
-  // Insert the implicit trait parameters:
-  // - MT: an TypeType which points to the struct that implements this trait.
-  // - T: a ParamRef to MT which is the type of MT.
-  // TODO: build AnyType instead
-  auto mt = ParamDeclAttr::get(decl.mangleParamName("MT"),
-                               TypeType::get(getContext()));
-  auto mtRef = ParamDeclAttr::get(decl.mangleParamName("T"),
-                                  ParamRefType::get(ParamDeclRefAttr::get(mt)));
+  // Insert the implicit trait parameter:
+  // - T: a value of this trait type - the struct conforming to this trait.
+  TraitType traitType = traitOp.bindReference();
+  auto actualType = ParamDeclAttr::get(decl.mangleParamName("T"), traitType);
 
-  auto params = ParamDeclArrayAttr::get(getContext(), {mt, mtRef});
-  SmallVector<StringAttr> paramNames(2, StringAttr::get(getContext()));
-  SmallVector<PassingKind> paramPassingKinds(2, PassingKind::Implicit);
-  auto paramListAttr =
-      PogsAttr::get(getContext(), paramNames, paramPassingKinds);
+  auto paramArray = ParamDeclArrayAttr::get(getContext(), {actualType});
+  StringAttr paramName = StringAttr::get(getContext(), "");
+  PassingKind paramPassingKind = PassingKind::Implicit;
+  auto paramListAttr = PogsAttr::get(getContext(), paramName, paramPassingKind);
   auto sig = TypeSignatureType::remapToSignature(silenceErrors(getContext()),
-                                                 params, paramListAttr);
+                                                 paramArray, paramListAttr);
   if (!sig)
     return failure();
-  traitOp.setParams(params);
+  traitOp.setParams(paramArray);
   traitOp.setSignature(sig);
   traitOp.setParentTypes(parentTypes);
 
@@ -2144,6 +2139,67 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   shared.notifyListenerOnTraitDecl(decl, identifierLoc);
 
   return success();
+}
+
+namespace {
+/// This replaces one attribute with another without respect to its original
+/// type.  TODO: Is there a better way to do this?
+struct AttrReplacer : public ParameterReplacer<AttrReplacer> {
+  TypedAttr oldAttrValue, newAttrValue;
+
+  AttrReplacer(TypedAttr oldAttrValue, TypedAttr newAttrValue)
+      : oldAttrValue(oldAttrValue), newAttrValue(newAttrValue) {}
+
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  doReplace(T value, size_t depth) {
+    if (auto result = tryReplace(value, depth))
+      return result;
+
+    if constexpr (std::is_base_of_v<Type, T>)
+      if (isa<ParameterScopeTypeInterface>(value))
+        ++depth;
+
+    SmallVector<Attribute, 16> newAttrs;
+    SmallVector<Type, 16> newTypes;
+    bool changed = false;
+    auto walkFn = [&](auto value, SmallVectorImpl<decltype(value)> &values) {
+      auto newValue = this->replaceImpl(value, depth);
+      changed |= newValue != value;
+      values.push_back(newValue);
+    };
+    value.walkImmediateSubElements(
+        [&](Attribute attr) { walkFn(attr, newAttrs); },
+        [&](Type type) { walkFn(type, newTypes); });
+    if (!changed)
+      return value;
+    return value.replaceImmediateSubElements(newAttrs, newTypes);
+  }
+
+  // CRTP methods.
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    if (attr == oldAttrValue)
+      return newAttrValue;
+    return {};
+  }
+  Type tryReplace(Type, size_t) { return {}; }
+};
+} // end anonymous namespace
+
+/// Update the types for a method pulled from a trait base to a derived trait,
+/// so they refer to the correct self type.
+static void replaceTraitMethodSelfTypes(LIT::FuncOp func,
+                                        TypedAttr parentSelfType,
+                                        TypedAttr traitSelfType) {
+  assert(isa<ParamDeclRefAttr>(parentSelfType) &&
+         isa<ParamDeclRefAttr>(traitSelfType));
+  AttrReplacer replacer(parentSelfType, traitSelfType);
+
+  // Update functionType, signature, and block argument types.
+  func.setSignature(replacer.replace(func.getSignature()));
+  func.setFunctionType(replacer.replace(func.getFunctionType()));
+  for (auto arg : func.getBody()->getArguments())
+    arg.setType(replacer.replace(arg.getType()));
 }
 
 ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
@@ -2181,6 +2237,10 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
     }
   }
 
+  // Get our Self type, which will be a reference to the T parameter on this
+  // trait.
+  ASTType traitSelfType = traitDecl.getSelfType();
+
   // Now just pull in the functions in the bodies of all parents.
   Block &body = *traitOp.getBody();
   for (TypeLineageAttr parent : traitOp.getParentTypes()) {
@@ -2188,6 +2248,8 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
         getDeclForTypeSymbol(cast<TraitType>(parent.getType()).getSymbol());
     if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
       continue;
+
+    ASTType parentSelfType = parentDecl.getSelfType();
 
     // Inherit function members, which we can override without worry because
     // they are all just declarations.
@@ -2203,6 +2265,15 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
         if (!existingFns.insert({name, func.getSymNameAttr()}).second)
           continue;
         func = func.clone();
+
+        // We copied down the function from a base trait to a derived trait,
+        // and its type (e.g. self arguments, but not limited to them) will
+        // refer to the T parameter from the base trait.  That will have a
+        // metatype from the base trait which we need to update to our correct
+        // Self type.
+        replaceTraitMethodSelfTypes(func, PValue(parentSelfType).get(),
+                                    PValue(traitSelfType).get());
+
         // Mark the function as inherited so that conformance checking won't
         // give duplicate errors if it is not provided.
         func.setIsInherited(true);

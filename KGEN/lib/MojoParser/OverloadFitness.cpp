@@ -1193,12 +1193,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           diag =
               emitDiagFor.wrongPosOnlyCount(numPosOnly, numActual, "parameter");
         } else {
-          // Hide the implicit trait parameters from the diagnostic.
-          // FIXME(#25492): This is awkward and the model should be reworked.
+          // Hide the implicit trait parameter from the diagnostic.
           size_t hidden = 0;
           if (ASTType type = callable.baseType)
             if (isa_and_nonnull<TraitType>(type.getMetaType()))
-              hidden = 2;
+              hidden = 1;
           size_t numExpected =
               signature.getNumParams() - hidden -
               countNumImplicitKinds(signature.getParamPassingKinds());
