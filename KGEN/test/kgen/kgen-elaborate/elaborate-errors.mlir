@@ -134,16 +134,6 @@ kgen.generator export @caller() {
 
 // -----
 
-// expected-error @below {{no viable expansions found}}
-kgen.generator @bad_recursion() {
-  kgen.param.fork N = <[1, 2]>
-  // expected-note @below {{recursive call to function with more than 1 implementation}}
-  kgen.call @bad_recursion() : () -> ()
-  kgen.return
-}
-
-// -----
-
 // COM: Unused `kgen.param.declare` should not be ignored.
 
 // expected-note @below {{no successful concrete nodes}}
@@ -157,31 +147,6 @@ kgen.generator @fail_if_zero<value>() -> index {
 // expected-error @below {{no viable expansions found}}
 kgen.generator @unused_param_declare() {
   kgen.param.declare unused = <apply(:() -> index bind_signature(:<index>() -> index @fail_if_zero, 0))>
-  kgen.return
-}
-
-// -----
-
-// expected-note @below {{failed to interpret function @fails_to_interpret_if_true}}
-kgen.generator @fails_to_interpret_if_true<cond: i1>() -> index {
-  kgen.param.if <cond> {
-    // expected-note @below {{failed to fold operation}}
-    "unknown.op"() : () -> ()
-    kgen.param.yield
-  } else {
-    kgen.param.yield
-  }
-  %idx0 = index.constant 0
-  kgen.return %idx0 : index
-}
-
-// expected-error @below {{no viable expansions found}}
-kgen.generator @interpreter_state_owner() {
-  // expected-note @below {{failed to evaluate 'apply'}}
-  kgen.param.fork first_fails = <[
-    apply(:() -> index @fails_to_interpret_if_true<:i1 1>),
-    apply(:() -> index @fails_to_interpret_if_true<:i1 0>)
-  ]>
   kgen.return
 }
 
@@ -254,15 +219,6 @@ kgen.generator export @entry() {
 
 // -----
 
-// expected-error @below {{primary generator with more than one successful implementation}}
-// expected-note @below {{select one implementation using search or remove forks in the implementation}}
-kgen.generator export @multiversioned() {
-  kgen.param.fork N = <[1, 2]>
-  kgen.return
-}
-
-// -----
-
 // expected-note @below {{no viable expansions found}}
 kgen.generator @no_impls() {
 // expected-note @below {{constraint failed}}
@@ -282,22 +238,6 @@ kgen.generator export @get_all_impls_none() {
 kgen.generator @failed_param_rebind() {
   // expected-note @below {{rebind input type 'i64' does not match result type 'i32'}}
   kgen.param.declare value: i32 = <rebind(:i64 2)>
-  kgen.return
-}
-
-// -----
-
-// expected-error @below {{primary generator with more than one successful implementation}}
-// expected-note @below {{select one implementation using search or remove forks in the implementation}}
-kgen.generator @kernel() {
-  kgen.param.fork a = <[1, 2]>
-  kgen.return
-}
-
-// expected-error @below {{no viable expansions found}}
-kgen.generator export @top() {
-  // expected-note @below {{failed to run the pass manager}}
-  kgen.param.constant: string = <compile_assembly(current_target(), asm, :() -> () @kernel)>
   kgen.return
 }
 

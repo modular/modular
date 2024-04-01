@@ -633,24 +633,11 @@ private:
   /// function and call the verifier.
   void finalizeFunction(ImplNode *node);
 
-  /// Process a kgen.param.fork op. This will create a clone for each value of
-  /// the parameter search, and will mark the parent as an error. This results
-  /// in a very clean model where the parent of the current parent (a generator)
-  /// will have its children be the successfully concretized parameter search
-  /// nodes.
-  ElaborationState processParamForkOp(ImplNode *parent, ParamForkOp op);
-
   /// Parameter constants are the only operation that can bridge the parameter
   /// domain into the runtime domain. Use it to root concretization of nested
   /// symbol references.
   template <typename OpT>
   ElaborationState processParamConstantOp(ImplNode *parent, OpT op);
-
-  /// Spawn a clone for kgen.param.fork. This creates a new FuncOp that is a
-  /// sibling to the parent of the kgen.param.fork op. It replaces the
-  /// kgen.param.fork with a param.declare to allow specialization to succeed.
-  void spawnParamForkClone(ParamForkOp forkOp, Attribute value,
-                           ImplNode *forkParentNode);
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.
@@ -1069,47 +1056,6 @@ ErrorOrSuccess ElaboratorImpl::evaluateFunctions(ImplNode *inode,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processParamForkOp
-//===----------------------------------------------------------------------===//
-
-ElaborationState ElaboratorImpl::processParamForkOp(ImplNode *parent,
-                                                    ParamForkOp op) {
-  auto _ = logger.scope("Processing ParamForkOp");
-  LLVM_DEBUG(logger.scope("Options") << op.getValuesAttr() << "\n");
-
-  Attribute value;
-  HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getValuesAttr());
-
-  auto forkValuesAttr = cast<VariadicAttr>(value);
-
-  if (forkValuesAttr.getValues().empty()) {
-    parent->setToError(ErrorTree(op.getLoc(), "no candidates found"));
-    return failure();
-  }
-
-  // Loop over all the possible candidates that we will search over, spawning
-  // N possibilities to explore.
-  SmallVector<ErrorTree> errors;
-  DenseSet<Attribute> seenValues;
-  seenValues.reserve(forkValuesAttr.getValues().size());
-  for (Attribute value : forkValuesAttr.getValues().drop_front()) {
-    // If we've already seen this concrete value before,
-    // ignore the duplicate.
-    if (!seenValues.insert(value).second)
-      continue;
-
-    // Otherwise, spawn a clone for this value.
-    spawnParamForkClone(op, value, parent);
-  }
-
-  // Take the first value for the current function.
-  parent->getEvaluator().setOrOverwriteParameterValue(
-      op.getParamDecl(), forkValuesAttr.getValues().front());
-  op.erase();
-  return ElaborationState::advance();
-}
-
-//===----------------------------------------------------------------------===//
 // ElaboratorImpl::processParamConstantOp
 //===----------------------------------------------------------------------===//
 
@@ -1153,46 +1099,6 @@ ElaborationState ElaboratorImpl::processParamConstantOp(ImplNode *parent,
   op.getResult().setType(value.getType());
   op.setValueAttr(value);
   return ElaborationState::advance();
-}
-
-//===----------------------------------------------------------------------===//
-// ElaboratorImpl::spawnParamForkClone
-//===----------------------------------------------------------------------===//
-
-/// Spawn a clone from a kgen.param.fork op.
-void ElaboratorImpl::spawnParamForkClone(ParamForkOp forkOp, Attribute value,
-                                         ImplNode *forkParentNode) {
-  auto _ = logger.scope("Spawning ParamForkClone for '", value, "'");
-
-  // Start by cloning the current WIP func to a new copy of it.
-  IRMapping map;
-
-  // Hook this new clone up correctly.
-  ImplNode *newFuncNode =
-      fork(forkParentNode, map, forkOp.getParamDecl().getName(), value);
-
-  // Change the future of this func by resolving the forkOp in the new func
-  // to the specified value.
-  auto newFork = cast<ParamForkOp>(map.lookup(forkOp.getOperation()));
-
-  LLVM_DEBUG(logger << "Setting '" << newFork.getParamDecl() << "' = '" << value
-                    << "'\n");
-
-  // Update the evaluator.
-  newFuncNode->getEvaluator().setOrOverwriteParameterValue(
-      newFork.getParamDecl(), value);
-
-  // Immediately process the fork operation in the clone by erasing it here.
-  // Take it off the clone's worklist before doing so.
-  assert(newFuncNode->stack.back().ops.back() == newFork);
-  newFuncNode->stack.back().ops.pop_back();
-  newFork->erase();
-
-  // And finally, push the forked node onto its parent's worklist, so that it
-  // will get processed after this function returns.
-  assert(forkParentNode->parent->numActive != 0 &&
-         "forking a completed parameter node?");
-  initialScheduleImplNode(newFuncNode);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1912,8 +1818,6 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
     return processParamDeclareOp(node, declare);
   } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
     return processParamResultBindOp(node, bind);
-  } else if (auto fork = dyn_cast<ParamForkOp>(op)) {
-    return processParamForkOp(node, fork);
   } else if (auto constant = dyn_cast<ParamConstantOp>(op)) {
     return processParamConstantOp(node, constant);
   } else if (auto constant = dyn_cast<ParamMaterializeOp>(op)) {

@@ -534,34 +534,6 @@ def KGEN_ParamDeclareRegionOp : KGENOp<"param.declare.region", [
 }
 
 //===----------------------------------------------------------------------===//
-// ParamForkOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamForkOp : KGENOp<"param.fork",
-    [DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
-  let summary = [{
-    The `kgen.param.fork` operation declares a tuple of parameters and binds its
-    value to one of a set values at elaboration time. This operation represents
-    a fork of the current generator by multi-versioning the generator based on
-    the possible values of the declared parameter.
-
-    Example:
-
-    ```mlir
-    kgen.param.declare PARAMS: !kgen.variadic<!kgen.list<index[2]>> =
-                              <#kgen.variadic<[1, 11], [2, 22], [3, 33]>>
-    kgen.param.fork PARAM_TUPLE : list<index[2]> = <PARAMS>
-    ```
-  }];
-
-  let arguments = (ins KGEN_ParamDeclAttr:$paramDecl,
-                       AttrOfType<KGEN_VariadicType>:$values);
-  let assemblyFormat = [{
-    custom<ParamForkOpValue>($paramDecl, $values) attr-dict
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // ParamApplyOp
 //===----------------------------------------------------------------------===//
 
