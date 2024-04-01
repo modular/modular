@@ -663,18 +663,6 @@ private:
 } // namespace
 
 ErrorOr<RCRef<BlobCacheBackend>>
-M::Cache::getS3Backend(const S3BackendConfig &config) {
-#if defined(__linux__)
-  constexpr llvm::StringLiteral libPath = "libblobcache_s3.so";
-#elif defined(__APPLE__)
-  constexpr llvm::StringLiteral libPath = "libblobcache_s3.dylib";
-#elif defined(_WIN32)
-  constexpr llvm::StringLiteral libPath = "blobcache_s3.dll";
-#endif
-  return DylibBackendStub::create(libPath, &config);
-}
-
-ErrorOr<RCRef<BlobCacheBackend>>
 M::Cache::getLocalDefaultBackendChain(const std::filesystem::path &cacheDir,
                                       std::string version) {
   auto filesystemOr = getFilesystemBackend(cacheDir, std::move(version));
@@ -696,23 +684,6 @@ M::Cache::getDefaultBackendChain(const URI &uri, std::string version) {
   // If no version is specified, use the default version.
   if (version.empty())
     version = getModularVersionString();
-
-  if (scheme == "s3") {
-    StringRef path = uri.getPath();
-    S3BackendConfig config(uri.getAuthority().str(),
-                           path.str() + "/" + version);
-    auto backendOr = getS3Backend(config);
-    if (backendOr.isError())
-      return backendOr.takeError();
-
-    // Get a default local backend chain and add the s3 backend to the end.
-    path.consume_front("/"); // Convert the path component to relative.
-    auto localChainOr = getLocalDefaultBackendChain(path.str(), version);
-    if (localChainOr.isError())
-      return localChainOr.takeError();
-    (*localChainOr)->appendDelegate(std::move(*backendOr));
-    return localChainOr;
-  }
 
   return Error("Can't build BlobCache backend chain with unknown URI scheme: " +
                scheme);
