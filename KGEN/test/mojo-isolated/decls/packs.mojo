@@ -41,7 +41,7 @@ fn takeOwnedAnyTypePack[*Ts: AnyType](owned *rest: *Ts):
 # Check the argument pack.
 # CHECK-LABEL: lit.func @"takeOwnedSomeTraitPack
 # CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
-# CHECK-SAME: :!lit.anytrait<!SomeTrait> !SomeTrait, :variadic<!SomeTrait> Ts>> owned_in_mem|pack)
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>> owned_in_mem|pack)
 fn takeOwnedSomeTraitPack[*Ts: SomeTrait](owned *rest: *Ts):
   pass
 

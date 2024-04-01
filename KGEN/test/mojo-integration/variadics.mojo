@@ -140,23 +140,16 @@ fn test_owned_reg_varargs():
 # owned variadic packs
 # ===----------------------------------------------------------------------=== #
 
-# TODO: VariadicPack can't work with Stringable and similar traits because we
-# don't have an AnyTypeType
-#
-# fn test_owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
-#  var packFormal = VariadicPack(pack, True)
-#
-#  fn process[T: Stringable](a: T):
-#      print("hello", a)
-#  packFormal.each[process]()
 
-
-fn test_owned_variadic_pack[*Ts: AnyType](owned *pack: *Ts):
+fn test_owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
     print("-- testing owned variadic pack with", len(pack), "elements")
 
     fn process[T: AnyType](a: T):
         print("hello value")
 
+    # TODO: each should take a Stringable.
+    # fn process[T: Stringable](a: T):
+    #   print("hello", a)
     pack.each[process]()
 
 

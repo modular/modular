@@ -609,11 +609,18 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     return {};
   }
 
+  // Convert the expected trait type to something of !lit.anytrait<AnyType> type
+  // even if it is a more specific type.
+  TypedAttr elementTrait = PValue(elementType).get();
+  if (elementTrait.getType() != packStruct.getParams()[2].getType())
+    elementTrait = ParamOperatorAttr::get(POC::Rebind, elementTrait,
+                                          packStruct.getParams()[2].getType());
+
   // Bind the VariadicPack[isMutable, lifetime, element_trait, element_types,
   // /*TODO*/ addr_space] parameters.
   // TODO: Support addr_space in VariadicPack! refType.getAddressSpace()
-  return packStruct.bindReference({refType.isMutable(), refType.getLifetime(),
-                                   PValue(elementType).get(), param.get()});
+  return packStruct.bindReference(
+      {refType.isMutable(), refType.getLifetime(), elementTrait, param.get()});
 }
 
 /// Type check each argument in turn, resolving their type and default
