@@ -305,21 +305,22 @@ fn _accumulate_x86_simd[
         if prefetch_offset:
 
             @unroll
-            for i in range(num_cols):
+            for j in range(num_cols):
                 (
-                    b + prefetch_offset.value() * kernel_width + i * simd_size
+                    b_ptr
+                    + prefetch_offset.value() * kernel_width
+                    + j * simd_size
                 ).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
 
         @unroll
         for i in range(num_rows):
+            # Broadcast an scalar from A to a simd vector.
+            var a_splat_vec = SIMD[a.type, simd_size](a[l + i * a_stride])
 
             @unroll
             for j in range(num_cols):
-                # Broadcast an scalar from A to a simd vector.
-                var a_splat_vec = SIMD[a.type, simd_size](a[l + i * a_stride])
-
                 # Load a simd vector from B.
                 var b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
                     b_ptr, j * simd_size, partial_load_b_size
@@ -374,22 +375,23 @@ fn _accumulate_x86_simd[
         if prefetch_offset:
 
             @unroll
-            for i in range(num_cols):
+            for j in range(num_cols):
                 (
-                    b + prefetch_offset.value() * kernel_width + i * simd_size
+                    b_ptr
+                    + prefetch_offset.value() * kernel_width
+                    + j * simd_size
                 ).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
 
         @unroll
         for i in range(num_rows):
+            # Broadcast an scalar from A to a simd vector.
+            var a_idx = a_base_offsets[i].value + a_offset + l
+            var a_splat_vec = SIMD[a.type, simd_size](a[a_idx])
 
             @unroll
             for j in range(num_cols):
-                # Broadcast an scalar from A to a simd vector.
-                var a_idx = a_base_offsets[i].value + a_offset + l
-                var a_splat_vec = SIMD[a.type, simd_size](a[a_idx])
-
                 # Load a simd vector from B.
                 var b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
                     b_ptr, j * simd_size, partial_load_b_size
