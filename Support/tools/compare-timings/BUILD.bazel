@@ -1,0 +1,8 @@
+cc_binary(
+    name = "compare-timings",
+    srcs = glob(["*.cpp"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//Support:Stats",
+    ],
+)

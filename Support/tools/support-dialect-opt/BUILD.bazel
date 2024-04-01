@@ -1,0 +1,12 @@
+cc_binary(
+    name = "support-dialect-opt",
+    srcs = glob(["*.cpp"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//LLCL:Runtime",
+        "//Support:Base",
+        "//Support:DebugInfoToLLVM",
+        "//Support:MDialect",
+        "@llvm-project//mlir:MlirOptLib",
+    ],
+)

@@ -4,6 +4,43 @@ package(
 )
 
 cc_library(
+    name = "CompilerSupportHeaders",
+    hdrs = glob([
+        "include/LLCL/CompilerSupport/*.h",
+    ]),
+    strip_include_prefix = "include",
+    deps = [
+        ":RuntimeHeaders",
+        "//Support:Threading",
+    ],
+)
+
+cc_library(
+    name = "RuntimeHeaders",
+    hdrs = glob([
+        "include/LLCL/Runtime/*.h",
+        "include/LLCL/Runtime/Globals/*.h",
+    ]) + [
+        "include/LLCL/ForwardDecls.h",
+    ],
+    local_defines = select({
+        "@platforms//os:linux": ["MODULAR_HAVE_SEM_TIMEDWAIT"],
+        "//conditions:default": [],
+    }),
+    strip_include_prefix = "include",
+    deps = [
+        ":SupportHeaders",
+        "//Support:ProfilingHeaders",
+    ],
+)
+
+cc_library(
+    name = "SupportHeaders",
+    hdrs = glob(["include/LLCL/Support/*.h"]),
+    strip_include_prefix = "include",
+)
+
+cc_library(
     name = "CompilerSupport",
     srcs = glob(["lib/CompilerSupport/*.cpp"]),
     hdrs = glob(["include/LLCL/CompilerSupport/*.h"]),
