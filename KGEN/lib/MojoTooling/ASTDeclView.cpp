@@ -420,12 +420,15 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
 
-  // We don't print the `borrowed` convention because that's the default for all
-  // args.
-  if (inout)
+  // Print the convention of the argument, eliding the defaults. In `fn`,
+  // borrowed is the default convention. In `def`, owned is the default
+  // convention.
+  if (isInout())
     os << "inout ";
-  if (owned)
+  if (isOwned() && !parentIsDef)
     os << "owned ";
+  if (isBorrowed() && parentIsDef)
+    os << "borrowed ";
 
   dumpIdentifierWithType(os, getName(), type);
   if (defaultValue)
@@ -441,12 +444,12 @@ std::string ArgumentDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object ArgumentDeclView::toJSON(MojoParserContext &ctx) const {
+  StringRef conventions[] = {"borrowed", "inout", "owned"};
   llvm::json::Object object{
       {"description", description},
-      {"inout", inout},
+      {"convention", conventions[static_cast<int>(convention)]},
       {"kind", getKindAsString()},
       {"name", getName().str()},
-      {"owned", owned},
       {"type", type},
       {"passingKind", stringifyPassingKind(passingKind)},
   };
@@ -664,8 +667,13 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_FunctionDeclView,
                declRef.getName().value_or(StringRef{})) {
   auto funcOp = cast<LIT::FuncOp>(declRef.getIfOperation());
-  LITSignatureType signature = funcOp.getSignature();
+  raisesFlag = funcOp.isThrows();
+  isAsyncFlag = funcOp.isAsync();
+  isStaticFlag = funcOp.getIsStatic();
+  isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
+  isDefFlag = funcOp.isDef();
 
+  LITSignatureType signature = funcOp.getSignature();
   ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
   ArrayRef<StringAttr> argNames = signature.getArgNames();
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
@@ -714,13 +722,17 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     if (auto defaultAttr = defaultArgHandler.getDefault(argIdx++))
       defaultValue = generatePValueString(defaultAttr);
 
+    auto declConvention = ArgumentDeclView::Convention::kBorrowed;
+    if (convention == ArgConvention::ByRef ||
+        convention == ArgConvention::InitSelf)
+      declConvention = ArgumentDeclView::Convention::kInOut;
+    else if (convention == ArgConvention::OwnedInMem ||
+             convention == ArgConvention::OwnedInReg)
+      declConvention = ArgumentDeclView::Convention::kOwned;
     args.push_back(ArgumentDeclView(
         name.getValue(), generateTypeString(type, selfType, convention),
-        passingKind, std::move(defaultValue),
-        /*inout=*/convention == ArgConvention::ByRef ||
-            convention == ArgConvention::InitSelf,
-        /*owned=*/convention == ArgConvention::OwnedInMem ||
-            convention == ArgConvention::OwnedInReg));
+        passingKind, std::move(defaultValue), /*parentIsDef=*/isDefFlag,
+        declConvention));
   }
 
   // Grab the types of the parameters to the function.
@@ -745,12 +757,6 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     summary = docStr->getSummary();
     augmentWithDocumentation(docStr->getDescription());
   }
-
-  raisesFlag = funcOp.isThrows();
-  isAsyncFlag = funcOp.isAsync();
-  isStaticFlag = funcOp.getIsStatic();
-  isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
-  isDefFlag = funcOp.isDef();
 }
 
 //===----------------------------------------------------------------------===//

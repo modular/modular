@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/ASTDecl.h"
@@ -28,11 +29,16 @@ using namespace M::KGEN::LIT;
 /// corresponding BlockArgument. Otherwise, return null.
 static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
   return TypeSwitch<DeclIRValue, BlockArgument>(declRef->getIRValue())
-      .Case<SBValue, SRValue, MBValue, MLValue>([&](auto val) -> BlockArgument {
+      .Case<SBValue, SRValue, MBValue, MLValue>([&](Value val) {
+        // Look through rebinds of arguments, which may happen for certain
+        // argument conventions.
+        if (auto rebind = val.getDefiningOp<RebindOp>())
+          val = rebind.getInput();
+
         if (auto bbArg = dyn_cast<BlockArgument>(Value(val)))
           if (isa<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
             return bbArg;
-        return {};
+        return BlockArgument();
       })
       .Default({});
 }
@@ -62,7 +68,7 @@ MojoASTTypeRef MojoASTDeclRef::getType() const {
   return TypeSwitch<ASTDecl &, MojoASTTypeRef>(*decl)
       .Case<GlobalVarDeclOp, VarDeclOp>(
           [&](auto op) { return MojoASTTypeRef(op.getType()); })
-      .Case([&](FuncOp op) { return op.getFullSignature(); })
+      .Case([&](LIT::FuncOp op) { return op.getFullSignature(); })
       .Case([&](StructDeclOp op) { return decl->computeSelfTypeForStruct(op); })
       .Case([&](TraitDeclOp op) { return decl->computeSelfTypeForTrait(op); })
       .Default({});
@@ -75,7 +81,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     return TypeSwitch<Operation &, std::optional<StringRef>>(*op)
         .Case<GlobalVarDeclOp, StructDeclOp, StructFieldOp, VarDeclOp>(
             [](auto op) { return op.getName(); })
-        .Case([&](FuncOp op) { return op.getSourceName(); })
+        .Case([&](LIT::FuncOp op) { return op.getSourceName(); })
         .Case<FileModuleOp, PackageOp>([](auto op) { return op.getSymName(); })
         .Case([](AliasDeclOp op) {
           return demangleParameterName(op.getParamDecl().getName());
@@ -91,7 +97,7 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     return name;
 
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
-    auto func = cast<FuncOp>(*decl->getParentDecl());
+    auto func = cast<LIT::FuncOp>(*decl->getParentDecl());
     ArrayRef<StringAttr> argNames = func.getSignature().getArgNames();
     if (size_t argNumber = bbArg.getArgNumber(); argNumber < argNames.size())
       return argNames[argNumber];
@@ -110,38 +116,54 @@ MojoASTDeclRef MojoASTDeclRef::getParentDecl() const {
   return MojoASTDeclRef(decl->getParentDecl());
 }
 
+/// Create an Argument decl view for the given decl and argument index.
+std::unique_ptr<ArgumentDeclView> createArgumentDeclView(MojoASTDeclRef declRef,
+                                                         unsigned arg) {
+  // The parent FunctionDeclView is the one who owns the docstring of this
+  // argument, so it's easier just to contruct that view and extract the
+  // argument from it.
+  MojoASTDeclRef parentDecl = declRef.getParentDecl();
+  auto functionView =
+      llvm::unique_dyn_cast_or_null<FunctionDeclView>(parentDecl.getView());
+  if (!functionView)
+    return nullptr;
+  return std::make_unique<ArgumentDeclView>(functionView->getArguments()[arg]);
+}
+
 std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
   if (isa<AliasDeclOp>(*decl))
     return std::unique_ptr<AliasDeclView>(new AliasDeclView(*this));
   if (isa<FileModuleOp>(*decl))
     return std::unique_ptr<ModuleDeclView>(new ModuleDeclView(*this));
-  if (isa<FuncOp>(*decl))
+  if (isa<LIT::FuncOp>(*decl))
     return std::unique_ptr<FunctionDeclView>(new FunctionDeclView(*this));
   if (isa<StructDeclOp>(*decl))
     return std::unique_ptr<StructDeclView>(new StructDeclView(*this));
   if (isa<StructFieldOp>(*decl))
     return std::unique_ptr<StructFieldDeclView>(new StructFieldDeclView(*this));
-  if (isa<GlobalVarDeclOp, VarDeclOp>(*decl))
+  if (auto varDecl = dyn_cast<VarDeclOp>(*decl)) {
+    // Handle the case of an argument materialized in a variable.
+    if (varDecl.getKind() == VarDeclKind::Arg) {
+      auto parentFn = varDecl->getParentOfType<LIT::FuncOp>();
+      auto argNames = parentFn.getSignature().getArgNames();
+      auto argIt = llvm::find(argNames, varDecl.getNameAttr());
+      if (argIt != argNames.end())
+        return createArgumentDeclView(*this, argIt - argNames.begin());
+    }
+    // Otherwise, this is a regular variable.
+    return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
+  }
+  if (isa<GlobalVarDeclOp>(*decl))
     return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));
   if (isa<PackageOp>(*decl))
     return std::unique_ptr<PackageDeclView>(new PackageDeclView(*this));
   if (isa<TraitDeclOp>(*decl))
     return std::unique_ptr<TraitDeclView>(new TraitDeclView(*this));
 
-  // After failing to match with regular Ops, we then inspect the IR to identify
-  // if this decl is an argument.
-  if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
-    // The parent FunctionDeclView is the one who owns the docstring of this
-    // argument, so it's easier just to contruct that view and extract the
-    // argument from it.
-    MojoASTDeclRef parentDecl = getParentDecl();
-    auto functionView =
-        llvm::unique_dyn_cast_or_null<FunctionDeclView>(parentDecl.getView());
-    if (!functionView)
-      return nullptr;
-    return std::make_unique<ArgumentDeclView>(
-        functionView->getArguments()[bbArg.getArgNumber()]);
-  }
+  // After failing to match with regular Ops, we then inspect the IR to
+  // identify if this decl is an argument.
+  if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this))
+    return createArgumentDeclView(*this, bbArg.getArgNumber());
 
   // Now we inspect the IR checking for a parameter.
   if (ParamDeclRefAttr param = getIfParameter(*this)) {
@@ -163,9 +185,6 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
         .Default({nullptr});
   }
 
-  // FIXME(#17974): Owned arguments are resolved as Var decls, and currently
-  // it is not possible to recover their original BlockArguments, so we can't
-  // generate a proper View for this kind of decl.
   return nullptr;
 }
 
@@ -174,13 +193,18 @@ std::optional<DeclViewKind> MojoASTDeclRef::getApproximateViewKind() const {
     return DeclViewKind::DK_AliasDeclView;
   if (isa<FileModuleOp>(*decl))
     return DeclViewKind::DK_ModuleDeclView;
-  if (isa<FuncOp>(*decl))
+  if (isa<LIT::FuncOp>(*decl))
     return DeclViewKind::DK_FunctionDeclView;
   if (isa<StructDeclOp>(*decl))
     return DeclViewKind::DK_StructDeclView;
   if (isa<StructFieldOp>(*decl))
     return DeclViewKind::DK_StructFieldDeclView;
-  if (isa<GlobalVarDeclOp, VarDeclOp>(*decl))
+  if (auto varDecl = dyn_cast<VarDeclOp>(*decl)) {
+    if (varDecl.getKind() == VarDeclKind::Arg)
+      return DeclViewKind::DK_ArgumentDeclView;
+    return DeclViewKind::DK_VariableDeclView;
+  }
+  if (isa<GlobalVarDeclOp>(*decl))
     return DeclViewKind::DK_VariableDeclView;
   if (isa<PackageOp>(*decl))
     return DeclViewKind::DK_PackageDeclView;
@@ -195,10 +219,6 @@ std::optional<DeclViewKind> MojoASTDeclRef::getApproximateViewKind() const {
   // Now we inspect the IR checking for a parameter.
   if (getIfParameter(*this))
     return DeclViewKind::DK_ParameterDeclView;
-
-  // FIXME(#17974): Owned arguments are resolved as Var decls, and currently
-  // it is not possible to recover their original BlockArguments, so we can't
-  // generate a proper View for this kind of decl.
   return std::nullopt;
 }
 

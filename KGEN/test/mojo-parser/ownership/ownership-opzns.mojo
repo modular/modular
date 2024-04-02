@@ -137,7 +137,7 @@ struct RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg1
 fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
-    # CHECK-NEXT: %a_0 = lit.var.decl "a" imp
+    # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
     # CHECK-NEXT: lit.ref.store %a, %a_0
     # CHECK-NEXT: [[EOL:%.*]] = lit.transfer_mem_ownership %a
     # CHECK-NEXT: [[AVAL:%.*]] = lit.load.consume [[EOL]]
@@ -147,7 +147,7 @@ fn result_reg1(owned a: RegUniqueMovable) -> RegUniqueMovable:
 
 # CHECK-LABEL: lit.func @"result_reg2
 fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %a_0 = lit.var.decl "a" imp
+    # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
     # CHECK-NEXT: lit.ref.store %a, %a_0
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a_0
     # CHECK-NEXT: kgen.return [[A]]
@@ -156,7 +156,7 @@ fn result_reg2(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg3
 fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %a_0 = lit.var.decl "a" imp
+    # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
     # CHECK-NEXT: lit.ref.store %a, %a_0
     # CHECK-NEXT: [[AREF:%.*]] = lit.transfer_mem_ownership %a_0
     # CHECK-NEXT: [[A:%.*]] = lit.load.consume [[AREF]]
@@ -166,7 +166,7 @@ fn result_reg3(owned a: RegMovableCopyable) -> RegMovableCopyable:
 
 # CHECK-LABEL: lit.func @"result_reg4
 fn result_reg4(owned a: RegMovableCopyable) -> RegMovableCopyable:
-    # CHECK-NEXT: %a_0 = lit.var.decl "a" imp
+    # CHECK-NEXT: %a_0 = lit.var.decl "a" arg
     # CHECK-NEXT: lit.ref.store %a, %a_0
 
     # CHECK-NEXT: %x = lit.var.decl "x"

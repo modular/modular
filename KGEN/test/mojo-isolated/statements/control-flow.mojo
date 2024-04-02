@@ -284,7 +284,7 @@ fn test_while(a: Bool, b: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_else_outside_while
 def test_else_outside_while(a: Bool, b: Bool) -> Bool:
-    # CHECK: %a_0 = lit.var.decl "a" imp
+    # CHECK: %a_0 = lit.var.decl "a" arg
     # CHECK: lit.ref.store %a, %a_0
     # CHECK: hlcf.elif {
     # CHECK:   hlcf.elif.yield

@@ -58,6 +58,9 @@ def LIT_VarDeclKind : I32EnumAttr<"VarDeclKind",
   I32EnumAttrCase<"Implicit", 1, "imp">,
   /// Value is not declared by the user at all.
   I32EnumAttrCase<"Synthesized", 2, "synth">,
+  /// Value is a shadow of a function argument, for arguments that need a
+  /// variable location.
+  I32EnumAttrCase<"Arg", 3, "arg">,
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;

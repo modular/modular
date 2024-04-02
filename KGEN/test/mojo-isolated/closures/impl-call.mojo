@@ -19,7 +19,7 @@ struct MemType:
 # CHECK-NEXT: %[[V1:.*]] = lit.ref.struct.ger %[[SELF]][field1]
 # CHECK-NEXT: kgen.param.declare *"w`1": lifetime<1> = <(mutcast imm *"self`")>
 # CHECK-NEXT: %[[V1REF:.*]] = kgen.rebind %[[V1]]
-# CHECK-NEXT: %q_0 = lit.var.decl "q" imp
+# CHECK-NEXT: %q_0 = lit.var.decl "q" arg
 # CHECK-NEXT: lit.ref.store %q, %q_0
 # CHECK-NEXT: %[[V2:.*]] = lit.ref.load %[[V0REF]]
 # CHECK-NEXT: %[[V3:.*]] = lit.ref.load %[[V0REF]]

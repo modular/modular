@@ -121,17 +121,37 @@ def fn_that_raises() -> Int:
 # CHECK:          "description": "This is an argument."
 # CHECK:          "name": "arg"
 # CHECK:          "type": "Int"
-# CHECK:      "signature": "fn_with_args(arg: Int)",
+# CHECK:          "convention": "inout"
+# CHECK:          "description": "This is an inout arg."
+# CHECK:          "name": "inoutArg"
+# CHECK:          "type": "Int"
+# CHECK:          "convention": "owned"
+# CHECK:          "description": "This is an owned arg."
+# CHECK:          "name": "ownedArg"
+# CHECK:          "type": "Int"
+# CHECK:          "convention": "borrowed"
+# CHECK:          "description": "This is a borrowedArg."
+# CHECK:          "name": "borrowedArg"
+# CHECK:          "type": "Int"
+# CHECK:      "signature": "fn_with_args(arg: Int, inout inoutArg: Int, owned ownedArg: Int, borrowedArg: Int)",
 # CHECK:      "summary": "This is a function summary."
 
 
-fn fn_with_args(arg: Int):
+fn fn_with_args(
+    arg: Int,
+    inout inoutArg: Int,
+    owned ownedArg: Int,
+    borrowed borrowedArg: Int,
+):
     """This is a function summary.
 
     The is some kind of description.
 
     Args:
         arg: This is an argument.
+        inoutArg: This is an inout arg.
+        ownedArg: This is an owned arg.
+        borrowedArg: This is a borrowedArg.
     """
     return
 

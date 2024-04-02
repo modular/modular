@@ -181,13 +181,19 @@ private:
 /// View for function arguments, including varargs arguments.
 class ArgumentDeclView : public DeclView {
 public:
+  /// The convention this argument is passed with.
+  enum class Convention {
+    kBorrowed,
+    kInOut,
+    kOwned,
+  };
   ArgumentDeclView(StringRef name, StringRef type,
                    KGEN::LIT::PassingKind passingKind,
-                   std::optional<std::string> defaultValue, bool inout,
-                   bool owned)
+                   std::optional<std::string> defaultValue, bool parentIsDef,
+                   Convention convention)
       : DeclView(DeclViewKind::DK_ArgumentDeclView, name), type(type),
         passingKind(passingKind), defaultValue(std::move(defaultValue)),
-        inout(inout), owned(owned) {}
+        parentIsDef(parentIsDef), convention(convention) {}
 
   std::string getDeclarationSnippet() const override;
 
@@ -197,9 +203,9 @@ public:
 
   std::string getMarkdownDocString() const override;
 
-  bool isInout() const { return inout; }
-
-  bool isOwned() const { return owned; }
+  bool isBorrowed() const { return convention == Convention::kBorrowed; }
+  bool isInout() const { return convention == Convention::kInOut; }
+  bool isOwned() const { return convention == Convention::kOwned; }
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; };
 
@@ -215,8 +221,7 @@ public:
   ///    "kind": "argument",
   ///    "name": string,
   ///    "description": string,
-  ///    "inout": boolean,
-  ///    "owned": boolean,
+  ///    "convention": string, // "borrowed", "inout", "owned"
   ///    "type": string
   ///    "passingKind": string,
   ///    "defaultValue": string?
@@ -236,8 +241,8 @@ private:
   std::string type;
   KGEN::LIT::PassingKind passingKind;
   std::optional<std::string> defaultValue;
-  bool inout;
-  bool owned;
+  bool parentIsDef;
+  Convention convention;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
