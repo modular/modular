@@ -34,7 +34,7 @@ from sys import argv
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor
+from layout.layout_tensor import LayoutTensor, outer_product_acc
 from gpu.device_print import _printf
 from pathlib import Path
 
@@ -257,15 +257,7 @@ fn sgemm_double_buffer[
                 ].distribute[thread_layout_loadb](ThreadIdx.x())
                 thread_loadb_smem_frags.copy_from_async(thread_loadb_gmem_frags)
 
-            # FFMA loop
-            @unroll
-            for i in range(TM):
-
-                @unroll
-                for j in range(TN):
-                    c_reg[i, j] += (
-                        a_reg0[i].cast[c_type]() * b_reg0[j].cast[c_type]()
-                    )
+            outer_product_acc(c_reg, a_reg0, b_reg0)
 
             # Alternate buffer
             swap_ptr(a_reg0, a_reg1)
@@ -291,15 +283,7 @@ fn sgemm_double_buffer[
             ](lane_id)
             b_reg1.copy_from_numa(thread_loadb_smem_frags)
 
-        # FFMA loop
-        @unroll
-        for i in range(TM):
-
-            @unroll
-            for j in range(TN):
-                c_reg[i, j] += (
-                    a_reg0[i].cast[c_type]() * b_reg0[j].cast[c_type]()
-                )
+        outer_product_acc(c_reg, a_reg0, b_reg0)
 
         swap_ptr(a_reg0, a_reg1)
         swap_ptr(b_reg0, b_reg1)
