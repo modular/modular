@@ -36,12 +36,10 @@ alias N = 143
 alias K = 71
 
 
-fn gemm_naive[
-    a_type: DType, b_type: DType, c_type: DType
-](
-    a: NDBuffer[a_type, 2, DimList.create_unknown[2]()],
-    b: NDBuffer[b_type, 2, DimList.create_unknown[2]()],
-    c: NDBuffer[c_type, 2, DimList.create_unknown[2]()],
+fn gemm_naive[](
+    a: NDBuffer[_, 2, _],
+    b: NDBuffer[_, 2, _],
+    c: NDBuffer[_, 2, _],
     m: Int,
     n: Int,
     k: Int,
@@ -49,23 +47,25 @@ fn gemm_naive[
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var a_val = a[i, p].cast[c_type]()
-                var b_val = b[p, j].cast[c_type]()
+                var a_val = a[i, p].cast[c.type]()
+                var b_val = b[p, j].cast[c.type]()
                 c[StaticIntTuple[2]((i, j))] += a_val * b_val
 
 
 fn test_matmul[
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    a_shape: DimList,
     saturated: Bool,
 ](m: Int, n: Int, k: Int, kernel_type_m: Int) -> Int:
     var a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
     var b_ptr = DTypePointer[b_type].alloc(k * n, alignment=alignment)
-    var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
+    var b = NDBuffer[b_type, 2, b_shape](b_ptr, Index(k, n))
 
     var padded_n_k = StaticIntTuple[2]()
     if kernel_type_m != 0:
@@ -73,9 +73,9 @@ fn test_matmul[
             a_type,
             a_shape,
             b_type,
-            DimList.create_unknown[2](),
+            b_shape,
             c_type,
-            DimList.create_unknown[2](),
+            c_shape,
             transpose_b,
             True,
         ](b, kernel_type_m)
@@ -84,9 +84,9 @@ fn test_matmul[
             a_type,
             a_shape,
             b_type,
-            DimList.create_unknown[2](),
+            b_shape,
             c_type,
-            DimList.create_unknown[2](),
+            c_shape,
             transpose_b,
             True,
         ](b)
@@ -102,24 +102,18 @@ fn test_matmul[
 
     var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
 
-    var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
-    var c = NDBuffer[c_type, 2](c0_ptr, Index(m, n))
+    var bp = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
+        bp_ptr, Index(padded_k, padded_n)
+    )
+    var c = NDBuffer[c_type, 2, c_shape](c0_ptr, Index(m, n))
 
-    var am = NDBuffer[a_type, 2, DimList.create_unknown[2]()](
-        a_ptr, Index(m, k)
-    )
-    var bm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
-        b_ptr, Index(k, n)
-    )
+    var am = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
+    var bm = NDBuffer[b_type, 2, b_shape](b_ptr, Index(k, n))
     var bpm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
         bp_ptr, Index(k, n)
     )
-    var cm0 = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
-        c0_ptr, Index(m, n)
-    )
-    var cm1 = NDBuffer[c_type, 2, DimList.create_unknown[2]()](
-        c1_ptr, Index(m, n)
-    )
+    var cm0 = NDBuffer[c_type, 2, c_shape](c0_ptr, Index(m, n))
+    var cm1 = NDBuffer[c_type, 2, c_shape](c1_ptr, Index(m, n))
 
     # saturated VNNI only has a range [0,127] for the input a
     var vnni_range: Int = 128 if saturated else 256
@@ -149,18 +143,18 @@ fn test_matmul[
                 a_type,
                 a_shape,
                 b_type,
-                DimList.create_unknown[2](),
+                b_shape,
                 c_type,
-                DimList.create_unknown[2](),
+                c_shape,
             ](b, bp, kernel_type_m)
         else:
             pack_b_ndbuffer[
                 a_type,
                 a_shape,
                 b_type,
-                DimList.create_unknown[2](),
+                b_shape,
                 c_type,
-                DimList.create_unknown[2](),
+                c_shape,
             ](b, bp)
 
     if kernel_type_m != 0:
@@ -168,27 +162,27 @@ fn test_matmul[
             a_type,
             a_shape,
             b_type,
-            DimList.create_unknown[2](),
+            b_shape,
             c_type,
-            DimList.create_unknown[2](),
+            c_shape,
             transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c, a, bp, kernel_type_m)
+        ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp), kernel_type_m)
     else:
         matmul[
             a_type,
             a_shape,
             b_type,
-            DimList.create_unknown[2](),
+            b_shape,
             c_type,
-            DimList.create_unknown[2](),
+            c_shape,
             transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c, a, bp)
+        ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp))
 
-    gemm_naive[a_type, b_type, c_type](am, bm, cm1, m, n, k)
+    gemm_naive(am, bm, cm1, m, n, k)
 
     var errors: Int = 0
     for i in range(m):
@@ -221,33 +215,39 @@ fn test_matmul[bPacked: Bool, saturated: Bool, mixed: Bool]() -> Int:
                 for k in range(64):
                     var kernel_type_m = m if mixed else 0
                     errors += test_matmul[
-                        False,  # transpose_b
-                        bPacked,  # b_packed
                         a_type,
+                        DimList.create_unknown[2](),
                         b_type,
+                        DimList.create_unknown[2](),
                         c_type,
                         DimList.create_unknown[2](),
+                        False,  # transpose_b
+                        bPacked,  # b_packed
                         saturated=saturated,
                     ](m, n, k, kernel_type_m)
     else:
         var kernel_type_m1 = M1 if mixed else 0
         errors += test_matmul[
-            False,  # transpose_b
-            bPacked,  # b_packed
             a_type,
+            DimList.create_unknown[2](),
             b_type,
+            DimList.create_unknown[2](),
             c_type,
             DimList.create_unknown[2](),
+            False,  # transpose_b
+            bPacked,  # b_packed
             saturated=saturated,
         ](M1, N, K, kernel_type_m1)
         var kernel_type_m2 = M2 if mixed else 0
         errors += test_matmul[
-            False,  # transpose_b
-            bPacked,  # b_packed
             a_type,
+            DimList.create_unknown[2](),
             b_type,
+            DimList.create_unknown[2](),
             c_type,
             DimList.create_unknown[2](),
+            False,  # transpose_b
+            bPacked,  # b_packed
             saturated=saturated,
         ](M2, N, K, kernel_type_m2)
 
@@ -259,22 +259,25 @@ fn test_matmul_mixed_static[bPacked: Bool, saturated: Bool]() -> Int:
     var errors: Int = 0
 
     errors += test_matmul[
+        a_type,
+        DimList(M1, K),
+        b_type,
+        DimList(K, N),
+        c_type,
+        DimList(M1, N),
         False,  # transpose_b
         bPacked,  # b_packed
-        a_type,
-        b_type,
-        c_type,
-        # Index(M1,K),
-        DimList(M1, K),
         saturated=saturated,
     ](M1, N, K, 0)
     errors += test_matmul[
+        a_type,
+        DimList(M2, K),
+        b_type,
+        DimList(K, N),
+        c_type,
+        DimList(M2, N),
         False,  # transpose_b
         bPacked,  # b_packed
-        a_type,
-        b_type,
-        c_type,
-        DimList(M2, K),
         saturated=saturated,
     ](M2, N, K, 0)
 
