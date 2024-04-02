@@ -17,6 +17,9 @@ endif()
 
 include(AddTCMalloc)
 
+# Add Globals subdir first since LLCLRuntime depends on it.
+add_subdirectory(Globals)
+
 add_modular_library(LLCLRuntime
   STATIC OBJECT # Always generate an obj.${name} target.
 
@@ -31,6 +34,7 @@ add_modular_library(LLCLRuntime
   ThreadPoolWorkQueue.cpp
 
   LINK_LIBS PUBLIC
+  LLCLRuntimeGlobals
   LLCLSupport
   LLVMSupport
   MSupport
@@ -43,5 +47,3 @@ if (TCMALLOC_LIBRARY)
   target_link_libraries(obj.LLCLRuntime PUBLIC libtcmalloc)
   target_include_directories(LLCLRuntime PUBLIC ${TCMALLOC_PATH}/include)
 endif()
-
-add_subdirectory(Globals)
