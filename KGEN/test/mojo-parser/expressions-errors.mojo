@@ -76,7 +76,7 @@ fn test_func_type():
     alias f8 = fn [Int, b: Int] capturing -> Int
 
     alias type = DType.float32
-    # expected-error @below {{SIMD[DType(type.value), 32]}}
+    # expected-error @below {{SIMD[type.value, 32]}}
     alias value: SIMD[type.value, 32] = SIMD[DType.float32, 32]()
 
 ##===----------------------------------------------------------------------===##

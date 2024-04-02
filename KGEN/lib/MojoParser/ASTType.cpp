@@ -331,29 +331,52 @@ ASTType ASTType::getSignatureUserResultType() const {
                                          sigType.getResults().front());
 }
 
-/// Pretty print a symbol reference.
-static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag,
-                        bool isFunc) {
-  if (!forDiag) {
-    printNestedSymbolReference(os, symbol);
-    return;
-  }
-
+/// Given a SymbolRefAttr, return the underlying symbol name.
+static StringRef getNameFromSymbolRef(SymbolRefAttr symbol, bool isFunc) {
   StringAttr leaf;
   if (symbol.getNestedReferences().empty())
     leaf = symbol.getRootReference();
   else
     leaf = symbol.getNestedReferences().back().getAttr();
+
   // Demangle the function name.
   StringRef name = leaf.getValue();
   if (isFunc)
     if (size_t mangleStart = name.find('('); mangleStart != std::string::npos)
       name = name.take_front(mangleStart);
+  return name;
+}
+
+/// Pretty print a symbol reference.
+static void printSymbol(raw_ostream &os, StringRef name, SymbolRefAttr symbol) {
   // For constructors, print the type name instead.
   // TODO: Handle other dunder methods.
   if (name == "__init__" && symbol.getNestedReferences().size() >= 2)
     name = symbol.getNestedReferences().drop_back().back().getAttr();
   os << name;
+}
+static void printSymbol(raw_ostream &os, SymbolRefAttr symbol, bool forDiag,
+                        bool isFunc) {
+  if (!forDiag)
+    printNestedSymbolReference(os, symbol);
+  else
+    printSymbol(os, getNameFromSymbolRef(symbol, isFunc), symbol);
+}
+
+/// Try to extract a symbol reference from the given parameter. Returns nullptr
+/// otherwise.
+static SymbolRefAttr tryGetSymbolName(TypedAttr param) {
+  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param))
+    return symbolCst.getSymbol();
+  if (auto op = dyn_cast<ParamOperatorAttr>(param)) {
+    switch (op.getOpcode()) {
+    case POC::Rebind:
+      return tryGetSymbolName(op.getOperands().front());
+    default:
+      break;
+    }
+  }
+  return {};
 }
 
 /// Pretty print a parameter value.
@@ -385,32 +408,61 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
   if (auto op = dyn_cast<ParamOperatorAttr>(param)) {
+    ArrayRef<TypedAttr> operands = op.getOperands();
+
     // Sugar the parameter operators the parser can generate.
     switch (op.getOpcode()) {
     case POC::Apply:
-      printDemangledParam(os, op.getOperands().front(), forDiag);
+    case POC::ApplyResultSlot: {
+      // Check if we're applying a known symbol, in which case we can do some
+      // more specialized printing.
+      if (SymbolRefAttr nameAttr = tryGetSymbolName(operands.front())) {
+        StringRef name = getNameFromSymbolRef(nameAttr, /*isFunc=*/true);
+
+        // If this is an init and we have a single argument, elide the init.
+        if (name == "__init__" && nameAttr.getNestedReferences().size() >= 2) {
+          if (operands.size() == 2)
+            return printDemangledParam(os, operands.back(), forDiag);
+        }
+        if (name == "__mlir_i1__" && operands.size() == 2)
+          return printDemangledParam(os, operands.back(), forDiag);
+
+        // Otherwise, print the symbol and go through the normal argument list.
+        printSymbol(os, name, nameAttr);
+      } else {
+        printDemangledParam(os, operands.front(), forDiag);
+      }
+
       os << '(';
-      llvm::interleaveComma(
-          op.getOperands().drop_front(), os,
-          [&](TypedAttr value) { printDemangledParam(os, value, forDiag); });
+      llvm::interleaveComma(operands.drop_front(), os, [&](TypedAttr value) {
+        printDemangledParam(os, value, forDiag);
+      });
       os << ')';
       return;
+    }
     case POC::BindSignature:
-      printDemangledParam(os, op.getOperands().front(), forDiag);
+      printDemangledParam(os, operands.front(), forDiag);
       os << '[';
-      llvm::interleaveComma(
-          op.getOperands().drop_front(), os,
-          [&](TypedAttr value) { printDemangledParam(os, value, forDiag); });
+      llvm::interleaveComma(operands.drop_front(), os, [&](TypedAttr value) {
+        printDemangledParam(os, value, forDiag);
+      });
       os << ']';
+      return;
+    case POC::Cond:
+      printDemangledParam(os, operands[1], forDiag);
+      os << " if ";
+      printDemangledParam(os, operands[0], forDiag);
+      os << " else ";
+      printDemangledParam(os, operands[2], forDiag);
       return;
     case POC::Rebind:
       // Just omit the types.
-      printDemangledParam(os, op.getOperands().front(), forDiag);
+      printDemangledParam(os, operands.front(), forDiag);
       return;
     case POC::VariadicGet:
-      printDemangledParam(os, op.getOperands().front(), forDiag);
+      printDemangledParam(os, operands.front(), forDiag);
       os << '[';
-      printDemangledParam(os, op.getOperands().back(), forDiag);
+      printDemangledParam(os, operands.back(), forDiag);
       os << ']';
       return;
     default:
@@ -438,6 +490,8 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     os << '$' << indexRef.getIndex();
     return;
   }
+  if (auto memAttr = dyn_cast<StoreToMemAttr>(param))
+    return printDemangledParam(os, memAttr.getValue(), forDiag);
 
   os << getParamAsString(param);
 }
