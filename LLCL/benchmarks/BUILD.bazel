@@ -1,0 +1,8 @@
+cc_test(
+    name = "QueueBenchmark",
+    srcs = ["QueueBenchmark.cpp"],
+    deps = [
+        "//LLCL:Runtime",
+        "@google_benchmark//:benchmark_main",
+    ],
+)
