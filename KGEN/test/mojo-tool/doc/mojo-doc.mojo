@@ -205,17 +205,25 @@ fn fn_with_parameter_references[
 # CHECK:      "parameters": [
 # CHECK:          "description": "This is a parameter."
 # CHECK:          "name": "param"
+# CHECK:          "passingKind": "pos",
 # CHECK:          "type": "dtype"
-# CHECK:      "signature": "fn_with_params[param: dtype]()"
+# CHECK:          "description": "This is a second parameter."
+# CHECK:          "name": "param2"
+# CHECK:          "passingKind": "kw",
+# CHECK:          "type": "dtype"
+# CHECK:      "signature": "fn_with_params[param: dtype, /, *, param2: dtype]()"
 
 
-fn fn_with_params[param: __mlir_type.`!kgen.dtype`]():
+fn fn_with_params[
+    param: __mlir_type.`!kgen.dtype`, /, *, param2: __mlir_type.`!kgen.dtype`
+]():
     """This is a function summary.
 
     The is some kind of description.
 
     Parameters:
         param: This is a parameter.
+        param2: This is a second parameter.
     """
     return
 

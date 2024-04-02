@@ -406,6 +406,7 @@ llvm::json::Object ParameterDeclView::toJSON(MojoParserContext &ctx) const {
   llvm::json::Object object{{"kind", getKindAsString()},
                             {"name", getName().str()},
                             {"type", type},
+                            {"passingKind", stringifyPassingKind(passingKind)},
                             {"description", description}};
   if (defaultValue)
     object["default"] = *defaultValue;
@@ -590,6 +591,31 @@ std::string FunctionDeclView::getMarkdownDocString() const {
   return markdown;
 }
 
+/// Print the signatures for a list of arguments or parameters.
+template <typename T>
+static void printArgOrParameterSignature(
+    ArrayRef<T> args, SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets,
+    llvm::raw_string_ostream &os) {
+  SmallVector<PassingKind> passingKinds = llvm::map_to_vector(
+      args, [](const T &arg) { return arg.getPassingKind(); });
+  PassingKindPrinter passingKindPrinter(os, passingKinds);
+  size_t idx = 0;
+  auto printArg = [&](const T &arg) {
+    passingKindPrinter.printOptionalStarSlash(idx);
+
+    unsigned argStart = os.str().size();
+    os << arg.getDeclarationSnippet();
+    if (offsets)
+      offsets->push_back({argStart, os.str().size()});
+
+    // Check if we are at the end; if so, we might still have to print a '/'.
+    passingKindPrinter.printOptionalTrailingSlash(idx++);
+  };
+  os << (std::is_same_v<T, ArgumentDeclView> ? "(" : "[");
+  interleaveComma(args, os, printArg);
+  os << (std::is_same_v<T, ArgumentDeclView> ? ")" : "]");
+}
+
 std::string FunctionDeclView::getSignature(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
     SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets,
@@ -601,40 +627,12 @@ std::string FunctionDeclView::getSignature(
   signatureOS << getName().split('(').first;
 
   // Emit the parameters of the function.
-  if (!parameters.empty()) {
-    signatureOS << "[";
-    interleaveComma(getParameters(), signatureOS, [&](const auto &param) {
-      unsigned paramStart = signature.size();
-      signatureOS << param.getDeclarationSnippet();
-      if (parameterOffsets)
-        parameterOffsets->push_back({paramStart, signature.size()});
-    });
-    signatureOS << "]";
-  }
+  if (!parameters.empty())
+    printArgOrParameterSignature(ArrayRef(parameters), parameterOffsets,
+                                 signatureOS);
 
   // Emit the arguments of the function.
-  SmallVector<PassingKind> passingKinds =
-      llvm::map_to_vector(args, [](const M::ArgumentDeclView &arg) {
-        return arg.getPassingKind();
-      });
-  PassingKindPrinter passingKindPrinter(signatureOS, passingKinds,
-                                        /*suppressSlashAfterSelf=*/isMethod());
-  size_t idx = 0;
-  auto printArg = [&](const M::ArgumentDeclView &arg) {
-    passingKindPrinter.printOptionalStarSlash(idx);
-
-    unsigned argStart = signature.size();
-    signatureOS << arg.getDeclarationSnippet();
-    if (argumentOffsets)
-      argumentOffsets->push_back({argStart, signature.size()});
-
-    // Check if we are at the end; if so, we might still have to print a '/'.
-    passingKindPrinter.printOptionalTrailingSlash(idx++);
-  };
-
-  signatureOS << "(";
-  interleaveComma(args, signatureOS, printArg);
-  signatureOS << ")";
+  printArgOrParameterSignature(ArrayRef(args), argumentOffsets, signatureOS);
 
   // Emit the result type.
   if (returnOffset)
@@ -746,7 +744,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     parameters.push_back(
         ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
                           generateTypeString(param.getType(), selfType),
-                          std::move(defaultValue)));
+                          paramPassingKinds[index], std::move(defaultValue)));
   }
 
   // Grab the result type, if it's non-none.
@@ -927,16 +925,8 @@ std::string StructDeclView::getDeclarationSnippet(
   llvm::raw_string_ostream os(snippet);
   os << "struct " << getName();
 
-  if (!parameters.empty()) {
-    os << "[";
-    interleaveComma(getParameters(), os, [&](const auto &param) {
-      unsigned paramStart = snippet.size();
-      os << param.getDeclarationSnippet();
-      if (parameterOffsets)
-        parameterOffsets->push_back({paramStart, snippet.size()});
-    });
-    os << "]";
-  }
+  if (!parameters.empty())
+    printArgOrParameterSignature(ArrayRef(parameters), parameterOffsets, os);
 
   return snippet;
 }
@@ -980,7 +970,8 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
       decl(declRef) {
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
   TypeSignatureType signature = structOp.getSignature();
-  DefaultValueHandler defaultParamHandler(signature.getParamPassingKinds(),
+  ArrayRef<PassingKind> passingKinds = signature.getParamPassingKinds();
+  DefaultValueHandler defaultParamHandler(passingKinds,
                                           signature.getDefaultPosParams(),
                                           signature.getDefaultKwOnlyParams());
 
@@ -989,9 +980,10 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultParamHandler.getDefault(index))
       defaultValue = generatePValueString(defaultAttr);
-    parameters.push_back(ParameterDeclView(
-        demangleIfNeeded(param).getName().getValue(),
-        generateTypeString(param.getType()), std::move(defaultValue)));
+    parameters.push_back(
+        ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
+                          generateTypeString(param.getType()),
+                          passingKinds[index], std::move(defaultValue)));
   }
 
   if (auto docStr = decl->getParsedDocString()) {

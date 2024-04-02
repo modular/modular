@@ -130,9 +130,12 @@ private:
 class ParameterDeclView : public DeclView {
 public:
   ParameterDeclView(StringRef name, StringRef type,
+                    KGEN::LIT::PassingKind passingKind,
                     std::optional<std::string> defaultValue)
       : DeclView(DeclViewKind::DK_ParameterDeclView, name), type(type),
-        defaultValue(std::move(defaultValue)) {}
+        passingKind(passingKind), defaultValue(std::move(defaultValue)) {}
+
+  KGEN::LIT::PassingKind getPassingKind() const { return passingKind; };
 
   /// Return the default value of this argument, if any.
   std::optional<StringRef> getDefaultValue() const { return defaultValue; }
@@ -155,6 +158,7 @@ public:
   ///    "description": string,
   ///    "name": string,
   ///    "type": string,
+  ///    "passingKind": string,
   ///    "defaultValue": string?
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
@@ -169,6 +173,7 @@ public:
 
 private:
   std::string type;
+  KGEN::LIT::PassingKind passingKind;
   std::optional<std::string> defaultValue;
 
   //===----------------------------------------------------------------------===//
