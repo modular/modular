@@ -63,12 +63,12 @@ from .tensor_spec import TensorSpec
 
 @always_inline
 fn _elementwise[
-    op: fn[dtype: DType, simd_width: Int] (x: SIMD[dtype, simd_width]) -> SIMD[
-        dtype, simd_width
+    op: fn[type: DType, simd_width: Int] (x: SIMD[type, simd_width]) -> SIMD[
+        type, simd_width
     ],
-    dtype: DType,
-](tensor: Tensor[dtype]) -> Tensor[dtype]:
-    var result = Tensor[tensor.dtype](tensor._spec)
+    type: DType,
+](tensor: Tensor[type]) -> Tensor[type]:
+    var result = Tensor[tensor.type](tensor._spec)
     var buffer = tensor._to_buffer()
     var result_buffer = result._to_buffer()
 
@@ -76,11 +76,9 @@ fn _elementwise[
     @parameter
     fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
         var idx = indices[0]
-        result_buffer.store(
-            idx, op[dtype, width](buffer.load[width=width](idx))
-        )
+        result_buffer.store(idx, op[type, width](buffer.load[width=width](idx)))
 
-    elementwise[func=func, simd_width = simdwidthof[dtype](), rank=1](
+    elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
         Index(len(buffer))
     )
 
@@ -89,12 +87,12 @@ fn _elementwise[
 
 @always_inline
 fn _elementwise[
-    op: fn[dtype: DType, simd_width: Int] (
-        x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]
-    ) -> SIMD[dtype, simd_width],
-    dtype: DType,
-](a: Tensor[dtype], b: Tensor[dtype]) -> Tensor[dtype]:
-    var result = Tensor[a.dtype](a._spec)
+    op: fn[type: DType, simd_width: Int] (
+        x: SIMD[type, simd_width], y: SIMD[type, simd_width]
+    ) -> SIMD[type, simd_width],
+    type: DType,
+](a: Tensor[type], b: Tensor[type]) -> Tensor[type]:
+    var result = Tensor[a.type](a._spec)
     var a_buffer = a._to_buffer()
     var b_buffer = b._to_buffer()
     var result_buffer = result._to_buffer()
@@ -105,12 +103,12 @@ fn _elementwise[
         var idx = indices[0]
         result_buffer.store(
             idx,
-            op[dtype, width](
+            op[type, width](
                 a_buffer.load[width=width](idx), b_buffer.load[width=width](idx)
             ),
         )
 
-    elementwise[func=func, simd_width = simdwidthof[dtype](), rank=1](
+    elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
         Index(len(a_buffer))
     )
 
@@ -119,12 +117,12 @@ fn _elementwise[
 
 @always_inline
 fn _elementwise[
-    op: fn[dtype: DType, simd_width: Int] (
-        x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]
-    ) -> SIMD[dtype, simd_width],
-    dtype: DType,
-](a: Tensor[dtype], b: Scalar[dtype]) -> Tensor[dtype]:
-    var result = Tensor[a.dtype](a._spec)
+    op: fn[type: DType, simd_width: Int] (
+        x: SIMD[type, simd_width], y: SIMD[type, simd_width]
+    ) -> SIMD[type, simd_width],
+    type: DType,
+](a: Tensor[type], b: Scalar[type]) -> Tensor[type]:
+    var result = Tensor[a.type](a._spec)
     var a_buffer = a._to_buffer()
     var result_buffer = result._to_buffer()
 
@@ -134,12 +132,12 @@ fn _elementwise[
         var idx = indices[0]
         result_buffer.store(
             idx,
-            op[dtype, width](
-                a_buffer.load[width=width](idx), SIMD[dtype, width](b)
+            op[type, width](
+                a_buffer.load[width=width](idx), SIMD[type, width](b)
             ),
         )
 
-    elementwise[func=func, simd_width = simdwidthof[dtype](), rank=1](
+    elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
         Index(len(a_buffer))
     )
 
@@ -148,12 +146,12 @@ fn _elementwise[
 
 @always_inline
 fn _elementwise[
-    op: fn[dtype: DType, simd_width: Int] (
-        x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]
-    ) -> SIMD[dtype, simd_width],
-    dtype: DType,
-](a: Scalar[dtype], b: Tensor[dtype]) -> Tensor[dtype]:
-    var result = Tensor[b.dtype](b._spec)
+    op: fn[type: DType, simd_width: Int] (
+        x: SIMD[type, simd_width], y: SIMD[type, simd_width]
+    ) -> SIMD[type, simd_width],
+    type: DType,
+](a: Scalar[type], b: Tensor[type]) -> Tensor[type]:
+    var result = Tensor[b.type](b._spec)
     var b_buffer = b._to_buffer()
     var result_buffer = result._to_buffer()
 
@@ -163,37 +161,37 @@ fn _elementwise[
         var idx = indices[0]
         result_buffer.store(
             idx,
-            op[dtype, width](
-                SIMD[dtype, width](a), b_buffer.load[width=width](idx)
+            op[type, width](
+                SIMD[type, width](a), b_buffer.load[width=width](idx)
             ),
         )
 
-    elementwise[func=func, simd_width = simdwidthof[dtype](), rank=1](
+    elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
         Index(len(b_buffer))
     )
 
     return result
 
 
-struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
+struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
     """A tensor type which owns its underlying data and is parameterized on
     DType.
 
 
     Parameters:
-      dtype: The underlying element type of the tensor.
+      type: The underlying element type of the tensor.
     """
 
     var _spec: TensorSpec
     """The underlying specification of the tensor."""
-    var _ptr: DTypePointer[dtype]
+    var _ptr: DTypePointer[type]
     """The underlying data of the tensor."""
 
     @always_inline
     fn __init__(inout self):
         """Default initializer for TensorShape."""
         self._spec = TensorSpec()
-        self._ptr = DTypePointer[dtype]()
+        self._ptr = DTypePointer[type]()
 
     @always_inline
     fn __init__(inout self, other: Self):
@@ -204,7 +202,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         """
         var num_elements = other.num_elements()
         self._spec = other._spec
-        self._ptr = DTypePointer[dtype].alloc(num_elements)
+        self._ptr = DTypePointer[type].alloc(num_elements)
         memcpy(self._ptr, other._ptr, num_elements)
 
     @always_inline
@@ -214,7 +212,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         Args:
           dims: The tensor dimensions.
         """
-        self = Self(TensorSpec(dtype, dims))
+        self = Self(TensorSpec(type, dims))
 
     @always_inline
     fn __init__(inout self, owned shape: TensorShape):
@@ -223,7 +221,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         Args:
           shape: The tensor shape.
         """
-        self = Self(TensorSpec(dtype, shape^))
+        self = Self(TensorSpec(type, shape^))
 
     @always_inline
     fn __init__(inout self, owned spec: TensorSpec):
@@ -234,12 +232,12 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         """
         var num_elements = spec.num_elements()
         self._spec = spec
-        self._ptr = DTypePointer[dtype].alloc(num_elements)
+        self._ptr = DTypePointer[type].alloc(num_elements)
         memset_zero(self._ptr, num_elements)
 
     @always_inline
     fn __init__(
-        inout self, owned shape: TensorShape, owned ptr: DTypePointer[dtype]
+        inout self, owned shape: TensorShape, owned ptr: DTypePointer[type]
     ):
         """Initializes a Tensor from the pointer and shape provided. The caller
         relinquishes the ownership of the pointer being passed in.
@@ -248,11 +246,11 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           shape: The tensor shapes.
           ptr: The data pointer.
         """
-        self = Self(TensorSpec(dtype, shape^), ptr)
+        self = Self(TensorSpec(type, shape^), ptr)
 
     @always_inline
     fn __init__(
-        inout self, owned spec: TensorSpec, owned ptr: DTypePointer[dtype]
+        inout self, owned spec: TensorSpec, owned ptr: DTypePointer[type]
     ):
         """Initializes a Tensor from the pointer and shape provided. The caller
         relinquishes the ownership of the pointer being passed in.
@@ -265,7 +263,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         self._ptr = ptr
 
     @always_inline
-    fn __init__(inout self, shape: TensorShape, *data: Scalar[dtype]):
+    fn __init__(inout self, shape: TensorShape, *data: Scalar[type]):
         """Initializes a Tensor from the shape and data provided. If a single
         scalar is passed in, then the scalar is splatted to all elements in the
         tensor.
@@ -275,7 +273,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
           data: Elements to place into the created tensor.
         """
         var num_elements = shape.num_elements()
-        var ptr = DTypePointer[dtype].alloc(num_elements)
+        var ptr = DTypePointer[type].alloc(num_elements)
         if len(data) == 1:
             var data0 = data[0]
 
@@ -285,7 +283,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
                 fn splat_val[simd_width: Int](idx: Int):
                     ptr.store[width=simd_width](idx, data0)
 
-                vectorize[splat_val, simdwidthof[dtype](), unroll_factor=8](
+                vectorize[splat_val, simdwidthof[type](), unroll_factor=8](
                     num_elements
                 )
 
@@ -297,9 +295,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         self = Self(shape, ptr)
 
     @always_inline
-    fn __init__(
-        inout self, shape: TensorShape, owned list: List[Scalar[dtype]]
-    ):
+    fn __init__(inout self, shape: TensorShape, owned list: List[Scalar[type]]):
         """Initializes a 1-dimensional Tensor from the provided list.
 
         Args:
@@ -310,13 +306,13 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         var list_len = len(list)
 
         var data_anyptr = list.steal_data()
-        var data_ptr = Pointer[Scalar[dtype]].__from_index(int(data_anyptr))
-        var data_dptr = DTypePointer[dtype](data_ptr)
+        var data_ptr = Pointer[Scalar[type]].__from_index(int(data_anyptr))
+        var data_dptr = DTypePointer[type](data_ptr)
 
         self = Self(shape, data_dptr)
 
     @always_inline
-    fn __init__(inout self, owned list: List[Scalar[dtype]]):
+    fn __init__(inout self, owned list: List[Scalar[type]]):
         """Initializes a 1-dimensional Tensor from the provided list.
 
         Args:
@@ -326,8 +322,8 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         var list_len = len(list)
 
         var data_anyptr = list.steal_data()
-        var data_ptr = Pointer[Scalar[dtype]].__from_index(int(data_anyptr))
-        var data_dptr = DTypePointer[dtype](data_ptr)
+        var data_ptr = Pointer[Scalar[type]].__from_index(int(data_anyptr))
+        var data_dptr = DTypePointer[type](data_ptr)
 
         self = Self(TensorShape(list_len), data_dptr)
 
@@ -345,7 +341,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         """
         var num_elements = other.num_elements()
         self._spec = other._spec
-        self._ptr = DTypePointer[dtype].alloc(num_elements)
+        self._ptr = DTypePointer[type].alloc(num_elements)
         memcpy(self._ptr, other._ptr, num_elements)
 
     fn __moveinit__(inout self, owned existing: Self):
@@ -357,7 +353,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         self._spec = existing._spec^
         self._ptr = existing._ptr
         existing._spec = TensorSpec()
-        existing._ptr = DTypePointer[dtype]()
+        existing._ptr = DTypePointer[type]()
 
     @always_inline
     fn ireshape(inout self, new_shape: TensorShape) raises -> None:
@@ -369,10 +365,10 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         if new_shape.num_elements() != self.num_elements():
             raise "Number of elements must match in reshape"
 
-        self._spec = TensorSpec(dtype, new_shape)
+        self._spec = TensorSpec(type, new_shape)
 
     @always_inline
-    fn reshape(inout self, new_shape: TensorShape) raises -> Tensor[dtype]:
+    fn reshape(inout self, new_shape: TensorShape) raises -> Tensor[type]:
         """Returns a reshaped tensor.
 
         Args:
@@ -433,7 +429,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return _elementwise[math.add](self, other)
 
     @always_inline
-    fn __add__(self, other: Scalar[dtype]) -> Self:
+    fn __add__(self, other: Scalar[type]) -> Self:
         """Adds this tensor with a scalar.
 
         Args:
@@ -445,7 +441,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return _elementwise[math.add](self, other)
 
     @always_inline
-    fn __radd__(self, other: Scalar[dtype]) -> Self:
+    fn __radd__(self, other: Scalar[type]) -> Self:
         """Adds this tensor with a scalar.
 
         Args:
@@ -475,7 +471,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return _elementwise[math.sub](self, other)
 
     @always_inline
-    fn __sub__(self, other: Scalar[dtype]) -> Self:
+    fn __sub__(self, other: Scalar[type]) -> Self:
         """Subtracts a scalar from this tensor.
 
         Args:
@@ -487,7 +483,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return _elementwise[math.sub](self, other)
 
     @always_inline
-    fn __rsub__(self, other: Scalar[dtype]) -> Self:
+    fn __rsub__(self, other: Scalar[type]) -> Self:
         """Subtracts this tensor from a scalar.
 
         Args:
@@ -517,7 +513,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return _elementwise[math.mul](self, other)
 
     @always_inline
-    fn __mul__(self, other: Scalar[dtype]) -> Self:
+    fn __mul__(self, other: Scalar[type]) -> Self:
         """Multiplies this tensor with a scalar.
 
         Args:
@@ -529,7 +525,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return _elementwise[math.mul](self, other)
 
     @always_inline
-    fn __rmul__(self, other: Scalar[dtype]) -> Self:
+    fn __rmul__(self, other: Scalar[type]) -> Self:
         """Multiplies this tensor with a scalar.
 
         Args:
@@ -561,7 +557,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return _elementwise[math.div](self, other)
 
     @always_inline
-    fn __truediv__(self, other: Scalar[dtype]) -> Self:
+    fn __truediv__(self, other: Scalar[type]) -> Self:
         """Divides this tensor by a scalar.
 
         Args:
@@ -573,7 +569,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return _elementwise[math.div](self, other)
 
     @always_inline
-    fn __rtruediv__(self, other: Scalar[dtype]) -> Self:
+    fn __rtruediv__(self, other: Scalar[type]) -> Self:
         """Divides a scalar by this tensor, broadcasting elementwise.
 
         Args:
@@ -625,25 +621,25 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
             buffer.store(idx, res)
 
         # Use the `elementwise` generator to run `pow` in parallel.
-        alias dtype_simd_width = simdwidthof[dtype]()
+        alias type_simd_width = simdwidthof[type]()
 
-        elementwise[func=_pow, simd_width=dtype_simd_width, rank=1](
+        elementwise[func=_pow, simd_width=type_simd_width, rank=1](
             Index(len(buffer))
         )
 
         return result
 
     @always_inline
-    fn astype[new_dtype: DType](self) -> Tensor[new_dtype]:
+    fn astype[new_type: DType](self) -> Tensor[new_type]:
         """Copy the Tensor with elements cast to the new type.
 
         Parameters:
-            new_dtype: The type to cast the values to.
+            new_type: The type to cast the values to.
 
         Returns:
             A new tensor with the same values but the new type.
         """
-        var result = Tensor[new_dtype](self._spec)
+        var result = Tensor[new_type](self._spec)
         var buffer = self._to_buffer()
         var result_buffer = result._to_buffer()
 
@@ -652,10 +648,10 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         fn func[width: Int, rank: Int](indices: StaticIntTuple[rank]):
             var idx = indices[0]
             result_buffer.store(
-                idx, buffer.load[width=width](idx).cast[new_dtype]()
+                idx, buffer.load[width=width](idx).cast[new_type]()
             )
 
-        elementwise[func=func, simd_width = simdwidthof[dtype](), rank=1](
+        elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
             Index(len(buffer))
         )
 
@@ -664,8 +660,8 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
     @always_inline
     fn clip(
         self,
-        lower_bound: Scalar[dtype],
-        upper_bound: Scalar[dtype],
+        lower_bound: Scalar[type],
+        upper_bound: Scalar[type],
     ) -> Self:
         """Clips the values of the tensor.
 
@@ -686,34 +682,25 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
             var idx = indices[0]
             result_buffer.store(
                 idx,
-                math.clamp[dtype, width](
+                math.clamp[type, width](
                     buffer.load[width=width](idx), lower_bound, upper_bound
                 ),
             )
 
-        elementwise[func=func, simd_width = simdwidthof[dtype](), rank=1](
+        elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
             Index(len(buffer))
         )
 
         return result
 
     @always_inline
-    fn data(self) -> DTypePointer[dtype]:
+    fn data(self) -> DTypePointer[type]:
         """Gets the underlying Data pointer to the Tensor.
 
         Returns:
           The underlying data pointer of the tensor.
         """
         return self._ptr
-
-    @always_inline
-    fn type(self) -> DType:
-        """Gets the underlying DType of the tensor.
-
-        Returns:
-          The underlying DType of the tensor.
-        """
-        return dtype
 
     @always_inline
     fn rank(self) -> Int:
@@ -805,7 +792,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return self.__str__()
 
     @always_inline
-    fn __getitem__(self, index: Int) -> Scalar[dtype]:
+    fn __getitem__(self, index: Int) -> Scalar[type]:
         """Gets the value at the specified index.
 
         Args:
@@ -818,7 +805,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return self._ptr.load(index)
 
     @always_inline
-    fn __getitem__(self, *indices: Int) -> Scalar[dtype]:
+    fn __getitem__(self, *indices: Int) -> Scalar[type]:
         """Gets the value at the specified indices.
 
         Args:
@@ -830,7 +817,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return self.load[width=1](indices)
 
     @always_inline
-    fn __getitem__(self, indices: VariadicList[Int]) -> Scalar[dtype]:
+    fn __getitem__(self, indices: VariadicList[Int]) -> Scalar[type]:
         """Gets the value at the specified indices.
 
         Args:
@@ -844,7 +831,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
     @always_inline
     fn __getitem__[
         len: Int
-    ](self, indices: StaticIntTuple[len]) -> Scalar[dtype]:
+    ](self, indices: StaticIntTuple[len]) -> Scalar[type]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -859,7 +846,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return self.load[width=1](indices)
 
     @always_inline
-    fn load[*, width: Int = 1](self, index: Int) -> SIMD[dtype, width]:
+    fn load[*, width: Int = 1](self, index: Int) -> SIMD[type, width]:
         """Gets the SIMD value at the specified index.
 
         Parameters:
@@ -875,7 +862,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return self._ptr.load[width=width](index)
 
     @always_inline
-    fn load[*, width: Int = 1](self, *indices: Int) -> SIMD[dtype, width]:
+    fn load[*, width: Int = 1](self, *indices: Int) -> SIMD[type, width]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -892,7 +879,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
     @always_inline
     fn load[
         *, width: Int = 1
-    ](self, indices: VariadicList[Int]) -> SIMD[dtype, width]:
+    ](self, indices: VariadicList[Int]) -> SIMD[type, width]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -910,7 +897,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
     @always_inline
     fn load[
         len: Int, /, *, width: Int = 1
-    ](self, indices: StaticIntTuple[len]) -> SIMD[dtype, width]:
+    ](self, indices: StaticIntTuple[len]) -> SIMD[type, width]:
         """Gets the SIMD value at the specified indices.
 
         Parameters:
@@ -927,7 +914,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return self._ptr.load[width=width](self._compute_linear_offset(indices))
 
     @always_inline
-    fn __setitem__(inout self, index: Int, val: Scalar[dtype]):
+    fn __setitem__(inout self, index: Int, val: Scalar[type]):
         """Sets the value at the specified index.
 
         Args:
@@ -938,7 +925,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         self.store[width=1](index, val)
 
     @always_inline
-    fn __setitem__(inout self, indices: VariadicList[Int], val: Scalar[dtype]):
+    fn __setitem__(inout self, indices: VariadicList[Int], val: Scalar[type]):
         """Sets the value at the specified indices.
 
         Args:
@@ -950,7 +937,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
     @always_inline
     fn __setitem__[
         len: Int
-    ](inout self, indices: StaticIntTuple[len], val: Scalar[dtype]):
+    ](inout self, indices: StaticIntTuple[len], val: Scalar[type]):
         """Sets the value at the specified indices.
 
         Parameters:
@@ -963,9 +950,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         self.store[len, width=1](indices, val)
 
     @always_inline
-    fn store[
-        *, width: Int = 1
-    ](inout self, index: Int, val: SIMD[dtype, width]):
+    fn store[*, width: Int = 1](inout self, index: Int, val: SIMD[type, width]):
         """Sets the SIMD value at the specified index.
 
         Parameters:
@@ -981,7 +966,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
     @always_inline
     fn store[
         *, width: Int = 1
-    ](inout self, indices: VariadicList[Int], val: SIMD[dtype, width]):
+    ](inout self, indices: VariadicList[Int], val: SIMD[type, width]):
         """Sets the SIMD value at the specified indices.
 
         Parameters:
@@ -997,7 +982,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
     @always_inline
     fn store[
         len: Int, /, *, width: Int = 1
-    ](inout self, indices: StaticIntTuple[len], val: SIMD[dtype, width]):
+    ](inout self, indices: StaticIntTuple[len], val: SIMD[type, width]):
         """Sets the SIMD value at the specified indices.
 
         Parameters:
@@ -1062,7 +1047,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         return result
 
     @always_inline
-    fn _to_ndbuffer[rank: Int](self) -> NDBuffer[dtype, rank]:
+    fn _to_ndbuffer[rank: Int](self) -> NDBuffer[type, rank]:
         debug_assert(
             rank == self.rank(), "to_ndbuffer rank must match Tensor rank"
         )
@@ -1072,11 +1057,11 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         for i in range(rank):
             shape[i] = self.dim(i)
 
-        return NDBuffer[dtype, rank](self._ptr, shape)
+        return NDBuffer[type, rank](self._ptr, shape)
 
     @always_inline
-    fn _to_buffer(self) -> Buffer[dtype]:
-        return Buffer[dtype](self._ptr, self.num_elements())
+    fn _to_buffer(self) -> Buffer[type]:
+        return Buffer[type](self._ptr, self.num_elements())
 
     fn _truncate_axis_dim(self, axis: Int, keep_dims: Bool = True) -> List[Int]:
         var output_shape = List[Int](capacity=self.rank())
@@ -1179,7 +1164,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         self._to_buffer().tofile(path)
 
     @always_inline
-    fn _steal_ptr(inout self) -> DTypePointer[dtype]:
+    fn _steal_ptr(inout self) -> DTypePointer[type]:
         """Transfer ownership of pointer to the underlying memory.
         The caller is responsible for freeing up the memory.
 
@@ -1187,7 +1172,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
             The pointer to the underlying memory.
         """
         var ptr = self._ptr
-        self._ptr = DTypePointer[dtype]()
+        self._ptr = DTypePointer[type]()
         self._spec = TensorSpec()
         return ptr
 
@@ -1204,8 +1189,8 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         var byte_tensor = Tensor[DType.int8](path.read_bytes())
         var num_elements = byte_tensor.num_elements()
         return Self(
-            num_elements // dtype.sizeof(),
-            bitcast[dtype](byte_tensor._steal_ptr()),
+            num_elements // type.sizeof(),
+            bitcast[type](byte_tensor._steal_ptr()),
         )
 
     fn save(self, path: Path) raises:
@@ -1218,7 +1203,7 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
         _serialize_to_file(self, path)
 
     @staticmethod
-    fn load(path: Path) raises -> Tensor[dtype]:
+    fn load(path: Path) raises -> Tensor[type]:
         """Read tensor from a file.
            The path should be a file saved with Tensor.save method.
 
@@ -1261,13 +1246,13 @@ struct Tensor[dtype: DType](Stringable, CollectionElement, EqualityComparable):
             raise "invalid tensor spec."
         var spec_ptr = spec_size_ptr + sizeof[UInt32]()
         var spec = TensorSpec.from_bytes(spec_ptr)
-        if dtype != spec.dtype():
-            raise "requested type doesn't match the dtype in serialized tensor."
+        if type != spec.dtype():
+            raise "requested type doesn't match the type in serialized tensor."
         var data = spec_ptr + sizeof[TensorSpec]()
         var tensor = Self(spec)
         if spec.num_elements() == 0:
             return tensor
-        memcpy(tensor.data(), bitcast[dtype](data), spec.num_elements())
+        memcpy(tensor.data(), bitcast[type](data), spec.num_elements())
         _ = bytes^
         return tensor
 
