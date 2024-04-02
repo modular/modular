@@ -14,6 +14,18 @@
 
 namespace M {
 
+enum class ProgressStyle {
+  /// A threaded safe progress bar that can handle multiple files and bytes.
+  /// Updates synchronized on timer.
+  MultiFileDownload,
+  /// A single file progress bar that shows download rate. Paints immediately on
+  /// update.
+  SingleFileDownload,
+  /// A simple progress bar like SingleFileDownload, but without the download
+  /// rate.
+  SimpleFileProgress,
+};
+
 /// Progress is a base class for progress in different subsystems. For these,
 /// these hooks are optionally called by backends during insert and find.
 ///
@@ -68,7 +80,7 @@ public:
 /// makeProgress returns an instance of the Progress class which emits a
 /// simple progress bar to the console (if appropriate).
 ErrorOr<std::unique_ptr<Progress>> makeProgress(llvm::raw_ostream &os,
-                                                bool singleFileMode = false);
+                                                ProgressStyle style);
 
 } // namespace M
 

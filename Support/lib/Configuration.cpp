@@ -20,7 +20,7 @@ using namespace M;
 
 /// Folder type for searching.
 namespace {
-enum class FolderType { Config, Data };
+enum class FolderType { Config, Data, Cache };
 } // namespace
 
 static ErrorOrSuccess createPath(const std::filesystem::path &path) {
@@ -365,6 +365,11 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   // If MODULAR_HOME is defined, use that and only that.
   auto modularHome = llvm::sys::Process::GetEnv("MODULAR_HOME");
   if (modularHome) {
+    // Cache folder is a subdirectory in this case.
+    if (type == FolderType::Cache) {
+      paths.push_back(std::filesystem::path(*modularHome) / "cache");
+      return;
+    }
     paths.push_back(*modularHome);
     return;
   }
@@ -372,6 +377,11 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   // If MODULAR_DERIVED_PATH is defined, use that and only that.
   auto derivedPath = llvm::sys::Process::GetEnv("MODULAR_DERIVED_PATH");
   if (derivedPath) {
+    // Cache folder is a subdirectory in this case.
+    if (type == FolderType::Cache) {
+      paths.push_back(std::filesystem::path(*derivedPath) / "cache");
+      return;
+    }
     paths.push_back(*derivedPath);
     return;
   }
@@ -384,6 +394,10 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   if (homeDir) {
     auto path = std::filesystem::path(*homeDir) / ".modular";
     if (std::filesystem::exists(path)) {
+      if (type == FolderType::Cache)
+        paths.push_back(path / ".cache" / "modular");
+      else
+        paths.push_back(std::filesystem::path(*homeDir) / ".modular");
       paths.push_back(path);
       addedHome = true;
     }
@@ -395,21 +409,37 @@ static void getSearchPaths(SmallVectorImpl<std::filesystem::path> &paths,
   // are not set. We will instead still default to `$HOME/.modular`.
   //
   // BOTH of these must be set for us to use them otherwise things may break.
+  ///
+  // XDG_CACHE_HOME is optional and if it is not set we will use
+  // $HOME/.cache/modular if we are otherwise using XDG_CONFIG_HOME and
+  // XDG_DATA_HOME too.
   auto xdgConfigHome = llvm::sys::Process::GetEnv("XDG_CONFIG_HOME");
   auto xdgConfigData = llvm::sys::Process::GetEnv("XDG_DATA_HOME");
+  auto xdgConfigCache = llvm::sys::Process::GetEnv("XDG_CACHE_HOME");
   if (xdgConfigHome && xdgConfigData) {
-    if (type == FolderType::Config) {
-      auto path = std::filesystem::path(*xdgConfigHome) / "modular";
-      paths.push_back(path);
-    } else if (type == FolderType::Data) {
-      auto path = std::filesystem::path(*xdgConfigData) / "modular";
-      paths.push_back(path);
+    if (!xdgConfigCache && homeDir)
+      xdgConfigCache = std::filesystem::path(*homeDir) / ".cache" / "modular";
+    switch (type) {
+    case FolderType::Config:
+      paths.push_back(std::filesystem::path(*xdgConfigHome) / "modular");
+      break;
+    case FolderType::Data:
+      paths.push_back(std::filesystem::path(*xdgConfigData) / "modular");
+      break;
+    case FolderType::Cache:
+      if (!xdgConfigCache)
+        paths.push_back(std::filesystem::path(*xdgConfigCache) / "modular");
+      break;
     }
   }
 
   // Lastly if we haven't added $HOME/.modular in first step, add it now.
-  if (!addedHome && homeDir)
-    paths.push_back(std::filesystem::path(*homeDir) / ".modular");
+  if (!addedHome && homeDir) {
+    if (type == FolderType::Cache)
+      paths.push_back(std::filesystem::path(*homeDir) / ".modular" / "cache");
+    else
+      paths.push_back(std::filesystem::path(*homeDir) / ".modular");
+  }
 
   // Add /opt/modular as a global destination.
   paths.push_back("/opt/modular");
@@ -480,6 +510,10 @@ ErrorOr<std::filesystem::path> Config::getModularConfigFolderPath(bool create) {
 
 ErrorOr<std::filesystem::path> Config::getModularDataFolderPath(bool create) {
   return findBestPathForType(FolderType::Data, create);
+}
+
+ErrorOr<std::filesystem::path> Config::getModularCacheFolderPath(bool create) {
+  return findBestPathForType(FolderType::Cache, create);
 }
 
 ErrorOr<std::filesystem::path> Config::getConfigFilePath(bool create) {
