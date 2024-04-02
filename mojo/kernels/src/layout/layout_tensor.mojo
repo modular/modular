@@ -851,3 +851,30 @@ fn stack_allocation_like[
     return LayoutTensor[
         layout, dtype, address_space=target_address_space
     ].stack_allocation()
+
+
+# Updates res with the outer product of lhs, rhs vectors, res += outer(lhs, rhs).
+#
+fn outer_product_acc[
+    dtype: DType
+](
+    res: LayoutTensor[_, dtype],
+    lhs: LayoutTensor[_, _],
+    rhs: LayoutTensor[_, _],
+):
+    constrained[res.rank() == 2, "Only rank 2 res is allowed."]()
+    constrained[lhs.rank() == 1, "Only rank 1 lhs is allowed."]()
+    constrained[rhs.rank() == 1, "Only rank 1 rhs is allowed."]()
+
+    alias M = res.shape[0]()
+    alias N = res.shape[1]()
+
+    constrained[lhs.shape[0]() == M, "lhs shape mismatch"]()
+    constrained[rhs.shape[0]() == N, "rhs shape mismatch"]()
+
+    @unroll
+    for i in range(M):
+
+        @unroll
+        for j in range(N):
+            res[i, j] += lhs[i].cast[dtype]() * rhs[j].cast[dtype]()
