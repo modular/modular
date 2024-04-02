@@ -549,8 +549,14 @@ def main(  # noqa: C901
         ctx.exit(1)
 
     write_back = WriteBack.from_configuration(check=check, diff=diff, color=color)
+
+    # When formatting files, this will be overridden by the file extension
+    is_mojo = False
+
     if target_version:
         versions = set(target_version)
+        if target_version[0].name == "MOJO":
+            is_mojo = True
     else:
         # We'll autodetect later.
         versions = set()
@@ -565,6 +571,7 @@ def main(  # noqa: C901
         experimental_string_processing=experimental_string_processing,
         preview=preview,
         python_cell_magics=set(python_cell_magics),
+        is_mojo=is_mojo
     )
 
     if code is not None:
@@ -901,6 +908,7 @@ def format_stdin_to_stdout(
         src, encoding, newline = content, "utf-8", ""
 
     dst = src
+
     try:
         dst = format_file_contents(src, fast=fast, mode=mode)
         return True
