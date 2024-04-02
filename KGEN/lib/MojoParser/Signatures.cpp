@@ -703,11 +703,6 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     arg.convention = (isDef || arg.vararg == VarArgKind::KWVarArg)
                          ? ParsedArgument::kConventionOwned
                          : ParsedArgument::kConventionBorrowed;
-
-    // FIXME(owned kwargs): we don't support owned kwargs, so pass varargs
-    // as borrowed instead for def's for now to hackaround this.
-    if (isDef && arg.vararg == VarArgKind::KWVarArg)
-      arg.convention = ParsedArgument::kConventionBorrowed;
   }
 
   // Emit default argument values if present.
