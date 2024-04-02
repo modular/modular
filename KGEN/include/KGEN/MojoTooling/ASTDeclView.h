@@ -129,8 +129,13 @@ private:
 /// View for parameters of structs or functions.
 class ParameterDeclView : public DeclView {
 public:
-  ParameterDeclView(StringRef name, StringRef type)
-      : DeclView(DeclViewKind::DK_ParameterDeclView, name), type(type){};
+  ParameterDeclView(StringRef name, StringRef type,
+                    std::optional<std::string> defaultValue)
+      : DeclView(DeclViewKind::DK_ParameterDeclView, name), type(type),
+        defaultValue(std::move(defaultValue)) {}
+
+  /// Return the default value of this argument, if any.
+  std::optional<StringRef> getDefaultValue() const { return defaultValue; }
 
   std::string getDeclarationSnippet() const override;
 
@@ -149,7 +154,8 @@ public:
   ///    "kind": "parameter",
   ///    "description": string,
   ///    "name": string,
-  ///    "type": string
+  ///    "type": string,
+  ///    "defaultValue": string?
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
@@ -163,6 +169,7 @@ public:
 
 private:
   std::string type;
+  std::optional<std::string> defaultValue;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString
@@ -175,9 +182,12 @@ private:
 class ArgumentDeclView : public DeclView {
 public:
   ArgumentDeclView(StringRef name, StringRef type,
-                   KGEN::LIT::PassingKind passingKind, bool inout, bool owned)
+                   KGEN::LIT::PassingKind passingKind,
+                   std::optional<std::string> defaultValue, bool inout,
+                   bool owned)
       : DeclView(DeclViewKind::DK_ArgumentDeclView, name), type(type),
-        passingKind(passingKind), inout(inout), owned(owned) {}
+        passingKind(passingKind), defaultValue(std::move(defaultValue)),
+        inout(inout), owned(owned) {}
 
   std::string getDeclarationSnippet() const override;
 
@@ -193,6 +203,9 @@ public:
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; };
 
+  /// Return the default value of this argument, if any.
+  std::optional<StringRef> getDefaultValue() const { return defaultValue; }
+
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
 
@@ -205,7 +218,8 @@ public:
   ///    "inout": boolean,
   ///    "owned": boolean,
   ///    "type": string
-  ///    "passingKind": string
+  ///    "passingKind": string,
+  ///    "defaultValue": string?
   ///  }
   llvm::json::Object toJSON(MojoParserContext &ctx) const override;
 
@@ -221,6 +235,7 @@ public:
 private:
   std::string type;
   KGEN::LIT::PassingKind passingKind;
+  std::optional<std::string> defaultValue;
   bool inout;
   bool owned;
 

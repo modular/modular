@@ -107,6 +107,14 @@ generateTypeString(Type type, std::optional<ASTType> selfType = std::nullopt,
   return os.str();
 }
 
+/// Generate a user-readable representation of the given pvalue.
+static std::string generatePValueString(PValue value) {
+  std::string typeName;
+  llvm::raw_string_ostream os(typeName);
+  value.printForDiag(os);
+  return os.str();
+}
+
 // Helper function that dumps an identifier along with an optional
 // type. It also takes care of varargs that need to encode * in the name.
 static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
@@ -288,13 +296,6 @@ static void dumpMarkdownTextSection(llvm::raw_ostream &os,
 // DeclView
 //===----------------------------------------------------------------------===//
 
-std::string ParameterDeclView::getDeclarationSnippet() const {
-  std::string buff;
-  llvm::raw_string_ostream os(buff);
-  dumpIdentifierWithType(os, getName(), type);
-  return buff;
-}
-
 StringRef DeclView::getKindAsString() const {
   switch (kind) {
   case DeclViewKind::DK_AliasDeclView:
@@ -385,6 +386,15 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
 // ParameterDeclView
 //===----------------------------------------------------------------------===//
 
+std::string ParameterDeclView::getDeclarationSnippet() const {
+  std::string buff;
+  llvm::raw_string_ostream os(buff);
+  dumpIdentifierWithType(os, getName(), type);
+  if (defaultValue)
+    os << " = " << *defaultValue;
+  return buff;
+}
+
 std::string ParameterDeclView::getMarkdownDocString() const {
   std::string markdown;
   llvm::raw_string_ostream os(markdown);
@@ -393,10 +403,13 @@ std::string ParameterDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object ParameterDeclView::toJSON(MojoParserContext &ctx) const {
-  return llvm::json::Object{{"kind", getKindAsString()},
+  llvm::json::Object object{{"kind", getKindAsString()},
                             {"name", getName().str()},
                             {"type", type},
                             {"description", description}};
+  if (defaultValue)
+    object["default"] = *defaultValue;
+  return object;
 }
 
 //===----------------------------------------------------------------------===//
@@ -415,6 +428,8 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
     os << "owned ";
 
   dumpIdentifierWithType(os, getName(), type);
+  if (defaultValue)
+    os << " = " << *defaultValue;
   return buff;
 }
 
@@ -426,7 +441,7 @@ std::string ArgumentDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object ArgumentDeclView::toJSON(MojoParserContext &ctx) const {
-  return llvm::json::Object{
+  llvm::json::Object object{
       {"description", description},
       {"inout", inout},
       {"kind", getKindAsString()},
@@ -435,6 +450,9 @@ llvm::json::Object ArgumentDeclView::toJSON(MojoParserContext &ctx) const {
       {"type", type},
       {"passingKind", stringifyPassingKind(passingKind)},
   };
+  if (defaultValue)
+    object["default"] = *defaultValue;
+  return object;
 }
 
 //===----------------------------------------------------------------------===//
@@ -649,6 +667,16 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
   ASTType resultType = funcOp.getUserResultType();
   ArrayRef<PassingKind> argPassingKinds = signature.getArgPassingKinds();
+  size_t numImplicitLifetimes = signature.getNumImplicitLifetimeDecls();
+  ArrayRef<ParamDeclAttr> params =
+      funcOp.getInputParams().drop_front(numImplicitLifetimes);
+  ArrayRef<PassingKind> paramPassingKinds = signature.getParamPassingKinds();
+  DefaultValueHandler defaultArgHandler(argPassingKinds,
+                                        signature.getDefaultPosArgs(),
+                                        signature.getDefaultKwOnlyArgs());
+  DefaultValueHandler defaultParamHandler(paramPassingKinds,
+                                          signature.getDefaultPosParams(),
+                                          signature.getDefaultKwOnlyParams());
 
   // Check for a by-ref result type, which gets modeled as the last argument
   // (as it needs to be passed through memory), and we don't want to include
@@ -674,12 +702,17 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     selfType = declRef->getParentDecl()->getSelfType();
 
   // Grab the types of the arguments to the function.
+  unsigned argIdx = 0;
   for (auto [type, name, initConvention, passingKind] :
        llvm::zip(argTypes, argNames, argConventions, argPassingKinds)) {
     auto convention = refineConventionForType(type, initConvention);
+    std::optional<std::string> defaultValue;
+    if (auto defaultAttr = defaultArgHandler.getDefault(argIdx++))
+      defaultValue = generatePValueString(defaultAttr);
+
     args.push_back(ArgumentDeclView(
         name.getValue(), generateTypeString(type, selfType, convention),
-        passingKind,
+        passingKind, std::move(defaultValue),
         /*inout=*/convention == ArgConvention::ByRef ||
             convention == ArgConvention::InitSelf,
         /*owned=*/convention == ArgConvention::OwnedInMem ||
@@ -687,16 +720,17 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   }
 
   // Grab the types of the parameters to the function.
-  size_t numImplicitLifetimes = signature.getNumImplicitLifetimeDecls();
-  auto params = funcOp.getInputParams().drop_front(numImplicitLifetimes);
-  auto paramPassingKinds = signature.getParamPassingKinds();
-  for (auto [param, passingKind] : llvm::zip(params, paramPassingKinds)) {
+  for (auto [index, param] : llvm::enumerate(params)) {
     // Ignore implicitly passed parameters.
-    if (passingKind == PassingKind::Implicit)
+    if (paramPassingKinds[index] == PassingKind::Implicit)
       continue;
+    std::optional<std::string> defaultValue;
+    if (auto defaultAttr = defaultParamHandler.getDefault(index))
+      defaultValue = generatePValueString(defaultAttr);
     parameters.push_back(
         ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
-                          generateTypeString(param.getType(), selfType)));
+                          generateTypeString(param.getType(), selfType),
+                          std::move(defaultValue)));
   }
 
   // Grab the result type, if it's non-none.
@@ -935,12 +969,20 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
                declRef.getName().value_or(StringRef())),
       decl(declRef) {
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
+  TypeSignatureType signature = structOp.getSignature();
+  DefaultValueHandler defaultParamHandler(signature.getParamPassingKinds(),
+                                          signature.getDefaultPosParams(),
+                                          signature.getDefaultKwOnlyParams());
 
   // Grab the types of the parameters to the struct.
-  for (ParamDeclAttr param : structOp.getInputParams())
-    parameters.push_back(
-        ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
-                          generateTypeString(param.getType())));
+  for (auto [index, param] : llvm::enumerate(structOp.getInputParams())) {
+    std::optional<std::string> defaultValue;
+    if (auto defaultAttr = defaultParamHandler.getDefault(index))
+      defaultValue = generatePValueString(defaultAttr);
+    parameters.push_back(ParameterDeclView(
+        demangleIfNeeded(param).getName().getValue(),
+        generateTypeString(param.getType()), std::move(defaultValue)));
+  }
 
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();
