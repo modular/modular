@@ -101,7 +101,7 @@ public:
 
   TelemetryContext(TelemetryContext &&other) = default;
 
-  ~TelemetryContext();
+  virtual ~TelemetryContext();
 
   // XXX: not sure if it's better to allocate Counter and Histogram on the heap
   // or not. For OTel, the Counter struct will basically just contain a pointer
@@ -230,7 +230,7 @@ public:
 
   /// Create a Logger with given domain (see
   /// https://opentelemetry.io/docs/specs/otel/logs/semantic_conventions/events/).
-  std::shared_ptr<Logs::Logger> getLogger(StringRef eventDomain) {
+  virtual std::shared_ptr<Logs::Logger> getLogger(StringRef eventDomain) {
 #ifdef MODULAR_ENABLE_TELEMETRY
     auto otelLogger = loggerProvider->GetLogger("modular_logger");
     auto otelEventLogger =

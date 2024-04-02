@@ -4,17 +4,17 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_BILLING_AWS_INSTANCEIDENTIFIER_H
-#define SUPPORT_BILLING_AWS_INSTANCEIDENTIFIER_H
+#ifndef SUPPORT_METERING_AWS_INSTANCEIDENTIFIER_H
+#define SUPPORT_METERING_AWS_INSTANCEIDENTIFIER_H
 
 #include "Support/HTTP/HTTPClient.h"
 
-namespace M::Billing {
+namespace M::Metering {
 
 /// Identifies AWS region and instance type by querying the IMDSv2 HTTP API.
 class InstanceIdentifier {
 public:
-  InstanceIdentifier(HTTPContextRef c) : ctx(std::move(c)) {}
+  InstanceIdentifier(HTTPContextRef ctx) : client(ctx->client()) {}
 
   ErrorOrSuccess fetch();
 
@@ -22,15 +22,15 @@ public:
   StringRef getInstanceType() const { return instanceType; }
 
 private:
-  ErrorOrSuccess fetchInfo(HTTPClient &client, StringRef token, bool isIPv4);
-  ErrorOrSuccess fetchV1(HTTPClient &client);
-  ErrorOrSuccess fetchV2(HTTPClient &client);
+  ErrorOrSuccess fetchInfo(StringRef token, bool isIPv4);
+  ErrorOrSuccess fetchV1();
+  ErrorOrSuccess fetchV2();
 
-  HTTPContextRef ctx;
+  std::unique_ptr<HTTPClient> client;
   std::string region;
   std::string instanceType;
 };
 
-} // namespace M::Billing
+} // namespace M::Metering
 
-#endif // SUPPORT_BILLING_AWS_INSTANCEIDENTIFIER_H
+#endif // SUPPORT_METERING_AWS_INSTANCEIDENTIFIER_H

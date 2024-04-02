@@ -147,6 +147,16 @@ std::pair<std::string, std::string> M::Telemetry::createLocalIDs() {
 }
 #endif // MODULAR_ENABLE_TELEMETRY
 
+static size_t getMaxProcessors(const HostMachineInfo &hostInfo) {
+  auto limitsOr = CPULimits::get();
+  if (!limitsOr.isError()) {
+    auto millicores = limitsOr->millicores;
+    if (millicores.has_value())
+      return *millicores / 1000;
+  }
+  return hostInfo.numPhysicalCores;
+}
+
 TelemetryContext::TelemetryContext(
     const EntitlementStore &entitlementStore,
     const llvm::StringMap<TelemetryContext::AttributeValue> &resources,
@@ -170,7 +180,11 @@ TelemetryContext::TelemetryContext(
   // Set some of the other useful features, like number of cores and operating
   // system.
   attrs.SetAttribute("cpu.cores", hostInfoOr->numPhysicalCores);
+  attrs.SetAttribute("cpu.max_cores", getMaxProcessors(*hostInfoOr));
+  attrs.SetAttribute("cpu.model_name", hostInfoOr->cpuModelName);
+
   attrs.SetAttribute("os.type", hostInfoOr->osName);
+  attrs.SetAttribute("os.triple", hostInfoOr->triple);
 
   // Set the underlying Modular version.
   auto version = getModularVersion();
@@ -408,6 +422,7 @@ TelemetryContext::TelemetryContext(
   ResourceAttributes attrs;
   auto hostInfoOr = getHostMachineInfo();
   assert(!hostInfoOr.isError() && "could not get the host machine info");
+  auto hostInfo = hostInfoOr.takeValue();
   // Set the CPU and architecture.
   attrs.SetAttribute("cpu.description", hostInfoOr->cpuModelName);
   attrs.SetAttribute("cpu.arch", hostInfoOr->cpuArch);

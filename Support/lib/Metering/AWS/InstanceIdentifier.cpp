@@ -4,13 +4,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Support/Billing/AWS/InstanceIdentifier.h"
+#include "Support/Metering/AWS/InstanceIdentifier.h"
 
 #include "Support/LLVMForwardDecls.h"
 
-#define DEBUG_TYPE "modular-billing"
+#define DEBUG_TYPE "modular-metering"
 
-namespace M::Billing {
+namespace M::Metering {
 namespace {
 
 // The IMDS static endpoints are documented at:
@@ -68,14 +68,13 @@ ErrorOr<std::string> send(HTTPClient &client, const HTTPRequest &req) {
 
 } // namespace
 
-ErrorOrSuccess InstanceIdentifier::fetchInfo(HTTPClient &client,
-                                             StringRef token, bool isIPv4) {
+ErrorOrSuccess InstanceIdentifier::fetchInfo(StringRef token, bool isIPv4) {
   const auto &baseURL = isIPv4 ? kIPv4BaseUrl : kIPv6BaseUrl;
-  auto regionOr = send(client, regionRequest(baseURL, token));
+  auto regionOr = send(*client, regionRequest(baseURL, token));
   if (regionOr.isError())
     return regionOr.takeError();
 
-  auto instanceTypeOr = send(client, instanceTypeRequest(baseURL, token));
+  auto instanceTypeOr = send(*client, instanceTypeRequest(baseURL, token));
   if (instanceTypeOr.isError())
     return instanceTypeOr.takeError();
 
@@ -85,9 +84,9 @@ ErrorOrSuccess InstanceIdentifier::fetchInfo(HTTPClient &client,
   return success();
 }
 
-ErrorOrSuccess InstanceIdentifier::fetchV1(HTTPClient &client) {
-  if (auto resultV4 = fetchInfo(client, "", true); resultV4.isError()) {
-    if (auto resultV6 = fetchInfo(client, "", false); resultV6.isError()) {
+ErrorOrSuccess InstanceIdentifier::fetchV1() {
+  if (auto resultV4 = fetchInfo("", true); resultV4.isError()) {
+    if (auto resultV6 = fetchInfo("", false); resultV6.isError()) {
       return Error(
           llvm::Twine("Could not reach the IMDSv1 API with errors: {") +
           resultV4.getError() + " | " + resultV6.getError() + "}");
@@ -96,14 +95,14 @@ ErrorOrSuccess InstanceIdentifier::fetchV1(HTTPClient &client) {
   return success();
 }
 
-ErrorOrSuccess InstanceIdentifier::fetchV2(HTTPClient &client) {
+ErrorOrSuccess InstanceIdentifier::fetchV2() {
   // Try IPv4 first and fallback to IPv6.
   bool isIPv4 = true;
   std::string token;
-  if (auto resultV4 = send(client, tokenRequest(kIPv4BaseUrl));
+  if (auto resultV4 = send(*client, tokenRequest(kIPv4BaseUrl));
       resultV4.isError()) {
     isIPv4 = false;
-    if (auto resultV6 = send(client, tokenRequest(kIPv6BaseUrl));
+    if (auto resultV6 = send(*client, tokenRequest(kIPv6BaseUrl));
         resultV6.isError()) {
       return Error(
           llvm::Twine("Could not reach the IMDSv2 API with errors: {") +
@@ -113,13 +112,12 @@ ErrorOrSuccess InstanceIdentifier::fetchV2(HTTPClient &client) {
   } else
     token = *resultV4;
   LLVM_DEBUG(llvm::dbgs() << "IMDSv2 token: " << token << "\n");
-  return fetchInfo(client, token, isIPv4);
+  return fetchInfo(token, isIPv4);
 }
 
 ErrorOrSuccess InstanceIdentifier::fetch() {
-  HTTPClient client(ctx.copy());
-  if (auto resultV2 = fetchV2(client); resultV2.isError()) {
-    if (auto resultV1 = fetchV1(client); resultV1.isError()) {
+  if (auto resultV2 = fetchV2(); resultV2.isError()) {
+    if (auto resultV1 = fetchV1(); resultV1.isError()) {
       return Error(llvm::Twine("Could not reach any IMDS API with errors: {") +
                    resultV2.getError() + " | " + resultV1.getError() + "}");
     }
@@ -132,4 +130,4 @@ ErrorOrSuccess InstanceIdentifier::fetch() {
   return success();
 }
 
-} // namespace M::Billing
+} // namespace M::Metering
