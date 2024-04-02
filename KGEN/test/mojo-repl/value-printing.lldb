@@ -10,12 +10,12 @@
 # CHECK: (Int) x = 12
 var x = 12
 
-# CHECK: (SIMD[f64, 1]) x = {
+# CHECK: (SIMD[float64, 1]) x = {
 # CHECK:   (f64) [0] = 4.2{{.*}}
 # CHECK: }
 var x = 4.2
 
-# CHECK:  (SIMD[si32, 8]) x = {
+# CHECK:  (SIMD[int32, 8]) x = {
 # CHECK:    (si32) [0] = 5
 # CHECK:    (si32) [1] = 6
 # CHECK:    (si32) [2] = 7
@@ -27,7 +27,7 @@ var x = 4.2
 # CHECK:  }
 var x = SIMD[DType.int32, 8](5, 6, 7, 8, 9, 10, 11, 12)
 
-# CHECK:  (SIMD[si64, 4]) x = {
+# CHECK:  (SIMD[int64, 4]) x = {
 # CHECK:    (si64) [0] = 1
 # CHECK:    (si64) [1] = 2
 # CHECK:    (si64) [2] = 3
@@ -38,7 +38,7 @@ var x = SIMD[DType.int64, 4](1, 2, 3, 4)
 # CHECK: (Int) v = -101
 var v = -101
 
-# CHECK: (SIMD[si8, 2]) w = {
+# CHECK: (SIMD[int8, 2]) w = {
 # CHECK:   (si8) [0] = -50
 # CHECK:   (si8) [1] = 31
 # CHECK: }
@@ -47,13 +47,13 @@ var w = SIMD[DType.int8, 2](-50, 31)
 
 # CHECK: (Foo) f = {
 # CHECK:   (Int) v = -101
-# CHECK:   (SIMD[si8, 2]) w = {
+# CHECK:   (SIMD[int8, 2]) w = {
 # CHECK:     (si8) [0] = -50
 # CHECK:     (si8) [1] = 31
 # CHECK:   }
 # CHECK:   (Bool) x = True
 # CHECK:   (StringLiteral) y = "fofofo"
-# CHECK:   (SIMD[f32, 4]) z = {
+# CHECK:   (SIMD[float32, 4]) z = {
 # CHECK:     (f32) [0] = 1
 # CHECK:     (f32) [1] = 2
 # CHECK:     (f32) [2] = 3
@@ -104,9 +104,9 @@ z.append(2)
 z.append(3)
 
 
-# CHECK: (Tuple[Int, SIMD[si8, 4]]) a = {
+# CHECK: (Tuple[Int, SIMD[int8, 4]]) a = {
 # CHECK:   (Int) [0] = 1
-# CHECK:   (SIMD[si8, 4]) [1] = {
+# CHECK:   (SIMD[int8, 4]) [1] = {
 # CHECK:     (si8) [0] = 1
 # CHECK:     (si8) [1] = 2
 # CHECK:     (si8) [2] = 3
