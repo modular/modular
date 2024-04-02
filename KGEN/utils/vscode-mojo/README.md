@@ -45,6 +45,17 @@ setting defined at the Workspace-level of any open Workspaces in the current
 window. This is particularly useful if the user opens Mojo files that don't
 belong to any active Workspace and wants to get some extension support.
 
+## Debugger
+
+A fully featured LLDB debugger is included with Mojo. You can press the down
+arrow next to the `▶️` button in the top right of a Mojo file, and select
+`Debug Mojo File`:
+
+![debugging](https://github.com/modularml/mojo/assets/77730378/45c547c3-8f08-4f8c-85a4-1254d12a09f5)
+
+The default key is `F5`, and you can rebind the related hotkeys in Preferences:
+Open Keyboard Shortcuts > `Debug: Start Debugging`
+
 ## Code Completion
 
 To trigger a completion press `ctrl + space`, pressing `ctrl + space` again will
