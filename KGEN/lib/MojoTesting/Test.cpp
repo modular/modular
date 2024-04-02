@@ -730,13 +730,7 @@ Test::discoverFromID(const TestID &testID,
 /// Create a temporary output file for the test executor.
 static ErrorOr<TempFile> createTempOutputFile() {
   // Create a temporary file to capture the output of the invocation.
-  std::error_code ec;
-  std::filesystem::path tmpDirPath = std::filesystem::temp_directory_path(ec);
-  if (ec)
-    return Error("could not find temporary directory for test output");
-
-  ErrorOr<TempFile> outOrErr =
-      TempFile::create((tmpDirPath / "test-out-%%%%%%.txt").string());
+  ErrorOr<TempFile> outOrErr = TempFile::create("test-out-%%%%%%.txt");
   if (failed(outOrErr))
     return Error("could not create temporary file for test output");
   return std::move(*outOrErr);
