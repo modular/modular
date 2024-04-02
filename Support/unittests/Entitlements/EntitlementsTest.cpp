@@ -6,6 +6,7 @@
 
 #include "Support/Entitlements/Entitlement.h"
 #include "Support/Entitlements/EntitlementStore.h"
+#include "Support/Entitlements/EntitlementToken.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "Support/Random.h"
 #include "mbedtls/error.h"
@@ -104,7 +105,7 @@ public:
                                 modularRootCertificate.size() + 1);
     EXPECT_EQ(rc, 0) << "mbedtls_x509_crt_parse failed";
   }
-  ~Firechicken() {
+  ~Firechicken() override {
     mbedtls_pk_free(&keyCtx);
     mbedtls_x509_crt_free(&rootCert);
   }
@@ -389,12 +390,88 @@ TEST(TestEntitlementStore, BootstrapAndOpen) {
   }
 
   Config config; // Use empty config.
-  auto storeOr = EntitlementStore::open(config, httpCtx.copy());
+  auto storeOr = EntitlementStore::open(config);
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
   ASSERT_TRUE(storeOr->has_value()) << "we just generated this...?";
 
   auto e = (*storeOr)->getEntitlement<TestEntitlement>();
   EXPECT_TRUE(e != nullptr);
+}
+
+/// Load an EntitlementStore using a token
+TEST(TestEntitlementStore, fromToken) {
+  Entitlement::registerEntitlement<TestEntitlement>();
+
+  Config config;
+  EntitlementToken token;
+  // throwaway private key
+  token.key =
+      "-----BEGIN PRIVATE KEY-----\n"
+      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgIqHReGavAgPFhuoM\n"
+      "s6w84NycMM/hFkaWcumQJZa2DCShRANCAAT4V1wTu7QXcPWIHic0P0C25i8QQWUV\n"
+      "8fvzSH9oO8BRHEp8tp0DGA+vJ21y/2D0fnVthFjzLKM2uZotZj6tXvQO\n"
+      "-----END PRIVATE KEY-----\n";
+
+  // cert signed with "local" certs
+  token.certChain.emplace_back(
+      "-----BEGIN CERTIFICATE-----\n"
+      "MIIBpDCCAUqgAwIBAgIIDa1JmRBfoSkwCgYIKoZIzj0EAwIwQjELMAkGA1UEBhMC\n"
+      "VVMxFDASBgNVBAoMC01vZHVsYXIgSW5jMR0wGwYDVQQDDBRkZXYuYXV0aC5tb2R1\n"
+      "bGFyLmNvbTAeFw0yNDA0MDExNDU5MzJaFw0yNDA0MDMxNDU5MzJaMDkxEjAQBgNV\n"
+      "BAoTCVdheW5lQ29ycDEMMAoGA1UECwwDUiZEMRUwEwYDVQQDDAxtc3RfMTIzNDEy\n"
+      "MzQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAT4V1wTu7QXcPWIHic0P0C25i8Q\n"
+      "QWUV8fvzSH9oO8BRHEp8tp0DGA+vJ21y/2D0fnVthFjzLKM2uZotZj6tXvQOozMw\n"
+      "MTAOBgNVHQ8BAf8EBAMCB4AwHwYDVR0jBBgwFoAU7y1D961419vhasbaJHQRKGm1\n"
+      "QhswCgYIKoZIzj0EAwIDSAAwRQIgDJf+sf0KFwKj7UiDI7WJg9ybAW2ib/w0xhtR\n"
+      "J3umlGICIQCdqZCsHtyqL18gNgjOyqVKqgKCd+9YFWmNSqCfK2q1Fw==\n"
+      "-----END CERTIFICATE-----\n");
+
+  auto storeOr = EntitlementStore::fromToken(token);
+  ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
+
+  auto store = storeOr.takeValue();
+  auto key = store.getPrivateKey()->getBuffer().str();
+  ASSERT_EQ("-----BEGIN PRIVATE KEY-----\nMIGH", key.substr(0, 32));
+}
+
+/// Load an EntitlementStore using a token
+TEST(TestEntitlementStore, preferFromToken) {
+  Entitlement::registerEntitlement<TestEntitlement>();
+
+  Config config;
+  EntitlementToken token;
+  // throwaway private key
+  token.key =
+      "-----BEGIN PRIVATE KEY-----\n"
+      "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgIqHReGavAgPFhuoM\n"
+      "s6w84NycMM/hFkaWcumQJZa2DCShRANCAAT4V1wTu7QXcPWIHic0P0C25i8QQWUV\n"
+      "8fvzSH9oO8BRHEp8tp0DGA+vJ21y/2D0fnVthFjzLKM2uZotZj6tXvQO\n"
+      "-----END PRIVATE KEY-----\n";
+
+  // cert signed with "local" certs
+  token.certChain.emplace_back(
+      "-----BEGIN CERTIFICATE-----\n"
+      "MIIBpDCCAUqgAwIBAgIIDa1JmRBfoSkwCgYIKoZIzj0EAwIwQjELMAkGA1UEBhMC\n"
+      "VVMxFDASBgNVBAoMC01vZHVsYXIgSW5jMR0wGwYDVQQDDBRkZXYuYXV0aC5tb2R1\n"
+      "bGFyLmNvbTAeFw0yNDA0MDExNDU5MzJaFw0yNDA0MDMxNDU5MzJaMDkxEjAQBgNV\n"
+      "BAoTCVdheW5lQ29ycDEMMAoGA1UECwwDUiZEMRUwEwYDVQQDDAxtc3RfMTIzNDEy\n"
+      "MzQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAT4V1wTu7QXcPWIHic0P0C25i8Q\n"
+      "QWUV8fvzSH9oO8BRHEp8tp0DGA+vJ21y/2D0fnVthFjzLKM2uZotZj6tXvQOozMw\n"
+      "MTAOBgNVHQ8BAf8EBAMCB4AwHwYDVR0jBBgwFoAU7y1D961419vhasbaJHQRKGm1\n"
+      "QhswCgYIKoZIzj0EAwIDSAAwRQIgDJf+sf0KFwKj7UiDI7WJg9ybAW2ib/w0xhtR\n"
+      "J3umlGICIQCdqZCsHtyqL18gNgjOyqVKqgKCd+9YFWmNSqCfK2q1Fw==\n"
+      "-----END CERTIFICATE-----\n");
+
+  std::string t = packToken(token);
+  auto storeOrOr = EntitlementStore::open(config, t);
+  ASSERT_FALSE(storeOrOr.isError()) << storeOrOr.getError();
+
+  auto storeOr = storeOrOr.takeValue();
+  ASSERT_TRUE(storeOr.has_value());
+  EntitlementStore &store = storeOr.value();
+  auto key = store.getPrivateKey()->getBuffer().str();
+  // This is the EntitlementToken private key
+  ASSERT_EQ("-----BEGIN PRIVATE KEY-----\nMIGH", key.substr(0, 32));
 }
 
 /// Check that we can boostrap and then refresh the entitlement certificate.

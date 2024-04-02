@@ -9,6 +9,7 @@
 #include "Support/Buffer.h"
 #include "Support/Configuration.h"
 #include "Support/Cryptography/Keypair.h"
+#include "Support/Entitlements/EntitlementToken.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "Support/Random.h"
@@ -636,8 +637,6 @@ ErrorOr<EntitlementStore> EntitlementStore::create(BufferRef &&clientKeyPriv,
   // Parse all entitlements.
   EntitlementStore out = EntitlementStore(
       std::move(*privKeyOr), std::move(clientKeyPriv), std::move(clientCert));
-  if (auto err = out.parseCertificateChain())
-    return err.takeError();
 
   // Parse the certificate chain. This is validating the store. The clientCert
   // object will be stored by this and all entitlements updated.
@@ -680,12 +679,46 @@ static std::filesystem::path findClientFile(const std::filesystem::path &dir,
 }
 
 ErrorOr<std::optional<EntitlementStore>>
-EntitlementStore::open(Config &config, HTTPContextRef httpCtx) {
-  std::unique_ptr<HTTPClient> client = httpCtx->client();
+EntitlementStore::open(Config &config, std::optional<std::string> envVarOr) {
+  // Use the creds in the EntitlementToken if:
+  //   - The containing env var is defined
+  //   - The value successfully unpacks to an EntitlementToken
+  //   - At least 1 cert in certChain
+  // Otherwise fallback to looking at the file system for certs.
 
-  // FIXME(mrterry): Shall we try creating from a token in the environment?
-  // Alas! This doesn't current exist. When it does, it should be right here.
+  if (envVarOr.has_value()) {
+    if (auto tokenOr = unpackToken(envVarOr.value()); !tokenOr.isError()) {
+      const EntitlementToken token = *tokenOr.takeValue().get();
+      if (auto storeOr = fromToken(token); !storeOr.isError()) {
+        return storeOr;
+      }
+    }
+  }
 
+  return fromConfig(config);
+}
+
+ErrorOr<EntitlementStore>
+EntitlementStore::fromToken(const EntitlementToken &token) {
+  if (token.certChain.empty()) {
+    return Error("Empty certChain");
+  }
+  BufferRef tokenBuf = Buffer::get(token.key);
+
+  // Concatenate all the certs together
+  WriteableBufferRef certBuf = WriteableBuffer::get();
+  for (const auto &pem : token.certChain) {
+    *certBuf << pem;
+    // Make sure that each cert starts on a newline
+    if (pem.back() != '\n') {
+      *certBuf << "\n";
+    }
+  }
+
+  return create(std::move(tokenBuf), std::move(certBuf));
+}
+
+ErrorOr<EntitlementStore> EntitlementStore::fromConfig(Config &config) {
   // Key files and certificate paths.
   auto dataFolderOr = M::Config::getModularDataFolderPath(true);
   if (dataFolderOr.isError())
@@ -760,16 +793,16 @@ ErrorOr<EntitlementStore> EntitlementStore::generate(Config &config,
 // EntitlementStore::alwaysOpen
 //===----------------------------------------------------------------------===//
 
-EntitlementStore EntitlementStore::alwaysOpen(HTTPContextRef httpCtx,
-                                              llvm::raw_ostream &warnStream) {
+EntitlementStore EntitlementStore::alwaysOpen(llvm::raw_ostream &warnStream) {
   // Open the configuration.
   //
   // N.B. This function is to be removed very shortly in the stack. We can no
   // longer open the entitlement store in this way. The asserts are here
-  // temporarily, but will be removed in the future with proper error plumbing.
+  // temporarily, but will be removed in the future with proper error
+  // plumbing.
   auto cfgOr = Config::open();
   assert(!cfgOr.isError());
-  auto esOr = EntitlementStore::open(*cfgOr, std::move(httpCtx));
+  auto esOr = EntitlementStore::open(*cfgOr, EntitlementStore::getEnv());
   if (!esOr.isError() && esOr->has_value())
     return std::move(esOr->value());
 
@@ -815,8 +848,8 @@ ErrorOrSuccess EntitlementStore::refresh(Config &config,
     return newKeysOr.takeError();
 
   // Swap the client keys (the current keys) with the new keys. That way
-  // `oldKeys` will point to the old keypair, and `clientKeys` will point to the
-  // new keypair for the CSR.
+  // `oldKeys` will point to the old keypair, and `clientKeys` will point to
+  // the new keypair for the CSR.
   Keypair oldKeys = std::move(*newKeysOr);
   std::swap(oldKeys, clientKeys);
 
@@ -836,7 +869,7 @@ ErrorOrSuccess EntitlementStore::refresh(Config &config,
   // but won't verify the certificate.
   auto certOr =
       requestCertificate(*client, buf->Buffer::getBuffer(),
-                         /*certChain=*/clientCertChain.get(), b64Sig,
+                         /*chain=*/clientCertChain.get(), b64Sig,
                          /*isRefresh=*/true, /*accessToken=*/std::nullopt);
   if (certOr.isError())
     // Include the original error and a helpful message here. It's possible
@@ -995,9 +1028,9 @@ private:
 //===----------------------------------------------------------------------===//
 
 /// This function uses the OAuth Device Authorization Flow to do initial
-/// authentication and bootstrap the client certificate. Note that this does not
-/// validate the client certificate, since that validation will happen when the
-/// cert is read in EntitlementStore::refresh.
+/// authentication and bootstrap the client certificate. Note that this does
+/// not validate the client certificate, since that validation will happen
+/// when the cert is read in EntitlementStore::refresh.
 ErrorOr<BufferRef>
 EntitlementStore::authAndFetchCertificate(HTTPClient &client,
                                           Keypair &clientKeys) {
@@ -1065,10 +1098,10 @@ EntitlementStore::authAndFetchCertificate(HTTPClient &client,
     return err.takeError();
 
   // Great, now we can refresh the cert given the CSR we just generated. Since
-  // we aren't rotating the client keypair, we don't want to pass in a signature
-  // from a previous key.
+  // we aren't rotating the client keypair, we don't want to pass in a
+  // signature from a previous key.
   return requestCertificate(client, csrBuf->Buffer::getBuffer(),
-                            /*certChain=*/nullptr, /*prevKeySig=*/"",
+                            /*chain=*/nullptr, /*prevKeySig=*/"",
                             /*isRefresh=*/false, /*accessToken=*/accessToken);
 }
 
