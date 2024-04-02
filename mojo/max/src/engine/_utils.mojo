@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.unsafe import DTypePointer
+from os import abort
+from pathlib import Path
 from sys.ffi import DLHandle
 from utils import StringRef
 
@@ -46,6 +48,25 @@ fn exchange[T: AnyRegType](inout old_var: T, owned new_value: T) -> T:
 # Utility structs and functions to interact with dylibs.                #
 #                                                                       #
 # ======================================================================#
+
+
+fn handle_from_config(name: String, param: String) -> DLHandle:
+    var lib_path_str_ptr = external_call[
+        "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
+    ](param._strref_dangerous())
+    param._strref_keepalive()
+
+    if not lib_path_str_ptr:
+        abort("cannot get " + name + " library location from modular.cfg")
+
+    # this transfers ownership of the underlying data buffer allocated in
+    # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
+    var lib_path = String._from_bytes(lib_path_str_ptr)
+
+    if not Path(lib_path).exists():
+        abort("cannot load " + name + "  library from " + lib_path)
+
+    return DLHandle(lib_path)
 
 
 @value

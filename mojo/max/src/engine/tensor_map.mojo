@@ -197,7 +197,7 @@ struct TensorMap(SizedRaising):
             key: Name of tensor / numpy array in the map.
 
         Returns:
-            A copy of tensor help by the map.
+            A copy of the tensor held by the map.
         """
         var tensor_ptr = self._ptr.get_tensor_by_name(
             key._strref_dangerous().data, self._lib
@@ -224,6 +224,19 @@ struct TensorMap(SizedRaising):
         )
         key._strref_keepalive()
         return EngineTensor(tensor_ptr, self._lib, self._session).buffer[type]()
+
+    fn get_spec(self, key: String) raises -> TensorSpec:
+        """Gets the spec of the tensor pointed by the key.
+
+        Args:
+            key: Name in TensorMap.
+
+        Returns:
+            Buffer of the tensor pointed by the key.
+        """
+        var tensor_ptr = self._ptr.get_tensor_by_name(key._as_ptr(), self._lib)
+        var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
+        return mof_tensor.spec()
 
     fn get_value(self, key: String) raises -> Value:
         """Gets the value pointed by the key.
