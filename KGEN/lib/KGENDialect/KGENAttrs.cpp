@@ -2100,13 +2100,6 @@ static TypedAttr simplifyVariadicGet(ArrayRef<TypedAttr> operands,
   return {};
 }
 
-static TypedAttr simplifyVariadicSize(TypedAttr operand, Type &resultType) {
-  if (auto variadic = dyn_cast<VariadicAttr>(operand))
-    return IntegerAttr::get(IndexType::get(operand.getContext()),
-                            variadic.getValues().size());
-  return {};
-}
-
 // Returns the op with operands replaced with substitutions with actual values.
 // substitutions are automatically added in conditionals with equals.
 //
