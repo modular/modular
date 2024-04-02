@@ -8,6 +8,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/MOGGPreElab/MOGGTensorAccessor.h"
 #include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/POPDialect/POPAttrs.h"
@@ -19,7 +20,6 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
 
-#include "MOGGDecorators.h"
 #include "UserLibraryChecker.h"
 
 using namespace M;

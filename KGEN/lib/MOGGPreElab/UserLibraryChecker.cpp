@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "UserLibraryChecker.h"
+#include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
-#include "MOGGDecorators.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include <list>
 
