@@ -675,18 +675,10 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
   ArrayRef<StringAttr> argNames = signature.getArgNames();
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
-  ASTType resultType = funcOp.getUserResultType();
   ArrayRef<PassingKind> argPassingKinds = signature.getArgPassingKinds();
   size_t numImplicitLifetimes = signature.getNumImplicitLifetimeDecls();
   ArrayRef<ParamDeclAttr> params =
       funcOp.getInputParams().drop_front(numImplicitLifetimes);
-  ArrayRef<PassingKind> paramPassingKinds = signature.getParamPassingKinds();
-  DefaultValueHandler defaultArgHandler(argPassingKinds,
-                                        signature.getDefaultPosArgs(),
-                                        signature.getDefaultKwOnlyArgs());
-  DefaultValueHandler defaultParamHandler(paramPassingKinds,
-                                          signature.getDefaultPosParams(),
-                                          signature.getDefaultKwOnlyParams());
 
   // Check for a by-ref result type, which gets modeled as the last argument
   // (as it needs to be passed through memory), and we don't want to include
@@ -712,12 +704,12 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     selfType = declRef->getParentDecl()->getSelfType();
 
   // Grab the types of the arguments to the function.
-  unsigned argIdx = 0;
-  for (auto [type, name, initConvention, passingKind] :
-       llvm::zip(argTypes, argNames, argConventions, argPassingKinds)) {
+  DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());
+  for (auto [argIdx, type, name, initConvention, passingKind] :
+       llvm::enumerate(argTypes, argNames, argConventions, argPassingKinds)) {
     auto convention = refineConventionForType(type, initConvention);
     std::optional<std::string> defaultValue;
-    if (auto defaultAttr = defaultArgHandler.getDefault(argIdx++))
+    if (auto defaultAttr = defaultArgHandler.getDefault(argIdx))
       defaultValue = generatePValueString(defaultAttr);
 
     auto declConvention = ArgumentDeclView::Convention::kBorrowed;
@@ -734,9 +726,11 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   }
 
   // Grab the types of the parameters to the function.
-  for (auto [index, param] : llvm::enumerate(params)) {
+  DefaultValueHandler defaultParamHandler(signature.getParamListAttrs());
+  for (auto [index, param, passingKind] :
+       llvm::enumerate(params, signature.getParamPassingKinds())) {
     // Ignore implicitly passed parameters.
-    if (paramPassingKinds[index] == PassingKind::Implicit)
+    if (passingKind == PassingKind::Implicit)
       continue;
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultParamHandler.getDefault(index))
@@ -744,11 +738,11 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     parameters.push_back(
         ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
                           generateTypeString(param.getType(), selfType),
-                          paramPassingKinds[index], std::move(defaultValue)));
+                          passingKind, std::move(defaultValue)));
   }
 
   // Grab the result type, if it's non-none.
-  if (!resultType.isNoneType())
+  if (ASTType resultType = funcOp.getUserResultType(); !resultType.isNoneType())
     returnType = generateTypeString(resultType, selfType);
 
   if (auto docStr = declRef->getParsedDocString()) {
@@ -970,20 +964,18 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
       decl(declRef) {
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
   TypeSignatureType signature = structOp.getSignature();
-  ArrayRef<PassingKind> passingKinds = signature.getParamPassingKinds();
-  DefaultValueHandler defaultParamHandler(passingKinds,
-                                          signature.getDefaultPosParams(),
-                                          signature.getDefaultKwOnlyParams());
 
   // Grab the types of the parameters to the struct.
-  for (auto [index, param] : llvm::enumerate(structOp.getInputParams())) {
+  DefaultValueHandler defaultParamHandler(signature.getParamListAttrs());
+  for (auto [index, param, passingKind] : llvm::enumerate(
+           structOp.getInputParams(), signature.getParamPassingKinds())) {
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultParamHandler.getDefault(index))
       defaultValue = generatePValueString(defaultAttr);
     parameters.push_back(
         ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
-                          generateTypeString(param.getType()),
-                          passingKinds[index], std::move(defaultValue)));
+                          generateTypeString(param.getType()), passingKind,
+                          std::move(defaultValue)));
   }
 
   if (auto docStr = decl->getParsedDocString()) {
