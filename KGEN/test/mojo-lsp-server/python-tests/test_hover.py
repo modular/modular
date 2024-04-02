@@ -611,3 +611,27 @@ Some documentation.
 
 """,
     )
+
+
+async def test_function_types(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+def function[
+    func: fn (Int) capturing -> Int
+]() -> fn (Int) capturing -> Int:
+    pass
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    range = fail_if_none(doc.find_first_range("function"))
+    result = fail_if_none(await requests.hover(doc, range.start))
+    assert isinstance(result.contents, MarkupContent)
+    assert (
+        result.contents.value
+        == """```mojo
+(function) def function[func: fn(Int, /) capturing -> Int]() raises -> fn(Int, /) capturing -> Int
+```"""
+    )

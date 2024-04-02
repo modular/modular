@@ -340,14 +340,14 @@ public:
   std::optional<StringRef> getReturnType() const { return returnType; }
 
   /// Generate a string for the signature of this function, given its
-  /// components. The positions of parameters and arguments within the printed
-  /// signature may be extracted via the optionally null `parameterOffsets` and
-  /// `argumentOffsets` parameters.
+  /// components. The positions of parameters, arguments, and the return type
+  /// within the printed signature may be extracted via the optionally null
+  /// `parameterOffsets`, `argumentOffsets`, and `returnOffset` parameters.
   std::string getSignature(
       SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets =
           nullptr,
-      SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets =
-          nullptr) const;
+      SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets = nullptr,
+      unsigned *returnOffset = nullptr) const;
 
   /// Return true if this function raises.
   bool raises() const { return raisesFlag; }

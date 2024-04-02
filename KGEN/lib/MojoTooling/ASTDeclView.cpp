@@ -544,8 +544,10 @@ std::string FunctionDeclView::getDeclarationSnippet(
   if (isAsync())
     os << "async ";
 
-  std::string signature = getSignature(parameterOffsets, argumentOffsets);
-  StringRef typeLessSignature = StringRef(signature).split(" ->").first;
+  unsigned returnOffset = 0;
+  std::string signature =
+      getSignature(parameterOffsets, argumentOffsets, &returnOffset);
+  StringRef resultLessSignature(signature.data(), returnOffset);
   os << (isDef() ? "def" : "fn") << " ";
 
   // Adjust the signature offsets.
@@ -562,13 +564,12 @@ std::string FunctionDeclView::getDeclarationSnippet(
     adjustOffsets(argumentOffsets);
 
   // Emit the signature.
-  os << typeLessSignature;
+  os << resultLessSignature;
 
   if (raises())
     os << " raises";
 
-  if (returnType)
-    os << " -> " << *returnType;
+  os << StringRef(signature).drop_front(returnOffset);
   return snippet;
 }
 
@@ -588,7 +589,8 @@ std::string FunctionDeclView::getMarkdownDocString() const {
 
 std::string FunctionDeclView::getSignature(
     SmallVectorImpl<std::pair<unsigned, unsigned>> *parameterOffsets,
-    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets) const {
+    SmallVectorImpl<std::pair<unsigned, unsigned>> *argumentOffsets,
+    unsigned *returnOffset) const {
   std::string signature;
   llvm::raw_string_ostream signatureOS(signature);
 
@@ -632,6 +634,8 @@ std::string FunctionDeclView::getSignature(
   signatureOS << ")";
 
   // Emit the result type.
+  if (returnOffset)
+    *returnOffset = signature.size();
   if (returnType)
     signatureOS << " -> " << *returnType;
   return signatureOS.str();
