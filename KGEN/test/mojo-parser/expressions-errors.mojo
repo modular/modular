@@ -158,7 +158,7 @@ def testLValuesRvalues() -> None:
 # expected-note @+1 {{function declared here}}
 fn badRef(inout val: Int):
   var x = Float32(1.0)
-  # expected-error-re @+1 {{invalid call to 'badRef': l-value of type 'SIMD[{{.*}}f32{{.*}}]' cannot be converted to reference of type 'Int'}}
+  # expected-error-re @+1 {{invalid call to 'badRef': l-value of type 'SIMD[{{.*}}float32{{.*}}]' cannot be converted to reference of type 'Int'}}
   badRef(x)
 
 struct PythonObject: pass
@@ -260,7 +260,7 @@ fn bad_tuple(a: Int):
   (c, d) = a
 
   var iTup : Tuple[Int, Int]
-  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, SIMD[f64, 1]]' value to 'Tuple[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, SIMD[float64, 1]]' value to 'Tuple[Int, Int]' in assignment}}
   iTup = (1, 2.0)
 
 
@@ -339,7 +339,7 @@ fn dict_parse_errors(a: Int):
 
 
 fn bad_exprs(cond: Bool, Float32: Float32, c1: Conv1, c2: Conv2):
-  # expected-error-re @+1 {{value of type 'SIMD[{{.*}}f32{{.*}}]' is not compatible with value of type 'Conv1'}}
+  # expected-error-re @+1 {{value of type 'SIMD[{{.*}}float32{{.*}}]' is not compatible with value of type 'Conv1'}}
   _ = Float32 if cond else c1
 
   # expected-error @below {{ambiguous merge: left value has type 'Conv1' and right value has type 'Conv2', and both convert to each other}}
@@ -389,7 +389,7 @@ struct IncompatElementTypes:
 
 fn test_subscript_implicit_conversion(c: IncompatElementTypes):
   var tmp : Int = c[1]
-  # expected-error-re @+1 {{cannot implicitly convert 'SIMD[f32, 1]' value to 'Int' in assignment}}
+  # expected-error-re @+1 {{cannot implicitly convert 'SIMD[float32, 1]' value to 'Int' in assignment}}
   c[1] = Float32(4.0)
   c[1] = tmp
 

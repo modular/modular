@@ -70,7 +70,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  var z = b+a  # expected-error-re {{invalid call to '__add__': right side cannot be converted from 'MySIMD[{{.*}}1{{.*}}, f64]' to 'MySIMD[{{.*}}2{{.*}}, si32]'}}
+  var z = b+a  # expected-error-re {{invalid call to '__add__': right side cannot be converted from 'MySIMD[{{.*}}1{{.*}}, float64]' to 'MySIMD[{{.*}}2{{.*}}, int32]'}}
 
 fn badReboundType[type: __mlir_type.`!kgen.dtype`,
                   val: __mlir_type[`!pop.scalar<`, type, `>`]]():

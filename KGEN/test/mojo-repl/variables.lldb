@@ -11,7 +11,7 @@
 # Check that we can properly define variables with large alignments.
 var bigValue = SIMD[DType.float32, 64]()
 
-# CHECK: (SIMD[f32, 64]) bigValue = {
+# CHECK: (SIMD[float32, 64]) bigValue = {
 # CHECK:   (f32) [0] = 0
 # CHECK:   (f32) [1] = 0
 # CHECK:   (f32) [62] = 0

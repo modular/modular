@@ -26,11 +26,11 @@ struct Point(CollectionElement):
 # CHECK:   (Int) [3] = 4
 # CHECK:   (Int) [4] = 5
 # CHECK: }
-# CHECK: (List[SIMD[f32, 1]]) vec2 = (size 2) {
-# CHECK:   (SIMD[f32, 1]) [0] = {
+# CHECK: (List[SIMD[float32, 1]]) vec2 = (size 2) {
+# CHECK:   (SIMD[float32, 1]) [0] = {
 # CHECK:     (f32) [0] = 4.3{{[0-9]*}}
 # CHECK:   }
-# CHECK:   (SIMD[f32, 1]) [1] = {
+# CHECK:   (SIMD[float32, 1]) [1] = {
 # CHECK:     (f32) [0] = 8.8{{[0-9]*}}
 # CHECK:   }
 # CHECK: }
