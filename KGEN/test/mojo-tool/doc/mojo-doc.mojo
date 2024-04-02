@@ -4,6 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+"""
+This is a module summary, that
+spills over to the next line."""
+
 # RUN: mojo doc %s | FileCheck %s
 
 # Check that no diagnostics are output:
@@ -13,6 +17,9 @@
 """
 This is a module summary, that
 spills over to the next line."""
+
+from layout.int_tuple import *
+from sys.info import triple_is_nvidia_cuda
 
 
 # CHECK:  "aliases": [
@@ -29,6 +36,24 @@ alias alias_Type = Int
 # CHECK:  "value": "10"
 alias alias_Value = 10
 """An example alias of a Value"""
+
+
+# CHECK:  "kind": "alias",
+# CHECK:  "name": "alias_construct",
+# CHECK:  "value": "DynamicTuple(0, 1, 2, 3, 4)"
+alias alias_construct = IntTuple(0, 1, 2, 3, 4)
+
+
+# CHECK:  "kind": "alias",
+# CHECK:  "name": "alias_cond",
+# CHECK:  "value": "2 if triple_is_nvidia_cuda() else 1"
+alias alias_cond = 2 if triple_is_nvidia_cuda() else 1
+
+
+# CHECK:  "kind": "alias",
+# CHECK:  "name": "alias_str",
+# CHECK:  "value": "\"\""
+alias alias_str = ""
 
 
 # CHECK:  "description": "",
