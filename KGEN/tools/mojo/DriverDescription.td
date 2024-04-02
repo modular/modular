@@ -15,7 +15,7 @@ include "REPL/REPLDescription.td"
 include "Run/RunDescription.td"
 include "Test/TestDescription.td"
 
-#ifndef MODULAR_PRODUCTION
+#ifdef MODULAR_MOJO_BUILD_SERVER_PREVIEW
 include "BuildProject/BuildProjectDescription.td"
 #endif
 

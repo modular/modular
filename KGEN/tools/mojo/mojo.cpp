@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
   // Register subcommands and their options.
   SubcommandRegistry registry;
   registerBuildSubcommand(registry);
-#ifndef MODULAR_PRODUCTION
+#ifdef MODULAR_MOJO_BUILD_SERVER_PREVIEW
   // Note that while this macro gate prevents users from invoking `mojo
   // build-project`, the source code for that command is compiled as part of
   // `mojo` regardless, by design.

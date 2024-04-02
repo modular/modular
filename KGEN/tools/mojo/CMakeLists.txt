@@ -29,14 +29,10 @@ set(sources
   Run/mojo-run.cpp
   Test/mojo-test.cpp)
 
-# The `mojo build-project` subcommand and its documentation is only
-# conditionally configured and built for now. We don't wish for external users
-# of Mojo to read its documentation while it's under internal development.
 set(tablegen_definitions)
-if (MODULAR_PRODUCTION)
-  list(APPEND tablegen_definitions MODULAR_PRODUCTION)
-else()
+if (MODULAR_MOJO_BUILD_SERVER_PREVIEW)
   set(sources ${sources} BuildProject/mojo-build-project.cpp)
+  list(APPEND tablegen_definitions MODULAR_MOJO_BUILD_SERVER_PREVIEW)
 endif()
 
 add_modular_tool(mojo
@@ -99,7 +95,7 @@ add_subdirectory(Package)
 add_subdirectory(REPL)
 add_subdirectory(Run)
 add_subdirectory(Test)
-if(NOT MODULAR_PRODUCTION)
+if(MODULAR_MOJO_BUILD_SERVER_PREVIEW)
   add_subdirectory(BuildProject)
 endif()
 
