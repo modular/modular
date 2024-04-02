@@ -12,6 +12,7 @@
 #include "Support/Configuration.h"
 #include "Support/Cryptography/Keypair.h"
 #include "Support/Entitlements/Entitlement.h"
+#include "Support/Entitlements/EntitlementToken.h"
 #include "Support/ErrorOr.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "llvm/ADT/DenseMap.h"
@@ -59,8 +60,8 @@ public:
   /// certificate does not exist, then return std::nullopt because the enclosing
   /// application should decide what to do in that state. If an actual error
   /// occurs, return the error.
-  static ErrorOr<std::optional<EntitlementStore>> open(Config &config,
-                                                       HTTPContextRef httpCtx);
+  static ErrorOr<std::optional<EntitlementStore>>
+  open(Config &config, std::optional<std::string> envVarOr = {});
 
   /// Remove an existing certificate from the user's system (if it exists) and
   /// fetch a new one. This always returns an EntitlementStore on success,
@@ -73,8 +74,7 @@ public:
   /// EntitlementStore if we don't have the required infrastructure, we don't
   /// have a certificate, or the opening fails. This will print a warning to
   /// `warnStream` if there was an actual error in opening the EntitlementStore.
-  static EntitlementStore alwaysOpen(HTTPContextRef httpCtx,
-                                     llvm::raw_ostream &warnStream);
+  static EntitlementStore alwaysOpen(llvm::raw_ostream &warnStream);
 
   /// Refresh the entitlement store by refreshing the client certificate. This
   /// will also invalidate any entitlements that currently exist, even if the
@@ -118,6 +118,14 @@ public:
 
     return found->second.get();
   }
+
+  static std::optional<std::string> getEnv() {
+    return llvm::sys::Process::GetEnv("MODULAR_ACCESS_TOKEN");
+  };
+
+  static ErrorOr<EntitlementStore> fromToken(const EntitlementToken &token);
+
+  static ErrorOr<EntitlementStore> fromConfig(Config &config);
 
 private:
   /// Creates a new EntitlementStore. The given `clientKeys` must correspond

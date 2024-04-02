@@ -87,15 +87,13 @@ public:
 
   TelemetryContext(const llvm::StringMap<AttributeValue> &resources = {},
                    std::optional<Config> config = std::nullopt)
-      : TelemetryContext(
-            EntitlementStore::alwaysOpen(HTTPContext::init(), llvm::errs()),
-            resources, std::move(config)) {}
+      : TelemetryContext(EntitlementStore::alwaysOpen(llvm::errs()), resources,
+                         std::move(config)) {}
 
   /// Construct a TelemetryContext from a config.
   TelemetryContext(Config config)
-      : TelemetryContext(
-            EntitlementStore::alwaysOpen(HTTPContext::init(), llvm::errs()), {},
-            std::move(config)){};
+      : TelemetryContext(EntitlementStore::alwaysOpen(llvm::errs()), {},
+                         std::move(config)){};
 
   /// Set up a TelemetryContext from a Settings object.
   TelemetryContext(Settings &settings,

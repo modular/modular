@@ -38,10 +38,9 @@ Settings::Settings(Config &&cfg, EntitlementStore &&store)
     settings->map.try_emplace(k, Setting{v});
 }
 
-static ErrorOr<EntitlementStore> openEntitlementStore(HTTPContextRef httpCtx,
-                                                      Config &config) {
+static ErrorOr<EntitlementStore> openEntitlementStore(Config &config) {
   // First, we attempt to open the certificate.
-  auto storeOr = EntitlementStore::open(config, httpCtx.copy());
+  auto storeOr = EntitlementStore::open(config, EntitlementStore::getEnv());
   if (storeOr.isError())
     return storeOr.takeError();
   if (storeOr->has_value())
@@ -60,7 +59,7 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
     return cfgOr.takeError();
 
   // Open the entitlement store.
-  auto storeOr = openEntitlementStore(httpCtx.copy(), *cfgOr);
+  auto storeOr = openEntitlementStore(*cfgOr);
   if (!storeOr.isError()) {
     Settings s(cfgOr.takeValue(), std::move(*storeOr));
 
@@ -76,7 +75,7 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
   // the error above, as entitlements are not available.
   if (entitlements == kAlwaysSucceed)
     return Settings(cfgOr.takeValue(),
-                    EntitlementStore::alwaysOpen(httpCtx.copy(), llvm::errs()));
+                    EntitlementStore::alwaysOpen(llvm::errs()));
 
   if (entitlements == kRequiredNoPrompt)
     return storeOr.takeError();
