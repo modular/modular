@@ -34,7 +34,7 @@ from sys import argv
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor, TensorBuilder
+from layout.layout_tensor import LayoutTensor
 from gpu.device_print import _printf
 from pathlib import Path
 
@@ -112,17 +112,21 @@ fn sgemm_double_buffer[
 
     # Double buffer in shared memory.
     alias a_smem_size = BK * BM_padded
-    var a_smem_base = TensorBuilder[
-        2 * BK, BM_padded, a_type, AddressSpace.SHARED
-    ].OnStack()
+    var a_smem_base = LayoutTensor[
+        Layout.row_major(2 * BK, BM_padded),
+        a_type,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
     var a_smem_tile = StaticTuple[_, 2](
         a_smem_base.tile[BK, BM](0, 0), a_smem_base.tile[BK, BM](1, 0)
     )
 
     alias b_smem_size = BK * BN
-    var b_smem_base = TensorBuilder[
-        2 * BK, BN, b_type, AddressSpace.SHARED
-    ].OnStack()
+    var b_smem_base = LayoutTensor[
+        Layout.row_major(2 * BK, BN),
+        b_type,
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
     var b_smem_tile = StaticTuple[_, 2](
         b_smem_base.tile[BK, BN](0, 0), b_smem_base.tile[BK, BN](1, 0)
     )
@@ -133,12 +137,8 @@ fn sgemm_double_buffer[
 
     # Load A tile from global memory to shared.
     # Row major thread layout for coalesced access.
-    alias thread_loada_gmem_layout = Layout(
-        IntTuple(NUM_THREADS // BK, BK), IntTuple(BK, 1)
-    )
-    alias thread_storea_smem_layout = Layout(
-        IntTuple(BK, NUM_THREADS // BK), IntTuple(1, BK)
-    )
+    alias thread_loada_gmem_layout = Layout.row_major(NUM_THREADS // BK, BK)
+    alias thread_storea_smem_layout = Layout.col_major(BK, NUM_THREADS // BK)
     var thread_loada_gmem_frags = a_gmem_tile.distribute[
         thread_loada_gmem_layout
     ](ThreadIdx.x())
@@ -149,9 +149,7 @@ fn sgemm_double_buffer[
 
     # Load B tile from global memory to shared.
     # Row major thread layout for coalesced access.
-    alias thread_layout_loadb = Layout(
-        IntTuple(NUM_THREADS // BN, BN), IntTuple(BN, 1)
-    )
+    alias thread_layout_loadb = Layout.row_major(NUM_THREADS // BN, BN)
     var thread_loadb_gmem_frags = b_gmem_tile.distribute[thread_layout_loadb](
         ThreadIdx.x()
     )
@@ -173,7 +171,7 @@ fn sgemm_double_buffer[
     var b_reg0 = LayoutTensor[Layout(TN), b_type].stack_allocation()
     var b_reg1 = LayoutTensor[Layout(TN), b_type].stack_allocation()
     var c_reg = LayoutTensor[
-        Layout(IntTuple(TM, TN), IntTuple(TN, 1)), c_type
+        Layout.row_major(TM, TN), c_type
     ].stack_allocation()
     c_reg.fill(0)
 
