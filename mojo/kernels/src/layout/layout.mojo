@@ -21,6 +21,7 @@ from .int_tuple import (
     mul,
     prefix_product,
     product,
+    reverse,
     shape_div,
     sorted,
     zip,
@@ -68,6 +69,31 @@ struct Layout(Sized, Stringable, CollectionElement, EqualityComparable):
             self.stride = prefix_product(self.shape)
         else:
             self.stride = stride
+
+    @staticmethod
+    fn col_major(*dims: Int) -> Layout:
+        var shape = IntTuple()
+        var stride = IntTuple()
+        var c_stride = 1
+        for dim in dims:
+            stride.append(c_stride)
+            shape.append(dim)
+            c_stride *= dim
+        return Layout(shape, stride)
+
+    @staticmethod
+    fn row_major(*dims: Int) -> Layout:
+        var shape = IntTuple()
+        var stride = IntTuple()
+        var c_stride = 1
+        stride.append(c_stride)
+        for i in range(len(dims) - 1):
+            var dim = dims[len(dims) - 1 - i]
+            stride.append(dim * c_stride)
+            c_stride *= dim
+        for dim in dims:
+            shape.append(dim)
+        return Layout(shape, reverse(stride))
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):

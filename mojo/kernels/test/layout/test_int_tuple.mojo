@@ -370,6 +370,14 @@ fn test_fill_like() raises:
     assert_equal(fill_like(t2, 1), IntTuple(IntTuple(1, 1), 1, IntTuple(1)))
 
 
+fn test_reverse() raises:
+    print("test_reverse")
+    alias t1 = IntTuple(2, IntTuple(3, 4))
+    alias t2 = IntTuple(IntTuple(1, 2), 3, 4, IntTuple(5, 6, 7))
+    assert_equal(reverse(t1), IntTuple(IntTuple(4, 3), 2))
+    assert_equal(reverse(t2), IntTuple(IntTuple(7, 6, 5), 4, 3, IntTuple(2, 1)))
+
+
 def main():
     test_tuple_basic()
     test_tuple_slicing()
@@ -387,3 +395,4 @@ def main():
     test_weakly_congruent()
     test_weakly_compatible()
     test_fill_like()
+    test_reverse()

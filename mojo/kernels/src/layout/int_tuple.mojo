@@ -490,3 +490,14 @@ fn fill_like(src: IntTuple, val: Int) -> IntTuple:
             res.append(fill_like(elem, val))
         return res
     return val
+
+
+# Returns an IntTuple reversed e.g reverse(1, 2, (3, 4)) returns ((4, 3), 2, 1)
+#
+fn reverse(src: IntTuple) -> IntTuple:
+    var res = IntTuple()
+    if is_int(src):
+        return src
+    for i in range(len(src)):
+        res.append(reverse(src[len(src) - i - 1]))
+    return res

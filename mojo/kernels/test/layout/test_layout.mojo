@@ -32,6 +32,8 @@ fn test_layout_basic() raises:
     assert_equal(
         layout, Layout(IntTuple(2, IntTuple(3, 4)), IntTuple(1, IntTuple(2, 6)))
     )
+    assert_equal(Layout.row_major(2, 3), Layout(IntTuple(2, 3), IntTuple(3, 1)))
+    assert_equal(Layout.col_major(2, 3), Layout(IntTuple(2, 3), IntTuple(1, 2)))
 
 
 fn validate_coalesce[layout: Layout]() raises:
