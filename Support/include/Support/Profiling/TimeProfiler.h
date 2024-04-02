@@ -773,6 +773,11 @@ struct GlobalProfilerContext {
   /// them, and return them as timing entries sorted by time then thread id.
   std::vector<CompletedEntry> getCompletedEntries();
 
+  /// Sets the runtime profiling mask in order to toggle trace types enabled
+  /// with MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  /// Pre-condition: there must be no profiler events currently in progress.
+  void setRuntimeProfilingTypeMask(uint64_t typeMask);
+
   /// Write all the completed entries in JSON form to os, using format in:
   /// https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview
   void writeJsonTrace(llvm::raw_pwrite_stream &os,
@@ -881,6 +886,15 @@ struct TimeTraceProfiler {
   /// Append given input shape to internal list.
   /// These will be included in metadata written to output stream.
   void addInputShape(const std::string &shape);
+
+  /// Sets the runtime profiling mask in order to toggle trace types enabled
+  /// with MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  /// Pre-condition: there must be no profiler events currently in progress.
+  void setRuntimeProfilingTypeMask(uint64_t typeMask);
+
+  /// Get the runtime profiling mask that toggles trace types enabled with
+  /// MODULAR_LLCL_MAX_PROFILING_LEVEL.
+  uint64_t runtimeProfilingTypeMask();
 
   /// Write profiling data to a file.
   /// The function will write to preferredFileName if provided, if not then will

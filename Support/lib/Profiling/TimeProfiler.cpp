@@ -26,6 +26,7 @@
 #include <vector>
 
 using namespace M;
+using M::ProfilingDetail::TimeTraceThreadProfiler;
 
 using std::chrono::duration;
 using std::chrono::duration_cast;
@@ -289,15 +290,23 @@ ProfilingDetail::GlobalProfilerContext::GlobalProfilerContext(
       beginningOfTime(system_clock::now()), startTime(ClockType::now()),
       runtimeProfilingTypeMask(level) {}
 
+/// Checks that profiler events created with `beginAndPush` have been ended with
+/// a corresponding `endAndPop`.
+template <typename Iter>
+void assertAllProfilerSectionsCompleted(Iter &&derefedProfilers) {
+  assert(llvm::all_of(derefedProfilers,
+                      [](const TimeTraceThreadProfiler &profiler) {
+                        return profiler.stack.empty();
+                      }) &&
+         "all profiler sections should be ended when calling write");
+}
+
 std::vector<ProfilingDetail::CompletedEntry>
 ProfilingDetail::GlobalProfilerContext::getCompletedEntries() {
   std::lock_guard<std::mutex> guard(lock);
   auto derefedProfilers = llvm::make_pointee_range(profilers);
 
-  assert(llvm::all_of(
-             derefedProfilers,
-             [](const auto &profiler) { return profiler.stack.empty(); }) &&
-         "all profiler sections should be ended when calling write");
+  assertAllProfilerSectionsCompleted(derefedProfilers);
 
   std::unordered_map<ProfilerEventId, CompletedEntry> beginEntryMap;
   std::unordered_map<ProfilerEventId, CompletedEntry> endEntryMap;
@@ -376,6 +385,34 @@ ProfilingDetail::GlobalProfilerContext::getCompletedEntries() {
   std::sort(result.begin(), result.end());
 
   return result;
+}
+
+void ProfilingDetail::GlobalProfilerContext::setRuntimeProfilingTypeMask(
+    uint64_t typeMask) {
+  std::lock_guard<std::mutex> guard(lock);
+  runtimeProfilingTypeMask = typeMask;
+
+  auto derefedProfilers = llvm::make_pointee_range(profilers);
+
+  // Sanity check that there are no unfinished profiling segments in flight.
+  assertAllProfilerSectionsCompleted(derefedProfilers);
+
+  // Collect begin and end events and check that each is a pair.
+  DenseSet<ProfilerEventId> beginEvents;
+  DenseSet<ProfilerEventId> endEvents;
+  for (TimeTraceThreadProfiler &profiler : derefedProfilers) {
+    profiler.beginEvents.enumerate([&beginEvents](const BeginEvent &event) {
+      beginEvents.insert(event.id);
+    });
+  }
+  for (TimeTraceThreadProfiler &profiler : derefedProfilers) {
+    profiler.endEvents.enumerate(
+        [&endEvents](const EndEvent &event) { endEvents.insert(event.id); });
+  }
+  assert(beginEvents == endEvents && "expected matching begin and end events");
+
+  for (TimeTraceThreadProfiler &profiler : derefedProfilers)
+    profiler.runtimeProfilingTypeMask = typeMask;
 }
 
 void ProfilingDetail::GlobalProfilerContext::writeJsonTrace(
@@ -519,6 +556,21 @@ void TimeTraceProfiler::addInputShape(const std::string &shape) {
   assert(ctx && "profiler should be initialized");
   std::lock_guard<std::mutex> guard(ctx->lock);
   ctx->inputShapes.push_back(shape);
+}
+
+uint64_t TimeTraceProfiler::runtimeProfilingTypeMask() {
+  auto *ctx = Globals::getGlobalProfilerContext();
+  assert(ctx && "profiler should be initialized");
+
+  std::lock_guard<std::mutex> guard(ctx->lock);
+  return ctx->runtimeProfilingTypeMask;
+}
+
+void TimeTraceProfiler::setRuntimeProfilingTypeMask(uint64_t typeMask) {
+  auto *ctx = Globals::getGlobalProfilerContext();
+  assert(ctx && "profiler should be initialized");
+
+  ctx->setRuntimeProfilingTypeMask(typeMask);
 }
 
 ErrorOrSuccess TimeTraceProfiler::write(StringRef preferredFileName,
