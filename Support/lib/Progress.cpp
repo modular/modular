@@ -68,7 +68,8 @@ private:
 // on update callbacks.
 class CLIProgress : public Progress {
 public:
-  CLIProgress(llvm::raw_ostream &os) : os(os) {}
+  CLIProgress(llvm::raw_ostream &os, bool showRate)
+      : showRate(showRate), os(os) {}
   ~CLIProgress() override { disable(); }
   void setExpectedTotalBytes(size_t bytes) override {
     expectedTotalBytes = bytes;
@@ -101,6 +102,7 @@ private:
   size_t totalBytes = 0;
   size_t doneBytes = 0;
   size_t expectedTotalBytes = 0;
+  bool showRate = true;
 
   llvm::raw_ostream &os;
 
@@ -371,12 +373,17 @@ void CLIProgress::update() {
   postfix << " ] " << std::setw(3) << static_cast<int>(100.0 * percentage)
           << "%";
 
-  postfix << "  " << std::setw(16) << bytes.str() << " @ " << std::setw(8)
-          << prettyBytes(static_cast<size_t>(rate)) << "/s";
+  postfix << "  " << std::setw(16) << bytes.str();
 
-  // Calculate the width of the bar. We assume that we have a fixed width for
-  // the prefix and postfix, and we want to fill the remaining space with the
-  // progress bar. We also want to leave a little bit of space.
+  if (enabled && showRate)
+    postfix << " @ " << std::setw(8) << prettyBytes(static_cast<size_t>(rate))
+            << "/s";
+  else // Pad to keep the progress bar in the same place.
+    postfix << std::setw(13) << "";
+
+  // Calculate the width of the bar. We assume that we have a fixed width
+  // for the prefix and postfix, and we want to fill the remaining space
+  // with the progress bar. We also want to leave a little bit of space.
   ssize_t barWidth = termWidth() - prefix.str().size() -
                      std::min(static_cast<size_t>(32), postfix.str().size()) -
                      7;
@@ -391,7 +398,9 @@ void CLIProgress::update() {
   // end of each emit call, we do a carriage return in preparation for the
   // next. The final disable will be used to emit a newline character.
   os << "\r" << prefix.str();
-  if (enabled == false || rate >= 0.3 * maxRate) {
+  if (showRate == false) {
+    os.changeColor(llvm::raw_ostream::Colors::BRIGHT_WHITE);
+  } else if (enabled == false || rate >= 0.3 * maxRate) {
     // If we're either finished or we have something within 50% of our top
     // rate, make the progress bar green if colors are available. We keep
     // the green range very wide because we expect variability naturally.
@@ -422,11 +431,12 @@ void CLIProgress::disable() {
 }
 
 ErrorOr<std::unique_ptr<Progress>> M::makeProgress(llvm::raw_ostream &os,
-                                                   bool singleFileMode) {
+                                                   ProgressStyle style) {
   // Check if the output is a tty.
   if (os.is_displayed()) {
-    if (singleFileMode) {
-      std::unique_ptr<Progress> r = std::make_unique<CLIProgress>(os);
+    if (style != ProgressStyle::MultiFileDownload) {
+      std::unique_ptr<Progress> r = std::make_unique<CLIProgress>(
+          os, style == ProgressStyle::SingleFileDownload ? true : false);
       return std::move(r);
     }
     std::unique_ptr<Progress> r = std::make_unique<MultiFileCLIProgress>(os);

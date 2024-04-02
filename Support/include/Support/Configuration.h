@@ -137,6 +137,15 @@ public:
   static ErrorOr<std::filesystem::path>
   getModularConfigFolderPath(bool create = true);
 
+  /// Get the path to the canonical modular cache folder.
+  ///
+  /// On systems that follow the XDG Base Directory Specification, this will be
+  /// the $XDG_CACHE_HOME/modular folder (typically $HOME/.cache/modular)
+  ///
+  /// On other systems except Windows, will typically be $HOME/.modular/cache
+  static ErrorOr<std::filesystem::path>
+  getModularCacheFolderPath(bool create = true);
+
   /// Get the path to the canonical modular config file.
   /// Often $XDG_CONFIG_HOME/modular/modular.cfg or $HOME/.modular/modular.cfg
   static ErrorOr<std::filesystem::path> getConfigFilePath(bool create = false);
