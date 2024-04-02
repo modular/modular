@@ -37,7 +37,7 @@ static void crashHandler(void *context) {
 
   // Crash dumps saved by Crashpad first and then the logging here is reached
   // after Crashpad re-raises to our previously registered signal handler.
-  llvm::errs() << programName << " crashed!\n";
+  llvm::errs() << *programName << " crashed!\n";
   llvm::errs() << "Please file a bug report.\n";
 
   // As a useful helper, always print a full name when there is an environment
