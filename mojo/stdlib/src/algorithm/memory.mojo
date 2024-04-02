@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-"""Implements parallel_memcpy.
+"""Implements `parallel_memcpy`.
 
 You can import these APIs from the `buffer` package. For example:
 
