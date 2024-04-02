@@ -49,7 +49,7 @@ struct RegExample:
 
   fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.var.decl "self" imp
+  # CHECK-NEXT: %self_0 = lit.var.decl "self" arg
   # CHECK-NEXT: lit.ref.store %self, %self_0
   # CHECK-NEXT:  = kgen.param.constant{{.*}} <#kgen.none>
   # CHECK-NEXT: lit.ownership.mark_destroyed %self_0
@@ -305,7 +305,7 @@ fn disableDtor(owned x: FieldSensitiveMemExample):
 
 # CHECK-LABEL: lit.func @"regpassable_owned_args_mutable
 fn regpassable_owned_args_mutable(owned x: RegExample):
-  # CHECK-NEXT: %x_0 = lit.var.decl "x" imp
+  # CHECK-NEXT: %x_0 = lit.var.decl "x" arg
   # CHECK-NEXT: lit.ref.store %x, %x_0
   # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x_0)
   x.mutate()
@@ -448,7 +448,7 @@ struct BigRegExample:
     return BigRegExample{a: self.a, b: self.b }
 
   # CHECK-LABEL: lit.func @"__del__
-  # CHECK-NEXT: %self_0 = lit.var.decl "self" imp
+  # CHECK-NEXT: %self_0 = lit.var.decl "self" arg
   # CHECK-NEXT: lit.ref.store %self, %self_0
 
   # CHECK-NEXT: [[APTR:%.*]] = lit.ref.struct.ger %self_0[a]
@@ -499,7 +499,7 @@ struct ExoticDelExample:
 
  # CHECK-LABEL: lit.func @"__del__
   fn __del__(owned self):
-    # CHECK-NEXT: %self_0 = lit.var.decl "self" imp
+    # CHECK-NEXT: %self_0 = lit.var.decl "self" arg
     # CHECK-NEXT: lit.ref.store %self, %self_0
 
     # self.b gets destroyed ASAP since it isn't used.

@@ -377,7 +377,7 @@ fn ownedConventionReg(
     borrowed b: RPStructWithInit,
     borrowed triv: RPStructWithInitTrivial,
 ):
-    # CHECK: %a_0 = lit.var.decl "a" imp
+    # CHECK: %a_0 = lit.var.decl "a" arg
     # CHECK: lit.ref.store %a, %a_0
 
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a_0[x]

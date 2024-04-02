@@ -2085,9 +2085,8 @@ VarDeclOp ExprEmitter::emitVarDecl(StringAttr name, Type type, Location loc,
 VarDeclOp ExprEmitter::makeArgLValueVarSlot(SRValue argValue,
                                             StringAttr argName, SMLoc loc) {
   // Emit the initializer expression into the slot.
-  VarDeclOp varDecl =
-      emitVarDecl(argName, argValue.getType(), translateLocation(loc),
-                  VarDeclKind::Implicit);
+  VarDeclOp varDecl = emitVarDecl(argName, argValue.getType(),
+                                  translateLocation(loc), VarDeclKind::Arg);
 
   // Expr to provide location information.
   ValueDest dest(MLValue(varDecl), EC_OwnedRegArgShadow);

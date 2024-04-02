@@ -658,9 +658,9 @@ fn mvalueStructField():
 
 # CHECK-LABEL: lit.func @"defTests({{.*}}, %untyped: !lit.ref<!object, mut {{.*}}> owned_in_mem,
 def defTests(a: Int, b: Int, untyped) -> None:
-  # CHECK: %a_0 = lit.var.decl "a" imp
+  # CHECK: %a_0 = lit.var.decl "a" arg
   # CHECK: lit.ref.store %a, %a_0
-  # CHECK: %b_1 = lit.var.decl "b" imp
+  # CHECK: %b_1 = lit.var.decl "b" arg
   # CHECK: lit.ref.store %b, %b_1
   # CHECK: %[[B:.*]] = lit.ref.load %b_1
   # CHECK-NEXT: lit.ref.store %[[B]], %a_0
@@ -672,8 +672,8 @@ def defTests(a: Int, b: Int, untyped) -> None:
 
 # CHECK-LABEL: lit.func @"basic_assignments
 def basic_assignments(a: Int, b: Int, c: RegPassable, d: RegPassable):
-  # CHECK:      %a_0 = lit.var.decl "a" imp
-  # CHECK:      %b_1 = lit.var.decl "b" imp
+  # CHECK:      %a_0 = lit.var.decl "a" arg
+  # CHECK:      %b_1 = lit.var.decl "b" arg
   # CHECK:      %[[LOAD_B:.*]] = lit.ref.load %b_1
   # CHECK-NEXT: lit.call {{.*}}Int::@"__iadd__{{.*}}(%a_0, %[[LOAD_B]])
   a += b

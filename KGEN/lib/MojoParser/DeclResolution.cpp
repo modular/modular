@@ -1069,7 +1069,7 @@ static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
   auto mlirLoc = emitter.translateLocation(loc);
   VarDeclOp varDecl =
       emitter.emitVarDecl(argName, UnresolvedType::get(emitter.getContext()),
-                          mlirLoc, VarDeclKind::Implicit);
+                          mlirLoc, VarDeclKind::Arg);
 
   // Create an instance of the VariadicList, passing in the !kgen.variadic.  The
   // type checker will deduce all the parameters.
