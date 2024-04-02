@@ -86,6 +86,7 @@ struct _MatmulConfig:
     var col_sizes: VariadicList[Int]
     var row_sizes: VariadicList[Int]
     var gemv_sizes: VariadicList[Int]
+    var pack_sizes: VariadicList[Int]
 
     fn __init__(
         inout self,
@@ -93,10 +94,12 @@ struct _MatmulConfig:
         col_sizes: VariadicList[Int],
         row_sizes: VariadicList[Int],
         gemv_sizes: VariadicList[Int],
+        pack_sizes: VariadicList[Int],
     ):
         self.col_sizes = col_sizes
         self.row_sizes = row_sizes
         self.gemv_sizes = gemv_sizes
+        self.pack_sizes = pack_sizes
 
     @staticmethod
     fn _get_matmul_config() -> _MatmulConfig:
@@ -106,18 +109,21 @@ struct _MatmulConfig:
                 col_sizes=VariadicList[Int](4, 3, 2, 1),
                 row_sizes=VariadicList[Int](6, 4, 1),
                 gemv_sizes=VariadicList[Int](32, 4, 1),
+                pack_sizes=VariadicList[Int](32, 8, 4, 1),
             )
         elif has_avx512f():
             return _MatmulConfig(
                 col_sizes=VariadicList[Int](4, 3, 2, 1),
                 row_sizes=VariadicList[Int](6, 4, 1),
                 gemv_sizes=VariadicList[Int](64, 16, 4, 1),
+                pack_sizes=VariadicList[Int](64, 16, 8, 4, 1),
             )
         else:
             return _MatmulConfig(
                 col_sizes=VariadicList[Int](3, 2, 1),
                 row_sizes=VariadicList[Int](4, 1),
                 gemv_sizes=VariadicList[Int](64, 16, 4, 1),
+                pack_sizes=VariadicList[Int](64, 16, 8, 4, 1),
             )
 
 
@@ -140,6 +146,7 @@ struct _Matmul[
         a_ptr: DTypePointer[type],
         a_stride: Int,
         b_ptr: DTypePointer[type],
+        b_stride: Int,
         inout c_tile: _MatmulAccumulators[type, simd_width, tile_m, tile_n],
     ):
         var ak_ptr = a_ptr
@@ -169,7 +176,7 @@ struct _Matmul[
                     for m in range(tile_m):
                         c_tile.fma(m, n, a_tile[m][k], b_data)
 
-                bk_ptr = bk_ptr.offset(tile_n * simd_width)
+                bk_ptr = bk_ptr.offset(b_stride)
 
         tile[loop_body, VariadicList[Int](simd_width, 1)](0, K)
 
@@ -182,6 +189,7 @@ struct _Matmul[
         a_ptr: DTypePointer[type],
         a_stride: Int,
         b_ptr: DTypePointer[type],
+        b_stride: Int,
         inout c_tile: _MatmulAccumulators[type, simd_width, tile_m, tile_n],
     ):
         var ak_ptr = a_ptr
@@ -210,7 +218,7 @@ struct _Matmul[
                         c_tile.fma(m, n, a_data, b_tile[n])
 
                 ak_ptr = ak_ptr.offset(1)
-                bk_ptr = bk_ptr.offset(tile_n * simd_width)
+                bk_ptr = bk_ptr.offset(b_stride)
 
         tile[loop_body, VariadicList[Int](2, 1)](0, K)
 
@@ -246,15 +254,17 @@ struct _Matmul[
 
                 @parameter
                 if has_neon():
-                    Self._inner_loop_a_lane(K, am_ptr, a_stride, bn_ptr, c_tile)
+                    Self._inner_loop_a_lane(
+                        K, am_ptr, a_stride, bn_ptr, N, c_tile
+                    )
                 else:
                     Self._inner_loop_a_broadcast(
-                        K, am_ptr, a_stride, bn_ptr, c_tile
+                        K, am_ptr, a_stride, bn_ptr, N, c_tile
                     )
 
                 c_tile.store(cn_ptr, c_stride)
 
-                bn_ptr = bn_ptr.offset(tile_n * simd_width * K)
+                bn_ptr = bn_ptr.offset(tile_n * simd_width)
                 cn_ptr = cn_ptr.offset(tile_n * simd_width)
 
             tile[process_cols, Self._matmul_config.col_sizes](
@@ -272,31 +282,22 @@ struct _Matmul[
         input_b_fn: Self._input_fn_type,
     ](packed_ptr: DTypePointer[type], N: Int, K: Int):
         var output_ptr = packed_ptr
+        var aligned_n = align_up(N, simd_width)
 
-        @parameter
-        fn process_cols[tile_n: Int](n_unscaled: Int):
-            alias packed_n = tile_n * simd_width
-            var n = n_unscaled * simd_width
-            var count_n = min(packed_n, N - n)
+        for k in range(K):
 
-            for k in range(K):
+            @always_inline
+            @parameter
+            fn packed_copy[_simd_width: Int](idx: Int):
+                var val = input_b_fn[_simd_width](idx, k)
+                output_ptr.offset(idx).store[width=_simd_width](val)
 
-                @always_inline
-                @parameter
-                fn packed_copy[_simd_width: Int](idx: Int):
-                    var val = input_b_fn[_simd_width](n + idx, k)
-                    output_ptr.offset(idx).store[width=_simd_width](val)
+            tile[packed_copy, Self._matmul_config.pack_sizes](0, N)
 
-                vectorize[packed_copy, simd_width](count_n)
+            if aligned_n != N:
+                memset_zero(output_ptr.offset(N), aligned_n - N)
 
-                if packed_n != count_n:
-                    memset_zero(output_ptr.offset(count_n), packed_n - count_n)
-
-                output_ptr = output_ptr.offset(packed_n)
-
-        tile[process_cols, Self._matmul_config.col_sizes](
-            0, div_ceil(N, simd_width)
-        )
+            output_ptr = output_ptr.offset(aligned_n)
 
     @no_inline
     @staticmethod
