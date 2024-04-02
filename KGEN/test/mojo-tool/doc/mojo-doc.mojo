@@ -282,6 +282,34 @@ fn keyword_only_prod(a: Int, b: Int, /, *, offset: Int):
     pass
 
 
+# CHECK:  "name": "default_args_and_params",
+# CHECK:  "overloads":
+# CHECK:      "args":
+# CHECK:          "default": "2",
+# CHECK:          "name": "b"
+
+# CHECK:          "default": "3",
+# CHECK:          "name": "c"
+
+# CHECK:      "parameters":
+# CHECK:          "default": "1",
+# CHECK:          "name": "a"
+# CHECK:      "signature": "default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3)",
+
+
+fn default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
+    """Test default handling.
+
+    Parameters:
+        a: Param.
+
+    Args:
+        b: Arg.
+        c: Arg.
+    """
+    pass
+
+
 # CHECK:  "kind": "module",
 # CHECK:  "name": "mojo-doc",
 
@@ -402,6 +430,17 @@ struct ParameterClass[_type: __mlir_type.`!kgen.dtype`]:
             param: This is a Self parameter.
         """
         return
+
+
+# CHECK:  "kind": "struct",
+# CHECK:  "name": "StructWithDefault",
+# CHECK:  "parameters":
+# CHECK:      "default": "1",
+# CHECK:      "name": "a"
+
+
+struct StructWithDefault[a: Int = 1]:
+    pass
 
 
 # CHECK:  "summary": "This is a module summary, that spills over to the next line."
