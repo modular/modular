@@ -1,0 +1,21 @@
+// REQUIRES: GENERATED_ONNX_TESTS
+// UNSUPPORTED: Windows
+// RUN: mkdir -p %t
+
+// COM: Successful execution.
+// RUN: rm -f %t/max-engine-telemetry-test-telemetry-success-logs
+// RUN: MODULAR_TELEMETRY_EXPORTERS_LOGS_FILE_PATH=%t/max-engine-telemetry-test-telemetry-success-logs modular-api-executor --model-inputs=zeros  --num-threads=0 --result-output-style=full %onnx_test_models_dir/test_abs/model.onnx
+// RUN: cat %t/max-engine-telemetry-test-telemetry-success-logs | FileCheck %s --check-prefix=CHECK_SUCCESS
+
+// COM: Error condition.
+// RUN: rm -f %t/max-engine-telemetry-test-telemetry-error-logs
+// RUN: MODULAR_TELEMETRY_EXPORTERS_LOGS_FILE_PATH=%t/max-engine-telemetry-test-telemetry-error-logs not modular-api-executor --model-inputs=zeros  --num-threads=0 --result-output-style=full non-existent.onnx
+// RUN: cat %t/max-engine-telemetry-test-telemetry-error-logs | FileCheck %s --check-prefix=CHECK_ERROR
+
+// CHECK-SUCCESS: compile.success
+// CHECK_SUCCESS-NOT: compile.failure
+
+
+// CHECK-ERROR: compile.failure
+// CHECK-ERROR: invalid path
+// CHECK_ERROR-NOT: compile.success
