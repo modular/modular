@@ -4,14 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(MBilling
-  BillingContext.cpp
+add_modular_library(MMetering
+  MeteringContext.cpp
 
   AWS/InstanceIdentifier.cpp
 
   LINK_LIBS PUBLIC
   MSupport
   MSupportHTTP
+  MTelemetry
   MThreading
   libcurl
 )

@@ -15,9 +15,3 @@ add_subdirectory(tools/crash-test-dummy EXCLUDE_FROM_ALL)
 add_subdirectory(tools/driver-tblgen)
 add_subdirectory(tools/compare-timings)
 add_subdirectory(examples/greeter-cli)
-
-add_custom_target(modular-billing)
-add_dependencies(modular-billing
-  MBilling
-  BillingTests
-)

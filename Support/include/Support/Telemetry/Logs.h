@@ -60,23 +60,29 @@ using AttributeValue = std::variant<bool, int32_t, int64_t, uint32_t, double,
 /// - logger->emitEvent("billing", Severity::kInfo);
 class Logger : public std::enable_shared_from_this<Logger> {
 public:
-  void emitL0Event(StringRef eventName,
-                   const llvm::StringMap<AttributeValue> &attributes = {}) {
+  virtual ~Logger() = default;
+
+  virtual void
+  emitL0Event(StringRef eventName,
+              const llvm::StringMap<AttributeValue> &attributes = {}) {
     return emitEvent(eventName, Severity::kInfo, M::Telemetry::Level::L0,
                      attributes);
   }
-  void emitL1Event(StringRef eventName,
-                   const llvm::StringMap<AttributeValue> &attributes = {}) {
+  virtual void
+  emitL1Event(StringRef eventName,
+              const llvm::StringMap<AttributeValue> &attributes = {}) {
     return emitEvent(eventName, Severity::kInfo, M::Telemetry::Level::L1,
                      attributes);
   }
-  void emitL2Event(StringRef eventName,
-                   const llvm::StringMap<AttributeValue> &attributes = {}) {
+  virtual void
+  emitL2Event(StringRef eventName,
+              const llvm::StringMap<AttributeValue> &attributes = {}) {
     return emitEvent(eventName, Severity::kInfo, M::Telemetry::Level::L2,
                      attributes);
   }
-  void emitL0Error(StringRef eventName, const CodedErrorOrSuccess &codedError,
-                   const llvm::StringMap<AttributeValue> &attributes = {}) {
+  virtual void
+  emitL0Error(StringRef eventName, const CodedErrorOrSuccess &codedError,
+              const llvm::StringMap<AttributeValue> &attributes = {}) {
 
     if (codedError.isError()) {
       llvm::StringMap<AttributeValue> attributesWithError{attributes};
@@ -94,6 +100,17 @@ public:
   bool eventEnabled(Level eventLevel) const {
     return eventLevel <= telemetryLevel;
   }
+
+protected:
+#ifdef MODULAR_ENABLE_TELEMETRY
+  Logger(std::shared_ptr<opentelemetry::logs::EventLogger> logger,
+         M::Telemetry::Level level)
+      : logger(std::move(logger)), telemetryLevel(level) {}
+
+  std::shared_ptr<opentelemetry::logs::EventLogger> logger;
+#else
+  Logger() {}
+#endif // MODULAR_ENABLE_TELEMETRY
 
 private:
   friend class M::Telemetry::TelemetryContext;
@@ -116,16 +133,6 @@ private:
     }
 #endif
   }
-
-#ifdef MODULAR_ENABLE_TELEMETRY
-  Logger(std::shared_ptr<opentelemetry::logs::EventLogger> logger,
-         M::Telemetry::Level level)
-      : logger(std::move(logger)), telemetryLevel(level) {}
-
-  std::shared_ptr<opentelemetry::logs::EventLogger> logger;
-#else
-  Logger() {}
-#endif // MODULAR_ENABLE_TELEMETRY
 
   // Configured level for Telemetry.
   M::Telemetry::Level telemetryLevel;

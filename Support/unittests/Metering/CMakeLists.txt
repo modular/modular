@@ -9,14 +9,15 @@ add_modular_unittest(
   check-support
 
   SUITE_NAME
-  BillingUnitTests
+  MeteringUnitTests
 
   TEST_NAME
-  BillingTests
+  MeteringTests
 
-  BillingTest.cpp
+  MeteringContextLogTest.cpp
+  MeteringContextTest.cpp
 
   LINK_LIBS PRIVATE
-  MBilling
+  MMetering
   MSupport
 )
