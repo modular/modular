@@ -77,12 +77,6 @@ struct TestPassDiagnosticValidator : public mlir::ScopedDiagnosticHandler {
 };
 } // namespace
 
-static constexpr char mlirString[] = R"(
-func.func private @someFunc() {
-  return
-}
-)";
-
 // We can have transform functions that write to a buffer and return a buffer.
 // Here we are testing the transform return value is the value that's returned
 // on a cache miss and output of cacheHitFn on cache hit.
