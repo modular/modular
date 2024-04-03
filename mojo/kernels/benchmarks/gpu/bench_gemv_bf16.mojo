@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s -t | FileCheck %s
 # CHECK: Benchmark results
@@ -29,64 +30,21 @@ from Matmul import (
     matmul_kernel_naive,
 )
 from memory.unsafe import DTypePointer, bitcast
+from memory import memset
 
 from utils.index import Index
 from buffer.list import DimList
-from random import random_float64
+from random import randn
 
 
-fn bench_gemv_tc(inout m: Bench, spec: GemvSpec) raises:
+@parameter
+fn no_raise[
+    func: fn (inout Bencher, GemvSpec) raises -> None
+](inout m: Bencher, spec: GemvSpec):
     try:
-
-        @parameter
-        @always_inline
-        fn bench_gemv_tc_wrapper(inout b: Bencher, concrete_spec: GemvSpec):
-            try:
-                bench_gemv_tc(b, concrete_spec)
-            except:
-                print("kernel failed")
-
-        m.bench_with_input[GemvSpec, bench_gemv_tc_wrapper](
-            BenchId("gemv_tc", str(spec)), spec
-        )
-    except:
-        print("launch failed")
-
-
-fn bench_gemv_ws(inout m: Bench, spec: GemvSpec) raises:
-    try:
-
-        @parameter
-        @always_inline
-        fn bench_gemv_ws_wrapper(inout b: Bencher, concrete_spec: GemvSpec):
-            try:
-                bench_gemv_ws(b, concrete_spec)
-            except:
-                print("kernel failed")
-
-        m.bench_with_input[GemvSpec, bench_gemv_ws_wrapper](
-            BenchId("gemv_ws", str(spec)), spec
-        )
-    except:
-        print("launch failed")
-
-
-fn bench_gemv_naive(inout m: Bench, spec: GemvSpec) raises:
-    try:
-
-        @parameter
-        @always_inline
-        fn bench_gemv_naive_wrapper(inout b: Bencher, concrete_spec: GemvSpec):
-            try:
-                bench_gemv_naive(b, concrete_spec)
-            except:
-                print("kernel failed")
-
-        m.bench_with_input[GemvSpec, bench_gemv_naive_wrapper](
-            BenchId("gemv_naive", str(spec)), spec
-        )
-    except:
-        print("launch failed")
+        func(m, spec)
+    except e:
+        abort(e)
 
 
 fn bench_gemv_tc(inout bencher: Bencher, spec: GemvSpec) raises:
@@ -94,19 +52,14 @@ fn bench_gemv_tc(inout bencher: Bencher, spec: GemvSpec) raises:
     var N = spec.n
     var K = spec.k
     var stream = Stream()
-    var a_host = Pointer[BFloat16].alloc(M * K)
-    var b_host = Pointer[BFloat16].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
+    var a_host = DTypePointer[DType.bfloat16].alloc(M * K)
+    var b_host = DTypePointer[DType.bfloat16].alloc(K * N)
+    var c_host = DTypePointer[DType.float32].alloc(M * N)
     var rand_min = -1000
     var rand_max = 1000
-    for i in range(M * K):
-        a_host[i] = random_float64(rand_min, rand_max)
-
-    for i in range(K * N):
-        b_host[i] = random_float64(rand_min, rand_max)
-
-    for i in range(M * N):
-        c_host[i] = 0
+    randn(a_host, M * K)
+    randn(b_host, K * N)
+    memset(c_host, 0, M * N)
 
     var a_device = _malloc[BFloat16](M * K)
     var b_device = _malloc[BFloat16](K * N)
@@ -166,19 +119,14 @@ fn bench_gemv_ws(inout bencher: Bencher, spec: GemvSpec) raises:
     var N = spec.n
     var K = spec.k
     var stream = Stream()
-    var a_host = Pointer[BFloat16].alloc(M * K)
-    var b_host = Pointer[BFloat16].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
+    var a_host = DTypePointer[DType.bfloat16].alloc(M * K)
+    var b_host = DTypePointer[DType.bfloat16].alloc(K * N)
+    var c_host = DTypePointer[DType.float32].alloc(M * N)
     var rand_min = -1000
     var rand_max = 1000
-    for i in range(M * K):
-        a_host[i] = random_float64(rand_min, rand_max)
-
-    for i in range(K * N):
-        b_host[i] = random_float64(rand_min, rand_max)
-
-    for i in range(M * N):
-        c_host[i] = 0
+    randn(a_host, M * K)
+    randn(b_host, K * N)
+    memset(c_host, 0, M * N)
 
     var a_device = _malloc[BFloat16](M * K)
     var b_device = _malloc[BFloat16](K * N)
@@ -238,19 +186,14 @@ fn bench_gemv_naive(inout bencher: Bencher, spec: GemvSpec) raises:
     var N = spec.n
     var K = spec.k
     var stream = Stream()
-    var a_host = Pointer[Float32].alloc(M * K)
-    var b_host = Pointer[Float32].alloc(K * N)
-    var c_host = Pointer[Float32].alloc(M * N)
+    var a_host = DTypePointer[DType.float32].alloc(M * K)
+    var b_host = DTypePointer[DType.float32].alloc(K * N)
+    var c_host = DTypePointer[DType.float32].alloc(M * N)
     var rand_min = -1000
     var rand_max = 1000
-    for i in range(M * K):
-        a_host[i] = random_float64(rand_min, rand_max)
-
-    for i in range(K * N):
-        b_host[i] = random_float64(rand_min, rand_max)
-
-    for i in range(M * N):
-        c_host[i] = 0
+    randn(a_host, M * K)
+    randn(b_host, K * N)
+    memset(c_host, 0, M * N)
 
     var a_device = _malloc[Float32](M * K)
     var b_device = _malloc[Float32](K * N)
@@ -324,16 +267,22 @@ def main():
     with Context() as ctx:
         var m = Bench(BenchConfig(num_repetitions=1))
 
-        bench_gemv_tc(m, GemvSpec(m=4096, n=1, k=4096))
-        bench_gemv_ws(m, GemvSpec(m=4096, n=1, k=4096))
-        bench_gemv_naive(m, GemvSpec(m=4096, n=1, k=4096))
+        fn bench_gemv_impls(spec: GemvSpec) raises:
+            m.bench_with_input[GemvSpec, no_raise[bench_gemv_tc]](
+                BenchId("gemv_tc", str(spec)), spec
+            )
+            m.bench_with_input[GemvSpec, no_raise[bench_gemv_ws]](
+                BenchId("gemv_ws", str(spec)), spec
+            )
+            m.bench_with_input[GemvSpec, no_raise[bench_gemv_naive]](
+                BenchId("gemv_naive", str(spec)), spec
+            )
 
-        bench_gemv_tc(m, GemvSpec(m=8192, n=1, k=8192))
-        bench_gemv_ws(m, GemvSpec(m=8192, n=1, k=8192))
-        bench_gemv_naive(m, GemvSpec(m=8192, n=1, k=8192))
-
-        bench_gemv_tc(m, GemvSpec(m=16384, n=1, k=16384))
-        bench_gemv_ws(m, GemvSpec(m=16384, n=1, k=16384))
-        bench_gemv_naive(m, GemvSpec(m=16384, n=1, k=16384))
+        bench_gemv_impls(GemvSpec(m=4096, n=1, k=4096))
+        # TODO: bench_gemv_tc, bench_gemv_ws, and bench_gemv_naive
+        # all do really large allocations and scalar fills of the same buffers
+        # Needs be merged into a common function before uncommenting below
+        # bench_gemv_impls(GemvSpec(m=8192, n=1, k=8192))
+        # bench_gemv_impls(GemvSpec(m=16834, n=1, k=16834))
 
         m.dump_report()
