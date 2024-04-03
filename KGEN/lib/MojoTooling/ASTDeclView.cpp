@@ -78,25 +78,60 @@ refineConventionForType(Type type, std::optional<ArgConvention> convention) {
   return convention;
 }
 
-/// Generate a user-readable representation of the given type, with an optional
-/// value convention, parent struct "Self" type. It also prepends * to variadic
-/// types.
+/// Helper enum to make stringifying of variadic types easier.
+enum class VariadicKind : uint8_t { kNone, kPack, kPosVar, kKwVar };
+
+/// Helper to return the variadic kind of a parameter/argument.
+static VariadicKind getVariadicKind(PogsAttr pogsAttr, size_t idx) {
+  if (pogsAttr.isPack(idx))
+    return VariadicKind::kPack;
+  if (!pogsAttr.isVariadic(idx))
+    return VariadicKind::kNone;
+  PassingKind passingKind = pogsAttr.getPassingKinds()[idx];
+  if (passingKind == PassingKind::KwOnly)
+    return VariadicKind::kKwVar;
+  assert(passingKind == PassingKind::PosOrKw);
+  return VariadicKind::kPosVar;
+}
+
+/// Generate a user-readable representation of the given type and variadic kind,
+/// with an optional value convention, parent struct "Self" type. It also
+/// prepends * to variadic types.
 static std::string
-generateTypeString(Type type, std::optional<ASTType> selfType = std::nullopt,
+generateTypeString(Type type, VariadicKind varKind,
+                   std::optional<ASTType> selfType = std::nullopt,
                    std::optional<ArgConvention> convention = std::nullopt) {
   std::string typeName;
   llvm::raw_string_ostream os(typeName);
   ASTType astType(type);
 
   // Handle variadic types.
-  if (auto variadic = dyn_cast<VariadicType>(type)) {
+  switch (varKind) {
+  case VariadicKind::kNone:
+  case VariadicKind::kPack:
+    // Packs don't need special handling; they are pretty printed correctly.
+    break;
+  case VariadicKind::kPosVar:
     astType = astType.getVariadicElementType();
     os << "*";
+    break;
+  case VariadicKind::kKwVar:
+    os << "**";
+    break;
   }
 
   // Process the convention if present.
-  if (convention && SignatureType::hasAddress(*convention))
-    astType = astType.getReferenceElementType();
+  if (convention && SignatureType::hasAddress(*convention)) {
+    // In some cases variadics are passed directly (which is a hack, but okay).
+    // The ABI in these cases is that we pass a variadic of refs. We leave these
+    // as is, since eventually (with unpacking) this hack won't be needed.
+    if (!isa<VariadicType>(astType))
+      astType = astType.getReferenceElementType();
+  }
+
+  // Get the value type in a kwargs dictionary.
+  if (varKind == VariadicKind::kKwVar)
+    astType = cast<TypeConstantAttr>(astType.getParamBindings()[1]).getValue();
 
   // If this type is the same as the self type, use the "Self" keyword.
   if (selfType && astType.isEqualCanon(*selfType))
@@ -126,7 +161,7 @@ static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
   os << identifier;
   if (!type.empty())
     os << ": " << type;
-};
+}
 
 /// Parse the given docstring lines and augment the provided decls with the
 /// appropriate documentation using the description.
@@ -704,6 +739,9 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     selfType = declRef->getParentDecl()->getSelfType();
 
   // Grab the types of the arguments to the function.
+  auto getArgVarKind = [&](size_t idx) {
+    return getVariadicKind(signature.getArgListAttrs(), idx);
+  };
   DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());
   for (auto [argIdx, type, name, initConvention, passingKind] :
        llvm::enumerate(argTypes, argNames, argConventions, argPassingKinds)) {
@@ -719,31 +757,36 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     else if (convention == ArgConvention::OwnedInMem ||
              convention == ArgConvention::OwnedInReg)
       declConvention = ArgumentDeclView::Convention::kOwned;
+
     args.push_back(ArgumentDeclView(
-        name.getValue(), generateTypeString(type, selfType, convention),
+        name.getValue(),
+        generateTypeString(type, getArgVarKind(argIdx), selfType, convention),
         passingKind, std::move(defaultValue), /*parentIsDef=*/isDefFlag,
         declConvention));
   }
 
   // Grab the types of the parameters to the function.
+  auto getParamVarKind = [&](size_t idx) {
+    return getVariadicKind(signature.getParamListAttrs(), idx);
+  };
   DefaultValueHandler defaultParamHandler(signature.getParamListAttrs());
-  for (auto [index, param, passingKind] :
+  for (auto [parIdx, param, passingKind] :
        llvm::enumerate(params, signature.getParamPassingKinds())) {
     // Ignore implicitly passed parameters.
     if (passingKind == PassingKind::Implicit)
       continue;
     std::optional<std::string> defaultValue;
-    if (auto defaultAttr = defaultParamHandler.getDefault(index))
+    if (auto defaultAttr = defaultParamHandler.getDefault(parIdx))
       defaultValue = generatePValueString(defaultAttr);
-    parameters.push_back(
-        ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
-                          generateTypeString(param.getType(), selfType),
-                          passingKind, std::move(defaultValue)));
+    parameters.push_back(ParameterDeclView(
+        demangleIfNeeded(param).getName().getValue(),
+        generateTypeString(param.getType(), getParamVarKind(parIdx), selfType),
+        passingKind, std::move(defaultValue)));
   }
 
   // Grab the result type, if it's non-none.
   if (ASTType resultType = funcOp.getUserResultType(); !resultType.isNoneType())
-    returnType = generateTypeString(resultType, selfType);
+    returnType = generateTypeString(resultType, VariadicKind::kNone, selfType);
 
   if (auto docStr = declRef->getParsedDocString()) {
     summary = docStr->getSummary();
@@ -966,16 +1009,19 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
   TypeSignatureType signature = structOp.getSignature();
 
   // Grab the types of the parameters to the struct.
+  auto getParamVarKind = [&](size_t idx) {
+    return getVariadicKind(signature.getParamListAttrs(), idx);
+  };
   DefaultValueHandler defaultParamHandler(signature.getParamListAttrs());
-  for (auto [index, param, passingKind] : llvm::enumerate(
+  for (auto [parIdx, param, passingKind] : llvm::enumerate(
            structOp.getInputParams(), signature.getParamPassingKinds())) {
     std::optional<std::string> defaultValue;
-    if (auto defaultAttr = defaultParamHandler.getDefault(index))
+    if (auto defaultAttr = defaultParamHandler.getDefault(parIdx))
       defaultValue = generatePValueString(defaultAttr);
-    parameters.push_back(
-        ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
-                          generateTypeString(param.getType()), passingKind,
-                          std::move(defaultValue)));
+    parameters.push_back(ParameterDeclView(
+        demangleIfNeeded(param).getName().getValue(),
+        generateTypeString(param.getType(), getParamVarKind(parIdx)),
+        passingKind, std::move(defaultValue)));
   }
 
   if (auto docStr = decl->getParsedDocString()) {

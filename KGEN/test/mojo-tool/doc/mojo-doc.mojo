@@ -363,6 +363,92 @@ fn default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
     pass
 
 
+# CHECK: "name": "variadic_pack",
+# CHECK: "overloads":
+# CHECK:     "args":
+# CHECK:             "name": "vals",
+# CHECK:             "passingKind": "pos_or_kw",
+# CHECK:             "type": "*Ts"
+
+# CHECK:     "parameters":
+# CHECK:         "name": "Ts",
+# CHECK:         "passingKind": "pos_or_kw",
+# CHECK:         "type": "*AnyType"
+
+# CHECK:     "signature": "variadic_pack[*Ts: AnyType](*vals: Ts)",
+
+
+fn variadic_pack[*Ts: AnyType](*vals: *Ts):
+    """Test variadic pack argument type printing.
+
+    Parameters:
+        Ts: Variadic types.
+
+    Args:
+        vals: Variadic pack arguments.
+    """
+    pass
+
+
+# CHECK: "name": "variadic_arg_hack",
+# CHECK: "overloads":
+# CHECK:     "args":
+# CHECK:         "name": "vals",
+# CHECK:         "passingKind": "pos_or_kw",
+# CHECK:         "type": "variadic<!lit.ref<:trait<{{.*}}AnyType> element_type, imm #lit.lifetime>, borrow_in_mem>"
+
+# CHECK:     "signature": "variadic_arg_hack[element_type: AnyType](vals: variadic<!lit.ref<:trait<_stdlib::_builtin::_anytype::_AnyType> element_type, imm #lit.lifetime>, borrow_in_mem>)",
+
+
+fn variadic_arg_hack[
+    element_type: AnyType
+](
+    vals: __mlir_type[
+        `!kgen.variadic<!lit.ref<`,
+        element_type,
+        `, #lit.lifetime<0>: !lit.lifetime<0>, 0>, borrow_in_mem>`,
+    ]
+):
+    """Test hacky use case of `!kgen.variadic` argument type printing.
+
+    Args:
+        vals: Variadic pack arguments.
+    """
+    pass
+
+
+# CHECK: "name": "variadic_params_args",
+# CHECK: "overloads":
+# CHECK:     "args":
+# CHECK:             "name": "vals",
+# CHECK:             "passingKind": "pos_or_kw",
+# CHECK:             "type": "*Int"
+
+# CHECK:             "name": "kwargs",
+# CHECK:             "passingKind": "kw",
+# CHECK:             "type": "**object"
+
+# CHECK:     "parameters":
+# CHECK:             "name": "nums",
+# CHECK:             "passingKind": "pos_or_kw",
+# CHECK:             "type": "*Int"
+
+# CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, owned *kwargs: *object)",
+
+
+fn variadic_params_args[*nums: Int](*vals: Int, **kwargs: object):
+    """Test variadic argument/parameter type printing.
+
+    Parameters:
+        nums: Variadic parameters.
+
+    Args:
+        vals: Variadic arguments.
+        kwargs: Variadic keyword arguments.
+    """
+    pass
+
+
 # CHECK:  "kind": "module",
 # CHECK:  "name": "mojo-doc",
 
