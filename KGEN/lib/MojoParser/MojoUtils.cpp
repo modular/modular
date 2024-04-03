@@ -284,9 +284,8 @@ void LIT::markRegionUnreachable(Region *deadRegion, Location unreachableLoc) {
 }
 
 Type LIT::getVariadicKwargsType(Type dictRefType) {
-  Type dictType = cast<RefType>(dictRefType).getElementType();
-  return cast<TypeConstantAttr>(ASTType(dictType).getParamBindings()[1])
-      .getValue();
+  ASTType dictType = ASTType(dictRefType).getReferenceElementType();
+  return cast<TypeConstantAttr>(dictType.getParamBindings()[1]).getValue();
 }
 
 //===----------------------------------------------------------------------===//
