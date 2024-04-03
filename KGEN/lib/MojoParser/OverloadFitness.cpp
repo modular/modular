@@ -300,6 +300,7 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (actualTypeConst && expectedTypeConst)
     return matchTypes(actualTypeConst.getValue(), expectedTypeConst.getValue());
 
+  // If both parameters are operator expressions, match them up lexically.
   auto actualOp = dyn_cast<ParamOperatorAttr>(actualAttr);
   auto expectedOp = dyn_cast<ParamOperatorAttr>(expectedAttr);
   if (actualOp && expectedOp &&
@@ -334,11 +335,11 @@ void ParameterInferenceState::matchParams(TypedAttr actualAttr,
       SyntheticNode node(declScope.getLoc());
       if (emitter.canImplicitlyConvertToType({actualAttr, node},
                                              expectedType)) {
-        PValue result = emitter.emitPValue({actualAttr, node},
-                                           EC_TypeParamValue, expectedType);
-        if (result)
+        if (PValue result = emitter.emitPValue(
+                {actualAttr, node}, EC_TypeParamValue, expectedType)) {
           inferredValues.push_back(result);
-        return;
+          return;
+        }
       }
       // Otherwise, we failed to infer the parameter. Record this failure.
       addFailedInference(expectedType, actualAttr.getType());

@@ -1063,9 +1063,8 @@ struct TraitSelfBinder : public IndexParameterReplacer<TraitSelfBinder> {
   Attribute tryReplace(Attribute attr, size_t depth) {
     // Replace a reference to $(0,0) with the new selfValue.
     auto paramRef = dyn_cast<ParamIndexRefAttr>(attr);
-    if (!paramRef || paramRef.getIsResult() || paramRef.getIndex() != 0)
-      return {};
-    if (paramRef.getDepth() + 1 != depth)
+    if (!paramRef || paramRef.getIsResult() || paramRef.getIndex() != 0 ||
+        paramRef.getDepth() + 1 != depth)
       return {};
     return selfValue;
   }
@@ -1309,10 +1308,6 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
               emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
                                   expr, CallSyntax::kImplicitConvert, ctorDest);
         }
-        if (!converted) {
-          dest.resetForError();
-          return {};
-        }
         return emitResult(converted, expr, dest);
       }
 
@@ -1321,18 +1316,10 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
       if (auto trait = dyn_cast<TraitType>(requiredType)) {
         if (isa<AnyStructType, TraitType>(rvalueType)) {
           PValue result = emitMetaTypeToTraitConversion({cValue, expr}, trait);
-          if (!result) {
-            dest.resetForError();
-            return {};
-          }
           return emitResult(result, expr, dest);
         }
         if (isa<TypeType>(rvalueType)) {
           PValue result = bindMLIRTypeToTrait({cValue, expr}, trait);
-          if (!result) {
-            dest.resetForError();
-            return {};
-          }
           return emitResult(result, expr, dest);
         }
         // If the source value is a parametric value of type 'AnyTrait[trait]'
