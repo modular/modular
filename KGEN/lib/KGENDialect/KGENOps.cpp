@@ -22,6 +22,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -325,15 +326,27 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
   if (body.isError())
     return ErrorTree(getLoc(), body.takeError());
   // Count the number of ops in the body, including parents of regions.
-  int64_t numOps = 0;
-  body.get()->walk([&numOps](Operation *op) {
+  int64_t numLoads = 0, numStores = 0, numOther = 0;
+  body.get()->walk([&numLoads, &numStores, &numOther](Operation *op) {
     // Don't count constants and terminators.
     if (op->hasTrait<OpTrait::ConstantLike>() ||
         op->hasTrait<OpTrait::IsTerminator>())
       return;
-    ++numOps;
+    if (auto memOp = dyn_cast<mlir::MemoryEffectOpInterface>(op)) {
+      if (memOp.hasEffect<mlir::MemoryEffects::Read>())
+        ++numLoads;
+      else if (memOp.hasEffect<mlir::MemoryEffects::Write>())
+        ++numStores;
+      else
+        ++numOther;
+    } else {
+      ++numOther;
+    }
   });
-  state.mapResults(Builder(getContext()).getIndexAttr(numOps));
+  Builder builder(getContext());
+  state.mapResults({builder.getIndexAttr(numLoads),
+                    builder.getIndexAttr(numStores),
+                    builder.getIndexAttr(numOther)});
   return success();
 }
 

@@ -1229,8 +1229,8 @@ kgen.generator @count_ops(%arg0: i1) -> index {
 }
 
 kgen.generator @cost_of<fn: (i1) -> index>() -> index {
-  %0 = kgen.cost_of[(i1) -> index: fn]
-  kgen.return %0 : index
+  %0, %1, %2 = kgen.cost_of[(i1) -> index: fn]
+  kgen.return %2  : index
 }
 
 // CHECK-LABEL: kgen.func export @main

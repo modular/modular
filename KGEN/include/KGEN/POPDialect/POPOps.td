@@ -731,7 +731,7 @@ def POP_SIMDSplatOp : POPOp<"simd.splat", [Pure,
 //===----------------------------------------------------------------------===//
 
 def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer load operation";
   let description = [{
     Loads the data at the given pointer. Returns a scalar of the element type.
@@ -764,7 +764,7 @@ def POP_LoadOp : POPOp<"load", [PointerElementType<"ptr", "result">,
 //===----------------------------------------------------------------------===//
 
 def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+  DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pointer store operation";
   let description = [{
     Store the given value to the given pointer of the element type. An
