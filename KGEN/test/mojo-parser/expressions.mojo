@@ -758,6 +758,7 @@ def literals():
     a = 0             # CHECK: 0
     a = 00            # CHECK: 0
     a = 0____0__0_0   # CHECK: 0
+    a = 0__           # CHECK: 0
     a = 00__0_0       # CHECK: 0
     a = 1__9_         # CHECK: 19
     a = 0x123         # CHECK: 291
