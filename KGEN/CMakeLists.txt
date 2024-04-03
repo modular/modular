@@ -136,6 +136,61 @@ endmacro()
 # Add the necessary tool dependencies to the mojo-sdk target.
 add_dependencies(mojo-sdk mojo mojo-lsp-server MojoJupyter)
 
+# This function will generate the CMake targets needed to build a Mojo binary
+# for the current source file.
+#   Usage:
+#
+#  add_mojo_binary(mojo-binary
+#     something_with_main.mojo
+#  )
+#
+# This will generate a target and binary called `mojo-binary`.
+#
+# This function will pull its include flags from the linked libs to avoid
+# having too many search paths.
+function(add_mojo_binary name)
+  cmake_parse_arguments(KGEN
+                        ""
+                        "OUTPUT_DIR;OUTPUT_NAME"
+                        "LINK_LIBS;LINK_DIRS;DEPENDS" ${ARGN})
+
+  _setup_libs()
+
+  if (NOT KGEN_OUTPUT_DIR)
+    set(KGEN_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bin)
+  else()
+    # Make sure that the directory is created.
+    file(MAKE_DIRECTORY ${KGEN_OUTPUT_DIR})
+  endif ()
+
+  set(KGEN_SOURCE_FILES "")
+  foreach(file ${KGEN_UNPARSED_ARGUMENTS})
+    list(APPEND KGEN_SOURCE_FILES "${CMAKE_CURRENT_LIST_DIR}/${file}")
+  endforeach()
+
+  # Ensure at most one source file is specified
+  if (NOT KGEN_SOURCE_FILES)
+    message(FATAL_ERROR "Must specify one mojo source files when calling `add_mojo_binary`.")
+  endif()
+  list(LENGTH KGEN_SOURCE_FILES KGEN_SOURCE_FILES_COUNT)
+  if (KGEN_SOURCE_FILES_COUNT GREATER 1)
+    message(FATAL_ERROR "Must specify a single mojo source files when calling `add_mojo_binary`.")
+  endif()
+
+  # Add the command used to generate the archive for the kernel.
+  add_custom_command(
+    OUTPUT ${KGEN_OUTPUT_DIR}/${name}
+
+    COMMAND $<TARGET_FILE:mojo> build
+    ${KGEN_SOURCE_FILES} -o ${KGEN_OUTPUT_DIR}/${name} ${KGEN_INCLUDE_FLAGS}
+
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_DEPENDS}
+  )
+  add_custom_target(${name} DEPENDS ${KGEN_OUTPUT_DIR}/${name})
+endfunction()
+
+
 # This function will generate the CMake targets needed to build a Mojo package
 # for the current source directory, or directory specified by PACKAGE_DIR.
 #   Usage:
