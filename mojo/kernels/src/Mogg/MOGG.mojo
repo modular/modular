@@ -853,6 +853,22 @@ fn broadcast_shape_impl[
             out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
 
 
+@always_inline
+@export
+fn broadcast_shape_shape[
+    lhs_type: DType,
+    rhs_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    lhs_buf: NDBuffer[lhs_type, 1],
+    rhs_buf: NDBuffer[rhs_type, 1],
+    ctx: MojoCallContextPtr,
+) -> StaticIntTuple[1]:
+    var lhs_dim = lhs_buf.dim(0)
+    var rhs_dim = rhs_buf.dim(0)
+    return StaticIntTuple[1](max(lhs_dim, rhs_dim))
+
+
 @mogg_register("mo.static.broadcast_to")
 @mogg_view_op
 @always_inline
