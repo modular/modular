@@ -2294,8 +2294,8 @@ fn batched_matmul[
     c: NDBuffer[c_type, rank],
     ctx: MojoCallContextPtr,
 ):
-    alias adj_a = False
-    alias adj_b = transpose_in_1
+    alias transpose_a = False
+    alias transpose_b = transpose_in_1
 
     if _guard_against_gpu_target[target](ctx):
         return
@@ -2315,8 +2315,8 @@ fn batched_matmul[
             a.get_shape(),
             b.get_shape(),
             c.get_shape(),
-            adj_a,
-            adj_b,
+            transpose_a,
+            transpose_b,
         )
         return (
             info
@@ -2333,8 +2333,8 @@ fn batched_matmul[
             a_type,
             b_type,
             c_type,
-            adj_a,
-            adj_b,
+            transpose_a,
+            transpose_b,
             Optional[batched_matmul_elementwise_epilogue_type](
                 epilogue_wrapper
             ) if lambdas_have_fusion else None,
