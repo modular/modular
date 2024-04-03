@@ -192,7 +192,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   mlir::TimingScope mojoScope = timing.nest("Import Mojo");
   OwningOpRef<ModuleOp> module = parseFn(parseConfig, mojoScope);
   if (!module)
-    return Error("failed to parse the provided Mojo");
+    return Error("failed to parse the provided Mojo source module");
 
   // Tag the module with the environment, which includes any definitions the
   // user may have specified on the command line.
