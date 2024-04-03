@@ -10,6 +10,7 @@ from math import div_ceil, isclose, isnan
 from buffer import NDBuffer
 from buffer.list import DimList
 from memory.unsafe import DTypePointer
+from memory.unsafe import _GPUAddressSpace as AddressSpace
 from Matmul import matmul_kernel_naive
 from gpu import (
     WARP_SIZE,
@@ -18,7 +19,6 @@ from gpu import (
     ThreadIdx,
     barrier,
     lane_id,
-    AddressSpace,
 )
 from gpu.host import Context, Function, synchronize, Stream
 from gpu.host.event import time_function
@@ -82,6 +82,9 @@ fn sgemm_double_buffer[
     alias _uint = Scalar[itype]
 
     alias simd_size = simdwidthof[c_type]()
+    alias a_align = alignof[SIMD[a_type, simd_size]]()
+    alias b_align = alignof[SIMD[b_type, simd_size]]()
+    alias c_align = alignof[SIMD[c_type, simd_size]]()
 
     var M = c.dim[0]()
     var N = c.dim[1]()
@@ -121,6 +124,7 @@ fn sgemm_double_buffer[
         a_smem_base.tile[BK, BM](0, 0), a_smem_base.tile[BK, BM](1, 0)
     )
 
+    # Align the address by the maximum async copy size (16 bytes).
     alias b_smem_size = BK * BN
     var b_smem_base = LayoutTensor[
         Layout.row_major(2 * BK, BN),
@@ -149,13 +153,15 @@ fn sgemm_double_buffer[
 
     # Load B tile from global memory to shared.
     # Row major thread layout for coalesced access.
-    alias thread_layout_loadb = Layout.row_major(NUM_THREADS // BN, BN)
-    var thread_loadb_gmem_frags = b_gmem_tile.distribute[thread_layout_loadb](
-        ThreadIdx.x()
+    alias thread_layout_loadb = Layout.row_major(
+        (NUM_THREADS // BN) * simd_size, BN // simd_size
     )
-    var thread_storeb_smem_frags = b_smem_tile[0].distribute[
-        thread_layout_loadb
-    ](ThreadIdx.x())
+    var thread_loadb_gmem_frags = b_gmem_tile.vectorize[
+        1, simd_size
+    ]().distribute[thread_layout_loadb](ThreadIdx.x())
+    var thread_storeb_smem_frags = b_smem_tile[0].vectorize[
+        1, simd_size
+    ]().distribute[thread_layout_loadb](ThreadIdx.x())
     thread_storeb_smem_frags.copy_from_async(thread_loadb_gmem_frags)
 
     async_copy_wait_all()
@@ -191,18 +197,22 @@ fn sgemm_double_buffer[
     var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
     var thread_loada_smem_frags = a_smem_warp_row.distribute[
         thread_layout, tile_size=simd_size, axis=0
-    ](lane_id)
-    a_reg0.copy_from_numa(thread_loada_smem_frags)
+    ](lane_id).vectorize[simd_size]()
+    a_reg0.vectorize[simd_size]().copy_from_numa[a_align](
+        thread_loada_smem_frags
+    )
 
     # Load B fragments to the first buffer.
     var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
     var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
     var thread_loadb_smem_frags = b_smem_warp_row.distribute[
         thread_layout, tile_size=simd_size, axis=1
-    ](lane_id)
-    b_reg0.copy_from_numa(thread_loadb_smem_frags)
+    ](lane_id).vectorize[simd_size]()
+    b_reg0.vectorize[simd_size]().copy_from_numa[b_align](
+        thread_loadb_smem_frags
+    )
 
-    var num_k_tiles = Scalar[itype](div_ceil(K, BK))
+    var num_k_tiles = div_ceil(K, BK)
 
     # Update (num_k_tile - 1) tiles while switching buffers.
     for k_tile_id in range(num_k_tiles - 1):
@@ -228,14 +238,18 @@ fn sgemm_double_buffer[
             a_smem_warp_row = a_smem_warp_tile.tile[1, WM](next_k, 0).coalesce()
             thread_loada_smem_frags = a_smem_warp_row.distribute[
                 thread_layout, tile_size=simd_size, axis=0
-            ](lane_id)
-            a_reg1.copy_from_numa(thread_loada_smem_frags)
+            ](lane_id).vectorize[simd_size]()
+            a_reg1.vectorize[simd_size]().copy_from_numa[a_align](
+                thread_loada_smem_frags
+            )
 
             b_smem_warp_row = b_smem_warp_tile.tile[1, WN](next_k, 0).coalesce()
             thread_loadb_smem_frags = b_smem_warp_row.distribute[
                 thread_layout, tile_size=simd_size, axis=1
-            ](lane_id)
-            b_reg1.copy_from_numa(thread_loadb_smem_frags)
+            ](lane_id).vectorize[simd_size]()
+            b_reg1.vectorize[simd_size]().copy_from_numa[b_align](
+                thread_loadb_smem_frags
+            )
 
             # Load next k tile from global memory to shared memory.
             if k == 0:
@@ -249,13 +263,17 @@ fn sgemm_double_buffer[
                 ].distribute[thread_storea_smem_layout](ThreadIdx.x())
                 thread_loada_smem_frags.copy_from_async(thread_loada_gmem_frags)
 
-                var thread_loadb_gmem_frags = b_gmem_tile.distribute[
-                    thread_layout_loadb
-                ](ThreadIdx.x())
-                var thread_loadb_smem_frags = b_smem_tile[
+                var thread_loadb_gmem_frags = b_gmem_tile.vectorize[
+                    1, simd_size
+                ]().distribute[thread_layout_loadb](ThreadIdx.x())
+                var thread_storeb_smem_frags = b_smem_tile[
                     prefetch_id
-                ].distribute[thread_layout_loadb](ThreadIdx.x())
-                thread_loadb_smem_frags.copy_from_async(thread_loadb_gmem_frags)
+                ].vectorize[1, simd_size]().distribute[thread_layout_loadb](
+                    ThreadIdx.x()
+                )
+                thread_storeb_smem_frags.copy_from_async(
+                    thread_loadb_gmem_frags
+                )
 
             outer_product_acc(c_reg, a_reg0, b_reg0)
 
@@ -273,37 +291,44 @@ fn sgemm_double_buffer[
             a_smem_warp_row = a_smem_warp_tile.tile[1, WM](next_k, 0).coalesce()
             thread_loada_smem_frags = a_smem_warp_row.distribute[
                 thread_layout, tile_size=simd_size, axis=0
-            ](lane_id)
-            a_reg1.copy_from_numa(thread_loada_smem_frags)
+            ](lane_id).vectorize[simd_size]()
+            a_reg1.vectorize[simd_size]().copy_from_numa[a_align](
+                thread_loada_smem_frags
+            )
 
             # Fill the other B fragments buffer.
             b_smem_warp_row = b_smem_warp_tile.tile[1, WN](next_k, 0).coalesce()
             thread_loadb_smem_frags = b_smem_warp_row.distribute[
                 thread_layout, tile_size=simd_size, axis=1
-            ](lane_id)
-            b_reg1.copy_from_numa(thread_loadb_smem_frags)
+            ](lane_id).vectorize[simd_size]()
+            b_reg1.vectorize[simd_size]().copy_from_numa[b_align](
+                thread_loadb_smem_frags
+            )
 
         outer_product_acc(c_reg, a_reg0, b_reg0)
 
         swap_ptr(a_reg0, a_reg1)
         swap_ptr(b_reg0, b_reg1)
 
+    # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
     var c_gmem_thread_tile = c_gmem_warp_tile.distribute[
         thread_layout, tile_size = IntTuple(simd_size, simd_size)
-    ](ThreadIdx.x())
+    ](ThreadIdx.x()).coalesce().vectorize[1, simd_size]()
+    # Reshape thread register tile to match its global memory tile.
     alias c_tiled_layout = c_reg._compute_tile_layout[simd_size, simd_size]()
     var c_reg_reshaped = LayoutTensor[
         c_tiled_layout, c_type, address_space = c_reg.address_space
-    ](c_reg.ptr)
-    c_gmem_thread_tile.copy_from_numa(c_reg_reshaped)
+    ](c_reg.ptr).coalesce().vectorize[1, simd_size]()
+    # vectorized store to global memory
+    c_gmem_thread_tile.copy_from_numa[c_align](c_reg_reshaped)
 
 
 fn test() raises:
     alias NUM_THREADS = 256
-    alias M = 128
-    alias N = 128
+    alias M = 8192
+    alias N = 8192
     alias K = 128
     alias BM = 128
     alias BN = 128
@@ -363,9 +388,7 @@ fn test() raises:
         TN,
         NUM_THREADS,
     ]
-    var func = Function[__type_of(gemm), gemm](
-        threads_per_block=NUM_THREADS, dump_ptx=Path("./mm.ptx")
-    )
+    var func = Function[__type_of(gemm), gemm](threads_per_block=NUM_THREADS)
 
     if is_benchmark():
         alias nrun = 200
