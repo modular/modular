@@ -22,15 +22,6 @@
 
 using namespace M;
 
-/// Wrapper function to avoid return type ABI issues when attempting to evaluate
-/// specializations. Simply returns the evaluator's result as an out-param.
-MODULAR_EXPORT LLVM_ATTRIBUTE_USED void
-lldb_evaluate_specializations(ssize_t (*evaluator)(void **, ssize_t),
-                              void **specializations,
-                              int64_t numSpecializations, uint64_t *best) {
-  *best = evaluator(specializations, numSpecializations);
-}
-
 /// Entry point that LLDB should stop at before evaluating expressions. It's
 /// guaranteed that all required setup happens before this function is called.
 MODULAR_EXPORT LLVM_ATTRIBUTE_USED LLVM_ATTRIBUTE_NOINLINE int
@@ -40,8 +31,7 @@ mojo_repl_main() {
 
 /// Ensure our exported functions aren't DCE'd so we can find it from the REPL.
 static void forceLinkExportedSymbols() {
-  llvm::nulls() << (void *)&lldb_evaluate_specializations
-                << (void *)&mojo_repl_main;
+  llvm::nulls() << (void *)&mojo_repl_main;
 }
 
 //===----------------------------------------------------------------------===//
