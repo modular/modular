@@ -217,8 +217,8 @@ fn batched_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    adj_a: Bool,
-    adj_b: Bool,
+    transpose_a: Bool,
+    transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
@@ -232,8 +232,8 @@ fn batched_matmul[
     @parameter
     if (
         single_thread_blocking_override
-        and not adj_a
-        and not adj_b
+        and not transpose_a
+        and not transpose_b
         and target == "cpu"
     ):
         return _small_batched_matmul[
@@ -256,8 +256,8 @@ fn batched_matmul[
         a_type,
         b_type,
         c_type,
-        adj_a,
-        adj_b,
+        transpose_a,
+        transpose_b,
         elementwise_epilogue_fn,
         rowwise_epilogue_enabled=False,
         saturated_vnni=saturated_vnni,
@@ -271,8 +271,8 @@ fn _batched_matmul_cpu[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    adj_a: Bool,
-    adj_b: Bool,
+    transpose_a: Bool,
+    transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     rowwise_epilogue_enabled: Bool = False,
     saturated_vnni: Bool = False,
@@ -282,7 +282,9 @@ fn _batched_matmul_cpu[
     b_buf: NDBuffer[b_type, rank],
     rowwise_epilogue: fn (Int, Int, NDBuffer[c_type, 2]) escaping -> None,
 ):
-    constrained[not adj_a, "batched matmul does not support adj_a yet"]()
+    constrained[
+        not transpose_a, "batched matmul does not support transpose_a yet"
+    ]()
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
 
     # Flatten to 3D Tensor.
@@ -293,7 +295,7 @@ fn _batched_matmul_cpu[
 
     var m = c.dim[1]()
     var n = c.dim[2]()
-    var k = a.dim[1]() if adj_a else a.dim[2]()
+    var k = a.dim[1]() if transpose_a else a.dim[2]()
     var num_threads = Runtime().parallelism_level()
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
@@ -429,7 +431,7 @@ fn _batched_matmul_cpu[
                 c_type,
                 DimList.create_unknown[2](),
                 transpose_a=False,
-                transpose_b=adj_b,
+                transpose_b=transpose_b,
                 b_packed=False,
                 elementwise_lambda_fn = Optional[
                     matmul_elementwise_epilogue_type
@@ -498,8 +500,8 @@ fn _batched_matmul_gpu[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    adj_a: Bool,
-    adj_b: Bool,
+    transpose_a: Bool,
+    transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     rowwise_epilogue_enabled: Bool = False,
     saturated_vnni: Bool = False,
@@ -561,8 +563,8 @@ fn batched_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    adj_a: Bool,
-    adj_b: Bool,
+    transpose_a: Bool,
+    transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     rowwise_epilogue_enabled: Bool = False,
     saturated_vnni: Bool = False,
@@ -580,8 +582,8 @@ fn batched_matmul[
         a_type,
         b_type,
         c_type,
-        adj_a,
-        adj_b,
+        transpose_a,
+        transpose_b,
         elementwise_epilogue_fn,
         rowwise_epilogue_enabled,
         saturated_vnni,
@@ -648,8 +650,8 @@ fn get_trace_information[
     a_matrix_shape: StaticIntTuple[rank],
     b_matrix_shape: StaticIntTuple[rank],
     c_matrix_shape: StaticIntTuple[rank],
-    adj_a: Bool,
-    adj_b: Bool,
+    transpose_a: Bool,
+    transpose_b: Bool,
 ) -> String:
     var a_shape: String
     var b_shape: String
@@ -661,12 +663,16 @@ fn get_trace_information[
     var a_description = String("A=") + a_shape
     var b_description = String("B=") + b_shape
     var c_description = String("C=") + c_shape
-    var adj_a_description = String("adj_a=") + adj_a
-    var adj_b_description = String("adj_b=") + adj_b
+    var transpose_a_description = String("transpose_a=") + transpose_a
+    var transpose_b_description = String("transpose_b=") + transpose_b
 
     return String(";").join(
         String(name),
         a_description,
         b_description,
-        c_description + ";" + adj_a_description + ";" + adj_b_description,
+        c_description
+        + ";"
+        + transpose_a_description
+        + ";"
+        + transpose_b_description,
     )

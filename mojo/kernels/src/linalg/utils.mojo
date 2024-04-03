@@ -870,15 +870,15 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
 fn get_trace_information(
     name: StringRef,
     shape: GemmShape,
-    a_transpose: Bool,
-    b_transpose: Bool,
+    transpose_a: Bool,
+    transpose_b: Bool,
     b_packed: Bool,
 ) -> String:
     var a_description = String("A=") + shape.M + "x" + shape.K
     var b_description = String("B=") + shape.K + "x" + shape.N
     var c_description = String("C=") + shape.M + "x" + shape.N
-    var a_transpose_description = String("a_transpose=") + a_transpose
-    var b_transpose_description = String("b_transpose=") + b_transpose
+    var transpose_a_description = String("transpose_a=") + transpose_a
+    var transpose_b_description = String("transpose_b=") + transpose_b
     var b_packed_description = String("b_packed=") + b_packed
 
     return (
@@ -890,9 +890,9 @@ fn get_trace_information(
         + ";"
         + c_description
         + ";"
-        + a_transpose_description
+        + transpose_a_description
         + ";"
-        + b_transpose_description
+        + transpose_b_description
         + ";"
         + b_packed_description
     )
