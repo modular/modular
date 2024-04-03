@@ -21,3 +21,5 @@ add_modular_unittest(
   MMetering
   MSupport
 )
+
+set_tests_properties(MeteringTests PROPERTIES TIMEOUT 20)
