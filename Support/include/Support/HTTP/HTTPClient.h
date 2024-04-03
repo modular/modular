@@ -32,7 +32,7 @@ public:
   /// HTTPContext can be initialized with a default constructor for the client.
   /// This allows dependency injection in some tests.
   using ClientConstructor =
-      llvm::function_ref<std::unique_ptr<HTTPClient>(HTTPContextRef)>;
+      std::function<std::unique_ptr<HTTPClient>(HTTPContextRef)>;
 
   /// Initialize an HTTP context.
   static HTTPContextRef init(ClientConstructor cc = nullptr);

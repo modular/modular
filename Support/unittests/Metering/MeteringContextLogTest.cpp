@@ -139,7 +139,7 @@ protected:
   static HTTPResponse emptyResponse(const HTTPRequest &request) { return {}; }
 
   std::unique_ptr<HTTPClient> createHTTPClient(HTTPContextRef ref) {
-    auto ptr = std::make_unique<NiceMock<MockHTTPClient>>(ref);
+    auto ptr = std::make_unique<NiceMock<MockHTTPClient>>(std::move(ref));
     ON_CALL(*ptr, executeRequestImpl(_, _, _, _))
         .WillByDefault([=](const HTTPRequest &request, raw_ostream &os,
                            std::chrono::milliseconds timeout,
@@ -147,7 +147,7 @@ protected:
           requestUrls.emplace_back(request.URL);
           return HTTPResponse{};
         });
-    return std::move(ptr);
+    return ptr;
   }
 
   void createContextWithHTTP(const MeteringContext::Options &options,
@@ -166,6 +166,15 @@ protected:
     EXPECT_EQ(llvm::print(attrs.at("region")), "us-west-2");
     EXPECT_EQ(llvm::print(attrs.at("instance.class")), "c5");
     EXPECT_EQ(llvm::print(attrs.at("instance.type")), "c5.4xlarge");
+  }
+
+  void expectValuesAdded() {
+    EXPECT_CALL(*mockTelemetryCtx.mockLogger, emitL0Event(_, _))
+        .WillRepeatedly(
+            [this](llvm::StringRef eventName,
+                   const llvm::StringMap<Logs::AttributeValue> &attrs) {
+              values.push_back(attrs);
+            });
   }
 
   NiceMock<MockTelemetryContext> mockTelemetryCtx;
@@ -203,13 +212,7 @@ TEST_F(MeteringContextLogTest, EmptyInstanceInfo) {
 }
 
 TEST_F(MeteringContextLogTest, Flush) {
-  EXPECT_CALL(*mockTelemetryCtx.mockLogger, emitL0Event(_, _))
-      .Times(2)
-      .WillRepeatedly(
-          [this](llvm::StringRef eventName,
-                 const llvm::StringMap<Logs::AttributeValue> &attributes) {
-            values.push_back(attributes);
-          });
+  expectValuesAdded();
 
   createContext({});
   std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -222,13 +225,7 @@ TEST_F(MeteringContextLogTest, Flush) {
 }
 
 TEST_F(MeteringContextLogTest, FlushWithLimits) {
-  EXPECT_CALL(*mockTelemetryCtx.mockLogger, emitL0Event(_, _))
-      .Times(2)
-      .WillRepeatedly(
-          [this](llvm::StringRef eventName,
-                 const llvm::StringMap<Logs::AttributeValue> &attrs) {
-            values.push_back(attrs);
-          });
+  expectValuesAdded();
 
   const auto maxProcessors = 4;
   createContext({}, maxProcessors);

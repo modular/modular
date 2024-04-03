@@ -25,18 +25,10 @@ protected:
   }
 
   void createContext(const MeteringContext::Options &options,
-                     bool meterError = false) {
+                     bool err = false) {
     context = std::make_unique<MeteringContext>(
         options, MeteringContext::InstanceInfo{"", "", ""}, 5);
-    context->setMeterCallback(
-        [&, err = meterError](int millis, bool stopped) -> ErrorOrSuccess {
-          if (!stopped) {
-            values.push_back(millis);
-          }
-          if (err)
-            return Error("error");
-          return success();
-        });
+    expectValuesAdded(err);
   }
 
   int elapsedSeconds() const {
@@ -46,8 +38,31 @@ protected:
         .count();
   }
 
+  void expectValuesAdded(bool err = false) {
+    context->setMeterCallback([=](int millis, bool stopped) -> ErrorOrSuccess {
+      if (err)
+        return Error("error");
+      if (!stopped) {
+        {
+          std::lock_guard<std::mutex> lk(mu);
+          values.emplace_back(std::this_thread::get_id(), millis);
+        }
+        cv.notify_all();
+      }
+      return success();
+    });
+  }
+
+  void waitForValues() {
+    std::unique_lock lk(mu);
+    cv.wait(lk, [=] { return !values.empty(); });
+  }
+
   std::unique_ptr<MeteringContext> context;
-  std::vector<int> values;
+
+  std::mutex mu;
+  std::condition_variable cv;
+  std::vector<std::pair<std::thread::id, int>> values;
 };
 
 constexpr static double kEps = 10;
@@ -59,7 +74,7 @@ TEST_F(MeteringContextTest, FlushSuccess) {
   ASSERT_FALSE(errOr.isError()) << errOr.getError();
   ASSERT_EQ(values.size(), 1u);
   const auto numCores = getNumPhysicalCores();
-  EXPECT_NEAR(values.back(), numCores * elapsedSeconds(), kEps);
+  EXPECT_NEAR(values.back().second, numCores * elapsedSeconds(), kEps);
 }
 
 TEST_F(MeteringContextTest, FlushSuccessMultiple) {
@@ -70,7 +85,7 @@ TEST_F(MeteringContextTest, FlushSuccessMultiple) {
   auto fn = [&] {
     ASSERT_FALSE(errOr.isError()) << errOr.getError();
     const auto numCores = getNumPhysicalCores();
-    EXPECT_NEAR(values.back(), numCores * elapsedSeconds(), kEps);
+    EXPECT_NEAR(values.back().second, numCores * elapsedSeconds(), kEps);
   };
   fn();
 
@@ -95,27 +110,20 @@ TEST_F(MeteringContextTest, FlushOnShutdown) {
 
 TEST_F(MeteringContextTest, FlushWithThreadIdempotent) {
   MeteringContext::Options opts;
-  opts.intervalMs = 3;
+  opts.intervalMs = 1;
 
-  std::vector<std::pair<std::thread::id, int>> markedValues;
   context = std::make_unique<MeteringContext>(
       std::move(opts), MeteringContext::InstanceInfo{"", "", ""}, 5);
-  context->setMeterCallback([&](int millis, bool stopped) -> ErrorOrSuccess {
-    if (!stopped) {
-      markedValues.emplace_back(std::this_thread::get_id(), millis);
-    }
-    return success();
-  });
-
+  expectValuesAdded();
   context->startMeterThread();
   context->startMeterThread();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  waitForValues();
   context->stopMeterThread();
 
-  ASSERT_FALSE(markedValues.empty());
-  auto firstThread = markedValues[0].first;
+  ASSERT_FALSE(values.empty());
+  auto firstThread = values[0].first;
   EXPECT_NE(std::this_thread::get_id(), firstThread);
-  EXPECT_THAT(markedValues, Each(Key(firstThread)));
+  EXPECT_THAT(values, Each(Key(firstThread)));
 }
 
 TEST_F(MeteringContextTest, StopMeterThread) {
