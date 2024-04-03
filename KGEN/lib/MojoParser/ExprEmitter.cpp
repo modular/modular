@@ -1335,6 +1335,15 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
           }
           return emitResult(result, expr, dest);
         }
+        // If the source value is a parametric value of type 'AnyTrait[trait]'
+        // then the elaborator will turn it into something that conforms to
+        // 'trait' and a simple rebind is enough.
+        if (auto sourceTraitMT = dyn_cast<AnyTraitType>(rvalueType)) {
+          if (sourceTraitMT.getTraitType() == trait) {
+            value = rebindValue({cValue, expr}, requiredType);
+            return emitResult(value, expr, dest);
+          }
+        }
       }
 
       // We disable implicit conversions to prevent converting T -> S -> U in
