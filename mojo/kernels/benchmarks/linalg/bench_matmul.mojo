@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
+
 from random import rand
 
 from benchmark import keep

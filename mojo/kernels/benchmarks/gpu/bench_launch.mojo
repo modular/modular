@@ -3,6 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+# REQUIRES: has_cuda_device
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
+
 from gpu.host import Context, Dim, Function, Stream
 from benchmark import Bencher, BenchId, Bench
 from layout import *

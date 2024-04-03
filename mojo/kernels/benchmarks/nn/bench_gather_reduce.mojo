@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
+
 from math import add
 from random import random_si64
 

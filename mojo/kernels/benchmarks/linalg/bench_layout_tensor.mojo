@@ -4,15 +4,22 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# TODO: #36558
+# XFAIL: *
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
+
 from random import rand
 
 import benchmark
 from algorithm import Static2DTileUnitFunc as Tile2DFunc
 from algorithm import sync_parallelize, vectorize
 from memory import memset_zero
+import math
 from python import Python
 
 from layout import *
+from layout.layout_tensor import LayoutTensor, TensorBuilder
 from layout.int_tuple import int
 
 

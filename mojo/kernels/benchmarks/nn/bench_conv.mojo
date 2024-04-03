@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
+
 from math import div_ceil, align_up
 from random import rand
 from sys import argv
@@ -169,9 +172,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
                     filter_type,
                     output_type,
                     True,
-                    ConvInfoStatic[
-                        spec.static_info.rank + 2 - 2
-                    ].create_unknown(),
+                    ConvInfoStatic[spec.static_info.rank + 2 - 2](),
                 ].run(
                     output,
                     input,

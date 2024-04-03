@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
+
 from layout import *
 from math import *
 from math.math import _exp_taylor, _ldexp_impl
@@ -11,11 +14,12 @@ from builtin.range import _StridedRange
 from builtin.simd import _simd_apply
 from sys.arg import argv
 
-from math.polynomial import EvaluationMethod
+from math.polynomial import EvaluationMethod, polynomial_evaluate
 from algorithm.functional import vectorize
 from benchmark import keep
 from benchmark import Bencher, BenchId, Bench
 from buffer import Buffer
+from compile import *
 
 
 fn apply[
@@ -401,10 +405,6 @@ def accuracy_test():
 def main():
     var args = argv()
     for i in range(len(args)):
-        if args[i] == "-t":
-            accuracy_test()
-            return
-    for i in range(len(args)):
         if args[i] == "-c":
             print(
                 compile_code[
@@ -426,4 +426,5 @@ def main():
     bench_unary[mlas_llvm_ldexp, DType.float32](
         m, problem_size, "mlas_llvm_ldexp"
     )
+    accuracy_test()
     m.dump_report()

@@ -4,6 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# REQUIRES: has_cuda_device
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
+
 from benchmark import Bench, Bencher, BenchId
 from benchmark._cuda import time_async_cuda_kernel
 

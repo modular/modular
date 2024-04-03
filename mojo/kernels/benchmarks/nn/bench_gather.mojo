@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
+
 from benchmark import *
 from nn.gather_scatter import gather_elements
 from tensor import Tensor, TensorShape

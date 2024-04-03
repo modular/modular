@@ -8,6 +8,11 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
+
+# XFAIL: *
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
+
 from random import rand
 
 from algorithm.functional import vectorize

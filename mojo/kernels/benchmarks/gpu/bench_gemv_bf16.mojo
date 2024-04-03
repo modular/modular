@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s -t | FileCheck %s
+# CHECK: Benchmark results
 
 from math import div_ceil, max, min
 
@@ -30,7 +31,7 @@ from Matmul import (
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index
-from utils.list import DimList
+from buffer.list import DimList
 from random import random_float64
 
 
