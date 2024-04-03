@@ -511,8 +511,10 @@ void ProfilingDetail::GlobalProfilerContext::writeTextTrace(
 //===----------------------------------------------------------------------===//
 
 TimeTraceProfiler::TimeTraceProfiler(unsigned timeTraceGranularity,
-                                     StringRef procName,
+                                     StringRef procName, StringRef filename,
                                      uint64_t runtimeProfilingTypeMask) {
+  profileFilename = filename.str();
+
   if constexpr (!ProfilingDetail::kProfilingEnabled) {
     llvm::dbgs() << "PROFILE: INFO: Profiling is not enabled at compile time, "
                     "only direct profiling entries will be captured\n";
@@ -573,8 +575,7 @@ void TimeTraceProfiler::setRuntimeProfilingTypeMask(uint64_t typeMask) {
   ctx->setRuntimeProfilingTypeMask(typeMask);
 }
 
-ErrorOrSuccess TimeTraceProfiler::write(StringRef preferredFileName,
-                                        StringRef fallbackFileName) {
+ErrorOrSuccess TimeTraceProfiler::write(StringRef fallbackFileName) {
   auto *ctx = Globals::getGlobalProfilerContext();
   assert(ctx && "profiler should be initialized");
 
@@ -583,15 +584,16 @@ ErrorOrSuccess TimeTraceProfiler::write(StringRef preferredFileName,
       ctx->getCompletedEntries();
 
   // Set up filename base.
-  std::string path = preferredFileName.str();
-  if (path.empty())
-    path = fallbackFileName == "-" ? "out" : fallbackFileName.str();
+  if (profileFilename.empty())
+    profileFilename = fallbackFileName == "-" ? "out" : fallbackFileName.str();
 
   std::error_code ec;
 
   {
     // Write time trace.
-    std::string tracePath = path == "-" ? path : path + ".time-trace";
+    std::string tracePath = profileFilename == "-"
+                                ? profileFilename
+                                : profileFilename + ".time-trace";
     llvm::dbgs() << "PROFILE: INFO: Writing " << entries.size()
                  << " entries to JSON " << tracePath << "\n";
     llvm::raw_fd_ostream os(tracePath, ec, llvm::sys::fs::OF_TextWithCRLF);
@@ -603,8 +605,9 @@ ErrorOrSuccess TimeTraceProfiler::write(StringRef preferredFileName,
 
   {
     // Write the raw event stream.
-    std::string eventStreamPath =
-        path == "-" ? path : path + ".time-events.txt";
+    std::string eventStreamPath = profileFilename == "-"
+                                      ? profileFilename
+                                      : profileFilename + ".time-events.txt";
     llvm::dbgs() << "PROFILE: INFO: Writing " << entries.size()
                  << " entries to text " << eventStreamPath << "\n";
     llvm::raw_fd_ostream os(eventStreamPath, ec,

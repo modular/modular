@@ -51,15 +51,15 @@ Runtime::Runtime(CompactRuntimePtr runtimePtr, ContextRef context,
     : context(std::move(context)),
       signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
-      profileFilename(profileFilename), profilerDebuginfo(profilerDebuginfo),
-      runtimeIndex(runtimePtr.index), readyChain(createReadyChain(*this)) {
+      profilerDebuginfo(profilerDebuginfo), runtimeIndex(runtimePtr.index),
+      readyChain(createReadyChain(*this)) {
   // Establish association of runtime to runtime index.
   Detail::RuntimeTable::getSingleton().setRuntime(runtimePtr.index, this);
 
   // NOTE: Users can't pass in profileFilename AND activate the time
   // profiler in the caller.
   if (!profileFilename.empty())
-    profiler.emplace(/*timeTraceGranularity=*/0, "Main",
+    profiler.emplace(/*timeTraceGranularity=*/0, "Main", profileFilename,
                      runtimeProfilingTypeMask);
 }
 
@@ -78,7 +78,7 @@ Runtime::~Runtime() {
 
   // We're done with profiling.
   if (profiler) {
-    if (auto E = profiler->write(profileFilename, "-"))
+    if (auto E = profiler->write("-"))
       llvm::report_fatal_error("unable to write time trace profile");
   }
 }
