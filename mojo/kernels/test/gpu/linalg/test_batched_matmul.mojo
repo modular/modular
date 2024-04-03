@@ -74,8 +74,8 @@ fn test_batched_matmul() raises:
         a_type = DType.float32,
         b_type = DType.float32,
         c_type = DType.float32,
-        adj_a=False,
-        adj_b=False,
+        transpose_a=False,
+        transpose_b=False,
         elementwise_epilogue_fn=elementwise_epilogue_empty_fn,
         target="cuda",
     ](
