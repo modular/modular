@@ -433,10 +433,6 @@ private:
   std::unique_ptr<Allocator> allocator;
   std::unique_ptr<WorkQueue> workQueue;
 
-  /// Filename into which time profiling should be written, or the empty
-  /// string if disabled.
-  std::string profileFilename;
-
   /// An active profiler used for the runtime, or nullopt if profiling is
   /// disabled. This is only set when profileFilename is non-empty.
   std::optional<TimeTraceProfiler> profiler;

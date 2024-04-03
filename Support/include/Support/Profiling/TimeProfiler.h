@@ -877,6 +877,7 @@ struct TimeTraceProfiler {
   /// runtime to toggle trace types enabled with
   /// MODULAR_LLCL_MAX_PROFILING_LEVEL.
   TimeTraceProfiler(unsigned timeTraceGranularity, StringRef procName,
+                    StringRef filename = "",
                     uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled);
 
   /// Destroy the time trace profiler. This should be destroyed from the
@@ -897,17 +898,21 @@ struct TimeTraceProfiler {
   uint64_t runtimeProfilingTypeMask();
 
   /// Write profiling data to a file.
-  /// The function will write to preferredFileName if provided, if not then will
+  /// The function will write to `profileFilename` if present, if not then will
   /// write to fallbackFileName appending .time-trace. Returns a StringError
   /// indicating a failure if the function is unable to open the file for
   /// writing.
-  ErrorOrSuccess write(StringRef preferredFileName, StringRef fallbackFileName);
+  ErrorOrSuccess write(StringRef fallbackFileName);
 
   /// Writes the profiling data in JSON form to os. Visible for testing.
   void writeJSONForTesting(llvm::raw_pwrite_stream &os);
 
   /// Make sure all internable strings are captured in all profiling entries.
   void intern();
+
+  /// Filename into which time profiling should be written, or the empty
+  /// string if disabled.
+  std::string profileFilename;
 };
 
 //===----------------------------------------------------------------------===//
