@@ -6,7 +6,6 @@
 
 import os
 import platform
-from pathlib import Path
 
 from lit.llvm import llvm_config
 
@@ -34,32 +33,23 @@ config.excludes.add("misc")
 config.excludes.add("packages")
 
 
-def has_gpu(modular_src_root, config=None):
+def has_gpu():
     if platform.system() != "Linux":
         return False
 
     try:
-        get_command_output(
-            [
-                "mojo",
-                Path(modular_src_root)
-                / "Kernels"
-                / "tools"
-                / "cuda-query"
-                / "cuda-query.mojo",
-            ]
-        )
+        get_command_output("cuda-query")
         return True
     except:
         return False
 
 
 # Configuration file for the 'lit' test runner.
-if has_gpu(config.modular_src_root, config):
+if has_gpu():
     config.available_features.add("has_cuda_device")
 
 
 tool_dirs = [config.modular_tools_dir]
-tools = ["mojo"]
+tools = ["mojo", "cuda-query"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
