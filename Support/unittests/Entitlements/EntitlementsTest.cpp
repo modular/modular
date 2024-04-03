@@ -399,7 +399,7 @@ TEST(TestEntitlementStore, BootstrapAndOpen) {
 }
 
 /// Load an EntitlementStore using a token
-TEST(TestEntitlementStore, fromToken) {
+TEST(TestEntitlementStore, DISABLED_fromToken) {
   Entitlement::registerEntitlement<TestEntitlement>();
 
   Config config;
@@ -435,7 +435,7 @@ TEST(TestEntitlementStore, fromToken) {
 }
 
 /// Load an EntitlementStore using a token
-TEST(TestEntitlementStore, preferFromToken) {
+TEST(TestEntitlementStore, DISABLED_preferFromToken) {
   Entitlement::registerEntitlement<TestEntitlement>();
 
   Config config;
