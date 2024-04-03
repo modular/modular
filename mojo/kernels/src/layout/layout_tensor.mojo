@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.optional import Optional
+from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
@@ -290,9 +291,17 @@ struct LayoutTensor[
     @always_inline
     fn coalesce(
         self,
-    ) -> LayoutTensor[coalesce(layout), dtype, address_space=address_space]:
+    ) -> LayoutTensor[
+        coalesce(layout),
+        dtype,
+        address_space=address_space,
+        element_layout = self.element_layout,
+    ]:
         return LayoutTensor[
-            coalesce(layout), dtype, address_space=address_space
+            coalesce(layout),
+            dtype,
+            address_space=address_space,
+            element_layout = self.element_layout,
         ](self.ptr)
 
     @staticmethod
@@ -603,6 +612,8 @@ struct LayoutTensor[
     # When source and destination address spaces differ
     @always_inline
     fn copy_from_numa[
+        alignment: Int = 1,
+        *,
         other_layout: Layout,
         other_addr_space: AddressSpace,
         other_element_layout: Layout,
@@ -629,6 +640,8 @@ struct LayoutTensor[
             dst_element_size == src_element_size, "copy_from should move"
         ]()
 
+        # alias align = alignof[SIMD[dtype, self.element_size]]()
+
         # Vectorize 1-D element read/writes.
         @parameter
         if (
@@ -647,9 +660,13 @@ struct LayoutTensor[
                     i * dst_element_size
                 )
                 var src_vec = rebind[self.element_type](
-                    other.ptr.load[width=src_element_size](src_idx)
+                    other.ptr.load[width=src_element_size, alignment=alignment](
+                        src_idx
+                    )
                 )
-                self.ptr.store[width = self.element_size](dst_idx, src_vec)
+                self.ptr.store[width = self.element_size, alignment=alignment](
+                    dst_idx, src_vec
+                )
 
             unroll[copy_vector_to_vector, dst_size]()
         # Vector read scalar writes.
@@ -722,37 +739,82 @@ struct LayoutTensor[
 
     @always_inline
     fn copy_from_async[
-        src_layout: Layout, src_addr_space: AddressSpace
+        src_layout: Layout,
+        src_addr_space: AddressSpace,
+        src_element_layout: Layout,
     ](
         self,
-        src: LayoutTensor[src_layout, dtype, address_space=src_addr_space],
+        src: LayoutTensor[
+            src_layout,
+            dtype,
+            address_space=src_addr_space,
+            element_layout=src_element_layout,
+        ],
     ):
         constrained[
             self.address_space == _GPUAddressSpace.SHARED,
             "Async is only supported for destinations in shared memory",
         ]()
 
-        @parameter
-        fn copy_element[i: Int]():
-            alias src_idx = src_layout(i)
-            alias dst_idx = self.layout(i)
-
-            var dst_ptr = self.ptr.address_space_cast[
-                _GPUAddressSpace.SHARED
-            ]() + dst_idx
-            var src_ptr = src.ptr.address_space_cast[
-                _GPUAddressSpace.GLOBAL
-            ]() + src_idx
-            async_copy[4](src_ptr, dst_ptr)
-
         alias dst_size = layout.size()
         alias src_size = src_layout.size()
-
         constrained[
-            dst_size == src_size, "copy_from should move data of the same size"
+            dst_size == src_size,
+            "copy_from_async should move data of the same size",
         ]()
 
-        unroll[copy_element, dst_size]()
+        alias dst_element_size = int(self.element_size)
+        alias src_element_size = int(src.element_size)
+        constrained[
+            dst_element_size == src_element_size,
+            "copy_from_async should move data of the same element size",
+        ]()
+
+        # Eligibility for 4, 8, 16 bytes async load.
+        alias element_size_bytes = sizeof[dtype]() * src_element_size
+        constrained[
+            element_size_bytes == 4
+            or element_size_bytes == 8
+            or element_size_bytes == 16,
+            "copy_from_async only allows 4, 8, 16 bytes element",
+        ]()
+
+        var dst_ptr = self.ptr.address_space_cast[_GPUAddressSpace.SHARED]()
+        var src_ptr = src.ptr.address_space_cast[_GPUAddressSpace.GLOBAL]()
+
+        @parameter
+        if (
+            src_element_layout.rank() == 1
+            and src_element_layout.stride[0] == 1
+            and self.element_layout.rank() == 1
+            and self.element_layout.stride[0] == 1
+        ):
+
+            @parameter
+            fn copy_vector_to_vector[i: Int]():
+                alias src_idx = make_layout(src.element_layout, src_layout)(
+                    i * src_element_size
+                )
+                alias dst_idx = make_layout(self.element_layout, self.layout)(
+                    i * dst_element_size
+                )
+
+                async_copy[element_size_bytes](
+                    src_ptr + src_idx, dst_ptr + dst_idx
+                )
+
+            unroll[copy_vector_to_vector, dst_size]()
+
+        else:
+
+            @parameter
+            fn copy_element[i: Int]():
+                alias src_idx = make_layout(src.element_layout, src_layout)(i)
+                alias dst_idx = make_layout(self.element_layout, self.layout)(i)
+
+                async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
+
+            unroll[copy_element, dst_size * dst_element_size]()
 
     fn linspace(self):
         @parameter
