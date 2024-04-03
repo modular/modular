@@ -3,11 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-
-# TODO: #36558
-# XFAIL: *
 # RUN: %mojo %s -t | FileCheck %s
-# CHECK: Benchmark results
+# CHECK: CPU Results
 
 from random import rand
 
@@ -147,7 +144,7 @@ fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
 
                     @unroll
                     for k in range(tile_k):
-                        var lhs_val = lhs_view[m, k]
+                        var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         @parameter
                         fn dot[simd_size: Int](n: Int):
@@ -216,7 +213,7 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
 
                     @unroll
                     for k in range(tile_k):
-                        var lhs_val = lhs_view[m, k]
+                        var lhs_val = rebind[Scalar[dtype]](lhs_view[m, k])
 
                         @parameter
                         fn dot[simd_size: Int](n: Int):
