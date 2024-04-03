@@ -925,10 +925,10 @@ ASTType SharedState::getBuiltinVariadicListType(ASTDecl &context,
                          loc);
 }
 
-ASTType SharedState::getCollectionsDictType(llvm::SMLoc loc) {
+ASTType SharedState::getOwnedKwargsDictType(llvm::SMLoc loc) {
   ASTDecl &collectionsModule =
-      importModule("stdlib.collections", /*currentPackage=*/nullptr, loc);
-  return lookupNamedType("Dict", collectionsModule, loc);
+      importModule("stdlib.collections.dict", /*currentPackage=*/nullptr, loc);
+  return lookupNamedType("OwnedKwargsDict", collectionsModule, loc);
 }
 
 ASTType SharedState::getBuiltinSourceLocationType(llvm::SMLoc loc) {

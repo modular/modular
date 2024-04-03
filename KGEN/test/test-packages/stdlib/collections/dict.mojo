@@ -5,17 +5,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-trait CollectionElement:
-    pass
-
-
-trait KeyElement:
-    pass
-
-
-struct Dict[K: KeyElement, V: CollectionElement]:
+struct OwnedKwargsDict[V: CollectionElement]:
     fn __init__(inout self):
         pass
 
-    fn __setitem__(inout self, key: K, value: V):
+    fn _insert(inout self, owned key: String, owned value: V):
+        pass
+
+    fn _insert(inout self, key: StringLiteral, owned value: V):
         pass
