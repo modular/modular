@@ -129,12 +129,18 @@ void ParameterCollector::collectUsesFromAttr(
                                << (indexRef.getIsResult() ? "result" : "input")
                                << " parameters";
           }
+      // FIXME(#36583): Bug in parameter index verifier
+      // Need to re-enable this - can we just remove the adjuster?
+#if 0
           Type type = types[indexRef.getIndex()];
           IndexDepthAdjuster adjuster(signatures.size() - 1);
-          if (adjuster.replace(type) != indexRef.getType()) {
-            return emitError() << "index reference type " << indexRef.getType()
-                               << " does not match parameter type " << type;
+          Type expectedType = adjuster.replace(type);
+          if (expectedType != indexRef.getType()) {
+            return emitError()
+                   << "type of index reference " << indexRef << " "
+                   << " does not match parameter type " << expectedType;
           }
+#endif
           return success();
         });
     return;
@@ -174,7 +180,8 @@ void ParameterCollector::collectUsesFromType(
   if (auto sig = dyn_cast<ParameterScopeTypeInterface>(type)) {
     signatures.push_back(sig);
     collectUsesFromTypesImpl(type, uses, hasConstExpr);
-    return signatures.pop_back();
+    signatures.pop_back();
+    return;
   }
   return collectUsesFromTypesImpl(type, uses, hasConstExpr);
 }

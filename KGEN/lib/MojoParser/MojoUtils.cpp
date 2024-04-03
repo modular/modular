@@ -71,6 +71,18 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
           return true;
       }
     }
+
+    // If the "from" type is a rebind of another type, it is a downcast from the
+    // actual type we care about.  Strip it off and try again.
+    if (auto fromRebind = dyn_cast<ParamOperatorAttr>(PValue(fromType).get());
+        fromRebind && fromRebind.getOpcode() == POC::Rebind)
+      return canConvertWithRebind(ASTType(fromRebind.getOperand(0)), toType,
+                                  shared);
+    // Strip them off 'to' type also.
+    if (auto toRebind = dyn_cast<ParamOperatorAttr>(PValue(toType).get());
+        toRebind && toRebind.getOpcode() == POC::Rebind)
+      return canConvertWithRebind(fromType, ASTType(toRebind.getOperand(0)),
+                                  shared);
   }
 
   // We can convert from AnyTraitType[Derived] to AnyTraitType[Base] with a

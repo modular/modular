@@ -144,19 +144,16 @@ fn test_owned_reg_varargs():
 fn test_owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
     print("-- testing owned variadic pack with", len(pack), "elements")
 
-    fn process[T: AnyType](a: T):
-        print("hello value")
+    fn process[T: Stringable](a: T):
+        print("hello", a)
 
-    # TODO: each should take a Stringable.
-    # fn process[T: Stringable](a: T):
-    #   print("hello", a)
     pack.each[process]()
 
 
 fn test_owned_variadic_pack():
     # CHECK: -- testing owned variadic pack with 2 elements
-    # CHECK: hello value
-    # CHECK: hello value
+    # CHECK: hello foo
+    # CHECK: hello 42
     test_owned_variadic_pack("foo", 42)
     print("")
 
@@ -164,9 +161,9 @@ fn test_owned_variadic_pack():
     # CHECK: initializing 2
     # CHECK: initializing 3
     # CHECK: -- testing owned variadic pack with 3 elements
-    # CHECK: hello value
-    # CHECK: hello value
-    # CHECK: hello value
+    # CHECK: hello talkative 1
+    # CHECK: hello talkative 2
+    # CHECK: hello talkative 3
     # CHECK: destroying 3
     # CHECK: destroying 2
     # CHECK: destroying 1

@@ -926,3 +926,19 @@ fn call_many_things_of_specified_trait(a: TraitStruct):
   # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
   # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :variadic<!SimpleTrait> {{.}}[!TraitStruct
   take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
+
+
+alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
+
+# CHECK-LABEL: lit.struct.decl @TestAnyTrait
+struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
+    # CHECK: lit.func @"take_any_type
+    # CHECK-SAME: <b_type: !AnyType>(%self:
+    # CHECK-SAME: %b_value: !lit.ref<:!AnyType b_type, imm {{.*}} borrow_in_mem)
+    fn take_any_type[b_type: AnyType](self, b_value: b_type): pass
+
+    # CHECK: lit.func @"test
+    # CHECK-SAME: <a_type: !kgen.paramref<:!lit.anytrait<!AnyType> element_trait>>(%self:
+    # CHECK-SAME: %a_value: !lit.ref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait> a_type, imm {{.*}}> borrow_in_mem
+    fn test[a_type: element_trait](self, a_value: a_type):
+       self.take_any_type(a_value)
