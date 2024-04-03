@@ -868,17 +868,19 @@ APInt Lexer::getIntegerLiteralValue(StringRef spelling) {
     case 'b':
     case 'B':
       base = 2;
+      spelling = spelling.drop_front(2);
       break;
     case 'o':
     case 'O':
       base = 8;
+      spelling = spelling.drop_front(2);
       break;
     case 'x':
     case 'X':
       base = 16;
+      spelling = spelling.drop_front(2);
       break;
     }
-    spelling = spelling.drop_front(2);
   }
   std::string digits = filterUnderscores(spelling);
   spelling = StringRef(digits);
