@@ -583,7 +583,8 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // TODO: Move to RefPackType consistently.
   if (isa<TypeType>(elementType) ||
       // To phase this in, only muck with 'owned'.
-      arg.convention != ParsedArgument::kConventionOwned)
+      (arg.convention != ParsedArgument::kConventionOwned &&
+       arg.convention != ParsedArgument::kConventionInOut))
     return PackType::get(param.get());
 
   // Arguments passed by memory need an associated lifetime parameter, and need

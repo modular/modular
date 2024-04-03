@@ -64,7 +64,7 @@ fn test_owned_trait():
     # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind [[ANONSLOT]] : !lit.ref<!SomeMem, mut *"anonymous*`3"> to !lit.ref<!SomeMem, mut {*"anonymous*`3", *"value1(transfer)`2"}>
 
     # Form pack and call
-    # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create(%2, %3)
+    # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])
 
     # Create the VariadicPack
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
@@ -96,3 +96,52 @@ fn test_owned_trait():
 
     # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[VARIADICPACK]])
     takeOwnedAnyTypePack(value3^, SomeReg())
+
+
+
+# Check the argument pack.
+# CHECK-LABEL: lit.func @"takeInoutSomeTraitPack
+# CHECK-SAME: (%rest: !lit.declref<#VariadicPack <:i1 1, :lifetime<1> *"rest`",
+# CHECK-SAME: :!lit.anytrait<!AnyType> !SomeTrait, :variadic<!SomeTrait> Ts>> byref|pack)
+fn takeInoutSomeTraitPack[*Ts: SomeTrait](inout *rest: *Ts):
+  pass
+
+
+# CHECK-LABEL: lit.func @"test_inout
+fn test_inout():
+    # CHECK-NEXT: %value1 = lit.var.decl
+    var value1: SomeMem
+    # CHECK-NEXT: %value2 = lit.var.decl
+    var value2: SomeMem
+
+    # Coerce to common lifetime
+    # CHECK-NEXT: [[V1C:%.*]] = kgen.rebind %value1 : !lit.ref<!SomeMem, mut *"value1`"> to !lit.ref<!SomeMem, mut {*"value1`", *"value2`1"}>
+    # CHECK-NEXT: [[V2C:%.*]] = kgen.rebind %value2 : !lit.ref<!SomeMem, mut *"value2`1"> to !lit.ref<!SomeMem, mut {*"value1`", *"value2`1"}>
+
+    # Form pack and call
+    # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create([[V1C]], [[V2C]])
+
+    # Create the VariadicPack
+    # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
+    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
+    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
+
+    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[VARIADICPACK]])
+    takeInoutSomeTraitPack(value1, value2)
+
+    # Test register types.
+    # CHECK-NEXT: %value3 = lit.var.decl
+    var value3: SomeReg
+
+    # Coerce to common lifetime
+    # CHECK-NEXT: [[PACK:%.*]] = lit.ref.pack.create(%value3)
+
+    # Create the VariadicPack
+    # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
+    # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
+    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
+
+    # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[VARIADICPACK]])
+    takeInoutSomeTraitPack(value3)
