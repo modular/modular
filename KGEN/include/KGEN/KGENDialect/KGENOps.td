@@ -586,20 +586,21 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
     characteristics of the function that can be used to develop heuristics for
     the cost of the function. This operation must be resolved at compile time.
 
-    Currently, `kgen.cost_of` returns the number of operations in the callee.
-    Specifically, the cost is evaluated on the function at the output of
-    elaboration, without running any post-elaboration passes.
+    Currently, `kgen.cost_of` returns the number of loads, stores and other
+    operations in the callee. Specifically, the cost is evaluated on
+    the function at the output of elaboration, without running any
+    post-elaboration passes.
 
     Example:
 
     ```mlir
-    %numOps = kgen.cost_of[(index) -> index: @evaluateMe]
+    %numLoads, %numStores, %numOther = kgen.cost_of[(index) -> index: @evaluate]
     ```
   }];
 
   let arguments = (ins TypedAttrInterface:$callee,
                        KGEN_ParamDeclArrayAttr:$paramDecls);
-  let results = (outs Index:$result);
+  let results = (outs Index:$numLoads, Index:$numStores, Index:$numOther);
 
   let assemblyFormat = [{
     `` custom<ParametricCallee>($callee, $paramDecls) attr-dict
