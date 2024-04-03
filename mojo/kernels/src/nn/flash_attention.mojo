@@ -372,8 +372,6 @@ struct _FlashAttention[
     type: DType,
     rank: Int,
     simd_width: Int,
-    block_m: Int,
-    block_n: Int,
     input_k_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -383,6 +381,9 @@ struct _FlashAttention[
     input_mask_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
+    block_m: Int,
+    qk_block_n: Int,
+    o_block_n: Int,
 ]:
     alias _matmul = _Matmul[type, simd_width]
 
@@ -465,8 +466,8 @@ struct _FlashAttention[
 
             vectorize[do_correction, simd_width, unroll_factor=2](count_n)
 
-            qk_row_ptr = qk_row_ptr.offset(block_n)
-            o_row_ptr = o_row_ptr.offset(block_n)
+            qk_row_ptr = qk_row_ptr.offset(qk_block_n)
+            o_row_ptr = o_row_ptr.offset(o_block_n)
 
     @staticmethod
     fn run(
@@ -477,20 +478,18 @@ struct _FlashAttention[
         scale: Float32,
     ):
         var num_batches = output.dim[0]()
-        var num_heads = 1
+        var num_heads = output.dim[1]() if rank == 4 else 1
         var seq_len = output.dim[rank - 2]()
         var depth_dim = output.dim[rank - 1]()
         var kv_seq_len = v_shape[rank - 2]
 
-        @parameter
-        if rank == 4:
-            num_heads = output.dim[1]()
-
-        var kn_packed = align_up(kv_seq_len, simd_width)
-        var vn_packed = align_up(depth_dim, simd_width)
+        # Compute the maximum size in elements for the common packed buffer.
+        var packed_qk_size = qk_block_n * depth_dim
+        var packed_o_size = o_block_n * qk_block_n
+        var packed_size = max(packed_qk_size, packed_o_size)
 
         var num_blocks_m = div_ceil(seq_len, block_m)
-        var num_blocks_n = div_ceil(depth_dim, block_n)
+        var num_blocks_n = div_ceil(depth_dim, o_block_n)
         var work_count = num_batches * num_heads * num_blocks_m * num_blocks_n
 
         var num_threads = min(work_count, Runtime().parallelism_level())
@@ -498,12 +497,12 @@ struct _FlashAttention[
         @parameter
         fn task_func(task_id: Int):
             var qk_block_ptr = stack_allocation[
-                block_m * block_n,
+                block_m * qk_block_n,
                 type,
                 alignment = alignof[SIMD[type, simd_width]](),
             ]()
             var o_block_ptr = stack_allocation[
-                block_m * block_n,
+                block_m * o_block_n,
                 type,
                 alignment = alignof[SIMD[type, simd_width]](),
             ]()
@@ -513,7 +512,7 @@ struct _FlashAttention[
             var packed_ptr = DTypePointer[
                 type
             ]() if seq_len == 1 else DTypePointer[type].alloc(
-                vn_packed * kn_packed,
+                packed_size,
                 alignment=alignof[SIMD[type, simd_width]](),
             )
 
@@ -522,7 +521,7 @@ struct _FlashAttention[
             )
 
             for i in range(block_range[0], block_range[0] + block_range[1]):
-                var n = (i % num_blocks_n) * block_n
+                var n = (i % num_blocks_n) * o_block_n
                 var j = i // num_blocks_n
                 var m = (j % num_blocks_m) * block_m
                 var batch_head = j // num_blocks_m
@@ -546,7 +545,7 @@ struct _FlashAttention[
                     return idx
 
                 var count_m = min(block_m, seq_len - m)
-                var count_n = min(block_n, depth_dim - n)
+                var count_n = min(o_block_n, depth_dim - n)
 
                 var o_ptr = output._offset(get_nd_index(m, n))
                 var q_ptr = q._offset(get_nd_index(m, 0))
@@ -554,8 +553,8 @@ struct _FlashAttention[
                 max_vals.fill(Scalar[type].MIN)
                 sum_vals.fill(0)
 
-                for kv_seq_idx in range(0, kv_seq_len, block_n):
-                    var kv_seq_cnt = min(kv_seq_len - kv_seq_idx, block_n)
+                for kv_seq_idx in range(0, kv_seq_len, qk_block_n):
+                    var kv_seq_cnt = min(kv_seq_len - kv_seq_idx, qk_block_n)
 
                     @parameter
                     @always_inline
@@ -574,7 +573,7 @@ struct _FlashAttention[
                         depth_dim,
                         packed_ptr,
                         qk_block_ptr,
-                        block_n,
+                        qk_block_n,
                     )
 
                     @parameter
@@ -611,10 +610,10 @@ struct _FlashAttention[
                         count_n,
                         kv_seq_cnt,
                         qk_block_ptr,
-                        block_n,
+                        qk_block_n,
                         packed_ptr,
                         o_block_ptr,
-                        block_n,
+                        o_block_n,
                         accumulate=(kv_seq_idx > 0),
                     )
 
@@ -633,7 +632,7 @@ struct _FlashAttention[
                     vectorize[do_final, simd_width, unroll_factor=4](count_n)
 
                     o_ptr = o_ptr.offset(depth_dim)
-                    oz_ptr = oz_ptr.offset(block_n)
+                    oz_ptr = oz_ptr.offset(o_block_n)
 
             if packed_ptr:
                 packed_ptr.free()
@@ -663,5 +662,13 @@ fn flash_attention[
     alias simd_width = simdwidthof[type]()
 
     _FlashAttention[
-        type, rank, simd_width, 64, 128, input_k_fn, input_v_fn, input_mask_fn
+        type,
+        rank,
+        simd_width,
+        input_k_fn,
+        input_v_fn,
+        input_mask_fn,
+        block_m=64,
+        qk_block_n=128,
+        o_block_n=128,
     ].run(q, k_shape, v_shape, output, scale)
