@@ -58,7 +58,7 @@ struct State {
   }
 
   /// Write the given error message to stderr and return a non-zero exit code.
-  int reportError(Twine errorMessage) const;
+  int reportError(const Twine &errorMessage) const;
 
   /// Print the given `helpText` to stdout and return a successful exit code.
 #if __cplusplus >= 202002

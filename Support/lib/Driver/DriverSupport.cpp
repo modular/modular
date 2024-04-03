@@ -76,7 +76,7 @@ M::resolveMojoInputFileOrPackage(StringRef path) {
 // State
 //===----------------------------------------------------------------------===//
 
-int State::reportError(Twine errorMessage) const {
+int State::reportError(const Twine &errorMessage) const {
   llvm::errs() << programName << ": error: " << errorMessage << "\n";
   return EXIT_FAILURE;
 }

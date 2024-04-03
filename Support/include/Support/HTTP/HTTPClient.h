@@ -76,7 +76,7 @@ struct HTTPRequest {
 
   /// Construct an HTTPRequest from a Twine - makes it easier to construct URLs
   /// from multiple components.
-  HTTPRequest(llvm::Twine t) : URL(t.str()) {}
+  HTTPRequest(const Twine &t) : URL(t.str()) {}
 
   /// Request URL.
   std::string URL;

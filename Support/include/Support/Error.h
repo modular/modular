@@ -43,7 +43,7 @@ public:
 
   /// Construct an Error with a dynamic Twine value (including std::string,
   /// const char *, etc).
-  Error(llvm::Twine message);
+  Error(const Twine &message);
 
   /// Construct an Error with a known-static string that doesn't need lifetime
   /// management.
