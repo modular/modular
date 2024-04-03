@@ -810,32 +810,29 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     fullType = VariadicType::get(fullType, arg.kgenConvention);
     arg.kgenConvention = ArgConvention::BorrowedInReg;
   } else if (arg.vararg == VarArgKind::KWVarArg) {
-    // We build Dict[String, ValType].
-    ASTType dictType = shared.getCollectionsDictType(arg.loc);
-    ASTType stringType = shared.getBuiltinStringType(declScope, arg.loc);
+    // We build OwnedKwargsDict[ValType].
+    ASTType dictType = shared.getOwnedKwargsDictType(arg.loc);
 
     auto dictDecl = cast<DeclRefType>(dictType.mlirType);
     auto dictMetatype = cast<AnyStructType>(dictDecl.getMetaType());
     ArrayRef<Type> inputTypes =
         dictMetatype.getSignature().getInputParamTypes();
-    if (inputTypes.size() != 2) {
+    if (inputTypes.size() != 1) {
       shared.emitError(arg.loc)
-          << "internal compiler error: Dict type has unexpected parameter "
-             "signature; please file a bug";
+          << "internal compiler error: OwnedKwargsDict type has unexpected "
+             "parameter signature; please file a bug";
       arg.isErroneous = true;
       return;
     }
 
-    auto keyElement = cast<TraitType>(inputTypes[0]);
-    auto collectionElement = cast<TraitType>(inputTypes[1]);
-    SmallVector<TypedAttr> newBindings{
-        typeEmitter.emitPValue({stringType, arg.typeExpr}, EC_Type, keyElement),
-        typeEmitter.emitPValue({fullType, arg.typeExpr}, EC_Type,
-                               collectionElement)};
+    auto collectionElement = cast<TraitType>(inputTypes[0]);
+    SmallVector<TypedAttr> newBindings{typeEmitter.emitPValue(
+        {fullType, arg.typeExpr}, EC_Type, collectionElement)};
     fullType =
         ParamRefType::get(BindTypeAttr::get(PValue(dictType), newBindings));
 
-    // Dict is memory only and only the callee can access it, so it's owned.
+    // OwnedKwargsDict is memory only and since only the callee can access it,
+    // we pass it as owned.
     arg.kgenConvention = ArgConvention::OwnedInMem;
     fullType = makeImplicitRefTypeForArg(arg, idx, fullType, tcSignature);
   }

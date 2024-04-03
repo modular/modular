@@ -647,18 +647,14 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     CValue literalKey = emitter.emitConstructorCall(
         stringLiteralType, CallOperands({{PValue(nameAttr), operand.expr}}),
         callExpr, CallSyntax::kImplicitConvert, kwargsDest);
-    ASTType stringType =
-        emitter.shared.getBuiltinStringType(emitter.declScope, loc);
-    CValue key = emitter.emitConstructorCall(
-        stringType, CallOperands({{literalKey, operand.expr}}), callExpr,
-        CallSyntax::kImplicitConvert, kwargsDest);
 
     // Then we set the element with the given key and the operand as value.
-    emitter.emitNamedMethodCall(
-        "__setitem__",
-        CallOperands(
-            {{MLValue(kwargsDict), callExpr}, {key, operand.expr}, operand}),
-        kwargsDest, CallSyntax::kImplicitConvert, callExpr);
+    emitter.emitNamedMethodCall("_insert",
+                                CallOperands({{MLValue(kwargsDict), callExpr},
+                                              {literalKey, operand.expr},
+                                              operand}),
+                                kwargsDest, CallSyntax::kImplicitConvert,
+                                callExpr);
   }
 
   return argumentValues;

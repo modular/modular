@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import CollectionElement, KeyElement
-
 alias int = __mlir_type.index
 alias string = __mlir_type.`!kgen.string`
 alias float = __mlir_type.`!pop.scalar<f64>`
@@ -32,6 +30,14 @@ alias `False` = __mlir_attr.`0 : i1`
 # ===----------------------------------------------------------------------=== #
 # Builtin Types
 # ===----------------------------------------------------------------------=== #
+
+
+trait CollectionElement:
+    pass
+
+
+trait KeyElement:
+    pass
 
 
 @register_passable
