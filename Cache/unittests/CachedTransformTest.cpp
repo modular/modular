@@ -169,8 +169,7 @@ TEST(CachedTransformTest, BufferReturn) {
 
   ASSERT_TRUE(output4.isType<BufferRef>());
   auto &outputBuffer4 = output4.get<BufferRef>();
-  Twine expectedOut = prependStr + world;
-  EXPECT_EQ(outputBuffer4->getBuffer(), expectedOut.str());
+  EXPECT_EQ(outputBuffer4->getBuffer(), (prependStr + world).str());
 
   EXPECT_EQ(runCount, 1);
   EXPECT_EQ(hitCount, 3);
