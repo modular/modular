@@ -92,8 +92,8 @@ fn _quicksort[
     stack.append(0)
     stack.append(size)
     while len(stack) > 0:
-        var end = stack.pop_back()
-        var start = stack.pop_back()
+        var end = stack.pop()
+        var start = stack.pop()
 
         var len = end - start
         if len < 2:
@@ -151,8 +151,8 @@ fn partition[
     stack.append(0)
     stack.append(size)
     while len(stack) > 0:
-        var end = stack.pop_back()
-        var start = stack.pop_back()
+        var end = stack.pop()
+        var start = stack.pop()
         var pivot = _partition[type, cmp_fn](buff, start, end)
         if pivot == k:
             break
