@@ -42,11 +42,18 @@ fn _compute_distribute_layout[
     return zipped_divide(data_layout, thread_tile)
 
 
-# Returns an IntTuple with all ones except axis same as input t.
-#
-fn _project_on_axis[axis: Int](t: IntTuple) -> IntTuple:
-    var p_t = fill_like(t, 0)
-    p_t[axis] = fill_like(t[axis], 1)
+# Returns an IntTuple with all ones except axis same as input t, when
+# submode_axis is provided the projection happens on the submode only.
+fn _project_on_axis[
+    axis: Int, submode_axis: Optional[Int] = None
+](t: IntTuple) -> IntTuple:
+    if not submode_axis:
+        var p_t = fill_like(t, 0)
+        p_t[axis] = fill_like(t[axis], 1)
+        return p_t
+    var p_t = fill_like(t, 1)
+    p_t[axis] = fill_like(t[axis], 0)
+    p_t[axis][submode_axis.value()] = 1
     return p_t
 
 
@@ -342,6 +349,7 @@ struct LayoutTensor[
             layout, threads_layout
         ](),
         axis: Optional[Int] = None,
+        submode_axis: Optional[Int] = None,
     ](self, thread_id: Int) -> LayoutTensor[
         tiled_layout[1],
         dtype,
@@ -355,7 +363,7 @@ struct LayoutTensor[
 
         # Selected projection axes 0-1 constant.
         alias projection_const = flatten(
-            _project_on_axis[axis.value()](
+            _project_on_axis[axis.value(), submode_axis](
                 threads_layout.shape
             ) if axis else fill_like(threads_layout.shape, 1)
         )

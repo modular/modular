@@ -860,6 +860,88 @@ fn test_distribute_axis_projection():
         print("=====")
 
 
+# CHECK-LABEL: test_distribute_axis_projection_submode
+fn test_distribute_axis_projection_submode():
+    print("== test_distribute_axis_projection_submode")
+    var tensor_4x8 = LayoutTensor[
+        Layout.row_major(4, 8), DType.float32
+    ].stack_allocation()
+    tensor_4x8.linspace()
+    alias thread_layout = Layout(
+        IntTuple(IntTuple(2, 2), 8), IntTuple(IntTuple(1, 16), 2)
+    )
+    # CHECK: ----thread[ 0 ]----
+    # CHECK: [0.0, 8.0, 16.0, 24.0]
+    # CHECK: ----thread[ 1 ]----
+    # CHECK: [0.0, 8.0, 16.0, 24.0]
+    # CHECK: ----thread[ 2 ]----
+    # CHECK: [1.0, 9.0, 17.0, 25.0]
+    # CHECK: ----thread[ 3 ]----
+    # CHECK: [1.0, 9.0, 17.0, 25.0]
+    # CHECK: ----thread[ 4 ]----
+    # CHECK: [2.0, 10.0, 18.0, 26.0]
+    # CHECK: ----thread[ 5 ]----
+    # CHECK: [2.0, 10.0, 18.0, 26.0]
+    # CHECK: ----thread[ 6 ]----
+    # CHECK: [3.0, 11.0, 19.0, 27.0]
+    # CHECK: ----thread[ 7 ]----
+    # CHECK: [3.0, 11.0, 19.0, 27.0]
+    # CHECK: ----thread[ 8 ]----
+    # CHECK: [4.0, 12.0, 20.0, 28.0]
+    # CHECK: ----thread[ 9 ]----
+    # CHECK: [4.0, 12.0, 20.0, 28.0]
+    # CHECK: ----thread[ 10 ]----
+    # CHECK: [5.0, 13.0, 21.0, 29.0]
+    # CHECK: ----thread[ 11 ]----
+    # CHECK: [5.0, 13.0, 21.0, 29.0]
+    # CHECK: ----thread[ 12 ]----
+    # CHECK: [6.0, 14.0, 22.0, 30.0]
+    # CHECK: ----thread[ 13 ]----
+    # CHECK: [6.0, 14.0, 22.0, 30.0]
+    # CHECK: ----thread[ 14 ]----
+    # CHECK: [7.0, 15.0, 23.0, 31.0]
+    # CHECK: ----thread[ 15 ]----
+    # CHECK: [7.0, 15.0, 23.0, 31.0]
+    # CHECK: ----thread[ 16 ]----
+    # CHECK: [0.0, 8.0, 16.0, 24.0]
+    # CHECK: ----thread[ 17 ]----
+    # CHECK: [0.0, 8.0, 16.0, 24.0]
+    # CHECK: ----thread[ 18 ]----
+    # CHECK: [1.0, 9.0, 17.0, 25.0]
+    # CHECK: ----thread[ 19 ]----
+    # CHECK: [1.0, 9.0, 17.0, 25.0]
+    # CHECK: ----thread[ 20 ]----
+    # CHECK: [2.0, 10.0, 18.0, 26.0]
+    # CHECK: ----thread[ 21 ]----
+    # CHECK: [2.0, 10.0, 18.0, 26.0]
+    # CHECK: ----thread[ 22 ]----
+    # CHECK: [3.0, 11.0, 19.0, 27.0]
+    # CHECK: ----thread[ 23 ]----
+    # CHECK: [3.0, 11.0, 19.0, 27.0]
+    # CHECK: ----thread[ 24 ]----
+    # CHECK: [4.0, 12.0, 20.0, 28.0]
+    # CHECK: ----thread[ 25 ]----
+    # CHECK: [4.0, 12.0, 20.0, 28.0]
+    # CHECK: ----thread[ 26 ]----
+    # CHECK: [5.0, 13.0, 21.0, 29.0]
+    # CHECK: ----thread[ 27 ]----
+    # CHECK: [5.0, 13.0, 21.0, 29.0]
+    # CHECK: ----thread[ 28 ]----
+    # CHECK: [6.0, 14.0, 22.0, 30.0]
+    # CHECK: ----thread[ 29 ]----
+    # CHECK: [6.0, 14.0, 22.0, 30.0]
+    # CHECK: ----thread[ 30 ]----
+    # CHECK: [7.0, 15.0, 23.0, 31.0]
+    # CHECK: ----thread[ 31 ]----
+    # CHECK: [7.0, 15.0, 23.0, 31.0]
+    for th_id in range(32):
+        print("----thread[", th_id, "]----")
+        var fragments = tensor_4x8.vectorize[4, 1]().distribute[
+            thread_layout, axis=0, submode_axis=1
+        ](th_id)
+        fragments.print()
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -874,3 +956,4 @@ fn main():
     test_copy_vectorized()
     test_distribute_vectorized()
     test_distribute_axis_projection()
+    test_distribute_axis_projection_submode()
