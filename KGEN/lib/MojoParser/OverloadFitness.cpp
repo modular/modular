@@ -160,7 +160,16 @@ void ParameterInferenceState::matchTypes(Type actualType, Type expectedType) {
   // type to an attribute parameter.
   if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType)) {
     if (auto actualParamRef = dyn_cast<ParamRefType>(actualType)) {
-      matchParams(actualParamRef.getParam(), expectedParamRef.getParam());
+      auto actualParam = actualParamRef.getParam();
+      // If this type is a rebind of another type, then this is a downcast that
+      // type erases, e.g. because it passed through some generic function which
+      // had a looser type bound.  Remove the downcast to infer from the
+      // super-type bound.
+      if (auto rebind = dyn_cast<ParamOperatorAttr>(actualParam);
+          rebind && rebind.getOpcode() == POC::Rebind)
+        actualParam = rebind.getOperand(0);
+
+      matchParams(actualParam, expectedParamRef.getParam());
       return;
     }
 

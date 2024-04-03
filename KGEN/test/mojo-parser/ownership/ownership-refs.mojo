@@ -289,3 +289,27 @@ struct SomeStruct:
     # CHECK-SAME : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut *"self`2x">
     # CHECK: lit.call {{.*}}__init__{{.*}}(%anonymous2A, [[REBIND]]
     return ptr[]
+
+
+# Test that we can infer the type of 'T' in the func param invocation.
+# CHECK-LABEL: CutDownVariadicPack
+struct CutDownVariadicPack[
+    element_trait: __mlir_type[`!lit.anytrait<`, AnyType, `>`],
+    *element_types: element_trait,
+]:
+
+    # CHECK: lit.func @"each_hack
+    fn each_hack[i: Int, func: fn[T: element_trait] (T) -> None](self):
+        # Test that we can infer the type of 'T' from the argument.
+        # CHECK-NEXT: [[REFVAL:%.*]] = lit.call {{.*}}get_element{{.*}}(%self)
+        # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}Reference::@"__refitem__{{.*}}([[REFVAL]])
+        # CHECK-NEXT: [[LITREFRB:%.*]] = kgen.rebind [[LITREF]] : !lit.ref<:!AnyType {{.*}} to !lit.ref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait>
+        # CHECK-NEXT: lit.call{{.*}}([[LITREFRB]])
+        func(self.get_element[i]()[])
+
+    fn get_element[index: Int](self) -> Reference[
+        element_types[index.value],
+        __mlir_attr.`0: i1`,
+        __lifetime_of(self),
+    ]:
+       while True: pass
