@@ -38,7 +38,7 @@ static std::tuple<StringRef, StringRef, bool> splitString(StringRef str) {
 /// for now, treats spaces and newlines as word delimiters. It will need to be
 /// updated if we wish to better support splitting `inline code` or
 /// hyphenated-text). Each new line is indented by `indent`.
-static raw_ostream &writeWordWrapped(raw_ostream &os, Twine text,
+static raw_ostream &writeWordWrapped(raw_ostream &os, const Twine &text,
                                      size_t indent = 0, size_t limit = 80) {
   ssize_t maxLineLength = limit - indent;
   assert(maxLineLength > 0 && "indent must not exceed line length limit");

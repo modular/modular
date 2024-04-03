@@ -294,7 +294,7 @@ Type LIT::getVariadicKwargsType(Type dictRefType) {
 
 void LIT::emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
                                    size_t maxAllowed, size_t numActual,
-                                   Twine argOrParam) {
+                                   const Twine &argOrParam) {
   diag << " expects ";
 
   // Tailor the diagnostic if the exact number of expected args is known.

@@ -102,10 +102,11 @@ public:
 
   /// Given an joining string, joins the command description record's executable
   /// and subcommand values by that string.
-  std::string getName(Twine join = "-") const {
+  std::string getName(const Twine &join) const {
     return llvm::formatv("{0}{1}{2}", getExecutable(),
                          getSubcommand().empty() ? "" : join, getSubcommand());
   }
+  std::string getName() const { return getName("-"); }
 
 private:
   /// Initializes the wrapper with the given `CommandDescription` record, as

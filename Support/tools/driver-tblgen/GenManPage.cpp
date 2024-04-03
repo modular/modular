@@ -29,7 +29,7 @@ using namespace M;
 
 /// Instantiates a new string based on the given text, but with special roff
 /// characters, such as "-", escaped ("\-").
-static std::string escape(Twine text) {
+static std::string escape(const Twine &text) {
   std::string result = text.str();
   for (size_t i = 0; i < result.size(); ++i)
     if (result[i] == '-')

@@ -73,7 +73,7 @@ struct SystemInfoCLIOptions {
 };
 } // namespace
 
-static int reportError(Twine errorMessage) {
+static int reportError(const Twine &errorMessage) {
   llvm::errs() << "system-info: " << errorMessage << "\n";
   return EXIT_FAILURE;
 }

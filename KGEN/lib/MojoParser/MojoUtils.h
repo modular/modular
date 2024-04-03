@@ -76,7 +76,7 @@ Type getVariadicKwargsType(Type dictRefType);
 /// parameter counts.
 void emitWrongArgOrParamCount(InflightDiag &diag, size_t minRequired,
                               size_t maxAllowed, size_t numActual,
-                              Twine argOrParam);
+                              const Twine &argOrParam);
 
 /// Helper to emit an error message for unknown keyword operands.
 void emitUnknownKeywords(InflightDiag &diag,

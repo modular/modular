@@ -48,7 +48,7 @@ struct BuildInfoCLIOptions {
 };
 } // namespace
 
-static int reportError(Twine errorMessage) {
+static int reportError(const Twine &errorMessage) {
   llvm::errs() << "build-info: " << errorMessage << "\n";
   return EXIT_FAILURE;
 }

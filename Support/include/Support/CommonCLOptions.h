@@ -29,7 +29,7 @@ namespace M {
 class OptionsBase {
 public:
   StringRef getProgramName() const { return programName; }
-  int reportError(Twine errorMessage) const {
+  int reportError(const Twine &errorMessage) const {
     llvm::errs() << programName << ": " << errorMessage << "\n";
     return EXIT_FAILURE;
   }

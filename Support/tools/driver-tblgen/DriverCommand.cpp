@@ -30,7 +30,7 @@ static bool printError(ArrayRef<llvm::SMLoc> locations, const Twine &message) {
 /// returns success.
 static LogicalResult validateCapitalized(StringRef text,
                                          ArrayRef<llvm::SMLoc> locs,
-                                         Twine description) {
+                                         const Twine &description) {
   if (text.empty())
     return success(
         /*isSuccess=*/!printError(locs, description + " should not be empty"));

@@ -51,10 +51,10 @@ private:
 };
 } // namespace
 
-static M::ErrorOr<size_t> readSmallFileFromDirFD(int dirFD, const char *relPath,
-                                                 llvm::Twine fileDescription,
-                                                 char *buffer,
-                                                 size_t bufferSize) {
+static M::ErrorOr<size_t>
+readSmallFileFromDirFD(int dirFD, const char *relPath,
+                       const llvm::Twine &fileDescription, char *buffer,
+                       size_t bufferSize) {
   int fd = openat(dirFD, relPath, O_RDONLY);
   if (fd == -1)
     return Error("Could not open " + fileDescription + ": " + strerror(errno));

@@ -135,7 +135,7 @@ ErrorOrSuccess Config::overrideFrom(const Config &other) {
 }
 
 ErrorOrSuccess Config::parseFrom(StringRef buffer, llvm::SourceMgr *mgr) {
-  auto emitError = [&](llvm::SMLoc loc, Twine msg) -> Error {
+  auto emitError = [&](llvm::SMLoc loc, const Twine &msg) -> Error {
     if (!mgr)
       return {msg};
 
