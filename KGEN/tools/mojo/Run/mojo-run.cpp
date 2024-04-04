@@ -224,6 +224,23 @@ static ErrorOrSuccess executeMain(ModuleOp moduleOp, const SymbolTable &symtab,
   return engine->runProgram("exec", "main", runFn);
 }
 
+/// Inserts the `M::Context` in the KGEN globals table so that Mojo code can
+/// pass this `M::Context` to the `EngineContext`.
+static ErrorOrSuccess insertMaxContextInGlobals(ExecutionEngine &engine,
+                                                M::Context &maxContext) {
+  // Get the insertion function from the KGENCompilerRT JIT Dylib.
+  auto insertGlobalFnOr = engine.lookup("KGEN_CompilerRT_InsertGlobal");
+  if (insertGlobalFnOr.isError())
+    return insertGlobalFnOr.takeError();
+  CompiledFunc &insertGlobalFn = *insertGlobalFnOr;
+
+  // Call the function to insert the `M::Context`.
+  insertGlobalFn.invoke<void, StringRef, void *>(StringRef("MaxContext"),
+                                                 (void *)&maxContext);
+
+  return M::success();
+}
+
 /// Given a module representing a Mojo program, and a set of `arguments` to pass
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
@@ -232,7 +249,8 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
                          MLIRContext &context,
                          const CompilationOptions &options, ModuleOp moduleOp,
                          TargetInfoAttr target,
-                         ArrayRef<const char *> arguments) {
+                         ArrayRef<const char *> arguments,
+                         M::Context &maxContext) {
   mlir::PassManager pm(&context);
   configurePassManager(pm);
 
@@ -245,6 +263,12 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   if (failed(execEngineOr))
     return state.reportError(execEngineOr.getError());
   std::unique_ptr<ExecutionEngine> engine = std::move(*execEngineOr);
+
+  // Insert the `M::Context` into the KGENCompilerRT globals.
+  // The MAX engine uses this mechanism to share globals with Mojo code.
+  if (auto errOr = insertMaxContextInGlobals(*engine, maxContext))
+    return state.reportError(errOr.getError());
+
   auto &compilerLayer = engine->getLayer<KGENCompilerLayer>();
 
   // Add the module into the layer. This will actually compile it down to the
@@ -266,7 +290,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
 
   // Trigger compilation so we can pull out the archive.
   // Start with `main` because mojo-run should always have `main`, and this
-  // sets up OCR JIT first query to be pending on the root of the function call
+  // sets up ORC JIT first query to be pending on the root of the function call
   // stack so that meterialization ordering is correct.
   if (exports.find(StringAttr::get(&context, Twine("main"))) == exports.end())
     return state.reportError("could not find a 'main' function to execute");
@@ -333,7 +357,8 @@ static int run(const State &state) {
   // Execute the Mojo program.
   return executeModule(
       state, runtime, mlirCtx, options, **moduleOp, target,
-      state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()));
+      state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()),
+      *ctx);
 }
 
 void M::registerRunSubcommand(SubcommandRegistry &registry) {
