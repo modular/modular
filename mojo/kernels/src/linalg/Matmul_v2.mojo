@@ -54,11 +54,43 @@ from .Neon import _neon_dotprod, _neon_matmul
 from runtime.llcl import Runtime
 from .Transpose import transpose_inplace
 from .VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
+from .matmul_vnni import Inner_matmul_vnni
 
 from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
+
+
+# Define a trait that defines the common functions across all existing
+# microkernels:
+# - _run_inner_loop_i8mm()
+# - _run_inner_loop_neon()
+# - _run_inner_loop_default()
+# - _run_inner_loop_vnni()
+trait InnerMatmulKernel:
+    fn _initialize_c_tile(
+        self,
+        c0_local: NDBuffer,
+    ):
+        ...
+
+    fn _load_c_tile(
+        self,
+        c0_local: NDBuffer,
+        tile_n_idx: Int,
+    ):
+        ...
+
+    fn _store_c_tile(
+        self,
+        c0_local: NDBuffer,
+        tile_n_idx: Int,
+    ):
+        ...
+
+    fn __inner_matmul__(self):
+        ...
 
 
 fn elementwise_epilogue_c_tile[
@@ -1613,28 +1645,110 @@ struct TiledMatmul[
             fn row_iteration[tile_size: Int](row_offset: Int):
                 alias tile_size2 = 2 if tile_size == 1 else tile_size
                 alias a_row_size = tile_size2 // 2 if config.use_i8mm else tile_size
-                MatmulInnerLoopBPacked[
-                    config.a_shape,
-                    config.c_shape,
-                    config.packed_shape,
-                    a_type,
-                    b_type,
-                    c_type,
-                    config.simd_size,
-                    a_row_size,
-                    m_loop_pack_inner_size,
-                    skip_col_bound,
-                    config.prefetch_b_distance_k,
-                    config.saturated_vnni,
-                    tile_size == 1,
-                ].run(
-                    self.c,
-                    self.a,
-                    b_packed_tile,
-                    global_offset + GemmShape(row_offset, 0, 0),
-                    self.global_tile_offset + self.global_tile_shape,
-                    sub_tile_n_k,
-                )
+
+                # TODO: Delete comment before merging with Matmul.mojo.
+                # Below we move out use_vnni/use_i8mm and instead of calling
+                # MatmulInnerLoopBPacked, we have moved out the check that was
+                # inside it here and call the appropriate microkernel.
+                # Note that currently as proof of concept only the VNNI case
+                # is implemented; rest to follow in a similar way. And then
+                # work on extending composability on the outer levels to follow.
+                alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+                # print(a_type, b_type, c_type)
+                alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+
+                @parameter
+                if use_i8mm:
+                    # print("_run_inner_loop_i8mm()")
+                    MatmulInnerLoopBPacked[
+                        config.a_shape,
+                        config.c_shape,
+                        config.packed_shape,
+                        a_type,
+                        b_type,
+                        c_type,
+                        config.simd_size,
+                        a_row_size,
+                        m_loop_pack_inner_size,
+                        skip_col_bound,
+                        config.prefetch_b_distance_k,
+                        config.saturated_vnni,
+                        tile_size == 1,
+                    ].run(
+                        self.c,
+                        self.a,
+                        b_packed_tile,
+                        global_offset + GemmShape(row_offset, 0, 0),
+                        self.global_tile_offset + self.global_tile_shape,
+                        sub_tile_n_k,
+                    )
+                elif has_neon() and not use_vnni and not use_i8mm:
+                    # print("_run_inner_loop_neon()")
+                    MatmulInnerLoopBPacked[
+                        config.a_shape,
+                        config.c_shape,
+                        config.packed_shape,
+                        a_type,
+                        b_type,
+                        c_type,
+                        config.simd_size,
+                        a_row_size,
+                        m_loop_pack_inner_size,
+                        skip_col_bound,
+                        config.prefetch_b_distance_k,
+                        config.saturated_vnni,
+                        tile_size == 1,
+                    ].run(
+                        self.c,
+                        self.a,
+                        b_packed_tile,
+                        global_offset + GemmShape(row_offset, 0, 0),
+                        self.global_tile_offset + self.global_tile_shape,
+                        sub_tile_n_k,
+                    )
+                elif not use_vnni and not has_neon():
+                    # print("_run_inner_loop_default()")
+                    MatmulInnerLoopBPacked[
+                        config.a_shape,
+                        config.c_shape,
+                        config.packed_shape,
+                        a_type,
+                        b_type,
+                        c_type,
+                        config.simd_size,
+                        a_row_size,
+                        m_loop_pack_inner_size,
+                        skip_col_bound,
+                        config.prefetch_b_distance_k,
+                        config.saturated_vnni,
+                        tile_size == 1,
+                    ].run(
+                        self.c,
+                        self.a,
+                        b_packed_tile,
+                        global_offset + GemmShape(row_offset, 0, 0),
+                        self.global_tile_offset + self.global_tile_shape,
+                        sub_tile_n_k,
+                    )
+                elif use_vnni:
+                    # print("_run_inner_loop_vnni()")
+                    var alg = Inner_matmul_vnni[
+                        config,
+                        a_row_size,
+                        m_loop_pack_inner_size,
+                        skip_col_bound,
+                        tile_size == 1,
+                    ](
+                        self.c,
+                        self.a,
+                        b_packed_tile,
+                        global_offset + GemmShape(row_offset, 0, 0),
+                        self.global_tile_offset + self.global_tile_shape,
+                        sub_tile_n_k,
+                    )
+                    alg.__inner_matmul__()
+                else:
+                    constrained[False, "no _run_inner_loop implementation"]()
 
                 @parameter
                 if elementwise_epilogue_enabled and last_k_tile:
