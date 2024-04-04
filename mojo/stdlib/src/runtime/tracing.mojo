@@ -244,25 +244,43 @@ struct Trace[level: TraceLevel]:
         if is_profiling_disabled[Self.trace_type, level]():
             return
 
-        var name = self.__str__()
-        var name_strref = name._strref_dangerous()
-        var detail_strref = self.detail._strref_dangerous()
+        if self.detail:
+            # 1. If there is a detail string we must heap allocate the string
+            #    because it presumably contains information only known at
+            #    runtime.
+            var detail_strref = self.detail._strref_dangerous()
 
-        # Begins recording the trace range from the stack. This is only enabled if the LLCL
-        # profiling is enabled.
-        self.event_id = external_call[
-            "KGEN_CompilerRT_TimeTraceProfilerBegin", Int
-        ](
-            name_strref.data,
-            name_strref.length.value,
-            detail_strref.data,
-            detail_strref.length.value,
-            self.parent_id,
-        )
+            # Begins recording the trace range from the stack. This is only enabled if the LLCL
+            # profiling is enabled.
+            self.event_id = external_call[
+                "KGEN_CompilerRT_TimeTraceProfilerBeginDetail", Int
+            ](
+                self.name.data(),
+                len(self.name),
+                detail_strref.data,
+                detail_strref.length.value,
+                self.parent_id,
+            )
+        elif self.int_payload:
+            # 2. If there is a task id, use the profiler API to create task:id
+            #    labels without copying.
+            self.event_id = external_call[
+                "KGEN_CompilerRT_TimeTraceProfilerBeginTask", Int
+            ](
+                self.name.data(),
+                len(self.name),
+                self.parent_id,
+                self.int_payload.value(),
+            )
+        else:
+            # 3. In the common case without a task id or detail string, create
+            #    a profiler event without copying until explicit intern call.
+            self.event_id = external_call[
+                "KGEN_CompilerRT_TimeTraceProfilerBegin", Int
+            ](self.name.data(), len(self.name), self.parent_id)
         external_call[
             "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
         ](self.event_id)
-        name._strref_keepalive()
 
     @always_inline
     fn __exit__(self):
@@ -287,17 +305,6 @@ struct Trace[level: TraceLevel]:
     fn __exit__(self, e: Error) -> Bool:
         self.__exit__()
         return not e
-
-    @always_inline
-    fn __str__(self) -> String:
-        constrained[
-            is_profiling_enabled[Self.trace_type, level](),
-            "cannot get trace string in non-profiling build",
-        ]()
-        var name = self.name + String(
-            self.int_payload.value()
-        ) if self.int_payload else self.name
-        return name
 
     # WAR: passing detail_fn to __init__ causes internal compiler crash
     @staticmethod
