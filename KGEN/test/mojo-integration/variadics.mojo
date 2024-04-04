@@ -145,6 +145,7 @@ fn owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
     print("-- testing owned variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
+    @parameter
     fn process[T: Stringable](a: T):
         print("hello", a)
 
@@ -184,6 +185,7 @@ fn inout_variadic_pack[*Ts: Stringable](inout *pack: *Ts):
     print("-- testing inout variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
+    @parameter
     fn process[T: Stringable](a: T):
         print("hello", a)
 
@@ -215,9 +217,42 @@ fn test_inout_variadic_pack():
     print("")
 
 
+fn borrowed_variadic_pack[*Ts: Stringable](*pack: *Ts):
+    print("-- testing borrowed variadic pack with", len(pack), "elements")
+
+    @parameter
+    fn process[T: Stringable](a: T):
+        print("hello", a)
+
+    pack.each[process]()
+
+
+fn test_borrowed_variadic_pack():
+    # CHECK: -- testing borrowed variadic pack with 2 elements
+    # CHECK: hello foo
+    # CHECK: hello 42
+    borrowed_variadic_pack("foo", 42)
+    print("")
+
+    # CHECK: initializing 2
+    # CHECK: initializing 1
+    # CHECK: -- testing borrowed variadic pack with 2 elements
+    # CHECK: hello talkative 1
+    # CHECK: hello talkative 2
+    # CHECK: destroying 1
+    # CHECK: after call
+    # CHECK: destroying 2
+    var m2 = TalkativeMem(2)
+    borrowed_variadic_pack(TalkativeMem(1), m2)
+    print("after call")
+    _ = m2^
+    print("")
+
+
 fn main():
     test_inout_varargs()
     test_owned_varargs()
     test_owned_reg_varargs()
     test_owned_variadic_pack()
     test_inout_variadic_pack()
+    test_borrowed_variadic_pack()

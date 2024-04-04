@@ -293,7 +293,8 @@ Attribute LITTypeLowerer::replace(Attribute attr) {
     result = processStructExtractAttr(sattr);
   } else if (auto bind = dyn_cast<BindTypeAttr>(attr)) {
     result = processBindType(bind);
-  } else if (isa<LifetimeAttr, LifetimeUnionAttr, LifetimeMutCastAttr>(attr)) {
+  } else if (isa<LifetimeAttr, LifetimeUnionAttr, LifetimeMutCastAttr,
+                 InvalidRefLifetimeAttr>(attr)) {
     result = emptyStructAttr; // #lit.lifetime => #kgen.struct<>
   } else if (auto refPack = dyn_cast<RefPackAttr>(attr)) {
     result = processRefPackAttr(refPack);

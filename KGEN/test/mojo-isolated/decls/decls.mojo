@@ -66,7 +66,7 @@ fn variadic_trait_elt[T: Copyable](*xs: T):
 
 # CHECK-LABEL: lit.func @"trait_pack
 # CHECK-SAME: <{{.*}}, Ts:
-# CHECK-SAME: !kgen.pack<:variadic<!Copyable> Ts> borrow
+# CHECK-SAME: %rest: !lit.declref<#VariadicPack <:i1 0, :lifetime<0> *"rest`1", :!lit.anytrait<!AnyType> !Copyable, :variadic<!Copyable> Ts>> borrow_in_mem|pack)
 fn trait_pack[T: Copyable, *Ts: Copyable](first: T, *rest: *Ts):
     pass
 
