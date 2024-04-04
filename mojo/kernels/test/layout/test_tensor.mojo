@@ -449,86 +449,62 @@ fn test_distribute_with_tile_size():
     # +-----------+-----------+-----------+-----------+
 
     # CHECK: ----thread[ 0 ]----
-    # CHECK: 0.0     64.0    4.0     68.0
-    # CHECK: 8.0     72.0    12.0    76.0
-    # CHECK: 1.0     65.0    5.0     69.0
-    # CHECK: 9.0     73.0    13.0    77.0
+    # CHECK: [0.0, 8.0, 1.0, 9.0] [4.0, 12.0, 5.0, 13.0]
+    # CHECK: [64.0, 72.0, 65.0, 73.0] [68.0, 76.0, 69.0, 77.0]
     # CHECK: ----thread[ 1 ]----
-    # CHECK: 16.0    80.0    20.0    84.0
-    # CHECK: 24.0    88.0    28.0    92.0
-    # CHECK: 17.0    81.0    21.0    85.0
-    # CHECK: 25.0    89.0    29.0    93.0
+    # CHECK: [16.0, 24.0, 17.0, 25.0] [20.0, 28.0, 21.0, 29.0]
+    # CHECK: [80.0, 88.0, 81.0, 89.0] [84.0, 92.0, 85.0, 93.0]
     # CHECK: ----thread[ 2 ]----
-    # CHECK: 2.0     66.0    6.0     70.0
-    # CHECK: 10.0    74.0    14.0    78.0
-    # CHECK: 3.0     67.0    7.0     71.0
-    # CHECK: 11.0    75.0    15.0    79.0
+    # CHECK: [2.0, 10.0, 3.0, 11.0] [6.0, 14.0, 7.0, 15.0]
+    # CHECK: [66.0, 74.0, 67.0, 75.0] [70.0, 78.0, 71.0, 79.0]
     # CHECK: ----thread[ 3 ]----
-    # CHECK: 18.0    82.0    22.0    86.0
-    # CHECK: 26.0    90.0    30.0    94.0
-    # CHECK: 19.0    83.0    23.0    87.0
-    # CHECK: 27.0    91.0    31.0    95.0
+    # CHECK: [18.0, 26.0, 19.0, 27.0] [22.0, 30.0, 23.0, 31.0]
+    # CHECK: [82.0, 90.0, 83.0, 91.0] [86.0, 94.0, 87.0, 95.0]
     # CHECK: ----thread[ 4 ]----
-    # CHECK: 32.0    96.0    36.0    100.0
-    # CHECK: 40.0    104.0   44.0    108.0
-    # CHECK: 33.0    97.0    37.0    101.0
-    # CHECK: 41.0    105.0   45.0    109.0
+    # CHECK: [32.0, 40.0, 33.0, 41.0] [36.0, 44.0, 37.0, 45.0]
+    # CHECK: [96.0, 104.0, 97.0, 105.0] [100.0, 108.0, 101.0, 109.0]
     # CHECK: ----thread[ 5 ]----
-    # CHECK: 48.0    112.0   52.0    116.0
-    # CHECK: 56.0    120.0   60.0    124.0
-    # CHECK: 49.0    113.0   53.0    117.0
-    # CHECK: 57.0    121.0   61.0    125.0
+    # CHECK: [48.0, 56.0, 49.0, 57.0] [52.0, 60.0, 53.0, 61.0]
+    # CHECK: [112.0, 120.0, 113.0, 121.0] [116.0, 124.0, 117.0, 125.0]
     # CHECK: ----thread[ 6 ]----
-    # CHECK: 34.0    98.0    38.0    102.0
-    # CHECK: 42.0    106.0   46.0    110.0
-    # CHECK: 35.0    99.0    39.0    103.0
-    # CHECK: 43.0    107.0   47.0    111.0
+    # CHECK: [34.0, 42.0, 35.0, 43.0] [38.0, 46.0, 39.0, 47.0]
+    # CHECK: [98.0, 106.0, 99.0, 107.0] [102.0, 110.0, 103.0, 111.0]
     # CHECK: ----thread[ 7 ]----
-    # CHECK: 50.0    114.0   54.0    118.0
-    # CHECK: 58.0    122.0   62.0    126.0
-    # CHECK: 51.0    115.0   55.0    119.0
-    # CHECK: 59.0    123.0   63.0    127.0
+    # CHECK: [50.0, 58.0, 51.0, 59.0] [54.0, 62.0, 55.0, 63.0]
+    # CHECK: [114.0, 122.0, 115.0, 123.0] [118.0, 126.0, 119.0, 127.0]
 
     for tid in range(thread_layout.size()):
         print("----thread[", tid, "]----")
-        var tile = tensor0.distribute[
-            thread_layout, tile_size = IntTuple(2, 2)
-        ](tid)
-        print_mode2_shape2_tensor(tile)
+        var tile = tensor0.vectorize[2, 2]().distribute[thread_layout](tid)
+        tile.print()
 
-    var tensor1 = LayoutTensor[Layout(8), DType.float32].stack_allocation()
-    tensor1.linspace()
+    var tensor8x1 = LayoutTensor[
+        Layout(IntTuple(8, 1)), DType.float32
+    ].stack_allocation()
+    tensor8x1.linspace()
 
     # Threads 2, 3, 6, 7 should have the same fragments as thread 0, 1, 4, 5.
     # CHECK: ----thread[ 0 ]----
-    # CHECK: 0.0
-    # CHECK: 1.0
+    # CHECK: [0.0, 1.0]
     # CHECK: ----thread[ 1 ]----
-    # CHECK: 2.0
-    # CHECK: 3.0
+    # CHECK: [2.0, 3.0]
     # CHECK: ----thread[ 2 ]----
-    # CHECK: 0.0
-    # CHECK: 1.0
+    # CHECK: [0.0, 1.0]
     # CHECK: ----thread[ 3 ]----
-    # CHECK: 2.0
-    # CHECK: 3.0
+    # CHECK: [2.0, 3.0]
     # CHECK: ----thread[ 4 ]----
-    # CHECK: 4.0
-    # CHECK: 5.0
+    # CHECK: [4.0, 5.0]
     # CHECK: ----thread[ 5 ]----
-    # CHECK: 6.0
-    # CHECK: 7.0
+    # CHECK: [6.0, 7.0]
     # CHECK: ----thread[ 6 ]----
-    # CHECK: 4.0
-    # CHECK: 5.0
+    # CHECK: [4.0, 5.0]
     # CHECK: ----thread[ 7 ]----
-    # CHECK: 6.0
-    # CHECK: 7.0
+    # CHECK: [6.0, 7.0]
     for tid in range(thread_layout.size()):
         print("----thread[", tid, "]----")
-        var tile = tensor1.distribute[
-            thread_layout, tile_size = IntTuple(2), axis=0
-        ](tid)
+        var tile = tensor8x1.vectorize[2]().distribute[thread_layout, axis=0](
+            tid
+        )
         tile.print()
 
 
