@@ -22,13 +22,14 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.sync import syncwarp
-from Matmul import (
+from MatmulGPU import (
     gemv_kernel,
     gevm_kernel,
     gemv_tc_kernel,
     matmul_kernel,
     matmul_kernel_naive,
 )
+
 from memory.unsafe import DTypePointer, bitcast
 from memory import memset
 
