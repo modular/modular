@@ -91,19 +91,19 @@ dereferenceIfREPLResult(lldb::opaque_compiler_type_t type) {
 //===----------------------------------------------------------------------===//
 
 struct MojoTypeSystem::Impl {
-  Impl(Target *target, const ArchSpec &archSpec)
-      : target(target), archSpec(archSpec) {
+  Impl(ContextRef ctx, Target *target, const ArchSpec &archSpec)
+      : runtime(*ctx->get<LLCL::Runtime>()), target(target),
+        archSpec(archSpec) {
     // Register all of the various dialect state.
     DialectRegistry registry;
     registerAllKGENDialects(registry);
     registerKGENToLLVMTranslation(registry);
 
+    // Register the context.
+    registerContext(registry, ctx);
+
     // Set up the dialects in the context.
     mlirContext.appendDialectRegistry(registry);
-
-    // Configure the runtime.
-    ownedRuntime = LLCL::createRuntimeIfNeeded(
-        LLCL::RuntimeOptions().withMainWillNotDonate());
 
     // Compute the target information for the expression.
     compilationOptions.targetTriple = archSpec.GetTriple().str();
@@ -158,8 +158,9 @@ struct MojoTypeSystem::Impl {
   MLIRContext mlirContext{mlir::MLIRContext::Threading::DISABLED};
 
   /// The LLCL runtime to use for compilation/processing associated with this
-  /// typesystem.
-  ConditionallyOwnedPointer<LLCL::Runtime> ownedRuntime;
+  /// type system. This is derived from the context available in the
+  /// MLIRContext.
+  LLCL::Runtime &runtime;
 
   /// The compilation options to use when compiling.
   KGEN::CompilationOptions compilationOptions;
@@ -200,8 +201,9 @@ struct MojoTypeSystem::Impl {
 // MojoTypeSystem
 //===----------------------------------------------------------------------===//
 
-MojoTypeSystem::MojoTypeSystem(Target *target, const ArchSpec &archSpec)
-    : impl(std::make_unique<Impl>(target, archSpec)) {}
+MojoTypeSystem::MojoTypeSystem(ContextRef ctx, Target *target,
+                               const ArchSpec &archSpec)
+    : impl(std::make_unique<Impl>(std::move(ctx), target, archSpec)) {}
 
 MojoTypeSystem::~MojoTypeSystem() = default;
 char MojoTypeSystem::ID = 0;
@@ -220,11 +222,14 @@ TargetInfoAttr MojoTypeSystem::GetTargetInfo() const {
   return impl->targetInfo;
 }
 
-LLCL::Runtime &MojoTypeSystem::getRuntime() { return *impl->ownedRuntime; }
+LLCL::Runtime &MojoTypeSystem::getRuntime() { return impl->runtime; }
 
 //===----------------------------------------------------------------------===//
 // Initialization
 //===----------------------------------------------------------------------===//
+
+/// Context used for createInstance, below.
+static std::atomic<MojoTypeSystem::CreateContextFn> createContextFn;
 
 /// Create a MojoTypeSystem instance from the given module and target.
 static lldb::TypeSystemSP createInstance(lldb::LanguageType language,
@@ -241,12 +246,14 @@ static lldb::TypeSystemSP createInstance(lldb::LanguageType language,
   if (!arch.IsValid())
     return {};
 
-  return std::make_shared<MojoTypeSystem>(target, arch);
+  return std::make_shared<MojoTypeSystem>(createContextFn.load()(), target,
+                                          arch);
 }
 
-void MojoTypeSystem::Initialize() {
+void MojoTypeSystem::Initialize(CreateContextFn ctxFn) {
   LanguageSet languages;
   languages.Insert(lldb::eLanguageTypeMojo);
+  createContextFn.store(ctxFn);
   PluginManager::RegisterPlugin(getPluginNameStatic(), "Mojo TypeSystem",
                                 createInstance, languages, languages);
 }

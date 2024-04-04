@@ -44,6 +44,10 @@ static ErrorOr<ContextRef> getOrCreateGlobalContext() {
   return ctxOr->copy();
 }
 
+static ContextRef getGlobalContext() {
+  return getOrCreateGlobalContext().takeValue();
+}
+
 /// LLDB has two different types of plugin initialization, we support them both
 /// here to provide flexibility for users. However, as we have the public API
 /// enabled, initialization will go through `lldb::PluginInitialize`.
@@ -69,7 +73,7 @@ MODULAR_EXPORT bool LLDBPluginInitialize() {
   }
 
   // Initialize the various plugin components.
-  MojoTypeSystem::Initialize();
+  MojoTypeSystem::Initialize(&getGlobalContext);
   MojoREPL::Initialize();
   MojoLanguage::Initialize();
   return true;
@@ -111,7 +115,7 @@ MODULAR_VISIBILITY_EXPORT bool PluginInitialize(SBDebugger debugger) {
   if (!LLDBPluginInitialize())
     return false;
 
-  registerMojoCommands(debugger, *getOrCreateGlobalContext());
+  registerMojoCommands(debugger, getGlobalContext());
   registerLLVMDebugCommands(debugger);
   // We enable JIT debugging here so that this feature doesn't depend on
   // lldb init files or how LLDB was launched.

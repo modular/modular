@@ -38,6 +38,7 @@ add_modular_library(MojoLLDB SHARED
   KGENEmitObject
   KGENPackage
   KGENSupport
+  MDialect
   LLCLRuntimeGlobals
   MCrashReporting
   MSupportGlobals
