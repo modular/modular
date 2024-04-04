@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements matrix band part functions."""
 
-from algorithm.functional import _elementwise_impl
+from algorithm.functional import _elementwise_impl, unswitch
 from buffer import NDBuffer
 from buffer.list import DimList
 from runtime.tracing import TraceLevel
@@ -34,11 +34,49 @@ fn matrix_band_part[
 ):
     var lower_diagonal_index = int(num_lower[0])
     var upper_diagonal_index = int(num_upper[0])
-    var exclude = exclude_buf[0] != 0
 
+    @__copy_capture(
+        input_shape, lower_diagonal_index, upper_diagonal_index, output
+    )
+    @parameter
+    fn dispatch[exclude: Bool]():
+        _matrix_band_part_impl[
+            type,
+            int_type,
+            cond_type,
+            rank,
+            input_0_fn,
+            simd_width,
+            single_thread_blocking_override,
+            exclude=exclude,
+            target=target,
+        ](input_shape, lower_diagonal_index, upper_diagonal_index, output)
+
+    unswitch[dispatch](exclude_buf[0] != 0)
+
+
+@always_inline
+fn _matrix_band_part_impl[
+    type: DType,
+    int_type: DType,
+    cond_type: DType,
+    rank: Int,
+    input_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    simd_width: Int,
+    single_thread_blocking_override: Bool,
+    exclude: Bool,
+    target: StringLiteral = "cpu",
+](
+    input_shape: StaticIntTuple[rank],
+    lower_diagonal_index: Int,
+    upper_diagonal_index: Int,
+    output: NDBuffer[type, rank],
+):
     constrained[rank >= 2, "Matrix band only supports rank >=2"]()
 
-    @__copy_capture(lower_diagonal_index, upper_diagonal_index, exclude, output)
+    @__copy_capture(lower_diagonal_index, upper_diagonal_index, output)
     @parameter
     @always_inline
     fn func[
@@ -52,6 +90,8 @@ fn matrix_band_part[
         var in_band = (
             lower_diagonal_index < 0 or (row - col) <= lower_diagonal_index
         ) and (upper_diagonal_index < 0 or (col - row) <= upper_diagonal_index)
+
+        @parameter
         if exclude:
             in_band = not in_band
 
