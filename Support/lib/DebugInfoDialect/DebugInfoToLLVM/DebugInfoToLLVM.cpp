@@ -156,6 +156,16 @@ MetadataConverter::convertAttrImpl(DIAggregatesIntoExprAttr attr) {
   if (llvmStructType.getElements().size() == 1)
     return prefix;
 
+  auto targetMember = cast<LLVM::DIDerivedTypeAttr>(
+      llvmStructType.getElements()[attr.getFieldIndex()]);
+  uint64_t fieldSize = targetMember.getSizeInBits();
+
+  // Fragments that cover the entire size of the struct are elided in the LLVM
+  // representation. This can happen if the other elements of this struct are
+  // 0-sized.
+  if (fieldSize == llvmStructType.getSizeInBits())
+    return prefix;
+
   uint64_t prefixSize = 0;
   for (LLVM::DINodeAttr member :
        llvmStructType.getElements().take_front(attr.getFieldIndex())) {
@@ -166,9 +176,6 @@ MetadataConverter::convertAttrImpl(DIAggregatesIntoExprAttr attr) {
         llvm::alignTo(prefixSize, std::max(1u, alignInBits)) + sizeInBits;
   }
 
-  auto targetMember = cast<LLVM::DIDerivedTypeAttr>(
-      llvmStructType.getElements()[attr.getFieldIndex()]);
-  uint64_t fieldSize = targetMember.getSizeInBits();
   if (uint32_t fieldAlignment = targetMember.getAlignInBits())
     prefixSize = llvm::alignTo(prefixSize, fieldAlignment);
 

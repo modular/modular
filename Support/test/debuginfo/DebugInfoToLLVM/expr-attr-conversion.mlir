@@ -83,3 +83,29 @@ func.func @foo(%arg0: i32, %arg1: i32, %arg2: !llvm.ptr) {
   debuginfo.value #local_variable_struct #agg_expr = %arg2 : !llvm.ptr
   return
 }
+
+!struct_with_zero_sized_fields = !debuginfo.struct<MyStruct(
+            !debuginfo.member<first: !debuginfo.struct<EmptyStruct()>>,
+            !debuginfo.member<second: !debuginfo.unresolved<i32>>
+          )>
+#local_variable_struct_zsf = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foostruct_zsf",
+  file = #file,
+  line = 10,
+  arg = 0,
+  alignInBits = 32
+> : !struct_with_zero_sized_fields
+
+#zsf_second = #debuginfo.expr.agg<
+  #debuginfo.expr.irvalue : !debuginfo.unresolved<i32>, 1
+> : !struct_with_zero_sized_fields
+
+// CHECK-LABEL: @simplify
+func.func @simplify() {
+  %v1 = llvm.mlir.constant(1: i32) : i32
+  // COM: There should be no more DI expr on the second field as it covers the entire struct.
+  // CHECK: llvm.intr.dbg.value #[[LOCALVAR_STRUCT_ZSF:[^ ]+]] = {{.*}} : i32
+  debuginfo.value #local_variable_struct_zsf #zsf_second = %v1 : i32
+  return
+}
