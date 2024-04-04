@@ -23,63 +23,7 @@ from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 
 from utils.index import Index
-
-
-struct _MatmulAccumulators[
-    type: DType, simd_width: Int, tile_m: Int, tile_n: Int
-]:
-    var _storage: StaticTuple[SIMD[type, simd_width], tile_m * tile_n]
-
-    fn __init__(inout self):
-        self._storage = StaticTuple[SIMD[type, simd_width], tile_m * tile_n](0)
-
-    @staticmethod
-    fn _storage_index(m: Int, n: Int) -> Int:
-        return m * tile_n + n
-
-    fn __getitem__(self, m: Int, n: Int) -> SIMD[type, simd_width]:
-        return self._storage[self._storage_index(m, n)]
-
-    fn __setitem__(inout self, m: Int, n: Int, value: SIMD[type, simd_width]):
-        self._storage[self._storage_index(m, n)] = value
-
-    fn fma(
-        inout self,
-        m: Int,
-        n: Int,
-        a: SIMD[type, simd_width],
-        b: SIMD[type, simd_width],
-    ):
-        self[m, n] = b.fma(a, self[m, n])
-
-    fn _transfer[
-        func: fn (m: Int, n: Int, ptr: DTypePointer[type]) capturing -> None
-    ](inout self, base_ptr: DTypePointer[type], stride: Int):
-        var row_ptr = base_ptr
-
-        @unroll
-        for m in range(tile_m):
-
-            @unroll
-            for n in range(tile_n):
-                func(m, n, row_ptr.offset(n * simd_width))
-            row_ptr = row_ptr.offset(stride)
-
-    fn load(inout self, base_ptr: DTypePointer[type], stride: Int):
-        @parameter
-        @always_inline
-        fn do_transfer(m: Int, n: Int, ptr: DTypePointer[type]):
-            self[m, n] = ptr.load[width=simd_width]()
-
-        self._transfer[do_transfer](base_ptr, stride)
-
-    fn store(inout self, base_ptr: DTypePointer[type], stride: Int):
-        @parameter
-        @always_inline
-        fn do_transfer(m: Int, n: Int, ptr: DTypePointer[type]):
-            ptr.store(self[m, n])
-
-        self._transfer[do_transfer](base_ptr, stride)
+from nn.accumulate import _Accumulator
 
 
 struct _MatmulConfig:
@@ -147,7 +91,7 @@ struct _Matmul[
         a_stride: Int,
         b_ptr: DTypePointer[type],
         b_stride: Int,
-        inout c_tile: _MatmulAccumulators[type, simd_width, tile_m, tile_n],
+        inout c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
     ):
         var ak_ptr = a_ptr
         var bk_ptr = b_ptr
@@ -190,7 +134,7 @@ struct _Matmul[
         a_stride: Int,
         b_ptr: DTypePointer[type],
         b_stride: Int,
-        inout c_tile: _MatmulAccumulators[type, simd_width, tile_m, tile_n],
+        inout c_tile: _Accumulator[type, tile_m, tile_n, simd_width],
     ):
         var ak_ptr = a_ptr
         var bk_ptr = b_ptr
@@ -245,9 +189,7 @@ struct _Matmul[
 
             @parameter
             fn process_cols[tile_n: Int](n_unscaled: Int):
-                var c_tile = _MatmulAccumulators[
-                    type, simd_width, tile_m, tile_n
-                ]()
+                var c_tile = _Accumulator[type, tile_m, tile_n, simd_width]()
 
                 if accumulate:
                     c_tile.load(cn_ptr, c_stride)
