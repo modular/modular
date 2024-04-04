@@ -332,7 +332,7 @@ async fn async_parallelize[
     fn func_wrapped(i: Int):
         with FlushDenormals():
             with Trace[TraceLevel.OP](
-                "task:", task_id=i, parent_id=parent_id
+                "task", task_id=i, parent_id=parent_id
             ) as t:
                 try:
                     func(i)
@@ -419,7 +419,7 @@ fn sync_parallelize[
     fn func_wrapped(i: Int):
         with FlushDenormals():
             with Trace[TraceLevel.OP](
-                "task:", task_id=i, parent_id=parent_id
+                "task", task_id=i, parent_id=parent_id
             ) as t:
                 try:
                     func(i)
