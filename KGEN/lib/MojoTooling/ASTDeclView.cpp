@@ -78,9 +78,6 @@ refineConventionForType(Type type, std::optional<ArgConvention> convention) {
   return convention;
 }
 
-/// Helper enum to make stringifying of variadic types easier.
-enum class VariadicKind : uint8_t { kNone, kPack, kPosVar, kKwVar };
-
 /// Helper to return the variadic kind of a parameter/argument.
 static VariadicKind getVariadicKind(PogsAttr pogsAttr, size_t idx) {
   if (pogsAttr.isPack(idx))
@@ -95,8 +92,7 @@ static VariadicKind getVariadicKind(PogsAttr pogsAttr, size_t idx) {
 }
 
 /// Generate a user-readable representation of the given type and variadic kind,
-/// with an optional value convention, parent struct "Self" type. It also
-/// prepends * to variadic types.
+/// with an optional value convention, and parent struct "Self" type.
 static std::string
 generateTypeString(Type type, VariadicKind varKind,
                    std::optional<ASTType> selfType = std::nullopt,
@@ -105,28 +101,14 @@ generateTypeString(Type type, VariadicKind varKind,
   llvm::raw_string_ostream os(typeName);
   ASTType astType(type);
 
-  // Handle variadic types.
-  switch (varKind) {
-  case VariadicKind::kNone:
-    break;
-  case VariadicKind::kPack:
-    // Legacy packs don't need special handling.
-    // TODO: Remove support for PackType.
-    if (::isa<PackType>(type))
-      break;
+  if (varKind == VariadicKind::kPosVar) {
+    astType = astType.getVariadicElementType();
+  } else if (varKind == VariadicKind::kPack && !isa<PackType>(type)) {
     // VariadicPack needs special printing, because its argument isn't a type.
     os << "*";
     ASTType::printParam(os, astType.getVariadicPackInfo().getVariadic(),
                         /*forDiag=*/true, /*demangleParams=*/false);
     return os.str();
-
-  case VariadicKind::kPosVar:
-    astType = astType.getVariadicElementType();
-    os << "*";
-    break;
-  case VariadicKind::kKwVar:
-    os << "**";
-    break;
   }
 
   // Process the convention if present.
@@ -159,15 +141,27 @@ static std::string generatePValueString(PValue value) {
   return os.str();
 }
 
+/// If the argument/parameter is variadic, we put the star (or two stars if
+/// variadic keyword) before the identifier.
+static Twine prependVariadicIdentifiers(const Twine &identifier,
+                                        VariadicKind varKind) {
+  switch (varKind) {
+  case VariadicKind::kPosVar:
+  case VariadicKind::kPack:
+    return "*" + identifier;
+  case VariadicKind::kKwVar:
+    return "**" + identifier;
+  default:
+    return identifier;
+  }
+}
+
 // Helper function that dumps an identifier along with an optional
 // type. It also takes care of varargs that need to encode * in the name.
 static void dumpIdentifierWithType(raw_ostream &os, StringRef identifier,
-                                   StringRef type) {
-  // If the argument is variadic, we put the star before the name when
-  // printing a signature.
-  if (type.consume_front("*"))
-    os << "*";
-  os << identifier;
+                                   StringRef type,
+                                   VariadicKind varKind = VariadicKind::kNone) {
+  os << prependVariadicIdentifiers(identifier, varKind);
   if (!type.empty())
     os << ": " << type;
 }
@@ -409,7 +403,10 @@ std::string VariableDeclView::getDeclarationSnippet() const {
 
 llvm::json::Object VariableDeclView::toJSON(MojoParserContext &ctx) const {
   return llvm::json::Object{
-      {"kind", getKindAsString()}, {"name", getName().str()}, {"type", type}};
+      {"kind", getKindAsString()},
+      {"name", getName()},
+      {"type", type},
+  };
 }
 
 VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
@@ -433,7 +430,7 @@ VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
 std::string ParameterDeclView::getDeclarationSnippet() const {
   std::string buff;
   llvm::raw_string_ostream os(buff);
-  dumpIdentifierWithType(os, getName(), type);
+  dumpIdentifierWithType(os, getName(), type, variadicKind);
   if (defaultValue)
     os << " = " << *defaultValue;
   return buff;
@@ -447,11 +444,13 @@ std::string ParameterDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object ParameterDeclView::toJSON(MojoParserContext &ctx) const {
-  llvm::json::Object object{{"kind", getKindAsString()},
-                            {"name", getName().str()},
-                            {"type", type},
-                            {"passingKind", stringifyPassingKind(passingKind)},
-                            {"description", description}};
+  llvm::json::Object object{
+      {"kind", getKindAsString()},
+      {"name", prependVariadicIdentifiers(getName(), variadicKind).str()},
+      {"type", type},
+      {"passingKind", stringifyPassingKind(passingKind)},
+      {"description", description},
+  };
   if (defaultValue)
     object["default"] = *defaultValue;
   return object;
@@ -475,7 +474,7 @@ std::string ArgumentDeclView::getDeclarationSnippet() const {
   if (isBorrowed() && parentIsDef)
     os << "borrowed ";
 
-  dumpIdentifierWithType(os, getName(), type);
+  dumpIdentifierWithType(os, getName(), type, variadicKind);
   if (defaultValue)
     os << " = " << *defaultValue;
   return buff;
@@ -490,11 +489,12 @@ std::string ArgumentDeclView::getMarkdownDocString() const {
 
 llvm::json::Object ArgumentDeclView::toJSON(MojoParserContext &ctx) const {
   StringRef conventions[] = {"borrowed", "inout", "owned"};
+
   llvm::json::Object object{
       {"description", description},
       {"convention", conventions[static_cast<int>(convention)]},
       {"kind", getKindAsString()},
-      {"name", getName().str()},
+      {"name", prependVariadicIdentifiers(getName(), variadicKind).str()},
       {"type", type},
       {"passingKind", stringifyPassingKind(passingKind)},
   };
@@ -748,9 +748,6 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     selfType = declRef->getParentDecl()->getSelfType();
 
   // Grab the types of the arguments to the function.
-  auto getArgVarKind = [&](size_t idx) {
-    return getVariadicKind(signature.getArgListAttrs(), idx);
-  };
   DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());
   for (auto [argIdx, type, name, initConvention, passingKind] :
        llvm::enumerate(argTypes, argNames, argConventions, argPassingKinds)) {
@@ -766,18 +763,16 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     else if (convention == ArgConvention::OwnedInMem ||
              convention == ArgConvention::OwnedInReg)
       declConvention = ArgumentDeclView::Convention::kOwned;
-
+    VariadicKind variadicKind =
+        getVariadicKind(signature.getArgListAttrs(), argIdx);
     args.push_back(ArgumentDeclView(
         name.getValue(),
-        generateTypeString(type, getArgVarKind(argIdx), selfType, convention),
-        passingKind, std::move(defaultValue), /*parentIsDef=*/isDefFlag,
-        declConvention));
+        generateTypeString(type, variadicKind, selfType, convention),
+        passingKind, variadicKind, std::move(defaultValue),
+        /*parentIsDef=*/isDefFlag, declConvention));
   }
 
   // Grab the types of the parameters to the function.
-  auto getParamVarKind = [&](size_t idx) {
-    return getVariadicKind(signature.getParamListAttrs(), idx);
-  };
   DefaultValueHandler defaultParamHandler(signature.getParamListAttrs());
   for (auto [parIdx, param, passingKind] :
        llvm::enumerate(params, signature.getParamPassingKinds())) {
@@ -787,10 +782,12 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultParamHandler.getDefault(parIdx))
       defaultValue = generatePValueString(defaultAttr);
+    VariadicKind variadicKind =
+        getVariadicKind(signature.getParamListAttrs(), parIdx);
     parameters.push_back(ParameterDeclView(
         demangleIfNeeded(param).getName().getValue(),
-        generateTypeString(param.getType(), getParamVarKind(parIdx), selfType),
-        passingKind, std::move(defaultValue)));
+        generateTypeString(param.getType(), variadicKind, selfType),
+        passingKind, variadicKind, std::move(defaultValue)));
   }
 
   // Grab the result type, if it's non-none.
@@ -826,7 +823,7 @@ llvm::json::Object StructFieldDeclView::toJSON(MojoParserContext &ctx) const {
   return llvm::json::Object{
       {"description", description},
       {"kind", getKindAsString()},
-      {"name", getName().str()},
+      {"name", getName()},
       {"summary", summary},
       {"type", type},
   };
@@ -1018,19 +1015,18 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
   TypeSignatureType signature = structOp.getSignature();
 
   // Grab the types of the parameters to the struct.
-  auto getParamVarKind = [&](size_t idx) {
-    return getVariadicKind(signature.getParamListAttrs(), idx);
-  };
   DefaultValueHandler defaultParamHandler(signature.getParamListAttrs());
   for (auto [parIdx, param, passingKind] : llvm::enumerate(
            structOp.getInputParams(), signature.getParamPassingKinds())) {
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultParamHandler.getDefault(parIdx))
       defaultValue = generatePValueString(defaultAttr);
-    parameters.push_back(ParameterDeclView(
-        demangleIfNeeded(param).getName().getValue(),
-        generateTypeString(param.getType(), getParamVarKind(parIdx)),
-        passingKind, std::move(defaultValue)));
+    VariadicKind variadicKind =
+        getVariadicKind(signature.getParamListAttrs(), parIdx);
+    parameters.push_back(
+        ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
+                          generateTypeString(param.getType(), variadicKind),
+                          passingKind, variadicKind, std::move(defaultValue)));
   }
 
   if (auto docStr = decl->getParsedDocString()) {
