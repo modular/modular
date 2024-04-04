@@ -6,6 +6,7 @@
 # RUN: %mojo -debug-level full %s
 
 from buffer import NDBuffer
+from buffer.list import Dim, DimList
 from math import exp, isclose, max
 from nn.flash_attention import flash_attention
 from random import rand, seed
@@ -105,7 +106,9 @@ def reference_attention[
 
 
 def test_case[
-    type: DType, batch_rank: Int
+    type: DType,
+    batch_rank: Int,
+    output_static_shape: DimList = DimList.create_unknown[batch_rank + 2](),
 ](
     batch_dims: StaticIntTuple[batch_rank],
     seq_len: Int,
@@ -154,7 +157,9 @@ def test_case[
     var k = NDBuffer[type, rank](k_ptr, k_shape)
     var v = NDBuffer[type, rank](v_ptr, v_shape)
     var mask = NDBuffer[type, rank](mask_ptr, mask_shape)
-    var output = NDBuffer[type, rank](output_ptr, output_shape)
+    var output = NDBuffer[type, rank, output_static_shape](
+        output_ptr, output_shape
+    )
     var ref_output = NDBuffer[type, rank](ref_output_ptr, output_shape)
 
     reference_attention[type, rank](
@@ -187,11 +192,13 @@ def test_case[
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
         return mask.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
 
-    flash_attention[type, rank, input_k_fn, input_v_fn, mask_fn](
+    flash_attention[
+        type, rank, input_k_fn, input_v_fn, mask_fn, output_static_shape
+    ](
         q.make_dims_unknown(),
         k.get_shape(),
         v.get_shape(),
-        output.make_dims_unknown(),
+        output,
         scale,
     )
 
@@ -249,6 +256,20 @@ def test_flash_attention[type: DType]():
         kv_seq_len=64,
         depth_dim=384,
         scale=0.25,
+    )
+    test_case[type, 1, DimList(Dim(), Dim(), 160)](
+        batch_dims=Index(1),
+        seq_len=100,
+        kv_seq_len=300,
+        depth_dim=160,
+        scale=0.1,
+    )
+    test_case[type, 1, DimList(Dim(), Dim(), 300)](
+        batch_dims=Index(1),
+        seq_len=100,
+        kv_seq_len=64,
+        depth_dim=300,
+        scale=0.1,
     )
 
 

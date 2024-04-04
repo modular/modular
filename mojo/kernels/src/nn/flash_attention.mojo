@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, div_ceil, exp, max, min
+from math import align_down, align_up, div_ceil, exp, max, min
 from sys.info import has_avx512f, has_neon
 
 from algorithm import sync_parallelize, tile, vectorize
@@ -16,7 +16,7 @@ from algorithm.reduction import (
     map_reduce,
 )
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim
+from buffer.list import Dim, DimList
 from LinAlg.MatmulUtils import partition_work
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
@@ -46,7 +46,7 @@ struct _MatmulConfig:
         self.pack_sizes = pack_sizes
 
     @staticmethod
-    fn _get_matmul_config() -> _MatmulConfig:
+    fn _get_config() -> _MatmulConfig:
         @parameter
         if has_neon():
             return _MatmulConfig(
@@ -75,7 +75,7 @@ struct _Matmul[
     type: DType,
     simd_width: Int,
 ]:
-    alias _matmul_config = _MatmulConfig._get_matmul_config()
+    alias _matmul_config = _MatmulConfig._get_config()
 
     alias _input_fn_type = fn[simd_width: Int] (
         x: Int, y: Int
@@ -103,7 +103,7 @@ struct _Matmul[
 
             @unroll
             for m in range(tile_m):
-                a_tile[m] = ak_ptr.offset(m * a_stride).load[width=lane_count]()
+                a_tile[m] = ak_ptr.load[width=lane_count](m * a_stride)
 
             ak_ptr += lane_count
 
@@ -112,9 +112,7 @@ struct _Matmul[
 
                 @unroll
                 for n in range(tile_n):
-                    var b_data = bk_ptr.offset(n * simd_width).load[
-                        width=simd_width
-                    ]()
+                    var b_data = bk_ptr.load[width=simd_width](n * simd_width)
 
                     @unroll
                     for m in range(tile_m):
@@ -149,13 +147,11 @@ struct _Matmul[
 
                 @unroll
                 for n in range(tile_n):
-                    b_tile[n] = bk_ptr.offset(n * simd_width).load[
-                        width=simd_width
-                    ]()
+                    b_tile[n] = bk_ptr.load[width=simd_width](n * simd_width)
 
                 @unroll
                 for m in range(tile_m):
-                    var a_data = ak_ptr.offset(m * a_stride).load()
+                    var a_data = ak_ptr.load(m * a_stride)
 
                     @unroll
                     for n in range(tile_n):
@@ -206,8 +202,8 @@ struct _Matmul[
 
                 c_tile.store(cn_ptr, c_stride)
 
-                bn_ptr = bn_ptr.offset(tile_n * simd_width)
-                cn_ptr = cn_ptr.offset(tile_n * simd_width)
+                bn_ptr += tile_n * simd_width
+                cn_ptr += tile_n * simd_width
 
             tile[process_cols, Self._matmul_config.col_sizes](
                 0, div_ceil(N, simd_width)
@@ -232,12 +228,12 @@ struct _Matmul[
             @parameter
             fn packed_copy[_simd_width: Int](idx: Int):
                 var val = input_b_fn[_simd_width](idx, k)
-                output_ptr.offset(idx).store[width=_simd_width](val)
+                output_ptr.store(idx, val)
 
             tile[packed_copy, Self._matmul_config.pack_sizes](0, N)
 
             if aligned_n != N:
-                memset_zero(output_ptr.offset(N), aligned_n - N)
+                memset_zero(output_ptr + N, aligned_n - N)
 
             output_ptr += aligned_n
 
@@ -310,6 +306,42 @@ struct _Matmul[
             )
 
 
+struct _FlashAttentionConfig[
+    type: DType,
+    rank: Int,
+    simd_width: Int,
+    output_static_shape: DimList,
+]:
+    var block_m: Int
+    var qk_block_n: Int
+    var o_block_n: Int
+
+    fn __init__(inout self):
+        self.qk_block_n = 128
+        self.o_block_n = 128
+
+        # Set a target size for the output block array.
+        alias output_target_size = 8192
+
+        alias depth_static_dim = output_static_shape.at[rank - 1]()
+
+        @parameter
+        if depth_static_dim:
+            # Extract the static depth dimension with a guard against zero.
+            var depth_dim = max(int(depth_static_dim), 1)
+
+            # Compute the number of columns for the output block array. If the
+            # count is too large, then use the default size.
+            self.o_block_n = align_up(
+                depth_dim if depth_dim <= 256 else self.o_block_n, simd_width
+            )
+
+        # Compute the number of rows per iteration, but constrain this number
+        # as other buffers are allocated to this size too.
+        self.block_m = align_down(output_target_size // self.o_block_n, 4)
+        self.block_m = min(max(self.block_m, 1), 64)
+
+
 struct _FlashAttention[
     type: DType,
     rank: Int,
@@ -323,11 +355,12 @@ struct _FlashAttention[
     input_mask_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
-    block_m: Int,
-    qk_block_n: Int,
-    o_block_n: Int,
+    output_static_shape: DimList,
 ]:
     alias _matmul = _Matmul[type, simd_width]
+    alias _config = _FlashAttentionConfig[
+        type, rank, simd_width, output_static_shape
+    ]()
 
     @staticmethod
     fn _online_softmax[
@@ -404,19 +437,19 @@ struct _FlashAttention[
             @parameter
             fn do_correction[_simd_width: Int](idx: Int):
                 var val = o_row_ptr.load[width=_simd_width](idx)
-                o_row_ptr.store[width=_simd_width](idx, val * fixup_val)
+                o_row_ptr.store(idx, val * fixup_val)
 
             vectorize[do_correction, simd_width, unroll_factor=2](count_n)
 
-            qk_row_ptr += qk_block_n
-            o_row_ptr += o_block_n
+            qk_row_ptr += Self._config.qk_block_n
+            o_row_ptr += Self._config.o_block_n
 
     @staticmethod
     fn run(
         q: NDBuffer[type, rank],
         k_shape: StaticIntTuple[rank],
         v_shape: StaticIntTuple[rank],
-        output: NDBuffer[type, rank],
+        output: NDBuffer[type, rank, output_static_shape],
         scale: Float32,
     ):
         var num_batches = output.dim[0]()
@@ -426,12 +459,12 @@ struct _FlashAttention[
         var kv_seq_len = v_shape[rank - 2]
 
         # Compute the maximum size in elements for the common packed buffer.
-        var packed_qk_size = qk_block_n * depth_dim
-        var packed_o_size = o_block_n * qk_block_n
+        var packed_qk_size = Self._config.qk_block_n * depth_dim
+        var packed_o_size = Self._config.o_block_n * Self._config.qk_block_n
         var packed_size = max(packed_qk_size, packed_o_size)
 
-        var num_blocks_m = div_ceil(seq_len, block_m)
-        var num_blocks_n = div_ceil(depth_dim, o_block_n)
+        var num_blocks_m = div_ceil(seq_len, Self._config.block_m)
+        var num_blocks_n = div_ceil(depth_dim, Self._config.o_block_n)
         var work_count = num_batches * num_heads * num_blocks_m * num_blocks_n
 
         var num_threads = min(work_count, Runtime().parallelism_level())
@@ -439,17 +472,21 @@ struct _FlashAttention[
         @parameter
         fn task_func(task_id: Int):
             var qk_block_ptr = stack_allocation[
-                block_m * qk_block_n,
+                Self._config.block_m * Self._config.qk_block_n,
                 type,
                 alignment = alignof[SIMD[type, simd_width]](),
             ]()
             var o_block_ptr = stack_allocation[
-                block_m * o_block_n,
+                Self._config.block_m * Self._config.o_block_n,
                 type,
                 alignment = alignof[SIMD[type, simd_width]](),
             ]()
-            var max_vals = Buffer[type, Dim(block_m)]().stack_allocation()
-            var sum_vals = Buffer[type, Dim(block_m)]().stack_allocation()
+            var max_vals = Buffer[
+                type, Dim(Self._config.block_m)
+            ]().stack_allocation()
+            var sum_vals = Buffer[
+                type, Dim(Self._config.block_m)
+            ]().stack_allocation()
 
             var packed_ptr = DTypePointer[
                 type
@@ -463,9 +500,9 @@ struct _FlashAttention[
             )
 
             for i in range(block_range[0], block_range[0] + block_range[1]):
-                var n = (i % num_blocks_n) * o_block_n
+                var n = (i % num_blocks_n) * Self._config.o_block_n
                 var j = i // num_blocks_n
-                var m = (j % num_blocks_m) * block_m
+                var m = (j % num_blocks_m) * Self._config.block_m
                 var batch_head = j // num_blocks_m
                 var head = batch_head % num_heads
                 var batch = batch_head // num_heads
@@ -486,8 +523,8 @@ struct _FlashAttention[
                         )
                     return idx
 
-                var count_m = min(block_m, seq_len - m)
-                var count_n = min(o_block_n, depth_dim - n)
+                var count_m = min(Self._config.block_m, seq_len - m)
+                var count_n = min(Self._config.o_block_n, depth_dim - n)
 
                 var o_ptr = output._offset(get_nd_index(m, n))
                 var q_ptr = q._offset(get_nd_index(m, 0))
@@ -495,8 +532,10 @@ struct _FlashAttention[
                 max_vals.fill(Scalar[type].MIN)
                 sum_vals.fill(0)
 
-                for kv_seq_idx in range(0, kv_seq_len, qk_block_n):
-                    var kv_seq_cnt = min(kv_seq_len - kv_seq_idx, qk_block_n)
+                for kv_seq_idx in range(0, kv_seq_len, Self._config.qk_block_n):
+                    var kv_seq_cnt = min(
+                        kv_seq_len - kv_seq_idx, Self._config.qk_block_n
+                    )
 
                     @parameter
                     @always_inline
@@ -515,7 +554,7 @@ struct _FlashAttention[
                         depth_dim,
                         packed_ptr,
                         qk_block_ptr,
-                        qk_block_n,
+                        Self._config.qk_block_n,
                     )
 
                     @parameter
@@ -552,29 +591,28 @@ struct _FlashAttention[
                         count_n,
                         kv_seq_cnt,
                         qk_block_ptr,
-                        qk_block_n,
+                        Self._config.qk_block_n,
                         packed_ptr,
                         o_block_ptr,
-                        o_block_n,
+                        Self._config.o_block_n,
                         accumulate=(kv_seq_idx > 0),
                     )
 
                 var oz_ptr = o_block_ptr
 
                 for m in range(count_m):
-                    var recip = 1 / sum_vals[m]
+                    var reciprocal = 1 / sum_vals[m]
 
                     @always_inline
                     @parameter
                     fn do_final[_simd_width: Int](idx: Int):
                         var v = oz_ptr.load[width=_simd_width](idx)
-                        var e = v * recip
-                        o_ptr.store[width=_simd_width](idx, e)
+                        o_ptr.store(idx, v * reciprocal)
 
                     vectorize[do_final, simd_width, unroll_factor=4](count_n)
 
                     o_ptr += depth_dim
-                    oz_ptr += o_block_n
+                    oz_ptr += Self._config.o_block_n
 
             if packed_ptr:
                 packed_ptr.free()
@@ -594,11 +632,12 @@ fn flash_attention[
     input_mask_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
+    output_static_shape: DimList = DimList.create_unknown[rank](),
 ](
     q: NDBuffer[type, rank],
     k_shape: StaticIntTuple[rank],
     v_shape: StaticIntTuple[rank],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[type, rank, output_static_shape],
     scale: Float32,
 ):
     alias simd_width = simdwidthof[type]()
@@ -606,11 +645,9 @@ fn flash_attention[
     _FlashAttention[
         type,
         rank,
-        simd_width,
+        simdwidthof[type](),
         input_k_fn,
         input_v_fn,
         input_mask_fn,
-        block_m=64,
-        qk_block_n=128,
-        o_block_n=128,
+        output_static_shape,
     ].run(q, k_shape, v_shape, output, scale)
