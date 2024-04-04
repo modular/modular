@@ -376,7 +376,9 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         return Self.BaseType.to_string(self._value)
 
 
-# DynamicTuple zip iterator
+# ===----------------------------------------------------------------------===#
+# zip
+# ===----------------------------------------------------------------------===#
 
 
 @value
@@ -466,3 +468,57 @@ fn zip[
     T, D
 ]:
     return _zip3(a, b, c)
+
+
+# ===----------------------------------------------------------------------===#
+# product
+# ===----------------------------------------------------------------------===#
+
+
+@value
+struct _ProductIter2[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+]:
+    var a_index: Int
+    var b_index: Int
+    var a: DynamicTuple[T, D]
+    var b: DynamicTuple[T, D]
+
+    @always_inline
+    fn __next__(inout self) -> DynamicTuple[T, D]:
+        var res = DynamicTuple[T, D](self.a[self.a_index], self.b[self.b_index])
+        self.b_index += 1
+        if self.b_index == len(self.b):
+            self.b_index = 0
+            self.a_index += 1
+        return res^
+
+    @always_inline
+    fn __len__(self) -> Int:
+        var shortest = math.min(len(self.a), len(self.b))
+        return shortest * shortest - self.a_index * len(self.b) - self.b_index
+
+
+@value
+struct _product2[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
+    Sized
+):
+    var a: DynamicTuple[T, D]
+    var b: DynamicTuple[T, D]
+
+    alias IterType = _ProductIter2[T, D]
+
+    @always_inline
+    fn __iter__(self) -> Self.IterType:
+        return Self.IterType(0, 0, self.a, self.b)
+
+    @always_inline
+    fn __len__(self) -> Int:
+        var shortest = math.min(len(self.a), len(self.b))
+        return shortest * shortest
+
+
+fn product[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+](a: DynamicTuple[T, D], b: DynamicTuple[T, D]) -> _product2[T, D]:
+    return _product2(a, b)
