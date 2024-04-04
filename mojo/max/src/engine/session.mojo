@@ -4,8 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-The entry point to MAX Engine and can be used to load models
-for inference.
+Defines the `InferenceSession` type that serves as an entry point to
+MAX Engine.
 """
 from collections import List
 from collections.optional import Optional
@@ -257,10 +257,8 @@ struct LoadOptions(CollectionElement):
     Configuration options to load model with MAX Engine.
 
     If you're loading a TorchScript model, you must create an instance of this
-    type and then call `add_input_spec()` or `add_input_specs()`, depending on
-    whether your model has one or multiple inputs (you must specify an
-    input spec for every input). Then, pass this `LoadOptions`
-    along with your TorchScript model to
+    type and call [`add_input_spec()`](#add_input_spec) for each input.
+    Then, pass `LoadOptions` along with your TorchScript model to
     [`Session.load_model()`](/engine/reference/mojo/engine/session#load_model).
     """
 
@@ -310,6 +308,22 @@ struct LoadOptions(CollectionElement):
         """Add specifications for one input tensor, as a
            [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
            Only applicable for TorchScript models.
+
+           For example:
+
+           ```mojo
+           var batch = 1
+           var seqlen = 128
+           var input_ids_spec = TensorSpec(DType.int64, batch, seqlen)
+           var attention_mask_spec = TensorSpec(DType.int64, batch, seqlen)
+
+           var options = engine.LoadOptions()
+           options.add_input_spec(input_ids_spec)
+           options.add_input_spec(attention_mask_spec)
+
+           var session = engine.InferenceSession()
+           var model = session.load_model("roberta.torchscript", options)
+           ```
 
            If an input supports dynamic shapes, use `None` for that dimension
            size in the `TensorSpec`.
@@ -399,8 +413,14 @@ struct SessionOptions:
 @value
 struct InferenceSession:
     """
-    Holds the context of MAX Engine and can be used for
-    loading models.
+    Holds the context for MAX Engine in which you can load and run models.
+
+    For example, you can load a model like this:
+
+    ```mojo
+    var session = engine.InferenceSession()
+    var model = session.load_model("bert-base-uncased")
+    ```
     """
 
     var _ptr: Arc[_InferenceSessionImpl]
@@ -428,10 +448,15 @@ struct InferenceSession:
         argument with an instance of
         [`LoadOptions`](/engine/reference/mojo/engine/session#loadoptions) that
         specifies the model's input specs (which may have dynamic shapes).
+        For details, see how to [specify input
+        specs](/engine/model-formats#specify-torchscript-input-specs).
 
         Args:
-            path: Location of model in filesystem.
-            config: Configurations need for compiling model.
+            path: Location of model in filesystem. You may pass a string here
+                  because the [`Path`](/mojo/stdlib/pathlib/path#path) object
+                  supports implicit casting from a string.
+            config: Configurations need for compiling model. This is required
+                    only when loading a TorchScript model.
 
         Returns:
             Initialized model ready for inference.

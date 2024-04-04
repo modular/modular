@@ -4,8 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-An abstracted instance of model from any framework loaded with Max
-Engine InferenceSession and is ready for execution.
+Defines the `Model` type that holds a model ready for execution.
 """
 
 from ._model_impl import CModel
@@ -23,9 +22,23 @@ from tensor import Tensor
 
 @value
 struct Model:
-    """A loaded model that you can execute.
+    """Represents a model from PyTorch, TensorFlow, or ONNX, loaded and ready
+    for execution.
 
-    Do not instantiate this class directly. Instead, create it with InferenceSession.
+    Do not instantiate this object directly. Instead, create it with
+    [`InferenceSession.load_model()`](/engine/reference/mojo/engine/session#load_model).
+    For example:
+
+    ```mojo
+    var session = engine.InferenceSession()
+    var model = session.load_model("bert-base-uncased")
+    ```
+
+    Then you can run inference by passing your inputs to [`execute()`](#execute)
+    as a NumPy array, a
+    [`TensorMap`](/engine/reference/mojo/engine/tensor_map#tensormap), or one
+    of the other [tensor types](/engine/reference/mojo/engine/tensor).
+
     """
 
     var _ctx: CRuntimeContext
@@ -348,7 +361,8 @@ struct Model:
         return self._compiled_model.get_model_output_names()
 
     fn get_model_input_metadata(self) raises -> List[EngineTensorSpec]:
-        """Get metadata about the model's input tensors, as a list of EngineTensorSpec
+        """Get metadata about the model's input tensors, as a list of
+        [`EngineTensorSpec`](/engine/reference/mojo/engine/tensor_spec#enginetensorspec)
         objects.
 
         Returns:
@@ -357,7 +371,8 @@ struct Model:
         return self._compiled_model.get_model_input_metadata()
 
     fn get_model_output_metadata(self) raises -> List[EngineTensorSpec]:
-        """Get metadata about the model's output tensors, as a list of EngineTensorSpec
+        """Get metadata about the model's output tensors, as a list of
+        [`EngineTensorSpec`](/engine/reference/mojo/engine/tensor_spec#enginetensorspec)
         objects.
 
         Returns:

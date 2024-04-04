@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Types for values that can be passed in and out of engine models."""
+"""Defines different value types you can be pass in and out of models."""
 
 
 from tensor import Tensor

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-Holds the input and output tensors for a model.
+Defines the `TensorMap` type that holds input and output tensors for a model.
 """
 from buffer import Buffer
 from memory.unsafe import bitcast, DTypePointer
@@ -21,7 +21,12 @@ from .value import Value
 struct TensorMap(SizedRaising):
     """
     Maps inputs and outputs to their respective names and can
-    be used to supply and receive data to Max Engine model.
+    be used to supply and receive data to MAX Engine model.
+
+    This is the data type returned by
+    [`Model.execute()`](/engine/reference/mojo/engine/model#execute), and you
+    can also use this type for the inputs you pass in (although `execute()`
+    also supports other formats for the input).
     """
 
     var _ptr: CTensorMap
@@ -121,7 +126,8 @@ struct TensorMap(SizedRaising):
 
         Args:
             key: Name of tensor in map.
-            spec: The tensor spec.
+            spec: The tensor spec. This is the standard library
+                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
             ptr: The tensor pointer.
         """
         var tensor_spec = EngineTensorSpec(
@@ -232,7 +238,8 @@ struct TensorMap(SizedRaising):
             key: Name in TensorMap.
 
         Returns:
-            Buffer of the tensor pointed by the key.
+            Buffer of the tensor pointed by the key, as a
+            [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
         """
         var tensor_ptr = self._ptr.get_tensor_by_name(key._as_ptr(), self._lib)
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
@@ -245,7 +252,8 @@ struct TensorMap(SizedRaising):
             key: Name in TensorMap.
 
         Returns:
-            Value pointed by the key.
+            [`Value`](/engine/reference/mojo/engine/value#value) pointed by
+            the key.
         """
         var value_ptr = self._ptr.get_value_by_name(
             key._strref_dangerous().data, self._lib

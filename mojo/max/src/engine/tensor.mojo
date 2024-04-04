@@ -4,8 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-Implements functionalities useful for giving input to Max Engine
-model for execution.
+Defines different data formats you can use to pass inputs to MAX Engine
+when executing a model.
+
+You can pass each of the types shown here to
+[`Model.execute()`](/engine/reference/mojo/engine/model#execute).
 """
 from collections import List
 from memory.unsafe import bitcast, DTypePointer, Pointer

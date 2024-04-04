@@ -4,13 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-Information about Max Engine, such as version.
+Provides information about MAX Engine, such as the version.
 """
 from ._engine_impl import _get_engine_path, _EngineImpl
 
 
 fn get_version() raises -> String:
-    """Returns version of modular AI engine.
+    """Returns the current MAX Engine version.
 
     Returns:
         Version as string.

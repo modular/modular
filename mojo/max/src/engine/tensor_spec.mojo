@@ -4,9 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 """
-Holds a description of the input/output tensor, given or produced by Max Engine.
-This is similar to `TensorSpec` in the Mojo standard library, but is specific
-to Max Engine.
+Defines `EngineTensorSpec` to define a model's input and output specs.
 """
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
@@ -21,7 +19,18 @@ from ._tensor_spec_impl import CTensorSpec
 
 struct EngineTensorSpec(Stringable, CollectionElement):
     """
-    Describes input/output of a Max Engine Model.
+    Describes the input and output tensor specifications of a
+    [`Model`](/engine/reference/mojo/engine/model#model).
+
+    Holds a description of the input/output tensor, given to or produced by
+    MAX Engine. This is similar to
+    [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec) in the Mojo
+    standard library, but is specific to MAX Engine.
+
+    This is the data type returned from
+    [`Model.get_model_input_metadata()`](/engine/reference/mojo/engine/model#get_model_input_metadata)
+    and
+    [`Model.get_model_output_metadata()`](/engine/reference/mojo/engine/model#get_model_output_metadata).
     """
 
     var _ptr: CTensorSpec
