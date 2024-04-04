@@ -126,16 +126,17 @@ if (MODULAR_STATIC_LINKED_PYTHON)
 endif()
 
 set(MBLACK_BIN "${CMAKE_BINARY_DIR}/lib/mblack/mblack${CMAKE_EXECUTABLE_SUFFIX}")
-set(MBLACK_SRC "${MODULAR_UTILS_DIR}/mblack/src/mblack/__main__.py")
+set(MBLACK_SRC_DIR "${MODULAR_UTILS_DIR}/mblack/src")
+set(MBLACK_SRC "${MBLACK_SRC_DIR}/mblack/__main__.py")
 
 add_custom_command(
   OUTPUT "${MBLACK_BIN}"
   COMMAND "${CMAKE_COMMAND}" -E env PYI_LOG_LEVEL=ERROR
     "${PYTHON_EXE}" -m PyInstaller -y -D --name mblack
-    --add-data "${MODULAR_UTILS_DIR}/mblack/src/mblib2to3${mblackPathSeparator}mblib2to3"
+    --add-data "${MBLACK_SRC_DIR}/mblib2to3${mblackPathSeparator}mblib2to3"
     --distpath "${CMAKE_BINARY_DIR}/lib"
     "${MBLACK_SRC}"
-  DEPENDS "${MBLACK_SRC}"
+  DEPENDS "${MBLACK_SRC}" "${MBLACK_SRC_DIR}/mblib2to3/Grammar.txt"
   COMMENT "Building mblack."
   VERBATIM
   )
