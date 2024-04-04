@@ -201,23 +201,23 @@ fn apply_zip[
 #     return r
 
 
-fn apply_zip3[
+fn apply_zip[
     func: fn (IntTuple, IntTuple, IntTuple) -> IntTuple
 ](t1: IntTuple, t2: IntTuple, t3: IntTuple,) -> IntTuple:
     var r = IntTuple()
-    for z in zip3(t1, t2, t3):
+    for z in zip(t1, t2, t3):
         r.append(func(z[0], z[1], z[2]))
     return r
 
 
-# fn apply_zip3(
+# fn apply_zip(
 #     func: fn (IntTuple, IntTuple, IntTuple) escaping -> IntTuple,
 #     t1: IntTuple,
 #     t2: IntTuple,
 #     t3: IntTuple,
 # ) -> IntTuple:
 #     var r = IntTuple()
-#     for z in zip3(t1, t2, t3):
+#     for z in zip(t1, t2, t3):
 #         r.append(func(z[0], z[1], z[2]))
 #     return r
 
@@ -427,7 +427,7 @@ fn idx2crd(
             if len(idx) != len(shape) or len(idx) != len(stride):
                 abort("input shapes mismatch")
 
-            return apply_zip3[idx2crd](idx, shape, stride)
+            return apply_zip[idx2crd](idx, shape, stride)
         else:  # tuple "int" "int"
             return abort[IntTuple]("Illegal inputs")  # Error
     else:
@@ -458,7 +458,7 @@ fn crd2idx(
             if len(crd) != len(shape) or len(crd) != len(stride):
                 abort("Shape mismatch")
             var r: Int = 0
-            for z in zip3(crd, shape, stride):
+            for z in zip(crd, shape, stride):
                 r += crd2idx(z[0], z[1], z[2])
             return r
         else:  # tuple "int" "int"

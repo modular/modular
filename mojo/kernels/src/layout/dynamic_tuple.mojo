@@ -277,7 +277,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
             v1._value, v2._value, v3._value, v4._value, v5._value
         )
 
-    fn __init__(inout self, zipper: zip[T, D]):
+    fn __init__(inout self, zipper: _zip2[T, D]):
         self._value = Self.BaseType()
         for z in zipper:
             self.append(z)
@@ -380,7 +380,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
 
 @value
-struct _ZipIter[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
+struct _ZipIter2[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
     var index: Int
     var a: DynamicTuple[T, D]
     var b: DynamicTuple[T, D]
@@ -398,11 +398,11 @@ struct _ZipIter[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
 
 
 @value
-struct zip[T: CollectionElement, D: ElementDelegate = DefaultDelegate](Sized):
+struct _zip2[T: CollectionElement, D: ElementDelegate = DefaultDelegate](Sized):
     var a: DynamicTuple[T, D]
     var b: DynamicTuple[T, D]
 
-    alias IterType = _ZipIter[T, D]
+    alias IterType = _ZipIter2[T, D]
 
     @always_inline
     fn __iter__(self) -> Self.IterType:
@@ -438,7 +438,7 @@ struct _ZipIter3[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
 
 
 @value
-struct zip3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](Sized):
+struct _zip3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](Sized):
     var a: DynamicTuple[T, D]
     var b: DynamicTuple[T, D]
     var c: DynamicTuple[T, D]
@@ -452,3 +452,17 @@ struct zip3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](Sized):
     @always_inline
     fn __len__(self) -> Int:
         return math.min(len(self.a), math.min(len(self.b), len(self.c)))
+
+
+fn zip[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+](a: DynamicTuple[T, D], b: DynamicTuple[T, D]) -> _zip2[T, D]:
+    return _zip2(a, b)
+
+
+fn zip[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+](a: DynamicTuple[T, D], b: DynamicTuple[T, D], c: DynamicTuple[T, D]) -> _zip3[
+    T, D
+]:
+    return _zip3(a, b, c)
