@@ -102,6 +102,9 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
 
   // Create a new runtime (if needed).
   if (options.runtimeOptions) {
+    std::string profileFilename =
+        llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
+
     LLCL::CompactRuntimePtr runtimePtr = LLCL::CompactRuntimePtr::reserve();
     std::unique_ptr<Allocator> allocator =
         LLCL::getAllocator(*options.runtimeOptions);
@@ -121,11 +124,12 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
                       options.runtimeOptions->threadBusyWaitTime),
                   options.runtimeOptions->poolName,
                   options.runtimeOptions->paranoid);
-    ctx->emplace<Runtime>(runtimePtr, ctx.copy(), std::move(allocator),
-                          std::move(workQueue),
-                          options.runtimeOptions->profileFilename,
-                          options.runtimeOptions->runtimeProfilingTypeMask,
-                          options.runtimeOptions->profilerDebuginfo);
+    ctx->emplace<Runtime>(
+        runtimePtr, ctx.copy(), std::move(allocator), std::move(workQueue),
+        profileFilename.empty() ? options.runtimeOptions->profileFilename
+                                : profileFilename,
+        options.runtimeOptions->runtimeProfilingTypeMask,
+        options.runtimeOptions->profilerDebuginfo);
   }
 
   // Finally move the settings.
