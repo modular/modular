@@ -35,7 +35,7 @@ struct CRuntimeConfig:
     alias FreeRuntimeConfigFnName = "M_freeRuntimeConfig"
     alias SetAllocatorTypeFnName = "M_setAllocatorType"
     alias SetDeviceFnName = "M_setDevice"
-    alias SetUseExistingRuntimeFnName = "M_setUseExistingRuntime"
+    alias SetMaxContextFnName = "M_setMaxContext"
 
     fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
@@ -50,8 +50,10 @@ struct CRuntimeConfig:
     ):
         call_dylib_func(lib, Self.SetAllocatorTypeFnName, self, allocator_type)
 
-    fn set_use_existing_runtime(self, borrowed lib: DLHandle):
-        call_dylib_func(lib, Self.SetUseExistingRuntimeFnName, self)
+    fn set_max_context(
+        self, lib: DLHandle, max_context: Pointer[NoneType]
+    ) -> None:
+        call_dylib_func(lib, Self.SetMaxContextFnName, self, max_context)
 
 
 @value
@@ -85,14 +87,18 @@ struct RuntimeConfig:
         lib: DLHandle,
         device: _Device,
         allocator_type: AllocatorType = AllocatorType.CACHING,
+        max_context: Pointer[NoneType] = Pointer[NoneType](),
     ):
         self.ptr = call_dylib_func[CRuntimeConfig](
             lib, Self.NewRuntimeConfigFnName
         )
-        # Mojo already has an existing runtime, regardless of the entrypoint.
-        # Set the runtime config to reuse this existing runtime, rather than
-        # trying to recreate a new one.
-        self.ptr.set_use_existing_runtime(lib)
+
+        if max_context:
+            # `mojo-run` already has an existing `M::Context`.
+            # Set the runtime config to reuse this existing context, rather
+            # than trying to recreate a new one.
+            self.ptr.set_max_context(lib, max_context)
+
         self.lib = lib
 
         if allocator_type != AllocatorType.CACHING:

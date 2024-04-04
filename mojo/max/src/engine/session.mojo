@@ -12,7 +12,7 @@ from collections.optional import Optional
 from collections.vector import InlinedFixedVector
 from os.atomic import Atomic
 from pathlib import Path
-from sys.ffi import DLHandle
+from sys.ffi import DLHandle, _get_global_or_null
 
 from max.graph import Graph, Module
 from memory._arc import Arc
@@ -45,7 +45,11 @@ struct _InferenceSessionImpl(Movable):
         device: _Device,
     ):
         self.engine = _EngineImpl(lib_path)
-        var config = RuntimeConfig(self.engine.lib, device)
+        var config = RuntimeConfig(
+            self.engine.lib,
+            device,
+            max_context=_get_global_or_null["MaxContext"](),
+        )
         self.context = RuntimeContext(config^, self.engine.lib)
         self.ref_count = 1
 
