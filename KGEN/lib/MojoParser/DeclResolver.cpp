@@ -907,12 +907,12 @@ StringAttr DeclResolver::getMangledName(StringAttr baseName, ASTDecl &container,
       TypedAttr packVariadic = variadicPack.getVariadicPackInfo().getVariadic();
       mangledName += '*';
       ASTType::printParam(os, packVariadic, /*forDiag=*/false,
-                          /*demangleParam=*/true);
+                          /*demangleParams=*/true);
       continue;
     } else if (fullSig.isKwVarArg(argNo)) {
       // TODO: Propagate convention correctly.
       convention = ArgConvention::BorrowedInReg;
-      argType = getVariadicKwargsType(argType);
+      argType = argType.getKwargsDictRefValueType();
       numStars = 2;
     }
 

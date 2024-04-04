@@ -494,7 +494,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
       continue;
 
     if (signature.isKwVarArg(expectedArgIdx)) {
-      Type valTy = getVariadicKwargsType(expectedType);
+      Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
       for (auto [name, operand] : variadicKwOperands) {
         // TODO: Passing OwnedInReg is a hack that is needed because the value
         // type is not a reference type (and doesn't have a lifetime), but we
@@ -1400,7 +1400,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     }
 
     if (signature.isKwVarArg(expectedArgIdx)) {
-      expectedType = getVariadicKwargsType(expectedType);
+      expectedType = ASTType(expectedType).getKwargsDictRefValueType();
 
       for (auto [name, operand] : variadicKwOperands) {
         // TODO: Passing OwnedInReg is a hack that is needed because the value

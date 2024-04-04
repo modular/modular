@@ -137,6 +137,14 @@ public:
   /// Return the RefPackType that corresponds to the VariadicPack instance.
   RefPackType getVariadicPackInfo() const;
 
+  /// Given a variadic keyword dictionary type, return the dictionary's value
+  /// type as an ASTType.
+  ASTType getKwargsDictValueType() const;
+
+  /// Given a variadic keyword dictionary reference type, return the
+  /// dictionary's value type as an ASTType.
+  ASTType getKwargsDictRefValueType() const;
+
   /// Returns the user-defined result type, looking through implicit memory
   /// results and stripping off the variant from error throwing results if
   /// needed.
