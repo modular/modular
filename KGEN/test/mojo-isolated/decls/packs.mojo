@@ -145,3 +145,14 @@ fn test_inout():
 
     # CHECK-NEXT: lit.call {{.*}}takeInoutSomeTraitPack{{.*}}([[VARIADICPACK]])
     takeInoutSomeTraitPack(value3)
+
+
+struct not_nested_struct[*Ts: AnyType]:
+    fn __init__(inout self, inout *args: *Ts):
+        pass
+
+# CHECK-LABEL: lit.func @"test_empty_pack
+fn test_empty_pack():
+  # Make sure we pass an immortal lifetime for the pack.
+  # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}:lifetime<1> #lit.lifetime,
+  var s1 = not_nested_struct()

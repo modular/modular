@@ -141,7 +141,7 @@ fn test_owned_reg_varargs():
 # ===----------------------------------------------------------------------=== #
 
 
-fn test_owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
+fn owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
     print("-- testing owned variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
@@ -152,11 +152,17 @@ fn test_owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
 
 
 fn test_owned_variadic_pack():
+    # CHECK: -- testing owned variadic pack with 0 elements
+    owned_variadic_pack()
+    # CHECK: done zero
+    print("done zero")
+
     # CHECK: -- testing owned variadic pack with 2 elements
     # CHECK: hello foo
     # CHECK: hello 42
-    test_owned_variadic_pack("foo", 42)
-    print("")
+    owned_variadic_pack("foo", 42)
+    # CHECK: done two
+    print("done two")
 
     # CHECK: initializing 1
     # CHECK: initializing 2
@@ -168,11 +174,13 @@ fn test_owned_variadic_pack():
     # CHECK: destroying 3
     # CHECK: destroying 2
     # CHECK: destroying 1
-    test_owned_variadic_pack(TalkativeMem(1), TalkativeMem(2), TalkativeMem(3))
-    print("")
+    owned_variadic_pack(TalkativeMem(1), TalkativeMem(2), TalkativeMem(3))
+
+    # CHECK: done three
+    print("done three")
 
 
-fn test_inout_variadic_pack[*Ts: Stringable](inout *pack: *Ts):
+fn inout_variadic_pack[*Ts: Stringable](inout *pack: *Ts):
     print("-- testing inout variadic pack with", len(pack), "elements")
 
     # TODO: Test mutation of the value not just reading of the value.
@@ -188,7 +196,7 @@ fn test_inout_variadic_pack():
     # CHECK: hello 42
     var string = "foo"
     var integer = 42
-    test_inout_variadic_pack(string, integer)
+    inout_variadic_pack(string, integer)
     print("")
 
     # CHECK: initializing 1
@@ -201,7 +209,7 @@ fn test_inout_variadic_pack():
     # CHECK: destroying 2
     var m1 = TalkativeMem(1)
     var m2 = TalkativeMem(2)
-    test_inout_variadic_pack(m1, m2)
+    inout_variadic_pack(m1, m2)
     print("after call")
     _ = m2^
     print("")
