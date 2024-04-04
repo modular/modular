@@ -185,7 +185,7 @@ function(add_mojo_binary name)
     ${KGEN_SOURCE_FILES} -o ${KGEN_OUTPUT_DIR}/${name} ${KGEN_INCLUDE_FLAGS}
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_DEPENDS}
+    DEPENDS mojo-stdlib ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_DEPENDS}
   )
   add_custom_target(${name} DEPENDS ${KGEN_OUTPUT_DIR}/${name})
 endfunction()
