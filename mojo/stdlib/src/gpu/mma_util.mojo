@@ -13,7 +13,10 @@ PTX documentation => https://docs.nvidia.com/cuda/parallel-thread-execution/inde
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: DTypePointer[DType.float32], tile_row: Int, tile_col: Int, ldm: Int
+    a_ptr: DTypePointer[DType.float32, _],
+    tile_row: Int,
+    tile_col: Int,
+    ldm: Int,
 ) -> SIMD[DType.float32, 4]:
     """
     For shape m16n8k8 type tf32 loads matrix A tile from memory to registers in specific order to be used
@@ -41,7 +44,10 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: DTypePointer[DType.float16], tile_row: Int, tile_col: Int, ldm: Int
+    a_ptr: DTypePointer[DType.float16, _],
+    tile_row: Int,
+    tile_col: Int,
+    ldm: Int,
 ) -> SIMD[DType.float16, 4]:
     """
     For shape m16n8k8 & type fp16 loads matrix A tile from memory to registers in specific order to be used
@@ -71,7 +77,10 @@ fn load_matrix_a[
 fn load_matrix_a[
     m: Int, n: Int, k: Int
 ](
-    a_ptr: DTypePointer[DType.bfloat16], tile_row: Int, tile_col: Int, ldm: Int
+    a_ptr: DTypePointer[DType.bfloat16, _],
+    tile_row: Int,
+    tile_col: Int,
+    ldm: Int,
 ) -> SIMD[DType.bfloat16, k // 2]:
     """
     For type bfp16 loads matrix A tile from memory to registers in specific order to be used
@@ -130,7 +139,10 @@ fn load_matrix_a[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: DTypePointer[DType.float32], tile_row: Int, tile_col: Int, ldm: Int
+    b_ptr: DTypePointer[DType.float32, _],
+    tile_row: Int,
+    tile_col: Int,
+    ldm: Int,
 ) -> SIMD[DType.float32, 2]:
     """
     For shape m16n8k8 & type tf32 loads matrix B tile from memory to registers in specific order to be used
@@ -155,7 +167,10 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: DTypePointer[DType.float16], tile_row: Int, tile_col: Int, ldm: Int
+    b_ptr: DTypePointer[DType.float16, _],
+    tile_row: Int,
+    tile_col: Int,
+    ldm: Int,
 ) -> SIMD[DType.float16, 2]:
     """
     For shape m16n8k8 & type fp16 loads matrix B tile from memory to registers in specific order to be used
@@ -180,7 +195,10 @@ fn load_matrix_b[
 fn load_matrix_b[
     m: Int, n: Int, k: Int
 ](
-    b_ptr: DTypePointer[DType.bfloat16], tile_row: Int, tile_col: Int, ldm: Int
+    b_ptr: DTypePointer[DType.bfloat16, _],
+    tile_row: Int,
+    tile_col: Int,
+    ldm: Int,
 ) -> SIMD[DType.bfloat16, k // 4]:
     """
     For type bfp16 loads matrix B tile from memory to registers in specific order to be used
@@ -223,7 +241,7 @@ fn load_matrix_b[
 fn store_matrix_d[
     dtype: DType, m: Int, n: Int, k: Int
 ](
-    d_ptr: DTypePointer[dtype],
+    d_ptr: DTypePointer[dtype, _],
     d: SIMD[dtype, 4],
     tile_row: Int,
     tile_col: Int,

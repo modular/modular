@@ -9,6 +9,7 @@ warp-matrix-matrix-multiplication (wmma) instructions."""
 from sys import llvm_intrinsic
 
 from memory.unsafe import Pointer, bitcast
+from gpu.memory import AddressSpace
 
 
 fn _split(
@@ -283,3 +284,53 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d[3] = rebind[Scalar[d.type]](r.get[3, Float32]())
     else:
         constrained[False, "no valid implementation of mma"]()
+
+
+# ===------------------------------------------------------------------===#
+# LDMATRIX Instruction
+# ===------------------------------------------------------------------===#
+
+
+@always_inline
+fn ld_matrix[
+    type: DType, simd_width: Int, transpose: Bool = False
+](ptr: DTypePointer[type, AddressSpace.SHARED]) -> SIMD[type, simd_width]:
+    """Performs warp sync copy from shared memory to registers.
+    Loads in a fashion that can be used directly by tensor core MMA instructions.
+    """
+
+    # The register width is fixed at 4 Bytes (32 bits)
+    alias register_width = 4
+    alias num_registers = (sizeof[type]() * simd_width) // register_width
+    alias base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
+
+    var d = SIMD[type, simd_width]()
+
+    @parameter
+    fn get_suffix() -> StringLiteral:
+        return (".trans" if transpose else "") + ".b16.p3"
+
+    # Here .x1 means every thread would use a single register, x2 is 2 while x4 is 4 registers
+    # An mma of shape m16n8k8 of type TF32 means for Matrix A every thread would have 4 registers hence .x4
+    # and input simd_width being equal to 4
+    @parameter
+    if num_registers == 1:
+        alias ins = base + ".x1" + get_suffix()
+        var r = llvm_intrinsic[ins, (UInt32)](ptr)
+        var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
+        d = rebind[SIMD[d.type, d.size]](r_ptr[0])
+    elif num_registers == 2:
+        alias ins = base + ".x2" + get_suffix()
+        var r = llvm_intrinsic[ins, (UInt32, UInt32)](ptr)
+        var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
+        d = rebind[SIMD[d.type, d.size]](r_ptr[0])
+    else:
+        constrained[
+            num_registers == 4,
+            "no valid implementation of ldmatrix instruction",
+        ]()
+        alias ins = base + ".x4" + get_suffix()
+        var r = llvm_intrinsic[ins, (UInt32, UInt32, UInt32, UInt32)](ptr)
+        var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
+        d = rebind[SIMD[d.type, d.size]](r_ptr[0])
+    return d
