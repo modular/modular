@@ -10,7 +10,7 @@ from sys.info import sizeof
 from time import now
 
 import microbenchmark
-from Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
+from LinAlg.Matmul import matmul, pack_b_ndbuffer, pack_matmul_b_shape_func
 from buffer import NDBuffer
 from memory.unsafe import DTypePointer, bitcast
 from microbenchmark import Benchmarkable
