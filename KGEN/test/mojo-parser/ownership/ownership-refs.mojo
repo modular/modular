@@ -10,7 +10,7 @@
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 # TODO: should autoimport some day.
-from memory.unsafe import Reference, _LITRef
+from memory.unsafe import AddressSpace, Reference, _LITRef
 
 # ===----------------------------------------------------------------------=== #
 # Parsing of references
@@ -46,15 +46,15 @@ fn implicit_owned(owned a: MemExample):
   pass
 
 # CHECK-LABEL: lit.func @"addrSpaces
-fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: __mlir_type.index]():
-  # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, as1>
+fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: AddressSpace]():
+  # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
   var ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt1, as1].type
 
   # CHECK: lit.alias.decl [[AS2:.*]]: !Int = <{42}>
   alias as2 : Int = 42
 
   # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, [[AS2]])>
-  var ref2 : _LITRef[MemExample, False.__mlir_i1__(), lt2, as2.__mlir_index__()].type
+  var ref2 : __mlir_type[`!lit.ref<`, MemExample, `, `, lt2, `, `, as2.__mlir_index__(), `>`]
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.func @"parametricMut
@@ -236,7 +236,7 @@ fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
 
 # CHECK-LABEL: lit.func @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
-# CHECK-SAME: Reference <{{.*}}, :i1 0, :lifetime<0> *"a`">
+# CHECK-SAME: Reference <{{.*}}, :i1 0, :lifetime<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
 fn testLifetimeOf1(a: MemExample) ->
   Reference[MemExample, __mlir_attr.`0: i1`, __lifetime_of(a)]:
   return a
