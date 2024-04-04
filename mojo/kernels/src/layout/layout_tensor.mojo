@@ -112,7 +112,7 @@ struct LayoutTensor[
         @parameter
         fn fill_vec_res[idx: Int]():
             alias element_offset = self.element_layout(idx)
-            vec_res[idx] = self.ptr.load[width=1](
+            vec_res[idx] = self.ptr.load(
                 Self._getOffset(strides, dims) + element_offset
             )
 
@@ -495,13 +495,13 @@ struct LayoutTensor[
         *tile_sizes: Int,
         __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
     ](self) -> LayoutTensor[
-        __tiled_layout[1],
+        coalesce(__tiled_layout[1], keep_rank=True),
         dtype,
         address_space=address_space,
         element_layout = coalesce(__tiled_layout[0]),
     ]:
         return LayoutTensor[
-            __tiled_layout[1],
+            coalesce(__tiled_layout[1], keep_rank=True),
             dtype,
             address_space=address_space,
             element_layout = coalesce(__tiled_layout[0]),
@@ -854,22 +854,38 @@ struct LayoutTensor[
         """Print 2D tensor in 2D, otherwise print all values in column major
         coordinate order."""
 
+        @always_inline
+        fn is_2d_print(layout: Layout) -> Bool:
+            return (
+                len(layout) == 2
+                and layout.shape[0].is_value()
+                and layout.shape[1].is_value()
+            )
+
         # The 2D print works only for layout shape (M, N).
+        # Check both original and coalesced layouts so that (M, 1) and
+        # ((M), (N)) can all be printed in 2D. Shapes like ((2, 2), 2) will be
+        # printed elementwise.
         @parameter
-        if (
-            len(layout) == 2
-            and layout.shape[0].is_value()
-            and layout.shape[1].is_value()
-        ):
+        if is_2d_print(layout) or is_2d_print(coalesce(layout)):
             for m in range(Self.dim[0]()):
                 for n in range(Self.dim[1]()):
                     print(self[m, n], end=" ")
                 print("")
         else:
             for i in range(layout.size()):
-                var coord = idx2crd(i, layout.shape)
-                var idx = layout(coord)
-                print(self.ptr[idx])
+                var vec_offset = layout(i)
+                var vec = SIMD[dtype, Self.element_size]()
+
+                @parameter
+                fn fill_vec[idx: Int]():
+                    alias element_offset = self.element_layout(idx)
+                    vec[idx] = self.ptr.load[width=1](
+                        vec_offset + element_offset
+                    )
+
+                unroll[fill_vec, Self.element_size]()
+                print(vec)
 
 
 struct TensorBuilder[

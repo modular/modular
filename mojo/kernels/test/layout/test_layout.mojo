@@ -84,6 +84,12 @@ fn test_coalesce() raises:
         )
     ]()
 
+    # Validate keeping rank
+    # CHECK: (16:4)
+    print(coalesce(Layout(IntTuple(2, 8), IntTuple(4, 8))))
+    # CHECK: ((2, 8):(4, 8))
+    print(coalesce(Layout(IntTuple(2, 8), IntTuple(4, 8)), keep_rank=True))
+
 
 fn validate_composition[layoutA: Layout, layoutB: Layout]() raises:
     alias layoutR = composition(layoutA, layoutB)
