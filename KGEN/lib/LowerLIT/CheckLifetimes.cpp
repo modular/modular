@@ -2565,6 +2565,16 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
     auto argRef = cast<RefType>(valueToDestroy.getType());
     assert(delSelfTy.getElementType() == argRef.getElementType());
     implicitLifetimes.push_back(argRef.getLifetime());
+
+    // Verify that the address space of the reference matches.  The __del__
+    // method will have address space zero.  Attempts to delete other things
+    // should not explode the compiler.
+    if (delSelfTy.getAddressSpace() != argRef.getAddressSpace()) {
+      mlir::emitError(builder.getLoc())
+          << "cannot destroy value in non-default address space";
+      return;
+    }
+
   } else {
     assert(signature.getArguments()[0] == valueToDestroy.getType());
   }
