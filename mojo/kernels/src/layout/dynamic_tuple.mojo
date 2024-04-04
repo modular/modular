@@ -40,65 +40,11 @@ struct DynamicTupleBase[
     fn __init__(inout self: Self):
         self._elements = List[Self.Element]()
 
-    # FIXME: We should have a single variadic constructor (https://github.com/modularml/modular/issues/32000)
-    # @always_inline
-    # fn __init__(inout self: Self, *v: Self.Element):
-    #     self._elements = List[Self.Element](capacity=len(v))
-    #     for e in v:
-    #         self._elements.append(e[])
-
     @always_inline
-    fn __init__(inout self: Self, v: Self.Element):
-        self._elements = List[Self.Element](capacity=1)
-        self._elements.append(v)
-
-    @always_inline
-    fn __init__(inout self, owned v1: Self.Element, owned v2: Self.Element):
-        self._elements = List[Self.Element](capacity=2)
-        self._elements.append(v1)
-        self._elements.append(v2)
-
-    @always_inline
-    fn __init__(
-        inout self,
-        owned v1: Self.Element,
-        owned v2: Self.Element,
-        owned v3: Self.Element,
-    ):
-        self._elements = List[Self.Element](capacity=3)
-        self._elements.append(v1)
-        self._elements.append(v2)
-        self._elements.append(v3)
-
-    @always_inline
-    fn __init__(
-        inout self,
-        owned v1: Self.Element,
-        owned v2: Self.Element,
-        owned v3: Self.Element,
-        owned v4: Self.Element,
-    ):
-        self._elements = List[Self.Element](capacity=4)
-        self._elements.append(v1)
-        self._elements.append(v2)
-        self._elements.append(v3)
-        self._elements.append(v4)
-
-    @always_inline
-    fn __init__(
-        inout self,
-        owned v1: Self.Element,
-        owned v2: Self.Element,
-        owned v3: Self.Element,
-        owned v4: Self.Element,
-        owned v5: Self.Element,
-    ):
-        self._elements = List[Self.Element](capacity=5)
-        self._elements.append(v1)
-        self._elements.append(v2)
-        self._elements.append(v3)
-        self._elements.append(v4)
-        self._elements.append(v5)
+    fn __init__(inout self: Self, *v: Self.Element):
+        self._elements = List[Self.Element](capacity=len(v))
+        for e in v:
+            self._elements.append(e[])
 
     @always_inline
     fn __moveinit__(inout self: Self, owned existing: Self):
