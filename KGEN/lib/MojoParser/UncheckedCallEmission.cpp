@@ -32,12 +32,27 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 /// This helper function emits a call to VariadicPack(refPackValue, isOwned)
-/// and returns the result value.
-static CValue emitVariadicPackConstructor(ASTType variadicPackType,
-                                          CValue refPackValue,
-                                          ArgConvention declaredArgConvention,
-                                          const ExprNode *expr,
-                                          ExprEmitter &emitter) {
+/// and returns the result value.  'variadicPackType' is the fully bound
+/// VariadicPack type per the function signature.
+static CValue emitVariadicPackConstructor(
+    ASTType variadicPackType, ArgConvention declaredArgConvention,
+    TypedAttr lifetimeToUse, const ExprNode *expr, ExprEmitter &emitter,
+    std::function<CValue(RefPackType)> refPackBuilder) {
+  RefPackType packType = variadicPackType.getVariadicPackInfo();
+
+  // If there was no lifetime specified, use an immortal one with the same
+  // mutability.
+  if (!lifetimeToUse)
+    lifetimeToUse = LifetimeAttr::get(packType.getLifetime().getType());
+
+  // Rebind the !lit.ref.pack with the common lifetime.
+  packType = RefPackType::get(packType.getVariadic(), lifetimeToUse,
+
+                              packType.getAddressSpace());
+
+  // Build the !lit.ref.pack or #lit.ref.pack value with the adjusted lifetime.
+  CValue refPackValue = refPackBuilder(packType);
+
   auto isOwned = declaredArgConvention == ArgConvention::OwnedInMem;
   auto isOwnedAttr = BoolAttr::get(emitter.getContext(), isOwned);
 
@@ -359,11 +374,13 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       for (TypedAttr &arg : args)
         arg = StoreToMemAttr::get(arg,
                                   packType.getElementRefTypeFor(arg.getType()));
-      argValue = PValue(RefPackAttr::get(storedAttrs, packType));
 
       // Bundle them up into a VariadicPack instance.
-      argValue = emitVariadicPackConstructor(variadicPackType, argValue,
-                                             convention, callExpr, emitter);
+      argValue = emitVariadicPackConstructor(
+          variadicPackType, convention, /*lifetime*/ {}, callExpr, emitter,
+          [&](RefPackType adjustedPackType) -> CValue {
+            return RefPackAttr::get(storedAttrs, adjustedPackType);
+          });
       if (!argValue)
         return failure();
     } else {
@@ -426,13 +443,11 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   }
 
   // Given a reference type for a variadic list of pack element, return the same
-  // type updated to the common lifetime of the elements.  This has to handle
-  // the case where there are no elements by rebinding to immortal.
-  auto getCommonLifetime = [&](TypedAttr lifetime) -> TypedAttr {
+  // type updated to the common lifetime of the elements.
+  auto getCommonLifetime = [&]() -> TypedAttr {
     if (!args.empty())
       return cast<RefType>(args.back().getType()).getLifetime();
-    // Use an immortal lifetime.
-    return LifetimeAttr::get(lifetime.getType());
+    return {};
   };
 
   CValue argVal;
@@ -440,8 +455,11 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     // Rebind the lifetime of the argument to the expected lifetime if needed.
     auto expectedVararg = cast<VariadicType>(expectedType);
     if (auto refType = dyn_cast<RefType>(expectedVararg.getElementType())) {
-      refType =
-          refType.getWithLifetime(getCommonLifetime(refType.getLifetime()));
+      auto lifetime = getCommonLifetime();
+      if (!lifetime) // No arguments, use immortal with same mutability.
+        lifetime = LifetimeAttr::get(refType.getLifetime().getType());
+
+      refType = refType.getWithLifetime(getCommonLifetime());
       expectedType = VariadicType::get(refType, expectedVararg.getConvention());
     }
 
@@ -459,20 +477,15 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
     argVal =
         SBValue(emitter.builder->create<PackCreateOp>(loc, expectedType, args));
   } else {
+    // Bundle them up into a VariadicPack instance.
     ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx);
     assert(variadicPackType && "Must be a VariadicPack");
-    RefPackType packType = variadicPackType.getVariadicPackInfo();
-
-    // Rebind the !lit.ref.pack with the common lifetime.
-    packType = RefPackType::get(packType.getVariadic(),
-                                getCommonLifetime(packType.getLifetime()),
-                                packType.getAddressSpace());
-    argVal =
-        SBValue(emitter.builder->create<RefPackCreateOp>(loc, packType, args));
-
-    // Bundle them up into a VariadicPack instance.
-    argVal = emitVariadicPackConstructor(variadicPackType, argVal, convention,
-                                         callExpr, emitter);
+    argVal = emitVariadicPackConstructor(
+        variadicPackType, convention, getCommonLifetime(), callExpr, emitter,
+        [&](RefPackType adjustedPackType) -> CValue {
+          return SBValue(emitter.builder->create<RefPackCreateOp>(
+              loc, adjustedPackType, args));
+        });
     if (!argVal)
       return failure();
   }
@@ -537,13 +550,13 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
         RefPackType packType = variadicPackType.getVariadicPackInfo();
         assert(packType.getVariadicIfResolved().getValues().empty() &&
                "pack type already checked against operand count");
-        auto argAttr = RefPackAttr::get(ArrayRef<TypedAttr>(), packType);
         auto argConv = calleeSig.getPackVarArgConvention(argIdx);
-        // Emit a VariadicPack constructor call taking the #lit.ref.pack and a
-        // bool indicating whether the argument is owned.
+        // Emit a VariadicPack constructor call.
         auto variadicPack = emitVariadicPackConstructor(
-            variadicPackType, argAttr, argConv, callExpr, emitter);
-
+            variadicPackType, argConv, /*lifetime*/ {}, callExpr, emitter,
+            [&](RefPackType adjustedPackType) -> CValue {
+              return RefPackAttr::get(ArrayRef<TypedAttr>(), adjustedPackType);
+            });
         if (!variadicPack)
           return failure();
         argumentValues.push_back({variadicPack, callExpr});
