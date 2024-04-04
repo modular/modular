@@ -10,7 +10,7 @@ from math import abs, div_ceil, min, rsqrt
 from random import rand
 from sys import argv
 
-from BatchedMatmul import batched_matmul
+from LinAlg.BatchedMatmul import batched_matmul
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import *

@@ -9,7 +9,7 @@ from math import align_down, div_ceil, exp, iota, max, min, sqrt
 from math.limit import neginf
 
 from algorithm import elementwise, unswitch
-from BatchedMatmul import batched_matmul
+from LinAlg.BatchedMatmul import batched_matmul
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from gpu import (
@@ -25,11 +25,11 @@ from gpu import (
 )
 from gpu.host import Function, Stream
 from gpu.memory import AddressSpace
-from Matmul import matmul
+from LinAlg.Matmul import matmul
 from memory import stack_allocation
 from memory.unsafe import AddressSpace as _AddressSpace
 from memory.unsafe import DTypePointer, bitcast
-from Transpose import transpose
+from LinAlg.Transpose import transpose
 
 from utils.index import Index, StaticIntTuple
 from utils.static_tuple import StaticTuple

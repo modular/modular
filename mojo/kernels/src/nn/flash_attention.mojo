@@ -17,7 +17,7 @@ from algorithm.reduction import (
 )
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim
-from MatmulUtils import partition_work
+from LinAlg.MatmulUtils import partition_work
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime

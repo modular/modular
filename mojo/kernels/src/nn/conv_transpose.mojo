@@ -31,7 +31,7 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.list import Dim, DimList
-from MatmulUtils import partition_work
+from LinAlg.MatmulUtils import partition_work
 from memory.memory import memset_zero
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime

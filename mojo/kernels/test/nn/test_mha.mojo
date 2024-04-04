@@ -8,7 +8,7 @@
 from math import abs, div_ceil, isclose, min, rsqrt
 from random import rand
 
-from BatchedMatmul import batched_matmul
+from LinAlg.BatchedMatmul import batched_matmul
 from buffer.buffer import NDBuffer, _compute_nd_index
 from buffer.list import DimList
 from memory.unsafe import DTypePointer
