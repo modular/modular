@@ -14,58 +14,524 @@ from buffer.buffer import Buffer, partial_simd_load, partial_simd_store
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
 
+
 # ===----------------------------------------------------------------------===#
 # Helper Functions
 # ===----------------------------------------------------------------------===#
+# TODO: rename to _MatmulAccumulators?
+struct _Accumulator[
+    c_type: DType,
+    num_rows: Int,
+    num_cols: Int,
+    simd_width: Int,
+    fill_val: Scalar[c_type] = 0.0,
+]:
+    """
+    Parameters:
+        c_type: DType of accumulator.
+        num_rows: Number of rows in register tiling.
+        num_cols: Number of columns in register tiling.
+        simd_width: Number of lanes of a SIMD vector.
+    """
+
+    # The output buffer, should have num_rows x num_cols x simd_width.
+    var _storage: StaticTuple[SIMD[c_type, simd_width], num_rows * num_cols]
+
+    # TODO: do we need to vectorize init?
+    fn __init__(inout self):
+        constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
+        self._storage = StaticTuple[
+            SIMD[c_type, simd_width], num_rows * num_cols
+        ](fill_val)
+
+    @staticmethod
+    @always_inline
+    fn _storage_index(m: Int, n: Int) -> Int:
+        return m * num_cols + n
+
+    @always_inline
+    fn __getitem__(self, m: Int, n: Int) -> SIMD[c_type, simd_width]:
+        return self._storage[self._storage_index(m, n)]
+
+    @always_inline
+    fn __setitem__(inout self, m: Int, n: Int, value: SIMD[c_type, simd_width]):
+        self._storage[self._storage_index(m, n)] = value
+
+    # In c+=(a*b), each of a, b, and c can have different types.
+    @always_inline
+    fn fma[
+        a_type: DType, b_type: DType
+    ](
+        inout self,
+        m: Int,
+        n: Int,
+        a: SIMD[a_type, simd_width],
+        b: SIMD[b_type, simd_width],
+    ):
+        # TODO: the order of 'a' and 'b' in the following FMA and its impact on accuracy.
+        self[m, n] = (b.cast[c_type]()).fma((a.cast[c_type]()), self[m, n])
+
+    @always_inline
+    fn _transfer[
+        func: fn (m: Int, n: Int, ptr: DTypePointer[c_type]) capturing -> None
+    ](inout self, base_ptr: DTypePointer[c_type], stride: Int):
+        var row_ptr = base_ptr
+
+        @unroll
+        for m in range(num_rows):
+
+            @unroll
+            for n in range(num_cols):
+                func(m, n, row_ptr.offset(n * simd_width))
+            row_ptr += stride
+
+    @always_inline
+    fn load(inout self, base_ptr: DTypePointer[c_type], stride: Int):
+        @parameter
+        @always_inline
+        fn do_transfer(m: Int, n: Int, ptr: DTypePointer[c_type]):
+            self[m, n] = ptr.load[width=simd_width]()
+
+        self._transfer[do_transfer](base_ptr, stride)
+
+    @always_inline
+    fn store(inout self, base_ptr: DTypePointer[c_type], stride: Int):
+        @parameter
+        @always_inline
+        fn do_transfer(m: Int, n: Int, ptr: DTypePointer[c_type]):
+            ptr.store(self[m, n])
+
+        self._transfer[do_transfer](base_ptr, stride)
+
+    @always_inline
+    fn fill(inout self, val: Scalar[c_type]):
+        # TODO: refactor with _transfer
+        @unroll
+        for m in range(num_rows):
+
+            @unroll
+            for n in range(num_cols):
+                self[m, n] = val
+
+    # ===----------------------------------------------------------------------===#
+    # Accumulation entry point.
+    # ===----------------------------------------------------------------------===#
+    @always_inline
+    fn accumulate[
+        # TODO: move the following params to accumulate function.
+        prefetch_offset: Optional[Int] = None,
+        partial_load_b: Bool = False,
+    ](
+        inout self,
+        length: Int,
+        a: DTypePointer,
+        a_stride: Int,
+        b: DTypePointer,
+        b_stride: Int,
+        partial_load_b_size: Optional[Int] = None,
+    ):
+        """Compute c += a * b with register tiling on SIMD ISAs.
+
+        Parameters:
+            prefetch_offset: The distance to  prefetch ahead.
+            partial_load_b: Whether use partial load for B.
+        Args:
+            length: Number of elements in accumulation.
+            c: The output buffer, should have num_rows x num_cols x simd_width.
+            a: The input buffer A.
+            a_stride: A's stride between each `length` segment.
+            b: The input buffer B.
+            b_stride: B's stride between each `num_cols x simd_width` segment.
+            partial_load_b_size: The partial load B size.
+        """
+
+        @parameter
+        if has_neon():
+            self._accumulate_neon_struct[
+                prefetch_offset=None,
+                partial_load_b=partial_load_b,
+            ](
+                length,
+                a,
+                a_stride,
+                b,
+                b_stride,
+                partial_load_b_size,
+            )
+        else:
+            self._accumulate_x86_simd_struct[
+                prefetch_offset=prefetch_offset,
+                partial_load_b=partial_load_b,
+            ](
+                length,
+                a,
+                a_stride,
+                b,
+                b_stride,
+                partial_load_b_size,
+            )
+
+    @always_inline
+    fn accumulate[
+        # TODO: move the following params to accumulate function.
+        prefetch_offset: Optional[Int] = None,
+        partial_load_b: Bool = False,
+    ](
+        inout self,
+        length: Int,
+        a: DTypePointer,
+        a_base_offsets: Buffer[DType.int32, num_rows],
+        a_offset: Int,
+        b: DTypePointer,
+        b_stride: Int,
+        partial_load_b_size: Optional[Int] = None,
+    ):
+        """Compute c += a * b with register tiling on SIMD ISAs.
+
+        This version applies to the cases where the rows in A are not separated
+        evenly by a single stride. E.x. pointwise conv with stride > 1.
+
+        Parameters:
+            prefetch_offset: The distance to  prefetch ahead.
+            partial_load_b: Whether use partial load for B.
+
+        Args:
+            length: Number of elements in accumulation.
+            a: The input buffer A.
+            a_base_offsets: Base offsets of rows in A.
+            a_offset: Offset into A rows.
+            b: The input buffer B.
+            b_stride: B's stride between each `num_cols x simd_width` segment.
+            partial_load_b_size: The partial load B size.
+
+
+        The A offsets work as follow:
+
+            a_base_offsets[0]: ------------------------------
+            a_base_offsets[1]: ------------------------------
+            ...
+            a_base_offsets[2]: ------------------------------
+            ...
+            ...
+            a_base_offsets[3]: ------------------------------
+                                    ^                    ^
+                                a_offset        a_offset + length
+        """
+
+        @parameter
+        if has_neon():
+            self._accumulate_neon_struct[
+                prefetch_offset=None,
+                partial_load_b=partial_load_b,
+            ](
+                length,
+                a,
+                a_base_offsets,
+                a_offset,
+                b,
+                b_stride,
+                partial_load_b_size,
+            )
+        else:
+            self._accumulate_x86_simd_struct[
+                prefetch_offset=prefetch_offset,
+                partial_load_b=partial_load_b,
+            ](
+                length,
+                a,
+                a_base_offsets,
+                a_offset,
+                b,
+                b_stride,
+                partial_load_b_size,
+            )
+
+    @always_inline
+    fn _accumulate_x86_simd_struct[
+        prefetch_offset: Optional[Int] = None,
+        partial_load_b: Bool = False,
+    ](
+        inout self,
+        length: Int,
+        a: DTypePointer,
+        a_stride: Int,
+        b: DTypePointer,
+        b_stride: Int,
+        partial_load_b_size: Optional[Int] = None,
+    ):
+        """Accumulation optimized for AVX512 and AVX2."""
+
+        constrained[not has_neon()]()
+
+        alias kernel_width = num_cols * simd_width
+        var b_ptr = b
+
+        for l in range(length):
+            # prefetch
+            @parameter
+            if prefetch_offset:
+
+                @unroll
+                for j in range(num_cols):
+                    (
+                        b_ptr
+                        + prefetch_offset.value() * kernel_width
+                        + j * simd_width
+                    ).prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ]()
+
+            @unroll
+            for i in range(num_rows):
+                # Broadcast an scalar from A to a simd vector.
+                var a_splat_vec = SIMD[a.type, simd_width](a[l + i * a_stride])
+
+                @unroll
+                for j in range(num_cols):
+                    # Load a simd vector from B.
+                    var b_vec = _simd_load_maybe_partial[
+                        simd_width, partial_load_b
+                    ](b_ptr, j * simd_width, partial_load_b_size)
+
+                    # The following should be lifted to registers and show up as
+                    # FMA instructions.
+                    self[i, j] = fma(
+                        a_splat_vec.cast[c_type](),
+                        b_vec.cast[c_type](),
+                        self[i, j],
+                    )
+
+            b_ptr = b_ptr + b_stride
+
+    @always_inline
+    fn _accumulate_x86_simd_struct[
+        prefetch_offset: Optional[Int] = None,
+        partial_load_b: Bool = False,
+    ](
+        inout self,
+        length: Int,
+        a: DTypePointer,
+        a_base_offsets: Buffer[DType.int32, num_rows],
+        a_offset: Int,
+        b: DTypePointer,
+        b_stride: Int,
+        partial_load_b_size: Optional[Int] = None,
+    ):
+        """Accumulation optimized for AVX512 and AVX2."""
+
+        constrained[not has_neon()]()
+
+        alias kernel_width = num_cols * simd_width
+        var b_ptr = b
+
+        for l in range(length):
+            # prefetch
+            @parameter
+            if prefetch_offset:
+
+                @unroll
+                for j in range(num_cols):
+                    (
+                        b_ptr
+                        + prefetch_offset.value() * kernel_width
+                        + j * simd_width
+                    ).prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ]()
+
+            @unroll
+            for i in range(num_rows):
+                # Broadcast an scalar from A to a simd vector.
+                var a_idx = a_base_offsets[i].value + a_offset + l
+                var a_splat_vec = SIMD[a.type, simd_width](a[a_idx])
+
+                @unroll
+                for j in range(num_cols):
+                    # Load a simd vector from B.
+                    var b_vec = _simd_load_maybe_partial[
+                        simd_width, partial_load_b
+                    ](b_ptr, j * simd_width, partial_load_b_size)
+
+                    # The following should be lifted to registers and show up as
+                    # FMA instructions.
+                    self[i, j] = fma(
+                        a_splat_vec.cast[c_type](),
+                        b_vec.cast[c_type](),
+                        self[i, j],
+                    )
+
+            b_ptr = b_ptr + b_stride
+
+    @always_inline
+    fn _accumulate_neon_struct[
+        prefetch_offset: Optional[Int] = None,
+        partial_load_b: Bool = False,
+    ](
+        inout self,
+        length: Int,
+        a: DTypePointer,
+        a_stride: Int,
+        b: DTypePointer,
+        b_stride: Int,
+        partial_load_b_size: Optional[Int] = None,
+    ):
+        """Accumulation optimized for NEON."""
+        constrained[has_neon()]()
+
+        var b_ptr = b
+
+        @parameter
+        @always_inline
+        fn micro_kernel[num_lanes: Int](offset: Int):
+            var a_vecs = stack_allocation[num_rows, SIMD[a.type, num_lanes]]()
+
+            # Load vectors of size num_lanes from input.
+            @unroll
+            for i in range(num_rows):
+                a_vecs[i] = a.load[width=num_lanes](offset + i * a_stride)
+
+            var b_ptr = b + offset * b_stride
+
+            @unroll
+            for lane in range(num_lanes):
+
+                @unroll
+                for j in range(num_cols):
+                    # Load a simd vector from B.
+                    var b_vec = _simd_load_maybe_partial[
+                        simd_width, partial_load_b
+                    ](b_ptr, j * simd_width, partial_load_b_size)
+
+                    @unroll
+                    for i in range(num_rows):
+                        # The following should be lifted to registers and show up as
+                        # FMA instructions.
+                        self[i, j] = fma[c_type, simd_width](
+                            a_vecs[i][lane].cast[c_type](),
+                            b_vec.cast[c_type](),
+                            self[i, j],
+                        )
+
+                b_ptr = b_ptr + b_stride
+
+        # Load vectors from A first. The remainder is handled one element at a time.
+        tile[micro_kernel, VariadicList[Int](simd_width, 1)](0, length)
+
+    @always_inline
+    fn _accumulate_neon_struct[
+        prefetch_offset: Optional[Int] = None,
+        partial_load_b: Bool = False,
+    ](
+        inout self,
+        length: Int,
+        a: DTypePointer,
+        a_base_offsets: Buffer[DType.int32, num_rows],
+        a_offset: Int,
+        b: DTypePointer,
+        b_stride: Int,
+        partial_load_b_size: Optional[Int] = None,
+    ):
+        """Accumulation optimized for NEON."""
+        constrained[has_neon()]()
+
+        var b_ptr = b
+
+        @parameter
+        @always_inline
+        fn micro_kernel[num_lanes: Int](offset: Int):
+            var a_vecs = stack_allocation[num_rows, SIMD[a.type, num_lanes]]()
+
+            # Load vectors of size num_lanes from input.
+            @unroll
+            for i in range(num_rows):
+                var a_idx = a_base_offsets[i].value + a_offset + offset
+                a_vecs[i] = a.load[width=num_lanes](a_idx)
+
+            var b_ptr = b + offset * b_stride
+
+            @unroll
+            for lane in range(num_lanes):
+
+                @unroll
+                for j in range(num_cols):
+                    # Load a simd vector from B.
+                    var b_vec = _simd_load_maybe_partial[
+                        simd_width, partial_load_b
+                    ](b_ptr, j * simd_width, partial_load_b_size)
+
+                    @unroll
+                    for i in range(num_rows):
+                        # The following should be lifted to registers and show up as
+                        # FMA instructions.
+                        self[i, j] = fma[c_type, simd_width](
+                            a_vecs[i][lane].cast[c_type](),
+                            b_vec.cast[c_type](),
+                            self[i, j],
+                        )
+
+                b_ptr += b_stride
+
+        # Load vectors from A first. The remainder is handled one element at a time.
+        tile[micro_kernel, VariadicList[Int](simd_width, 1)](0, length)
+
+
+###############################################################################
+###############################################################################
 
 
 @always_inline
 fn _simd_load_maybe_partial[
-    simd_size: Int, partial_load: Bool
+    simd_width: Int, partial_load: Bool
 ](
     ptr: DTypePointer, offset: Int, partial_load_size: Optional[Int] = None
-) -> SIMD[ptr.type, simd_size]:
+) -> SIMD[ptr.type, simd_width]:
     """Load a simd vector. The the vector may exceed the data's end, i.e.,
-    offset + simd_size > end. In this case, if user specifies partial load, we
+    offset + simd_width > end. In this case, if user specifies partial load, we
     will load partial values of size (end - offset), and fill the rest lanes
     with 0.
 
     One use case is in convolution when the output channel is NOT multiple of
-    simd_size and is NOT padded with zeros at the end. We need to partially load
+    simd_width and is NOT padded with zeros at the end. We need to partially load
     the filter near the end.
     """
 
     @parameter
     if partial_load:
-        return partial_simd_load[simd_size](
+        return partial_simd_load[simd_width](
             ptr + offset, 0, partial_load_size.value(), 0.0
         )
     else:
-        return ptr.load[width=simd_size](offset)
+        return ptr.load[width=simd_width](offset)
 
 
 @always_inline
 fn _simd_store_maybe_partial[
-    simd_size: Int, partial_store: Bool
+    simd_width: Int, partial_store: Bool
 ](
     ptr: DTypePointer,
     offset: Int,
-    vec: SIMD[ptr.type, simd_size],
+    vec: SIMD[ptr.type, simd_width],
     partial_store_size: Optional[Int] = None,
 ):
     """Store a simd vector. The the vector may exceed the data's end, i.e.,
-    offset + simd_size > end. In this case, if user specifies partial_store, we
+    offset + simd_width > end. In this case, if user specifies partial_store, we
     will store `partial_store_size` lanes of input vector.
     """
 
     @parameter
     if partial_store:
         # TODO: check if partial_store_size is present.
-        return partial_simd_store[simd_size](
+        return partial_simd_store[simd_width](
             ptr + offset, 0, partial_store_size.value(), vec
         )
     else:
-        return ptr.store[width=simd_size](offset, vec)
+        return ptr.store[width=simd_width](offset, vec)
 
 
 # ===----------------------------------------------------------------------===#
@@ -77,7 +543,7 @@ fn _simd_store_maybe_partial[
 fn accumulate[
     num_rows: Int,
     num_cols: Int,
-    simd_size: Int,
+    simd_width: Int,
     prefetch_offset: Optional[Int] = None,
     partial_load_b: Bool = False,
 ](
@@ -92,19 +558,19 @@ fn accumulate[
     """Compute c += a * b with register tiling on SIMD ISAs.
 
     Parameters:
-        num_rows: Number of rows in resigter tiling.
-        num_cols: Number of columns in resigter tiling.
-        simd_size: Number of lanes of a SIMD vector.
+        num_rows: Number of rows in register tiling.
+        num_cols: Number of columns in register tiling.
+        simd_width: Number of lanes of a SIMD vector.
         prefetch_offset: The distance to  prefetch ahead.
         partial_load_b: Whether use partial load for B.
 
     Args:
         length: Number of elements in accumulation.
-        c: The output buffer, should have num_rows x num_cols x simd_size.
+        c: The output buffer, should have num_rows x num_cols x simd_width.
         a: The input buffer A.
         a_stride: A's stride between each `length` segment.
         b: The input buffer B.
-        b_stride: B's stride between each `num_cols x simd_size` segment.
+        b_stride: B's stride between each `num_cols x simd_width` segment.
         partial_load_b_size: The partial load B size.
 
     """
@@ -114,7 +580,7 @@ fn accumulate[
         _accumulate_neon[
             num_rows,
             num_cols,
-            simd_size,
+            simd_width,
             prefetch_offset=None,
             partial_load_b=partial_load_b,
         ](
@@ -130,7 +596,7 @@ fn accumulate[
         _accumulate_x86_simd[
             num_rows,
             num_cols,
-            simd_size,
+            simd_width,
             prefetch_offset=prefetch_offset,
             partial_load_b=partial_load_b,
         ](
@@ -148,7 +614,7 @@ fn accumulate[
 fn accumulate[
     num_rows: Int,
     num_cols: Int,
-    simd_size: Int,
+    simd_width: Int,
     prefetch_offset: Optional[Int] = None,
     partial_load_b: Bool = False,
 ](
@@ -167,20 +633,20 @@ fn accumulate[
     evenly by a single stride. E.x. pointwise conv with stride > 1.
 
     Parameters:
-        num_rows: Number of rows in resigter tiling.
-        num_cols: Number of columns in resigter tiling.
-        simd_size: Number of lanes of a SIMD vector.
+        num_rows: Number of rows in register tiling.
+        num_cols: Number of columns in register tiling.
+        simd_width: Number of lanes of a SIMD vector.
         prefetch_offset: The distance to  prefetch ahead.
         partial_load_b: Whether use partial load for B.
 
     Args:
         length: Number of elements in accumulation.
-        c: The output buffer, should have num_rows x num_cols x simd_size.
+        c: The output buffer, should have num_rows x num_cols x simd_width.
         a: The input buffer A.
         a_base_offsets: Base offsets of rows in A.
         a_offset: Offset into A rows.
         b: The input buffer B.
-        b_stride: B's stride between each `num_cols x simd_size` segment.
+        b_stride: B's stride between each `num_cols x simd_width` segment.
         partial_load_b_size: The partial load B size.
 
 
@@ -202,7 +668,7 @@ fn accumulate[
         _accumulate_neon[
             num_rows,
             num_cols,
-            simd_size,
+            simd_width,
             prefetch_offset=None,
             partial_load_b=partial_load_b,
         ](
@@ -219,7 +685,7 @@ fn accumulate[
         _accumulate_x86_simd[
             num_rows,
             num_cols,
-            simd_size,
+            simd_width,
             prefetch_offset=prefetch_offset,
             partial_load_b=partial_load_b,
         ](
@@ -258,7 +724,7 @@ fn accumulate[
 #
 #    ==>      :         Broadcast a scalar into a SIMD register.
 #    -->      :         Load a SIMD vector from memory.
-# simd_size   :         |--------|
+# simd_width   :         |--------|
 # kernel_width:         |-----------------------------------|
 #
 # The accumulation proceeds as:
@@ -275,7 +741,7 @@ fn accumulate[
 fn _accumulate_x86_simd[
     num_rows: Int,
     num_cols: Int,
-    simd_size: Int,
+    simd_width: Int,
     prefetch_offset: Optional[Int] = None,
     partial_load_b: Bool = False,
 ](
@@ -295,7 +761,7 @@ fn _accumulate_x86_simd[
     if num_rows == 0 or num_cols == 0:
         return
 
-    alias kernel_width = num_cols * simd_size
+    alias kernel_width = num_cols * simd_width
 
     var b_ptr = b
 
@@ -309,7 +775,7 @@ fn _accumulate_x86_simd[
                 (
                     b_ptr
                     + prefetch_offset.value() * kernel_width
-                    + j * simd_size
+                    + j * simd_width
                 ).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
@@ -317,23 +783,23 @@ fn _accumulate_x86_simd[
         @unroll
         for i in range(num_rows):
             # Broadcast an scalar from A to a simd vector.
-            var a_splat_vec = SIMD[a.type, simd_size](a[l + i * a_stride])
+            var a_splat_vec = SIMD[a.type, simd_width](a[l + i * a_stride])
 
             @unroll
             for j in range(num_cols):
                 # Load a simd vector from B.
-                var b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
-                    b_ptr, j * simd_size, partial_load_b_size
-                )
+                var b_vec = _simd_load_maybe_partial[
+                    simd_width, partial_load_b
+                ](b_ptr, j * simd_width, partial_load_b_size)
 
                 # The following should be lifted to registers and show up as
                 # FMA instructions.
-                var c_ptr = c + i * kernel_width + j * simd_size
+                var c_ptr = c + i * kernel_width + j * simd_width
                 c_ptr.store(
                     fma(
                         a_splat_vec.cast[c.type](),
                         b_vec.cast[c.type](),
-                        c_ptr.load[width=simd_size](),
+                        c_ptr.load[width=simd_width](),
                     )
                 )
 
@@ -344,7 +810,7 @@ fn _accumulate_x86_simd[
 fn _accumulate_x86_simd[
     num_rows: Int,
     num_cols: Int,
-    simd_size: Int,
+    simd_width: Int,
     prefetch_offset: Optional[Int] = None,
     partial_load_b: Bool = False,
 ](
@@ -365,7 +831,7 @@ fn _accumulate_x86_simd[
     if num_rows == 0 or num_cols == 0:
         return
 
-    alias kernel_width = num_cols * simd_size
+    alias kernel_width = num_cols * simd_width
 
     var b_ptr = b
 
@@ -379,7 +845,7 @@ fn _accumulate_x86_simd[
                 (
                     b_ptr
                     + prefetch_offset.value() * kernel_width
-                    + j * simd_size
+                    + j * simd_width
                 ).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
@@ -388,23 +854,23 @@ fn _accumulate_x86_simd[
         for i in range(num_rows):
             # Broadcast an scalar from A to a simd vector.
             var a_idx = a_base_offsets[i].value + a_offset + l
-            var a_splat_vec = SIMD[a.type, simd_size](a[a_idx])
+            var a_splat_vec = SIMD[a.type, simd_width](a[a_idx])
 
             @unroll
             for j in range(num_cols):
                 # Load a simd vector from B.
-                var b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
-                    b_ptr, j * simd_size, partial_load_b_size
-                )
+                var b_vec = _simd_load_maybe_partial[
+                    simd_width, partial_load_b
+                ](b_ptr, j * simd_width, partial_load_b_size)
 
                 # The following should be lifted to registers and show up as
                 # FMA instructions.
-                var c_ptr = c + i * kernel_width + j * simd_size
+                var c_ptr = c + i * kernel_width + j * simd_width
                 c_ptr.store(
                     fma(
                         a_splat_vec.cast[c.type](),
                         b_vec.cast[c.type](),
-                        c_ptr.load[width=simd_size](),
+                        c_ptr.load[width=simd_width](),
                     )
                 )
 
@@ -434,7 +900,7 @@ fn _accumulate_x86_simd[
 #                                |--------|--------|--------|--------|
 #
 #    -->      :         Load a SIMD vector from memory.
-# simd_size   :         |--------|
+# simd_width   :         |--------|
 # kernel_width:         |-----------------------------------|
 #
 #
@@ -456,7 +922,7 @@ fn _accumulate_x86_simd[
 fn _accumulate_neon[
     num_rows: Int,
     num_cols: Int,
-    simd_size: Int,
+    simd_width: Int,
     prefetch_offset: Optional[Int] = None,
     partial_load_b: Bool = False,
 ](
@@ -476,7 +942,7 @@ fn _accumulate_neon[
     if num_rows == 0 or num_cols == 0:
         return
 
-    alias kernel_width = num_cols * simd_size
+    alias kernel_width = num_cols * simd_width
 
     var b_ptr = b
 
@@ -498,34 +964,34 @@ fn _accumulate_neon[
             @unroll
             for j in range(num_cols):
                 # Load a simd vector from B.
-                var b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
-                    b_ptr, j * simd_size, partial_load_b_size
-                )
+                var b_vec = _simd_load_maybe_partial[
+                    simd_width, partial_load_b
+                ](b_ptr, j * simd_width, partial_load_b_size)
 
                 @unroll
                 for i in range(num_rows):
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
-                    var c_ptr = c + i * kernel_width + j * simd_size
+                    var c_ptr = c + i * kernel_width + j * simd_width
                     c_ptr.store(
-                        fma[c.type, simd_size](
+                        fma[c.type, simd_width](
                             a_vecs[i][lane].cast[c.type](),
                             b_vec.cast[c.type](),
-                            c_ptr.load[width=simd_size](),
+                            c_ptr.load[width=simd_width](),
                         )
                     )
 
             b_ptr = b_ptr + b_stride
 
     # Load vectors from A first. The remainder is handled one element at a time.
-    tile[micro_kernel, VariadicList[Int](simd_size, 1)](0, length)
+    tile[micro_kernel, VariadicList[Int](simd_width, 1)](0, length)
 
 
 @always_inline
 fn _accumulate_neon[
     num_rows: Int,
     num_cols: Int,
-    simd_size: Int,
+    simd_width: Int,
     prefetch_offset: Optional[Int] = None,
     partial_load_b: Bool = False,
 ](
@@ -546,7 +1012,7 @@ fn _accumulate_neon[
     if num_rows == 0 or num_cols == 0:
         return
 
-    alias kernel_width = num_cols * simd_size
+    alias kernel_width = num_cols * simd_width
 
     var b_ptr = b
 
@@ -569,27 +1035,27 @@ fn _accumulate_neon[
             @unroll
             for j in range(num_cols):
                 # Load a simd vector from B.
-                var b_vec = _simd_load_maybe_partial[simd_size, partial_load_b](
-                    b_ptr, j * simd_size, partial_load_b_size
-                )
+                var b_vec = _simd_load_maybe_partial[
+                    simd_width, partial_load_b
+                ](b_ptr, j * simd_width, partial_load_b_size)
 
                 @unroll
                 for i in range(num_rows):
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
-                    var c_ptr = c + i * kernel_width + j * simd_size
+                    var c_ptr = c + i * kernel_width + j * simd_width
                     c_ptr.store(
-                        fma[c.type, simd_size](
+                        fma[c.type, simd_width](
                             a_vecs[i][lane].cast[c.type](),
                             b_vec.cast[c.type](),
-                            c_ptr.load[width=simd_size](),
+                            c_ptr.load[width=simd_width](),
                         )
                     )
 
             b_ptr = b_ptr + b_stride
 
     # Load vectors from A first. The remainder is handled one element at a time.
-    tile[micro_kernel, VariadicList[Int](simd_size, 1)](0, length)
+    tile[micro_kernel, VariadicList[Int](simd_width, 1)](0, length)
 
 
 # ===----------------------------------------------------------------------===#
@@ -599,35 +1065,35 @@ fn _accumulate_neon[
 
 @always_inline
 fn init_register_tile[
-    num_rows: Int, num_cols: Int, simd_size: Int
+    num_rows: Int, num_cols: Int, simd_width: Int
 ](tile: DTypePointer):
     """Initialize a register tile to zero.
 
     Parameters:
-        num_rows: Number of rows in resigter tiling.
-        num_cols: Number of columns in resigter tiling.
-        simd_size: Number of lanes of a SIMD vector.
+        num_rows: Number of rows in register tiling.
+        num_cols: Number of columns in register tiling.
+        simd_width: Number of lanes of a SIMD vector.
 
     Args:
         tile: Pointer to the register tile.
     """
 
-    alias tile_width = num_cols * simd_size
-    alias zero_vec = SIMD[tile.type, simd_size](0)
+    alias tile_width = num_cols * simd_width
+    alias zero_vec = SIMD[tile.type, simd_width](0)
 
     @unroll
     for i in range(num_rows):
 
         @unroll
         for j in range(num_cols):
-            tile.store(i * tile_width + j * simd_size, zero_vec)
+            tile.store(i * tile_width + j * simd_width, zero_vec)
 
 
 @always_inline
 fn load_register_tile[
     num_rows: Int,
     num_cols: Int,
-    simd_size: Int,
+    simd_width: Int,
     partial_load: Bool = False,
 ](
     tile: DTypePointer,
@@ -638,31 +1104,31 @@ fn load_register_tile[
     """Load a register tile from the input buffer.
 
     Parameters:
-        num_rows: Number of rows in resigter tiling.
-        num_cols: Number of columns in resigter tiling.
-        simd_size: Number of lanes of a SIMD vector.
+        num_rows: Number of rows in register tiling.
+        num_cols: Number of columns in register tiling.
+        simd_width: Number of lanes of a SIMD vector.
         partial_load: Whether load input partially.
 
     Args:
         tile: Pointer to the register tile.
         input: Pointer to input buffer.
-        input_stride: Stride between input segments of size `num_cols * simd_size`.
+        input_stride: Stride between input segments of size `num_cols * simd_width`.
         partial_load_size: Size of partial load for input.
     """
 
-    alias tile_width = num_cols * simd_size
+    alias tile_width = num_cols * simd_width
 
     @always_inline
     @parameter
     fn body[i: Int, j: Int]():
-        var input_ptr = input + i * input_stride + j * simd_size
-        var tile_ptr = tile + i * tile_width + j * simd_size
+        var input_ptr = input + i * input_stride + j * simd_width
+        var tile_ptr = tile + i * tile_width + j * simd_width
 
         alias partial_load_last_vec = partial_load and (j == num_cols - 1)
 
         # TODO: check if partial_load_size has value.
         tile_ptr.store(
-            _simd_load_maybe_partial[simd_size, partial_load_last_vec](
+            _simd_load_maybe_partial[simd_width, partial_load_last_vec](
                 input_ptr, 0, partial_load_size
             ).cast[tile_ptr.type]()
         )
@@ -674,7 +1140,7 @@ fn load_register_tile[
 fn store_register_tile[
     num_rows: Int,
     num_cols: Int,
-    simd_size: Int,
+    simd_width: Int,
     partial_store: Bool = False,
 ](
     output: DTypePointer,
@@ -685,29 +1151,29 @@ fn store_register_tile[
     """Load a register tile from the input buffer.
 
     Parameters:
-        num_rows: Number of rows in resigter tiling.
-        num_cols: Number of columns in resigter tiling.
-        simd_size: Number of lanes of a SIMD vector.
+        num_rows: Number of rows in register tiling.
+        num_cols: Number of columns in register tiling.
+        simd_width: Number of lanes of a SIMD vector.
         partial_store: Whether store output partially.
 
     Args:
         output: Pointer to output buffer.
-        output_stride: Stride between output segments of size `num_cols * simd_size`.
+        output_stride: Stride between output segments of size `num_cols * simd_width`.
         tile: Pointer to the register tile.
         partial_store_size: Size of partial store to the output.
     """
 
-    alias tile_width = num_cols * simd_size
+    alias tile_width = num_cols * simd_width
 
     @always_inline
     @parameter
     fn body[i: Int, j: Int]():
         alias partial_store_last_vec = partial_store and (j == num_cols - 1)
 
-        _simd_store_maybe_partial[simd_size, partial_store_last_vec](
+        _simd_store_maybe_partial[simd_width, partial_store_last_vec](
             output,
-            i * output_stride + j * simd_size,
-            tile.load[width=simd_size](i * tile_width + j * simd_size).cast[
+            i * output_stride + j * simd_width,
+            tile.load[width=simd_width](i * tile_width + j * simd_width).cast[
                 output.type
             ](),
             partial_store_size,
