@@ -227,7 +227,7 @@ fn test_matmul[
     print("Success")
 
 
-fn test_matmul[
+fn test_matmul_static_shape[
     *,
     a_type: DType,
     b_type: DType,
@@ -239,7 +239,7 @@ fn test_matmul[
     n: Int,
     k: Int,
 ]():
-    print("== test_matmul")
+    print("== test_matmul_static_shape")
     var errors = 0
     alias a_shape = DimList(m, k)
     alias b_shape = DimList(k, n)
@@ -270,17 +270,6 @@ fn test_shapes[
     mixed_kernels: Bool,
 ]():
     @parameter
-    fn test_shapes_helper(m: Int, n: Int, k: Int):
-        test_matmul[
-            a_type=a_type,
-            b_type=b_type,
-            c_type=c_type,
-            b_packed=b_packed,
-            saturated=saturated,
-            mixed_kernels=mixed_kernels,
-        ](m, n, k)
-
-    @parameter
     fn test_shapes_helper[m: Int, n: Int, k: Int]():
         test_matmul[
             a_type=a_type,
@@ -290,20 +279,24 @@ fn test_shapes[
             saturated=saturated,
             mixed_kernels=mixed_kernels,
         ](m, n, k)
+        test_matmul_static_shape[
+            a_type=a_type,
+            b_type=b_type,
+            c_type=c_type,
+            b_packed=b_packed,
+            saturated=saturated,
+            mixed_kernels=mixed_kernels,
+            m=m,
+            n=n,
+            k=k,
+        ]()
 
-    test_shapes_helper(4, 5, 6)
     test_shapes_helper[4, 5, 6]()
-    test_shapes_helper(15, 16, 17)
     test_shapes_helper[15, 16, 17]()
-    test_shapes_helper(24, 32, 64)
     test_shapes_helper[24, 32, 64]()
-    test_shapes_helper(61, 73, 79)
     test_shapes_helper[61, 73, 79]()
-    test_shapes_helper(123, 456, 321)
     test_shapes_helper[123, 456, 321]()
-    test_shapes_helper(256, 256, 256)
     test_shapes_helper[256, 256, 256]()
-    test_shapes_helper(2, 65, 1200)
     test_shapes_helper[2, 65, 1200]()
 
 
