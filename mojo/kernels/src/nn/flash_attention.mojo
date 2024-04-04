@@ -161,7 +161,7 @@ struct _Matmul[
             for m in range(tile_m):
                 a_tile[m] = ak_ptr.offset(m * a_stride).load[width=lane_count]()
 
-            ak_ptr = ak_ptr.offset(lane_count)
+            ak_ptr += lane_count
 
             @unroll
             for k in range(lane_count):
@@ -176,7 +176,7 @@ struct _Matmul[
                     for m in range(tile_m):
                         c_tile.fma(m, n, a_tile[m][k], b_data)
 
-                bk_ptr = bk_ptr.offset(b_stride)
+                bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](simd_width, 1)](0, K)
 
@@ -217,8 +217,8 @@ struct _Matmul[
                     for n in range(tile_n):
                         c_tile.fma(m, n, a_data, b_tile[n])
 
-                ak_ptr = ak_ptr.offset(1)
-                bk_ptr = bk_ptr.offset(b_stride)
+                ak_ptr += 1
+                bk_ptr += b_stride
 
         tile[loop_body, VariadicList[Int](2, 1)](0, K)
 
@@ -271,8 +271,8 @@ struct _Matmul[
                 0, div_ceil(N, simd_width)
             )
 
-            am_ptr = am_ptr.offset(tile_m * a_stride)
-            cm_ptr = cm_ptr.offset(tile_m * c_stride)
+            am_ptr += tile_m * a_stride
+            cm_ptr += tile_m * c_stride
 
         tile[process_rows, Self._matmul_config.row_sizes](0, M)
 
@@ -297,7 +297,7 @@ struct _Matmul[
             if aligned_n != N:
                 memset_zero(output_ptr.offset(N), aligned_n - N)
 
-            output_ptr = output_ptr.offset(aligned_n)
+            output_ptr += aligned_n
 
     @no_inline
     @staticmethod
@@ -324,7 +324,7 @@ struct _Matmul[
                 accum += cn_ptr.load[width=_simd_width]()
 
             cn_ptr.store(accum)
-            cn_ptr = cn_ptr.offset(_simd_width)
+            cn_ptr += _simd_width
 
         tile[process_cols, Self._matmul_config.gemv_sizes](0, N)
 
@@ -466,8 +466,8 @@ struct _FlashAttention[
 
             vectorize[do_correction, simd_width, unroll_factor=2](count_n)
 
-            qk_row_ptr = qk_row_ptr.offset(qk_block_n)
-            o_row_ptr = o_row_ptr.offset(o_block_n)
+            qk_row_ptr += qk_block_n
+            o_row_ptr += o_block_n
 
     @staticmethod
     fn run(
@@ -631,8 +631,8 @@ struct _FlashAttention[
 
                     vectorize[do_final, simd_width, unroll_factor=4](count_n)
 
-                    o_ptr = o_ptr.offset(depth_dim)
-                    oz_ptr = oz_ptr.offset(o_block_n)
+                    o_ptr += depth_dim
+                    oz_ptr += o_block_n
 
             if packed_ptr:
                 packed_ptr.free()
