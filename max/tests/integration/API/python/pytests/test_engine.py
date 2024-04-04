@@ -17,32 +17,10 @@ import pytest
 DYLIB_FILE_EXTENSION = "dylib" if os.uname().sysname == "Darwin" else "so"
 
 
-@pytest.fixture
-def modular_path() -> Path:
-    """Returns the path to the Modular .derived directory."""
-    modular_path = os.getenv("MODULAR_PATH")
-    assert modular_path is not None
-
-    return Path(modular_path)
-
-
 # This path is used in skipif clauses rather than tests, so we can neither mark
 # it as a fixture nor can we call other fixtures.
 def modular_lib_path() -> Path:
     return Path(os.getenv("MODULAR_PATH")) / ".derived" / "build" / "lib"
-
-
-@pytest.fixture
-def mo_model_path(modular_path: Path) -> Path:
-    """Returns the path to the generated BasicMLP model."""
-    return (
-        modular_path
-        / "SDK"
-        / "integration-test"
-        / "EngineAPI"
-        / "c"
-        / "mo-model.api"
-    )
 
 
 @pytest.fixture
