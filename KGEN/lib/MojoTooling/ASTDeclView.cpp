@@ -108,9 +108,18 @@ generateTypeString(Type type, VariadicKind varKind,
   // Handle variadic types.
   switch (varKind) {
   case VariadicKind::kNone:
-  case VariadicKind::kPack:
-    // Packs don't need special handling; they are pretty printed correctly.
     break;
+  case VariadicKind::kPack:
+    // Legacy packs don't need special handling.
+    // TODO: Remove support for PackType.
+    if (::isa<PackType>(type))
+      break;
+    // VariadicPack needs special printing, because its argument isn't a type.
+    os << "*";
+    ASTType::printParam(os, astType.getVariadicPackInfo().getVariadic(),
+                        /*forDiag=*/true, /*demangleParams=*/false);
+    return os.str();
+
   case VariadicKind::kPosVar:
     astType = astType.getVariadicElementType();
     os << "*";

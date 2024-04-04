@@ -535,7 +535,8 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
   }
 
   // The reference is immutable when borrowing, mutable otherwise.
-  bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed;
+  bool isMutable = arg.convention != ParsedArgument::kConventionBorrowed &&
+                   arg.convention != ParsedArgument::kConventionUnspec;
   auto lifetimeDecl = ParamDeclAttr::get(
       lifetimeName, LifetimeType::get(lifetimeName.getContext(), isMutable));
 
@@ -581,10 +582,7 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // If the pack is over an "AnyRegType" list, use the KGEN direct
   // representation for compatibility.
   // TODO: Move to RefPackType consistently.
-  if (isa<TypeType>(elementType) ||
-      // To phase this in, only muck with 'owned'.
-      (arg.convention != ParsedArgument::kConventionOwned &&
-       arg.convention != ParsedArgument::kConventionInOut))
+  if (isa<TypeType>(elementType))
     return PackType::get(param.get());
 
   // Arguments passed by memory need an associated lifetime parameter, and need

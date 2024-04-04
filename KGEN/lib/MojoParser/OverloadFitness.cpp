@@ -510,10 +510,9 @@ ParameterInferenceState::infer(LITSignatureType signature,
 
     // Handle case when there are no more provided positional operands.
     if (posOperandIdx == numPosOperands) {
-      // If the argument is a (positional) variadic argument list or pack, then
+      // If the argument is a (positional) variadic argument pack, then
       // it can be initialized with zero values no problem.
-      if (signature.isPackVarArg(expectedArgIdx) ||
-          signature.isPackVarArg(expectedArgIdx))
+      if (signature.isPackVarArg(expectedArgIdx))
         break;
 
       // Check if a keyword operand was provided for this argument
