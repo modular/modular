@@ -57,23 +57,23 @@ from algorithm.reduction import (
     _reduce_generator,
 )
 from algorithm.reduction import mean as _mean
-from BatchedMatmul import batched_matmul as _batched_matmul
-from BatchedMatmul import batched_matmul_shape
-from BatchedMatmul import (
+from LinAlg.BatchedMatmul import batched_matmul as _batched_matmul
+from LinAlg.BatchedMatmul import batched_matmul_shape
+from LinAlg.BatchedMatmul import (
     get_trace_information as get_trace_information_batched_matmul,
 )
 from buffer import NDBuffer
 from buffer.list import Dim, DimList
 from gpu.host._compile import _get_nvptx_target
-from Matmul import matmul as _matmul
-from Matmul import (
+from LinAlg.Matmul import matmul as _matmul
+from LinAlg.Matmul import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
 )
-from MatmulUtils import GemmShape, get_trace_information
-from MatrixBandPart import matrix_band_part
-from MatrixSolve import matrix_solve, matrix_solve_shape
+from LinAlg.MatmulUtils import GemmShape, get_trace_information
+from LinAlg.MatrixBandPart import matrix_band_part
+from LinAlg.MatrixSolve import matrix_solve, matrix_solve_shape
 from memory import memset_zero
 from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGIntList import IntList
@@ -2183,12 +2183,12 @@ fn gather[
 # MOGG matmul
 # ===----------------------------------------------------------------------===#
 
-from BatchedMatmul import (
+from LinAlg.BatchedMatmul import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 
 # TODO(#29765): remove import and allow Optional type to be inferred
-from MatmulUtils import (
+from LinAlg.MatmulUtils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
 
