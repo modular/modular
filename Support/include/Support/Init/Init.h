@@ -20,7 +20,7 @@ using namespace M::Telemetry;
 
 class Options {
 public:
-  Options();
+  Options() = default;
   Options &withEntitlementPolicy(
       Settings::EntitlementPolicy v = Settings::kRequiredNoPrompt) {
     entitlementPolicy = v;
