@@ -8,7 +8,9 @@
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 
 #include "KGEN/MojoTooling/ASTDeclRef.h"
+#include "LLCL/Runtime/Runtime.h"
 #include "MojoDWARFParser.h"
+#include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/SymbolExport.h"
@@ -42,7 +44,7 @@ class MojoTypeSystem : public lldb_private::TypeSystem {
   static char ID;
 
 public:
-  MojoTypeSystem(lldb_private::Target *target,
+  MojoTypeSystem(ContextRef ctx, lldb_private::Target *target,
                  const lldb_private::ArchSpec &archSpec);
   ~MojoTypeSystem() override;
 
@@ -71,7 +73,8 @@ public:
   // Initialization
   //===--------------------------------------------------------------------===//
 
-  static void Initialize();
+  using CreateContextFn = ContextRef (*)(void);
+  static void Initialize(CreateContextFn fn);
   static void Terminate();
 
   llvm::StringRef GetPluginName() override { return getPluginNameStatic(); }
