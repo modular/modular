@@ -131,7 +131,7 @@ generateTypeString(Type type, VariadicKind varKind,
 
   // Get the value type in a kwargs dictionary.
   if (varKind == VariadicKind::kKwVar)
-    astType = cast<TypeConstantAttr>(astType.getParamBindings()[0]).getValue();
+    astType = astType.getKwargsDictValueType();
 
   // If this type is the same as the self type, use the "Self" keyword.
   if (selfType && astType.isEqualCanon(*selfType))

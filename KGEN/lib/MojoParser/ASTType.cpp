@@ -323,6 +323,14 @@ RefPackType ASTType::getVariadicPackInfo() const {
       IntegerAttr::get(IndexType::get(bindings[1].getContext()), 0));
 }
 
+ASTType ASTType::getKwargsDictValueType() const {
+  return cast<TypeConstantAttr>(getParamBindings()[0]).getValue();
+}
+
+ASTType ASTType::getKwargsDictRefValueType() const {
+  return getReferenceElementType().getKwargsDictValueType();
+}
+
 /// Returns the user-defined result type, looking through implicit memory
 /// results and stripping off the variant from error throwing results if needed.
 ASTType ASTType::getSignatureUserResultType() const {

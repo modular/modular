@@ -64,10 +64,6 @@ bool canSynthesizeIfMissing(StringRef name, bool rpTrivial, bool regPassable);
 /// determined to be dead code.
 void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 
-/// Return the expected type of variadic argument values based on the **kwargs
-/// (dictionary) type from a signature.
-Type getVariadicKwargsType(Type dictRefType);
-
 //===----------------------------------------------------------------------===//
 // Diagnostic utilities
 //===----------------------------------------------------------------------===//
