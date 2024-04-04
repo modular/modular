@@ -441,8 +441,9 @@ struct _ProductIter2[
 
     @always_inline
     fn __len__(self) -> Int:
-        var shortest = math.min(len(self.a), len(self.b))
-        return shortest * shortest - self.a_index * len(self.b) - self.b_index
+        var len_a = len(self.a)
+        var len_b = len(self.b)
+        return len_a * len_b - self.a_index * len_b - self.b_index
 
 
 @value
@@ -460,11 +461,81 @@ struct _product2[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn __len__(self) -> Int:
-        var shortest = math.min(len(self.a), len(self.b))
-        return shortest * shortest
+        var len_a = len(self.a)
+        var len_b = len(self.b)
+        return len_a * len_b
+
+
+@value
+struct _ProductIter3[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+]:
+    var a_index: Int
+    var b_index: Int
+    var c_index: Int
+    var a: DynamicTuple[T, D]
+    var b: DynamicTuple[T, D]
+    var c: DynamicTuple[T, D]
+
+    @always_inline
+    fn __next__(inout self) -> DynamicTuple[T, D]:
+        var res = DynamicTuple[T, D](
+            self.a[self.a_index], self.b[self.b_index], self.c[self.c_index]
+        )
+        self.c_index += 1
+        if self.c_index == len(self.c):
+            self.c_index = 0
+            self.b_index += 1
+        if self.b_index == len(self.b):
+            self.c_index = 0
+            self.b_index = 0
+            self.a_index += 1
+        return res^
+
+    @always_inline
+    fn __len__(self) -> Int:
+        var len_a = len(self.a)
+        var len_b = len(self.b)
+        var len_c = len(self.c)
+        return (
+            len_a * len_b * len_c
+            - self.a_index * len_b * len_c
+            - self.b_index * len_c
+            - self.c_index
+        )
+
+
+@value
+struct _product3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
+    Sized
+):
+    var a: DynamicTuple[T, D]
+    var b: DynamicTuple[T, D]
+    var c: DynamicTuple[T, D]
+
+    alias IterType = _ProductIter3[T, D]
+
+    @always_inline
+    fn __iter__(self) -> Self.IterType:
+        return Self.IterType(0, 0, 0, self.a, self.b, self.c)
+
+    @always_inline
+    fn __len__(self) -> Int:
+        var len_a = len(self.a)
+        var len_b = len(self.b)
+        var len_c = len(self.c)
+        return len_a * len_b * len_c
 
 
 fn product[
     T: CollectionElement, D: ElementDelegate = DefaultDelegate
 ](a: DynamicTuple[T, D], b: DynamicTuple[T, D]) -> _product2[T, D]:
     return _product2(a, b)
+
+
+fn product[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+](
+    a: DynamicTuple[T, D], b: DynamicTuple[T, D], c: DynamicTuple[T, D]
+) -> _product3[T, D]:
+    return _product3(a, b, c)
