@@ -410,3 +410,9 @@ fn testConditionalMut(cond: __mlir_type.i1):
     var cref = Reference(a).value if cond else Reference(b).value
 
     Reference(cref)[] = MemExample()
+
+# CheckLifetimes cannot call MemExample.__del__ because 'self' is in the default
+# address space.
+fn bad_addr_space[addr_space: AddressSpace](ptr: Pointer[MemExample, addr_space]):
+  # expected-error @+1 {{cannot destroy value in non-default address space}}
+  _ = __get_address_as_owned_value(ptr.address)
