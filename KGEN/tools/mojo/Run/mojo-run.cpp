@@ -241,6 +241,22 @@ static ErrorOrSuccess insertMaxContextInGlobals(ExecutionEngine &engine,
   return M::success();
 }
 
+/// Writes the time trace profile to a file if the profiler is present.
+static ErrorOrSuccess writeTimeTraceProfile(M::Context &maxContext) {
+  // FIXME(#36219): Write all traces, since the runtime won't be flushed.
+  // This should be removed when the runtime is properly flushed when the
+  // context goes out of scope.
+  std::optional<TimeTraceProfiler> &profilerOr =
+      maxContext.get<LLCL::Runtime>()->getProfiler();
+  if (profilerOr) {
+    auto writeErr = profilerOr->write("-");
+    if (writeErr.isError())
+      return writeErr.takeError();
+  }
+
+  return M::success();
+}
+
 /// Given a module representing a Mojo program, and a set of `arguments` to pass
 /// along to that program, initializes an execution engine and executes the
 /// program. Returns a successful exit code if the program was executed
@@ -304,6 +320,10 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
       executeMain(moduleOp, symtab, engine.get(), runtime, arguments);
   if (failed(result))
     return state.reportError(result.getError());
+
+  // Write out the time trace profile if the context contains a profiler.
+  if (auto errOr = writeTimeTraceProfile(maxContext))
+    return state.reportError(errOr.getError());
 
   return EXIT_SUCCESS;
 }
