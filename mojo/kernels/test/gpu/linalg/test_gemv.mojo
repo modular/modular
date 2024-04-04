@@ -21,12 +21,14 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.sync import syncwarp
-from Matmul import (
-    elementwise_epilogue_type,
+from MatmulGPU import (
     gemv_kernel,
     gevm_kernel,
     matmul_kernel,
     matmul_kernel_naive,
+)
+from MatmulUtils import (
+    elementwise_epilogue_type,
 )
 from memory.unsafe import DTypePointer, bitcast
 

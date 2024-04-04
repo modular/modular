@@ -11,7 +11,7 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from memory.unsafe import DTypePointer
 from memory.unsafe import _GPUAddressSpace as AddressSpace
-from Matmul import matmul_kernel_naive
+from MatmulGPU import matmul_kernel_naive
 from gpu import (
     WARP_SIZE,
     BlockDim,

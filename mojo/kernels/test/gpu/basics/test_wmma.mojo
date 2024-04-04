@@ -32,7 +32,7 @@ from gpu.memory import AddressSpace
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from gpu.sync import syncwarp
-from Matmul import matmul_kernel, matmul_kernel_naive
+from MatmulGPU import matmul_kernel, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 

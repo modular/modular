@@ -23,7 +23,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.memory import AddressSpace
-from Matmul import sgemm_warp_tiling_kernel
+from MatmulGPU import sgemm_warp_tiling_kernel
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 from tensor import Tensor
