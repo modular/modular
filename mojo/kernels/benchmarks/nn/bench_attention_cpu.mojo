@@ -9,7 +9,7 @@
 
 from benchmark import *
 from buffer import NDBuffer
-from buffer.list import DimList
+from buffer.list import Dim, DimList
 from nn.flash_attention import flash_attention
 from nn.mha import fused_attention
 from random import rand
@@ -88,16 +88,34 @@ def bench_attention[type: DType](inout m: Bench, spec: AttentionSpec):
     fn flash_bench_fn(inout b: Bencher):
         @always_inline
         @parameter
-        fn iter_fn():
-            flash_attention[type, 3, input_k_fn, input_v_fn, mask_fn](
+        fn iter_fn[depth_static_dim: Dim]():
+            alias output_static_shape = DimList(Dim(), Dim(), depth_static_dim)
+            flash_attention[
+                type, 3, input_k_fn, input_v_fn, mask_fn, output_static_shape
+            ](
                 q.make_dims_unknown(),
                 k.get_shape(),
                 v.get_shape(),
-                output.make_dims_unknown(),
+                rebind[NDBuffer[type, 3, output_static_shape]](output),
                 scale=scale,
             )
 
-        b.iter[iter_fn]()
+        var dispatched = False
+        alias depth_static_dims = VariadicList[Int](40, 64, 80, 128, 160)
+
+        @always_inline
+        @parameter
+        fn dispatch_depth_dim[idx: Int]():
+            if depth_static_dims[idx] == spec.depth_dim:
+                b.iter[iter_fn[Dim(depth_static_dims[idx])]]()
+                dispatched = True
+
+        # Attempt to dispatch with a static shape.
+        unroll[dispatch_depth_dim, len(depth_static_dims)]()
+
+        # Fallback to dispatch with a dynamic shape.
+        if not dispatched:
+            b.iter[iter_fn[Dim()]]()
 
     m.bench_function[flash_bench_fn](BenchId(">flash", str(spec)))
 
