@@ -25,6 +25,9 @@ enum class PassingKind : uint32_t;
 class MojoASTDeclRef;
 class MojoParserContext;
 
+/// Helper enum to make stringifying of variadic types easier.
+enum class VariadicKind : uint8_t { kNone, kPack, kPosVar, kKwVar };
+
 //===----------------------------------------------------------------------===//
 // MojoASTDecl Views
 //
@@ -131,14 +134,13 @@ class ParameterDeclView : public DeclView {
 public:
   ParameterDeclView(StringRef name, StringRef type,
                     KGEN::LIT::PassingKind passingKind,
+                    VariadicKind variadicKind,
                     std::optional<std::string> defaultValue)
       : DeclView(DeclViewKind::DK_ParameterDeclView, name), type(type),
-        passingKind(passingKind), defaultValue(std::move(defaultValue)) {}
+        passingKind(passingKind), variadicKind(variadicKind),
+        defaultValue(std::move(defaultValue)) {}
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; };
-
-  /// Return the default value of this argument, if any.
-  std::optional<StringRef> getDefaultValue() const { return defaultValue; }
 
   std::string getDeclarationSnippet() const override;
 
@@ -174,6 +176,7 @@ public:
 private:
   std::string type;
   KGEN::LIT::PassingKind passingKind;
+  VariadicKind variadicKind;
   std::optional<std::string> defaultValue;
 
   //===----------------------------------------------------------------------===//
@@ -194,11 +197,13 @@ public:
   };
   ArgumentDeclView(StringRef name, StringRef type,
                    KGEN::LIT::PassingKind passingKind,
+                   VariadicKind variadicKind,
                    std::optional<std::string> defaultValue, bool parentIsDef,
                    Convention convention)
       : DeclView(DeclViewKind::DK_ArgumentDeclView, name), type(type),
-        passingKind(passingKind), defaultValue(std::move(defaultValue)),
-        parentIsDef(parentIsDef), convention(convention) {}
+        passingKind(passingKind), variadicKind(variadicKind),
+        defaultValue(std::move(defaultValue)), parentIsDef(parentIsDef),
+        convention(convention) {}
 
   std::string getDeclarationSnippet() const override;
 
@@ -213,9 +218,6 @@ public:
   bool isOwned() const { return convention == Convention::kOwned; }
 
   KGEN::LIT::PassingKind getPassingKind() const { return passingKind; };
-
-  /// Return the default value of this argument, if any.
-  std::optional<StringRef> getDefaultValue() const { return defaultValue; }
 
   /// Set the description of this decl.
   void setDescription(StringRef desc) { description = desc; }
@@ -245,6 +247,7 @@ public:
 private:
   std::string type;
   KGEN::LIT::PassingKind passingKind;
+  VariadicKind variadicKind;
   std::optional<std::string> defaultValue;
   bool parentIsDef;
   Convention convention;

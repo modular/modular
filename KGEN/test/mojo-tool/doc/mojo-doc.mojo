@@ -366,16 +366,16 @@ fn default_args_and_params[a: Int = 1](b: Int = 2, /, *, c: Int = 3):
 # CHECK: "name": "variadic_pack",
 # CHECK: "overloads":
 # CHECK:     "args":
-# CHECK:             "name": "vals",
-# CHECK:             "passingKind": "pos_or_kw",
-# CHECK:             "type": "*Ts"
+# CHECK:         "name": "*vals",
+# CHECK:         "passingKind": "pos_or_kw",
+# CHECK:         "type": "*Ts"
 
 # CHECK:     "parameters":
-# CHECK:         "name": "Ts",
+# CHECK:         "name": "*Ts",
 # CHECK:         "passingKind": "pos_or_kw",
-# CHECK:         "type": "*AnyType"
+# CHECK:         "type": "AnyType"
 
-# CHECK:     "signature": "variadic_pack[*Ts: AnyType](*vals: Ts)",
+# CHECK:     "signature": "variadic_pack[*Ts: AnyType](*vals: *Ts)",
 
 
 fn variadic_pack[*Ts: AnyType](*vals: *Ts):
@@ -412,7 +412,7 @@ fn variadic_arg_hack[
     """Test hacky use case of `!kgen.variadic` argument type printing.
 
     Args:
-        vals: Variadic pack arguments.
+        vals: !kgen.variadic arguments.
     """
     pass
 
@@ -420,20 +420,20 @@ fn variadic_arg_hack[
 # CHECK: "name": "variadic_params_args",
 # CHECK: "overloads":
 # CHECK:     "args":
-# CHECK:             "name": "vals",
-# CHECK:             "passingKind": "pos_or_kw",
-# CHECK:             "type": "*Int"
+# CHECK:         "name": "*vals",
+# CHECK:         "passingKind": "pos_or_kw",
+# CHECK:         "type": "Int"
 
-# CHECK:             "name": "kwargs",
-# CHECK:             "passingKind": "kw",
-# CHECK:             "type": "**object"
+# CHECK:         "name": "**kwargs",
+# CHECK:         "passingKind": "kw",
+# CHECK:         "type": "object"
 
 # CHECK:     "parameters":
-# CHECK:             "name": "nums",
-# CHECK:             "passingKind": "pos_or_kw",
-# CHECK:             "type": "*Int"
+# CHECK:         "name": "*nums",
+# CHECK:         "passingKind": "pos_or_kw",
+# CHECK:         "type": "Int"
 
-# CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, owned *kwargs: *object)",
+# CHECK:     "signature": "variadic_params_args[*nums: Int](*vals: Int, *, owned **kwargs: object)",
 
 
 fn variadic_params_args[*nums: Int](*vals: Int, **kwargs: object):
@@ -481,8 +481,8 @@ fn variadic_params_args[*nums: Int](*vals: Int, **kwargs: object):
 # CHECK:        },
 # CHECK:        {
 # CHECK:          "description": "This is a variadic argument."
-# CHECK:          "name": "args",
-# CHECK:          "type": "*Self"
+# CHECK:          "name": "*args",
+# CHECK:          "type": "Self"
 # CHECK:        }
 # CHECK:      "constraints": "This describes the method's constraints.",
 # CHECK:      "description": ""
