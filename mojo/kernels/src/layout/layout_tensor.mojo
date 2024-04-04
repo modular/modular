@@ -318,16 +318,29 @@ struct LayoutTensor[
 
     @always_inline
     fn tile[
-        M1: Int,
-        N1: Int,
-        *,
-        __tiled_layout: Layout = Self._compute_tile_layout[M1, N1](),
-    ](self, m: Int, n: Int) -> LayoutTensor[
+        *tile_sizes: Int,
+        __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
+    ](self, *tile_coords: Int) -> LayoutTensor[
         __tiled_layout[0], dtype, address_space=address_space
     ]:
-        alias stride_m = int(__tiled_layout[1].stride[0])
-        alias stride_n = int(__tiled_layout[1].stride[1])
-        var offset = m * stride_m + n * stride_n
+        @parameter
+        fn num_tiles() -> Int:
+            return __mlir_op.`pop.variadic.size`(tile_sizes)
+
+        constrained[
+            __tiled_layout[1].rank() == num_tiles(),
+            "Number of tiles should match the rank",
+        ]()
+
+        var offset = 0
+
+        @parameter
+        fn compute_offset[i: Int]():
+            alias stride = int(__tiled_layout[1].stride[i])
+            offset += tile_coords[i] * stride
+
+        unroll[compute_offset, num_tiles()]()
+
         return LayoutTensor[
             __tiled_layout[0], dtype, address_space=address_space
         ](self.ptr.offset(offset))

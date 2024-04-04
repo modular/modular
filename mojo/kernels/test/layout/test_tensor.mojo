@@ -106,6 +106,26 @@ fn test_basic_tensor_ops():
             var tile_2x2 = transposed_tensor.tile[2, 2](tile_i, tile_j)
             print_tile_tensor(tile_2x2)
 
+    print("----1d-tensor-tiles----")
+    var tensor_8 = LayoutTensor[Layout(8), DType.float32].stack_allocation()
+    tensor_8.linspace()
+    # CHECK: ----tile[ 0 ]----
+    # CHECK: 0.0
+    # CHECK: 1.0
+    # CHECK: ----tile[ 1 ]----
+    # CHECK: 2.0
+    # CHECK: 3.0
+    # CHECK: ----tile[ 2 ]----
+    # CHECK: 4.0
+    # CHECK: 5.0
+    # CHECK: ----tile[ 3 ]----
+    # CHECK: 6.0
+    # CHECK: 7.0
+    for tile_i in range(4):
+        print("----tile[", tile_i, "]----")
+        var tile = tensor_8.tile[2](tile_i)
+        tile.print()
+
     _ = managed_tensor^
 
 
