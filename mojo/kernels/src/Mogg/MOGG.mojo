@@ -3811,6 +3811,7 @@ fn no_mask_flash_attention_cpu[
     input_2_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
+    input_4_static_shape: DimList,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
@@ -3819,7 +3820,7 @@ fn no_mask_flash_attention_cpu[
     input_2_shape: StaticIntTuple[rank],
     # TODO(28121): This should be rank 0, but only works with rank 1
     scale: NDBuffer[type, 1],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[type, rank, input_4_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
     if _guard_against_gpu_target[target](ctx):
@@ -3836,7 +3837,14 @@ fn no_mask_flash_attention_cpu[
         ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
             return SIMD[type, simd_width](0)
 
-        cpu_flash_attention[type, rank, input_1_fn, input_2_fn, mask_fn](
+        cpu_flash_attention[
+            type,
+            rank,
+            input_1_fn,
+            input_2_fn,
+            mask_fn,
+            input_4_static_shape,
+        ](
             q,
             input_1_shape,
             input_2_shape,
@@ -3860,6 +3868,7 @@ fn with_mask_flash_attention_cpu[
     input_3_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
+    input_5_static_shape: DimList,
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
 ](
@@ -3869,7 +3878,7 @@ fn with_mask_flash_attention_cpu[
     input_3_shape: StaticIntTuple[rank],
     # TODO(28121): This should be rank 0, but only works with rank 1
     scale: NDBuffer[type, 1],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[type, rank, input_5_static_shape],
     ctx: MojoCallContextPtr,
 ) raises:
     if _guard_against_gpu_target[target](ctx):
@@ -3878,7 +3887,14 @@ fn with_mask_flash_attention_cpu[
     constrained[target == "cpu"]()
 
     with Trace[TraceLevel.OP]("mojo.flash_attention") as t:
-        cpu_flash_attention[type, rank, input_1_fn, input_2_fn, input_3_fn](
+        cpu_flash_attention[
+            type,
+            rank,
+            input_1_fn,
+            input_2_fn,
+            input_3_fn,
+            input_5_static_shape,
+        ](
             q,
             input_1_shape,
             input_2_shape,
