@@ -30,17 +30,31 @@ version_string = __version__
 
 @dataclass
 class TensorFlowLoadOptions:
-    """Configures how to load TensorFlow models."""
+    """Configures how to load TensorFlow models.
+
+    You usually don't need to use this, unless your TensorFlow SavedModel
+    includes multiple signatures or you changed the signature key `during export
+    <https://www.tensorflow.org/guide/saved_model#specifying_signatures_during_export>`_.
+    In which case, you should create an instance of
+    ``TensorFlowLoadOptions``, specify the ``exported_name``, and pass it to
+    :obj:`~InferenceSession.load()`."""
 
     exported_name: str = field(default="serving_default")
-    """The exported name from the TensorFlow model's signature."""
+    """The exported name from the TensorFlow model's signature. You shouldn't
+       change this unless your model includes multiple signatures or you
+       changed the signature key during export."""
 
     type: str = "tf"
 
 
 @dataclass
 class TorchLoadOptions:
-    """Configures how to load TorchScript models."""
+    """Configures how to load TorchScript models.
+
+    When using a TorchScript model, you must pass this to
+    :obj:`~InferenceSession.load()` in order to `specify the input specs
+    </engine/model-formats#specify-torchscript-input-specs>`_.
+    """
 
     input_specs: List["TorchInputSpec"] = field(default_factory=list)
     """The tensor specifications (shape and data type) for each of the
