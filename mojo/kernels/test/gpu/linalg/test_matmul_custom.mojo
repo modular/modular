@@ -20,7 +20,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.sync import syncwarp
-from MatmulGPU import (
+from LinAlg.MatmulGPU import (
     matmul_kernel,
     matmul_kernel_naive,
 )

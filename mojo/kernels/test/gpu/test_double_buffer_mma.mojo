@@ -31,7 +31,7 @@ from gpu.host.memory import (
 )
 from gpu.memory import async_copy, async_copy_wait_all
 from gpu.mma import mma
-from MatmulGPU import matmul_kernel_naive
+from LinAlg.MatmulGPU import matmul_kernel_naive
 from memory.unsafe import DTypePointer
 from testing import assert_almost_equal
 
