@@ -815,13 +815,10 @@ private:
 
   /// State for a package reader.
   struct PackageReaderState {
-    PackageReaderState(MLIRContext *ctx, mlir::AsmResourceBlob *blob);
     ~PackageReaderState() {
       if (failed(reader.finalize()))
         llvm::report_fatal_error("failed to finalize bytecode reader");
     }
-
-    LogicalResult initialize();
 
     std::shared_ptr<llvm::SourceMgr> sourceMgr;
     mlir::ParserConfig config;
@@ -2124,27 +2121,6 @@ void ElaboratorImpl::specializeFromSource(ImplNode *inode, ParamNode *genNode,
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::specializeFromPackage
 //===----------------------------------------------------------------------===//
-
-static llvm::MemoryBufferRef getBufferRef(mlir::AsmResourceBlob *blob) {
-  return llvm::MemoryBufferRef(
-      StringRef(blob->getData().begin(), blob->getData().size()), "");
-}
-
-ElaboratorImpl::PackageReaderState::PackageReaderState(
-    MLIRContext *ctx, mlir::AsmResourceBlob *blob)
-    : sourceMgr(std::make_shared<llvm::SourceMgr>()),
-      config(ctx, /*verifyAfterParse=*/false),
-      reader(getBufferRef(blob), config, /*lazyLoad=*/true, sourceMgr) {}
-
-LogicalResult ElaboratorImpl::PackageReaderState::initialize() {
-  if (failed(reader.readTopLevel(&block)))
-    return failure();
-  module = cast<ModuleOp>(block.front());
-  if (failed(reader.materialize(module)))
-    return failure();
-  symtab.emplace(module);
-  return success();
-}
 
 void ElaboratorImpl::specializeFromPackage(ImplNode *parent, ParamNode *genNode,
                                            FlatSymbolRefAttr linkRef,
