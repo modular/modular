@@ -21,8 +21,8 @@ from buffer import NDBuffer
 from buffer.buffer import prod_dims
 from buffer.list import DimList
 from memory.unsafe import bitcast
-from Neon import _neon_dotprod
-from VNNI import dot_i8_to_i32_saturated_x86
+from LinAlg.Neon import _neon_dotprod
+from LinAlg.VNNI import dot_i8_to_i32_saturated_x86
 
 from utils.index import Index
 
