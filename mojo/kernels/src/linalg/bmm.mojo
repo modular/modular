@@ -14,12 +14,12 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Function, Stream
-from Matmul import _submatmul_sequential_sync
-from MatmulUtils import PartitionHeuristic
-from MatmulUtils import (
+from .Matmul import _submatmul_sequential_sync
+from .MatmulUtils import PartitionHeuristic
+from .MatmulUtils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
-from MatmulUtils import (
+from .MatmulUtils import (
     get_kernel_type,
     get_matmul_num_tasks,
     get_min_task_size,

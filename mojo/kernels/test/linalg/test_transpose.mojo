@@ -7,7 +7,11 @@
 
 from buffer import Buffer, NDBuffer
 from buffer.list import DimList
-from Transpose import _simplify_transpose_perms, transpose, transpose_inplace
+from LinAlg.Transpose import (
+    _simplify_transpose_perms,
+    transpose,
+    transpose_inplace,
+)
 
 from utils.index import Index, StaticIntTuple
 

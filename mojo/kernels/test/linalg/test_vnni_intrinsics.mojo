@@ -14,7 +14,7 @@ from sys.info import has_avx512f
 
 from buffer import Buffer
 from memory import memcmp
-from VNNI import (
+from LinAlg.VNNI import (
     dot_i8_to_i32_AVX2,
     dot_i8_to_i32_saturated_AVX2,
     dot_i8_to_i32_saturated_x86,

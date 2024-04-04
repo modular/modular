@@ -28,8 +28,8 @@ from buffer.buffer import (
     partial_simd_store,
 )
 from buffer.list import Dim, DimList
-from Gemv import gemv
-from MatmulUtils import (
+from .Gemv import gemv
+from .MatmulUtils import (
     GemmShape,
     MatmulConfig,
     PartitionHeuristic,
@@ -50,10 +50,10 @@ from MatmulUtils import (
 )
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
-from Neon import _neon_dotprod, _neon_matmul
+from .Neon import _neon_dotprod, _neon_matmul
 from runtime.llcl import Runtime
-from Transpose import transpose_inplace
-from VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
+from .Transpose import transpose_inplace
+from .VNNI import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple

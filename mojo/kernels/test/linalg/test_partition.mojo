@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from MatmulUtils import SubMatmulConfig, get_partitioned_matmul_mojo
+from LinAlg.MatmulUtils import SubMatmulConfig, get_partitioned_matmul_mojo
 
 alias kernel_height = 6
 alias kernel_width = 64

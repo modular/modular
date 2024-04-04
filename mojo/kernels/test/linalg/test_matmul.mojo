@@ -13,7 +13,7 @@ from sys.info import has_avx2, has_neon_int8_matmul
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from Matmul import (
+from LinAlg.Matmul import (
     matmul,
     matmul_M,
     pack_b_ndbuffer,

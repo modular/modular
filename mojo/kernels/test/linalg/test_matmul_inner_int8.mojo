@@ -10,8 +10,8 @@ from sys.info import simdwidthof
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
-from MatmulUtils import (
+from LinAlg.Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
+from LinAlg.MatmulUtils import (
     get_matmul_arch_factor,
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,

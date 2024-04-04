@@ -12,14 +12,14 @@ from buffer.buffer import (
     NDBuffer,
 )
 from buffer.list import Dim, DimList
-from Gemv import gemv
+from .Gemv import gemv
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Function, Stream
 from gpu.host.memory import _memset_async
 from gpu.memory import AddressSpace
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from gpu.tensor_ops import tc_reduce
-from MatmulUtils import (
+from .MatmulUtils import (
     GemmShape,
     elementwise_epilogue_type,
 )
