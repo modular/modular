@@ -54,7 +54,7 @@ protected:
   }
 
   void waitForValues() {
-    std::unique_lock lk(mu);
+    std::unique_lock<std::mutex> lk(mu);
     cv.wait(lk, [=] { return !values.empty(); });
   }
 
