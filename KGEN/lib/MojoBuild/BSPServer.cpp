@@ -12,7 +12,6 @@ using namespace M::Build;
 
 void BSPServer::onBuildInitialize(
     const InitializeBuildParams &params,
-    mlir::lsp::Callback<llvm::json::Value> callback) {
-  llvm::json::Object result{{"displayName", "mojo-build-server"}};
-  callback(std::move(result));
+    mlir::lsp::Callback<InitializeBuildResult> callback) {
+  callback(InitializeBuildResult{"mojo-build-server"});
 }
