@@ -243,14 +243,6 @@ cc_test(
 )
 
 cc_library(
-    name = "Globals",
-    srcs = glob(["lib/Globals/*.cpp"]),
-    hdrs = glob(["include/Support/Globals/*.h"]),
-    strip_include_prefix = "include",
-    deps = [":Base"],
-)
-
-cc_library(
     name = "ADT",
     srcs = glob([
         "lib/ADT/*.cpp",
@@ -272,6 +264,7 @@ cc_test(
     srcs = glob(["unittests/ADT/*.cpp"]),
     deps = [
         ":ADT",
+        ":Globals",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -550,6 +543,7 @@ cc_test(
     deps = [
         ":MArchTarget",
         ":Threading",
+        "//LLCL:CompilerSupport",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -579,6 +573,7 @@ cc_test(
     name = "ProfilingTest",
     srcs = ["unittests/TimeProfilerTest.cpp"],
     deps = [
+        ":Globals",
         ":Profiling",
         "@com_github_google_googletest//:gtest_main",
     ],
@@ -629,6 +624,7 @@ cc_library(
         ":MDialect",
         ":Profiling",
         "@llvm-project//mlir:AllPassesAndDialects",
+        "@llvm-project//mlir:BytecodeWriter",
     ],
 )
 
@@ -1160,6 +1156,7 @@ cc_test(
         ":DebugInfoDialect",
         ":DebugInfoToLLVM",
         ":DebugInfoTransforms",
+        "//LLCL:CompilerSupport",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -1229,6 +1226,7 @@ cc_test(
     srcs = glob(["unittests/Compiler/*.cpp"]),
     deps = [
         ":Compiler",
+        "//LLCL:CompilerSupport",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -1263,4 +1261,31 @@ cc_library(
     deps = [
         ":Telemetry",
     ],
+)
+
+cc_library(
+    name = "Globals",
+    srcs = glob(["lib/Globals/*.cpp"]),
+    hdrs = glob(["include/Support/Globals/*.h"]) + [
+        "include/Support/SymbolExport.h",
+    ],
+    strip_include_prefix = "include",
+    # TODO: Missing define conditionals for symbol visibility
+    # NOTE: This library should not have any deps to avoid shared object linking issues
+)
+
+cc_shared_library(
+    name = "Globals.shared",
+    shared_lib_name = select({
+        "@platforms//os:macos": "libMSupportGlobals.dylib",
+        "@platforms//os:linux": "libMSupportGlobals.so",
+    }),
+    user_link_flags = select({
+        "@platforms//os:macos": [
+            "-install_name",
+            "@rpath/libMSupportGlobals.dylib",
+        ],
+        "@platforms//os:linux": [],  # TODO: set this correctly for distribution
+    }),
+    deps = [":Globals"],
 )

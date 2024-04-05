@@ -1,0 +1,45 @@
+cc_test(
+    name = "AsyncValueTest",
+    srcs = ["AsyncValueTest.cpp"],
+    deps = [
+        "//LLCL:Runtime",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "DebuggingAllocatorsTest",
+    srcs = ["DebuggingAllocatorsTest.cpp"],
+    deps = [
+        "//LLCL:Runtime",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ResourceTest",
+    srcs = ["ResourceTest.cpp"],
+    deps = [
+        "//LLCL:Support",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "RuntimeTest",
+    srcs = ["RuntimeTest.cpp"],
+    deps = [
+        "//LLCL:Runtime",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "TypeIDTest",
+    srcs = ["TypeIDTest.cpp"],
+    deps = [
+        "//LLCL:Support",
+        "//Support:Base",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
