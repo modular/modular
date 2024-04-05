@@ -8,9 +8,15 @@
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Path.h"
 
-bool mlir::lsp::fromJSON(const llvm::json::Value &value,
-                         M::Build::InitializeBuildParams &result,
-                         llvm::json::Path path) {
+using namespace M;
+using namespace M::Build;
+
+//===----------------------------------------------------------------------===//
+// build/initialize
+//===----------------------------------------------------------------------===//
+
+bool M::Build::fromJSON(const llvm::json::Value &value,
+                        InitializeBuildParams &result, llvm::json::Path path) {
   llvm::json::ObjectMapper o(value, path);
   return o && o.map("displayName", result.displayName);
 }

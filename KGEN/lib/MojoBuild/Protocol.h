@@ -26,7 +26,7 @@ namespace M {
 namespace Build {
 
 //===----------------------------------------------------------------------===//
-// Protocol objects
+// build/initialize
 //===----------------------------------------------------------------------===//
 
 /// Parameters for the `build/initialize` method.
@@ -34,19 +34,11 @@ struct InitializeBuildParams {
   /// Name of the client.
   std::string displayName;
 };
+
+/// Deserialize a parameters object from JSON.
+bool fromJSON(const llvm::json::Value &value, InitializeBuildParams &result,
+              llvm::json::Path path);
 } // namespace Build
 } // namespace M
-
-//===----------------------------------------------------------------------===//
-// JSON serialization
-//===----------------------------------------------------------------------===//
-
-namespace mlir {
-namespace lsp {
-
-bool fromJSON(const llvm::json::Value &value,
-              M::Build::InitializeBuildParams &result, llvm::json::Path path);
-} // namespace lsp
-} // namespace mlir
 
 #endif // KGEN_MOJOBUILD_PROTOCOL_H
