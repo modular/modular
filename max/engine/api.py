@@ -355,7 +355,7 @@ class TorchInputSpec:
 
     _impl: _TorchInputSpec
 
-    def __init__(self, shape: Optional[List[Optional[int]]], dtype: DType):
+    def __init__(self, shape: Optional[List[Union[int, str]]], dtype: DType):
         self._impl = _TorchInputSpec(shape, dtype._to())
 
     @classmethod
@@ -370,7 +370,7 @@ class TorchInputSpec:
     def __str__(self) -> str:
         if self.shape is not None:
             mlir_shape = [
-                str(dim) if dim is not None else "-1" for dim in self.shape
+                str(dim) if isinstance(dim, int) else "-1" for dim in self.shape
             ]
             shape_str = "x".join(mlir_shape)
             return f"{shape_str}x{self.dtype.name}"
