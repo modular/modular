@@ -13,6 +13,9 @@ lit_tests(
         "//Support:include/Support/Driver/DriverCommand.td",
         "@llvm-project//llvm:include/llvm/Option/OptParser.td",
     ],
+    env = {
+        "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(location @crashpad//:modular-crashpad-handler)",
+    },
     tools = [
         "//Support:driver-tblgen",
         "//Support/tools/build-info",
