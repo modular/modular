@@ -124,8 +124,7 @@ TypeSignatureType TypeSignatureType::get(
     ArrayRef<TypedAttr> defaultKwOnlyParams, ArrayRef<size_t> variadicIndices) {
   auto paramListAttrs =
       PogsAttr::get(context, paramNames, paramPassingKinds, defaultPosParams,
-                    defaultKwOnlyParams, variadicIndices, /*packIndex=*/-1,
-                    ArgConvention::None);
+                    defaultKwOnlyParams, variadicIndices);
   return get(context, paramTypes, paramListAttrs);
 }
 
@@ -476,8 +475,7 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
 
   auto paramListAttrs =
       PogsAttr::get(getContext(), newParamNames, newPassingKinds,
-                    newPosDefaults, newKwOnlyDefaults, newVariadicIndices,
-                    /*packIndex=*/-1, ArgConvention::None);
+                    newPosDefaults, newKwOnlyDefaults, newVariadicIndices);
   auto newSig =
       TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
   return AnyStructType::get(getSymbol(), values, newSig);

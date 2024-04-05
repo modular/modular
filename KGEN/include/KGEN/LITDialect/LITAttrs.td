@@ -107,7 +107,12 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
   let builders = [
     AttrBuilder<(ins)>,
     AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
-                     "ArrayRef<PassingKind>":$passingKinds)>
+                     "ArrayRef<PassingKind>":$passingKinds)>,
+    AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
+                     "ArrayRef<PassingKind>":$passingKinds,
+                     "ArrayRef<TypedAttr>":$defaultPos,
+                     "ArrayRef<TypedAttr>":$defaultKwOnly,
+                     "ArrayRef<size_t>":$variadicIndices)>
   ];
 
   let extraClassDeclaration = [{

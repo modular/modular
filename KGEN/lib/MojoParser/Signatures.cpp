@@ -407,8 +407,7 @@ TypeCheckedParamList::TypeCheckedParamList(
 
 PogsAttr TypeCheckedParamList::getParamListAttr() {
   return PogsAttr::get(shared.getContext(), names, passingKinds,
-                       defaultPosParams, defaultKwOnlyParams, variadicIndices,
-                       /*packIndex=*/-1, ArgConvention::None);
+                       defaultPosParams, defaultKwOnlyParams, variadicIndices);
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
