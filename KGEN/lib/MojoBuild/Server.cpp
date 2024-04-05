@@ -11,28 +11,13 @@
 
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
-#include "mlir/Tools/lsp-server-support/Transport.h"
-#include "llvm/Support/Program.h"
 
 using namespace M;
 using namespace M::Build;
 
 MODULAR_EXPORT int mojoBuildServerMain() {
-  llvm::sys::ChangeStdinToBinary();
-  mlir::lsp::JSONTransport transport(stdin, llvm::outs(),
-                                     mlir::lsp::JSONStreamStyle::Delimited,
-                                     /*prettyOutput=*/true);
+  mlir::lsp::Logger::setLogLevel(mlir::lsp::Logger::Level::Debug);
+
   BSPServer bspServer;
-
-  mlir::lsp::MessageHandler messageHandler(transport);
-  messageHandler.method("build/initialize", &bspServer,
-                        &BSPServer::onBuildInitialize);
-
-  if (llvm::Error error = transport.run(messageHandler)) {
-    mlir::lsp::Logger::error("Transport error: {0}", error);
-    llvm::consumeError(std::move(error));
-    return 1;
-  }
-
-  return 0;
+  return succeeded(bspServer.run()) ? 0 : 1;
 }
