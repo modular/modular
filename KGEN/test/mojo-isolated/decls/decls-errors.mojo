@@ -143,7 +143,7 @@ fn exampleByRefVariadic(a: FloatLiteral, inout *b: Int): pass
 # expected-note @+1 {{function declared here}}
 fn parameterizedVariadic[T: __mlir_type.`!kgen.type`](*args: T): pass
 
-fn ownedPack[*Ts: __mlir_type.`!kgen.type`](owned *args: *Ts): pass
+fn ownedPack[*Ts: AnyType](owned *args: *Ts): pass
 fn ownedVariadic(owned *args: Inner): pass
 fn ownedVariadicReg(owned *args: WrongType): pass
 
@@ -231,13 +231,13 @@ fn invalidParameterPack[*Ts: AnyType]():
 
 # expected-error @+2 {{only variadic arguments' types can be unpacked}}
 # expected-note @+1 {{'x' is not a variadic argument}}
-fn invalidArgumentUnpack[*Ts: __mlir_type.`!kgen.type`](x: *Ts): pass
+fn invalidArgumentUnpack[*Ts: AnyType](x: *Ts): pass
 
 # expected-error @+1 {{argument already has a convention specified}}
 fn invalidOwned(owned inout x: Int): pass
 
 # expected-note @+1 {{function declared here}}
-fn examplePack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
+fn examplePack[*Ts: AnyType](*args: *Ts):
   pass
 
 fn packArgOverload():
@@ -246,11 +246,9 @@ fn packArgOverload():
 fn packArgOverload(x: Int):
   pass
 
-fn directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
-  pass
 
 # expected-note @+1 {{function declared here}}
-fn first_and_rest[T: AnyRegType, *Ts: AnyRegType](*values: *Ts):
+fn first_and_rest[T: AnyRegType, *Ts: AnyType](*values: *Ts):
     pass
 
 fn badPackCalls(value: Int):
@@ -271,6 +269,9 @@ struct TestPackErrorMessage[*Ts: AnyType]:
     fn __init__(*args: *Ts):
          pass
 
+# TODO: xpected-error @+1 {{variadic pack elements declared as 'AnyRegType' are removed, please declare elements as 'AnyType' instead of 'AnyRegType'}}
+fn badAnyRegPack[*Ts: AnyRegType](*args: *Ts):
+  pass
 
 ##===----------------------------------------------------------------------===##
 # Function Overloading

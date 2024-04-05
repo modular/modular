@@ -33,16 +33,16 @@ fn test_type_instead_of_instance() -> Foo:
 
 # COM: https://github.com/modularml/modular/issues/29438
 # COM: ensure we do not crash in the example below, but emit an error.
-struct MadeFromPack[*Ts: AnyRegType]:
+struct MadeFromPack[*Ts: AnyType]:
     fn __init__(inout self, *args: *Ts):
         pass
 
 
-struct WrapsMadeFromPack[*Ts: AnyRegType]:
+struct WrapsMadeFromPack[*Ts: AnyType]:
     var data: MadeFromPack[Ts]
 
     fn __init__(inout self, *args: *Ts):
-        # expected-error @+1 {{cannot implicitly convert '*Ts' value to 'MadeFromPack[Ts]' in assignment}}
+        # expected-error @+1 {{cannot implicitly convert 'VariadicPack[0, args, AnyType, Ts]' value to 'MadeFromPack[Ts]' in assignment}}
         self.data = args
 
 

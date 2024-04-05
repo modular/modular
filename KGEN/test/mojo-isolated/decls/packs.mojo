@@ -156,3 +156,61 @@ fn test_empty_pack():
   # Make sure we pass an immortal lifetime for the pack.
   # CHECK: lit.call {{.*}}VariadicPack::@"__init__{{.*}}:lifetime<1> #lit.lifetime,
   var s1 = not_nested_struct()
+
+
+# ===----------------------------------------------------------------------=== #
+# Other tests
+# ===----------------------------------------------------------------------=== #
+
+# CHECK-LABEL: lit.struct.decl @MyTuple
+# CHECK-SAME: <Ts: variadic<!AnyType> var>
+struct MyTuple[*Ts: AnyType]:
+
+    fn __init__(inout self, *args: *Ts):
+        pass
+
+
+# CHECK-LABEL: lit.func @"pack[
+# CHECK-SAME: Ts: variadic<!AnyType> var>(
+# CHECK-SAME: %args: !lit.declref<#VariadicPack <:i1 0, :lifetime<0> *"args`", :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> Ts>> borrow_in_mem|pack)
+fn pack[*Ts: AnyType](*args: *Ts): pass
+
+# CHECK-LABEL: lit.func @"packBorrowed[
+# CHECK-SAME: Ts: variadic<!AnyType> var>(
+# CHECK-SAME: %args: !lit.declref<#VariadicPack {{.*}} borrow_in_mem|pack
+fn packBorrowed[*Ts: AnyType](*args: *Ts): pass
+
+
+# Ensure that parameters can be bound correctly.
+fn variadicParameter[*Ts: AnyRegType](x: Int):
+    pass
+
+
+# CHECK-LABEL: lit.func @"usePacks
+# CHECK-SAME: [[ARGX:%.*]]: !FloatDyn
+# CHECK-SAME: [[ARGY:%.*]]: !Int
+fn usePacks(x: FloatDyn, y: Int):
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [#Int1]>
+    var a: MyTuple[Int]
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [#Int1, #FloatDyn1, #Int1]>
+    var b: MyTuple[Int, FloatDyn, Int]
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [#Int1]>
+    var c = MyTuple[Int](1)
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> [#FloatDyn1, #type_value]>
+    var d = MyTuple(3.14, Int(6).value)
+    # CHECK: lit.var.decl {{.*}} : !lit.ref<@packs::@MyTuple<:variadic<!AnyType> []>
+    var e = MyTuple()
+
+    pack(Int(1).value)
+    pack(Int(1).value, 3.14)
+    pack()
+
+    pack(Int(1).value, x, y)
+    pack[Int, FloatDyn, Int](Int(1).value, x, y)
+
+    packBorrowed(Int(1).value, x, y)
+
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, !FloatDyn]>
+    variadicParameter[Int, FloatDyn](1)
+    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
+    variadicParameter(Int(2).value)

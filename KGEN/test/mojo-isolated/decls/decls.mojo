@@ -46,7 +46,7 @@ fn packOverload(a: Int):
     pass
 
 
-fn packOverload[*Ts: __mlir_type.`!kgen.type`](*a: *Ts):
+fn packOverload[*Ts: AnyType](*a: *Ts):
     pass
 
 
@@ -542,83 +542,6 @@ fn callVariadic[p: Int](x: Int):
     _ = VarArgsParameterizedStruct[4, 5]()
     # CHECK: lit.call {{.*}}@VarArgsParameterizedStruct::@"__init__({{.*}}<:variadic<!Int> []>
     _ = VarArgsParameterizedStruct()
-
-
-# CHECK-LABEL: lit.struct.decl @MyTuple
-# CHECK-SAME: <Ts: variadic<type> var>
-struct MyTuple[*Ts: __mlir_type.`!kgen.type`]:
-    var elements: __mlir_type[`!kgen.pack<`, Ts, `>`]
-
-    fn __init__(inout self, *args: *Ts):
-        self.elements = args
-
-
-# CHECK-LABEL: lit.func @"pack{{.*}}"<
-# CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow_in_mem|pack)
-fn pack[*Ts: __mlir_type.`!kgen.type`](*args: *Ts):
-    # CHECK: %copy = lit.var.decl "copy" {{.*}}!kgen.pack<Ts>
-    # CHECK-NEXT: lit.ref.store %args, %copy
-    var copy = args
-
-
-# CHECK-LABEL: lit.func @"packBorrowed{{.*}}"<
-# CHECK-SAME: Ts: variadic<type> var>(%args: !kgen.pack<Ts> borrow_in_mem|pack)
-fn packBorrowed[*Ts: __mlir_type.`!kgen.type`](borrowed *args: *Ts):
-    # CHECK: %copy = lit.var.decl "copy" {{.*}}!kgen.pack<Ts>
-    # CHECK-NEXT: lit.ref.store %args, %copy
-    var copy = args
-
-
-# Ensure that parameters can be bound correctly.
-fn variadicParameter[*Ts: __mlir_type.`!kgen.type`](x: Int):
-    pass
-
-
-# CHECK-LABEL: lit.func @"usePacks
-# CHECK-SAME: [[ARGX:%.*]]: !FloatDyn
-# CHECK-SAME: [[ARGY:%.*]]: !Int
-fn usePacks(x: FloatDyn, y: Int):
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int]>
-    var a: MyTuple[Int]
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int, !FloatDyn, !Int]>
-    var b: MyTuple[Int, FloatDyn, Int]
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!Int]>
-    var c = MyTuple[Int](1)
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> [!FloatDyn, index]>
-    var d = MyTuple(3.14, Int(6).value)
-    # CHECK: lit.var.decl {{.*}} : !lit.ref<@decls::@MyTuple<:variadic<type> []>
-    var e = MyTuple()
-
-    # CHECK: [[C1:%.*]] = kgen.param.constant = <1>
-    # CHECK: %[[PACK1:.*]] = kgen.pack.create([[C1]])
-    # CHECK: lit.call @decls::@"pack{{.*}}(%[[PACK1]])
-    pack(Int(1).value)
-    # CHECK: [[C1:%.*]] = kgen.param.constant = <1>
-    # CHECK: [[C3:%.*]] = kgen.param.constant{{.*}}3.14
-    # CHECK: %[[PACK2:.*]] = kgen.pack.create([[C1]], [[C3]])
-    # CHECK: lit.call @decls::@"pack{{.*}} [index, {{.*}}FloatDyn]>(%[[PACK2]])
-    pack(Int(1).value, 3.14)
-    # CHECK: %[[PACK3:.*]] = kgen.param.constant: !kgen.pack<[]> = <<>>
-    # CHECK: lit.call @decls::@"pack{{.*}} []>(%[[PACK3]])
-    pack()
-
-    # CHECK: %[[PACK4:.*]] = kgen.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-    # CHECK: lit.call @decls::@"pack{{.*}} [index, !FloatDyn, !Int]>(%[[PACK4]])
-    pack(Int(1).value, x, y)
-    # CHECK: %[[INTCTOR:.*]] = kgen.param.constant: !Int = <{1}>
-    # CHECK: %[[PACK5:.*]] = kgen.pack.create(%[[INTCTOR]], %x, %y)
-    # CHECK: lit.call @decls::@"pack{{.*}} [!Int, !FloatDyn, !Int]>(%[[PACK5]])
-    pack[Int, FloatDyn, Int](Int(1).value, x, y)
-
-    # CHECK: kgen.param.constant = <1>
-    # CHECK-NEXT: [[PACK6:%.*]] = kgen.pack.create(%{{.*}}, [[ARGX]], [[ARGY]])
-    # CHECK-NEXT: lit.call {{.*}}packBorrowed{{.*}}([[PACK6]])
-    packBorrowed(Int(1).value, x, y)
-
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type>  [!Int, !FloatDyn]>
-    variadicParameter[Int, FloatDyn](1)
-    # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
-    variadicParameter(Int(2).value)
 
 
 # COM: Test variadic arguments in a parameter context.
