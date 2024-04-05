@@ -39,13 +39,21 @@ void LITDialect::registerAttributes() {
 //===----------------------------------------------------------------------===//
 
 PogsAttr PogsAttr::get(MLIRContext *context) {
-  return PogsAttr::get(context, {}, {}, {}, {}, {}, -1, ArgConvention::None);
+  return PogsAttr::get(context, {}, {});
 }
 
 PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                        ArrayRef<PassingKind> passingKinds) {
-  return PogsAttr::get(context, names, passingKinds, {}, {}, {}, -1,
-                       ArgConvention::None);
+  return PogsAttr::get(context, names, passingKinds, {}, {}, {});
+}
+
+PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
+                       ArrayRef<PassingKind> passingKinds,
+                       ArrayRef<TypedAttr> defaultPos,
+                       ArrayRef<TypedAttr> defaultKwOnly,
+                       ArrayRef<size_t> variadicIndices) {
+  return PogsAttr::get(context, names, passingKinds, defaultPos, defaultKwOnly,
+                       variadicIndices, -1, ArgConvention::None);
 }
 
 LogicalResult PogsAttr::verify(
@@ -220,7 +228,7 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
 
   auto newParamAttrs = PogsAttr::get(
       getContext(), newParamNames, newParamPassingKinds, newDefaultPosParams,
-      newDefaultKwOnlyParams, newVariadicIndices, -1, ArgConvention::None);
+      newDefaultKwOnlyParams, newVariadicIndices);
   return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls());
 }
 
@@ -245,7 +253,7 @@ FnMetadataAttr::prependPosParams(size_t numNewParams,
   assert(oldParamListAttr.getPackIndex() && "no param packs");
   auto newParamListAttr = PogsAttr::get(
       getContext(), newParamNames, newPassingKinds, getDefaultPosParams(),
-      getDefaultKwOnlyParams(), newVariadicIndices, -1, ArgConvention::None);
+      getDefaultKwOnlyParams(), newVariadicIndices);
   return get(getArgListAttrs(), newParamListAttr,
              getNumImplicitLifetimeDecls());
 }
