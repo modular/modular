@@ -7,7 +7,7 @@
 #ifndef KGEN_MOJOBUILD_BSPSERVER_H
 #define KGEN_MOJOBUILD_BSPSERVER_H
 
-#include "Protocol.h"
+#include "KGEN/MojoBuild/Protocol.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"
 
 namespace M::Build {

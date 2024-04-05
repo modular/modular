@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Protocol.h"
+#include "KGEN/MojoBuild/Protocol.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/Path.h"
 

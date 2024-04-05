@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoBuild/Server.h"
+#include "KGEN/MojoBuild/Protocol.h"
 
 #include "BSPServer.h"
-#include "Protocol.h"
 
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
