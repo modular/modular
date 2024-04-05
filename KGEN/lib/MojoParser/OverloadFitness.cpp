@@ -953,7 +953,12 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
   if (ASTType variadicPackType = signature.getIfVariadicPack(lastPosIdx)) {
     RefPackType packType = variadicPackType.getVariadicPackInfo();
     VariadicAttr packed = packType.getVariadicIfResolved();
-    assert(packed && "caller always knows what is passed");
+    // The caller should know the concrete type list unless we binded the pack
+    // directly as a parameter.  This is an unpack like situation.
+    // TODO: This happens in error cases and needs to be re-evaluated.
+    if (!packed)
+      return {0, numPosArgs - 1};
+
     // NOTE: we adjust the number of user declared pos args since that
     // includes the pack itself (hence the "-1").
     size_t packSize = packed.getValues().size();

@@ -656,16 +656,16 @@ fn testDependentField():
     takeAbstraction2(lvalue.value)
 
 
-fn tail_types[T: AnyRegType, *U: AnyRegType](a: T, *b: *U):
+fn tail_types[T: AnyRegType, *U: AnyType](a: T, *b: *U):
     pass
 
 # CHECK-LABEL: lit.func @"call_with_tail_types()"
 fn call_with_tail_types():
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> []>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> []>
     tail_types(1)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}FloatDyn]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [{{.*}}FloatDyn1]>
     tail_types(1, 1.2)
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<type> [{{.*}}Int]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:type !Int, :variadic<!AnyType> [{{.*}}Int2]>
     tail_types(1, 77)
 
 # COM: We can't infer parameters from the default value, but we need to test if

@@ -47,7 +47,6 @@ static CValue emitVariadicPackConstructor(
 
   // Rebind the !lit.ref.pack with the common lifetime.
   packType = RefPackType::get(packType.getVariadic(), lifetimeToUse,
-
                               packType.getAddressSpace());
 
   // Build the !lit.ref.pack or #lit.ref.pack value with the adjusted lifetime.

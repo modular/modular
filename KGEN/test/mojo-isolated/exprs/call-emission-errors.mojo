@@ -45,7 +45,7 @@ fn var_arg_func(*args: int):
 
 
 # expected-note @+1 {{declared here}}
-fn pack_func[*Ts: AnyRegType](*args: *Ts):
+fn pack_func[*Ts: AnyType](*args: *Ts):
     pass
 
 
