@@ -17,8 +17,9 @@ from math import max
 from math.bit import ctlz
 from sys.info import bitwidthof
 
-from algorithm.swap import swap
+from .swap import swap
 from memory.unsafe import DTypePointer, Pointer
+from memory import AnyPointer
 
 # ===----------------------------------------------------------------------===#
 # sort
@@ -40,6 +41,25 @@ fn _insertion_sort[
         # find the position. Throughout, we assume array[start:i] has already
         # been sorted.
         while j > start and not cmp_fn[type](array[j - 1], value):
+            array[j] = array[j - 1]
+            j -= 1
+
+        array[j] = value
+
+
+fn _insertion_sort[
+    type: CollectionElement, cmp_fn: fn (type, type) capturing -> Bool
+](array: AnyPointer[type], start: Int, end: Int):
+    """Sort the array[start:end] slice"""
+
+    for i in range(start + 1, end):
+        var value = array[i]
+        var j = i
+
+        # Find the placement of the value in the array, shifting as we try to
+        # find the position. Throughout, we assume array[start:i] has already
+        # been sorted.
+        while j > start and not cmp_fn(array[j - 1], value):
             array[j] = array[j - 1]
             j -= 1
 
@@ -71,6 +91,36 @@ fn _partition[
             swap(array[left], array[right])
 
     if cmp_fn[type](array[right], pivot_value):
+        right += 1
+    swap(array[end - 1], array[right])
+    return right
+
+
+@always_inline
+fn _partition[
+    type: CollectionElement, cmp_fn: fn (type, type) capturing -> Bool
+](array: AnyPointer[type], start: Int, end: Int) -> Int:
+    if start == end:
+        return end
+
+    var pivot = start + (end - start) // 2
+
+    var pivot_value = array[pivot]
+
+    var left = start
+    var right = end - 2
+
+    swap(array[pivot], array[end - 1])
+
+    while left < right:
+        if cmp_fn(array[left], pivot_value):
+            left += 1
+        elif not cmp_fn(array[right], pivot_value):
+            right -= 1
+        else:
+            swap(array[left], array[right])
+
+    if cmp_fn(array[right], pivot_value):
         right += 1
     swap(array[end - 1], array[right])
     return right
@@ -116,6 +166,36 @@ fn _quicksort[
             continue
 
         if len < 32:
+            _insertion_sort[type, cmp_fn](array, start, end)
+            continue
+
+        var pivot = _partition[type, cmp_fn](array, start, end)
+
+        stack.append(pivot + 1)
+        stack.append(end)
+
+        stack.append(start)
+        stack.append(pivot)
+
+
+fn _quicksort[
+    type: CollectionElement, cmp_fn: fn (type, type) capturing -> Bool
+](array: AnyPointer[type], size: Int):
+    if size == 0:
+        return
+
+    var stack = List[Int](capacity=_estimate_initial_height(size))
+    stack.append(0)
+    stack.append(size)
+    while len(stack) > 0:
+        var end = stack.pop()
+        var start = stack.pop()
+
+        var len = end - start
+        if len < 2:
+            continue
+
+        if len < 8:
             _insertion_sort[type, cmp_fn](array, start, end)
             continue
 
@@ -233,6 +313,25 @@ fn sort[type: DType](inout v: List[Scalar[type]]):
 
     var ptr = rebind[Pointer[Scalar[type]]](v.data)
     sort[type](ptr, len(v))
+
+
+fn sort[
+    type: CollectionElement,
+    cmp_fn: fn (type, type) capturing -> Bool,
+](inout v: List[type]):
+    """Sort the vector inplace.
+
+    The function doesn't return anything, the vector is updated inplace.
+
+    Parameters:
+        type: DType of the underlying data.
+        cmp_fn: The comparison function.
+
+    Args:
+        v: Input vector to sort.
+    """
+
+    _quicksort[type, cmp_fn](v.data, len(v))
 
 
 # ===----------------------------------------------------------------------===#

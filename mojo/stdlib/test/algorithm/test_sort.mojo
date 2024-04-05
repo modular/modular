@@ -532,6 +532,33 @@ fn test_sort_stress():
         test[_leq, _leq](length)
 
 
+@value
+struct MyStruct:
+    var val: Int
+
+
+# CHECK-LABEL: test_sort_custom
+fn test_sort_custom():
+    print("== test_sort_custom")
+
+    alias length = 103
+    var list = List[MyStruct](capacity=length)
+
+    for i in range(length):
+        list.append(MyStruct(length - i - 1))
+
+    @parameter
+    fn compare_fn(lhs: MyStruct, rhs: MyStruct) -> Bool:
+        return lhs.val <= rhs.val
+
+    sort[MyStruct, compare_fn](list)
+
+    # CHECK-NOT: unsorted
+    for i in range(1, length):
+        if list[i - 1].val > list[i].val:
+            print("error: unsorted")
+
+
 fn main():
     test_sort_small_3()
     test_sort_small_5()
@@ -549,6 +576,8 @@ fn main():
     test_quick_sort_repeated_val()
 
     test_sort_stress()
+
+    test_sort_custom()
 
     # CHECK-LABEL: test_partition_top_k_7_5
     # CHECK-NOT: incorrect top-k
