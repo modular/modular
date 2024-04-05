@@ -109,6 +109,9 @@ struct HostMachineInfo {
 /// triple, cpu and features.
 ErrorOr<HostMachineInfo> getHostMachineInfo();
 
+/// Get the host machine total memory in kB
+ErrorOr<std::string> getHostTotalMemoryKB();
+
 } // namespace M
 
 #endif // SUPPORT_MARCHTARGET_HOST_H
