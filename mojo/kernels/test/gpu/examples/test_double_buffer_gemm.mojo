@@ -194,11 +194,9 @@ fn sgemm_double_buffer[
 
     # Load A fragments to the first buffer.
     var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
-    var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).reshape[
-        Layout.row_major(WM // simd_size, simd_size)
-    ]()
+    var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
     var thread_loada_smem_frags = a_smem_warp_row.vectorize[
-        1, simd_size
+        simd_size
     ]().distribute[thread_layout, axis=0](lane_id)
     a_reg0.vectorize[simd_size]().copy_from_numa[a_align](
         thread_loada_smem_frags
@@ -206,11 +204,9 @@ fn sgemm_double_buffer[
 
     # Load B fragments to the first buffer.
     var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
-    var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).reshape[
-        Layout.col_major(simd_size, WN // simd_size)
-    ]()
+    var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
     var thread_loadb_smem_frags = b_smem_warp_row.vectorize[
-        simd_size, 1
+        simd_size
     ]().distribute[thread_layout, axis=1](lane_id)
     b_reg0.vectorize[simd_size]().copy_from_numa[b_align](
         thread_loadb_smem_frags
@@ -241,9 +237,9 @@ fn sgemm_double_buffer[
             # Fill the other A fragments buffer using the next row in A.
             var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](
                 next_k, 0
-            ).reshape[Layout.row_major(WM // simd_size, simd_size)]()
+            ).coalesce()
             var thread_loada_smem_frags = a_smem_warp_row.vectorize[
-                1, simd_size
+                simd_size
             ]().distribute[thread_layout, axis=0](lane_id)
             a_reg1.vectorize[simd_size]().copy_from_numa[a_align](
                 thread_loada_smem_frags
@@ -251,9 +247,9 @@ fn sgemm_double_buffer[
 
             var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
                 next_k, 0
-            ).reshape[Layout.col_major(simd_size, WN // simd_size)]()
+            ).coalesce()
             var thread_loadb_smem_frags = b_smem_warp_row.vectorize[
-                simd_size, 1
+                simd_size
             ]().distribute[thread_layout, axis=1](lane_id)
             b_reg1.vectorize[simd_size]().copy_from_numa[b_align](
                 thread_loadb_smem_frags
@@ -298,9 +294,9 @@ fn sgemm_double_buffer[
             # Fill the other A fragments buffer.
             var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](
                 next_k, 0
-            ).reshape[Layout.row_major(WM // simd_size, simd_size)]()
+            ).coalesce()
             var thread_loada_smem_frags = a_smem_warp_row.vectorize[
-                1, simd_size
+                simd_size
             ]().distribute[thread_layout, axis=0](lane_id)
             a_reg1.vectorize[simd_size]().copy_from_numa[a_align](
                 thread_loada_smem_frags
@@ -309,9 +305,9 @@ fn sgemm_double_buffer[
             # Fill the other B fragments buffer.
             var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
                 next_k, 0
-            ).reshape[Layout.col_major(simd_size, WN // simd_size)]()
+            ).coalesce()
             var thread_loadb_smem_frags = b_smem_warp_row.vectorize[
-                simd_size, 1
+                simd_size
             ]().distribute[thread_layout, axis=1](lane_id)
             b_reg1.vectorize[simd_size]().copy_from_numa[b_align](
                 thread_loadb_smem_frags
