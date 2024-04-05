@@ -347,3 +347,33 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
     return M::Error(hostMachineInfo.getError());
   return *hostMachineInfo;
 }
+
+M::ErrorOr<std::string> M::getHostTotalMemoryKB() {
+#if defined(__APPLE__)
+  int mib[2] = {CTL_HW, HW_MEMSIZE};
+  int64_t bytes;
+  size_t len = sizeof(int64_t);
+  if (sysctl(mib, 2, &bytes, &len, nullptr, 0) == -1)
+    return Error("Unable to query hw.memsize: " + llvm::Twine(strerror(errno)));
+  return std::to_string(bytes / 1000);
+#elif defined(__linux__)
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> errOrBuf =
+      llvm::MemoryBuffer::getFileAsStream("/proc/meminfo");
+  if (std::error_code ec = errOrBuf.getError())
+    return Error("Can't open /proc/meminfo: " + llvm::Twine(ec.message()));
+  SmallVector<StringRef> lines;
+  (*errOrBuf)->getBuffer().split(lines, "\n", /*MaxSplit=*/-1,
+                                 /*KeepEmpty=*/false);
+  for (StringRef line : lines) {
+    auto fields = line.split(':');
+    if (fields.first.trim() == "MemTotal")
+      return fields.second.trim().drop_back(3).str();
+  }
+  return Error("Failed to find MemTotal field in /proc/meminfo.");
+#elif defined(_MSC_VER)
+  // TODO Windows implementation
+  return "";
+#else
+  return Error("Unsupported platform.");
+#endif
+}

@@ -422,7 +422,6 @@ TelemetryContext::TelemetryContext(
   ResourceAttributes attrs;
   auto hostInfoOr = getHostMachineInfo();
   assert(!hostInfoOr.isError() && "could not get the host machine info");
-  auto hostInfo = hostInfoOr.takeValue();
   // Set the CPU and architecture.
   attrs.SetAttribute("cpu.description", hostInfoOr->cpuModelName);
   attrs.SetAttribute("cpu.arch", hostInfoOr->cpuArch);
@@ -435,6 +434,12 @@ TelemetryContext::TelemetryContext(
   // system.
   attrs.SetAttribute("cpu.cores", hostInfoOr->numPhysicalCores);
   attrs.SetAttribute("os.type", hostInfoOr->osName);
+
+  // Get total memory
+  auto memoryOr = getHostTotalMemoryKB();
+  if (!memoryOr.isError()) {
+    attrs.SetAttribute("memory", memoryOr.takeValue());
+  }
 
   // Set the underlying Modular version.
   auto version = getModularVersion();
