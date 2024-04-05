@@ -120,7 +120,7 @@ struct FunctionHandle(Boolable):
         *Ts: AnyRegType,
     ](
         self,
-        *args: *Ts,
+        borrowed *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         stream: Optional[Stream] = None,
@@ -417,7 +417,7 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
         *Ts: AnyRegType
     ](
         self,
-        *args: *Ts,
+        borrowed *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         stream: Optional[Stream] = None,
