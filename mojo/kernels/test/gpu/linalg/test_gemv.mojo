@@ -27,7 +27,7 @@ from LinAlg.MatmulGPU import (
     matmul_kernel,
     matmul_kernel_naive,
 )
-from MatmulUtils import (
+from LinAlg.MatmulUtils import (
     elementwise_epilogue_type,
 )
 from memory.unsafe import DTypePointer, bitcast

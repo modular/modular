@@ -19,7 +19,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from Matmul import matmul as _matmul
+from LinAlg.Matmul import matmul as _matmul
 from LinAlg.MatmulGPU import matmul_kernel_naive, matmul_kernel
 from memory import memset_zero, stack_allocation
 from tensor import Tensor

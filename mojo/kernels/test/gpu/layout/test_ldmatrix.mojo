@@ -31,7 +31,7 @@ from gpu.host.memory import (
 from gpu.mma import mma, ld_matrix
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
 from gpu.sync import syncwarp
-from Matmul import matmul_kernel, matmul_kernel_naive
+from LinAlg.MatmulGPU import matmul_kernel, matmul_kernel_naive
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 from gpu.memory import AddressSpace

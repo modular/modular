@@ -7,7 +7,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 
-from BatchedMatmul import batched_matmul
+from LinAlg.BatchedMatmul import batched_matmul
 from buffer import NDBuffer
 from gpu.host import Context, synchronize
 from gpu.host.memory import _copy_device_to_host, _copy_host_to_device, _malloc
