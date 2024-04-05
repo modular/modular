@@ -8,6 +8,7 @@
 # RUN: kgen-translate --mojo-enable-prebuilt-packages -import-mojo -I %T %s --kgen-print-inline-vtables | FileCheck %s
 
 from test_package_trait.module import (
+    ImplicitlyConformingPackageTrait,
     PackageTrait,
     UseTrait,
     UseTraitReg,
@@ -58,3 +59,11 @@ fn use_trait[T: PackageTrait](x: UseTrait, y: T):
 # CHECK: lit.struct.decl @UseTrait(!UsedInPackageTrait
 
 # CHECK: lit.func @"method({{.*}}_PrivateReg)_thunk"
+
+
+fn check_implicitly_conforming_package_trait():
+    # This conformance check will cause a thunk to be generated for
+    # ImplicitlyConformingPackageTrait. This test ensures that the generated
+    # thunk does not inherit the DIFile scope from the struct decl, which is
+    # illegal (and will fail verification).
+    bind_trait[ImplicitlyConformingPackageTrait]()
