@@ -39,6 +39,8 @@ add_modular_tool(mojo
   ${sources}
 
   DEPENDS
+  orc-rt-cas
+  compiler-rt-cas
   KGENCompilerRT-static
   modular-crashpad-handler
   MojoLLDB

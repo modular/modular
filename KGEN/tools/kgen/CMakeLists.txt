@@ -8,7 +8,8 @@ add_modular_tool(kgen
   kgen.cpp
 
   DEPENDS
-  KGENCompilerRTShared
+  orc-rt-cas
+  compiler-rt-cas
 
   LINK_COMPONENTS
   AllTargetsAsmParsers
