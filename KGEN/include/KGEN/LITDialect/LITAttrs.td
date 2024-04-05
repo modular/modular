@@ -100,7 +100,7 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
         `[` (`]`) : ($defaultPos^      `]`)? `,`
         `[` (`]`) : ($defaultKwOnly^   `]`)? `,`
         `[` (`]`) : ($variadicIndices^ `]`)? `,`
-        $packIndex $origPackConvention
+        $packIndex `,` $origPackConvention
     `>`
   }];
 
