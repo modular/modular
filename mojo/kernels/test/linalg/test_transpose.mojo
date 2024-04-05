@@ -7,7 +7,7 @@
 
 from buffer import Buffer, NDBuffer
 from buffer.list import DimList
-from LinAlg.Transpose import (
+from LinAlg.transpose import (
     _simplify_transpose_perms,
     transpose,
     transpose_inplace,
