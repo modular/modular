@@ -281,16 +281,13 @@ fn sgemm_double_buffer[
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
-    var c_gmem_thread_tile = c_gmem_warp_tile.distribute[
-        thread_layout, tile_size = IntTuple(simd_size, simd_size)
-    ](ThreadIdx.x()).coalesce().vectorize[1, simd_size]()
-    # Reshape thread register tile to match its global memory tile.
-    alias c_tiled_layout = c_reg._compute_tile_layout[simd_size, simd_size]()
-    var c_reg_reshaped = LayoutTensor[
-        c_tiled_layout, c_type, address_space = c_reg.address_space
-    ](c_reg.ptr).coalesce().vectorize[1, simd_size]()
-    # vectorized store to global memory
-    c_gmem_thread_tile.copy_from_numa[c_align](c_reg_reshaped)
+    var c_gmem_thread_tile = c_gmem_warp_tile.vectorize[
+        simd_size, simd_size
+    ]().distribute[thread_layout](ThreadIdx.x())
+    # Copy results to global memory.
+    c_gmem_thread_tile.copy_from_numa[c_align](
+        c_reg.vectorize[simd_size, simd_size]()
+    )
 
 
 fn test() raises:
