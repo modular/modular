@@ -1126,7 +1126,7 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1")}> to !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1"), (mutcast mut *"c`2")}>
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
-  # CHECK:         [[TMP:%.*]] = kgen.rebind
+  # CHECK:         [[TMP:%.*]] = kgen.rebind {{.*}} : !lit.ref<!lit.ref<!MemoryOnlyInt, mut *"c`2">, mut *"anonymous*`15">
   # CHECK-NEXT:   [[TMPV:%.*]] = lit.ref.load [[TMP]] : <!lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1"), (mutcast mut *"c`2")}>, mut *"anonymous*`15">
   # CHECK-NEXT:   hlcf.yield [[TMPV]] : !lit.ref<{{.*}}>
   # CHECK-NEXT: }

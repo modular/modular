@@ -50,11 +50,11 @@ fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: AddressSpace]():
   # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
   var ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt1, as1].type
 
-  # CHECK: lit.alias.decl [[AS2:.*]]: !Int = <{42}>
-  alias as2 : Int = 42
+  # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}
+  alias as2: AddressSpace = AddressSpace(42)
 
-  # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2, apply(:!lit.signature<("self": !Int borrow) -> index> {{.*}}__mlir_index__{{.*}}, [[AS2]])>
-  var ref2 : __mlir_type[`!lit.ref<`, MemExample, `, `, lt2, `, `, as2.__mlir_index__(), `>`]
+  # CHECK: lit.var.decl "ref2" {{.*}}!lit.ref<!MemExample, imm lt2,{{.*}}!AddressSpace [[AS2]], "_value">
+  var ref2 : __mlir_type[`!lit.ref<`, MemExample, `, `, lt2, `, `, as2._value.value, `>`]
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.func @"parametricMut
