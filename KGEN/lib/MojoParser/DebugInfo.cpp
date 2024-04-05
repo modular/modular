@@ -103,8 +103,14 @@ SourceNameAttr SourceNames::getSourceName(Type type) {
 }
 
 void SharedState::setLocationDebugScope(LIT::FuncOp funcOp) {
-  if (!diBuilder)
+  if (!diBuilder) {
+    // Ensure no debug scope for function.
+    if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(
+            funcOp->getLoc()))
+      funcOp->setLoc(fusedLoc.getLocations().front());
     return;
+  }
+
   FileLineColLoc fileLineCol =
       funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
 
