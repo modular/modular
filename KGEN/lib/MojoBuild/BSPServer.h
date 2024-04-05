@@ -22,7 +22,7 @@ class BSPServer {
 public:
   /// Handles the `build/initialize` request.
   void onBuildInitialize(const InitializeBuildParams &params,
-                         mlir::lsp::Callback<llvm::json::Value> callback);
+                         mlir::lsp::Callback<InitializeBuildResult> callback);
 };
 } // namespace M::Build
 

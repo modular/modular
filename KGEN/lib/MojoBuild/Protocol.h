@@ -38,6 +38,14 @@ struct InitializeBuildParams {
 /// Deserialize a parameters object from JSON.
 bool fromJSON(const llvm::json::Value &value, InitializeBuildParams &result,
               llvm::json::Path path);
+
+struct InitializeBuildResult {
+  /// Name of the server.
+  std::string displayName;
+};
+
+/// Serialize a result object to JSON.
+llvm::json::Value toJSON(const M::Build::InitializeBuildResult &value);
 } // namespace Build
 } // namespace M
 
