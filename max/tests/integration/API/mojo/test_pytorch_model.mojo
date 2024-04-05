@@ -79,7 +79,7 @@ fn test_named_input_dims() raises:
     shape.append(100)
     shape.append(100)
     config.add_input_spec(shape, DType.float32)
-    _ = session.load_model(model_path, config)
+    _ = session.load(model_path, config)
 
     shape.clear()
     config = LoadOptions()
@@ -89,7 +89,7 @@ fn test_named_input_dims() raises:
     shape.append(100)
     with assert_raises():
         config.add_input_spec(shape, DType.float32)
-        _ = session.load_model(model_path, config)
+        _ = session.load(model_path, config)
 
 
 fn test_model_execute() raises:
