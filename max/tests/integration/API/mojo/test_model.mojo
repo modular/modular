@@ -37,7 +37,7 @@ fn test_model_num_io_and_names() raises:
     var model_path = args[1]
 
     var session = InferenceSession()
-    var compiled_model = session.load_model(Path(model_path))
+    var compiled_model = session.load(Path(model_path))
     assert_equal(compiled_model.num_model_inputs(), 1)
 
     var input_names = compiled_model.get_model_input_names()
@@ -64,7 +64,7 @@ fn test_model_metadata() raises:
     var model_path = args[1]
 
     var session = InferenceSession()
-    var compiled_model = session.load_model(Path(model_path))
+    var compiled_model = session.load(Path(model_path))
 
     var input_metadata = compiled_model.get_model_input_metadata()
     var num_inputs = len(input_metadata)
@@ -90,7 +90,7 @@ fn test_model_mismatched_input_output_count() raises:
     var model_path = args[2]
 
     var session = InferenceSession()
-    var compiled_model = session.load_model(Path(model_path))
+    var compiled_model = session.load(Path(model_path))
     assert_equal(compiled_model.num_model_inputs(), 2)
 
     var input_names = compiled_model.get_model_input_names()
@@ -118,7 +118,7 @@ fn test_model() raises:
     var model_path = args[1]
 
     var session = InferenceSession()
-    var model = session.load_model(Path(model_path))
+    var model = session.load(Path(model_path))
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):
@@ -149,7 +149,7 @@ fn test_model_tuple_input() raises:
         input_tensor[i] = 1.0
 
     var session = InferenceSession()
-    var model = session.load_model(Path(model_path))
+    var model = session.load(Path(model_path))
     var outputs = model.execute(NamedTensor("input", input_tensor^))
     var output_tensor = outputs.get[DType.float32]("output")
 
@@ -173,7 +173,7 @@ fn test_model_tuple_input_different_dtypes() raises:
         input_tensor_int[i] = i
 
     var session = InferenceSession()
-    var model = session.load_model(Path(model_path))
+    var model = session.load(Path(model_path))
     var outputs = model.execute(
         NamedTensor("input0", input_tensor_float^),
         NamedTensor("input1", input_tensor_int),
@@ -195,7 +195,7 @@ fn test_model_tuple_input_dynamic() raises:
         input_tensor[i] = 1.0
 
     var session = InferenceSession()
-    var model = session.load_model(Path(model_path))
+    var model = session.load(Path(model_path))
     var tensor_name: String = "input"
 
     var outputs = model.execute(NamedTensor(tensor_name, input_tensor^))
@@ -212,7 +212,7 @@ fn test_model_tuple_input_dynamic() raises:
 fn test_model_py_dict_execute() raises:
     var model_path = Path(argv()[1])
     var session = InferenceSession()
-    var model = session.load_model(model_path)
+    var model = session.load(model_path)
     var inputs = Python.evaluate(
         "{'input': __import__('numpy').arange(5).astype('float32')}"
     )

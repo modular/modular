@@ -30,7 +30,7 @@ fn test_model_numpy_input() raises:
 
     var model_path = args[1]
     var session = InferenceSession()
-    var model = session.load_model(Path(model_path))
+    var model = session.load(Path(model_path))
 
     var expected_output = Tensor[DType.float32](
         TensorShape(5), 4.0, 2.0, -5.0, 3.0, 6.0
