@@ -11,6 +11,7 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Init/Init.h"
 #include "Support/MDialect/MDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Support/Timing.h"
@@ -31,6 +32,17 @@ int main(int argc, char *argv[]) {
   KGENCommonCLOptions parser(clOptions);
 
   KGEN::registerKGENCommandLineOptions();
+
+  // Create our context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "kgen-translate",
+      Init::Options().withRuntimeOptions(
+          LLCL::RuntimeOptions().withMainWillNotDonate().withCPUAffinity(
+              false)));
+  if (ctxOr.isError()) {
+    llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
+    return 1;
+  }
 
   M::cl::MOpt<bool> disableBuiltinModule{
       "mojo-disable-builtins",
@@ -80,11 +92,9 @@ int main(int argc, char *argv[]) {
 
         DialectRegistry registry;
         registerAllKGENDialects(registry);
+        registerContext(registry, *ctxOr);
         context->appendDialectRegistry(registry);
 
-        // Set up the runtime.
-        std::unique_ptr<LLCL::Runtime> runtime =
-            clOptions.withMainWillNotDonate().createRuntime();
         mlir::TimingScope ts;
         CompilationOptions options = clOptions.getCompilationOptions();
         options.searchPaths = parserSearchPaths.getValue();
@@ -94,8 +104,8 @@ int main(int argc, char *argv[]) {
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.parsingStandardLibrary = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
-        OwningOpRef<ModuleOp> output =
-            LIT::importMojoFile(*runtime, sourceMgr, config, ts);
+        OwningOpRef<ModuleOp> output = LIT::importMojoFile(
+            *(*ctxOr)->get<LLCL::Runtime>(), sourceMgr, config, ts);
 
         if (output && !parserBytecodeOutput.getValue().empty()) {
           std::string message;
