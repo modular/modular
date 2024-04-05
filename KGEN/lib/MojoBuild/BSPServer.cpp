@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "BSPServer.h"
-#include "Protocol.h"
+#include "KGEN/MojoBuild/Protocol.h"
 
 using namespace M;
 using namespace M::Build;
