@@ -100,7 +100,7 @@ fn execute_no_args(
     m.verify()
 
     var session = InferenceSession()
-    var model = session.load_model(m, load_options)
+    var model = session.load(m, load_options)
 
     var input_map = session.new_tensor_map()
     var result_map = model.execute(input_map)
@@ -122,7 +122,7 @@ fn execute_n_args[
     m.verify()
 
     var session = InferenceSession()
-    var model = session.load_model(m, load_options)
+    var model = session.load(m, load_options)
 
     var input_map = session.new_tensor_map()
     input_map.borrow("input0", t1)
@@ -142,7 +142,7 @@ fn execute_base(
     m.verify()
 
     var session = InferenceSession()
-    var model = session.load_model(m, load_options)
+    var model = session.load(m, load_options)
 
     var input_map = session.new_tensor_map()
     for i in range(len(tensors)):

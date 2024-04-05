@@ -26,12 +26,12 @@ struct Model:
     for execution.
 
     Do not instantiate this object directly. Instead, create it with
-    [`InferenceSession.load_model()`](/engine/reference/mojo/engine/session#load_model).
+    [`InferenceSession.load()`](/engine/reference/mojo/engine/session#load).
     For example:
 
     ```mojo
     var session = engine.InferenceSession()
-    var model = session.load_model("bert-base-uncased")
+    var model = session.load("bert-base-uncased")
     ```
 
     Then you can run inference by passing your inputs to [`execute()`](#execute)

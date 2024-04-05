@@ -302,7 +302,7 @@ struct SingleModelInferenceService(InferenceService):
     ) raises:
         self._lib = lib
         self._session = session^
-        self._model = self._session.load_model(model.path)
+        self._model = self._session.load(model.path)
 
     fn infer[
         req_type: InferenceRequest, resp_type: InferenceResponse

@@ -150,7 +150,7 @@ struct _InferenceSessionImpl(Movable):
         )
         return model^
 
-    fn load_model(
+    fn load(
         self,
         owned config: LoadOptions,
         owned session: InferenceSession,
@@ -274,7 +274,7 @@ struct LoadOptions(CollectionElement):
     If you're loading a TorchScript model, you must create an instance of this
     type and call [`add_input_spec()`](#add_input_spec) for each input.
     Then, pass `LoadOptions` along with your TorchScript model to
-    [`Session.load_model()`](/engine/reference/mojo/engine/session#load_model).
+    [`Session.load()`](/engine/reference/mojo/engine/session#load).
     """
 
     var _source: Optional[ModelSource]
@@ -337,7 +337,7 @@ struct LoadOptions(CollectionElement):
            options.add_input_spec(attention_mask_spec)
 
            var session = engine.InferenceSession()
-           var model = session.load_model("roberta.torchscript", options)
+           var model = session.load("roberta.torchscript", options)
            ```
 
            If an input supports dynamic shapes, use `None` for that dimension
@@ -463,7 +463,7 @@ struct InferenceSession:
 
     ```mojo
     var session = engine.InferenceSession()
-    var model = session.load_model("bert-base-uncased")
+    var model = session.load("bert-base-uncased")
     ```
     """
 
@@ -479,7 +479,7 @@ struct InferenceSession:
         var path = _get_engine_path()
         self._ptr = Arc(_InferenceSessionImpl(path, options._device))
 
-    fn load_model(
+    fn load(
         self, path: Path, config: Optional[LoadOptions] = None
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
@@ -512,9 +512,9 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_path(path)
-        return self._ptr[].load_model(load_config^, self)
+        return self._ptr[].load(load_config^, self)
 
-    fn load_model(
+    fn load(
         self, graph: Graph, config: Optional[LoadOptions] = None
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
@@ -528,9 +528,9 @@ struct InferenceSession:
             Initialized model ready for inference.
 
         """
-        return self.load_model(graph.module(), config)
+        return self.load(graph.module(), config)
 
-    fn load_model(
+    fn load(
         self, module: Module, config: Optional[LoadOptions] = None
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
@@ -550,7 +550,7 @@ struct InferenceSession:
         else:
             load_config = LoadOptions()
         load_config._set_model_source(module)
-        return self._ptr[].load_model(load_config^, self)
+        return self._ptr[].load(load_config^, self)
 
     fn get_as_engine_tensor_spec(
         self, name: String, spec: TensorSpec

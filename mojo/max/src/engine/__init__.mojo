@@ -17,7 +17,7 @@ from max import engine
 fn main() raises:
     # Load your model:
     var session = engine.InferenceSession()
-    var model = session.load_model(model_path)
+    var model = session.load(model_path)
 
     # Get the inputs, then run an inference:
     var outputs = model.execute(inputs)
