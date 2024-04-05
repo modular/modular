@@ -12,6 +12,8 @@ add_modular_tool(kgen-translate
   MojoParser
   LLCLRuntimeGlobals
   MSupportGlobals
+  MSupportInit
+  MSupport
   MArchTarget
   MProfiling
 
