@@ -58,17 +58,17 @@ public:
   MockEventLogger() = default;
 
   MOCK_METHOD((const opentelemetry::nostd::string_view), GetName, (),
-              (override));
+              (noexcept, override));
 
   MOCK_METHOD((opentelemetry::nostd::shared_ptr<opentelemetry::logs::Logger>),
-              GetDelegateLogger, (), (override));
+              GetDelegateLogger, (), (noexcept, override));
 
   MOCK_METHOD(
       void, EmitEvent,
       ((opentelemetry::nostd::string_view event_name),
        (opentelemetry::nostd::unique_ptr<opentelemetry::logs::LogRecord> &&
         log_record)),
-      (override));
+      (noexcept, override));
 };
 
 class MockLogger : public Logs::Logger {
