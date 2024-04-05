@@ -550,7 +550,7 @@ static Value materializeLLVMAlloca(OpBuilder &b, Type elementType,
   auto start =
       b.create<LLVM::LifetimeStartOp>(op->getLoc(), typeAllocSize * count, ptr);
   b.setInsertionPoint(op->getBlock(), --op->getBlock()->end());
-  b.create<LLVM::LifetimeEndOp>(op->getLoc(), typeAllocSize * count, ptr);
+  b.create<LLVM::LifetimeEndOp>(hoistedLoc, typeAllocSize * count, ptr);
   b.setInsertionPointAfter(start);
 
   return ptr;
