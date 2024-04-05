@@ -3016,14 +3016,17 @@ AnyValue MagicFunctionNode::emitSourceLocation(ValueDest &dest,
 
   auto loc =
       cast<FileLineColLoc>(emitter.shared.diags.translateLocation(getLoc()));
-  auto func =
-      cast<LIT::FuncOp>(emitter.declScope.getNearestDeclOfType<LIT::FuncOp>());
+  auto func = dyn_cast_or_null<LIT::FuncOp>(
+      emitter.declScope.getNearestDeclOfType<LIT::FuncOp>());
 
   return emitter.emitConstructorCall(
       emitter.shared.getBuiltinSourceLocationType(getLoc()),
       ArrayRef<ASTExprAnd<AnyValue>>{
           {StringAttr::get(loc.getFilename().getValue(), stringType), this},
-          {StringAttr::get(*func.getSourceName(), stringType), this},
+          {StringAttr::get(func && func.getSourceName() ? *func.getSourceName()
+                                                        : "None",
+                           stringType),
+           this},
           {b.getIndexAttr(loc.getLine()), this}},
       this, CallSyntax::kImplicitConvert, dest);
 }
