@@ -176,7 +176,7 @@ public:
              bool demangleParams = false) const;
 
   /// Print the specified parameter like we would in AST type printing.
-  static void printParam(raw_ostream &os, TypedAttr value, bool forDiag,
+  static void printParam(raw_ostream &os, TypedAttr param, bool forDiag,
                          bool demangleParams);
 
   /// Create and return a reference type with 'this' as the underlying element

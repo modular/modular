@@ -540,7 +540,7 @@ static void printDemangledParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  os << getParamAsString(param);
+  os << getParamAsString(param, forDiag);
 }
 
 /// Pretty print a parameter value and optionally demangle it.
@@ -765,5 +765,5 @@ RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
   auto ctx = mlirType.getContext();
   auto selfLifetime = ParamDeclRefAttr::get(StringAttr::get(ctx, argName + "`"),
                                             LifetimeType::get(ctx, isMut));
-  return RefType::get(mlirType, selfLifetime, /*addrSpace=*/0);
+  return RefType::get(mlirType, selfLifetime, /*addressSpace=*/0);
 }

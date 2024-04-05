@@ -40,8 +40,9 @@ using ExportMap = llvm::MapVector<StringAttr, ExportedSymbol>;
 ExportMap getExportedSymbols(ModuleOp module);
 
 /// Return the string form for an attribute value that is printed in a <>
-/// context in the .mlir file.
-std::string getParamAsString(Attribute value);
+/// context in the .mlir file. In diagnostics contexts, MLIR and KGEN keywords
+/// are not escaped with *"...".
+std::string getParamAsString(Attribute value, bool forDiag = false);
 
 /// Print the value as colon type parameter value into a string.
 StringAttr getParamTypeAsString(TypedAttr value);
@@ -113,8 +114,11 @@ void printParamName(AsmPrinter &p, StringAttr name, bool isRef = false);
 ParseResult parseParamName(AsmParser &p, StringAttr &name);
 
 /// When in a context that knows it is dealing with a parameter specifically,
-/// utilize syntactic shortcuts to make the printed syntax easier to grok.
-void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
+/// utilize syntactic shortcuts to make the printed syntax easier to grok. In a
+/// context where printing for diagnostics, we do not use the double quoted
+/// syntax to escape MLIR and KGEN keywords.
+void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {},
+                     bool forDiag = false);
 void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
                      Type type = {});
 

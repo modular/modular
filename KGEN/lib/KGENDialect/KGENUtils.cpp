@@ -34,13 +34,13 @@ using namespace KGEN;
 // Parameter Type and Value Printing and Parsing
 //===----------------------------------------------------------------------===//
 
-std::string KGEN::getParamAsString(Attribute value) {
+std::string KGEN::getParamAsString(Attribute value, bool forDiag) {
   SmallVector<char, 128> result;
   {
     llvm::raw_svector_ostream os(result);
     if (auto ta = dyn_cast<TypedAttr>(value)) {
       StreamAsmPrinter p(os);
-      printParamValue(p, ta);
+      printParamValue(p, ta, {}, forDiag);
     } else {
       os << value;
     }
@@ -1043,10 +1043,8 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
   }
 }
 
-/// Convert a parameter value to a string when in a context that knows it is
-/// dealing with a parameter specifically.  This utilize syntactic shortcuts to
-/// make the printed syntax easier to grok.
-void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
+void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
+                           bool forDiag) {
   // If the attribute's type provides a pretty printing hook, try to use it.
   if (auto typeItf = dyn_cast<ParameterTypeInterface>(value.getType()))
     if (succeeded(typeItf.printValue(p, value)))
@@ -1066,7 +1064,10 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     bool isRef = isTypeExpr(value);
     if (auto type = dyn_cast<ParameterTypeInterface>(value.getType()))
       isRef |= type.isMetaType();
-    printParamName(p, declRef.getName(), isRef);
+    if (forDiag)
+      llvm::printEscapedString(declRef.getName(), p.getStream());
+    else
+      printParamName(p, declRef.getName(), isRef);
     return;
   }
   if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value)) {
