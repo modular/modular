@@ -29,7 +29,7 @@ from LinAlg.Matmul import matmul
 from memory import stack_allocation
 from memory.unsafe import AddressSpace as _AddressSpace
 from memory.unsafe import DTypePointer, bitcast
-from LinAlg.Transpose import transpose
+from LinAlg.transpose import transpose
 
 from utils.index import Index, StaticIntTuple
 from utils.static_tuple import StaticTuple
