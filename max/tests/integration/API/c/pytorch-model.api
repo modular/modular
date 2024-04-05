@@ -1,6 +1,7 @@
 // REQUIRES: mtorch
 // RUN: modular-api-executor --compile-specs=?x3x100x100xf32 --print-metadata %torchscript_relu_model | FileCheck %s
 // RUN: modular-api-executor --compile-specs=?x3x100x100xf32 --input-specs=1x3x100x100xf32 --print-metadata %torchscript_relu_model | FileCheck %s --check-prefix=CHECK-PREFER-COMPILE-SPECS
+// RUN: modular-api-executor --compile-specs=?x3x100x100xf32 --input-dim-names="batch;-;-;-" --print-metadata %torchscript_relu_model | FileCheck %s --check-prefix=CHECK-INPUT-DIM-NAMES
 // RUN: modular-api-executor --input-specs=1x3x100x100xf32 --print-metadata %torchscript_relu_model | FileCheck %s --check-prefix=CHECK-FALLBACK-INPUT-SPECS
 // RUN: modular-api-executor --compile-specs=?x3x100x100xf32 --input-specs=1x3x100x100xf32 --input-names=x --result-output-style=full %torchscript_relu_model | FileCheck %s --check-prefix=CHECK-EXECUTE
 
@@ -18,6 +19,13 @@
 // CHECK-PREFER-COMPILE-SPECS: Outputs:
 // CHECK-PREFER-COMPILE-SPECS: - name: result0
 // CHECK-PREFER-COMPILE-SPECS:   spec: -1x3x100x100xf32
+
+// CHECK-INPUT-DIM-NAMES: Inputs:
+// CHECK-INPUT-DIM-NAMES: - name: x
+// CHECK-INPUT-DIM-NAMES:   spec: -1x3x100x100xf32
+// CHECK-INPUT-DIM-NAMES: Outputs:
+// CHECK-INPUT-DIM-NAMES: - name: result0
+// CHECK-INPUT-DIM-NAMES:   spec: -1x3x100x100xf32
 
 // CHECK-FALLBACK-INPUT-SPECS: Inputs:
 // CHECK-FALLBACK-INPUT-SPECS: - name: x

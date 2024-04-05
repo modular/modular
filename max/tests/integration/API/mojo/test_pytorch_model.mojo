@@ -12,11 +12,12 @@ from max.engine import (
     TensorMap,
     EngineTensorView,
     LoadOptions,
+    ShapeElement,
 )
 from sys import argv
 from tensor import Tensor, TensorSpec
 from collections import Optional
-from testing import assert_equal
+from testing import assert_equal, assert_raises
 from pathlib import Path
 
 
@@ -65,6 +66,32 @@ fn test_pytorch_model2() raises:
     assert_equal(compiled_model.num_model_outputs(), 1)
 
 
+fn test_named_input_dims() raises:
+    # CHECK-LABEL: ====test_named_input_dims
+    print("====test_named_input_dims")
+
+    var model_path = Path(argv()[1])
+    var session = InferenceSession()
+    var config = LoadOptions()
+    var shape = List[ShapeElement]()
+    shape.append("batch")
+    shape.append(3)
+    shape.append(100)
+    shape.append(100)
+    config.add_input_spec(shape, DType.float32)
+    _ = session.load_model(model_path, config)
+
+    shape.clear()
+    config = LoadOptions()
+    shape.append("1two3")
+    shape.append(3)
+    shape.append(100)
+    shape.append(100)
+    with assert_raises():
+        config.add_input_spec(shape, DType.float32)
+        _ = session.load_model(model_path, config)
+
+
 fn test_model_execute() raises:
     var args = argv()
     var model_path = args[1]
@@ -85,4 +112,5 @@ fn test_model_execute() raises:
 fn main() raises:
     test_pytorch_model()
     test_pytorch_model2()
+    test_named_input_dims()
     test_model_execute()

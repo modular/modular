@@ -207,3 +207,13 @@ def test_repr_torch_input_spec():
         == "TorchInputSpec(shape=None, dtype=DType.float64)"
     )
     assert str(input_spec_without_shape) == "None x float64"
+
+    input_spec_with_dim_names = me.TorchInputSpec(
+        ["BATCH", 30], me.DType.float32
+    )
+    assert input_spec_with_dim_names.shape == ["BATCH", 30]
+    assert (
+        repr(input_spec_with_dim_names)
+        == "TorchInputSpec(shape=['BATCH', 30], dtype=DType.float32)"
+    )
+    assert str(input_spec_with_dim_names) == "-1x30xfloat32"
