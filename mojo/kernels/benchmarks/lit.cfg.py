@@ -38,7 +38,7 @@ def has_gpu():
         return False
 
     try:
-        get_command_output("cuda-query")
+        get_command_output(["cuda-query"])
         return True
     except:
         return False

@@ -22,7 +22,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.sync import syncwarp
-from MatmulGPU import (
+from LinAlg.MatmulGPU import (
     gemv_kernel,
     gevm_kernel,
     gemv_tc_kernel,
