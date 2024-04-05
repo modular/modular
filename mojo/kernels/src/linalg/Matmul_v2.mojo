@@ -251,6 +251,8 @@ struct PackMatrixRows[
                     start_idx_global[1],
                 )
                 var row_data: SIMD[type, simd_size]
+
+                @parameter
                 if skip_col_bound:
                     # This is fastest path where both row and col bounds
                     #  are skipped so the code path is simd-in and simd-out
