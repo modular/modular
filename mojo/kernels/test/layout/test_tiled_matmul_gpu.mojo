@@ -14,6 +14,7 @@ from gpu.sync import barrier
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import int
+from layout.layout_tensor import outer_product_acc
 from gpu.device_print import _printf
 
 
@@ -151,35 +152,20 @@ fn sram_blocked_matmul[
 
         barrier()
 
-        # Distribute thread layout into rows of l.h.s and cols of r.h.s
-        # to perform dot mma instruction.
-        var lhs_sram_local = lhs_sram_tile.vectorize[1, BK]().distribute[
-            thread_layout, axis=0
-        ](ThreadIdx.x())
-        var rhs_sram_local = rhs_sram_tile.vectorize[BK, 1]().distribute[
-            thread_layout, axis=1
-        ](ThreadIdx.x())
-
+        @always_inline
         @parameter
-        fn dot[
-            v1: Int, v2: Int
-        ](
-            lhs: SIMD[DType.float32, v1], rhs: SIMD[DType.float32, v2]
-        ) -> Float32:
-            constrained[v1 == v2, "Expecting same vector length"]()
-            var res = Float32(0)
-            for i in range(v1):
-                res += lhs[i] * rhs[i]
-            return res
+        fn accumulate[kk: Int]():
+            var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
+            var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
+            var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
+                ThreadIdx.x()
+            )
+            var rhs_frags = rhs_row.distribute[thread_layout, axis=1](
+                ThreadIdx.x()
+            )
+            outer_product_acc(dst_register_tile, lhs_frags, rhs_frags)
 
-        # Iterate over fragments of each thread.
-        for m_i in range(dst_register_tile.shape[0]()):
-            for n_i in range(dst_register_tile.shape[1]()):
-                # Accumlate into the register tile.
-                dst_register_tile[m_i, n_i] += dot(
-                    lhs_sram_local[m_i, 0],
-                    rhs_sram_local[0, n_i],
-                )
+        unroll[accumulate, BK]()
 
     # Move data from register tile to DRAM
     dst_local_tile.copy_from(dst_register_tile)
@@ -362,6 +348,7 @@ fn main() raises:
         # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
         # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
         test_naive_matmul_kernel()
+
         # CHECK: === test_sram_blocked_matmul
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
         # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0

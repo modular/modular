@@ -29,14 +29,9 @@ fn _compute_distribute_layout[
 
     @parameter
     if axis:
-        for i in range(len(threads_layout.shape)):
-            var shape_i = threads_layout.shape[i]
-            if i == axis.value():
-                thread_tile.append(Layout(shape_i))
-            else:
-                thread_tile.append(Layout(1))
-
-        return zipped_divide(data_layout, thread_tile)
+        return zipped_divide(
+            data_layout, Layout(threads_layout.shape[axis.value()])
+        )
 
     for dim in threads_layout.shape:
         thread_tile.append(Layout(dim))
@@ -367,10 +362,10 @@ struct LayoutTensor[
     @always_inline
     fn distribute[
         threads_layout: Layout,
-        tiled_layout: Layout = _compute_distribute_layout[
-            layout, threads_layout
-        ](),
         axis: Optional[Int] = None,
+        tiled_layout: Layout = _compute_distribute_layout[
+            layout, threads_layout, axis
+        ](),
         submode_axis: Optional[Int] = None,
     ](self, thread_id: Int) -> LayoutTensor[
         tiled_layout[1],
@@ -383,23 +378,24 @@ struct LayoutTensor[
         alias threads_layout_shape = flatten(threads_layout.shape)
         alias threads_layout_stride = flatten(threads_layout.stride)
 
-        # Selected projection axes 0-1 constant.
-        alias projection_const = flatten(
-            _project_on_axis[axis.value(), submode_axis](
-                threads_layout.shape
-            ) if axis else fill_like(threads_layout.shape, 1)
+        alias thread_projected_stride = flatten(
+            threads_layout.stride[
+                axis.value()
+            ] if axis else threads_layout.stride
+        )
+        alias thread_projected_shape = flatten(
+            threads_layout.shape[axis.value()] if axis else threads_layout.shape
         )
 
         var offset = 0
 
         @parameter
         fn compute_offset[i: Int]():
-            alias p_axis = int(projection_const[i])
-            alias shape_i = int(threads_layout_shape[i])
-            alias stride_i = int(threads_layout_stride[i])
-            var coords_i = (thread_id // stride_i) % shape_i
             alias fragments_stride_i = int(fragments_layout_stride[i])
-            offset += p_axis * coords_i * fragments_stride_i
+            alias shape_i = int(thread_projected_shape[i])
+            alias stride_i = int(thread_projected_stride[i])
+            var thread_coord_i = (thread_id // stride_i) % shape_i
+            offset += thread_coord_i * fragments_stride_i
 
         unroll[compute_offset, len(fragments_layout_stride)]()
 
@@ -955,11 +951,15 @@ fn stack_allocation_like[
 # Updates res with the outer product of lhs, rhs vectors, res += outer(lhs, rhs).
 #
 fn outer_product_acc[
-    dtype: DType
+    dtype: DType,
+    *,
+    res_address_space: AddressSpace,
+    lhs_address_space: AddressSpace,
+    rhs_address_space: AddressSpace,
 ](
-    res: LayoutTensor[_, dtype],
-    lhs: LayoutTensor[_, _],
-    rhs: LayoutTensor[_, _],
+    res: LayoutTensor[_, dtype, address_space=res_address_space],
+    lhs: LayoutTensor[_, _, address_space=lhs_address_space],
+    rhs: LayoutTensor[_, _, address_space=rhs_address_space],
 ):
     constrained[res.rank() == 2, "Only rank 2 res is allowed."]()
     constrained[lhs.rank() == 1, "Only rank 1 lhs is allowed."]()

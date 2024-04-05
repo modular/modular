@@ -503,6 +503,20 @@ fn test_distribute_with_tile_size():
     ].stack_allocation()
     tensor8x1.linspace()
 
+    # +-------------+
+    # | TH_0 | TH_2 |
+    # | TH_0 | TH_2 |
+    # |------+------+
+    # | TH_1 | TH_3 |
+    # | TH_1 | TH_3 |
+    # |------+------+
+    # | TH_4 | TH_6 |
+    # | TH_4 | TH_6 |
+    # |------+------+
+    # | TH_5 | TH_7 |
+    # | TH_5 | TH_7 |
+    # |------+------+
+
     # Threads 2, 3, 6, 7 should have the same fragments as thread 0, 1, 4, 5.
     # CHECK: ----thread[ 0 ]----
     # CHECK: [0.0, 1.0]
@@ -522,9 +536,9 @@ fn test_distribute_with_tile_size():
     # CHECK: [6.0, 7.0]
     for tid in range(thread_layout.size()):
         print("----thread[", tid, "]----")
-        var tile = tensor8x1.vectorize[2]().distribute[thread_layout, axis=0](
-            tid
-        )
+        var tile = tensor8x1.vectorize[2, 1]().distribute[
+            thread_layout, axis=0
+        ](tid)
         tile.print()
 
 
@@ -795,7 +809,7 @@ fn test_distribute_axis_projection():
     for th_id in range(16):
         print("th_id", th_id)
         var tensor = tensor_4x4.vectorize[1, 4]().distribute[
-            Layout(IntTuple(4, 4), IntTuple(4, 1)), axis=0
+            Layout.row_major(4, 4), axis=0
         ](th_id)
         tensor.print()
         print("=====")
@@ -850,92 +864,10 @@ fn test_distribute_axis_projection():
     for th_id in range(16):
         print("th_id", th_id)
         var tensor = tensor_4x4.vectorize[4, 1]().distribute[
-            Layout(IntTuple(4, 4), IntTuple(4, 1)), axis=1
+            Layout.row_major(4, 4), axis=1
         ](th_id)
         tensor.print()
         print("=====")
-
-
-# CHECK-LABEL: test_distribute_axis_projection_submode
-fn test_distribute_axis_projection_submode():
-    print("== test_distribute_axis_projection_submode")
-    var tensor_4x8 = LayoutTensor[
-        Layout.row_major(4, 8), DType.float32
-    ].stack_allocation()
-    tensor_4x8.linspace()
-    alias thread_layout = Layout(
-        IntTuple(IntTuple(2, 2), 8), IntTuple(IntTuple(1, 16), 2)
-    )
-    # CHECK: ----thread[ 0 ]----
-    # CHECK: [0.0, 8.0, 16.0, 24.0]
-    # CHECK: ----thread[ 1 ]----
-    # CHECK: [0.0, 8.0, 16.0, 24.0]
-    # CHECK: ----thread[ 2 ]----
-    # CHECK: [1.0, 9.0, 17.0, 25.0]
-    # CHECK: ----thread[ 3 ]----
-    # CHECK: [1.0, 9.0, 17.0, 25.0]
-    # CHECK: ----thread[ 4 ]----
-    # CHECK: [2.0, 10.0, 18.0, 26.0]
-    # CHECK: ----thread[ 5 ]----
-    # CHECK: [2.0, 10.0, 18.0, 26.0]
-    # CHECK: ----thread[ 6 ]----
-    # CHECK: [3.0, 11.0, 19.0, 27.0]
-    # CHECK: ----thread[ 7 ]----
-    # CHECK: [3.0, 11.0, 19.0, 27.0]
-    # CHECK: ----thread[ 8 ]----
-    # CHECK: [4.0, 12.0, 20.0, 28.0]
-    # CHECK: ----thread[ 9 ]----
-    # CHECK: [4.0, 12.0, 20.0, 28.0]
-    # CHECK: ----thread[ 10 ]----
-    # CHECK: [5.0, 13.0, 21.0, 29.0]
-    # CHECK: ----thread[ 11 ]----
-    # CHECK: [5.0, 13.0, 21.0, 29.0]
-    # CHECK: ----thread[ 12 ]----
-    # CHECK: [6.0, 14.0, 22.0, 30.0]
-    # CHECK: ----thread[ 13 ]----
-    # CHECK: [6.0, 14.0, 22.0, 30.0]
-    # CHECK: ----thread[ 14 ]----
-    # CHECK: [7.0, 15.0, 23.0, 31.0]
-    # CHECK: ----thread[ 15 ]----
-    # CHECK: [7.0, 15.0, 23.0, 31.0]
-    # CHECK: ----thread[ 16 ]----
-    # CHECK: [0.0, 8.0, 16.0, 24.0]
-    # CHECK: ----thread[ 17 ]----
-    # CHECK: [0.0, 8.0, 16.0, 24.0]
-    # CHECK: ----thread[ 18 ]----
-    # CHECK: [1.0, 9.0, 17.0, 25.0]
-    # CHECK: ----thread[ 19 ]----
-    # CHECK: [1.0, 9.0, 17.0, 25.0]
-    # CHECK: ----thread[ 20 ]----
-    # CHECK: [2.0, 10.0, 18.0, 26.0]
-    # CHECK: ----thread[ 21 ]----
-    # CHECK: [2.0, 10.0, 18.0, 26.0]
-    # CHECK: ----thread[ 22 ]----
-    # CHECK: [3.0, 11.0, 19.0, 27.0]
-    # CHECK: ----thread[ 23 ]----
-    # CHECK: [3.0, 11.0, 19.0, 27.0]
-    # CHECK: ----thread[ 24 ]----
-    # CHECK: [4.0, 12.0, 20.0, 28.0]
-    # CHECK: ----thread[ 25 ]----
-    # CHECK: [4.0, 12.0, 20.0, 28.0]
-    # CHECK: ----thread[ 26 ]----
-    # CHECK: [5.0, 13.0, 21.0, 29.0]
-    # CHECK: ----thread[ 27 ]----
-    # CHECK: [5.0, 13.0, 21.0, 29.0]
-    # CHECK: ----thread[ 28 ]----
-    # CHECK: [6.0, 14.0, 22.0, 30.0]
-    # CHECK: ----thread[ 29 ]----
-    # CHECK: [6.0, 14.0, 22.0, 30.0]
-    # CHECK: ----thread[ 30 ]----
-    # CHECK: [7.0, 15.0, 23.0, 31.0]
-    # CHECK: ----thread[ 31 ]----
-    # CHECK: [7.0, 15.0, 23.0, 31.0]
-    for th_id in range(32):
-        print("----thread[", th_id, "]----")
-        var fragments = tensor_4x8.vectorize[4, 1]().distribute[
-            thread_layout, axis=0, submode_axis=1
-        ](th_id)
-        fragments.print()
 
 
 fn main():
@@ -952,4 +884,3 @@ fn main():
     test_copy_vectorized()
     test_distribute_vectorized()
     test_distribute_axis_projection()
-    test_distribute_axis_projection_submode()
