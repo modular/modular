@@ -20,9 +20,21 @@ namespace M::Build {
 /// Mojo and building Mojo projects.
 class BSPServer {
 public:
+  BSPServer();
+
+  /// Executes the underlying JSON-RPC transport for the server.
+  mlir::LogicalResult run();
+
+private:
   /// Handles the `build/initialize` request.
   void onBuildInitialize(const InitializeBuildParams &params,
                          mlir::lsp::Callback<InitializeBuildResult> callback);
+
+  /// A JSON-RPC transport that reads requests from stdin, and writes responses
+  /// and notifications to stdout.
+  mlir::lsp::JSONTransport transport;
+  /// A message handler that maps request types to response callbacks.
+  mlir::lsp::MessageHandler messageHandler;
 };
 } // namespace M::Build
 

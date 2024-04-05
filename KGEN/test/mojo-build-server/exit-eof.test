@@ -7,4 +7,4 @@
 // RUN: not mojo-build-server < %s 2> %t.err
 // RUN: FileCheck %s < %t.err
 
-// CHECK: Transport error:
+// CHECK: server transport error:
