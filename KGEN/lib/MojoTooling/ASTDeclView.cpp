@@ -107,7 +107,7 @@ generateTypeString(Type type, VariadicKind varKind,
     // VariadicPack needs special printing, because its argument isn't a type.
     os << "*";
     ASTType::printParam(os, astType.getVariadicPackInfo().getVariadic(),
-                        /*forDiag=*/true, /*demangleParams=*/false);
+                        /*forDiag=*/true, /*demangleParams=*/true);
     return os.str();
   }
 
@@ -128,7 +128,7 @@ generateTypeString(Type type, VariadicKind varKind,
   if (selfType && astType.isEqualCanon(*selfType))
     os << "Self";
   else
-    os << astType.getAsString(/*forDiag=*/true);
+    os << astType.getAsString(/*forDiag=*/true, /*demangleParams=*/true);
 
   return os.str();
 }

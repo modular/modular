@@ -449,6 +449,23 @@ fn variadic_params_args[*nums: Int](*vals: Int, **kwargs: object):
     pass
 
 
+# CHECK: "name": "parameter_with_escaped_mlir_name",
+# CHECK: "overloads":
+# CHECK:     "args":
+# CHECK:         "name": "value",
+# CHECK:         "type": "type"
+
+# CHECK:     "parameters":
+# CHECK:         "kind": "parameter",
+# CHECK:         "name": "type",
+
+# CHECK:     "signature": "parameter_with_escaped_mlir_name[type: AnyType](value: type)",
+
+
+fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
+    pass
+
+
 # CHECK:  "kind": "module",
 # CHECK:  "name": "mojo-doc",
 
