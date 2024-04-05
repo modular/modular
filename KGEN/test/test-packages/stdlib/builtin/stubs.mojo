@@ -310,5 +310,5 @@ struct __ParameterClosureCaptureList[fn_type: AnyRegType, fn_ref: fn_type]:
 struct Tuple[*Ts: AnyRegType]:
     var storage: __mlir_type[`!kgen.pack<`, Ts, `>`]
 
-    fn __init__(*args: *Ts) -> Self:
+    fn __init__(borrowed *args: *Ts) -> Self:
         return Self {storage: args}

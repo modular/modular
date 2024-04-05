@@ -50,8 +50,8 @@ fn test_func_type():
     alias float4: fn[a: Int](inout *Int) -> None = test_func_type
     # expected-error @below {{fn(owned *MemType) raises capturing -> None}}
     alias float5: def(*MemType) capturing -> None = test_func_type
-    # expected-error @below {{'fn[*AnyRegType](owned * *$0) capturing -> None'}}
-    alias float6: fn[*Ts: AnyRegType](owned* *Ts) capturing -> None = test_func_type
+    # expected-error @below {{'fn[*AnyType](owned * *$0) capturing -> None'}}
+    alias float6: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
     # expected-error @below {{'fn[*AnyType](owned * *$0) capturing -> None'}}
     alias float6a: fn[*Ts: AnyType](owned* *Ts) capturing -> None = test_func_type
     # expected-error @below {{fn[AnyRegType](inout *$0) capturing -> None}}

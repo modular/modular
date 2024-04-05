@@ -581,8 +581,16 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
   // If the pack is over an "AnyRegType" list, use the KGEN direct
   // representation for compatibility.
   // TODO: Move to RefPackType consistently.
-  if (isa<TypeType>(elementType))
+  if (isa<TypeType>(elementType) &&
+      arg.convention == ParsedArgument::kConventionBorrowed)
     return PackType::get(param.get());
+
+  if (isa<TypeType>(elementType)) {
+    emitter.emitError(arg.loc)
+        << "variadic pack elements declared as 'AnyRegType' are removed,"
+        << " please declare elements as 'AnyType' instead of 'AnyRegType'";
+    return {};
+  }
 
   // Arguments passed by memory need an associated lifetime parameter, and need
   // to be passed by reference.
@@ -606,17 +614,21 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
     emitter.emitError(arg.loc, "malformed VariadicPack");
     return {};
   }
+  // The default element_trait param type is
+  // !lit.anytrait<<@stdlib::@builtin::@anytype::@AnyType>>
+  // reflecting that it takes any trait like Stringable.
+  auto elementTraitParamTy = packStruct.getParams()[2].getType();
 
-  // Convert the expected trait type to something of !lit.anytrait<AnyType> type
-  // even if it is a more specific type.
+  // If the declared type of the pack elements is a trait subtype of AnyType,
+  // it will be that traits metatype.  Downcast to the same type, but with
+  // !lit.anytrait<AnyType> type.
   TypedAttr elementTrait = PValue(elementType).get();
-  if (elementTrait.getType() != packStruct.getParams()[2].getType())
-    elementTrait = ParamOperatorAttr::get(POC::Rebind, elementTrait,
-                                          packStruct.getParams()[2].getType());
+  if (elementTrait.getType() != elementTraitParamTy)
+    elementTrait =
+        ParamOperatorAttr::get(POC::Rebind, elementTrait, elementTraitParamTy);
 
-  // Bind the VariadicPack[isMutable, lifetime, element_trait, element_types,
-  // /*TODO*/ addr_space] parameters.
-  // TODO: Support addr_space in VariadicPack! refType.getAddressSpace()
+  // Bind the VariadicPack[isMutable, lifetime, element_trait, element_types]
+  // parameters.
   return packStruct.bindReference(
       {refType.isMutable(), refType.getLifetime(), elementTrait, param.get()});
 }

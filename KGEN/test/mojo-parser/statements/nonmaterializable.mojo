@@ -44,7 +44,7 @@ alias notMaterializedAlias = NmStruct(77)
 alias notMaterializedButConverted: NmTarget = NmStruct(76)
 
 
-fn tail_types[T: AnyRegType, *U: AnyRegType](a: T, *b: *U):
+fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
     pass
 
 
@@ -79,7 +79,7 @@ fn useNonmaterializable(p: Bool):
 
     # Test that parameter inference using nonmaterializable gives the target,
     # not the nonmaterializable type.
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !NmTarget, :variadic<type> []>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType #NmTarget1, :variadic<!AnyType> []>
     tail_types(NmStruct(5))
-    # CHECK: call {{.*}}tail_types{{.*}}<:type !NmTarget, :variadic<type> [{{.*}}NmTarget]>
+    # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType #NmTarget1, :variadic<!AnyType> [#NmTarget1]>
     tail_types(NmStruct(5), NmStruct(6))
