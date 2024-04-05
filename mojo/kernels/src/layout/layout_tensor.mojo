@@ -733,6 +733,41 @@ struct LayoutTensor[
                 self.ptr.store[width = self.element_size](dst_idx, src_vec)
 
             unroll[copy_scalars_to_vectors, dst_size]()
+        # Vectorized copy between 2D row-major elements, used for C in gemm.
+        elif (
+            # Not trivial element
+            self.element_layout != Layout(IntTuple(1, 1))
+            and self.element_layout.rank() == 2
+            and other_element_layout.shape == self.element_layout.shape
+            and other_element_layout.stride[1] == 1
+            and self.element_layout.stride[1] == 1
+        ):
+            # Copy an element tensor.
+            @parameter
+            fn copy_by_element[i: Int]():
+                # Offset to the current element.
+                alias src_offset = other_layout(i)
+                alias dst_offset = self.layout(i)
+                alias num_copies = self.element_layout.shape[0].value()
+                alias vec_width = self.element_layout.shape[1].value()
+
+                @parameter
+                fn copy_by_vec[j: Int]():
+                    alias src_idx = src_offset + other_element_layout(j)
+                    alias dst_idx = dst_offset + self.element_layout(j)
+
+                    var src_vec = other.ptr.load[
+                        width=vec_width, alignment=alignment
+                    ](src_idx).cast[dtype]()
+
+                    self.ptr.store[width=vec_width, alignment=alignment](
+                        dst_idx, src_vec
+                    )
+
+                unroll[copy_by_vec, num_copies]()
+
+            unroll[copy_by_element, dst_size]()
+
         else:
 
             @parameter
