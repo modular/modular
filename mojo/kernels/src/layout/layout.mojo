@@ -188,34 +188,7 @@ fn MakeTileLayoutList[*tile_sizes: Int]() -> LayoutList:
 # The CUTE version has a second input to specify which modes to coalesce. We simplify
 # it to flag to indicate keeping the original rank.
 fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
-    if not keep_rank:
-        var result_shape = IntTuple(1)
-        var result_stride = IntTuple(0)
-
-        for z in zip(flatten(layout.shape), flatten(layout.stride)):
-            var shape = int(z[0])
-            var stride = int(z[1])
-
-            # skip their shape-1s
-            if shape == 1:
-                continue
-            # replace our shape-1 with anything
-            elif result_shape[-1] == 1:
-                result_shape[-1] = shape
-                result_stride[-1] = stride
-            # merge modes if the shape*stride match
-            elif int(result_shape[-1]) * int(result_stride[-1]) == stride:
-                result_shape[-1] = int(result_shape[-1]) * shape
-            # append a new mode
-            else:
-                result_shape.append(shape)
-                result_stride.append(stride)
-
-        if len(result_shape) == 1:
-            return Layout(result_shape[0], result_stride[0])
-        else:
-            return Layout(result_shape, result_stride)
-    else:
+    if keep_rank:
         # Coalesce each mode and concat the results to perserve rank.
         var shapes = IntTuple()
         var strides = IntTuple()
@@ -225,6 +198,32 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
             strides.append(coalesced_mode.stride)
 
         return Layout(shapes, strides)
+
+    var result_shape = IntTuple(1)
+    var result_stride = IntTuple(0)
+
+    for z in zip(flatten(layout.shape), flatten(layout.stride)):
+        var shape = int(z[0])
+        var stride = int(z[1])
+
+        # skip their shape-1s
+        if shape == 1:
+            continue
+        # replace our shape-1 with anything
+        elif result_shape[-1] == 1:
+            result_shape[-1] = shape
+            result_stride[-1] = stride
+        # merge modes if the shape*stride match
+        elif int(result_shape[-1]) * int(result_stride[-1]) == stride:
+            result_shape[-1] = int(result_shape[-1]) * shape
+        # append a new mode
+        else:
+            result_shape.append(shape)
+            result_stride.append(stride)
+
+    if len(result_shape) == 1:
+        return Layout(result_shape[0], result_stride[0])
+    return Layout(result_shape, result_stride)
 
 
 # Layout composition

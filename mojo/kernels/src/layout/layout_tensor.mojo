@@ -373,11 +373,24 @@ struct LayoutTensor[
         address_space=address_space,
         element_layout=element_layout,
     ]:
+        """Distribute tiled workload to threads.
+
+        If the `axis` is given, for example, using `axis = 0` for 4 threads:
+        TH_0 TH_2
+        TH_1 TH_3
+        This means the tensor is only distributed to threads in axis = 0, i.e.,
+        threads 0 and 1. Threads 2 and 3 gets the same tile as 0 and 1, respectively.
+        This is useful when threads load same vectors from a row in A matrix and
+        some threads share the same vector.
+        """
         alias fragments_layout_stride = flatten(tiled_layout[0].stride)
 
         alias threads_layout_shape = flatten(threads_layout.shape)
         alias threads_layout_stride = flatten(threads_layout.stride)
 
+        # Only extract coordinates in the given axis.
+        # Example: axis = 0 for 2x2 threads, we only need thread 0 and 1's
+        # coordinates since thread 2 and 3 are getting the same tile.
         alias thread_projected_stride = flatten(
             threads_layout.stride[
                 axis.value()
@@ -404,86 +417,6 @@ struct LayoutTensor[
             dtype,
             address_space=address_space,
             element_layout=element_layout,
-        ](self.ptr.offset(offset))
-
-    # Work around issue 34843
-    @staticmethod
-    fn _make_layout_wrapper(layout1: Layout, layout2: Layout) -> Layout:
-        return make_layout(layout1, layout2)
-
-    @always_inline
-    fn distribute[
-        threads_layout: Layout,
-        tile_size: IntTuple,
-        axis: Optional[Int] = None,
-        __tiled_layout: Layout = Self._compute_tile_layout[tile_size](),
-        __tile_distribution: Layout = Self._compute_distribute_layout[
-            __tiled_layout[1], threads_layout, axis
-        ](),
-        __result_layout: Layout = Self._make_layout_wrapper(
-            __tiled_layout[0], __tile_distribution[1]
-        ),
-    ](self, thread_id: Int) -> LayoutTensor[
-        __result_layout,
-        dtype,
-        address_space=address_space,
-    ]:
-        """Distribute tiled workload to threads. Each thread gets several tiles
-        of the input tile_size.
-
-        The function first tiles the tensor by `tile_sizes`. __tiled_layout[1]
-        indicates how the tile pattern gets repeated in the tensor. Then, the
-        function tiles __tiled_layout[1] by the thread_layout. This effectively
-        distribute the tiles to each thread.
-
-        If the `axis` is given, for example, using `axis = 0` for 4 threads:
-        TH_0 TH_2
-        TH_1 TH_3
-        This means the tensor is only distributed to threads in axis = 0, i.e.,
-        threads 0 and 1. Threads 2 and 3 gets the same tile as 0 and 1, respectively.
-        This is useful when threads load same vectors from a row in A matrix and
-        some threads share the same vector.
-        """
-
-        # Fragments are the tile of tile_size. The stride is between the TH_0's
-        # tile to TH_1's tile. Example:
-        # +-----------+-----------+
-        # | TH_0 TH_0 | TH_2 TH_2 |
-        # | TH_0 TH_0 | TH_2 TH_2 |
-        # |-----------+-----------+
-        # | TH_1 TH_1 | TH_3 TH_3 |
-        # | TH_1 TH_1 | TH_3 TH_3 |
-        # |-----------+-----------+
-        alias fragments_layout_stride = flatten(__tile_distribution[0].stride)
-
-        # Only extract coordinates in the given axis.
-        # Example: axis = 0 in the above diagram, we only need TH_0 and TH_1's
-        # coordinates since TH_2 and TH_3 are getting the same tile.
-        # fmt: off
-        alias thread_projected_stride = flatten(
-            threads_layout.stride[axis.value()] if axis else threads_layout.stride
-        )
-        alias thread_projected_shape = flatten(
-            threads_layout.shape[axis.value()] if axis else threads_layout.shape
-        )
-        # fmt: on
-
-        var offset = 0
-
-        @parameter
-        fn compute_offset[i: Int]():
-            alias fragments_stride_i = int(fragments_layout_stride[i])
-            alias shape_i = int(thread_projected_shape[i])
-            alias stride_i = int(thread_projected_stride[i])
-            var thread_coord_i = (thread_id // stride_i) % shape_i
-            offset += thread_coord_i * fragments_stride_i
-
-        unroll[compute_offset, len(fragments_layout_stride)]()
-
-        return LayoutTensor[
-            __result_layout,
-            dtype,
-            address_space=address_space,
         ](self.ptr.offset(offset))
 
     @always_inline
