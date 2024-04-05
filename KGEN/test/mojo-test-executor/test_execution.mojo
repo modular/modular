@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# TODO(asan): Timing out in ASAN. Fix.
+# UNSUPPORTED: asan
+
 # RUN: not mojo-test-executor --pretty "%s::unknown_test()" | FileCheck %s --check-prefix=CHECK-UNKNOWN
 # RUN: mojo-test-executor --pretty "%s::test_fn_assert_failure()" | FileCheck %s --check-prefix=CHECK-UNIT
 # RUN: mojo-test-executor --pretty "%s::test_def_assert_failure()" | FileCheck %s --check-prefix=CHECK-UNIT

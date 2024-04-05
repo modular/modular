@@ -4,6 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# TODO(asan): Timing out in ASAN. Fix.
 # UNSUPPORTED: asan
 
 # RUN: not mojo test -I %S/inputs "%s" | FileCheck %s
