@@ -1169,8 +1169,8 @@ fn function_types[
   # CHECK-SAME: p1: {{.*}}<[2]<"a": !Int, "b": {{.*}}@ParamType<:!Int *(0,0)>>(?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<none, mut *[0,1]> byref_result) throws -> i1
   p1: def[a: Int, b: ParamType[a]]() -> None,
 
-  # CHECK-SAME: p2: {{.*}}<<"Ts": variadic<type> var>(!kgen.pack<*(0,0)> borrow_in_mem|pack) async -> !kgen.none
-  p2: async fn[*Ts: AnyRegType](* *Ts) -> None,
+  # CHECK-SAME: p2: {{.*}}"Ts": variadic<!AnyType> var>(!lit.declref<#VariadicPack <:i1 0, :lifetime<0> *[0,0], :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> *(0,0)>> borrow_in_mem|pack) async
+  p2: async fn[*Ts: AnyType](* *Ts) -> None,
 ](
   # CHECK-SAME: %{{.*}}: {{.*}}(!Int borrow, |) -> !Int
   float0: fn(Int) -> Int,

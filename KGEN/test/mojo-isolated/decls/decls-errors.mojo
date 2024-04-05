@@ -269,7 +269,7 @@ struct TestPackErrorMessage[*Ts: AnyType]:
     fn __init__(*args: *Ts):
          pass
 
-# TODO: xpected-error @+1 {{variadic pack elements declared as 'AnyRegType' are removed, please declare elements as 'AnyType' instead of 'AnyRegType'}}
+# expected-error @+1 {{variadic pack elements declared as 'AnyRegType' are removed, please declare elements as 'AnyType' instead of 'AnyRegType'}}
 fn badAnyRegPack[*Ts: AnyRegType](*args: *Ts):
   pass
 
