@@ -120,7 +120,7 @@ public:
   }
 
   static std::optional<std::string> getEnv() {
-    return llvm::sys::Process::GetEnv("MODULAR_ACCESS_TOKEN");
+    return llvm::sys::Process::GetEnv("MODULAR_AUTH_TOKEN");
   };
 
   static ErrorOr<EntitlementStore> fromToken(const EntitlementToken &token);
