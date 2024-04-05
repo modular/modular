@@ -118,50 +118,63 @@ struct TorchInputSpec(Movable):
 
     alias NewTorchInputSpecFnName = "M_newTorchInputSpec"
 
-    fn __init__(inout self, spec: TensorSpec, lib: DLHandle):
+    fn __init__(inout self, spec: TensorSpec, lib: DLHandle) raises:
         var shape = Self.shape_type()
         shape.reserve(spec.rank())
         for i in range(spec.rank()):
             shape.append(spec[i])
         self.shape = shape
         self.dtype = spec.dtype()
+        var status = Status(lib)
         var ptr = call_dylib_func[CTorchInputSpec](
             lib,
             Self.NewTorchInputSpecFnName,
             self.shape.data,
+            DTypePointer[DType.invalid].get_null(),
             len(self.shape),
             EngineDType(self.dtype),
+            status.ptr,
         )
+        if status:
+            raise Error(str(status))
         self.ptr = ptr
         self.torch_lib = lib
 
     fn __init__(
         inout self,
-        shape: List[Optional[Int64]],
+        shape: List[ShapeElement],
         dtype: DType,
         lib: DLHandle,
         engine_lib: DLHandle,
-    ):
+    ) raises:
         var converted_shape = Self.shape_type()
+        var converted_dim_names = List[DTypePointer[DType.int8]]()
         converted_shape.reserve(len(shape))
-        for i in range(len(shape)):
-            var dim_or = shape[i]
-            if dim_or:
-                converted_shape.append(dim_or.value())
+        for dim in shape:
+            if dim[].is_static():
+                converted_shape.append(dim[].static_value())
+                converted_dim_names.append(DTypePointer[DType.int8]())
             else:
                 converted_shape.append(
                     CTensorSpec.get_dynamic_dimension_value(engine_lib)
                 )
+                converted_dim_names.append(dim[]._name._as_ptr())
 
         self.shape = converted_shape^
         self.dtype = dtype
+        var status = Status(lib)
         var ptr = call_dylib_func[CTorchInputSpec](
             lib,
             Self.NewTorchInputSpecFnName,
             self.shape.data,
+            converted_dim_names.data,
             len(self.shape),
             EngineDType(self.dtype),
+            status.ptr,
         )
+        _ = converted_dim_names^
+        if status:
+            raise Error(str(status))
         self.ptr = ptr
         self.torch_lib = lib
 
@@ -171,16 +184,21 @@ struct TorchInputSpec(Movable):
         dtype: DType,
         lib: DLHandle,
         engine_lib: DLHandle,
-    ):
+    ) raises:
         self.shape = Self.shape_type()
         self.dtype = dtype
+        var status = Status(lib)
         var ptr = call_dylib_func[CTorchInputSpec](
             lib,
             Self.NewTorchInputSpecFnName,
             CTorchInputSpec.ptr_type(),
+            Pointer[NoneType](),
             CTensorSpec.get_dynamic_rank_value(engine_lib),
             EngineDType(self.dtype),
+            status.ptr,
         )
+        if status:
+            raise Error(str(status))
         self.ptr = ptr
         self.torch_lib = lib
 
@@ -263,16 +281,16 @@ struct CompileConfig:
             inner_spec.append(spec_ptr[].ptr)
         self.ptr[].set_torch_input_specs(self.torch_lib.value(), inner_spec)
 
-    fn add_input_spec(inout self, spec: TensorSpec):
+    fn add_input_spec(inout self, spec: TensorSpec) raises:
         self.input_specs.emplace_back(
             TorchInputSpec(spec, self.torch_lib.value())
         )
 
     fn add_input_spec(
         inout self,
-        shape_or: Optional[List[Optional[Int64]]],
+        shape_or: Optional[List[ShapeElement]],
         dtype: DType,
-    ):
+    ) raises:
         if not shape_or:
             self.input_specs.emplace_back(
                 TorchInputSpec(None, dtype, self.torch_lib.value(), self.lib)

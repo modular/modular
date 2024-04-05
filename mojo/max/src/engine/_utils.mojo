@@ -119,9 +119,37 @@ struct FourArgCallable[
 
     @always_inline("nodebug")
     fn __call__(
-        self, arg1: Arg1Ty, arg2: Arg2Ty, arg3: Arg3Ty, arg4: Arg4Ty
+        self,
+        arg1: Arg1Ty,
+        arg2: Arg2Ty,
+        arg3: Arg3Ty,
+        arg4: Arg4Ty,
     ) -> ResultTy:
         return self.func(arg1, arg2, arg3, arg4)
+
+
+@value
+@register_passable("trivial")
+struct FiveArgCallable[
+    ResultTy: AnyRegType,
+    Arg1Ty: AnyRegType,
+    Arg2Ty: AnyRegType,
+    Arg3Ty: AnyRegType,
+    Arg4Ty: AnyRegType,
+    Arg5Ty: AnyRegType,
+]:
+    var func: fn (Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty) -> ResultTy
+
+    @always_inline("nodebug")
+    fn __call__(
+        self,
+        arg1: Arg1Ty,
+        arg2: Arg2Ty,
+        arg3: Arg3Ty,
+        arg4: Arg4Ty,
+        arg5: Arg5Ty,
+    ) -> ResultTy:
+        return self.func(arg1, arg2, arg3, arg4, arg5)
 
 
 @always_inline("nodebug")
@@ -242,6 +270,29 @@ fn call_dylib_func[
     return lib.get_function[
         FourArgCallable[ResultTy, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty]
     ](name)(arg1, arg2, arg3, arg4)
+
+
+@always_inline("nodebug")
+fn call_dylib_func[
+    ResultTy: AnyRegType,
+    Arg1Ty: AnyRegType,
+    Arg2Ty: AnyRegType,
+    Arg3Ty: AnyRegType,
+    Arg4Ty: AnyRegType,
+    Arg5Ty: AnyRegType,
+](
+    borrowed lib: DLHandle,
+    name: StringRef,
+    arg1: Arg1Ty,
+    arg2: Arg2Ty,
+    arg3: Arg3Ty,
+    arg4: Arg4Ty,
+    arg5: Arg5Ty,
+) -> ResultTy:
+    """Call function `name` in dylib with one result and five arguments."""
+    return lib.get_function[
+        FiveArgCallable[ResultTy, Arg1Ty, Arg2Ty, Arg3Ty, Arg4Ty, Arg5Ty]
+    ](name)(arg1, arg2, arg3, arg4, arg5)
 
 
 struct OwningVector[T: Movable](Sized):

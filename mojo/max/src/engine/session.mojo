@@ -229,7 +229,8 @@ struct _InferenceSessionImpl(Movable):
 struct _Specs(CollectionElement):
     var static: Optional[TensorSpec]
 
-    alias dynamic_type = Optional[List[Optional[Int64]]]
+    alias legacy_dynamic_type = Optional[List[Optional[Int64]]]
+    alias dynamic_type = Optional[List[ShapeElement]]
     var dynamic: Self.dynamic_type
     var dtype: DType
 
@@ -241,6 +242,20 @@ struct _Specs(CollectionElement):
     fn __init__(
         inout self, spec: Optional[List[Optional[Int64]]], dtype: DType
     ):
+        self.static = None
+        if spec:
+            var dyn_spec = List[ShapeElement]()
+            for item in spec.value():
+                if item[]:
+                    dyn_spec.append(item[].value())
+                else:
+                    dyn_spec.append(None)
+            self.dynamic = dyn_spec^
+        else:
+            self.dynamic = None
+        self.dtype = dtype
+
+    fn __init__(inout self, spec: Optional[List[ShapeElement]], dtype: DType):
         self.static = None
         self.dynamic = spec
         self.dtype = dtype
@@ -353,6 +368,20 @@ struct LoadOptions(CollectionElement):
         """
         self._input_specs.append(_Specs(shape, dtype))
 
+    fn add_input_spec(
+        inout self,
+        shape: _Specs.legacy_dynamic_type,
+        dtype: DType,
+    ):
+        """Add valid input specs for model to be given at compile time.
+           Only applicable for PyTorch.
+
+        Args:
+            shape: Shape of the input.
+            dtype: Datatype of the input.
+        """
+        self._input_specs.append(_Specs(shape, dtype))
+
     fn add_input_specs(
         inout self,
         specs: List[TensorSpec],
@@ -389,6 +418,21 @@ struct LoadOptions(CollectionElement):
             dtypes: Datatypes of the inputs, as a collection of
                    [`DType`](/mojo/stdlib/builtin/dtype#dtype) values in an
                    [`InlinedFixedVector`](/mojo/stdlib/collections/vector#inlinedfixedvector).
+        """
+        for i in range(len(shapes)):
+            self._input_specs.append(_Specs(shapes[i], dtypes[i]))
+
+    fn add_input_specs(
+        inout self,
+        shapes: List[_Specs.legacy_dynamic_type],
+        dtypes: InlinedFixedVector[DType],
+    ) raises:
+        """Add valid input specs for model to be given at compile time.
+           Only applicable for PyTorch.
+
+        Args:
+            shapes: Shapes of the input.
+            dtypes: Datatypes of the input.
         """
         for i in range(len(shapes)):
             self._input_specs.append(_Specs(shapes[i], dtypes[i]))
