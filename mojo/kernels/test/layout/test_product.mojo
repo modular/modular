@@ -18,6 +18,17 @@ def test_product2():
     for i in product(IntTuple(1, 2), IntTuple(3, 4)):
         print(i)
 
+    alias prd = product(IntTuple(1, 2), IntTuple(3, 4))
+
+    # CHECK: (1, 3)
+    print(prd[0])
+    # CHECK: (1, 4)
+    print(prd[1])
+    # CHECK: (2, 3)
+    print(prd[2])
+    # CHECK: (2, 4)
+    print(prd[3])
+
 
 def test_product3():
     # CHECK: (1, 3, 5)
@@ -30,6 +41,17 @@ def test_product3():
     # CHECK: (2, 4, 6)
     for i in product(IntTuple(1, 2), IntTuple(3, 4), IntTuple(5, 6)):
         print(i)
+
+    alias prd = product(IntTuple(1, 2), IntTuple(3, 4), IntTuple(5, 6))
+
+    # CHECK: (1, 3, 5)
+    print(prd[0])
+    # CHECK: (1, 3, 6)
+    print(prd[1])
+    # CHECK: (2, 4, 5)
+    print(prd[6])
+    # CHECK: (2, 4, 6)
+    print(prd[7])
 
 
 def main():

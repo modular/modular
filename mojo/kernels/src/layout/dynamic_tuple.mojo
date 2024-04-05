@@ -465,6 +465,15 @@ struct _product2[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         var len_b = len(self.b)
         return len_a * len_b
 
+    @always_inline
+    fn __getitem__(self, idx: Int) -> DynamicTuple[T, D]:
+        var len_b = len(self.b)
+
+        var idx_b = idx._positive_rem(len_b)
+        var idx_a = idx._positive_div(len_b)
+
+        return DynamicTuple[T, D](self.a[idx_a], self.b[idx_b])
+
 
 @value
 struct _ProductIter3[
@@ -525,6 +534,20 @@ struct _product3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         var len_b = len(self.b)
         var len_c = len(self.c)
         return len_a * len_b * len_c
+
+    @always_inline
+    fn __getitem__(self, idx: Int) -> DynamicTuple[T, D]:
+        var len_b = len(self.b)
+        var len_c = len(self.c)
+
+        var curr_index = idx
+
+        var idx_c = curr_index._positive_rem(len_c)
+        curr_index = curr_index._positive_div(len_c)
+        var idx_b = curr_index._positive_rem(len_b)
+        var idx_a = curr_index._positive_div(len_b)
+
+        return DynamicTuple[T, D](self.a[idx_a], self.b[idx_b], self.c[idx_c])
 
 
 fn product[
