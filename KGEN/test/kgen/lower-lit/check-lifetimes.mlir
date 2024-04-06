@@ -413,3 +413,72 @@ lit.func @top(%c: !lit.ref<@Box<:trait<@AnyType> !Thing>, mut #lit.lifetime> bor
   lit.call @Thing::@get(%0) : !lit.signature<("self": !lit.ref<!Thing, mut #lit.lifetime> borrow_in_mem) -> ()>
   kgen.return
 }
+
+// -----
+
+lit.struct.decl @S attributes {
+  destructor =
+    #kgen.symbol.constant<@S::@__del__> : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+  lit.struct.field a : index
+  lit.func @__init__[mut selflife](%self: !lit.ref<@S, mut selflife> init_self, |) -> !kgen.none attributes {isStatic} {
+    %0 = lit.ref.struct.ger %self[a] : <index, mut selflife> from @S
+    %idx1 = index.constant 1
+    lit.ref.store %idx1, %0 : !lit.ref<index, mut selflife>
+
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+  }
+}
+
+lit.func @print(%borrowMe: !lit.ref<@S, mut #lit.lifetime> borrow_in_mem) -> !kgen.none {
+    %none = kgen.param.constant: none = <#kgen.none>
+    kgen.return %none : !kgen.none
+}
+
+lit.func @elifInitCorrect[mut *"__result__`0"](?, %cond: i1, %__result__[__result__]: !lit.ref<@S, mut *"__result__`0"> byref_result) -> !kgen.none {
+  // CHECK: hlcf.elif {
+  // CHECK-NEXT: hlcf.elif.yield %cond : i1
+  // CHECK-NEXT: } then {
+  // CHECK-NEXT:   lit.call @S::@__init__[mut *"__result__`0"](%__result__)
+  // CHECK-NEXT:   hlcf.yield
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT:   lit.call @S::@__init__[mut *"__result__`0"](%__result__)
+  // CHECK-NEXT:   hlcf.yield
+  // CHECK-NEXT: }
+  hlcf.elif {
+    hlcf.elif.yield %cond : i1
+  } then {
+    %0 = lit.call @S::@__init__[mut *"__result__`0"](%__result__) : !lit.signature<[1](!lit.ref<@S, mut *"__result__`0"> init_self, |) -> !kgen.none>
+    hlcf.yield
+  } else {
+    %0 = lit.call @S::@__init__[mut *"__result__`0"](%__result__) : !lit.signature<[1](!lit.ref<@S, mut *"__result__`0"> init_self, |) -> !kgen.none>
+    hlcf.yield
+  }
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// CHECK-LABEL: @unreachableInElif
+lit.func @unreachableInElif[mut *"range`", mut *"__result__`1"](
+  %cond1: i1 borrow,
+  %cond2: i1 borrow, ?,
+  %__result__: !lit.ref<@S, mut *"__result__`1"> byref_result) {
+  hlcf.elif {
+    hlcf.elif.yield %cond1 : i1
+  } then {
+    hlcf.elif {
+      hlcf.elif.yield %cond2 : i1
+    } then {
+      %1 = lit.call @S::@__init__[mut *"__result__`1"](%__result__) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> init_self) -> !kgen.none>
+      kgen.return
+    } else {
+      %1 = lit.call @S::@__init__[mut *"__result__`1"](%__result__) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> init_self) -> !kgen.none>
+      kgen.return
+    }
+    kgen.unreachable
+  } else {
+    %1 = lit.call @S::@__init__[mut *"__result__`1"](%__result__) : !lit.signature<[1](!lit.ref<@S, mut *[0,0]> init_self) -> !kgen.none>
+    kgen.return
+  }
+  kgen.unreachable
+}

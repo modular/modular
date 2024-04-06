@@ -778,6 +778,7 @@ struct UninitializedValueScan {
 private:
   void checkTerminatorOp(Operation &op);
   void checkLocalControlFlowOp(Operation &op);
+  void checkAcyclicControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
   void checkLoopOp(HLCF::LoopOp loopOp);
   void checkTryOp(LIT::TryOp tryOp);
@@ -1233,6 +1234,9 @@ void UninitializedValueScan::scanBlock(Block &block) {
     case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op);
       break;
+    case OverallOpValueEffect::acyclicControlFlowNodeOp:
+      checkAcyclicControlFlowOp(op);
+      break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(cast<HLCF::LoopOp>(op));
       break;
@@ -1305,6 +1309,63 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
   // Indicate that all values are live after the terminator so an 'if' will get
   // properly intersected with the other side of the branch.
   liveValues.set();
+}
+
+void UninitializedValueScan::checkAcyclicControlFlowOp(Operation &op) {
+  auto controlFlowNode = cast<HLCF::ControlFlowNode>(op);
+  std::optional<BitVector> resultValues;
+
+  SmallVector<std::pair<HLCF::ControlFlowTarget, BitVector>> liveValuesAtTarget;
+  SmallVector<HLCF::ControlFlowTarget> targets;
+  SmallVector<Attribute> controlFlowNodeOperands;
+  for (unsigned i = 0, e = controlFlowNode->getNumOperands(); i < e; i++)
+    controlFlowNodeOperands.push_back(Attribute());
+  controlFlowNode.getEntryTargets(controlFlowNodeOperands, targets);
+  assert(!targets.empty() && "expected at least 1 target to enter op");
+  for (HLCF::ControlFlowTarget target : targets)
+    liveValuesAtTarget.emplace_back(
+        std::pair<HLCF::ControlFlowTarget, BitVector>(target, liveValues));
+  while (!liveValuesAtTarget.empty()) {
+    auto [target, localLiveValues] = liveValuesAtTarget.back();
+    liveValuesAtTarget.pop_back();
+    if (target.index.has_value()) {
+      unsigned index = target.index.value();
+      BitVector initialLiveValues = localLiveValues;
+      Region &targetRegion = op.getRegion(index);
+
+      // Compute Liveness after this target.
+      liveValues = initialLiveValues;
+      scanBlock(targetRegion.front());
+      BitVector postLiveValues = liveValues;
+
+      // Advance to next target.
+      HLCF::ControlFlowTerminator term = cast<HLCF::ControlFlowTerminator>(
+          targetRegion.front().getTerminator());
+      if (!term.isParentNode(controlFlowNode) || isa<UnreachableOp>(term)) {
+        // Path has completed.
+        if (resultValues.has_value())
+          resultValues.value() &= postLiveValues;
+        else
+          resultValues = postLiveValues;
+        continue;
+      }
+      SmallVector<HLCF::ControlFlowTarget> termTargets;
+      SmallVector<Attribute> operands(term->getNumOperands());
+      term.getBranchTargets(operands, termTargets);
+      for (HLCF::ControlFlowTarget t : termTargets) {
+        liveValuesAtTarget.emplace_back(
+            std::pair<HLCF::ControlFlowTarget, BitVector>(t, postLiveValues));
+      }
+    } else {
+      // Path has completed.
+      if (resultValues.has_value())
+        resultValues.value() &= localLiveValues;
+      else
+        resultValues = localLiveValues;
+    }
+  }
+  assert(resultValues.has_value() && "expected at least 1 completed path");
+  liveValues = resultValues.value();
 }
 
 /// This is HLCF::IfOp, ParamIfOp, or a throwing call, which are all if-like.
@@ -1582,6 +1643,10 @@ void DestructorInsertion::scanBlock(Block &block) {
       break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(cast<HLCF::LoopOp>(op));
+      break;
+    case OverallOpValueEffect::acyclicControlFlowNodeOp:
+      // TODO: replace with implementation in followup
+      consumedValues.set(0);
       break;
     case OverallOpValueEffect::tryOp:
       checkTryOp(cast<LIT::TryOp>(op));
