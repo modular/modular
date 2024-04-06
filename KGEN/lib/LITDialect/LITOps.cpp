@@ -155,8 +155,8 @@ LITSignatureType LIT::getFullSignature(Operation *container,
   auto [ancestors, params] = collectParametricAncestors(container);
   if (params.empty())
     return signature;
-  auto [variadicIndices, _] = getContextualVariadicIndices(ancestors);
-  return LITSignatureType::prependParams(signature, params, variadicIndices);
+  return LITSignatureType::prependParams(signature, params,
+                                         getContextualVariadicMask(ancestors));
 }
 
 //===----------------------------------------------------------------------===//

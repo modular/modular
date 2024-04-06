@@ -92,7 +92,7 @@ struct LITLowerer {
   LogicalResult lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
                              const Twine &parentPrefix,
                              ArrayRef<ParamDeclAttr> parentInputParams,
-                             ArrayRef<size_t> parentVariadicIndices);
+                             ArrayRef<bool> parentVariadicMask);
   /// Lower nested structures in lit.struct.decl away.
   LogicalResult lowerStructDecl(StructDeclOp structDecl,
                                 Block::iterator symTableIt);
@@ -299,14 +299,14 @@ LogicalResult LITLowerer::lowerLITFunc(LIT::FuncOp func,
                                        Block::iterator symTableIt,
                                        const Twine &parentPrefix) {
   return lowerLITFunc(func, symTableIt, parentPrefix, /*parentInputParams=*/{},
-                      /*parentVariadicIndices=*/{});
+                      /*parentVariadicMask=*/{});
 }
 
 LogicalResult
 LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
                          const Twine &parentPrefix,
                          ArrayRef<ParamDeclAttr> parentInputParams,
-                         ArrayRef<size_t> parentVariadicIndices) {
+                         ArrayRef<bool> parentVariadicMask) {
   // Update the function name, incorporating the parent prefix.
   if (!parentPrefix.isTriviallyEmpty()) {
     StringAttr newName = flattenAndRenameSymbol(func, symbolTable, symTableIt);
@@ -334,7 +334,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
     // Offset index references within the current signature to make room.
     // Remap parent input parameter references to indices.
     signature = LITSignatureType::prependParams(signature, parentInputParams,
-                                                parentVariadicIndices);
+                                                parentVariadicMask);
   }
   llvm::append_range(inputParams, genParams);
 
@@ -424,11 +424,10 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       return member.emitError("unsupported op in lit lowering");
 
     // Lower renamed function as usual.
-    SmallVector<size_t> variadicIndices =
-        structDecl.getSignature().getParamListAttrs().getVariadicIndices();
-    if (failed(lowerLITFunc(func, structDecl->getIterator(),
-                            structName.getValue() + "::",
-                            structDecl.getInputParams(), variadicIndices)))
+    if (failed(lowerLITFunc(
+            func, structDecl->getIterator(),
+            structName.getValue() + "::", structDecl.getInputParams(),
+            structDecl.getSignature().getParamListAttrs().getVariadicMask())))
       return failure();
   }
   return success();
