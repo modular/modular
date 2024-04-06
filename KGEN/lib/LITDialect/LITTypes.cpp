@@ -117,17 +117,6 @@ TypeSignatureType TypeSignatureType::get(MLIRContext *context) {
   return get(context, /*paramTypes=*/{}, PogsAttr::get(context));
 }
 
-TypeSignatureType TypeSignatureType::get(
-    MLIRContext *context, ArrayRef<Type> paramTypes,
-    ArrayRef<StringAttr> paramNames, ArrayRef<PassingKind> paramPassingKinds,
-    ArrayRef<TypedAttr> defaultPosParams,
-    ArrayRef<TypedAttr> defaultKwOnlyParams, ArrayRef<size_t> variadicIndices) {
-  auto paramListAttrs =
-      PogsAttr::get(context, paramNames, paramPassingKinds, defaultPosParams,
-                    defaultKwOnlyParams, variadicIndices);
-  return get(context, paramTypes, paramListAttrs);
-}
-
 ArrayRef<StringAttr> TypeSignatureType::getParamNames() const {
   return getParamListAttrs().getNames();
 }
