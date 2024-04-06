@@ -91,7 +91,7 @@ def PogsAttr : DialectAttribute<(attr
   EnumAttrArray<"PassingKind">:$passingKinds,
   TypedAttrArray:$defaultPos,
   TypedAttrArray:$defaultKwOnly,
-  IntegralAttrArray<"size_t">:$variadicIndices,
+  IntegralAttrArray<"bool">:$variadicMask,
   VarInt:$packIndex,
   EnumAttr<"ArgConvention">:$origPackConvention
 )>;

@@ -424,7 +424,7 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       return member.emitError("unsupported op in lit lowering");
 
     // Lower renamed function as usual.
-    ArrayRef<size_t> variadicIndices =
+    SmallVector<size_t> variadicIndices =
         structDecl.getSignature().getParamListAttrs().getVariadicIndices();
     if (failed(lowerLITFunc(func, structDecl->getIterator(),
                             structName.getValue() + "::",

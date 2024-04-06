@@ -44,7 +44,8 @@ PogsAttr PogsAttr::get(MLIRContext *context) {
 
 PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                        ArrayRef<PassingKind> passingKinds) {
-  return PogsAttr::get(context, names, passingKinds, {}, {}, {});
+  return PogsAttr::get(context, names, passingKinds, {}, {},
+                       ArrayRef<size_t>());
 }
 
 PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
@@ -56,16 +57,37 @@ PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                        variadicIndices, -1, ArgConvention::None);
 }
 
-LogicalResult PogsAttr::verify(
-    function_ref<InFlightDiagnostic()> emitError, ArrayRef<StringAttr> names,
-    ArrayRef<PassingKind> passingKinds, ArrayRef<TypedAttr> defaultPos,
-    ArrayRef<TypedAttr> defaultKwOnly, ArrayRef<size_t> variadicIndices,
-    ssize_t packIndex, ArgConvention packOrigConvention) {
+PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
+                       ArrayRef<PassingKind> passingKinds,
+                       ArrayRef<TypedAttr> defaultPos,
+                       ArrayRef<TypedAttr> defaultKwOnly,
+                       ArrayRef<size_t> variadicIndices, ssize_t packIndex,
+                       ArgConvention origPackConvention) {
+  SmallVector<bool> variadicMask(names.size(), false);
+  for (size_t idx : variadicIndices)
+    variadicMask[idx] = true;
+
+  return PogsAttr::get(context, names, passingKinds, defaultPos, defaultKwOnly,
+                       variadicMask, packIndex, origPackConvention);
+}
+
+LogicalResult PogsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                               ArrayRef<StringAttr> names,
+                               ArrayRef<PassingKind> passingKinds,
+                               ArrayRef<TypedAttr> defaultPos,
+                               ArrayRef<TypedAttr> defaultKwOnly,
+                               ArrayRef<bool> variadicMask, ssize_t packIndex,
+                               ArgConvention origPackConvention) {
   size_t numEl = names.size();
   if (size_t numPassingKinds = passingKinds.size(); numEl != numPassingKinds) {
     return emitError() << "number of argument/parameter names and passing "
                           "kinds does not match: "
                        << numEl << " vs. " << numPassingKinds;
+  }
+  if (size_t lenMask = variadicMask.size(); numEl != lenMask) {
+    return emitError() << "number of argument/parameter names and length of "
+                          "variadic mask does not match: "
+                       << numEl << " vs. " << lenMask;
   }
   for (StringAttr name : names)
     if (!name)
@@ -92,15 +114,15 @@ LogicalResult PogsAttr::verify(
   if (packIndex != -1) {
     if (failed(verifyVariadicIdx(packIndex, /*isPack=*/true)))
       return failure();
-    if (packOrigConvention == ArgConvention::None)
+    if (origPackConvention == ArgConvention::None)
       return emitError() << "pack convention not specified";
   } else {
-    if (packOrigConvention != ArgConvention::None)
+    if (origPackConvention != ArgConvention::None)
       return emitError() << "pack convention specified without pack";
   }
 
-  for (size_t idx : variadicIndices)
-    if (failed(verifyVariadicIdx(idx, /*isPack=*/false)))
+  for (auto [idx, isVariadic] : llvm::enumerate(variadicMask))
+    if (isVariadic && failed(verifyVariadicIdx(idx, /*isPack=*/false)))
       return failure();
 
   return success();
@@ -131,6 +153,14 @@ bool PogsAttr::hasKwVariadics() const {
   return llvm::any_of(getVariadicIndices(), [&](size_t idx) {
     return getPassingKinds()[idx] == PassingKind::KwOnly;
   });
+}
+
+SmallVector<size_t> PogsAttr::getVariadicIndices() const {
+  SmallVector<size_t> variadicIndices;
+  for (auto [idx, isVariadic] : llvm::enumerate(getVariadicMask()))
+    if (isVariadic)
+      variadicIndices.push_back(idx);
+  return variadicIndices;
 }
 
 //===----------------------------------------------------------------------===//
@@ -208,7 +238,8 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
     }
   }
 
-  ArrayRef<size_t> variadicIndices = getParamListAttrs().getVariadicIndices();
+  SmallVector<size_t> variadicIndices =
+      getParamListAttrs().getVariadicIndices();
   SmallVector<size_t> newVariadicIndices;
   assert(getParamListAttrs().getPackIndex() == -1 && "no param packs");
   if (!variadicIndices.empty()) {
@@ -542,7 +573,7 @@ static TypedAttr getOrFoldBindType(TypedAttr typeValue,
 }
 
 TypedAttr BindTypeAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
-                                   MLIRContext *ctx, TypedAttr typeValue,
+                                   MLIRContext *context, TypedAttr typeValue,
                                    ArrayRef<TypedAttr> values,
                                    AnyStructType type) {
   if (failed(verify(emitError, typeValue, values, type)))
@@ -550,7 +581,7 @@ TypedAttr BindTypeAttr::getChecked(function_ref<InFlightDiagnostic()> emitError,
   return getOrFoldBindType(typeValue, values, type);
 }
 
-TypedAttr BindTypeAttr::get(MLIRContext *ctx, TypedAttr typeValue,
+TypedAttr BindTypeAttr::get(MLIRContext *context, TypedAttr typeValue,
                             ArrayRef<TypedAttr> values, AnyStructType type) {
   return getOrFoldBindType(typeValue, values, type);
 }
