@@ -27,6 +27,18 @@ using namespace KGEN;
 using namespace LIT;
 using llvm::BitVector;
 
+// Targets that are outside the ControlFlowNode. Negative numbers indicate
+// outside of op. Positive numbers are indices into regions of control flow
+// node.
+enum ControlFlowTarget {
+  ParentPrev = -1,
+  ParentPost = -2,
+  Continue = -3,
+  Break = -4,
+  Raise = -5,
+  Return = -6
+};
+
 /// Find all the functions and types in the module.
 static std::tuple<std::vector<LIT::FuncOp>,
                   DenseMap<SymbolRefAttr, LIT::FuncOp>,
@@ -1481,6 +1493,7 @@ private:
   void checkTerminatorOp(Operation &op);
   void checkLocalControlFlowOp(Operation &op);
   void checkIfLikeOp(Operation &op);
+  void checkAcyclicControlFlowOp(Operation &op);
   void checkLoopOp(HLCF::LoopOp loopOp);
   void checkTryOp(LIT::TryOp tryOp);
 
@@ -1641,12 +1654,11 @@ void DestructorInsertion::scanBlock(Block &block) {
     case OverallOpValueEffect::ifLikeOp:
       checkIfLikeOp(op);
       break;
+    case OverallOpValueEffect::acyclicControlFlowNodeOp:
+      checkAcyclicControlFlowOp(op);
+      break;
     case OverallOpValueEffect::loopOp:
       checkLoopOp(cast<HLCF::LoopOp>(op));
-      break;
-    case OverallOpValueEffect::acyclicControlFlowNodeOp:
-      // TODO: replace with implementation in followup
-      consumedValues.set(0);
       break;
     case OverallOpValueEffect::tryOp:
       checkTryOp(cast<LIT::TryOp>(op));
@@ -1770,6 +1782,192 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
   assert(isa<LIT::TryRaiseOp>(op) && "Unknown local control flow op");
   assert(raiseSet && "Not in a 'try'?");
   consumedValues = *raiseSet;
+}
+
+void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
+  auto controlFlowNode = cast<HLCF::ControlFlowNode>(op);
+  SmallVector<SmallVector<int>> succ(op.getNumRegions());
+  SmallVector<SmallVector<int>> pred(op.getNumRegions());
+  SmallVector<int> entries;
+
+  // Initialize paths.
+  SmallVector<HLCF::ControlFlowTarget> targets;
+  SmallVector<Attribute> cfnOperands(controlFlowNode->getNumOperands());
+  controlFlowNode.getEntryTargets(cfnOperands, targets);
+  for (HLCF::ControlFlowTarget target : targets) {
+    if (target.index.has_value()) {
+      pred[target.index.value()].push_back(ParentPrev);
+      entries.push_back(target.index.value());
+    }
+  }
+
+  // Compute successor list and predecessor list.
+  for (unsigned curr = 0, e = op.getNumRegions(); curr < e; curr++) {
+    Region &region = op.getRegion(curr);
+    HLCF::ControlFlowTerminator term =
+        cast<HLCF::ControlFlowTerminator>(region.front().getTerminator());
+    assert(!isa<LIT::ErrorReturnOp>(term) &&
+           "error handling control flow ops require special unification logic "
+           "and will be handled in a followup.");
+    // Terminator branches outside this op.
+    if (!term.isParentNode(&op) || isa<UnreachableOp>(term)) {
+      if (isa<HLCF::ContinueOp>(term))
+        succ[curr].push_back(Continue);
+
+      if (isa<HLCF::BreakOp>(term))
+        succ[curr].push_back(Break);
+
+      if (isa<LIT::TryRaiseOp>(term))
+        succ[curr].push_back(Raise);
+      continue;
+    }
+    SmallVector<HLCF::ControlFlowTarget> termTargets;
+    SmallVector<Attribute> operands(term->getNumOperands());
+    term.getBranchTargets(operands, termTargets);
+    for (HLCF::ControlFlowTarget t : termTargets) {
+      if (t.index.has_value()) {
+        succ[curr].push_back(t.index.value());
+        pred[t.index.value()].push_back(curr);
+        continue;
+      }
+      succ[curr].push_back(ParentPost);
+    }
+  }
+
+  DenseMap<int, BitVector> consumedValuesInRegion;
+  consumedValuesInRegion[ParentPost] = consumedValues;
+  if (continueSet)
+    consumedValuesInRegion[Continue] = *this->continueSet;
+  if (breakSet)
+    consumedValuesInRegion[Break] = *this->breakSet;
+  if (raiseSet)
+    consumedValuesInRegion[Raise] = *this->raiseSet;
+
+  SmallVector<int> empty;
+  auto getSuccessors = [&](int curr) -> SmallVector<int> & {
+    if (curr < 0 && curr != ParentPrev)
+      return empty;
+    return curr == ParentPrev ? entries : succ[curr];
+  };
+  auto getPredecessors = [&](int curr) -> SmallVector<int> & {
+    if (curr < 0)
+      return empty;
+    return pred[curr];
+  };
+
+  // Partially order blocks so that a block's successors are processed before
+  // it.
+  SmallVector<int> sortedBlocks;
+  SmallVector<int> worklist;
+  for (int entry : entries)
+    worklist.push_back(entry);
+  while (!worklist.empty()) {
+    int curr = worklist.pop_back_val();
+    if (std::find(sortedBlocks.begin(), sortedBlocks.end(), curr) !=
+        sortedBlocks.end())
+      continue;
+    sortedBlocks.push_back(curr);
+    for (int s : getSuccessors(curr)) {
+      if (s < 0)
+        continue;
+      bool allPredsSeen = true;
+      for (int p : getPredecessors(s)) {
+        if (std::find(sortedBlocks.begin(), sortedBlocks.end(), p) ==
+            sortedBlocks.end()) {
+          allPredsSeen = false;
+          break;
+        }
+      }
+      if (!allPredsSeen)
+        continue;
+      worklist.push_back(s);
+    }
+  }
+
+  // Scan all blocks to insert destructors.
+  for (auto currPtr = sortedBlocks.rbegin(); currPtr != sortedBlocks.rend();
+       currPtr++) {
+    int curr = *currPtr;
+    BitVector consumedInSomeSucc(consumedValues.size(), false);
+    SmallVector<int> &successors = getSuccessors(curr);
+    for (unsigned successor : successors) {
+      assert(consumedValuesInRegion.contains(successor) &&
+             "a successor to current has not been processed, which suggests a "
+             "cycle!");
+      consumedInSomeSucc |= consumedValuesInRegion[successor];
+    }
+    Region &region = op.getRegion(curr);
+    BitVector oldConsumedValues(consumedValues);
+    consumedValues = consumedInSomeSucc;
+    scanBlock(region.front());
+    consumedValuesInRegion[curr] = consumedValues;
+    consumedValues = oldConsumedValues;
+
+    // Correct unification exception case 1: a region that overwrites a
+    // subfield. Ignore error case since that overwrite is artificial.
+    BitVector &consumedHere = consumedValuesInRegion[curr];
+    BitVector consumedInRegion(consumedHere);
+    if (consumedInSomeSucc == consumedHere)
+      consumedInRegion.reset();
+    else if (!successors.empty())
+      consumedInRegion.reset(oldConsumedValues);
+    for (const ValueInfo &v : valueSet.getValueInfos()) {
+      // We have identified a full object. Makes sure the subfields are
+      // reset so that we don't render a full object indestructible by
+      // destroying its subfields.
+      if (v.isIndirect && consumedInRegion.test(v.endValueBit - 1)) {
+        BitVector destroySubfields(consumedHere);
+        destroySubfields.flip();
+        destroySubfields.reset(0, v.startValueBit);
+        destroySubfields.reset(v.endValueBit, destroySubfields.size());
+        if (!destroySubfields.none()) {
+          if (!dryRun)
+            destroyValuesAtEntry(destroySubfields,
+                                 op.getRegion(*currPtr).front(), op.getLoc());
+          consumedHere.set(v.startValueBit, v.endValueBit);
+        }
+      }
+    }
+  }
+
+  // Unify Destructor paths. Insert parent prev so that the entries are unified
+  // also.
+  sortedBlocks.insert(sortedBlocks.begin(), ParentPrev);
+  bool needsUpdate = true;
+  int i = 0;
+  while (needsUpdate) {
+    assert(i++ < 2 && "This should be executed at most twice because elif "
+                      "nodes have at most one predecessor.");
+    needsUpdate = false;
+    for (auto currPtr = sortedBlocks.rbegin(); currPtr != sortedBlocks.rend();
+         currPtr++) {
+      int curr = *currPtr;
+      // for each branch, insert destructors for values that are destroyed in
+      // some other branch
+      BitVector consumedInSomeSucc(consumedValues.size(), false);
+      for (int successor : getSuccessors(curr))
+        consumedInSomeSucc |= consumedValuesInRegion[successor];
+      for (int successor : getSuccessors(curr)) {
+        // Only self contained successors are corrected.
+        if (successor < 0)
+          continue;
+
+        BitVector consumedInAltBranch(consumedInSomeSucc);
+        consumedInAltBranch ^= consumedValuesInRegion[successor];
+        consumedValuesInRegion[successor] = consumedInSomeSucc;
+        if (consumedInAltBranch.none())
+          continue;
+        needsUpdate = true;
+        if (!dryRun)
+          destroyValuesAtEntry(consumedInAltBranch,
+                               op.getRegion(successor).front(), op.getLoc());
+      }
+    }
+  }
+
+  // All entry paths have unified consumed values; it doesn't matter which we
+  // use to update the consumed values.
+  consumedValues = consumedValuesInRegion[entries.front()];
 }
 
 /// 'if' operations propagate the consume sets into each branch, and use the
