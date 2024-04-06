@@ -407,7 +407,8 @@ TypeCheckedParamList::TypeCheckedParamList(
 
 PogsAttr TypeCheckedParamList::getParamListAttr() {
   return PogsAttr::get(shared.getContext(), names, passingKinds,
-                       defaultPosParams, defaultKwOnlyParams, variadicIndices);
+                       defaultPosParams, defaultKwOnlyParams,
+                       PogsAttr::toMask(variadicIndices, names.size()));
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -1157,16 +1158,17 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   argPassingKinds.reserve(numArgs);
   SmallVector<ArgConvention> argConventions;
   argConventions.reserve(numArgs);
-  SmallVector<size_t> argVariadicIndices;
+  SmallVector<bool> argVariadicMask;
+  argVariadicMask.reserve(numArgs);
   ssize_t argPackIndex = -1;
   ArgConvention argPackOrigConvention = ArgConvention::None;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
     argPassingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
     argNames.push_back(arg.name);
     argConventions.push_back(arg.kgenConvention);
-    if (arg.vararg == VarArgKind::VarArg || arg.vararg == VarArgKind::KWVarArg)
-      argVariadicIndices.push_back(idx);
-    else if (arg.vararg == VarArgKind::PackVarArg) {
+    argVariadicMask.push_back(arg.vararg == VarArgKind::VarArg ||
+                              arg.vararg == VarArgKind::KWVarArg);
+    if (arg.vararg == VarArgKind::PackVarArg) {
       assert(argPackIndex == -1 && "only one argument pack is possible");
       argPackIndex = idx;
       argPackOrigConvention = arg.kgenVariadicConvention;
@@ -1175,7 +1177,7 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
 
   auto metadata = FnMetadataAttr::get(
       PogsAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                    defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
+                    defaultKwOnlyArgs, argVariadicMask, argPackIndex,
                     argPackOrigConvention),
       paramList.getParamListAttr(), implicitLifetimeDecls.size());
 

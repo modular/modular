@@ -117,11 +117,6 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
                      "ArrayRef<PassingKind>":$passingKinds,
                      "ArrayRef<TypedAttr>":$defaultPos,
                      "ArrayRef<TypedAttr>":$defaultKwOnly,
-                     "ArrayRef<size_t>":$variadicIndices)>,
-    AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
-                     "ArrayRef<PassingKind>":$passingKinds,
-                     "ArrayRef<TypedAttr>":$defaultPos,
-                     "ArrayRef<TypedAttr>":$defaultKwOnly,
                      "ArrayRef<size_t>":$variadicIndices,
                      "ssize_t":$packIndex,
                      "ArgConvention":$origPackConvention)>
@@ -148,6 +143,9 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
     bool hasPack() const;
     /// Return true if there is a variadic keyword argument/param.
     bool hasKwVariadics() const;
+
+    /// Create a variadic mask of given length from a list of variadic indices.
+    static SmallVector<bool> toMask(ArrayRef<size_t> indices, size_t length);
   }];
 
   let genVerifyDecl = 1;

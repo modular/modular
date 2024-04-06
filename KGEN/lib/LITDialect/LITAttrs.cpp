@@ -45,7 +45,7 @@ PogsAttr PogsAttr::get(MLIRContext *context) {
 PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                        ArrayRef<PassingKind> passingKinds) {
   return PogsAttr::get(context, names, passingKinds, {}, {},
-                       ArrayRef<size_t>());
+                       SmallVector<bool>(names.size(), false));
 }
 
 PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
@@ -61,23 +61,11 @@ PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                        ArrayRef<PassingKind> passingKinds,
                        ArrayRef<TypedAttr> defaultPos,
                        ArrayRef<TypedAttr> defaultKwOnly,
-                       ArrayRef<size_t> variadicIndices) {
-  return PogsAttr::get(context, names, passingKinds, defaultPos, defaultKwOnly,
-                       variadicIndices, -1, ArgConvention::None);
-}
-
-PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
-                       ArrayRef<PassingKind> passingKinds,
-                       ArrayRef<TypedAttr> defaultPos,
-                       ArrayRef<TypedAttr> defaultKwOnly,
                        ArrayRef<size_t> variadicIndices, ssize_t packIndex,
                        ArgConvention origPackConvention) {
-  SmallVector<bool> variadicMask(names.size(), false);
-  for (size_t idx : variadicIndices)
-    variadicMask[idx] = true;
-
   return PogsAttr::get(context, names, passingKinds, defaultPos, defaultKwOnly,
-                       variadicMask, packIndex, origPackConvention);
+                       toMask(variadicIndices, names.size()), packIndex,
+                       origPackConvention);
 }
 
 LogicalResult PogsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -172,6 +160,13 @@ bool PogsAttr::hasKwVariadics() const {
     if (isKwVariadic(idx))
       return true;
   return false;
+}
+
+SmallVector<bool> PogsAttr::toMask(ArrayRef<size_t> indices, size_t length) {
+  SmallVector<bool> variadicMask(length, false);
+  for (size_t idx : indices)
+    variadicMask[idx] = true;
+  return variadicMask;
 }
 
 //===----------------------------------------------------------------------===//

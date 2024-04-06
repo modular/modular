@@ -419,8 +419,10 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   assert(getParamValues().size() == values.size() && "expected full value set");
 
   TypeSignatureType sig = getSignature();
+  PogsAttr paramListAttr = sig.getParamListAttrs();
   auto sigRange = llvm::enumerate(sig.getParamTypes(), sig.getParamNames(),
-                                  sig.getParamPassingKinds());
+                                  sig.getParamPassingKinds(),
+                                  paramListAttr.getVariadicMask());
   auto sigIt = sigRange.begin();
 
   SmallVector<Type> newParamTypes;
@@ -428,27 +430,26 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   SmallVector<PassingKind> newPassingKinds;
   SmallVector<TypedAttr> newPosDefaults;
   SmallVector<TypedAttr> newKwOnlyDefaults;
-  SmallVector<size_t> newVariadicIndices;
+  SmallVector<bool> newVariadicMask;
 
-  DefaultValueHandler defaultHandler(sig.getParamListAttrs());
+  DefaultValueHandler defaultHandler(paramListAttr);
   ParameterEvaluator evaluator;
   for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
     // Current value is unbound. This corresponds to a parameter in the
     // signature.
     if (::isa<UnboundAttr>(cur)) {
       if (::isa<UnboundAttr>(val)) {
-        auto [i, type, name, kind] = *sigIt;
+        auto [i, type, name, kind, isVariadic] = *sigIt;
         newParamTypes.push_back(evaluator.getReboundType(type));
         newParamNames.push_back(name);
         newPassingKinds.push_back(kind);
+        newVariadicMask.push_back(isVariadic);
 
         if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
           newPosDefaults.push_back(defaultOr);
         else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
           newKwOnlyDefaults.push_back(defaultOr);
 
-        if (sig.isVarParam(i))
-          newVariadicIndices.push_back(i);
         evaluator.addInputValue(ParamIndexRefAttr::get(
             /*depth=*/0, /*isResult=*/false, newParamTypes.size() - 1,
             newParamTypes.back()));
@@ -464,7 +465,7 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
 
   auto paramListAttrs =
       PogsAttr::get(getContext(), newParamNames, newPassingKinds,
-                    newPosDefaults, newKwOnlyDefaults, newVariadicIndices);
+                    newPosDefaults, newKwOnlyDefaults, newVariadicMask);
   auto newSig =
       TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
   return AnyStructType::get(getSymbol(), values, newSig);
