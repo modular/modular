@@ -85,6 +85,10 @@ struct LayoutTensor[
         self.owning = False
 
     fn __del__(owned self):
+        # Owned tensors live in GENERIC address space only.
+        @parameter
+        if address_space != AddressSpace.GENERIC:
+            return
         if self.owning:
             self.ptr.free()
 
