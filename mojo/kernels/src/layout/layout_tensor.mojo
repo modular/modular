@@ -925,6 +925,7 @@ fn stack_allocation_like[
 
 # Updates res with the outer product of lhs, rhs vectors, res += outer(lhs, rhs).
 #
+@always_inline
 fn outer_product_acc[
     dtype: DType,
     *,
