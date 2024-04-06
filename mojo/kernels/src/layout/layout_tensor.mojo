@@ -85,12 +85,15 @@ struct LayoutTensor[
         self.owning = False
 
     fn __del__(owned self):
-        # Owned tensors live in GENERIC address space only.
         @parameter
-        if address_space != AddressSpace.GENERIC:
-            return
-        if self.owning:
-            self.ptr.free()
+        if triple_is_nvidia_cuda() and (
+            address_space == _GPUAddressSpace.GENERIC
+            or address_space == _GPUAddressSpace.GLOBAL
+        ):
+            # Owned tensors live in GENERIC address space only futheremore you
+            # can only allocate in GENERIC address space, so can skip the free.
+            if self.owning:
+                self.ptr.free()
 
     @always_inline
     fn _offset(self, m: Int, n: Int) -> Int:
