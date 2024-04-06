@@ -89,7 +89,7 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
     OptionalArrayRefParameter<"PassingKind">:$passingKinds,
     OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
     OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly,
-    OptionalArrayRefParameter<"size_t">:$variadicIndices,
+    OptionalArrayRefParameter<"bool">:$variadicMask,
     "ssize_t":$packIndex,
     "ArgConvention":$origPackConvention
   );
@@ -99,7 +99,7 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
         `[` (`]`) : ($passingKinds^    `]`)? `,`
         `[` (`]`) : ($defaultPos^      `]`)? `,`
         `[` (`]`) : ($defaultKwOnly^   `]`)? `,`
-        `[` (`]`) : ($variadicIndices^ `]`)? `,`
+        `[` (`]`) : ($variadicMask^    `]`)? `,`
         $packIndex `,` $origPackConvention
     `>`
   }];
@@ -112,7 +112,14 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
                      "ArrayRef<PassingKind>":$passingKinds,
                      "ArrayRef<TypedAttr>":$defaultPos,
                      "ArrayRef<TypedAttr>":$defaultKwOnly,
-                     "ArrayRef<size_t>":$variadicIndices)>
+                     "ArrayRef<size_t>":$variadicIndices)>,
+    AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
+                     "ArrayRef<PassingKind>":$passingKinds,
+                     "ArrayRef<TypedAttr>":$defaultPos,
+                     "ArrayRef<TypedAttr>":$defaultKwOnly,
+                     "ArrayRef<size_t>":$variadicIndices,
+                     "ssize_t":$packIndex,
+                     "ArgConvention":$origPackConvention)>
   ];
 
   let extraClassDeclaration = [{
@@ -129,6 +136,9 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
     bool isPosVariadic(size_t idx) const;
     /// Return true if there is an variadic keyword argument/param.
     bool hasKwVariadics() const;
+
+    /// Accessor to be removed once migration to variadic mask is done.
+    SmallVector<size_t> getVariadicIndices() const;
   }];
 
   let genVerifyDecl = 1;
