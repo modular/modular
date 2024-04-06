@@ -112,6 +112,11 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
                      "ArrayRef<PassingKind>":$passingKinds,
                      "ArrayRef<TypedAttr>":$defaultPos,
                      "ArrayRef<TypedAttr>":$defaultKwOnly,
+                     "ArrayRef<bool>":$variadicMask)>,
+    AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
+                     "ArrayRef<PassingKind>":$passingKinds,
+                     "ArrayRef<TypedAttr>":$defaultPos,
+                     "ArrayRef<TypedAttr>":$defaultKwOnly,
                      "ArrayRef<size_t>":$variadicIndices)>,
     AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
                      "ArrayRef<PassingKind>":$passingKinds,
@@ -135,11 +140,14 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
     bool isPack(size_t idx) const;
     /// Return true if the argument/param at `idx` is a positional variadic.
     bool isPosVariadic(size_t idx) const;
-    /// Return true if there is an variadic keyword argument/param.
+    /// Return true if the argument/param at `idx` is a keyword variadic.
+    bool isKwVariadic(size_t idx) const;
+    /// Return true if there is a variadic (pos or keyword) argument/param.
+    bool hasVariadic() const;
+    /// Return true if there is a variadic pack argument/param.
+    bool hasPack() const;
+    /// Return true if there is a variadic keyword argument/param.
     bool hasKwVariadics() const;
-
-    /// Accessor to be removed once migration to variadic mask is done.
-    SmallVector<size_t> getVariadicIndices() const;
   }];
 
   let genVerifyDecl = 1;
@@ -242,10 +250,10 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
     /// Get a new metadata attribute for a signature with the given number of
     /// positional input parameters prepended to the signature. An additional
-    /// array of indices corresponding to variadic parameters of the prepended
+    /// array of bool corresponding to the variadic mask of the prepended
     /// parameters is also required.
     FnMetadataAttr prependPosParams(size_t numNewParams,
-                                    ArrayRef<size_t> variadicIndices) const;
+                                    ArrayRef<bool> variadicMask) const;
   }];
 }
 

@@ -157,9 +157,9 @@ public:
   /// prepended to the current signature and references are remapped to index
   /// references. An additional array of indices corresponding to variadic
   /// parameters of the prepended parameters is also required.
-  static LITSignatureType
-  prependParams(LITSignatureType sig, ArrayRef<ParamDeclAttr> parentParams,
-                ArrayRef<size_t> parentVariadicIndices = {});
+  static LITSignatureType prependParams(LITSignatureType sig,
+                                        ArrayRef<ParamDeclAttr> parentParams,
+                                        ArrayRef<bool> parentVariadicMask);
 };
 } // namespace M::KGEN::LIT
 

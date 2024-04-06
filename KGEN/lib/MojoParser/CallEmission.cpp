@@ -170,7 +170,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
     // *_ doesn't work with variadic parameter lists.
     // TODO: Why not? It should expand to a variadic on the enclosing context.
-    if (!paramListAttr.getVariadicIndices().empty()) {
+    if (paramListAttr.hasVariadic()) {
       if (diagEmitter.emitUnboundPackInVariadic)
         diagEmitter.emitUnboundPackInVariadic(binding);
       return {{}, fitness};

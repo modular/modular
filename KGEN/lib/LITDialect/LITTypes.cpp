@@ -90,7 +90,7 @@ bool TypeSignatureType::isVarParam(size_t idx) const {
 }
 
 bool TypeSignatureType::hasVariadicParam() const {
-  return !getParamListAttrs().getVariadicIndices().empty();
+  return getParamListAttrs().hasVariadic();
 }
 
 TypeSignatureType TypeSignatureType::remapToSignature(
@@ -107,7 +107,7 @@ TypeSignatureType TypeSignatureType::remapToSignature(
       ctx, paramListAttrs.getNames(), paramListAttrs.getPassingKinds(),
       remapper.replace(paramListAttrs.getDefaultPos()),
       remapper.replace(paramListAttrs.getDefaultKwOnly()),
-      paramListAttrs.getVariadicIndices(), paramListAttrs.getPackIndex(),
+      paramListAttrs.getVariadicMask(), paramListAttrs.getPackIndex(),
       paramListAttrs.getOrigPackConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
@@ -1192,7 +1192,7 @@ LITSignatureType LITSignatureType::get(FunctionType values,
 LITSignatureType
 LITSignatureType::prependParams(LITSignatureType sig,
                                 ArrayRef<ParamDeclAttr> parentParams,
-                                ArrayRef<size_t> parentVariadicIndices) {
+                                ArrayRef<bool> parentVariadicMask) {
   IndexRefRemapper remapper(parentParams, /*resultParams=*/{},
                             parentParams.size());
   SmallVector<Type> inputParamTypes;
@@ -1202,8 +1202,8 @@ LITSignatureType::prependParams(LITSignatureType sig,
     inputParamTypes.push_back(remapper.replace(type));
 
   FnMetadataAttrInterface metadata =
-      remapper.replace(sig.getMetadata().prependPosParams(
-          parentParams.size(), parentVariadicIndices));
+      remapper.replace(sig.getMetadata().prependPosParams(parentParams.size(),
+                                                          parentVariadicMask));
 
   return SignatureType::get(remapper.replace(sig.getValues()), inputParamTypes,
                             remapper.replace(sig.getResultParamTypes()),

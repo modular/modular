@@ -703,10 +703,14 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   SmallVector<ParamDeclRefAttr> captured = capturedRefs.takeVector();
   // Unbind the N capture parameters, creating a new signature with N new input
   // parameters prepended.
+  // TODO: what if we capture a variadic?
+  SmallVector<bool> variadicMask(captured.size(), false);
   auto unbound = LITSignatureType::prependParams(
-      original, llvm::map_to_vector(captured, [](ParamDeclRefAttr ref) {
-        return ParamDeclAttr::get(ref);
-      }));
+      original,
+      llvm::map_to_vector(
+          captured,
+          [](ParamDeclRefAttr ref) { return ParamDeclAttr::get(ref); }),
+      variadicMask);
   return {std::move(captured), unbound};
 }
 

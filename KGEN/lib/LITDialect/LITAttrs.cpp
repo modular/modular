@@ -52,6 +52,15 @@ PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                        ArrayRef<PassingKind> passingKinds,
                        ArrayRef<TypedAttr> defaultPos,
                        ArrayRef<TypedAttr> defaultKwOnly,
+                       ArrayRef<bool> variadicMask) {
+  return PogsAttr::get(context, names, passingKinds, defaultPos, defaultKwOnly,
+                       variadicMask, -1, ArgConvention::None);
+}
+
+PogsAttr PogsAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
+                       ArrayRef<PassingKind> passingKinds,
+                       ArrayRef<TypedAttr> defaultPos,
+                       ArrayRef<TypedAttr> defaultKwOnly,
                        ArrayRef<size_t> variadicIndices) {
   return PogsAttr::get(context, names, passingKinds, defaultPos, defaultKwOnly,
                        variadicIndices, -1, ArgConvention::None);
@@ -136,9 +145,7 @@ PogsAttr PogsAttr::cloneWith(ArrayRef<StringAttr> names,
                        getOrigPackConvention());
 }
 
-bool PogsAttr::isVariadic(size_t idx) const {
-  return llvm::is_contained(getVariadicIndices(), idx);
-}
+bool PogsAttr::isVariadic(size_t idx) const { return getVariadicMask()[idx]; }
 
 bool PogsAttr::isPack(size_t idx) const {
   return getPackIndex() == ssize_t(idx);
@@ -150,18 +157,21 @@ bool PogsAttr::isPosVariadic(size_t idx) const {
          isVariadic(idx);
 }
 
-bool PogsAttr::hasKwVariadics() const {
-  return llvm::any_of(getVariadicIndices(), [&](size_t idx) {
-    return getPassingKinds()[idx] == PassingKind::KwOnly;
-  });
+bool PogsAttr::isKwVariadic(size_t idx) const {
+  return isVariadic(idx) && getPassingKinds()[idx] == PassingKind::KwOnly;
 }
 
-SmallVector<size_t> PogsAttr::getVariadicIndices() const {
-  SmallVector<size_t> variadicIndices;
-  for (auto [idx, isVariadic] : llvm::enumerate(getVariadicMask()))
-    if (isVariadic)
-      variadicIndices.push_back(idx);
-  return variadicIndices;
+bool PogsAttr::hasVariadic() const {
+  return llvm::any_of(getVariadicMask(), [](bool b) { return b; });
+}
+
+bool PogsAttr::hasPack() const { return getPackIndex() != -1; }
+
+bool PogsAttr::hasKwVariadics() const {
+  for (size_t idx = 0, e = getPassingKinds().size(); idx < e; ++idx)
+    if (isKwVariadic(idx))
+      return true;
+  return false;
 }
 
 //===----------------------------------------------------------------------===//
@@ -200,20 +210,17 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   if (numArgs < newDefaultPosArgs.size())
     newDefaultPosArgs = newDefaultPosArgs.take_back(numArgs);
 
+  /// If needed, we drop variadic indices and adjust the pack index.
   PogsAttr argListAttrs = getArgListAttrs();
-  /// We drop varidic/pack indices if needed, and adjust the rest.
-  SmallVector<size_t> newVariadicIndices;
-  for (size_t idx : argListAttrs.getVariadicIndices())
-    if (idx >= numBound)
-      newVariadicIndices.push_back(idx - numBound);
-
+  ArrayRef<bool> newArgVaridicMask =
+      argListAttrs.getVariadicMask().drop_front(numBound);
   ssize_t packIdx = argListAttrs.getPackIndex();
-  if (packIdx != -1 && packIdx >= ssize_t(numBound))
+  if (argListAttrs.hasPack() && packIdx >= ssize_t(numBound))
     packIdx -= numBound;
 
   auto newArgListAttrs = PogsAttr::get(
       getContext(), newArgNames, newArgPassingKind, newDefaultPosArgs,
-      getDefaultKwOnlyArgs(), newVariadicIndices, packIdx,
+      getDefaultKwOnlyArgs(), newArgVaridicMask, packIdx,
       argListAttrs.getOrigPackConvention());
   return get(newArgListAttrs, getParamListAttrs(),
              getNumImplicitLifetimeDecls());
@@ -225,8 +232,10 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   SmallVector<TypedAttr> newDefaultKwOnlyParams;
   SmallVector<StringAttr> newParamNames;
   SmallVector<PassingKind> newParamPassingKinds;
+  SmallVector<bool> newVariadicMask;
 
-  DefaultValueHandler defaultHandler(getParamListAttrs());
+  PogsAttr paramListAttr = getParamListAttrs();
+  DefaultValueHandler defaultHandler(paramListAttr);
   size_t numParams = boundParams.size();
   for (size_t idx = 0; idx < numParams; ++idx) {
     if (!boundParams[idx]) {
@@ -236,70 +245,46 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
         newDefaultPosParams.emplace_back(defaultOr);
       else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(idx))
         newDefaultKwOnlyParams.emplace_back(defaultOr);
+      newVariadicMask.emplace_back(paramListAttr.getVariadicMask()[idx]);
     }
   }
 
-  SmallVector<size_t> variadicIndices =
-      getParamListAttrs().getVariadicIndices();
-  SmallVector<size_t> newVariadicIndices;
-  assert(getParamListAttrs().getPackIndex() == -1 && "no param packs");
-  if (!variadicIndices.empty()) {
-    // We need to calculate the cumulatives number of bound parameters to adjust
-    // the variadic indices.
-    SmallVector<size_t> cumSum{boundParams[0]};
-    cumSum.reserve(numParams);
-    for (size_t idx = 1; idx < numParams; ++idx)
-      cumSum.push_back(cumSum[idx - 1] + boundParams[idx]);
-
-    // We drop an index that corresponds to a bound parameter, and adjust the
-    // rest according to how many preceding parameters are bound.
-    for (size_t idx : variadicIndices)
-      if (!boundParams[idx])
-        newVariadicIndices.push_back(idx - cumSum[idx]);
-  }
-
-  auto newParamAttrs = PogsAttr::get(
-      getContext(), newParamNames, newParamPassingKinds, newDefaultPosParams,
-      newDefaultKwOnlyParams, newVariadicIndices);
+  auto newParamAttrs = PogsAttr::get(getContext(), newParamNames,
+                                     newParamPassingKinds, newDefaultPosParams,
+                                     newDefaultKwOnlyParams, newVariadicMask);
   return get(getArgListAttrs(), newParamAttrs, getNumImplicitLifetimeDecls());
 }
 
 FnMetadataAttr
 FnMetadataAttr::prependPosParams(size_t numNewParams,
-                                 ArrayRef<size_t> variadicIndices) const {
+                                 ArrayRef<bool> variadicMask) const {
   if (numNewParams == 0)
     return *this;
 
   auto emptyStr = StringAttr::get(getContext());
   SmallVector<StringAttr> newParamNames(numNewParams, emptyStr);
   llvm::append_range(newParamNames, getParamNames());
+
   SmallVector<PassingKind> newPassingKinds(numNewParams, PassingKind::PosOnly);
   llvm::append_range(newPassingKinds, getParamPassingKinds());
 
-  // We need to prepend the new variadic indices, and offset the existing ones.
   PogsAttr oldParamListAttr = getParamListAttrs();
-  SmallVector<size_t> newVariadicIndices(variadicIndices);
-  for (size_t idx : oldParamListAttr.getVariadicIndices())
-    newVariadicIndices.push_back(idx + numNewParams);
+  SmallVector<bool> newVariadicMask(variadicMask);
+  llvm::append_range(newVariadicMask, oldParamListAttr.getVariadicMask());
 
   assert(oldParamListAttr.getPackIndex() && "no param packs");
   auto newParamListAttr = PogsAttr::get(
       getContext(), newParamNames, newPassingKinds, getDefaultPosParams(),
-      getDefaultKwOnlyParams(), newVariadicIndices);
+      getDefaultKwOnlyParams(), newVariadicMask);
   return get(getArgListAttrs(), newParamListAttr,
              getNumImplicitLifetimeDecls());
 }
 
-std::pair<SmallVector<size_t>, size_t>
-LIT::getContextualVariadicIndices(ArrayRef<Operation *> ops) {
-  std::pair<SmallVector<size_t>, size_t> res;
-  auto &[variadicIndices, numNewParams] = res;
+SmallVector<bool> LIT::getContextualVariadicMask(ArrayRef<Operation *> ops) {
+  SmallVector<bool> variadicMask;
   for (Operation *op : ops) {
-    // Count the number of new parameters.
-    size_t idxOffset = numNewParams;
-    numNewParams += ::cast<DeclInterface>(op).getInputParams().size();
-
-    // If we are dealing with a struct or trait, we collect the variadics.
+    // If we are dealing with a struct or trait, we concatenate their variadic
+    // masks.
     PogsAttr paramListAttr;
     if (auto structDecl = ::dyn_cast<StructDeclOp>(op))
       paramListAttr = structDecl.getSignature().getParamListAttrs();
@@ -308,18 +293,15 @@ LIT::getContextualVariadicIndices(ArrayRef<Operation *> ops) {
     else
       continue;
 
-    // The variadic indices need to be offset to correspond to the location in
-    // the collected array.
-    for (size_t idx : paramListAttr.getVariadicIndices())
-      variadicIndices.push_back(idxOffset + idx);
+    llvm::append_range(variadicMask, paramListAttr.getVariadicMask());
   }
-  return res;
+  return variadicMask;
 }
 
 FnMetadataAttrInterface
 FnMetadataAttr::prependPosParamsFromOps(ArrayRef<Operation *> ops) const {
-  auto [variadicIndices, numNewParams] = getContextualVariadicIndices(ops);
-  return prependPosParams(numNewParams, variadicIndices);
+  SmallVector<bool> variadicMask = getContextualVariadicMask(ops);
+  return prependPosParams(variadicMask.size(), variadicMask);
 }
 
 LogicalResult FnMetadataAttr::verifySignature(
@@ -394,7 +376,7 @@ LogicalResult FnMetadataAttr::verifySignature(
 }
 
 bool FnMetadataAttr::hasVarArgs() const {
-  return !getArgListAttrs().getVariadicIndices().empty();
+  return getArgListAttrs().hasVariadic();
 }
 
 bool FnMetadataAttr::hasPackVarArgs() const {
@@ -402,7 +384,7 @@ bool FnMetadataAttr::hasPackVarArgs() const {
 }
 
 bool FnMetadataAttr::hasParamVarArgs() const {
-  return !getParamListAttrs().getVariadicIndices().empty();
+  return getParamListAttrs().hasVariadic();
 }
 
 bool FnMetadataAttr::hasKwVarArgs() const {
@@ -410,8 +392,7 @@ bool FnMetadataAttr::hasKwVarArgs() const {
 }
 
 bool FnMetadataAttr::isAnyVarArg(size_t idx) const {
-  return llvm::is_contained(getArgListAttrs().getVariadicIndices(), idx) ||
-         isPackVarArg(idx);
+  return getArgListAttrs().isVariadic(idx) || isPackVarArg(idx);
 }
 
 bool FnMetadataAttr::isPosVarArg(size_t idx) const {
@@ -419,8 +400,7 @@ bool FnMetadataAttr::isPosVarArg(size_t idx) const {
 }
 
 bool FnMetadataAttr::isKwVarArg(size_t idx) const {
-  return getArgPassingKinds()[idx] == PassingKind::KwOnly &&
-         llvm::is_contained(getArgListAttrs().getVariadicIndices(), idx);
+  return getArgListAttrs().isKwVariadic(idx);
 }
 
 bool FnMetadataAttr::isPackVarArg(size_t idx) const {
