@@ -129,9 +129,10 @@ LogicalResult PogsAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 PogsAttr PogsAttr::cloneWith(ArrayRef<StringAttr> names,
-                             ArrayRef<PassingKind> passingKinds) const {
+                             ArrayRef<PassingKind> passingKinds,
+                             ArrayRef<bool> variadicMask) const {
   return PogsAttr::get(getContext(), names, passingKinds, getDefaultPos(),
-                       getDefaultKwOnly(), getVariadicIndices(), getPackIndex(),
+                       getDefaultKwOnly(), variadicMask, getPackIndex(),
                        getOrigPackConvention());
 }
 

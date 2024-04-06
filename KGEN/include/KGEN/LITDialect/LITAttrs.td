@@ -126,7 +126,8 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
     /// Create a new arg/paramlist attr with the given names and passking kinds,
     /// retaining the existing defaults and variadic indices.
     PogsAttr cloneWith(ArrayRef<StringAttr> names,
-                               ArrayRef<PassingKind> passingKinds) const;
+                       ArrayRef<PassingKind> passingKinds,
+                       ArrayRef<bool> variadicMask) const;
 
     /// Return true if the argument/param at `idx` is a variadic.
     bool isVariadic(size_t idx) const;

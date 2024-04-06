@@ -108,40 +108,43 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
                                      LITSignatureType sig) {
   MLIRContext *ctx = sig.getContext();
 
-  unsigned callArgCount = sig.getNumArguments() + 1;
-  SmallVector<Type> callMemberSignatureInputs;
-  callMemberSignatureInputs.reserve(callArgCount);
-  SmallVector<ArgConvention> callMemberArgConventions;
-  callMemberArgConventions.reserve(callArgCount);
-  SmallVector<StringAttr> callMemberArgNames;
-  callMemberArgNames.reserve(callArgCount);
-  SmallVector<PassingKind> callMemberArgPassingKinds;
-  callMemberArgPassingKinds.reserve(callArgCount);
+  unsigned newArgCount = sig.getNumArguments() + 1;
+  SmallVector<Type> signatureInputs;
+  signatureInputs.reserve(newArgCount);
+  SmallVector<ArgConvention> argConventions;
+  argConventions.reserve(newArgCount);
+  SmallVector<StringAttr> argNames;
+  argNames.reserve(newArgCount);
+  SmallVector<PassingKind> argPassingKinds;
+  argPassingKinds.reserve(newArgCount);
+  SmallVector<bool> argVariadicMask;
+  argVariadicMask.reserve(newArgCount);
 
   // Add self.
-  callMemberSignatureInputs.push_back(closureType);
-  callMemberArgConventions.push_back(convention);
-  callMemberArgNames.push_back(StringAttr::get(ctx));
-  callMemberArgPassingKinds.push_back(PassingKind::PosOnly);
+  signatureInputs.push_back(closureType);
+  argConventions.push_back(convention);
+  argNames.push_back(StringAttr::get(ctx));
+  argPassingKinds.push_back(PassingKind::PosOnly);
+  argVariadicMask.push_back(false);
   // Add the rest of the arguments.
-  llvm::append_range(callMemberSignatureInputs, sig.getArguments());
-  llvm::append_range(callMemberArgConventions, sig.getArgConventions());
-  llvm::append_range(callMemberArgNames, sig.getArgNames());
-  llvm::append_range(callMemberArgPassingKinds, sig.getArgPassingKinds());
+  FnMetadataAttr oldMetadata = sig.getMetadata();
+  PogsAttr argListAttr = oldMetadata.getArgListAttrs();
+  llvm::append_range(signatureInputs, sig.getArguments());
+  llvm::append_range(argConventions, sig.getArgConventions());
+  llvm::append_range(argNames, argListAttr.getNames());
+  llvm::append_range(argPassingKinds, argListAttr.getPassingKinds());
+  llvm::append_range(argVariadicMask, argListAttr.getVariadicMask());
+  assert(argNames.size() == argConventions.size());
 
   // A closure signature is not escaping because its 'escaping' state is
   // captured in the self argument we are inserting in this function.
-
-  assert(callMemberArgNames.size() == callMemberArgConventions.size());
-  FnMetadataAttr oldMetadata = sig.getMetadata();
-  auto metadata =
-      FnMetadataAttr::get(oldMetadata.getArgListAttrs().cloneWith(
-                              callMemberArgNames, callMemberArgPassingKinds),
-                          oldMetadata.getParamListAttrs(),
-                          oldMetadata.getNumImplicitLifetimeDecls());
+  auto metadata = FnMetadataAttr::get(
+      argListAttr.cloneWith(argNames, argPassingKinds, argVariadicMask),
+      oldMetadata.getParamListAttrs(),
+      oldMetadata.getNumImplicitLifetimeDecls());
   return SignatureType::get(
-      FunctionType::get(ctx, callMemberSignatureInputs, sig.getResults()),
-      sig.getParamTypes(), /*resultParamTypes=*/{}, callMemberArgConventions,
+      FunctionType::get(ctx, signatureInputs, sig.getResults()),
+      sig.getParamTypes(), /*resultParamTypes=*/{}, argConventions,
       sig.getFnEffects().setEscaping(false), metadata);
 }
 

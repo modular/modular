@@ -122,20 +122,19 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
   }
 
   PogsAttr oldArgListAttrs = traitSig.getArgListAttrs();
-  auto oldArgNames = oldArgListAttrs.getNames();
-  auto oldPassingKinds = oldArgListAttrs.getPassingKinds();
+  ArrayRef<StringAttr> argNames = oldArgListAttrs.getNames();
+  ArrayRef<PassingKind> passingKinds = oldArgListAttrs.getPassingKinds();
+  ArrayRef<bool> variadicMask = oldArgListAttrs.getVariadicMask();
   if (replacedResult) {
-    if (traitSig.hasInitSelfArg()) {
-      oldArgNames = oldArgNames.drop_front();
-      oldPassingKinds = oldPassingKinds.drop_front();
-    } else if (traitSig.hasMemoryOnlyResult()) {
-      oldArgNames = oldArgNames.drop_back();
-      oldPassingKinds = oldPassingKinds.drop_back();
-    }
+    bool hasInitSelf = traitSig.hasInitSelfArg();
+    bool hasMemRes = traitSig.hasMemoryOnlyResult();
+    argNames = argNames.drop_front(hasInitSelf).drop_back(hasMemRes);
+    passingKinds = passingKinds.drop_front(hasInitSelf).drop_back(hasMemRes);
+    variadicMask = variadicMask.drop_front(hasInitSelf).drop_back(hasMemRes);
   }
 
   PogsAttr newArgListAttrs =
-      oldArgListAttrs.cloneWith(oldArgNames, oldPassingKinds);
+      oldArgListAttrs.cloneWith(argNames, passingKinds, variadicMask);
   auto metadata = FnMetadataAttr::get(
       newArgListAttrs, traitSig.getParamListAttrs(), numImplicitLifetimeDecls);
   return SignatureType::get(
