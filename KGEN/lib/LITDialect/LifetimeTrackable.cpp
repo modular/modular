@@ -551,7 +551,7 @@ OverallOpValueEffect LIT::getOperationEffects(
     return OverallOpValueEffect::ifLikeOp;
   }
 
-  if (isa<HLCF::ElifOp, HLCF::SwitchOp, HLCF::IfOp>(op)) {
+  if (isa<HLCF::ElifOp, HLCF::SwitchOp>(op)) {
     if (size_t num = op.getNumResults())
       results.resize(num, ResultEffect::ignore);
     return OverallOpValueEffect::acyclicControlFlowNodeOp;
