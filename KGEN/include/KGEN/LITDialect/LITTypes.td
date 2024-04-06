@@ -93,12 +93,6 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
 
   let builders = [
     TypeBuilder<(ins)>,
-    TypeBuilder<(ins "ArrayRef<Type>":$paramTypes,
-                     "ArrayRef<StringAttr>":$paramNames,
-                     "ArrayRef<PassingKind>":$paramPassingKinds,
-                     CArg<"ArrayRef<TypedAttr>", "{}">:$defaultPosParams,
-                     CArg<"ArrayRef<TypedAttr>", "{}">:$defaultKwOnlyParams,
-                     CArg<"ArrayRef<size_t>", "{}">:$variadicIndices)>
   ];
 
   let genVerifyDecl = 1;

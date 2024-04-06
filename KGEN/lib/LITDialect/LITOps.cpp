@@ -1110,30 +1110,31 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SmallVector<PassingKind> newPassingKinds;
   SmallVector<TypedAttr> newPosDefaults;
   SmallVector<TypedAttr> newKwOnlyDefaults;
-  SmallVector<size_t> newVariadicIndices;
+  SmallVector<bool> newVariadicMask;
 
-  DefaultValueHandler defaultHandler(sig.getParamListAttrs());
-  for (auto [i, value, type, name, kind] :
-       llvm::enumerate(paramValues, sig.getParamTypes(), sig.getParamNames(),
-                       sig.getParamPassingKinds())) {
+  PogsAttr paramListAttr = sig.getParamListAttrs();
+  DefaultValueHandler defaultHandler(paramListAttr);
+  for (auto [i, value, type, name, kind, isVariadic] : llvm::enumerate(
+           paramValues, sig.getParamTypes(), sig.getParamNames(),
+           sig.getParamPassingKinds(), paramListAttr.getVariadicMask())) {
     if (::isa<UnboundAttr>(value)) {
       newParamTypes.push_back(type);
       newParamNames.push_back(name);
       newPassingKinds.push_back(kind);
+      newVariadicMask.push_back(isVariadic);
 
       if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
         newPosDefaults.push_back(defaultOr);
       else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(i))
         newKwOnlyDefaults.push_back(defaultOr);
-
-      if (sig.isVarParam(i))
-        newVariadicIndices.push_back(i);
     }
   }
 
-  auto newSig = TypeSignatureType::get(
-      getContext(), newParamTypes, newParamNames, newPassingKinds,
-      newPosDefaults, newKwOnlyDefaults, newVariadicIndices);
+  MLIRContext *ctx = getContext();
+  auto newParamListAttr =
+      PogsAttr::get(ctx, newParamNames, newPassingKinds, newPosDefaults,
+                    newKwOnlyDefaults, newVariadicMask);
+  auto newSig = TypeSignatureType::get(ctx, newParamTypes, newParamListAttr);
   return DeclRefType::get(symbol, paramValues,
                           AnyStructType::get(symbol, paramValues, newSig));
 }
