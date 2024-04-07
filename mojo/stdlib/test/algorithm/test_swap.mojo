@@ -47,15 +47,15 @@ def test_swap_Tuple_Int():
 
     swap(a, b)
 
-    assert_equal(a.get[0, Int](), 5)
-    assert_equal(a.get[1, Int](), 6)
-    assert_equal(a.get[2, Int](), 7)
-    assert_equal(a.get[3, Int](), 8)
+    assert_equal(a.get[0](), 5)
+    assert_equal(a.get[1](), 6)
+    assert_equal(a.get[2](), 7)
+    assert_equal(a.get[3](), 8)
 
-    assert_equal(b.get[0, Int](), 1)
-    assert_equal(b.get[1, Int](), 2)
-    assert_equal(b.get[2, Int](), 3)
-    assert_equal(b.get[3, Int](), 4)
+    assert_equal(b.get[0](), 1)
+    assert_equal(b.get[1](), 2)
+    assert_equal(b.get[2](), 3)
+    assert_equal(b.get[3](), 4)
 
 
 # TODO: We can not implement this test because Tuple currently can not bind to
