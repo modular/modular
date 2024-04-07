@@ -1471,6 +1471,26 @@ def KGEN_PackExtractOp : KGENOp<"pack.extract",
 }
 
 //===----------------------------------------------------------------------===//
+// PackGEPOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_PackGEPOp : KGENOp<"pack.gep",
+                     [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "pack get element pointer";
+  let description = [{
+    The `kgen.pack.gep` operation returns a pointer to the element of a pack at
+    the provided index.  The index must be a parameter of index type.  This
+    operation is resolved post-elaboration when the pack details become known.
+  }];
+
+  let arguments = (ins PointerOf<KGEN_PackType>:$pack, AttrOfType<Index>:$index);
+  let results = (outs PointerType:$result);
+  let assemblyFormat = [{
+    $pack `[` custom<IndexParamValue>($index) `]` attr-dict `:` type($pack)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // PackSizeOp
 //===----------------------------------------------------------------------===//
 

@@ -2023,6 +2023,16 @@ LogicalResult PackCreateOp::verify() {
 // PackExtractOp
 //===----------------------------------------------------------------------===//
 
+/// Given a packtype, return the type of the field at the specified index, which
+/// may be parametric.
+static Type getPackFieldAtIndex(PackType packType, TypedAttr index) {
+  // The result type is the type extracted from the type list.  Extract the
+  // element from the type list.  This automatically folds if constant.
+  auto typeAttr =
+      ParamOperatorAttr::get(POC::VariadicGet, packType.getVariadic(), index);
+  return ParamRefType::get(typeAttr);
+}
+
 LogicalResult PackExtractOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> loc, ValueRange operands,
     DictionaryAttr attrs, mlir::OpaqueProperties properties,
@@ -2037,13 +2047,35 @@ LogicalResult PackExtractOp::inferReturnTypes(
   if (!indexAttr || !indexAttr.getType().isIndex())
     return emitError("expected an index attribute");
 
-  auto refPackTy = cast<PackType>(operands[0].getType());
+  auto packType = cast<PackType>(operands[0].getType());
+  inferredReturnTypes.push_back(getPackFieldAtIndex(packType, indexAttr));
+  return success();
+}
 
-  // The result type is the type extracted from the type list.  Extract the
-  // element from the type list.  This automatically folds if constant.
-  auto typeAttr = ParamOperatorAttr::get(POC::VariadicGet,
-                                         refPackTy.getVariadic(), indexAttr);
-  inferredReturnTypes.push_back(ParamRefType::get(typeAttr));
+//===----------------------------------------------------------------------===//
+// PackGEPOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult PackGEPOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> loc, ValueRange operands,
+    DictionaryAttr attrs, mlir::OpaqueProperties properties,
+    RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
+  auto emitError = [&](const Twine &msg) -> LogicalResult {
+    return mlir::emitOptionalError(loc, msg);
+  };
+  if (operands.size() != 1 || !isa<PointerType>(operands[0].getType()))
+    return emitError("expected 1 operand");
+  auto packType = dyn_cast<PackType>(
+      cast<PointerType>(operands[0].getType()).getElementType());
+  if (!packType)
+    return emitError("expected pointer to pack type");
+
+  auto indexAttr = dyn_cast_if_present<TypedAttr>(attrs.get("index"));
+  if (!indexAttr || !indexAttr.getType().isIndex())
+    return emitError("expected an index attribute");
+
+  inferredReturnTypes.push_back(
+      PointerType::get(getPackFieldAtIndex(packType, indexAttr)));
   return success();
 }
 
