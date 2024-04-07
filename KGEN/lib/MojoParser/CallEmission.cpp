@@ -1507,8 +1507,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
 
     // If we failed to resolve the set, then try to emit a tailored error.  If
     // constructing from one value, then this is a type conversion (either
-    // implicit or explicit). If there was an ambiguous overload, make sure to
-    // indicate that.
+    // implicit or explicit).
     if (operandType && newFnDecls.size() <= 1 && !callee.isErroneous()) {
       // Reject Int(x) where x is already an Int with an error + fixit.
       if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
@@ -1524,8 +1523,19 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
         return {};
       }
 
-      // Diagnose implicit conversions with a custom message.
-      if (syntax == CallSyntax::kImplicitConvert) {
+      // Diagnose implicit conversions with a custom message, unless this is
+      // forming a Reference.
+      // FIXME: Why are we duplicating this logic? Just let overload resolution
+      // do its job.
+      bool isReference = false;
+      if (auto declRef = dyn_cast<DeclRefType>(type)) {
+        auto symbolNestedRefs = declRef.getSymbol().getNestedReferences();
+        if (!symbolNestedRefs.empty() &&
+            symbolNestedRefs.back().getAttr().str() == "Reference")
+          isReference = true;
+      }
+
+      if (syntax == CallSyntax::kImplicitConvert && !isReference) {
         // Handle common type mismatches with tailored errors.
         auto diag = emitError(expr->getLoc());
 

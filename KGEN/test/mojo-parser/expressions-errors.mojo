@@ -6,6 +6,8 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
+from memory.unsafe import _LITRef
+
 ##===----------------------------------------------------------------------===##
 # Conversions
 ##===----------------------------------------------------------------------===##
@@ -522,3 +524,35 @@ fn invalid_call_variadic_int(a: Int):
     # expected-error @+1 {{cannot use dynamic value in '@parameter if' condition}}
     if variadic_int(a, a):
         pass
+
+
+## FIXME: Shouldn't have to duplicate this from stdlib, but otherwise
+## Verify diagnostics gets happy because we have no check line for the note :(
+struct Reference[
+    type: AnyType,
+    is_mutable: __mlir_type.i1,
+    lifetime: AnyLifetime[is_mutable].type,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]:
+    alias mlir_ref_type = _LITRef[
+        type, is_mutable, lifetime, address_space
+    ].type
+
+    # expected-note @+1 {{function declared here}}
+    fn __init__(inout self, value: Self.mlir_ref_type): pass
+    fn __refitem__(self) -> Self.mlir_ref_type: pass
+
+fn test_bad_ref_errors(a: MemoryOnlyPair, b: MemoryOnlyPair):
+  var aref = Reference(a)
+  var bref = Reference(b)
+
+  _ = Reference(MemoryOnlyPair())
+
+fn test_bad_ref_errors[T: AnyType](a: Reference[T, _, _, _]):
+  # expected-error @below {{invalid call to '__init__': argument #1 cannot be converted from 'T' to 'Reference['T', ...]}}
+  # expected-note @below {{operand address space address_space._value.value doesn't match expected address space 0}}
+  var x : Reference[T, a.is_mutable, a.lifetime] = a[]
+
+  # expected-error @below {{invalid call to '__init__': argument #1 cannot be converted from 'T' to 'Reference['T', ...]}}
+  # expected-note @below {{operand mutability is_mutable doesn't match expected mutability 1}}
+  var y : Reference[T, __mlir_attr.`1: i1`, __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
