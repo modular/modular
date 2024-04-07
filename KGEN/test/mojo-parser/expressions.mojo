@@ -886,12 +886,12 @@ fn tuples_lv(i0: Int, f0: Float32):
 
    # Tuple LValue
    # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
-   # CHECK: [[TUP:%.*]] = lit.ref.load %iTup
+   # CHECK: [[TUP:%.*]] = lit.ref.immut %iTup
    # CHECK: lit.call {{.*}}@"__copyinit__{{.*}}([[TMPVAR]], [[TUP]])
-   # CHECK: [[TUPTMP:%.*]] = lit.ref.load [[TMPVAR]]
+   # CHECK: [[TUPTMP:%.*]] = lit.ref.immut [[TMPVAR]]
    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"get{{.*}}([[TUPTMP]])
    # CHECK-NEXT: lit.ref.store [[ELT]], %i1
-   # CHECK: [[TUPTMP:%.*]] = lit.ref.load [[TMPVAR]]
+   # CHECK: [[TUPTMP:%.*]] = lit.ref.immut [[TMPVAR]]
    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"get{{.*}}([[TUPTMP]])
    # CHECK-NEXT: lit.ref.store [[ELT]], %i2
    (i1, i2) = iTup
@@ -904,10 +904,10 @@ fn tuples_lv(i0: Int, f0: Float32):
    # CHECK-NEXT: [[I1VAL:%.*]] = lit.ref.load %i1
    # CHECK-NEXT: [[PACK:%.*]] = kgen.pack.create([[I2VAL]], [[I1VAL]])
    # CHECK-NEXT: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[TMPVAR]], [[PACK]])
-   # CHECK-NEXT: [[TUPTMP:%.*]] = lit.ref.load [[TMPVAR]]
+   # CHECK-NEXT: [[TUPTMP:%.*]] = lit.ref.immut [[TMPVAR]]
    # CHECK-NEXT: [[I1VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {0}, {{.*}}([[TUPTMP]])
    # CHECK-NEXT: lit.ref.store [[I1VAL]], %i1
-   # CHECK-NEXT: [[TUPTMP:%.*]] = lit.ref.load [[TMPVAR]]
+   # CHECK-NEXT: [[TUPTMP:%.*]] = lit.ref.immut [[TMPVAR]]
    # CHECK-NEXT: [[I2VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {1}, {{.*}}([[TUPTMP]])
    # CHECK-NEXT: lit.ref.store [[I2VAL]], %i2
    (i1, i2) = (i2, i1)
