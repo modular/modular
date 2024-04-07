@@ -6,7 +6,7 @@
 """This module includes utilities for working with the
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
-from sys import llvm_intrinsic
+from sys import llvm_intrinsic, _RegisterPackType
 
 from memory.unsafe import Pointer, bitcast
 from gpu.memory import AddressSpace
@@ -44,7 +44,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.f16.f16",
-            (SIMD[DType.float16, 2], SIMD[DType.float16, 2]),
+            _RegisterPackType[SIMD[DType.float16, 2], SIMD[DType.float16, 2]],
         ](sa[0], sa[1], b, sc[0], sc[1])
 
         var d0 = r.get[0, SIMD[DType.float16, 2]]()
@@ -65,7 +65,8 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         and c.size == 2
     ):
         var r = llvm_intrinsic[
-            "llvm.nvvm.mma.m8n8k4.row.col.f16.f16", (Float16, Float16)
+            "llvm.nvvm.mma.m8n8k4.row.col.f16.f16",
+            _RegisterPackType[Float16, Float16],
         ](a, b, c)
 
         var d0 = r.get[0, Float16]()
@@ -94,7 +95,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.f32.f32",
-            (Float32, Float32, Float32, Float32),
+            _RegisterPackType[Float32, Float32, Float32, Float32],
         ](
             sa[0],
             sa[1],
@@ -121,14 +122,14 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ):
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m8n8k4.row.col.f32.f32",
-            (Float32, Float32),
+            _RegisterPackType[Float32, Float32],
         ](a, b, c)
 
         var d0 = r.get[0, Float32]()
         var d1 = r.get[1, Float32]()
 
-        d[0] = rebind[Scalar[d.type]](d0[0])
-        d[1] = rebind[Scalar[d.type]](d1[0])
+        d[0] = rebind[Scalar[d.type]](d0)
+        d[1] = rebind[Scalar[d.type]](d1)
 
     # ===------------------------------------------------------------------===#
     # F32 = BF16 * BF16 + F32
@@ -150,7 +151,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.bf16",
-            (Float32, Float32, Float32, Float32),
+            _RegisterPackType[Float32, Float32, Float32, Float32],
         ](
             bitcast[DType.int32, 1](sa[0]),
             bitcast[DType.int32, 1](sa[1]),
@@ -186,7 +187,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k16.row.col.bf16",
-            (Float32, Float32, Float32, Float32),
+            _RegisterPackType[Float32, Float32, Float32, Float32],
         ](
             bitcast[DType.int32, 1](sa1[0]),
             bitcast[DType.int32, 1](sa1[1]),
@@ -228,7 +229,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k4.row.col.tf32",
-            (Float32, Float32, Float32, Float32),
+            _RegisterPackType[Float32, Float32, Float32, Float32],
         ](
             a_ptr[0],
             a_ptr[1],
@@ -264,7 +265,7 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
 
         var r = llvm_intrinsic[
             "llvm.nvvm.mma.m16n8k8.row.col.tf32",
-            (Float32, Float32, Float32, Float32),
+            _RegisterPackType[Float32, Float32, Float32, Float32],
         ](
             a_ptr[0],
             a_ptr[1],
@@ -316,12 +317,12 @@ fn ld_matrix[
     @parameter
     if num_registers == 1:
         alias ins = base + ".x1" + get_suffix()
-        var r = llvm_intrinsic[ins, (UInt32)](ptr)
+        var r = llvm_intrinsic[ins, UInt32](ptr)
         var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
         d = rebind[SIMD[d.type, d.size]](r_ptr[0])
     elif num_registers == 2:
         alias ins = base + ".x2" + get_suffix()
-        var r = llvm_intrinsic[ins, (UInt32, UInt32)](ptr)
+        var r = llvm_intrinsic[ins, _RegisterPackType[UInt32, UInt32]](ptr)
         var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
         d = rebind[SIMD[d.type, d.size]](r_ptr[0])
     else:
@@ -330,7 +331,9 @@ fn ld_matrix[
             "no valid implementation of ldmatrix instruction",
         ]()
         alias ins = base + ".x4" + get_suffix()
-        var r = llvm_intrinsic[ins, (UInt32, UInt32, UInt32, UInt32)](ptr)
+        var r = llvm_intrinsic[
+            ins, _RegisterPackType[UInt32, UInt32, UInt32, UInt32]
+        ](ptr)
         var r_ptr = Pointer.address_of(r).bitcast[__type_of(d)]()
         d = rebind[SIMD[d.type, d.size]](r_ptr[0])
     return d
