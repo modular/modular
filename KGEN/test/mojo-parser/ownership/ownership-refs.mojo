@@ -313,3 +313,22 @@ struct CutDownVariadicPack[
         __lifetime_of(self),
     ]:
        while True: pass
+
+# Test that you can implicitly convert an immortal mutable reference (as is returned
+# by AnyPointer for example) to mortal reference with specified lifetime.
+# CHECK: lit.func @"test_immortal_to_mortal
+fn test_immortal_to_mortal[mutability: __mlir_type.`i1`, life: AnyLifetime[mutability].type](arg:
+   Reference[Int, mutability, life].mlir_ref_type)
+    -> Reference[Int, mutability, life]:
+  # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON]], %arg)
+  # CHECK-NEXT: [[REFVAL:%.*]] = lit.ref.load [[ANON]]
+  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}AnyPointer::@"__init__{{.*}}([[REFVAL]])
+  # CHECK-NEXT: [[LITREFVAL:%.*]] = lit.call {{.*}}AnyPointer::@"__refitem__{{.*}}([[PTRVAL]])
+
+  # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[LITREFVAL]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=mutability, life>
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON2]], [[ADJREFVAL]])
+  # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[ANON2:%.*]]
+  # CHECK-NEXT: kgen.return [[RES]]
+  return AnyPointer(Reference(arg))[]
