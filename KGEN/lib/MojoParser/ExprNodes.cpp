@@ -2946,9 +2946,8 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
       return {};
     }
 
-    // Emit an intrinsic so the compiler knows the value is mutable (it doesn't
-    // warn about vars that should be lets) and so that it is checked to be
-    // initialized at this point.
+    // Emit an intrinsic so the compiler checks it to be initialized at this
+    // point.
     emitter.builder->create<OwnershipDefLValueOp>(getLocation(emitter),
                                                   resultRef);
 
@@ -2958,6 +2957,18 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
     // Return the MLValue as an SRValue since the pointer itself is the
     // result.
     return emitter.emitResult(SRValue(resultPtr), this, dest);
+  }
+
+  // __get_mvalue_as_litref(someMValue) returns the !lit.ref.
+  if (kind == kGetMValueAsLitRef) {
+    if (!subExprValue.isMValue()) {
+      emitter.emitError(getLoc(), "cannot use non-memory value") << getRange();
+      return {};
+    }
+
+    // Return the MValue as an SRValue since the ref itself is the result.
+    return emitter.emitResult(SRValue(subExprValue.getMValueReference()), this,
+                              dest);
   }
 
   // __get_address_as_uninit_lvalue and __get_address_as_owned_value take a
