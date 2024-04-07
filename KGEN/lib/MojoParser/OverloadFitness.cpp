@@ -793,34 +793,6 @@ InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
                          << expectedType;
 }
 
-/// Attach extra type conversion error detail or hints to the user.
-static void addTypeConversionDetail(InflightDiag &diag, SourceRange payloadLoc,
-                                    ASTType payloadType, ASTType argType) {
-  if (!payloadType) {
-    diag.attachNote(payloadLoc.getStart())
-        << "try resolving the overloaded function first" << payloadLoc;
-    return;
-  }
-  // Try to detect mismatched byref result type.
-  auto lhsSig = dyn_cast<SignatureType>(payloadType);
-  auto rhsSig = dyn_cast<SignatureType>(argType);
-  if (lhsSig && rhsSig) {
-    auto getByRefResult = [](SignatureType sig) -> std::pair<bool, Type> {
-      return {sig.hasMemoryOnlyResult(),
-              ASTType(sig).getSignatureUserResultType()};
-    };
-    auto [lhsByRef, lhsRetType] = getByRefResult(lhsSig);
-    auto [rhsByRef, rhsRetType] = getByRefResult(rhsSig);
-    if (lhsByRef == rhsByRef || lhsRetType != rhsRetType)
-      return;
-    // Different result semantics but same result type.
-    diag.attachNote(payloadLoc.getStart())
-        << "memory-only type bound to generic result type: "
-        << (lhsByRef ? "payload" : "argument") << " returns "
-        << ASTType(lhsRetType) << " by reference";
-  }
-}
-
 /// Helper to get the RValueType from an operand.
 static ASTType getRValueType(ASTExprAnd<AnyValue> operand) {
   AnyValue value = operand.ir;
@@ -832,6 +804,90 @@ static ASTType getRValueType(ASTExprAnd<AnyValue> operand) {
       return pValue.getType();
   // Initializer lists have no implied type.
   return ASTType();
+}
+
+/// Attach extra type conversion error detail or hints to the user when
+/// reporting an error passing `operand` to an argument of type `argType`.
+static void addTypeConversionDetail(InflightDiag &diag,
+                                    ASTExprAnd<AnyValue> operand,
+                                    ASTType argType, SharedState &shared) {
+  auto loc = operand.expr->getLoc();
+  ASTType operandType = getRValueType(operand);
+  if (!operandType) {
+    diag.attachNote(loc) << "try resolving the overloaded function first";
+    return;
+  }
+  // Try to detect mismatched byref result type.
+  auto lhsSig = dyn_cast<SignatureType>(operandType);
+  auto rhsSig = dyn_cast<SignatureType>(argType);
+  if (lhsSig && rhsSig) {
+    auto getByRefResult = [](SignatureType sig) -> std::pair<bool, Type> {
+      return {sig.hasMemoryOnlyResult(),
+              ASTType(sig).getSignatureUserResultType()};
+    };
+    auto [lhsByRef, lhsRetType] = getByRefResult(lhsSig);
+    auto [rhsByRef, rhsRetType] = getByRefResult(rhsSig);
+    if (lhsByRef == rhsByRef || lhsRetType != rhsRetType)
+      return;
+    // Different result semantics but same result type.
+    diag.attachNote(loc) << "memory-only type bound to generic result type: "
+                         << (lhsByRef ? "payload" : "argument") << " returns "
+                         << ASTType(lhsRetType) << " by reference";
+    return;
+  }
+}
+
+/// Emit a tailored diagnostic when failing to convert a value to type !lit.ref.
+/// This happens when the user is forming a Reference incorrectly which happens
+/// when confusion and details run the highest.
+static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
+                                            ASTExprAnd<AnyValue> operand,
+                                            RefType argType,
+                                            SharedState &shared) {
+  diag << "'Reference[" << ASTType(argType.getElementType()) << ", ...]";
+
+  auto loc = operand.expr->getLoc();
+  if (operand.ir.getIfRValue()) {
+    diag.attachNote(loc) << "cannot bind an RValue to a reference";
+    return;
+  }
+  if (!operand.ir.isMValue()) {
+    diag.attachNote(loc) << "operand does not have a memory representation";
+    return;
+  }
+
+  auto attrToString = [&](TypedAttr attr) -> std::string {
+    std::string str;
+    llvm::raw_string_ostream os(str);
+    ASTType::printParam(os, attr, /*forDiag*/ true,
+                        /*demangleParams*/ false);
+    return os.str();
+  };
+
+  auto operandRefTy = cast<RefType>(operand.ir.getMValueReference().getType());
+  if (!ASTType(argType.getElementType())
+           .isEqualCanon(operandRefTy.getElementType())) {
+    diag.attachNote(loc) << "operand element type "
+                         << ASTType(operandRefTy.getElementType())
+                         << " doesn't match expected element type "
+                         << ASTType(argType.getElementType());
+  } else if (argType.getAddressSpace() != operandRefTy.getAddressSpace()) {
+    diag.attachNote(loc) << "operand address space "
+                         << attrToString(operandRefTy.getAddressSpace())
+                         << " doesn't match expected address space "
+                         << attrToString(argType.getAddressSpace());
+  } else if (!canConvertWithRebind(operandRefTy.getLifetimeType(),
+                                   argType.getLifetimeType(), shared)) {
+    diag.attachNote(loc) << "operand mutability "
+                         << attrToString(operandRefTy.isMutable())
+                         << " doesn't match expected mutability "
+                         << attrToString(argType.isMutable());
+  } else if (!canConvertWithRebind(operandRefTy, argType, shared)) {
+    diag.attachNote(loc) << "operand lifetime "
+                         << attrToString(operandRefTy.getLifetime())
+                         << " doesn't match expected lifetime "
+                         << attrToString(argType.getLifetime());
+  }
 }
 
 InflightDiag
@@ -866,7 +922,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
                            << operand.expr->getRange();
   case ArgTypeMismatchKind::kWrongType: {
     describeArgumentNo(diag, argIdx);
-    diag << " cannot be converted from ";
+    diag << " cannot be converted from " << operand.expr->getRange();
     ASTType rValueType = getRValueType(operand);
     bool isConvertingTypeValue = ty.getMetaType() == rValueType;
     if (rValueType) {
@@ -879,12 +935,17 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     } else {
       diag << "unknown overload";
     }
-    SourceRange payloadLoc = operand.expr->getRange();
-    diag << " to " << (isConvertingTypeValue ? "an instance of " : "") << ty
-         << payloadLoc;
+    diag << " to ";
+
+    if (auto refType = dyn_cast<RefType>(ty)) {
+      diagnoseFailedRefTypeConversion(diag, operand, refType, shared);
+      return diag;
+    }
+
+    diag << (isConvertingTypeValue ? "an instance of " : "") << ty;
     if (isConvertingTypeValue)
       diag << "; did you mean to instantiate " << ty << "?";
-    addTypeConversionDetail(diag, payloadLoc, rValueType, ty);
+    addTypeConversionDetail(diag, operand, ty, shared);
     return diag;
   }
   default:
