@@ -789,3 +789,18 @@ fn test_partial_overwrite(cond: __mlir_type.i1):
     # CHECK-NEXT: kgen.return
     return
   # CHECK-NEXT: }
+
+# CHECK-LABEL: UninitField
+struct UninitField:
+  var field: MemExample
+
+  # CHECK: lit.func @"__init__
+  fn __init__(inout self):
+      # Show that we can mark a field as intentionally uninitialized.
+      # Even after checklifetimes, we don't want the thing initialized.
+      __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self.field))
+
+      # CHECK-NEXT: %0 = lit.ref.struct.ger %self[field]
+      # CHECK-NEXT: lit.ownership.mark_initialized %0
+      # CHECK-NEXT: %none = kgen.param.constant
+      # CHECK-NEXT: kgen.return %none
