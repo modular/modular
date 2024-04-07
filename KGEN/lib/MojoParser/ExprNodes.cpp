@@ -819,12 +819,29 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     Value refVal = emitter.emitSRValue({callResult, node}, dest.getContext());
     if (!refVal)
       return {};
+    assert(refVal.getType() == resultRefType &&
+           "RValue type didn't agree with actual type");
 
     // The result of the subscript or attribute lookup is a borrowed reference
     // or LValue, which can be directly used.  Parametric mutability is always
     // treated as immutable because some cases wouldn't allow mutation.
     auto result = resultRefType.isMutableKnown(true) ? AnyValue(MLValue(refVal))
                                                      : MBValue(refVal);
+
+    // Check to see if we get a reference with an element type that is a down
+    // casted metatype.  If we have this, we rebind the reference itself to get
+    // the original type.  This happens when a type gets used with Reference -
+    // which downcasts the metatype to AnyType. After remapping it through the
+    // parameter system we should strip this off.
+    // TODO: This seems like a very specific hack, why do we need this?
+    if (auto paramRef = dyn_cast<ParamRefType>(resultRefType.getElementType()))
+      if (auto rebind = dyn_cast<ParamOperatorAttr>(paramRef.getParam());
+          rebind && rebind.getOpcode() == POC::Rebind) {
+        resultRefType =
+            resultRefType.getWithElement(ASTType(rebind.getOperand(0)));
+        result = emitter.rebindValue({result, node}, resultRefType);
+      }
+
     return emitter.emitResult(result, node, dest);
   }
 
