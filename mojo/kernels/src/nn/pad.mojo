@@ -20,7 +20,6 @@ from memory.unsafe import DTypePointer
 from LinAlg.transpose import _fill_strides
 
 from utils.index import StaticIntTuple
-from builtin.tuple import _DeprecatedRegisterTuple
 
 
 @always_inline
@@ -42,9 +41,7 @@ struct _NestedLoopIter[n_loops: Int]:
 
     var cur: StaticIntTuple[n_loops]
 
-    alias LoopBoundSpec = InlinedFixedVector[
-        _DeprecatedRegisterTuple[Int, Int], n_loops
-    ]
+    alias LoopBoundSpec = InlinedFixedVector[StaticIntTuple[2], n_loops]
     var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
@@ -72,10 +69,10 @@ struct _NestedLoopIter[n_loops: Int]:
             self.early_stop = self.early_stop or invalid_bound
 
     fn _lb_loop(borrowed self, axis: Int) -> Int:
-        return self.loop_bounds[axis].get[0, Int]()
+        return self.loop_bounds[axis][0]
 
     fn _ub_loop(borrowed self, axis: Int) -> Int:
-        return self.loop_bounds[axis].get[1, Int]()
+        return self.loop_bounds[axis][1]
 
     fn __copyinit__(inout self: Self, other: Self):
         self.cur = other.cur
@@ -779,7 +776,7 @@ fn pad_repeat[
     var loop_bounds = _NestedLoopIter[rank].LoopBoundSpec(rank)
 
     for i in range(rank):
-        loop_bounds.append(_DeprecatedRegisterTuple(0, input.dim(i)))
+        loop_bounds.append(StaticIntTuple[2](0, input.dim(i)))
 
     var non_pad_iter = _NestedLoopIter[rank](loop_bounds)
 
@@ -788,24 +785,22 @@ fn pad_repeat[
         output[output_idx] = input[input_idx]
 
     for axis in range(rank - 1, -1, -1):
-        alias sit = StaticIntTuple[2]
-
         var pre_pad = pre_pads[axis]
         var post_pad = post_pads[axis]
 
         for i in range(axis):
-            loop_bounds[i] = _DeprecatedRegisterTuple(
+            loop_bounds[i] = StaticIntTuple[2](
                 pre_pads[i], pre_pads[i] + input.dim(i)
             )
 
         for i in range(axis + 1, rank):
-            loop_bounds[i] = _DeprecatedRegisterTuple(0, output.dim(i))
+            loop_bounds[i] = StaticIntTuple[2](0, output.dim(i))
 
         # handle pre-padding of the axis
         var pre_lower = 0
         var pre_upper = pre_pads[axis]
 
-        loop_bounds[axis] = _DeprecatedRegisterTuple(pre_lower, pre_upper)
+        loop_bounds[axis] = StaticIntTuple[2](pre_lower, pre_upper)
 
         var pre_pad_iter = _NestedLoopIter[rank](loop_bounds)
 
@@ -820,7 +815,7 @@ fn pad_repeat[
         var post_lower = pre_pads[axis] + input.dim(axis)
         var post_upper = output.dim(axis)
 
-        loop_bounds[axis] = _DeprecatedRegisterTuple(post_lower, post_upper)
+        loop_bounds[axis] = StaticIntTuple[2](post_lower, post_upper)
 
         var post_pad_iter = _NestedLoopIter[rank](loop_bounds)
 
