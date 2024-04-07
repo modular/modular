@@ -1673,7 +1673,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   if (innerExpr->kind == ExprNode::kNoneLiteral)
     return shared.getNoneType();
   if (innerExpr->isEmptyTuple())
-    return shared.getBuiltinTupleInstantiation(declScope, expr->getLoc(), {});
+    return getBuiltinTupleInstantiation(expr->getLoc(), {});
 
   auto value = emitExprPValue(expr, EC_Type);
   if (!value)
@@ -1789,6 +1789,51 @@ CValue ExprEmitter::emitMLIRIndex(ASTExprAnd<AnyValue> value,
 
 CValue ExprEmitter::emitMLIRIndex(const ExprNode *expr, ExprContext context) {
   return emitMLIRIndex({emitExprCValue(expr, context), expr}, context);
+}
+
+/// This returns an instance of Tuple[...] with the specified element types
+/// installed.
+ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
+                                                  ArrayRef<Type> elements) {
+  auto tupleType = shared.getBuiltinTupleType(declScope, loc);
+  if (tupleType.isTypeCheckErrorType())
+    return {};
+  ASTDecl *typeDecl = ASTType(tupleType).getDecl(shared);
+  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
+  if (!structOp) {
+    emitError(loc, "internal error: Tuple type not found or not a struct");
+    return {};
+  }
+
+  auto anyRegTypeType = TypeType::get(getContext());
+  SyntheticNode tmpExpr(loc);
+  ParamBindings bindings(*this);
+  for (ASTType elt : elements) {
+    // If the element type is referencing a parameter, ensure that the parameter
+    // type is `!kgen.type`. Otherwise, VariadicAttr cannot be constructed
+    // because values will conflict with the tuple element type constraint.
+    //
+    // FIXME: This check is wrong, and MAX Graphs is relying on Symbol in
+    // tuples... how does anything work!
+    if (auto paramRefType = dyn_cast<KGEN::ParamRefType>(elt)) {
+      if (paramRefType.getParam().getType() != anyRegTypeType) {
+        emitError(
+            loc, "tuples can only be constructed from register passable types");
+        return {};
+      }
+    }
+    bindings.add(&tmpExpr, PValue(elt));
+  }
+
+  // Check the bindings.
+  auto metaType = cast<AnyStructType>(tupleType.getMetaType());
+  auto bindingsAttr = bindings.verifyBindings(
+      structOp, metaType.getSignature(), loc, ParamBindings::Boundness::Full);
+  if (!bindingsAttr)
+    return {};
+
+  // Ok, we succeeded at reparameterizing the type.
+  return ASTType(BindTypeAttr::get(PValue(tupleType), bindingsAttr));
 }
 
 //===----------------------------------------------------------------------===//

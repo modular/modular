@@ -416,6 +416,11 @@ public:
   PValue emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
                                        TraitType trait);
 
+  /// This returns an instance of Tuple[...] with the specified element types
+  /// installed.
+  ASTType getBuiltinTupleInstantiation(llvm::SMLoc loc,
+                                       ArrayRef<Type> elements);
+
   //===--------------------------------------------------------------------===//
   // Emission helpers for various value classifications.
 

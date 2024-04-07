@@ -1041,12 +1041,15 @@ static void printPackType(AsmPrinter &p, TypedAttr value) {
 }
 
 static ParseResult parsePackType(AsmParser &p, TypedAttr &value) {
-  auto anyRegTypeType = TypeType::get(p.getContext());
-  Type type = VariadicType::get(anyRegTypeType);
-  if (succeeded(p.parseOptionalColon()))
-    if (parseKGENType(p, type))
+  Type packType;
+  if (succeeded(p.parseOptionalColon())) {
+    if (parseKGENType(p, packType))
       return failure();
-  return parseParamValue(p, value, type);
+  } else {
+    packType = VariadicType::get(TypeType::get(p.getContext()));
+  }
+
+  return parseParamValue(p, value, packType);
 }
 
 /// Verify that the element type of the variadic attribute or expression is a
