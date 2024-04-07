@@ -970,44 +970,6 @@ ArrayRef<ASTDecl *> SharedState::getBuiltinFunction(ASTDecl &context,
   return decls;
 }
 
-/// This returns an instance of Tuple[...] with the specified element types
-/// installed.
-ASTType SharedState::getBuiltinTupleInstantiation(ASTDecl &context,
-                                                  llvm::SMLoc loc,
-                                                  ArrayRef<Type> elements) {
-  auto tupleType = getBuiltinTupleType(context, loc);
-  if (tupleType.isTypeCheckErrorType())
-    return tupleType;
-
-  // Get the pack parameter from the Tuple type.
-  ASTDecl &tupleLiteralDecl = *tupleType.getDecl(*this);
-  auto tupleLiteralStruct = cast<StructDeclOp>(tupleLiteralDecl);
-  assert(tupleLiteralStruct.getParams().size() == 1);
-  ParamDeclAttr tupleParam = tupleLiteralStruct.getParams()[0];
-
-  // Bind the correct element types for the tuple to the tuple type.
-  SmallVector<TypedAttr> eltTypes;
-  auto anyRegTypeType = TypeType::get(tupleLiteralStruct.getContext());
-  for (auto elt : elements) {
-    // If the element type is referencing a parameter, ensure that the parameter
-    // type is `!kgen.type`. Otherwise, VariadicAttr cannot be constructed
-    // because values will conflict with the tuple element type constraint.
-    if (auto paramRefType = dyn_cast<KGEN::ParamRefType>(elt)) {
-      if (paramRefType.getParam().getType() != anyRegTypeType) {
-        emitError(
-            loc, "tuples can only be constructed from register passable types");
-        return {};
-      }
-    }
-    eltTypes.push_back(TypeConstantAttr::get(elt, anyRegTypeType));
-  }
-
-  // Bind it to a VariadicAttr of the right elements.
-  TypedAttr packAttr =
-      VariadicAttr::get(eltTypes, cast<VariadicType>(tupleParam.getType()));
-  return BindTypeAttr::get(PValue(tupleType), packAttr);
-}
-
 void SharedState::importBuiltinModules(ASTDecl &moduleDecl) {
   // Check if this is the first attempt at resolving the builtin modules.
   if (impl->implicitBuiltinImports.empty()) {

@@ -3040,7 +3040,7 @@ AnyValue MagicFunctionNode::emitSourceLocation(ValueDest &dest,
 
 // There are two options. We are either emitting a type or an instance of Tuple.
 // That is, either
-//      (T,T) is sugar for Tuple[T,T]
+//      (T1,T2) is sugar for Tuple[T1,T2]
 // and we want to reuse 'substituteParametersIntoUserDefinedType' so
 // that bindings are verified and parameter evaluation is used or
 //      (exp, exp) is sugar for Tuple[typeof(expr), typeof(expr)](exp, exp)
@@ -3064,13 +3064,12 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // HACK: Tuple emission should not be context dependent.
   if (allEltsTypes && !elements.empty()) {
-    PValue pValue(tupleType);
     SmallVector<Operand> operands;
     for (ExprNode *exprNode : exprs)
       operands.push_back(Operand(exprNode, exprNode->getLoc(),
                                  Operand::PassKind::kPositional));
     PValue concretizedTupleType = substituteParametersIntoUserDefinedType(
-        pValue, operands, getLoc(), exprs.front()->getRangeStart(),
+        PValue(tupleType), operands, getLoc(), exprs.front()->getRangeStart(),
         exprs.back()->getRangeEnd(), emitter);
 
     return emitter.emitResult(concretizedTupleType, this, dest);
@@ -3082,8 +3081,8 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     SmallVector<Type> typeElts;
     for (ASTExprAnd<AnyValue> elt : elements)
       typeElts.push_back(elt.ir.getIfLValue().getRValueType());
-    auto concretizedTupleType = emitter.shared.getBuiltinTupleInstantiation(
-        emitter.declScope, getLoc(), typeElts);
+    auto concretizedTupleType =
+        emitter.getBuiltinTupleInstantiation(getLoc(), typeElts);
     if (!concretizedTupleType || concretizedTupleType.isTypeCheckErrorType())
       return {};
     DLValue result(
