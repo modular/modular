@@ -1131,7 +1131,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 /// the operands as SSA values.
 static AnyValue emitMLIROperatorCall(const CallNode &call,
                                      UnboundMLIROperationAttr unboundOp,
-                                     ExprEmitter &emitter) {
+                                     ValueDest &dest, ExprEmitter &emitter) {
   auto *context = emitter.getContext();
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(&call);
@@ -1323,9 +1323,14 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     return {};
   }
 
-  // If we succeeded and have no types, then install a None type.
+  // Helper to emit an SValue or PValue to the destination.
+  auto emitSOrPValueResult = [&](AnyValue value) -> AnyValue {
+    return emitter.emitResult(value, &call, dest);
+  };
+
+  // If we succeeded and have no types, then install a None value.
   if (resultOp->getNumResults() == 0)
-    return PValue(emitter.shared.getNoneAttr());
+    return emitSOrPValueResult(PValue(emitter.shared.getNoneAttr()));
 
   if (resultOp->getNumResults() == 1) {
     OpResult res = resultOp->getResult(0);
@@ -1347,7 +1352,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       if (auto val = dyn_cast<Value>(folded)) {
         if (val.getType() == resType) {
           resultOp->erase();
-          return SRValue(val);
+          return emitSOrPValueResult(SRValue(val));
         }
         foldedType = val.getType();
       } else {
@@ -1355,7 +1360,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         auto attr = cast<TypedAttr>(cast<Attribute>(folded));
         if (attr.getType() == resType) {
           resultOp->erase();
-          return PValue(attr);
+          return emitSOrPValueResult(PValue(attr));
         }
         foldedType = attr.getType();
       }
@@ -1366,21 +1371,25 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       return {};
     }
 
-    // If folding failed, return the operation normally.
-    return SRValue(res);
+    // If folding failed, return the operation's result normally.
+    return emitSOrPValueResult(SRValue(res));
   }
 
   // Pack results into a tuple and return it.
-  ValueDest tupleDest = ValueDest(EC_MLIRMagic);
-  ASTType tupleType = emitter.shared.getBuiltinTupleInstantiation(
-      emitter.declScope, call.getLoc(), state.types);
+  auto tupleType =
+      emitter.shared.getBuiltinTupleType(emitter.declScope, call.getLoc());
+  if (tupleType.isTypeCheckErrorType())
+    return {};
+
+  // Construct the Tuple type without parameters so we infer them.
+  tupleType = tupleType.getWithoutParameters();
+
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
   for (OpResult opResult : resultOp->getResults())
     posOperands.push_back({SRValue(opResult), &call});
-  AnyValue tupleVal = emitter.emitConstructorCall(
-      tupleType, posOperands, &call, CallSyntax::kImplicitConvert, tupleDest,
-      /*allowImplicitConversion=*/true);
-  return tupleVal;
+  return emitter.emitConstructorCall(tupleType, posOperands, &call,
+                                     CallSyntax::kImplicitConvert, dest,
+                                     /*allowImplicitConversion=*/true);
 }
 
 AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
@@ -1391,10 +1400,8 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If this is the invocation of an unbound MLIR operator, bind it into an
   // actual operator!
   if (auto mValue = calleeVal.getIfPValue()) {
-    if (auto unboundOp = dyn_cast<UnboundMLIROperationAttr>(mValue.get())) {
-      AnyValue result = emitMLIROperatorCall(*this, unboundOp, emitter);
-      return emitter.emitResult(result, this, dest);
-    }
+    if (auto unboundOp = dyn_cast<UnboundMLIROperationAttr>(mValue.get()))
+      return emitMLIROperatorCall(*this, unboundOp, dest, emitter);
   }
 
   /// Emit all the operands that we'll need.
