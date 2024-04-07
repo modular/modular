@@ -105,7 +105,7 @@ struct Model:
     fn _execute_view[
         key_type: AnyRegType, value_type: AnyRegType
     ](
-        self, inputs: VariadicList[Tuple[key_type, value_type]]
+        self, inputs: VariadicListMem[Tuple[key_type, value_type], _, _]
     ) raises -> TensorMap:
         var input_map = TensorMap(self._ctx, self._lib, self._session)
         for i in range(len(inputs)):
