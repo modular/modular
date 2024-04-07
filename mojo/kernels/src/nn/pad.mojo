@@ -20,6 +20,7 @@ from memory.unsafe import DTypePointer
 from LinAlg.transpose import _fill_strides
 
 from utils.index import StaticIntTuple
+from builtin.tuple import _DeprecatedRegisterTuple
 
 
 @always_inline
@@ -41,11 +42,13 @@ struct _NestedLoopIter[n_loops: Int]:
 
     var cur: StaticIntTuple[n_loops]
 
-    alias LoopBoundSpec = InlinedFixedVector[Tuple[Int, Int], n_loops]
-    var loop_bounds: _NestedLoopIter[n_loops].LoopBoundSpec
+    alias LoopBoundSpec = InlinedFixedVector[
+        _DeprecatedRegisterTuple[Int, Int], n_loops
+    ]
+    var loop_bounds: Self.LoopBoundSpec
     var early_stop: Bool
 
-    fn __init__(inout self: Self, loop_bounds: self.LoopBoundSpec):
+    fn __init__(inout self: Self, loop_bounds: Self.LoopBoundSpec):
         debug_assert(
             len(loop_bounds) == n_loops,
             (
@@ -776,7 +779,7 @@ fn pad_repeat[
     var loop_bounds = _NestedLoopIter[rank].LoopBoundSpec(rank)
 
     for i in range(rank):
-        loop_bounds.append((0, input.dim(i)))
+        loop_bounds.append(_DeprecatedRegisterTuple(0, input.dim(i)))
 
     var non_pad_iter = _NestedLoopIter[rank](loop_bounds)
 
@@ -791,16 +794,18 @@ fn pad_repeat[
         var post_pad = post_pads[axis]
 
         for i in range(axis):
-            loop_bounds[i] = (pre_pads[i], pre_pads[i] + input.dim(i))
+            loop_bounds[i] = _DeprecatedRegisterTuple(
+                pre_pads[i], pre_pads[i] + input.dim(i)
+            )
 
         for i in range(axis + 1, rank):
-            loop_bounds[i] = (0, output.dim(i))
+            loop_bounds[i] = _DeprecatedRegisterTuple(0, output.dim(i))
 
         # handle pre-padding of the axis
         var pre_lower = 0
         var pre_upper = pre_pads[axis]
 
-        loop_bounds[axis] = (pre_lower, pre_upper)
+        loop_bounds[axis] = _DeprecatedRegisterTuple(pre_lower, pre_upper)
 
         var pre_pad_iter = _NestedLoopIter[rank](loop_bounds)
 
@@ -815,7 +820,7 @@ fn pad_repeat[
         var post_lower = pre_pads[axis] + input.dim(axis)
         var post_upper = output.dim(axis)
 
-        loop_bounds[axis] = (post_lower, post_upper)
+        loop_bounds[axis] = _DeprecatedRegisterTuple(post_lower, post_upper)
 
         var post_pad_iter = _NestedLoopIter[rank](loop_bounds)
 
