@@ -26,10 +26,10 @@ OpFoldResult PackCreateOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
-// PackGetOp
+// PackExtractOp
 //===----------------------------------------------------------------------===//
 
-OpFoldResult PackGetOp::fold(FoldAdaptor adaptor) {
+OpFoldResult PackExtractOp::fold(FoldAdaptor adaptor) {
   auto index = dyn_cast_or_null<IntegerAttr>(adaptor.getIndexAttr());
   if (!index)
     return {};

@@ -319,9 +319,9 @@ kgen.func @pack_get(
   %p1: !kgen.pack<[i32, f32]>
 ) -> (i1, f32) {
   // CHECK: llvm.extractvalue %arg0[0] : !llvm.struct<(i1)>
-  %0 = kgen.pack.get %p0[0] : <[i1]>
+  %0 = kgen.pack.extract %p0[0] : <[i1]>
   // CHECK: llvm.extractvalue %arg1[1] : !llvm.struct<(i32, f32)>
-  %1 = kgen.pack.get %p1[1] : <[i32, f32]>
+  %1 = kgen.pack.extract %p1[1] : <[i32, f32]>
 
   kgen.return %0, %1 : i1, f32
 }

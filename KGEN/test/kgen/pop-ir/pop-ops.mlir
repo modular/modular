@@ -866,17 +866,17 @@ kgen.generator @pack<Ts: variadic<!kgen.type>, T: type, I: index>(
 ) -> i32 {
   // CHECK: kgen.pack.size %arg0 : <Ts>
   %0 = kgen.pack.size %arg0 : <Ts>
-  // CHECK: kgen.pack.get %arg0[3] : <Ts>
-  %1 = kgen.pack.get %arg0[3] : <Ts>
+  // CHECK: kgen.pack.extract %arg0[3] : <Ts>
+  %1 = kgen.pack.extract %arg0[3] : <Ts>
 
   // CHECK: kgen.pack.size %arg1 : <[i32, T]>
   %2 = kgen.pack.size %arg1 : <[i32, T]>
-  // CHECK: kgen.pack.get %arg1[0] : <[i32, T]>
-  %3 = kgen.pack.get %arg1[0] : <[i32, T]>
-  // CHECK: kgen.pack.get %arg1[1] : <[i32, T]>
-  %4 = kgen.pack.get %arg1[1] : <[i32, T]>
-  // CHECK: kgen.pack.get %arg1[add(I, 1)] : <[i32, T]>
-  %5 = kgen.pack.get %arg1[add(I, 1)] : <[i32, T]>
+  // CHECK: kgen.pack.extract %arg1[0] : <[i32, T]>
+  %3 = kgen.pack.extract %arg1[0] : <[i32, T]>
+  // CHECK: kgen.pack.extract %arg1[1] : <[i32, T]>
+  %4 = kgen.pack.extract %arg1[1] : <[i32, T]>
+  // CHECK: kgen.pack.extract %arg1[add(I, 1)] : <[i32, T]>
+  %5 = kgen.pack.extract %arg1[add(I, 1)] : <[i32, T]>
 
   // CHECK: %[[PACK:.*]] = kgen.pack.create(%arg2, %arg2, %arg3) : !kgen.pack<[f32, f32, i8]>
   %6 = kgen.pack.create(%arg2, %arg2, %arg3) : !kgen.pack<[f32, f32, i8]>

@@ -588,7 +588,7 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     Example:
 
     ```mlir
-    lit.trait.decl @Trait<MT: type, T: !kgen.paramref<MT>> {
+    lit.trait.decl @Trait<T: !Trait> {
       lit.func @f() -> !kgen.none {
         lit.trait_func
       }
@@ -1794,14 +1794,14 @@ def LIT_RefPackCreateOp : LITOp<"ref.pack.create", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// RefPackGetOp
+// RefPackExtractOp
 //===----------------------------------------------------------------------===//
 
-def LIT_RefPackGetOp : LITOp<"ref.pack.get",
+def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
                       [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "reference pack get element";
   let description = [{
-    The `lit.ref.pack.get` operation returns the reference in the pack at the
+    The `lit.ref.pack.extract` operation returns the reference in the pack at the
     provided index.
   }];
 

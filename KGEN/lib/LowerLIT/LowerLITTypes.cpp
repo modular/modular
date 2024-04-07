@@ -602,11 +602,11 @@ static Value lowerOp(RefPackCreateOp op, RefPackCreateOpAdaptor adaptor,
       op.getLoc(), lowerer.replace(op.getType()), adaptor.getOperands());
 }
 
-// lit.ref.pack.get => kgen.pack.get
-static Value lowerOp(RefPackGetOp op, RefPackGetOpAdaptor adaptor,
+// lit.ref.pack.extract => kgen.pack.extract
+static Value lowerOp(RefPackExtractOp op, RefPackExtractOpAdaptor adaptor,
                      LITTypeLowerer &lowerer) {
-  return lowerer.create<PackGetOp>(op.getLoc(), adaptor.getOperands()[0],
-                                   op.getIndex());
+  return lowerer.create<PackExtractOp>(op.getLoc(), adaptor.getOperands()[0],
+                                       op.getIndex());
 }
 
 static Value getCastedToType(Location newLoc, Value value, Type destType,
@@ -796,7 +796,7 @@ void LowerLITTypesPass::runOnOperation() {
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
               RefImmutOp, RefToPointerOp, RefFromPointerOp,
               RefFromPointerREPLOp, RefStructGEROp, RefOffsetOp, RefLoadOp,
-              RefStoreOp, RebindOp, RefPackCreateOp, RefPackGetOp>(
+              RefStoreOp, RebindOp, RefPackCreateOp, RefPackExtractOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Default([](auto) { return success(); });
   });

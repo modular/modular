@@ -1427,16 +1427,16 @@ def KGEN_PackCreateOp : KGENOp<"pack.create", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// PackGetOp
+// PackExtractOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_PackGetOp : KGENOp<"pack.get",
+def KGEN_PackExtractOp : KGENOp<"pack.extract",
                      [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "pack get element";
   let description = [{
-    The `kgen.pack.get` operation returns the element of a pack at the provided
-    index.  The index must be a parameter of index type.  This operation is
-    resolved post-elaboration when the pack details become known.
+    The `kgen.pack.extract` operation returns the element of a pack at the
+    provided index.  The index must be a parameter of index type.  This
+    operation is resolved post-elaboration when the pack details become known.
 
     Example:
 
@@ -1446,15 +1446,15 @@ def KGEN_PackGetOp : KGENOp<"pack.get",
       %arg1: Ts,
     ) {
       // Get the first element, of type `i32`.
-      %0 = kgen.pack.get %arg0[0] : <[i32, T]>
+      %0 = kgen.pack.extract %arg0[0] : <[i32, T]>
       // Get the second element, of type `!kgen.paramref<T>`.
-      %1 = kgen.pack.get %arg0[1] : <[i32, T]>
+      %1 = kgen.pack.extract %arg0[1] : <[i32, T]>
 
       // Get the element at an offset `I + 1`.
-      %2 = kgen.pack.get %arg0[add(I, 1)] : <[i32, T]>
+      %2 = kgen.pack.extract %arg0[add(I, 1)] : <[i32, T]>
 
       // Get the element at index 3.
-      %3 = kgen.pack.get %arg1[3] : <Ts>
+      %3 = kgen.pack.extract %arg1[3] : <Ts>
 
       kgen.return
     }
