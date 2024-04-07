@@ -888,6 +888,26 @@ kgen.generator @pack<Ts: variadic<!kgen.type>, T: type, I: index>(
   kgen.return %3 : i32
 }
 
+
+// CHECK-LABEL: kgen.generator @pack
+kgen.generator @pack_ptr<Ts: variadic<!kgen.type>, T: type, I: index>(
+  %arg0: !kgen.pointer<!kgen.pack<Ts>>,
+  %arg1: !kgen.pointer<!kgen.pack<[i32, T]>>
+)  {
+  // CHECK: kgen.pack.gep %arg0[3] : <!kgen.pack<Ts>>
+  %1 = kgen.pack.gep %arg0[3] : <!kgen.pack<Ts>>
+
+  // CHECK: kgen.pack.gep %arg1[0] : <!kgen.pack<[i32, T]>>
+  %2 = kgen.pack.gep %arg1[0] : <!kgen.pack<[i32, T]>>
+  // CHECK: kgen.pack.gep %arg1[1] : <!kgen.pack<[i32, T]>>
+  %3 = kgen.pack.gep %arg1[1] : <!kgen.pack<[i32, T]>>
+  // CHECK: kgen.pack.gep %arg1[add(I, 1)] : <!kgen.pack<[i32, T]>>
+  %4 = kgen.pack.gep %arg1[add(I, 1)] : <!kgen.pack<[i32, T]>>
+
+  kgen.return
+}
+
+
 // CHECK-LABEL: @parametric_pack
 kgen.generator @parametric_pack<N, T: type>(%arg0: !pop.simd<N, bool>, %arg1: !kgen.paramref<T>) {
   // CHECK-NEXT: kgen.pack.create(%arg0, %arg1) : !kgen.pack<[simd<N, bool>, T]>

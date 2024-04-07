@@ -595,10 +595,10 @@ struct ConvertKGENPackCreate : public ConvertPOPToLLVMPattern<PackCreateOp> {
 };
 
 //===----------------------------------------------------------------------===//
-// ConvertKGENPackGet
+// ConvertKGENPackExtract
 //===----------------------------------------------------------------------===//
 
-struct ConvertKGENPackGet : public ConvertPOPToLLVMPattern<PackExtractOp> {
+struct ConvertKGENPackExtract : public ConvertPOPToLLVMPattern<PackExtractOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
@@ -608,6 +608,32 @@ struct ConvertKGENPackGet : public ConvertPOPToLLVMPattern<PackExtractOp> {
     // underlying storage.
     rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
         op, adaptor.getPack(), cast<IntegerAttr>(op.getIndex()).getInt());
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertKGENPackGEP
+//===----------------------------------------------------------------------===//
+
+struct ConvertKGENPackGEP : public ConvertPOPToLLVMPattern<PackGEPOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PackGEPOp op, PackGEPOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // Otherwise, GEP to the value at the specified index from the pack's
+    // underlying storage.
+    auto index = cast<IntegerAttr>(op.getIndex()).getInt();
+
+    PointerType ptrType = cast<PointerType>(op.getPack().getType());
+    Type elementType = convertType(ptrType.getElementType());
+    if (!elementType)
+      return op.emitError("failed to convert pack type");
+    LLVM::LLVMPointerType opaquePtr = LLVM::LLVMPointerType::get(getContext());
+    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, opaquePtr, elementType, adaptor.getPack(),
+        ArrayRef<LLVM::GEPArg>{0, static_cast<int32_t>(index)});
     return success();
   }
 };
@@ -703,11 +729,10 @@ struct ConvertKGENStructGEP : ConvertPOPToLLVMPattern<StructGEPOp> {
     if (!elementType)
       return op.emitError("failed to convert result type");
     LLVM::LLVMPointerType opaquePtr = LLVM::LLVMPointerType::get(getContext());
-    LLVM::GEPOp newOp = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), opaquePtr, elementType, adaptor.getContainer(),
+    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+        op, opaquePtr, elementType, adaptor.getContainer(),
         ArrayRef<LLVM::GEPArg>{
             0, static_cast<int32_t>(op.getIndexAttr().getInt())});
-    rewriter.replaceOp(op, newOp);
     return success();
   }
 };
@@ -812,7 +837,7 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENCall,
       ConvertKGENGlobalAddress,
       ConvertKGENPackCreate,
-      ConvertKGENPackGet,
+      ConvertKGENPackExtract,ConvertKGENPackGEP,
       ConvertKGENPackSize,
       ConvertKGENStructCreate,
       ConvertKGENStructGEP,
