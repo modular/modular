@@ -14,13 +14,13 @@ struct Dim(Stringable):
     var _value: StaticIntTuple[3]
 
     fn __init__(dims: Tuple[Int]) -> Self:
-        return Self(dims.get[0, Int]())
+        return Self(dims.get[0]())
 
     fn __init__(dims: Tuple[Int, Int]) -> Self:
-        return Self(dims.get[0, Int](), dims.get[1, Int]())
+        return Self(dims.get[0](), dims.get[1]())
 
     fn __init__(dims: Tuple[Int, Int, Int]) -> Self:
-        return Self(dims.get[0, Int](), dims.get[1, Int](), dims.get[2, Int]())
+        return Self(dims.get[0](), dims.get[1](), dims.get[2]())
 
     fn __init__(x: Int, y: Int = 1, z: Int = 1) -> Self:
         return Self {_value: Index(x, y, z)}
