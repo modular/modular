@@ -58,7 +58,7 @@ static Level levelFromString(StringRef levelStr) {
   if (levelStr.empty())
     return Level::L1;
 
-  int level;
+  int level = 0;
   if (levelStr.getAsInteger(10, level))
     assert(false && "Non-integer telemetry level specified");
   assert((level >= 0 && level < 3) && "Telemetry level outside [0,2] range");
