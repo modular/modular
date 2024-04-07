@@ -218,7 +218,7 @@ struct DimList(Sized, Stringable):
         Returns:
             A dimension list.
         """
-        return Self {value: VariadicList[Dim](values.get[0, Int]())}
+        return Self {value: VariadicList[Dim](values.get[0]())}
 
     @always_inline("nodebug")
     fn __init__(values: Tuple[Int, Int]) -> Self:
@@ -230,9 +230,7 @@ struct DimList(Sized, Stringable):
         Returns:
             A dimension list.
         """
-        return Self {
-            value: VariadicList[Dim](values.get[0, Int](), values.get[1, Int]())
-        }
+        return Self {value: VariadicList[Dim](values.get[0](), values.get[1]())}
 
     @always_inline("nodebug")
     fn __init__(values: Tuple[Int, Int, Int]) -> Self:
@@ -246,7 +244,7 @@ struct DimList(Sized, Stringable):
         """
         return Self {
             value: VariadicList[Dim](
-                values.get[0, Int](), values.get[1, Int](), values.get[2, Int]()
+                values.get[0](), values.get[1](), values.get[2]()
             )
         }
 
