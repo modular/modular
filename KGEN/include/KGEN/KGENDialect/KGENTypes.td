@@ -534,7 +534,8 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 
 def KGEN_PackType : KGENType<"Pack", "pack", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
-    DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "parameterized pack type";
   let description = [{
     A `!kgen.pack` type represents a sequence of heterogeneously typed elements.

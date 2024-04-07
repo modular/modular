@@ -990,10 +990,10 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
   return getPackedElementsTypeAlign(getElementTypes(), target);
 }
 
-ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
+ErrorOrSuccess StructType::writeTo(TypedAttr structValue, int64_t addr,
                                    InterpreterState &state) const {
   int64_t offset = 0;
-  for (TypedAttr value : ::cast<StructAttr>(value).getValues()) {
+  for (TypedAttr value : ::cast<StructAttr>(structValue).getValues()) {
     auto dl = ::cast<DataLayoutInterface>(value.getType());
     // Store each element spaced apart by padding according to its alignment.
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
@@ -1105,6 +1105,49 @@ bool PackType::isEmpty() {
 
 VariadicAttr PackType::getVariadicIfResolved() const {
   return ::dyn_cast<VariadicAttr>(getVariadic());
+}
+
+ErrorOrSuccess PackType::writeTo(TypedAttr packValue, int64_t addr,
+                                 InterpreterState &state) const {
+  auto packValueAttr = ::dyn_cast<PackAttr>(packValue);
+  assert(packValueAttr && "This runs after elaboration");
+
+  int64_t offset = 0;
+  for (TypedAttr value : packValueAttr.getValues()) {
+    auto dl = ::cast<DataLayoutInterface>(value.getType());
+    // Store each element spaced apart by padding according to its alignment.
+    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    // Ignore unknown values. Just leave the memory as-is.
+    if (!::isa<UnknownAttr>(value)) {
+      ErrorOrSuccess result =
+          state.writeAttributeToMemory(addr + offset, value);
+      if (result.isError())
+        return result.takeError();
+    }
+    offset += *dl.getTypeSize(state.getTarget());
+  }
+  return success();
+}
+
+ErrorOr<TypedAttr> PackType::readFrom(int64_t addr,
+                                      InterpreterState &state) const {
+  VariadicAttr typeList = getVariadicIfResolved();
+  assert(typeList && "should happen after elaboration");
+
+  SmallVector<TypedAttr> values;
+  int64_t offset = 0;
+  for (TypedAttr elTypeAttr : typeList.getValues()) {
+    Type elType = ::cast<TypeConstantAttr>(elTypeAttr).getValue();
+    auto dl = elType.cast<DataLayoutInterface>();
+    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    ErrorOr<TypedAttr> value =
+        state.readAttributeFromMemory(addr + offset, elType);
+    if (value.isError())
+      return value.takeError();
+    values.push_back(value.takeValue());
+    offset += *dl.getTypeSize(state.getTarget());
+  }
+  return PackAttr::get(values, *this);
 }
 
 //===----------------------------------------------------------------------===//

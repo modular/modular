@@ -842,30 +842,34 @@ world"
 
 # CHECK-LABEL: lit.func @"tuples_rv
 fn tuples_rv(a: Int, b: Float32):
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: [[PACK0:%.*]] = kgen.param.constant: !kgen.pack<[]> = <<>>
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK0]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]], [[PACK0]])
     _ = ()
 
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: [[PACK1:%.*]] = kgen.pack.create(%a, %b)
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]], [[PACK1]])
     _ = (a, b)
 
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: [[PACK1:%.*]] = kgen.pack.create(%a, %b)
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK1]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]], [[PACK1]])
     _ = a, b
 
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: [[PACK2:%.*]] = kgen.pack.create(%a)
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]], [[PACK2]])
     _ = (a,)
 
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: [[PACK2:%.*]] = kgen.pack.create(%a)
-    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
+    # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]], [[PACK2]])
     _ = a,
 
     # CHECK: %c = lit.var.decl "c"
     # CHECK: [[PACK2:%.*]] = kgen.pack.create(%a)
-    # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[PACK2]])
-    # CHECK: lit.ref.store [[TUP2]], %c
+    # CHECK: [[TUP2:%.*]] = lit.call @{{.*}}@Tuple::@"__init__({{.*}}(%c, [[PACK2]])
     var c = a,
 
 # CHECK-LABEL: lit.func @"tuples_lv
@@ -877,29 +881,34 @@ fn tuples_lv(i0: Int, f0: Float32):
    var iTup : Tuple[Int, Int]
 
    # Tuple Rvalue
-   # CHECK: [[TUP:%.*]] = lit.call {{.*}}@Tuple::@"__init__
-   # CHECK: lit.ref.store [[TUP]], %iTup
+   # CHECK: [[TUP:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}(%iTup,
    iTup = (i1, i2)
 
    # Tuple LValue
+   # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
    # CHECK: [[TUP:%.*]] = lit.ref.load %iTup
-   # CHECK: [[TUP2:%.*]] = lit.call {{.*}}@"__copyinit__{{.*}}([[TUP]])
-   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"get{{.*}}([[TUP2]])
+   # CHECK: lit.call {{.*}}@"__copyinit__{{.*}}([[TMPVAR]], [[TUP]])
+   # CHECK: [[TUPTMP:%.*]] = lit.ref.load [[TMPVAR]]
+   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"get{{.*}}([[TUPTMP]])
    # CHECK-NEXT: lit.ref.store [[ELT]], %i1
-   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"get{{.*}}([[TUP2]])
+   # CHECK: [[TUPTMP:%.*]] = lit.ref.load [[TMPVAR]]
+   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"get{{.*}}([[TUPTMP]])
    # CHECK-NEXT: lit.ref.store [[ELT]], %i2
    (i1, i2) = iTup
 
    # Check that the swap idiom is correct, this requires producing a copy of the
    # whole RValue on the right before extracting from it.
 
+   # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
    # CHECK: [[I2VAL:%.*]] = lit.ref.load %i2
    # CHECK-NEXT: [[I1VAL:%.*]] = lit.ref.load %i1
    # CHECK-NEXT: [[PACK:%.*]] = kgen.pack.create([[I2VAL]], [[I1VAL]])
-   # CHECK-NEXT: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[PACK]])
-   # CHECK-NEXT: [[I1VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {0}, {{.*}}([[TUPRV]])
+   # CHECK-NEXT: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[TMPVAR]], [[PACK]])
+   # CHECK-NEXT: [[TUPTMP:%.*]] = lit.ref.load [[TMPVAR]]
+   # CHECK-NEXT: [[I1VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {0}, {{.*}}([[TUPTMP]])
    # CHECK-NEXT: lit.ref.store [[I1VAL]], %i1
-   # CHECK-NEXT: [[I2VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {1}, {{.*}}([[TUPRV]])
+   # CHECK-NEXT: [[TUPTMP:%.*]] = lit.ref.load [[TMPVAR]]
+   # CHECK-NEXT: [[I2VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {1}, {{.*}}([[TUPTMP]])
    # CHECK-NEXT: lit.ref.store [[I2VAL]], %i2
    (i1, i2) = (i2, i1)
 
