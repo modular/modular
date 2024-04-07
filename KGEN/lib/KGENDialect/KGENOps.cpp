@@ -2020,10 +2020,10 @@ LogicalResult PackCreateOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// PackGetOp
+// PackExtractOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult PackGetOp::inferReturnTypes(
+LogicalResult PackExtractOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> loc, ValueRange operands,
     DictionaryAttr attrs, mlir::OpaqueProperties properties,
     RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {

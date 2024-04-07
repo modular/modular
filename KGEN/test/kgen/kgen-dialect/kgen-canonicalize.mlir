@@ -250,7 +250,7 @@ kgen.func @pack_create_empty() -> !kgen.pack<[]> {
 kgen.func @pack_get() -> i4 {
   // CHECK-NEXT: kgen.param.constant: i4 = <3>
   %0 = kgen.param.constant: !kgen.pack<[f32, i4]> = <<-1.2, 3>>
-  %1 = kgen.pack.get %0[1] : !kgen.pack<[f32, i4]>
+  %1 = kgen.pack.extract %0[1] : !kgen.pack<[f32, i4]>
   kgen.return %1 : i4
 }
 
@@ -258,7 +258,7 @@ kgen.func @pack_get() -> i4 {
 kgen.func @pack_create_get(%arg0: f32, %arg1: si8) -> f32 {
   // CHECK-NEXT: kgen.return %arg0
   %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[f32, si8]>
-  %1 = kgen.pack.get %0[0] : !kgen.pack<[f32, si8]>
+  %1 = kgen.pack.extract %0[0] : !kgen.pack<[f32, si8]>
   kgen.return %1 : f32
 }
 

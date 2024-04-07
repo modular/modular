@@ -598,11 +598,11 @@ struct ConvertKGENPackCreate : public ConvertPOPToLLVMPattern<PackCreateOp> {
 // ConvertKGENPackGet
 //===----------------------------------------------------------------------===//
 
-struct ConvertKGENPackGet : public ConvertPOPToLLVMPattern<PackGetOp> {
+struct ConvertKGENPackGet : public ConvertPOPToLLVMPattern<PackExtractOp> {
   using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(PackGetOp op, PackGetOpAdaptor adaptor,
+  matchAndRewrite(PackExtractOp op, PackExtractOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     // Otherwise, extract the value at the specified index from the pack's
     // underlying storage.

@@ -2041,10 +2041,10 @@ LogicalResult RefPackCreateOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// RefPackGetOp
+// RefPackExtractOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult RefPackGetOp::inferReturnTypes(
+LogicalResult RefPackExtractOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> loc, ValueRange operands,
     DictionaryAttr attrs, mlir::OpaqueProperties properties,
     RegionRange regions, SmallVectorImpl<Type> &inferredReturnTypes) {
