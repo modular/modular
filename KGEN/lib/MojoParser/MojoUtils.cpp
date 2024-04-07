@@ -119,13 +119,13 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
     return false;
   }
 
-  // Check lifetime downcasting.  We can convert from (mutable or parametric) to
-  // immutable, but nothing else.
+  // Check lifetime downcasting.  The safe conversions are:
+  //   Lifetimes with identical mutability will be uniqued and already handled.
+  //   Conversion from any mutability to KNOWN immutable is fine.
+  //   Conversion from KNOWN mutable to any mutability is fine.
   if (auto fromLife = dyn_cast<LifetimeType>(fromType))
-    if (auto toLife = dyn_cast<LifetimeType>(toType)) {
-      return fromLife.isMutable() == toLife.isMutable() ||
-             toLife.isMutableKnown(false);
-    }
+    if (auto toLife = dyn_cast<LifetimeType>(toType))
+      return toLife.isMutableKnown(false) || fromLife.isMutableKnown(true);
 
   // Check reference downcasting.  The only thing allowed to disagree is the
   // lifetime set / mutability.
