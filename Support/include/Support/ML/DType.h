@@ -210,6 +210,13 @@ public:
   /// width values.
   constexpr ssize_t getWidthInBits() const;
 
+  /// Return the width of the floating point significand precision in bits.
+  /// Precision includes the actual significand width in bits and the implicit
+  /// leading bit (if present). This returns a nullopt for non-float dtypes.
+  /// It also returns a nullopt for f8 and f24 because they have unclear formats
+  /// in our stack.
+  constexpr std::optional<ssize_t> getSignificandPrecisionInBits() const;
+
   /// Return the in-memory size for an array of the specified type with the
   /// specified number of elements, or -1 for non-numeric types or too large
   /// values.  This supports densely packed sub-byte types like i1, i2, i4.
@@ -284,6 +291,39 @@ inline constexpr ssize_t DType::getWidthInBits() const {
     return 80;
   case DType::f128:
     return 128;
+  }
+}
+
+/// Return the width of the floating point significand precision in bits.
+/// Precision includes the actual significand width in bits and the implicit
+/// leading bit (if present). This returns a nullopt for non-float dtypes.
+/// It also returns a nullopt for f8 and f24 because they have unclear formats
+/// in our stack.
+inline constexpr std::optional<ssize_t>
+DType::getSignificandPrecisionInBits() const {
+  // For all but f80, this is the number of significand bits + 1.
+  // f80 is special and does not have an implicit leading bit.
+  // The addition of the leading bit is written out explicitly for clarity.
+  switch (getValue()) {
+  default:
+  case DType::f8:
+    // f8 has at least 2 formats and is not supported in our stack.
+  case DType::f24:
+    // f24 has an unclear format and is not supported in our stack.
+    return std::nullopt;
+  case DType::bf16:
+    return 7 + 1;
+  case DType::f16:
+  case DType::tf32:
+    return 10 + 1;
+  case DType::f32:
+    return 23 + 1;
+  case DType::f64:
+    return 52 + 1;
+  case DType::f80:
+    return 64;
+  case DType::f128:
+    return 112 + 1;
   }
 }
 
