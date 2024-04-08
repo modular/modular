@@ -138,7 +138,7 @@ if output.returncode == 0:
 
 torchscript_relu_model_path = (
     Path(config.modular_src_root)
-    / "GenericML"
+    / "SDK"
     / "integration-test"
     / "max-cli"
     / "Inputs"
