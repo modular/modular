@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.unsafe import DTypePointer
+from memory.anypointer import *
 from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
@@ -315,14 +316,14 @@ struct OwningVector[T: Movable](Sized):
 
     fn emplace_back(inout self, owned value: T):
         if self.size < self.capacity:
-            (self.ptr + self.size).emplace_value(value^)
+            initialize_pointee(self.ptr + self.size, value^)
             self.size += 1
             return
 
         self.capacity = self.capacity * 2
         var new_ptr = AnyPointer[T].alloc(self.capacity)
         for i in range(self.size):
-            (new_ptr + i).emplace_value((self.ptr + i).take_value())
+            move_pointee(src=self.ptr + i, dst=new_ptr + i)
         self.ptr.free()
         self.ptr = new_ptr
         self.emplace_back(value^)
@@ -339,5 +340,5 @@ struct OwningVector[T: Movable](Sized):
 
     fn __del__(owned self):
         for i in range(self.size):
-            _ = (self.ptr + i).take_value()
+            destroy_pointee(self.ptr + i)
         self.ptr.free()
