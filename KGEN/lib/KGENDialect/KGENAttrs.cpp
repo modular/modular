@@ -2213,14 +2213,6 @@ static TypedAttr simplifyGetTypeMethod(ArrayRef<TypedAttr> operands,
   VTableAttr vtable = typeConstant.getVTable();
   StringAttr targetName = cast<StringAttr>(operands[1]);
   SignatureType targetSignature = cast<SignatureType>(resultType);
-  // FIXME: Nuke out nested vtables in the target signature. This occurs when
-  // attempting to extract a method with a self type reference, since the type
-  // parameter will have the vtable but the signatures inside it will not.
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([](TypeConstantAttr type) {
-    return TypeConstantAttr::get(type.getValue(), type.getType());
-  });
-  targetSignature = cast<SignatureType>(replacer.replace(targetSignature));
 
   // Scan the vtable for a name + signature match, then the method is the
   // payload.
