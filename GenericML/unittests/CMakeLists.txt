@@ -10,7 +10,6 @@ add_subdirectory(GraphCompiler/Conversion)
 add_subdirectory(GraphCompiler/Matchers)
 add_subdirectory(GraphCompiler/MODialect)
 add_subdirectory(GraphCompiler/RMODialect)
-add_subdirectory(EngineCLI)
 add_subdirectory(API)
 
 add_modular_unittest(
