@@ -680,12 +680,14 @@ struct LoadStoreOutputTile[
 
 
 struct MatmulInnerLoopBPacked[
-    a_shape: DimList,
-    c_shape: DimList,
-    packed_shape: DimList,
     a_type: DType,
+    a_shape: DimList,
     b_type: DType,
+    b_shape: DimList,
     c_type: DType,
+    c_shape: DimList,
+    transpose_b: Bool,
+    packed_shape: DimList,
     simd_size: Int,
     a_row_size: Int,
     pack_inner_size: Int,
@@ -1039,7 +1041,12 @@ struct MatmulInnerLoopBPacked[
                 ]()
 
         # This inner kernels works with non-transposed A.
-        var K = self.a.dim[1]()
+
+        alias axis = 1 if transpose_b else 0
+        # Get the static value of K when b_shape is static otherwise get the dynamic value of K from the A buffer
+        var K = b_shape.get[axis]() if b_shape.has_value[
+            axis
+        ]() else self.a.dim[1]()
         var a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
 
         # Loop over local accumulator tiles.
@@ -1613,12 +1620,14 @@ struct TiledMatmul[
                 alias tile_size2 = 2 if tile_size == 1 else tile_size
                 alias a_row_size = tile_size2 // 2 if config.use_i8mm else tile_size
                 MatmulInnerLoopBPacked[
-                    config.a_shape,
-                    config.c_shape,
-                    config.packed_shape,
                     a_type,
+                    config.a_shape,
                     b_type,
+                    config.b_shape,
                     c_type,
+                    config.c_shape,
+                    config.transpose_b,
+                    config.packed_shape,
                     config.simd_size,
                     a_row_size,
                     m_loop_pack_inner_size,

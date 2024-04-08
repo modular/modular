@@ -59,16 +59,18 @@ fn matmul_inner_loop(
     ],
 ):
     MatmulInnerLoopBPacked[
+        a_type,
         DimList(M, K),
+        b_type,
+        DimList(K, N),
+        c_type,
         DimList(M, N),
+        False,  # transpose_b
         DimList(
             NP // tile_inner_size,
             KH // factor,
             factor * tile_inner_size,
         ),
-        a_type,
-        b_type,
-        c_type,
         simd_size,
         a_row_size,
         pack_inner_size * simd_size,

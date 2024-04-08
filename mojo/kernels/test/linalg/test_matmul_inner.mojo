@@ -28,11 +28,12 @@ alias K: Int = 64
 
 fn matmul_inner_loop[
     a_type: DType,
-    b_type: DType,
-    c_type: DType,
     a_shape: DimList,
+    b_type: DType,
     b_shape: DimList,
+    c_type: DType,
     c_shape: DimList,
+    packed_shape: DimList,
     tile_inner_size: Int,
     simd_size: Int,
     a_row_size: Int,
@@ -40,18 +41,20 @@ fn matmul_inner_loop[
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
-    b_packed: NDBuffer[b_type, 3, b_shape],
+    b_packed: NDBuffer[b_type, 3, packed_shape],
     m: Int,
     n: Int,
     k: Int,
 ):
     MatmulInnerLoopBPacked[
-        a_shape,
-        c_shape,
-        b_shape,
         a_type,
+        a_shape,
         b_type,
+        b_shape,
         c_type,
+        c_shape,
+        False,  # transpose_b
+        packed_shape,
         simd_size,
         a_row_size,
         pack_inner_size * simd_size,
@@ -93,11 +96,13 @@ fn test_micro_kernel[
     var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
     a.fill(1)
 
-    alias b_shape = DimList.create_unknown[3]()
+    alias b_shape = DimList.create_unknown[2]()
+
+    alias b_packed_shape = DimList.create_unknown[3]()
     var b_packed_ptr = DTypePointer[b_type].alloc(
         (n // tile_inner_size) * k * tile_inner_size, alignment=alignment
     )
-    var b_packed = NDBuffer[b_type, 3, b_shape](
+    var b_packed = NDBuffer[b_type, 3, b_packed_shape](
         b_packed_ptr, Index(n // tile_inner_size, k, tile_inner_size)
     )
     b_packed.fill(1)
@@ -110,11 +115,12 @@ fn test_micro_kernel[
 
     matmul_inner_loop[
         a_type,
-        b_type,
-        c_type,
         a_shape,
+        b_type,
         b_shape,
+        c_type,
         c_shape,
+        b_packed_shape,
         tile_inner_size,
         simd_size,
         a_row_size,
@@ -150,11 +156,12 @@ fn test_micro_kernel_static[
     var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, K))
     a.fill(1)
 
-    alias b_shape = DimList(N // tile_inner_size, K, tile_inner_size)
+    alias b_shape = DimList.create_unknown[2]()
+    alias b_packed_shape = DimList(N // tile_inner_size, K, tile_inner_size)
     var b_packed_ptr = DTypePointer[b_type].alloc(
         (N // tile_inner_size) * K * tile_inner_size, alignment=alignment
     )
-    var b_packed = NDBuffer[b_type, 3, b_shape](
+    var b_packed = NDBuffer[b_type, 3, b_packed_shape](
         b_packed_ptr, Index(N // tile_inner_size, K, tile_inner_size)
     )
     b_packed.fill(1)
@@ -166,11 +173,12 @@ fn test_micro_kernel_static[
 
     matmul_inner_loop[
         a_type,
-        b_type,
-        c_type,
         a_shape,
+        b_type,
         b_shape,
+        c_type,
         c_shape,
+        b_packed_shape,
         tile_inner_size,
         simd_size,
         a_row_size,
