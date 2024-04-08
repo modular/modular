@@ -1599,6 +1599,8 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
   if (!hasInitSelfArg)
     return emitCallUnchecked(calleeFn, operands, dest, expr);
   if (!builder) {
+    // If we are emitting into a PValue context, remove the 'inout self'
+    // argument because it won't be used.
     operands = callOperands;
     return emitCallUnchecked(calleeFn, operands, dest, expr);
   }

@@ -360,25 +360,22 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
       // If the element has a memory-only type, drop it into memory.
       if (SignatureType::hasAddress(convention)) {
-        SmallVector<TypedAttr> storedAttrs;
         for (TypedAttr &arg : args)
           arg = StoreToMemAttr::get(arg, varElType);
       }
       auto newVarType = VariadicType::get(varElType, varType.getConvention());
       argValue = PValue(VariadicAttr::get(args, newVarType));
     } else if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-      RefPackType packType = variadicPackType.getVariadicPackInfo();
-      // RefPack elements are passed through memory.
-      SmallVector<TypedAttr> storedAttrs;
-      for (TypedAttr &arg : args)
-        arg = StoreToMemAttr::get(arg,
-                                  packType.getElementRefTypeFor(arg.getType()));
-
       // Bundle them up into a VariadicPack instance.
       argValue = emitVariadicPackConstructor(
           variadicPackType, convention, /*lifetime*/ {}, callExpr, emitter,
           [&](RefPackType adjustedPackType) -> CValue {
-            return RefPackAttr::get(storedAttrs, adjustedPackType);
+            // RefPack elements are passed through memory.  Use adjustedPackType
+            // to get the proper (immortal) lifetime installed.
+            for (TypedAttr &arg : args)
+              arg = StoreToMemAttr::get(
+                  arg, adjustedPackType.getElementRefTypeFor(arg.getType()));
+            return RefPackAttr::get(args, adjustedPackType);
           });
       if (!argValue)
         return failure();

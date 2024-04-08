@@ -214,3 +214,12 @@ fn usePacks(x: FloatDyn, y: Int):
     variadicParameter[Int, FloatDyn](1)
     # CHECK: lit.call {{.*}}variadicParameter{{.*}}<:variadic<type> []>
     variadicParameter(Int(2).value)
+
+
+# CHECK-LABEL: test_comptime_call
+fn test_comptime_call[a: Int]():
+  # CHECK: lit.alias.decl *"foo`": none =
+  # CHECK-SAME: <apply(:!lit.signature<[1](
+  # CHECK-SAME: "args": !lit.declref<#VariadicPack <:i1 0, :lifetime<0> #lit.lifetime, :!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> [#Int1]>> borrow_in_mem|pack)
+  # CHECK-SAME: <store_to_mem(a)>, {:i1 0}))>
+  alias foo = pack(a)

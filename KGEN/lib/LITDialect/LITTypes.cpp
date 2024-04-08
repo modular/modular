@@ -1045,7 +1045,6 @@ FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
       // If we are substituting the signature directly, subtract 1.
       if (auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
           ref && ref.getDepth() == depth) {
-        // Verify if requested.
         if (ref.getIndex() >= values.size()) {
           emitError() << "implicit lifetime reference at depth " << depth
                       << " has an out-of-range index: " << ref.getIndex()
@@ -1071,16 +1070,26 @@ FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
 /// Get this signature with all the implicit lifetimes bound to #lit.lifetime
 /// and dropped from the signature.
 LITSignatureType LITSignatureType::getWithImplicitLifetimesBoundImmortal() {
-  // Avoid work if this there is nothing to do.
+  // Avoid work if there is nothing to do.
   if (getNumImplicitLifetimeDecls() == 0)
     return *this;
 
-  SmallVector<TypedAttr> lifetimes(getNumImplicitLifetimeDecls(),
-                                   LifetimeAttr::get(getContext(), true));
-  FunctionType newFnType = substituteImplicitLifetimesIntoValues(
-      lifetimes,
-      []() -> InFlightDiagnostic { llvm_unreachable("malformed fn type"); });
+  // Replace the lifetimes with attrs of the right mutability.  We just scan
+  // through the type to find the references to update.  We get implicit
+  // lifetimes in a range of places (e.g. buried in pack and variadic types etc)
+  // that make it difficult to "just know" the mutability of each one.
+  struct Substitutor : IndexParameterReplacer<Substitutor> {
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      // If we are substituting the signature directly, subtract 1.
+      auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
+      if (!ref || ref.getDepth() != depth)
+        return nullptr;
+      return LifetimeAttr::get(ref.getType());
+    }
+  };
 
+  FunctionType newFnType = Substitutor().replace(getValues());
   return LITSignatureType::get(newFnType, getParamTypes(), getArgConventions(),
                                getFnEffects(), getMetadata());
 }

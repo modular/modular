@@ -873,8 +873,7 @@ LogicalResult RefPackAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                        << " elements, but got " << values.size();
 
   // Check that the element constants have the right types.
-  for (auto [i, value, type] :
-       llvm::zip(llvm::seq<size_t>(0, expected.size()), values, expected)) {
+  for (auto [i, value, type] : llvm::enumerate(values, expected)) {
     auto eltType = packType.getElementRefTypeFor(ParamRefType::get(type));
     if (value.getType() != eltType)
       return emitError() << "pack attribute element #" << i << " has type "
