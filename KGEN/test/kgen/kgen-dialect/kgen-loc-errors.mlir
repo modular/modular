@@ -130,11 +130,13 @@ kgen.func @foo() {
 
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)
+#subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#loc4 = loc(fused<#subprogram>[#loc1])
 
 kgen.func @foo() {
   kgen.return
 // CHECK: foo.mlir:44:1: error: 'kgen.func' op without debuginfo scope must contain only file/line/col location
-} loc(callsite(#loc1 at #loc2))
+} loc(callsite(#loc4 at #loc2))
 
 // -----
 
