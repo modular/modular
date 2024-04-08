@@ -7,6 +7,7 @@
 
 from max.graph.symbol import SymbolTuple
 from max.graph.type import AnyMOType, TypeTuple
+from max.graph.module import _string_attr
 
 
 def custom[
@@ -53,5 +54,5 @@ def custom_nv[
         These correspond 1:1 with the types passed as `out_types`.
     """
     var g = values[0].graph()
-    var symbol_attr = g._module().string_attr("symbol", name)
+    var symbol_attr = _string_attr(g._context(), "symbol", name)
     return g.nvop("mo.custom", values, out_types, symbol_attr)

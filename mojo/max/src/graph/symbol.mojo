@@ -32,6 +32,7 @@ import _mlir
 
 from .attr import AttrMap
 from .graph import Graph
+from .module import _string_attr
 from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 # TODO: The overloads are incomplete, and make unverified assumptions about
@@ -601,7 +602,7 @@ struct Symbol(CollectionElement, Stringable):
             label: A label to accompany the printout.
         """
         var g = self.graph()
-        var attrs = AttrMap(g._module().string_attr("label", label))
+        var attrs = AttrMap(_string_attr(g._context(), "label", label))
         _ = g.nvop("mo.debug.tensor.print", self, TypeTuple(), attrs)
 
     # ===------------------------------------------------------------------=== #

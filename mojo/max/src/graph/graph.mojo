@@ -22,7 +22,7 @@ from tensor import Tensor
 import _mlir
 
 from .attr import AttrMap
-from .module import _Module
+from .module import _Module, _tensor_attr, _vector_attr
 from .symbol import Symbol, SymbolTuple
 from .type import MOList, MOTensor, TypeTuple
 
@@ -113,6 +113,10 @@ struct Graph(CollectionElement, Stringable):
             The `Module` that holds this `Graph`.
         """
         return _Module(_mlir.Module.from_op(self._op.parent()))
+
+    fn _context(self) raises -> _mlir.Context:
+        """Returns the `Graph`'s MLIR context."""
+        return self._module()._module.context()
 
     fn __getitem__(self, n: Int) raises -> Symbol:
         """Returns the `n`th argument of this `Graph`.
@@ -265,7 +269,7 @@ struct Graph(CollectionElement, Stringable):
         return self.op(
             "mo.constant",
             MOTensor(value.spec()),
-            AttrMap(self._module().tensor_attr("value", value)),
+            AttrMap(_tensor_attr(self._context(), "value", value)),
         )
 
     fn vector[dtype: DType](self, values: List[Scalar[dtype]]) raises -> Symbol:
@@ -286,7 +290,7 @@ struct Graph(CollectionElement, Stringable):
         return self.op(
             "mo.constant",
             MOTensor(dtype, len(values)),
-            AttrMap(self._module().vector_attr[dtype]("value", values)),
+            AttrMap(_vector_attr[dtype](self._context(), "value", values)),
         )
 
     fn scalar[

@@ -85,128 +85,6 @@ struct _Module(Stringable):
             self._module.as_op().write(file)
 
     # ===------------------------------------------------------------------=== #
-    # Attribute factories
-    # ===------------------------------------------------------------------=== #
-
-    fn tensor_attr[
-        dtype: DType
-    ](self, name: String, owned value: Tensor[dtype]) -> _mlir.NamedAttribute:
-        """Creates a new `Tensor`-valued `Attribute`.
-
-        The value of this attribute will have the type `MOTensor` with the same
-        shape and dtype as `value`.
-        This method takes ownership of `value` and is suitable for use with
-        very large `Tensor` values (such as model weights).
-
-        Parameters:
-            dtype: The attribute tensor's element type.
-
-        Args:
-            name: The `Attribute` name.
-            value: The `Attribute` value.
-
-        Returns:
-            An internal representation of an `Attribute`.
-        """
-        var t = MOTensor(value.spec()).to_mlir(self._module.context())
-        return _c.attr_new_tensor(
-            name,
-            value._steal_ptr().bitcast[DType.invalid](),
-            t,
-            is_owned=True,
-        )
-
-    fn tensor_resource_attr(
-        self, name: String, file_name: String, type: MOTensor
-    ) -> _mlir.NamedAttribute:
-        """Creates a new `Tensor` `Attribute` from an external file.
-
-        The value of this constant will have the type `type`.
-        The file must contain the `Tensor`s raw data, as returned by
-        `Tensor.data`. No endianness transformation is performed.
-
-        Args:
-            name: The `Attribute` name.
-            file_name: The file name to load from.
-            type: The `Tensor` type (element type, shape).
-
-        Returns:
-            An internal representation of an `Attribute`.
-        """
-        return _c.attr_new_tensor_from_file(
-            name, file_name, type.to_mlir(self._module.context())
-        )
-
-    fn vector_attr[
-        dtype: DType
-    ](self, name: String, values: List[Scalar[dtype]]) -> _mlir.NamedAttribute:
-        """Creates a new `Tensor`-valued `Attribute`.
-
-        The value of this attribute will have the type `MOTensor` with 1D shape,
-        consistent with the size of `values`.
-
-        Parameters:
-            dtype: The attribute tensor's element type.
-
-        Args:
-            name: The `Attribute` name.
-            values: A vector representing the attribute's value.
-
-        Returns:
-            An internal representation of an `Attribute`.
-        """
-        return _c.attr_new_tensor(
-            name,
-            values,
-            MOTensor(dtype, len(values)).to_mlir(self._module.context()),
-            is_owned=False,
-        )
-
-    fn scalar_attr[
-        dtype: DType
-    ](
-        self, name: String, value: Scalar[dtype], rank: Int = 0
-    ) raises -> _mlir.NamedAttribute:
-        """Creates a new `Tensor`-valued `Attribute`.
-
-        The `Tensor` is considered to contain a single element, and its shape
-        be of the specified rank (for example, `rank=0` denotes a scalar).
-
-        Parameters:
-            dtype: The attribute tensor's element type.
-
-        Args:
-            name: The `Attribute` name.
-            value: The `Attribute` value.
-            rank: The attribute tensor's rank.
-
-        Returns:
-            An internal representation of an `Attribute`.
-        """
-        # Note: while this could generalize to something like splat, MO doesn't
-        # really make use of those.
-        var shape = List[Int](capacity=rank)
-        for i in range(rank):
-            shape.append(1)
-        return self.tensor_attr[dtype](name, Tensor(shape, value))
-
-    fn string_attr(self, name: String, value: String) -> _mlir.NamedAttribute:
-        """Creates a new `String`-valued `Attribute`.
-
-        Args:
-            name: The `Attribute` name.
-            value: The `Attribute` value.
-
-        Returns:
-            An internal representation of an `Attribute`.
-        """
-        var ctx = self._module.context()
-        return _mlir.NamedAttribute(
-            name=_mlir.Identifier(ctx, name),
-            attr=_mlir.builtin_attributes.StringAttr(ctx, value),
-        )
-
-    # ===------------------------------------------------------------------=== #
     # Graph factories
     # ===------------------------------------------------------------------=== #
 
@@ -251,3 +129,139 @@ struct _Module(Stringable):
             An empty `Graph` ready to be filled with ops.
         """
         return self.graph("graph", in_types, out_types)
+
+
+# ===------------------------------------------------------------------=== #
+# Attribute factories
+# ===------------------------------------------------------------------=== #
+
+
+fn _tensor_attr[
+    dtype: DType
+](
+    ctx: _mlir.Context, name: String, owned value: Tensor[dtype]
+) -> _mlir.NamedAttribute:
+    """Creates a new `Tensor`-valued `Attribute`.
+
+    The value of this attribute will have the type `MOTensor` with the same
+    shape and dtype as `value`.
+    This method takes ownership of `value` and is suitable for use with
+    very large `Tensor` values (such as model weights).
+
+    Parameters:
+        dtype: The attribute tensor's element type.
+
+    Args:
+        ctx: The MLIR context.
+        name: The `Attribute` name.
+        value: The `Attribute` value.
+
+    Returns:
+        An internal representation of an `Attribute`.
+    """
+    var t = MOTensor(value.spec()).to_mlir(ctx)
+    return _c.attr_new_tensor(
+        name,
+        value._steal_ptr().bitcast[DType.invalid](),
+        t,
+        is_owned=True,
+    )
+
+
+fn _tensor_resource_attr(
+    ctx: _mlir.Context, name: String, file_name: String, type: MOTensor
+) -> _mlir.NamedAttribute:
+    """Creates a new `Tensor` `Attribute` from an external file.
+
+    The value of this constant will have the type `type`.
+    The file must contain the `Tensor`s raw data, as returned by
+    `Tensor.data`. No endianness transformation is performed.
+
+    Args:
+        ctx: The MLIR context.
+        name: The `Attribute` name.
+        file_name: The file name to load from.
+        type: The `Tensor` type (element type, shape).
+
+    Returns:
+        An internal representation of an `Attribute`.
+    """
+    return _c.attr_new_tensor_from_file(name, file_name, type.to_mlir(ctx))
+
+
+fn _vector_attr[
+    dtype: DType
+](
+    ctx: _mlir.Context, name: String, values: List[Scalar[dtype]]
+) -> _mlir.NamedAttribute:
+    """Creates a new `Tensor`-valued `Attribute`.
+
+    The value of this attribute will have the type `MOTensor` with 1D shape,
+    consistent with the size of `values`.
+
+    Parameters:
+        dtype: The attribute tensor's element type.
+
+    Args:
+        ctx: The MLIR context.
+        name: The `Attribute` name.
+        values: A vector representing the attribute's value.
+
+    Returns:
+        An internal representation of an `Attribute`.
+    """
+    return _c.attr_new_tensor(
+        name,
+        values,
+        MOTensor(dtype, len(values)).to_mlir(ctx),
+        is_owned=False,
+    )
+
+
+fn _scalar_attr[
+    dtype: DType
+](
+    ctx: _mlir.Context, name: String, value: Scalar[dtype], rank: Int = 0
+) raises -> _mlir.NamedAttribute:
+    """Creates a new `Tensor`-valued `Attribute`.
+
+    The `Tensor` is considered to contain a single element, and its shape
+    be of the specified rank (for example, `rank=0` denotes a scalar).
+
+    Parameters:
+        dtype: The attribute tensor's element type.
+
+    Args:
+        ctx: The MLIR context.
+        name: The `Attribute` name.
+        value: The `Attribute` value.
+        rank: The attribute tensor's rank.
+
+    Returns:
+        An internal representation of an `Attribute`.
+    """
+    # Note: while this could generalize to something like splat, MO doesn't
+    # really make use of those.
+    var shape = List[Int](capacity=rank)
+    for i in range(rank):
+        shape.append(1)
+    return _tensor_attr[dtype](ctx, name, Tensor(shape, value))
+
+
+fn _string_attr(
+    ctx: _mlir.Context, name: String, value: String
+) -> _mlir.NamedAttribute:
+    """Creates a new `String`-valued `Attribute`.
+
+    Args:
+        ctx: The MLIR context.
+        name: The `Attribute` name.
+        value: The `Attribute` value.
+
+    Returns:
+        An internal representation of an `Attribute`.
+    """
+    return _mlir.NamedAttribute(
+        name=_mlir.Identifier(ctx, name),
+        attr=_mlir.builtin_attributes.StringAttr(ctx, value),
+    )
