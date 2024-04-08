@@ -87,7 +87,7 @@ void Detail::TensorShapeStorage::assign(ArrayRef<ssize_t> elements) {
     auto endIt = elements.end();
     switch (rank) {
     default:
-      assert(0 && "unreachable");
+      llvm_unreachable("invalid rank");
     case 4:
       dim = *--endIt;
       representation.rep32.dim3 = dim;
