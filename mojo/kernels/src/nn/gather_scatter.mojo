@@ -905,27 +905,21 @@ fn scatter_nd_shape[
             " input_rank - num_sliced_dims)"
         )
 
-    var foundMismatch = False
-
     @unroll
     for i in range(indices_rank - 1):
         if indices.dim(i) != updates.dim(i):
-            foundMismatch = True
-    if foundMismatch:
-        raise Error(
-            "[scatter_nd] batch dimensions of indices and updates don't match"
-        )
-
-    foundMismatch = False
+            raise Error(
+                "[scatter_nd] batch dimensions of indices and updates don't"
+                " match"
+            )
 
     @unroll
     for i in range(input_rank - num_sliced_dims):
         if input.dim(i + num_sliced_dims) != updates.dim(i + indices_rank - 1):
-            foundMismatch = True
-    if foundMismatch:
-        raise Error(
-            "[scatter_nd] updated dimensions of input and updates don't match"
-        )
+            raise Error(
+                "[scatter_nd] updated dimensions of input and updates don't"
+                " match"
+            )
 
     return input.get_shape()
 
