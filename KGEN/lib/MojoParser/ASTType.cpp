@@ -319,7 +319,6 @@ RefPackType ASTType::getVariadicPackInfo() const {
 
   return RefPackType::get(
       /*variadicList*/ bindings[3], /*lifetime*/ bindings[1],
-      // TODO: VariadicPack should support address space.
       IntegerAttr::get(IndexType::get(bindings[1].getContext()), 0));
 }
 

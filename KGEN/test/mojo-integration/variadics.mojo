@@ -249,6 +249,32 @@ fn test_borrowed_variadic_pack():
     print("")
 
 
+# Sum all the specified values together.
+fn sum_intable[*Ts: Intable](*pack: *Ts) -> Int:
+    var result = 0
+
+    @parameter
+    fn process[T: Intable](a: T):
+        result += int(a)
+
+    pack.each[process]()
+    return result
+
+
+# Check to see if we can do packs at comptime.
+fn test_comptime_pack():
+    # CHECK: test_comptime_pack
+    print("test_comptime_pack")
+
+    var str1 = sum_intable(4, 5.0, 7)
+    print(str1)
+    # CHECK: 16
+
+    alias str2 = sum_intable(4, 5.0, 7)
+    print(str2)
+    # CHECK: 16
+
+
 fn main():
     test_inout_varargs()
     test_owned_varargs()
@@ -256,3 +282,4 @@ fn main():
     test_owned_variadic_pack()
     test_inout_variadic_pack()
     test_borrowed_variadic_pack()
+    test_comptime_pack()
