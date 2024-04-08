@@ -110,7 +110,6 @@ struct _Module(Stringable):
         """
         var t = MOTensor(value.spec()).to_mlir(self._module.context())
         return _c.attr_new_tensor(
-            self._module,
             name,
             value._steal_ptr().bitcast[DType.invalid](),
             t,
@@ -135,7 +134,7 @@ struct _Module(Stringable):
             An internal representation of an `Attribute`.
         """
         return _c.attr_new_tensor_from_file(
-            self._module, name, file_name, type.to_mlir(self._module.context())
+            name, file_name, type.to_mlir(self._module.context())
         )
 
     fn vector_attr[
@@ -157,7 +156,6 @@ struct _Module(Stringable):
             An internal representation of an `Attribute`.
         """
         return _c.attr_new_tensor(
-            self._module,
             name,
             values,
             MOTensor(dtype, len(values)).to_mlir(self._module.context()),

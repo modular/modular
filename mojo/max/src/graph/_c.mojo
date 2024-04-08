@@ -95,7 +95,6 @@ fn graph_new(
 fn attr_new_tensor[
     T: CollectionElement
 ](
-    m: _mlir.Module,
     name: String,
     data: List[T],
     type: _mlir.Type,
@@ -104,17 +103,15 @@ fn attr_new_tensor[
     return cfunc[
         "MAXG_attrNewTensor",
         fn (
-            _mlir.Module.c_type,
             StringRef,
             AnyPointer[T],
             _mlir.Type.c_type,
             Bool,
         ) -> _mlir.NamedAttribute.c_type,
-    ]()(m.c, name._strref_dangerous(), data.data, type.c, is_owned)
+    ]()(name._strref_dangerous(), data.data, type.c, is_owned)
 
 
 fn attr_new_tensor(
-    m: _mlir.Module,
     name: String,
     data: DTypePointer[DType.invalid],
     type: _mlir.Type,
@@ -123,24 +120,23 @@ fn attr_new_tensor(
     return cfunc[
         "MAXG_attrNewTensor",
         fn (
-            _mlir.Module.c_type,
             StringRef,
             DTypePointer[DType.invalid],
             _mlir.Type.c_type,
             Bool,
         ) -> _mlir.NamedAttribute.c_type,
-    ]()(m.c, name._strref_dangerous(), data, type.c, is_owned)
+    ]()(name._strref_dangerous(), data, type.c, is_owned)
 
 
 fn attr_new_tensor_from_file(
-    m: _mlir.Module, name: String, file_name: String, type: _mlir.Type
+    name: String, file_name: String, type: _mlir.Type
 ) -> _mlir.NamedAttribute:
     return cfunc[
         "MAXG_attrNewTensorFromFile",
         fn (
-            _mlir.Module.c_type, StringRef, StringRef, _mlir.Type.c_type
+            StringRef, StringRef, _mlir.Type.c_type
         ) -> _mlir.NamedAttribute.c_type,
-    ]()(m.c, name._strref_dangerous(), file_name._strref_dangerous(), type.c)
+    ]()(name._strref_dangerous(), file_name._strref_dangerous(), type.c)
 
 
 # ===----------------------------------------------------------------------===#
