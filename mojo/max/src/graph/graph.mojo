@@ -24,7 +24,7 @@ import _mlir
 from .attr import AttrMap
 from .module import Module
 from .symbol import Symbol, SymbolTuple
-from .type import MOList, MOType, MOTensor, TypeTuple
+from .type import MOList, MOTensor, TypeTuple
 
 
 # TODO: Add examples throughout.

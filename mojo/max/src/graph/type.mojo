@@ -315,38 +315,8 @@ struct Dim(CollectionElement):
             return str(self.value.get[StaticDim]()[].dim)
 
 
-trait MOType:
-    """An internal helper trait for _mlir construction.
-
-    MOTypes have methods to help us convert between our structured types
-    and their _mlir representations.
-    """
-
-    fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
-        """Converts to an _mlir.Type instance.
-
-        Args:
-            ctx: The mlir.Context in which to create the type.
-
-        Returns:
-            An _mlir.Type in the specified Context.
-        """
-        ...
-
-    fn to_string(self, ctx: _mlir.Context) -> String:
-        """Converts to a maybe-human-readable string.
-
-        Args:
-            ctx: An mlir.Context to help with string construction.
-
-        Returns:
-            A string representation of the type.
-        """
-        ...
-
-
 @value
-struct ElementType(MOType):
+struct ElementType:
     """The element type of a data container, like a tensor or scalar.
 
     Prefer to use the standard library DType and implicitly convert
@@ -367,20 +337,9 @@ struct ElementType(MOType):
         """
         return _c.dtype_new(ctx, self.dtype)
 
-    fn to_string(self, ctx: _mlir.Context) -> String:
-        """Converts to a maybe-human-readable string.
-
-        Args:
-            ctx: An mlir.Context to help with string construction.
-
-        Returns:
-            A string representation of the type.
-        """
-        return str(self.to_mlir(ctx))
-
 
 @value
-struct MOTensor(MOType, CollectionElement):
+struct MOTensor(CollectionElement):
     """A symbolic tensor type.
 
     It is _not_ an eager tensor type!! It contains no actual data, but instead
@@ -478,10 +437,6 @@ struct MOTensor(MOType, CollectionElement):
             dims.append(Dim.static(spec[i]))
         self.__init__(spec.dtype(), dims)
 
-    # ===------------------------------------------------------------------=== #
-    # MOType trait
-    # ===------------------------------------------------------------------=== #
-
     fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
         """Converts to an _mlir.Type instance.
 
@@ -500,17 +455,6 @@ struct MOTensor(MOType, CollectionElement):
             dims,
             self.ranked,
         )
-
-    fn to_string(self, ctx: _mlir.Context) -> String:
-        """Converts to a maybe-human-readable string.
-
-        Args:
-            ctx: An mlir.Context to help with string construction.
-
-        Returns:
-            A string representation of the type.
-        """
-        return str(self.to_mlir(ctx))
 
     @staticmethod
     fn from_mlir(t: _mlir.Type) raises -> Self:
@@ -658,7 +602,7 @@ struct MOTensor(MOType, CollectionElement):
 
 
 @value
-struct MOList(MOType, CollectionElement):
+struct MOList(CollectionElement):
     """A type representing a flat list of tensor values.
 
     This isn't an eager list type! It doesn't contain any data, but represents
@@ -679,10 +623,6 @@ struct MOList(MOType, CollectionElement):
     unranked tensors.
     """
 
-    # ===------------------------------------------------------------------=== #
-    # MOType trait
-    # ===------------------------------------------------------------------=== #
-
     fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
         """Converts to an _mlir.Type instance.
 
@@ -694,20 +634,9 @@ struct MOList(MOType, CollectionElement):
         """
         return _c.list_type_new(ctx, self.eltype.to_mlir(ctx))
 
-    fn to_string(self, ctx: _mlir.Context) -> String:
-        """Converts to a maybe-human-readable string.
-
-        Args:
-            ctx: An mlir.Context to help with string construction.
-
-        Returns:
-            A string representation of the type.
-        """
-        return str(self.to_mlir(ctx))
-
 
 @value
-struct AnyMOType(MOType, CollectionElement):
+struct AnyMOType(CollectionElement):
     """Represents any possible type for Graph Symbol values.
 
     Every Symbol has a Type, and that type is represented by an AnyMOType.
@@ -797,17 +726,6 @@ struct AnyMOType(MOType, CollectionElement):
         else:
             debug_assert(_c.type_is_tensor(t), "MO type variants")
             return Self(MOTensor.from_mlir(t))
-
-    fn to_string(self, ctx: _mlir.Context) -> String:
-        """Converts to a maybe-human-readable string.
-
-        Args:
-            ctx: An mlir.Context to help with string construction.
-
-        Returns:
-            A string representation of the type.
-        """
-        return str(self.to_mlir(ctx))
 
 
 @value

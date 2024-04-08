@@ -37,9 +37,9 @@ fn list(elements: SymbolTuple) raises -> Symbol:
         if not elt_type == type:
             raise (
                 "elements must all have the same type "
-                + type.to_string(ctx)
+                + str(type.to_mlir(ctx))
                 + ", got "
-                + elt_type.to_string(ctx)
+                + str(elt_type.to_mlir(ctx))
                 + " at position "
                 + str(i)
             )
