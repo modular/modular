@@ -362,6 +362,7 @@ ProfilingDetail::GlobalProfilerContext::getCompletedEntries() {
 
   // Gather all the completed entries so far.
   std::vector<CompletedEntry> result;
+  result.reserve(beginEntryMap.size() + endEntryMap.size());
   for (auto &pair : beginEntryMap)
     result.emplace_back(std::move(pair.second));
   beginEntryMap.clear();
