@@ -29,6 +29,7 @@ add_modular_library(KGENCompilerRT
   LINK_LIBS PUBLIC
   CUDASupport
   LLCLRuntime
+  LLCLRuntimeGlobals
   MProfiling
   MSupport
   MThreading
