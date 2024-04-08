@@ -9,6 +9,7 @@ from tensor import Tensor
 from testing import assert_almost_equal, assert_equal
 
 from max.engine import InferenceSession, LoadOptions, TensorMap
+from max.graph.module import _Module
 
 
 fn assert_tensors_almost_equal[
@@ -34,19 +35,19 @@ fn assert_tensors_equal[
 
 fn execute_nullary[
     outtype: DType = DType.float32
-](module: Module, load_options: Optional[LoadOptions] = None) raises -> Tensor[
+](graph: Graph, load_options: Optional[LoadOptions] = None) raises -> Tensor[
     outtype
 ]:
-    var result_map = execute_no_args(module, load_options)
+    var result_map = execute_no_args(graph, load_options)
     return result_map.get[outtype]("output0")
 
 
 fn execute_nullary_list[
     outtype: DType = DType.float32
-](module: Module, load_options: Optional[LoadOptions] = None) raises -> List[
+](graph: Graph, load_options: Optional[LoadOptions] = None) raises -> List[
     Tensor[outtype]
 ]:
-    var result_map = execute_no_args(module, load_options)
+    var result_map = execute_no_args(graph, load_options)
     var engine_list = result_map.get_value("output0").as_list()
     var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
@@ -58,22 +59,22 @@ fn execute_nullary_list[
 fn execute_unary[
     intype: DType = DType.float32, outtype: DType = DType.float32
 ](
-    module: Module,
+    graph: Graph,
     input: Tensor[intype],
     load_options: Optional[LoadOptions] = None,
 ) raises -> Tensor[outtype]:
-    var result_map = execute_base(module, input, load_options=load_options)
+    var result_map = execute_base(graph, input, load_options=load_options)
     return result_map.get[outtype]("output0")
 
 
 fn execute_unary_list[
     intype: DType = DType.float32, outtype: DType = DType.float32
 ](
-    module: Module,
+    graph: Graph,
     input: Tensor[intype],
     load_options: Optional[LoadOptions] = None,
 ) raises -> List[Tensor[outtype]]:
-    var result_map = execute_base(module, input, load_options=load_options)
+    var result_map = execute_base(graph, input, load_options=load_options)
     var engine_list = result_map.get_value("output0").as_list()
     var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
@@ -85,22 +86,22 @@ fn execute_unary_list[
 fn execute_binary[
     intype: DType = DType.float32, outtype: DType = DType.float32
 ](
-    module: Module,
+    graph: Graph,
     x: Tensor[intype],
     y: Tensor[intype],
     load_options: Optional[LoadOptions] = None,
 ) raises -> Tensor[outtype]:
-    var result_map = execute_base(module, x, y, load_options=load_options)
+    var result_map = execute_base(graph, x, y, load_options=load_options)
     return result_map.get[outtype]("output0")
 
 
 fn execute_no_args(
-    m: Module, load_options: Optional[LoadOptions] = None
+    g: Graph, load_options: Optional[LoadOptions] = None
 ) raises -> TensorMap:
-    m.verify()
+    g.verify()
 
     var session = InferenceSession()
-    var model = session.load(m, load_options)
+    var model = session.load(g, load_options)
 
     var input_map = session.new_tensor_map()
     var result_map = model.execute(input_map)
@@ -111,7 +112,7 @@ fn execute_no_args(
 fn execute_n_args[
     dt1: DType, dt2: DType, dt3: DType, dt4: DType, dt5: DType
 ](
-    m: Module,
+    g: Graph,
     t1: Tensor[dt1],
     t2: Tensor[dt2],
     t3: Tensor[dt3],
@@ -119,10 +120,10 @@ fn execute_n_args[
     t5: Tensor[dt5],
     load_options: Optional[LoadOptions] = None,
 ) raises -> TensorMap:
-    m.verify()
+    g.verify()
 
     var session = InferenceSession()
-    var model = session.load(m, load_options)
+    var model = session.load(g, load_options)
 
     var input_map = session.new_tensor_map()
     input_map.borrow("input0", t1)
@@ -137,12 +138,12 @@ fn execute_n_args[
 
 
 fn execute_base(
-    m: Module, *tensors: Tensor, load_options: Optional[LoadOptions] = None
+    g: Graph, *tensors: Tensor, load_options: Optional[LoadOptions] = None
 ) raises -> TensorMap:
-    m.verify()
+    g.verify()
 
     var session = InferenceSession()
-    var model = session.load(m, load_options)
+    var model = session.load(g, load_options)
 
     var input_map = session.new_tensor_map()
     for i in range(len(tensors)):

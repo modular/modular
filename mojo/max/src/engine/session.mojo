@@ -14,7 +14,7 @@ from os.atomic import Atomic
 from pathlib import Path
 from sys.ffi import DLHandle, _get_global_or_null
 
-from max.graph import Graph, Module
+from max.graph import Graph
 from memory._arc import Arc
 from memory.anypointer import AnyPointer
 from tensor import Tensor
@@ -289,16 +289,17 @@ struct LoadOptions(CollectionElement):
         self._custom_ops_path = None
         self._input_specs = List[_Specs]()
 
-    fn _set_model_source(inout self, module: Module):
-        """Specifies the MAX Graph Module to load model from.
+    fn _set_model_source(inout self, graph: Graph) raises:
+        """Specifies the MAX Graph to load model from.
            Use either this function or `set_model_path` function
            to specify model source.
 
         Args:
-            module: MAX Graph module.
+            graph: MAX Graph.
         """
-        var mlir_module = module._module
-        self._source = ModelSource(mlir_module.c.ptr, FrameworkFormat.MAXGraph)
+        self._source = ModelSource(
+            graph._module()._module.c.ptr, FrameworkFormat.MAXGraph
+        )
 
     fn _set_model_path(inout self, path: Path):
         """Specifies the loaction in filesystem to load model from.
@@ -518,26 +519,10 @@ struct InferenceSession:
         self, graph: Graph, config: Optional[LoadOptions] = None
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
-           [`Graph`](/engine/reference/mojo/graph/graph#graph) and config.
-
-        Args:
-            graph: MAX `Graph` module.
-            config: Configurations need for compiling model.
-
-        Returns:
-            Initialized model ready for inference.
-
-        """
-        return self.load(graph.module(), config)
-
-    fn load(
-        self, module: Module, config: Optional[LoadOptions] = None
-    ) raises -> Model:
-        """Compile and initialize a model in MAX Engine, with the given
            [`Module`](/engine/reference/mojo/graph/module#module) and config.
 
         Args:
-            module: MAX Graph module.
+            graph: MAX Graph.
             config: Configurations need for compiling model.
 
         Returns:
@@ -549,7 +534,7 @@ struct InferenceSession:
             load_config = config.value()
         else:
             load_config = LoadOptions()
-        load_config._set_model_source(module)
+        load_config._set_model_source(graph)
         return self._ptr[].load(load_config^, self)
 
     fn get_as_engine_tensor_spec(

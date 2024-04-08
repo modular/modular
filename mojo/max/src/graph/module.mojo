@@ -23,7 +23,7 @@ import ._c
 
 
 @value
-struct Module(Stringable):
+struct _Module(Stringable):
     """A Module is a container that holds `Graph`s."""
 
     var _module: _mlir.Module

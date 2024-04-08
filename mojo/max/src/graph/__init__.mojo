@@ -7,7 +7,6 @@
 
 from .attr import AttrMap
 from .graph import Graph
-from .module import Module
 from .symbol import Symbol, SymbolTuple
 from .type import (
     AnyMOType,

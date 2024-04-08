@@ -22,7 +22,7 @@ from tensor import Tensor
 import _mlir
 
 from .attr import AttrMap
-from .module import Module
+from .module import _Module
 from .symbol import Symbol, SymbolTuple
 from .type import MOList, MOTensor, TypeTuple
 
@@ -36,6 +36,20 @@ struct Graph(CollectionElement, Stringable):
 
     var _op: _mlir.Operation
 
+    fn __init__(inout self, in_types: TypeTuple, out_types: TypeTuple):
+        """Constructs a new `Graph`.
+
+        The constructed Graph will not be valid unless it has no outputs;
+        a graph with outputs will need a `graph.output` call to tell it
+        what to return. The graph's validity can be checked by calling
+        `graph.verify()`.
+
+        Args:
+            in_types: The `Graph`'s input types.
+            out_types: The `Graph`'s output types.
+        """
+        self.__init__("graph", in_types, out_types)
+
     fn __init__(
         inout self, name: String, in_types: TypeTuple, out_types: TypeTuple
     ):
@@ -44,14 +58,14 @@ struct Graph(CollectionElement, Stringable):
         The constructed Graph will not be valid unless it has no outputs;
         a graph with outputs will need a `graph.output` call to tell it
         what to return. The graph's validity can be checked by calling
-        `graph.module().verify()`.
+        `graph.verify()`.
 
         Args:
             name: A name for the graph.
             in_types: The `Graph`'s input types.
             out_types: The `Graph`'s output types.
         """
-        var module = Module()
+        var module = _Module()
         self = module.graph(name, in_types, out_types)
 
     fn __str__(self) -> String:
@@ -63,7 +77,27 @@ struct Graph(CollectionElement, Stringable):
         Returns:
             A human-readable string representation of the graph.
         """
-        return str(self._op)
+        try:
+            return str(self._module()._module)
+        except:
+            return str(self._op)
+
+    fn verify(self) raises:
+        """Verifies the `Graph` and its contents.
+
+        Examples of cases when a `Graph` may not be valid (the list is not
+        exhaustive):
+        1. it has an `output` op whose types don't match its `out_types`
+        2. it has an op with an invalid name, number, type of operands,
+            output types, etc.
+        3. it contains cycles
+
+        Raises:
+            If the `Graph` did not pass verification. In this case it will also
+            print a diagnostic message indicating the error.
+        """
+        if not self._op.verify():
+            raise "graph did not verify"
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -72,13 +106,13 @@ struct Graph(CollectionElement, Stringable):
     fn _body(self) raises -> _mlir.Block:
         return self._op.region(0).first_block()
 
-    fn module(self) raises -> Module:
+    fn _module(self) raises -> _Module:
         """Returns the `Graph`'s parent `Module`s.
 
         Returns:
             The `Module` that holds this `Graph`.
         """
-        return Module(_mlir.Module.from_op(self._op.parent()))
+        return _Module(_mlir.Module.from_op(self._op.parent()))
 
     fn __getitem__(self, n: Int) raises -> Symbol:
         """Returns the `n`th argument of this `Graph`.
@@ -231,7 +265,7 @@ struct Graph(CollectionElement, Stringable):
         return self.op(
             "mo.constant",
             MOTensor(value.spec()),
-            AttrMap(self.module().tensor_attr("value", value)),
+            AttrMap(self._module().tensor_attr("value", value)),
         )
 
     fn vector[dtype: DType](self, values: List[Scalar[dtype]]) raises -> Symbol:
@@ -252,7 +286,7 @@ struct Graph(CollectionElement, Stringable):
         return self.op(
             "mo.constant",
             MOTensor(dtype, len(values)),
-            AttrMap(self.module().vector_attr[dtype]("value", values)),
+            AttrMap(self._module().vector_attr[dtype]("value", values)),
         )
 
     fn scalar[

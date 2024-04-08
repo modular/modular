@@ -28,7 +28,6 @@ fn list(elements: SymbolTuple) raises -> Symbol:
         raise "`elements` cannot be empty"
 
     var g = elements[0].graph()
-    var m = g.module()
     var ctx = g._op.context()
     var type = elements[0].tensor_type()
 

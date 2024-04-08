@@ -53,5 +53,5 @@ def custom_nv[
         These correspond 1:1 with the types passed as `out_types`.
     """
     var g = values[0].graph()
-    var symbol_attr = g.module().string_attr("symbol", name)
+    var symbol_attr = g._module().string_attr("symbol", name)
     return g.nvop("mo.custom", values, out_types, symbol_attr)

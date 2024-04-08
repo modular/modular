@@ -601,7 +601,7 @@ struct Symbol(CollectionElement, Stringable):
             label: A label to accompany the printout.
         """
         var g = self.graph()
-        var attrs = AttrMap(g.module().string_attr("label", label))
+        var attrs = AttrMap(g._module().string_attr("label", label))
         _ = g.nvop("mo.debug.tensor.print", self, TypeTuple(), attrs)
 
     # ===------------------------------------------------------------------=== #

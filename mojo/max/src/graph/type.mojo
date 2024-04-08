@@ -10,7 +10,6 @@ from utils.variant import Variant
 
 import _mlir
 
-from .module import Module
 import ._c
 
 
@@ -285,7 +284,7 @@ struct Dim(CollectionElement):
             ctx: The mlir.Context in which to create the attribute.
 
         Returns:
-            A _mlir.Attribute in the Module's context representing the dimension.
+            A _mlir.Attribute in the context representing the dimension.
         """
 
         if self.value.isa[DynamicDim]():
