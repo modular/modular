@@ -37,14 +37,4 @@ tools = [
     "hash-mlir",
 ]
 
-parse_isolated = (
-    "kgen-translate -import-mojo -mojo-enable-prebuilt-packages"
-    " -mojo-search-paths={0}".format(
-        config.parser_stubs_source
-    )
-)
-
-config.substitutions.append(("%parse-mojo-isolated", parse_isolated))
-
-
 llvm_config.add_tool_substitutions(tools, tool_dirs)
