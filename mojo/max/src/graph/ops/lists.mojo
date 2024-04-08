@@ -29,14 +29,20 @@ fn list(elements: SymbolTuple) raises -> Symbol:
 
     var g = elements[0].graph()
     var m = g.module()
+    var ctx = g._op.context()
     var type = elements[0].tensor_type()
 
     for i in range(1, len(elements)):
         var elt_type = elements[i].tensor_type()
         if not elt_type == type:
-            raise "elements must all have the same type " + type.to_string(
-                m
-            ) + ", got " + elt_type.to_string(m) + " at position " + str(i)
+            raise (
+                "elements must all have the same type "
+                + type.to_string(ctx)
+                + ", got "
+                + elt_type.to_string(ctx)
+                + " at position "
+                + str(i)
+            )
 
     return g.op("mo.list.create", elements, MOList(type))
 

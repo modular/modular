@@ -108,7 +108,7 @@ struct Module(Stringable):
         Returns:
             An internal representation of an `Attribute`.
         """
-        var t = MOTensor(value.spec()).to_mlir(self)
+        var t = MOTensor(value.spec()).to_mlir(self._module.context())
         return _c.attr_new_tensor(
             self._module,
             name,
@@ -135,7 +135,7 @@ struct Module(Stringable):
             An internal representation of an `Attribute`.
         """
         return _c.attr_new_tensor_from_file(
-            self._module, name, file_name, type.to_mlir(self)
+            self._module, name, file_name, type.to_mlir(self._module.context())
         )
 
     fn vector_attr[
@@ -160,7 +160,7 @@ struct Module(Stringable):
             self._module,
             name,
             values,
-            MOTensor(dtype, len(values)).to_mlir(self),
+            MOTensor(dtype, len(values)).to_mlir(self._module.context()),
             is_owned=False,
         )
 
@@ -229,14 +229,14 @@ struct Module(Stringable):
         var loc = _mlir.Location.unknown(ctx)
 
         var function_type = _mlir.builtin_types.FunctionType(
-            ctx, in_types.to_mlir(self), out_types.to_mlir(self)
+            ctx, in_types.to_mlir(ctx), out_types.to_mlir(ctx)
         )
         var op = _c.graph_new(
             self._module,
             loc,
             name,
             _mlir.builtin_types.FunctionType(
-                ctx, in_types.to_mlir(self), out_types.to_mlir(self)
+                ctx, in_types.to_mlir(ctx), out_types.to_mlir(ctx)
             ),
         )
 

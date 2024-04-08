@@ -147,7 +147,7 @@ struct Graph(CollectionElement, Stringable):
             name=name,
             location=_mlir.Location.unknown(ctx),
             operands=operands,
-            results=out_types.to_mlir(self.module()),
+            results=out_types.to_mlir(ctx),
             attributes=attrs.attrs,
         )
 

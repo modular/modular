@@ -148,10 +148,10 @@ fn attr_new_tensor_from_file(
 # ===----------------------------------------------------------------------===#
 
 
-fn dtype_new(m: _mlir.Module, dtype: DType) -> _mlir.Type:
+fn dtype_new(ctx: _mlir.Context, dtype: DType) -> _mlir.Type:
     return cfunc[
-        "MAXG_dTypeNew", fn (_mlir.Module.c_type, UInt8) -> _mlir.Type.c_type
-    ]()(m.c, dtype._as_i8())
+        "MAXG_dTypeNew", fn (_mlir.Context.c_type, UInt8) -> _mlir.Type.c_type
+    ]()(ctx.c, dtype._as_i8())
 
 
 fn dim_type_new_dynamic() -> Int64:
@@ -159,7 +159,7 @@ fn dim_type_new_dynamic() -> Int64:
 
 
 fn tensor_type_new(
-    m: _mlir.Module,
+    ctx: _mlir.Context,
     dtype: _mlir.Type,
     dims: List[_mlir.Attribute],
     ranked: Bool,
@@ -167,14 +167,14 @@ fn tensor_type_new(
     var result = cfunc[
         "MAXG_tensorTypeNew",
         fn (
-            _mlir.Module.c_type,
+            _mlir.Context.c_type,
             _mlir.Type.c_type,
             Bool,
             Pointer[_mlir.Attribute.c_type],
             Int32,
         ) -> _mlir.Type.c_type,
     ]()(
-        m.c,
+        ctx.c,
         dtype.c,
         ranked,
         Pointer[_mlir.Attribute](dims.data.value).bitcast[
@@ -268,11 +268,11 @@ fn dim_symbolic_name(a: _mlir.Attribute) -> _mlir.Identifier:
     ]()(a.c)
 
 
-fn list_type_new(m: _mlir.Module, eltype: _mlir.Type) -> _mlir.Type:
+fn list_type_new(ctx: _mlir.Context, eltype: _mlir.Type) -> _mlir.Type:
     return cfunc[
         "MAXG_listTypeNew",
-        fn (_mlir.Module.c_type, _mlir.Type.c_type) -> _mlir.Type.c_type,
-    ]()(m.c, eltype.c)
+        fn (_mlir.Context.c_type, _mlir.Type.c_type) -> _mlir.Type.c_type,
+    ]()(ctx.c, eltype.c)
 
 
 fn list_type_element_type(t: _mlir.Type) -> _mlir.Type:
