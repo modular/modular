@@ -459,6 +459,7 @@ fn batched_matmul_kernel[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
+    accum_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_buff: NDBuffer[c_type, 3, c_shape],
@@ -477,9 +478,12 @@ fn batched_matmul_kernel[
 
     if z >= batch_size or x >= n or y >= m:
         return
-    var val = Scalar[c_type](0.0)
+    var val = Scalar[accum_type](0.0)
     for ki in range(k):
-        val += a_buff[z, y, ki].cast[c_type]() * b_buff[z, ki, x].cast[c_type]()
+        val += (
+            a_buff[z, y, ki].cast[accum_type]()
+            * b_buff[z, ki, x].cast[accum_type]()
+        )
 
     @parameter
     if elementwise_lambda_fn:
@@ -489,9 +493,9 @@ fn batched_matmul_kernel[
         )
         nd_corrds[rank - 1] = x
         nd_corrds[rank - 2] = y
-        elementwise_lambda[c_type, 1, rank](nd_corrds, val)
+        elementwise_lambda[c_type, 1, rank](nd_corrds, val.cast[c_type]())
     else:
-        c_buff[(z, y, x)] = val
+        c_buff[(z, y, x)] = val.cast[c_type]()
 
 
 @always_inline
@@ -527,6 +531,8 @@ fn _batched_matmul_gpu[
     var k = a_buf_reshaped.dim(2)
     var n = b_buf_reshaped.dim(2)
 
+    alias accum_type = DType.float32 if a_type.is_bfloat16() or b_type.is_bfloat16() else c_type
+
     try:
         var stream = Stream.get_current_stream()
         alias bmm = batched_matmul_kernel[
@@ -537,6 +543,7 @@ fn _batched_matmul_gpu[
             unkown_shape,
             b_type,
             unkown_shape,
+            accum_type,
             elementwise_epilogue_fn,
         ]
         var gpu_func = Function[__type_of(bmm), bmm]()
