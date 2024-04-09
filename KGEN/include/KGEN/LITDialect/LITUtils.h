@@ -38,7 +38,7 @@ enum class ArgConvention : uint32_t;
 namespace LIT {
 class LITSignatureType;
 class PassingKindArrayAttr;
-class PogsAttr;
+class PogListAttr;
 enum class PassingKind : uint32_t;
 
 /// Returns whether the given attribute is a LIT type expression.
@@ -86,25 +86,25 @@ ParseResult parseOptionalDefaultValue(AsmParser &p, TypedAttr &defaultVal,
 /// Parse a parameter specification in a lit op.
 ParseResult parseOptionalParameterSpec(AsmParser &p,
                                        ParamDeclArrayAttr &inputParamDecls,
-                                       PogsAttr &paramListAttr);
+                                       PogListAttr &paramListAttr);
 
 /// Print a parameter specification in a lit op. A ParameterEvaluator is
 /// necessary to substitute parameters into parametric parameters.
 void printOptionalParameterSpec(AsmPrinter &p,
                                 ArrayRef<ParamDeclAttr> paramDecls,
-                                PogsAttr paramListAttr,
+                                PogListAttr paramListAttr,
                                 ParameterEvaluator &evaluator);
 
 /// Parse a parameter signature (input/result types with optional default
 /// values) if present.
 ParseResult parseOptionalParamSignature(AsmParser &p,
                                         SmallVectorImpl<Type> &inputParamTypes,
-                                        PogsAttr &paramListAttr);
+                                        PogListAttr &paramListAttr);
 
 /// Print the parameter type signature if there are any input or result types,
 /// along with the default input parameter values.
 void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
-                                 PogsAttr paramListAttr);
+                                 PogListAttr paramListAttr);
 
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
@@ -123,7 +123,7 @@ enum class Variadicness : uint8_t { kNone, kVariadic, kPack };
 
 /// Return an array of enums representing the variadicness of each
 /// argument/parameter in the given list.
-SmallVector<Variadicness> getVariadicness(PogsAttr listAttr);
+SmallVector<Variadicness> getVariadicness(PogListAttr pogListAttr);
 
 /// Parse an optional passing convention and variadicness. The the given index
 /// will be added to the appropriate index array if a variadicness is present.
@@ -256,7 +256,7 @@ public:
         kwOnlyEnd(passingKinds.size() - countNumImplicitKinds(passingKinds)),
         defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()){};
 
-  DefaultValueHandler(PogsAttr listAttr);
+  DefaultValueHandler(PogListAttr pogListAttr);
 
   /// If the given index refers to an optional positional (pos-only or
   /// pos-or-kw) argument/parameter, return its default value or null otherwise.

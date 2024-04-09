@@ -1,77 +1,77 @@
 // RUN: kgen-opt %s -verify-parameters -verify-diagnostics -split-input-file -o /dev/null
 
 // expected-error @+1 {{number of argument/parameter names and passing kinds does not match: 4 vs. 3}}
-#names_passing_kind_mismatch = #lit.pogs<
+#names_passing_kind_mismatch = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw], [], [], [], -1, none
 >
 
 // -----
 
 // expected-error @+1 {{number of argument/parameter names and length of variadic mask does not match: 4 vs. 2}}
-#names_passing_kind_mismatch = #lit.pogs<
+#names_passing_kind_mismatch = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [], [false, true], -1, none
 >
 
 // -----
 
 // expected-error @+1 {{pos passing kind cannot follow pos_or_kw}}
-#passing_kind_order1 = #lit.pogs<
+#passing_kind_order1 = #lit.pog_list<
   ["a", "b", "c", "d"], [pos_or_kw, pos, kw, implicit], [], [], [false, false, false, false], -1, none
 >
 
 // -----
 
 // expected-error @+1 {{pos_or_kw passing kind cannot follow implicit}}
-#passing_kind_order2 = #lit.pogs<
+#passing_kind_order2 = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, kw, implicit, pos_or_kw], [], [], [false, false, false, false], -1, none
 >
 
 // -----
 
 // expected-error @+1 {{kw passing kind cannot follow implicit}}
-#passing_kind_order3 = #lit.pogs<
+#passing_kind_order3 = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, implicit, kw], [], [], [false, false, false, false], -1, none
 >
 
 // -----
 
 // expected-error @+1 {{there are more default keyword-only arguments/parameters than keyword-only arguments/parameters: 3 vs. 2}}
-#too_many_kw_only_defaults = #lit.pogs<
+#too_many_kw_only_defaults = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [1 : i8, 2 : i8, 3 : i8], [false, false, false, false], -1, none
 >
 
 // -----
 
 // expected-error @+1 {{there are more default positional arguments/parameters than positional arguments/parameters: 3 vs. 1}}
-#too_many_kw_only_defaults = #lit.pogs<
+#too_many_kw_only_defaults = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, kw, kw, kw], [1 : i8, 2 : i8, 3 : i8], [], [false, false, false, false], -1, none
 >
 
 // -----
 
 // expected-error @+1 {{variadic cannot have a default value}}
-#variadic_with_default = #lit.pogs<
+#variadic_with_default = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [1 : i8], [], [false, true, false, false], -1, none
 >
 
 // -----
 
 // expected-error @+1 {{pack convention not specified}}
-#too_many_packs = #lit.pogs<
+#too_many_packs = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, pos_or_kw, kw], [], [], [false, false, false, false], 1, none
 >
 
 // -----
 
 // expected-error @+1 {{variadic pack cannot have a default value}}
-#pack_with_default = #lit.pogs<
+#pack_with_default = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [1 : i8], [], [false, false, false, false], 1, owned_in_mem
 >
 
 // -----
 
 // expected-error @+1 {{variadic pack index must be less than the number of elements: 4 vs. 4}}
-#pos_only_pack = #lit.pogs<
+#pos_only_pack = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos, kw, kw], [], [], [false, false, false, false], 4, owned_in_mem
 >
 

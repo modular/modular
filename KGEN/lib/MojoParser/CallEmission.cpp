@@ -143,7 +143,7 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
-                              PogsAttr paramListAttr,
+                              PogListAttr paramListAttr,
                               ParameterInferenceHookTy parameterInferenceHook,
                               const DiagEmitter &diagEmitter,
                               Boundness boundness) const {
@@ -475,7 +475,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
 std::pair<ParameterExprArrayAttr, ParamBindings::Fitness>
 ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
-                              PogsAttr paramListAttr, const Twine &baseName,
+                              PogListAttr paramListAttr, const Twine &baseName,
                               llvm::SMLoc exprLoc,
                               std::optional<Location> opLoc,
                               Boundness boundness) const {

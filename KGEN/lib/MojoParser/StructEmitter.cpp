@@ -29,8 +29,8 @@ using namespace M::KGEN::LIT;
 
 LIT::FuncOp StructEmitter::createFunction(
     ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
-    PogsAttr paramListAttrs, ArrayRef<Type> argTypes,
-    ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
+    PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
+    ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
     ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix) {
   // If the result of the function is a non-trivial type, mark the function
@@ -134,19 +134,19 @@ LIT::FuncOp StructEmitter::createFunction(
 
 std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
-    ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs,
+    ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
     FnEffects fnEffects, StringRef suffix) {
   return synthesizeMethodInStruct(
-      name, /*params=*/{}, /*paramListAttrs=*/PogsAttr::get(getContext()),
+      name, /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(getContext()),
       argTypes, argConventions, argListAttrs, resultType, structDecl,
       specialFnID, fnEffects, suffix);
 }
 
 std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
-    StringRef name, ArrayRef<ParamDeclAttr> params, PogsAttr paramListAttrs,
+    StringRef name, ArrayRef<ParamDeclAttr> params, PogListAttr paramListAttrs,
     ArrayRef<Type> argTypes, ArrayRef<ArgConvention> argConventions,
-    PogsAttr argListAttrs, Type resultType, ASTDecl &structDecl,
+    PogListAttr argListAttrs, Type resultType, ASTDecl &structDecl,
     SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
@@ -273,7 +273,7 @@ void StructEmitter::appendDefaultReturnAndEndOp(ASTDecl &funcDecl) {
 
 LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
-    ArrayRef<ArgConvention> argConventions, PogsAttr argListAttrs) {
+    ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs) {
   auto structOp = cast<StructDeclOp>(structDecl);
   ASTType selfType = structDecl.getSelfType();
 
@@ -449,10 +449,10 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
 LIT::FuncOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                                          ArrayRef<Type> argTypes,
                                          ArrayRef<ArgConvention> argConventions,
-                                         PogsAttr argListAttrs,
+                                         PogListAttr argListAttrs,
                                          SpecialFunctionKind kind,
                                          ArrayRef<ParamDeclAttr> params,
-                                         PogsAttr paramListAttrs) {
+                                         PogListAttr paramListAttrs) {
   auto [func, _] = synthesizeMethodInStruct(
       prefix, params, paramListAttrs, argTypes, argConventions, argListAttrs,
       shared.getNoneType(), structDecl, kind);
@@ -471,12 +471,12 @@ LIT::FuncOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
 LIT::FuncOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
                                          ArrayRef<Type> argTypes,
                                          ArrayRef<ArgConvention> argConventions,
-                                         PogsAttr argListAttrs,
+                                         PogListAttr argListAttrs,
                                          SpecialFunctionKind kind) {
 
   return addVoidMethod(structDecl, prefix, argTypes, argConventions,
                        argListAttrs, kind, /*params=*/{},
-                       /*paramListAttrs=*/PogsAttr::get(getContext()));
+                       /*paramListAttrs=*/PogListAttr::get(getContext()));
 }
 
 LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
@@ -500,7 +500,7 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
   StructEmitter emitter(shared);
   auto [funcOp, funcDecl] = emitter.synthesizeMethodInStruct(
       "__del__", selfType.mlirType, convention,
-      PogsAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
+      PogListAttr::get(emitter.getContext(), selfName, PassingKind::PosOnly),
       shared.getNoneType(), structDecl, SpecialFunctionKind::kDel);
 
   // Set up the body.
@@ -542,8 +542,8 @@ static LIT::FuncOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
     Type refToSelf = selfType.getRefForArgument("self", /*isMut=*/true);
     Type refToExisting = selfType.getRefForArgument("existing", isMove);
     auto argListAttrs =
-        PogsAttr::get(ctx, {b.getStringAttr("self"), existingName},
-                      {PassingKind::PosOnly, PassingKind::PosOnly});
+        PogListAttr::get(ctx, {b.getStringAttr("self"), existingName},
+                         {PassingKind::PosOnly, PassingKind::PosOnly});
     return emitter.addVoidMethod(
         structDecl, name, {refToSelf, refToExisting},
         {ArgConvention::InitSelf,
@@ -553,7 +553,7 @@ static LIT::FuncOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
                : SpecialFunctionKind::kCopyInit);
   }
 
-  auto argListAttrs = PogsAttr::get(ctx, existingName, PassingKind::PosOnly);
+  auto argListAttrs = PogListAttr::get(ctx, existingName, PassingKind::PosOnly);
   auto [func, _] = emitter.synthesizeMethodInStruct(
       name, Type(selfType),
       isMove ? ArgConvention::OwnedInReg : ArgConvention::BorrowedInReg,
@@ -731,7 +731,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
     }
     init = synthesizeMemberwiseInit(
         structDecl, argTypes, argConventions,
-        PogsAttr::get(getContext(), argNames, argPassingKinds));
+        PogListAttr::get(getContext(), argNames, argPassingKinds));
   }
 
   if (!valueInfo->hasDestructor() && forceGenerateDestructor)

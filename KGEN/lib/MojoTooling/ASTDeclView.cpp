@@ -79,12 +79,12 @@ refineConventionForType(Type type, std::optional<ArgConvention> convention) {
 }
 
 /// Helper to return the variadic kind of a parameter/argument.
-static VariadicKind getVariadicKind(PogsAttr pogsAttr, size_t idx) {
-  if (pogsAttr.isPack(idx))
+static VariadicKind getVariadicKind(PogListAttr pogListAttr, size_t idx) {
+  if (pogListAttr.isPack(idx))
     return VariadicKind::kPack;
-  if (!pogsAttr.isVariadic(idx))
+  if (!pogListAttr.isVariadic(idx))
     return VariadicKind::kNone;
-  PassingKind passingKind = pogsAttr.getPassingKinds()[idx];
+  PassingKind passingKind = pogListAttr.getPassingKinds()[idx];
   if (passingKind == PassingKind::KwOnly)
     return VariadicKind::kKwVar;
   assert(passingKind == PassingKind::PosOrKw);

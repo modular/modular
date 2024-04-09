@@ -35,7 +35,8 @@ enum class KwDiagResult {
 /// args/params, this function also collects them.
 template <typename OperandType>
 static std::pair<KwDiagResult, SmallVector<StringAttr>> diagnoseKeywordOperands(
-    PogsAttr pogsAttr, KeywordOperandContainer<OperandType> &variadicKwOperands,
+    PogListAttr pogListAttr,
+    KeywordOperandContainer<OperandType> &variadicKwOperands,
     const OperandContainer<OperandType> &operands,
     bool allowMissingKwOnly = false) {
   // First, we collect any (named) pos-only args/params passed by keyword
@@ -45,12 +46,12 @@ static std::pair<KwDiagResult, SmallVector<StringAttr>> diagnoseKeywordOperands(
   SmallVector<StringAttr> posOnlyPassedByKw;
   SmallVector<StringAttr> missingKwOnly;
 
-  DefaultValueHandler defaultHandler(pogsAttr);
+  DefaultValueHandler defaultHandler(pogListAttr);
   for (auto [argIdx, name, passingKind] :
-       llvm::enumerate(pogsAttr.getNames(), pogsAttr.getPassingKinds())) {
+       llvm::enumerate(pogListAttr.getNames(), pogListAttr.getPassingKinds())) {
     if (passingKind == PassingKind::Implicit)
       continue;
-    if (pogsAttr.isPack(argIdx) || pogsAttr.isVariadic(argIdx))
+    if (pogListAttr.isPack(argIdx) || pogListAttr.isVariadic(argIdx))
       continue; // Variadic/pack args cannot be specified by their keyword.
     if (passingKind == PassingKind::KwOnly &&
         !defaultHandler.getKwOnlyDefault(argIdx) && !operands.findKwArg(name)) {
@@ -80,7 +81,7 @@ static std::pair<KwDiagResult, SmallVector<StringAttr>> diagnoseKeywordOperands(
   }
 
   // If the function doesn't accept variadic kwargs, this is an error.
-  if (!pogsAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
+  if (!pogListAttr.hasKwVariadics() && !variadicKwOperands.empty()) {
     SmallVector<StringAttr> unknownKwOperands;
     for (auto [name, _] : variadicKwOperands)
       unknownKwOperands.push_back(name);
@@ -98,21 +99,21 @@ enum class PosDiagResult { kValid, kMissingPos, kTooManyPos, kByPosAndKw };
 /// argument/parameter specified both by positional and keyword operands).
 template <typename OperandType>
 static std::pair<PosDiagResult, SmallVector<StringAttr>>
-diagnosePosOperands(PogsAttr pogsAttr,
+diagnosePosOperands(PogListAttr pogListAttr,
                     const OperandContainer<OperandType> &operands,
                     bool allowCountMismatch = false) {
   SmallVector<StringAttr> missingPosNames;
   SmallVector<StringAttr> byPosAndKw;
 
   size_t numPosOperands = operands.posOperands.size();
-  size_t numPosMaximum = countNumPositional(pogsAttr.getPassingKinds());
+  size_t numPosMaximum = countNumPositional(pogListAttr.getPassingKinds());
   bool hasVariadicOrPack = false;
 
-  ArrayRef<StringAttr> names = pogsAttr.getNames();
+  ArrayRef<StringAttr> names = pogListAttr.getNames();
 
-  DefaultValueHandler defaultHandler(pogsAttr);
+  DefaultValueHandler defaultHandler(pogListAttr);
   for (size_t idx = 0; idx != numPosMaximum; ++idx) {
-    if (pogsAttr.isPosVariadic(idx) || pogsAttr.isPack(idx)) {
+    if (pogListAttr.isPosVariadic(idx) || pogListAttr.isPack(idx)) {
       // Positional variadics and packs don't require any operands. But we
       // remember this because it lifts the limit on the maximum number.
       hasVariadicOrPack = true;

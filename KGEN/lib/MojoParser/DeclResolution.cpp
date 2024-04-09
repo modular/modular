@@ -2135,7 +2135,8 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   auto paramArray = ParamDeclArrayAttr::get(getContext(), {actualType});
   StringAttr paramName = StringAttr::get(getContext(), "");
   PassingKind paramPassingKind = PassingKind::Implicit;
-  auto paramListAttr = PogsAttr::get(getContext(), paramName, paramPassingKind);
+  auto paramListAttr =
+      PogListAttr::get(getContext(), paramName, paramPassingKind);
   auto sig = TypeSignatureType::remapToSignature(silenceErrors(getContext()),
                                                  paramArray, paramListAttr);
   if (!sig)
