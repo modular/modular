@@ -578,8 +578,6 @@ struct LayoutTensor[
     # When source and destination address spaces differ
     @always_inline
     fn copy_from_numa[
-        alignment: Int = 1,
-        *,
         other_layout: Layout,
         other_addr_space: AddressSpace,
         other_element_layout: Layout,
@@ -626,13 +624,15 @@ struct LayoutTensor[
                     i * dst_element_size
                 )
                 var src_vec = rebind[self.element_type](
-                    other.ptr.load[width=src_element_size, alignment=alignment](
-                        src_idx
-                    )
+                    other.ptr.load[
+                        width=src_element_size,
+                        alignment = alignof[other.element_type](),
+                    ](src_idx)
                 )
-                self.ptr.store[width = self.element_size, alignment=alignment](
-                    dst_idx, src_vec
-                )
+                self.ptr.store[
+                    width = self.element_size,
+                    alignment = alignof[self.element_type](),
+                ](dst_idx, src_vec)
 
             unroll[copy_vector_to_vector, dst_size]()
         # Vector read scalar writes.
@@ -650,7 +650,10 @@ struct LayoutTensor[
                 )
 
                 var src_vec = rebind[self.element_type](
-                    other.ptr.load[width=src_element_size](src_idx)
+                    other.ptr.load[
+                        width=src_element_size,
+                        alignment = alignof[self.element_type](),
+                    ](src_idx)
                 )
 
                 @parameter
@@ -714,12 +717,14 @@ struct LayoutTensor[
                     alias dst_idx = dst_offset + self.element_layout(j)
 
                     var src_vec = other.ptr.load[
-                        width=vec_width, alignment=alignment
+                        width=vec_width,
+                        alignment = alignof[SIMD[dtype, vec_width]](),
                     ](src_idx).cast[dtype]()
 
-                    self.ptr.store[width=vec_width, alignment=alignment](
-                        dst_idx, src_vec
-                    )
+                    self.ptr.store[
+                        width=vec_width,
+                        alignment = alignof[SIMD[dtype, vec_width]](),
+                    ](dst_idx, src_vec)
 
                 unroll[copy_by_vec, num_copies]()
 

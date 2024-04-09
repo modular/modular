@@ -707,7 +707,9 @@ fn test_copy_vectorized():
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
     tensor_8_8_zeros_1_4.print()
 
-    var tensor_8_8_zeros_4_4 = stack_allocation_like(tensor_8_8).vectorize[
+    var tensor_8_8_zeros_4_4 = LayoutTensor[
+        Layout(IntTuple(8, 8), IntTuple(8, 1)), DType.float32
+    ].aligned_stack_allocation[alignof[SIMD[DType.float32, 4]]()]().vectorize[
         4, 4
     ]()
     tensor_8_8_zeros_4_4.fill(0)
