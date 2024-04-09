@@ -98,9 +98,9 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
 
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
     auto func = cast<LIT::FuncOp>(*decl->getParentDecl());
-    ArrayRef<StringAttr> argNames = func.getSignature().getArgNames();
-    if (size_t argNumber = bbArg.getArgNumber(); argNumber < argNames.size())
-      return argNames[argNumber];
+    if (size_t argNumber = bbArg.getArgNumber();
+        argNumber < func.getSignature().getNumArguments())
+      return func.getSignature().getArgName(argNumber);
     return std::nullopt;
   }
 
@@ -145,7 +145,7 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     // Handle the case of an argument materialized in a variable.
     if (varDecl.getKind() == VarDeclKind::Arg) {
       auto parentFn = varDecl->getParentOfType<LIT::FuncOp>();
-      auto argNames = parentFn.getSignature().getArgNames();
+      ArrayRef<StringAttr> argNames = parentFn.getSignature().getArgNames();
       auto argIt = llvm::find(argNames, varDecl.getNameAttr());
       if (argIt != argNames.end())
         return createArgumentDeclView(*this, argIt - argNames.begin());
