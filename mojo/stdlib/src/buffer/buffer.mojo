@@ -20,7 +20,8 @@ from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 from algorithm import vectorize
 from buffer.list import Dim, DimList, _make_tuple
 from memory import stack_allocation, memset_zero
-from memory.unsafe import AddressSpace, DTypePointer, Pointer, _GPUAddressSpace
+from memory.reference import AddressSpace, _GPUAddressSpace
+from memory.unsafe import DTypePointer, Pointer
 
 from utils._serialize import _serialize
 from utils.index import StaticIntTuple
