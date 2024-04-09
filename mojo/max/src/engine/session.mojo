@@ -16,7 +16,6 @@ from sys.ffi import DLHandle, _get_global_or_null
 
 from max.graph import Graph
 from memory._arc import Arc
-from memory.anypointer import AnyPointer
 from tensor import Tensor
 
 from ._compilation import (

@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import List
-from memory.anypointer import AnyPointer
 from buffer import Buffer
 from memory.unsafe import bitcast, DTypePointer
 from python import Python, PythonObject
