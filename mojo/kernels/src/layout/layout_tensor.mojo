@@ -10,6 +10,7 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
 from gpu.memory import async_copy, async_copy_wait_all
+from gpu.id import ThreadIdx
 from memory import memcpy
 from memory.unsafe import DTypePointer
 from memory.reference import AddressSpace, _GPUAddressSpace
@@ -979,3 +980,33 @@ fn outer_product_acc[
         @unroll
         for j in range(N):
             res[i, j] += lhs[i].cast[dtype]() * rhs[j].cast[dtype]()
+
+
+# Copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
+#
+@always_inline
+fn copy_dram_to_sram_async[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
+    src_thread_layout: Layout,
+    dst_thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+](
+    dst: LayoutTensor[
+        dst_layout,
+        dtype,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=dst_element_layout,
+    ],
+    src: LayoutTensor[
+        src_layout,
+        dtype,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=src_element_layout,
+    ],
+):
+    var src_framgents = src.distribute[src_thread_layout](ThreadIdx.x())
+    var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
+    dst_framgents.copy_from_async(src_framgents)
