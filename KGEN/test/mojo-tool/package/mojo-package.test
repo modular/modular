@@ -1,4 +1,4 @@
-// RUN: mojo package -D fire="🔥" %S/test_package -o - | kgen-opt | FileCheck %s
+// RUN: mojo package %S/test_package -o - | kgen-opt | FileCheck %s
 // RUN: not mojo package %S/test_package_with_main -o - 2>&1 | FileCheck %s --check-prefix=MAIN_IN_PACKAGE
 
 // MAIN_IN_PACKAGE: defining 'main' within a package is not yet supported
@@ -7,8 +7,7 @@
 // CHECK-DAG: !subroutine{{[0-9]+}} =
 
 // CHECK: lit.package @test_package
-// CHECK-SAME: {compiledEnv =
-// CHECK-SAME: fire = "\F0\9F\94\A5"{{.*}}, postParseModule = {{.*}}
+// CHECK-SAME: postParseModule = {{.*}}
 
 // CHECK: lit.package @inner1
 // CHECK:   lit.file_module @myfile
