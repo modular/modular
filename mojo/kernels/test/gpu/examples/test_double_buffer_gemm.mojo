@@ -70,9 +70,6 @@ fn sgemm_double_buffer[
     alias _uint = Scalar[itype]
 
     alias simd_size = simdwidthof[c_type]()
-    alias a_align = alignof[SIMD[a_type, simd_size]]()
-    alias b_align = alignof[SIMD[b_type, simd_size]]()
-    alias c_align = alignof[SIMD[c_type, simd_size]]()
 
     var M = c.dim[0]()
     var N = c.dim[1]()
@@ -190,9 +187,7 @@ fn sgemm_double_buffer[
     var thread_loada_smem_frags = a_smem_warp_row.vectorize[
         simd_size
     ]().distribute[thread_layout, axis=0](lane_id)
-    a_reg[0].vectorize[simd_size]().copy_from_numa[a_align](
-        thread_loada_smem_frags
-    )
+    a_reg[0].vectorize[simd_size]().copy_from_numa(thread_loada_smem_frags)
 
     # Load B fragments to the first buffer.
     var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
@@ -200,9 +195,7 @@ fn sgemm_double_buffer[
     var thread_loadb_smem_frags = b_smem_warp_row.vectorize[
         simd_size
     ]().distribute[thread_layout, axis=1](lane_id)
-    b_reg[0].vectorize[simd_size]().copy_from_numa[b_align](
-        thread_loadb_smem_frags
-    )
+    b_reg[0].vectorize[simd_size]().copy_from_numa(thread_loadb_smem_frags)
 
     var num_k_tiles = div_ceil(K, BK)
 
@@ -238,9 +231,9 @@ fn sgemm_double_buffer[
             var thread_loada_smem_frags = a_smem_warp_row.vectorize[
                 simd_size
             ]().distribute[thread_layout, axis=0](lane_id)
-            a_reg[next_buffer_id].vectorize[simd_size]().copy_from_numa[
-                a_align
-            ](thread_loada_smem_frags)
+            a_reg[next_buffer_id].vectorize[simd_size]().copy_from_numa(
+                thread_loada_smem_frags
+            )
 
             var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
                 next_k, 0
@@ -248,9 +241,9 @@ fn sgemm_double_buffer[
             var thread_loadb_smem_frags = b_smem_warp_row.vectorize[
                 simd_size
             ]().distribute[thread_layout, axis=1](lane_id)
-            b_reg[next_buffer_id].vectorize[simd_size]().copy_from_numa[
-                b_align
-            ](thread_loadb_smem_frags)
+            b_reg[next_buffer_id].vectorize[simd_size]().copy_from_numa(
+                thread_loadb_smem_frags
+            )
 
             # Load next k tile from global memory to shared memory.
             if k == 0 and k_tile_id < num_k_tiles - 1:
@@ -285,9 +278,7 @@ fn sgemm_double_buffer[
         simd_size, simd_size
     ]().distribute[thread_layout](ThreadIdx.x())
     # Copy results to global memory.
-    c_gmem_thread_tile.copy_from_numa[c_align](
-        c_reg.vectorize[simd_size, simd_size]()
-    )
+    c_gmem_thread_tile.copy_from_numa(c_reg.vectorize[simd_size, simd_size]())
 
 
 fn test() raises:
