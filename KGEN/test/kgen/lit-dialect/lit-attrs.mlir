@@ -10,22 +10,22 @@
 } : () -> ()
 
 // CHECK-LABEL: "pogs.with_defaults"
-// CHECK-SAME: {pogs = #lit.pogs<
+// CHECK-SAME: {pogs = #lit.pog_list<
 // CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.200000e+00 : f32], [1 : i64], [false, false, false, false], -1, none>}
-"pogs.with_defaults"() {pogs = #lit.pogs<
+"pogs.with_defaults"() {pogs = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.2 : f32], [1: i64], [false, false, false, false], -1, none
 >} : () -> ()
 
 // CHECK-LABEL: "pogs.with_variadics"
-// CHECK-SAME: {pogs = #lit.pogs<
+// CHECK-SAME: {pogs = #lit.pog_list<
 // CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [], [false, false, false, true], 1, owned_in_mem>}
-"pogs.with_variadics"() {pogs = #lit.pogs<
+"pogs.with_variadics"() {pogs = #lit.pog_list<
   ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [], [false, false, false, true], 1, owned_in_mem
 >} : () -> ()
 
 // CHECK-LABEL: "empty.pogs"
-// CHECK-SAME: {pogs = #lit.pogs<[], [], [], [], [], -1, none>}
-"empty.pogs"() {pogs = #lit.pogs<[], [], [], [], [], -1, none>} : () -> ()
+// CHECK-SAME: {pogs = #lit.pog_list<[], [], [], [], [], -1, none>}
+"empty.pogs"() {pogs = #lit.pog_list<[], [], [], [], [], -1, none>} : () -> ()
 
 // CHECK-LABEL: "some.metadata"
 // CHECK-SAME: #lit.fn_metadata

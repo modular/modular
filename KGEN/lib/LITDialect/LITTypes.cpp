@@ -60,20 +60,21 @@ void LITDialect::registerTypes() {
 /// TODO: remove these?
 static ParseResult parseTypeSignature(AsmParser &p,
                                       SmallVectorImpl<Type> &paramTypes,
-                                      PogsAttr &paramListAttrs) {
+                                      PogListAttr &paramListAttrs) {
   if (parseOptionalParamSignature(p, paramTypes, paramListAttrs))
     return failure();
   return success();
 }
 
 static void printTypeSignature(AsmPrinter &p, ArrayRef<Type> paramTypes,
-                               PogsAttr paramListAttrs) {
+                               PogListAttr paramListAttrs) {
   printOptionalParamSignature(p, paramTypes, paramListAttrs);
 }
 
 LogicalResult
 TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
-                          ArrayRef<Type> paramTypes, PogsAttr paramListAttrs) {
+                          ArrayRef<Type> paramTypes,
+                          PogListAttr paramListAttrs) {
   ArrayRef<PassingKind> paramPassingKinds = paramListAttrs.getPassingKinds();
   if (paramPassingKinds.size() != paramTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
@@ -95,7 +96,7 @@ bool TypeSignatureType::hasVariadicParam() const {
 
 TypeSignatureType TypeSignatureType::remapToSignature(
     function_ref<InFlightDiagnostic()> emitError, ParamDeclArrayAttr paramDecls,
-    PogsAttr paramListAttrs) {
+    PogListAttr paramListAttrs) {
   IndexRefRemapper remapper(paramDecls, {});
   SmallVector<Type> inputParamTypes =
       llvm::map_to_vector(paramDecls, [&](ParamDeclAttr decl) {
@@ -103,7 +104,7 @@ TypeSignatureType TypeSignatureType::remapToSignature(
       });
 
   MLIRContext *ctx = paramDecls.getContext();
-  paramListAttrs = PogsAttr::get(
+  paramListAttrs = PogListAttr::get(
       ctx, paramListAttrs.getNames(), paramListAttrs.getPassingKinds(),
       remapper.replace(paramListAttrs.getDefaultPos()),
       remapper.replace(paramListAttrs.getDefaultKwOnly()),
@@ -114,7 +115,7 @@ TypeSignatureType TypeSignatureType::remapToSignature(
 }
 
 TypeSignatureType TypeSignatureType::get(MLIRContext *context) {
-  return get(context, /*paramTypes=*/{}, PogsAttr::get(context));
+  return get(context, /*paramTypes=*/{}, PogListAttr::get(context));
 }
 
 ArrayRef<StringAttr> TypeSignatureType::getParamNames() const {
@@ -419,7 +420,7 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   assert(getParamValues().size() == values.size() && "expected full value set");
 
   TypeSignatureType sig = getSignature();
-  PogsAttr paramListAttr = sig.getParamListAttrs();
+  PogListAttr paramListAttr = sig.getParamListAttrs();
   auto sigRange = llvm::enumerate(sig.getParamTypes(), sig.getParamNames(),
                                   sig.getParamPassingKinds(),
                                   paramListAttr.getVariadicMask());
@@ -464,8 +465,8 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   assert(sigIt == sigRange.end() && "expected signature to get processed");
 
   auto paramListAttrs =
-      PogsAttr::get(getContext(), newParamNames, newPassingKinds,
-                    newPosDefaults, newKwOnlyDefaults, newVariadicMask);
+      PogListAttr::get(getContext(), newParamNames, newPassingKinds,
+                       newPosDefaults, newKwOnlyDefaults, newVariadicMask);
   auto newSig =
       TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
   return AnyStructType::get(getSymbol(), values, newSig);
@@ -770,7 +771,7 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
       return failure();
 
   SmallVector<Type> inputParamTypes;
-  PogsAttr paramListAttr;
+  PogListAttr paramListAttr;
   if (failed(parseOptionalParamSignature(p, inputParamTypes, paramListAttr)))
     return failure();
 
@@ -828,9 +829,9 @@ static ParseResult parseLITSignature(AsmParser &p, Type &signature) {
 
   MLIRContext *ctx = p.getContext();
   auto metadata = FnMetadataAttr::get(
-      PogsAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                    defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
-                    origArgPackConvention),
+      PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
+                       defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
+                       origArgPackConvention),
       paramListAttr, numLifetimeDecls);
   signature = SignatureType::getChecked(
       [&] { return p.emitError(startLoc); }, functionType, inputParamTypes,
@@ -921,11 +922,11 @@ FnMetadataAttr LITSignatureType::getMetadata() {
   return ::cast<FnMetadataAttr>(SignatureType::getMetadata());
 }
 
-PogsAttr LITSignatureType::getArgListAttrs() {
+PogListAttr LITSignatureType::getArgListAttrs() {
   return getMetadata().getArgListAttrs();
 }
 
-PogsAttr LITSignatureType::getParamListAttrs() {
+PogListAttr LITSignatureType::getParamListAttrs() {
   return getMetadata().getParamListAttrs();
 }
 
@@ -1172,7 +1173,7 @@ LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
   size_t numInputs = funcType.getNumInputs();
   SmallVector<StringAttr> argNames(numInputs, StringAttr::get(ctx));
   SmallVector<PassingKind> argPassingKinds(numInputs, PassingKind::PosOnly);
-  auto newArgAttrs = PogsAttr::get(ctx, argNames, argPassingKinds);
+  auto newArgAttrs = PogListAttr::get(ctx, argNames, argPassingKinds);
   auto metadata = FnMetadataAttr::get(newArgAttrs, numImplicitLifetimeDecls);
   return LITSignatureType::get(funcType, /*paramTypes=*/{},
                                /*convs=*/{}, /*effects=*/{}, metadata);

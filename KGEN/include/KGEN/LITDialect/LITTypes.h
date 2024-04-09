@@ -18,7 +18,7 @@
 //===----------------------------------------------------------------------===//
 
 namespace M::KGEN::LIT {
-class PogsAttr;
+class PogListAttr;
 class FnMetadataAttr;
 class RefPackType;
 class SymbolAttr;
@@ -33,10 +33,10 @@ public:
   FnMetadataAttr getMetadata();
 
   /// Get the argument list metadata.
-  PogsAttr getArgListAttrs();
+  PogListAttr getArgListAttrs();
 
   /// Get the parameter list metadata.
-  PogsAttr getParamListAttrs();
+  PogListAttr getParamListAttrs();
 
   /// Get the function input argument names.
   ArrayRef<StringAttr> getArgNames();

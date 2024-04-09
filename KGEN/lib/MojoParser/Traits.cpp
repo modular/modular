@@ -121,7 +121,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
     conventions.push_back(conv);
   }
 
-  PogsAttr oldArgListAttrs = traitSig.getArgListAttrs();
+  PogListAttr oldArgListAttrs = traitSig.getArgListAttrs();
   ArrayRef<StringAttr> argNames = oldArgListAttrs.getNames();
   ArrayRef<PassingKind> passingKinds = oldArgListAttrs.getPassingKinds();
   ArrayRef<bool> variadicMask = oldArgListAttrs.getVariadicMask();
@@ -133,7 +133,7 @@ static LITSignatureType getRegisterPassableSignature(LITSignatureType traitSig,
     variadicMask = variadicMask.drop_front(hasInitSelf).drop_back(hasMemRes);
   }
 
-  PogsAttr newArgListAttrs =
+  PogListAttr newArgListAttrs =
       oldArgListAttrs.cloneWith(argNames, passingKinds, variadicMask);
   auto metadata = FnMetadataAttr::get(
       newArgListAttrs, traitSig.getParamListAttrs(), numImplicitLifetimeDecls);
@@ -315,7 +315,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     // has one.
     auto [dtor, _] = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedInMem,
-        PogsAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
+        PogListAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
         shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     if (!dtor)
       return;
@@ -341,8 +341,8 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     auto [ctor, _] = gen.synthesizeMethodInStruct(
         name, {selfRefType, existingType},
         {ArgConvention::InitSelf, existingConv},
-        PogsAttr::get(shared.getContext(), {empty, empty},
-                      {PassingKind::PosOnly, PassingKind::PosOnly}),
+        PogListAttr::get(shared.getContext(), {empty, empty},
+                         {PassingKind::PosOnly, PassingKind::PosOnly}),
         shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     if (!ctor)
       return;

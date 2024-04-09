@@ -575,7 +575,7 @@ static ParseResult parseLITFunctionSignature(
                                 parseLifetimeDecl))
     return failure();
 
-  PogsAttr paramListAttr;
+  PogListAttr paramListAttr;
   if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
 
@@ -646,9 +646,9 @@ static ParseResult parseLITFunctionSignature(
   passingKindParser.populatePassingKinds(argPassingKinds);
 
   auto metadata = FnMetadataAttr::get(
-      PogsAttr::get(p.getContext(), argNames, argPassingKinds, defaultPosArgs,
-                    defaultKwOnlyArgs, argVariadicIndices, argPackIndex,
-                    origArgPackConvention),
+      PogListAttr::get(p.getContext(), argNames, argPassingKinds,
+                       defaultPosArgs, defaultKwOnlyArgs, argVariadicIndices,
+                       argPackIndex, origArgPackConvention),
       paramListAttr, lifetimeDecls.size());
   signature = SignatureType::remapToSignature(
       params, /*resultParams=*/{}, functionType, argConventions, effects,
@@ -1033,7 +1033,7 @@ static ParseResult parseStructParameterSpec(AsmParser &p,
                                             TypeAttr &signature,
                                             TypeLineageArrayAttr &parentTypes) {
   llvm::SMLoc startLoc = p.getCurrentLocation();
-  PogsAttr paramListAttr;
+  PogListAttr paramListAttr;
   if (parseOptionalParameterSpec(p, params, paramListAttr))
     return failure();
 
@@ -1110,7 +1110,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
   SmallVector<TypedAttr> newKwOnlyDefaults;
   SmallVector<bool> newVariadicMask;
 
-  PogsAttr paramListAttr = sig.getParamListAttrs();
+  PogListAttr paramListAttr = sig.getParamListAttrs();
   DefaultValueHandler defaultHandler(paramListAttr);
   for (auto [i, value, type, name, kind, isVariadic] : llvm::enumerate(
            paramValues, sig.getParamTypes(), sig.getParamNames(),
@@ -1130,8 +1130,8 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
 
   MLIRContext *ctx = getContext();
   auto newParamListAttr =
-      PogsAttr::get(ctx, newParamNames, newPassingKinds, newPosDefaults,
-                    newKwOnlyDefaults, newVariadicMask);
+      PogListAttr::get(ctx, newParamNames, newPassingKinds, newPosDefaults,
+                       newKwOnlyDefaults, newVariadicMask);
   auto newSig = TypeSignatureType::get(ctx, newParamTypes, newParamListAttr);
   return DeclRefType::get(symbol, paramValues,
                           AnyStructType::get(symbol, paramValues, newSig));

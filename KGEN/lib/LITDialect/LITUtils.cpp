@@ -173,7 +173,7 @@ static ParseResult parseVariadicness(AsmParser &p,
 /// parameter-spec   ::= `<` parameter-list (`->` parameter-list)? `>`
 ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &inputParamDecls,
-                                            PogsAttr &paramListAttr) {
+                                            PogListAttr &paramListAttr) {
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
@@ -246,9 +246,9 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
-  paramListAttr = PogsAttr::get(p.getContext(), paramNames, paramPassingKinds,
-                                defaultPosParams, defaultKwOnlyParams,
-                                variadicIndices, packIndex, origPackConvention);
+  paramListAttr = PogListAttr::get(
+      p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
+      defaultKwOnlyParams, variadicIndices, packIndex, origPackConvention);
   return success();
 }
 
@@ -318,20 +318,19 @@ void LIT::printConventionAndVariadicness(AsmPrinter &p,
 
 /// Return an array of enums representing the variadicness of each
 /// argument/parameter in the given list.
-SmallVector<Variadicness> LIT::getVariadicness(PogsAttr listAttr) {
+SmallVector<Variadicness> LIT::getVariadicness(PogListAttr pogListAttr) {
   SmallVector<Variadicness> res;
-  res.reserve(listAttr.getNames().size());
-  for (bool isVariadic : listAttr.getVariadicMask())
+  res.reserve(pogListAttr.getNames().size());
+  for (bool isVariadic : pogListAttr.getVariadicMask())
     res.push_back(isVariadic ? Variadicness::kVariadic : Variadicness::kNone);
-  if (listAttr.hasPack())
-    res[listAttr.getPackIndex()] = Variadicness::kPack;
-
+  if (pogListAttr.hasPack())
+    res[pogListAttr.getPackIndex()] = Variadicness::kPack;
   return res;
 }
 
 void LIT::printOptionalParameterSpec(AsmPrinter &p,
                                      ArrayRef<ParamDeclAttr> paramDecls,
-                                     PogsAttr paramListAttr,
+                                     PogListAttr paramListAttr,
                                      ParameterEvaluator &evaluator) {
   // Substitute input parameters when printing default parameters.
   for (ParamDeclAttr param : paramDecls)
@@ -364,7 +363,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
 ParseResult
 LIT::parseOptionalParamSignature(AsmParser &p,
                                  SmallVectorImpl<Type> &inputParamTypes,
-                                 PogsAttr &paramListAttr) {
+                                 PogListAttr &paramListAttr) {
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
@@ -416,7 +415,7 @@ LIT::parseOptionalParamSignature(AsmParser &p,
   if (packIndex != -1)
     return p.emitError(startLoc, "pack not supported in parameter list");
 
-  paramListAttr = PogsAttr::get(
+  paramListAttr = PogListAttr::get(
       p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
       defaultKwOnlyParams, variadicIndices, packIndex, ArgConvention::None);
   return success();
@@ -424,7 +423,7 @@ LIT::parseOptionalParamSignature(AsmParser &p,
 
 void LIT::printOptionalParamSignature(AsmPrinter &p,
                                       ArrayRef<Type> inputParamTypes,
-                                      PogsAttr paramListAttr) {
+                                      PogListAttr paramListAttr) {
   DefaultValueHandler defaultHandler(paramListAttr);
   SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
@@ -798,9 +797,10 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
 // DefaultValueHandler
 //===----------------------------------------------------------------------===//
 
-DefaultValueHandler::DefaultValueHandler(PogsAttr listAttr)
-    : DefaultValueHandler(listAttr.getPassingKinds(), listAttr.getDefaultPos(),
-                          listAttr.getDefaultKwOnly()) {}
+DefaultValueHandler::DefaultValueHandler(PogListAttr pogListAttr)
+    : DefaultValueHandler(pogListAttr.getPassingKinds(),
+                          pogListAttr.getDefaultPos(),
+                          pogListAttr.getDefaultKwOnly()) {}
 
 //===----------------------------------------------------------------------===//
 // Verifier helpers

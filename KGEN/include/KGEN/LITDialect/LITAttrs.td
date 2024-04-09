@@ -76,13 +76,13 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
 }
 
 //===----------------------------------------------------------------------===//
-// PogsAttr
+// PogListAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
+def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
   let summary = "Argument or parameter list metadata.";
   let description = [{
-    The `#lit.pogs` attribute contains metadata about an argument or
+    The `#lit.pog_list` attribute contains metadata about an argument or
     parameter list of a function, including names, passing kinds, default
     values, and information about variadic arguments. The positional default
     values correspond to the trailing positional (i.e. pos-only or pos-or-kw)
@@ -98,7 +98,7 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
     // `4.2`, and the last keyword-only arg/param ("d") has a default value of
     // 1. The second argument is a (positional) variadic pack, and the last
     // argument is a variadic keyword argument
-    #lit.pogs<
+    #lit.pog_list<
       ["a", "b", "c", "d"],
       [pos, pos_or_kw, kw, kw],
       [4.2 : f32],
@@ -150,9 +150,9 @@ def LIT_PogsAttr : LITAttr<"Pogs", "pogs"> {
   let extraClassDeclaration = [{
     /// Create a new arg/paramlist attr with the given names and passking kinds,
     /// retaining the existing defaults and variadic indices.
-    PogsAttr cloneWith(ArrayRef<StringAttr> names,
-                       ArrayRef<PassingKind> passingKinds,
-                       ArrayRef<bool> variadicMask) const;
+    PogListAttr cloneWith(ArrayRef<StringAttr> names,
+                          ArrayRef<PassingKind> passingKinds,
+                          ArrayRef<bool> variadicMask) const;
 
     /// Return true if the argument/param at `idx` is a variadic.
     bool isVariadic(size_t idx) const;
@@ -209,8 +209,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   }];
 
   let parameters = (ins
-    LIT_PogsAttr:$argListAttrs,
-    LIT_PogsAttr:$paramListAttrs,
+    LIT_PogListAttr:$argListAttrs,
+    LIT_PogListAttr:$paramListAttrs,
     "size_t":$numImplicitLifetimeDecls
   );
   let assemblyFormat = [{
@@ -220,11 +220,11 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   let builders = [
     AttrBuilder<(ins)>,
     AttrBuilderWithInferredContext<(ins
-      "PogsAttr":$argListAttrs,
-      "PogsAttr":$paramListAttrs,
+      "PogListAttr":$argListAttrs,
+      "PogListAttr":$paramListAttrs,
       CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
     AttrBuilderWithInferredContext<(ins
-      "PogsAttr":$argListAttrs,
+      "PogListAttr":$argListAttrs,
       CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
   ];
 
