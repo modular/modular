@@ -59,7 +59,7 @@ struct _InferenceSessionImpl(Movable):
 
     fn _compile_model_from_config(
         self,
-        owned config: LoadOptions,
+        owned config: TorchLoadOptions,
         owned session: InferenceSession,
     ) raises -> CompiledModel:
         var context = self.context.borrow_ptr()
@@ -151,7 +151,7 @@ struct _InferenceSessionImpl(Movable):
 
     fn load(
         self,
-        owned config: LoadOptions,
+        owned config: TorchLoadOptions,
         owned session: InferenceSession,
     ) raises -> Model:
         """
@@ -266,13 +266,13 @@ struct _Specs(CollectionElement):
 
 
 @value
-struct LoadOptions(CollectionElement):
+struct TorchLoadOptions(CollectionElement):
     """
-    Configuration options to load model with MAX Engine.
+    Configuration options to load PyTorch models with MAX Engine.
 
-    If you're loading a TorchScript model, you must create an instance of this
-    type and call [`add_input_spec()`](#add_input_spec) for each input.
-    Then, pass `LoadOptions` along with your TorchScript model to
+    You must create an instance of this type and call
+    [`add_input_spec()`](#add_input_spec) for each input.
+    Then, pass `TorchLoadOptions` along with your TorchScript model to
     [`Session.load()`](/engine/reference/mojo/engine/session#load).
     """
 
@@ -282,7 +282,7 @@ struct LoadOptions(CollectionElement):
     var _input_specs: List[_Specs]
 
     fn __init__(inout self):
-        """Creates a new LoadOptions object."""
+        """Creates a new TorchLoadOptions object."""
         self._source = None
         self._model_path = None
         self._custom_ops_path = None
@@ -332,7 +332,7 @@ struct LoadOptions(CollectionElement):
            var input_ids_spec = TensorSpec(DType.int64, batch, seqlen)
            var attention_mask_spec = TensorSpec(DType.int64, batch, seqlen)
 
-           var options = engine.LoadOptions()
+           var options = engine.TorchLoadOptions()
            options.add_input_spec(input_ids_spec)
            options.add_input_spec(attention_mask_spec)
 
@@ -480,7 +480,7 @@ struct InferenceSession:
         self._ptr = Arc(_InferenceSessionImpl(path, options._device))
 
     fn load(
-        self, path: Path, config: Optional[LoadOptions] = None
+        self, path: Path, config: Optional[TorchLoadOptions] = None
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
            model path and config.
@@ -490,7 +490,7 @@ struct InferenceSession:
 
         If you're loading a TorchScript model, you must specify the `config`
         argument with an instance of
-        [`LoadOptions`](/engine/reference/mojo/engine/session#loadoptions) that
+        [`TorchLoadOptions`](/engine/reference/mojo/engine/session#loadoptions) that
         specifies the model's input specs (which may have dynamic shapes).
         For details, see how to [specify input
         specs](/engine/model-formats#specify-torchscript-input-specs).
@@ -506,16 +506,16 @@ struct InferenceSession:
             Initialized model ready for inference.
 
         """
-        var load_config: LoadOptions
+        var load_config: TorchLoadOptions
         if config:
             load_config = config.value()
         else:
-            load_config = LoadOptions()
+            load_config = TorchLoadOptions()
         load_config._set_model_path(path)
         return self._ptr[].load(load_config^, self)
 
     fn load(
-        self, graph: Graph, config: Optional[LoadOptions] = None
+        self, graph: Graph, config: Optional[TorchLoadOptions] = None
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
            [`Graph`](/engine/reference/mojo/graph/graph#graph) and config.
@@ -528,11 +528,11 @@ struct InferenceSession:
             Initialized model ready for inference.
 
         """
-        var load_config: LoadOptions
+        var load_config: TorchLoadOptions
         if config:
             load_config = config.value()
         else:
-            load_config = LoadOptions()
+            load_config = TorchLoadOptions()
         load_config._set_model_source(graph)
         return self._ptr[].load(load_config^, self)
 

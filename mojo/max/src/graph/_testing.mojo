@@ -8,7 +8,7 @@ from collections import Optional
 from tensor import Tensor
 from testing import assert_almost_equal, assert_equal
 
-from max.engine import InferenceSession, LoadOptions, TensorMap
+from max.engine import InferenceSession, TensorMap, TorchLoadOptions
 
 
 fn assert_tensors_almost_equal[
@@ -34,16 +34,16 @@ fn assert_tensors_equal[
 
 fn execute_nullary[
     outtype: DType = DType.float32
-](graph: Graph, load_options: Optional[LoadOptions] = None) raises -> Tensor[
-    outtype
-]:
+](
+    graph: Graph, load_options: Optional[TorchLoadOptions] = None
+) raises -> Tensor[outtype]:
     var result_map = execute_no_args(graph, load_options)
     return result_map.get[outtype]("output0")
 
 
 fn execute_nullary_list[
     outtype: DType = DType.float32
-](graph: Graph, load_options: Optional[LoadOptions] = None) raises -> List[
+](graph: Graph, load_options: Optional[TorchLoadOptions] = None) raises -> List[
     Tensor[outtype]
 ]:
     var result_map = execute_no_args(graph, load_options)
@@ -60,7 +60,7 @@ fn execute_unary[
 ](
     graph: Graph,
     input: Tensor[intype],
-    load_options: Optional[LoadOptions] = None,
+    load_options: Optional[TorchLoadOptions] = None,
 ) raises -> Tensor[outtype]:
     var result_map = execute_base(graph, input, load_options=load_options)
     return result_map.get[outtype]("output0")
@@ -71,7 +71,7 @@ fn execute_unary_list[
 ](
     graph: Graph,
     input: Tensor[intype],
-    load_options: Optional[LoadOptions] = None,
+    load_options: Optional[TorchLoadOptions] = None,
 ) raises -> List[Tensor[outtype]]:
     var result_map = execute_base(graph, input, load_options=load_options)
     var engine_list = result_map.get_value("output0").as_list()
@@ -88,14 +88,14 @@ fn execute_binary[
     graph: Graph,
     x: Tensor[intype],
     y: Tensor[intype],
-    load_options: Optional[LoadOptions] = None,
+    load_options: Optional[TorchLoadOptions] = None,
 ) raises -> Tensor[outtype]:
     var result_map = execute_base(graph, x, y, load_options=load_options)
     return result_map.get[outtype]("output0")
 
 
 fn execute_no_args(
-    g: Graph, load_options: Optional[LoadOptions] = None
+    g: Graph, load_options: Optional[TorchLoadOptions] = None
 ) raises -> TensorMap:
     g.verify()
 
@@ -117,7 +117,7 @@ fn execute_n_args[
     t3: Tensor[dt3],
     t4: Tensor[dt4],
     t5: Tensor[dt5],
-    load_options: Optional[LoadOptions] = None,
+    load_options: Optional[TorchLoadOptions] = None,
 ) raises -> TensorMap:
     g.verify()
 
@@ -137,7 +137,7 @@ fn execute_n_args[
 
 
 fn execute_base(
-    g: Graph, *tensors: Tensor, load_options: Optional[LoadOptions] = None
+    g: Graph, *tensors: Tensor, load_options: Optional[TorchLoadOptions] = None
 ) raises -> TensorMap:
     g.verify()
 

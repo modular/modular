@@ -29,7 +29,7 @@ For details, see how to [run inferencew with Mojo](/engine/mojo/get-started).
 
 from .info import get_version
 from .model import Model
-from .session import InferenceSession, LoadOptions, SessionOptions
+from .session import InferenceSession, SessionOptions, TorchLoadOptions
 from .shape_element import ShapeElement
 from .tensor_spec import EngineTensorSpec
 from .tensor_map import TensorMap
