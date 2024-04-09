@@ -541,9 +541,7 @@ OverallOpValueEffect LIT::getOperationEffects(
     return OverallOpValueEffect::localControlFlowOp;
 
   // If-like operations.
-  // TODO: when destructor insertion for acyclic control flow is complete,
-  // remove IfOp from ifLikeOp.
-  if (isa<ParamIfOp, HLCF::IfOp>(op)) {
+  if (isa<ParamIfOp>(op)) {
     // i1 value is never owned, and the markers are not used either.
     // TODO: IfOp could return an owned result.
     if (size_t num = op.getNumResults())
@@ -551,7 +549,7 @@ OverallOpValueEffect LIT::getOperationEffects(
     return OverallOpValueEffect::ifLikeOp;
   }
 
-  if (isa<HLCF::ElifOp, HLCF::SwitchOp>(op)) {
+  if (isa<HLCF::ElifOp, HLCF::SwitchOp, HLCF::IfOp>(op)) {
     if (size_t num = op.getNumResults())
       results.resize(num, ResultEffect::ignore);
     return OverallOpValueEffect::acyclicControlFlowNodeOp;
