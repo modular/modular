@@ -1,6 +1,14 @@
 // RUN: kgen-opt %s -allow-unregistered-dialect -verify-parameters | FileCheck %s
 // RUN: kgen-opt %s -emit-bytecode -allow-unregistered-dialect | kgen-opt -allow-unregistered-dialect | FileCheck %s
 
+// CHECK-LABEL: "pog.metadata"
+// CHECK-SAME: pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, false>,
+// CHECK-SAME: pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, true>
+"pog.metadata"() {
+  pog1 = #lit.pog_metadata<"some_keyword_param", pos_or_kw, false>,
+  pog2 = #lit.pog_metadata<"some_variadic_param", pos_or_kw, true>
+} : () -> ()
+
 // CHECK-LABEL: "pogs.with_defaults"
 // CHECK-SAME: {pogs = #lit.pogs<
 // CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.200000e+00 : f32], [1 : i64], [false, false, false, false], -1, none>}

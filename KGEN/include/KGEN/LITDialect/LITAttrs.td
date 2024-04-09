@@ -51,6 +51,31 @@ def LIT_SymbolAttr : LITAttr<"Symbol", "symbol"> {
 }
 
 //===----------------------------------------------------------------------===//
+// PogMetadataAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
+  let summary = "Metadata for a single Argument or parameter.";
+  let description = [{
+    The `#lit.pog_metadata` attribute contains metadata about an argument or
+    parameter of a function, including the name, passing kind, and variadicness
+
+    Example:
+
+    ```mlir
+    #lit.pog_metadata<"some_keyword_param", pos_or_kw, false>
+    #lit.pog_metadata<"some_variadic_param", pos_or_kw, true>
+    ```
+  }];
+
+  let parameters = (ins
+    "StringAttr":$name, "PassingKind":$passingKind, "bool":$isVariadicMask
+  );
+
+  let assemblyFormat = "`<` $name `,` $passingKind `,` $isVariadicMask `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // PogsAttr
 //===----------------------------------------------------------------------===//
 
