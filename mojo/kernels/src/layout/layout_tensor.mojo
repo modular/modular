@@ -11,7 +11,8 @@ from sys.intrinsics import PrefetchOptions
 from algorithm import vectorize
 from gpu.memory import async_copy, async_copy_wait_all
 from memory import memcpy
-from memory.unsafe import AddressSpace, DTypePointer, _GPUAddressSpace
+from memory.unsafe import DTypePointer
+from memory.reference import AddressSpace, _GPUAddressSpace
 
 from .int_tuple import flatten, idx2crd, int, product, fill_like
 from .layout import *
