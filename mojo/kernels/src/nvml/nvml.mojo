@@ -331,7 +331,9 @@ struct Device:
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetSupportedMemoryClocks",
-                fn (_DeviceImpl, Pointer[UInt32], AnyPointer[UInt32]) -> Result,
+                fn (
+                    _DeviceImpl, Pointer[UInt32], UnsafePointer[UInt32]
+                ) -> Result,
             ]()(self.device, Pointer.address_of(num_clocks), clocks.data)
         )
 
