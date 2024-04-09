@@ -281,6 +281,10 @@ void SharedState::deleteDecl(ASTDecl &decl) {
     impl->symbolTables.getSymbolTable(op->getParentOp()).remove(op);
   }
   op->erase();
+
+  // Set the IRValue to nullptr, so that any reference pointing to the decl can
+  // check if it's valid.
+  decl.setIRValue(nullptr);
 }
 
 ASTDecl &SharedState::getTopLevelDecl() { return *impl->topLevelDecl; }

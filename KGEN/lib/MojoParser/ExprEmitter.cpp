@@ -1475,7 +1475,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
       break;
     }
 
-    // As a special extension, the __copyinit__ of a register-only types are
+    // As a special extension, the __copyinit__ of register-passable types are
     // allowed to return their new self directly as a register value instead of
     // taking a memory value in. Check to see if the copyinit members in the
     // overload set have a kCopyInitReg form and use it if present
