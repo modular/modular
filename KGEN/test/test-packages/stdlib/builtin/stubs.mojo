@@ -306,9 +306,16 @@ struct __ParameterClosureCaptureList[fn_type: AnyRegType, fn_ref: fn_type]:
         __mlir_op.`kgen.capture_list.expand`(self.value)
 
 
-@register_passable
-struct Tuple[*Ts: AnyRegType]:
-    var storage: __mlir_type[`!kgen.pack<`, Ts, `>`]
+struct Tuple[*element_types: AnyType]:
+    fn __init__(inout self, *args: *element_types):
+        pass
 
-    fn __init__(borrowed *args: *Ts) -> Self:
-        return Self {storage: args}
+    fn __copyinit__(inout self, existing: Self):
+        pass
+
+    fn __moveinit__(inout self, owned existing: Self):
+        pass
+
+    fn get[i: Int](self) -> element_types[i.value]:
+        while __mlir_attr.`true`:
+            pass
