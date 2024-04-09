@@ -11,8 +11,8 @@ from max.engine import (
     InferenceSession,
     TensorMap,
     EngineTensorView,
-    LoadOptions,
     ShapeElement,
+    TorchLoadOptions,
 )
 from sys import argv
 from tensor import Tensor, TensorSpec
@@ -26,7 +26,7 @@ fn test_pytorch_model() raises:
     var model_path = args[1]
 
     var session = InferenceSession()
-    var config = LoadOptions()
+    var config = TorchLoadOptions()
     config.add_input_spec(TensorSpec(DType.float32, 1, 3, 100, 100))
     var compiled_model = session.load(Path(model_path), config)
 
@@ -46,7 +46,7 @@ fn test_pytorch_model2() raises:
     var model_path = args[1]
 
     var session = InferenceSession()
-    var config = LoadOptions()
+    var config = TorchLoadOptions()
     var shape = List[Optional[Int64]]()
     shape.append(Int64(1))
     shape.append(Int64(3))
@@ -72,7 +72,7 @@ fn test_named_input_dims() raises:
 
     var model_path = Path(argv()[1])
     var session = InferenceSession()
-    var config = LoadOptions()
+    var config = TorchLoadOptions()
     var shape = List[ShapeElement]()
     shape.append("batch")
     shape.append(3)
@@ -82,7 +82,7 @@ fn test_named_input_dims() raises:
     _ = session.load(model_path, config)
 
     shape.clear()
-    config = LoadOptions()
+    config = TorchLoadOptions()
     shape.append("1two3")
     shape.append(3)
     shape.append(100)
@@ -97,7 +97,7 @@ fn test_model_execute() raises:
     var model_path = args[1]
 
     var session = InferenceSession()
-    var config = LoadOptions()
+    var config = TorchLoadOptions()
     config.add_input_spec(TensorSpec(DType.float32, 1, 3, 100, 100))
     var model = session.load(Path(model_path), config)
     var input_tensor = Tensor[DType.float32](1, 3, 100, 100)

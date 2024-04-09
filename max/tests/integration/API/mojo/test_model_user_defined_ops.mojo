@@ -11,7 +11,7 @@ from max.engine import (
     InferenceSession,
     TensorMap,
     EngineTensorView,
-    LoadOptions,
+    TorchLoadOptions,
 )
 from sys import argv
 from tensor import Tensor, TensorShape
@@ -25,7 +25,7 @@ fn test_model_metadata() raises:
     var user_defined_ops_path = args[2]
 
     var session = InferenceSession()
-    var config = LoadOptions()
+    var config = TorchLoadOptions()
     config.set_custom_ops_path(Path(user_defined_ops_path))
     var compiled_model = session.load(Path(model_path), config)
     assert_equal(compiled_model.num_model_inputs(), 1)
@@ -52,7 +52,7 @@ fn test_model() raises:
     var user_defined_ops_path = args[2]
 
     var session = InferenceSession()
-    var config = LoadOptions()
+    var config = TorchLoadOptions()
     config.set_custom_ops_path(Path(user_defined_ops_path))
     var model = session.load(Path(model_path), config^)
     var input_tensor = Tensor[DType.float32](5)
