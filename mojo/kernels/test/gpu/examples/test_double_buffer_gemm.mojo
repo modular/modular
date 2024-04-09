@@ -10,7 +10,7 @@ from math import div_ceil, isclose, isnan
 from buffer import NDBuffer
 from buffer.list import DimList
 from memory.unsafe import DTypePointer
-from memory.unsafe import _GPUAddressSpace as AddressSpace
+from memory.reference import _GPUAddressSpace as AddressSpace
 from LinAlg.MatmulGPU import matmul_kernel_naive
 from gpu import (
     WARP_SIZE,
