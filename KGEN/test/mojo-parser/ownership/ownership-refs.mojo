@@ -323,8 +323,8 @@ fn test_immortal_to_mortal[mutability: __mlir_type.`i1`, life: AnyLifetime[mutab
   # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON]], %arg)
   # CHECK-NEXT: [[REFVAL:%.*]] = lit.ref.load [[ANON]]
-  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}AnyPointer::@"__init__{{.*}}([[REFVAL]])
-  # CHECK-NEXT: [[LITREFVAL:%.*]] = lit.call {{.*}}AnyPointer::@"__refitem__{{.*}}([[PTRVAL]])
+  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[REFVAL]])
+  # CHECK-NEXT: [[LITREFVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__refitem__{{.*}}([[PTRVAL]])
 
   # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[LITREFVAL]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=mutability, life>
