@@ -6,6 +6,7 @@
 
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -223,6 +224,8 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
                       returnOp.getLoc(), b);
         returnOp.setOperand(i, newOperand);
       }
+    } else if (auto elifOp = dyn_cast<HLCF::ElifOp>(op)) {
+      HLCF::replaceElifWithIfOps(elifOp);
     } else if (auto globalRefOp = dyn_cast<GlobalVarRefOp>(op)) {
       Value newAddr = b.create<GlobalAddressOp>(
           op->getLoc(), globalRefOp.getType().getAsPointerType(),

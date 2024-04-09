@@ -100,7 +100,9 @@ fn thing_that_raises(c: __mlir_type.i1) raises -> MemExample:
     # CHECK-NEXT: }
     somethingThatRaises()
 
-    # CHECK-NEXT:   hlcf.if %c {
+    # CHECK-NEXT:   hlcf.elif {
+    # CHECK-NEXT:     hlcf.elif.yield %c
+    # CHECK-NEXT:   } then {
     # CHECK-NEXT:      = lit.call {{.*}}__init__
     # CHECK-NOT:       __del__
     # CHECK: kgen.return
