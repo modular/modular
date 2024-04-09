@@ -113,7 +113,7 @@ from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
 from nn.mha import flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from nn.normalization import layer_norm as _layer_norm
+from nn.normalization import layer_norm as _layer_norm, layer_norm_shape
 from nn.pad import pad_constant as _pad_constant
 from nn.pad import pad_reflect as _pad_reflect
 from nn.pad import pad_repeat as _pad_repeat
@@ -184,6 +184,7 @@ fn MOGGExport():
     alias _greater_equal = greater_equal
     alias _isinf = isinf
     alias _isnan = isnan
+    alias _layer_norm_shape = layer_norm_shape
     alias _logical_and = logical_and
     alias _logical_not = logical_not
     alias _logical_xor = logical_xor
