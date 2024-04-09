@@ -9,6 +9,7 @@ from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import vectorize
+from gpu import WARP_SIZE
 from gpu.memory import async_copy, async_copy_wait_all
 from gpu.id import ThreadIdx
 from memory import memcpy
@@ -1010,3 +1011,42 @@ fn copy_dram_to_sram_async[
     var src_framgents = src.distribute[src_thread_layout](ThreadIdx.x())
     var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
     dst_framgents.copy_from_async(src_framgents)
+
+
+# Warp level copy from SRAM to local memory.
+#
+@always_inline
+fn warp_copy_sram_to_local[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
+    src_warp_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+    axis: Optional[Int] = None,
+](
+    dst: LayoutTensor[
+        dst_layout,
+        dtype,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=dst_element_layout,
+    ],
+    src: LayoutTensor[
+        src_layout,
+        dtype,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=src_element_layout,
+    ],
+):
+    var tid = ThreadIdx.x()
+    var lane_id = tid % WARP_SIZE
+
+    @parameter
+    if axis:
+        var src_fragments = src.distribute[
+            src_warp_layout, axis = axis.value()
+        ](lane_id)
+        dst.copy_from_numa(src_fragments)
+    else:
+        var src_fragments = src.distribute[src_warp_layout](lane_id)
+        dst.copy_from_numa(src_fragments)
