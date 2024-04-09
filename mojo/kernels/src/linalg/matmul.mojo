@@ -1040,13 +1040,7 @@ struct MatmulInnerLoopBPacked[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
 
-        # This inner kernels works with non-transposed A.
-
-        alias axis = 1 if transpose_b else 0
-        # Get the static value of K when b_shape is static otherwise get the dynamic value of K from the A buffer
-        var K = b_shape.get[axis]() if b_shape.has_value[
-            axis
-        ]() else self.a.dim[1]()
+        var K = self.a.dim[1]()
         var a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
 
         # Loop over local accumulator tiles.
