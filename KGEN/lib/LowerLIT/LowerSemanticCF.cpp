@@ -247,13 +247,12 @@ void LowerSemanticCF::lowerElif(HLCF::ElifOp elifOp, bool &doesRaise,
       continue;
     elifFallsThrough |= blockFallThroughs;
   }
-  HLCF::IfOp ifOp = HLCF::replaceElifWithIfOps(elifOp);
   doesFallThrough = elifFallsThrough;
   if (!doesFallThrough) {
     auto b = handleSemanticTerminatorOp(
-        *ifOp.getOperation(),
+        *elifOp.getOperation(),
         "if statement with then/else that do not fall through");
-    b.create<UnreachableOp>(ifOp.getLoc());
+    b.create<UnreachableOp>(elifOp.getLoc());
   }
 }
 
@@ -683,7 +682,7 @@ bool LowerSemanticCF::checkSelfRecursion(Block &block, bool isConditional) {
     // If we are already in conditional code, or if this is an 'if'-like
     // operation, then the subregions are executed conditionally.
     bool isSubregionConditional =
-        isConditional || isa<HLCF::IfOp, ParamIfOp>(op);
+        isConditional || isa<HLCF::IfOp, ParamIfOp, HLCF::ElifOp>(op);
     // Handle things like if statements, HLCF::Loop, try, etc.
     for (auto &region : op.getRegions()) {
       if (checkSelfRecursion(region.front(), isSubregionConditional))
