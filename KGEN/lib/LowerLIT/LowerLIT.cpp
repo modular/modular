@@ -447,10 +447,9 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   // We have at least some pre-compiled bytecode available, so insert a link
   // directive.
   OpBuilder b(package.getContext());
-  auto linkOp = b.create<PackageLinkOp>(
-      package.getLoc(), package.getSymNameAttr(),
-      package.getPostParseModuleAttr(),
-      /*preElaborationModule=*/mlir::DenseResourceElementsAttr());
+  auto linkOp =
+      b.create<PackageLinkOp>(package.getLoc(), package.getSymNameAttr(),
+                              package.getPostParseModuleAttr());
 
   // Insert the link op into the symbol table right where the package was. Don't
   // erase the package op cause we need to do some cleanup still, but we do

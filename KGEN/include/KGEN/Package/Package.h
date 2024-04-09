@@ -36,8 +36,7 @@ ErrorOr<OwningOpRef<ModuleOp>> specializeModuleForPreElaborationLinking(
 
 /// Loads the serialized MLIR bytecode representing a post-parser module in
 /// `packageLink`, and prepare to link it directly into another module.
-/// The preElaborationModule of `packageLink` is set to the result of the
-/// preparation. Returns the bytecode if successful, or an error.
+/// Returns the bytecode if successful, or an error.
 ErrorOr<DenseResourceElementsAttr>
 specializePackageLinkForPreElaborationLinking(
     PackageLinkOp packageLink, LLCL::Runtime &runtime,
