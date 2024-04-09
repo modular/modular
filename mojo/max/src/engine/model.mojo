@@ -103,7 +103,7 @@ struct Model:
         return self.execute(input_map)
 
     fn _execute_view[
-        key_type: AnyRegType, value_type: AnyRegType
+        key_type: CollectionElement, value_type: CollectionElement
     ](
         self, inputs: VariadicListMem[Tuple[key_type, value_type], _, _]
     ) raises -> TensorMap:
