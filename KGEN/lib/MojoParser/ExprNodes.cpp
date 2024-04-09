@@ -3075,7 +3075,7 @@ AnyValue MagicFunctionNode::emitSourceLocation(ValueDest &dest,
 // and we want to emit a constructor call and infer the parameter types
 // of Tuple.
 AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  Type tupleType =
+  ASTType tupleType =
       emitter.shared.getBuiltinTupleType(emitter.declScope, getLoc());
   bool allEltsLValue = true;
   bool allEltsTypes = true;
@@ -3096,6 +3096,8 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     for (ExprNode *exprNode : exprs)
       operands.push_back(Operand(exprNode, exprNode->getLoc(),
                                  Operand::PassKind::kPositional));
+    if (tupleType.isTypeCheckErrorType())
+      return {};
     PValue concretizedTupleType = substituteParametersIntoUserDefinedType(
         PValue(tupleType), operands, getLoc(), exprs.front()->getRangeStart(),
         exprs.back()->getRangeEnd(), emitter);
@@ -3109,7 +3111,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     SmallVector<Type> typeElts;
     for (ASTExprAnd<AnyValue> elt : elements)
       typeElts.push_back(elt.ir.getIfLValue().getRValueType());
-    auto concretizedTupleType =
+    ASTType concretizedTupleType =
         emitter.getBuiltinTupleInstantiation(getLoc(), typeElts);
     if (!concretizedTupleType || concretizedTupleType.isTypeCheckErrorType())
       return {};
@@ -3120,7 +3122,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // The ASTType will carry around parameters bound, we want to unbind them so
   // they can be inferred from the elements.
-  tupleType = ASTType(tupleType).getWithoutParameters();
+  tupleType = tupleType.getWithoutParameters();
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.

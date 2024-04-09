@@ -270,6 +270,12 @@ def tuple_return():
   return 32, 17 # expected-error {{cannot implicitly convert 'Tuple[Int, Int]' value to 'object' in return value}}
 
 
+# Issue https://github.com/modularml/mojo/issues/1917
+# Do not crash in tuple creation if element has syntax error.
+# expected-error @below {{expected '(' for argument list}}
+fn bad_func return fn() -> __mlir_type.index
+
+
 ##===----------------------------------------------------------------------===##
 # Other Specific expression forms
 ##===----------------------------------------------------------------------===##
