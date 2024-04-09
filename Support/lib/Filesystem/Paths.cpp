@@ -22,6 +22,12 @@ bool M::Filesystem::isMojoSourcePackagePath(const std::filesystem::path &path) {
   return false;
 }
 
+bool M::Filesystem::isMojoBinaryPackagePath(const std::filesystem::path &path) {
+  std::error_code ec;
+  return std::filesystem::is_regular_file(path, ec) &&
+         llvm::is_contained({".mojopkg", ".📦"}, path.extension());
+}
+
 bool M::Filesystem::isMojoSourceFile(const std::filesystem::path &path) {
   std::error_code ec;
   return std::filesystem::is_regular_file(path, ec) &&

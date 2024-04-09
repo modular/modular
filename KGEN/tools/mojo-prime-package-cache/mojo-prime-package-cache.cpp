@@ -22,6 +22,7 @@
 #include "Support/CommonCLOptions.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Filesystem/Paths.h"
 #include "Support/Init/Init.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -209,7 +210,7 @@ int main(int argc, char **argv) {
 
   // Make sure the input is actually a package.
   StringRef inputFileName(clOptions.inputFilename);
-  if (!inputFileName.ends_with(".mojopkg") && !inputFileName.ends_with(".📦"))
+  if (!Filesystem::isMojoBinaryPackagePath(inputFileName.str()))
     return clOptions.reportError("input file must be a Mojo package");
 
   // Set up the input file(s).

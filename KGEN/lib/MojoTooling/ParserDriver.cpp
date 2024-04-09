@@ -158,7 +158,7 @@ static ASTDecl *buildModuleDecl(const std::filesystem::path &filepath,
 static ASTDecl *buildPackageDecl(const std::filesystem::path &filepath,
                                  SharedState &sharedState) {
   // If the file is a binary package, just import it.
-  if (filepath.extension() == ".mojopkg" || filepath.extension() == ".📦") {
+  if (Filesystem::isMojoBinaryPackagePath(filepath)) {
     return &sharedState.createBinaryPackage(filepath.string(),
                                             filepath.stem().string());
   }
@@ -211,7 +211,7 @@ MojoASTDeclRef
 MojoParserContext::parsePackage(const std::filesystem::path &path) {
   // Check that the path is actually a package.
   if (!(Filesystem::isMojoSourcePackagePath(path) ||
-        path.extension() == ".mojopkg" || path.extension() == ".📦"))
+        Filesystem::isMojoBinaryPackagePath(path)))
     return nullptr;
   return parseFileOrPackage(path);
 }

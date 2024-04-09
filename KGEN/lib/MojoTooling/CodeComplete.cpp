@@ -134,10 +134,9 @@ struct CodeCompletionListener : public BaseCompletionListener {
       for (const auto &it : std::filesystem::directory_iterator(dir, ec)) {
         if (ec)
           continue;
-        std::string extension = it.path().extension().string();
-        if (extension == ".mojo" || extension == ".🔥")
+        if (Filesystem::isMojoSourceFile(it.path()))
           addImportCompletion(it.path(), /*isPackage=*/false);
-        else if (extension == ".mojopkg" || extension == ".📦" ||
+        else if (Filesystem::isMojoBinaryPackagePath(it.path()) ||
                  Filesystem::isMojoSourcePackagePath(it.path()))
           addImportCompletion(it.path(), /*isPackage=*/true);
       }
