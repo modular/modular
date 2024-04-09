@@ -2593,19 +2593,7 @@ fn _matmul_cpu[
             ):
                 return
 
-            _submatmul_sequential_sync[
-                config.a_type,
-                config.a_shape,
-                config.b_type,
-                config.b_shape,
-                config.c_type,
-                config.c_shape,
-                config.transpose_a,
-                config.transpose_b,
-                config.b_packed,
-                elementwise_lambda_fn,
-                config.saturated_vnni,
-            ](
+            _submatmul_sequential_sync[config, elementwise_lambda_fn](
                 c,
                 a_packed if use_i8mm else a,
                 b,
@@ -2726,105 +2714,65 @@ fn matmul[
 
 
 fn _submatmul_sequential_sync[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
+    config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     rowwise_epilogue_enabled: Bool,
-    saturated_vnni: Bool,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b: NDBuffer[config.b_type, 2, config.b_shape],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
     rowwise_epilogue_fn: fn (Int, Int) escaping -> None,
     kernel_type_m: Int = 0,
 ):
-    constrained[not transpose_a, "transpose_a not yet supported"]()
+    constrained[not config.transpose_a, "transpose_a not yet supported"]()
 
-    @parameter
-    @always_inline
-    fn dispatch_on_kernel_type[kernel_type: Bool]():
-        alias mm_config = get_mm_config[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_a=transpose_a,
-            transpose_b=transpose_b,
-            b_packed=b_packed,
-            kernel_type=kernel_type,
-            saturated_vnni=saturated_vnni,
-        ]()
+    fn elementwise_closure(offset: GemmShape, shape: GemmShape):
+        @parameter
+        if elementwise_lambda_fn:
+            elementwise_epilogue_c_tile[
+                config.simd_size,
+                config.c_type,
+                config.c_shape,
+                elementwise_lambda_fn.value(),
+            ](
+                offset,
+                shape,
+                rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
+            )
+        else:
+            pass
 
-        fn elementwise_closure(offset: GemmShape, shape: GemmShape):
-            @parameter
-            if elementwise_lambda_fn:
-                elementwise_epilogue_c_tile[
-                    mm_config.simd_size,
-                    c_type,
-                    mm_config.c_shape,
-                    elementwise_lambda_fn.value(),
-                ](
-                    offset,
-                    shape,
-                    rebind[NDBuffer[c_type, 2, mm_config.c_shape]](c),
-                )
-            else:
-                pass
-
-        TiledMatmul[
-            mm_config,
-            a_type,
-            b_type,
-            c_type,
-            # transpose_a
-            False,
-            transpose_b,
-            b_packed,
-            elementwise_lambda_fn.__bool__(),
-            rowwise_epilogue_enabled,
-        ].run(
-            rebind[NDBuffer[c_type, 2, mm_config.c_shape]](c),
-            rebind[NDBuffer[a_type, 2, mm_config.a_shape]](a),
-            rebind[NDBuffer[b_type, 2, mm_config.b_shape]](b),
-            elementwise_closure,
-            rowwise_epilogue_fn,
-            sub_matrix_shape,
-            sub_matrix_offset,
-        )
-
-    var shape = GemmShape.get[False, transpose_b](c, a, b)
-    var n = shape.N
-    var k = shape.K
-    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+    TiledMatmul[
+        config,
+        config.a_type,
+        config.b_type,
+        config.c_type,
+        # transpose_a
+        False,
+        config.transpose_b,
+        config.b_packed,
+        elementwise_lambda_fn.__bool__(),
+        rowwise_epilogue_enabled,
+    ].run(
+        rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
+        rebind[NDBuffer[config.a_type, 2, config.a_shape]](a),
+        rebind[NDBuffer[config.b_type, 2, config.b_shape]](b),
+        elementwise_closure,
+        rowwise_epilogue_fn,
+        sub_matrix_shape,
+        sub_matrix_offset,
+    )
 
 
 fn _submatmul_sequential_sync[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
+    config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    saturated_vnni: Bool,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b: NDBuffer[config.b_type, 2, config.b_shape],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
     kernel_type_m: Int = 0,
@@ -2832,20 +2780,7 @@ fn _submatmul_sequential_sync[
     fn null_rowwise_epilogue(offset: Int, num_rows: Int):
         pass
 
-    _submatmul_sequential_sync[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_a,
-        transpose_b,
-        b_packed,
-        elementwise_lambda_fn,
-        False,
-        saturated_vnni,
-    ](
+    _submatmul_sequential_sync[config, elementwise_lambda_fn, False](
         c,
         a,
         b,

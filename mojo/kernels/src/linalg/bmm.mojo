@@ -27,6 +27,7 @@ from .MatmulUtils import (
     packA_i8mm,
     partition_work,
     use_i8mm_fn,
+    get_mm_config,
 )
 from memory import memset_zero
 from runtime.llcl import Runtime
@@ -423,7 +424,7 @@ fn _batched_matmul_cpu[
             ):
                 return
 
-            _submatmul_sequential_sync[
+            alias config = get_mm_config[
                 a_type,
                 DimList.create_unknown[2](),
                 b_type,
@@ -433,15 +434,23 @@ fn _batched_matmul_cpu[
                 transpose_a=False,
                 transpose_b=transpose_b,
                 b_packed=False,
+                # kernel_type not supported yet with BatchedMatmul
+                kernel_type=False,
+                saturated_vnni=saturated_vnni,
+            ]()
+
+            _submatmul_sequential_sync[
+                config,
                 elementwise_lambda_fn = Optional[
                     matmul_elementwise_epilogue_type
                 ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
                 rowwise_epilogue_enabled=rowwise_epilogue_enabled,
-                saturated_vnni=saturated_vnni,
             ](
-                c_view,
-                a_packed if use_i8mm else a_view,
-                b_view,
+                rebind[NDBuffer[config.c_type, 2, config.c_shape]](c_view),
+                rebind[NDBuffer[config.a_type, 2, config.a_shape]](
+                    a_packed if use_i8mm else a_view
+                ),
+                rebind[NDBuffer[config.b_type, 2, config.b_shape]](b_view),
                 sub_matmul_config.shape,
                 sub_matmul_config.offset,
                 rowwise_closure,
