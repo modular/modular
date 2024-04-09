@@ -6,61 +6,36 @@
 # UNSUPPORTED: asan
 # RUN: %mojo -debug-level full %s | FileCheck %s
 
-from math import div_ceil
-from sys.info import has_neon, simdwidthof
+from math import align_up
+from sys.info import has_neon, has_vnni
 
 from buffer import NDBuffer
 from buffer.list import DimList
 from LinAlg.Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
-from LinAlg.MatmulUtils import (
-    get_matmul_kernel_shape,
-    get_matmul_prefetch_b_distance_k,
-)
+from LinAlg.MatmulUtils import get_matmul_arch_factor, get_mm_config
 
 from utils.index import Index
 
-alias prefetch_b_distance_k: Int = get_matmul_prefetch_b_distance_k()
-
 alias M: Int = 64
 alias N: Int = 64
-alias K: Int = 64
+alias K: Int = 256
 
 
 fn matmul_inner_loop[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    packed_shape: DimList,
-    tile_inner_size: Int,
-    simd_size: Int,
-    a_row_size: Int,
-    pack_inner_size: Int,
+    config: MatmulConfig,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b_packed: NDBuffer[b_type, 3, packed_shape],
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b_packed: NDBuffer[config.b_type, 3, config.packed_shape],
     m: Int,
     n: Int,
     k: Int,
 ):
     MatmulInnerLoopBPacked[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        False,  # transpose_b
-        packed_shape,
-        simd_size,
-        a_row_size,
-        pack_inner_size * simd_size,
+        config,
+        config.a_row_size,
+        config.pack_inner_size,
         True,  # skip bound check
-        prefetch_b_distance_k,
-        False,  # saturated_vnni
     ].run(
         c,
         a,
@@ -75,120 +50,61 @@ fn matmul_inner_loop[
 
 # CHECK-LABEL: test_micro_kernel
 fn test_micro_kernel[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
+    a_type: DType, b_type: DType, c_type: DType, saturated_vnni: Bool = False
 ](m: Int, n: Int, k: Int):
     print("== test_micro_kernel")
-
-    alias simd_size: Int = simdwidthof[c_type]()
-    alias kernel_shape = get_matmul_kernel_shape[
-        a_type, b_type, c_type, False
-    ]()
-    alias a_row_size = kernel_shape.a_row_size
-    alias pack_inner_size = kernel_shape.pack_inner_size
-    alias tile_inner_size: Int = pack_inner_size * simd_size
-
-    var chunk = div_ceil(n, tile_inner_size)
-    var alignment = 64
-    var a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
-
     alias a_shape = DimList.create_unknown[2]()
-    var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
-    a.fill(1)
-
     alias b_shape = DimList.create_unknown[2]()
-
+    alias c_shape = DimList.create_unknown[2]()
     alias b_packed_shape = DimList.create_unknown[3]()
-    var b_packed_ptr = DTypePointer[b_type].alloc(
-        chunk * k * tile_inner_size, alignment=alignment
-    )
-    var b_packed = NDBuffer[b_type, 3, b_packed_shape](
-        b_packed_ptr, Index(chunk, k, tile_inner_size)
-    )
-    b_packed.fill(1)
 
-    alias c_shape = DimList.create_unknown[2]()
-    var c_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
-    var c = NDBuffer[c_type, 2, c_shape](c_ptr, Index(m, n))
-    # var c = NDBuffer[c_type, 2, DimList(M, N)].aligned_stack_allocation[128]()
-    c.fill(0)
-
-    matmul_inner_loop[
+    alias config = get_mm_config[
         a_type,
         a_shape,
         b_type,
         b_shape,
         c_type,
         c_shape,
-        b_packed_shape,
-        tile_inner_size,
-        simd_size,
-        a_row_size,
-        pack_inner_size,
-    ](c, a, b_packed, m, n, k)
-
-    # CHECK: 64.0
-    print(c[0, 0])
-    a_ptr.free()
-    b_packed_ptr.free()
-    c_ptr.free()
-
-
-fn test_micro_kernel_static[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    N: Int,
-    K: Int,
-](m: Int):
-    alias simd_size: Int = simdwidthof[c_type]()
-    alias kernel_shape = get_matmul_kernel_shape[
-        a_type, b_type, c_type, False
+        transpose_b=False,
+        b_packed=True,
+        kernel_type=False,
+        saturated_vnni=saturated_vnni,
     ]()
-    alias a_row_size = kernel_shape.a_row_size
-    alias pack_inner_size = kernel_shape.pack_inner_size
-    alias tile_inner_size: Int = pack_inner_size * simd_size
-    alias alignment = alignof[SIMD[c_type, simd_size]]()
+    alias factor = get_matmul_arch_factor[config.use_vnni, config.use_i8mm]()
+    var np = align_up(n, config.pack_inner_size)
+    var kh = align_up(k, factor)
 
-    alias chunk = div_ceil(N, tile_inner_size)
-    var a_ptr = DTypePointer[a_type].alloc(m * K, alignment=alignment)
+    alias alignment = alignof[SIMD[c_type, config.simd_size]]()
 
-    alias a_shape = DimList.create_unknown[2]()
-    var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, K))
+    var a_ptr = DTypePointer[config.a_type].alloc(m * k, alignment=alignment)
+    var b_packed_ptr = DTypePointer[config.b_type].alloc(
+        (np // config.pack_inner_size)
+        * (kh // factor)
+        * (factor * config.pack_inner_size),
+        alignment=alignment,
+    )
+    var c_ptr = DTypePointer[config.c_type].alloc(m * n, alignment=alignment)
+    var a = NDBuffer[config.a_type, 2, config.a_shape](a_ptr, Index(m, k))
+
+    var b_packed = NDBuffer[config.b_type, 3, config.packed_shape](
+        b_packed_ptr,
+        Index(
+            np // config.pack_inner_size,
+            kh // factor,
+            factor * config.pack_inner_size,
+        ),
+    )
+
+    var c = NDBuffer[config.c_type, 2, config.c_shape](c_ptr, Index(m, n))
+
     a.fill(1)
-
-    alias b_shape = DimList.create_unknown[2]()
-    alias b_packed_shape = DimList(chunk, K, tile_inner_size)
-
-    var b_packed_ptr = DTypePointer[b_type].alloc(
-        chunk * K * tile_inner_size, alignment=alignment
-    )
-
-    var b_packed = NDBuffer[b_type, 3, b_packed_shape](
-        b_packed_ptr, Index(chunk, K, tile_inner_size)
-    )
     b_packed.fill(1)
-
-    alias c_shape = DimList.create_unknown[2]()
-    var c_ptr = DTypePointer[c_type].alloc(m * N, alignment=alignment)
-    var c = NDBuffer[c_type, 2, c_shape](c_ptr, Index(m, N))
     c.fill(0)
 
-    matmul_inner_loop[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        b_packed_shape,
-        tile_inner_size,
-        simd_size,
-        a_row_size,
-        pack_inner_size,
-    ](c, a, b_packed, m, N, K)
+    matmul_inner_loop[config](c, a, b_packed, m, n, k)
 
+    # CHECK: 256
+    print(int(c[0, 0]))
     a_ptr.free()
     b_packed_ptr.free()
     c_ptr.free()
@@ -199,15 +115,12 @@ fn kernel_export_dynamic(m: Int, n: Int, k: Int):
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 
-@export(ABI="C")
-fn kernel_export_static(m: Int):
-    test_micro_kernel_static[DType.float32, DType.float32, DType.float32, M, N](
-        m
-    )
-
-
 fn main():
     test_micro_kernel[DType.float32, DType.float32, DType.float32](M, N, K)
+    test_micro_kernel[DType.uint8, DType.int8, DType.int32](M, N, K)
+    test_micro_kernel[
+        DType.uint8, DType.int8, DType.int32, saturated_vnni=True
+    ](M, N, K)
 
     # TODO(30525): Re-enable after we resolve llvm lowering issues.
     @parameter

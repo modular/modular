@@ -680,21 +680,11 @@ struct LoadStoreOutputTile[
 
 
 struct MatmulInnerLoopBPacked[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_b: Bool,
-    packed_shape: DimList,
-    simd_size: Int,
+    config: MatmulConfig,
     a_row_size: Int,
     pack_inner_size: Int,
     # Skip the output c space boundary check if True.
     skip_boundary_check: Bool,
-    prefetch_b_distance: Int,
-    saturated_vnni: Bool,
     single_row_i8mm: Bool = False,
 ]:
     """Inner loop implementation for mlas-style tiled matmul. Accumulates a
@@ -703,9 +693,9 @@ struct MatmulInnerLoopBPacked[
 
     # Parameters for global reference.
     var c_stride: Int
-    var c_ptr: DTypePointer[c_type]
-    var a: NDBuffer[a_type, 2, a_shape]
-    var b_packed: NDBuffer[b_type, 3, packed_shape]
+    var c_ptr: DTypePointer[config.c_type]
+    var a: NDBuffer[config.a_type, 2, config.a_shape]
+    var b_packed: NDBuffer[config.b_type, 3, config.packed_shape]
     # 3D global offset within the whole matmul problem space.
     var global_offset: GemmShape
     # Dynamic tiling parameter for this inner loop
@@ -715,14 +705,14 @@ struct MatmulInnerLoopBPacked[
     #  local tile, in (a_row_size, TileN).
     var c_bound: StaticIntTuple[2]
 
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    alias use_vnni = use_vnni_fn[config.a_type, config.b_type, config.c_type]()
+    alias use_i8mm = use_i8mm_fn[config.a_type, config.b_type, config.c_type]()
 
     fn __init__(
         inout self,
-        c: NDBuffer[c_type, 2, c_shape],
-        a: NDBuffer[a_type, 2, a_shape],
-        b_packed: NDBuffer[b_type, 3, packed_shape],
+        c: NDBuffer[config.c_type, 2, config.c_shape],
+        a: NDBuffer[config.a_type, 2, config.a_shape],
+        b_packed: NDBuffer[config.b_type, 3, config.packed_shape],
         global_offset: GemmShape,
         tile_n_k: StaticIntTuple[2],
         c_bound: StaticIntTuple[2],
@@ -739,9 +729,9 @@ struct MatmulInnerLoopBPacked[
 
     @staticmethod
     fn run(
-        c: NDBuffer[c_type, 2, c_shape],
-        a: NDBuffer[a_type, 2, a_shape],
-        b_packed: NDBuffer[b_type, 3, packed_shape],
+        c: NDBuffer[config.c_type, 2, config.c_shape],
+        a: NDBuffer[config.a_type, 2, config.a_shape],
+        b_packed: NDBuffer[config.b_type, 3, config.packed_shape],
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: StaticIntTuple[2],
@@ -771,7 +761,7 @@ struct MatmulInnerLoopBPacked[
     fn _initialize_c_tile(
         self,
         c_local: NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
         ],
@@ -787,19 +777,20 @@ struct MatmulInnerLoopBPacked[
         @parameter
         fn outer_body[idx0: Int, idx1: Int]():
             c_local.store[
-                width=simd_size, alignment = alignof[SIMD[c_type, simd_size]]()
+                width = config.simd_size,
+                alignment = alignof[SIMD[config.c_type, config.simd_size]](),
             ](
-                Index(idx0, idx1 * simd_size),
-                SIMD[c_type, simd_size](0),
+                Index(idx0, idx1 * config.simd_size),
+                SIMD[config.c_type, config.simd_size](0),
             )
 
-        unroll[outer_body, a_row_size, pack_inner_size // simd_size]()
+        unroll[outer_body, a_row_size, pack_inner_size // config.simd_size]()
 
     @always_inline
     fn _load_c_tile(
         self,
         c_local: NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
         ],
@@ -822,7 +813,7 @@ struct MatmulInnerLoopBPacked[
             @always_inline
             @parameter
             fn body_i8mm[idx0: Int, idx1: Int]():
-                var c_data: SIMD[c_type, simd_size] = 0
+                var c_data: SIMD[config.c_type, config.simd_size] = 0
                 if skip_boundary_check or (
                     idx1 * 2 + 2 <= self.c_bound[1] - tile_n_idx
                 ):
@@ -831,8 +822,10 @@ struct MatmulInnerLoopBPacked[
                     )
                     var t1 = c_ptr.load[width=2](
                         self.c_stride * (2 * idx0 + 1) + 2 * idx1
-                    ) if not single_row_i8mm else SIMD[c_type, 2](0)
-                    c_data = rebind[SIMD[c_type, simd_size]](t0.join(t1))
+                    ) if not single_row_i8mm else SIMD[config.c_type, 2](0)
+                    c_data = rebind[SIMD[config.c_type, config.simd_size]](
+                        t0.join(t1)
+                    )
                 elif idx1 * 2 <= self.c_bound[1]:
                     var t0 = partial_simd_load[2](
                         c_ptr.offset(self.c_stride * (2 * idx0 + 0) + 2 * idx1),
@@ -845,23 +838,29 @@ struct MatmulInnerLoopBPacked[
                         0,
                         self.c_bound[1] - tile_n_idx - idx1 * 2,
                         0,
-                    ) if not single_row_i8mm else SIMD[c_type, 2](0)
-                    c_data = rebind[SIMD[c_type, simd_size]](t0.join(t1))
+                    ) if not single_row_i8mm else SIMD[config.c_type, 2](0)
+                    c_data = rebind[SIMD[config.c_type, config.simd_size]](
+                        t0.join(t1)
+                    )
 
                 # Store data to local buffer.
-                c_local.store[width=simd_size](
-                    Index(idx0, idx1 * simd_size),
-                    rebind[SIMD[c_type, simd_size]](c_data),
+                c_local.store[width = config.simd_size](
+                    Index(idx0, idx1 * config.simd_size),
+                    rebind[SIMD[config.c_type, config.simd_size]](c_data),
                 )
 
-            unroll[body_i8mm, a_row_size, pack_inner_size // simd_size]()
+            unroll[body_i8mm, a_row_size, pack_inner_size // config.simd_size]()
             return
 
         @parameter
         if has_neon():
             self._initialize_c_tile(c_local)
             return LoadStoreOutputTile[
-                c_type, simd_size, a_row_size, pack_inner_size, True
+                config.c_type,
+                config.simd_size,
+                a_row_size,
+                pack_inner_size,
+                True,
             ].run(
                 c_local,
                 c_ptr,
@@ -872,19 +871,22 @@ struct MatmulInnerLoopBPacked[
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
-            var c_data: SIMD[c_type, simd_size] = 0
+            var c_data: SIMD[config.c_type, config.simd_size] = 0
             if skip_boundary_check or (
-                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_n_idx
+                idx1 * config.simd_size + config.simd_size
+                <= self.c_bound[1] - tile_n_idx
             ):
                 # Use simd load if all within bound
-                c_data = c_ptr.load[width=simd_size](idx1 * simd_size)
-            elif idx1 * simd_size <= self.c_bound[1]:
+                c_data = c_ptr.load[width = config.simd_size](
+                    idx1 * config.simd_size
+                )
+            elif idx1 * config.simd_size <= self.c_bound[1]:
                 # Use partial load if row inbound but col not
                 #  in simd bound.
-                c_data = partial_simd_load[simd_size](
-                    c_ptr.offset(idx1 * simd_size),
+                c_data = partial_simd_load[config.simd_size](
+                    c_ptr.offset(idx1 * config.simd_size),
                     0,
-                    self.c_bound[1] - tile_n_idx - idx1 * simd_size,
+                    self.c_bound[1] - tile_n_idx - idx1 * config.simd_size,
                     0,
                 )
             else:
@@ -892,19 +894,19 @@ struct MatmulInnerLoopBPacked[
                 c_data = 0
 
             # Store data to local buffer.
-            c_local.store(Index(idx0, idx1 * simd_size), c_data)
+            c_local.store(Index(idx0, idx1 * config.simd_size), c_data)
 
             @parameter
-            if idx1 == pack_inner_size // simd_size - 1:
+            if idx1 == pack_inner_size // config.simd_size - 1:
                 c_ptr = c_ptr.offset(self.c_stride)
 
-        unroll[body, a_row_size, pack_inner_size // simd_size]()
+        unroll[body, a_row_size, pack_inner_size // config.simd_size]()
 
     @always_inline
     fn _store_c_tile(
         self,
         c_local: NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
         ],
@@ -925,8 +927,8 @@ struct MatmulInnerLoopBPacked[
             @always_inline
             @parameter
             fn body_i8mm[idx0: Int, idx1: Int]():
-                var c_data = c_local.load[width=simd_size](
-                    Index(idx0, idx1 * simd_size)
+                var c_data = c_local.load[width = config.simd_size](
+                    Index(idx0, idx1 * config.simd_size)
                 )
                 if skip_boundary_check or (
                     idx1 * 2 + 2 <= self.c_bound[1] - tile_n_idx
@@ -959,13 +961,17 @@ struct MatmulInnerLoopBPacked[
                             c_data.slice[2, offset=2](),
                         )
 
-            unroll[body_i8mm, a_row_size, pack_inner_size // simd_size]()
+            unroll[body_i8mm, a_row_size, pack_inner_size // config.simd_size]()
             return
 
         @parameter
         if has_neon():
             return LoadStoreOutputTile[
-                c_type, simd_size, a_row_size, pack_inner_size, False
+                config.c_type,
+                config.simd_size,
+                a_row_size,
+                pack_inner_size,
+                False,
             ].run(
                 c_local,
                 c_ptr,
@@ -976,35 +982,38 @@ struct MatmulInnerLoopBPacked[
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
-            var c_data = c_local.load[width=simd_size](
-                Index(idx0, idx1 * simd_size)
+            var c_data = c_local.load[width = config.simd_size](
+                Index(idx0, idx1 * config.simd_size)
             )
             if skip_boundary_check or (
-                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_n_idx
+                idx1 * config.simd_size + config.simd_size
+                <= self.c_bound[1] - tile_n_idx
             ):
                 # Use simd store if all within bound
-                c_ptr.offset(idx1 * simd_size).store[width=simd_size](c_data)
-            elif idx1 * simd_size <= self.c_bound[1]:
+                c_ptr.offset(idx1 * config.simd_size).store[
+                    width = config.simd_size
+                ](c_data)
+            elif idx1 * config.simd_size <= self.c_bound[1]:
                 # Use partial store if col not in simd bound.
                 partial_simd_store(
-                    c_ptr.offset(idx1 * simd_size),
+                    c_ptr.offset(idx1 * config.simd_size),
                     0,
-                    self.c_bound[1] - tile_n_idx - idx1 * simd_size,
+                    self.c_bound[1] - tile_n_idx - idx1 * config.simd_size,
                     c_data,
                 )
 
             @parameter
-            if idx1 == pack_inner_size // simd_size - 1:
+            if idx1 == pack_inner_size // config.simd_size - 1:
                 c_ptr = c_ptr.offset(self.c_stride)
 
-        unroll[body, a_row_size, pack_inner_size // simd_size]()
+        unroll[body, a_row_size, pack_inner_size // config.simd_size]()
 
     fn _accumulate[
         a_col_size: Int
     ](
         self,
         c_local: NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
         ],
@@ -1031,12 +1040,12 @@ struct MatmulInnerLoopBPacked[
 
         # Prefetch B matrix.
         @parameter
-        if prefetch_b_distance > 0:
-            alias prefetch_offset = prefetch_b_distance * pack_inner_size
+        if config.prefetch_b_distance_k > 0:
+            alias prefetch_offset = config.prefetch_b_distance_k * pack_inner_size
 
             @unroll
-            for idx in range(pack_inner_size // simd_size):
-                b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
+            for idx in range(pack_inner_size // config.simd_size):
+                b_ptr.offset(prefetch_offset + idx * config.simd_size).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
 
@@ -1048,18 +1057,22 @@ struct MatmulInnerLoopBPacked[
         for idx0 in range(a_row_size):
 
             @unroll
-            for idx1 in range(pack_inner_size // simd_size):
-                var c_idx = Index(idx0, idx1 * simd_size)
-                var a_val = a_ptr[idx0 * K].cast[c_type]()
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
-                var c_val = c_local.load[width=simd_size, alignment=alignment](
-                    c_idx
+            for idx1 in range(pack_inner_size // config.simd_size):
+                var c_idx = Index(idx0, idx1 * config.simd_size)
+                var a_val = a_ptr[idx0 * K].cast[config.c_type]()
+                alias alignment = alignof[
+                    SIMD[config.c_type, config.simd_size]
+                ]()
+                var c_val = c_local.load[
+                    width = config.simd_size, alignment=alignment
+                ](c_idx)
+                var b_val = b_ptr.load[
+                    width = config.simd_size, alignment=alignment
+                ](idx1 * config.simd_size).cast[config.c_type]()
+                c_val = fma[config.c_type, config.simd_size](
+                    a_val, b_val, c_val
                 )
-                var b_val = b_ptr.load[width=simd_size, alignment=alignment](
-                    idx1 * simd_size
-                ).cast[c_type]()
-                c_val = fma[c_type, simd_size](a_val, b_val, c_val)
-                c_local.store[width=simd_size, alignment=alignment](
+                c_local.store[width = config.simd_size, alignment=alignment](
                     c_idx, c_val
                 )
 
@@ -1068,7 +1081,7 @@ struct MatmulInnerLoopBPacked[
     ](
         self,
         c_local: NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
         ],
@@ -1090,18 +1103,20 @@ struct MatmulInnerLoopBPacked[
         var global_k = self.global_offset.K + kl
         var b_ptr = self.b_packed._offset(
             Index(n_outer_idx, kl // 4, 0)
-        ).bitcast[c_type]()
+        ).bitcast[config.c_type]()
 
         @parameter
         if not is_tail:
             # Prefetch B matrix.
             @parameter
-            if prefetch_b_distance > 0:
-                alias prefetch_offset = prefetch_b_distance * pack_inner_size
+            if config.prefetch_b_distance_k > 0:
+                alias prefetch_offset = config.prefetch_b_distance_k * pack_inner_size
 
                 @unroll
-                for idx in range(pack_inner_size // simd_size):
-                    b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
+                for idx in range(pack_inner_size // config.simd_size):
+                    b_ptr.offset(
+                        prefetch_offset + idx * config.simd_size
+                    ).prefetch[
                         PrefetchOptions()
                         .for_read()
                         .high_locality()
@@ -1111,7 +1126,7 @@ struct MatmulInnerLoopBPacked[
         # This inner kernels works with non-transposed A.
         var K = self.a.dim(1)
 
-        var a_local = Buffer[a_type, 4 * a_row_size].stack_allocation()
+        var a_local = Buffer[config.a_type, 4 * a_row_size].stack_allocation()
         var a_base_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
         var a_ptr = a_local.data if (
             is_tail and not has_avx512f()
@@ -1134,43 +1149,54 @@ struct MatmulInnerLoopBPacked[
         for idx0 in range(a_row_size):
 
             @unroll
-            for idx1 in range(pack_inner_size // simd_size):
+            for idx1 in range(pack_inner_size // config.simd_size):
                 # width K bytes or K/4 ints, a_ptr is pointer to ints
-                var a_val = bitcast[c_type, 1](
+                var a_val = bitcast[config.c_type, 1](
                     partial_simd_load[4](
                         a_ptr.offset(idx0 * a_ptr_stride), 0, tail_length, 0
                     )
                 ) if (is_tail and has_avx512f()) else a_ptr.offset(
                     idx0 * a_ptr_stride
                 ).bitcast[
-                    c_type
+                    config.c_type
                 ]().load()
 
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
-                var c_idx = Index(idx0, idx1 * simd_size)
-                var c_val = c_local.load[width=simd_size, alignment=alignment](
-                    c_idx
-                )
+                alias alignment = alignof[
+                    SIMD[config.c_type, config.simd_size]
+                ]()
+                var c_idx = Index(idx0, idx1 * config.simd_size)
+                var c_val = c_local.load[
+                    width = config.simd_size, alignment=alignment
+                ](c_idx)
 
-                var b_val = b_ptr.offset(idx1 * simd_size).load[
-                    width=simd_size, alignment=alignment
+                var b_val = b_ptr.offset(idx1 * config.simd_size).load[
+                    width = config.simd_size, alignment=alignment
                 ]()
 
                 @parameter
                 if has_neon_int8_dotprod():
-                    var a_val2 = SIMD[c_type, simd_size].splat(a_val)
-                    c_val = _neon_dotprod[a_type, b_type, c_type, simd_size](
-                        c_val,
-                        bitcast[a_type, 16](a_val2),
-                        bitcast[b_type, 16](b_val),
+                    var a_val2 = SIMD[config.c_type, config.simd_size].splat(
+                        a_val
                     )
-                elif saturated_vnni:
-                    c_val = dot_i8_to_i32_saturated_x86[simd_size](
+                    c_val = _neon_dotprod[
+                        config.a_type,
+                        config.b_type,
+                        config.c_type,
+                        config.simd_size,
+                    ](
+                        c_val,
+                        bitcast[config.a_type, 16](a_val2),
+                        bitcast[config.b_type, 16](b_val),
+                    )
+                elif config.saturated_vnni:
+                    c_val = dot_i8_to_i32_saturated_x86[config.simd_size](
                         c_val, a_val, b_val
                     )
                 else:
-                    c_val = dot_i8_to_i32_x86[simd_size](c_val, a_val, b_val)
-                c_local.store[width=simd_size, alignment=alignment](
+                    c_val = dot_i8_to_i32_x86[config.simd_size](
+                        c_val, a_val, b_val
+                    )
+                c_local.store[width = config.simd_size, alignment=alignment](
                     c_idx, c_val
                 )
 
@@ -1185,10 +1211,12 @@ struct MatmulInnerLoopBPacked[
 
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
-        ].aligned_stack_allocation[alignof[SIMD[c_type, simd_size]]()]()
+        ].aligned_stack_allocation[
+            alignof[SIMD[config.c_type, config.simd_size]]()
+        ]()
 
         for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
             # Initialize accumulation buffer
@@ -1215,10 +1243,12 @@ struct MatmulInnerLoopBPacked[
         constrained[not Self.use_vnni and not has_neon()]()
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
-        ].aligned_stack_allocation[alignof[SIMD[c_type, simd_size]]()]()
+        ].aligned_stack_allocation[
+            alignof[SIMD[config.c_type, config.simd_size]]()
+        ]()
 
         for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
             # Initialize accumulation buffer
@@ -1241,7 +1271,7 @@ struct MatmulInnerLoopBPacked[
     ](
         self,
         c_local: NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
         ],
@@ -1266,13 +1296,15 @@ struct MatmulInnerLoopBPacked[
             Index(n_outer_idx, tile_n_k_idx[1], 0)
         )
 
-        var a_vals = stack_allocation[a_row_size, SIMD[c_type, a_col_size]]()
+        var a_vals = stack_allocation[
+            a_row_size, SIMD[config.c_type, a_col_size]
+        ]()
 
         @unroll
         for row in range(a_row_size):
             var global_m = self.global_offset.M + row
             var a_val = self.a.load[width=a_col_size](global_m, global_k).cast[
-                c_type
+                config.c_type
             ]()
             a_vals[row] = a_val
 
@@ -1280,18 +1312,20 @@ struct MatmulInnerLoopBPacked[
         for lane in range(a_col_size):
 
             @unroll
-            for col in range(pack_inner_size // simd_size):
-                var b_val = b_ptr.offset(col * simd_size).load[
-                    width=simd_size
-                ]().cast[c_type]()
+            for col in range(pack_inner_size // config.simd_size):
+                var b_val = b_ptr.offset(col * config.simd_size).load[
+                    width = config.simd_size
+                ]().cast[config.c_type]()
 
                 @unroll
                 for row in range(a_row_size):
                     var a_val = a_vals[row]
-                    var c_idx = Index(row, col * simd_size)
-                    var c_val = c_local.load[width=simd_size](c_idx)
-                    c_val = fma[c_type, simd_size](a_val[lane], b_val, c_val)
-                    c_local.store[width=simd_size](c_idx, c_val)
+                    var c_idx = Index(row, col * config.simd_size)
+                    var c_val = c_local.load[width = config.simd_size](c_idx)
+                    c_val = fma[config.c_type, config.simd_size](
+                        a_val[lane], b_val, c_val
+                    )
+                    c_local.store[width = config.simd_size](c_idx, c_val)
 
             b_ptr = b_ptr.offset(pack_inner_size)
 
@@ -1302,10 +1336,12 @@ struct MatmulInnerLoopBPacked[
         constrained[has_neon() and not Self.use_vnni and not Self.use_i8mm]()
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
-        ].aligned_stack_allocation[alignof[SIMD[c_type, simd_size]]()]()
+        ].aligned_stack_allocation[
+            alignof[SIMD[config.c_type, config.simd_size]]()
+        ]()
 
         for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
             # Initialize accumulation buffer
@@ -1315,9 +1351,13 @@ struct MatmulInnerLoopBPacked[
             else:
                 self._load_c_tile(c_local, idx_n)
 
-            var partition_end = simd_size * (self.tile_n_k[1] // simd_size)
-            for idx_k0 in range(0, partition_end, simd_size):
-                self._accumulate_lane[simd_size](c_local, Index(idx_n, idx_k0))
+            var partition_end = config.simd_size * (
+                self.tile_n_k[1] // config.simd_size
+            )
+            for idx_k0 in range(0, partition_end, config.simd_size):
+                self._accumulate_lane[config.simd_size](
+                    c_local, Index(idx_n, idx_k0)
+                )
 
             for idx_k1 in range(partition_end, self.tile_n_k[1]):
                 # accumulate data for this (n, k) index
@@ -1328,7 +1368,7 @@ struct MatmulInnerLoopBPacked[
     fn _accumulate_i8mm(
         self,
         c_local: NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
         ],
@@ -1354,12 +1394,12 @@ struct MatmulInnerLoopBPacked[
 
         # Prefetch B matrix.
         @parameter
-        if prefetch_b_distance > 0:
-            alias prefetch_offset = prefetch_b_distance * pack_inner_size
+        if config.prefetch_b_distance_k > 0:
+            alias prefetch_offset = config.prefetch_b_distance_k * pack_inner_size
 
             @unroll
-            for idx in range(pack_inner_size // simd_size):
-                b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
+            for idx in range(pack_inner_size // config.simd_size):
+                b_ptr.offset(prefetch_offset + idx * config.simd_size).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
 
@@ -1368,18 +1408,20 @@ struct MatmulInnerLoopBPacked[
         for idx0 in range(a_row_size):
 
             @unroll
-            for idx1 in range(pack_inner_size // simd_size):
-                alias alignment = alignof[SIMD[c_type, simd_size]]()
+            for idx1 in range(pack_inner_size // config.simd_size):
+                alias alignment = alignof[
+                    SIMD[config.c_type, config.simd_size]
+                ]()
                 var a_val = a_ptr.load[width=16](2 * idx0 * K)
                 var b_val = b_ptr.offset(16 * idx1).load[
                     width=16, alignment=alignment
                 ]()
                 var c_idx = Index(idx0, 4 * idx1)
-                var c_val = c_local.load[width=simd_size, alignment=alignment](
-                    c_idx
-                )
+                var c_val = c_local.load[
+                    width = config.simd_size, alignment=alignment
+                ](c_idx)
                 c_val = _neon_matmul(c_val, a_val, b_val)
-                c_local.store[width=simd_size, alignment=alignment](
+                c_local.store[width = config.simd_size, alignment=alignment](
                     c_idx, c_val
                 )
 
@@ -1391,10 +1433,12 @@ struct MatmulInnerLoopBPacked[
 
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
-            c_type,
+            config.c_type,
             2,
             DimList(a_row_size, pack_inner_size),
-        ].aligned_stack_allocation[alignof[SIMD[c_type, simd_size]]()]()
+        ].aligned_stack_allocation[
+            alignof[SIMD[config.c_type, config.simd_size]]()
+        ]()
 
         for idx_n in range(0, self.tile_n_k[0], pack_inner_size // 2):
             if self.global_offset.K == 0:
@@ -1608,20 +1652,10 @@ struct TiledMatmul[
                 alias tile_size2 = 2 if tile_size == 1 else tile_size
                 alias a_row_size = tile_size2 // 2 if config.use_i8mm else tile_size
                 MatmulInnerLoopBPacked[
-                    config.a_type,
-                    config.a_shape,
-                    config.b_type,
-                    config.b_shape,
-                    config.c_type,
-                    config.c_shape,
-                    config.transpose_b,
-                    config.packed_shape,
-                    config.simd_size,
+                    config,
                     a_row_size,
                     m_loop_pack_inner_size,
                     skip_col_bound,
-                    config.prefetch_b_distance_k,
-                    config.saturated_vnni,
                     tile_size == 1,
                 ].run(
                     self.c,
