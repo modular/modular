@@ -667,7 +667,6 @@ static ParseResult parseLITFunctionSignature(
 }
 
 static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
-                                      ArrayRef<StringAttr> argNames,
                                       ArrayRef<ParamDeclAttr> params,
                                       FunctionType functionType,
                                       LITSignatureType signature) {
@@ -702,7 +701,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     // If different from the SSA name (e.g. because it was uniqued, or because
     // it contains characters that need escaping), we also print the
     // user-defined argument name in brackets.
-    StringAttr argName = argNames[i];
+    StringAttr argName = signature.getArgName(i);
     if (StringRef(ssaName).drop_front() != argName) {
       p << "[";
       printParamName(p, argName);
@@ -819,8 +818,8 @@ void LIT::FuncOp::print(OpAsmPrinter &p) {
     p.printSymbolName(*getSymName());
 
   // Print the function arguments. Here we need all the use defined names.
-  printLITFunctionSignature(p, &getBodyRegion(), getSignature().getArgNames(),
-                            getParams(), getFunctionType(), getSignature());
+  printLITFunctionSignature(p, &getBodyRegion(), getParams(), getFunctionType(),
+                            getSignature());
   printOptionalInline(p, getInlineLevel());
   printOptionalDecorators(p, *this, getDecorators());
 
@@ -844,9 +843,8 @@ void LIT::FuncOp::getAsmBlockArgumentNames(
     return;
 
   // Set a name for each argument.
-  for (auto [arg, name] :
-       llvm::zip(getBody()->getArguments(), getSignature().getArgNames()))
-    setNameFn(arg, name.strref());
+  for (auto [idx, arg] : llvm::enumerate(getBody()->getArguments()))
+    setNameFn(arg, getSignature().getArgName(idx).strref());
 }
 
 LogicalResult LIT::FuncOp::verify() {

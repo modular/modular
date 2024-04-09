@@ -631,7 +631,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
          llvm::enumerate(sig.getArguments(), sig.getArgConventions(),
                          sig.getArgNames(), sig.getArgPassingKinds())) {
       ASTType type = typeX;
-      auto convention = conventionX;
+      ArgConvention convention = conventionX;
       if (SignatureType::isResultSlot(convention))
         continue; // Don't print result in argument list.
 

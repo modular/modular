@@ -201,8 +201,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     llvm_unreachable("none convention not permitted in lit");
   }
 
-  ArrayRef<StringAttr> argNames = signature.getArgNames();
-  name = argNames[argIdx];
+  name = signature.getArgName(argIdx);
   if (name.empty()) {
     name = StringAttr::get(v.getContext(), "(positional-only argument # " +
                                                Twine(argIdx) + ")");

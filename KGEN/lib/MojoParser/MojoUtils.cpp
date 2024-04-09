@@ -161,7 +161,7 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
 
   // Allow signature types to be converted for free if they differ only in
   // argument names, parameter names, or implicit lifetimes.
-  if (from.getArgNames().size() != to.getArgNames().size())
+  if (from.getNumArguments() != to.getNumArguments())
     return false;
   if (from.getNumParams() != to.getNumParams())
     return false;
