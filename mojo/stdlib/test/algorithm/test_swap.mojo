@@ -58,31 +58,23 @@ def test_swap_Tuple_Int():
     assert_equal(b.get[3](), 4)
 
 
-# TODO: We can not implement this test because Tuple currently can not bind to
-# memory types -- like String. In addition, Tuple does not support equality
-# comparison which requires us to manually unpack compare individual tuple
-# elements.
-#
-# https://github.com/modularml/modular/issues/27660
-#
-#  def test_swap_Tuple_Mixed():
-#
-#      var a = (1,"Hello",3)
-#      var b = (4,"World",6)
-#
-#      swap(a, b)
-#
-#      assert_equal(a.get[0, Int](), 4)
-#      assert_equal(a.get[1, String](), "World")
-#      assert_equal(a.get[2, Int](), 6)
-#
-#      assert_equal(b.get[0, Int](), 1)
-#      assert_equal(b.get[1, String](), "Hello")
-#      assert_equal(b.get[2, Int](), 3)
+def test_swap_Tuple_Mixed():
+    var a = (1, String("Hello"), 3)
+    var b = (4, String("World"), 6)
+
+    swap(a, b)
+
+    assert_equal(a.get[0](), 4)
+    assert_equal(a.get[1](), "World")
+    assert_equal(a.get[2](), 6)
+
+    assert_equal(b.get[0](), 1)
+    assert_equal(b.get[1](), "Hello")
+    assert_equal(b.get[2](), 3)
 
 
 def main():
     test_swap_Int()
     test_swap_String()
     test_swap_Tuple_Int()
-    #  test_swap_Tuple_Mixed()
+    test_swap_Tuple_Mixed()
