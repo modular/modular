@@ -101,25 +101,6 @@ static LogicalResult verifyScope(InlinedSubprogramScoped inlined,
   return inlined->emitOpError("must have callsite location");
 }
 
-/// Recursively look for debug info in this location
-static bool hasDebugInfo(Location loc) {
-  bool debInfo = false;
-  loc->walk([&](Location l) {
-    if (isa<DIScopeAttr, DISubprogramAttr>(l)) {
-      debInfo = true;
-      return mlir::WalkResult::interrupt();
-    }
-    if (auto fused = dyn_cast<mlir::FusedLoc>(l);
-        fused && fused.getMetadata() &&
-        isa<DIScopeAttr, DISubprogramAttr>(fused.getMetadata())) {
-      debInfo = true;
-      return mlir::WalkResult::interrupt();
-    }
-    return mlir::WalkResult::advance();
-  });
-  return debInfo;
-}
-
 LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
   Location funcLoc = op->getLoc();
   auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(funcLoc);
@@ -127,7 +108,7 @@ LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
     // If the function doesn't contain a debuginfo scope, we don't need to
     // verify anything. Named locations indicate that we are dealing with some
     // external location, which may not comply with our rules.
-    if (hasDebugInfo(funcLoc)) {
+    if (funcLoc->findInstanceOf<mlir::FusedLocWith<DIScopeAttr>>()) {
       return op.emitOpError("without debuginfo scope must contain only "
                             "file/line/col location but it is ")
              << funcLoc;
