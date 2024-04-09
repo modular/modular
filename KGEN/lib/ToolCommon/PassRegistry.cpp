@@ -6,7 +6,6 @@
 
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/MOGGPreElab/Passes.h"
-#include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"

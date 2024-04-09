@@ -21,6 +21,7 @@ class Runtime;
 } // namespace M::LLCL
 
 namespace M::KGEN {
+class PackageLinkOp;
 
 //===----------------------------------------------------------------------===//
 // populateElaborateModulePasses
@@ -33,13 +34,11 @@ void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
                                    TargetInfoAttr target,
                                    const CompilationOptions &options,
-                                   EvaluatorExecutorFn evaluatorExecutorFn,
-                                   PackageGenLibraryFn packageGenLibraryFn);
+                                   EvaluatorExecutorFn evaluatorExecutorFn);
 void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
                                    TargetInfoAttr target,
-                                   const CompilationOptions &options,
-                                   PackageGenLibraryFn packageGenLibraryFn);
+                                   const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
 // Caching
@@ -74,8 +73,7 @@ public:
 
   /// Add a module to the JIT. This module will be modified in-place as
   /// compilation occurs, and will be forwarded to the ObjectCompilerLayer.
-  ErrorOrSuccess add(StringRef libName, ModuleOp theModule,
-                     PackageGenLibraryFn packageGenLibraryFn);
+  ErrorOrSuccess add(StringRef libName, ModuleOp theModule);
 
   /// Given a library name and a module, emit the code for it. This runs
   /// the passes in `populateElaborateModulePasses` and calls `emit` on the
@@ -139,6 +137,32 @@ initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
                           KGEN::ExecutionEngineOptions executionEngineOptions,
                           bool isJIT, TargetInfoAttr target,
                           bool isSearch = false);
+
+/// Loads the serialized MLIR bytecode representing a post-parser module in
+/// `bytecodeAttr`, and prepare to link it directly into another module. Returns
+/// the module if successful, or an error.
+ErrorOr<OwningOpRef<ModuleOp>> specializeModuleForPreElaborationLinking(
+    DenseResourceElementsAttr bytecodeAttr, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &compileOptions);
+
+/// Loads the serialized MLIR bytecode representing a post-parser module in
+/// `packageLink`, and prepare to link it directly into another module.
+ErrorOr<DenseResourceElementsAttr>
+specializePackageLinkForPreElaborationLinking(
+    PackageLinkOp packageLink, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &compileOptions);
+
+/// This creates the materialize packages pass with the default library
+/// generation pipeline, i.e. `specializePackageLinkForPreElaborationLinking`.
+std::unique_ptr<Pass>
+createMaterializePackagesWithDefaultGen(LLCL::Runtime &runtime,
+                                        const CompilationOptions &options);
+
+/// Create an instance of the elaborator pass using the given configuration.
+/// The created elaborator pass uses a default specialization executor that
+/// JITs and executes in-process.
+std::unique_ptr<Pass>
+createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime);
 
 } // namespace M::KGEN
 

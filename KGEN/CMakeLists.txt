@@ -48,7 +48,6 @@ add_subdirectory(lib/CompilerRT)
 add_subdirectory(lib/ExecutionEngine)
 add_subdirectory(lib/ObjectCompiler)
 add_subdirectory(lib/Compiler)
-add_subdirectory(lib/Package)
 
 # Mojo frontend.
 add_subdirectory(lib/MojoParser)
