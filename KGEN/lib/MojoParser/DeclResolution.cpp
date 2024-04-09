@@ -1197,6 +1197,12 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   if (ParserBase(shared, lexer).parseSuite(decl))
     return failure();
 
+  // If this decl or a parent is erroneous, return before emitting.  There is no
+  // point to emitting after errors, and we might trip assertions because
+  // erroneous decls don't respect invariants.
+  if (decl.isErroneous() || decl.getParentDecl()->isErroneous())
+    return success();
+
   // Function body is empty if the body block is empty or the last operation in
   // the block is still the same as it was before parseSuite.
   bool emptyBody =

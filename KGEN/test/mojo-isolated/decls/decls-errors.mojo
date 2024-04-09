@@ -690,6 +690,23 @@ def useBadCtor():
     # a spurious error about HasBadCtor not being constructable from IntLiteral
     var fromBadCtor = HasBadCtor(123)
 
+struct NotRegisterPassable:
+    fn __init__(inout self):
+        pass
+
+# https://github.com/modularml/modular/issues/34551
+# Don't crash on emitting methods when the struct itself is erroneous.
+@value
+@register_passable
+struct Outer34551: # expected-error {{all members of '@register_passable' struct must themselves be '@register_passable'}}
+    var _inner: NotRegisterPassable # expected-note {{'_inner' declared with type 'NotRegisterPassable'}}
+    fn __init__(inout self):
+        self._inner = NotRegisterPassable()
+    # The key point of this test is that these errors break an invariant needed
+    # for emission, so previously it would crash while emitting this __del__.
+    fn __del__(owned self): # expected-error {{cannot transfer value into destination, because 'Outer34551' doesn't implement `__moveinit__`}}
+        _ = self._inner ^
+
 ##===----------------------------------------------------------------------===##
 # Traits
 ##===----------------------------------------------------------------------===##
