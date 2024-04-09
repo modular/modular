@@ -519,7 +519,7 @@ struct InferenceSession:
         self, graph: Graph, config: Optional[LoadOptions] = None
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
-           [`Module`](/engine/reference/mojo/graph/module#module) and config.
+           [`Graph`](/engine/reference/mojo/graph/graph#graph) and config.
 
         Args:
             graph: MAX Graph.
