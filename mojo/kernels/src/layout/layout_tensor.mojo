@@ -1050,3 +1050,31 @@ fn warp_copy_sram_to_local[
     else:
         var src_fragments = src.distribute[src_warp_layout](lane_id)
         dst.copy_from_numa(src_fragments)
+
+
+# Copy local memory to DRAM, thread affinity is needed only for dst fragments.
+#
+@always_inline
+fn copy_local_to_dram[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
+    dst_thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+](
+    dst: LayoutTensor[
+        dst_layout,
+        dtype,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=dst_element_layout,
+    ],
+    src: LayoutTensor[
+        src_layout,
+        dtype,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=src_element_layout,
+    ],
+):
+    var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
+    dst_framgents.copy_from_numa(src)
