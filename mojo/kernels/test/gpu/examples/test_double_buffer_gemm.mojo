@@ -38,6 +38,7 @@ from layout.layout_tensor import (
     LayoutTensor,
     outer_product_acc,
     copy_dram_to_sram_async,
+    warp_copy_sram_to_local,
 )
 from gpu.device_print import _printf
 from pathlib import Path
@@ -185,18 +186,16 @@ fn sgemm_double_buffer[
     # Load A fragments to the first buffer.
     var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
     var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
-    var thread_loada_smem_frags = a_smem_warp_row.vectorize[
-        simd_size
-    ]().distribute[thread_layout, axis=0](lane_id)
-    a_reg[0].vectorize[simd_size]().copy_from_numa(thread_loada_smem_frags)
+    warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
+        a_reg[0].vectorize[simd_size](), a_smem_warp_row.vectorize[simd_size]()
+    )
 
     # Load B fragments to the first buffer.
     var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
     var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
-    var thread_loadb_smem_frags = b_smem_warp_row.vectorize[
-        simd_size
-    ]().distribute[thread_layout, axis=1](lane_id)
-    b_reg[0].vectorize[simd_size]().copy_from_numa(thread_loadb_smem_frags)
+    warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
+        b_reg[0].vectorize[simd_size](), b_smem_warp_row.vectorize[simd_size]()
+    )
 
     var num_k_tiles = div_ceil(K, BK)
 
@@ -229,11 +228,9 @@ fn sgemm_double_buffer[
             var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](
                 next_k, 0
             ).coalesce()
-            var thread_loada_smem_frags = a_smem_warp_row.vectorize[
-                simd_size
-            ]().distribute[thread_layout, axis=0](lane_id)
-            a_reg[next_buffer_id].vectorize[simd_size]().copy_from_numa(
-                thread_loada_smem_frags
+            warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
+                a_reg[next_buffer_id].vectorize[simd_size](),
+                a_smem_warp_row.vectorize[simd_size](),
             )
 
             var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
@@ -245,6 +242,11 @@ fn sgemm_double_buffer[
             b_reg[next_buffer_id].vectorize[simd_size]().copy_from_numa(
                 thread_loadb_smem_frags
             )
+            # FIXME: Figure out why this drops perf by 4x.
+            # warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
+            #     b_reg[next_buffer_id].vectorize[simd_size](),
+            #     b_smem_warp_row.vectorize[simd_size](),
+            # )
 
             # Load next k tile from global memory to shared memory.
             if k == 0 and k_tile_id < num_k_tiles - 1:
