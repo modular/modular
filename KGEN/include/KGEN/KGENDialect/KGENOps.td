@@ -1127,7 +1127,7 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
   let summary = "link to a precompiled package's artifacts";
   let description = [{
     A `kgen.package.link` defines a link to the compiled artifacts of a package.
-    It contains a reference to all precompiled archives, providing an anchor for
+    It contains a reference to all precompiled packages, providing an anchor for
     functions and other operations defined within the package during the
     lowering pipeline. It may also contain the post-parse and pre-elaboration
     bodies which can be used to compile the package if none of the precompiled
@@ -1151,9 +1151,7 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
   let arguments = (ins
     SymbolNameAttr:$sym_name,
     OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule,
-
-    KGEN_EnvAttr:$compiledEnv
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$preElaborationModule
   );
 
   let assemblyFormat = [{

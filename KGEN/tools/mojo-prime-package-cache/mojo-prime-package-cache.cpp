@@ -83,8 +83,7 @@ primeCacheForPackage(KGEN::LIT::PackageOp packageOp, TargetInfoAttr targetInfo,
       builder.create<KGEN::PackageLinkOp>(
           packageOp->getLoc(), packageOp.getNameAttr(),
           packageOp.getPostParseModuleAttr(),
-          /*preElaborationModule=*/DenseResourceElementsAttr(),
-          packageOp.getCompiledEnvAttr());
+          /*preElaborationModule=*/DenseResourceElementsAttr());
 
   // First specialize the module up to the pre-elaboration phase.
   ErrorOr<DenseResourceElementsAttr> preElabOr =

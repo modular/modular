@@ -278,7 +278,6 @@ def LIT_PackageOp : LITOp<"package", [
 
     If the package was precompiled it may also contain:
     - The full post-parser IR module, `postParseModule`.
-    - The definitions used at compile time, `compiledEnv`.
     - Any and all precompiled, standalone archives of the package, `archives`.
 
     Example:
@@ -296,9 +295,7 @@ def LIT_PackageOp : LITOp<"package", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // The module containing the post-parser IR of this package when it was
     // compiled.
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
-
-    OptionalAttr<KGEN_EnvAttr>:$compiledEnv
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 

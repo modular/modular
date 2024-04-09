@@ -87,7 +87,7 @@ static bool canExternalize(LIT::FuncOp func) {
 /// package only contains stubs of the original package's contents, and is
 /// suitable for importing into other Mojo programs.
 static std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>
-buildPackageModule(LIT::PackageOp parsedPackageOp, EnvAttr env) {
+buildPackageModule(LIT::PackageOp parsedPackageOp) {
   OwningOpRef<ModuleOp> packageModule =
       ModuleOp::create(parsedPackageOp->getLoc());
   OpBuilder b(packageModule->getBody(), packageModule->getBody()->begin());
@@ -125,8 +125,6 @@ buildPackageModule(LIT::PackageOp parsedPackageOp, EnvAttr env) {
 
   // Clone the parsed package operation and push its ops onto the worklist.
   LIT::PackageOp thePackage = cloneWithoutRegions(parsedPackageOp);
-  thePackage.setCompiledEnvAttr(
-      KGEN::getModularEnvAttr(thePackage.getContext()).extend(env));
   pushOpsOntoWorklist(parsedPackageOp.getOps());
 
   auto packageName = FlatSymbolRefAttr::get(thePackage.getSymNameAttr());
@@ -242,8 +240,6 @@ struct PackageArgs {
   CompilationOptions compileOptions;
   /// The MLIR context used for compilation.
   mlir::MLIRContext ctx{MLIRContext::Threading::DISABLED};
-  /// A set of `-D` compile-time parameter definition.
-  EnvAttr env;
 };
 } // namespace
 
@@ -256,13 +252,6 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
     return Error("no input directory provided");
   if (args.hasMultipleArgs(options::OPT_INPUT))
     return Error("too many inputs, expected exactly one");
-
-  pkgArgs.ctx.loadDialect<KGENDialect>();
-  ErrorOr<EnvAttr> envOrErr =
-      EnvAttr::parseDefines(&pkgArgs.ctx, args.getAllArgValues(options::OPT_D));
-  if (failed(envOrErr))
-    return envOrErr.takeError();
-  pkgArgs.env = envOrErr.takeValue();
 
   // Reject input files that do not appear to be mojo package directories (this
   // includes stdin "-").
@@ -322,9 +311,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 static ErrorOr<std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>>
 buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, LLCL::Runtime &runtime) {
-  // Set up the package builder.
-  auto [packageModule, thePackage] =
-      buildPackageModule(parsedPackageOp, packageArgs.env);
+  auto [packageModule, thePackage] = buildPackageModule(parsedPackageOp);
 
   // For now we implicilty export everything in the package, so add exports to
   // the main module for the contents of the module.
@@ -335,7 +322,6 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   });
 
   // Attach the post-parse module to the package.
-  theModule->setAttr(EnvAttr::getEnvAttrName(), packageArgs.env);
   if (auto err = buildPostParseModule(theModule, thePackage))
     return Error(llvm::formatv("compilation failed: {0}", err.getError()));
 
@@ -395,9 +381,8 @@ static int package(const State &state) {
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
   auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, StringRef(state.subcommand),
-                      args, /*privateArgs=*/
-                      {options::OPT_D, options::OPT_I, options::OPT_o});
+  initializeTelemetry(telemetryCtx, StringRef(state.subcommand), args,
+                      /*privateArgs=*/{options::OPT_I, options::OPT_o});
 
   //===--------------------------------------------------------------------===//
   // Build the package
@@ -419,7 +404,7 @@ static int package(const State &state) {
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
       state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
       options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
-      options::OPT_D,
+      /*definesId=*/llvm::opt::OptSpecifier(),
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(

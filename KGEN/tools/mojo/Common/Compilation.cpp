@@ -197,14 +197,16 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   // Tag the module with the environment, which includes any definitions the
   // user may have specified on the command line.
   ctx->loadDialect<KGENDialect>();
-  ErrorOr<EnvAttr> envOrErr =
-      EnvAttr::parseDefines(ctx, args.getAllArgValues(definesId));
-  if (failed(envOrErr)) {
-    return Error(
-        llvm::formatv("an internal error occurred when initializing the Mojo "
-                      "MLIR module: {0}",
-                      envOrErr.getError()));
+  if (definesId.isValid()) {
+    ErrorOr<EnvAttr> envOrErr =
+        EnvAttr::parseDefines(ctx, args.getAllArgValues(definesId));
+    if (failed(envOrErr)) {
+      return Error(
+          llvm::formatv("an internal error occurred when initializing the Mojo "
+                        "MLIR module: {0}",
+                        envOrErr.getError()));
+    }
+    (*module)->setAttr(EnvAttr::getEnvAttrName(), *envOrErr);
   }
-  (*module)->setAttr(EnvAttr::getEnvAttrName(), *envOrErr);
   return module;
 }
