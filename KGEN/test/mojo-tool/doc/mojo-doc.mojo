@@ -609,6 +609,8 @@ struct StructWithDefault[a: Int = 1]:
 # CHECK:    "description": "The is some kind of description.",
 # CHECK:    "functions":
 # CHECK:      "kind": "function",
+# Check that we don't generate inherited methods (like __del__ from AnyType).
+# CHECK-NOT: "name": "__del__"
 # CHECK:      "name": "f",
 # CHECK:      "summary": "This is a trait function doc."
 # CHECK:    "kind": "trait",

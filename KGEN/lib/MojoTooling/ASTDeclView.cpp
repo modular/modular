@@ -225,9 +225,12 @@ static std::string parseDocStringSection(ArrayRef<StringRef> lines,
 
 /// Extract a list of direct children decls from a given decl. It omits
 /// children whose name start with _, except for special functions that start
-/// and end with __.
+/// and end with __. `shouldHideFn` allows for additional filtering of decls to
+/// hide.
 template <typename DeclViewType, typename OpType>
-static SmallVector<DeclViewType, 2> extractChildDecls(const ASTDecl &decl) {
+static SmallVector<DeclViewType, 2>
+extractChildDecls(const ASTDecl &decl,
+                  function_ref<bool(OpType, StringRef)> shouldHideFn = {}) {
   DenseSet<Operation *> seenOps;
   SmallVector<DeclViewType, 2> children;
 
@@ -236,20 +239,19 @@ static SmallVector<DeclViewType, 2> extractChildDecls(const ASTDecl &decl) {
       continue;
 
     for (auto &child : decls) {
-      if (!isa<OpType>(*child))
+      OpType childOp = dyn_cast<OpType>(*child);
+      if (!childOp)
         continue;
+
       // Skip declarations that were imported from other scopes.
-      if (child->getParentDecl() != &decl ||
-          !seenOps.insert(child->getIfOperation()).second)
+      if (child->getParentDecl() != &decl || !seenOps.insert(childOp).second)
         continue;
       // Skip synthetic declarations that don't have accompanying documentation
       // generated with them.
-      // FIXME(#26535): Use a proper API to check if a decl is synthetic.
-      if (child->getIfOperation()->getLoc() ==
-              decl.getIfOperation()->getLoc() &&
-          !child->getDocString())
+      if (childOp.isSynthetic() && !childOp.getDocStringAttr())
         continue;
-
+      if (shouldHideFn && shouldHideFn(childOp, name))
+        continue;
       children.push_back(cast<DeclViewType>(*MojoASTDeclRef(child).getView()));
     }
   }
@@ -913,8 +915,13 @@ std::string TraitDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object TraitDeclView::toJSON(MojoParserContext &ctx) const {
+  // Ignore some inherited functions.
+  auto shouldHideFn = [](FuncOp decl, StringRef name) {
+    return decl.getIsInherited() && name == "__del__";
+  };
+
   auto functionOverloads = FunctionDeclOverloadSetView::fromSortedFunctions(
-      extractChildDecls<FunctionDeclView, FuncOp>(*decl));
+      extractChildDecls<FunctionDeclView, FuncOp>(*decl, shouldHideFn));
   SmallVector<StringRef> parentTraits;
   collectParentTypes(ctx, parentTraits,
                      cast<TraitDeclOp>(*decl).getParentTypes());
