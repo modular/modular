@@ -15,6 +15,8 @@ from memory.unsafe import AddressSpace, DTypePointer, _GPUAddressSpace
 
 from .int_tuple import flatten, idx2crd, int, product, fill_like
 from .layout import *
+from math.limit import max_finite
+from builtin.int import int as _int
 
 
 # Distribute thread_layout into data_layout, if axis is provided
@@ -53,6 +55,18 @@ fn _project_on_axis[
     return p_t
 
 
+fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
+    if layout.cosize() < _int(max_finite[DType.int32]()):
+        return DType.int32
+    elif (
+        address_space == _GPUAddressSpace.SHARED
+        or address_space == _GPUAddressSpace.CONSTANT
+    ):
+        return DType.int32
+    else:
+        return DType.index
+
+
 @register_passable
 struct LayoutTensor[
     layout: Layout,
@@ -61,6 +75,7 @@ struct LayoutTensor[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
     element_layout: Layout = Layout(1, 1),
+    index_type: DType = _get_index_type(layout, address_space),
 ](CollectionElement):
     var ptr: DTypePointer[dtype, address_space]
     var owning: Bool
@@ -374,7 +389,7 @@ struct LayoutTensor[
             layout, threads_layout, axis
         ](),
         submode_axis: Optional[Int] = None,
-    ](self, thread_id: Int) -> LayoutTensor[
+    ](self, thread_id: Int32) -> LayoutTensor[
         tiled_layout[1],
         dtype,
         address_space=address_space,
@@ -407,7 +422,7 @@ struct LayoutTensor[
             threads_layout.shape[axis.value()] if axis else threads_layout.shape
         )
 
-        var offset = 0
+        var offset: Scalar[Self.index_type] = 0
 
         @parameter
         fn compute_offset[i: Int]():
@@ -415,7 +430,9 @@ struct LayoutTensor[
             alias shape_i = int(thread_projected_shape[i])
             alias stride_i = int(thread_projected_stride[i])
             var thread_coord_i = (thread_id // stride_i) % shape_i
-            offset += thread_coord_i * fragments_stride_i
+            offset += (
+                thread_coord_i.cast[Self.index_type]() * fragments_stride_i
+            )
 
         unroll[compute_offset, len(fragments_layout_stride)]()
 
@@ -932,10 +949,13 @@ fn outer_product_acc[
     res_address_space: AddressSpace,
     lhs_address_space: AddressSpace,
     rhs_address_space: AddressSpace,
+    res_layout: Layout,
+    lhs_layout: Layout,
+    rhs_layout: Layout,
 ](
-    res: LayoutTensor[_, dtype, address_space=res_address_space],
-    lhs: LayoutTensor[_, _, address_space=lhs_address_space],
-    rhs: LayoutTensor[_, _, address_space=rhs_address_space],
+    res: LayoutTensor[res_layout, dtype, address_space=res_address_space],
+    lhs: LayoutTensor[lhs_layout, _, address_space=lhs_address_space],
+    rhs: LayoutTensor[rhs_layout, _, address_space=rhs_address_space],
 ):
     constrained[res.rank() == 2, "Only rank 2 res is allowed."]()
     constrained[lhs.rank() == 1, "Only rank 1 lhs is allowed."]()
