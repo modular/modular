@@ -20,7 +20,6 @@
 #include "KGEN/MojoTooling/ASTDeclRef.h"
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/Binary.h"
 #include "lldb/Expression/DiagnosticManager.h"
@@ -126,16 +125,8 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   KGEN::CompilationOptions hackCompilationOptions;
   hackCompilationOptions.enableLLVMPerFunctionSplitting = false;
 
-  populateElaborateModulePasses(
-      *compilationPM, typeSystem->getRuntime(), targetInfo,
-      hackCompilationOptions,
-      /*evaluatorExecutorFn=*/
-      [&](KGEN::FuncOp, const SymbolTable &, TargetInfoAttr,
-          ArrayRef<KGEN::FuncOp>) { return [] { return 0; }; },
-      [this, hackCompilationOptions](PackageLinkOp packageLink) {
-        return specializePackageLinkForPreElaborationLinking(
-            packageLink, typeSystem->getRuntime(), hackCompilationOptions);
-      });
+  populateElaborateModulePasses(*compilationPM, typeSystem->getRuntime(),
+                                targetInfo, hackCompilationOptions);
 
   // Create the compiler instance.
   auto compilerOr = ObjectCompiler::create(typeSystem->getRuntime(),

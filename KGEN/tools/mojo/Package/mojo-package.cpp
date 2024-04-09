@@ -13,7 +13,6 @@
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/MojoParser/EntryPoint.h"
-#include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/Runtime/Runtime.h"

@@ -411,13 +411,110 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
 }
 
 //===----------------------------------------------------------------------===//
+// specializeModuleForPreElaborationLinking
+//===----------------------------------------------------------------------===//
+
+ErrorOr<OwningOpRef<ModuleOp>> KGEN::specializeModuleForPreElaborationLinking(
+    DenseResourceElementsAttr bytecodeAttr, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &compileOptions) {
+  OwningOpRef<ModuleOp> packageModuleOr =
+      readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
+  if (!packageModuleOr)
+    return Error("unable to load parsed module bytecode");
+  auto cacheBackends = getMojoCacheBackends(runtime);
+  if (cacheBackends.isError())
+    return cacheBackends.takeError();
+  auto transformCache =
+      RCRef<Cache::TransformCache>::create(std::move(cacheBackends->first));
+  auto regionCache =
+      RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
+
+  // Generate a library from the module, processing the pipeline up to the
+  // elaboration phase.
+  mlir::PassManager genLibPM(packageModuleOr->getContext());
+  configurePassManager(genLibPM);
+  buildGenerateLibraryPipeline(genLibPM, runtime, compileOptions);
+  genLibPM.addPass(
+      createMaterializePackagesWithDefaultGen(runtime, compileOptions));
+  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+      *packageModuleOr, regionCache.copy(), transformCache.copy(),
+      AsyncValueRef<Chain>::createReady(runtime), genLibPM);
+  LLCL::await(ready);
+  if (ready.isError())
+    return ready.takeDiagnostic().getMessage().copy();
+
+  // Strip the implicit package exports, we don't need these because we're going
+  // to link the package into an existing module as-is.
+  for (ExportInterface op : packageModuleOr->getOps<ExportInterface>())
+    if (op.isPackageExported())
+      op.setNotExported();
+
+  return std::move(packageModuleOr);
+}
+
+ErrorOr<DenseResourceElementsAttr>
+KGEN::specializePackageLinkForPreElaborationLinking(
+    PackageLinkOp packageLink, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &compileOptions) {
+  DenseResourceElementsAttr bytecodeAttr = packageLink.getPostParseModuleAttr();
+  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
+      specializeModuleForPreElaborationLinking(bytecodeAttr, runtime,
+                                               compileOptions);
+  if (packageModuleOr.isError())
+    return packageModuleOr.takeError();
+
+  DenseResourceElementsAttr bytecodeResource =
+      writeModuleToBytecodeAttr(cast<ModuleOp>(**packageModuleOr));
+  if (!bytecodeResource)
+    return Error("failed to write bytecode for package module");
+  return bytecodeResource;
+}
+
+//===----------------------------------------------------------------------===//
+// createElaborateGeneratorsWithDefaultJIT
+//===----------------------------------------------------------------------===//
+
+/// Create an instance of the elaborator pass using the given configuration.
+/// The created elaborator pass uses a default specialization executor that
+/// JITs and executes in-process.
+std::unique_ptr<Pass>
+KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
+  CompilationOptions options;
+  return createElaborateGenerators(
+      runtime, /*target=*/{}, /*options=*/{},
+      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
+                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
+        return evaluateSpecializations(evaluator, symtab, runtime, target,
+                                       options, specializations);
+      },
+      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
+                    StringAttr name, const SymbolTable &symtab,
+                    TargetInfoAttr target, EmissionKind emissionKind) {
+        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
+                                    emissionKind, options);
+      });
+}
+
+//===----------------------------------------------------------------------===//
+// createMaterializePackagesWithDefaultGen
+//===----------------------------------------------------------------------===//
+
+std::unique_ptr<Pass> KGEN::createMaterializePackagesWithDefaultGen(
+    LLCL::Runtime &runtime, const CompilationOptions &options) {
+  return createMaterializePackages([&](KGEN::PackageLinkOp packageLink) {
+    return specializePackageLinkForPreElaborationLinking(packageLink, runtime,
+                                                         options);
+  });
+}
+
+//===----------------------------------------------------------------------===//
 // populateElaborateModulePasses
 //===----------------------------------------------------------------------===//
 
 void KGEN::populateElaborateModulePasses(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    const CompilationOptions &options, EvaluatorExecutorFn evaluatorExecutorFn,
-    PackageGenLibraryFn packageGenLibraryFn) {
+    const CompilationOptions &options,
+    EvaluatorExecutorFn evaluatorExecutorFn) {
   buildElaborateModulePipeline(
       pm, runtime, target, options, std::move(evaluatorExecutorFn),
       /*compileAsmFn=*/
@@ -427,14 +524,17 @@ void KGEN::populateElaborateModulePasses(
         return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
                                     emissionKind, options);
       },
-      std::move(packageGenLibraryFn));
+      [=, &runtime](PackageLinkOp packageLink) {
+        return specializePackageLinkForPreElaborationLinking(packageLink,
+                                                             runtime, options);
+      });
   buildPostElaborationPipeline(pm, runtime, options);
 }
 
-void KGEN::populateElaborateModulePasses(
-    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    const CompilationOptions &options,
-    PackageGenLibraryFn packageGenLibraryFn) {
+void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
+                                         LLCL::Runtime &runtime,
+                                         TargetInfoAttr target,
+                                         const CompilationOptions &options) {
   populateElaborateModulePasses(
       pm, runtime, target, options,
       /*evaluatorExecutorFn=*/
@@ -442,8 +542,7 @@ void KGEN::populateElaborateModulePasses(
                     TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
         return evaluateSpecializations(evaluator, symtab, runtime, target,
                                        options, specializations);
-      },
-      std::move(packageGenLibraryFn));
+      });
 }
 
 //===----------------------------------------------------------------------===//
@@ -536,8 +635,7 @@ KGENCompilerLayer::KGENCompilerLayer(
       RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend));
 }
 
-ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
-                                      PackageGenLibraryFn packageGenLibraryFn) {
+ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   CompilerTimeTraceScope traceScope("KGENCompilerLayer::add(" + libName.str() +
                                     ")");
   auto dylibOr = getOrCreateDylib(libName);
@@ -553,8 +651,7 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule,
 
   // Populate the passes.
   buildGenerateLibraryPipeline(pm, runtime, options);
-  populateElaborateModulePasses(pm, runtime, target, options,
-                                std::move(packageGenLibraryFn));
+  populateElaborateModulePasses(pm, runtime, target, options);
 
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
   auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();

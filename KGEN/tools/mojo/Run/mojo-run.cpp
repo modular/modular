@@ -15,7 +15,6 @@
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "KGEN/Package/Package.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
@@ -290,12 +289,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   // Add the module into the layer. This will actually compile it down to the
   // post-elaboration phase, because before that phase we don't have flat
   // symbols.
-  auto packageGenLibraryFn = [&](PackageLinkOp packageLink) {
-    return specializePackageLinkForPreElaborationLinking(packageLink, runtime,
-                                                         options);
-  };
-  if (ErrorOrSuccess err =
-          compilerLayer.add("exec", moduleOp, packageGenLibraryFn))
+  if (ErrorOrSuccess err = compilerLayer.add("exec", moduleOp))
     return state.reportError(err.getError());
 
   // Generate a symbol table and an export map for the module post-compile.

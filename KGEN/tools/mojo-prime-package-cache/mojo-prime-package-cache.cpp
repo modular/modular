@@ -10,9 +10,9 @@
 
 #include "../common/Telemetry.h"
 #include "Config/Version.h"
+#include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/Package/Package.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"

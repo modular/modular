@@ -10,7 +10,6 @@
 #include "KGEN/Compiler/KGENCompiler.h"
 #include "KGEN/MojoParser/EntryPoint.h"
 #include "KGEN/MojoTesting/Test.h"
-#include "KGEN/Package/Package.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Init/Init.h"

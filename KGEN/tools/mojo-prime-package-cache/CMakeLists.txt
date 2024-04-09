@@ -18,7 +18,6 @@ add_modular_tool(mojo-prime-package-cache
   KGENCompiler
   KGENEmitObject
   KGENExecutionEngine
-  KGENPackage
   LLCLRuntimeGlobals
   MArchTarget
   MSupportGlobals

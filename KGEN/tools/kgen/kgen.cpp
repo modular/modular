@@ -11,7 +11,6 @@
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/MojoParser/EntryPoint.h"
-#include "KGEN/Package/Package.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CLOptions.h"
@@ -349,12 +348,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // This currently compiles the module, so we don't need to try to look
   // anything up.
-  auto packageGenLibFn = [&](PackageLinkOp packageLink) {
-    return specializePackageLinkForPreElaborationLinking(packageLink, runtime,
-                                                         options);
-  };
-  if (ErrorOrSuccess err =
-          compileLayer.add("exec", *theModule, packageGenLibFn))
+  if (ErrorOrSuccess err = compileLayer.add("exec", *theModule))
     return failure(clOptions.reportError(err.getError()));
 
   // If all we're doing is generating a library file or elaborating, we're done
