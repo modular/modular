@@ -34,7 +34,7 @@ lit.func @caller() -> index attributes {test.target.0 = #module_target, doNotExt
 // LOWER_LIT-LABEL: kgen.extern.generator export @exported_func
 // LOWER_LIT-SAME: preCompiledModuleRef = @link_exported_func
 
-// CHECK: kgen.package.link @link_exported_func pre_elaboration(dense_resource<
+// CHECK: kgen.package.link @link_exported_func
 // CHECK-SAME: post_parse(dense_resource<exported_func_generated_post_parse_attr
 // CHECK-LABEL: kgen.generator @exported_func
 // ELAB-LABEL: kgen.func @exported_func

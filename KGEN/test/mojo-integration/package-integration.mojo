@@ -37,7 +37,6 @@ fn top() -> Int:
 # MATER-NEXT: kgen.param.if
 
 # GENLIB: kgen.package.link [[PKG]] post_parse(dense_resource<{{.*}})
-# MATER: kgen.package.link [[PKG]] pre_elaboration(dense_resource<{{.*}})
 
 # GENLIB: kgen.extern.generator export @exported_func()
 # MATER: kgen.generator @exported_func()

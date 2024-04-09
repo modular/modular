@@ -25,12 +25,10 @@ using namespace KGEN;
 
 /// Loads the serialized MLIR bytecode representing a post-parser module in
 /// `bytecodeAttr`, and prepare to link it into directly another module. Returns
-/// the module if successful, or an error. If `exportedPreElaborationAttr` is
-/// non-null, it will be set to the exported pre-elaboration bytecode.
+/// the module if successful, or an error.
 static ErrorOr<OwningOpRef<ModuleOp>> specializeModuleForPreElaboration(
     DenseResourceElementsAttr bytecodeAttr, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &compileOptions,
-    DenseResourceElementsAttr *exportedPreElaborationAttr = nullptr) {
+    const KGEN::CompilationOptions &compileOptions) {
   OwningOpRef<ModuleOp> packageModuleOr =
       readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
   if (!packageModuleOr)
@@ -57,15 +55,6 @@ static ErrorOr<OwningOpRef<ModuleOp>> specializeModuleForPreElaboration(
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
 
-  // Build the exported pre-elaboration bytecode if requested.
-  if (exportedPreElaborationAttr) {
-    DenseResourceElementsAttr bytecodeResource =
-        writeModuleToBytecodeAttr(*packageModuleOr);
-    if (!bytecodeResource)
-      return Error("failed to write bytecode for package module");
-    *exportedPreElaborationAttr = bytecodeResource;
-  }
-
   // Strip the implicit package exports, we don't need these because we're going
   // to link the package into an existing module as-is.
   for (ExportInterface op : packageModuleOr->getOps<ExportInterface>())
@@ -91,13 +80,10 @@ KGEN::specializePackageLinkForPreElaborationLinking(
     PackageLinkOp packageLink, LLCL::Runtime &runtime,
     const KGEN::CompilationOptions &compileOptions) {
   DenseResourceElementsAttr bytecodeAttr = packageLink.getPostParseModuleAttr();
-  DenseResourceElementsAttr preElaborationBytecode;
   ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
-      specializeModuleForPreElaboration(bytecodeAttr, runtime, compileOptions,
-                                        &preElaborationBytecode);
+      specializeModuleForPreElaboration(bytecodeAttr, runtime, compileOptions);
   if (packageModuleOr.isError())
     return packageModuleOr.takeError();
-  packageLink.setPreElaborationModuleAttr(preElaborationBytecode);
 
   DenseResourceElementsAttr bytecodeResource =
       writeModuleToBytecodeAttr(cast<ModuleOp>(**packageModuleOr));

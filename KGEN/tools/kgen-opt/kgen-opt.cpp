@@ -170,19 +170,11 @@ struct TestGeneratePreElaboratedBody
           *fakeCopyModule, funcName + "_generated_post_parse_attr");
       if (!postParseBytecode)
         return signalPassFailure();
-      DenseResourceElementsAttr preElabBytecode =
-          serializeToResource(*fakeModule, funcName + "_generated_body_attr");
-      if (!preElabBytecode)
-        return signalPassFailure();
-      DenseResourceElementsAttr postElabBytecode = serializeToResource(
-          *fakeCompiledModule, funcName + "_generated_comp_attr");
-      if (!postElabBytecode)
-        return signalPassFailure();
 
       // Generate a package link to the fake module.
       OpBuilder linkBuilder(func);
-      linkBuilder.create<KGEN::PackageLinkOp>(
-          func.getLoc(), linkName, postParseBytecode, preElabBytecode);
+      linkBuilder.create<KGEN::PackageLinkOp>(func.getLoc(), linkName,
+                                              postParseBytecode);
     }
   }
 };
@@ -246,8 +238,8 @@ struct TestMaterializePackages
       OpBuilder linkBuilder(func);
       auto bytecodeBufferAttr = createResourceAttr(
           &getContext(), buffer, funcName + "_generated_body_attr");
-      linkBuilder.create<KGEN::PackageLinkOp>(
-          func.getLoc(), linkName, bytecodeBufferAttr, bytecodeBufferAttr);
+      linkBuilder.create<KGEN::PackageLinkOp>(func.getLoc(), linkName,
+                                              bytecodeBufferAttr);
     }
   }
 };

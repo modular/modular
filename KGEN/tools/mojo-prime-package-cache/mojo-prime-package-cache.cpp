@@ -80,10 +80,9 @@ primeCacheForPackage(KGEN::LIT::PackageOp packageOp, TargetInfoAttr targetInfo,
   // Build a package link that we'll use to call into the compilation methods.
   OpBuilder builder(packageOp.getContext());
   OwningOpRef<KGEN::PackageLinkOp> packageLink =
-      builder.create<KGEN::PackageLinkOp>(
-          packageOp->getLoc(), packageOp.getNameAttr(),
-          packageOp.getPostParseModuleAttr(),
-          /*preElaborationModule=*/DenseResourceElementsAttr());
+      builder.create<KGEN::PackageLinkOp>(packageOp->getLoc(),
+                                          packageOp.getNameAttr(),
+                                          packageOp.getPostParseModuleAttr());
 
   // First specialize the module up to the pre-elaboration phase.
   ErrorOr<DenseResourceElementsAttr> preElabOr =
