@@ -104,7 +104,7 @@ fn attr_new_tensor[
         "MAXG_attrNewTensor",
         fn (
             StringRef,
-            AnyPointer[T],
+            UnsafePointer[T],
             _mlir.Type.c_type,
             Bool,
         ) -> _mlir.NamedAttribute.c_type,

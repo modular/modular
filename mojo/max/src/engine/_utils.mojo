@@ -297,14 +297,14 @@ fn call_dylib_func[
 
 
 struct OwningVector[T: Movable](Sized):
-    var ptr: AnyPointer[T]
+    var ptr: UnsafePointer[T]
     var size: Int
 
     alias initial_capacity = 5
     var capacity: Int
 
     fn __init__(inout self):
-        var ptr = AnyPointer[T].alloc(Self.initial_capacity)
+        var ptr = UnsafePointer[T].alloc(Self.initial_capacity)
         self.ptr = ptr
         self.size = 0
         self.capacity = Self.initial_capacity
@@ -321,14 +321,14 @@ struct OwningVector[T: Movable](Sized):
             return
 
         self.capacity = self.capacity * 2
-        var new_ptr = AnyPointer[T].alloc(self.capacity)
+        var new_ptr = UnsafePointer[T].alloc(self.capacity)
         for i in range(self.size):
             move_pointee(src=self.ptr + i, dst=new_ptr + i)
         self.ptr.free()
         self.ptr = new_ptr
         self.emplace_back(value^)
 
-    fn get(self, idx: Int) raises -> AnyPointer[T]:
+    fn get(self, idx: Int) raises -> UnsafePointer[T]:
         if idx >= self.size:
             raise "requested index(" + String(
                 idx
