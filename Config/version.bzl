@@ -6,7 +6,7 @@ def _status_template_impl(ctx):
             ctx.files.src[0].path,
             ctx.outputs.out.path,
         ],
-        command = 'set -x ; cat "$3" > "$4" && (cat "$1" "$2" | while read var value; do sed -e "s|\\${${var}}|${value}|g" -i.bak "$4"; done)',
+        command = 'cat "$3" > "$4" && (cat "$1" "$2" | while read var value; do sed -e "s|\\${${var}}|${value}|g" -i.bak "$4"; done)',
         inputs = [
             ctx.info_file,
             ctx.version_file,
