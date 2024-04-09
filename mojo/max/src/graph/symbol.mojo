@@ -24,7 +24,7 @@ a shorthand notation for "Adds a node representing an op that returns foo".
 """
 
 from collections.optional import Optional
-from memory.unsafe import _LITRef
+from memory.reference import _LITRef
 from tensor import Tensor, TensorShape, TensorSpec
 from utils.variant import Variant
 
