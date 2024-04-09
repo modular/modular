@@ -30,9 +30,8 @@ from utils.variant import Variant
 
 import _mlir
 
-from .attr import AttrMap
+from ._attributes import AttrMap, _string_attr
 from .graph import Graph
-from .module import _string_attr
 from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 # TODO: The overloads are incomplete, and make unverified assumptions about

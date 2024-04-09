@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Helpers for custom ops."""
 
+from max.graph._attributes import _string_attr
 from max.graph.symbol import SymbolTuple
 from max.graph.type import AnyMOType, TypeTuple
-from max.graph.module import _string_attr
 
 
 def custom[

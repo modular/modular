@@ -3,14 +3,17 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Module primitives.
+"""Attribute primitives.
 
-A `Module` is a very basic container that holds `Graph`s for the purpose of
-compiling or exporting them as a whole.
+`Attribute`s are key-value pairs that can be attached to a `Node`, `Graph` and
+other elements. Attributes are similar to inputs, except they are constant -
+their value doesn't change at runtime. The attribute name is always a string.
 
-Note: `Module`s are not to be confused with layers or modules found in other
-high-level APIs (like `torch.nn.Module`, or `tf.Module`). The MAX Graph API
-is a low level library. Rather, a `Module` is closer to ONNX Models.
+For exmple, `mo.constant` has a `value` attribute, representing the value
+of the constant it holds.
+
+`Attribute`s can hold various types of values, including primitive values,
+lists, tensors, etc.
 """
 
 from tensor import Tensor
@@ -20,6 +23,35 @@ import _mlir
 
 from .type import MOTensor, TypeTuple
 import ._c
+
+
+@value
+struct AttrMap(Sized):
+    """Holds a set of attributes."""
+
+    var attrs: List[_mlir.NamedAttribute]
+    """The list of attributes held by this map.
+
+    The list values are internal `Attribute` representations.
+    """
+
+    # ===------------------------------------------------------------------=== #
+    # Basic constructors and accessors
+    # ===------------------------------------------------------------------=== #
+
+    fn __init__(inout self, *attrs: _mlir.NamedAttribute):
+        """Constructs an `AttrMap` from internal `Attribute` representations.
+
+        Args:
+            attrs: Variadic list of internal `Attribute` representations.
+        """
+        self.attrs = List[_mlir.NamedAttribute]()
+        for attr in attrs:
+            self.attrs.append(attr[])
+
+    fn __len__(self) -> Int:
+        """Returns the size of this map."""
+        return len(self.attrs)
 
 
 # ===------------------------------------------------------------------=== #

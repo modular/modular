@@ -21,8 +21,7 @@ from tensor import Tensor
 
 import _mlir
 
-from .attr import AttrMap
-from .module import _tensor_attr, _vector_attr
+from ._attributes import AttrMap, _tensor_attr, _vector_attr
 from .symbol import Symbol, SymbolTuple
 from .type import MOList, MOTensor, TypeTuple
 
