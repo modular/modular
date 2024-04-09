@@ -575,15 +575,6 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
                                            lowerer.getIndexAttr(index));
 }
 
-/// Lower lit.ref.offset %ref[%index] => pop.offset %ptr[%index]
-static Value lowerOp(RefOffsetOp op, RefOffsetOpAdaptor adaptor,
-                     LITTypeLowerer &lowerer) {
-  assert(isa<PointerType>(adaptor.getRef().getType()) &&
-         "operand should be lowered");
-  return lowerer.create<POP::OffsetOp>(op.getLoc(), adaptor.getRef(),
-                                       op.getIndex());
-}
-
 /// Squash noop rebinds exposed by ref -> ptr lowering.
 static Value lowerOp(RebindOp op, RebindOpAdaptor adaptor,
                      LITTypeLowerer &lowerer) {
@@ -795,8 +786,8 @@ void LowerLITTypesPass::runOnOperation() {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
         .Case<LIT::StructCreateOp, StructInsertOp, LIT::StructExtractOp,
               RefImmutOp, RefToPointerOp, RefFromPointerOp,
-              RefFromPointerREPLOp, RefStructGEROp, RefOffsetOp, RefLoadOp,
-              RefStoreOp, RebindOp, RefPackCreateOp, RefPackExtractOp>(
+              RefFromPointerREPLOp, RefStructGEROp, RefLoadOp, RefStoreOp,
+              RebindOp, RefPackCreateOp, RefPackExtractOp>(
             [&](auto op) { return structLowerer.materializeLowering(op); })
         .Default([](auto) { return success(); });
   });
