@@ -192,7 +192,7 @@ struct Coroutine[T: AnyRegType]:
     var value: __mlir_type[`!pop.coroutine<() -> `, T, `>`]
 
     fn __await__(self) -> T:
-        while __mlir_attr.`true`:
+        while __mlir_attr.true:
             pass
 
 
@@ -204,7 +204,7 @@ struct RaisingCoroutine[T: AnyRegType]:
     ]
 
     fn __await__(self) raises -> T:
-        while __mlir_attr.`true`:
+        while __mlir_attr.true:
             pass
 
 
@@ -317,5 +317,5 @@ struct Tuple[*element_types: AnyType]:
         pass
 
     fn get[i: Int](self) -> element_types[i.value]:
-        while __mlir_attr.`true`:
+        while __mlir_attr.true:
             pass
