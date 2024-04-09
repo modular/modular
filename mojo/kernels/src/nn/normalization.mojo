@@ -183,3 +183,35 @@ fn layer_norm[
             )
 
         sync_parallelize[task_func](num_workers)
+
+
+@always_inline
+fn layer_norm_shape[
+    type: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    input: NDBuffer[type, rank],
+    gamma: NDBuffer[type, 1, DimList(1)],
+    beta: NDBuffer[type, 1, DimList(1)],
+    epsilon: NDBuffer[type, 1, DimList(1)],
+) -> StaticIntTuple[rank]:
+    """
+    Compute the output shape of a `layer_norm` operation.
+
+    Parameters:
+        type: Type of the input tensors.
+        rank: Rank of the input tensor.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+
+    Args:
+        input: The input tensor.
+        gamma: The tensor for gamma coefficient.
+        beta: The tensor for beta coefficient.
+        epsilon: The tensor for epsilon coefficient.
+
+    Returns:
+        The output shape.
+    """
+    return input.get_shape()
