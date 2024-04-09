@@ -27,7 +27,7 @@ from gpu.host import Function, Stream
 from gpu.memory import AddressSpace
 from LinAlg.Matmul import matmul
 from memory import stack_allocation
-from memory.unsafe import AddressSpace as _AddressSpace
+from memory.reference import AddressSpace as _AddressSpace
 from memory.unsafe import DTypePointer, bitcast
 from LinAlg.transpose import transpose
 
