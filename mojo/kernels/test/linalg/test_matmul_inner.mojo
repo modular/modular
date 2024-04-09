@@ -89,6 +89,7 @@ fn test_micro_kernel[
     alias pack_inner_size = kernel_shape.pack_inner_size
     alias tile_inner_size: Int = pack_inner_size * simd_size
 
+    var chunk = div_ceil(n, tile_inner_size)
     var alignment = 64
     var a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
 
@@ -100,10 +101,10 @@ fn test_micro_kernel[
 
     alias b_packed_shape = DimList.create_unknown[3]()
     var b_packed_ptr = DTypePointer[b_type].alloc(
-        (n // tile_inner_size) * k * tile_inner_size, alignment=alignment
+        chunk * k * tile_inner_size, alignment=alignment
     )
     var b_packed = NDBuffer[b_type, 3, b_packed_shape](
-        b_packed_ptr, Index(n // tile_inner_size, k, tile_inner_size)
+        b_packed_ptr, Index(chunk, k, tile_inner_size)
     )
     b_packed.fill(1)
 
@@ -148,8 +149,9 @@ fn test_micro_kernel_static[
     alias a_row_size = kernel_shape.a_row_size
     alias pack_inner_size = kernel_shape.pack_inner_size
     alias tile_inner_size: Int = pack_inner_size * simd_size
-
     alias alignment = alignof[SIMD[c_type, simd_size]]()
+
+    alias chunk = div_ceil(N, tile_inner_size)
     var a_ptr = DTypePointer[a_type].alloc(m * K, alignment=alignment)
 
     alias a_shape = DimList.create_unknown[2]()
@@ -157,12 +159,14 @@ fn test_micro_kernel_static[
     a.fill(1)
 
     alias b_shape = DimList.create_unknown[2]()
-    alias b_packed_shape = DimList(N // tile_inner_size, K, tile_inner_size)
+    alias b_packed_shape = DimList(chunk, K, tile_inner_size)
+
     var b_packed_ptr = DTypePointer[b_type].alloc(
-        (N // tile_inner_size) * K * tile_inner_size, alignment=alignment
+        chunk * K * tile_inner_size, alignment=alignment
     )
+
     var b_packed = NDBuffer[b_type, 3, b_packed_shape](
-        b_packed_ptr, Index(N // tile_inner_size, K, tile_inner_size)
+        b_packed_ptr, Index(chunk, K, tile_inner_size)
     )
     b_packed.fill(1)
 
