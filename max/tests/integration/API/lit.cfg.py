@@ -127,18 +127,6 @@ if output.returncode == 0:
     config.available_features.add("cuda")
 
 
-torchscript_relu_model_path = (
-    Path(config.modular_src_root)
-    / "SDK"
-    / "integration-test"
-    / "max-cli"
-    / "Inputs"
-    / "relu3x100x100.torchscript"
-)
-config.substitutions.append(
-    ("%torchscript_relu_model", str(torchscript_relu_model_path))
-)
-
 pytorch_generated_tests_dir = os.path.join(
     config.modular_derived_dir, "pytorch-generated-tests"
 )
