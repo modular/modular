@@ -1475,7 +1475,9 @@ def KGEN_PackExtractOp : KGENOp<"pack.extract",
 //===----------------------------------------------------------------------===//
 
 def KGEN_PackGEPOp : KGENOp<"pack.gep",
-                     [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+                     [Pure,
+                      DeclareOpInterfaceMethods<InferTypeOpInterface>,
+                      DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "pack get element pointer";
   let description = [{
     The `kgen.pack.gep` operation returns a pointer to the element of a pack at

@@ -2079,6 +2079,40 @@ LogicalResult PackGEPOp::inferReturnTypes(
   return success();
 }
 
+ErrorTreeOrSuccess PackGEPOp::interpret(ArrayRef<Attribute> operands,
+                                        InterpreterState &state) {
+  auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
+  auto idxAttr = dyn_cast_if_present<IntegerAttr>(getIndex());
+  if (!ptr || !idxAttr)
+    return ErrorTree(getLoc(), "non-constant inputs");
+
+  int64_t offset = 0;
+  auto variadic =
+      getPack().getType().getElementAs<PackType>().getVariadicIfResolved();
+  if (!variadic)
+    return ErrorTree(getLoc(), "unknown type list");
+
+  ArrayRef<TypedAttr> typeElts = variadic.getValues();
+
+  // Move the address over the elements before the one we are reading.
+  unsigned index = idxAttr.getInt();
+  for (unsigned i = 0; i != index; ++i) {
+    auto eltType = cast<TypeConstantAttr>(typeElts[i]).getValue();
+    auto dl = cast<DataLayoutInterface>(eltType);
+    offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
+    offset += *dl.getTypeSize(state.getTarget());
+  }
+
+  // Align the address to the target element.
+  Type targetType = cast<TypeConstantAttr>(typeElts[index]).getValue();
+  offset = llvm::alignTo(
+      offset,
+      *cast<DataLayoutInterface>(targetType).getTypeAlign(state.getTarget()));
+  state.mapResults(
+      PointerAttr::get(ptr.getAddr() + offset, PointerType::get(targetType)));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // StructCreateOp
 //===----------------------------------------------------------------------===//

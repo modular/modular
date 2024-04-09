@@ -1805,25 +1805,10 @@ ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
     return {};
   }
 
-  auto anyRegTypeType = TypeType::get(getContext());
   SyntheticNode tmpExpr(loc);
   ParamBindings bindings(*this);
-  for (ASTType elt : elements) {
-    // If the element type is referencing a parameter, ensure that the parameter
-    // type is `!kgen.type`. Otherwise, VariadicAttr cannot be constructed
-    // because values will conflict with the tuple element type constraint.
-    //
-    // FIXME: This check is wrong, and MAX Graphs is relying on Symbol in
-    // tuples... how does anything work!
-    if (auto paramRefType = dyn_cast<KGEN::ParamRefType>(elt)) {
-      if (paramRefType.getParam().getType() != anyRegTypeType) {
-        emitError(
-            loc, "tuples can only be constructed from register passable types");
-        return {};
-      }
-    }
+  for (ASTType elt : elements)
     bindings.add(&tmpExpr, PValue(elt));
-  }
 
   // Check the bindings.
   auto metaType = cast<AnyStructType>(tupleType.getMetaType());
@@ -2060,9 +2045,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   }
 
   // Tuple has a get method with a signature of:
-  //    get[i: Int, T: AnyRegType](self)
-  // FIXME(Issue #14946): The Tuple.get's T parameter shouldn't exist!
-  //   https://github.com/modularml/modular/issues/14946
+  //    get[i: Int](self)
   // For the dynamic case we'd use __getitem__.
   auto getDecl =
       OverloadSet::lookup(emitter.declScope, emitter.shared, elementType, "get",
@@ -2070,7 +2053,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
                           /*errorHandler*/ {});
 
   if (getDecl.isNull()) {
-    emitError() << "expected Tuple to have one get method";
+    emitError() << "expected Tuple to have a get method";
     return;
   }
 
@@ -2082,16 +2065,13 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   // Ok, we have a tuple with the right number of elements, extract each element
   // and store into the corresponding lvalue.
   for (auto [index, lvalue] : llvm::enumerate(eltLValues)) {
-    // Bind the i/T parameters.  Int implicitly constructs from index type.
+    // Bind the i parameters.  Int implicitly constructs from index type.
     TypedAttr iParam =
         IntegerAttr::get(IndexType::get(emitter.getContext()), index);
-    if (index == 0) {
+    if (index == 0)
       bindings.add(expr, iParam);
-      bindings.add(expr, packVariadic.getValues()[index]);
-    } else {
+    else
       bindings.replace(1, expr, iParam);
-      bindings.replace(2, expr, packVariadic.getValues()[index]);
-    }
 
     // Emit the call to get the item from the tuple into the corresponding
     // LValue.
