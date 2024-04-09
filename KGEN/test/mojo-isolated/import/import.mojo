@@ -61,7 +61,7 @@ fn test_function_calls():
 
 fn import_in_dead_branch():
     # expected-warning @below {{if statement with constant condition 'if True'}}
-    if __mlir_attr.`true`:
+    if __mlir_attr.true:
         pass
     else:
         from test_package.module import function

@@ -16,7 +16,7 @@ fn direct(output: int):
     fn closure() escaping:
         @parameter
         fn body():
-            if __mlir_attr.`true`:
+            if __mlir_attr.true:
                 use(output)
 
 

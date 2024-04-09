@@ -29,7 +29,7 @@ struct SIMD[size: Int, dt: DType]:
         return Self{value: existing.value}
 
     fn __add__(lhs, rhs: Self) -> Self:
-        while __mlir_attr.`true`:
+        while __mlir_attr.true:
             pass
 
     @staticmethod
@@ -451,7 +451,7 @@ struct MyDType:
      return MyDType{state: value}
 
   fn __eq__(self, rhs: MyDType) -> Bool:
-     return __mlir_attr.`true`
+     return __mlir_attr.true
 
   alias ui8 = MyDType(Int(1).value)
   alias float32 = MyDType(Int(2).value)
