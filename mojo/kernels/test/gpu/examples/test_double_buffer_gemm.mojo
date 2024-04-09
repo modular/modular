@@ -39,6 +39,7 @@ from layout.layout_tensor import (
     outer_product_acc,
     copy_dram_to_sram_async,
     warp_copy_sram_to_local,
+    copy_local_to_dram,
 )
 from gpu.device_print import _printf
 from pathlib import Path
@@ -270,11 +271,11 @@ fn sgemm_double_buffer[
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
-    var c_gmem_thread_tile = c_gmem_warp_tile.vectorize[
-        simd_size, simd_size
-    ]().distribute[thread_layout](ThreadIdx.x())
     # Copy results to global memory.
-    c_gmem_thread_tile.copy_from_numa(c_reg.vectorize[simd_size, simd_size]())
+    copy_local_to_dram[dst_thread_layout=thread_layout](
+        c_gmem_warp_tile.vectorize[simd_size, simd_size](),
+        c_reg.vectorize[simd_size, simd_size](),
+    )
 
 
 fn test() raises:
