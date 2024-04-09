@@ -19,7 +19,7 @@ from sys.info import bitwidthof
 
 from .swap import swap
 from memory.unsafe import DTypePointer, Pointer
-from memory import AnyPointer
+from memory import UnsafePointer
 
 # ===----------------------------------------------------------------------===#
 # sort
@@ -49,7 +49,7 @@ fn _insertion_sort[
 
 fn _insertion_sort[
     type: CollectionElement, cmp_fn: fn (type, type) capturing -> Bool
-](array: AnyPointer[type], start: Int, end: Int):
+](array: UnsafePointer[type], start: Int, end: Int):
     """Sort the array[start:end] slice"""
 
     for i in range(start + 1, end):
@@ -99,7 +99,7 @@ fn _partition[
 @always_inline
 fn _partition[
     type: CollectionElement, cmp_fn: fn (type, type) capturing -> Bool
-](array: AnyPointer[type], start: Int, end: Int) -> Int:
+](array: UnsafePointer[type], start: Int, end: Int) -> Int:
     if start == end:
         return end
 
@@ -180,7 +180,7 @@ fn _quicksort[
 
 fn _quicksort[
     type: CollectionElement, cmp_fn: fn (type, type) capturing -> Bool
-](array: AnyPointer[type], size: Int):
+](array: UnsafePointer[type], size: Int):
     if size == 0:
         return
 
