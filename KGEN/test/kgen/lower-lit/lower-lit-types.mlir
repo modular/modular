@@ -213,16 +213,6 @@ kgen.generator @gerToGEPFooFromBar<l: !lit.lifetime<1>, l2: !lit.lifetime<1>>
   kgen.return %a : si32
 }
 
-// CHECK-LABEL: kgen.generator @ref_offset
-kgen.generator @ref_offset<l: !lit.lifetime<1>>
-  (%arg0: !lit.ref<@PairStruct, mut l>, %arg1: index) -> !lit.ref<@PairStruct, mut l> {
-  // CHECK-NEXT: %0 = pop.offset %arg0[%arg1]
-  %0 = lit.ref.offset %arg0[%arg1] : <@PairStruct, mut l>
-
-  // CHECK-NEXT: kgen.return %0
-  kgen.return %0 : !lit.ref<@PairStruct, mut l>
-}
-
 // Issue #29038 - lower lit can't change positions of parameters.
 // CHECK-LABEL: kgen.generator @takes_val_after_lifetime
 // CHECK-SAME: <life: struct<()>, type: type>(%arg0: !kgen.pointer<type>)
