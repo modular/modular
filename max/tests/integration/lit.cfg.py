@@ -35,13 +35,3 @@ tool_dirs = [
 tools = ["max"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
-
-mojo_user_package = (
-    Path(config.modular_src_root)
-    / "SDK"
-    / "integration-test"
-    / "EngineAPI"
-    / "Inputs"
-    / "test_user_op"
-)
-config.substitutions.append(("%mojo_user_pkg", mojo_user_package))

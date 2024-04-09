@@ -9,11 +9,17 @@ if(NOT TARGET max-pybind-ext)
   return()
 endif()
 
+set(CUSTOM_OP_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/../../Inputs/test_user_op)
 set(CUSTOM_OP_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/user_op.mojopkg)
 
 add_custom_command(
-  COMMAND $<TARGET_FILE:mojo> package ${CMAKE_CURRENT_SOURCE_DIR}/../Inputs/test_user_op -o ${CUSTOM_OP_OUTPUT}
+  COMMAND $<TARGET_FILE:mojo> package ${CUSTOM_OP_SOURCE} -o ${CUSTOM_OP_OUTPUT}
   OUTPUT ${CUSTOM_OP_OUTPUT}
+  DEPENDS
+    ${CUSTOM_OP_SOURCE}/__init__.mojo
+    ${CUSTOM_OP_SOURCE}/user_add.mojo
+    ${CUSTOM_OP_SOURCE}/user_ops.mojo
+    ${CUSTOM_OP_SOURCE}/user_sqrt.mojo
 )
 
 add_modular_pytest(max-engine

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# RUN: mojo package %mojo_user_pkg -o %t.mojopkg
+# RUN: mojo package %S/../../Inputs/test_user_op -o %t.mojopkg
 # RUN: %mojo -debug-level full %s %S/mo.mlir %t.mojopkg
 
 from max.engine import (
