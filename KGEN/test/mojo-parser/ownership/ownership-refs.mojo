@@ -281,7 +281,7 @@ struct TwoLifetimes[a_lifetime: ImmLifetime,
 # https://github.com/modularml/mojo/issues/1921
 struct SomeStruct:
   # CHECK-LABEL: lit.func @"refBindingToImmortal
-  fn refBindingToImmortal(inout self, ptr: AnyPointer[Int])
+  fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
       -> Reference[Int, __mlir_attr.`1: i1`, __lifetime_of(self)]:
     # CHECK: [[REFVAL:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%ptr)
     # CHECK: %anonymous2A = lit.var.decl "anonymous*"
@@ -315,7 +315,7 @@ struct CutDownVariadicPack[
        while True: pass
 
 # Test that you can implicitly convert an immortal mutable reference (as is returned
-# by AnyPointer for example) to mortal reference with specified lifetime.
+# by UnsafePointer for example) to mortal reference with specified lifetime.
 # CHECK: lit.func @"test_immortal_to_mortal
 fn test_immortal_to_mortal[mutability: __mlir_type.`i1`, life: AnyLifetime[mutability].type](arg:
    Reference[Int, mutability, life].mlir_ref_type)
@@ -331,7 +331,7 @@ fn test_immortal_to_mortal[mutability: __mlir_type.`i1`, life: AnyLifetime[mutab
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON2]], [[ADJREFVAL]])
   # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[ANON2:%.*]]
   # CHECK-NEXT: kgen.return [[RES]]
-  return AnyPointer(Reference(arg))[]
+  return UnsafePointer(Reference(arg))[]
 
 
 # CHECK: lit.func @"ref_copyability
