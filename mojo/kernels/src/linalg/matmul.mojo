@@ -2487,65 +2487,56 @@ fn _small_matmul[
 
 @always_inline
 fn _matmul_cpu[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
+    config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    saturated_vnni: Bool,
     single_thread_blocking_override: Bool = False,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b: NDBuffer[config.b_type, 2, config.b_shape],
     kernel_type_m: Int,
     num_threads: Int = -1,
 ):
     @parameter
     if (
         single_thread_blocking_override
-        and not transpose_a
-        and not b_packed
-        and a_type == b_type
-        and b_type == c_type
+        and not config.transpose_a
+        and not config.b_packed
+        and config.a_type == config.b_type
+        and config.b_type == config.c_type
     ):
         return _small_matmul[
-            a_type,
-            a_shape,
-            b_shape,
-            c_shape,
-            transpose_b,
+            config.a_type,
+            config.a_shape,
+            config.b_shape,
+            config.c_shape,
+            config.transpose_b,
             elementwise_lambda_fn,
         ](
             a,
-            rebind[NDBuffer[a_type, 2, b_shape]](b),
-            rebind[NDBuffer[a_type, 2, c_shape]](c),
+            rebind[NDBuffer[config.a_type, 2, config.b_shape]](b),
+            rebind[NDBuffer[config.a_type, 2, config.c_shape]](c),
         )
-    constrained[not transpose_a, "transpose_a not yet supported"]()
+    constrained[not config.transpose_a, "transpose_a not yet supported"]()
 
-    var shape = GemmShape.get[False, transpose_b](c, a, b)
+    var shape = GemmShape.get[False, config.transpose_b](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
 
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = Buffer[c_type](c.data, c.dim[0]())
-        var lhs = rebind[NDBuffer[a_type, 2, a_shape]](a)
-        var rhs = Buffer[b_type](b.data, b.dim[0]())
+        var out = Buffer[config.c_type](c.data, c.dim[0]())
+        var lhs = rebind[NDBuffer[config.a_type, 2, config.a_shape]](a)
+        var rhs = Buffer[config.b_type](b.data, b.dim[0]())
         gemv[
             parallelize=True,
             c_size = Dim(),
-            c_type=c_type,
-            a_shape=a_shape,
-            a_type=a_type,
+            c_type = config.c_type,
+            a_shape = config.a_shape,
+            a_type = config.a_type,
             b_size = Dim(),
-            b_type=b_type,
+            b_type = config.b_type,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](out, lhs, rhs)
     else:
@@ -2555,17 +2546,19 @@ fn _matmul_cpu[
             num_threads if num_threads > 0 else Runtime().parallelism_level(),
         )
 
-        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-        alias simd_size = simdwidthof[c_type]()
-        alias alignment = alignof[SIMD[c_type, simd_size]]()
+        alias use_i8mm = use_i8mm_fn[
+            config.a_type, config.b_type, config.c_type
+        ]()
+        alias simd_size = simdwidthof[config.c_type]()
+        alias alignment = alignof[SIMD[config.c_type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr = DTypePointer[a_type]()
+        var a_packed_ptr = DTypePointer[config.a_type]()
         if use_i8mm:
-            a_packed_ptr = DTypePointer[a_type].alloc(
+            a_packed_ptr = DTypePointer[config.a_type].alloc(
                 mh * kh, alignment=alignment
             )
-        var a_packed = NDBuffer[a_type, 2, a_shape](
+        var a_packed = NDBuffer[config.a_type, 2, config.a_shape](
             a_packed_ptr, DimList(mh, kh)
         )
 
@@ -2574,18 +2567,24 @@ fn _matmul_cpu[
         @parameter
         fn pack_task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
-                a_type, b_type, c_type, PartitionHeuristic.MOJO
+                config.a_type,
+                config.b_type,
+                config.c_type,
+                PartitionHeuristic.MOJO,
             ](m, 1, k, task_id, num_tasks, kernel_type_m)
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
-            packA_i8mm[a_type](t0, t1, k, a.data, a_packed_ptr)
+            packA_i8mm[config.a_type](t0, t1, k, a.data, a_packed_ptr)
 
         @always_inline
         @__copy_capture(m, k, num_tasks, n, a_packed)
         @parameter
         fn task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
-                a_type, b_type, c_type, PartitionHeuristic.MOJO
+                config.a_type,
+                config.b_type,
+                config.c_type,
+                PartitionHeuristic.MOJO,
             ](m, n, k, task_id, num_tasks, kernel_type_m)
 
             if (
@@ -2595,17 +2594,17 @@ fn _matmul_cpu[
                 return
 
             _submatmul_sequential_sync[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
-                transpose_a,
-                transpose_b,
-                b_packed,
+                config.a_type,
+                config.a_shape,
+                config.b_type,
+                config.b_shape,
+                config.c_type,
+                config.c_shape,
+                config.transpose_a,
+                config.transpose_b,
+                config.b_packed,
                 elementwise_lambda_fn,
-                saturated_vnni,
+                config.saturated_vnni,
             ](
                 c,
                 a_packed if use_i8mm else a,
@@ -2652,20 +2651,34 @@ fn matmul_M[
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
     alias func = _matmul_cpu if target == "cpu" else _matmul_gpu
 
-    func[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_a,
-        transpose_b,
-        b_packed,
-        elementwise_lambda_fn,
-        saturated_vnni,
-        single_thread_blocking_override,
-    ](c, a, b, kernel_type_m, num_threads)
+    @parameter
+    @always_inline
+    fn dispatch_on_kernel_type[kernel_type: Bool]():
+        alias config = get_mm_config[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            b_packed=b_packed,
+            kernel_type=kernel_type,
+            saturated_vnni=saturated_vnni,
+        ]()
+        func[config, elementwise_lambda_fn, single_thread_blocking_override,](
+            rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
+            rebind[NDBuffer[config.a_type, 2, config.a_shape]](a),
+            rebind[NDBuffer[config.b_type, 2, config.b_shape]](b),
+            kernel_type_m,
+            num_threads,
+        )
+
+    var shape = GemmShape.get[False, transpose_b](c, a, b)
+    var n = shape.N
+    var k = shape.K
+    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
 @always_inline

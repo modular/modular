@@ -20,6 +20,7 @@ from gpu.memory import AddressSpace
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from gpu.tensor_ops import tc_reduce
 from .MatmulUtils import (
+    MatmulConfig,
     GemmShape,
     elementwise_epilogue_type,
 )
@@ -619,22 +620,13 @@ fn matmul_kernel_naive[
 
 @always_inline
 fn _matmul_gpu[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_a: Bool,
-    transpose_b: Bool,
-    b_packed: Bool,
+    config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    saturated_vnni: Bool,
     single_thread_blocking_override: Bool = False,
 ](
-    c: NDBuffer[c_type, 2, c_shape],
-    a: NDBuffer[a_type, 2, a_shape],
-    b: NDBuffer[b_type, 2, b_shape],
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b: NDBuffer[config.b_type, 2, config.b_shape],
     kernel_type_m: Int,
     num_threads: Int = -1,
 ):
@@ -646,20 +638,22 @@ fn _matmul_gpu[
     #     not single_thread_blocking_override,
     #     "single_thread_blocking_override not applicable",
     # ]()
-    constrained[transpose_a == False, "only NN matmul is supported"]()
-    constrained[transpose_b == False, "only NN matmul is supported"]()
-    constrained[not b_packed, "pre-packing not yet supported"]()
-    constrained[not saturated_vnni, "saturated_vnni_flag not applicable"]()
+    constrained[config.transpose_a == False, "only NN matmul is supported"]()
+    constrained[config.transpose_b == False, "only NN matmul is supported"]()
+    constrained[not config.b_packed, "pre-packing not yet supported"]()
     constrained[
-        a_type == DType.float32 or a_type == DType.bfloat16,
+        not config.saturated_vnni, "saturated_vnni_flag not applicable"
+    ]()
+    constrained[
+        config.a_type == DType.float32 or config.a_type == DType.bfloat16,
         "only Float32/BFloat16 types are supported",
     ]()
     constrained[
-        b_type == DType.float32 or b_type == DType.bfloat16,
+        config.b_type == DType.float32 or config.b_type == DType.bfloat16,
         "only Float32/BFloat16 types are supported",
     ]()
     constrained[
-        c_type == DType.float32 or c_type == DType.bfloat16,
+        config.c_type == DType.float32 or config.c_type == DType.bfloat16,
         "only Float32/BFloat16 types are supported",
     ]()
 
@@ -676,23 +670,23 @@ fn _matmul_gpu[
     if elementwise_lambda_fn:
         if use_32bit_indexing:
             _matmul_gpu_dispatch[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
+                config.a_type,
+                config.a_shape,
+                config.b_type,
+                config.b_shape,
+                config.c_type,
+                config.c_shape,
                 indexing_integral_dtype = DType.uint32,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b)
         else:
             _matmul_gpu_dispatch[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
+                config.a_type,
+                config.a_shape,
+                config.b_type,
+                config.b_shape,
+                config.c_type,
+                config.c_shape,
                 indexing_integral_dtype = DType.uint64,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b)
@@ -700,22 +694,22 @@ fn _matmul_gpu[
     else:
         if use_32bit_indexing:
             _matmul_gpu_dispatch[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
+                config.a_type,
+                config.a_shape,
+                config.b_type,
+                config.b_shape,
+                config.c_type,
+                config.c_shape,
                 indexing_integral_dtype = DType.uint32,
             ](c, a, b)
         else:
             _matmul_gpu_dispatch[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
+                config.a_type,
+                config.a_shape,
+                config.b_type,
+                config.b_shape,
+                config.c_type,
+                config.c_shape,
                 indexing_integral_dtype = DType.uint64,
             ](c, a, b)
 
