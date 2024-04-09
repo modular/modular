@@ -7,7 +7,8 @@
 
 from sys import llvm_intrinsic
 
-from memory.unsafe import AddressSpace, DTypePointer, Pointer
+from memory.reference import AddressSpace
+from memory.unsafe import DTypePointer, Pointer
 
 from .memory import AddressSpace as GPUAddressSpace
 
