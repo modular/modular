@@ -34,7 +34,11 @@ from sys import argv
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor, outer_product_acc
+from layout.layout_tensor import (
+    LayoutTensor,
+    outer_product_acc,
+    copy_dram_to_sram_async,
+)
 from gpu.device_print import _printf
 from pathlib import Path
 
@@ -128,26 +132,23 @@ fn sgemm_double_buffer[
     # Row major thread layout for coalesced access.
     alias thread_loada_gmem_layout = Layout.row_major(NUM_THREADS // BK, BK)
     alias thread_storea_smem_layout = Layout.col_major(BK, NUM_THREADS // BK)
-    var thread_loada_gmem_frags = a_gmem_tile.distribute[
-        thread_loada_gmem_layout
-    ](ThreadIdx.x())
-    var thread_storea_smem_frags = a_smem_tile[0].distribute[
-        thread_storea_smem_layout
-    ](ThreadIdx.x())
-    thread_storea_smem_frags.copy_from_async(thread_loada_gmem_frags)
+    copy_dram_to_sram_async[
+        src_thread_layout=thread_loada_gmem_layout,
+        dst_thread_layout=thread_storea_smem_layout,
+    ](a_smem_tile[0], a_gmem_tile)
 
     # Load B tile from global memory to shared.
     # Row major thread layout for coalesced access.
     alias thread_layout_loadb = Layout.row_major(
         (NUM_THREADS // BN) * simd_size, BN // simd_size
     )
-    var thread_loadb_gmem_frags = b_gmem_tile.vectorize[
-        1, simd_size
-    ]().distribute[thread_layout_loadb](ThreadIdx.x())
-    var thread_storeb_smem_frags = b_smem_tile[0].vectorize[
-        1, simd_size
-    ]().distribute[thread_layout_loadb](ThreadIdx.x())
-    thread_storeb_smem_frags.copy_from_async(thread_loadb_gmem_frags)
+    copy_dram_to_sram_async[
+        src_thread_layout=thread_layout_loadb,
+        dst_thread_layout=thread_layout_loadb,
+    ](
+        b_smem_tile[0].vectorize[1, simd_size](),
+        b_gmem_tile.vectorize[1, simd_size](),
+    )
 
     async_copy_wait_all()
     barrier()
@@ -248,25 +249,18 @@ fn sgemm_double_buffer[
             # Load next k tile from global memory to shared memory.
             if k == 0 and k_tile_id < num_k_tiles - 1:
                 a_gmem_tile = a.tile[BM, BK](BlockIdx.y(), k_tile_id + 1)
-                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, BlockIdx.x())
-                var thread_loada_gmem_frags = a_gmem_tile.distribute[
-                    thread_loada_gmem_layout
-                ](ThreadIdx.x())
-                var thread_loada_smem_frags = a_smem_tile[
-                    prefetch_id
-                ].distribute[thread_storea_smem_layout](ThreadIdx.x())
-                thread_loada_smem_frags.copy_from_async(thread_loada_gmem_frags)
+                copy_dram_to_sram_async[
+                    src_thread_layout=thread_loada_gmem_layout,
+                    dst_thread_layout=thread_storea_smem_layout,
+                ](a_smem_tile[prefetch_id], a_gmem_tile)
 
-                var thread_loadb_gmem_frags = b_gmem_tile.vectorize[
-                    1, simd_size
-                ]().distribute[thread_layout_loadb](ThreadIdx.x())
-                var thread_storeb_smem_frags = b_smem_tile[
-                    prefetch_id
-                ].vectorize[1, simd_size]().distribute[thread_layout_loadb](
-                    ThreadIdx.x()
-                )
-                thread_storeb_smem_frags.copy_from_async(
-                    thread_loadb_gmem_frags
+                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, BlockIdx.x())
+                copy_dram_to_sram_async[
+                    src_thread_layout=thread_layout_loadb,
+                    dst_thread_layout=thread_layout_loadb,
+                ](
+                    b_smem_tile[prefetch_id].vectorize[1, simd_size](),
+                    b_gmem_tile.vectorize[1, simd_size](),
                 )
 
             outer_product_acc(c_reg, a_reg[buffer_id], b_reg[buffer_id])
