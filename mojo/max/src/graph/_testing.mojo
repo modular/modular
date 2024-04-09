@@ -9,7 +9,6 @@ from tensor import Tensor
 from testing import assert_almost_equal, assert_equal
 
 from max.engine import InferenceSession, LoadOptions, TensorMap
-from max.graph.module import _Module
 
 
 fn assert_tensors_almost_equal[

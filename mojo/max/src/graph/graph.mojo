@@ -22,7 +22,7 @@ from tensor import Tensor
 import _mlir
 
 from .attr import AttrMap
-from .module import _Module, _tensor_attr, _vector_attr
+from .module import _tensor_attr, _vector_attr
 from .symbol import Symbol, SymbolTuple
 from .type import MOList, MOTensor, TypeTuple
 
@@ -65,8 +65,24 @@ struct Graph(CollectionElement, Stringable):
             in_types: The `Graph`'s input types.
             out_types: The `Graph`'s output types.
         """
-        var module = _Module()
-        self = module.graph(name, in_types, out_types)
+        var ctx = _mlir.Context()
+        ctx.load_modular_dialects()
+        ctx.load_all_available_dialects()
+        var module = _mlir.Module(_mlir.Location.unknown(ctx))
+        var loc = _mlir.Location.unknown(ctx)
+
+        var function_type = _mlir.builtin_types.FunctionType(
+            ctx, in_types.to_mlir(ctx), out_types.to_mlir(ctx)
+        )
+        var op = _c.graph_new(
+            module,
+            loc,
+            name,
+            _mlir.builtin_types.FunctionType(
+                ctx, in_types.to_mlir(ctx), out_types.to_mlir(ctx)
+            ),
+        )
+        self.__init__(op)
 
     fn __str__(self) -> String:
         """Returns a `String` representation of this `Graph`.
@@ -78,7 +94,7 @@ struct Graph(CollectionElement, Stringable):
             A human-readable string representation of the graph.
         """
         try:
-            return str(self._module()._module)
+            return str(self._module())
         except:
             return str(self._op)
 
@@ -106,17 +122,17 @@ struct Graph(CollectionElement, Stringable):
     fn _body(self) raises -> _mlir.Block:
         return self._op.region(0).first_block()
 
-    fn _module(self) raises -> _Module:
+    fn _module(self) raises -> _mlir.Module:
         """Returns the `Graph`'s parent `Module`s.
 
         Returns:
             The `Module` that holds this `Graph`.
         """
-        return _Module(_mlir.Module.from_op(self._op.parent()))
+        return _mlir.Module.from_op(self._op.parent())
 
     fn _context(self) raises -> _mlir.Context:
         """Returns the `Graph`'s MLIR context."""
-        return self._module()._module.context()
+        return self._module().context()
 
     fn __getitem__(self, n: Int) raises -> Symbol:
         """Returns the `n`th argument of this `Graph`.

@@ -298,7 +298,7 @@ struct LoadOptions(CollectionElement):
             graph: MAX Graph.
         """
         self._source = ModelSource(
-            graph._module()._module.c.ptr, FrameworkFormat.MAXGraph
+            graph._module().c.ptr, FrameworkFormat.MAXGraph
         )
 
     fn _set_model_path(inout self, path: Path):
