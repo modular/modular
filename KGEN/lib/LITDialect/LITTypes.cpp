@@ -924,12 +924,8 @@ PogListAttr LITSignatureType::getParamListAttrs() {
   return getMetadata().getParamListAttrs();
 }
 
-SmallVector<StringAttr> LITSignatureType::getArgNames() {
-  return getArgListAttrs().getNames();
-}
-
 StringAttr LITSignatureType::getArgName(size_t idx) {
-  return getArgNames()[idx];
+  return getArgListAttrs().getName(idx);
 }
 
 SmallVector<PassingKind> LITSignatureType::getArgPassingKinds() {
@@ -1165,10 +1161,11 @@ LITSignatureType LITSignatureType::get(MLIRContext *ctx, TypeRange inputs,
   auto funcType = FunctionType::get(ctx, inputs, results);
 
   size_t numInputs = funcType.getNumInputs();
-  SmallVector<StringAttr> argNames(numInputs, StringAttr::get(ctx));
-  SmallVector<PassingKind> argPassingKinds(numInputs, PassingKind::PosOnly);
-  auto newArgAttrs = PogListAttr::get(ctx, argNames, argPassingKinds);
-  auto metadata = FnMetadataAttr::get(newArgAttrs, numImplicitLifetimeDecls);
+  SmallVector<PogMetadataAttr> argPogs(
+      numInputs,
+      PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
+  auto metadata = FnMetadataAttr::get(PogListAttr::get(ctx, argPogs),
+                                      numImplicitLifetimeDecls);
   return LITSignatureType::get(funcType, /*paramTypes=*/{},
                                /*convs=*/{}, /*effects=*/{}, metadata);
 }

@@ -627,20 +627,19 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     }
     os << '(';
     PassingKindPrinter passingKindPrinter(os, sig.getArgPassingKinds());
-    for (auto [i, typeX, conventionX, name, passingKind] :
-         llvm::enumerate(sig.getArguments(), sig.getArgConventions(),
-                         sig.getArgNames(), sig.getArgPassingKinds())) {
+    for (auto [idx, typeX, conventionX] :
+         llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
       ASTType type = typeX;
       ArgConvention convention = conventionX;
       if (SignatureType::isResultSlot(convention))
         continue; // Don't print result in argument list.
 
-      if (i)
+      if (idx)
         os << ", ";
-      passingKindPrinter.printOptionalStarSlash(i);
+      passingKindPrinter.printOptionalStarSlash(idx);
 
       bool printStar = false;
-      if (sig.isPosVarArg(i)) { // Print with the element of the variadic.
+      if (sig.isPosVarArg(idx)) { // Print with the element of the variadic.
         auto variadic = cast<VariadicType>(type);
         type = variadic.getElementType();
         convention = variadic.getConvention();
@@ -658,10 +657,11 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
 
       // The formal type is VariadicPack[] and the thing to print is a pack
       // attribute, not a type.
-      if (sig.isPackVarArg(i)) {
-        convention = sig.getPackVarArgConvention(i);
+      StringAttr name = sig.getArgName(idx);
+      if (sig.isPackVarArg(idx)) {
+        convention = sig.getPackVarArgConvention(idx);
         TypedAttr variadic;
-        if (ASTType variadicPack = sig.getIfVariadicPack(i)) {
+        if (ASTType variadicPack = sig.getIfVariadicPack(idx)) {
           variadic = variadicPack.getVariadicPackInfo().getVariadic();
         } else {
           // TODO: remove old PackType.
@@ -690,7 +690,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       }
 
       // Check if we are at the end; if so, we might still have to print a '/'.
-      passingKindPrinter.printOptionalTrailingSlash(i);
+      passingKindPrinter.printOptionalTrailingSlash(idx);
     }
     os << ')';
     for (auto [enabled, effect] :

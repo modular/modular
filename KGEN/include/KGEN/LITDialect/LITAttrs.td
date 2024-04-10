@@ -76,7 +76,9 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-      "StringAttr":$name, "PassingKind":$passingKind, "bool":$isVariadic
+      "StringAttr":$name,
+      "PassingKind":$passingKind,
+      CArg<"bool", "false">:$isVariadic
     ), [{
       return $_get(name.getContext(), name, passingKind, isVariadic);
     }]>
@@ -140,6 +142,7 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
 
   let builders = [
     AttrBuilder<(ins)>,
+    AttrBuilder<(ins "ArrayRef<PogMetadataAttr>":$pogs)>,
     AttrBuilder<(ins "ArrayRef<PogMetadataAttr>":$pogs,
                      "ArrayRef<TypedAttr>":$defaultPos,
                      "ArrayRef<TypedAttr>":$defaultKwOnly)>,

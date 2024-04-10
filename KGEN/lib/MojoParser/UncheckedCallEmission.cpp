@@ -503,11 +503,11 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
   SmallVector<ASTExprAnd<AnyValue>> argumentValues;
   argumentValues.reserve(calleeSig.getNumArguments());
 
-  DefaultValueHandler defaultHandler(calleeSig.getArgListAttrs());
-  for (auto [argIdx, argName, expectedTypeX, convention, passingKind] :
-       llvm::enumerate(calleeSig.getArgNames(), calleeSig.getArguments(),
-                       calleeSig.getArgConventions(),
-                       calleeSig.getArgPassingKinds())) {
+  PogListAttr argListAttr = calleeSig.getArgListAttrs();
+  DefaultValueHandler defaultHandler(argListAttr);
+  for (auto [argIdx, expectedTypeX, convention, pogAttr] :
+       llvm::enumerate(calleeSig.getArguments(), calleeSig.getArgConventions(),
+                       argListAttr.getPogs())) {
     // Use a ParserParamEvaluator to fold only 'apply' expressions. Emit a
     // rebind if the refined type is different than the expected type.
     Type expectedType = evaluator.refineType(expectedTypeX);
@@ -523,7 +523,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // emitted. Just skip over it for now.
     if (emitter.builder && SignatureType::isResultSlot(convention)) {
       assert(calleeSig.hasMemoryOnlyResult() ||
-             (calleeSig.isThrows() && passingKind == PassingKind::Implicit));
+             (calleeSig.isThrows() &&
+              pogAttr.getPassingKind() == PassingKind::Implicit));
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
     }
@@ -578,6 +579,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
         argumentValues.push_back({kwargsDict, callExpr});
         continue;
       }
+      StringAttr argName = pogAttr.getName();
       if (auto kwOperandOr = operands.findKwArg(argName);
           kwOperandOr.has_value()) {
         // The argument is passed as a keyword operand.
