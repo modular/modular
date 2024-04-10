@@ -306,7 +306,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         var list_len = len(list)
 
         var data_anyptr = list.steal_data()
-        var data_ptr = Pointer[Scalar[type]].__from_index(int(data_anyptr))
+        var data_ptr = Pointer[Scalar[type]](address=int(data_anyptr))
         var data_dptr = DTypePointer[type](data_ptr)
 
         self = Self(shape, data_dptr)
@@ -322,7 +322,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         var list_len = len(list)
 
         var data_anyptr = list.steal_data()
-        var data_ptr = Pointer[Scalar[type]].__from_index(int(data_anyptr))
+        var data_ptr = Pointer[Scalar[type]](address=int(data_anyptr))
         var data_dptr = DTypePointer[type](data_ptr)
 
         self = Self(TensorShape(list_len), data_dptr)
@@ -1190,7 +1190,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         var num_elements = byte_tensor.num_elements()
         return Self(
             num_elements // type.sizeof(),
-            bitcast[type](byte_tensor._steal_ptr()),
+            byte_tensor._steal_ptr().bitcast[type](),
         )
 
     fn save(self, path: Path) raises:
@@ -1252,7 +1252,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         var tensor = Self(spec)
         if spec.num_elements() == 0:
             return tensor
-        memcpy(tensor.data(), bitcast[type](data), spec.num_elements())
+        memcpy(tensor.data(), data.bitcast[type](), spec.num_elements())
         _ = bytes^
         return tensor
 
@@ -1343,7 +1343,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     # TODO: Avoid this copy.
     memcpy(
         bytes.data() + copied,
-        bitcast[DType.int8](tensor.data()),
+        tensor.data().bitcast[DType.int8](),
         tensor.num_elements() * type.sizeof(),
     )
     copied += tensor.num_elements() * type.sizeof()
