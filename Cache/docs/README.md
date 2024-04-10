@@ -147,8 +147,8 @@ mlir::PassManager pm(&ctx);
 mlir::OwningOpRef<ModuleOp> module1 =
   mlir::parseSourceString<ModuleOp>(mlirString, ParserConfig{&ctx});
 // Run the pass manager on the module.
-auto xform = cachedTransform(*module1, regionCache, transformCache,
-                             std::move(readyChain), pm);
+auto xform = cachedTransform(*module1, transformCache, std::move(readyChain),
+                             pm);
 ```
 
 This example runs a set of provided passes, caches the result, and at the end,

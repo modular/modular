@@ -418,13 +418,11 @@ ErrorOrSuccess KGEN::runLibraryGenerationPipeline(
     ModuleOp module, LLCL::Runtime &runtime,
     const KGEN::CompilationOptions &compileOptions,
     bool materializeDependencies) {
-  auto cacheBackends = getMojoCacheBackends(runtime);
-  if (cacheBackends.isError())
-    return cacheBackends.takeError();
+  auto cacheBackend = getMojoCacheBackend(runtime);
+  if (cacheBackend.isError())
+    return cacheBackend.takeError();
   auto transformCache =
-      RCRef<Cache::TransformCache>::create(std::move(cacheBackends->first));
-  auto regionCache =
-      RCRef<Cache::RegionCache>::create(std::move(cacheBackends->second));
+      RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
 
   // Generate a library from the module, processing the pipeline up to the
   // elaboration phase.
@@ -436,8 +434,8 @@ ErrorOrSuccess KGEN::runLibraryGenerationPipeline(
         createMaterializePackagesWithDefaultGen(runtime, compileOptions));
   }
   LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-      module, regionCache.copy(), transformCache.copy(),
-      AsyncValueRef<Chain>::createReady(runtime), genLibPM);
+      module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
+      genLibPM);
   LLCL::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
@@ -549,21 +547,10 @@ void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
 // Caching
 //===----------------------------------------------------------------------===//
 
-ErrorOr<
-    std::pair<RCRef<Cache::BlobCacheBackend>, RCRef<Cache::BlobCacheBackend>>>
-KGEN::getMojoCacheBackends(LLCL::Runtime &runtime) {
-  auto transformCacheBackend = Cache::getLocalDefaultBackendChain(
+ErrorOr<RCRef<Cache::BlobCacheBackend>>
+KGEN::getMojoCacheBackend(LLCL::Runtime &runtime) {
+  return Cache::getLocalDefaultBackendChain(
       std::filesystem::path(".mojo_cache") / "transform", KGEN_VERSION_STRING);
-  if (transformCacheBackend.isError())
-    return transformCacheBackend.takeError();
-
-  auto regionCacheBackend = Cache::getLocalDefaultBackendChain(
-      std::filesystem::path(".mojo_cache") / "region", KGEN_VERSION_STRING);
-  if (regionCacheBackend.isError())
-    return regionCacheBackend.takeError();
-
-  return std::make_pair(transformCacheBackend.takeValue(),
-                        regionCacheBackend.takeValue());
 }
 
 //===----------------------------------------------------------------------===//
@@ -621,7 +608,6 @@ KGENCompilerLayer::KGENCompilerLayer(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
     const CompilationOptions &options, ObjectCompilerLayer &base,
     RCRef<Cache::BlobCacheBackend> transformCacheBackend,
-    RCRef<Cache::BlobCacheBackend> regionCacheBackend,
     llvm::orc::ExecutionSession &sess, const llvm::DataLayout &dl,
     MaterializationLayer::AddToSearchOrderFn add)
     : MaterializationLayer(LayerKind::kKGENCompilerLayer, sess, dl,
@@ -631,8 +617,6 @@ KGENCompilerLayer::KGENCompilerLayer(
   // Construct the caches.
   transformCache =
       RCRef<Cache::TransformCache>::create(std::move(transformCacheBackend));
-  regionCache =
-      RCRef<Cache::RegionCache>::create(std::move(regionCacheBackend));
 }
 
 ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
@@ -667,8 +651,7 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
                 "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
 
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-        theModule, regionCache.copy(), transformCache.copy(),
-        runtime.getReadyChain().copy(), pm);
+        theModule, transformCache.copy(), runtime.getReadyChain().copy(), pm);
     LLCL::await(ready);
     if (ready.isError())
       return ready.takeDiagnostic().getMessage().copy();
@@ -745,12 +728,11 @@ KGEN::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
 
   // Add the KGEN compiler layer. First though, get the backend chains to pass
   // into the compile layer.
-  auto cacheBackends = getMojoCacheBackends(runtime);
-  if (cacheBackends.isError())
-    return cacheBackends.takeError();
+  auto cacheBackend = getMojoCacheBackend(runtime);
+  if (cacheBackend.isError())
+    return cacheBackend.takeError();
 
   engine->addLayer<KGENCompilerLayer>(pm, runtime, target, compilationOptions,
-                                      objLayer, std::move(cacheBackends->first),
-                                      std::move(cacheBackends->second));
+                                      objLayer, std::move(*cacheBackend));
   return std::move(engine);
 }

@@ -259,17 +259,6 @@ cachedTransform(EncodedLocation loc, RCRef<TransformCache> transformCache,
 using CacheProfilerEntry =
     ProfilerEntry<Trace::EnableTrace(Trace::kCompiler, 1), Trace::kCompiler>;
 
-/// The Cache dialect can store the region of an op - this struct defines the
-/// cache key. It can be a region (indicating that we need to hash the region)
-/// or a string (indicating that we already know the hash).
-struct RegionCacheKey {
-  using KeyTy = std::variant<Region *, StringRef>;
-  static std::string hashKey(KeyTy key);
-};
-
-/// Convenience typedef to reduce typing.
-using RegionCache = BlobCache<RegionCacheKey>;
-
 //===----------------------------------------------------------------------===//
 // Operation Transformations
 //===----------------------------------------------------------------------===//
@@ -322,7 +311,6 @@ cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
 /// hashes from the old versions (pre-transform) to the new versions (transform
 /// applied).
 LLCL::AnyAsyncValueRef cachedTransform(Operation *target,
-                                       RCRef<RegionCache> regionCache,
                                        RCRef<TransformCache> transformCache,
                                        LLCL::AnyAsyncValueRef chain,
                                        mlir::PassManager &pm);
