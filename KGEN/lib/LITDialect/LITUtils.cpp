@@ -461,28 +461,42 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
-size_t LIT::countNumPosOnly(ArrayRef<PassingKind> kinds) {
-  for (auto [idx, kind] : llvm::enumerate(kinds))
-    if (kind != PassingKind::PosOnly)
+size_t LIT::countNumPosOnly(ArrayRef<PogMetadataAttr> pogs) {
+  for (auto [idx, pogAttr] : llvm::enumerate(pogs))
+    if (pogAttr.getPassingKind() != PassingKind::PosOnly)
       return idx;
-  return kinds.size();
+  return pogs.size();
 }
 
-size_t LIT::countNumPositional(ArrayRef<PassingKind> kinds) {
-  for (auto [idx, kind] : llvm::enumerate(kinds))
-    if (kind != PassingKind::PosOnly && kind != PassingKind::PosOrKw)
-      return idx;
-  return kinds.size();
+size_t LIT::countNumPosOnly(PogListAttr pogListAttr) {
+  return countNumPosOnly(pogListAttr.getPogs());
 }
 
-size_t LIT::countNumImplicitKinds(ArrayRef<PassingKind> kinds) {
+size_t LIT::countNumPositional(ArrayRef<PogMetadataAttr> pogs) {
+  for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
+    if (PassingKind kind = pogAttr.getPassingKind();
+        kind != PassingKind::PosOnly && kind != PassingKind::PosOrKw)
+      return idx;
+  }
+  return pogs.size();
+}
+
+size_t LIT::countNumPositional(PogListAttr pogListAttr) {
+  return countNumPositional(pogListAttr.getPogs());
+}
+
+size_t LIT::countNumImplicitKinds(ArrayRef<PogMetadataAttr> pogs) {
   size_t num = 0;
-  for (PassingKind kind : llvm::reverse(kinds)) {
-    if (kind != PassingKind::Implicit)
+  for (PogMetadataAttr pogAttr : llvm::reverse(pogs)) {
+    if (pogAttr.getPassingKind() != PassingKind::Implicit)
       break;
     ++num;
   }
   return num;
+}
+
+size_t LIT::countNumImplicitKinds(PogListAttr pogListAttr) {
+  return countNumImplicitKinds(pogListAttr.getPogs());
 }
 
 //===----------------------------------------------------------------------===//
@@ -798,21 +812,21 @@ llvm::raw_ostream &LIT::operator<<(raw_ostream &os, const MangledSymbol &ms) {
 //===----------------------------------------------------------------------===//
 
 DefaultValueHandler::DefaultValueHandler(PogListAttr pogListAttr)
-    : DefaultValueHandler(pogListAttr.getPassingKinds(),
-                          pogListAttr.getDefaultPos(),
+    : DefaultValueHandler(pogListAttr.getPogs(), pogListAttr.getDefaultPos(),
                           pogListAttr.getDefaultKwOnly()) {}
 
 //===----------------------------------------------------------------------===//
 // Verifier helpers
 //===----------------------------------------------------------------------===//
 
-LogicalResult LIT::verifyDefaultTypes(
-    function_ref<InFlightDiagnostic()> emitError,
-    ArrayRef<TypedAttr> defaultsPos, ArrayRef<TypedAttr> defaultsKwOnly,
-    ArrayRef<PassingKind> passingKinds, ArrayRef<Type> types,
-    StringRef argOrParam, ArrayRef<ArgConvention> convs) {
-  DefaultValueHandler defaultHandler(passingKinds, defaultsPos, defaultsKwOnly);
-  for (size_t idx = 0; idx < passingKinds.size(); ++idx) {
+LogicalResult
+LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
+                        ArrayRef<TypedAttr> defaultsPos,
+                        ArrayRef<TypedAttr> defaultsKwOnly,
+                        ArrayRef<PogMetadataAttr> pogs, ArrayRef<Type> types,
+                        StringRef argOrParam, ArrayRef<ArgConvention> convs) {
+  DefaultValueHandler defaultHandler(pogs, defaultsPos, defaultsKwOnly);
+  for (size_t idx = 0; idx < pogs.size(); ++idx) {
     TypedAttr defaultOr = defaultHandler.getDefault(idx);
     if (!defaultOr)
       continue;
@@ -838,9 +852,8 @@ LogicalResult LIT::verifyDefaultTypes(
 
 LogicalResult
 LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
-                        ArrayRef<PassingKind> passingKinds,
-                        size_t numPosDefaults, size_t numKwOnlyDefaults,
-                        StringRef argOrParam) {
+                        ArrayRef<PogMetadataAttr> pogs, size_t numPosDefaults,
+                        size_t numKwOnlyDefaults, StringRef argOrParam) {
   // First, verify the order of passing kinds.
   auto latestKind = PassingKind::PosOnly;
   auto emitDiag = [&](PassingKind kind) {
@@ -849,7 +862,8 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
                        << stringifyPassingKind(latestKind);
   };
 
-  for (PassingKind kind : passingKinds) {
+  for (PogMetadataAttr pogAttr : pogs) {
+    PassingKind kind = pogAttr.getPassingKind();
     if (kind == PassingKind::Implicit) {
       latestKind = kind;
       continue;
@@ -879,14 +893,12 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
                        << numPassingKinds;
   };
 
-  // TODO: test this
-  size_t numPos = countNumPositional(passingKinds);
+  size_t numPos = countNumPositional(pogs);
   if (numPosDefaults > numPos)
     return emitTooManyDefaults(numPosDefaults, numPos, "positional");
 
-  // TODO: test this
-  size_t numEl = passingKinds.size();
-  size_t numKwOnly = numEl - numPos - countNumImplicitKinds(passingKinds);
+  size_t numEl = pogs.size();
+  size_t numKwOnly = numEl - numPos - countNumImplicitKinds(pogs);
   if (numKwOnlyDefaults > numKwOnly)
     return emitTooManyDefaults(numKwOnlyDefaults, numKwOnly, "keyword-only");
 

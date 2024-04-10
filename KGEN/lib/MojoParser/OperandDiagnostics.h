@@ -106,7 +106,7 @@ diagnosePosOperands(PogListAttr pogListAttr,
   SmallVector<StringAttr> byPosAndKw;
 
   size_t numPosOperands = operands.posOperands.size();
-  size_t numPosMaximum = countNumPositional(pogListAttr.getPassingKinds());
+  size_t numPosMaximum = countNumPositional(pogListAttr);
   bool hasVariadicOrPack = false;
 
   DefaultValueHandler defaultHandler(pogListAttr);

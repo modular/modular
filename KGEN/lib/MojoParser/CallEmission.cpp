@@ -177,7 +177,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     }
 
     // Check if we have too many parameters after unpacking.
-    size_t numPosPassable = countNumPositional(paramListAttr.getPassingKinds());
+    size_t numPosPassable = countNumPositional(paramListAttr);
     size_t numUnpackedPositionals = unpackedPosBindings.size();
     if (unpackedPosBindings.size() > numPosPassable) {
       if (diagEmitter.emitTooManyPositional) {
@@ -479,16 +479,15 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               llvm::SMLoc exprLoc,
                               std::optional<Location> opLoc,
                               Boundness boundness) const {
-  SmallVector<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   size_t maxAllowed =
-      expectedParamTypes.size() - countNumImplicitKinds(paramPassingKinds);
+      expectedParamTypes.size() - countNumImplicitKinds(paramListAttr);
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
         InflightDiag diag = shared.emitError(exprLoc, baseName);
         if (posOnly) {
           emitWrongArgOrParamCount(
-              diag, /*minRequired=*/countNumPosOnly(paramPassingKinds),
-              maxAllowed, numActual, "positional parameter");
+              diag, /*minRequired=*/countNumPosOnly(paramListAttr), maxAllowed,
+              numActual, "positional parameter");
         } else {
           size_t minRequired = expectedParamTypes.size() -
                                paramListAttr.getDefaultPos().size() -

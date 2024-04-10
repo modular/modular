@@ -75,15 +75,14 @@ LogicalResult
 TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                           ArrayRef<Type> paramTypes,
                           PogListAttr paramListAttrs) {
-  SmallVector<PassingKind> paramPassingKinds = paramListAttrs.getPassingKinds();
-  if (paramPassingKinds.size() != paramTypes.size()) {
-    return emitError() << "number of parameter names doesn't match number of "
-                          "input parameter types";
+  if (paramListAttrs.getPogs().size() != paramTypes.size()) {
+    return emitError() << "number of parameters doesn't match number of input "
+                          "parameter types";
   }
 
   return verifyDefaultTypes(emitError, paramListAttrs.getDefaultPos(),
                             paramListAttrs.getDefaultKwOnly(),
-                            paramPassingKinds, paramTypes, "parameter");
+                            paramListAttrs.getPogs(), paramTypes, "parameter");
 }
 
 bool TypeSignatureType::isVarParam(size_t idx) const {

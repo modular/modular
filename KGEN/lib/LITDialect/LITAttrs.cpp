@@ -89,12 +89,12 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
   SmallVector<PassingKind> passingKinds = llvm::map_to_vector(
       pogs, [](PogMetadataAttr pogAttr) { return pogAttr.getPassingKind(); });
-  if (failed(verifyPassingKinds(emitError, passingKinds, defaultPos.size(),
+  if (failed(verifyPassingKinds(emitError, pogs, defaultPos.size(),
                                 defaultKwOnly.size(), "arguments/parameter")))
     return failure();
 
   // We verified the passing kinds' order and number, so we can use a handler.
-  DefaultValueHandler defaultHandler(passingKinds, defaultPos, defaultKwOnly);
+  DefaultValueHandler defaultHandler(pogs, defaultPos, defaultKwOnly);
   auto verifyVariadicIdx = [&](size_t idx, bool isPack) -> LogicalResult {
     if (idx >= numEl) {
       return emitError() << "variadic " << (isPack ? "pack " : "")
@@ -232,8 +232,7 @@ FnMetadataAttrInterface
 FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
   PogListAttr argListAttrs = getArgListAttrs();
 
-  SmallVector<PassingKind> passingKinds = argListAttrs.getPassingKinds();
-  size_t numPositional = countNumPositional(passingKinds);
+  size_t numPositional = countNumPositional(argListAttrs);
   assert(numBound <= numPositional && "only positional arguments can be bound");
 
   ArrayRef<PogMetadataAttr> newPogs =
@@ -387,13 +386,13 @@ LogicalResult FnMetadataAttr::verifySignature(
     }
   }
 
-  if (failed(verifyDefaultTypes(
-          emitError, getDefaultPosArgs(), getDefaultKwOnlyArgs(),
-          getArgListAttrs().getPassingKinds(), values.getInputs(), "argument",
-          argConventions)) ||
+  if (failed(verifyDefaultTypes(emitError, getDefaultPosArgs(),
+                                getDefaultKwOnlyArgs(),
+                                getArgListAttrs().getPogs(), values.getInputs(),
+                                "argument", argConventions)) ||
       failed(verifyDefaultTypes(
           emitError, getDefaultPosParams(), getDefaultKwOnlyParams(),
-          paramListAttr.getPassingKinds(), inputParamTypes, "parameter")))
+          paramListAttr.getPogs(), inputParamTypes, "parameter")))
     return failure();
 
   return success();
