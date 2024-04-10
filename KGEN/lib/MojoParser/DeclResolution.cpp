@@ -1104,9 +1104,10 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
 
   // Set up the body of the fn/def, creating declarations for the value
   // parameters and adding them to the symbol table.
-  for (auto [argName, bbArg, convention] :
-       llvm::zip(funcSignature.getArgNames(), funcOp.getBody()->getArguments(),
-                 funcSignature.getArgConventions())) {
+  for (auto [argIdx, bbArg, convention] :
+       llvm::enumerate(funcOp.getBody()->getArguments(),
+                       funcSignature.getArgConventions())) {
+    StringAttr argName = funcSignature.getArgName(argIdx);
     // Don't bind byref-result, it is handled specially by 'return'.
     if (SignatureType::isResultSlot(convention))
       continue;
@@ -1132,7 +1133,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     shared.buildArgDebugInfo(*emitter.builder, bbArg, argName);
 
     // VarArg arguments are projected into a VariadicList.
-    if (funcSignature.isPosVarArg(bbArg.getArgNumber())) {
+    if (funcSignature.isPosVarArg(argIdx)) {
       auto declOp = makeVarArgWrapper(SRValue(bbArg), argName, decl, emitter,
                                       argDecl.getLoc());
       if (!declOp)

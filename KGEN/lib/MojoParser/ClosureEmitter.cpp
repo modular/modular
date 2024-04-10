@@ -120,8 +120,8 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   // Add self.
   signatureInputs.push_back(closureType);
   argConventions.push_back(convention);
-  argPogs.emplace_back(PogMetadataAttr::get(
-      StringAttr::get(ctx), PassingKind::PosOnly, /*isVariadic=*/false));
+  argPogs.emplace_back(
+      PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   // Add the rest of the arguments.
   FnMetadataAttr oldMetadata = sig.getMetadata();
   PogListAttr argListAttr = oldMetadata.getArgListAttrs();
@@ -281,10 +281,9 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
 
   dependentSignatureType = dependentSignatureType.getSpecializedSignature(
       paramValues, translateLocation(nestedFunctionOrTypeLocation));
-  auto sigMetadata = FnMetadataAttr::get(
-      PogListAttr::get(ctx, dependentSignatureType.getArgNames(),
-                       dependentSignatureType.getArgPassingKinds()),
-      dependentSignatureType.getNumImplicitLifetimeDecls());
+  auto sigMetadata =
+      FnMetadataAttr::get(dependentSignatureType.getArgListAttrs(),
+                          dependentSignatureType.getNumImplicitLifetimeDecls());
   Type resultType = dependentSignatureType.getResults().front();
   FunctionType functionType =
       b.getFunctionType(dependentSignatureType.getArguments(), resultType);
@@ -483,10 +482,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   callInputTypes.reserve(callArgCount);
   SmallVector<ArgConvention> callConventions;
   callConventions.reserve(callArgCount);
-  SmallVector<StringAttr> callNames;
-  callNames.reserve(callArgCount);
-  SmallVector<PassingKind> callPassingKinds;
-  callPassingKinds.reserve(callArgCount);
+  SmallVector<PogMetadataAttr> callPogs;
+  callPogs.reserve(callArgCount);
 
   // Currently Closure Impls are not register passable, so use BorrowedInMem
   // convention.
@@ -494,21 +491,20 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   callInputTypes.push_back(
       ASTType(structSelfType).getRefForArgument("self", /*isMut=*/false));
   callConventions.push_back(ArgConvention::BorrowedInMem);
-  callNames.push_back(StringAttr::get(ctx));
-  callPassingKinds.push_back(PassingKind::PosOnly);
+  callPogs.emplace_back(
+      PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
 
   llvm::append_range(callInputTypes, nestedFn.getFunctionType().getInputs());
   llvm::append_range(callConventions, wrapperSig.getArgConventions());
-  llvm::append_range(callNames, wrapperSig.getArgNames());
-  llvm::append_range(callPassingKinds, wrapperSig.getArgPassingKinds());
+  llvm::append_range(callPogs, wrapperSig.getArgListAttrs().getPogs());
 
   Type closureResultType = wrapperSig.getResults().front();
   auto builder = ImplicitLocOpBuilder::atBlockEnd(declOp.getLoc(),
                                                   &declOp.getFields().front());
   auto [callFunc, _] = synthesizeMethodInStruct(
       "__call__", callInputTypes, callConventions,
-      PogListAttr::get(ctx, callNames, callPassingKinds), closureResultType,
-      structDecl, SpecialFunctionKind::kNormal,
+      PogListAttr::get(ctx, callPogs), closureResultType, structDecl,
+      SpecialFunctionKind::kNormal,
       wrapperSig.getFnEffects().setEscaping(false));
 
   // Add and register its fields as fully resolved decls.

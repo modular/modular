@@ -157,11 +157,12 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   }
 
   // Synthesize the method inside the struct.
+  PogListAttr argListAttr = memSig.getArgListAttrs();
   auto [thunk, _] = StructEmitter(shared).synthesizeMethodInStruct(
       name, paramDecls, memSig.getParamListAttrs(), memSig.getArguments(),
-      memSig.getArgConventions(), memSig.getArgListAttrs(),
-      memSig.getResultType(), structDecl, SpecialFunctionInfo::getKind(name),
-      memSig.getFnEffects(), "_thunk");
+      memSig.getArgConventions(), argListAttr, memSig.getResultType(),
+      structDecl, SpecialFunctionInfo::getKind(name), memSig.getFnEffects(),
+      "_thunk");
   if (!thunk)
     return;
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
@@ -191,9 +192,9 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   SmallVector<FuncOperand> posOperands;
   KeywordOperands kwOperands;
   bool hasLegacyInitSelfArg = false;
-  for (auto [arg, kind, conv, name] :
-       llvm::zip(thunk.getArguments(), memSig.getArgPassingKinds(),
-                 memSig.getArgConventions(), memSig.getArgNames())) {
+  for (auto [arg, conv, pogAttr] :
+       llvm::zip(thunk.getArguments(), memSig.getArgConventions(),
+                 argListAttr.getPogs())) {
     AnyValue value;
     switch (conv) {
     case ArgConvention::InitSelf:
@@ -229,8 +230,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
     default:
       llvm_unreachable("unexpected input convention");
     }
-    if (kind == PassingKind::KwOnly)
-      kwOperands.insert({name, {value, node}});
+    if (pogAttr.getPassingKind() == PassingKind::KwOnly)
+      kwOperands.insert({pogAttr.getName(), {value, node}});
     else
       posOperands.push_back({value, node});
   }

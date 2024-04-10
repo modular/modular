@@ -43,6 +43,11 @@ PogListAttr PogListAttr::get(MLIRContext *context) {
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context,
+                             ArrayRef<PogMetadataAttr> pogs) {
+  return PogListAttr::get(context, pogs, {}, {});
+}
+
+PogListAttr PogListAttr::get(MLIRContext *context,
                              ArrayRef<PogMetadataAttr> pogs,
                              ArrayRef<TypedAttr> defaultPos,
                              ArrayRef<TypedAttr> defaultKwOnly) {
@@ -53,12 +58,10 @@ PogListAttr PogListAttr::get(MLIRContext *context,
 PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,
                              ArrayRef<PassingKind> passingKinds) {
   SmallVector<PogMetadataAttr> pogs;
-  for (auto [name, passingKind] : llvm::zip(names, passingKinds)) {
-    pogs.emplace_back(
-        PogMetadataAttr::get(name, passingKind, /*isVariadic=*/false));
-  }
+  for (auto [name, passingKind] : llvm::zip(names, passingKinds))
+    pogs.emplace_back(PogMetadataAttr::get(name, passingKind));
 
-  return PogListAttr::get(context, pogs, {}, {});
+  return PogListAttr::get(context, pogs);
 }
 
 PogListAttr PogListAttr::get(MLIRContext *context, ArrayRef<StringAttr> names,

@@ -38,9 +38,6 @@ public:
   /// Get the parameter list metadata.
   PogListAttr getParamListAttrs();
 
-  /// Get the function input argument names.
-  SmallVector<StringAttr> getArgNames();
-
   /// Return the name for the argument at the specified index.
   StringAttr getArgName(size_t idx);
 

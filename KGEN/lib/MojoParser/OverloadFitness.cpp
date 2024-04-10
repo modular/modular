@@ -1449,12 +1449,11 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
   ParserParamEvaluator evaluator(*shared.declResolver);
-  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  for (auto [expectedArgIdx, unboundExpectedType, expectedConvention, argName,
-             passingKind] :
-       llvm::enumerate(signature.getArguments(), signature.getArgConventions(),
-                       signature.getArgNames(),
-                       signature.getArgPassingKinds())) {
+  PogListAttr argListAttr = signature.getArgListAttrs();
+  DefaultValueHandler defaultHandler(argListAttr);
+  for (auto [expectedArgIdx, unboundExpectedType, expectedConvention] :
+       llvm::enumerate(signature.getArguments(),
+                       signature.getArgConventions())) {
     // Ignore the return slot if present.
     Type expectedType = evaluator.refineType(unboundExpectedType);
     if (expectedConvention == ArgConvention::ByRefError)
@@ -1492,6 +1491,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
 
     // Handle case when there are no more provided positional operands.
+    StringAttr argName = argListAttr.getName(expectedArgIdx);
     if (posOperandIdx == numPosOperands) {
       // If the argument is a varargs argument list or pack, then it can be
       // initialized with zero values no problem.
@@ -1581,9 +1581,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     // Otherwise, we have an ordinary positional argument that is not varargs or
     // a pack. We ensured earlier that it is not also passed as a keyword
     // operand, so we process it as usual.
-    assert((passingKind == PassingKind::PosOnly ||
-            (!argName.empty() && !callOperands.findKwArg(argName))) &&
-           "redundant argument not caught by diagnostics");
+    assert(
+        (argListAttr.getPassingKind(expectedArgIdx) == PassingKind::PosOnly ||
+         (!argName.empty() && !callOperands.findKwArg(argName))) &&
+        "redundant argument not caught by diagnostics");
     if (auto result =
             processPositionalOperand(expectedType, expectedConvention))
       return std::move(*result);
