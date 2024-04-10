@@ -161,7 +161,8 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
 
   // Allow signature types to be converted for free if they differ only in
   // argument names, parameter names, or implicit lifetimes.
-  if (from.getNumArguments() != to.getNumArguments())
+  size_t fromNumArgs = from.getNumArguments();
+  if (fromNumArgs != to.getNumArguments())
     return false;
   if (from.getNumParams() != to.getNumParams())
     return false;
@@ -169,8 +170,11 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
     return false;
 
   // Pos-or-kw arguments can be passed positionally.
-  for (auto [toKind, fromKind] :
-       llvm::zip(to.getArgPassingKinds(), from.getArgPassingKinds())) {
+  PogListAttr fromArgListAttr = from.getArgListAttrs();
+  PogListAttr toArgListAttr = to.getArgListAttrs();
+  for (size_t idx = 0; idx < fromNumArgs; ++idx) {
+    PassingKind fromKind = fromArgListAttr.getPassingKind(idx);
+    PassingKind toKind = toArgListAttr.getPassingKind(idx);
     if (toKind != fromKind) {
       if (toKind == PassingKind::PosOnly && fromKind == PassingKind::PosOrKw)
         continue;

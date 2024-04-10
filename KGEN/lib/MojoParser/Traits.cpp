@@ -298,7 +298,8 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
   StructEmitter gen(shared);
   auto selfRefType =
       structDecl.getSelfType().getRefForArgument("self", /*isMut=*/true);
-  auto empty = StringAttr::get(shared.getContext());
+  MLIRContext *ctx = shared.getContext();
+  auto empty = StringAttr::get(ctx);
 
   // Synthesize the required special method. Importantly, don't mark the struct
   // as actually having this method so that destructors et al. are not
@@ -310,7 +311,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     // has one.
     auto [dtor, _] = gen.synthesizeMethodInStruct(
         "__del__", selfRefType, ArgConvention::OwnedInMem,
-        PogListAttr::get(shared.getContext(), empty, PassingKind::PosOnly),
+        PogListAttr::get(ctx, {empty}, {PassingKind::PosOnly}),
         shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     if (!dtor)
       return;
@@ -336,7 +337,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     auto [ctor, _] = gen.synthesizeMethodInStruct(
         name, {selfRefType, existingType},
         {ArgConvention::InitSelf, existingConv},
-        PogListAttr::get(shared.getContext(), {empty, empty},
+        PogListAttr::get(ctx, {empty, empty},
                          {PassingKind::PosOnly, PassingKind::PosOnly}),
         shared.getNoneType(), structDecl, kind, FnEffects(), "_thunk");
     if (!ctor)
@@ -354,7 +355,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
   func.setInlineLevel(InlineLevel::AlwaysNoDebug);
   auto b = ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), func.getBody());
   b.create<KGEN::ReturnOp>(
-      Value(b.create<ParamConstantOp>(NoneAttr::get(b.getContext()))));
+      Value(b.create<ParamConstantOp>(b.getAttr<NoneAttr>())));
 }
 
 LogicalResult LIT::verifyConformance(ASTDecl &structDecl,

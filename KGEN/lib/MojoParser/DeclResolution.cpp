@@ -2133,13 +2133,12 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   TraitType traitType = traitOp.bindReference();
   auto actualType = ParamDeclAttr::get(decl.mangleParamName("T"), traitType);
 
-  auto paramArray = ParamDeclArrayAttr::get(getContext(), {actualType});
-  StringAttr paramName = StringAttr::get(getContext(), "");
-  PassingKind paramPassingKind = PassingKind::Implicit;
+  MLIRContext *ctx = getContext();
+  auto paramArray = ParamDeclArrayAttr::get(ctx, {actualType});
   auto paramListAttr =
-      PogListAttr::get(getContext(), paramName, paramPassingKind);
-  auto sig = TypeSignatureType::remapToSignature(silenceErrors(getContext()),
-                                                 paramArray, paramListAttr);
+      PogListAttr::get(ctx, StringAttr::get(ctx), PassingKind::Implicit);
+  auto sig = TypeSignatureType::remapToSignature(silenceErrors(ctx), paramArray,
+                                                 paramListAttr);
   if (!sig)
     return failure();
   traitOp.setParams(paramArray);

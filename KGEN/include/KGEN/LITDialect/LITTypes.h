@@ -41,9 +41,6 @@ public:
   /// Return the name for the argument at the specified index.
   StringAttr getArgName(size_t idx);
 
-  /// Get the function argument passing kinds (e.g. keyword-only).
-  SmallVector<PassingKind> getArgPassingKinds();
-
   /// Get the function's default positional arguments.
   ArrayRef<TypedAttr> getDefaultPosArgs();
 
@@ -62,9 +59,6 @@ public:
   /// Mojo only has input parameters.
   ArrayRef<Type> getParamTypes() { return getInputParamTypes(); }
   size_t getNumParams() { return getParamTypes().size(); }
-
-  /// Return the passing kind for the parameter at the specified index.
-  PassingKind getParamPassingKind(size_t idx);
 
   /// Get the number of implicit lifetime decls this function type carries.
   size_t getNumImplicitLifetimeDecls();

@@ -684,10 +684,11 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   ParameterEvaluator evaluator;
   printOptionalParameterSpec(p, params.drop_front(lifetimeDecls.size()),
                              signature.getParamListAttrs(), evaluator);
-  SmallVector<Variadicness> variadicness =
-      getVariadicness(signature.getArgListAttrs());
-  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
+
+  PogListAttr argListAttr = signature.getArgListAttrs();
+  SmallVector<Variadicness> variadicness = getVariadicness(argListAttr);
+  DefaultValueHandler defaultHandler(argListAttr);
+  PassingKindPrinter passingKindPrinter(p, argListAttr.getPassingKinds(), '|');
   auto printElt = [&](unsigned i) {
     passingKindPrinter.printOptionalStarSlash(i);
 
@@ -862,21 +863,6 @@ LogicalResult LIT::FuncOp::verify() {
     if (!getPreElaborationNameAttr())
       return emitOpError(
           "external function requires attribute 'preElaborationName'");
-  }
-  // Verify order of positional-only, pos-or-kw, and keyword-only args.
-  PassingKind prevPassingKind = PassingKind::PosOnly;
-  for (PassingKind passingKind : getSignature().getArgPassingKinds()) {
-    if (prevPassingKind != passingKind) {
-      if (prevPassingKind == PassingKind::KwOnly) {
-        return emitOpError(
-            "keyword-only argument must follow all other arguments");
-      }
-      if (prevPassingKind == PassingKind::PosOrKw &&
-          passingKind == PassingKind::PosOnly) {
-        return emitOpError(
-            "positional-only argument cannot follow positional-or-keyword");
-      }
-    }
   }
 
   // Verify the correct number of parameters.
