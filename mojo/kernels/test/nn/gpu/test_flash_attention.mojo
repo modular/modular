@@ -122,8 +122,8 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                 DTypePointer[type],
                 DTypePointer[type],
                 Float32,
-                Scalar[DType.uint32],
-                Scalar[DType.uint32],
+                Int,
+                Int,
             ) -> None, flash_attention_kernel[
                 BM=32,  # q_tile_num_rows,
                 BN=128,  # kv_tile_num_rows,
@@ -196,9 +196,9 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                 DTypePointer[type],
                 DTypePointer[type],
                 Float32,
-                Scalar[DType.uint32],
-                Scalar[DType.uint32],
-                Scalar[DType.uint32],
+                Int,
+                Int,
+                Int,
             ) -> None, flash_attention_kernel_flexible_seqlen[
                 BM=32,  # q_tile_num_rows,
                 BN=128,  # kv_tile_num_rows,
