@@ -52,13 +52,10 @@ cc_library(
 
 cc_library(
     name = "Runtime",
-    srcs = glob([
-        "lib/Runtime/*.cpp",
-        "lib/Runtime/Globals/*.cpp",
-    ]),
+    srcs = glob(["lib/Runtime/*.cpp"]),
     hdrs = glob([
-        "include/LLCL/Runtime/*.h",
         "include/LLCL/Runtime/Globals/*.h",
+        "include/LLCL/Runtime/*.h",
     ]) + [
         "include/LLCL/ForwardDecls.h",
     ],
@@ -68,10 +65,37 @@ cc_library(
     }),
     strip_include_prefix = "include",
     deps = [
+        ":RuntimeHeaders",
         ":Support",
         "//Support:ADT",
         "//Support:Profiling",
     ],
+)
+
+cc_library(
+    name = "RuntimeGlobals",
+    srcs = glob(["lib/Runtime/Globals/*.cpp"]),
+    deps = [
+        ":CompilerSupport",
+        ":RuntimeHeaders",
+        ":SupportHeaders",
+        "//Support:Base",
+        "//Support:Profiling",
+        "//Support:SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
+    alwayslink = True,
+)
+
+cc_binary(
+    name = "RuntimeGlobals.shared.underlying",
+    linkshared = True,
+    deps = [":RuntimeGlobals"],
+)
+
+cc_import(
+    name = "RuntimeGlobals.shared",
+    shared_library = "RuntimeGlobals.shared.underlying",
 )
 
 cc_library(

@@ -8,7 +8,7 @@ cc_binary(
     srcs = glob(["*.cpp"]),
     deps = [
         "//Cache",
-        "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals",
         "//Support:CommonCLOptions",
         "//Support:Init",
         "@llvm-project//mlir:Support",
