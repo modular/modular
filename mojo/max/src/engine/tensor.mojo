@@ -90,7 +90,7 @@ struct EngineTensorView:
             _ptr: bitcast[Tensor[DType.invalid]](
                 Pointer[Tensor[type]].address_of(tensor)
             ),
-            _data_ptr: bitcast[DType.invalid](tensor.data()),
+            _data_ptr: tensor.data().bitcast[DType.invalid](),
             _dtype: type,
         }
 
@@ -108,7 +108,7 @@ struct EngineTensorView:
         """
         if type != self._dtype:
             raise String("Expected type: ") + self._dtype.__str__()
-        return bitcast[type](self._data_ptr)
+        return self._data_ptr.bitcast[type]()
 
     fn data(self) -> DTypePointer[DType.invalid]:
         """Returns type erased pointer to the start of tensor.

@@ -91,7 +91,7 @@ struct EngineTensor(Sized):
 
     fn data[type: DType](self) raises -> DTypePointer[type]:
         var ptr = self.data()
-        return bitcast[type](ptr)
+        return ptr.bitcast[type]()
 
     fn dtype(self) -> DType:
         return self.ptr.dtype(self.lib).to_dtype()

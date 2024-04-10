@@ -110,7 +110,7 @@ struct TensorMap(SizedRaising):
             self._session,
         )
         self._ptr.borrow_tensor_by_name(
-            bitcast[DType.invalid](value.data()), spec, self._lib
+            value.data().bitcast[DType.invalid](), spec, self._lib
         )
         key._strref_keepalive()
 
