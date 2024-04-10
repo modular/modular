@@ -411,16 +411,13 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
 }
 
 //===----------------------------------------------------------------------===//
-// specializeModuleForPreElaborationLinking
+// runLibraryGenerationPipeline
 //===----------------------------------------------------------------------===//
 
-ErrorOr<OwningOpRef<ModuleOp>> KGEN::specializeModuleForPreElaborationLinking(
-    DenseResourceElementsAttr bytecodeAttr, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &compileOptions) {
-  OwningOpRef<ModuleOp> packageModuleOr =
-      readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
-  if (!packageModuleOr)
-    return Error("unable to load parsed module bytecode");
+ErrorOrSuccess KGEN::runLibraryGenerationPipeline(
+    ModuleOp module, LLCL::Runtime &runtime,
+    const KGEN::CompilationOptions &compileOptions,
+    bool materializeDependencies) {
   auto cacheBackends = getMojoCacheBackends(runtime);
   if (cacheBackends.isError())
     return cacheBackends.takeError();
@@ -431,13 +428,15 @@ ErrorOr<OwningOpRef<ModuleOp>> KGEN::specializeModuleForPreElaborationLinking(
 
   // Generate a library from the module, processing the pipeline up to the
   // elaboration phase.
-  mlir::PassManager genLibPM(packageModuleOr->getContext());
+  mlir::PassManager genLibPM(module.getContext());
   configurePassManager(genLibPM);
   buildGenerateLibraryPipeline(genLibPM, runtime, compileOptions);
-  genLibPM.addPass(
-      createMaterializePackagesWithDefaultGen(runtime, compileOptions));
+  if (materializeDependencies) {
+    genLibPM.addPass(
+        createMaterializePackagesWithDefaultGen(runtime, compileOptions));
+  }
   LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-      *packageModuleOr, regionCache.copy(), transformCache.copy(),
+      module, regionCache.copy(), transformCache.copy(),
       AsyncValueRef<Chain>::createReady(runtime), genLibPM);
   LLCL::await(ready);
   if (ready.isError())
@@ -445,23 +444,24 @@ ErrorOr<OwningOpRef<ModuleOp>> KGEN::specializeModuleForPreElaborationLinking(
 
   // Strip the implicit package exports, we don't need these because we're going
   // to link the package into an existing module as-is.
-  for (ExportInterface op : packageModuleOr->getOps<ExportInterface>())
+  for (ExportInterface op : module.getOps<ExportInterface>())
     if (op.isPackageExported())
       op.setNotExported();
-
-  return std::move(packageModuleOr);
+  return success();
 }
 
-ErrorOr<DenseResourceElementsAttr>
-KGEN::specializePackageLinkForPreElaborationLinking(
+static ErrorOr<DenseResourceElementsAttr>
+specializePackageLinkForPreElaborationLinking(
     PackageLinkOp packageLink, LLCL::Runtime &runtime,
     const KGEN::CompilationOptions &compileOptions) {
   DenseResourceElementsAttr bytecodeAttr = packageLink.getPostParseModuleAttr();
-  ErrorOr<OwningOpRef<ModuleOp>> packageModuleOr =
-      specializeModuleForPreElaborationLinking(bytecodeAttr, runtime,
-                                               compileOptions);
-  if (packageModuleOr.isError())
-    return packageModuleOr.takeError();
+  OwningOpRef<ModuleOp> packageModuleOr =
+      readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
+  if (!packageModuleOr)
+    return Error("unable to load parsed module bytecode");
+  if (auto err = runLibraryGenerationPipeline(*packageModuleOr, runtime,
+                                              compileOptions))
+    return err.takeError();
 
   DenseResourceElementsAttr bytecodeResource =
       writeModuleToBytecodeAttr(cast<ModuleOp>(**packageModuleOr));

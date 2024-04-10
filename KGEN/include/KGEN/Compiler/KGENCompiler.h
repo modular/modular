@@ -138,22 +138,16 @@ initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
                           bool isJIT, TargetInfoAttr target,
                           bool isSearch = false);
 
-/// Loads the serialized MLIR bytecode representing a post-parser module in
-/// `bytecodeAttr`, and prepare to link it directly into another module. Returns
-/// the module if successful, or an error.
-ErrorOr<OwningOpRef<ModuleOp>> specializeModuleForPreElaborationLinking(
-    DenseResourceElementsAttr bytecodeAttr, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &compileOptions);
-
-/// Loads the serialized MLIR bytecode representing a post-parser module in
-/// `packageLink`, and prepare to link it directly into another module.
-ErrorOr<DenseResourceElementsAttr>
-specializePackageLinkForPreElaborationLinking(
-    PackageLinkOp packageLink, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &compileOptions);
+/// Run the library generation pipeline on the given module. If
+/// `materializeDependencies` is true, the pipeline will ensure all dependencies
+/// are materialized in the final module.
+ErrorOrSuccess
+runLibraryGenerationPipeline(ModuleOp module, LLCL::Runtime &runtime,
+                             const KGEN::CompilationOptions &compileOptions,
+                             bool materializeDependencies = true);
 
 /// This creates the materialize packages pass with the default library
-/// generation pipeline, i.e. `specializePackageLinkForPreElaborationLinking`.
+/// generation pipeline, i.e. `runLibraryGenerationPipeline`.
 std::unique_ptr<Pass>
 createMaterializePackagesWithDefaultGen(LLCL::Runtime &runtime,
                                         const CompilationOptions &options);

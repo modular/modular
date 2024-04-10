@@ -25,7 +25,6 @@
 #include "Support/Filesystem/Paths.h"
 #include "Support/Init/Init.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -73,27 +72,6 @@ public:
 };
 } // namespace
 
-/// Prime the cache for the given package and compilation environment.
-static ErrorOrSuccess
-primeCacheForPackage(KGEN::LIT::PackageOp packageOp, TargetInfoAttr targetInfo,
-                     LLCL::Runtime &runtime,
-                     const KGEN::CompilationOptions &options) {
-  // Build a package link that we'll use to call into the compilation methods.
-  OpBuilder builder(packageOp.getContext());
-  OwningOpRef<KGEN::PackageLinkOp> packageLink =
-      builder.create<KGEN::PackageLinkOp>(packageOp->getLoc(),
-                                          packageOp.getNameAttr(),
-                                          packageOp.getPostParseModuleAttr());
-
-  // First specialize the module up to the pre-elaboration phase.
-  ErrorOr<DenseResourceElementsAttr> preElabOr =
-      specializePackageLinkForPreElaborationLinking(*packageLink, runtime,
-                                                    options);
-  if (preElabOr.isError())
-    return preElabOr.takeError();
-  return success();
-}
-
 /// Execute the tool pipeline to prime the different caches for the input
 /// package.
 static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
@@ -131,15 +109,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (!packageOp)
     return failure(clOptions.reportError("failed to read input package"));
   KGEN::CompilationOptions options;
-
-  // Get the target info for the current compilation environment.
-  ErrorOr<TargetInfoAttr> targetInfoOr = getTargetInfoFor(
-      ctx, options.targetTriple, options.targetCpu, options.targetFeatures);
-  if (targetInfoOr.isError())
-    return targetInfoOr.takeError();
-
   LLCL::Runtime &runtime = *ctxRef->get<LLCL::Runtime>();
-
   std::vector<AnyAsyncValueRef> asyncValues;
 
   // Helper functor used to enqueue priming the cache for a specific
@@ -148,11 +118,15 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     auto out = AsyncValueRef<Chain>::allocate(runtime);
     LLCL::addTask(runtime, [&, out = out.copy(),
                             options = std::move(options)]() mutable {
-      ErrorOrSuccess resultOr =
-          primeCacheForPackage(*packageOp, *targetInfoOr, runtime, options);
-      if (resultOr.isError())
+      OwningOpRef<ModuleOp> packageModuleOr =
+          readOpFromBytecodeFile<ModuleOp>(packageOp->getPostParseModuleAttr());
+      if (!packageModuleOr)
+        std::move(out).setToError(LLCL::getMLIRDiagnostic(
+            "unable to load parsed module bytecode", packageOp->getLoc()));
+      if (auto err =
+              runLibraryGenerationPipeline(*packageModuleOr, runtime, options))
         std::move(out).setToError(
-            LLCL::getMLIRDiagnostic(resultOr.takeError(), packageOp->getLoc()));
+            LLCL::getMLIRDiagnostic(err.takeError(), packageOp->getLoc()));
       else
         std::move(out).emplace();
     });

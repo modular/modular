@@ -10,6 +10,7 @@
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "LLCL/Runtime/Runtime.h"
+#include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Filesystem/Paths.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/Encoding.h"
@@ -345,6 +346,58 @@ LIT::importMojoPackage(LLCL::Runtime &runtime, StringRef path,
   if (!module)
     return {};
   return {std::move(module), cast<PackageOp>(*packageDecl)};
+}
+
+OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
+    LLCL::Runtime &runtime, const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
+    MLIRContext *ctx, StringRef path) {
+  // Emit an error if the path doesn't actually correspond with a package.
+  if (!Filesystem::isMojoBinaryPackagePath(path.str())) {
+    sourceMgr->PrintMessage({}, llvm::SourceMgr::DK_Error,
+                            "provided path '" + path +
+                                "' does not correspond to a binary package");
+    return {};
+  }
+
+  auto emitPackageLoadFailure = [&] {
+    sourceMgr->PrintMessage({}, llvm::SourceMgr::DK_Error,
+                            "unable to load package '" + path + "'");
+    return OwningOpRef<ModuleOp>();
+  };
+
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
+      llvm::MemoryBuffer::getFile(path);
+  if (!packageBuffer)
+    return emitPackageLoadFailure();
+  sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
+  const llvm::MemoryBuffer *memoryBuf =
+      sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
+
+  // Parse just the top-level binary package operation and extract out the post
+  // parse module.
+  mlir::ParserConfig config(ctx, /*verifyAfterParse=*/false);
+  mlir::BytecodeReader bytecodeReader(memoryBuf->getMemBufferRef(), config,
+                                      /*lazyLoad=*/true, sourceMgr);
+  auto finalizeReader = [&] {
+    return bytecodeReader.finalize([](Operation *) { return false; });
+  };
+  mlir::Block block;
+  if (failed(bytecodeReader.readTopLevel(&block))) {
+    (void)finalizeReader();
+    return emitPackageLoadFailure();
+  }
+  LIT::PackageOp packageOp = cast<LIT::PackageOp>(&block.front());
+  DenseResourceElementsAttr postParseModuleAttr =
+      packageOp.getPostParseModuleAttr();
+  if (failed(finalizeReader()))
+    return emitPackageLoadFailure();
+
+  // Read in the post parser module from the package.
+  OwningOpRef<ModuleOp> packageModule =
+      readOpFromBytecodeFile<ModuleOp>(postParseModuleAttr);
+  if (!packageModule)
+    return emitPackageLoadFailure();
+  return packageModule;
 }
 
 OwningOpRef<mlir::ModuleOp>
