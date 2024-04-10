@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from memory.unsafe import DTypePointer
-from memory.anypointer import *
+from memory.unsafe_pointer import *
 from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
