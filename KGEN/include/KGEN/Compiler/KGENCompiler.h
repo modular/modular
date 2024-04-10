@@ -44,11 +44,10 @@ void populateElaborateModulePasses(mlir::PassManager &pm,
 // Caching
 //===----------------------------------------------------------------------===//
 
-/// Returns Mojo transform and caching backends, or an error if the backend
-/// objects could not be created.
-ErrorOr<
-    std::pair<RCRef<Cache::BlobCacheBackend>, RCRef<Cache::BlobCacheBackend>>>
-getMojoCacheBackends(LLCL::Runtime &runtime);
+/// Returns Mojo transform backend, or an error if the backend could not be
+/// created.
+ErrorOr<RCRef<Cache::BlobCacheBackend>>
+getMojoCacheBackend(LLCL::Runtime &runtime);
 
 //===----------------------------------------------------------------------===//
 // KGENCompilerLayer
@@ -67,7 +66,6 @@ public:
                     TargetInfoAttr target, const CompilationOptions &options,
                     ObjectCompilerLayer &base,
                     RCRef<Cache::BlobCacheBackend> transformCacheBackend,
-                    RCRef<Cache::BlobCacheBackend> regionCacheBackend,
                     llvm::orc::ExecutionSession &sess,
                     const llvm::DataLayout &dl, AddToSearchOrderFn add);
 
@@ -103,7 +101,6 @@ private:
   CompilationOptions options;
   ObjectCompilerLayer &baseLayer;
 
-  RCRef<Cache::RegionCache> regionCache;
   RCRef<Cache::TransformCache> transformCache;
 };
 

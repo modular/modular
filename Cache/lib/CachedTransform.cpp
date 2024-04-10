@@ -147,7 +147,6 @@ static Diagnostic copyDiag(const Diagnostic &diag) {
 
 /// Run a pass manager's passes as a cached transform.
 AnyAsyncValueRef Cache::cachedTransform(Operation *target,
-                                        RCRef<RegionCache> regionCache,
                                         RCRef<TransformCache> transformCache,
                                         AnyAsyncValueRef chain,
                                         mlir::PassManager &pm) {
@@ -156,9 +155,8 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
 
   // Callback that runs the pass manager and puts the correct region hash attr
   // on the op.
-  auto runTransform = [&pm, regionCache = regionCache.copy()](
-                          Operation *op, WriteableBufferRef buf,
-                          AnyAsyncValueRef chain) -> AsyncValueRef<Chain> {
+  auto runTransform = [&pm](Operation *op, WriteableBufferRef buf,
+                            AnyAsyncValueRef chain) -> AsyncValueRef<Chain> {
     TimeTraceScope traceScope(CacheProfilerEntry::create(
         "Cache::cachedTransform(Operation *)::runTransform"));
     // Allocate a space to put the result of the pass manager (the emitted
