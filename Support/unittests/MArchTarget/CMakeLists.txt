@@ -24,6 +24,7 @@ add_modular_unittest(
 
   LINK_LIBS PRIVATE
   MArchTarget
+  LLCLRuntime
   LLCLRuntimeGlobals
   MSupportGlobals
 )
