@@ -211,7 +211,7 @@ fn testGetAsUnitializedObject(ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`
 # https://github.com/modularml/modular/issues/27472
 fn testCondGetAsUnitializedObject(exit_early: __mlir_type.i1,
                                   ptr: __mlir_type[`!kgen.pointer<`, MemExample, `>`]):
-  # CHECK: hlcf.elif
+  # CHECK: hlcf.if
   if exit_early:
       return
 
@@ -379,9 +379,7 @@ fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
   # CHECK-NEXT: lit.ref.store [[TMP]], %example2
   var example2 = RegExample()
 
-  # CHECK-NEXT: hlcf.elif
-  # CHECK-NEXT: hlcf.elif.yield
-  # CHECK-NEXT: } then {
+  # CHECK-NEXT: hlcf.if %cond
   if (cond):
     # CHECK-NEXT: [[TMP:%.*]] = lit.transfer_mem_ownership %example2
     # CHECK-NEXT: [[TMP2:%.*]] = lit.load.consume [[TMP]]
@@ -510,11 +508,9 @@ struct ExoticDelExample:
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BVAL]])
 
     # Test the condition
-    # CHECK-NEXT: hlcf.elif
     # CHECK-NEXT: [[CONDPTR:%.*]] = lit.ref.struct.ger %self_0[cond]
     # CHECK-NEXT: [[CONDVAL:%.*]] = lit.ref.load [[CONDPTR]]
-    # CHECK-NEXT: hlcf.elif.yield [[CONDVAL]]
-    # CHECK-NEXT: } then {
+    # CHECK-NEXT: hlcf.if [[CONDVAL]] {
     if self.cond:
       # This side we manually consume for c.
 
@@ -770,9 +766,7 @@ fn test_partial_overwrite(cond: __mlir_type.i1):
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%pair)
   var pair = MemPair()
 
-  # CHECK-NEXT: hlcf.elif
-  # CHECK-NEXT: hlcf.elif.yield %cond
-  # CHECK-NEXT: } then {
+  # CHECK-NEXT: hlcf.if %cond {
   if cond:
     # Inserted destruction of incoming pair.b
     # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %pair[b]

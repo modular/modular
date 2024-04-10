@@ -294,10 +294,7 @@ lit.func @throwing_func() throws -> !kgen.variant<@Error, none> {
 // CHECK-LABEL: kgen.generator @return_raise_or
 // CHECK-SAME: -> !kgen.variant<@Error, none>
 lit.func @return_raise_or(%cond: i1, %err: !lit.declref<@Error>) -> !kgen.variant<@Error, none> {
-  // CHECK-NEXT: hlcf.if %arg0
-  hlcf.elif {
-    hlcf.elif.yield %cond : i1
-  } then {
+  hlcf.if %cond {
     // CHECK: %[[ERR:.*]] = kgen.variant.create %arg1
     %0 = kgen.variant.create %err, 0 : <@Error, none>
     // CHECK-NEXT: kgen.return %[[ERR]]
