@@ -7,6 +7,14 @@ package(
 )
 
 cc_library(
+    name = "SymbolExport",
+    hdrs = [
+        "include/Support/SymbolExport.h",
+    ],
+    strip_include_prefix = "include",
+)
+
+cc_library(
     name = "Base",
     srcs = [
         "lib/AlignedAlloc.cpp",
@@ -213,6 +221,7 @@ cc_library(
     deps = [
         ":Base",
         ":Filesystem",
+        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -391,7 +400,10 @@ cc_library(
         "include/Support/Filesystem/*.h",
     ]),
     strip_include_prefix = "include",
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 cc_test(
@@ -608,6 +620,7 @@ cc_test(
     deps = [
         ":MArchTarget",
         "//LLCL:CompilerSupport",
+        "//LLCL:RuntimeGlobals",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -1271,22 +1284,17 @@ cc_library(
         "include/Support/SymbolExport.h",
     ],
     strip_include_prefix = "include",
+    alwayslink = True,
     # TODO: Missing define conditionals for symbol visibility
     # NOTE: This library should not have any deps to avoid shared object linking issues
 )
 
 cc_shared_library(
-    name = "Globals.shared",
-    shared_lib_name = select({
-        "@platforms//os:macos": "libMSupportGlobals.dylib",
-        "@platforms//os:linux": "libMSupportGlobals.so",
-    }),
-    user_link_flags = select({
-        "@platforms//os:macos": [
-            "-install_name",
-            "@rpath/libMSupportGlobals.dylib",
-        ],
-        "@platforms//os:linux": [],  # TODO: set this correctly for distribution
-    }),
+    name = "Globals.shared.underlying",
     deps = [":Globals"],
+)
+
+cc_import(
+    name = "Globals.shared",
+    shared_library = "Globals.shared.underlying",
 )

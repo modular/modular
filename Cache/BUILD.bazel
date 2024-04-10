@@ -30,6 +30,7 @@ cc_test(
     srcs = glob(["unittests/*.cpp"]),
     deps = [
         ":Cache",
+        "//LLCL:RuntimeGlobals",
         "@com_github_google_googletest//:gtest_main",
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:FuncDialect",

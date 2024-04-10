@@ -1126,17 +1126,28 @@ cc_library(
     ]),
     strip_include_prefix = "include",
     deps = [
-        ":KGENDialect",
-        ":KGENInterfacesIncGen",
-        ":KGENPassesIncGen",
-        ":KGENTypesIncGen",
-        ":VersionHeader",
-        "//CUDASupport",
+        "//CUDASupport:CUDASupportHeaders",
         "//CUDASupport:Globals",
-        "//Support:DebugInfoTransforms",
-        "//Support:Telemetry",
-        "@llvm-project//llvm:OrcJIT",
+        "//LLCL:RuntimeHeaders",
+        "//Support:Base",
+        "//Support:Configuration",
+        "//Support:Threading",
     ],
+    alwayslink = True,
+)
+
+cc_binary(
+    name = "CompilerRT.shared.underlying",  # TODO: Rename to .shared
+    linkshared = True,
+    deps = [
+        ":CompilerRT",
+    ],
+)
+
+# TODO: Extract, wrap in cc_library, propagate headers that correlate
+cc_import(
+    name = "CompilerRTShared",
+    shared_library = "CompilerRT.shared.underlying",
 )
 
 # TODO: Move to configure.bzl?
@@ -1426,6 +1437,7 @@ cc_binary(
     srcs = glob(["tools/hash-mlir/*.cpp"]),
     deps = [
         ":ToolCommon",
+        "//LLCL:RuntimeGlobals.shared",
         "//Support:Base",
         "@llvm-project//mlir:BytecodeWriter",
     ],
@@ -1436,7 +1448,7 @@ cc_binary(
     srcs = glob(["tools/kgen/*.cpp"]),
     deps = [
         ":Compiler",
-        ":CompilerRT",
+        ":CompilerRTShared",
         ":ExecutionEngine",
         ":KGENDialect",
         ":MojoParser",
@@ -1447,8 +1459,10 @@ cc_binary(
         ":ToolCommon",
         "//Config",
         "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals.shared",
         "//Support:Base",
         "//Support:Compiler",
+        "//Support:Globals.shared",
         "//Support:Init",
         "//Support:MArchTarget",
         "@llvm-project//mlir:BytecodeWriter",
@@ -1460,7 +1474,7 @@ cc_binary(
     srcs = glob(["tools/kgen-opt/*.cpp"]),
     deps = [
         ":Compiler",
-        ":CompilerRT",
+        ":CompilerRTShared",
         ":ExecutionEngine",
         ":KGENDialect",
         ":LITDialect",
@@ -1472,6 +1486,7 @@ cc_binary(
         ":Support",
         ":ToolCommon",
         "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals.shared",
         "//Support:Base",
         "//Support:Compiler",
         "//Support:Init",
@@ -1488,7 +1503,7 @@ cc_binary(
     ]),
     deps = [
         ":Compiler",
-        ":CompilerRT",
+        ":CompilerRTShared",
         ":ExecutionEngine",
         ":HLCFDialect",
         ":KGENDialect",
@@ -1497,6 +1512,7 @@ cc_binary(
         ":Pipeline",
         ":ToolCommon",
         ":TransformUtils",
+        "//LLCL:RuntimeGlobals.shared",
         "//Support:Base",
         "//Support:Init",
         "@llvm-project//mlir:MlirOptLib",
@@ -1511,7 +1527,7 @@ cc_binary(
     ]),
     deps = [
         ":Compiler",
-        ":CompilerRT",
+        ":CompilerRTShared",
         ":ExecutionEngine",
         ":KGENDialect",
         ":MojoParser",
@@ -1520,6 +1536,7 @@ cc_binary(
         ":Support",
         ":ToolCommon",
         "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals.shared",
         "//Support:Init",
         "//Support:MDialect",
         "@llvm-project//mlir:MlirTranslateMain",
@@ -1557,6 +1574,7 @@ cc_binary(
         ":Support",
         ":ToolCommon",
         "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals.shared",
         "//Support:Base",
         "//Support:Init",
         "//Support:Telemetry",
@@ -1573,12 +1591,14 @@ cc_binary(
         "tools/mojo-repl-entry-point/*.h",
     ]),
     deps = [
-        ":CompilerRT",
+        ":CompilerRTHeaders",
+        ":CompilerRTShared",
         ":MojoParser",
         ":MojoTooling",
         ":ObjectCompiler",
         ":Pipeline",
         ":ToolCommon",
+        "//LLCL:RuntimeGlobals.shared",
         "//Support:Base",
         "//Support:Init",
         "@llvm-project//llvm:Support",
@@ -1608,7 +1628,7 @@ cc_binary(
         "tools/mojo-prime-package-cache/*.h",
     ]),
     deps = [
-        ":CompilerRT",
+        ":CompilerRTShared",
         ":ExecutionEngine",
         ":KGENDialect",
         ":LITDialect",
@@ -1622,6 +1642,7 @@ cc_binary(
         "//Config",
         "//LLCL:CompilerSupport",
         "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals.shared",
         "//Support:Base",
         "//Support:Compiler",
         "//Support:Driver",
@@ -1664,6 +1685,7 @@ cc_binary(
         ":Build.inc_files",
         ":BuildProject.inc_files",
         ":Compiler",
+        ":CompilerRTShared",
         ":Debug.inc_files",
         ":Demangle.inc_files",
         ":Doc.inc_files",
@@ -1688,11 +1710,13 @@ cc_binary(
         ":ToolCommon",
         "//Config",
         "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals.shared",
         "//Support:Base",
         "//Support:Compiler",
         "//Support:CrashReporting",
         "//Support:Driver",
         "//Support:Filesystem",
+        "//Support:Globals.shared",
         "//Support:Init",
         "//Support:MArchTarget",
         "//Support:MDialect",
@@ -1758,5 +1782,19 @@ td_library(
     deps = [
         "//Support:DriverCommandTdFiles",
         "//Support:OptTableTdFiles",
+    ],
+)
+
+cc_library(
+    name = "MojoBuild",
+    srcs = glob([
+        "lib/MojoBuild/*.cpp",
+        "lib/MojoBuild/*.h",
+    ]),
+    hdrs = glob(["include/KGEN/MojoBuild/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        "//Support:Base",
+        "@llvm-project//mlir:MlirLspServerSupportLib",
     ],
 )
