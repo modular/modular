@@ -272,22 +272,25 @@ StringRef DocString::CodeBlock::getRawCode() const {
 //===----------------------------------------------------------------------===//
 
 /// Return the names of the arguments to the given function.
-static ArrayRef<StringAttr> getFunctionArgumentNames(LIT::FuncOp funcOp) {
+static SmallVector<StringAttr> getFunctionArgumentNames(LIT::FuncOp funcOp) {
   // In general, each function argument must be documented, but exceptions are
   // pruned from the list below.
   LITSignatureType sig = funcOp.getSignature();
-  ArrayRef<StringAttr> argNames = sig.getArgNames();
 
   // The compiler can insert an implicit `__result__` argument, which stores
   // memory-only results, at the end of an argument list.  Because these
   // arguments are hidden artifacts of the compiler, they don't need to be
   // documented.
-  argNames = argNames.drop_back(sig.hasMemoryOnlyResult() + sig.isThrows());
+  size_t end =
+      sig.getNumArguments() - sig.hasMemoryOnlyResult() - sig.isThrows();
   // Methods take `self` as an explicit first argument, for which
   // documentation isn't required.
-  if (isa<StructDeclOp, TraitDeclOp>(funcOp->getParentOp()) &&
-      !funcOp.getIsStatic())
-    argNames = argNames.drop_front();
+  bool hasSelf = isa<StructDeclOp, TraitDeclOp>(funcOp->getParentOp()) &&
+                 !funcOp.getIsStatic();
+
+  SmallVector<StringAttr> argNames;
+  for (size_t idx = hasSelf; idx < end; ++idx)
+    argNames.emplace_back(sig.getArgName(idx));
 
   return argNames;
 }
@@ -295,11 +298,10 @@ static ArrayRef<StringAttr> getFunctionArgumentNames(LIT::FuncOp funcOp) {
 /// Return the names of the parameters to the given function.
 static SmallVector<StringAttr> getFunctionParameterNames(LIT::FuncOp funcOp) {
   SmallVector<StringAttr> result;
-  LITSignatureType signature = funcOp.getSignature();
-  for (auto [paramName, passingKind] :
-       llvm::zip(signature.getParamNames(), signature.getParamPassingKinds()))
-    if (passingKind != PassingKind::Implicit)
-      result.push_back(paramName);
+  for (PogMetadataAttr pogAttr :
+       funcOp.getSignature().getParamListAttrs().getPogs())
+    if (pogAttr.getPassingKind() != PassingKind::Implicit)
+      result.emplace_back(pogAttr.getName());
   return result;
 }
 

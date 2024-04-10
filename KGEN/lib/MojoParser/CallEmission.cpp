@@ -305,9 +305,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     return {};
   };
 
-  ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
-  for (auto [idx, sigType, paramName, passingKind] : llvm::enumerate(
-           expectedParamTypes, paramListAttr.getNames(), paramPassingKinds)) {
+  for (auto [idx, sigType, pogAttr] :
+       llvm::enumerate(expectedParamTypes, paramListAttr.getPogs())) {
     // This is the refined type expected by the signature.
     Type requestedType = evaluator.getReboundType(sigType);
     // This is the expected type of a value satisfying this parameter.
@@ -319,6 +318,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
 
     // Check to see if we ran out of bindings to provide to this param decl.
     // Implicit parameters are infer-only. They cannot be explicitly passed.
+    PassingKind passingKind = pogAttr.getPassingKind();
+    StringAttr paramName = pogAttr.getName();
     if (posBindingIdx == numPosBindings ||
         (parameterInferenceHook && passingKind == PassingKind::Implicit)) {
       // We first check if we have a keyword parameter.
@@ -405,9 +406,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     // This lambda hides the diagnostic and error handling logic for checking a
     // single positional parameter binding.
     auto handlePosBinding =
-        [&, paramName = paramName, passingKind = passingKind,
-         &kwDiagNames = kwDiagNames](size_t index, const Binding &binding,
-                                     ASTType expectedType) -> PValue {
+        [&, &kwDiagNames = kwDiagNames](size_t index, const Binding &binding,
+                                        ASTType expectedType) -> PValue {
       if (passingKind == PassingKind::KwOnly) {
         // If this is a keyword-only passed positionally, we remember it.
         kwDiagNames.push_back(paramName);
@@ -479,7 +479,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               llvm::SMLoc exprLoc,
                               std::optional<Location> opLoc,
                               Boundness boundness) const {
-  ArrayRef<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
+  SmallVector<PassingKind> paramPassingKinds = paramListAttr.getPassingKinds();
   size_t maxAllowed =
       expectedParamTypes.size() - countNumImplicitKinds(paramPassingKinds);
   DiagEmitter diagEmitter{
@@ -664,7 +664,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(ASTType baseType,
   // parameter.
   LITSignatureType signature = funcOp.getFullSignature();
   ParamBindings bindings = *this;
-  assert(bindings.posBindings.size() >= 1);
+  assert(!bindings.posBindings.empty());
   SmallVector<TypedAttr> paramValues;
   paramValues.push_back(bindings.posBindings.front().value);
 

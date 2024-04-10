@@ -11,36 +11,40 @@
 
 // CHECK-LABEL: "pogs.with_defaults"
 // CHECK-SAME: {pogs = #lit.pog_list<
-// CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.200000e+00 : f32], [1 : i64], [false, false, false, false], -1, none>}
+// CHECK-SAME: [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, false>],
+// CHECK-SAME: [4.200000e+00 : f32], [1 : i64], -1, none>}
 "pogs.with_defaults"() {pogs = #lit.pog_list<
-  ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [4.2 : f32], [1: i64], [false, false, false, false], -1, none
+  [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, false>],
+  [4.2 : f32], [1: i64], -1, none
 >} : () -> ()
 
 // CHECK-LABEL: "pogs.with_variadics"
 // CHECK-SAME: {pogs = #lit.pog_list<
-// CHECK-SAME: ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [], [false, false, false, true], 1, owned_in_mem>}
+// CHECK-SAME: [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, true>],
+// CHECK-SAME: [], [], 1, owned_in_mem>}
 "pogs.with_variadics"() {pogs = #lit.pog_list<
-  ["a", "b", "c", "d"], [pos, pos_or_kw, kw, kw], [], [], [false, false, false, true], 1, owned_in_mem
+  [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, true>],
+  [], [], 1, owned_in_mem
 >} : () -> ()
 
 // CHECK-LABEL: "empty.pogs"
-// CHECK-SAME: {pogs = #lit.pog_list<[], [], [], [], [], -1, none>}
-"empty.pogs"() {pogs = #lit.pog_list<[], [], [], [], [], -1, none>} : () -> ()
+// CHECK-SAME: {pogs = #lit.pog_list<[], [], [], -1, none>}
+"empty.pogs"() {pogs = #lit.pog_list<[], [], [], -1, none>} : () -> ()
 
 // CHECK-LABEL: "some.metadata"
 // CHECK-SAME: #lit.fn_metadata
-// CHECK-SAME: <["someRef", "v"], [pos, kw], [13 : index], [17 : i64], [false, false], -1, none>,
-// CHECK-SAME: <["someParam", "paramWithDefault"], [pos, pos_or_kw], [], [], [false, true], -1, none>,
+// CHECK-SAME: <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64], -1, none>,
+// CHECK-SAME: <[<"someParam", pos, false>, <"paramWithDefault", pos_or_kw, true>], [], [], -1, none>,
 // CHECK-SAME: 2>
 "some.metadata"() {metadata = #lit.fn_metadata<
-  <["someRef", "v"], [pos, kw], [13 : index], [17 : i64], [false, false], -1, none>,
-  <["someParam", "paramWithDefault"], [pos, pos_or_kw], [], [], [false, true], -1, none>,
+  <[<"someRef", pos, false>, <"v", kw, false>], [13 : index], [17 : i64], -1, none>,
+  <[<"someParam", pos, false>, <"paramWithDefault", pos_or_kw, true>], [], [], -1, none>,
   2
 >} : () -> ()
 
 // CHECK-LABEL: "empty.metadata"
-// CHECK-SAME: #lit.fn_metadata<<[], [], [], [], [], -1, none>, <[], [], [], [], [], -1, none>, 0>
-"empty.metadata"() {metadata = #lit.fn_metadata<<[], [], [], [], [], -1, none>, <[], [], [], [], [], -1, none>, 0>} : () -> ()
+// CHECK-SAME: #lit.fn_metadata<<[], [], [], -1, none>, <[], [], [], -1, none>, 0>
+"empty.metadata"() {metadata = #lit.fn_metadata<<[], [], [], -1, none>, <[], [], [], -1, none>, 0>} : () -> ()
 
 // CHECK-LABEL: "none.type"
 // CHECK-SAME: #kgen.none : !kgen.none

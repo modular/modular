@@ -1269,8 +1269,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   ParamBindings::DiagEmitter bindingDiag{
       /*emitParamCount=*/
       [&](size_t numActual, bool posOnly) {
+        SmallVector<PassingKind> paramPassingKinds =
+            signature.getParamListAttrs().getPassingKinds();
         if (posOnly) {
-          size_t numPosOnly = countNumPosOnly(signature.getParamPassingKinds());
+          size_t numPosOnly = countNumPosOnly(paramPassingKinds);
           diag =
               emitDiagFor.wrongPosOnlyCount(numPosOnly, numActual, "parameter");
         } else {
@@ -1279,9 +1281,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           if (ASTType type = callable.baseType)
             if (isa_and_nonnull<TraitType>(type.getMetaType()))
               hidden = 1;
-          size_t numExpected =
-              signature.getNumParams() - hidden -
-              countNumImplicitKinds(signature.getParamPassingKinds());
+          size_t numExpected = signature.getNumParams() - hidden -
+                               countNumImplicitKinds(paramPassingKinds);
           diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);
         }
         // For each of the missing parameters, attach any parameter inference
@@ -1316,7 +1317,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       [&](size_t paramIdx) {
         auto emitMessage = [&](auto sig) {
           diag << "could not deduce ";
-          if (StringAttr name = sig.getParamNames()[paramIdx]; !name.empty())
+          if (StringAttr name = sig.getParamName(paramIdx); !name.empty())
             diag << "parameter " << name;
           else
             diag << nameForPosOnly(paramIdx, "parameter");
@@ -1356,7 +1357,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                 diag << "failed to infer implicit parameter ";
                 auto structDecl =
                     cast<StructDeclOp>(ASTType(type).getDecl(shared));
-                printNameOrIdx(structDecl.getSignature().getParamNames()[i], i,
+                printNameOrIdx(structDecl.getSignature().getParamName(i), i,
                                diag);
                 diag << " of argument ";
                 printNameOrIdx(signature.getArgName(idx), idx, diag);

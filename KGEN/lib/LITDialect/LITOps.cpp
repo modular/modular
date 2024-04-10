@@ -1104,22 +1104,18 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
 
   // Compute the resultant signature.
   SmallVector<Type> newParamTypes;
-  SmallVector<StringAttr> newParamNames;
-  SmallVector<PassingKind> newPassingKinds;
+  SmallVector<PogMetadataAttr> newPogs;
   SmallVector<TypedAttr> newPosDefaults;
   SmallVector<TypedAttr> newKwOnlyDefaults;
-  SmallVector<bool> newVariadicMask;
 
   PogListAttr paramListAttr = sig.getParamListAttrs();
   DefaultValueHandler defaultHandler(paramListAttr);
-  for (auto [i, value, type, name, kind, isVariadic] : llvm::enumerate(
-           paramValues, sig.getParamTypes(), sig.getParamNames(),
-           sig.getParamPassingKinds(), paramListAttr.getVariadicMask())) {
+
+  for (auto [i, value, type, pogAttr] : llvm::enumerate(
+           paramValues, sig.getParamTypes(), paramListAttr.getPogs())) {
     if (::isa<UnboundAttr>(value)) {
       newParamTypes.push_back(type);
-      newParamNames.push_back(name);
-      newPassingKinds.push_back(kind);
-      newVariadicMask.push_back(isVariadic);
+      newPogs.push_back(pogAttr);
 
       if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
         newPosDefaults.push_back(defaultOr);
@@ -1130,8 +1126,7 @@ DeclRefType StructDeclOp::bindReference(ArrayRef<TypedAttr> paramValues) {
 
   MLIRContext *ctx = getContext();
   auto newParamListAttr =
-      PogListAttr::get(ctx, newParamNames, newPassingKinds, newPosDefaults,
-                       newKwOnlyDefaults, newVariadicMask);
+      PogListAttr::get(ctx, newPogs, newPosDefaults, newKwOnlyDefaults);
   auto newSig = TypeSignatureType::get(ctx, newParamTypes, newParamListAttr);
   return DeclRefType::get(symbol, paramValues,
                           AnyStructType::get(symbol, paramValues, newSig));

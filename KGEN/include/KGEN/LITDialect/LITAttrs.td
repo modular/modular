@@ -69,10 +69,23 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
   }];
 
   let parameters = (ins
-    "StringAttr":$name, "PassingKind":$passingKind, "bool":$isVariadicMask
+    "StringAttr":$name, "PassingKind":$passingKind, "bool":$isVariadic
   );
 
-  let assemblyFormat = "`<` $name `,` $passingKind `,` $isVariadicMask `>`";
+  let assemblyFormat = "`<` $name `,` $passingKind `,` $isVariadic `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins
+      "StringAttr":$name, "PassingKind":$passingKind, "bool":$isVariadic
+    ), [{
+      return $_get(name.getContext(), name, passingKind, isVariadic);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    bool isVariadic() const { return getIsVariadic(); };
+  }];
+
 }
 
 //===----------------------------------------------------------------------===//
@@ -110,34 +123,28 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
   }];
 
   let parameters = (ins
-    OptionalArrayRefParameter<"StringAttr">:$names,
-    OptionalArrayRefParameter<"PassingKind">:$passingKinds,
+    OptionalArrayRefParameter<"PogMetadataAttr">:$pogs,
     OptionalArrayRefParameter<"TypedAttr">:$defaultPos,
     OptionalArrayRefParameter<"TypedAttr">:$defaultKwOnly,
-    OptionalArrayRefParameter<"bool">:$variadicMask,
     "ssize_t":$packIndex,
     "ArgConvention":$origPackConvention
   );
 
   let assemblyFormat = [{
-    `<` `[` (`]`) : ($names^           `]`)? `,`
-        `[` (`]`) : ($passingKinds^    `]`)? `,`
+    `<` `[` (`]`) : ($pogs^            `]`)? `,`
         `[` (`]`) : ($defaultPos^      `]`)? `,`
         `[` (`]`) : ($defaultKwOnly^   `]`)? `,`
-        `[` (`]`) : ($variadicMask^    `]`)? `,`
         $packIndex `,` $origPackConvention
     `>`
   }];
 
   let builders = [
     AttrBuilder<(ins)>,
+    AttrBuilder<(ins "ArrayRef<PogMetadataAttr>":$pogs,
+                     "ArrayRef<TypedAttr>":$defaultPos,
+                     "ArrayRef<TypedAttr>":$defaultKwOnly)>,
     AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
                      "ArrayRef<PassingKind>":$passingKinds)>,
-    AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
-                     "ArrayRef<PassingKind>":$passingKinds,
-                     "ArrayRef<TypedAttr>":$defaultPos,
-                     "ArrayRef<TypedAttr>":$defaultKwOnly,
-                     "ArrayRef<bool>":$variadicMask)>,
     AttrBuilder<(ins "ArrayRef<StringAttr>":$names,
                      "ArrayRef<PassingKind>":$passingKinds,
                      "ArrayRef<TypedAttr>":$defaultPos,
@@ -148,11 +155,9 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
   ];
 
   let extraClassDeclaration = [{
-    /// Create a new arg/paramlist attr with the given names and passking kinds,
-    /// retaining the existing defaults and variadic indices.
-    PogListAttr cloneWith(ArrayRef<StringAttr> names,
-                          ArrayRef<PassingKind> passingKinds,
-                          ArrayRef<bool> variadicMask) const;
+    /// Create a new argument/parametere list attr with the given array of
+    /// individual argument/parameter metadata attributes.
+    PogListAttr cloneWith(ArrayRef<PogMetadataAttr> pogs) const;
 
     /// Return true if the argument/param at `idx` is a variadic.
     bool isVariadic(size_t idx) const;
@@ -169,8 +174,23 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
     /// Return true if there is a variadic keyword argument/param.
     bool hasKwVariadics() const;
 
-    /// Create a variadic mask of given length from a list of variadic indices.
-    static SmallVector<bool> toMask(ArrayRef<size_t> indices, size_t length);
+    /// Return the name for the argument/parameter at the given index.
+    StringAttr getName(size_t idx) const;
+    /// Return the passing kind for the argument/parameter at the given index.
+    PassingKind getPassingKind(size_t idx) const;
+
+    /// Create an array of PogMetadataAttr from the given names, passing kinds,
+    /// and variadic indices.
+    static SmallVector<PogMetadataAttr> toPogs(
+      ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
+      ArrayRef<size_t> indices);
+
+    /// Compatibility accessor returning an array of names.
+    SmallVector<StringAttr> getNames() const;
+    /// Compatibility accessor returning an array of passing kinds.
+    SmallVector<PassingKind> getPassingKinds() const;
+    /// Compatibility accessor returning an array of variadicness indicators.
+    SmallVector<bool> getVariadicMask() const;
   }];
 
   let genVerifyDecl = 1;
@@ -790,15 +810,6 @@ def LIT_RefPackAttr : LITAttr<"RefPack", "ref.pack", [
 
 def LIT_TypeConventionAttr : EnumAttr<LITDialect, LIT_TypeConvention,
     "type_convention">;
-
-//===----------------------------------------------------------------------===//
-// PassingKindArrayAttr
-//===----------------------------------------------------------------------===//
-
-def LIT_PassingKindArrayAttr : LITAttr<"PassingKindArray", "passing.kinds"> {
-  let parameters = (ins OptionalArrayRefParameter<"PassingKind">:$value);
-  let assemblyFormat = "`<` `[` (`]`) : ($value^ `]`)? `>`";
-}
 
 //===----------------------------------------------------------------------===//
 // VarDeclKindAttr

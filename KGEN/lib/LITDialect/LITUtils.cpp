@@ -564,17 +564,17 @@ PassingKindParser::getNumPassingKinds() const {
           idx - numKwOnlySoFar - numPosOrKwSoFar - numPosOnly};
 }
 
-PassingKindPrinter::PassingKindPrinter(raw_ostream &os,
-                                       ArrayRef<PassingKind> passingKinds,
-                                       bool suppressSlashAfterSelf, char slash)
-    : os(os), passingKinds(passingKinds), numInputs(passingKinds.size()),
+PassingKindPrinter::PassingKindPrinter(
+    raw_ostream &os, SmallVectorImpl<PassingKind> &&passingKinds,
+    bool suppressSlashAfterSelf, char slash)
+    : os(os), passingKinds(std::move(passingKinds)),
       prevPassingKind(PassingKind::PosOnly),
       suppressSlashAfterSelf(suppressSlashAfterSelf), slash(slash) {}
 
-PassingKindPrinter::PassingKindPrinter(AsmPrinter &printer,
-                                       ArrayRef<PassingKind> passingKinds,
-                                       char slash)
-    : PassingKindPrinter(printer.getStream(), passingKinds,
+PassingKindPrinter::PassingKindPrinter(
+    AsmPrinter &printer, SmallVectorImpl<PassingKind> &&passingKinds,
+    char slash)
+    : PassingKindPrinter(printer.getStream(), std::move(passingKinds),
                          /*suppressSlashAfterSelf=*/false, slash) {}
 
 void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
@@ -615,7 +615,7 @@ void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
 void PassingKindPrinter::printOptionalTrailingSlash(size_t idx) const {
   if (suppressSlashAfterSelf && idx == 0)
     return;
-  if (idx == numInputs - 1)
+  if (idx == passingKinds.size() - 1)
     if (prevPassingKind == PassingKind::PosOnly)
       os << ", " << slash;
 }

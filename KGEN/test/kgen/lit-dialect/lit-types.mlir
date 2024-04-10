@@ -96,6 +96,23 @@ kgen.generator @passing_kinds(
   kgen.return
 }
 
+// Test that passing kind printing/parsing works correctly for long signatures.
+!t = !kgen.signature<!lit.signature<(
+    "a": index borrow, |, *,
+    "b": index borrow, "c": index borrow, "d": index borrow, "e": index borrow,
+    "f": index borrow, "g": index borrow, "h": index borrow, "i": index borrow,
+    "j": index borrow, "k": index borrow, "l": index borrow, "m": index borrow
+) -> !kgen.none>>
+
+// CHECK-LABEL: lit.func @long_sig(%t: !kgen.signature<!lit.signature<
+// CHECK-SAME: "a": index borrow, |, *,
+// CHECK-SAME: "b": index borrow, "c": index borrow, "d": index borrow, "e": index borrow,
+// CHECK-SAME: "f": index borrow, "g": index borrow, "h": index borrow, "i": index borrow,
+// CHECK-SAME: "j": index borrow, "k": index borrow, "l": index borrow, "m": index borrow
+lit.func @long_sig(%t: !t) {
+    kgen.return
+}
+
 lit.trait.decl @Trait {
 }
 
