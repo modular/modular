@@ -6,6 +6,7 @@
 
 import math
 from utils.variant import Variant
+from algorithm.functional import _get_start_indices_of_nth_subvolume
 
 
 # FIXME: This is a horrible hack around Mojo's lack or proper trait inheritance
@@ -479,39 +480,24 @@ struct _product2[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 struct _ProductIter3[
     T: CollectionElement, D: ElementDelegate = DefaultDelegate
 ]:
-    var a_index: Int
-    var b_index: Int
-    var c_index: Int
+    var offset: Int
     var a: DynamicTuple[T, D]
     var b: DynamicTuple[T, D]
     var c: DynamicTuple[T, D]
 
     @always_inline
     fn __next__(inout self) -> DynamicTuple[T, D]:
-        var res = DynamicTuple[T, D](
-            self.a[self.a_index], self.b[self.b_index], self.c[self.c_index]
+        self.offset += 1
+        var idx = _get_start_indices_of_nth_subvolume[3, 0](
+            self.offset - 1, (len(self.a), len(self.b), len(self.c))
         )
-        self.c_index += 1
-        if self.c_index == len(self.c):
-            self.c_index = 0
-            self.b_index += 1
-        if self.b_index == len(self.b):
-            self.c_index = 0
-            self.b_index = 0
-            self.a_index += 1
-        return res^
+        return DynamicTuple[T, D](
+            self.a[idx[0]], self.b[idx[1]], self.c[idx[2]]
+        )
 
     @always_inline
     fn __len__(self) -> Int:
-        var len_a = len(self.a)
-        var len_b = len(self.b)
-        var len_c = len(self.c)
-        return (
-            len_a * len_b * len_c
-            - self.a_index * len_b * len_c
-            - self.b_index * len_c
-            - self.c_index
-        )
+        return len(self.a) * len(self.b) * len(self.c) - self.offset
 
 
 @value
@@ -526,28 +512,21 @@ struct _product3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn __iter__(self) -> Self.IterType:
-        return Self.IterType(0, 0, 0, self.a, self.b, self.c)
+        return Self.IterType(0, self.a, self.b, self.c)
 
     @always_inline
     fn __len__(self) -> Int:
-        var len_a = len(self.a)
-        var len_b = len(self.b)
-        var len_c = len(self.c)
-        return len_a * len_b * len_c
+        return len(self.a) * len(self.b) * len(self.c)
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> DynamicTuple[T, D]:
-        var len_b = len(self.b)
-        var len_c = len(self.c)
+    fn __getitem__(self, offset: Int) -> DynamicTuple[T, D]:
+        var idx = _get_start_indices_of_nth_subvolume[3, 0](
+            offset, (len(self.a), len(self.b), len(self.c))
+        )
 
-        var curr_index = idx
-
-        var idx_c = curr_index._positive_rem(len_c)
-        curr_index = curr_index._positive_div(len_c)
-        var idx_b = curr_index._positive_rem(len_b)
-        var idx_a = curr_index._positive_div(len_b)
-
-        return DynamicTuple[T, D](self.a[idx_a], self.b[idx_b], self.c[idx_c])
+        return DynamicTuple[T, D](
+            self.a[idx[0]], self.b[idx[1]], self.c[idx[2]]
+        )
 
 
 fn product[
