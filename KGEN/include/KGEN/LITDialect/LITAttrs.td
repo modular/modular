@@ -230,18 +230,6 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
   let extraClassDeclaration = [{
     size_t getNumArgs() const;
-    ArrayRef<StringAttr> getArgNames() const {
-      return getArgListAttrs().getNames();
-    };
-    ArrayRef<PassingKind> getArgPassingKinds() const {
-      return getArgListAttrs().getPassingKinds();
-    };
-    ArrayRef<StringAttr> getParamNames() const {
-      return getParamListAttrs().getNames();
-    };
-    ArrayRef<PassingKind> getParamPassingKinds() const {
-      return getParamListAttrs().getPassingKinds();
-    };
     ArrayRef<TypedAttr> getDefaultPosArgs() const {
       return getArgListAttrs().getDefaultPos();
     };
