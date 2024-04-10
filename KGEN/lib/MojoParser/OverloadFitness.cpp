@@ -997,7 +997,7 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
   // This function heavily assumes that a signature has at most
   // one pack variadic argument and that variadics are always the last
   // positional args.
-  size_t numPosArgs = countNumPositional(signature.getArgPassingKinds());
+  size_t numPosArgs = countNumPositional(signature.getArgListAttrs());
 
   // We don't require any positional operands (because this function does not
   // check for passing kinds).
@@ -1247,13 +1247,14 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     break;
   }
 
+  PogListAttr argListAttr = signature.getArgListAttrs();
   auto [posDiagRes, posDiagNames] =
-      diagnosePosOperands(signature.getArgListAttrs(), callOperands);
+      diagnosePosOperands(argListAttr, callOperands);
   switch (posDiagRes) {
   case PosDiagResult::kMissingPos:
     return emitDiagFor.missingArgs(posDiagNames, "positional");
   case PosDiagResult::kTooManyPos: {
-    size_t numPosMaximum = countNumPositional(signature.getArgPassingKinds());
+    size_t numPosMaximum = countNumPositional(argListAttr);
     return emitDiagFor.tooManyPosArgs(numPosMaximum, numPosOperands);
   }
   case PosDiagResult::kByPosAndKw:
@@ -1269,10 +1270,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   ParamBindings::DiagEmitter bindingDiag{
       /*emitParamCount=*/
       [&](size_t numActual, bool posOnly) {
-        SmallVector<PassingKind> paramPassingKinds =
-            signature.getParamListAttrs().getPassingKinds();
+        PogListAttr paramListAttr = signature.getParamListAttrs();
         if (posOnly) {
-          size_t numPosOnly = countNumPosOnly(paramPassingKinds);
+          size_t numPosOnly = countNumPosOnly(paramListAttr);
           diag =
               emitDiagFor.wrongPosOnlyCount(numPosOnly, numActual, "parameter");
         } else {
@@ -1282,7 +1282,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
             if (isa_and_nonnull<TraitType>(type.getMetaType()))
               hidden = 1;
           size_t numExpected = signature.getNumParams() - hidden -
-                               countNumImplicitKinds(paramPassingKinds);
+                               countNumImplicitKinds(paramListAttr);
           diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);
         }
         // For each of the missing parameters, attach any parameter inference
@@ -1449,7 +1449,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the
   // argument types.
   ParserParamEvaluator evaluator(*shared.declResolver);
-  PogListAttr argListAttr = signature.getArgListAttrs();
+  argListAttr = signature.getArgListAttrs();
   DefaultValueHandler defaultHandler(argListAttr);
   for (auto [expectedArgIdx, unboundExpectedType, expectedConvention] :
        llvm::enumerate(signature.getArguments(),

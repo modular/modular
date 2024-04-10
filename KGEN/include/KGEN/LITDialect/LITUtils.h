@@ -38,6 +38,7 @@ enum class ArgConvention : uint32_t;
 namespace LIT {
 class LITSignatureType;
 class PogListAttr;
+class PogMetadataAttr;
 enum class PassingKind : uint32_t;
 
 /// Returns whether the given attribute is a LIT type expression.
@@ -109,13 +110,16 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 
 /// Count the number of positional-only passing kinds.
-size_t countNumPosOnly(ArrayRef<PassingKind> kinds);
+size_t countNumPosOnly(ArrayRef<PogMetadataAttr> pogs);
+size_t countNumPosOnly(PogListAttr pogListAttr);
 
 /// Count the number of positional (pos-only or pos-or-kw) passing kinds.
-size_t countNumPositional(ArrayRef<PassingKind> kinds);
+size_t countNumPositional(ArrayRef<PogMetadataAttr> pogs);
+size_t countNumPositional(PogListAttr pogListAttr);
 
 /// Count the number of implicit passing kinds.
-size_t countNumImplicitKinds(ArrayRef<PassingKind> kinds);
+size_t countNumImplicitKinds(ArrayRef<PogMetadataAttr> pogs);
+size_t countNumImplicitKinds(PogListAttr pogListAttr);
 
 /// Helper enum to make printing of variadicness easier.
 enum class Variadicness : uint8_t { kNone, kVariadic, kPack };
@@ -246,14 +250,13 @@ llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MangledSymbol &ms);
 /// keyword-only default values.
 class DefaultValueHandler {
 public:
-  DefaultValueHandler(ArrayRef<PassingKind> passingKinds,
+  DefaultValueHandler(ArrayRef<PogMetadataAttr> pogs,
                       ArrayRef<TypedAttr> defaultsPos,
                       ArrayRef<TypedAttr> defaultsKwOnly)
-      : passingKinds(passingKinds), defaultsPos(defaultsPos),
-        defaultsKwOnly(defaultsKwOnly),
-        numPositional(countNumPositional(passingKinds)),
+      : pogs(pogs), defaultsPos(defaultsPos), defaultsKwOnly(defaultsKwOnly),
+        numPositional(countNumPositional(pogs)),
         defaultPosStart(numPositional - defaultsPos.size()),
-        kwOnlyEnd(passingKinds.size() - countNumImplicitKinds(passingKinds)),
+        kwOnlyEnd(pogs.size() - countNumImplicitKinds(pogs)),
         defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()){};
 
   DefaultValueHandler(PogListAttr pogListAttr);
@@ -283,7 +286,7 @@ public:
   }
 
 private:
-  ArrayRef<PassingKind> passingKinds;
+  ArrayRef<PogMetadataAttr> pogs;
   ArrayRef<TypedAttr> defaultsPos;
   ArrayRef<TypedAttr> defaultsKwOnly;
   size_t numPositional;
@@ -302,14 +305,14 @@ private:
 LogicalResult verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
                                  ArrayRef<TypedAttr> defaultsPos,
                                  ArrayRef<TypedAttr> defaultsKwOnly,
-                                 ArrayRef<PassingKind> passingKinds,
+                                 ArrayRef<PogMetadataAttr> pogs,
                                  ArrayRef<Type> types, StringRef argOrParam,
                                  ArrayRef<ArgConvention> convs = {});
 
 /// Verify the the order of passing kinds, and that the number of defaults
 /// doesn't exceed the number of corresponding passing kinds.
 LogicalResult verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
-                                 ArrayRef<PassingKind> passingKinds,
+                                 ArrayRef<PogMetadataAttr> pogs,
                                  size_t numPosDefaults,
                                  size_t numKwOnlyDefaults,
                                  StringRef argOrParam);
