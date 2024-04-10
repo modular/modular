@@ -298,6 +298,12 @@ static M::ErrorOr<HostMachineInfo> getHostMachineInfoImpl() {
     return cpuModelNameOr.takeError();
   machineInfo.cpuModelName = std::move(*cpuModelNameOr);
 
+  // Get OS version
+  auto osVersion = getHostOSVersion();
+  if (osVersion.isError())
+    return osVersion.takeError();
+  machineInfo.osVersion = osVersion.takeValue();
+
   auto hostFeaturesOr = decodeFeatures(getHostCPUFeatures());
   if (hostFeaturesOr.isError())
     return hostFeaturesOr.takeError();
@@ -370,6 +376,46 @@ M::ErrorOr<std::string> M::getHostTotalMemoryKB() {
       return fields.second.trim().drop_back(3).str();
   }
   return Error("Failed to find MemTotal field in /proc/meminfo.");
+#elif defined(_MSC_VER)
+  // TODO Windows implementation
+  return "";
+#else
+  return Error("Unsupported platform.");
+#endif
+}
+
+M::ErrorOr<std::string> M::getHostOSVersion() {
+#if defined(__APPLE__)
+  std::string OSVersion;
+  auto procTriple = llvm::Triple(llvm::sys::getProcessTriple());
+  llvm::VersionTuple adjustedVersion;
+  if (!procTriple.getMacOSXVersion(adjustedVersion))
+    return Error("Failed to getMacOSXVersion");
+  OSVersion = adjustedVersion.getAsString();
+  // Deal with LLVM sometimes missing minor version
+  if (!adjustedVersion.getMinor().has_value() &&
+      procTriple.getOSVersion().getMinor().has_value()) {
+    llvm::VersionTuple fullVersion(
+        adjustedVersion.getMajor(),
+        procTriple.getOSVersion().getMinor().value());
+    OSVersion = fullVersion.getAsString();
+  }
+
+  return OSVersion;
+#elif defined(__linux__)
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> errOrBuf =
+      llvm::MemoryBuffer::getFileAsStream("/etc/os-release");
+  if (std::error_code ec = errOrBuf.getError())
+    return Error("Can't open /etc/os-release: " + llvm::Twine(ec.message()));
+  SmallVector<StringRef> lines;
+  (*errOrBuf)->getBuffer().split(lines, "\n", /*MaxSplit=*/-1,
+                                 /*KeepEmpty=*/false);
+  for (StringRef line : lines) {
+    auto fields = line.split('=');
+    if (fields.first.trim() == "PRETTY_NAME")
+      return fields.second.trim().drop_back(1).drop_front(1).str();
+  }
+  return Error("Failed to find PRETTY_NAME field in /etc/os-release.");
 #elif defined(_MSC_VER)
   // TODO Windows implementation
   return "";

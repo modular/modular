@@ -434,6 +434,7 @@ TelemetryContext::TelemetryContext(
   // system.
   attrs.SetAttribute("cpu.cores", hostInfoOr->numPhysicalCores);
   attrs.SetAttribute("os.type", hostInfoOr->osName);
+  attrs.SetAttribute("os.version", hostInfoOr->osVersion);
 
   // Get total memory
   auto memoryOr = getHostTotalMemoryKB();

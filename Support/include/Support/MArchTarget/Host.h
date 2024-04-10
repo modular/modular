@@ -68,6 +68,7 @@ struct HostMachineInfo {
   std::string osName;
   std::string cpuArch;
   std::string cpuModelName;
+  std::string osVersion;
   // This is the SIMD bit-width of the host system.
   size_t simdBitWidth = 0;
   std::vector<std::string> cpuFeatures;
@@ -111,6 +112,9 @@ ErrorOr<HostMachineInfo> getHostMachineInfo();
 
 /// Get the host machine total memory in kB
 ErrorOr<std::string> getHostTotalMemoryKB();
+
+/// Get the host machine OS version
+ErrorOr<std::string> getHostOSVersion();
 
 } // namespace M
 
