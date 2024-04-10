@@ -1024,17 +1024,10 @@ fn _reduce_along_outer_dimension[
 
                     unroll[unroll_reduce_helper, num_reductions]()
 
-                # Store the result back to the output.
                 indices[reduce_dim] = 0
-
-                @always_inline
-                @parameter
-                fn unroll_output_helper[i: Int]():
-                    output_0_fn[init_type, simd_width, indices.size](
-                        indices, acc_simd_tup[i]
-                    )
-
-                unroll[unroll_output_helper, num_reductions]()
+                output_0_fn[init_type, simd_width, indices.size](
+                    indices, acc_simd_tup
+                )
 
             vectorize[reduce_chunk, simd_width](inner_dim)
 

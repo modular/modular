@@ -50,9 +50,9 @@ fn test_reductions():
     print(sum(vector))
 
 
-# CHECK-LABEL: test_fused_reductions
-fn test_fused_reductions() raises:
-    print("== test_fused_reductions")
+# CHECK-LABEL: test_fused_reductions_inner
+fn test_fused_reductions_inner() raises:
+    print("== test_fused_redtest_fused_reductions_inneructions")
 
     alias size = 100
     alias test_type = DType.float32
@@ -128,6 +128,88 @@ fn test_fused_reductions() raises:
 
     # CHECK: 5050.0
     print(out[2])
+
+
+# CHECK-LABEL: test_fused_reductions_outer
+fn test_fused_reductions_outer() raises:
+    print("== test_fused_reductions_outer")
+
+    alias size = 100
+    alias test_type = DType.float32
+    alias num_reductions = 3
+    var vector = Buffer[test_type, size].stack_allocation()
+
+    # COM: For the purposes of this test, we reinterpret this as a tensor
+    # COM: of shape [50, 2] and reduce along the outer dimension.
+    # COM: A slice of the first column gives all odd numbers: 1, 3, 5 ... 99
+    # COM: while a slice of the second gives all even numbers: 2, 4, 6, ... 100
+    for i in range(size):
+        vector[i] = i + 1
+
+    @always_inline
+    @__copy_capture(vector)
+    @parameter
+    fn input_fn[
+        type: DType, width: Int, rank: Int
+    ](indices: StaticIntTuple[rank]) -> SIMD[type, width]:
+        var loaded_val = vector.load[width=width](indices[0] * 2 + indices[1])
+        return rebind[SIMD[type, width]](loaded_val)
+
+    var col0 = StaticTuple[Scalar[test_type], num_reductions]()
+    var col1 = StaticTuple[Scalar[test_type], num_reductions]()
+
+    @always_inline
+    @parameter
+    fn reduce_fn[
+        ty: DType,
+        width: Int,
+        reduction_idx: Int,
+    ](left: SIMD[ty, width], right: SIMD[ty, width],) -> SIMD[ty, width]:
+        constrained[reduction_idx < num_reductions, "reduction_idx OOB"]()
+
+        @parameter
+        if reduction_idx == 0:
+            return _min(left, right)
+        elif reduction_idx == 1:
+            return _max(left, right)
+        else:
+            return left + right
+
+    var init_min = Scalar[test_type].MAX
+    var init_max = Scalar[test_type].MIN
+    var init = StaticTuple[Scalar[test_type], num_reductions](
+        init_min, init_max, 0
+    )
+    var shape = StaticIntTuple[2](50, 2)
+
+    @always_inline
+    @parameter
+    fn output_fn[
+        type: DType, width: Int, rank: Int
+    ](
+        indices: StaticIntTuple[rank],
+        val: StaticTuple[SIMD[type, width], num_reductions],
+    ):
+        # CHECK: Column: 0  min:  1.0  max:  99.0  sum:  2500.0
+        # CHECK: Column: 1  min:  2.0  max:  100.0  sum:  2550.0
+        print(
+            "Column:",
+            indices[1],
+            " min: ",
+            val[0],
+            " max: ",
+            val[1],
+            " sum: ",
+            val[2],
+        )
+
+    _reduce_generator[
+        num_reductions, test_type, input_fn, output_fn, reduce_fn
+    ](
+        shape,
+        init=init,
+        reduce_dim=0,
+    )
 
 
 # We use a smaller vector so that we do not overflow
@@ -905,7 +987,8 @@ fn test_cumsum():
 
 fn main() raises:
     test_reductions()
-    test_fused_reductions()
+    test_fused_reductions_inner()
+    test_fused_reductions_outer()
     test_product()
     test_mean_variance()
     test_3d_reductions_axis_0()
