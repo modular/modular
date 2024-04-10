@@ -663,7 +663,7 @@ KGEN::ExecutionEngine::mangleAndIntern(StringRef name) {
 
 ErrorOrSuccess ExecutionEngine::addToSearchOrder(StringRef name,
                                                  llvm::orc::JITDylib *dylib) {
-  auto [_, didInsert] = knownDylibs.insert(name);
+  [[maybe_unused]] auto [_, didInsert] = knownDylibs.insert(name);
   assert(didInsert && "must have uniquely-named dylibs");
 
   // If this isn't the platform stdlib, setup CompilerRT.
