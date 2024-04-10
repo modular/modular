@@ -321,10 +321,10 @@ LogicalResult FnMetadataAttr::verifySignature(
            << "number of arguments does not match number of input conventions: "
            << numInputs << " != " << numArgConv;
   }
-  if (size_t numArgName = getArgNames().size(); numArgName != numInputs) {
+  if (size_t numArgs = getNumArgs(); numArgs != numInputs) {
     return emitError()
            << "number of arguments does not match number of argument names: "
-           << numInputs << " != " << numArgName;
+           << numInputs << " != " << numArgs;
   }
 
   for (auto [i, argType, conv] :
@@ -371,6 +371,8 @@ LogicalResult FnMetadataAttr::verifySignature(
 
   return success();
 }
+
+size_t FnMetadataAttr::getNumArgs() const { return getArgNames().size(); }
 
 bool FnMetadataAttr::hasVarArgs() const {
   return getArgListAttrs().hasVariadic();

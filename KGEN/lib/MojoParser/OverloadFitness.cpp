@@ -62,6 +62,15 @@ private:
 };
 } // namespace
 
+/// Helper to consistently print a parameter/argument name or index (if the name
+/// is empty) in diagnostics.
+static void printNameOrIdx(StringAttr name, size_t idx, InflightDiag &diag) {
+  if (!name.empty())
+    diag << "'" << name.getValue() << "'";
+  else
+    diag << "#" << idx;
+}
+
 void ParameterInferenceDiagnostics::attach(LITSignatureType signature,
                                            InflightDiag &diag, size_t numActual,
                                            const CallOperands &operands) {
@@ -77,10 +86,7 @@ void ParameterInferenceDiagnostics::attach(LITSignatureType signature,
           [&, idx = idx]() -> InflightDiag & {
             diag.attachNote(expr->getLoc())
                 << expr->getRange() << "failed to infer parameter ";
-            if (StringRef name = signature.getParamNames()[idx]; !name.empty())
-              diag << "'" << name << "'";
-            else
-              diag << "#" << idx;
+            printNameOrIdx(signature.getParamName(idx), idx, diag);
             return diag << ", ";
           },
           failed.paramType, failed.argParamType);
@@ -1339,12 +1345,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
       /*emitInferOnlyFailure=*/
       [&](size_t paramIdx) {
-        auto printNameOrIdx = [&](StringAttr name, size_t i) {
-          if (!name.empty())
-            diag << "'" << name.getValue() << "'";
-          else
-            diag << "#" << i;
-        };
         // Find the parameter number and potentially name of the type of the
         // argument that failed to be inferred.
         for (auto [idx, argType] : llvm::enumerate(signature.getArguments())) {
@@ -1356,9 +1356,10 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                 diag << "failed to infer implicit parameter ";
                 auto structDecl =
                     cast<StructDeclOp>(ASTType(type).getDecl(shared));
-                printNameOrIdx(structDecl.getSignature().getParamNames()[i], i);
+                printNameOrIdx(structDecl.getSignature().getParamNames()[i], i,
+                               diag);
                 diag << " of argument ";
-                printNameOrIdx(signature.getArgName(idx), idx);
+                printNameOrIdx(signature.getArgName(idx), idx, diag);
                 diag << " type '" << structDecl.getSymName() << "'";
                 return;
               }

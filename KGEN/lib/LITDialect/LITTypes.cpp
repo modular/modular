@@ -121,6 +121,9 @@ TypeSignatureType TypeSignatureType::get(MLIRContext *context) {
 ArrayRef<StringAttr> TypeSignatureType::getParamNames() const {
   return getParamListAttrs().getNames();
 }
+StringAttr TypeSignatureType::getParamName(size_t idx) const {
+  return getParamNames()[idx];
+}
 ArrayRef<PassingKind> TypeSignatureType::getParamPassingKinds() const {
   return getParamListAttrs().getPassingKinds();
 }
@@ -934,8 +937,8 @@ ArrayRef<StringAttr> LITSignatureType::getArgNames() {
   return getMetadata().getArgNames();
 }
 
-StringAttr LITSignatureType::getArgName(size_t inputNo) {
-  return getArgNames()[inputNo];
+StringAttr LITSignatureType::getArgName(size_t idx) {
+  return getArgNames()[idx];
 }
 
 ArrayRef<PassingKind> LITSignatureType::getArgPassingKinds() {
@@ -960,6 +963,10 @@ ArrayRef<TypedAttr> LITSignatureType::getDefaultKwOnlyParams() {
 
 ArrayRef<StringAttr> LITSignatureType::getParamNames() {
   return getMetadata().getParamNames();
+}
+
+StringAttr LITSignatureType::getParamName(size_t idx) {
+  return getParamNames()[idx];
 }
 
 ArrayRef<PassingKind> LITSignatureType::getParamPassingKinds() {

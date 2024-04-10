@@ -101,6 +101,7 @@ def LIT_TypeSignatureType : LITType<"TypeSignature", "type_signature",
     ArrayRef<Type> getInputParamTypes() const { return getParamTypes(); }
     ArrayRef<Type> getResultParamTypes() const { return {}; }
     ArrayRef<StringAttr> getParamNames() const;
+    StringAttr getParamName(size_t idx) const;
     ArrayRef<PassingKind> getParamPassingKinds() const;
     ArrayRef<TypedAttr> getDefaultPosParams() const;
     ArrayRef<TypedAttr> getDefaultKwOnlyParams() const;

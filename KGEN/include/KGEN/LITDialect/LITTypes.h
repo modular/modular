@@ -41,8 +41,8 @@ public:
   /// Get the function input argument names.
   ArrayRef<StringAttr> getArgNames();
 
-  /// Return the name for the specified argument.
-  StringAttr getArgName(size_t inputNo);
+  /// Return the name for the argument at the specified index.
+  StringAttr getArgName(size_t idx);
 
   /// Get the function argument passing kinds (e.g. keyword-only).
   ArrayRef<PassingKind> getArgPassingKinds();
@@ -61,6 +61,9 @@ public:
 
   /// Get the function's (unmangled) parameter names.
   ArrayRef<StringAttr> getParamNames();
+
+  /// Return the name for the parameter at the specified index.
+  StringAttr getParamName(size_t idx);
 
   /// Mojo only has input parameters.
   ArrayRef<Type> getParamTypes() { return getInputParamTypes(); }
