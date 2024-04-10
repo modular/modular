@@ -195,11 +195,14 @@ FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
 
 FnMetadataAttrInterface
 FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
-  ArrayRef<PassingKind> passingKinds = getArgPassingKinds();
+  PogListAttr argListAttrs = getArgListAttrs();
+
+  ArrayRef<PassingKind> passingKinds = argListAttrs.getPassingKinds();
   size_t numPositional = countNumPositional(passingKinds);
   assert(numBound <= numPositional && "only positional arguments can be bound");
 
-  ArrayRef<StringAttr> newArgNames = getArgNames().drop_front(numBound);
+  ArrayRef<StringAttr> newArgNames =
+      argListAttrs.getNames().drop_front(numBound);
   ArrayRef<PassingKind> newArgPassingKind = passingKinds.drop_front(numBound);
 
   ArrayRef<TypedAttr> newDefaultPosArgs = getDefaultPosArgs();
@@ -208,7 +211,6 @@ FnMetadataAttr::getWithBoundPosArgs(size_t numBound) const {
     newDefaultPosArgs = newDefaultPosArgs.take_back(numArgs);
 
   /// If needed, we drop variadic indices and adjust the pack index.
-  PogListAttr argListAttrs = getArgListAttrs();
   ArrayRef<bool> newArgVaridicMask =
       argListAttrs.getVariadicMask().drop_front(numBound);
   ssize_t packIdx = argListAttrs.getPackIndex();
@@ -236,8 +238,8 @@ FnMetadataAttr::getWithBoundParams(const llvm::BitVector &boundParams) const {
   size_t numParams = boundParams.size();
   for (size_t idx = 0; idx < numParams; ++idx) {
     if (!boundParams[idx]) {
-      newParamNames.emplace_back(getParamNames()[idx]);
-      newParamPassingKinds.emplace_back(getParamPassingKinds()[idx]);
+      newParamNames.emplace_back(paramListAttr.getNames()[idx]);
+      newParamPassingKinds.emplace_back(paramListAttr.getPassingKinds()[idx]);
       if (TypedAttr defaultOr = defaultHandler.getPosDefault(idx))
         newDefaultPosParams.emplace_back(defaultOr);
       else if (TypedAttr defaultOr = defaultHandler.getKwOnlyDefault(idx))
@@ -258,14 +260,14 @@ FnMetadataAttr::prependPosParams(size_t numNewParams,
   if (numNewParams == 0)
     return *this;
 
+  PogListAttr oldParamListAttr = getParamListAttrs();
   auto emptyStr = StringAttr::get(getContext());
   SmallVector<StringAttr> newParamNames(numNewParams, emptyStr);
-  llvm::append_range(newParamNames, getParamNames());
+  llvm::append_range(newParamNames, oldParamListAttr.getNames());
 
   SmallVector<PassingKind> newPassingKinds(numNewParams, PassingKind::PosOnly);
-  llvm::append_range(newPassingKinds, getParamPassingKinds());
+  llvm::append_range(newPassingKinds, oldParamListAttr.getPassingKinds());
 
-  PogListAttr oldParamListAttr = getParamListAttrs();
   SmallVector<bool> newVariadicMask(variadicMask);
   llvm::append_range(newVariadicMask, oldParamListAttr.getVariadicMask());
 
@@ -309,7 +311,8 @@ LogicalResult FnMetadataAttr::verifySignature(
   if (!resultParamTypes.empty())
     return emitError() << "expected no result parameters";
 
-  if (getParamNames().size() != inputParamTypes.size()) {
+  PogListAttr paramListAttr = getParamListAttrs();
+  if (paramListAttr.getNames().size() != inputParamTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
                           "input parameter types";
   }
@@ -360,19 +363,21 @@ LogicalResult FnMetadataAttr::verifySignature(
     }
   }
 
-  if (failed(verifyDefaultTypes(emitError, getDefaultPosArgs(),
-                                getDefaultKwOnlyArgs(), getArgPassingKinds(),
-                                values.getInputs(), "argument",
-                                argConventions)) ||
+  if (failed(verifyDefaultTypes(
+          emitError, getDefaultPosArgs(), getDefaultKwOnlyArgs(),
+          getArgListAttrs().getPassingKinds(), values.getInputs(), "argument",
+          argConventions)) ||
       failed(verifyDefaultTypes(
           emitError, getDefaultPosParams(), getDefaultKwOnlyParams(),
-          getParamPassingKinds(), inputParamTypes, "parameter")))
+          paramListAttr.getPassingKinds(), inputParamTypes, "parameter")))
     return failure();
 
   return success();
 }
 
-size_t FnMetadataAttr::getNumArgs() const { return getArgNames().size(); }
+size_t FnMetadataAttr::getNumArgs() const {
+  return getArgListAttrs().getNames().size();
+}
 
 bool FnMetadataAttr::hasVarArgs() const {
   return getArgListAttrs().hasVariadic();

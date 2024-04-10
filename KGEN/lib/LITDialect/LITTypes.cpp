@@ -934,7 +934,7 @@ PogListAttr LITSignatureType::getParamListAttrs() {
 }
 
 ArrayRef<StringAttr> LITSignatureType::getArgNames() {
-  return getMetadata().getArgNames();
+  return getArgListAttrs().getNames();
 }
 
 StringAttr LITSignatureType::getArgName(size_t idx) {
@@ -942,7 +942,7 @@ StringAttr LITSignatureType::getArgName(size_t idx) {
 }
 
 ArrayRef<PassingKind> LITSignatureType::getArgPassingKinds() {
-  return getMetadata().getArgPassingKinds();
+  return getArgListAttrs().getPassingKinds();
 }
 
 ArrayRef<TypedAttr> LITSignatureType::getDefaultPosArgs() {
@@ -962,7 +962,7 @@ ArrayRef<TypedAttr> LITSignatureType::getDefaultKwOnlyParams() {
 }
 
 ArrayRef<StringAttr> LITSignatureType::getParamNames() {
-  return getMetadata().getParamNames();
+  return getParamListAttrs().getNames();
 }
 
 StringAttr LITSignatureType::getParamName(size_t idx) {
@@ -970,7 +970,7 @@ StringAttr LITSignatureType::getParamName(size_t idx) {
 }
 
 ArrayRef<PassingKind> LITSignatureType::getParamPassingKinds() {
-  return getMetadata().getParamPassingKinds();
+  return getParamListAttrs().getPassingKinds();
 }
 
 /// Get the number of implicit lifetime decls this function type carries.
