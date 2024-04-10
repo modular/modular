@@ -31,12 +31,7 @@ from buffer.buffer import (
     prod_dims,
 )
 from buffer.list import Dim, DimList
-from LinAlg.Matmul import (
-    GemmShape,
-    MatmulInnerLoopBPacked,
-    PackMatrixCols,
-    PackMatrixRows,
-)
+
 from LinAlg.MatmulUtils import (
     PartitionHeuristic,
     get_matmul_prefetch_b_distance_k,
