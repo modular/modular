@@ -740,22 +740,20 @@ lit.func @self_recursive_arg_diff(%a: index) -> !kgen.none {
 }
 
 // CHECK-LABEL: lit.func @elif
-// CHECK-NEXT: %idx0 = index.constant 0
+// CHECK: %idx0 = index.constant 0
 // CHECK-NEXT: %idx1 = index.constant 1
 // CHECK-NEXT: %idx2 = index.constant 2
-// CHECK-NEXT: %0 = hlcf.elif -> index {
-// CHECK-NEXT: [[V1:%*.]] = index.cmp eq(%arg0, %idx0)
-// CHECK-NEXT: hlcf.elif.yield [[V1]] : i1
-// CHECK-NEXT: } then {
-// CHECK-NEXT: hlcf.yield %arg0 : index
-// CHECK-NEXT: } {
-// CHECK-NEXT: [[V2:%*.]] = index.cmp eq(%arg0, %idx1)
-// CHECK-NEXT: hlcf.elif.yield [[V2]] : i1
-// CHECK-NEXT: } then {
-// CHECK-NEXT: kgen.return %arg1 : index
+// CHECK-NEXT: %0 = index.cmp eq(%arg0, %idx0)
+// CHECK-NEXT: %1 = hlcf.if %0 -> index {
+// CHECK-NEXT:   hlcf.yield %arg0 : index
 // CHECK-NEXT: } else {
-// CHECK-NEXT: kgen.return %arg1 : index
-// CHECK-NEXT: }
+// CHECK-NEXT:   %2 = index.cmp eq(%arg0, %idx1)
+// CHECK-NEXT:   %3 = hlcf.if %2 -> index {
+// CHECK-NEXT:       hlcf.yield %arg1 : index
+// CHECK-NEXT:     } else {
+// CHECK-NEXT:       hlcf.yield %arg2 : index
+// CHECK:       hlcf.yield %3 : index
+// CHECK: kgen.return %1 : index
 lit.func @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
@@ -769,10 +767,8 @@ lit.func @elif(%arg0: index, %arg1: index, %arg2: index) -> index {
     %c = index.cmp eq(%arg0, %idx1)
     hlcf.elif.yield %c : i1
   } then {
-    lit.return %arg1 : index
     hlcf.yield %arg1 : index
   } else {
-    lit.return %arg1 : index
     hlcf.yield %arg2 : index
   }
   kgen.return %0 : index
@@ -908,18 +904,17 @@ lit.func @mangle_params_finally_3<x>(%c: i1 borrow) -> !kgen.none {
   lit.end_func
 }
 
+
 // CHECK-LABEL: lit.func @containsEarlyReturn
 lit.func @containsEarlyReturn(%arg: i1) -> !kgen.none {
-  // CHECK: hlcf.elif {
-  // CHECK:     hlcf.elif.yield %arg : i1
-  // CHECK:    } then {
-  // CHECK:     %none = kgen.param.constant: none = <#kgen.none>
-  // CHECK:     kgen.return %none : !kgen.none
-  // CHECK:   } else {
-  // CHECK:     %none = kgen.param.constant: none = <#kgen.none>
-  // CHECK:     kgen.return %none : !kgen.none
-  // CHECK:   }
-  // CHECK:   kgen.unreachable
+  // CHECK: hlcf.if %arg {
+  // CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
+  // CHECK-NEXT: kgen.return %none : !kgen.none
+  // CHECK-NEXT: } else {
+  // CHECK-NEXT:  %none = kgen.param.constant: none = <#kgen.none>
+  // CHECK-NEXT:  kgen.return %none : !kgen.none
+  // CHECK-NEXT: }
+  // CHECK-NEXT: kgen.unreachable
   hlcf.elif {
     hlcf.elif.yield %arg : i1
   } then {
@@ -942,16 +937,14 @@ lit.func @fallthrough<cond0: i1, cond1: i1>(%lhs: index, %rhs: index, %cond2 : i
 // CHECK-NEXT: kgen.param.if <cond1> {
 // CHECK-NEXT:   kgen.return %rhs : index
 // CHECK-NEXT:  } else {
-// CHECK-NEXT:  hlcf.elif {
-// CHECK-NEXT:    hlcf.elif.yield %cond2 : i1
-// CHECK-NEXT:  } then {
-// CHECK-NEXT:    hlcf.yield
-// CHECK-NEXT:  } else {
-// CHECK-NEXT:    hlcf.yield
-// CHECK-NEXT:  }
-// CHECK-NEXT:  %index0 = kgen.param.constant = <0>
-// CHECK-NEXT:  kgen.return %index0 : index
-// CHECK-NEXT:  }
+// CHECK-NEXT:    hlcf.if %cond2 {
+// CHECK-NEXT:      hlcf.yield
+// CHECK-NEXT:    } else {
+// CHECK-NEXT:      hlcf.yield
+// CHECK-NEXT:    }
+// CHECK-NEXT:    %index0 = kgen.param.constant = <0>
+// CHECK-NEXT:    kgen.return %index0 : index
+// CHECK-NEXT:   }
 // CHECK-NEXT:  kgen.unreachable
 // CHECK-NEXT: }
 // CHECK-NEXT: kgen.unreachable
@@ -979,14 +972,10 @@ lit.func @fallthrough<cond0: i1, cond1: i1>(%lhs: index, %rhs: index, %cond2 : i
  lit.end_func
 }
 
-
 // CHECK-LABEL: lit.func @consecutiveElifs
 lit.func @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   %idx0 = index.constant 0
   %idx1 = index.constant 1
-
-  // CHECK:  hlcf.elif -> index {
-  // CHECK-NEXT: index.cmp eq(%arg0, %idx0)
   %0 = hlcf.elif -> index {
     %c = index.cmp eq(%arg0, %idx0)
     hlcf.elif.yield %c : i1
@@ -995,14 +984,6 @@ lit.func @consecutiveElifs(%arg0: index, %arg1: index) -> index {
   } else {
     hlcf.yield %arg1 : index
   }
-  // CHECK:  hlcf.elif {
-  // CHECK-NEXT:   index.cmp eq(%arg0, %idx1)
-  // CHECK-NEXT:   hlcf.elif.yield
-  // CHECK-NEXT: } then {
-  // CHECK-NEXT:   kgen.return %arg0 : index
-  // CHECK-NEXT: } else {
-  // CHECK-NEXT:   kgen.return %arg1 : index
-  // CHECK-NEXT: }
   hlcf.elif {
     %c = index.cmp eq(%arg0, %idx1)
     hlcf.elif.yield %c : i1
@@ -1013,7 +994,13 @@ lit.func @consecutiveElifs(%arg0: index, %arg1: index) -> index {
     lit.return %arg1 : index
     hlcf.yield
   }
+
+  // CHECK:  [[COND:%.*]] = index.cmp eq(%arg0, %idx1)
+  // CHECK-NEXT:  hlcf.if [[COND]] {
+  // CHECK-NEXT:   kgen.return %arg0 : index
+  // CHECK-NEXT:  } else {
+  // CHECK-NEXT:    kgen.return %arg1 : index
+  // CHECK-NEXT:  }
   // CHECK-NEXT: kgen.unreachable
-  // CHECK-NEXT: }
   lit.end_func
 }
