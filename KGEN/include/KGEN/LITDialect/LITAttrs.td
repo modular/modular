@@ -229,6 +229,7 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
   ];
 
   let extraClassDeclaration = [{
+    size_t getNumArgs() const;
     ArrayRef<StringAttr> getArgNames() const {
       return getArgListAttrs().getNames();
     };

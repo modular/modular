@@ -155,11 +155,11 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   // Synthesize input and result parameter decls.
   SmallVector<ParamDeclAttr> paramDecls;
   Builder b(shared.getContext());
-  for (auto [i, type, name] :
-       llvm::enumerate(memSig.getParamTypes(), memSig.getParamNames())) {
+  for (auto [idx, type] : llvm::enumerate(memSig.getParamTypes())) {
+    StringAttr name = memSig.getParamName(idx);
     // The parameter names are derived from the decl name.
     paramDecls.push_back(ParamDeclAttr::get(
-        name.empty() ? b.getStringAttr("i" + Twine(i)) : name, type));
+        name.empty() ? b.getStringAttr("i" + Twine(idx)) : name, type));
   }
 
   // Synthesize the method inside the struct.

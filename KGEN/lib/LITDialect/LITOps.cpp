@@ -850,7 +850,7 @@ void LIT::FuncOp::getAsmBlockArgumentNames(
 LogicalResult LIT::FuncOp::verify() {
   // Check that the number of argument labels matches the number of argument
   // types.
-  if (getSignature().getMetadata().getArgNames().size() !=
+  if (getSignature().getMetadata().getNumArgs() !=
       getFunctionType().getNumInputs())
     return emitOpError("incorrect number of value parameter labels");
 
