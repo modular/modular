@@ -7,6 +7,7 @@
 // CHECK-DAG: !subroutine{{[0-9]+}} =
 
 // CHECK: lit.package @test_package
+// CHECK-SAME: dependencies = #kgen<link.dependencies[@stdlib]>
 // CHECK-SAME: postParseModule = {{.*}}
 
 // CHECK: lit.package @inner1
