@@ -529,6 +529,96 @@ struct _product3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
         )
 
 
+@always_inline
+fn _lift(n: Int, shape: List[Int]) -> List[Int]:
+    """Lifts the linearized shape to the ND shape. This is the same as
+    _get_start_indices_of_nth_subvolume[N, 0] but works in the runtime
+    domain."""
+    var out = List[Int](capacity=len(shape))
+    var curr_index = n
+
+    for i in range(len(shape) - 1, -1, -1):
+        out.append(curr_index._positive_rem(shape[i]))
+        curr_index = curr_index._positive_div(shape[i])
+
+    return out
+
+
+@always_inline
+fn _get_shapes[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+](tuples: List[DynamicTuple[T, D]]) -> List[Int]:
+    var tuples_shapes = List[Int](capacity=len(tuples))
+    for tup in tuples:
+        tuples_shapes.append(len(tup[]))
+    return tuples_shapes
+
+
+struct _ProductIterN[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+]:
+    var offset: Int
+    var tuples: List[DynamicTuple[T, D]]
+    var tuples_shape: List[Int]
+
+    fn __init__(inout self, tuples: List[DynamicTuple[T, D]]):
+        self.offset = 0
+        self.tuples = tuples
+        self.tuples_shape = _get_shapes(tuples)
+
+    @always_inline
+    fn __next__(inout self) -> DynamicTuple[T, D]:
+        self.offset += 1
+        var idx = _lift(self.offset - 1, self.tuples_shape)
+        var res = DynamicTuple[T, D]()
+        for i in range(len(self.tuples_shape)):
+            res.append(self.tuples[i][idx[i]])
+        return res
+
+    @always_inline
+    fn __len__(self) -> Int:
+        var total = 1
+        for i in self.tuples_shape:
+            total *= i[]
+        return total - self.offset
+
+
+struct _productN[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
+    Sized
+):
+    var tuples: List[DynamicTuple[T, D]]
+
+    alias IterType = _ProductIterN[T, D]
+
+    fn __init__(inout self, *tuples: DynamicTuple[T, D]):
+        self.tuples = List[DynamicTuple[T, D]](capacity=len(tuples))
+        for tup in tuples:
+            self.tuples.append(tup[])
+
+    fn __init__(inout self, tuples: List[DynamicTuple[T, D]]):
+        self.tuples = tuples
+
+    @always_inline
+    fn __iter__(self) -> Self.IterType:
+        return Self.IterType(self.tuples)
+
+    @always_inline
+    fn __len__(self) -> Int:
+        var total = 1
+        for tup in self.tuples:
+            total *= len(tup[])
+        return total
+
+    @always_inline
+    fn __getitem__(self, offset: Int) -> DynamicTuple[T, D]:
+        var tuples_shape = _get_shapes(self.tuples)
+        var idx = _lift(offset, tuples_shape)
+        var res = DynamicTuple[T, D]()
+        for i in range(len(tuples_shape)):
+            res.append(self.tuples[i][idx[i]])
+        return res
+
+
 fn product[
     T: CollectionElement, D: ElementDelegate = DefaultDelegate
 ](a: DynamicTuple[T, D], b: DynamicTuple[T, D]) -> _product2[T, D]:
@@ -541,3 +631,12 @@ fn product[
     a: DynamicTuple[T, D], b: DynamicTuple[T, D], c: DynamicTuple[T, D]
 ) -> _product3[T, D]:
     return _product3(a, b, c)
+
+
+fn product[
+    T: CollectionElement, D: ElementDelegate = DefaultDelegate
+](*tuples: DynamicTuple[T, D]) -> _productN[T, D]:
+    var lst = List[DynamicTuple[T, D]](capacity=len(tuples))
+    for tup in tuples:
+        lst.append(tup[])
+    return _productN(lst^)
