@@ -39,13 +39,13 @@ public:
   PogListAttr getParamListAttrs();
 
   /// Get the function input argument names.
-  ArrayRef<StringAttr> getArgNames();
+  SmallVector<StringAttr> getArgNames();
 
   /// Return the name for the argument at the specified index.
   StringAttr getArgName(size_t idx);
 
   /// Get the function argument passing kinds (e.g. keyword-only).
-  ArrayRef<PassingKind> getArgPassingKinds();
+  SmallVector<PassingKind> getArgPassingKinds();
 
   /// Get the function's default positional arguments.
   ArrayRef<TypedAttr> getDefaultPosArgs();
@@ -59,9 +59,6 @@ public:
   /// Get the function's default keyword-only parameters.
   ArrayRef<TypedAttr> getDefaultKwOnlyParams();
 
-  /// Get the function's (unmangled) parameter names.
-  ArrayRef<StringAttr> getParamNames();
-
   /// Return the name for the parameter at the specified index.
   StringAttr getParamName(size_t idx);
 
@@ -69,8 +66,8 @@ public:
   ArrayRef<Type> getParamTypes() { return getInputParamTypes(); }
   size_t getNumParams() { return getParamTypes().size(); }
 
-  /// Get the function parameter passing kinds (e.g. keyword-only).
-  ArrayRef<PassingKind> getParamPassingKinds();
+  /// Return the passing kind for the parameter at the specified index.
+  PassingKind getParamPassingKind(size_t idx);
 
   /// Get the number of implicit lifetime decls this function type carries.
   size_t getNumImplicitLifetimeDecls();

@@ -145,10 +145,10 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
     // Handle the case of an argument materialized in a variable.
     if (varDecl.getKind() == VarDeclKind::Arg) {
       auto parentFn = varDecl->getParentOfType<LIT::FuncOp>();
-      ArrayRef<StringAttr> argNames = parentFn.getSignature().getArgNames();
-      auto argIt = llvm::find(argNames, varDecl.getNameAttr());
-      if (argIt != argNames.end())
-        return createArgumentDeclView(*this, argIt - argNames.begin());
+      for (auto [idx, pogAttr] :
+           llvm::enumerate(parentFn.getSignature().getArgListAttrs().getPogs()))
+        if (pogAttr.getName() == varDecl.getNameAttr())
+          return createArgumentDeclView(*this, idx);
     }
     // Otherwise, this is a regular variable.
     return std::unique_ptr<VariableDeclView>(new VariableDeclView(*this));

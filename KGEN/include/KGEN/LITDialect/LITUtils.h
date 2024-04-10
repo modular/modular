@@ -37,7 +37,6 @@ enum class ArgConvention : uint32_t;
 
 namespace LIT {
 class LITSignatureType;
-class PassingKindArrayAttr;
 class PogListAttr;
 enum class PassingKind : uint32_t;
 
@@ -181,9 +180,11 @@ private:
 /// printing methods with mojo syntax).
 class PassingKindPrinter {
 public:
-  PassingKindPrinter(raw_ostream &os, ArrayRef<PassingKind> passingKinds,
+  PassingKindPrinter(raw_ostream &os,
+                     SmallVectorImpl<PassingKind> &&passingKinds,
                      bool suppressSlashAfterSelf = false, char slash = '/');
-  PassingKindPrinter(AsmPrinter &printer, ArrayRef<PassingKind> passingKinds,
+  PassingKindPrinter(AsmPrinter &printer,
+                     SmallVectorImpl<PassingKind> &&passingKinds,
                      char slash = '/');
 
   /// Print a single '*' or '/' if needed, given the index of the passing kind.
@@ -194,8 +195,7 @@ public:
 
 private:
   raw_ostream &os;
-  ArrayRef<PassingKind> passingKinds;
-  size_t numInputs;
+  SmallVector<PassingKind> passingKinds;
   PassingKind prevPassingKind;
   bool suppressSlashAfterSelf;
   char slash; // TODO: remove this when AsmParser can handle '/'.

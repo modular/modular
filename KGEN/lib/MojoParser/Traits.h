@@ -20,7 +20,7 @@ class TraitType;
 class TypeLineageAttr;
 
 /// Check conformance of a struct against a given trait type.
-LogicalResult verifyConformance(ASTDecl &structDecl, TypeLineageAttr trait,
+LogicalResult verifyConformance(ASTDecl &structDecl, TypeLineageAttr parent,
                                 SharedState &shared,
                                 std::optional<InflightDiag> &diag);
 } // namespace M::KGEN::LIT

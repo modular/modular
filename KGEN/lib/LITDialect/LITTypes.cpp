@@ -75,7 +75,7 @@ LogicalResult
 TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
                           ArrayRef<Type> paramTypes,
                           PogListAttr paramListAttrs) {
-  ArrayRef<PassingKind> paramPassingKinds = paramListAttrs.getPassingKinds();
+  SmallVector<PassingKind> paramPassingKinds = paramListAttrs.getPassingKinds();
   if (paramPassingKinds.size() != paramTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
                           "input parameter types";
@@ -105,11 +105,10 @@ TypeSignatureType TypeSignatureType::remapToSignature(
 
   MLIRContext *ctx = paramDecls.getContext();
   paramListAttrs = PogListAttr::get(
-      ctx, paramListAttrs.getNames(), paramListAttrs.getPassingKinds(),
+      ctx, paramListAttrs.getPogs(),
       remapper.replace(paramListAttrs.getDefaultPos()),
       remapper.replace(paramListAttrs.getDefaultKwOnly()),
-      paramListAttrs.getVariadicMask(), paramListAttrs.getPackIndex(),
-      paramListAttrs.getOrigPackConvention());
+      paramListAttrs.getPackIndex(), paramListAttrs.getOrigPackConvention());
   return TypeSignatureType::getChecked(emitError, ctx, inputParamTypes,
                                        paramListAttrs);
 }
@@ -118,15 +117,14 @@ TypeSignatureType TypeSignatureType::get(MLIRContext *context) {
   return get(context, /*paramTypes=*/{}, PogListAttr::get(context));
 }
 
-ArrayRef<StringAttr> TypeSignatureType::getParamNames() const {
-  return getParamListAttrs().getNames();
-}
 StringAttr TypeSignatureType::getParamName(size_t idx) const {
-  return getParamNames()[idx];
+  return getParamListAttrs().getName(idx);
 }
-ArrayRef<PassingKind> TypeSignatureType::getParamPassingKinds() const {
-  return getParamListAttrs().getPassingKinds();
+
+PassingKind TypeSignatureType::getParamPassingKind(size_t idx) const {
+  return getParamListAttrs().getPassingKind(idx);
 }
+
 ArrayRef<TypedAttr> TypeSignatureType::getDefaultPosParams() const {
   return getParamListAttrs().getDefaultPos();
 }
@@ -424,17 +422,13 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
 
   TypeSignatureType sig = getSignature();
   PogListAttr paramListAttr = sig.getParamListAttrs();
-  auto sigRange = llvm::enumerate(sig.getParamTypes(), sig.getParamNames(),
-                                  sig.getParamPassingKinds(),
-                                  paramListAttr.getVariadicMask());
+  auto sigRange = llvm::enumerate(sig.getParamTypes(), paramListAttr.getPogs());
   auto sigIt = sigRange.begin();
 
   SmallVector<Type> newParamTypes;
-  SmallVector<StringAttr> newParamNames;
-  SmallVector<PassingKind> newPassingKinds;
+  SmallVector<PogMetadataAttr> newPogs;
   SmallVector<TypedAttr> newPosDefaults;
   SmallVector<TypedAttr> newKwOnlyDefaults;
-  SmallVector<bool> newVariadicMask;
 
   DefaultValueHandler defaultHandler(paramListAttr);
   ParameterEvaluator evaluator;
@@ -443,11 +437,9 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
     // signature.
     if (::isa<UnboundAttr>(cur)) {
       if (::isa<UnboundAttr>(val)) {
-        auto [i, type, name, kind, isVariadic] = *sigIt;
+        auto [i, type, pogAttr] = *sigIt;
         newParamTypes.push_back(evaluator.getReboundType(type));
-        newParamNames.push_back(name);
-        newPassingKinds.push_back(kind);
-        newVariadicMask.push_back(isVariadic);
+        newPogs.push_back(pogAttr);
 
         if (TypedAttr defaultOr = defaultHandler.getPosDefault(i))
           newPosDefaults.push_back(defaultOr);
@@ -467,9 +459,8 @@ AnyStructType AnyStructType::bind(ArrayRef<TypedAttr> values) const {
   }
   assert(sigIt == sigRange.end() && "expected signature to get processed");
 
-  auto paramListAttrs =
-      PogListAttr::get(getContext(), newParamNames, newPassingKinds,
-                       newPosDefaults, newKwOnlyDefaults, newVariadicMask);
+  auto paramListAttrs = PogListAttr::get(getContext(), newPogs, newPosDefaults,
+                                         newKwOnlyDefaults);
   auto newSig =
       TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
   return AnyStructType::get(getSymbol(), values, newSig);
@@ -933,7 +924,7 @@ PogListAttr LITSignatureType::getParamListAttrs() {
   return getMetadata().getParamListAttrs();
 }
 
-ArrayRef<StringAttr> LITSignatureType::getArgNames() {
+SmallVector<StringAttr> LITSignatureType::getArgNames() {
   return getArgListAttrs().getNames();
 }
 
@@ -941,7 +932,7 @@ StringAttr LITSignatureType::getArgName(size_t idx) {
   return getArgNames()[idx];
 }
 
-ArrayRef<PassingKind> LITSignatureType::getArgPassingKinds() {
+SmallVector<PassingKind> LITSignatureType::getArgPassingKinds() {
   return getArgListAttrs().getPassingKinds();
 }
 
@@ -961,16 +952,12 @@ ArrayRef<TypedAttr> LITSignatureType::getDefaultKwOnlyParams() {
   return getMetadata().getDefaultKwOnlyParams();
 }
 
-ArrayRef<StringAttr> LITSignatureType::getParamNames() {
-  return getParamListAttrs().getNames();
-}
-
 StringAttr LITSignatureType::getParamName(size_t idx) {
-  return getParamNames()[idx];
+  return getParamListAttrs().getName(idx);
 }
 
-ArrayRef<PassingKind> LITSignatureType::getParamPassingKinds() {
-  return getParamListAttrs().getPassingKinds();
+PassingKind LITSignatureType::getParamPassingKind(size_t idx) {
+  return getParamListAttrs().getPassingKind(idx);
 }
 
 /// Get the number of implicit lifetime decls this function type carries.

@@ -109,8 +109,6 @@ diagnosePosOperands(PogListAttr pogListAttr,
   size_t numPosMaximum = countNumPositional(pogListAttr.getPassingKinds());
   bool hasVariadicOrPack = false;
 
-  ArrayRef<StringAttr> names = pogListAttr.getNames();
-
   DefaultValueHandler defaultHandler(pogListAttr);
   for (size_t idx = 0; idx != numPosMaximum; ++idx) {
     if (pogListAttr.isPosVariadic(idx) || pogListAttr.isPack(idx)) {
@@ -123,7 +121,7 @@ diagnosePosOperands(PogListAttr pogListAttr,
     // If we found a positional operand, check if it was also provided by
     // keyword.
     if (idx < numPosOperands) {
-      StringAttr name = names[idx];
+      StringAttr name = pogListAttr.getName(idx);
       if (operands.findKwArg(name))
         byPosAndKw.push_back(name);
       continue;
@@ -135,7 +133,7 @@ diagnosePosOperands(PogListAttr pogListAttr,
       continue;
 
     // If the arg/param was passed by keyword, we are okay.
-    StringAttr name = names[idx];
+    StringAttr name = pogListAttr.getName(idx);
     if (operands.findKwArg(name))
       continue;
 

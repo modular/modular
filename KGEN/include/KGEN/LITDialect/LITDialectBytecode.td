@@ -86,12 +86,16 @@ def LITDialectTypes : DialectTypes<"lit"> {
 // LITDialect Attributes
 //===----------------------------------------------------------------------===//
 
+def PogMetadataAttr : DialectAttribute<(attr
+  StringAttr:$name,
+  EnumAttr<"PassingKind">:$passingKind,
+  Bool:$isVariadic
+)>;
+
 def PogListAttr : DialectAttribute<(attr
-  StringAttrArray:$names,
-  EnumAttrArray<"PassingKind">:$passingKinds,
+  ConcreteAttrArray<"PogMetadataAttr">:$pogs,
   TypedAttrArray:$defaultPos,
   TypedAttrArray:$defaultKwOnly,
-  IntegralAttrArray<"bool">:$variadicMask,
   VarInt:$packIndex,
   EnumAttr<"ArgConvention">:$origPackConvention
 )>;
@@ -169,8 +173,8 @@ def TypeConventionAttr : DialectAttribute<(attr
   EnumAttr<"TypeConvention">:$value
 )>;
 
-def PassingKindArrayAttr : DialectAttribute<(attr
-  EnumAttrArray<"PassingKind">:$value
+def PassingKindAttr : DialectAttribute<(attr
+  EnumAttr<"PassingKind">:$value
 )>;
 
 def VarDeclKindAttr : DialectAttribute<(attr
@@ -179,6 +183,7 @@ def VarDeclKindAttr : DialectAttribute<(attr
 
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
+    PogMetadataAttr,
     PogListAttr,
     FnMetadataAttr,
     DocStringAttr,
@@ -193,7 +198,6 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     StructExtractAttr,
     TypeLineageAttr,
     TypeConventionAttr,
-    PassingKindArrayAttr,
     VarDeclKindAttr
   ];
 }

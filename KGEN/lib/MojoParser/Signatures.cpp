@@ -406,9 +406,10 @@ TypeCheckedParamList::TypeCheckedParamList(
 }
 
 PogListAttr TypeCheckedParamList::getParamListAttr() {
-  return PogListAttr::get(shared.getContext(), names, passingKinds,
-                          defaultPosParams, defaultKwOnlyParams,
-                          PogListAttr::toMask(variadicIndices, names.size()));
+  return PogListAttr::get(
+      shared.getContext(),
+      PogListAttr::toPogs(names, passingKinds, variadicIndices),
+      defaultPosParams, defaultKwOnlyParams);
 }
 
 /// param_signature    ::= "[" param_list ("->" param_result_types)? "]"
@@ -439,7 +440,8 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTDecl &declScope,
   ArrayRef<Type> params = metatype.getSignature().getParamTypes();
   if (params.empty())
     return type;
-  ArrayRef<StringAttr> names = metatype.getSignature().getParamNames();
+  SmallVector<StringAttr> names =
+      metatype.getSignature().getParamListAttrs().getNames();
 
   SmallVector<TypedAttr> paramValues;
   ParserParamEvaluator evaluator(*shared.declResolver);
@@ -1152,22 +1154,19 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   MLIRContext *ctx = paramList.shared.getContext();
 
   size_t numArgs = argList.parsedArgs.size();
-  SmallVector<StringAttr> argNames;
-  argNames.reserve(numArgs);
-  SmallVector<PassingKind> argPassingKinds;
-  argPassingKinds.reserve(numArgs);
+  SmallVector<PogMetadataAttr> argPogs;
+  argPogs.reserve(numArgs);
   SmallVector<ArgConvention> argConventions;
   argConventions.reserve(numArgs);
-  SmallVector<bool> argVariadicMask;
-  argVariadicMask.reserve(numArgs);
+
   ssize_t argPackIndex = -1;
   ArgConvention argPackOrigConvention = ArgConvention::None;
   for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
-    argPassingKinds.push_back(arg.getKWArgHandlingAsPassingKind());
-    argNames.push_back(arg.name);
+    bool isVariadic =
+        arg.vararg == VarArgKind::VarArg || arg.vararg == VarArgKind::KWVarArg;
+    argPogs.emplace_back(PogMetadataAttr::get(
+        arg.name, arg.getKWArgHandlingAsPassingKind(), isVariadic));
     argConventions.push_back(arg.kgenConvention);
-    argVariadicMask.push_back(arg.vararg == VarArgKind::VarArg ||
-                              arg.vararg == VarArgKind::KWVarArg);
     if (arg.vararg == VarArgKind::PackVarArg) {
       assert(argPackIndex == -1 && "only one argument pack is possible");
       argPackIndex = idx;
@@ -1176,9 +1175,8 @@ LITSignatureType TypeCheckedFnSignature::getLITSignatureType() const {
   }
 
   auto metadata = FnMetadataAttr::get(
-      PogListAttr::get(ctx, argNames, argPassingKinds, defaultPosArgs,
-                       defaultKwOnlyArgs, argVariadicMask, argPackIndex,
-                       argPackOrigConvention),
+      PogListAttr::get(ctx, argPogs, defaultPosArgs, defaultKwOnlyArgs,
+                       argPackIndex, argPackOrigConvention),
       paramList.getParamListAttr(), implicitLifetimeDecls.size());
 
   /// Silence internal verifier errors when constructing types from the parser.

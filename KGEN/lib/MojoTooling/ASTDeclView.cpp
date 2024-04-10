@@ -69,10 +69,8 @@ static size_t getIndentationLevel(StringRef str) {
 }
 
 /// Refine the convention for the given type and input convention.
-static std::optional<ArgConvention>
-refineConventionForType(Type type, std::optional<ArgConvention> convention) {
-  if (!convention)
-    return convention;
+static ArgConvention refineConventionForType(Type type,
+                                             ArgConvention convention) {
   if (auto variadic = dyn_cast<VariadicType>(type))
     return variadic.getConvention();
   return convention;
@@ -642,9 +640,9 @@ template <typename T>
 static void printArgOrParameterSignature(
     ArrayRef<T> args, SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets,
     llvm::raw_string_ostream &os) {
-  SmallVector<PassingKind> passingKinds = llvm::map_to_vector(
-      args, [](const T &arg) { return arg.getPassingKind(); });
-  PassingKindPrinter passingKindPrinter(os, passingKinds);
+  PassingKindPrinter passingKindPrinter(
+      os, llvm::map_to_vector(
+              args, [](const T &arg) { return arg.getPassingKind(); }));
   size_t idx = 0;
   auto printArg = [&](const T &arg) {
     passingKindPrinter.printOptionalStarSlash(idx);
@@ -719,9 +717,8 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
 
   LITSignatureType signature = funcOp.getSignature();
   ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
-  ArrayRef<StringAttr> argNames = signature.getArgNames();
+  ArrayRef<PogMetadataAttr> argPogs = signature.getArgListAttrs().getPogs();
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
-  ArrayRef<PassingKind> argPassingKinds = signature.getArgPassingKinds();
   size_t numImplicitLifetimes = signature.getNumImplicitLifetimeDecls();
   ArrayRef<ParamDeclAttr> params =
       funcOp.getInputParams().drop_front(numImplicitLifetimes);
@@ -732,16 +729,14 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   if (!argConventions.empty() &&
       argConventions.back() == ArgConvention::ByRefResult) {
     argTypes = argTypes.drop_back();
-    argNames = argNames.drop_back();
+    argPogs = argPogs.drop_back();
     argConventions = argConventions.drop_back();
-    argPassingKinds = argPassingKinds.drop_back();
   }
   if (!argConventions.empty() &&
       argConventions.back() == ArgConvention::ByRefError) {
     argTypes = argTypes.drop_back();
-    argNames = argNames.drop_back();
+    argPogs = argPogs.drop_back();
     argConventions = argConventions.drop_back();
-    argPassingKinds = argPassingKinds.drop_back();
   }
 
   // If this is a method, grab the expected "Self" type.
@@ -751,9 +746,9 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
 
   // Grab the types of the arguments to the function.
   DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());
-  for (auto [argIdx, type, name, initConvention, passingKind] :
-       llvm::enumerate(argTypes, argNames, argConventions, argPassingKinds)) {
-    auto convention = refineConventionForType(type, initConvention);
+  for (auto [argIdx, type, conventionX, pogAttr] :
+       llvm::enumerate(argTypes, argConventions, argPogs)) {
+    ArgConvention convention = refineConventionForType(type, conventionX);
     std::optional<std::string> defaultValue;
     if (auto defaultAttr = defaultArgHandler.getDefault(argIdx))
       defaultValue = generatePValueString(defaultAttr);
@@ -768,17 +763,17 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     VariadicKind variadicKind =
         getVariadicKind(signature.getArgListAttrs(), argIdx);
     args.push_back(ArgumentDeclView(
-        name.getValue(),
+        pogAttr.getName(),
         generateTypeString(type, variadicKind, selfType, convention),
-        passingKind, variadicKind, std::move(defaultValue),
+        pogAttr.getPassingKind(), variadicKind, std::move(defaultValue),
         /*parentIsDef=*/isDefFlag, declConvention));
   }
 
   // Grab the types of the parameters to the function.
   DefaultValueHandler defaultParamHandler(signature.getParamListAttrs());
-  for (auto [parIdx, param, passingKind] :
-       llvm::enumerate(params, signature.getParamPassingKinds())) {
+  for (auto [parIdx, param] : llvm::enumerate(params)) {
     // Ignore implicitly passed parameters.
+    PassingKind passingKind = signature.getParamPassingKind(parIdx);
     if (passingKind == PassingKind::Implicit)
       continue;
     std::optional<std::string> defaultValue;
@@ -1022,18 +1017,19 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
   TypeSignatureType signature = structOp.getSignature();
 
   // Grab the types of the parameters to the struct.
-  DefaultValueHandler defaultParamHandler(signature.getParamListAttrs());
-  for (auto [parIdx, param, passingKind] : llvm::enumerate(
-           structOp.getInputParams(), signature.getParamPassingKinds())) {
+  PogListAttr paramListAttr = signature.getParamListAttrs();
+  DefaultValueHandler defaultParamHandler(paramListAttr);
+  for (auto [idx, param] : llvm::enumerate(structOp.getInputParams())) {
     std::optional<std::string> defaultValue;
-    if (auto defaultAttr = defaultParamHandler.getDefault(parIdx))
+    if (auto defaultAttr = defaultParamHandler.getDefault(idx))
       defaultValue = generatePValueString(defaultAttr);
     VariadicKind variadicKind =
-        getVariadicKind(signature.getParamListAttrs(), parIdx);
+        getVariadicKind(signature.getParamListAttrs(), idx);
     parameters.push_back(
         ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
                           generateTypeString(param.getType(), variadicKind),
-                          passingKind, variadicKind, std::move(defaultValue)));
+                          signature.getParamPassingKind(idx), variadicKind,
+                          std::move(defaultValue)));
   }
 
   if (auto docStr = decl->getParsedDocString()) {
