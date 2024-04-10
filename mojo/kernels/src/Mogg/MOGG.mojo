@@ -55,6 +55,7 @@ from algorithm.functional import _async_elementwise_impl, _elementwise_impl
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
+    _reduce_generator_cpu,
 )
 from algorithm.reduction import mean as _mean
 from LinAlg.BatchedMatmul import batched_matmul as _batched_matmul
@@ -3612,6 +3613,116 @@ fn pack_conv_transpose_filter_shape[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("reduce_min_and_max")
+@always_inline
+@export
+fn reduce_min_and_max[
+    type: DType,
+    index_type: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+    input_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, width],
+    output_0_fn: fn[width: Int, rank: Int] (
+        StaticIntTuple[rank], SIMD[type, width]
+    ) capturing -> None,
+    target: StringLiteral = "cpu",
+](
+    input_shape: StaticIntTuple[rank],
+    axis_buffer: NDBuffer[index_type, 1],
+    output_shape: StaticIntTuple[rank],
+    ctx: MojoCallContextPtr,
+) raises:
+    """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
+    writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
+    the minimum reduction and [:, :, 1, :] contains the maximum reduction.
+    """
+    if _guard_against_gpu_target[target](ctx):
+        return
+
+    alias num_reductions = 2
+    var axis = int(normalize_neg_index(axis_buffer[0], rank))
+
+    @always_inline
+    @parameter
+    fn input_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](idx: StaticIntTuple[rank]) -> SIMD[_type, width]:
+        return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+    @always_inline
+    @parameter
+    fn output_0_fn_wrapper[
+        _type: DType, width: Int, rank: Int
+    ](
+        indices: StaticIntTuple[rank],
+        val: StaticTuple[SIMD[_type, width], num_reductions],
+    ):
+        # TODO: once we support multiple outputs, change this to route to
+        # TODO: multiple output tensors.
+        var indices_min = indices
+        indices_min[axis] = 0
+        output_0_fn[width, rank](indices_min, rebind[SIMD[type, width]](val[0]))
+
+        var indices_max = indices
+        indices_max[axis] = 1
+        output_0_fn[width, rank](indices_max, rebind[SIMD[type, width]](val[1]))
+
+    @always_inline
+    @parameter
+    fn reduce_fn[
+        ty: DType,
+        width: Int,
+        reduction_idx: Int,
+    ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
+        constrained[reduction_idx < num_reductions, "reduction_idx OOB"]()
+
+        @parameter
+        if reduction_idx == 0:
+            return min(left, right)
+        else:
+            return max(left, right)
+
+    var init_min = Scalar[type].MAX
+    var init_max = Scalar[type].MIN
+    var init = StaticTuple[Scalar[type], num_reductions](init_min, init_max)
+
+    with Trace[TraceLevel.OP]("reduce_min_and_max") as t:
+        _reduce_generator[
+            num_reductions,
+            type,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_fn,
+            single_thread_blocking_override=single_thread_blocking_override,
+            target=target,
+        ](
+            input_shape,
+            init=init,
+            reduce_dim=axis,
+        )
+
+
+@mogg_register_shape_func("reduce_min_and_max")
+@always_inline
+@export
+fn reduce_min_and_max_shape_func[
+    type: DType,
+    index_type: DType,
+    rank: Int,
+    single_thread_blocking_override: Bool,
+](
+    data: NDBuffer[type, rank, DimList.create_unknown[rank]()],
+    axis_buffer: NDBuffer[index_type, 1],
+) -> StaticIntTuple[rank]:
+    var new_shape = data.get_shape()
+    var axis = int(normalize_neg_index(axis_buffer[0], rank))
+    new_shape[axis] = 2
+    return new_shape
+
+
+# MHA Kernels:
 @mogg_register("mo.multi_head_flash_attention")
 @always_inline
 @export
