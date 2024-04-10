@@ -9,7 +9,7 @@ from math import div_ceil
 
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
-from LinAlg.Matmul import pack_b
+from LinAlg.MatmulPack import pack_b
 
 from utils.index import StaticIntTuple
 

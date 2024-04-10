@@ -9,7 +9,7 @@ from sys.info import simdwidthof
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.Matmul import PackMatrixCols
+from LinAlg.MatmulPack import PackMatrixCols
 
 from utils.index import Index
 

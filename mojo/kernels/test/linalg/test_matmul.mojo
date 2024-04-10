@@ -16,6 +16,8 @@ from buffer.list import DimList
 from LinAlg.Matmul import (
     matmul,
     matmul_M,
+)
+from LinAlg.MatmulPack import (
     pack_b_ndbuffer,
     pack_b_ndbuffer_M,
     pack_matmul_b_shape_func,
