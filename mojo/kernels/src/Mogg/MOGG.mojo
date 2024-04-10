@@ -67,7 +67,7 @@ from buffer import NDBuffer
 from buffer.list import Dim, DimList
 from gpu.host._compile import _get_nvptx_target
 from LinAlg.Matmul import matmul as _matmul
-from LinAlg.Matmul import (
+from LinAlg.MatmulPack import (
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
