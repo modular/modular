@@ -29,25 +29,6 @@ version_string = __version__
 
 
 @dataclass
-class TensorFlowLoadOptions:
-    """Configures how to load TensorFlow models.
-
-    You usually don't need to use this, unless your TensorFlow SavedModel
-    includes multiple signatures or you changed the signature key `during export
-    <https://www.tensorflow.org/guide/saved_model#specifying_signatures_during_export>`_.
-    In which case, you should create an instance of
-    ``TensorFlowLoadOptions``, specify the ``exported_name``, and pass it to
-    :obj:`~InferenceSession.load()`."""
-
-    exported_name: str = field(default="serving_default")
-    """The exported name from the TensorFlow model's signature. You shouldn't
-       change this unless your model includes multiple signatures or you
-       changed the signature key during export."""
-
-    type: str = "tf"
-
-
-@dataclass
 class TorchLoadOptions:
     """Configures how to load TorchScript models.
 
@@ -455,9 +436,7 @@ class InferenceSession:
     def load(
         self,
         model_path: Union[str, Path],
-        *options: Union[
-            TensorFlowLoadOptions, TorchLoadOptions, CommonLoadOptions
-        ],
+        *options: Union[CommonLoadOptions, TorchLoadOptions],
         **kwargs,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
@@ -471,7 +450,7 @@ class InferenceSession:
             Path to a model. May be a TensorFlow model in the SavedModel
             format, a serialized TorchScript model, or an ONNX model.
 
-        *options: Union[TensorFlowLoadOptions, TorchLoadOptions, CommonLoadOptions]
+        *options: Union[CommonLoadOptions, TorchLoadOptions]
             Load options for configuring how the model should be compiled.
 
         Returns
