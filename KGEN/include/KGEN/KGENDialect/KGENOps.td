@@ -1136,17 +1136,20 @@ def PackageLinkOp : KGENOp<"package.link", [Symbol]> {
 
     ```mlir
     kgen.package.link @foo
-      post_parse = dense_resource<...> : tensor<...xi8>,
+      dependencies([@stdlib])
+      post_parse(dense_resource<...> : tensor<...xi8>)
     ```
   }];
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
+    OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies
   );
 
   let assemblyFormat = [{
     $sym_name
+    (`dependencies` `(` $dependencies^ `)`)?
     (`post_parse` `(` $postParseModule^ `)`)?
     attr-dict-with-keyword
   }];

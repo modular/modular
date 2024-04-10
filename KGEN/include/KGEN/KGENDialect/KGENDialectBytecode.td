@@ -211,6 +211,10 @@ def VariantAttr : DialectAttribute<(attr
   ConcreteType<"VariantType">:$type
 )>;
 
+def LinkDependencyArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"FlatSymbolRefAttr">:$value
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
@@ -238,7 +242,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     StructAttr,
     StructExtractAttr,
     PackAttr,
-    VariantAttr
+    VariantAttr,
+    LinkDependencyArrayAttr
   ];
 }
 

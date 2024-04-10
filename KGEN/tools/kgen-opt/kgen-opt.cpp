@@ -172,8 +172,8 @@ struct TestGeneratePreElaboratedBody
 
       // Generate a package link to the fake module.
       OpBuilder linkBuilder(func);
-      linkBuilder.create<KGEN::PackageLinkOp>(func.getLoc(), linkName,
-                                              postParseBytecode);
+      linkBuilder.create<KGEN::PackageLinkOp>(
+          func.getLoc(), linkName, postParseBytecode, /*dependencies=*/nullptr);
     }
   }
 };
@@ -238,7 +238,8 @@ struct TestMaterializePackages
       auto bytecodeBufferAttr = createResourceAttr(
           &getContext(), buffer, funcName + "_generated_body_attr");
       linkBuilder.create<KGEN::PackageLinkOp>(func.getLoc(), linkName,
-                                              bytecodeBufferAttr);
+                                              bytecodeBufferAttr,
+                                              /*dependencies=*/nullptr);
     }
   }
 };

@@ -1003,4 +1003,17 @@ def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
   let assemblyFormat = "`<` $value `>`";
 }
 
+//===----------------------------------------------------------------------===//
+// LinkDependencyArrayAttr
+//===----------------------------------------------------------------------===//
+
+def KGEN_LinkDependencyArrayAttr : ArrayOfAttr<KGENDialect,
+  "LinkDependencyArray", "link.dependencies", "FlatSymbolRefAttr"> {
+  let summary = "List of references to link dependencies.";
+  let description = [{
+    The `#kgen.link.dependencies` attribute represents a list of link
+    dependencies, which are flat symbol references.
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENATTRS_TD

@@ -278,7 +278,7 @@ def LIT_PackageOp : LITOp<"package", [
 
     If the package was precompiled it may also contain:
     - The full post-parser IR module, `postParseModule`.
-    - Any and all precompiled, standalone archives of the package, `archives`.
+    - The set of link dependencies for this package, `dependencies`.
 
     Example:
 
@@ -295,7 +295,9 @@ def LIT_PackageOp : LITOp<"package", [
     OptionalAttr<LIT_DocStringAttr>:$docString,
     // The module containing the post-parser IR of this package when it was
     // compiled.
-    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule
+    OptionalAttr<Builtin_DenseResourceElementsAttr>:$postParseModule,
+    // References to the dependencies of this package.
+    OptionalAttr<KGEN_LinkDependencyArrayAttr>:$dependencies
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
 

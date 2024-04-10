@@ -310,6 +310,19 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
 static ErrorOr<std::pair<OwningOpRef<ModuleOp>, LIT::PackageOp>>
 buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, LLCL::Runtime &runtime) {
+  // Add the dependencies of the package to the package itself, and strip out
+  // any post parser metadata for other package.
+  SmallVector<FlatSymbolRefAttr> dependencies;
+  for (LIT::PackageOp package : theModule.getOps<LIT::PackageOp>()) {
+    if (package == parsedPackageOp)
+      continue;
+    dependencies.push_back(FlatSymbolRefAttr::get(package.getSymNameAttr()));
+  }
+  if (!dependencies.empty()) {
+    parsedPackageOp.setDependenciesAttr(
+        LinkDependencyArrayAttr::get(theModule.getContext(), dependencies));
+  }
+
   auto [packageModule, thePackage] = buildPackageModule(parsedPackageOp);
 
   // For now we implicilty export everything in the package, so add exports to
