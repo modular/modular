@@ -120,10 +120,6 @@ StringAttr TypeSignatureType::getParamName(size_t idx) const {
   return getParamListAttrs().getName(idx);
 }
 
-PassingKind TypeSignatureType::getParamPassingKind(size_t idx) const {
-  return getParamListAttrs().getPassingKind(idx);
-}
-
 ArrayRef<TypedAttr> TypeSignatureType::getDefaultPosParams() const {
   return getParamListAttrs().getDefaultPos();
 }
@@ -867,10 +863,10 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   printOptionalParamSignature(p, signature.getParamTypes(),
                               signature.getParamListAttrs());
 
-  SmallVector<Variadicness> variadicness =
-      getVariadicness(signature.getArgListAttrs());
-  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  PassingKindPrinter passingKindPrinter(p, signature.getArgPassingKinds(), '|');
+  PogListAttr argListAttr = signature.getArgListAttrs();
+  SmallVector<Variadicness> variadicness = getVariadicness(argListAttr);
+  DefaultValueHandler defaultHandler(argListAttr);
+  PassingKindPrinter passingKindPrinter(p, argListAttr.getPassingKinds(), '|');
   auto printElt = [&](unsigned i) {
     passingKindPrinter.printOptionalStarSlash(i);
 
@@ -927,10 +923,6 @@ StringAttr LITSignatureType::getArgName(size_t idx) {
   return getArgListAttrs().getName(idx);
 }
 
-SmallVector<PassingKind> LITSignatureType::getArgPassingKinds() {
-  return getArgListAttrs().getPassingKinds();
-}
-
 ArrayRef<TypedAttr> LITSignatureType::getDefaultPosArgs() {
   return getMetadata().getDefaultPosArgs();
 }
@@ -949,10 +941,6 @@ ArrayRef<TypedAttr> LITSignatureType::getDefaultKwOnlyParams() {
 
 StringAttr LITSignatureType::getParamName(size_t idx) {
   return getParamListAttrs().getName(idx);
-}
-
-PassingKind LITSignatureType::getParamPassingKind(size_t idx) {
-  return getParamListAttrs().getPassingKind(idx);
 }
 
 /// Get the number of implicit lifetime decls this function type carries.

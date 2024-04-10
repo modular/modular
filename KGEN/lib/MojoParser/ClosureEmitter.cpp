@@ -888,7 +888,8 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
                                              PassingKind::PosOnly);
   auto paramListAttrs = PogListAttr::get(ctx, getDemangledNames(topLevelParams),
                                          paramPassingKinds);
-  auto argListAttrs = PogListAttr::get(ctx, otherName, PassingKind::PosOnly);
+  auto argListAttrs =
+      PogListAttr::get(ctx, {otherName}, {PassingKind::PosOnly});
   builder = ImplicitLocOpBuilder::atBlockEnd(
       fileModuleOp.getLoc(), &fileModuleOp.getBodyRegion().front());
   LIT::FuncOp topLevelCopyInit = createFunction(
@@ -949,7 +950,7 @@ LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
   LIT::FuncOp topLevelDtor =
       createFunction(moduleDecl, generateName("_dtor_"), topLevelParams,
                      paramListAttrs, opaquePtrType, ArgConvention::OwnedInReg,
-                     PogListAttr::get(ctx, selfName, PassingKind::PosOnly),
+                     PogListAttr::get(ctx, {selfName}, {PassingKind::PosOnly}),
                      noneType, SpecialFunctionKind::kNormal, loc, builder);
 
   // Populate destructor body.

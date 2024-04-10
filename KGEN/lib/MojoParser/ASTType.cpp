@@ -626,7 +626,8 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       os << ']';
     }
     os << '(';
-    PassingKindPrinter passingKindPrinter(os, sig.getArgPassingKinds());
+    PassingKindPrinter passingKindPrinter(
+        os, sig.getArgListAttrs().getPassingKinds());
     for (auto [idx, typeX, conventionX] :
          llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
       ASTType type = typeX;

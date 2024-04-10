@@ -87,7 +87,6 @@ def LIT_PogMetadataAttr : LITAttr<"PogMetadata", "pog_metadata"> {
   let extraClassDeclaration = [{
     bool isVariadic() const { return getIsVariadic(); };
   }];
-
 }
 
 //===----------------------------------------------------------------------===//

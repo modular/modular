@@ -770,10 +770,11 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   }
 
   // Grab the types of the parameters to the function.
-  DefaultValueHandler defaultParamHandler(signature.getParamListAttrs());
+  PogListAttr paramListAttr = signature.getParamListAttrs();
+  DefaultValueHandler defaultParamHandler(paramListAttr);
   for (auto [parIdx, param] : llvm::enumerate(params)) {
     // Ignore implicitly passed parameters.
-    PassingKind passingKind = signature.getParamPassingKind(parIdx);
+    PassingKind passingKind = paramListAttr.getPassingKind(parIdx);
     if (passingKind == PassingKind::Implicit)
       continue;
     std::optional<std::string> defaultValue;
@@ -1028,7 +1029,7 @@ StructDeclView::StructDeclView(MojoASTDeclRef declRef)
     parameters.push_back(
         ParameterDeclView(demangleIfNeeded(param).getName().getValue(),
                           generateTypeString(param.getType(), variadicKind),
-                          signature.getParamPassingKind(idx), variadicKind,
+                          paramListAttr.getPassingKind(idx), variadicKind,
                           std::move(defaultValue)));
   }
 
