@@ -9,7 +9,6 @@ from .api import (
     DType,
     InferenceSession,
     Model,
-    TensorFlowLoadOptions,
     TensorSpec,
     TorchInputSpec,
     TorchLoadOptions,
