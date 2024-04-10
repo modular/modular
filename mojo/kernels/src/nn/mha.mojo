@@ -164,7 +164,7 @@ fn fused_attention[
         var row_size = c.dim(1)
         for i in range(start_row, start_row + num_rows):
             var row_view = Buffer[DType.float32](
-                bitcast[DType.float32](c.data.offset(i * row_size)), row_size
+                c.data.offset(i * row_size).bitcast[DType.float32](), row_size
             )
 
             @__copy_capture(row_view)
@@ -239,7 +239,7 @@ fn fused_attention[
 
     # We did not reuse the output buffer, so we have to free the allocate
     # intermediate buffer.
-    if score_ptr != bitcast[score_type](output.data):
+    if score_ptr != output.data.bitcast[score_type]():
         score_ptr.free()
 
 
