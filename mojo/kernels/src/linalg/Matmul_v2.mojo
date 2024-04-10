@@ -3,6 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+
+# This file is a placeholder for rewriting Matmul.
+# See:
+# https://www.notion.so/modularai/Ingredients-for-Matmul-Rewrite-on-CPUs-8f631d688c6049e3a267ec0d9c66634c
+
 from math import align_down, align_up, div_ceil, fma, min
 from sys.info import (
     alignof,
@@ -59,29 +64,6 @@ from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 from utils.static_tuple import StaticTuple
 
-from .MatmulGPU import _matmul_gpu
-
-
-fn elementwise_epilogue_c_tile[
-    simd_width: Int,
-    type: DType,
-    c_shape: DimList,
-    func: fn[type: DType, width: Int] (
-        StaticIntTuple[2], SIMD[type, width]
-    ) capturing -> None,
-](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[type, 2, c_shape]):
-    @always_inline
-    @parameter
-    fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int):
-        var n_coord = idx_n + offset.N
-        for idx_m in range(tile_len.M):
-            var m_coord = idx_m + offset.M
-            var c_coord = (m_coord, n_coord)
-            var c_val = c.load[width=col_chunk_size](c_coord)
-            func[type, col_chunk_size](c_coord, c_val)
-
-    vectorize[activation_on_col_chunk, simd_width](tile_len.N)
-
 
 # Define a trait that defines the common functions across all existing
 # microkernels:
@@ -112,6 +94,27 @@ trait InnerMatmulKernel:
 
     fn __inner_matmul__(self):
         ...
+
+
+fn elementwise_epilogue_c_tile[
+    simd_width: Int,
+    type: DType,
+    c_shape: DimList,
+    func: fn[type: DType, width: Int] (
+        StaticIntTuple[2], SIMD[type, width]
+    ) capturing -> None,
+](offset: GemmShape, tile_len: GemmShape, c: NDBuffer[type, 2, c_shape]):
+    @always_inline
+    @parameter
+    fn activation_on_col_chunk[col_chunk_size: Int](idx_n: Int):
+        var n_coord = idx_n + offset.N
+        for idx_m in range(tile_len.M):
+            var m_coord = idx_m + offset.M
+            var c_coord = (m_coord, n_coord)
+            var c_val = c.load[width=col_chunk_size](c_coord)
+            func[type, col_chunk_size](c_coord, c_val)
+
+    vectorize[activation_on_col_chunk, simd_width](tile_len.N)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -719,6 +722,12 @@ struct LoadStoreOutputTile[
 @value
 struct TiledMatmul[
     config: MatmulConfig,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
     elementwise_epilogue_enabled: Bool,
     rowwise_epilogue_enabled: Bool,
 ]:
@@ -730,9 +739,9 @@ struct TiledMatmul[
     TODO: add fusion hooks.
     """
 
-    var c: NDBuffer[config.c_type, 2, config.c_shape]
-    var a: NDBuffer[config.a_type, 2, config.a_shape]
-    var b: NDBuffer[config.b_type, 2, config.b_shape]
+    var c: NDBuffer[c_type, 2, config.c_shape]
+    var a: NDBuffer[a_type, 2, config.a_shape]
+    var b: NDBuffer[b_type, 2, config.b_shape]
     # Dynamic tile parameter.
     var tile_n_k: StaticIntTuple[2]
 
@@ -742,9 +751,7 @@ struct TiledMatmul[
     # Tile sizes this routine will process on the (M,N,K) coordinates.
     var global_tile_shape: GemmShape
 
-    var b_tile_generator: BTileGenerator[
-        config, config.b_type, config.transpose_b, config.b_packed
-    ]
+    var b_tile_generator: BTileGenerator[config, b_type, transpose_b, b_packed]
 
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None
 
@@ -753,9 +760,9 @@ struct TiledMatmul[
     # Interface method
     @staticmethod
     fn run(
-        c: NDBuffer[config.c_type, 2, config.c_shape],
-        a: NDBuffer[config.a_type, 2, config.a_shape],
-        b: NDBuffer[config.b_type, 2, config.b_shape],
+        c: NDBuffer[c_type, 2, config.c_shape],
+        a: NDBuffer[a_type, 2, config.a_shape],
+        b: NDBuffer[b_type, 2, config.b_shape],
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape = GemmShape {M: 0, N: 0, K: 0},
     ):
@@ -777,9 +784,9 @@ struct TiledMatmul[
 
     @staticmethod
     fn run(
-        c: NDBuffer[config.c_type, 2, config.c_shape],
-        a: NDBuffer[config.a_type, 2, config.a_shape],
-        b: NDBuffer[config.b_type, 2, config.b_shape],
+        c: NDBuffer[c_type, 2, config.c_shape],
+        a: NDBuffer[a_type, 2, config.a_shape],
+        b: NDBuffer[b_type, 2, config.b_shape],
         elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape,
@@ -800,9 +807,9 @@ struct TiledMatmul[
     # Interface method
     @staticmethod
     fn run(
-        c: NDBuffer[config.c_type, 2, config.c_shape],
-        a: NDBuffer[config.a_type, 2, config.a_shape],
-        b: NDBuffer[config.b_type, 2, config.b_shape],
+        c: NDBuffer[c_type, 2, config.c_shape],
+        a: NDBuffer[a_type, 2, config.a_shape],
+        b: NDBuffer[b_type, 2, config.b_shape],
         elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
         rowwise_epilogue_fn: fn (Int, Int) escaping -> None,
         global_tile_shape: GemmShape,
@@ -819,12 +826,8 @@ struct TiledMatmul[
             global_tile_shape: Tile shape this call will process.
             global_tile_offset: Tile offset on the original buffer.
         """
-        alias use_vnni = use_vnni_fn[
-            config.a_type, config.b_type, config.c_type
-        ]()
-        alias use_i8mm = use_i8mm_fn[
-            config.a_type, config.b_type, config.c_type
-        ]()
+        alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
         alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
         var tile_n_k = calculate_tile_n_k[
@@ -833,6 +836,12 @@ struct TiledMatmul[
 
         var matmul = TiledMatmul[
             config,
+            a_type,
+            b_type,
+            c_type,
+            transpose_a,
+            transpose_b,
+            b_packed,
             elementwise_epilogue_enabled,
             rowwise_epilogue_enabled,
         ](
@@ -842,9 +851,9 @@ struct TiledMatmul[
             tile_n_k,
             global_tile_offset,
             global_tile_shape,
-            BTileGenerator[
-                config, config.b_type, config.transpose_b, config.b_packed
-            ].get(b, tile_n_k),
+            BTileGenerator[config, b_type, transpose_b, b_packed].get(
+                b, tile_n_k
+            ),
             elementwise_epilogue_fn,
             rowwise_epilogue_fn,
         )
@@ -902,11 +911,12 @@ struct TiledMatmul[
                 alias tile_size2 = 2 if tile_size == 1 else tile_size
                 alias a_row_size = tile_size2 // 2 if config.use_i8mm else tile_size
 
-                alias use_vnni = config.use_vnni
-                alias use_i8mm = config.use_i8mm
+                alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+                alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
                 @parameter
                 if use_i8mm:
+                    # print("_run_inner_loop_i8mm()")
                     Inner_matmul_i8mm[
                         config,
                         a_row_size,
@@ -922,6 +932,7 @@ struct TiledMatmul[
                         sub_tile_n_k,
                     ).__inner_matmul__()
                 elif has_neon() and not use_vnni and not use_i8mm:
+                    # print("_run_inner_loop_neon()")
                     Inner_matmul_neon[
                         config,
                         a_row_size,
@@ -937,6 +948,7 @@ struct TiledMatmul[
                         sub_tile_n_k,
                     ).__inner_matmul__()
                 elif not use_vnni and not has_neon():
+                    # print("_run_inner_loop_default()")
                     Inner_matmul_default[
                         config,
                         a_row_size,
@@ -952,6 +964,7 @@ struct TiledMatmul[
                         sub_tile_n_k,
                     ).__inner_matmul__()
                 elif use_vnni:
+                    # print("_run_inner_loop_vnni()")
                     Inner_matmul_vnni[
                         config,
                         a_row_size,
@@ -1051,7 +1064,7 @@ struct TiledMatmul[
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
         @parameter
-        if not config.b_packed:
+        if not b_packed:
             alias secondary_tiles = VariadicList[Int](
                 config.pack_inner_size, 2 * config.simd_size, config.simd_size
             )
@@ -1103,11 +1116,11 @@ struct TiledMatmul[
     #  need to remap every time K and pack_inner_size changes.
     fn _view_buffer_as(
         self,
-        b_packed_ptr: DTypePointer[config.b_type],
+        b_packed_ptr: DTypePointer[b_type],
         tile_n: Int,
         tile_k: Int,
         n_inner_size: Int,
-    ) -> NDBuffer[config.b_type, 3, config.packed_shape]:
+    ) -> NDBuffer[b_type, 3, config.packed_shape]:
         """Utility function to use to map the allocated packing workspace into
         an n-dimensional buffer.
 
@@ -1118,7 +1131,7 @@ struct TiledMatmul[
             n_inner_size: Inner dimension size to use for the packed data
                 layout.
         """
-        return NDBuffer[config.b_type, 3, config.packed_shape](
+        return NDBuffer[b_type, 3, config.packed_shape](
             b_packed_ptr.address,
             DimList(tile_n // n_inner_size, tile_k, n_inner_size),
         )
@@ -1812,56 +1825,65 @@ fn _small_matmul[
 
 @always_inline
 fn _matmul_cpu[
-    config: MatmulConfig,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    saturated_vnni: Bool,
     single_thread_blocking_override: Bool = False,
 ](
-    c: NDBuffer[config.c_type, 2, config.c_shape],
-    a: NDBuffer[config.a_type, 2, config.a_shape],
-    b: NDBuffer[config.b_type, 2, config.b_shape],
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b: NDBuffer[b_type, 2, b_shape],
     kernel_type_m: Int,
     num_threads: Int = -1,
 ):
     @parameter
     if (
         single_thread_blocking_override
-        and not config.transpose_a
-        and not config.b_packed
-        and config.a_type == config.b_type
-        and config.b_type == config.c_type
+        and not transpose_a
+        and not b_packed
+        and a_type == b_type
+        and b_type == c_type
     ):
         return _small_matmul[
-            config.a_type,
-            config.a_shape,
-            config.b_shape,
-            config.c_shape,
-            config.transpose_b,
+            a_type,
+            a_shape,
+            b_shape,
+            c_shape,
+            transpose_b,
             elementwise_lambda_fn,
         ](
             a,
-            rebind[NDBuffer[config.a_type, 2, config.b_shape]](b),
-            rebind[NDBuffer[config.a_type, 2, config.c_shape]](c),
+            rebind[NDBuffer[a_type, 2, b_shape]](b),
+            rebind[NDBuffer[a_type, 2, c_shape]](c),
         )
-    constrained[not config.transpose_a, "transpose_a not yet supported"]()
+    constrained[not transpose_a, "transpose_a not yet supported"]()
 
-    var shape = GemmShape.get[False, config.transpose_b](c, a, b)
+    var shape = GemmShape.get[False, transpose_b](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
 
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = Buffer[config.c_type](c.data, c.dim[0]())
-        var lhs = rebind[NDBuffer[config.a_type, 2, config.a_shape]](a)
-        var rhs = Buffer[config.b_type](b.data, b.dim[0]())
+        var out = Buffer[c_type](c.data, c.dim[0]())
+        var lhs = rebind[NDBuffer[a_type, 2, a_shape]](a)
+        var rhs = Buffer[b_type](b.data, b.dim[0]())
         gemv[
             parallelize=True,
             c_size = Dim(),
-            c_type = config.c_type,
-            a_shape = config.a_shape,
-            a_type = config.a_type,
+            c_type=c_type,
+            a_shape=a_shape,
+            a_type=a_type,
             b_size = Dim(),
-            b_type = config.b_type,
+            b_type=b_type,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](out, lhs, rhs)
     else:
@@ -1871,19 +1893,17 @@ fn _matmul_cpu[
             num_threads if num_threads > 0 else Runtime().parallelism_level(),
         )
 
-        alias use_i8mm = use_i8mm_fn[
-            config.a_type, config.b_type, config.c_type
-        ]()
-        alias simd_size = simdwidthof[config.c_type]()
-        alias alignment = alignof[SIMD[config.c_type, simd_size]]()
+        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+        alias simd_size = simdwidthof[c_type]()
+        alias alignment = alignof[SIMD[c_type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
-        var a_packed_ptr = DTypePointer[config.a_type]()
+        var a_packed_ptr = DTypePointer[a_type]()
         if use_i8mm:
-            a_packed_ptr = DTypePointer[config.a_type].alloc(
+            a_packed_ptr = DTypePointer[a_type].alloc(
                 mh * kh, alignment=alignment
             )
-        var a_packed = NDBuffer[config.a_type, 2, config.a_shape](
+        var a_packed = NDBuffer[a_type, 2, a_shape](
             a_packed_ptr, DimList(mh, kh)
         )
 
@@ -1892,24 +1912,18 @@ fn _matmul_cpu[
         @parameter
         fn pack_task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
-                config.a_type,
-                config.b_type,
-                config.c_type,
-                PartitionHeuristic.MOJO,
+                a_type, b_type, c_type, PartitionHeuristic.MOJO
             ](m, 1, k, task_id, num_tasks, kernel_type_m)
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
-            packA_i8mm[config.a_type](t0, t1, k, a.data, a_packed_ptr)
+            packA_i8mm[a_type](t0, t1, k, a.data, a_packed_ptr)
 
         @always_inline
         @__copy_capture(m, k, num_tasks, n, a_packed)
         @parameter
         fn task_func(task_id: Int):
             var sub_matmul_config = get_partitioned_matmul[
-                config.a_type,
-                config.b_type,
-                config.c_type,
-                PartitionHeuristic.MOJO,
+                a_type, b_type, c_type, PartitionHeuristic.MOJO
             ](m, n, k, task_id, num_tasks, kernel_type_m)
 
             if (
@@ -1918,7 +1932,19 @@ fn _matmul_cpu[
             ):
                 return
 
-            _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            _submatmul_sequential_sync[
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+                transpose_a,
+                transpose_b,
+                b_packed,
+                elementwise_lambda_fn,
+                saturated_vnni,
+            ](
                 c,
                 a_packed if use_i8mm else a,
                 b,
@@ -1961,37 +1987,24 @@ fn matmul_M[
     kernel_type_m: Int,
     num_threads: Int = -1,
 ):
-    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
-    alias func = _matmul_cpu if target == "cpu" else _matmul_gpu
+    # TODO: Add cuda target when merging with Matmul.mojo
+    constrained[target == "cpu", "unsupported target"]()
+    alias func = _matmul_cpu
 
-    @parameter
-    @always_inline
-    fn dispatch_on_kernel_type[kernel_type: Bool]():
-        alias config = get_mm_config[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_a=transpose_a,
-            transpose_b=transpose_b,
-            b_packed=b_packed,
-            kernel_type=kernel_type,
-            saturated_vnni=saturated_vnni,
-        ]()
-        func[config, elementwise_lambda_fn, single_thread_blocking_override,](
-            rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
-            rebind[NDBuffer[config.a_type, 2, config.a_shape]](a),
-            rebind[NDBuffer[config.b_type, 2, config.b_shape]](b),
-            kernel_type_m,
-            num_threads,
-        )
-
-    var shape = GemmShape.get[False, transpose_b](c, a, b)
-    var n = shape.N
-    var k = shape.K
-    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
+    func[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        elementwise_lambda_fn,
+        saturated_vnni,
+        single_thread_blocking_override,
+    ](c, a, b, kernel_type_m, num_threads)
 
 
 @always_inline
@@ -2039,58 +2052,105 @@ fn matmul[
 
 
 fn _submatmul_sequential_sync[
-    config: MatmulConfig,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     rowwise_epilogue_enabled: Bool,
+    saturated_vnni: Bool,
 ](
-    c: NDBuffer[config.c_type, 2, config.c_shape],
-    a: NDBuffer[config.a_type, 2, config.a_shape],
-    b: NDBuffer[config.b_type, 2, config.b_shape],
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b: NDBuffer[b_type, 2, b_shape],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
     rowwise_epilogue_fn: fn (Int, Int) escaping -> None,
     kernel_type_m: Int = 0,
 ):
-    constrained[not config.transpose_a, "transpose_a not yet supported"]()
+    constrained[not transpose_a, "transpose_a not yet supported"]()
 
-    fn elementwise_closure(offset: GemmShape, shape: GemmShape):
-        @parameter
-        if elementwise_lambda_fn:
-            elementwise_epilogue_c_tile[
-                config.simd_size,
-                config.c_type,
-                config.c_shape,
-                elementwise_lambda_fn.value(),
-            ](
-                offset,
-                shape,
-                rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
-            )
-        else:
-            pass
+    @parameter
+    @always_inline
+    fn dispatch_on_kernel_type[kernel_type: Bool]():
+        alias mm_config = get_mm_config[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            b_packed=b_packed,
+            kernel_type=kernel_type,
+            saturated_vnni=saturated_vnni,
+        ]()
 
-    TiledMatmul[
-        config,
-        elementwise_lambda_fn.__bool__(),
-        rowwise_epilogue_enabled,
-    ].run(
-        c,
-        a,
-        b,
-        elementwise_closure,
-        rowwise_epilogue_fn,
-        sub_matrix_shape,
-        sub_matrix_offset,
-    )
+        fn elementwise_closure(offset: GemmShape, shape: GemmShape):
+            @parameter
+            if elementwise_lambda_fn:
+                elementwise_epilogue_c_tile[
+                    mm_config.simd_size,
+                    c_type,
+                    mm_config.c_shape,
+                    elementwise_lambda_fn.value(),
+                ](
+                    offset,
+                    shape,
+                    rebind[NDBuffer[c_type, 2, mm_config.c_shape]](c),
+                )
+            else:
+                pass
+
+        TiledMatmul[
+            mm_config,
+            a_type,
+            b_type,
+            c_type,
+            # transpose_a
+            False,
+            transpose_b,
+            b_packed,
+            elementwise_lambda_fn.__bool__(),
+            rowwise_epilogue_enabled,
+        ].run(
+            rebind[NDBuffer[c_type, 2, mm_config.c_shape]](c),
+            rebind[NDBuffer[a_type, 2, mm_config.a_shape]](a),
+            rebind[NDBuffer[b_type, 2, mm_config.b_shape]](b),
+            elementwise_closure,
+            rowwise_epilogue_fn,
+            sub_matrix_shape,
+            sub_matrix_offset,
+        )
+
+    var shape = GemmShape.get[False, transpose_b](c, a, b)
+    var n = shape.N
+    var k = shape.K
+    dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
 fn _submatmul_sequential_sync[
-    config: MatmulConfig,
+    a_type: DType,
+    a_shape: DimList,
+    b_type: DType,
+    b_shape: DimList,
+    c_type: DType,
+    c_shape: DimList,
+    transpose_a: Bool,
+    transpose_b: Bool,
+    b_packed: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    saturated_vnni: Bool,
 ](
-    c: NDBuffer[config.c_type, 2, config.c_shape],
-    a: NDBuffer[config.a_type, 2, config.a_shape],
-    b: NDBuffer[config.b_type, 2, config.b_shape],
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b: NDBuffer[b_type, 2, b_shape],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
     kernel_type_m: Int = 0,
@@ -2098,7 +2158,20 @@ fn _submatmul_sequential_sync[
     fn null_rowwise_epilogue(offset: Int, num_rows: Int):
         pass
 
-    _submatmul_sequential_sync[config, elementwise_lambda_fn, False](
+    _submatmul_sequential_sync[
+        a_type,
+        a_shape,
+        b_type,
+        b_shape,
+        c_type,
+        c_shape,
+        transpose_a,
+        transpose_b,
+        b_packed,
+        elementwise_lambda_fn,
+        False,
+        saturated_vnni,
+    ](
         c,
         a,
         b,
