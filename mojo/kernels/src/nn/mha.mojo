@@ -36,6 +36,10 @@ from utils.static_tuple import StaticTuple
 
 from .softmax import softmax, softmax_3_pass
 
+from layout.int_tuple import IntTuple
+from layout.layout import *
+from layout.layout_tensor import LayoutTensor
+
 # ===----------------------------------------------------------------------===#
 # Multi-Head Attention
 # ===----------------------------------------------------------------------===#
@@ -624,8 +628,6 @@ fn flash_attention_kernel[
     var global_q_offset = depth * (
         head_idx + num_heads * (q_tile_idx * BM + seq_len * batch_idx)
     )
-    alias loadq_num_rows_per_iter = (num_threads * simd_size) // depth
-    alias loadq_num_iters = BM // loadq_num_rows_per_iter
     # We transpose Q BSHD -> BHSD. 2 subsequenet rows in q tile have stride
     # != depth in global Q array because the stride is based on BSHD.
     alias row_stride = num_heads * depth
@@ -633,16 +635,26 @@ fn flash_attention_kernel[
     var loadq_row = (tid * simd_size) // depth
     var loadq_col = (tid * simd_size) % depth
 
-    @unroll
-    for i in range(loadq_num_iters):
-        var row_in_tile = loadq_row + i * loadq_num_rows_per_iter
-        var global_q_idx = global_q_offset + row_in_tile * row_stride + loadq_col
-        var vec = q_ptr.load[width=simd_size, alignment=alignment](
-            global_q_idx,
-        )
-        q_tile.store[width=simd_size, alignment=alignment](
-            row_in_tile * depth + loadq_col, vec
-        )
+    var q_gmem_base = LayoutTensor[
+        Layout(IntTuple(BM, depth), IntTuple(row_stride, 1)), DType.float32
+    ](q_ptr.offset(global_q_offset))
+
+    var q_smem_base = LayoutTensor[
+        Layout.row_major(BM, depth),
+        DType.float32,
+        address_space = AddressSpace.SHARED,
+    ](q_tile)
+
+    alias thread_xmem_layout = Layout.row_major(
+        (num_threads // depth) * simd_size, depth // simd_size
+    )
+    var thread_loadq_gmem_frags = q_gmem_base.vectorize[
+        1, simd_size
+    ]().distribute[thread_xmem_layout](ThreadIdx.x())
+    var thread_storeq_smem_frags = q_smem_base.vectorize[
+        1, simd_size
+    ]().distribute[thread_xmem_layout](ThreadIdx.x())
+    thread_storeq_smem_frags.copy_from_numa(thread_loadq_gmem_frags)
 
     # Clear thread's register tile for output.
     _fill[TM * TN](o_thread_tile, 0)
