@@ -23,6 +23,7 @@ from memory.unsafe import DTypePointer, Pointer
 
 from utils.index import StaticIntTuple
 from utils.static_tuple import StaticTuple
+from utils.loop import unroll
 
 # These representation must be kept in sync with the TensorShape file in
 # Support/include/Support/ML/TensorShape.h
@@ -706,6 +707,73 @@ struct TensorShape(Stringable, CollectionElement, EqualityComparable):
     fn __init__(inout self):
         """Default initializer for TensorShape."""
         self._rep = _TensorShapeStorage()
+
+    @always_inline
+    fn __init__(inout self, shapes: Tuple):
+        """Initializes a TensorShape from the values provided.
+
+        Args:
+          shapes: The shapes to initialize the shape with.
+        """
+
+        @parameter
+        fn variadic_size(
+            x: __mlir_type[`!kgen.variadic<`, CollectionElement, `>`]
+        ) -> Int:
+            return __mlir_op.`pop.variadic.size`(x)
+
+        alias rank = variadic_size(shapes.element_types)
+
+        # Decide which representation we can use and initialize the elements.
+        # The most common case should fit into 4 dimensions.
+        @parameter
+        if rank <= 4:
+            var ok = True  # Checks if we did not loose precision.
+            var rep = _Rep32()
+            rep.rank = rank
+
+            @parameter
+            fn _fill_small[i: Int]():
+                rep[i] = shapes.get[i, Int]()
+                if rep[i] != shapes.get[i, Int]():
+                    ok = False
+
+            unroll[_fill_small, rank]()
+            if ok:
+                self._rep = rep
+                return
+
+        # Otherwise we fall through to try the next representation.
+        # Virtually everything else will fit into 6 dimensions.
+        @parameter
+        if rank <= 6:
+            var ok = True  # Checks if we did not loose precision.
+            var rep = _Rep16()
+            rep.rank = rank
+
+            @parameter
+            fn _fill_medium[i: Int]():
+                rep[i] = shapes.get[i, Int]()
+                if rep[i] != shapes.get[i, Int]():
+                    ok = False
+
+            unroll[_fill_medium, rank]()
+            if ok:
+                self._rep = rep
+                return
+
+        # # Otherwise, we will store out of line.
+        var rep = _RepOutOfLine()
+        rep.rank = rank
+        rep.dims = DTypePointer[DType.index].alloc(rank)
+
+        @parameter
+        fn _fill_large[i: Int]():
+            rep[i] = shapes.get[i, Int]()
+
+        unroll[_fill_large, rank]()
+
+        self._rep = _Rep32()
 
     @always_inline
     fn __init__(inout self, *shapes: Int):

@@ -236,6 +236,18 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         memset_zero(self._ptr, num_elements)
 
     @always_inline
+    fn __init__(inout self, shape: Tuple):
+        """Allocates a tensor using the shape provided.
+
+        Args:
+          shape: The tensor shape.
+        """
+        self._spec = TensorSpec(type, shape)
+        var num_elements = self._spec.num_elements()
+        self._ptr = DTypePointer[type].alloc(num_elements)
+        memset_zero(self._ptr, num_elements)
+
+    @always_inline
     fn __init__(
         inout self, owned shape: TensorShape, owned ptr: DTypePointer[type]
     ):

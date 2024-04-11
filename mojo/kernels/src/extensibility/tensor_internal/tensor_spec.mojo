@@ -47,6 +47,16 @@ struct TensorSpec(Stringable, CollectionElement, EqualityComparable):
         self = TensorSpec(type, shapes)
 
     @always_inline
+    fn __init__(inout self, type: DType, shape: Tuple):
+        """Initializes a Tensorspec from the dtype and shapes provided.
+
+        Args:
+          type: The dtype of the specification.
+          shape: The shapes to initialize the shape with.
+        """
+        self = TensorSpec(type, TensorShape(shape))
+
+    @always_inline
     fn __init__(inout self, type: DType, shapes: VariadicList[Int]):
         """Initializes a Tensorspec from the dtype and shapes provided.
 
