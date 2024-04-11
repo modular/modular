@@ -319,10 +319,13 @@ void LIT::printConventionAndVariadicness(AsmPrinter &p,
 /// Return an array of enums representing the variadicness of each
 /// argument/parameter in the given list.
 SmallVector<Variadicness> LIT::getVariadicness(PogListAttr pogListAttr) {
+  size_t numPogs = pogListAttr.getPogs().size();
   SmallVector<Variadicness> res;
-  res.reserve(pogListAttr.getNames().size());
-  for (bool isVariadic : pogListAttr.getVariadicMask())
-    res.push_back(isVariadic ? Variadicness::kVariadic : Variadicness::kNone);
+  res.reserve(numPogs);
+  for (size_t idx = 0; idx < numPogs; ++idx) {
+    res.push_back(pogListAttr.isVariadic(idx) ? Variadicness::kVariadic
+                                              : Variadicness::kNone);
+  }
   if (pogListAttr.hasPack())
     res[pogListAttr.getPackIndex()] = Variadicness::kPack;
   return res;
