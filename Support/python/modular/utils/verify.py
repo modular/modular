@@ -74,7 +74,7 @@ def is_close(
       a: The second value to compare.
       absolute_tolerance: The absolute tolerance.
       relative_tolerance: The relative tolerance.
-      equal_nan: Whether to compare NaN’s as equal.
+      equal_nan: Whether to compare NaN's as equal.
 
     Returns:
       A boolean vector where a and b are equal within the specified tolerance.
