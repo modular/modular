@@ -6,16 +6,15 @@
 
 """Implements `parallel_memcpy`.
 
-You can import these APIs from the `buffer` package. For example:
+You can import these APIs from the `algorithm` package. For example:
 
 ```mojo
-from buffer import parallel_memcpy
+from algorithm import parallel_memcpy
 ```
 """
 
 from math import div_ceil, min
 
-from algorithm import sync_parallelize
 from memory import memcpy
 from runtime.llcl import Runtime
 

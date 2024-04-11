@@ -29,6 +29,7 @@ from .functional import (
     parallelize_over_rows,
     stencil,
 )
+from .memory import parallel_memcpy
 from .reduction import (
     map_reduce,
     reduce,
