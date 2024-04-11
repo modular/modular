@@ -13,84 +13,11 @@ using namespace M::LLCL;
 
 namespace {
 
-//===----------------------------------------------------------------------===//
-// Runtime contexts
-//===----------------------------------------------------------------------===//
-
-struct ContextA {
-  int i = 42;
-
-  ContextA() = default;
-  ContextA(int i) : i(i) {}
-};
-
-struct ContextB {
-  bool b = true;
-  char lots[26]; // Give this struct a large but unaligned size
-
-  ContextB() = default;
-};
-
-struct ContextC {
-  char c = 'a';
-};
-
 std::unique_ptr<Runtime> createRuntime() {
   return LLCL::createUniqueRuntime(LLCL::RuntimeOptions()
                                        .withLeakCheckedAllocator()
                                        .withMainWillNotDonate());
 }
-
-TEST(RuntimeTest, Contexts) {
-  auto runtime = createRuntime();
-
-  ContextA &contextARef = runtime->context->emplace<ContextA>(5);
-  runtime->context->emplace<ContextB>();
-
-  ++contextARef.i;
-
-  ContextA *contextAPtr = runtime->context->get<ContextA>();
-  ContextB *contextBPtr = runtime->context->get<ContextB>();
-  ContextC *contextCPtr = runtime->context->get<ContextC>();
-
-  ASSERT_NE(contextAPtr, nullptr);
-  EXPECT_EQ(contextAPtr->i, 6);
-  ASSERT_NE(contextBPtr, nullptr);
-  EXPECT_EQ(contextBPtr->b, true);
-  EXPECT_EQ(contextCPtr, nullptr);
-
-  bool created = false;
-  ErrorOr<ContextC *> contextCOr = runtime->context->createIfMissing<ContextC>(
-      [&created]() -> ErrorOr<std::unique_ptr<ContextC>> {
-        created = true;
-        return std::make_unique<ContextC>();
-      });
-  ASSERT_TRUE(created);
-  ASSERT_FALSE(contextCOr.isError());
-  ASSERT_EQ((*contextCOr)->c, 'a');
-
-  created = false;
-  ErrorOr<ContextC *> contextCAgainOr =
-      runtime->context->createIfMissing<ContextC>(
-          [&created]() -> ErrorOr<std::unique_ptr<ContextC>> {
-            created = true;
-            return std::make_unique<ContextC>();
-          });
-  ASSERT_FALSE(created);
-  ASSERT_FALSE(contextCAgainOr.isError());
-  ASSERT_EQ(*contextCAgainOr, *contextCOr);
-}
-
-#ifndef NDEBUG
-TEST(RuntimeTest, Contexturations_ExpectDeath) {
-  auto runtime = createRuntime();
-
-  runtime->context->emplace<ContextA>();
-
-  ASSERT_DEATH_IF_SUPPORTED(runtime->context->emplace<ContextA>(),
-                            "set already holds object of type");
-}
-#endif
 
 /// Test to ensure that we can utilize the full range of indices for runtime.
 /// This is mostly meant to be a precursor to check that the full range of

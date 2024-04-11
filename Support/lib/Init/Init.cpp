@@ -124,12 +124,13 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
                       options.runtimeOptions->threadBusyWaitTime),
                   options.runtimeOptions->poolName,
                   options.runtimeOptions->paranoid);
-    ctx->emplace<Runtime>(
-        runtimePtr, ctx.copy(), std::move(allocator), std::move(workQueue),
-        profileFilename.empty() ? options.runtimeOptions->profileFilename
-                                : profileFilename,
-        options.runtimeOptions->runtimeProfilingTypeMask,
-        options.runtimeOptions->profilerDebuginfo);
+    ctx->emplace<Runtime>(runtimePtr, ctx.getPointer(), std::move(allocator),
+                          std::move(workQueue),
+                          profileFilename.empty()
+                              ? options.runtimeOptions->profileFilename
+                              : profileFilename,
+                          options.runtimeOptions->runtimeProfilingTypeMask,
+                          options.runtimeOptions->profilerDebuginfo);
   }
 
   // Finally move the settings.

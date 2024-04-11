@@ -35,7 +35,10 @@ void LLVMThreadPool::TurnStile::waitAndReset(LLCL::Runtime &runtime) {
   chain = LLCL::AsyncValueRef<Chain>::allocate(runtime);
 }
 
-LLVMThreadPool::~LLVMThreadPool() { std::move(poolTurnStile.chain).emplace(); }
+LLVMThreadPool::~LLVMThreadPool() {
+  poolTurnStile.waitAndReset(runtime);
+  std::move(poolTurnStile.chain).emplace();
+}
 
 void LLVMThreadPool::asyncEnqueue(std::function<void()> task,
                                   ThreadPoolTaskGroup *group) {

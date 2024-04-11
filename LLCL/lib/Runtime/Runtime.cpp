@@ -43,12 +43,12 @@ CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
 // Runtime
 //===----------------------------------------------------------------------===//
 
-Runtime::Runtime(CompactRuntimePtr runtimePtr, ContextRef context,
+Runtime::Runtime(CompactRuntimePtr runtimePtr, Context *context,
                  std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue,
                  StringRef profileFilename, uint64_t runtimeProfilingTypeMask,
                  RuntimeOptions::ProfilerDebuginfo profilerDebuginfo)
-    : context(std::move(context)),
+    : context(context),
       signature(TypeID::getSignature() ^ CompactRuntimePtr::getSignature()),
       allocator(std::move(allocator)), workQueue(std::move(workQueue)),
       profilerDebuginfo(profilerDebuginfo), runtimeIndex(runtimePtr.index),
@@ -133,7 +133,7 @@ std::unique_ptr<Allocator> LLCL::getAllocator(const RuntimeOptions &options) {
 }
 
 static std::unique_ptr<Runtime>
-createRuntimeImpl(ContextRef context, const RuntimeOptions &options) {
+createRuntimeImpl(Context *context, const RuntimeOptions &options) {
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
   std::unique_ptr<Allocator> allocator = getAllocator(options);
   if (options.leakCheckedAllocator)
@@ -149,9 +149,9 @@ createRuntimeImpl(ContextRef context, const RuntimeOptions &options) {
                 std::chrono::microseconds(options.threadBusyWaitTime),
                 options.poolName, options.paranoid);
   return std::make_unique<Runtime>(
-      runtimePtr, std::move(context), std::move(allocator),
-      std::move(workQueue), options.profileFilename,
-      options.runtimeProfilingTypeMask, options.profilerDebuginfo);
+      runtimePtr, context, std::move(allocator), std::move(workQueue),
+      options.profileFilename, options.runtimeProfilingTypeMask,
+      options.profilerDebuginfo);
 }
 
 std::unique_ptr<Runtime>
@@ -159,21 +159,20 @@ LLCL::createUniqueRuntime(const RuntimeOptions &options) {
   assert(Runtime::getCurrentRuntimeOrNull() == nullptr &&
          "creating a runtime from a thread already associated with an outer "
          "runtime");
-  return createRuntimeImpl(ContextRef::create(), options);
+  return createRuntimeImpl(nullptr, options);
 }
 
 std::unique_ptr<Runtime>
 LLCL::createNestedRuntime(const RuntimeOptions &options) {
   if (auto runtime = Runtime::getCurrentRuntimeOrNull())
-    return createRuntimeImpl(runtime->context.copy(), options);
+    return createRuntimeImpl(runtime->context, options);
   else
-    return createRuntimeImpl(ContextRef::create(), options);
+    return createRuntimeImpl(nullptr, options);
 }
 
 ConditionallyOwnedPointer<Runtime>
 LLCL::createRuntimeIfNeeded(const RuntimeOptions &options) {
   return ConditionallyOwnedPointer<Runtime>::takeIfNeeded(
-      Runtime::getCurrentRuntimeOrNull(), [&options]() {
-        return createRuntimeImpl(ContextRef::create(), options).release();
-      });
+      Runtime::getCurrentRuntimeOrNull(),
+      [&options]() { return createRuntimeImpl(nullptr, options).release(); });
 }
