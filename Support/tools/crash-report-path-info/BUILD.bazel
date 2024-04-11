@@ -6,5 +6,6 @@ cc_binary(
         "//Support:Base",
         "//Support:Configuration",
         "//Support:CrashReporting",
+        "//Support:Globals.static",
     ],
 )

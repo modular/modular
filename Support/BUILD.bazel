@@ -1,5 +1,6 @@
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
+load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -263,7 +264,7 @@ cc_library(
     strip_include_prefix = "include",
     deps = [
         ":Base",
-        ":Globals",
+        ":Globals.headers",
         "@llvm-project//mlir:IR",
     ],
 )
@@ -567,7 +568,7 @@ cc_library(
     strip_include_prefix = "include",
     deps = [
         ":Base",
-        ":Globals",
+        ":Globals.headers",
         ":MArchTarget",
     ],
 )
@@ -621,6 +622,7 @@ cc_test(
         ":MArchTarget",
         "//LLCL:CompilerSupport",
         "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -1277,24 +1279,13 @@ cc_library(
     ],
 )
 
-cc_library(
+globals_library(
     name = "Globals",
     srcs = glob(["lib/Globals/*.cpp"]),
     hdrs = glob(["include/Support/Globals/*.h"]) + [
         "include/Support/SymbolExport.h",
     ],
     strip_include_prefix = "include",
-    alwayslink = True,
     # TODO: Missing define conditionals for symbol visibility
     # NOTE: This library should not have any deps to avoid shared object linking issues
-)
-
-cc_shared_library(
-    name = "Globals.shared.underlying",
-    deps = [":Globals"],
-)
-
-cc_import(
-    name = "Globals.shared",
-    shared_library = "Globals.shared.underlying",
 )
