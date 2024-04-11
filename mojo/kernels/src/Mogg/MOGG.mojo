@@ -1174,7 +1174,7 @@ fn concat_shape[
     # 2. either optimize away the conversion from variadic list to
     # InlinedFixedVector, or generalize `concat_from_list_shape` with some List
     # Trait so we can pass in variadic list directly.
-    var axis = axis_buf[0].to_int()
+    var axis = int(axis_buf[0])
     if axis < 0:
         axis += input_rank
     if axis < 0 or input_rank <= axis:
@@ -2853,10 +2853,10 @@ fn random_normal[
     output: NDBuffer[type, rank],
     ctx: MojoCallContextPtr,
 ):
-    seed(op_seed[0].to_int())
+    seed(int(op_seed[0]))
     var num_elements = 1
     for i in range(len(shape)):
-        num_elements *= shape[i].to_int()
+        num_elements *= int(shape[i])
     randn[type](
         output.data,
         num_elements,
