@@ -71,7 +71,7 @@ public:
   ArrayRef<Type> getParameters() const;
 
   /// Return this type with any parameter bindings removed.
-  ASTType getWithoutParameters() const;
+  ASTType getWithoutParameters(SharedState &shared) const;
 
   /// Get the default values for the unbound parameters of the type.
   ArrayRef<TypedAttr> getDefaultPosParams() const;

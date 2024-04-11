@@ -63,7 +63,7 @@ static CValue emitVariadicPackConstructor(
   // Construct the pack type without parameters so we reinfer the lifetime which
   // is different on the caller side (the union of the argument lifetimes) than
   // the declared callee side (a parameter).
-  variadicPackType = variadicPackType.getWithoutParameters();
+  variadicPackType = variadicPackType.getWithoutParameters(emitter.shared);
 
   auto callResult = emitter.emitConstructorCall(
       variadicPackType, operands, expr, CallSyntax::kTypeCall, packDest);

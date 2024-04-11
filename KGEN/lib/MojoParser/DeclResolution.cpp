@@ -1760,8 +1760,8 @@ static SymbolConstantAttr lookupCopyMoveInit(ASTDecl &structDecl,
   const char *name = SpecialFunctionInfo::get(specialKind).name;
   LookupResult inits = shared.lookupAndResolveDecl(
       name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
-  ArrayRef<ASTDecl *> entries = inits.getIfSuccess();
-  for (ASTDecl *candidate : entries) {
+
+  for (ASTDecl *candidate : inits.getIfSuccess()) {
     LIT::FuncOp func = dyn_cast<LIT::FuncOp>(candidate);
     if (func && func.getSpecialFunctionKind() == specialKind)
       return func.getBoundSymbolRef();

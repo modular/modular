@@ -1399,7 +1399,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     return {};
 
   // Construct the Tuple type without parameters so we infer them.
-  tupleType = tupleType.getWithoutParameters();
+  tupleType = tupleType.getWithoutParameters(emitter.shared);
 
   SmallVector<ASTExprAnd<AnyValue>> posOperands;
   for (OpResult opResult : resultOp->getResults())
@@ -1820,7 +1820,7 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
 
   // The ASTType will carry around parameters bound, we want to unbind them so
   // they can be inferred from the elements.
-  type = type.getWithoutParameters();
+  type = type.getWithoutParameters(emitter.shared);
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.
@@ -3122,7 +3122,7 @@ AnyValue TupleNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // The ASTType will carry around parameters bound, we want to unbind them so
   // they can be inferred from the elements.
-  tupleType = tupleType.getWithoutParameters();
+  tupleType = tupleType.getWithoutParameters(emitter.shared);
 
   // Emit a call to the builtin type constructor as an implicit conversion.
   // The type parameters are inferred from the element types.

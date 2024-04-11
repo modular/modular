@@ -485,7 +485,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
         // 'actualType' will have those newly inferred parameters.
         ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
         auto [initFn, erroneousDecl] = emitter.canConstructType(
-            expectedType.getWithoutParameters(), initValue.get(), operand.expr);
+            expectedType.getWithoutParameters(emitter.shared), initValue.get(),
+            operand.expr);
         // If there were declaration errors, assume success to not raise
         // spurious errors due to not resolving to those erroneous
         // declarations.
