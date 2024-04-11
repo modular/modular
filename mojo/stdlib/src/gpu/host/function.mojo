@@ -403,6 +403,9 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
             cache_config=cache_config.value().code if cache_config else -1,
         )
 
+        if not self.info.func_handle:
+            raise "Unable to load the CUDA function"
+
     @always_inline
     fn __del__(owned self):
         pass
