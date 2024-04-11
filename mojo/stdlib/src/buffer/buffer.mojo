@@ -12,12 +12,11 @@ from buffer import Buffer
 ```
 """
 
-from math import fma, iota, max, min
+from math import fma, iota, max, min, align_down
 from pathlib import Path
 from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
 
-from algorithm import vectorize
 from buffer.list import Dim, DimList, _make_tuple
 from memory import stack_allocation, memset_zero
 from memory.reference import AddressSpace, _GPUAddressSpace
@@ -308,12 +307,11 @@ struct Buffer[
             self.zero()
             return
 
-        @always_inline
-        @parameter
-        fn _fill[simd_width: Int](idx: Int):
-            self.store(idx, SIMD[type, simd_width].splat(val))
-
-        vectorize[_fill, simd_width](len(self))
+        var vec_end = align_down(len(self), simd_width)
+        for i in range(0, vec_end, simd_width):
+            self.store[width=simd_width](i, val)
+        for i in range(vec_end, len(self)):
+            self.store(i, val)
 
     @always_inline
     fn fill(self, val: Scalar[type]):
