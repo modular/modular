@@ -106,25 +106,19 @@ fn sgemm_double_buffer[
 
     # Double buffer in shared memory.
     alias a_smem_size = BK * BM_padded
-    var a_smem_base = LayoutTensor[
+    var a_smem_tile = LayoutTensor[
         Layout.row_major(2 * BK, BM_padded),
         a_type,
         address_space = AddressSpace.SHARED,
-    ].stack_allocation()
-    var a_smem_tile = StaticTuple[_, 2](
-        a_smem_base.tile[BK, BM](0, 0), a_smem_base.tile[BK, BM](1, 0)
-    )
+    ].stack_allocation().slice[:, :BM]().split[2]()
 
     # Align the address by the maximum async copy size (16 bytes).
     alias b_smem_size = BK * BN
-    var b_smem_base = LayoutTensor[
+    var b_smem_tile = LayoutTensor[
         Layout.row_major(2 * BK, BN),
         b_type,
         address_space = AddressSpace.SHARED,
-    ].stack_allocation()
-    var b_smem_tile = StaticTuple[_, 2](
-        b_smem_base.tile[BK, BN](0, 0), b_smem_base.tile[BK, BN](1, 0)
-    )
+    ].stack_allocation().split[2]()
 
     # Global memory tile.
     var a_gmem_tile = a.tile[BM, BK](BlockIdx.y(), 0)
