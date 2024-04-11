@@ -102,46 +102,6 @@ struct Model:
             input_map.borrow(str(py_pair[0]), EngineNumpyView(py_pair[1]))
         return self.execute(input_map)
 
-    fn _execute_view[
-        key_type: CollectionElement, value_type: CollectionElement
-    ](
-        self, inputs: VariadicListMem[Tuple[key_type, value_type], _, _]
-    ) raises -> TensorMap:
-        var input_map = TensorMap(self._ctx, self._lib, self._session)
-        for i in range(len(inputs)):
-            var pair = inputs[i]
-
-            # TODO: This is likely dead code with the removal of the
-            #       StringRef-based API using NamedTensor.
-            @parameter
-            if _mlirtype_is_eq[key_type, StringRef]():
-
-                @parameter
-                if _mlirtype_is_eq[value_type, EngineTensorView]():
-                    input_map.borrow(
-                        pair.get[0, StringRef](),
-                        pair.get[1, EngineTensorView](),
-                    )
-                elif _mlirtype_is_eq[value_type, EngineNumpyView]():
-                    input_map.borrow(
-                        pair.get[0, StringRef](), pair.get[1, EngineNumpyView]()
-                    )
-
-            elif _mlirtype_is_eq[key_type, StringLiteral]():
-
-                @parameter
-                if _mlirtype_is_eq[value_type, EngineTensorView]():
-                    input_map.borrow(
-                        pair.get[0, StringLiteral](),
-                        pair.get[1, EngineTensorView](),
-                    )
-                elif _mlirtype_is_eq[value_type, EngineNumpyView]():
-                    input_map.borrow(
-                        pair.get[0, StringLiteral](),
-                        pair.get[1, EngineNumpyView](),
-                    )
-        return self.execute(input_map)
-
     fn execute(self, *inputs: NamedTensor) raises -> TensorMap:
         """Execute model with given inputs.
 
@@ -173,7 +133,10 @@ struct Model:
         Returns:
             A TensorMap with output names as keys.
         """
-        return self._execute_view[StringLiteral, EngineNumpyView](inputs)
+        var input_map = TensorMap(self._ctx, self._lib, self._session)
+        for pair in inputs:
+            input_map.borrow(pair[].get[0](), pair[].get[1]())
+        return self.execute(input_map)
 
     fn execute[
         type: DType
