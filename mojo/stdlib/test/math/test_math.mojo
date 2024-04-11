@@ -12,6 +12,7 @@ from math import (
     isfinite,
     isinf,
     isnan,
+    isclose,
     nan,
     rotate_bits_left,
     rotate_bits_right,
@@ -284,6 +285,34 @@ def test_copysign():
     # TODO: Add some test cases for SIMD vector with width > 1
 
 
+def test_isclose():
+    assert_true(isclose(Int64(2), Int64(2)))
+    assert_false(isclose(Int64(2), Int64(3)))
+
+    assert_true(isclose(Float32(2), Float32(2)))
+    assert_true(isclose(Float32(2), Float32(2), rtol=1e-9))
+    assert_true(isclose(Float32(2), Float32(2.00001), rtol=1e-3))
+    assert_true(
+        isclose(nan[DType.float32](), nan[DType.float32](), equal_nan=True)
+    )
+
+    assert_true(
+        isclose(
+            SIMD[DType.float32, 4](1, 2, 3, nan[DType.float32]()),
+            SIMD[DType.float32, 4](1, 2, 3, nan[DType.float32]()),
+            equal_nan=True,
+        )
+    )
+
+    assert_false(
+        isclose(
+            SIMD[DType.float32, 4](1, 2, nan[DType.float32](), 3),
+            SIMD[DType.float32, 4](1, 2, nan[DType.float32](), 4),
+            equal_nan=True,
+        )
+    )
+
+
 def main():
     test_inf()
     test_nan()
@@ -295,3 +324,4 @@ def main():
     test_rotate_bits()
     test_boole()
     test_copysign()
+    test_isclose()
