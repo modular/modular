@@ -8,13 +8,13 @@ from math import align_down, div_ceil, max, min
 from sys.info import has_neon, sizeof
 from sys.intrinsics import PrefetchOptions
 
-from algorithm import elementwise, sync_parallelize, vectorize
+from algorithm import elementwise, sync_parallelize, vectorize, parallel_memcpy
 from algorithm.functional import (
     _async_elementwise_impl,
     _elementwise_impl,
     tile,
 )
-from buffer import Buffer, NDBuffer, parallel_memcpy
+from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
 from buffer.list import Dim, DimList
 from gpu.host.memory import _copy_device_to_device_async
