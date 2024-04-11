@@ -1338,3 +1338,9 @@ fn test_in(a: String, b: String):
     # CHECK-NEXT: [[RESB:%.*]] = lit.call {{.*}}__bool__{{.*}}([[RES]])
     # CHECK-NEXT: = lit.call {{.*}}__invert__{{.*}}([[RESB]])
     _ = a not in b
+
+# Test that parameter inference can handle this.
+fn dependent_call_it[simd_width: Int, dtype: DType](ptr: DTypePointer[dtype]):
+   dependent_callee[simd_width](ptr, 0.0)
+fn dependent_callee[width: Int](storage: DTypePointer, pad_value: Scalar[storage.type]):
+   pass
