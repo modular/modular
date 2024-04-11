@@ -1,5 +1,6 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
 
 package(
@@ -1106,16 +1107,7 @@ cc_library(
     ],
 )
 
-# TODO: Ideally only CompilerRT would exist but there is a circular dependency
-cc_library(
-    name = "CompilerRTHeaders",
-    hdrs = glob([
-        "include/KGEN/CompilerRT/*.h",
-    ]),
-    strip_include_prefix = "include",
-)
-
-cc_library(
+globals_library(
     name = "CompilerRT",
     srcs = glob([
         "lib/CompilerRT/*.cpp",
@@ -1128,26 +1120,14 @@ cc_library(
     deps = [
         "//CUDASupport:CUDASupportHeaders",
         "//CUDASupport:Globals",
+        "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals",
         "//LLCL:RuntimeHeaders",
         "//Support:Base",
         "//Support:Configuration",
+        "//Support:Globals",
         "//Support:Threading",
     ],
-    alwayslink = True,
-)
-
-cc_binary(
-    name = "CompilerRT.shared.underlying",  # TODO: Rename to .shared
-    linkshared = True,
-    deps = [
-        ":CompilerRT",
-    ],
-)
-
-# TODO: Extract, wrap in cc_library, propagate headers that correlate
-cc_import(
-    name = "CompilerRTShared",
-    shared_library = "CompilerRT.shared.underlying",
 )
 
 # TODO: Move to configure.bzl?
@@ -1437,8 +1417,9 @@ cc_binary(
     srcs = glob(["tools/hash-mlir/*.cpp"]),
     deps = [
         ":ToolCommon",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
         "//Support:Base",
+        "//Support:Globals",
         "@llvm-project//mlir:BytecodeWriter",
     ],
 )
@@ -1448,7 +1429,7 @@ cc_binary(
     srcs = glob(["tools/kgen/*.cpp"]),
     deps = [
         ":Compiler",
-        ":CompilerRTShared",
+        ":CompilerRT",
         ":ExecutionEngine",
         ":KGENDialect",
         ":MojoParser",
@@ -1459,10 +1440,10 @@ cc_binary(
         ":ToolCommon",
         "//Config",
         "//LLCL:Runtime",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
         "//Support:Base",
         "//Support:Compiler",
-        "//Support:Globals.shared",
+        "//Support:Globals",
         "//Support:Init",
         "//Support:MArchTarget",
         "@llvm-project//mlir:BytecodeWriter",
@@ -1474,7 +1455,7 @@ cc_binary(
     srcs = glob(["tools/kgen-opt/*.cpp"]),
     deps = [
         ":Compiler",
-        ":CompilerRTShared",
+        ":CompilerRT",
         ":ExecutionEngine",
         ":KGENDialect",
         ":LITDialect",
@@ -1486,9 +1467,10 @@ cc_binary(
         ":Support",
         ":ToolCommon",
         "//LLCL:Runtime",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
         "//Support:Base",
         "//Support:Compiler",
+        "//Support:Globals",
         "//Support:Init",
         "//Support:MDialect",
         "@llvm-project//mlir:MlirOptLib",
@@ -1503,7 +1485,7 @@ cc_binary(
     ]),
     deps = [
         ":Compiler",
-        ":CompilerRTShared",
+        ":CompilerRT",
         ":ExecutionEngine",
         ":HLCFDialect",
         ":KGENDialect",
@@ -1512,8 +1494,9 @@ cc_binary(
         ":Pipeline",
         ":ToolCommon",
         ":TransformUtils",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
         "//Support:Base",
+        "//Support:Globals",
         "//Support:Init",
         "@llvm-project//mlir:MlirOptLib",
     ],
@@ -1527,7 +1510,7 @@ cc_binary(
     ]),
     deps = [
         ":Compiler",
-        ":CompilerRTShared",
+        ":CompilerRT",
         ":ExecutionEngine",
         ":KGENDialect",
         ":MojoParser",
@@ -1536,7 +1519,8 @@ cc_binary(
         ":Support",
         ":ToolCommon",
         "//LLCL:Runtime",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
         "//Support:Init",
         "//Support:MDialect",
         "@llvm-project//mlir:MlirTranslateMain",
@@ -1574,8 +1558,9 @@ cc_binary(
         ":Support",
         ":ToolCommon",
         "//LLCL:Runtime",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
         "//Support:Base",
+        "//Support:Globals",
         "//Support:Init",
         "//Support:Telemetry",
         "@llvm-project//llvm:Support",
@@ -1591,15 +1576,15 @@ cc_binary(
         "tools/mojo-repl-entry-point/*.h",
     ]),
     deps = [
-        ":CompilerRTHeaders",
-        ":CompilerRTShared",
+        ":CompilerRT.static",
         ":MojoParser",
         ":MojoTooling",
         ":ObjectCompiler",
         ":Pipeline",
         ":ToolCommon",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
         "//Support:Base",
+        "//Support:Globals",
         "//Support:Init",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirLspServerLib",
@@ -1628,7 +1613,7 @@ cc_binary(
         "tools/mojo-prime-package-cache/*.h",
     ]),
     deps = [
-        ":CompilerRTShared",
+        ":CompilerRT",
         ":ExecutionEngine",
         ":KGENDialect",
         ":LITDialect",
@@ -1642,10 +1627,11 @@ cc_binary(
         "//Config",
         "//LLCL:CompilerSupport",
         "//LLCL:Runtime",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
         "//Support:Base",
         "//Support:Compiler",
         "//Support:Driver",
+        "//Support:Globals",
         "//Support:Init",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirLspServerLib",
@@ -1685,7 +1671,7 @@ cc_binary(
         ":Build.inc_files",
         ":BuildProject.inc_files",
         ":Compiler",
-        ":CompilerRTShared",
+        ":CompilerRT",
         ":Debug.inc_files",
         ":Demangle.inc_files",
         ":Doc.inc_files",
@@ -1710,13 +1696,13 @@ cc_binary(
         ":ToolCommon",
         "//Config",
         "//LLCL:Runtime",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
         "//Support:Base",
         "//Support:Compiler",
         "//Support:CrashReporting",
         "//Support:Driver",
         "//Support:Filesystem",
-        "//Support:Globals.shared",
+        "//Support:Globals",
         "//Support:Init",
         "//Support:MArchTarget",
         "//Support:MDialect",

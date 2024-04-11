@@ -4,6 +4,7 @@ cc_test(
     deps = [
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -14,6 +15,7 @@ cc_test(
     deps = [
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -33,6 +35,7 @@ cc_test(
     deps = [
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -43,6 +46,7 @@ cc_test(
     deps = [
         "//LLCL:Support",
         "//Support:Base",
+        "//Support:Globals",
         "@com_github_google_googletest//:gtest_main",
     ],
 )

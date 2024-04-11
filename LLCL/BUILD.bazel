@@ -1,3 +1,5 @@
+load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
+
 package(
     default_visibility = ["//visibility:public"],
     licenses = ["notice"],
@@ -72,7 +74,7 @@ cc_library(
     ],
 )
 
-cc_library(
+globals_library(
     name = "RuntimeGlobals",
     srcs = glob(["lib/Runtime/Globals/*.cpp"]),
     deps = [
@@ -84,18 +86,6 @@ cc_library(
         "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
     ],
-    alwayslink = True,
-)
-
-cc_binary(
-    name = "RuntimeGlobals.shared.underlying",
-    linkshared = True,
-    deps = [":RuntimeGlobals"],
-)
-
-cc_import(
-    name = "RuntimeGlobals.shared",
-    shared_library = "RuntimeGlobals.shared.underlying",
 )
 
 cc_library(

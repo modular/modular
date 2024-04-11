@@ -5,9 +5,10 @@ cc_binary(
     deps = [
         "//LLCL:CompilerSupport",
         "//LLCL:Runtime",
-        "//LLCL:RuntimeGlobals.shared",
+        "//LLCL:RuntimeGlobals",
         "//Support:Base",
         "//Support:DebugInfoToLLVM",
+        "//Support:Globals",
         "//Support:MDialect",
         "@llvm-project//mlir:MlirOptLib",
     ],
