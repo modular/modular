@@ -238,11 +238,15 @@ struct _CachedFunctionInfo(Boolable):
     var mod_handle: _ModuleImpl
     var func_handle: FunctionHandle
 
-    fn __init__() -> Self:
-        return Self {mod_handle: _ModuleImpl(), func_handle: FunctionHandle()}
+    fn __init__(inout self):
+        self.mod_handle = _ModuleImpl()
+        self.func_handle = FunctionHandle()
 
-    fn __init__(mod_handle: _ModuleImpl, func_handle: FunctionHandle) -> Self:
-        return Self {mod_handle: mod_handle, func_handle: func_handle}
+    fn __init__(
+        inout self, mod_handle: _ModuleImpl, func_handle: FunctionHandle
+    ):
+        self.mod_handle = mod_handle
+        self.func_handle = func_handle
 
     fn __del__(owned self):
         pass
@@ -334,19 +338,18 @@ fn _get_global_cache_info[
         debug, verbose, max_registers, threads_per_block, cache_config
     )
 
-    var res = (
-        _get_global[
-            fn_name,
-            _init_fn[func_type, func],
-            _destroy_fn,
-        ](Pointer.address_of(payload).bitcast[NoneType]())
-        .bitcast[_CachedFunctionInfo]()
-        .load()
-    )
+    var info_ptr = _get_global[
+        fn_name,
+        _init_fn[func_type, func],
+        _destroy_fn,
+    ](Pointer.address_of(payload).bitcast[NoneType]())
+
+    if not info_ptr:
+        return _CachedFunctionInfo()
 
     _ = payload
 
-    return res
+    return info_ptr.bitcast[_CachedFunctionInfo]().load()
 
 
 # ===----------------------------------------------------------------------===#
