@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # Issue #23536
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 import math
 from math.limit import neginf
 
