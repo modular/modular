@@ -424,10 +424,12 @@ LogicalResult LITLowerer::lowerStructDecl(StructDeclOp structDecl,
       return member.emitError("unsupported op in lit lowering");
 
     // Lower renamed function as usual.
-    if (failed(lowerLITFunc(
-            func, structDecl->getIterator(),
-            structName.getValue() + "::", structDecl.getInputParams(),
-            structDecl.getSignature().getParamListAttrs().getVariadicMask())))
+    SmallVector<bool> variadicMask = llvm::map_to_vector(
+        structDecl.getSignature().getParamListAttrs().getPogs(),
+        [](PogMetadataAttr pogAttr) { return pogAttr.isVariadic(); });
+    if (failed(lowerLITFunc(func, structDecl->getIterator(),
+                            structName.getValue() + "::",
+                            structDecl.getInputParams(), variadicMask)))
       return failure();
   }
   return success();

@@ -132,7 +132,7 @@ PogListAttr PogListAttr::cloneWith(ArrayRef<PogMetadataAttr> pogs) const {
 }
 
 bool PogListAttr::isVariadic(size_t idx) const {
-  return getVariadicMask()[idx];
+  return getPogs()[idx].isVariadic();
 }
 
 bool PogListAttr::isPack(size_t idx) const {
@@ -150,7 +150,8 @@ bool PogListAttr::isKwVariadic(size_t idx) const {
 }
 
 bool PogListAttr::hasVariadic() const {
-  return llvm::any_of(getVariadicMask(), [](bool b) { return b; });
+  return llvm::any_of(
+      getPogs(), [](PogMetadataAttr pogAttr) { return pogAttr.isVariadic(); });
 }
 
 bool PogListAttr::hasPack() const { return getPackIndex() != -1; }
@@ -198,11 +199,6 @@ SmallVector<PassingKind> PogListAttr::getPassingKinds() const {
   return llvm::map_to_vector(getPogs(), [](PogMetadataAttr pogAttr) {
     return pogAttr.getPassingKind();
   });
-}
-
-SmallVector<bool> PogListAttr::getVariadicMask() const {
-  return llvm::map_to_vector(
-      getPogs(), [](PogMetadataAttr pogAttr) { return pogAttr.isVariadic(); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -315,7 +311,8 @@ SmallVector<bool> LIT::getContextualVariadicMask(ArrayRef<Operation *> ops) {
     else
       continue;
 
-    llvm::append_range(variadicMask, paramListAttr.getVariadicMask());
+    for (PogMetadataAttr pogAttr : paramListAttr.getPogs())
+      variadicMask.emplace_back(pogAttr.isVariadic());
   }
   return variadicMask;
 }
