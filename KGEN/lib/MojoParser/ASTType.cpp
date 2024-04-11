@@ -95,13 +95,11 @@ ArrayRef<Type> ASTType::getParameters() const {
 }
 
 /// Return this type with any parameter bindings removed.
-ASTType ASTType::getWithoutParameters() const {
+ASTType ASTType::getWithoutParameters(SharedState &shared) const {
   if (!mlirType)
     return {};
-  if (auto declRef = dyn_cast<DeclRefType>(mlirType)) {
-    auto fixedMetatype = ASTType(declRef.getMetaType()).getWithoutParameters();
-    return DeclRefType::get(declRef.getSymbol(), fixedMetatype);
-  }
+  if (auto declRef = dyn_cast<DeclRefType>(mlirType))
+    return cast<StructDeclOp>(getDecl(shared)).bindReference();
   if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(mlirType))
     return AnyStructType::get(metaType.getSymbol(), metaType.getSignature());
   return {};
