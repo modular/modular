@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: asan
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout.dynamic_tuple import *
 from layout.int_tuple import *

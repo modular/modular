@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: asan
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout.int_tuple import *
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
