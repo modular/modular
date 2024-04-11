@@ -330,10 +330,15 @@ struct LayoutTensor[
         return zipped_divide(layout, tiler)
 
     @staticmethod
-    fn _compute_tile_layout[tile_sizes: IntTuple]() -> Layout:
+    fn _compute_tile_layout[tile_size: Int, axis: Int]() -> Layout:
         var tiler = LayoutList()
-        for tile_size in tile_sizes:
-            tiler.append(Layout(tile_size))
+        var i = 0
+        for dim in layout.shape:
+            if i == axis:
+                tiler.append(Layout(tile_size))
+            else:
+                tiler.append(Layout(dim))
+            i += 1
         return zipped_divide(layout, tiler)
 
     @always_inline
@@ -364,6 +369,41 @@ struct LayoutTensor[
         return LayoutTensor[
             __tiled_layout[0], dtype, address_space=address_space
         ](self.ptr.offset(offset))
+
+    @always_inline
+    fn split[
+        count: Int,
+        axis: Int = 0,
+        __tile_size: Int = layout.shape[axis].value() // count,
+        __tiled_layout: Layout = Self._compute_tile_layout[__tile_size, axis](),
+    ](self) -> StaticTuple[
+        LayoutTensor[__tiled_layout[0], dtype, address_space=address_space],
+        count,
+    ]:
+        constrained[
+            layout.shape[axis].is_value(),
+            "Only support partition modes that are plain values.",
+        ]()
+
+        constrained[
+            layout.shape[axis].value() % count == 0,
+            "The input dimension must be divisible over the input count.",
+        ]()
+
+        alias stride = layout.stride[axis].value()
+
+        var tiles = StaticTuple[
+            LayoutTensor[__tiled_layout[0], dtype, address_space=address_space],
+            count,
+        ]()
+
+        @unroll
+        for i in range(count):
+            tiles[i] = LayoutTensor[
+                __tiled_layout[0], dtype, address_space=address_space
+            ](self.ptr.offset(i * __tile_size * stride))
+
+        return tiles
 
     @staticmethod
     fn _compute_distribute_layout[

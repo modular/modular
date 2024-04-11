@@ -881,6 +881,35 @@ fn test_distribute_axis_projection():
         print("=====")
 
 
+fn test_split():
+    var tensor_4x4 = LayoutTensor[
+        Layout(IntTuple(4, 4), IntTuple(4, 1)), DType.float32
+    ].stack_allocation()
+    tensor_4x4.linspace()
+
+    var tiles_axis0 = tensor_4x4.split[2]()
+    # CHECK: 0.0 1.0 2.0 3.0
+    # CHECK: 4.0 5.0 6.0 7.0
+    tiles_axis0[0].print()
+    # CHECK: 8.0 9.0 10.0 11.0
+    # CHECK: 12.0 13.0 14.0 15.0
+    tiles_axis0[1].print()
+
+    var tiles_axis1 = tensor_4x4.split[2, axis=1]()
+    # CHECK: 0.0 1.0
+    # CHECK: 4.0 5.0
+    # CHECK: 8.0 9.0
+    # CHECK: 12.0 13.0
+    tiles_axis1[0].print()
+    # CHECK: 2.0 3.0
+    # CHECK: 6.0 7.0
+    # CHECK: 10.0 11.0
+    # CHECK: 14.0 15.0
+    tiles_axis1[1].print()
+
+    _ = tensor_4x4^
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -895,3 +924,4 @@ fn main():
     test_copy_vectorized()
     test_distribute_vectorized()
     test_distribute_axis_projection()
+    test_split()
