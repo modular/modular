@@ -48,8 +48,12 @@ enum class Severity : uint8_t {
   kFatal
 };
 
-using AttributeValue = std::variant<bool, int32_t, int64_t, uint32_t, double,
-                                    const char *, std::string, uint64_t>;
+using AttributeValue =
+    std::variant<bool, int32_t, int64_t, uint32_t, double, const char *,
+                 llvm::StringRef, llvm::ArrayRef<const bool>,
+                 llvm::ArrayRef<const int32_t>, llvm::ArrayRef<const int64_t>,
+                 llvm::ArrayRef<const uint32_t>, llvm::ArrayRef<const double>,
+                 llvm::ArrayRef<llvm::StringRef>>;
 
 #endif // MODULAR_ENABLE_TELEMETRY
 
