@@ -9,8 +9,14 @@ from math import div_ceil, min
 from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load, strided_store
 
-from algorithm import sync_parallelize, tile, unswitch, vectorize
-from buffer import Buffer, NDBuffer, parallel_memcpy
+from algorithm import (
+    sync_parallelize,
+    tile,
+    unswitch,
+    vectorize,
+    parallel_memcpy,
+)
+from buffer import Buffer, NDBuffer
 from buffer.list import DimList
 from memory import memcpy
 from memory.unsafe import DTypePointer
