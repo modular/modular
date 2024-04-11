@@ -24,7 +24,7 @@ alias unit = Unit.ns
 # increasing will reduce the benefit of passing the size as a paramater
 alias multiplier = 2
 # Add .5 of the elements that fit into a simd register
-alias size: Int = (multiplier * width + (width * 0.5)).to_int()
+alias size: Int = int(multiplier * width + (width * 0.5))
 alias unroll_factor = 2
 alias its = 1000
 
