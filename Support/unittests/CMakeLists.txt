@@ -30,6 +30,7 @@ add_modular_unittest(
   Base64Test.cpp
   BufferTest.cpp
   ConfigurationTest.cpp
+  ContextTest.cpp
   DTypeTest.cpp
   DeviceSpecsTest.cpp
   ErrorOrTest.cpp

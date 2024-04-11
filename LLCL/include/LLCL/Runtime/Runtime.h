@@ -324,7 +324,7 @@ public:
   ///
   /// If profileFilename is non-empty then time profiling will be activated
   /// and the profile JSON and text will be written to files with that prefix.
-  Runtime(CompactRuntimePtr runtimePtr, ContextRef context,
+  Runtime(CompactRuntimePtr runtimePtr, Context *context,
           std::unique_ptr<Allocator> allocator,
           std::unique_ptr<WorkQueue> workQueue, StringRef profileFilename = {},
           uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled,
@@ -415,8 +415,10 @@ public:
     return cancelValue.load(std::memory_order_acquire);
   }
 
-  /// Reference to our shared global context.
-  ContextRef context;
+  /// Reference to our shared global context. Note that this doesn't hold the
+  /// reference properly, in order to fix the cycle. This should be removed as
+  /// soon as possible.
+  Context *context;
 
 private:
   Runtime(const Runtime &) = delete;
