@@ -540,7 +540,7 @@ fn _lift(n: Int, shape: List[Int]) -> List[Int]:
     for i in range(len(shape) - 1, -1, -1):
         out.append(curr_index._positive_rem(shape[i]))
         curr_index = curr_index._positive_div(shape[i])
-
+    out.reverse()
     return out
 
 
