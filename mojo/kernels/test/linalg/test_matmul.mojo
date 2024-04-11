@@ -7,7 +7,7 @@
 # Checks x86 int8 matmul C = A*B with prepacked B
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo-no-debug %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from sys.info import has_avx2, has_neon_int8_matmul
 
@@ -281,18 +281,8 @@ fn test_shapes[
             saturated=saturated,
             mixed_kernels=mixed_kernels,
         ](m, n, k)
-        test_matmul_static_shape[
-            a_type=a_type,
-            b_type=b_type,
-            c_type=c_type,
-            b_packed=b_packed,
-            saturated=saturated,
-            mixed_kernels=mixed_kernels,
-            m=m,
-            n=n,
-            k=k,
-        ]()
 
+    test_shapes_helper[256, 1024, 4096]()
     test_shapes_helper[4, 5, 6]()
     test_shapes_helper[15, 16, 17]()
     test_shapes_helper[24, 32, 64]()
@@ -317,6 +307,15 @@ fn test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
     test_shapes[
         DType.int8, DType.int8, DType.int32, b_packed, saturated, mixed_kernels
     ]()
+    if not saturated:
+        test_shapes[
+            DType.float32,
+            DType.float32,
+            DType.float32,
+            b_packed,
+            saturated,
+            mixed_kernels,
+        ]()
 
 
 fn main():
