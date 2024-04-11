@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from math import exp, isclose
 from sys.info import has_neon, triple_is_nvidia_cuda

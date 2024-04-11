@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
 
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 import builtin
 import gpu.host as gpu_host

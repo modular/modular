@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize

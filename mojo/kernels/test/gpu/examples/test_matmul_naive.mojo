@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
 # TODO(#31429): Restore `--debug-level full` here
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import div_ceil
 from pathlib import Path

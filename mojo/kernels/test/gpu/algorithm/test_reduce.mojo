@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from math import align_up, div_ceil, exp, max, min
 from pathlib import Path

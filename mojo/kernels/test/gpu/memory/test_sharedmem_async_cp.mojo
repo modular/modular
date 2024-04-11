@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
 # Hangs with debug mode Issue #24921
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 import builtin
 import gpu.host as gpu_host
 from gpu import AddressSpace, ThreadIdx, memory, sync, time

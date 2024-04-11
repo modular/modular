@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from gpu.host._compile import _compile_code, _get_nvptx_target
 from gpu.intrinsics import ldg

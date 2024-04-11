@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: nvptx_backend
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo-no-debug %s | FileCheck %s
 
 from math import abs, div_ceil, iota
 from sys.info import simdwidthof

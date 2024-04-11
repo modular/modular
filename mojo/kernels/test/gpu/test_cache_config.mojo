@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s
+# RUN: %mojo-no-debug %s
 
 from gpu.host import CacheConfig, Context, Function, synchronize
 from gpu.host.memory import _malloc_managed
