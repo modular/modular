@@ -12,8 +12,6 @@ from complex import ComplexSIMD
 ```
 """
 
-from math import sqrt
-
 from builtin.io import _snprintf_scalar
 from builtin.string import _calc_initial_buffer_size, _vec_fmt
 
@@ -21,6 +19,39 @@ alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
 alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 
 
+# ===----------------------------------------------------------------------===#
+# _complex_sqrt
+# ===----------------------------------------------------------------------===#
+# NOTE: This `_complex_sqrt` implementation was copied from the `math` module
+# inorder to break a build dependency cycle. We've duplicate the implementation
+# for the time being until we can solve this by another mechanism.
+#
+# Please do not introduce futher callsites of `_complex_sqrt`. It is intended to
+# be an internal implementation detail of the `complex` module.
+# ===----------------------------------------------------------------------===#
+@always_inline("nodebug")
+fn _complex_sqrt[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Performs elementwise square root on the elements of a SIMD vector.
+
+    Parameters:
+      type: The `dtype` of the input and output SIMD vector.
+      simd_width: The width of the input and output SIMD vector.
+
+    Args:
+      x: SIMD vector to perform square root on.
+
+    Returns:
+      The elementwise square root of x.
+    """
+
+    return llvm_intrinsic["llvm.sqrt", __type_of(x)](x.value)
+
+
+# ===----------------------------------------------------------------------===#
+# ComplexSIMD
+# ===----------------------------------------------------------------------===#
 @value
 @register_passable("trivial")
 struct ComplexSIMD[type: DType, size: Int](Stringable):
@@ -141,7 +172,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         Returns:
             Value of `sqrt(re*re + im*im)`.
         """
-        return sqrt(self.squared_norm())
+        return _complex_sqrt(self.squared_norm())
 
     @always_inline
     fn squared_norm(self) -> SIMD[type, size]:
