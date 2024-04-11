@@ -9,7 +9,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# XFAIL: *
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
@@ -33,7 +32,7 @@ alias its = 1000
 fn main():
     var p1 = DTypePointer[type].alloc(size)
     var p2 = DTypePointer[type].alloc(size)
-
+    print("Benchmark results")
     rand(p1, size)
 
     @parameter
@@ -73,19 +72,19 @@ fn main():
             vectorize[closure, width, size=size, unroll_factor=unroll_factor]()
 
     var arg = run[arg_size](max_runtime_secs=0.5).mean(unit)
-    print(p2.load[size]())
+    print(p2.load[width=size]())
     memset_zero(p2, size)
 
     var param = run[param_size](max_runtime_secs=0.5).mean(unit)
-    print(p2.load[size]())
+    print(p2.load[width=size]())
     memset_zero(p2, size)
 
     var arg_unroll = run[arg_size_unroll](max_runtime_secs=0.5).mean(unit)
-    print(p2.load[size]())
+    print(p2.load[width=size]())
     memset_zero(p2, size)
 
     var param_unroll = run[param_size_unroll](max_runtime_secs=0.5).mean(unit)
-    print(p2.load[size]())
+    print(p2.load[width=size]())
 
     print(
         "calculating",
