@@ -14,4 +14,3 @@ from .buffer import (
     DynamicRankBuffer,
 )
 from .list import Dim, DimList
-from .memory import parallel_memcpy
