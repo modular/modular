@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s -t | FileCheck %s
+# RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: CPU Results
 
 from random import rand

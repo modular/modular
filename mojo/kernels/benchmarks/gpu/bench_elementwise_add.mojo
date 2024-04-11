@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # REQUIRES: has_cuda_device
-# RUN: %mojo %s -t | FileCheck %s
+# RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
 from benchmark import Bench, Bencher, BenchId
