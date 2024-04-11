@@ -1667,6 +1667,7 @@ cc_binary(
         "tools/mojo/**/*.cpp",
     ]),
     includes = ["tools/mojo"],
+    local_defines = ["MODULAR_MOJO_BUILD_SERVER_PREVIEW"],
     deps = [
         ":Build.inc_files",
         ":BuildProject.inc_files",
@@ -1741,6 +1742,7 @@ driver_option_tablegen(
     srcs = ["tools/mojo/DriverOptions.td"],
     manual_name = "mojo",
     markdown_name = "index",
+    opts = ["-DMODULAR_MOJO_BUILD_SERVER_PREVIEW"],
     td_file = "tools/mojo/DriverOptions.td",
     deps = [
         ":Build.td_library",
