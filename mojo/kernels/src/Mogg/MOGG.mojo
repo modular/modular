@@ -4388,11 +4388,11 @@ struct BufferRef[type: DType]:
         self.size = size
         if alignment == UInt64.MAX:
             self.alignment = alignof[type]()
-            self.ref = DTypePointer[type].alloc(self.size.to_int())
+            self.ref = DTypePointer[type].alloc(int(self.size))
         else:
             self.alignment = alignment
             self.ref = DTypePointer[type].alloc(
-                self.size.to_int(), alignment=self.alignment.to_int()
+                int(self.size), alignment=int(self.alignment)
             )
 
 
