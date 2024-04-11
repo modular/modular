@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # TODO (#34267): reenable
 # REQUIRES: disabled
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from time import sleep, time_function
 
