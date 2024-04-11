@@ -76,7 +76,7 @@ struct Batch(Sized, CollectionElement):
         _ = self._session^
 
     fn __len__(self) -> Int:
-        return self._ptr.size(self._lib).to_int()
+        return int(self._ptr.size(self._lib))
 
     fn request_at(self, index: Int64) -> ModelInferRequest:
         return ModelInferRequest(

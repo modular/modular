@@ -27,7 +27,7 @@ struct Int64ArrayRef(Boolable):
     fn _as_int_vector(self) -> List[Int]:
         var vec = List[Int]()
         for i in range(self.length):
-            vec.append(self.data[i].to_int())
+            vec.append(int(self.data[i]))
         return vec^
 
 

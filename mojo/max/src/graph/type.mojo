@@ -469,7 +469,7 @@ struct MOTensor(CollectionElement):
         var ranked = _c.tensor_type_is_ranked(t)
         if ranked:
             var rank = _c.tensor_type_get_rank(t)
-            var dims = List[Dim](capacity=rank.to_int())
+            var dims = List[Dim](capacity=int(rank))
             for i in range(rank):
                 var dim_attr = _c.tensor_type_get_dim(t, i)
                 var dim: Dim

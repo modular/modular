@@ -220,7 +220,7 @@ struct ModelInferRequest(InferenceRequest, CollectionElement):
 
     fn get_requested_outputs(self) -> List[String]:
         var result = List[String](
-            capacity=self._ptr.outputs_size(self._lib).to_int()
+            capacity=int(self._ptr.outputs_size(self._lib))
         )
         for i in range(self._ptr.outputs_size(self._lib)):
             result.append(self._ptr.output_name(self._lib, i).__str__())
