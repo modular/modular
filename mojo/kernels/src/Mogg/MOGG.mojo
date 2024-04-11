@@ -42,6 +42,7 @@ from math import (
     tanh,
     trunc,
 )
+from builtin.simd import UInt8, UInt64, Int64
 from random import randn, seed
 from sys import external_call
 from sys.info import simdwidthof
@@ -4232,8 +4233,8 @@ fn pytorch_test_custom[
 @mogg_register("mip.constant.index")
 @always_inline
 @export
-fn mip_constant_index[value: Int]() -> Int:
-    return value
+fn mip_constant_index[value: Int64]() -> Int:
+    return value.value
 
 
 @mogg_register("mip.add")
@@ -4352,8 +4353,8 @@ fn mip_select[T: AnyRegType](cond: Bool, true: T, false: T) -> T:
 @mogg_register("mip.nary.mul")
 @always_inline
 @export
-fn mip_nary_mul[constInt: Int](*vals: Int) -> Int:
-    var product = constInt
+fn mip_nary_mul[constInt: Int64](*vals: Int) -> Int:
+    var product = Int(constInt.value)
     for val in vals:
         product *= val
     return product
@@ -4370,3 +4371,50 @@ fn mip_nary_mul[constInt: Int](*vals: Int) -> Int:
 fn mgp_assert[message: StringLiteral](cond: Bool) raises:
     if not cond:
         raise Error(message)
+
+
+@register_passable("trivial")
+struct BufferRef[type: DType]:
+    """Defines a `BufferRef` struct that contains an unsafe pointer and the size/alignment.
+    The purpose of this structure is to preserve information needed for the ABI interface
+    which needs this information for the subsequent unpacking/packing call.
+    """
+
+    var ref: DTypePointer[type]
+    var size: UInt64
+    var alignment: UInt64
+
+    fn __init__(inout self, size: UInt64, alignment: UInt64):
+        self.size = size
+        if alignment == UInt64.MAX:
+            self.alignment = alignof[type]()
+            self.ref = DTypePointer[type].alloc(self.size.to_int())
+        else:
+            self.alignment = alignment
+            self.ref = DTypePointer[type].alloc(
+                self.size.to_int(), alignment=self.alignment.to_int()
+            )
+
+
+@mogg_register("builtin.create_buffer_ref_async")
+@always_inline
+@export
+fn create_buffer_ref_async(
+    value: BufferRef[DType.uint8],
+    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+):
+    external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
+        value.ref, value.size, value.alignment, async_ptr, runtime
+    )
+
+
+@mogg_register("mgp.buffer.alloc.static")
+@export
+fn mgp_buffer_alloc_static[
+    aRuntimeSlot: UInt64,
+    bSize: UInt64,
+    cRawAlign: UInt64,
+    dDevice: StringLiteral,
+]() -> BufferRef[DType.uint8]:
+    return BufferRef[DType.uint8](bSize, cRawAlign)
