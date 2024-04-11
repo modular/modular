@@ -8,7 +8,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: neon_matmul
-# RUN: %mojo -debug-level full %s | FileCheck %s
+# RUN: %mojo %s | FileCheck %s
 
 from sys.info import has_neon_int8_matmul
 
