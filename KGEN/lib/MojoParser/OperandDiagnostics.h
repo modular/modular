@@ -13,7 +13,6 @@
 
 #include "MojoUtils.h"
 
-#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITUtils.h"
 
 #include "KGEN/MojoParser/CallEmission.h"
@@ -47,8 +46,9 @@ static std::pair<KwDiagResult, SmallVector<StringAttr>> diagnoseKeywordOperands(
   SmallVector<StringAttr> missingKwOnly;
 
   DefaultValueHandler defaultHandler(pogListAttr);
-  for (auto [argIdx, name, passingKind] :
-       llvm::enumerate(pogListAttr.getNames(), pogListAttr.getPassingKinds())) {
+  for (auto [argIdx, pogAttr] : llvm::enumerate(pogListAttr.getPogs())) {
+    StringAttr name = pogAttr.getName();
+    PassingKind passingKind = pogAttr.getPassingKind();
     if (passingKind == PassingKind::Implicit)
       continue;
     if (pogListAttr.isPack(argIdx) || pogListAttr.isVariadic(argIdx))

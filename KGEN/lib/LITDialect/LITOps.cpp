@@ -14,7 +14,6 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENDialect/ParameterReplacer.h"
-#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -688,7 +687,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   PogListAttr argListAttr = signature.getArgListAttrs();
   SmallVector<Variadicness> variadicness = getVariadicness(argListAttr);
   DefaultValueHandler defaultHandler(argListAttr);
-  PassingKindPrinter passingKindPrinter(p, argListAttr.getPassingKinds(), '|');
+  PassingKindPrinter passingKindPrinter(p, argListAttr, '|');
   auto printElt = [&](unsigned i) {
     passingKindPrinter.printOptionalStarSlash(i);
 

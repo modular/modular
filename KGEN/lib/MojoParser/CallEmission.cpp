@@ -18,7 +18,6 @@
 #include "OperandDiagnostics.h"
 
 #include "KGEN/HLCFDialect/HLCFOps.h"
-#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"

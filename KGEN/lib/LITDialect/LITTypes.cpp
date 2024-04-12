@@ -8,7 +8,6 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITDialect.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "mlir/IR/Builders.h"
@@ -866,7 +865,7 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
   PogListAttr argListAttr = signature.getArgListAttrs();
   SmallVector<Variadicness> variadicness = getVariadicness(argListAttr);
   DefaultValueHandler defaultHandler(argListAttr);
-  PassingKindPrinter passingKindPrinter(p, argListAttr.getPassingKinds(), '|');
+  PassingKindPrinter passingKindPrinter(p, argListAttr, '|');
   auto printElt = [&](unsigned i) {
     passingKindPrinter.printOptionalStarSlash(i);
 

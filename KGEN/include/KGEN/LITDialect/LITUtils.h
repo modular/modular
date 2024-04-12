@@ -12,6 +12,7 @@
 #ifndef KGEN_LITDIALECT_LITUTILS_H
 #define KGEN_LITDIALECT_LITUTILS_H
 
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -37,8 +38,6 @@ enum class ArgConvention : uint32_t;
 
 namespace LIT {
 class LITSignatureType;
-class PogListAttr;
-class PogMetadataAttr;
 enum class PassingKind : uint32_t;
 
 /// Returns whether the given attribute is a LIT type expression.
@@ -184,11 +183,12 @@ private:
 /// printing methods with mojo syntax).
 class PassingKindPrinter {
 public:
-  PassingKindPrinter(raw_ostream &os,
-                     SmallVectorImpl<PassingKind> &&passingKinds,
+  PassingKindPrinter(raw_ostream &os, size_t numPogs,
+                     std::function<PassingKind(size_t)> getPassingKind,
                      bool suppressSlashAfterSelf = false, char slash = '/');
-  PassingKindPrinter(AsmPrinter &printer,
-                     SmallVectorImpl<PassingKind> &&passingKinds,
+  PassingKindPrinter(raw_ostream &os, PogListAttr pogListAttr,
+                     bool suppressSlashAfterSelf = false, char slash = '/');
+  PassingKindPrinter(AsmPrinter &printer, PogListAttr pogListAttr,
                      char slash = '/');
 
   /// Print a single '*' or '/' if needed, given the index of the passing kind.
@@ -199,7 +199,8 @@ public:
 
 private:
   raw_ostream &os;
-  SmallVector<PassingKind> passingKinds;
+  size_t numPogs;
+  std::function<PassingKind(size_t)> getPassingKind;
   PassingKind prevPassingKind;
   bool suppressSlashAfterSelf;
   char slash; // TODO: remove this when AsmParser can handle '/'.

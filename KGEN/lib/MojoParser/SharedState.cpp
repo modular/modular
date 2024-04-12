@@ -21,7 +21,6 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/Support/CompilerProfiling.h"
 
-#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/LITDialect/LITOps.h"
