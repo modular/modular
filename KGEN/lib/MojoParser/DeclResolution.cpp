@@ -2007,14 +2007,17 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   // This collects all the resolved struct fields. Now that the body is
   // completely resolved, check the declared fields for extra invariants.
+  bool hasBadField = false;
   SmallVector<std::pair<StructFieldOp, ASTDecl *>> structFields;
   for (StructFieldOp field : structOp.getFieldDecls()) {
     // Make sure the field is signature resolved so we can get its type.
     auto fieldEntries = structDecl.lookupInCurrentScope(field.getNameAttr());
     assert(fieldEntries.size() == 1 && "field decls cannot be overloaded");
     ASTDecl &fieldASTDecl = *fieldEntries[0];
-    if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc())))
+    if (failed(resolveSignature(fieldASTDecl, fieldASTDecl.getLoc()))) {
+      hasBadField = true;
       continue;
+    }
     structFields.push_back({field, &fieldASTDecl});
   }
 
@@ -2025,6 +2028,13 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
     // TODO: Split trivial and register_passable apart.
     processRegisterPassableDecorator(structOp, structDecl, structFields, *this,
                                      structOp.getConvention());
+  }
+
+  // If any of the fields are bad, we do not process decorators since they
+  // assume that the struct body if valid.
+  if (hasBadField && !structDecl.getBodyDecorators(shared).empty()) {
+    structDecl.setErroneous();
+    return failure();
   }
 
   // If there are any body decorators, resolve them now.

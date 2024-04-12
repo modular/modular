@@ -358,11 +358,6 @@ fn test_too_few_pos_only(a: Int, msg: Int = 3):
   too_few_pos_only(a, msg=msg)
 
 
-alias int = __mlir_type.index
-
-alias `1` = __mlir_attr.`1 : index`
-alias `2` = __mlir_attr.`2 : index`
-
 # COM: Issue #23007
 # expected-note @+1 {{function declared here}}
 fn missing_args(a: int, b: int, c: int = `2`, d: int = `2`): pass
@@ -898,6 +893,31 @@ struct Outer: # expected-error {{all members of '@register_passable' struct must
 @value # expected-error {{cannot synthesize members: 'value' has non-copyable, non-movable type 'T'}}
 struct AnyTypeMember[T: AnyType]:
     var value: T # expected-note {{'value' declared here}}
+
+
+# Issue https://github.com/modularml/mojo/issues/1675
+# Ensure @value fails gracefully in the presence of duplicate field names.
+@value
+struct BadStruct:
+    var b: int  # expected-note {{previous definition here}}
+    var b: int  # expected-error {{invalid redefinition of 'b'}}
+
+
+# Also ensure that @value doesn't fail if a method/alias shadows it.
+@value
+struct OtherBadStruct:
+    # expected-note @below {{previous definition here}}
+    # expected-note @below {{cannot overload with this non-function definition}}
+    var b: int
+    alias b = `0`  # expected-error {{invalid redefinition of 'b'}}
+
+    fn b(inout self):  # expected-error {{invalid redefinition of 'b'}}
+        pass
+
+
+fn test_bad_struct():
+    _ = BadStruct(`1`)
+    _ = OtherBadStruct(`2`)
 
 ##===----------------------------------------------------------------------===##
 # Top Level Code
