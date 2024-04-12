@@ -159,6 +159,6 @@ def parse_binary_output(
     return _unify_result_descriptions(
         result_descriptions, compare_result_by_position
     ), [
-        results[name].flatten().tolist()
+        results[name]
         for name in (results if compare_result_by_position else sorted(results))
     ]
