@@ -37,6 +37,9 @@ include_directories(PRIVATE ${CMAKE_SOURCE_DIR}/ModelServing/include/)
 #   LINK_LIBS PRIVATE
 #   ModularMuttLib
 #   tf
+
+#   TAGS
+#   asan-red
 # )
 
 # target_compile_definitions(MuttTests
