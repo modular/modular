@@ -251,6 +251,11 @@ public:
   traverseImportDirectories(unsigned importBufferFileId,
                             function_ref<WalkResult(StringRef)> callback) const;
 
+  /// Resolve the absolute path for a given module name. Returns nullopt if the
+  /// module cannot be found.
+  std::optional<std::string> resolveModulePath(StringRef moduleName,
+                                               llvm::SMLoc includeLoc);
+
   //===--------------------------------------------------------------------===//
   // Debug Info
 

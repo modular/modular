@@ -314,9 +314,10 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   // any post parser metadata for other package.
   SmallVector<FlatSymbolRefAttr> dependencies;
   for (LIT::PackageOp package : theModule.getOps<LIT::PackageOp>()) {
-    if (package == parsedPackageOp)
+    if (package == parsedPackageOp || !package.getPostParseModuleAttr())
       continue;
     dependencies.push_back(FlatSymbolRefAttr::get(package.getSymNameAttr()));
+    package.removePostParseModuleAttr();
   }
   if (!dependencies.empty()) {
     parsedPackageOp.setDependenciesAttr(

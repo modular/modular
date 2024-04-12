@@ -36,7 +36,7 @@ fn top() -> Int:
 # MATER-SAME: preCompiledModuleRef = [[PKG:@.*target_dep_package.*]],
 # MATER-NEXT: kgen.param.if
 
-# GENLIB: kgen.package.link [[PKG]] post_parse(dense_resource<{{.*}})
+# GENLIB: kgen.package.link [[PKG]] dependencies([@stdlib]) post_parse(dense_resource<{{.*}})
 
 # GENLIB: kgen.extern.generator export @exported_func()
 # MATER: kgen.generator @exported_func()
