@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MOGGPreElabPasses
+  OutlineMOGGFuncs.cpp
   SliceMOGGFuncs.cpp
   UserLibraryChecker.cpp
 
