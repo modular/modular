@@ -52,6 +52,35 @@ def cast(v: Symbol, dtype: ElementType) -> Symbol:
 
 
 # ===----------------------------------------------------------------------=== #
+# Rebind
+# ===----------------------------------------------------------------------=== #
+
+
+fn rebind(v: Symbol, out_dims: List[Dim]) raises -> Symbol:
+    """Rebinds a symbolic tensor to a specified set of Dims.
+
+    Args:
+        v: The input symbolic tensor to rebind.
+        out_dims: The new symbolic shape in the graph.
+
+    Returns:
+        A symbolic tensor with the same elements and shape as the original tensor.
+
+        Its symbolic shape will be changed to `out_dims`.
+        A runtime assert will be added that the original symbolic shape is equivalent to the new symbolic shape.
+    """
+    var g = v.graph()
+    if v.tensor_type().rank() != len(out_dims):
+        raise "rebind out_dims length must match the rank of the input shape"
+
+    return g.op(
+        "rmo.rebind_tensor_shape",
+        (v),
+        MOTensor(v.tensor_type().dtype, out_dims),
+    )
+
+
+# ===----------------------------------------------------------------------=== #
 # Reshapes
 # ===----------------------------------------------------------------------=== #
 

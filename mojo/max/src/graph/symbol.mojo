@@ -115,6 +115,12 @@ struct Symbol(CollectionElement, Stringable):
     # Casting and reshaping operators.
     # ===------------------------------------------------------------------=== #
 
+    fn rebind(self, *dims: Dim) raises -> Symbol:
+        var out_dims = List[Dim]()
+        for dim in dims:
+            out_dims.append(dim[])
+        return ops.rebind(self, out_dims)
+
     fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
         """Reshapes this `Symbol`.
 

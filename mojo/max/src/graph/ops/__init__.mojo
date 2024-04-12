@@ -10,6 +10,7 @@ from .casting import (
     cast,
     squeeze,
     unsqueeze,
+    rebind,
     reshape,
     reshape_like,
     transpose_matrix,
