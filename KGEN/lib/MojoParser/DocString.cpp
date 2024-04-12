@@ -21,22 +21,6 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-/// Within a doc string, the "Constraints" section describes invariants that
-/// must be true for the struct or function.
-const char *DocString::kSectionConstraints = "Constraints";
-
-/// Within a doc string, the "Parameters" section lists descriptions of each
-/// parameter.
-const char *DocString::kSectionParameters = "Parameters";
-
-/// Within a doc string, the "Args" section lists descriptions of each function
-/// argument.
-const char *DocString::kSectionArgs = "Args";
-
-/// Within a doc string, the "Returns" section describes the results of a
-/// function.
-const char *DocString::kSectionReturns = "Returns";
-
 /// Return the indentation level of the first line of the string.
 static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
@@ -630,9 +614,11 @@ private:
         {DocString::kSectionArgs, nullptr},
         {DocString::kSectionParameters, nullptr},
         {DocString::kSectionReturns, nullptr},
+        {DocString::kSectionRaises, nullptr},
     };
     ArrayRef<StringRef> description = docStr->getDescription();
     bool hasResults = doesFunctionHaveResults(funcOp);
+    bool canThrow = funcOp.getSignature().isThrows();
 
     auto processFn = [&](StringRef section, const char *loc) mutable {
       if (section == DocString::kSectionArgs)
@@ -644,6 +630,10 @@ private:
       if (section == DocString::kSectionReturns && !hasResults)
         emitWarning(loc, "unexpected 'Returns' in doc string for "
                          "function with no results");
+
+      if (section == DocString::kSectionRaises && !canThrow)
+        emitWarning(loc, "unexpected 'Raises' in doc string for "
+                         "function that does not throw");
 
       // Validate paragraph sections such as "Constraints:" and "Returns:".
       if (validation == ValidationKind::Strict) {
@@ -821,6 +811,8 @@ private:
     processArguments(getFunctionArgumentNames(funcOp));
     if (doesFunctionHaveResults(funcOp))
       os << "\n\nReturns:\n    [description].";
+    if (funcOp.isThrows())
+      os << "\n\nRaises:\n    [description].";
   }
 
   //===--------------------------------------------------------------------===//

@@ -377,7 +377,8 @@ public:
   ///   "isStatic": boolean,
   ///   "parameters": ParameterDeclView[],
   ///   "raises": boolean,
-  ///   "returns": string,
+  ///   "raisesDoc": string,
+  ///   "returnsDoc": string,
   ///   "returnType": string,
   ///   "signature": string, // E.g., "baz() -> Int"
   ///   "summary": string
@@ -423,7 +424,8 @@ private:
 
   std::string constraints;
   std::string description;
-  std::string returns;
+  std::string raisesDoc;
+  std::string returnsDoc;
   std::string summary;
 };
 
