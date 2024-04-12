@@ -763,10 +763,7 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
       emitter.replaceNestedFunctionWithClosureImplStructDecl(
           loc, nestedFnDecl, paramCaptures, wrapperSig);
 
-  // Map the closure wrapper captures to the impl captures.
-  SmallDenseMap<unsigned, unsigned> fromImplToWrapperParameterMap;
-  emitter.createWrapperInitWithImpl(closureWrapper, closureImpl,
-                                    fromImplToWrapperParameterMap, loc);
+  emitter.createWrapperInitWithImpl(closureWrapper, closureImpl, loc);
 
   builder.restoreInsertionPoint(insertPoint);
 
