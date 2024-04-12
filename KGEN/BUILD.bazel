@@ -1,6 +1,7 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
+load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
 
 package(
@@ -1710,6 +1711,11 @@ cc_binary(
         "//Support:MDialect",
         "//Support:Telemetry",
     ],
+)
+
+opt_wrapper(
+    name = "mojo.opt",
+    dep = ":mojo",
 )
 
 [
