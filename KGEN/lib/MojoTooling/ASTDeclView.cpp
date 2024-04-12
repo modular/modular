@@ -713,19 +713,27 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_FunctionDeclView,
                declRef.getName().value_or(StringRef{})) {
   auto funcOp = cast<LIT::FuncOp>(declRef.getIfOperation());
-  raisesFlag = funcOp.isThrows();
-  isAsyncFlag = funcOp.isAsync();
   isStaticFlag = funcOp.getIsStatic();
   isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
   isDefFlag = funcOp.isDef();
+  initFromSignature(declRef, funcOp.getSignature(), funcOp.getArgumentTypes());
+}
 
-  LITSignatureType signature = funcOp.getSignature();
-  ArrayRef<Type> argTypes = funcOp.getArgumentTypes();
+FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef,
+                                   KGEN::LIT::LITSignatureType signature)
+    : DeclView(DeclViewKind::DK_FunctionDeclView, /*name=*/StringRef()) {
+  initFromSignature(declRef, signature, signature.getArguments());
+}
+
+void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
+                                         LITSignatureType signature,
+                                         ArrayRef<Type> argTypes) {
+  raisesFlag = signature.isThrows();
+  isAsyncFlag = signature.isAsync();
+
   ArrayRef<PogMetadataAttr> argPogs = signature.getArgListAttrs().getPogs();
   ArrayRef<ArgConvention> argConventions = signature.getArgConventions();
-  size_t numImplicitLifetimes = signature.getNumImplicitLifetimeDecls();
-  ArrayRef<ParamDeclAttr> params =
-      funcOp.getInputParams().drop_front(numImplicitLifetimes);
+  ArrayRef<Type> paramTypes = signature.getInputParamTypes();
 
   // Check for a by-ref result type, which gets modeled as the last argument
   // (as it needs to be passed through memory), and we don't want to include
@@ -745,7 +753,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
 
   // If this is a method, grab the expected "Self" type.
   std::optional<ASTType> selfType;
-  if (isa<StructDeclOp>(funcOp->getParentOp()))
+  if (isa<StructDeclOp>(*declRef.getParentDecl()))
     selfType = declRef->getParentDecl()->getSelfType();
 
   // Grab the types of the arguments to the function.
@@ -776,7 +784,7 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
   // Grab the types of the parameters to the function.
   PogListAttr paramListAttr = signature.getParamListAttrs();
   DefaultValueHandler defaultParamHandler(paramListAttr);
-  for (auto [parIdx, param] : llvm::enumerate(params)) {
+  for (size_t parIdx : llvm::seq<size_t>(0, paramTypes.size())) {
     // Ignore implicitly passed parameters.
     PassingKind passingKind = paramListAttr.getPassingKind(parIdx);
     if (passingKind == PassingKind::Implicit)
@@ -787,13 +795,14 @@ FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     VariadicKind variadicKind =
         getVariadicKind(signature.getParamListAttrs(), parIdx);
     parameters.push_back(ParameterDeclView(
-        demangleIfNeeded(param).getName().getValue(),
-        generateTypeString(param.getType(), variadicKind, selfType),
+        signature.getParamName(parIdx),
+        generateTypeString(paramTypes[parIdx], variadicKind, selfType),
         passingKind, variadicKind, std::move(defaultValue)));
   }
 
   // Grab the result type, if it's non-none.
-  if (ASTType resultType = funcOp.getUserResultType(); !resultType.isNoneType())
+  ASTType resultType = ASTType(signature).getSignatureUserResultType();
+  if (resultType && !resultType.isNoneType())
     returnType = generateTypeString(resultType, VariadicKind::kNone, selfType);
 
   if (auto docStr = declRef->getParsedDocString()) {

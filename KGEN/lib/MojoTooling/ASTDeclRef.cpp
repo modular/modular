@@ -25,6 +25,48 @@ using namespace M::KGEN::LIT;
 // MojoASTDeclRef
 //===----------------------------------------------------------------------===//
 
+/// Return the signature type contained by this decl (e.g. if it's a function),
+/// or null otherwise.
+static LITSignatureType getSignatureFromDecl(ASTDecl *decl) {
+  if (!decl)
+    return nullptr;
+  if (auto func = dyn_cast<LIT::FuncOp>(*decl))
+    return func.getSignature();
+  if (auto pValue = decl->getIfPValue())
+    return dyn_cast_or_null<LITSignatureType>(pValue.getIfTypeValue().mlirType);
+  return nullptr;
+}
+
+/// Return the index of the argument that corresponds to the given decl.
+static std::optional<size_t> getDeclArgIndex(ASTDecl &decl,
+                                             BlockArgument &arg) {
+  // If this is a normal argument, we can just return the argument number.
+  if (arg.getParentRegion())
+    return arg.getArgNumber();
+  // Otherwise, we need to inspect the children of the parent decl. The parser
+  // uses a shared block for all dangling arguments, so we need to find the
+  // correct one manually.
+  size_t argIndex = 0;
+  for (auto [name, decls] : decl.getParentDecl()->getDeclsInScope()) {
+    if (decls.size() != 1)
+      continue;
+    // Check if the decl is the one we're looking for.
+    DeclIRValue childValue = decls.front()->getIRValue();
+    auto resIndex =
+        TypeSwitch<DeclIRValue, std::optional<size_t>>(childValue)
+            .Case<MLValue, SRValue, SBValue, MBValue>([&](Value val) {
+              if (val == arg)
+                return std::make_optional(argIndex);
+              ++argIndex;
+              return std::optional<size_t>();
+            })
+            .Default(std::optional<size_t>());
+    if (resIndex)
+      return *resIndex;
+  }
+  return std::nullopt;
+}
+
 /// If this decl corresponds to a not owned function argument, return its
 /// corresponding BlockArgument. Otherwise, return null.
 static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
@@ -35,9 +77,17 @@ static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
         if (auto rebind = val.getDefiningOp<RebindOp>())
           val = rebind.getInput();
 
-        if (auto bbArg = dyn_cast<BlockArgument>(Value(val)))
-          if (isa<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
+        // Check if this is a block argument of a function.
+        if (auto bbArg = dyn_cast<BlockArgument>(Value(val))) {
+          if (isa_and_nonnull<LIT::FuncOp>(bbArg.getOwner()->getParentOp()))
             return bbArg;
+          // If this is a block without a proper owner, this is generally a
+          // block argument for a function signature. These are detached from
+          // normal IR.
+          if (!bbArg.getOwner()->getParentOp())
+            return bbArg;
+        }
+
         return BlockArgument();
       })
       .Default({});
@@ -97,10 +147,12 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
     return name;
 
   if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
-    auto func = cast<LIT::FuncOp>(*decl->getParentDecl());
-    if (size_t argNumber = bbArg.getArgNumber();
-        argNumber < func.getSignature().getNumArguments())
-      return func.getSignature().getArgName(argNumber);
+    LITSignatureType signature = getSignatureFromDecl(decl->getParentDecl());
+    if (!signature)
+      return std::nullopt;
+    std::optional<size_t> argNumber = getDeclArgIndex(*decl, bbArg);
+    if (argNumber && *argNumber < signature.getNumArguments())
+      return signature.getArgName(*argNumber);
     return std::nullopt;
   }
 
@@ -162,8 +214,11 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
 
   // After failing to match with regular Ops, we then inspect the IR to
   // identify if this decl is an argument.
-  if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this))
-    return createArgumentDeclView(*this, bbArg.getArgNumber());
+  if (BlockArgument bbArg = getIfNotOwnedFunctionArgument(*this)) {
+    if (std::optional<size_t> argIdx = getDeclArgIndex(*decl, bbArg))
+      return createArgumentDeclView(*this, *argIdx);
+    return nullptr;
+  }
 
   // Now we inspect the IR checking for a parameter.
   if (ParamDeclRefAttr param = getIfParameter(*this)) {
@@ -179,11 +234,18 @@ std::unique_ptr<DeclView> MojoASTDeclRef::getView() const {
       return nullptr;
     };
 
-    return TypeSwitch<DeclView *, std::unique_ptr<DeclView>>(
-               getParentDecl().getView().get())
+    std::unique_ptr<DeclView> parentView = getParentDecl().getView();
+    if (!parentView)
+      return nullptr;
+    return TypeSwitch<DeclView *, std::unique_ptr<DeclView>>(&*parentView)
         .Case<FunctionDeclView, StructDeclView>(getParamViewFromParent)
         .Default({nullptr});
   }
+
+  // If the decl corresponds to a signature, synthesize a function view for it.
+  if (auto signature = getSignatureFromDecl(decl))
+    return std::make_unique<FunctionDeclView>(
+        FunctionDeclView(*this, signature));
 
   return nullptr;
 }
@@ -193,7 +255,7 @@ std::optional<DeclViewKind> MojoASTDeclRef::getApproximateViewKind() const {
     return DeclViewKind::DK_AliasDeclView;
   if (isa<FileModuleOp>(*decl))
     return DeclViewKind::DK_ModuleDeclView;
-  if (isa<LIT::FuncOp>(*decl))
+  if (getSignatureFromDecl(decl))
     return DeclViewKind::DK_FunctionDeclView;
   if (isa<StructDeclOp>(*decl))
     return DeclViewKind::DK_StructDeclView;

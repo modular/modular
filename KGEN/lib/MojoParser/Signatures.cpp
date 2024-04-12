@@ -69,12 +69,8 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   if (kind == ArgListKind::kFnTypeArgList ||
       kind == ArgListKind::kFnTypeParamList) {
     StringAttr maybeArgName;
-    SMLoc nextLocation;
-    if (succeeded(p.parseOptionalIdentifier(maybeArgName, Token::colon,
-                                            &nextLocation))) {
+    if (succeeded(p.parseOptionalIdentifier(maybeArgName, Token::colon)))
       name = maybeArgName;
-      loc = nextLocation;
-    }
   } else {
     if (p.parseIdentifier(name, "expected parameter name", &loc)) {
       // TODO: Scan ahead for better recovery.
@@ -901,8 +897,13 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // expose something like !kgen.variadic to subsequent arguments, we should
   // expose VariadicListMem.  This will require moving the VariadicList
   // formation to the caller side.
-  typeEmitter.getDeclResolver().addFullyResolvedDecl(
+  ASTDecl &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
       argIRValue, arg.name, arg.loc, &typeEmitter.declScope);
+
+  // If we don't have a function decl, notify the listener immediately (function
+  // arguments will be notified when they are fully resolved later).
+  if (!fnDecl)
+    shared.notifyListenerOnArgumentDecl(decl, arg.name, arg.loc);
 }
 
 /// Type check the result type for the function.  `resultTypeExpr` will be

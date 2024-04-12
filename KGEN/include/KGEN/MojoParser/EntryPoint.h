@@ -143,7 +143,8 @@ public:
   ///
   /// It is guaranteed that this listener has been notified of its parent
   /// function decl before this call.
-  virtual void onArgumentDecl(ASTDecl *decl, llvm::SMLoc identifierLoc);
+  virtual void onArgumentDecl(ASTDecl *decl, StringRef argName,
+                              llvm::SMLoc identifierLoc);
 
   /// Notify the listener that a new `def` or `fn` function declaration has been
   /// resolved by the parser. This includes struct methods and closures.

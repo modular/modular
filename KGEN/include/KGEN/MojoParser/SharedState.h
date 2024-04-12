@@ -272,8 +272,9 @@ public:
   /// Notify the parser listener, if present, of a parsed alias decl.
   void notifyListenerOnAliasDecl(ASTDecl &decl, SMLoc identifierLoc);
 
-  /// Notify the parser listener, if present, of a parsed alias decl.
-  void notifyListenerOnArgumentDecl(ASTDecl &decl, SMLoc identifierLoc);
+  /// Notify the parser listener, if present, of a parsed argument decl.
+  void notifyListenerOnArgumentDecl(ASTDecl &decl, StringRef argName,
+                                    SMLoc identifierLoc);
 
   /// Notify the parser listener, if present, of a parsed function.
   void notifyListenerOnFunctionDecl(ASTDecl &decl, SMLoc identifierLoc);

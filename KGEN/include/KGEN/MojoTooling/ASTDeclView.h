@@ -19,6 +19,7 @@ class Object;
 namespace M {
 
 namespace KGEN::LIT {
+class LITSignatureType;
 enum class PassingKind : uint32_t;
 } // namespace KGEN::LIT
 
@@ -398,6 +399,13 @@ private:
   friend class MojoASTDeclRef;
 
   FunctionDeclView(MojoASTDeclRef declRef);
+  FunctionDeclView(MojoASTDeclRef declRef,
+                   KGEN::LIT::LITSignatureType signature);
+
+  /// Initialize the function view with the given signature.
+  void initFromSignature(MojoASTDeclRef declRef,
+                         KGEN::LIT::LITSignatureType signature,
+                         ArrayRef<Type> argTypes);
 
   /// Augment this function view with docstring documentation, as well as its
   /// parameters and args.
@@ -412,11 +420,11 @@ private:
   // Effects and modifiers
   //===----------------------------------------------------------------------===//
 
-  bool isAsyncFlag;
-  bool isDefFlag;
-  bool isMethodFlag;
-  bool isStaticFlag;
-  bool raisesFlag;
+  bool isAsyncFlag = false;
+  bool isDefFlag = false;
+  bool isMethodFlag = false;
+  bool isStaticFlag = false;
+  bool raisesFlag = false;
 
   //===----------------------------------------------------------------------===//
   // Parsed DocString

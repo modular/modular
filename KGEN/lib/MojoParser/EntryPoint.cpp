@@ -484,7 +484,8 @@ OwningOpRef<ModuleOp> LIT::cloneDeclModuleForCompilation(ASTDecl &decl,
 
 bool ParserListener::isInterestedInLoc(SMLoc parserLoc) { return true; }
 void ParserListener::onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) {}
-void ParserListener::onArgumentDecl(ASTDecl *decl, SMLoc identifierLoc) {}
+void ParserListener::onArgumentDecl(ASTDecl *decl, StringRef argName,
+                                    SMLoc identifierLoc) {}
 void ParserListener::onFunctionDecl(ASTDecl *decl, SMLoc identifierLoc) {}
 void ParserListener::onImport(SMLoc importLoc) {}
 void ParserListener::onImport(ResolveInputDeclFn getPackageDecl,
