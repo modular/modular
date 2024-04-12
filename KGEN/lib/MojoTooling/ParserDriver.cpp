@@ -116,6 +116,20 @@ MojoASTTypeRef MojoParserContext::concretizeType(MojoASTTypeRef base,
 // Driver
 //===----------------------------------------------------------------------===//
 
+/// Return the package name to use for the given Mojo source package directory.
+static std::string getNameForSourcePackage(const std::filesystem::path &path) {
+  // FIXME: This is kind of a huge hack, but works around the fact that the
+  // Mojo standard library was open sourced with a different package name than
+  // the directory, and our tools aren't ready to support that yet. Until we can
+  // properly support this case, special case the common project layout of
+  // having a `src` directory (that contains the package), under a directory
+  // with the package name.
+  std::string name = path.stem().string();
+  if (name == "src")
+    return path.parent_path().stem().string();
+  return name;
+}
+
 /// Import a module or package that is nested within a source package.
 static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
                                       SharedState &sharedState) {
@@ -127,8 +141,8 @@ static ASTDecl *buildNestedModuleDecl(std::filesystem::path filepath,
   }
 
   // Create the package using the outermost name.
-  ASTDecl &packageDecl =
-      sharedState.createPackage(filepath.string(), filepath.stem().string());
+  ASTDecl &packageDecl = sharedState.createPackage(
+      filepath.string(), getNameForSourcePackage(filepath));
 
   // Import the file from within the package.
   std::reverse(packageNames.begin(), packageNames.end());
@@ -174,7 +188,7 @@ static ASTDecl *buildPackageDecl(const std::filesystem::path &filepath,
 
   // Otherwise, create a new package.
   return &sharedState.createPackage(filepath.string(),
-                                    filepath.stem().string());
+                                    getNameForSourcePackage(filepath));
 }
 
 /// Create an ASTDecl for the given module or package.
