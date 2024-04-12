@@ -1655,10 +1655,10 @@ void SharedState::notifyListenerOnAliasDecl(ASTDecl &decl,
     parserListener->onAliasDecl(&decl, identifierLoc);
 }
 
-void SharedState::notifyListenerOnArgumentDecl(ASTDecl &decl,
+void SharedState::notifyListenerOnArgumentDecl(ASTDecl &decl, StringRef argName,
                                                SMLoc identifierLoc) {
   if (isListenerInterestedInLoc(parserListener, identifierLoc))
-    parserListener->onArgumentDecl(&decl, identifierLoc);
+    parserListener->onArgumentDecl(&decl, argName, identifierLoc);
 }
 
 void SharedState::notifyListenerOnFunctionDecl(ASTDecl &decl,

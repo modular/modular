@@ -1124,7 +1124,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // specified IR representation.
     auto setDecl = [&](DeclIRValue value) {
       argDecl.setIRValue(value);
-      shared.notifyListenerOnArgumentDecl(argDecl, argDecl.getLoc());
+      shared.notifyListenerOnArgumentDecl(argDecl, argName, argDecl.getLoc());
     };
 
     shared.buildArgDebugInfo(*emitter.builder, bbArg, argName);
@@ -1182,7 +1182,7 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     }
 
     // Otherwise, nothing fancy is needed.
-    shared.notifyListenerOnArgumentDecl(argDecl, argDecl.getLoc());
+    shared.notifyListenerOnArgumentDecl(argDecl, argName, argDecl.getLoc());
   }
 
   Block *body = funcOp.getBody();

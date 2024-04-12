@@ -2885,6 +2885,10 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (!signature)
     return {}; // Error already emitted.
 
+  // Set the value of the dummy scope to the generated signature so that we can
+  // still resolve information about it in tools.
+  dummyScope.setIRValue(PValue(signature));
+
   // The parsed SignatureType is set to the pretty type that includes implicit
   // lifetimes, we strip off the named lifetime decl references and replace them
   // with indices.

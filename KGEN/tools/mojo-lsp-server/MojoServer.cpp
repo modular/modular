@@ -404,7 +404,8 @@ public:
   LSPParserListener(MojoDocument &mainDoc, SymbolIndex &symbolIndex)
       : mainDoc(mainDoc), symbolIndex(symbolIndex) {}
 
-  void addSymbolDecl(ASTDecl *decl, SMLoc loc);
+  void addSymbolDecl(ASTDecl *decl, SMLoc loc,
+                     std::optional<StringRef> identifier = {});
 
   bool isInterestedInLoc(SMLoc parserLoc) override {
     // We're only interested in locations in the main file.
@@ -413,7 +414,8 @@ public:
 
   void onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
-  void onArgumentDecl(ASTDecl *decl, SMLoc identifierLoc) override;
+  void onArgumentDecl(ASTDecl *decl, StringRef argName,
+                      SMLoc identifierLoc) override;
 
   void onFunctionDecl(ASTDecl *decl, SMLoc identifierLoc) override;
 
@@ -441,9 +443,12 @@ private:
 };
 } // namespace
 
-void LSPParserListener::addSymbolDecl(ASTDecl *decl, SMLoc loc) {
+void LSPParserListener::addSymbolDecl(ASTDecl *decl, SMLoc loc,
+                                      std::optional<StringRef> identifier) {
   MojoASTDeclRef declRef(decl);
-  symbolIndex.registerSymbol(declRef, declRef.getName(),
+  if (!identifier)
+    identifier = declRef.getName();
+  symbolIndex.registerSymbol(declRef, identifier,
                              mainDoc.translateParserLoc(loc));
 }
 
@@ -451,8 +456,9 @@ void LSPParserListener::onAliasDecl(ASTDecl *decl, SMLoc identifierLoc) {
   addSymbolDecl(decl, identifierLoc);
 }
 
-void LSPParserListener::onArgumentDecl(ASTDecl *decl, SMLoc identifierLoc) {
-  addSymbolDecl(decl, identifierLoc);
+void LSPParserListener::onArgumentDecl(ASTDecl *decl, StringRef argName,
+                                       SMLoc identifierLoc) {
+  addSymbolDecl(decl, identifierLoc, argName);
 }
 
 void LSPParserListener::onFunctionDecl(ASTDecl *decl, SMLoc identifierLoc) {

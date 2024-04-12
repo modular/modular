@@ -13,6 +13,15 @@ from pytest_lsp import LanguageClient
 client = mojo_lsp_client
 
 
+async def assert_doc_hover(
+    doc: Document, requests: Requests, text: str, expected: str
+):
+    range = fail_if_none(doc.find_first_range(text))
+    result = fail_if_none(await requests.hover(doc, range.start))
+    assert isinstance(result.contents, MarkupContent)
+    assert result.contents.value == expected
+
+
 async def test_hover_letvar(client: LanguageClient):
     doc = Document(
         "foo.mojo",
@@ -504,11 +513,8 @@ async def test_hover_external_symbol(client: LanguageClient):
     doc = Document.from_file("aliases.mojo")
     requests.open_document(doc)
 
-    async def assert_hover(func_name: str, expected: str):
-        range = fail_if_none(doc.find_first_range(func_name))
-        result = fail_if_none(await requests.hover(doc, range.start))
-        assert isinstance(result.contents, MarkupContent)
-        assert result.contents.value == expected
+    async def assert_hover(text: str, expected: str):
+        assert_doc_hover(doc, requests, text, expected)
 
     await assert_hover(
         "LAZY",
@@ -549,11 +555,8 @@ fn function[type: AnyRegType](arg: type):
     requests = Requests(client)
     requests.open_document(doc)
 
-    async def assert_hover(func_name: str, expected: str):
-        range = fail_if_none(doc.find_first_range(func_name))
-        result = fail_if_none(await requests.hover(doc, range.start))
-        assert isinstance(result.contents, MarkupContent)
-        assert result.contents.value == expected
+    async def assert_hover(text: str, expected: str):
+        assert_doc_hover(doc, requests, text, expected)
 
     await assert_hover(
         'print("',
@@ -581,10 +584,7 @@ async def test_hover(client: LanguageClient):
     requests.open_document(doc)
 
     async def assert_hover(text: str, expected: str):
-        range = fail_if_none(doc.find_first_range(text))
-        result = fail_if_none(await requests.hover(doc, range.start))
-        assert isinstance(result.contents, MarkupContent)
-        assert result.contents.value == expected
+        assert_doc_hover(doc, requests, text, expected)
 
     await assert_hover(
         "ATrait:",
@@ -626,12 +626,49 @@ def function[
     requests = Requests(client)
     requests.open_document(doc)
 
-    range = fail_if_none(doc.find_first_range("function"))
-    result = fail_if_none(await requests.hover(doc, range.start))
-    assert isinstance(result.contents, MarkupContent)
-    assert (
-        result.contents.value
-        == """```mojo
+    assert_doc_hover(
+        doc,
+        requests,
+        "function",
+        """```mojo
 (function) def function[func: fn(Int, /) capturing -> Int]() raises -> fn(Int, /) capturing -> Int
-```"""
+```""",
+    )
+
+
+async def test_named_function_types(client: LanguageClient):
+    doc = Document(
+        "foo.mojo",
+        """
+fn fn1[f: fn [p1: DType](foo: Scalar[p1]) -> __type_of(foo)]():
+  ...
+
+
+fn fn2[f: fn [dt: DType, dt2: Int](arg1: Scalar[dt], arg2: Int) -> None]():
+  ...
+""",
+    )
+    requests = Requests(client)
+    requests.open_document(doc)
+
+    async def assert_hover(text: str, expected: str):
+        assert_doc_hover(doc, requests, text, expected)
+
+    assert_hover(
+        "p1",
+        """```mojo
+(parameter) p1: DType
+```""",
+    )
+    assert_hover(
+        "foo",
+        """```mojo
+(argument) foo: SIMD[$0, 1]
+```""",
+    )
+    assert_hover(
+        "arg2",
+        """```mojo
+(argument) arg2: Int
+```""",
     )
