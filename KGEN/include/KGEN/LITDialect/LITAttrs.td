@@ -189,8 +189,6 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
 
     /// Compatibility accessor returning an array of names.
     SmallVector<StringAttr> getNames() const;
-    /// Compatibility accessor returning an array of passing kinds.
-    SmallVector<PassingKind> getPassingKinds() const;
   }];
 
   let genVerifyDecl = 1;

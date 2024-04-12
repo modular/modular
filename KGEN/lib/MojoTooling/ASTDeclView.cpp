@@ -82,7 +82,7 @@ static VariadicKind getVariadicKind(PogListAttr pogListAttr, size_t idx) {
     return VariadicKind::kPack;
   if (!pogListAttr.isVariadic(idx))
     return VariadicKind::kNone;
-  PassingKind passingKind = pogListAttr.getPassingKinds()[idx];
+  PassingKind passingKind = pogListAttr.getPassingKind(idx);
   if (passingKind == PassingKind::KwOnly)
     return VariadicKind::kKwVar;
   assert(passingKind == PassingKind::PosOrKw);
@@ -641,8 +641,7 @@ static void printArgOrParameterSignature(
     ArrayRef<T> args, SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets,
     llvm::raw_string_ostream &os) {
   PassingKindPrinter passingKindPrinter(
-      os, llvm::map_to_vector(
-              args, [](const T &arg) { return arg.getPassingKind(); }));
+      os, args.size(), [&](size_t idx) { return args[idx].getPassingKind(); });
   size_t idx = 0;
   auto printArg = [&](const T &arg) {
     passingKindPrinter.printOptionalStarSlash(idx);

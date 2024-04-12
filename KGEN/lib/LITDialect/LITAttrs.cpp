@@ -141,12 +141,13 @@ bool PogListAttr::isPack(size_t idx) const {
 
 bool PogListAttr::isPosVariadic(size_t idx) const {
   return llvm::is_contained({PassingKind::PosOnly, PassingKind::PosOrKw},
-                            getPassingKinds()[idx]) &&
+                            getPassingKind(idx)) &&
          isVariadic(idx);
 }
 
 bool PogListAttr::isKwVariadic(size_t idx) const {
-  return isVariadic(idx) && getPassingKinds()[idx] == PassingKind::KwOnly;
+
+  return isVariadic(idx) && getPassingKind(idx) == PassingKind::KwOnly;
 }
 
 bool PogListAttr::hasVariadic() const {
@@ -157,7 +158,7 @@ bool PogListAttr::hasVariadic() const {
 bool PogListAttr::hasPack() const { return getPackIndex() != -1; }
 
 bool PogListAttr::hasKwVariadics() const {
-  for (size_t idx = 0, e = getPassingKinds().size(); idx < e; ++idx)
+  for (size_t idx = 0, e = getPogs().size(); idx < e; ++idx)
     if (isKwVariadic(idx))
       return true;
   return false;
@@ -193,12 +194,6 @@ PogListAttr::toPogs(ArrayRef<StringAttr> names,
 SmallVector<StringAttr> PogListAttr::getNames() const {
   return llvm::map_to_vector(
       getPogs(), [](PogMetadataAttr pogAttr) { return pogAttr.getName(); });
-}
-
-SmallVector<PassingKind> PogListAttr::getPassingKinds() const {
-  return llvm::map_to_vector(getPogs(), [](PogMetadataAttr pogAttr) {
-    return pogAttr.getPassingKind();
-  });
 }
 
 //===----------------------------------------------------------------------===//

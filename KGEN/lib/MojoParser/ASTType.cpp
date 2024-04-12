@@ -14,7 +14,6 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/SharedState.h"
 
-#include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
@@ -624,8 +623,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       os << ']';
     }
     os << '(';
-    PassingKindPrinter passingKindPrinter(
-        os, sig.getArgListAttrs().getPassingKinds());
+    PassingKindPrinter passingKindPrinter(os, sig.getArgListAttrs());
     for (auto [idx, typeX, conventionX] :
          llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
       ASTType type = typeX;

@@ -13,7 +13,6 @@
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
-#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -342,8 +341,7 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   DefaultValueHandler defaultHandler(paramListAttr);
   SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
-  PassingKindPrinter passingKindPrinter(p, paramListAttr.getPassingKinds(),
-                                        '|');
+  PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
   auto printWithDefault = [&](ParamDeclAttr decl) {
     passingKindPrinter.printOptionalStarSlash(idx);
 
@@ -430,8 +428,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
   DefaultValueHandler defaultHandler(paramListAttr);
   SmallVector<Variadicness> variadicness = getVariadicness(paramListAttr);
   size_t idx = 0;
-  PassingKindPrinter passingKindPrinter(p, paramListAttr.getPassingKinds(),
-                                        '|');
+  PassingKindPrinter passingKindPrinter(p, paramListAttr, '|');
   auto printWithDefault = [&](Type type) {
     passingKindPrinter.printOptionalStarSlash(idx);
 
@@ -582,20 +579,27 @@ PassingKindParser::getNumPassingKinds() const {
 }
 
 PassingKindPrinter::PassingKindPrinter(
-    raw_ostream &os, SmallVectorImpl<PassingKind> &&passingKinds,
+    raw_ostream &os, size_t numPogs,
+    std::function<PassingKind(size_t)> getPassingKind,
     bool suppressSlashAfterSelf, char slash)
-    : os(os), passingKinds(std::move(passingKinds)),
+    : os(os), numPogs(numPogs), getPassingKind(std::move(getPassingKind)),
       prevPassingKind(PassingKind::PosOnly),
       suppressSlashAfterSelf(suppressSlashAfterSelf), slash(slash) {}
 
-PassingKindPrinter::PassingKindPrinter(
-    AsmPrinter &printer, SmallVectorImpl<PassingKind> &&passingKinds,
-    char slash)
-    : PassingKindPrinter(printer.getStream(), std::move(passingKinds),
+PassingKindPrinter::PassingKindPrinter(raw_ostream &os, PogListAttr pogListAttr,
+                                       bool suppressSlashAfterSelf, char slash)
+    : PassingKindPrinter(
+          os, pogListAttr.getPogs().size(),
+          [pogListAttr](size_t idx) { return pogListAttr.getPassingKind(idx); },
+          suppressSlashAfterSelf, slash) {}
+
+PassingKindPrinter::PassingKindPrinter(AsmPrinter &printer,
+                                       PogListAttr pogListAttr, char slash)
+    : PassingKindPrinter(printer.getStream(), pogListAttr,
                          /*suppressSlashAfterSelf=*/false, slash) {}
 
 void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
-  PassingKind passingKind = passingKinds[idx];
+  PassingKind passingKind = getPassingKind(idx);
   if (prevPassingKind == passingKind)
     return;
 
@@ -632,7 +636,7 @@ void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
 void PassingKindPrinter::printOptionalTrailingSlash(size_t idx) const {
   if (suppressSlashAfterSelf && idx == 0)
     return;
-  if (idx == passingKinds.size() - 1)
+  if (idx == numPogs - 1)
     if (prevPassingKind == PassingKind::PosOnly)
       os << ", " << slash;
 }
