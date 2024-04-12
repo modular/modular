@@ -507,14 +507,15 @@ auto SharedState::lookupAndResolveDecl(StringRef name, SMLoc loc,
 
       // Resolve the import. If it fails, don't fail the search immediately,
       // keep checking for something that can resolve the decl we care about.
-      if (failed(declResolver->importWildCardDeclsFromModule(
-              scope, moduleName, isFullImport, loc)))
-        continue;
-      // Re-check the lookup in the scope now that the wildcard import has
-      // been resolved.
-      result = scope.lookupInCurrentScope(nameAttr);
-      if (!result.empty())
-        return result;
+      if (succeeded(declResolver->importWildCardDeclsFromModule(
+              scope, moduleName, isFullImport, loc))) {
+        // Re-check the lookup in the scope now that the wildcard import has
+        // been resolved.
+        result = scope.lookupInCurrentScope(nameAttr);
+        if (!result.empty())
+          return result;
+      }
+      e = scope.unresolvedWildcardImports.size();
     }
 
     return {};
