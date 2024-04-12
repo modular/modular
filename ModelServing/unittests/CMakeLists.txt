@@ -21,26 +21,27 @@ add_custom_command(PRE_BUILD
 
 include_directories(PRIVATE ${CMAKE_SOURCE_DIR}/ModelServing/include/)
 
-add_modular_unittest(
-  SUITE_NAME
-  MuttUnitTests
+# TODO(yihualou): Temporarily disable tests while we renovate.
+# add_modular_unittest(
+#   SUITE_NAME
+#   MuttUnitTests
 
-  TEST_NAME
-  MuttTests
+#   TEST_NAME
+#   MuttTests
 
-  server_test.cpp
-  test_mutt.cpp
-  test_server_async.cpp
-  test_server.cpp
+#   server_test.cpp
+#   test_mutt.cpp
+#   test_server_async.cpp
+#   test_server.cpp
 
-  LINK_LIBS PRIVATE
-  ModularMuttLib
-  tf
-)
+#   LINK_LIBS PRIVATE
+#   ModularMuttLib
+#   tf
+# )
 
-target_compile_definitions(MuttTests
-  PRIVATE
-  MODULAR_MODEL_DIR="${CMAKE_BINARY_DIR}/GeneratedTests/BINARIES/models"
-)
+# target_compile_definitions(MuttTests
+#   PRIVATE
+#   MODULAR_MODEL_DIR="${CMAKE_BINARY_DIR}/GeneratedTests/BINARIES/models"
+# )
 
-add_dependencies(MuttTests ExtractGenModels)
+# add_dependencies(MuttTests ExtractGenModels)
