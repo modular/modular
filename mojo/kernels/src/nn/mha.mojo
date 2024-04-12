@@ -775,9 +775,16 @@ fn flash_attention_kernel[
         # V tile has shape [BN, depth]. P tile has shape [BM, BN]. Each itertion
         # loads V sub-tile [BK, depth] from global memory to shared memory and
         # stages p sub-tile [BM, BK] from thread register tile to shared memory.
-        alias loadv_num_rows_per_iter = (num_threads * simd_size) // depth
-        alias loadv_num_iters = BK // loadv_num_rows_per_iter
-        alias loadv_iter_stride = loadv_num_rows_per_iter * row_stride
+
+        var v_gmem_base = LayoutTensor[
+            Layout(IntTuple(BN, depth), IntTuple(row_stride, 1)), DType.float32
+        ](v_ptr.offset(global_kv_offset))
+
+        var v_smem_base = LayoutTensor[
+            Layout.row_major(BK, BN),
+            DType.float32,
+            address_space = AddressSpace.SHARED,
+        ](kv_tile)
         var storep_col_start = 0
         for subtile_start_row in range(0, BN, BK):
             # Store thread register tile to p sub-tile.
@@ -795,18 +802,21 @@ fn flash_attention_kernel[
             storep_col_start += BK
 
             # Load v sub-tile.
-            @unroll
-            for i in range(loadv_num_iters):
-                var row_in_tile = loadv_row + i * loadv_num_rows_per_iter
-                var global_idx = global_kv_offset + (
-                    subtile_start_row + row_in_tile
-                ) * row_stride + loadv_col
-                var vec = v_ptr.load[width=simd_size, alignment=alignment](
-                    global_idx
-                )
-                kv_tile.store[width=simd_size, alignment=alignment](
-                    row_in_tile * depth + loadv_col, vec
-                )
+            var v_gmem_tile = v_gmem_base.tile[BK, depth](
+                subtile_start_row // BK
+            )
+            alias thread_v_xmem_layout = Layout.row_major(
+                (num_threads // BN) * simd_size, BN // simd_size
+            )
+            var thread_loadv_gmem_frags = v_gmem_tile.vectorize[
+                1, simd_size
+            ]().distribute[thread_v_xmem_layout](ThreadIdx.x())
+
+            var thread_storev_smem_frags = v_smem_base.vectorize[
+                1, simd_size
+            ]().distribute[thread_v_xmem_layout](ThreadIdx.x())
+            thread_storev_smem_frags.copy_from_numa(thread_loadv_gmem_frags)
+
             # Guard writing to p_tile and kv_tile.
             barrier()
 
