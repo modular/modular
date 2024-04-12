@@ -567,10 +567,13 @@ void FunctionDeclView::augmentWithDocumentation(ArrayRef<StringRef> desc) {
       augmentDeclsWithDocumentation(desc, line, lineE, parameters);
     } else if (desc[line] == (Twine(DocString::kSectionReturns) + ":").str()) {
       if (returnType)
-        returns = parseDocStringSection(desc, line, lineE);
+        returnsDoc = parseDocStringSection(desc, line, lineE);
     } else if (desc[line] ==
                (Twine(DocString::kSectionConstraints) + ":").str()) {
       constraints = parseDocStringSection(desc, line, lineE);
+    } else if (desc[line] == (Twine(DocString::kSectionRaises) + ":").str()) {
+      if (raises())
+        raisesDoc = parseDocStringSection(desc, line, lineE);
     } else {
       pureDescriptionLines.push_back(desc[line]);
     }
@@ -628,8 +631,9 @@ std::string FunctionDeclView::getMarkdownDocString() const {
   dumpMarkdownDocumentationHeader(os, summary);
   dumpMarkdownDeclListSection(os, DocString::kSectionParameters, parameters);
   dumpMarkdownDeclListSection(os, DocString::kSectionArgs, args);
-  dumpMarkdownTextSection(os, DocString::kSectionReturns, returns);
+  dumpMarkdownTextSection(os, DocString::kSectionReturns, returnsDoc);
   dumpMarkdownTextSection(os, DocString::kSectionConstraints, constraints);
+  dumpMarkdownTextSection(os, DocString::kSectionRaises, raisesDoc);
   dumpMarkdownDocumentationDescription(os, description);
 
   return markdown;
@@ -697,7 +701,8 @@ llvm::json::Object FunctionDeclView::toJSON(MojoParserContext &ctx) const {
       {"name", getName().str()},
       {"parameters", toJSONArray(ctx, parameters)},
       {"raises", raises()},
-      {"returns", returns},
+      {"raisesDoc", raisesDoc},
+      {"returnsDoc", returnsDoc},
       {"returnType", returnType},
       {"signature", getSignature()},
       {"summary", summary},

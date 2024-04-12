@@ -78,7 +78,7 @@ fn empty_fn():
 # CHECK:  "name": "fn_that_async",
 # CHECK:  "overloads":
 # CHECK:      "async": true
-# CHECK:      "returns": "An Int."
+# CHECK:      "returnsDoc": "An Int."
 # CHECK:      "signature": "fn_that_async() -> Int"
 # CHECK:      "summary": "This is a function summary."
 
@@ -98,7 +98,8 @@ async fn fn_that_async() -> Int:
 # CHECK:  "name": "fn_that_raises",
 # CHECK:  "overloads":
 # CHECK:      "raises": true
-# CHECK:      "returns": "An Int."
+# CHECK:      "raisesDoc": "Raises an exeception when it wants to."
+# CHECK:      "returnsDoc": "An Int."
 # CHECK:      "signature": "fn_that_raises() -> Int"
 # CHECK:      "summary": "This is a function summary."
 
@@ -107,6 +108,9 @@ def fn_that_raises() -> Int:
     """This is a function summary.
 
     The is some kind of description.
+
+    Raises:
+        Raises an exeception when it wants to.
 
     Returns:
         An Int.
@@ -235,7 +239,7 @@ fn fn_with_params[
 # CHECK:         "description": "This is an argument."
 # CHECK:         "name": "arg"
 # CHECK:         "type": "Int"
-# CHECK:     "returns": "This is a return value."
+# CHECK:     "returnsDoc": "This is a return value."
 # CHECK:     "signature": "fn_with_params_and_return(arg: Int) -> Int"
 
 
@@ -503,7 +507,7 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
 # CHECK:        }
 # CHECK:      "constraints": "This describes the method's constraints.",
 # CHECK:      "description": ""
-# CHECK:      "returns": "This is a by-ref return value.",
+# CHECK:      "returnsDoc": "This is a by-ref return value.",
 # CHECK:      "signature": "fn_with_by_conventions(inout self: Self, inout arg: Self, inout *args: Self) -> Self",
 # CHECK:      "summary": "This is a function summary."
 # CHECK:  "kind": "struct",

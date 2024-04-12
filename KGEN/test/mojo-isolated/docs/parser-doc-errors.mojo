@@ -205,6 +205,20 @@ fn fn_args_return():
     """
     return
 
+fn fn_raises():
+    """This is a function summary.
+
+    # expected-warning @below {{unexpected 'Raises' in doc string for function that does not throw}}
+    # expected-note @below {{see previous definition here}}
+    Raises:
+      This raises nothing.
+
+    # expected-warning @below {{duplicate 'Raises' section found in doc string}}
+    Raises:
+      This raises nothing.
+    """
+    return
+
 
 # expected-warning @below {{function has results, but no 'Returns' in doc string}}
 fn fn_args_missing_return() -> int:

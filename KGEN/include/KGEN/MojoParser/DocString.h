@@ -87,19 +87,23 @@ public:
 
   /// Within a doc string, the "Constraints" section describes invariants that
   /// must be true for the struct or function.
-  static const char *kSectionConstraints;
+  static constexpr StringLiteral kSectionConstraints = "Constraints";
 
   /// Within a doc string, the "Parameters" section lists descriptions of each
   /// parameter.
-  static const char *kSectionParameters;
+  static constexpr StringLiteral kSectionParameters = "Parameters";
 
   /// Within a doc string, the "Args" section lists descriptions of each
   /// function argument.
-  static const char *kSectionArgs;
+  static constexpr StringLiteral kSectionArgs = "Args";
 
   /// Within a doc string, the "Returns" section describes the results of a
   /// function.
-  static const char *kSectionReturns;
+  static constexpr StringLiteral kSectionReturns = "Returns";
+
+  /// Within a doc string, the "Raises" section describes the invariants
+  /// surrounding raises within the function.
+  static constexpr StringLiteral kSectionRaises = "Raises";
 
 private:
   /// The short summary of the doc string.
