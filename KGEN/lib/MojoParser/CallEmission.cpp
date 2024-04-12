@@ -1454,7 +1454,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
       // parameters to be inferred, and those may depend on other value
       // arguments.  Handle this by setting up a placeholder with the type
       // we know so far, and use that to filter the overload set.
-      auto attr = UnknownAttr::get(PointerType::get(type));
+      auto attr = UnknownAttr::get(RefType::getImmortal(type, true));
       posOperandsWithSelf.push_back({PValue(attr), expr});
       posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
       operands.posOperands = posOperandsWithSelf;
