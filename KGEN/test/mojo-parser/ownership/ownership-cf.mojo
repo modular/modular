@@ -45,7 +45,9 @@ fn if_examples(cond: __mlir_type.i1):
     # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
     var b = MemExample()
 
-    # CHECK: hlcf.if %cond {
+    # CHECK: hlcf.elif
+    # CHECK-NEXT: hlcf.elif.yield
+    # CHECK-NEXT: } then {
     if cond:
         # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%a)
         # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
@@ -62,7 +64,9 @@ fn if_examples(cond: __mlir_type.i1):
     # CHECK-NEXT: %c = lit.var.decl
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
     var c = MemExample()
-    # CHECK: hlcf.if %cond {
+    # CHECK: hlcf.elif {
+    # CHECK-NEXT: hlcf.elif.yield %cond
+    # CHECK-NEXT: } then {
     if cond:
         # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%c)
         # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
@@ -82,8 +86,10 @@ fn if_examples(cond: __mlir_type.i1):
     # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%d)
     var d = MemExample()
 
+    # CHECK: hlcf.elif {
     # CHECK-NEXT: [[ONE:%[0-9]+]] = kgen.param.constant: i1 = <1>
-    # CHECK: hlcf.if [[ONE]] {
+    # CHECK-NEXT: hlcf.elif.yield [[ONE]]
+    # CHECK-NEXT: } then {
     if True:
         # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %d
         # CHECK-NEXT: lit.call @{{.*}}noop{{.*}}([[IMMREF]])
@@ -185,7 +191,8 @@ fn try_examples(cond: __mlir_type.i1, err: Error):
     # CHECK-NEXT: [[ERRSLOT:%.*]] = lit.var.decl "e"
     # CHECK-NEXT: lit.try {
     try:
-        # CHECK-NEXT:  hlcf.if %cond {
+        # CHECK-NEXT:  hlcf.elif
+        # CHECK-NEXT:  hlcf.elif.yield
         if cond:
             raise err
         # CHECK-NOT: %d
@@ -216,20 +223,23 @@ fn chris_lifetime_example(a: Bool, b: Bool):
     try:
         # CHECK: lit.try
         try:
-            # CHECK: hlcf.if
+            # CHECK: hlcf.elif
             if a:
                 # CHECK: __init__{{.*}}(%x)
                 x = MemExample()
                 # CHECK: lit.try.raise
                 raise Error()
         # CHECK: except
-        # CHECK: hlcf.if
+        # CHECK: hlcf.elif
+        # CHECK-NEXT: lit.call
+        # CHECK-NEXT: hlcf.elif.yield
+        # CHECK-NEXT: } then {
         # CHECK-NEXT: __del__{{.*}}(%x)
         # CHECK: return
         # CHECK: else
         # CHECK: lit.try.raise
         # CHECK: else
-        # CHECK: hlcf.if
+        # CHECK: hlcf.elif
         # CHECK: return
         # CHECK: else
         finally:
@@ -267,7 +277,9 @@ fn loop_example(cond1: __mlir_type.i1, cond2: __mlir_type.i1):
     while True:
         # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%c)
         c = MemExample()
-        # CHECK-NEXT: hlcf.if %cond2 {
+        # CHECK-NEXT: hlcf.elif {
+        # CHECK-NEXT: hlcf.elif.yield %cond2 : i1
+        # CHECK-NEXT: } then {
         if cond2:
             # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}(%b)
             b = MemExample()
