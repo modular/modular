@@ -1118,6 +1118,7 @@ globals_library(
     ]),
     strip_include_prefix = "include",
     deps = [
+        "//ArraySupport",
         "//CUDASupport:CUDASupportHeaders",
         "//CUDASupport:Globals",
         "//LLCL:Runtime",

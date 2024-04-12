@@ -1289,3 +1289,24 @@ globals_library(
     # TODO: Missing define conditionals for symbol visibility
     # NOTE: This library should not have any deps to avoid shared object linking issues
 )
+
+cc_library(
+    name = "Metering",
+    srcs = glob(["lib/Metering/**/*.cpp"]),
+    hdrs = glob(["include/Support/Metering/**/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+        ":HTTP",
+        ":Telemetry",
+    ],
+)
+
+cc_test(
+    name = "MeteringTests",
+    srcs = glob(["unittests/Metering/*.cpp"]),
+    deps = [
+        ":Metering",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
