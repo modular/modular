@@ -20,4 +20,7 @@ add_modular_testsuite(check-mojo-tool
   mojo-build-server
   mojo-sdk
   kgen-opt
+
+  TAGS
+  asan-red
 )
