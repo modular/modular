@@ -48,13 +48,10 @@ public:
       ArrayRef<ParamDeclRefAttr> paramCaptures, LITSignatureType wrapperSig);
 
   /// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
-  /// instance. The 'fromImplToWrapperParameterIndexMap' allows the caller to
-  /// specify which parameters of the ClosureWrapper should be bound to the
-  /// ClosureImpl.
-  LIT::FuncOp createWrapperInitWithImpl(
-      StructDeclOp closureWrapper, StructDeclOp closureImpl,
-      SmallDenseMap<unsigned, unsigned> fromImplToWrapperParameterIndexMap,
-      SMLoc location);
+  /// instance.
+  LIT::FuncOp createWrapperInitWithImpl(StructDeclOp closureWrapper,
+                                        StructDeclOp closureImpl,
+                                        SMLoc location);
 
 private:
   MLIRContext *ctx;

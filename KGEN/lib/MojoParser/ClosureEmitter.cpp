@@ -774,14 +774,9 @@ getDemangledNames(ArrayRef<ParamDeclAttr> decls) {
   });
 }
 
-/// Generate an initializer on the ClosureWrapper that accepts a ClosureImpl
-/// instance. The 'fromImplToWrapperParameterIndexMap' allows the caller to
-/// specify which parameters of the ClosureWrapper should be bound to the
-/// ClosureImpl.
-LIT::FuncOp ClosureEmitter::createWrapperInitWithImpl(
-    StructDeclOp closureWrapper, StructDeclOp closureImpl,
-    SmallDenseMap<unsigned, unsigned> fromImplToWrapperParameterIndexMap,
-    SMLoc loc) {
+LIT::FuncOp
+ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
+                                          StructDeclOp closureImpl, SMLoc loc) {
   // The __init__ will take self and the impl. We first build the types. Add the
   // parameter references captured only in the body to the signature of the
   // constructor. Pass the ones captured in the signature from the wrapper to
