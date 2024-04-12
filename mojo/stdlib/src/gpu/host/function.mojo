@@ -237,16 +237,24 @@ struct FunctionHandle(Boolable):
 struct _CachedFunctionInfo(Boolable):
     var mod_handle: _ModuleImpl
     var func_handle: FunctionHandle
+    var error: Error
 
     fn __init__(inout self):
         self.mod_handle = _ModuleImpl()
         self.func_handle = FunctionHandle()
+        self.error = Error()
 
     fn __init__(
         inout self, mod_handle: _ModuleImpl, func_handle: FunctionHandle
     ):
         self.mod_handle = mod_handle
         self.func_handle = func_handle
+        self.error = Error()
+
+    fn __init__(inout self, error: Error):
+        self.mod_handle = _ModuleImpl()
+        self.func_handle = FunctionHandle()
+        self.error = error
 
     fn __del__(owned self):
         pass
@@ -309,8 +317,9 @@ fn _init_fn[
         res.store(_CachedFunctionInfo(mod_handle._steal_handle(), func_handle))
         return res.bitcast[NoneType]()
     except e:
-        print("Error loading the PTX code:", e)
-        return Pointer[NoneType]()
+        var res = Pointer[_CachedFunctionInfo].alloc(1)
+        res.store(_CachedFunctionInfo(e))
+        return res.bitcast[NoneType]()
 
 
 fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
@@ -343,9 +352,6 @@ fn _get_global_cache_info[
         _init_fn[func_type, func],
         _destroy_fn,
     ](Pointer.address_of(payload).bitcast[NoneType]())
-
-    if not info_ptr:
-        return _CachedFunctionInfo()
 
     _ = payload
 
@@ -398,13 +404,18 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
             else:
                 print(llvm)
 
-        self.info = _get_global_cache_info[func_type, func](
+        var info = _get_global_cache_info[func_type, func](
             debug=debug,
             verbose=verbose,
             max_registers=max_registers.value() if max_registers else -1,
             threads_per_block=threads_per_block.value() if threads_per_block else -1,
             cache_config=cache_config.value().code if cache_config else -1,
         )
+
+        if info.error:
+            raise info.error
+
+        self.info = info
 
         if not self.info.func_handle:
             raise "Unable to load the CUDA function"
