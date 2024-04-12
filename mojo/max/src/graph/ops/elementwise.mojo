@@ -67,7 +67,6 @@ Given two input tensor shapes, broadcasting works as following:
 from math import max as math_max
 
 from max.graph.type import Dim, ElementType, MOTensor
-from max.graph.type_promotion import implicit_cast_type
 
 
 # ===----------------------------------------------------------------------=== #
@@ -477,9 +476,9 @@ def _unary_op[op_name: StringLiteral](value: Symbol) -> Symbol:
 
 def _unary_float_op[op_name: StringLiteral](value: Symbol) -> Symbol:
     var dtype = value.tensor_type().dtype.dtype
-    # TODO: Don't cast implicitly here, we don't know what to cast to.
-    var float_v = cast(value, implicit_cast_type(dtype, DType.float16))
-    return value.graph().op(op_name, float_v, float_v.tensor_type())
+    if not dtype.is_floating_point():
+        raise op_name + " only supports floating point inputs. Please explicitly cast to your desired float type first."
+    return value.graph().op(op_name, value, value.tensor_type())
 
 
 def _unary_comparison_op[op_name: StringLiteral](value: Symbol) -> Symbol:
@@ -745,10 +744,8 @@ def cos(value: Symbol) -> Symbol:
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
     Args:
-        value: The symbolic tensor to use as the input to the trunc
-            computation. If it's not a floating-point DType, it will be promoted
-            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
-            before computation.
+        value: The symbolic tensor to use as the input to the cos
+            computation. If it's not a floating-point DType, an exception will be raised.
 
     Returns:
         A new symbolic tensor value representing the output of the absolute
@@ -767,10 +764,8 @@ def floor(value: Symbol) -> Symbol:
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
     Args:
-        value: The symbolic tensor to use as the input to the trunc
-            computation. If it's not a floating-point DType, it will be promoted
-            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
-            before computation.
+        value: The symbolic tensor to use as the input to the floor
+            computation. If it's not a floating-point DType, an exception will be raised.
 
     Returns:
         A new symbolic tensor value representing the output of the absolute
@@ -789,10 +784,8 @@ def round(value: Symbol) -> Symbol:
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
     Args:
-        value: The symbolic tensor to use as the input to the trunc
-            computation. If it's not a floating-point DType, it will be promoted
-            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
-            before computation.
+        value: The symbolic tensor to use as the input to the round
+            computation. If it's not a floating-point DType, an exception will be raised.
 
     Returns:
         A new symbolic tensor value representing the output of the absolute
@@ -811,10 +804,8 @@ def roundeven(value: Symbol) -> Symbol:
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
     Args:
-        value: The symbolic tensor to use as the input to the trunc
-            computation. If it's not a floating-point DType, it will be promoted
-            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
-            before computation.
+        value: The symbolic tensor to use as the input to the roundeven
+            computation. If it's not a floating-point DType, an exception will be raised.
 
     Returns:
         A new symbolic tensor value representing the output of the absolute
@@ -833,10 +824,8 @@ def rsqrt(value: Symbol) -> Symbol:
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
     Args:
-        value: The symbolic tensor to use as the input to the trunc
-            computation. If it's not a floating-point DType, it will be promoted
-            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
-            before computation.
+        value: The symbolic tensor to use as the input to the rsqrt
+            computation. If it's not a floating-point DType, an exception will be raised.
 
     Returns:
         A new symbolic tensor value representing the output of the absolute
@@ -855,10 +844,8 @@ def sqrt(value: Symbol) -> Symbol:
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
     Args:
-        value: The symbolic tensor to use as the input to the trunc
-            computation. If it's not a floating-point DType, it will be promoted
-            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
-            before computation.
+        value: The symbolic tensor to use as the input to the sqrt
+            computation. If it's not a floating-point DType, an exception will be raised.
 
     Returns:
         A new symbolic tensor value representing the output of the absolute
@@ -877,10 +864,8 @@ def sin(value: Symbol) -> Symbol:
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
     Args:
-        value: The symbolic tensor to use as the input to the trunc
-            computation. If it's not a floating-point DType, it will be promoted
-            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
-            before computation.
+        value: The symbolic tensor to use as the input to the sin
+            computation. If it's not a floating-point DType, an exception will be raised.
 
     Returns:
         A new symbolic tensor value representing the output of the absolute
@@ -899,10 +884,8 @@ def tanh(value: Symbol) -> Symbol:
     symbolic tensor and adds it to the graph, returning the symbolic result.
 
     Args:
-        value: The symbolic tensor to use as the input to the trunc
-            computation. If it's not a floating-point DType, it will be promoted
-            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
-            before computation.
+        value: The symbolic tensor to use as the input to the tanh
+            computation. If it's not a floating-point DType, an exception will be raised.
 
     Returns:
         A new symbolic tensor value representing the output of the absolute
@@ -922,9 +905,7 @@ def trunc(value: Symbol) -> Symbol:
 
     Args:
         value: The symbolic tensor to use as the input to the trunc
-            computation. If it's not a floating-point DType, it will be promoted
-            to one according to [type promotion rules](/engine/reference/mojo/graph/type_promotion)
-            before computation.
+            computation. If it's not a floating-point DType, an exception will be raised.
 
     Returns:
         A new symbolic tensor value representing the output of the absolute
