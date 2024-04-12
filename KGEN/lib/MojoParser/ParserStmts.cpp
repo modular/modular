@@ -659,9 +659,10 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
   ExprNode *expr = nullptr;
   Operation *parent = parentDecl.getIfOperation();
   // TODO: Top level expressions will be supported in the future.
-  if (parent && isa<LIT::FileModuleOp>(parent))
+  if (parent && isa<LIT::FileModuleOp>(parent)) {
     emitTokenError()
         << "TODO: expressions are not yet supported at the file scope level";
+  }
   if (parseSimpleStmtExprs(expr, stmtIndent))
     return failure();
 
