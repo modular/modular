@@ -58,6 +58,7 @@ void KGEN::registerDefaultKGENPasses(LLCL::Runtime &runtime) {
   DebugInfo::registerDebugInfoToLLVM();
   DebugInfo::registerDebugInfoStrip();
 
+  KGEN::MOGGPreElab::registerOutlineMOGGFuncs();
   KGEN::MOGGPreElab::registerSliceMOGGFuncs();
 
   // Register passes that require a runtime.

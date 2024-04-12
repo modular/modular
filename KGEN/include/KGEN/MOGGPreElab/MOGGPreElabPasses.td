@@ -19,3 +19,42 @@ def SliceMOGGFuncs : Pass<"slice-mogg-funcs", "mlir::ModuleOp"> {
     This description to expand as the functionality is added to the pass.
   }];
 }
+
+def OutlineMOGGFuncs : Pass<"mogg-outline", "mlir::ModuleOp"> {
+  let summary = "Outline MOGG kernel functions";
+  let description = [{
+    Separate the kernel entry point from the implementation details of the
+    kernel by outlining them into a function invoked by the entry point.
+
+    This additionally will mark the kernel as elementwise if it is elementwise
+
+    The outlining will produce one of two forms. The first form is for the case
+    of outlining generic kernels. The other form is for the special case of
+    elementwise.
+    ```
+    kgen.generator MY_KERNEL(...) {
+      // Any fusion lambdas
+      kgen.param.region.declare InLambda(...) {
+
+      }
+
+      kgen.call "MY_KERNEL_OUTLINED"<...InLambda...>(...)
+    }
+    ```
+
+    For elementwise we retain the elementwise loop but outline the body.
+    ```
+    kgen.generator MY_KERNEL(...) {
+      // Any fusion lambdas
+      kgen.param.region.declare InLambda(...) {
+
+      }
+      
+      kgen.param.region.declare BODY (...) {
+        kgen.call "MY_KERNEL_OUTLINED"<...InLambda...>(...)
+      }
+      kgen.call "for_each"<body: BODY>(...)
+    }
+    ```
+  }];
+}
