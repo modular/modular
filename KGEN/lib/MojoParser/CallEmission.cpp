@@ -545,7 +545,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                "deduction");
         InflightDiag diag = shared.emitError(exprLoc, baseName)
                             << " missing required ";
-        if (StringAttr name = paramListAttr.getNames()[paramIdx]; !name.empty())
+        if (StringAttr name = paramListAttr.getName(paramIdx); !name.empty())
           diag << "parameter " << name;
         else
           diag << nameForPosOnly(paramIdx, "parameter");

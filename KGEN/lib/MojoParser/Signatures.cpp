@@ -436,14 +436,15 @@ static ASTType addImplicitTypeParams(SharedState &shared, ASTDecl &declScope,
   ArrayRef<Type> params = metatype.getSignature().getParamTypes();
   if (params.empty())
     return type;
-  SmallVector<StringAttr> names =
-      metatype.getSignature().getParamListAttrs().getNames();
+  PogListAttr paramListAttr = metatype.getSignature().getParamListAttrs();
 
   SmallVector<TypedAttr> paramValues;
   ParserParamEvaluator evaluator(*shared.declResolver);
-  for (auto [type, name] : llvm::zip(params, names)) {
-    auto funcDecl = ParamDeclAttr::get(declScope.mangleParamName(name.strref()),
-                                       evaluator.getReboundType(type));
+  for (auto [idx, type] : llvm::enumerate(params)) {
+    auto funcDecl = ParamDeclAttr::get(
+        declScope.mangleParamName(paramListAttr.getName(idx).strref()),
+        evaluator.getReboundType(type));
+
     paramList.names.push_back(StringAttr::get(type.getContext()));
     paramList.passingKinds.push_back(PassingKind::Implicit);
     paramList.paramDeclAttrs.push_back(funcDecl);

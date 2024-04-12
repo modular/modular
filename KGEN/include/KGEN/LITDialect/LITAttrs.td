@@ -186,9 +186,6 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list"> {
     static SmallVector<PogMetadataAttr> toPogs(
       ArrayRef<StringAttr> names, ArrayRef<PassingKind> passingKinds,
       ArrayRef<size_t> indices);
-
-    /// Compatibility accessor returning an array of names.
-    SmallVector<StringAttr> getNames() const;
   }];
 
   let genVerifyDecl = 1;

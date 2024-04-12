@@ -432,7 +432,7 @@ void LIT::printOptionalParamSignature(AsmPrinter &p,
   auto printWithDefault = [&](Type type) {
     passingKindPrinter.printOptionalStarSlash(idx);
 
-    if (StringAttr name = paramListAttr.getNames()[idx]; !name.empty()) {
+    if (StringAttr name = paramListAttr.getName(idx); !name.empty()) {
       p.printString(name);
       p << ": ";
     }
