@@ -191,11 +191,6 @@ PogListAttr::toPogs(ArrayRef<StringAttr> names,
   return pogs;
 }
 
-SmallVector<StringAttr> PogListAttr::getNames() const {
-  return llvm::map_to_vector(
-      getPogs(), [](PogMetadataAttr pogAttr) { return pogAttr.getName(); });
-}
-
 //===----------------------------------------------------------------------===//
 // FnMetadataAttr
 //===----------------------------------------------------------------------===//
@@ -327,7 +322,7 @@ LogicalResult FnMetadataAttr::verifySignature(
     return emitError() << "expected no result parameters";
 
   PogListAttr paramListAttr = getParamListAttrs();
-  if (paramListAttr.getNames().size() != inputParamTypes.size()) {
+  if (paramListAttr.getPogs().size() != inputParamTypes.size()) {
     return emitError() << "number of parameter names doesn't match number of "
                           "input parameter types";
   }
@@ -391,7 +386,7 @@ LogicalResult FnMetadataAttr::verifySignature(
 }
 
 size_t FnMetadataAttr::getNumArgs() const {
-  return getArgListAttrs().getNames().size();
+  return getArgListAttrs().getPogs().size();
 }
 
 bool FnMetadataAttr::hasVarArgs() const {

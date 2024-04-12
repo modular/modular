@@ -359,9 +359,13 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     fieldVals.push_back(arg);
   }
 
+  SmallVector<StringAttr> names =
+      llvm::map_to_vector(argListAttrs.getPogs(), [](PogMetadataAttr pogAttr) {
+        return pogAttr.getName();
+      });
   auto result = SRValue(builder.create<StructCreateOp>(
       selfType.mlirType, fieldVals,
-      StringArrayAttr::get(emitter.getContext(), argListAttrs.getNames())));
+      StringArrayAttr::get(emitter.getContext(), names)));
 
   ExprEmitter::emitNormalReturn(builder, result, funcOp);
   builder.create<LIT::EndFuncOp>();
