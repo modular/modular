@@ -48,6 +48,7 @@ add_modular_testsuite(check-max-engine-integration-tests
 
   TAGS
   gpu
+  asan-red
 )
 
 add_subdirectory(python)
