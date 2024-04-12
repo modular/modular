@@ -83,14 +83,26 @@ fn execute_unary_list[
 
 
 fn execute_binary[
-    intype: DType = DType.float32, outtype: DType = DType.float32
+    intype1: DType = DType.float32,
+    intype2: DType = intype1,
+    outtype: DType = intype1,
 ](
     graph: Graph,
-    x: Tensor[intype],
-    y: Tensor[intype],
+    x: Tensor[intype1],
+    y: Tensor[intype2],
     load_options: Optional[TorchLoadOptions] = None,
 ) raises -> Tensor[outtype]:
-    var result_map = execute_base(graph, x, y, load_options=load_options)
+    graph.verify()
+
+    var session = InferenceSession()
+    var model = session.load(graph, load_options)
+
+    var input_map = session.new_tensor_map()
+    input_map.borrow("input0", x)
+    input_map.borrow("input1", y)
+
+    var result_map = model.execute(input_map)
+
     return result_map.get[outtype]("output0")
 
 

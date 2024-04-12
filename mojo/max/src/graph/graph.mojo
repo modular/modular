@@ -167,6 +167,7 @@ struct Graph(CollectionElement, Stringable):
         inputs: SymbolTuple = SymbolTuple(),
         out_types: TypeTuple = TypeTuple(),
         attrs: AttrMap = AttrMap(),
+        enable_result_type_inference: Bool = False,
     ) raises -> SymbolTuple:
         """Adds a new `Node` to the `Graph`.
 
@@ -185,6 +186,7 @@ struct Graph(CollectionElement, Stringable):
             inputs: The list of symbolic operands.
             out_types: The list of output types.
             attrs: Any attributes that the operation might require.
+            enable_result_type_inference: Will infer the result type if True.
 
         Returns:
             The symbolic outputs of the newly-added `Node`.
@@ -202,6 +204,7 @@ struct Graph(CollectionElement, Stringable):
             operands=operands,
             results=out_types.to_mlir(ctx),
             attributes=attrs.attrs,
+            enable_result_type_inference=enable_result_type_inference,
         )
 
         var output_op = self._body().terminator()
