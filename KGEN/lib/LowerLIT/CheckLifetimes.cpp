@@ -1802,15 +1802,17 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
   }
 
   // Compute successor list and predecessor list.
+  llvm::DenseSet<int> errorRegions;
   for (unsigned curr = 0, e = op.getNumRegions(); curr < e; curr++) {
     Region &region = op.getRegion(curr);
     HLCF::ControlFlowTerminator term =
         cast<HLCF::ControlFlowTerminator>(region.front().getTerminator());
-    assert(!isa<LIT::ErrorReturnOp>(term) &&
-           "error handling control flow ops require special unification logic "
-           "and will be handled in a followup.");
+
     // Terminator branches outside this op.
     if (!term.isParentNode(&op) || isa<UnreachableOp>(term)) {
+      if (isa<LIT::ErrorReturnOp>(term))
+        errorRegions.insert(curr);
+
       if (isa<HLCF::ContinueOp>(term))
         succ[curr].push_back(Continue);
 
@@ -1884,24 +1886,72 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
     }
   }
 
-  // Scan all blocks to insert destructors.
+  // The self value requires special correction in the context of handling
+  // conditional self initialization.
+  int selfInitIndex = -1;
+  for (ValueInfo &v : valueSet.getValueInfos())
+    if (v.isIndirect && v.isFullObjectLiveOnEntry)
+      selfInitIndex = v.endValueBit - 1;
+
+  // If a success region does not consume a self init value and there is an
+  // error region, the unifier will try and insert an illegal destructor.
+  llvm::DenseSet<int> errorToValueNoDestruction;
+
+  // Scan all blocks to insert destructors. Insert parentPrev so it's successors
+  // are checked for self initialization.
+  sortedBlocks.insert(sortedBlocks.begin(), ParentPrev);
   for (auto currPtr = sortedBlocks.rbegin(); currPtr != sortedBlocks.rend();
        currPtr++) {
     int curr = *currPtr;
     BitVector consumedInSomeSucc(consumedValues.size(), false);
     SmallVector<int> &successors = getSuccessors(curr);
+    // Consider the following data flow, where A,B,C are regions
+    // and B and C are potential successors of A.
+    //            [A]
+    //           /   \
+    //         [B]   [C]
+    // If `hasSuccessorSetThatMarksSelfInitialized` is true for A then
+    // either B marks an error initialized and C marks self as initialized
+    // or vice versa. Today we don't emit ops that have more than two
+    // successors in a conditional initialization context but if we did the
+    // assumption is that at least one marks the self as initialized and at
+    // least one marks the error as initialized and all others do one or the
+    // other. In any case, the destruction of self should not be emitted into
+    // any successor of a node where `hasSuccessorSetThatMarksSelfInitialized`
+    // is true. To prevent this from happening in the unification step, we
+    // record such exceptions here.
+    bool hasSuccessorSetThatMarksSelfInitialized =
+        selfInitIndex > -1 && successors.size() == 2;
+    if (hasSuccessorSetThatMarksSelfInitialized) {
+      int errorRegionCandidate = successors[0];
+      int succRegionCandidate = successors[1];
+      bool candidateIsError =
+          errorRegions.contains(errorRegionCandidate) &&
+          consumedValuesInRegion[errorRegionCandidate].test(selfInitIndex);
+      hasSuccessorSetThatMarksSelfInitialized =
+          candidateIsError &&
+          !consumedValuesInRegion[succRegionCandidate].test(selfInitIndex);
+    }
     for (unsigned successor : successors) {
       assert(consumedValuesInRegion.contains(successor) &&
              "a successor to current has not been processed, which suggests a "
              "cycle!");
-      consumedInSomeSucc |= consumedValuesInRegion[successor];
+      BitVector &consumptionInSucc = consumedValuesInRegion[successor];
+      consumedInSomeSucc |= consumptionInSucc;
+      if (hasSuccessorSetThatMarksSelfInitialized)
+        errorToValueNoDestruction.insert(successor);
     }
+
+    if (curr == ParentPrev)
+      continue;
     Region &region = op.getRegion(curr);
     BitVector oldConsumedValues(consumedValues);
     consumedValues = consumedInSomeSucc;
     scanBlock(region.front());
     consumedValuesInRegion[curr] = consumedValues;
     consumedValues = oldConsumedValues;
+
+    bool isError = errorRegions.contains(curr);
 
     // Correct unification exception case 1: a region that overwrites a
     // subfield. Ignore error case since that overwrite is artificial.
@@ -1910,8 +1960,10 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
     if (consumedInSomeSucc == consumedHere)
       consumedInRegion.reset();
     else if (!successors.empty())
-      consumedInRegion.reset(oldConsumedValues);
+      consumedInRegion.reset(consumedInSomeSucc);
     for (const ValueInfo &v : valueSet.getValueInfos()) {
+      if ((int)(v.endValueBit - 1) == selfInitIndex && isError)
+        continue;
       // We have identified a full object. Makes sure the subfields are
       // reset so that we don't render a full object indestructible by
       // destroying its subfields.
@@ -1930,9 +1982,7 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
     }
   }
 
-  // Unify Destructor paths. Insert parent prev so that the entries are unified
-  // also.
-  sortedBlocks.insert(sortedBlocks.begin(), ParentPrev);
+  // Unify Destructor paths.
   bool needsUpdate = true;
   int i = 0;
   while (needsUpdate) {
@@ -1945,13 +1995,21 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
       // for each branch, insert destructors for values that are destroyed in
       // some other branch
       BitVector consumedInSomeSucc(consumedValues.size(), false);
-      for (int successor : getSuccessors(curr))
+      for (int successor : getSuccessors(curr)) {
+        // Ignore the contribution if the successor is unreachable.
+        if (!consumedValuesInRegion[successor][0])
+          continue;
         consumedInSomeSucc |= consumedValuesInRegion[successor];
+      }
+
       for (int successor : getSuccessors(curr)) {
         // Only self contained successors are corrected.
         if (successor < 0)
           continue;
-
+        if (errorToValueNoDestruction.contains(successor)) {
+          consumedInSomeSucc.reset(selfInitIndex);
+          consumedValuesInRegion[successor].reset(selfInitIndex);
+        }
         BitVector consumedInAltBranch(consumedInSomeSucc);
         consumedInAltBranch ^= consumedValuesInRegion[successor];
         consumedValuesInRegion[successor] = consumedInSomeSucc;
@@ -1982,11 +2040,9 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
          "if-like op should have two single-block regions");
   BitVector thenConsumedValues = consumedValues;
   scanBlock(ifElseOp.getRegion(0).front());
-
   // Scan 'else' block.
   thenConsumedValues.swap(consumedValues);
   scanBlock(ifElseOp.getRegion(1).front());
-
   // At this point, 'thenConsumedValues' is the set of upwardly consumed
   // values from the 'then' block and 'consumedValues' is the set of upwardly
   // consumed values from the else branch.  See if they agree already, then
@@ -2010,7 +2066,6 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
   // union of both sets.
   BitVector upwardConsumeSet = consumedValues;
   upwardConsumeSet |= thenConsumedValues;
-
   // It is possible that some subfields out of a value that is fully consumed
   // are not demanded.  For example, consider something like:
   //
@@ -2066,7 +2121,6 @@ void DestructorInsertion::checkIfLikeOp(Operation &ifElseOp) {
       upwardConsumeSet.set(valueInfo.startValueBit, valueInfo.endValueBit);
     }
   }
-
   // If we are in a dryrun, just return the computed union of the two sets.
   if (dryRun) {
     consumedValues = upwardConsumeSet;
