@@ -658,14 +658,12 @@ static std::optional<std::string> resolveModulePath(SharedState &shared,
 
 /// Resolve the absolute path for a given module name. Returns nullopt if the
 /// module cannot be found.
-static std::optional<std::string>
-resolveModulePath(SharedState &sharedState, StringRef moduleName,
-                  llvm::SMLoc includeLoc, bool isParsingStandardLibrary) {
-  unsigned includeBufferId =
-      sharedState.getSourceMgr().FindBufferContainingLoc(includeLoc);
+std::optional<std::string> SharedState::resolveModulePath(StringRef moduleName,
+                                                          SMLoc includeLoc) {
+  unsigned includeBufferId = getSourceMgr().FindBufferContainingLoc(includeLoc);
 
   std::optional<std::string> result;
-  sharedState.traverseImportDirectories(includeBufferId, [&](StringRef dir) {
+  traverseImportDirectories(includeBufferId, [&](StringRef dir) {
     // Don't try to resolve modules that reside within a package.
     if (Filesystem::isMojoSourcePackagePath(dir.str())) {
       // TODO: It'd be nice to emit a list of potential modules that the
@@ -673,8 +671,8 @@ resolveModulePath(SharedState &sharedState, StringRef moduleName,
       // package.
       return WalkResult::advance();
     }
-    if ((result = resolveModulePath(sharedState, includeLoc, moduleName, dir,
-                                    isParsingStandardLibrary)))
+    if ((result = ::resolveModulePath(*this, includeLoc, moduleName, dir,
+                                      parsingStandardLibrary)))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
@@ -732,8 +730,8 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
       return createErrorModuleState(identifierLoc, declName, *parentState->decl,
                                     "unable to locate module '" + name + "'");
     }
-    modulePath = resolveModulePath(*this, loc, name, *parentState->sourcePath,
-                                   parsingStandardLibrary);
+    modulePath = ::resolveModulePath(*this, loc, name, *parentState->sourcePath,
+                                     parsingStandardLibrary);
   } else {
     // If this is a top-level import, try to resolve a standard library module.
     // We current bundle all of the standard library packages into one mega
@@ -750,9 +748,9 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
       // Otherwise, if the standard library is a source package, check to see if
       // we can resolve a path from it.
       if (impl->stdlibPackageState->sourcePath) {
-        modulePath = resolveModulePath(*this, loc, name,
-                                       *impl->stdlibPackageState->sourcePath,
-                                       parsingStandardLibrary);
+        modulePath = ::resolveModulePath(*this, loc, name,
+                                         *impl->stdlibPackageState->sourcePath,
+                                         parsingStandardLibrary);
         if (modulePath) {
           ModuleState &moduleState = importModuleState(("stdlib." + name).str(),
                                                        impl->topLevelDecl, loc);
@@ -763,7 +761,7 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
     }
 
     // Otherwise, go through the normal import path.
-    modulePath = resolveModulePath(*this, name, loc, parsingStandardLibrary);
+    modulePath = resolveModulePath(name, loc);
   }
   if (!modulePath) {
     return createErrorModuleState(identifierLoc, declName, *parentState->decl,
@@ -1387,8 +1385,19 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
   // If this decl is a package, this is its corresponding module state.
   ModuleState *packageState = nullptr;
-  if (isa<PackageOp>(declOp))
+  if (auto declPackage = dyn_cast<PackageOp>(declOp)) {
     packageState = impl->moduleStates[&decl];
+
+    // Fully resolve any dependencies of the package.
+    if (LinkDependencyArrayAttr deps = declPackage.getDependenciesAttr()) {
+      for (FlatSymbolRefAttr dep : deps) {
+        ASTDecl *depDecl = &importModule(
+            dep.getValue(), /*currentPackage=*/nullptr, decl.getLoc());
+        if (failed(declResolver->resolveFully(*depDecl, decl.getLoc())))
+          return failure();
+      }
+    }
+  }
 
   // Materialize the body of the decl.
   if (bytecodeReader->isMaterializable(declOp)) {

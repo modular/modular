@@ -34,6 +34,136 @@ namespace M::KGEN {
 } // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
+// PackageState
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This class represents the state of a package that is being materialized. It
+/// handles the logic for materializing external generators, and inflating
+/// operations into the main module.
+class PackageState {
+public:
+  /// Create a new package state instance.
+  static std::unique_ptr<PackageState>
+  create(SymbolTable &symtab, StringAttr moduleRef, mlir::ParserConfig &config,
+         const PackageGenLibraryFn &packageGenLibraryFn, Operation *ctx,
+         const std::shared_ptr<llvm::SourceMgr> &bufferOwnerRef);
+
+  /// Materialize a new extern generator. This enqueues operations to inflate,
+  /// which should be processed as part of `processOperationsToInflate`.
+  LogicalResult materializeExternGenerator(ExternGeneratorOp func,
+                                           SymbolTable &symtab);
+
+  /// Process the current set of operations to inflate.
+  LogicalResult processOperationsToInflate(
+      SymbolTable &symtab, function_ref<LogicalResult(Operation *)> processFn);
+
+  /// Finalize the state.
+  LogicalResult finalize() {
+    // Finalize the bytecode reader, dropping anything that wasn't materialized.
+    return reader.finalize([&](Operation *) { return false; });
+  }
+
+private:
+  PackageState(llvm::MemoryBufferRef buffer, const mlir::ParserConfig &config,
+               const std::shared_ptr<llvm::SourceMgr> &bufferOwnerRef)
+      : reader(buffer, config, /*lazyLoad=*/true, bufferOwnerRef) {}
+
+  /// A set of operations that need to be inflated.
+  SmallVector<Operation *> operationsToInflate;
+
+  /// The bytecode parser state.
+  Block block;
+  mlir::BytecodeReader reader;
+  std::unique_ptr<SymbolTable> bytecodeSymtab;
+};
+} // namespace
+
+std::unique_ptr<PackageState> PackageState::create(
+    SymbolTable &symtab, StringAttr moduleRef, mlir::ParserConfig &config,
+    const PackageGenLibraryFn &packageGenLibraryFn, Operation *ctx,
+    const std::shared_ptr<llvm::SourceMgr> &bufferOwnerRef) {
+  auto packageLink = symtab.lookup<PackageLinkOp>(moduleRef);
+  if (!packageLink) {
+    ctx->emitOpError("unable to find the link for preCompiledModuleRef");
+    return nullptr;
+  }
+
+  ErrorOr<DenseResourceElementsAttr> bytecodeOr =
+      packageGenLibraryFn(packageLink);
+  if (bytecodeOr.isError()) {
+    mlir::emitError(packageLink.getLoc(),
+                    "failed to load precompiled module and its dependencies "
+                    "for this package");
+    return nullptr;
+  }
+  DenseResourceElementsAttr bytecode = bytecodeOr.takeValue();
+
+  // Get the data for the imported module body.
+  mlir::AsmResourceBlob *blob = bytecode.getRawHandle().getBlob();
+  if (!blob) {
+    mlir::emitError(packageLink.getLoc(),
+                    "unable to find the precompiled body blob");
+    return nullptr;
+  }
+  ArrayRef<char> bytecodeData = blob->getData();
+  llvm::MemoryBufferRef bufferRef(
+      StringRef(bytecodeData.begin(), bytecodeData.size()), "");
+  std::unique_ptr<PackageState> state(
+      new PackageState(bufferRef, config, std::make_shared<llvm::SourceMgr>()));
+
+  // Parse in the top-level module.
+  if (failed(state->reader.readTopLevel(&state->block)) ||
+      failed(state->reader.materialize(&state->block.front()))) {
+    (void)state->reader.finalize();
+    return nullptr;
+  }
+  state->bytecodeSymtab = std::make_unique<SymbolTable>(&state->block.front());
+  return state;
+}
+
+LogicalResult PackageState::materializeExternGenerator(ExternGeneratorOp func,
+                                                       SymbolTable &symtab) {
+  StringAttr name = func.getSymNameAttr();
+  auto result = bytecodeSymtab->lookup<GeneratorOp>(name);
+  if (!result) {
+    return mlir::emitError(func.getLoc(), "unable to find ")
+           << name.getValue() << " in imported package bytecode";
+  }
+  operationsToInflate.push_back(result);
+  result->moveAfter(func);
+
+  // Propagate the precompiled reference to the materialized generator to
+  // indicate that it has an external implementation.
+  result.setPreCompiledModuleRefAttr(func.getPreCompiledModuleRefAttr());
+
+  // Replace the original function with the parsed KGEN Func.
+  symtab.erase(func);
+  symtab.insert(result);
+  return success();
+}
+
+LogicalResult PackageState::processOperationsToInflate(
+    SymbolTable &symtab, function_ref<LogicalResult(Operation *)> processFn) {
+  bool processFailed = false;
+  auto insertFn = [&](Operation *op, Operation *after) {
+    op->moveAfter(after);
+    symtab.insert(op);
+
+    processFailed |= failed(processFn(op));
+  };
+  auto existsFn = [&](StringAttr name) -> bool { return symtab.lookup(name); };
+
+  // Process and clear the current set of operations.
+  SmallVector<Operation *> toInflate = std::move(operationsToInflate);
+  for (Operation *op : toInflate)
+    if (failed(loadSymbolsFromBytecode(op, reader, existsFn, insertFn,
+                                       *bytecodeSymtab)))
+      return failure();
+  return failure(processFailed);
+}
+
+//===----------------------------------------------------------------------===//
 // Pass Definition
 //===----------------------------------------------------------------------===//
 
@@ -65,96 +195,58 @@ void MaterializePackagesPass::runOnOperation() {
   auto theModule = cast<ModuleOp>(getOperation());
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
-
-  // Collect the functions that need inflation, and the source containing
-  // their bodies.
-  llvm::MapVector<StringAttr, SmallVector<ExternGeneratorOp>> toInflate;
-  for (auto func : theModule.getOps<ExternGeneratorOp>())
-    toInflate[func.getPreCompiledModuleRefAttr().getAttr()].emplace_back(func);
-
+  auto sourceMgr = std::make_shared<llvm::SourceMgr>();
   mlir::ParserConfig parserConfig(&getContext(), /*verifyAfterParse=*/false);
-  for (auto &[moduleRef, funcs] : toInflate) {
-    auto packageLink = symtab.lookup<PackageLinkOp>(moduleRef);
-    if (!packageLink) {
-      funcs[0].emitOpError("unable to find the link for preCompiledModuleRef");
-      return signalPassFailure();
-    }
+  llvm::MapVector<StringAttr, std::unique_ptr<PackageState>> states;
 
-    ErrorOr<DenseResourceElementsAttr> bytecodeOr =
-        packageGenLibraryFn(packageLink);
-    if (bytecodeOr.isError()) {
-      mlir::emitError(packageLink.getLoc(),
-                      "failed to load precompiled module and its dependencies "
-                      "for this package");
-      return signalPassFailure();
-    }
-    DenseResourceElementsAttr bytecode = bytecodeOr.takeValue();
-
-    // Get the data for the imported module body.
-    mlir::AsmResourceBlob *blob = bytecode.getRawHandle().getBlob();
-    if (!blob) {
-      funcs[0].emitError("unable to find the precompiled body blob");
-      return signalPassFailure();
-    }
-    ArrayRef<char> bytecodeData = blob->getData();
-    llvm::MemoryBufferRef bufferRef(
-        StringRef(bytecodeData.begin(), bytecodeData.size()), "");
-
-    // Start lazy loading the bytecode for the function bodies.
-    auto sourceMgr = std::make_shared<llvm::SourceMgr>();
-    mlir::BytecodeReader reader(bufferRef, parserConfig, /*lazyLoad=*/true,
-                                sourceMgr);
-    Block block;
-    if (failed(reader.readTopLevel(&block))) {
-      (void)reader.finalize();
-      return signalPassFailure();
-    }
-    ModuleOp bytecodeModule = cast<ModuleOp>(block.front());
-    if (failed(reader.materialize(bytecodeModule))) {
-      (void)reader.finalize();
-      return signalPassFailure();
-    }
-
-    // Collect the symbols within the bytecode.
-    SymbolTable bytecodeSymtab(bytecodeModule);
-
-    // Replace the high level functions with their counter parts in the package
-    // bytecode module.
-    SmallVector<Operation *> operationsToInflate;
-    for (ExternGeneratorOp func : funcs) {
-      // Try the post-elaboration (linkage) name first, and then fallback to the
-      // pre-elaboration name.
-      StringAttr preElaborationName = func.getSymNameAttr();
-      auto result = bytecodeSymtab.lookup<GeneratorOp>(preElaborationName);
-      if (!result) {
-        (void)reader.finalize();
-        mlir::emitError(func.getLoc(), "unable to find ")
-            << preElaborationName.getValue() << " in imported package bytecode";
-        return signalPassFailure();
+  /// Materialize the given extern generator.
+  auto materializeGenerator = [&](ExternGeneratorOp func) {
+    StringAttr refAttr = func.getPreCompiledModuleRefAttr().getAttr();
+    std::unique_ptr<PackageState> &state = states[refAttr];
+    if (!state) {
+      state = PackageState::create(symtab, refAttr, parserConfig,
+                                   packageGenLibraryFn, func, sourceMgr);
+      if (!state) {
+        states.erase(refAttr);
+        return failure();
       }
-      operationsToInflate.push_back(result);
-      result->moveAfter(func);
-
-      // Propagate the precompiled reference to the materialized generator to
-      // indicate that it has an external implementation.
-      result.setPreCompiledModuleRefAttr(func.getPreCompiledModuleRefAttr());
-
-      // Replace the original function with the parsed KGEN Func.
-      symtab.erase(func);
-      symtab.insert(result);
     }
+    return state->materializeExternGenerator(func, symtab);
+  };
+  auto cleanupState = [&] {
+    for (auto &state : states)
+      if (failed(state.second->finalize()))
+        signalPassFailure();
+  };
 
-    // Now that we've replaced the high level functions with the bytecode
-    // functions, inflate them and pull in all of the dependencies.
-    for (Operation *op : operationsToInflate)
-      if (failed(loadSymbolsFromBytecode(op, reader, symtab, bytecodeSymtab)))
-        return signalPassFailure();
+  // Materialize the initial set of extern generators.
+  SmallVector<ExternGeneratorOp> generatorsToProcess(
+      theModule.getOps<ExternGeneratorOp>());
 
-    // Finalize the bytecode reader, dropping anything that wasn't
-    // materialized.
-    if (failed(reader.finalize()))
-      return signalPassFailure();
+  // Inflate all of the extern generators and their dependencies in a fixed
+  // point until we've processed all of the imported operations.
+  auto processExternGenerators = [&](Operation *op) {
+    if (auto func = dyn_cast<ExternGeneratorOp>(op))
+      generatorsToProcess.emplace_back(func);
+    return mlir::success();
+  };
+  while (!generatorsToProcess.empty()) {
+    // Materialize the generators.
+    for (ExternGeneratorOp func : generatorsToProcess)
+      if (failed(materializeGenerator(func)))
+        return cleanupState();
+    generatorsToProcess.clear();
+
+    // Process any new operations to inflate.
+    for (auto &state : states) {
+      if (failed(state.second->processOperationsToInflate(
+              symtab, processExternGenerators)))
+        return cleanupState();
+    }
   }
+
+  // Finalize all of the package states.
+  cleanupState();
 }
 
 std::unique_ptr<mlir::Pass>

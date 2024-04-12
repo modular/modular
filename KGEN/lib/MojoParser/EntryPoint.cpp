@@ -9,6 +9,7 @@
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/Support/CompilerProfiling.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Filesystem/Paths.h"
@@ -348,30 +349,20 @@ LIT::importMojoPackage(LLCL::Runtime &runtime, StringRef path,
   return {std::move(module), cast<PackageOp>(*packageDecl)};
 }
 
-OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
-    LLCL::Runtime &runtime, const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
-    MLIRContext *ctx, StringRef path) {
-  // Emit an error if the path doesn't actually correspond with a package.
-  if (!Filesystem::isMojoBinaryPackagePath(path.str())) {
-    sourceMgr->PrintMessage({}, llvm::SourceMgr::DK_Error,
-                            "provided path '" + path +
-                                "' does not correspond to a binary package");
-    return {};
-  }
-
-  auto emitPackageLoadFailure = [&] {
-    sourceMgr->PrintMessage({}, llvm::SourceMgr::DK_Error,
-                            "unable to load package '" + path + "'");
-    return OwningOpRef<ModuleOp>();
-  };
-
+/// Load a stripped binary package at the given path, only pulling in the top
+/// level package operation. Returns the dependencies of the package, and its
+/// post parse module.
+static std::pair<LinkDependencyArrayAttr, DenseResourceElementsAttr>
+loadStrippedBinaryPackage(LLCL::Runtime &runtime,
+                          const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
+                          MLIRContext *ctx, StringRef path) {
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> packageBuffer =
       llvm::MemoryBuffer::getFile(path);
   if (!packageBuffer)
-    return emitPackageLoadFailure();
-  sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
-  const llvm::MemoryBuffer *memoryBuf =
-      sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
+    return {nullptr, nullptr};
+  unsigned bufferId =
+      sourceMgr->AddNewSourceBuffer(std::move(*packageBuffer), SMLoc());
+  const llvm::MemoryBuffer *memoryBuf = sourceMgr->getMemoryBuffer(bufferId);
 
   // Parse just the top-level binary package operation and extract out the post
   // parse module.
@@ -384,19 +375,75 @@ OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
   mlir::Block block;
   if (failed(bytecodeReader.readTopLevel(&block))) {
     (void)finalizeReader();
-    return emitPackageLoadFailure();
+    return {nullptr, nullptr};
   }
   LIT::PackageOp packageOp = cast<LIT::PackageOp>(&block.front());
   DenseResourceElementsAttr postParseModuleAttr =
       packageOp.getPostParseModuleAttr();
+  LinkDependencyArrayAttr deps = packageOp.getDependenciesAttr();
   if (failed(finalizeReader()))
-    return emitPackageLoadFailure();
+    return {nullptr, nullptr};
+  return {deps, postParseModuleAttr};
+}
+
+OwningOpRef<ModuleOp> LIT::importStandaloneMojoBinaryPackage(
+    LLCL::Runtime &runtime, const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
+    MLIRContext *ctx, StringRef path) {
+  // Emit an error if the path doesn't actually correspond with a package.
+  if (!Filesystem::isMojoBinaryPackagePath(path.str())) {
+    sourceMgr->PrintMessage(
+        {}, llvm::SourceMgr::DK_Error,
+        "provided path '" + path +
+            "' does not correspond to a binary Mojo package");
+    return {};
+  }
+
+  auto emitPackageLoadFailure = [&](const Twine &msg = {}) {
+    sourceMgr->PrintMessage(
+        {}, llvm::SourceMgr::DK_Error,
+        "unable to load package '" + path + "'" +
+            (!msg.isTriviallyEmpty() ? (": " + msg.str()) : ""));
+    return OwningOpRef<ModuleOp>();
+  };
 
   // Read in the post parser module from the package.
+  auto [deps, postParseModuleAttr] =
+      loadStrippedBinaryPackage(runtime, sourceMgr, ctx, path);
+  if (!postParseModuleAttr)
+    return emitPackageLoadFailure();
   OwningOpRef<ModuleOp> packageModule =
       readOpFromBytecodeFile<ModuleOp>(postParseModuleAttr);
   if (!packageModule)
     return emitPackageLoadFailure();
+
+  // The post parser module of a package is not self-contained, it references
+  // other packages but those packages don't have their own post-parser content
+  // available. To resolve this, pull in the dependencies so that we can attach
+  // the necessary metadata to our module.
+  if (!deps)
+    return packageModule;
+  KGEN::CompilationOptions options;
+  ParserConfig config(ctx, options);
+  SharedState sharedState(*sourceMgr, config);
+  SymbolTable symbolTable(packageModule.get());
+  for (FlatSymbolRefAttr dep : deps) {
+    std::optional<std::string> depPath =
+        sharedState.resolveModulePath(dep.getValue(), SMLoc());
+    if (!depPath || !Filesystem::isMojoBinaryPackagePath(*depPath))
+      return emitPackageLoadFailure("unable to locate module '" +
+                                    dep.getValue() + "'");
+
+    auto [_, postParseModuleAttr] =
+        loadStrippedBinaryPackage(runtime, sourceMgr, ctx, *depPath);
+    if (!postParseModuleAttr)
+      return emitPackageLoadFailure("unable to load dependency module '" +
+                                    dep.getValue() + "'");
+
+    // Update the symbol table with the dependency.
+    PackageOp mainDepPackage = symbolTable.lookup<PackageOp>(dep.getValue());
+    mainDepPackage.setPostParseModuleAttr(postParseModuleAttr);
+  }
+
   return packageModule;
 }
 

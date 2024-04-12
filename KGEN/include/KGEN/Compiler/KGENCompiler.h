@@ -141,7 +141,7 @@ initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
 ErrorOrSuccess
 runLibraryGenerationPipeline(ModuleOp module, LLCL::Runtime &runtime,
                              const KGEN::CompilationOptions &compileOptions,
-                             bool materializeDependencies = true);
+                             bool materializeDependencies = false);
 
 /// This creates the materialize packages pass with the default library
 /// generation pipeline, i.e. `runLibraryGenerationPipeline`.

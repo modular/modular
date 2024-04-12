@@ -451,7 +451,7 @@ static LogicalResult addPackageLinkDirective(LIT::PackageOp package,
   OpBuilder b(package.getContext());
   auto linkOp = b.create<PackageLinkOp>(
       package.getLoc(), package.getSymNameAttr(),
-      package.getPostParseModuleAttr(), /*dependencies=*/nullptr);
+      package.getPostParseModuleAttr(), package.getDependenciesAttr());
 
   // Insert the link op into the symbol table right where the package was. Don't
   // erase the package op cause we need to do some cleanup still, but we do
