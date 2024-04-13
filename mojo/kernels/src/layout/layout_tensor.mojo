@@ -828,8 +828,10 @@ struct LayoutTensor[
             "copy_from_async only allows 4, 8, 16 bytes element",
         ]()
 
-        var dst_ptr = self.ptr.address_space_bitcast[_GPUAddressSpace.SHARED]()
-        var src_ptr = src.ptr.address_space_bitcast[_GPUAddressSpace.GLOBAL]()
+        var dst_ptr = self.ptr.bitcast[
+            address_space = _GPUAddressSpace.SHARED
+        ]()
+        var src_ptr = src.ptr.bitcast[address_space = _GPUAddressSpace.GLOBAL]()
 
         @parameter
         if (
