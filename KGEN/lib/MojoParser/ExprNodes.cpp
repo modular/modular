@@ -3001,14 +3001,24 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
     return {};
 
   // __lifetime_of(someMValue) -> PValue.
-  if (!subExprValue.isMValue()) {
-    emitter.emitError(getLoc())
-        << "value doesn't have a memory type" << getRange();
-    return {};
+  RefType refType;
+  if (subExprValue.isMValue()) {
+    refType = cast<RefType>(subExprValue.getMValueReference().getType());
+  } else {
+    // FIXME(Variadics): work around variadic arguments not being formally
+    // VariadicListMem, by allowing digging a lifetime out of the kgen.variadic.
+    if (auto sValue = subExprValue.getIfSBValue()) {
+      if (auto variadic = dyn_cast<VariadicType>(sValue.getType()))
+        refType = dyn_cast<RefType>(variadic.getElementType());
+    }
+    if (!refType) {
+      emitter.emitError(getLoc())
+          << "value doesn't have a memory type" << getRange();
+      return {};
+    }
   }
 
-  Value mvalue = subExprValue.getMValueReference();
-  auto lifetime = cast<RefType>(mvalue.getType()).getLifetime();
+  auto lifetime = refType.getLifetime();
 
   // If the lifetime is an InvalidRefLifetimeAttr then this value is
   // derived from an argument which might be bound (after elaboration)
