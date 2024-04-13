@@ -69,7 +69,7 @@ fn keep[type: DType, simd_width: Int](val: SIMD[type, simd_width]):
     var tmp_ptr = Pointer.address_of(tmp)
 
     @parameter
-    if sizeof[type]() <= sizeof[Pointer[SIMD[type, simd_width]].pointer_type]():
+    if sizeof[type]() <= sizeof[Pointer[SIMD[type, simd_width]]._mlir_type]():
         inlined_assembly[
             "",
             NoneType,
