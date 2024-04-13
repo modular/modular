@@ -542,8 +542,10 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
       // Pack arguments are fulfilled with an empty #lit.ref.pack.
       if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
-        RefPackType packType = variadicPackType.getVariadicPackInfo();
-        assert(packType.getVariadicIfResolved().getValues().empty() &&
+        assert(variadicPackType.getVariadicPackInfo()
+                   .getVariadicIfResolved()
+                   .getValues()
+                   .empty() &&
                "pack type already checked against operand count");
         auto argConv = calleeSig.getPackVarArgConvention(argIdx);
         // Emit a VariadicPack constructor call.
