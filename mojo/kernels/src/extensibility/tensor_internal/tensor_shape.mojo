@@ -352,7 +352,7 @@ struct _RepOutOfLine(EqualityComparable):
     """A general storage kind which stores the dimensions on the heap."""
 
     alias _padding_size = (
-        13 - sizeof[DTypePointer[DType.invalid].pointer_type]()
+        13 - sizeof[DTypePointer[DType.invalid]._mlir_type]()
     )
     var dims: DTypePointer[DType.index]
     """The heap allocated dimensions."""
