@@ -571,7 +571,6 @@ struct FunctionTypeNode final : public ExprNode {
 };
 
 /// __get_value_from_rvalue(some_ref)      # returns LValue or BValue
-/// __get_lvalue_as_address(some_ptr)      # returns !kgen.pointer
 /// __get_address_as_owned_value(some_ptr) # returns RValue
 /// __lifetime_of(decl)                    # returns !lit.lifetime<mut>
 /// __source_location()                    # returns _SourceLocation

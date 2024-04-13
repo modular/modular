@@ -2936,32 +2936,6 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   if (!subExprValue)
     return {};
 
-  // __get_lvalue_as_address(someMLValue) returns a !kgen.pointer.
-  if (kind == kGetLValueAsAddress) {
-    ValueDest lValueDest(dest.getContext());
-    LValue result = emitter.emitLValue({subExprValue, subExpr}, lValueDest);
-    if (!result)
-      return {};
-
-    MLValue resultRef = result.getIfMLValue();
-    if (!resultRef) {
-      emitter.emitError(getLoc(), "cannot use a dynamic LValue") << getRange();
-      return {};
-    }
-
-    // Emit an intrinsic so the compiler checks it to be initialized at this
-    // point.
-    emitter.builder->create<OwnershipDefLValueOp>(getLocation(emitter),
-                                                  resultRef);
-
-    Value resultPtr = emitter.builder->create<RefToPointerOp>(
-        getLocation(emitter), resultRef);
-
-    // Return the MLValue as an SRValue since the pointer itself is the
-    // result.
-    return emitter.emitResult(SRValue(resultPtr), this, dest);
-  }
-
   // __get_mvalue_as_litref(someMValue) returns the !lit.ref.
   if (kind == kGetMValueAsLitRef) {
     if (!subExprValue.isMValue()) {
