@@ -2942,10 +2942,22 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
       emitter.emitError(getLoc(), "cannot use non-memory value") << getRange();
       return {};
     }
+    Value refValue = subExprValue.getMValueReference();
+
+    // If the lifetime is an InvalidRefLifetimeAttr then this value is
+    // derived from an argument which might be bound (after elaboration)
+    // to a register value that has no lifetime.  Emit an error because
+    // you can't form a Reference to these things.
+    if (isa<InvalidRefLifetimeAttr>(
+            cast<RefType>(refValue.getType()).getLifetime())) {
+      emitter.emitError(subExpr->getLoc(),
+                        "cannot form a reference to an argument that might "
+                        "instantiate to @register_passable type");
+      return {};
+    }
 
     // Return the MValue as an SRValue since the ref itself is the result.
-    return emitter.emitResult(SRValue(subExprValue.getMValueReference()), this,
-                              dest);
+    return emitter.emitResult(SRValue(refValue), this, dest);
   }
 
   // __get_address_as_uninit_lvalue and __get_address_as_owned_value take a
