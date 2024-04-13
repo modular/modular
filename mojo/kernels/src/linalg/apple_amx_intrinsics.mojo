@@ -492,9 +492,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
                 shape= (16, 16),
                 address_space = AddressSpace.GENERIC,
             ](
-                c.data.bitcast[DType.float32]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                c.data.bitcast[DType.float32, AddressSpace.GENERIC](),
             ),
             NDBuffer[
                 DType.float32,
@@ -502,9 +500,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
                 shape= (16, 16),
                 address_space = AddressSpace.GENERIC,
             ](
-                a.data.bitcast[DType.float32]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                a.data.bitcast[DType.float32, AddressSpace.GENERIC](),
             ),
             NDBuffer[
                 DType.float32,
@@ -512,9 +508,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
                 shape= (16, 16),
                 address_space = AddressSpace.GENERIC,
             ](
-                b.data.bitcast[DType.float32]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
+                b.data.bitcast[DType.float32, AddressSpace.GENERIC](),
             ),
         )
     elif c.type == DType.float16:
@@ -525,7 +519,15 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
                 shape= (32, 32),
                 address_space = AddressSpace.GENERIC,
             ](
-                c.data.bitcast[DType.float16]().address_space_cast[
+                c.data.bitcast[DType.float16, AddressSpace.GENERIC](),
+            ),
+            NDBuffer[
+                DType.float16,
+                2,
+                shape= (32, 32),
+                address_space = AddressSpace.GENERIC,
+            ](
+                a.data.bitcast[DType.float16]().address_space_bitcast[
                     AddressSpace.GENERIC
                 ](),
             ),
@@ -535,17 +537,7 @@ fn dot_at_b(c: NDBuffer, a: __type_of(c), b: __type_of(c)):
                 shape= (32, 32),
                 address_space = AddressSpace.GENERIC,
             ](
-                a.data.bitcast[DType.float16]().address_space_cast[
-                    AddressSpace.GENERIC
-                ](),
-            ),
-            NDBuffer[
-                DType.float16,
-                2,
-                shape= (32, 32),
-                address_space = AddressSpace.GENERIC,
-            ](
-                b.data.bitcast[DType.float16]().address_space_cast[
+                b.data.bitcast[DType.float16]().address_space_bitcast[
                     AddressSpace.GENERIC
                 ](),
             ),
