@@ -193,10 +193,10 @@ kgen.func @simd_cast(
     !pop.simd<2, f32>
 }
 
-// CHECK-LABEL: address_space_cast
+// CHECK-LABEL: address_space_bitcast
 //  CHECK-SAME: %[[ARG0:[a-z0-9]+]]:
 //  CHECK-SAME: %[[ARG1:[a-z0-9]+]]:
-kgen.func @address_space_cast(%arg0: !kgen.pointer<scalar<f32>>, %arg1: !kgen.pointer<f32>)
+kgen.func @address_space_bitcast(%arg0: !kgen.pointer<scalar<f32>>, %arg1: !kgen.pointer<f32>)
     -> (!kgen.pointer<scalar<f32>, 1>, !kgen.pointer<f32, 3>) {
   // CHECK: llvm.addrspacecast %[[ARG0]] : !llvm.ptr to !llvm.ptr<1>
   %0 = pop.pointer.addrspacecast %arg0 : !kgen.pointer<scalar<f32>> to !kgen.pointer<scalar<f32>, 1>
