@@ -10,7 +10,7 @@ from os import abort
 from pathlib import Path
 
 from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer, Pointer, bitcast
+from memory.unsafe import DTypePointer, Pointer
 
 from utils import StringRef
 
@@ -360,7 +360,7 @@ struct ModuleHandle:
             num_options += 1
 
             opts[num_options] = JitOptions.INFO_LOG_BUFFER_SIZE_BYTES
-            option_vals[num_options] = bitcast[NoneType](buffer_size)
+            option_vals[num_options] = Pointer[NoneType](address=buffer_size)
             num_options += 1
 
             opts[num_options] = JitOptions.ERROR_LOG_BUFFER
@@ -368,25 +368,25 @@ struct ModuleHandle:
             num_options += 1
 
             opts[num_options] = JitOptions.ERROR_LOG_BUFFER_SIZE_BYTES
-            option_vals[num_options] = bitcast[NoneType](buffer_size)
+            option_vals[num_options] = Pointer[NoneType](address=buffer_size)
             num_options += 1
 
             if debug:
                 opts[num_options] = JitOptions.GENERATE_DEBUG_INFO
-                option_vals[num_options] = bitcast[NoneType](1)
+                option_vals[num_options] = Pointer[NoneType](address=1)
                 num_options += 1
 
             if max_registers:
                 opts[num_options] = JitOptions.MAX_REGISTERS
-                option_vals[num_options] = bitcast[NoneType](
-                    max_registers.value()
+                option_vals[num_options] = Pointer[NoneType](
+                    address=max_registers.value()
                 )
                 num_options += 1
 
             if threads_per_block:
                 opts[num_options] = JitOptions.THREADS_PER_BLOCK
-                option_vals[num_options] = bitcast[NoneType](
-                    threads_per_block.value()
+                option_vals[num_options] = Pointer[NoneType](
+                    address=threads_per_block.value()
                 )
                 num_options += 1
 
