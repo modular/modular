@@ -58,7 +58,7 @@ struct AsyncContext:
 
     @staticmethod
     fn get_chain(ctx: Pointer[AsyncContext]) -> Pointer[Chain]:
-        return __get_lvalue_as_address(ctx[].chain)
+        return Reference(ctx[].chain).get_legacy_pointer()
 
     @staticmethod
     fn complete(hdl: Pointer[NoneType], ch: Chain):
