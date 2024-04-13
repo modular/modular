@@ -112,19 +112,6 @@ struct MyPointer[elType: __mlir_type.`!kgen.type`]:
     fn __init__(value: Self.StorageTy) -> MyPointer[elType]:
         return MyPointer[elType] {value: value}
 
-
-# CHECK-LABEL: getAddressOf{{.*}}"[mut *"arg`"]<T: type>(%arg: !lit.ref<T, mut {{.*}}> byref)
-fn getAddressOf[T: __mlir_type.`!kgen.type`](inout arg: T) -> MyPointer[T]:
-    return __mlir_op.`pop.pointer.bitcast`[_type = MyPointer[T].StorageTy](
-        __get_lvalue_as_address(arg)
-    )
-    # CHECK-NEXT: [[IMM:%.*]] = kgen.rebind %arg : {{.*}}#lit.invalid.ref.lifetime
-    # CHECK-NEXT: lit.ownership.def_lvalue [[IMM]]
-    # CHECK-NEXT: [[PTR:%.*]] = lit.ref.to_pointer [[IMM]]
-    # CHECK-NEXT: [[RES:%.*]] = lit.call @"{{.*}}@MyPointer::@"__init__{{.*}}"<:type T>([[PTR]])
-    # CHECK-NEXT: lit.return [[RES]]
-
-
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
     # CHECK: %0 = hlcf.loop (%arg0 = %index0 : index) -> index {

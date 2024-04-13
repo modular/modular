@@ -437,6 +437,16 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       return matchParams(actualStore.getValue(), expectedStore.getValue());
   }
 
+  // StructExtractAttr can also line up.
+  if (auto actualExtract = dyn_cast<LIT::StructExtractAttr>(actualAttr)) {
+    if (auto expectedExtract = dyn_cast<LIT::StructExtractAttr>(expectedAttr)) {
+      if (actualExtract.getField() != expectedExtract.getField())
+        return failure();
+      return matchParams(actualExtract.getStructValue(),
+                         expectedExtract.getStructValue());
+    }
+  }
+
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << parameterIndex << "\n");
   return failure();
@@ -584,6 +594,9 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 
     // Drop all the parameters from the expected type, because we can't push in
     // the parameters we're trying to infer.
+
+    // Drop them if they have ParamIndexRefAttr or ParamDeclRefAttr
+
     // TODO: This is too much. We should probably replace them with a walk to
     // UnknownAttrs.
     auto nonParamType = expectedType.getWithoutParameters(emitter.shared);
