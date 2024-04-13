@@ -1496,7 +1496,10 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure]> {
 // CallLLVMIntrinsicOp
 //===----------------------------------------------------------------------===//
 
-def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic"> {
+def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+    DeclareOpInterfaceMethods<ConditionallySpeculatable>,
+  ]> {
   let summary = "Call to an LLVM intrinsic function.";
   let description = [{
     The `pop.call_llvm_intrinsic` operation calls an llvm intrinsic using the
@@ -1512,9 +1515,11 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic"> {
   let arguments = (ins
     AttrOfType<KGEN_StringType>:$intrin, Variadic<AnyType>:$args,
     DefaultValuedAttr<POP_FastmathFlagsAttr,
-                      "FastmathFlags::none">:$fastmathFlags);
+                      "FastmathFlags::none">:$fastmathFlags,
+    DefaultValuedAttr<BoolAttr, "true">:$hasSideEffects);
   let results = (outs Optional<AnyType>:$results);
   let assemblyFormat = [{
+    (`side_effecting` $hasSideEffects^)?
     custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`
     attr-dict `:` functional-type($args, $results)
   }];

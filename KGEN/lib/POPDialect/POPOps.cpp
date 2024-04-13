@@ -451,6 +451,22 @@ LogicalResult GlobalConstantOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// CallLLVMIntrinsicOp
+//===----------------------------------------------------------------------===//
+
+void CallLLVMIntrinsicOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  if (getHasSideEffects())
+    effects.emplace_back(mlir::MemoryEffects::Write::get());
+}
+
+mlir::Speculation::Speculatability CallLLVMIntrinsicOp::getSpeculatability() {
+  if (getHasSideEffects())
+    return mlir::Speculation::NotSpeculatable;
+  return mlir::Speculation::Speculatable;
+}
+
+//===----------------------------------------------------------------------===//
 // CompilerGlobalLoadOp
 //===----------------------------------------------------------------------===//
 
