@@ -470,9 +470,9 @@ struct Q4sym[
         )
 
         var blob_output_ptr = output_tensor.data.address
-        var base_block_ptr = bitcast[Q4sym[group_size, float_dtype]](
-            blob_output_ptr
-        )
+        var base_block_ptr = blob_output_ptr.bitcast[
+            Q4sym[group_size, float_dtype]
+        ]()
 
         # as we support only inner-most dim, treat like rank-2 tensor
         var outer_stride = prod_dims[0, rank - 1](input_tensor)
@@ -527,9 +527,9 @@ struct Q4sym[
         # TODO: check contiguous inputs and outputs
 
         var uint8_input_ptr = input_tensor.data.address
-        var base_block_ptr = bitcast[
+        var base_block_ptr = uint8_input_ptr.bitcast[
             Q4sym[group_size, float_dtype, are_nibbles_reversed]
-        ](uint8_input_ptr)
+        ]()
 
         # as we support only inner-most dim, treat like rank-2 tensor
         var output_inner_dim = output_shape[rank - 1]
