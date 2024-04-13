@@ -1284,7 +1284,7 @@ alias _SERIALIZATION_HEADER = StaticTuple[Int8, 6](
 
 fn _serialize_as_tensor[
     type: AnyRegType
-](inout object: type) -> Tensor[DType.int8]:
+](object: Reference[type, _, _, AddressSpace.GENERIC]) -> Tensor[DType.int8]:
     """Serialize the given object into a Tensor of bytes.
 
     Args:
@@ -1293,10 +1293,10 @@ fn _serialize_as_tensor[
     Returns:
       Tensor containing the bytes of object.
     """
-    var self_ptr = bitcast[Int8](Pointer.address_of(object))
+    var self_ptr = object.get_legacy_pointer().bitcast[Int8]()
     alias size = sizeof[type]()
     var bytes = Tensor[DType.int8](size)
-    memcpy(bytes.data(), DTypePointer[DType.int8](self_ptr.address), size)
+    memcpy(bytes.data(), self_ptr, size)
     return bytes^
 
 
@@ -1321,7 +1321,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     var spec_size: UInt32 = sizeof[TensorSpec]()
     var spec_size_bytes = _serialize_as_tensor(spec_size)
     var spec = tensor.spec()
-    var spec_bytes = _serialize_as_tensor[TensorSpec](spec)
+    var spec_bytes = _serialize_as_tensor(spec)
 
     var bytes = Tensor[DType.int8](
         header_bytes.num_elements()
