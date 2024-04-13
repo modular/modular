@@ -1651,8 +1651,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
     // If the arguments or results got bound to a memory-only type then their
     // argument convention needs to change.  We cannot support this until we get
-    // proper type traits.  Note that the PointerType is considered a valid
-    // register passable type, so things passed byref are ok.
+    // proper type traits.
+    // TODO: Don't let memory types bind to AnyRegType.
     if (!ASTType(expectedType).isRegisterPassable(callLoc, shared))
       return emitDiagFor.argGenericMemType(expectedArgIdx, expectedType);
 
