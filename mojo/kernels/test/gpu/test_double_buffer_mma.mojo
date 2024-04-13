@@ -207,8 +207,8 @@ fn sgemm_double_buffer[
     ]()
 
     # Cast pointers from generic to global.
-    var a_gmem_ptr = a.data.address.address_space_cast[AddressSpace.GLOBAL]()
-    var b_gmem_ptr = b.data.address.address_space_cast[AddressSpace.GLOBAL]()
+    var a_gmem_ptr = a.data.address.address_space_bitcast[AddressSpace.GLOBAL]()
+    var b_gmem_ptr = b.data.address.address_space_bitcast[AddressSpace.GLOBAL]()
 
     # Current block updates a [BM, BN] tile in C.
     # Find the this tile's coordinates in C and set the offsets in A, B.

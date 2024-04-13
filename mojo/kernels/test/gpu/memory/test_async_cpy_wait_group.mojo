@@ -24,7 +24,7 @@ fn copy_via_shared(
     ]()
     var src_global: Pointer[
         Float32, _AddressSpace.GLOBAL
-    ] = src._as_scalar_pointer().address_space_cast[_AddressSpace.GLOBAL]()
+    ] = src._as_scalar_pointer().address_space_bitcast[_AddressSpace.GLOBAL]()
 
     memory.async_copy[4](
         src_global.offset(thread_id),
