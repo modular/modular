@@ -941,7 +941,7 @@ def KGEN_UndefOp : KGENOp<"undef", [ConstantLike, Pure]> {
 def KGEN_CallIndirectOp : KGENOp<"call_indirect", [
     TypesMatchWith<"operands match callee argument types", "callee",
     "arguments", "cast<SignatureType>($_self).getArguments()">,
-    CalleeResultTypes]> {
+    CalleeResultTypes, DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Call a signature typed instance";
   let description = [{
     The `kgen.call_indirect` operation takes an SSA value of `!kgen.signature`

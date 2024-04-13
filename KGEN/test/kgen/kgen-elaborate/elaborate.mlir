@@ -350,6 +350,24 @@ kgen.generator @test_paramref_type_rewrite() {
   kgen.return
 }
 
+
+kgen.generator @indirect_callee() -> index {
+  %0 = kgen.param.constant = <42>
+  kgen.return %0: index
+}
+
+kgen.generator @call_indirect(%fp: !kgen.signature<() -> index>) -> index {
+  %0 = kgen.call_indirect %fp() : () -> index
+  kgen.return %0: index
+}
+
+// CHECK-LABEL: kgen.func @test_comptime_call_indirect
+kgen.generator @test_comptime_call_indirect() -> index {
+  // CHECK-NEXT: %index42 = kgen.param.constant = <42>
+  %0 = kgen.param.constant = <apply(:(!kgen.signature<() -> index>) -> index @call_indirect, @indirect_callee)>
+  kgen.return %0: index
+}
+
 // -----
 
 // This takes a parameter function that uses a contextual type instead of
