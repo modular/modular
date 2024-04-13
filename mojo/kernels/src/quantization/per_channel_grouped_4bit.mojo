@@ -492,9 +492,9 @@ struct Q4sym[
 
                 # TODO: use the memory more directly instead of memcpy
                 var encoded_data = Q4sym[group_size, float_dtype](loaded_group)
-                var src_ptr = Pointer.address_of(
-                    encoded_data
-                ).address_space_bitcast[output_ptr.address_space]()
+                var src_ptr = Pointer.address_of(encoded_data).bitcast[
+                    address_space = output_ptr.address_space
+                ]()
                 memcpy(output_ptr, src_ptr, 1)
 
     @staticmethod
