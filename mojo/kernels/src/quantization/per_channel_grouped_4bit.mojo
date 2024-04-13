@@ -494,7 +494,7 @@ struct Q4sym[
                 var encoded_data = Q4sym[group_size, float_dtype](loaded_group)
                 var src_ptr = Pointer.address_of(
                     encoded_data
-                ).address_space_cast[output_ptr.address_space]()
+                ).address_space_bitcast[output_ptr.address_space]()
                 memcpy(output_ptr, src_ptr, 1)
 
     @staticmethod
