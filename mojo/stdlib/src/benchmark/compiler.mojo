@@ -99,7 +99,7 @@ fn keep[type: DType](val: DTypePointer[type]):
     Args:
       val: The value to not optimize away.
     """
-    keep(Pointer(val.address))
+    keep(val.address)
 
 
 @always_inline
