@@ -1236,9 +1236,8 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
                 raise "given file is not a serialized mojo tensor."
 
         fn _uint32_from_bytes(data: DTypePointer[DType.int8]) -> UInt32:
-            var ptr = data._as_scalar_pointer()
-            var spec_ptr = bitcast[UInt32](ptr)
-            return __get_address_as_owned_value(spec_ptr.address)
+            var ptr = data._as_scalar_pointer().bitcast[UInt32]()
+            return __get_address_as_owned_value(ptr.address)
 
         var major_format_ptr = bytes.data() + len(_SERIALIZATION_HEADER)
         var major_format = _uint32_from_bytes(major_format_ptr)
