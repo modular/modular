@@ -87,9 +87,7 @@ struct EngineTensorView:
             An instance of EngineTensorView of given tensor.
         """
         return Self {
-            _ptr: bitcast[Tensor[DType.invalid]](
-                Pointer[Tensor[type]].address_of(tensor)
-            ),
+            _ptr: Pointer.address_of(tensor).bitcast[Tensor[DType.invalid]](),
             _data_ptr: tensor.data().bitcast[DType.invalid](),
             _dtype: type,
         }
@@ -161,7 +159,7 @@ struct EngineTensorView:
 
     @always_inline("nodebug")
     fn _get_value[type: DType](self) -> Tensor[type]:
-        return bitcast[Tensor[type]](self._ptr)[]
+        return self._ptr.bitcast[Tensor[type]]()[]
 
 
 @value
@@ -192,7 +190,7 @@ struct EngineNumpyView:
             DTypePointer of given type.
         """
         var data_ptr = self._obj.ctypes.data.__index__()
-        return bitcast[DType.invalid](data_ptr)
+        return DTypePointer[DType.invalid](address=data_ptr)
 
     fn dtype(self) raises -> DType:
         """Get DataType of the array backing the view.
