@@ -11,7 +11,7 @@ from algorithm import (
     parallelize,
 )
 from sys.info import num_physical_cores
-from benchmark import Bencher, BenchId, Bench
+from benchmark import Bencher, BenchId, Bench, keep
 
 
 @parameter
@@ -19,7 +19,7 @@ fn bench_empty_sync_parallelize(inout b: Bencher) raises:
     @always_inline
     @parameter
     fn parallel_fn(thread_id: Int):
-        pass
+        keep(thread_id)
 
     sync_parallelize[parallel_fn](num_physical_cores())
 
@@ -29,7 +29,7 @@ fn bench_empty_parallelize(inout b: Bencher) raises:
     @always_inline
     @parameter
     fn parallel_fn(thread_id: Int):
-        pass
+        keep(thread_id)
 
     parallelize[parallel_fn](num_physical_cores())
 
