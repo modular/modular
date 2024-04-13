@@ -403,7 +403,6 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw_def:
   case Token::kw_lambda:
   case Token::kw_fn:
-  case Token::kw___get_lvalue_as_address:
   case Token::kw___get_mvalue_as_litref:
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
@@ -553,7 +552,6 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
     // will have handled that, so we can return here.
     return parseLambda(result);
 
-  case Token::kw___get_lvalue_as_address:
   case Token::kw___get_mvalue_as_litref:
   case Token::kw___get_address_as_owned_value:
   case Token::kw___get_address_as_uninit_lvalue:
@@ -1044,9 +1042,6 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
     llvm_unreachable("bad token");
   case Token::kw___get_address_as_uninit_lvalue:
     nodeKind = ExprNode::kGetAddressAsUninitLValue;
-    break;
-  case Token::kw___get_lvalue_as_address:
-    nodeKind = ExprNode::kGetLValueAsAddress;
     break;
   case Token::kw___get_mvalue_as_litref:
     nodeKind = ExprNode::kGetMValueAsLitRef;

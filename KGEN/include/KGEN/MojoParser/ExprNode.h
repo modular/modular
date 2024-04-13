@@ -59,14 +59,13 @@ public:
     kFunctionType,   // async fn[](owned Int, &F32) capturing raises -> F64
 
     // Magic functions
-    kGetLValueAsAddress,       // __get_lvalue_as_address(x)
     kGetMValueAsLitRef,        // __get_mvalue_as_litref(x)
     kGetAddressAsUninitLValue, // __get_address_as_uninit_lvalue(x)
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
     kLifetimeOf,               // __lifetime_of(x)
     kTypeOf,                   // __type_of(x)
     kSourceLocation,           // __source_location()
-    kFirstMagicFunction = kGetLValueAsAddress,
+    kFirstMagicFunction = kGetMValueAsLitRef,
     kLastMagicFunction = kSourceLocation,
 
     // Prefix and Postfix unary expressions.
