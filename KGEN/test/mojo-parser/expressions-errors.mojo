@@ -6,8 +6,6 @@
 
 # RUN: kgen-translate -import-mojo -verify-diagnostics %s
 
-from memory.unsafe import _LITRef
-
 ##===----------------------------------------------------------------------===##
 # Conversions
 ##===----------------------------------------------------------------------===##
@@ -535,13 +533,19 @@ struct Reference[
     lifetime: AnyLifetime[is_mutable].type,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
-    alias mlir_ref_type = _LITRef[
-        type, is_mutable, lifetime, address_space
-    ].type
+    alias _mlir_type = __mlir_type[
+        `!lit.ref<`,
+        type,
+        `, `,
+        lifetime,
+        `, `,
+        address_space._value.value,
+        `>`,
+    ]
 
     # expected-note @+1 {{function declared here}}
-    fn __init__(inout self, value: Self.mlir_ref_type): pass
-    fn __refitem__(self) -> Self.mlir_ref_type: pass
+    fn __init__(inout self, value: Self._mlir_type): pass
+    fn __refitem__(self) -> Self._mlir_type: pass
 
 fn test_bad_ref_errors(a: MemoryOnlyPair, b: MemoryOnlyPair):
   var aref = Reference(a)

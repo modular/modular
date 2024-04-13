@@ -10,7 +10,7 @@
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
 # TODO: should autoimport some day.
-from memory.unsafe import AddressSpace, Reference, _LITRef
+from memory.unsafe import AddressSpace, Reference
 
 # ===----------------------------------------------------------------------=== #
 # Parsing of references
@@ -26,11 +26,11 @@ struct MemExample:
   fn mutate(inout self): pass
 
 # CHECK-LABEL: lit.func @"borrow{{.*}}"<lt: lifetime<0>>(%a: !lit.ref<!MemExample, imm lt> borrow)
-fn borrow[lt: ImmLifetime](a: _LITRef[MemExample, False.__mlir_i1__(), lt].type):
+fn borrow[lt: ImmLifetime](a: Reference[MemExample, False.__mlir_i1__(), lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.func @"mutate{{.*}}"<lt: lifetime<1>>(%a: !lit.ref<!MemExample, mut lt> borrow)
-fn mutate[lt: MutLifetime](a: _LITRef[MemExample, True.__mlir_i1__(), lt].type):
+fn mutate[lt: MutLifetime](a: Reference[MemExample, True.__mlir_i1__(), lt]._mlir_type):
   pass
 
 # CHECK-LABEL: lit.func @"implicit_borrow
@@ -48,7 +48,7 @@ fn implicit_owned(owned a: MemExample):
 # CHECK-LABEL: lit.func @"addrSpaces
 fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: AddressSpace]():
   # CHECK: lit.var.decl "ref1" {{.*}}!lit.ref<!MemExample, mut lt1, #lit.struct.extract<:!Int #lit.struct.extract<:!AddressSpace as1, "_value">, "value">>
-  var ref1 : _LITRef[MemExample, True.__mlir_i1__(), lt1, as1].type
+  var ref1 : Reference[MemExample, True.__mlir_i1__(), lt1, as1]._mlir_type
 
   # CHECK: lit.alias.decl [[AS2:.*]]: !AddressSpace = {{.*}} {42}
   alias as2: AddressSpace = AddressSpace(42)
@@ -61,8 +61,8 @@ fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: AddressSpace]():
 # CHECK-SAME: (%a: !lit.ref<!MemExample, mut=isMut, life> borrow)
 # CHECK-SAME: -> !lit.ref<!MemExample, mut=isMut, life>
 fn parametricMut[isMut: __mlir_type.i1,
-                 life: AnyLifetime[isMut].type](a: _LITRef[MemExample, isMut, life].type)
-   -> _LITRef[MemExample, isMut, life].type:
+                 life: AnyLifetime[isMut].type](a: Reference[MemExample, isMut, life]._mlir_type)
+   -> Reference[MemExample, isMut, life]._mlir_type:
   return a
 
 # CHECK-LABEL: lit.func @"testParametricMut
@@ -220,7 +220,7 @@ struct SelfRefTest:
   # CHECK-LABEL: lit.func @"method
   # CHECK-SAME: (%self: !lit.ref<!SelfRefTest, mut=isMut, lt> borrow)
   fn method[isMut: __mlir_type.i1, lt: AnyLifetime[isMut].type](
-     self: _LITRef[Self, isMut, lt].type) -> Reference[Self, isMut, lt]:
+     self: Reference[Self, isMut, lt]._mlir_type) -> Reference[Self, isMut, lt]:
       return Reference(self)
 
 # CHECK-LABEL: lit.func @"testSelfRef
@@ -244,8 +244,8 @@ fn testLifetimeOf1(a: MemExample) ->
 # CHECK-LABEL: lit.func @"testLifetimeOf2
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
 # CHECK-SAME: !lit.ref<!MemExample, imm *"a`">
-fn testLifetimeOf2(a: MemExample) -> _LITRef[
-        MemExample,  __mlir_attr.`0: i1`, __lifetime_of(a)].type:
+fn testLifetimeOf2(a: MemExample) -> Reference[
+        MemExample,  __mlir_attr.`0: i1`, __lifetime_of(a)]._mlir_type:
 
   # CHECK: kgen.return {{.*}} : !lit.ref<!MemExample, imm *"a`">
   return Reference(a).value
@@ -318,7 +318,7 @@ struct CutDownVariadicPack[
 # by UnsafePointer for example) to mortal reference with specified lifetime.
 # CHECK: lit.func @"test_immortal_to_mortal
 fn test_immortal_to_mortal[mutability: __mlir_type.`i1`, life: AnyLifetime[mutability].type](arg:
-   Reference[Int, mutability, life].mlir_ref_type)
+   Reference[Int, mutability, life]._mlir_type)
     -> Reference[Int, mutability, life]:
   # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON]], %arg)

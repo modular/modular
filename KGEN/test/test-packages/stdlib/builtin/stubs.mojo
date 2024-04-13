@@ -215,9 +215,9 @@ struct RaisingCoroutine[T: AnyRegType]:
 
 @register_passable
 struct VariadicList[type: AnyRegType]:
-    alias storage_type = __mlir_type[`!kgen.variadic<`, type, `>`]
+    alias _mlir_type = __mlir_type[`!kgen.variadic<`, type, `>`]
 
-    fn __init__(value: Self.storage_type) -> Self:
+    fn __init__(value: Self._mlir_type) -> Self:
         return Self {}
 
 
@@ -226,28 +226,28 @@ struct VariadicListMem[
     elt_is_mutable: __mlir_type.i1,
     lifetime: __mlir_type[`!lit.lifetime<`, elt_is_mutable, `>`],
 ]:
-    alias mlir_ref_type = __mlir_type[
+    alias _mlir_type = __mlir_type[
         `!lit.ref<`, element_type, `, `, lifetime, `, 0>`
     ]
 
     fn __init__(
         inout self,
         value: __mlir_type[
-            `!kgen.variadic<`, Self.mlir_ref_type, `, borrow_in_mem>`
+            `!kgen.variadic<`, Self._mlir_type, `, borrow_in_mem>`
         ],
     ):
         pass
 
     fn __init__(
         inout self,
-        value: __mlir_type[`!kgen.variadic<`, Self.mlir_ref_type, `, byref>`],
+        value: __mlir_type[`!kgen.variadic<`, Self._mlir_type, `, byref>`],
     ):
         pass
 
     fn __init__(
         inout self,
         value: __mlir_type[
-            `!kgen.variadic<`, Self.mlir_ref_type, `, owned_in_mem>`
+            `!kgen.variadic<`, Self._mlir_type, `, owned_in_mem>`
         ],
     ):
         pass
