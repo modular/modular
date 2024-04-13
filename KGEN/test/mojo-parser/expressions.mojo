@@ -1339,8 +1339,34 @@ fn test_in(a: String, b: String):
     # CHECK-NEXT: = lit.call {{.*}}__invert__{{.*}}([[RESB]])
     _ = a not in b
 
+##===----------------------------------------------------------------------===##
+# Parameter inference
+##===----------------------------------------------------------------------===##
+
 # Test that parameter inference can handle this.
-fn dependent_call_it[simd_width: Int, dtype: DType](ptr: DTypePointer[dtype]):
-   dependent_callee[simd_width](ptr, 0.0)
-fn dependent_callee[width: Int](storage: DTypePointer, pad_value: Scalar[storage.type]):
+fn dependent_call_it[dtype: DType](ptr: DTypePointer[dtype]):
+   dependent_callee(ptr, 0.0)
+# This requires substitution to realize that storage.type == dtype
+fn dependent_callee[dtype: DType](storage: DTypePointer[dtype],
+                   pad_value: Scalar[storage.type]):
    pass
+
+# This requires handling of VariadicAttr in parameter inference.
+fn variadic_attr_caller(*inputs: Tuple[Int]):
+   variadic_attr_callee[Int](inputs)
+fn variadic_attr_callee[key_type: CollectionElement](
+       inputs: VariadicListMem[Tuple[key_type], _, _]
+    ):
+  pass
+
+# Test that parameter inference works with implicit conversions - in this case
+# that we can infer the parameters of 'thing_taking_reference' even though x
+# needs to be built as a Reference.
+fn thing_taking_reference[type: AnyType, m: __mlir_type.i1, l: AnyLifetime[m].type](
+    arg: Reference[type, m, l]): pass
+
+# CHECK-LABEL: lit.func @"test_thing_taking_reference
+fn test_thing_taking_reference(inout x: String):
+# CHECK: lit.call {{.*}}@Reference::@"__init__
+# CHECK-SAME: <:!AnyType #String1, :i1 1, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
+  thing_taking_reference(x)
