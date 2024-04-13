@@ -334,7 +334,7 @@ fn test_immortal_to_mortal[mutability: __mlir_type.`i1`, life: AnyLifetime[mutab
   return UnsafePointer(Reference(arg))[]
 
 
-# CHECK: lit.func @"ref_copyability
+# CHECK-LABEL: lit.func @"ref_copyability
 fn ref_copyability[*element_types: Copyable](*args: *element_types):
   # CHECK: %x = lit.var.decl
   # Cast away the metatype rebind to AnyType.
@@ -343,3 +343,27 @@ fn ref_copyability[*element_types: Copyable](*args: *element_types):
   var x = args.get_element[4]()[]
 
   # CHECK-NEXT: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__del__{{.*}}(%x)
+
+
+@value
+struct HeterogenousList[elt_lifetime: ImmLifetime]:
+    var storage: VariadicListMem[MemExample, False.__mlir_i1__(), elt_lifetime]._mlir_type
+
+fn make_het_list(*elts: MemExample) -> HeterogenousList[__lifetime_of(elts)]:
+  # NOTE: typeof(elts) is different in argument list than in the body of the
+  # function, this will be fixed by https://github.com/modularml/modular/issues/37343
+  return HeterogenousList[elts.lifetime](elts.value)
+
+# CHECK-LABEL: lit.func @"test_heterogenous_list
+fn test_heterogenous_list():
+    var i = MemExample()
+    var j = MemExample()
+    var k = MemExample()
+
+    # Verify that each list captures the right lifetime set.
+    # CHECK: lit.var.decl "list1" var : !lit.ref<{{.*}}@HeterogenousList<:lifetime<0> (mutcast mut *"i`")>
+    var list1 = make_het_list(i)
+    # CHECK: lit.var.decl "list2" var : !lit.ref<{{.*}}@HeterogenousList<:lifetime<0> {(mutcast mut *"i`"), (mutcast mut *"j`1")}>
+    var list2 = make_het_list(i, j)
+    # CHECK: lit.var.decl "list3" var : !lit.ref<{{.*}}@HeterogenousList<:lifetime<0> {(mutcast mut *"i`"), (mutcast mut *"j`1"), (mutcast mut *"k`2")}>
+    var list3 = make_het_list(i, j, k)
