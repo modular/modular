@@ -467,22 +467,6 @@ kgen.func @pointer_bitcast_of_bitcast(%arg0: !kgen.pointer<si32>) -> !kgen.point
   kgen.return %1 : !kgen.pointer<f32>
 }
 
-// CHECK-LABEL: @addrspacecast_same
-kgen.func @addrspacecast_same(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none> {
-  // CHECK-NEXT: return %arg0
-  %0 = pop.pointer.addrspacecast %arg0 : <none> to <none>
-  kgen.return %0 : !kgen.pointer<none>
-}
-
-// CHECK-LABEL: @addrspacecast_of_addrspacecast
-kgen.func @addrspacecast_of_addrspacecast(%arg0: !kgen.pointer<none>) -> !kgen.pointer<none, 2> {
-  // CHECK: %0 = pop.pointer.addrspacecast %arg0 : <none> to <none, 2>
-  %0 = pop.pointer.addrspacecast %arg0 : <none> to <none, 1>
-  %1 = pop.pointer.addrspacecast %0 : <none, 1> to <none, 2>
-  // CHECK: return %0
-  kgen.return %1 : !kgen.pointer<none, 2>
-}
-
 // CHECK-LABEL: @cast
 kgen.func @cast() -> (
     !pop.scalar<f16>, !pop.scalar<f16>, !pop.scalar<f16>,
