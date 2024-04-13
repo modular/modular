@@ -1209,6 +1209,32 @@ struct ConvertPOPCallLLVMIntrinsic
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertPOPPointerBitcast
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPPointerBitcast
+    : public ConvertPOPToLLVMPattern<PointerBitcastOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PointerBitcastOp op, PointerBitcastOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto resultTy = getTypeConverter()->convertType(op.getType());
+    if (!resultTy)
+      return failure();
+
+    // The LLVMPointerType doesn't maintain an element type, just an address
+    // space.  Insert an address space cast if needed.
+    auto srcVal = adaptor.getOperands()[0];
+    if (srcVal.getType() != resultTy)
+      rewriter.replaceOpWithNewOp<LLVM::AddrSpaceCastOp>(op, resultTy, srcVal);
+    else
+      rewriter.replaceOp(op, srcVal);
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
 // Trivial Conversions
 //===----------------------------------------------------------------------===//
 
@@ -1234,8 +1260,6 @@ using ConvertPOPPointerAddrSpaceCastOp =
                                        LLVM::AddrSpaceCastOp>;
 using ConvertPOPBitcast =
     mlir::OneToOneConvertToLLVMPattern<BitcastOp, LLVM::BitcastOp>;
-using ConvertPOPPointerBitcast =
-    mlir::OneToOneConvertToLLVMPattern<PointerBitcastOp, LLVM::BitcastOp>;
 using ConvertPOPShl = mlir::OneToOneConvertToLLVMPattern<ShlOp, LLVM::ShlOp>;
 using ConvertPOPIndexToPointer =
     mlir::OneToOneConvertToLLVMPattern<IndexToPointerOp, LLVM::IntToPtrOp>;
