@@ -122,9 +122,11 @@ class ParameterInferenceState {
 public:
   ParameterInferenceState(ASTDecl &declScope, SharedState &shared, size_t index,
                           ParserParamEvaluator &evaluator,
-                          ParameterInferenceDiagnostics &diags)
+                          ParameterInferenceDiagnostics &diags,
+                          bool allowImplicitConversions)
       : declScope(declScope), shared(shared), parameterIndex(index),
-        evaluator(evaluator), paramIndexRefDepth(0), diags(diags) {}
+        evaluator(evaluator), paramIndexRefDepth(0), diags(diags),
+        allowImplicitConversions(allowImplicitConversions) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
   /// signature, try to infer the value of the next 'decl' parameter.  This
@@ -156,6 +158,9 @@ private:
   SmallVector<PValue> inferredValues;
   size_t paramIndexRefDepth;
   ParameterInferenceDiagnostics &diags;
+
+  // True if implicit conversions in argument lists are permitted.
+  bool allowImplicitConversions;
 
   const ExprNode *curArgExpr = nullptr;
 };
@@ -270,7 +275,9 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       if (failed(
               matchTypes(actual.getElementType(), expected.getElementType())))
         return failure();
-      return matchParams(actual.getAddressSpace(), expected.getAddressSpace());
+      // FIXME: Enforce address space matching as per Reference above.
+      (void)matchParams(actual.getAddressSpace(), expected.getAddressSpace());
+      return success();
     }
 
   // Handle VariadicType.
@@ -537,8 +544,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     if (canConvertWithRebind(argType, expectedType, shared))
       return success();
 
-    // TODO: Implicit conversions for parameter inference here.
-
     // If the argument is an explicit !lit.ref type and the argument value is an
     // MValue, then we allow matching it to its underlying element type,
     // addrspace, mutability, lifetime etc.
@@ -559,11 +564,56 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       }
     }
 
-    // Otherwise, we pass as an r-value if we know the type.
-    // FIXME: Don't ignore this failure! We should perform implicit conversions
-    // above and when that is ready, we can actually enable this!
-    (void)matchTypes(argType, expectedType);
-    return success();
+    // Otherwise, we pass as an r-value if we know what the type must be.
+    if (succeeded(matchTypes(argType, expectedType)))
+      return success();
+
+    // If implicit conversions are enabled and the target type is known, then
+    // we can check to see if any of the constructors for the result type can
+    // work.
+    if (!allowImplicitConversions)
+      return failure();
+    ASTDecl *expectedDecl = expectedType.getDecl(shared);
+    if (!expectedDecl)
+      return failure();
+
+    // Determine if we can construct the requested type given the existing value
+    // we have.  If so, get the type inferred signature of the init method that
+    // would make it work.
+    ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
+
+    // Drop all the parameters from the expected type, because we can't push in
+    // the parameters we're trying to infer.
+    // TODO: This is too much. We should probably replace them with a walk to
+    // UnknownAttrs.
+    auto nonParamType = expectedType.getWithoutParameters(emitter.shared);
+    auto [pValue, _] = emitter.canConstructType(
+        nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
+        /*allowImplicitConversions=*/false);
+    if (!pValue) {
+      // TODO: Because we're not passing known params from expectedType down, we
+      // can't reliably resolve the implicit conversion in the case of
+      // overloads. One example is when ExpectedType is "SIMD[uint8, 1]" and we
+      // have an IntLiteral, because you can't infer the SIMD parameters from an
+      // SIMD.__init__(IntLiteral) constructor.
+      return success();
+    }
+
+    // If we found one, we recursively call inferOneOperand (but with implicit
+    // conversions disabled of course) to resolve our value as the init
+    // methods argument.  This allows us to infer parameters from it.
+    auto initSig = cast<LITSignatureType>(pValue.getType());
+    // We expected to args: 0=self, 1=value we're converting from.
+    ASTType inferredSelf;
+    if (initSig.getArgConvention(0) == ArgConvention::InitSelf)
+      inferredSelf =
+          ASTType(initSig.getArguments()[0]).getReferenceElementType();
+    else // FIXME: get rid of -> Self initializers.
+      inferredSelf = initSig.getResultType();
+
+    // Infer the parameters of this overload candidate against the computed
+    // result type of the initializer.
+    return matchTypes(inferredSelf, expectedType);
   }
   case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
@@ -1485,7 +1535,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                                     ParserParamEvaluator &evaluator) {
     if (PValue inferred =
             ParameterInferenceState(callable.paramBindings.declScope, shared,
-                                    index, evaluator, inferenceDiags)
+                                    index, evaluator, inferenceDiags,
+                                    allowImplicitConversions)
                 .infer(signature, bindingsSoFar, callOperands,
                        variadicKwOperands))
       return inferred;
