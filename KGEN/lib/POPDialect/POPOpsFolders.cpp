@@ -573,32 +573,6 @@ LogicalResult PointerBitcastOp::canonicalize(PointerBitcastOp op,
 }
 
 //===----------------------------------------------------------------------===//
-// PointerAddrSpaceCastOp
-//===----------------------------------------------------------------------===//
-
-OpFoldResult PointerAddrSpaceCastOp::fold(FoldAdaptor adaptor) {
-  auto cast = getInput().getDefiningOp<PointerAddrSpaceCastOp>();
-  if (cast && cast.getInput().getType() == getType())
-    return cast.getInput();
-  return {};
-}
-
-LogicalResult PointerAddrSpaceCastOp::canonicalize(PointerAddrSpaceCastOp op,
-                                                   PatternRewriter &b) {
-  auto cast = op.getInput().getDefiningOp<PointerAddrSpaceCastOp>();
-  if (!cast)
-    return b.notifyMatchFailure(op.getLoc(), "not a bitcast of a bitcast");
-  if (!cast->hasOneUse())
-    return b.notifyMatchFailure(op.getLoc(),
-                                "intermediate cast has multiple uses");
-  b.replaceOpWithNewOp<PointerAddrSpaceCastOp>(op, op.getType(),
-                                               cast.getInput());
-  // Erase the intermediate cast -- its only use has been removed.
-  b.eraseOp(cast);
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
 

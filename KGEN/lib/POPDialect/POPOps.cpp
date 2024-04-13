@@ -121,19 +121,6 @@ bool PointerBitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 }
 
 //===----------------------------------------------------------------------===//
-// PointerAddrSpaceCastOp
-//===----------------------------------------------------------------------===//
-
-bool PointerAddrSpaceCastOp::areCastCompatible(TypeRange inputs,
-                                               TypeRange outputs) {
-  if (inputs.size() != 1 || outputs.size() != 1)
-    return false;
-  auto inPtr = dyn_cast<PointerType>(inputs.front());
-  auto outPtr = dyn_cast<PointerType>(outputs.front());
-  return inPtr && outPtr && inPtr.getElementType() == outPtr.getElementType();
-}
-
-//===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
 

@@ -515,32 +515,6 @@ def POP_PointerBitcastOp : POPOp<"pointer.bitcast", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// PointerAddrSpaceCastOp
-//===----------------------------------------------------------------------===//
-
-def POP_PointerAddrSpaceCastOp : POPOp<"pointer.addrspacecast", [Pure,
-    DeclareOpInterfaceMethods<CastOpInterface>]> {
-  let summary = "pointer address space cast";
-  let description = [{
-    The `pop.pointer.addrspacecast` operation converts between pointers that
-    differ only in their address space.
-
-    Example:
-
-    ```mlir
-    %0 = pop.pointer.addrspacecast %arg0 : <none> to <none, 3>
-    ```
-  }];
-
-  let arguments = (ins PointerType:$input);
-  let results = (outs PointerType:$output);
-  let assemblyFormat = "$input attr-dict `:` type($input) `to` type($output)";
-
-  let hasFolder = 1;
-  let hasCanonicalizeMethod = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
 

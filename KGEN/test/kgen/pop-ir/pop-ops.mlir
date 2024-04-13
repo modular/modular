@@ -435,13 +435,6 @@ kgen.generator @pointer_bitcast(%arg0: !kgen.pointer<scalar<f32>>, %arg1: !kgen.
   kgen.return %0, %1 : !kgen.pointer<simd<4, si32>>, !kgen.pointer<scalar<f64>>
 }
 
-// CHECK-LABEL: @addrspacecast
-kgen.func @addrspacecast(%arg0: !kgen.pointer<none>) {
-  // CHECK: %0 = pop.pointer.addrspacecast %arg0 : <none> to <none, 3>
-  %0 = pop.pointer.addrspacecast %arg0 : <none> to <none, 3>
-  kgen.return
-}
-
 // CHECK-LABEL: @pointer_bitcast_funcptr
 kgen.generator @pointer_bitcast_funcptr<T:type>(%arg0: !kgen.signature<() -> ()>) {
   // CHECK: pop.pointer.bitcast %arg0 : !kgen.signature<() -> ()> to !kgen.signature<(i32) -> i32>
