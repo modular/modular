@@ -231,17 +231,10 @@ fn sgemm_double_buffer[
             var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
                 next_k, 0
             ).coalesce()
-            var thread_loadb_smem_frags = b_smem_warp_row.vectorize[
-                simd_size
-            ]().distribute[thread_layout, axis=1](lane_id)
-            b_reg[next_buffer_id].vectorize[simd_size]().copy_from_numa(
-                thread_loadb_smem_frags
+            warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
+                b_reg[next_buffer_id].vectorize[simd_size](),
+                b_smem_warp_row.vectorize[simd_size](),
             )
-            # FIXME: Figure out why this drops perf by 4x.
-            # warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
-            #     b_reg[next_buffer_id].vectorize[simd_size](),
-            #     b_smem_warp_row.vectorize[simd_size](),
-            # )
 
             # Load next k tile from global memory to shared memory.
             if k == 0 and k_tile_id < num_k_tiles - 1:
