@@ -797,6 +797,26 @@ LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
   return success();
 }
 
+/// CallIndirectOp cannot conform to CallOpInterface, but is very similar since
+/// we know the callee at elaboration time.
+ErrorTreeOrSuccess CallIndirectOp::interpret(ArrayRef<Attribute> operands,
+                                             InterpreterState &state) {
+  auto callee = dyn_cast<SymbolConstantAttr>(operands[0]);
+  if (!callee)
+    return ErrorTree(getLoc(), "couldn't resolve kgen.call_indirect callee");
+
+  auto bodyOr = state.lookupFunctionBody(callee.getSymbol());
+  if (bodyOr.isError())
+    return ErrorTree(getLoc(), bodyOr.takeError());
+
+  // Function regions are isolated from above, so push a new stack frame. Then,
+  // transfer control flow to the beginning of the function body.
+  Region &body = **bodyOr;
+  state.pushFrame(*this, body.getParentOp());
+  state.transferControlFlowTo(&body.front(), operands.drop_front());
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // StageClosureOp
 //===----------------------------------------------------------------------===//
