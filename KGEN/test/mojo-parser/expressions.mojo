@@ -1006,12 +1006,6 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   # between recursive calls of emitNextCmp calls to get this to work.
   var mixedChain = 0 < 1 < a < 10 < 11 < b < 20 < 21 < c < 30 < 31
 
-
-fn lvalue_utilities(inout a: Int):
-  # Get the address of the specified physical lvalue as a pop.pointer value.
-  var addr : __mlir_type[`!kgen.pointer<`,Int,`>`] = __get_lvalue_as_address(a)
-
-
 # CHECK-LABEL: lit.func @"ref_utilities
 fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
                  inout c: MemoryOnlyInt,

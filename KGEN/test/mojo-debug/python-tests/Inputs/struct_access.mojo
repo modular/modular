@@ -38,7 +38,7 @@ fn main():
     p.first = 3
     p.second = 4
     print(p.second)  # breakpoint
-    use_address(__get_lvalue_as_address(p.first))
+    use_address(Reference(p.first).get_legacy_pointer())
 
     var pp = MyPairPair(5, 6, 7, 8)
     print(pp.second.first)  # breakpoint
