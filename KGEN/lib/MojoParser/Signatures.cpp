@@ -762,10 +762,15 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
     arg.kgenConvention = ArgConvention::OwnedInReg;
     break;
   case ParsedArgument::kConventionBorrowed:
-    if (type.isRegisterPassable(arg.loc, shared))
+    arg.kgenConvention = ArgConvention::BorrowedInMem;
+    // We can pass the borrowed argument in a register if it is register
+    // passable, but variadics have more details.
+    if (type.isRegisterPassable(arg.loc, shared) &&
+        // We MUST pass non-trivial register types with VariadicListMem,
+        // but can't quite use it for all borrowed arguments yet.
+        // TODO: Make variadics always pass through memory.
+        (arg.vararg != VarArgKind::VarArg || type.isTrivial(arg.loc, shared)))
       arg.kgenConvention = ArgConvention::BorrowedInReg;
-    else
-      arg.kgenConvention = ArgConvention::BorrowedInMem;
     break;
   case ParsedArgument::kConventionInOut:
     arg.kgenConvention = ArgConvention::ByRef;
