@@ -1040,6 +1040,10 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     p << ", ";
     printParamValue(p, operands[1]);
     break;
+  case POC::VariadicPtrRemoveMap:
+    // Include the type of the list.
+    printColonTypeParamValue(p, operands[0]);
+    break;
   }
 }
 
