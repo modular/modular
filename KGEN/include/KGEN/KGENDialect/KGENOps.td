@@ -1514,6 +1514,24 @@ def KGEN_PackSizeOp : KGENOp<"pack.size", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// PackLoadOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_PackLoadOp : KGENOp<"pack.load",
+                     [Pure, DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "load all pack elements";
+  let description = [{
+    The `kgen.pack.load` operation takes a pack of !kgen.pointer values and
+    loads each one into a pack without the pointer type.  This requires
+    elements with trivially loadable types supported by pop.load.
+  }];
+
+  let arguments = (ins KGEN_PackType:$pack);
+  let results = (outs KGEN_PackType:$result);
+  let assemblyFormat = "$pack attr-dict `:` type($pack)";
+}
+
+//===----------------------------------------------------------------------===//
 // StructCreateOp
 //===----------------------------------------------------------------------===//
 

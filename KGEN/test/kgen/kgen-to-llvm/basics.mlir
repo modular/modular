@@ -240,6 +240,34 @@ kgen.func @used_func() {
   kgen.return
 }
 
+// CHECK: llvm.func internal @pop_pack_load
+kgen.func @pop_pack_load(%a: !kgen.pointer<i32>, %b: !kgen.pointer<f64>,
+                         %c: !kgen.pointer<f32>) -> !kgen.pack<[i32, f64, f32]> {
+  // CHECK-NEXT: %0 = llvm.mlir.undef : !llvm.struct<(ptr, ptr, ptr)>
+  // CHECK-NEXT: %1 = llvm.insertvalue %arg0, %0[0]
+  // CHECK-NEXT: %2 = llvm.insertvalue %arg1, %1[1]
+  // CHECK-NEXT: %3 = llvm.insertvalue %arg2, %2[2]
+  %0 = kgen.pack.create(%a, %b, %c) : !kgen.pack<[!kgen.pointer<i32>, !kgen.pointer<f64>, !kgen.pointer<f32>]>
+
+  // CHECK-NEXT: %4 = llvm.extractvalue %3[0]
+  // CHECK-NEXT: %5 = builtin.unrealized_conversion_cast %4 : !llvm.ptr to !kgen.pointer<i32>
+  // CHECK-NEXT: %6 = pop.load %5 : !kgen.pointer<i32>
+  // CHECK-NEXT: %7 = llvm.extractvalue %3[1] : !llvm.struct<(ptr, ptr, ptr)>
+  // CHECK-NEXT: %8 = builtin.unrealized_conversion_cast %7 : !llvm.ptr to !kgen.pointer<f64>
+  // CHECK-NEXT: %9 = pop.load %8 : !kgen.pointer<f64>
+  // CHECK-NEXT: %10 = llvm.extractvalue %3[2]
+  // CHECK-NEXT: %11 = builtin.unrealized_conversion_cast %10 : !llvm.ptr to !kgen.pointer<f32>
+  // CHECK-NEXT: %12 = pop.load %11
+
+  // CHECK-NEXT: %13 = llvm.mlir.undef
+  // CHECK-NEXT: %14 = llvm.insertvalue %6, %13[0]
+  // CHECK-NEXT: %15 = llvm.insertvalue %9, %14[1]
+  // CHECK-NEXT: %16 = llvm.insertvalue %12, %15[2]
+  %1 = kgen.pack.load %0 : !kgen.pack<[pointer<i32>, pointer<f64>, pointer<f32>]>
+
+  // CHECK-NEXT: llvm.return %16
+  kgen.return %1: !kgen.pack<[i32, f64, f32]>
+}
 
 // CHECK: llvm.func @used_package_func
 kgen.func export package @used_package_func() -> !kgen.struct<(i32, i32)>{

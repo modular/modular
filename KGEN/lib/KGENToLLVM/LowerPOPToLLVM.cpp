@@ -712,19 +712,16 @@ struct ConvertPOPLoad : ConvertPOPToLLVMPattern<LoadOp> {
     Type elementType = typeConverter->convertType(ptrType.getElementType());
     unsigned alignment =
         getAlignment(getTypeConverter(), ptrType, adaptor.getAlignmentAttr());
+    Value loadOperand = adaptor.getPtr();
     if (auto addressSpace =
             dyn_cast_or_null<IntegerAttr>(ptrType.getAddressSpace());
         addressSpace && addressSpace.getInt() != 0) {
-      auto castOp = rewriter.create<LLVM::AddrSpaceCastOp>(
+      loadOperand = rewriter.create<LLVM::AddrSpaceCastOp>(
           op.getLoc(), convertType(PointerType::get(ptrType.getElementType())),
           adaptor.getPtr());
-      auto newOp = rewriter.create<LLVM::LoadOp>(op.getLoc(), elementType,
-                                                 castOp, alignment);
-      rewriter.replaceOp(op, newOp);
-      return success();
     }
     auto loadOp = rewriter.create<LLVM::LoadOp>(op.getLoc(), elementType,
-                                                adaptor.getPtr(), alignment);
+                                                loadOperand, alignment);
     rewriter.replaceOp(op, loadOp);
     return success();
   }
