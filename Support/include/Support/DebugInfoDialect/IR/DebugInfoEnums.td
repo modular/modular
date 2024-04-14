@@ -30,6 +30,26 @@ def DIEmissionKind : I64EnumAttr<
 }
 
 //===----------------------------------------------------------------------===//
+// DINameTableKind
+//===----------------------------------------------------------------------===//
+
+def DINameTableDefault : I64EnumAttrCase<"Default", 0>;
+def DINameTableGNU     : I64EnumAttrCase<"GNU", 1>;
+def DINameTableNone    : I64EnumAttrCase<"None", 2>;
+def DINameTableApple   : I64EnumAttrCase<"Apple", 3>;
+
+def DINameTableKind : I64EnumAttr<
+    "DINameTableKind",
+    "Debug name table kind", [
+      DINameTableDefault,
+      DINameTableGNU,
+      DINameTableNone,
+      DINameTableApple,
+    ]> {
+  let cppNamespace = "::M::DebugInfo";
+}
+
+//===----------------------------------------------------------------------===//
 // DISubprogramFlags
 //===----------------------------------------------------------------------===//
 

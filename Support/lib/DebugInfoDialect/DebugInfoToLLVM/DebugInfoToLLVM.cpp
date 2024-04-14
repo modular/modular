@@ -104,7 +104,8 @@ MetadataConverter::convertAttrImpl(DICompileUnitAttr attr) {
       mlir::DistinctAttr::create(mlir::UnitAttr::get(attr.getContext())),
       attr.getSourceLanguage(), convertAttr(attr.getFile()), attr.getProducer(),
       attr.getIsOptimized(),
-      static_cast<LLVM::DIEmissionKind>(attr.getEmissionKind()));
+      static_cast<LLVM::DIEmissionKind>(attr.getEmissionKind()),
+      static_cast<LLVM::DINameTableKind>(attr.getNameTableKind()));
 }
 
 LLVM::DIFileAttr MetadataConverter::convertAttrImpl(DIFileAttr attr) {
