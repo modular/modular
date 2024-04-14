@@ -68,10 +68,10 @@ struct _NestedLoopIter[n_loops: Int]:
             var invalid_bound = lb >= ub
             self.early_stop = self.early_stop or invalid_bound
 
-    fn _lb_loop(borrowed self, axis: Int) -> Int:
+    fn _lb_loop(self, axis: Int) -> Int:
         return self.loop_bounds[axis][0]
 
-    fn _ub_loop(borrowed self, axis: Int) -> Int:
+    fn _ub_loop(self, axis: Int) -> Int:
         return self.loop_bounds[axis][1]
 
     fn __copyinit__(inout self: Self, other: Self):
