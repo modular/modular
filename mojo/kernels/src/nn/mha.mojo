@@ -636,12 +636,12 @@ fn flash_attention_kernel[
     var loadq_col = (tid * simd_size) % depth
 
     var q_gmem_base = LayoutTensor[
-        Layout(IntTuple(BM, depth), IntTuple(row_stride, 1)), DType.float32
+        DType.float32, Layout(IntTuple(BM, depth), IntTuple(row_stride, 1))
     ](q_ptr.offset(global_q_offset))
 
     var q_smem_base = LayoutTensor[
-        Layout.row_major(BM, depth),
         DType.float32,
+        Layout.row_major(BM, depth),
         address_space = AddressSpace.SHARED,
     ](q_tile)
 
@@ -777,12 +777,12 @@ fn flash_attention_kernel[
         # stages p sub-tile [BM, BK] from thread register tile to shared memory.
 
         var v_gmem_base = LayoutTensor[
-            Layout(IntTuple(BN, depth), IntTuple(row_stride, 1)), DType.float32
+            DType.float32, Layout(IntTuple(BN, depth), IntTuple(row_stride, 1))
         ](v_ptr.offset(global_kv_offset))
 
         var v_smem_base = LayoutTensor[
-            Layout.row_major(BK, BN),
             DType.float32,
+            Layout.row_major(BK, BN),
             address_space = AddressSpace.SHARED,
         ](kv_tile)
         var storep_col_start = 0
