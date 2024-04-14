@@ -342,7 +342,7 @@ fn testMutatingAdd(owned a: MutatingAdd, b: MutatingAdd):
 # CHECK-LABEL: lit.func @"ownedConventionMem
 # CHECK-SAME: (%a: !lit.ref<!StructWithInit, mut {{.*}}> owned_in_mem,
 # CHECK-SAME:  %b: !lit.ref<!StructWithInit, imm {{.*}}> borrow_in_mem)
-fn ownedConventionMem(owned a: StructWithInit, borrowed b: StructWithInit):
+fn ownedConventionMem(owned a: StructWithInit, b: StructWithInit):
     # CHECK: [[AX:%.*]] = lit.ref.struct.ger %a[x]
     # CHECK: %1 = lit.ref.load [[AX]]
     _ = a.x
@@ -374,8 +374,8 @@ struct RPStructWithInitTrivial:
 # CHECK-SAME:  %triv: !RPStructWithInitTrivial borrow)
 fn ownedConventionReg(
     owned a: RPStructWithInit,
-    borrowed b: RPStructWithInit,
-    borrowed triv: RPStructWithInitTrivial,
+    b: RPStructWithInit,
+    triv: RPStructWithInitTrivial,
 ):
     # CHECK: %a_0 = lit.var.decl "a" arg
     # CHECK: lit.ref.store %a, %a_0
@@ -393,10 +393,10 @@ fn ownedConventionReg(
 
 
 struct BorrowStruct:
-    fn testMethod(borrowed self):
+    fn testMethod(self):
         pass
 
-    fn borrowedVarArgs(borrowed self, borrowed *x: BorrowStruct):
+    fn borrowedVarArgs(self, borrowed *x: BorrowStruct):
         pass
 
 

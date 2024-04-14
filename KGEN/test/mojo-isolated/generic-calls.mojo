@@ -20,7 +20,7 @@ fn owned_generic[T: AnyType](owned x: T):
     pass
 
 
-fn borrowed_generic[T: AnyType](borrowed x: T):
+fn borrowed_generic[T: AnyType](x: T):
     pass
 
 
@@ -45,7 +45,7 @@ fn test_owned(owned x: RegPassable):
 
 
 # CHECK-LABEL: lit.func @"test_borrowed{{.*}}"(%x: !RegPassable borrow)
-fn test_borrowed(borrowed x: RegPassable):
+fn test_borrowed(x: RegPassable):
     # CHECK: [[XSTACK:%.*]] = pop.stack_allocation 1 x !RegPassable
     # CHECK: pop.store %x, [[XSTACK]]
     # CHECK: [[XREF:%.*]] = lit.ref.from_pointer [[XSTACK]] :
