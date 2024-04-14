@@ -19,7 +19,7 @@ struct CStatus:
     alias GetErrorFnName = "M_getError"
     alias FreeStatusFnName = "M_freeStatus"
 
-    fn is_error(self, borrowed lib: DLHandle) -> Bool:
+    fn is_error(self, lib: DLHandle) -> Bool:
         """
         Check if status is error.
 
@@ -28,14 +28,14 @@ struct CStatus:
         """
         return call_dylib_func[Bool](lib, Self.IsErrorFnName, self)
 
-    fn get_error(self, borrowed lib: DLHandle) -> String:
+    fn get_error(self, lib: DLHandle) -> String:
         """
         Get Error String from Engine library.
         """
         var error = call_dylib_func[CString](lib, Self.GetErrorFnName, self)
         return error.__str__()
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         """
         Free the status ptr.
         """
@@ -48,7 +48,7 @@ struct Status:
 
     alias NewStatusFnName = "M_newStatus"
 
-    fn __init__(inout self, borrowed lib: DLHandle):
+    fn __init__(inout self, lib: DLHandle):
         self.ptr = call_dylib_func[CStatus](lib, self.NewStatusFnName)
         self.lib = lib
 

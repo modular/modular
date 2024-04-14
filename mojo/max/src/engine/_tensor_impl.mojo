@@ -33,28 +33,28 @@ struct CTensor:
     alias GetTensorSpecFnName = "M_getTensorSpec"
     alias FreeTensorFnName = "M_freeTensor"
 
-    fn size(self, borrowed lib: DLHandle) -> Int:
+    fn size(self, lib: DLHandle) -> Int:
         return call_dylib_func[Int](lib, Self.GetTensorNumElementsFnName, self)
 
-    fn dtype(self, borrowed lib: DLHandle) -> EngineDType:
+    fn dtype(self, lib: DLHandle) -> EngineDType:
         return call_dylib_func[EngineDType](
             lib, Self.GetTensorDTypeFnName, self
         )
 
-    fn data(self, borrowed lib: DLHandle) -> DTypePointer[DType.invalid]:
+    fn data(self, lib: DLHandle) -> DTypePointer[DType.invalid]:
         return call_dylib_func[DTypePointer[DType.invalid]](
             lib, Self.GetTensorDataFnName, self
         )
 
     fn get_tensor_spec(
-        self, borrowed lib: DLHandle, owned session: InferenceSession
+        self, lib: DLHandle, owned session: InferenceSession
     ) -> EngineTensorSpec:
         var spec = call_dylib_func[CTensorSpec](
             lib, Self.GetTensorSpecFnName, self
         )
         return EngineTensorSpec(spec, lib, session^)
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         """
         Free the status ptr.
         """

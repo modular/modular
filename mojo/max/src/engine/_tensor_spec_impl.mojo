@@ -59,5 +59,5 @@ struct CTensorSpec:
     fn get_dynamic_dimension_value(lib: DLHandle) -> Int:
         return call_dylib_func[Int](lib, Self.GetDynamicDimensionValueFnName)
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeTensorSpecFnName, self)

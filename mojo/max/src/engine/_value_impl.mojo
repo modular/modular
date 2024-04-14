@@ -22,19 +22,19 @@ struct CValue:
     alias _GetListFnName = "M_getListFromValue"
     alias _FreeValueFnName = "M_freeValue"
 
-    fn get_c_tensor(self, borrowed lib: DLHandle) -> CTensor:
+    fn get_c_tensor(self, lib: DLHandle) -> CTensor:
         """Get CTensor within value."""
         return call_dylib_func[CTensor](lib, Self._GetTensorFnName, self)
 
-    fn get_bool(self, borrowed lib: DLHandle) -> Bool:
+    fn get_bool(self, lib: DLHandle) -> Bool:
         """Get bool within value."""
         return call_dylib_func[Bool](lib, Self._GetBoolFnName, self)
 
-    fn get_list(self, borrowed lib: DLHandle) -> CList:
+    fn get_list(self, lib: DLHandle) -> CList:
         """Get list within value."""
         return call_dylib_func[CList](lib, Self._GetListFnName, self)
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         """Free value."""
         call_dylib_func(lib, Self._FreeValueFnName, self)
 
@@ -51,18 +51,18 @@ struct CList:
     alias _AppendFnName = "M_appendToList"
     alias _FreeFnName = "M_freeList"
 
-    fn get_size(self, borrowed lib: DLHandle) -> Int:
+    fn get_size(self, lib: DLHandle) -> Int:
         """Get number of elements in list."""
         return call_dylib_func[Int](lib, Self._GetSizeFnName, self)
 
-    fn get_value(self, borrowed lib: DLHandle, index: Int) -> CValue:
+    fn get_value(self, lib: DLHandle, index: Int) -> CValue:
         """Get value by index in list."""
         return call_dylib_func[CValue](lib, Self._GetValueFnName, self, index)
 
-    fn append(self, borrowed lib: DLHandle, value: CValue):
+    fn append(self, lib: DLHandle, value: CValue):
         """Get value by index in list."""
         return call_dylib_func(lib, Self._AppendFnName, self, value)
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         """Free list."""
         call_dylib_func(lib, Self._FreeFnName, self)

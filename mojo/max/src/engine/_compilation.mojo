@@ -57,18 +57,16 @@ struct CCompileConfig:
     alias SetDeviceFnName = "M_setDevice"
     alias SetTorchInputSpecsFnName = "M_setTorchInputSpecs"
 
-    fn set_model_source(
-        self, model_source: ModelSource, borrowed lib: DLHandle
-    ):
+    fn set_model_source(self, model_source: ModelSource, lib: DLHandle):
         call_dylib_func(lib, Self.SetModelSourceFnName, self, model_source)
 
-    fn set_model_path(self, path: String, borrowed lib: DLHandle):
+    fn set_model_path(self, path: String, lib: DLHandle):
         """Sets the path of model to compile."""
         var path_strref = path._strref_dangerous()
         call_dylib_func(lib, Self.SetModelPathFnName, self, path_strref.data)
         path._strref_keepalive()
 
-    fn replace_ops(self, path: String, borrowed lib: DLHandle) raises:
+    fn replace_ops(self, path: String, lib: DLHandle) raises:
         var status = Status(lib)
         var path_strref = path._strref_dangerous()
         call_dylib_func(
@@ -91,7 +89,7 @@ struct CCompileConfig:
             len(specs_ptr),
         )
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeCompileConfigFnName, self)
 
 
@@ -222,7 +220,7 @@ struct CompileConfig:
 
     alias NewCompileConfigFnName = "M_newCompileConfig"
 
-    fn __init__(inout self, borrowed lib: DLHandle):
+    fn __init__(inout self, lib: DLHandle):
         self.ptr = Pointer[CCompileConfig].alloc(1)
         __get_address_as_uninit_lvalue(self.ptr.address) = call_dylib_func[
             CCompileConfig
@@ -335,7 +333,7 @@ struct CCompiledModel:
     alias GetNumInputsFnName = "M_getNumModelInputs"
     alias GetNumOutputsFnName = "M_getNumModelOutputs"
 
-    fn num_model_inputs(self, borrowed lib: DLHandle) raises -> Int:
+    fn num_model_inputs(self, lib: DLHandle) raises -> Int:
         """Gets the number of inputs of the model."""
 
         var status = Status(lib)
@@ -346,7 +344,7 @@ struct CCompiledModel:
             raise Error(status.__str__())
         return num_inputs
 
-    fn num_model_outputs(self, borrowed lib: DLHandle) raises -> Int:
+    fn num_model_outputs(self, lib: DLHandle) raises -> Int:
         """Gets the number of outputs of the model."""
 
         var status = Status(lib)
@@ -360,7 +358,7 @@ struct CCompiledModel:
     fn get_model_input_spec_by_name(
         self,
         tensor_name: String,
-        borrowed lib: DLHandle,
+        lib: DLHandle,
         owned session: InferenceSession,
     ) raises -> EngineTensorSpec:
         """Gets the input spec of the model by name."""
@@ -379,7 +377,7 @@ struct CCompiledModel:
     fn get_model_output_spec_by_name(
         self,
         tensor_name: String,
-        borrowed lib: DLHandle,
+        lib: DLHandle,
         owned session: InferenceSession,
     ) raises -> EngineTensorSpec:
         """Gets the output spec of the model by name."""
@@ -395,7 +393,7 @@ struct CCompiledModel:
             raise Error(status.__str__())
         return EngineTensorSpec(output_spec, lib, session)
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeCompiledModelFnName, self)
 
 

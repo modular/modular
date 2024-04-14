@@ -84,7 +84,7 @@ struct CTensorMap:
         if status:
             raise status.__str__()
 
-    fn size(self, borrowed lib: DLHandle) raises -> Int:
+    fn size(self, lib: DLHandle) raises -> Int:
         var status = Status(lib)
         var size = call_dylib_func[Int](
             lib, Self.GetTensorMapSizeFnName, self, status.borrow_ptr()
@@ -93,7 +93,7 @@ struct CTensorMap:
             raise status.__str__()
         return size
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         """
         Free the AsyncTensorMap ptr.
         """

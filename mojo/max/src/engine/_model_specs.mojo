@@ -32,7 +32,7 @@ struct CTensorNameArray:
         )
         return name.__str__()
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeTensorNameArrayFnName, self)
 
 
@@ -42,9 +42,7 @@ struct TensorNamesIterator(Sized):
     var length: Int
     var lib: DLHandle
 
-    fn __init__(
-        inout self, ptr: CTensorNameArray, length: Int, borrowed lib: DLHandle
-    ):
+    fn __init__(inout self, ptr: CTensorNameArray, length: Int, lib: DLHandle):
         self.ptr = ptr
         self.current = 0
         self.length = length

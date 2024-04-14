@@ -32,5 +32,5 @@ struct CModel:
         if status:
             raise status.__str__()
 
-    fn free(self, borrowed lib: DLHandle):
+    fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeModelFnName, self)

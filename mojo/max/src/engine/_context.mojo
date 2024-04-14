@@ -40,14 +40,12 @@ struct CRuntimeConfig:
     fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
 
-    fn set_device(self, borrowed lib: DLHandle, device: String):
+    fn set_device(self, lib: DLHandle, device: String):
         var device_ref = device._strref_dangerous()
         call_dylib_func(lib, Self.SetDeviceFnName, self, device_ref.data, 0)
         device._strref_keepalive()
 
-    fn set_allocator_type(
-        self, borrowed lib: DLHandle, allocator_type: AllocatorType
-    ):
+    fn set_allocator_type(self, lib: DLHandle, allocator_type: AllocatorType):
         call_dylib_func(lib, Self.SetAllocatorTypeFnName, self, allocator_type)
 
     fn set_max_context(

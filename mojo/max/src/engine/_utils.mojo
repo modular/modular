@@ -156,7 +156,7 @@ struct FiveArgCallable[
 @always_inline("nodebug")
 fn call_dylib_func[
     ResultTy: AnyRegType
-](borrowed lib: DLHandle, name: StringRef) -> ResultTy:
+](lib: DLHandle, name: StringRef) -> ResultTy:
     """Call function `name` in dylib with one result and no arguments."""
     return lib.get_function[SingleArgCallable[ResultTy, NoneType]](name)(None)
 
@@ -164,7 +164,7 @@ fn call_dylib_func[
 @always_inline("nodebug")
 fn call_dylib_func[
     ArgTy: AnyRegType
-](borrowed lib: DLHandle, name: StringRef, arg: ArgTy) -> None:
+](lib: DLHandle, name: StringRef, arg: ArgTy) -> None:
     """Call function `name` in dylib with no result and one argument."""
     lib.get_function[SingleArgCallable[NoneType, ArgTy]](name)(arg)
 
@@ -172,7 +172,7 @@ fn call_dylib_func[
 @always_inline("nodebug")
 fn call_dylib_func[
     ResultTy: AnyRegType, ArgTy: AnyRegType
-](borrowed lib: DLHandle, name: StringRef, arg: ArgTy) -> ResultTy:
+](lib: DLHandle, name: StringRef, arg: ArgTy) -> ResultTy:
     """Call function `name` in dylib with one result and one argument."""
     return lib.get_function[SingleArgCallable[ResultTy, ArgTy]](name)(arg)
 
@@ -180,7 +180,7 @@ fn call_dylib_func[
 @always_inline("nodebug")
 fn call_dylib_func[
     Arg1Ty: AnyRegType, Arg2Ty: AnyRegType
-](borrowed lib: DLHandle, name: StringRef, arg1: Arg1Ty, arg2: Arg2Ty):
+](lib: DLHandle, name: StringRef, arg1: Arg1Ty, arg2: Arg2Ty):
     """Call function `name` in dylib with no result and two arguments."""
     lib.get_function[TwoArgCallable[NoneType, Arg1Ty, Arg2Ty]](name)(arg1, arg2)
 
@@ -188,9 +188,7 @@ fn call_dylib_func[
 @always_inline("nodebug")
 fn call_dylib_func[
     ResultTy: AnyRegType, Arg1Ty: AnyRegType, Arg2Ty: AnyRegType
-](
-    borrowed lib: DLHandle, name: StringRef, arg1: Arg1Ty, arg2: Arg2Ty
-) -> ResultTy:
+](lib: DLHandle, name: StringRef, arg1: Arg1Ty, arg2: Arg2Ty) -> ResultTy:
     """Call function `name` in dylib with one result and two arguments."""
     return lib.get_function[TwoArgCallable[ResultTy, Arg1Ty, Arg2Ty]](name)(
         arg1, arg2
@@ -200,13 +198,7 @@ fn call_dylib_func[
 @always_inline("nodebug")
 fn call_dylib_func[
     Arg1Ty: AnyRegType, Arg2Ty: AnyRegType, Arg3Ty: AnyRegType
-](
-    borrowed lib: DLHandle,
-    name: StringRef,
-    arg1: Arg1Ty,
-    arg2: Arg2Ty,
-    arg3: Arg3Ty,
-):
+](lib: DLHandle, name: StringRef, arg1: Arg1Ty, arg2: Arg2Ty, arg3: Arg3Ty,):
     """Call function `name` in dylib with no result and three arguments."""
     lib.get_function[ThreeArgCallable[NoneType, Arg1Ty, Arg2Ty, Arg3Ty]](name)(
         arg1, arg2, arg3
@@ -220,7 +212,7 @@ fn call_dylib_func[
     Arg2Ty: AnyRegType,
     Arg3Ty: AnyRegType,
 ](
-    borrowed lib: DLHandle,
+    lib: DLHandle,
     name: StringRef,
     arg1: Arg1Ty,
     arg2: Arg2Ty,
@@ -239,7 +231,7 @@ fn call_dylib_func[
     Arg3Ty: AnyRegType,
     Arg4Ty: AnyRegType,
 ](
-    borrowed lib: DLHandle,
+    lib: DLHandle,
     name: StringRef,
     arg1: Arg1Ty,
     arg2: Arg2Ty,
@@ -260,7 +252,7 @@ fn call_dylib_func[
     Arg3Ty: AnyRegType,
     Arg4Ty: AnyRegType,
 ](
-    borrowed lib: DLHandle,
+    lib: DLHandle,
     name: StringRef,
     arg1: Arg1Ty,
     arg2: Arg2Ty,
@@ -282,7 +274,7 @@ fn call_dylib_func[
     Arg4Ty: AnyRegType,
     Arg5Ty: AnyRegType,
 ](
-    borrowed lib: DLHandle,
+    lib: DLHandle,
     name: StringRef,
     arg1: Arg1Ty,
     arg2: Arg2Ty,
