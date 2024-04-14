@@ -11,6 +11,7 @@
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPDialect.h"
+#include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -582,10 +583,10 @@ struct ConvertKGENPackCreate : public ConvertPOPToLLVMPattern<PackCreateOp> {
   matchAndRewrite(PackCreateOp op, PackCreateOpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type packType = convertType(op.getType());
-    if (!packType) {
+    if (!packType)
       return rewriter.notifyMatchFailure(op.getLoc(),
                                          "failed to convert pack type");
-    }
+
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
     Value container = materializeLLVMStruct(b, packType, adaptor.getOperands());
     rewriter.replaceOp(op, container);
@@ -654,6 +655,66 @@ struct ConvertKGENPackSize : public ConvertPOPToLLVMPattern<PackSizeOp> {
     rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(
         op, rewriter.getIntegerAttr(getTypeConverter()->getIndexType(),
                                     type.getBody().size()));
+    return success();
+  }
+};
+
+//===----------------------------------------------------------------------===//
+// ConvertPOPPackLoad
+//===----------------------------------------------------------------------===//
+
+struct ConvertPOPPackLoad : ConvertPOPToLLVMPattern<PackLoadOp> {
+  using ConvertPOPToLLVMPattern::ConvertPOPToLLVMPattern;
+
+  LogicalResult
+  matchAndRewrite(PackLoadOp op, PackLoadOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    // The input pack will already be lowered to an LLVM struct, and the
+    // pointers within it are already lowered to LLVM pointers (erasing their
+    // element types).  We need to work in both worlds.
+    VariadicAttr origInputPack =
+        cast<PackType>(op.getOperand().getType()).getVariadicIfResolved();
+    if (!origInputPack)
+      return rewriter.notifyMatchFailure(op.getLoc(), "pack is not concrete");
+
+    auto inputStruct = adaptor.getPack();
+    // auto inputStructTy = cast<LLVM::LLVMStructType>(inputStruct.getType());
+
+    // The result will also be a pack.
+    auto resultType =
+        dyn_cast_or_null<LLVM::LLVMStructType>(convertType(op.getType()));
+    if (!resultType)
+      return rewriter.notifyMatchFailure(op.getLoc(),
+                                         "failed to convert result pack type");
+
+    // PackLoadOp gets lowered to a bunch of extracts + pop.load's for each elt.
+    SmallVector<Value> resultElts;
+    for (auto [idx, origTypeAttr, resultEltType] :
+         llvm::enumerate(origInputPack.getValues(), resultType.getBody())) {
+      Value elt =
+          rewriter.create<LLVM::ExtractValueOp>(op.getLoc(), inputStruct, idx);
+      // Dig the original pointer type out of
+      // #kgen.concretetype.constant<!kgen.pointer<i32>>
+      Type origPointerTy = cast<TypeConstantAttr>(origTypeAttr).getValue();
+      elt = rewriter
+                .create<mlir::UnrealizedConversionCastOp>(op.getLoc(),
+                                                          origPointerTy, elt)
+                .getResult(0);
+      elt = rewriter.create<POP::LoadOp>(op.getLoc(), elt);
+
+      // Cast the result back so we get LLVM types, not things like 'index'
+      if (elt.getType() != resultEltType)
+        elt = rewriter
+                  .create<mlir::UnrealizedConversionCastOp>(op.getLoc(),
+                                                            resultEltType, elt)
+                  .getResult(0);
+
+      resultElts.push_back(elt);
+    }
+
+    ImplicitLocOpBuilder b(op.getLoc(), rewriter);
+    Value container = materializeLLVMStruct(b, resultType, resultElts);
+    rewriter.replaceOp(op, container);
     return success();
   }
 };
@@ -836,8 +897,10 @@ static void populateKGENToLLVMPatterns(mlir::LLVMTypeConverter &typeConverter,
       ConvertKGENCall,
       ConvertKGENGlobalAddress,
       ConvertKGENPackCreate,
-      ConvertKGENPackExtract,ConvertKGENPackGEP,
+      ConvertKGENPackExtract,
+      ConvertKGENPackGEP,
       ConvertKGENPackSize,
+      ConvertPOPPackLoad,
       ConvertKGENStructCreate,
       ConvertKGENStructGEP,
       ConvertKGENStructGet,
