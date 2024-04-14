@@ -1060,3 +1060,15 @@ struct SomeReference[lt: __mlir_type.`!lit.lifetime<0>`]:
 # CHECK-SAME: #SomeReference <:lifetime<0> [[R]]>
 fn unbound_lifetime(r: SomeReference[_]):
     pass
+
+# #33498: Variadics can't infer types for function pointers
+fn indirect_function(x: Int):  pass
+fn take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
+
+# CHECK-LABEL: call_variadic_pack_with_function
+fn call_variadic_pack_with_function():
+  # CHECK: [[FP:%.*]]  = kgen.param.constant: !lit.signature<("x": !Int borrow) -> !kgen.none> = <@parameters::@"indirect_function(
+  # CHECK: lit.call {{.*}}take_variadic_pack
+  var x = take_variadic_pack(indirect_function)
+
+
