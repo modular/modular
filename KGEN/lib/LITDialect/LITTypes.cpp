@@ -1019,7 +1019,6 @@ FunctionType LITSignatureType::substituteImplicitLifetimesIntoValues(
   struct Substitutor : IndexParameterReplacer<Substitutor> {
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
-      // If we are substituting the signature directly, subtract 1.
       if (auto ref = ::dyn_cast<ImplicitLifetimeRefAttr>(attr);
           ref && ref.getDepth() == depth) {
         if (ref.getIndex() >= values.size()) {

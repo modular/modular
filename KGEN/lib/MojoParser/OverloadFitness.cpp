@@ -634,6 +634,38 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   llvm_unreachable("invalid argument convention");
 };
 
+/// Given a signature type that has some of its parameter bindings known, burn
+/// the values for those parameters in, leaving the rest untouched so we can
+/// infer them.
+static LITSignatureType
+getPartiallySpecializedSignature(LITSignatureType signature,
+                                 ArrayRef<TypedAttr> bindingsSoFar) {
+  if (bindingsSoFar.empty())
+    return signature;
+
+  struct Substitutor : IndexParameterReplacer<Substitutor> {
+    Type tryReplace(Type, size_t) { return {}; }
+    Attribute tryReplace(Attribute attr, size_t depth) {
+      if (auto ref = ::dyn_cast<ParamIndexRefAttr>(attr);
+          ref && ref.getDepth() == depth &&
+          ref.getIndex() < bindingsSoFar.size()) {
+        auto result = bindingsSoFar[ref.getIndex()];
+        assert(result.getType() == ref.getType() && "Parameter type mismatch");
+        return result;
+      }
+      return nullptr;
+    }
+
+    ArrayRef<TypedAttr> bindingsSoFar;
+  } substitutor;
+  substitutor.bindingsSoFar = bindingsSoFar;
+  return substitutor.replace(signature);
+}
+
+/// Given an incomplete parameter binding set for a call to the specified
+/// signature, try to infer the value of the next 'decl' parameter.  This
+/// should always return null /without/ an error if it cannot be inferred, and
+/// return a specific value if unambiguously determined.
 PValue
 ParameterInferenceState::infer(LITSignatureType signature,
                                ArrayRef<TypedAttr> bindingsSoFar,
@@ -642,11 +674,12 @@ ParameterInferenceState::infer(LITSignatureType signature,
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
   size_t numPosOperands = posOperands.size();
 
-  // TODO: Apply the bindings so far (plus a distinct new attribute relating
+  // Apply the bindings so far (plus a distinct new attribute relating
   // back to the original decls for ones that are missing) to the signature with
   // getSpecializedSignature so we benefit from the already-fixed substitutions
   // being applied to the input types.  This can make them more concrete and
   // help with inferring dependent types based on already-bound parameters.
+  signature = getPartiallySpecializedSignature(signature, bindingsSoFar);
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
