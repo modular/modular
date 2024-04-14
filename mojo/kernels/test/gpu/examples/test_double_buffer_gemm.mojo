@@ -69,9 +69,9 @@ fn sgemm_double_buffer[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    c: LayoutTensor[c_layout, c_type],
-    a: LayoutTensor[a_layout, a_type],
-    b: LayoutTensor[b_layout, b_type],
+    c: LayoutTensor[c_type, c_layout],
+    a: LayoutTensor[a_type, a_layout],
+    b: LayoutTensor[b_type, b_layout],
 ):
     alias _uint = Scalar[itype]
 
@@ -107,16 +107,16 @@ fn sgemm_double_buffer[
     # Double buffer in shared memory.
     alias a_smem_size = BK * BM_padded
     var a_smem_tile = LayoutTensor[
-        Layout.row_major(2 * BK, BM_padded),
         a_type,
+        Layout.row_major(2 * BK, BM_padded),
         address_space = AddressSpace.SHARED,
     ].stack_allocation().slice[:, :BM]().split[2]()
 
     # Align the address by the maximum async copy size (16 bytes).
     alias b_smem_size = BK * BN
     var b_smem_tile = LayoutTensor[
-        Layout.row_major(2 * BK, BN),
         b_type,
+        Layout.row_major(2 * BK, BN),
         address_space = AddressSpace.SHARED,
     ].stack_allocation().split[2]()
 
@@ -155,15 +155,15 @@ fn sgemm_double_buffer[
 
     # Double buffer in registers (fragments in nvidia terms).
     var a_reg = StaticTuple[_, 2](
-        LayoutTensor[Layout(TM), a_type].stack_allocation(),
-        LayoutTensor[Layout(TM), a_type].stack_allocation(),
+        LayoutTensor[a_type, Layout(TM)].stack_allocation(),
+        LayoutTensor[a_type, Layout(TM)].stack_allocation(),
     )
     var b_reg = StaticTuple[_, 2](
-        LayoutTensor[Layout(TN), b_type].stack_allocation(),
-        LayoutTensor[Layout(TN), b_type].stack_allocation(),
+        LayoutTensor[b_type, Layout(TN)].stack_allocation(),
+        LayoutTensor[b_type, Layout(TN)].stack_allocation(),
     )
     var c_reg = LayoutTensor[
-        Layout.row_major(TM, TN), c_type
+        c_type, Layout.row_major(TM, TN)
     ].stack_allocation()
     c_reg.fill(0)
 
@@ -307,9 +307,9 @@ fn test() raises:
     var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](a_device)
     var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](b_device)
 
-    var c_tensor = LayoutTensor[c_layout, DType.float32](c_device)
-    var a_tensor = LayoutTensor[a_layout, DType.float32](a_device)
-    var b_tensor = LayoutTensor[b_layout, DType.float32](b_device)
+    var c_tensor = LayoutTensor[DType.float32, c_layout](c_device)
+    var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
+    var b_tensor = LayoutTensor[DType.float32, b_layout](b_device)
 
     alias gemm = sgemm_double_buffer[
         DType.float32,

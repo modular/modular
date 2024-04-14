@@ -25,7 +25,7 @@ fn gpu_kernel(
     )
 
     var dst_tensor = LayoutTensor[
-        Layout(IntTuple(16, 1), IntTuple(1, 1)), DType.float32
+        DType.float32, Layout(IntTuple(16, 1), IntTuple(1, 1))
     ](dst)
 
 
