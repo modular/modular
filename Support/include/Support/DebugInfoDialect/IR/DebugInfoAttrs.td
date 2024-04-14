@@ -160,16 +160,18 @@ def DebugInfo_DICompileUnitAttr : DIScopeAttr<"DICompileUnit", "compile_unit"> {
     "DIFileAttr":$file,
     "StringAttr":$producer,
     "bool":$isOptimized,
-    "EmissionKind":$emissionKind
+    "EmissionKind":$emissionKind,
+    OptionalParameter<"DINameTableKind">:$nameTableKind
   );
   let builders = [
     AttrBuilderWithInferredContext<(ins
       "unsigned":$sourceLanguage, "DIFileAttr":$file, "StringRef":$producer,
-      "bool":$isOptimized, "EmissionKind":$emissionKind
+      "bool":$isOptimized, "EmissionKind":$emissionKind, 
+      CArg<"DINameTableKind", "DINameTableKind::Default">:$nameTableKind
     ), [{
       MLIRContext *ctx = file.getContext();
       return $_get(ctx, sourceLanguage, file, StringAttr::get(ctx, producer),
-                   isOptimized, emissionKind);
+                   isOptimized, emissionKind, nameTableKind);
     }]>
   ];
   let assemblyFormat = "`<` struct(params) `>`";
