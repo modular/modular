@@ -6,12 +6,11 @@
 """This module includes NVIDIA GPUs print functions."""
 
 
-from memory import stack_allocation
+from builtin.builtin_list import _LITRefPackHelper
+
 
 # We need to make sure that the call to vprintf consistently uses the same type,
 # otherwise you end up with signature conflicts when using external_call.
-
-
 @always_inline
 fn _printf(fmt: StringLiteral):
     var tmp = 0
@@ -22,9 +21,13 @@ fn _printf(fmt: StringLiteral):
 
 
 @always_inline
-fn _printf[*Ts: AnyRegType](fmt: StringLiteral, args: ListLiteral[Ts]):
-    var args_stack = stack_allocation[1, ListLiteral[Ts]]()
-    args_stack[0] = args
+fn _printf[*types: AnyType](fmt: StringLiteral, *args: *types):
+    var kgen_pack = _LITRefPackHelper(args._value).get_as_kgen_pack()
+
+    # FIXME(37129): Cannot use get_loaded_kgen_pack because vtables on types
+    # aren't stripped off correctly.
+    var loaded_pack = __mlir_op.`kgen.pack.load`(kgen_pack)
+
     _ = external_call["vprintf", Int32](
-        fmt.data(), args_stack.bitcast[Pointer[NoneType]]()
+        fmt.data(), UnsafePointer.address_of(loaded_pack)
     )
