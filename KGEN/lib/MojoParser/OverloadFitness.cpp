@@ -28,6 +28,18 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+/// Helper to get the RValueType from an operand.
+static ASTType getRValueTypeIfResolvable(AnyValue value) {
+  if (auto cValue = value.getIfCValue())
+    return cValue.getRValueType();
+  // Otherwise, try to narrow an overload set to a PValue.
+  if (auto ovSet = value.getIfOverloadSet())
+    if (auto pValue = ovSet->getIfPValue())
+      return pValue.getType();
+  // Initializer lists have no implied type.
+  return ASTType();
+}
+
 //===----------------------------------------------------------------------===//
 // ParameterInferenceDiagnostics
 //===----------------------------------------------------------------------===//
@@ -737,14 +749,14 @@ ParameterInferenceState::infer(LITSignatureType signature,
       SyntheticNode node(shared.getTopLevelDecl().getLoc());
       while (posOperandIdx != numPosOperands) {
         ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
-        CValue value = operand.ir.getIfCValue();
-        if (!value) {
+        ASTType toPush = getRValueTypeIfResolvable(operand.ir);
+        if (!toPush) {
           shared.emitWarning(operand.expr->getLoc(),
                              "could not infer parameter type for this value, "
                              "because it is not concrete");
           return {};
         }
-        ASTType toPush = value.getRValueType();
+
         // Infer nonmaterializable types as their materialization target.
         if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
           toPush = nmTarget;
@@ -779,14 +791,13 @@ ParameterInferenceState::infer(LITSignatureType signature,
       SyntheticNode node(shared.getTopLevelDecl().getLoc());
       while (posOperandIdx != numPosOperands) {
         ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
-        CValue value = operand.ir.getIfCValue();
-        if (!value) {
+        ASTType toPush = getRValueTypeIfResolvable(operand.ir);
+        if (!toPush) {
           shared.emitWarning(operand.expr->getLoc(),
                              "could not infer parameter type for this value, "
                              "because it is not concrete");
           return {};
         }
-        ASTType toPush = value.getRValueType();
         // Infer nonmaterializable types as their materialization target.
         if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
           toPush = nmTarget;
@@ -990,26 +1001,13 @@ InflightDiag DiagEmitter::argGenericMemType(size_t expectedArgIdx,
                          << expectedType;
 }
 
-/// Helper to get the RValueType from an operand.
-static ASTType getRValueType(ASTExprAnd<AnyValue> operand) {
-  AnyValue value = operand.ir;
-  if (auto cValue = value.getIfCValue())
-    return cValue.getRValueType();
-  // Otherwise, try to narrow an overload set to a PValue.
-  if (auto ovSet = value.getIfOverloadSet())
-    if (auto pValue = ovSet->getIfPValue())
-      return pValue.getType();
-  // Initializer lists have no implied type.
-  return ASTType();
-}
-
 /// Attach extra type conversion error detail or hints to the user when
 /// reporting an error passing `operand` to an argument of type `argType`.
 static void addTypeConversionDetail(InflightDiag &diag,
                                     ASTExprAnd<AnyValue> operand,
                                     ASTType argType, SharedState &shared) {
   auto loc = operand.expr->getLoc();
-  ASTType operandType = getRValueType(operand);
+  ASTType operandType = getRValueTypeIfResolvable(operand.ir);
   if (!operandType) {
     diag.attachNote(loc) << "try resolving the overloaded function first";
     return;
@@ -1099,7 +1097,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
          callSyntax == CallSyntax::kMethodCallSynthetic) &&
         argIdx == 0) {
       diag << "invalid use of mutating method on rvalue of type ";
-      if (ASTType type = getRValueType(operand))
+      if (ASTType type = getRValueTypeIfResolvable(operand.ir))
         diag << type;
       else if (operand.ir.getIfInitializer())
         diag << "initializer list";
@@ -1120,7 +1118,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
   case ArgTypeMismatchKind::kWrongType: {
     describeArgumentNo(diag, argIdx);
     diag << " cannot be converted from " << operand.expr->getRange();
-    ASTType rValueType = getRValueType(operand);
+    ASTType rValueType = getRValueTypeIfResolvable(operand.ir);
     bool isConvertingTypeValue = ty.getMetaType() == rValueType;
     if (rValueType) {
       if (isConvertingTypeValue)
