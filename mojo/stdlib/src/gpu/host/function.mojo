@@ -57,41 +57,6 @@ struct CacheConfig(CollectionElement, EqualityComparable):
 # FunctionHandle
 # ===----------------------------------------------------------------------===#
 
-
-@value
-@register_passable("trivial")
-struct AnyRegTuple[*Ts: AnyRegType]:
-    alias _type = __mlir_type[
-        `!kgen.pack<:variadic<`, AnyRegType, `> `, Ts, `>`
-    ]
-    var storage: Self._type
-
-    @staticmethod
-    fn _offset[i: Int]() -> Int:
-        constrained[i >= 0, "index must be positive"]()
-
-        @parameter
-        if i == 0:
-            return 0
-        else:
-            return align_up(
-                Self._offset[i - 1]()
-                + align_up(sizeof[Ts[i - 1]](), alignof[Ts[i - 1]]()),
-                alignof[Ts[i]](),
-            )
-
-    fn get[i: Int, T: AnyRegType](self) -> T:
-        alias offset = Self._offset[i]()
-        # Copy the storage so we can get its address, because we can't take the
-        # address of 'self' in a non-mutating method.
-        # TODO(Ownership): we should be able to get const references.
-        var selfCopy = self
-        var addr = Pointer.address_of(selfCopy.storage).bitcast[Int8]().offset(
-            offset
-        )
-        return addr.bitcast[T]().load()
-
-
 alias _populate_fn_type = fn (Pointer[NoneType]) capturing -> None
 
 
@@ -112,71 +77,53 @@ struct FunctionHandle(Boolable):
     fn __bool__(self) -> Bool:
         return self.handle.__bool__()
 
-    # TODO: Move the stream argument at the end when When Mojo will support both vararg and keyword only arguments
     @always_inline
     fn _call_impl[
         num_captures: Int,
         populate: _populate_fn_type,
-        *Ts: AnyRegType,
+        *Ts: AnyType,
     ](
         self,
-        borrowed *args: *Ts,
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         stream: Optional[Stream] = None,
     ) raises:
-        var values = AnyRegTuple(args)
-
-        self._call_impl[num_captures, populate](
-            values,
+        self._call_impl_pack[num_captures, populate](
+            args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             stream=stream,
         )
 
     @always_inline
-    fn _call_impl[
+    fn _call_impl_pack[
         num_captures: Int,
         populate: _populate_fn_type,
-        *Ts: AnyRegType,
+        *Ts: AnyType,
+        elt_is_mutable: __mlir_type.i1,
+        lifetime: AnyLifetime[elt_is_mutable].type,
     ](
         self,
-        inout values: AnyRegTuple[Ts],
+        # TODO(unpacking): this is just because we can't forward packs!
+        args: VariadicPack[elt_is_mutable, lifetime, AnyType, Ts],
         grid_dim: Dim,
         block_dim: Dim,
         stream: Optional[Stream] = None,
     ) raises:
-        alias types = VariadicList(Ts)
-
         var args_stack = stack_allocation[
             num_captures + len(VariadicList(Ts)), Pointer[NoneType]
         ]()
         populate(args_stack.bitcast[NoneType]())
 
         @parameter
-        @always_inline
-        fn append[i: Int]():
-            alias T = types[i]
-            var _val = values.get[i, T]()
-            alias arg_offset = num_captures + i
+        fn unrolled[i: Int]():
+            var arg_offset = num_captures + i
+            args_stack[arg_offset] = (
+                args.get_element[i]().get_legacy_pointer().bitcast[NoneType]()
+            )
 
-            @parameter
-            if _mlirtype_is_eq[T, FloatLiteral]():
-                var tmp = Float32(rebind[FloatLiteral](_val))
-                args_stack[arg_offset] = Pointer.address_of(tmp).bitcast[
-                    NoneType
-                ]()
-            elif _mlirtype_is_eq[T, IntLiteral]():
-                var tmp = Int(rebind[IntLiteral](_val))
-                args_stack[arg_offset] = Pointer.address_of(tmp).bitcast[
-                    NoneType
-                ]()
-            else:
-                args_stack[arg_offset] = Pointer.address_of(_val).bitcast[
-                    NoneType
-                ]()
-
-        unroll[append, len(types)]()
+        unroll[unrolled, args.__len__()]()
 
         self.__call_impl(
             args_stack, grid_dim=grid_dim, block_dim=block_dim, stream=stream
@@ -431,10 +378,10 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
     @always_inline
     @parameter
     fn __call__[
-        *Ts: AnyRegType
+        *Ts: AnyType
     ](
         self,
-        borrowed *args: *Ts,
+        *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
         stream: Optional[Stream] = None,
@@ -442,8 +389,6 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
         alias num_captures = Self._impl.num_captures
         alias populate = Self._impl.populate
 
-        var values = AnyRegTuple(args)
-
-        self.info.func_handle._call_impl[num_captures, populate](
-            values, grid_dim=grid_dim, block_dim=block_dim, stream=stream
+        self.info.func_handle._call_impl_pack[num_captures, populate](
+            args, grid_dim=grid_dim, block_dim=block_dim, stream=stream
         )
