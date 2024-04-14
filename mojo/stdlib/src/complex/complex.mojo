@@ -12,8 +12,8 @@ from complex import ComplexSIMD
 ```
 """
 
-from builtin.io import _snprintf_scalar
-from builtin.string import _calc_initial_buffer_size, _vec_fmt
+from builtin.io import _snprintf_scalar, _snprintf
+from builtin.string import _calc_initial_buffer_size
 
 alias ComplexFloat32 = ComplexSIMD[DType.float32, 1]
 alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
@@ -62,29 +62,29 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         # Print an opening `[`.
         @parameter
         if size > 1:
-            buf.size += _vec_fmt(buf.data, 2, "[")
+            buf.size += _snprintf(buf.data, 2, "[")
         # Print each element.
         for i in range(size):
             var re = self.re[i]
             var im = self.im[i]
             # Print separators between each element.
             if i != 0:
-                buf.size += _vec_fmt(buf.data + buf.size, 3, ", ")
+                buf.size += _snprintf(buf.data + buf.size, 3, ", ")
 
             buf.size += _snprintf_scalar[type](
-                rebind[Pointer[Int8]](buf.data + buf.size),
+                buf.data + buf.size,
                 _calc_initial_buffer_size(re),
                 re,
             )
 
             if im != 0:
-                buf.size += _vec_fmt(buf.data + buf.size, 4, " + ")
+                buf.size += _snprintf(buf.data + buf.size, 4, " + ")
                 buf.size += _snprintf_scalar[type](
-                    rebind[Pointer[Int8]](buf.data + buf.size),
+                    buf.data + buf.size,
                     _calc_initial_buffer_size(im),
                     im,
                 )
-                buf.size += _vec_fmt(buf.data + buf.size, 2, "i")
+                buf.size += _snprintf(buf.data + buf.size, 2, "i")
 
             debug_assert(
                 buf.size <= initial_buffer_size,
@@ -94,7 +94,7 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         # Print a closing `]`.
         @parameter
         if size > 1:
-            buf.size += _vec_fmt(buf.data + buf.size, 2, "]")
+            buf.size += _snprintf(buf.data + buf.size, 2, "]")
 
         buf.size += 1  # for the null terminator.
         return String(buf)
