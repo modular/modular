@@ -154,6 +154,7 @@ td_library(
     srcs = glob(["include/KGEN/KGENDialect/*.td"]),
     includes = ["include"],
     deps = [
+        ":InterpreterTdFiles",
         "//Support:DebugInfoTdFiles",
         "//Support:MTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
