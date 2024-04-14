@@ -10,9 +10,9 @@ from tensor import *
 from testing import *
 
 
-def argmax_tensor(
-    borrowed input: Tensor[DType.float32],
-) -> Tensor[DType.float32]:
+fn argmax_tensor(
+    input: Tensor[DType.float32],
+) raises -> Tensor[DType.float32]:
     var output = Tensor[DType.float32](TensorShape(2, 1))
 
     argmax(input._to_ndbuffer[2](), -1, output._to_ndbuffer[2]())
