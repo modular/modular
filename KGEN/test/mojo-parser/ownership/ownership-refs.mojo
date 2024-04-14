@@ -367,3 +367,8 @@ fn test_heterogenous_list():
     var list2 = make_het_list(i, j)
     # CHECK: lit.var.decl "list3" var : !lit.ref<{{.*}}@HeterogenousList<:lifetime<0> {(mutcast mut *"i`"), (mutcast mut *"j`1"), (mutcast mut *"k`2")}>
     var list3 = make_het_list(i, j, k)
+
+# Issue #37659: Parameter inference doesn't work with force-immut lifetimes 
+fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmLifetime](a: Reference[T, False.__mlir_i1__(), value_lifetime]): pass
+fn test_passing_mutable_ref(inout i: String):
+    thing_taking_immutable_ref(i)
