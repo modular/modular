@@ -25,9 +25,9 @@ fn naive_matmul[
     BM: Int,
     BN: Int,
 ](
-    dst: LayoutTensor[layout_dst, DType.float32],
-    lhs: LayoutTensor[layout_dst, DType.float32],
-    rhs: LayoutTensor[layout_dst, DType.float32],
+    dst: LayoutTensor[DType.float32, layout_dst],
+    lhs: LayoutTensor[DType.float32, layout_dst],
+    rhs: LayoutTensor[DType.float32, layout_dst],
 ):
     var dst_tile = dst.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
     dst_tile[ThreadIdx.y(), ThreadIdx.x()] = 0
@@ -52,13 +52,13 @@ fn test_naive_matmul_kernel() raises:
     alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
     var mat_a = ManagedLayoutTensor[
-        layout_a, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, layout_a, gpu_managed_alloc, gpu_free
     ]()
     var mat_b = ManagedLayoutTensor[
-        layout_b, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, layout_b, gpu_managed_alloc, gpu_free
     ]()
     var mat_c = ManagedLayoutTensor[
-        layout_c, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, layout_c, gpu_managed_alloc, gpu_free
     ]()
 
     mat_a.tensor.linspace()
@@ -91,22 +91,22 @@ fn sram_blocked_matmul[
     BN: Int,
     BK: Int,
 ](
-    dst: LayoutTensor[layout_dst, DType.float32],
-    lhs: LayoutTensor[layout_lhs, DType.float32],
-    rhs: LayoutTensor[layout_rhs, DType.float32],
+    dst: LayoutTensor[DType.float32, layout_dst],
+    lhs: LayoutTensor[DType.float32, layout_lhs],
+    rhs: LayoutTensor[DType.float32, layout_rhs],
 ):
     # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
     var lhs_sram_tile = LayoutTensor[
-        Layout(IntTuple(BM, BK)),
         DType.float32,
+        Layout(IntTuple(BM, BK)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
     # Allocate an SRAM tile of (BK, BN) size with row-major layout for
     # the r.h.s.
     var rhs_sram_tile = LayoutTensor[
-        Layout(IntTuple(BK, BN)),
         DType.float32,
+        Layout(IntTuple(BK, BN)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -190,13 +190,13 @@ fn test_sram_blocked_matmul() raises:
     alias thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
 
     var mat_a = ManagedLayoutTensor[
-        layout_a, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, layout_a, gpu_managed_alloc, gpu_free
     ]()
     var mat_b = ManagedLayoutTensor[
-        layout_b, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, layout_b, gpu_managed_alloc, gpu_free
     ]()
     var mat_c = ManagedLayoutTensor[
-        layout_c, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, layout_c, gpu_managed_alloc, gpu_free
     ]()
 
     mat_a.tensor.linspace()
@@ -234,9 +234,9 @@ fn single_warp_mma_sync_m16n8k8[
     layout_a_mma: Layout,
     layout_b_mma: Layout,
 ](
-    mat_c: LayoutTensor[layout_c, DType.float32],
-    mat_a: LayoutTensor[layout_a, DType.float32],
-    mat_b: LayoutTensor[layout_b, DType.float32],
+    mat_c: LayoutTensor[DType.float32, layout_c],
+    mat_a: LayoutTensor[DType.float32, layout_a],
+    mat_b: LayoutTensor[DType.float32, layout_b],
 ):
     var mat_a_mma = mat_a.reshape[layout_a_mma]()
     # Note: CUTLASS layout above assumes the same layout as the instruction itself, l.h.s row-major and r.h.s col-major.
@@ -282,13 +282,13 @@ fn test_single_warp_tf32_m16n8k8_matmul() raises:
     alias layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
 
     var mat_a = ManagedLayoutTensor[
-        layout_a, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, layout_a, gpu_managed_alloc, gpu_free
     ]()
     var mat_b = ManagedLayoutTensor[
-        layout_b, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, layout_b, gpu_managed_alloc, gpu_free
     ]()
     var mat_c = ManagedLayoutTensor[
-        layout_c, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, layout_c, gpu_managed_alloc, gpu_free
     ]()
 
     mat_a.tensor.linspace()

@@ -37,9 +37,9 @@ trait TiledOp:
         layout_n_k: Layout,
         dtype: DType,
     ](
-        inout dst: LayoutTensor[layout_m_n, dtype],
-        lhs: LayoutTensor[layout_m_k, dtype],
-        rhs: LayoutTensor[layout_n_k, dtype],
+        inout dst: LayoutTensor[dtype, layout_m_n],
+        lhs: LayoutTensor[dtype, layout_m_k],
+        rhs: LayoutTensor[dtype, layout_n_k],
     ):
         pass
 
@@ -53,9 +53,9 @@ struct MMA(TiledOp):
         layout_n_k: Layout,
         dtype: DType,
     ](
-        inout dst: LayoutTensor[layout_m_n, dtype],
-        lhs: LayoutTensor[layout_m_k, dtype],
-        rhs: LayoutTensor[layout_n_k, dtype],
+        inout dst: LayoutTensor[dtype, layout_m_n],
+        lhs: LayoutTensor[dtype, layout_m_k],
+        rhs: LayoutTensor[dtype, layout_n_k],
     ):
         alias M = dst.dim[0]()
         alias N = dst.dim[1]()
@@ -76,9 +76,9 @@ struct MMA_Vec(TiledOp):
         layout_n_k: Layout,
         dtype: DType,
     ](
-        inout dst: LayoutTensor[layout_m_n, dtype],
-        lhs: LayoutTensor[layout_m_k, dtype],
-        rhs: LayoutTensor[layout_n_k, dtype],
+        inout dst: LayoutTensor[dtype, layout_m_n],
+        lhs: LayoutTensor[dtype, layout_m_k],
+        rhs: LayoutTensor[dtype, layout_n_k],
     ):
         alias M = dst.dim[0]()
         alias N = dst.dim[1]()
@@ -111,9 +111,9 @@ fn gemm_l2_cache[
     layout_k_n: Layout,
     dtype: DType,
 ](
-    dst: LayoutTensor[layout_m_n, dtype],
-    lhs: LayoutTensor[layout_m_k, dtype],
-    rhs: LayoutTensor[layout_k_n, dtype],
+    dst: LayoutTensor[dtype, layout_m_n],
+    lhs: LayoutTensor[dtype, layout_m_k],
+    rhs: LayoutTensor[dtype, layout_k_n],
 ):
     alias M = dst.dim[0]()
     alias N = dst.dim[1]()
@@ -128,7 +128,7 @@ fn gemm_l2_cache[
 
     # Cache matrix to materialize L2 transposed tiles
     var l2_rhs_cache = ManagedLayoutTensor[
-        Layout(IntTuple(L2.n, L2.k)), dtype
+        dtype, Layout(IntTuple(L2.n, L2.k))
     ]()
 
     # First level of tiling (grid_blocks, L1 cache ..etc).
@@ -173,9 +173,9 @@ fn gemm_l1_cache[
     layout_k_n: Layout,
     dtype: DType,
 ](
-    dst: LayoutTensor[layout_m_n, dtype],
-    lhs: LayoutTensor[layout_m_k, dtype],
-    rhs: LayoutTensor[layout_k_n, dtype],
+    dst: LayoutTensor[dtype, layout_m_n],
+    lhs: LayoutTensor[dtype, layout_m_k],
+    rhs: LayoutTensor[dtype, layout_k_n],
 ):
     alias M = dst.dim[0]()
     alias N = dst.dim[1]()
@@ -205,10 +205,10 @@ fn gemm_l1_cache[
     fn process_raw(m_1: Int) capturing:
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
         var l1_lhs_cache = LayoutTensor[
-            Layout(IntTuple(L1.m, L1.k)), dtype
+            dtype, Layout(IntTuple(L1.m, L1.k))
         ].stack_allocation()
         var l1_rhs_cache = LayoutTensor[
-            Layout(IntTuple(L1.n, L1.k)), dtype
+            dtype, Layout(IntTuple(L1.n, L1.k))
         ].stack_allocation()
 
         for k_1 in range(l1_size.k):
@@ -252,9 +252,9 @@ fn test_tiled_matmul[use_l1_cache: Bool]():
     else:
         print("=== test_tiled_matmul_l2_cache")
 
-    var dst = ManagedLayoutTensor[Layout(IntTuple(8, 8)), DType.float32]()
-    var rhs = ManagedLayoutTensor[Layout(IntTuple(8, 8)), DType.float32]()
-    var lhs = ManagedLayoutTensor[Layout(IntTuple(8, 8)), DType.float32]()
+    var dst = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
+    var rhs = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
+    var lhs = ManagedLayoutTensor[DType.float32, Layout(IntTuple(8, 8))]()
 
     dst.tensor.fill(0)
     rhs.tensor.linspace()

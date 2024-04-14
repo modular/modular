@@ -39,13 +39,14 @@ fn test_tiled_and_vectorized_matmul():
     alias TN = 2
 
     var tensor_a = LayoutTensor[
-        Layout(IntTuple(M, K), IntTuple(K, 1)), DType.float32
+        DType.float32,
+        Layout(IntTuple(M, K), IntTuple(K, 1)),
     ].stack_allocation()
     var tensor_b = LayoutTensor[
-        Layout(IntTuple(K, N), IntTuple(N, 1)), DType.float32
+        DType.float32, Layout(IntTuple(K, N), IntTuple(N, 1))
     ].stack_allocation()
     var tensor_c = LayoutTensor[
-        Layout(IntTuple(M, N), IntTuple(N, 1)), DType.float32
+        DType.float32, Layout(IntTuple(M, N), IntTuple(N, 1))
     ].stack_allocation()
     tensor_a.linspace()
     tensor_b.linspace()

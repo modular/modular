@@ -72,8 +72,8 @@ fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
 
 @register_passable
 struct LayoutTensor[
-    layout: Layout,
     dtype: DType,
+    layout: Layout,
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -312,14 +312,14 @@ struct LayoutTensor[
     fn coalesce(
         self,
     ) -> LayoutTensor[
-        coalesce(layout),
         dtype,
+        coalesce(layout),
         address_space=address_space,
         element_layout = self.element_layout,
     ]:
         return LayoutTensor[
-            coalesce(layout),
             dtype,
+            coalesce(layout),
             address_space=address_space,
             element_layout = self.element_layout,
         ](self.ptr)
@@ -346,7 +346,7 @@ struct LayoutTensor[
         *tile_sizes: Int,
         __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
     ](self, *tile_coords: Int) -> LayoutTensor[
-        __tiled_layout[0], dtype, address_space=address_space
+        dtype, __tiled_layout[0], address_space=address_space
     ]:
         @parameter
         fn num_tiles() -> Int:
@@ -367,7 +367,7 @@ struct LayoutTensor[
         unroll[compute_offset, num_tiles()]()
 
         return LayoutTensor[
-            __tiled_layout[0], dtype, address_space=address_space
+            dtype, __tiled_layout[0], address_space=address_space
         ](self.ptr.offset(offset))
 
     @always_inline
@@ -377,7 +377,7 @@ struct LayoutTensor[
         __tile_size: Int = layout.shape[axis].value() // count,
         __tiled_layout: Layout = Self._compute_tile_layout[__tile_size, axis](),
     ](self) -> StaticTuple[
-        LayoutTensor[__tiled_layout[0], dtype, address_space=address_space],
+        LayoutTensor[dtype, __tiled_layout[0], address_space=address_space],
         count,
     ]:
         constrained[
@@ -393,14 +393,14 @@ struct LayoutTensor[
         alias stride = layout.stride[axis].value()
 
         var tiles = StaticTuple[
-            LayoutTensor[__tiled_layout[0], dtype, address_space=address_space],
+            LayoutTensor[dtype, __tiled_layout[0], address_space=address_space],
             count,
         ]()
 
         @unroll
         for i in range(count):
             tiles[i] = LayoutTensor[
-                __tiled_layout[0], dtype, address_space=address_space
+                dtype, __tiled_layout[0], address_space=address_space
             ](self.ptr.offset(i * __tile_size * stride))
 
         return tiles
@@ -433,8 +433,8 @@ struct LayoutTensor[
         ](),
         submode_axis: Optional[Int] = None,
     ](self, thread_id: Int32) -> LayoutTensor[
-        tiled_layout[1],
         dtype,
+        tiled_layout[1],
         address_space=address_space,
         element_layout=element_layout,
     ]:
@@ -480,8 +480,8 @@ struct LayoutTensor[
         unroll[compute_offset, len(fragments_layout_stride)]()
 
         return LayoutTensor[
-            tiled_layout[1],
             dtype,
+            tiled_layout[1],
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr.offset(offset))
@@ -491,14 +491,14 @@ struct LayoutTensor[
         *tile_sizes: Int,
         __tiled_layout: Layout = Self._compute_tile_layout[tile_sizes](),
     ](self) -> LayoutTensor[
-        coalesce(__tiled_layout[1], keep_rank=True),
         dtype,
+        coalesce(__tiled_layout[1], keep_rank=True),
         address_space=address_space,
         element_layout = coalesce(__tiled_layout[0]),
     ]:
         return LayoutTensor[
-            coalesce(__tiled_layout[1], keep_rank=True),
             dtype,
+            coalesce(__tiled_layout[1], keep_rank=True),
             address_space=address_space,
             element_layout = coalesce(__tiled_layout[0]),
         ](self.ptr)
@@ -531,8 +531,8 @@ struct LayoutTensor[
             d1_slice,
         ),
     ](self) -> LayoutTensor[
-        __slice_layout,
         dtype,
+        __slice_layout,
         address_space=address_space,
         element_layout=element_layout,
     ]:
@@ -544,8 +544,8 @@ struct LayoutTensor[
         alias stride_n = int(__slice_layout.stride[1])
         var offset = d0_slice.start * stride_m + d1_slice.start * stride_n
         return LayoutTensor[
-            __slice_layout,
             dtype,
+            __slice_layout,
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr.offset(offset))
@@ -559,14 +559,14 @@ struct LayoutTensor[
             Layout(IntTuple(N, M), IntTuple(M, 1)),
         ),
     ](self) -> LayoutTensor[
-        transposed_layout,
         dtype,
+        transposed_layout,
         address_space=address_space,
         element_layout=element_layout,
     ]:
         return LayoutTensor[
-            transposed_layout,
             dtype,
+            transposed_layout,
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr)
@@ -576,14 +576,14 @@ struct LayoutTensor[
         dst_layout: Layout,
         reshaped_layout: Layout = composition(layout, dst_layout),
     ](self) -> LayoutTensor[
-        reshaped_layout,
         dtype,
+        reshaped_layout,
         address_space=address_space,
         element_layout=element_layout,
     ]:
         return LayoutTensor[
-            reshaped_layout,
             dtype,
+            reshaped_layout,
             address_space=address_space,
             element_layout=element_layout,
         ](self.ptr)
@@ -594,8 +594,8 @@ struct LayoutTensor[
     ](
         self,
         other: LayoutTensor[
-            other_layout,
             dtype,
+            other_layout,
             address_space=address_space,
             element_layout=element_layout,  # TODO: Remove this assumtion.
         ],
@@ -627,8 +627,8 @@ struct LayoutTensor[
     ](
         self,
         other: LayoutTensor[
-            other_layout,
             dtype,
+            other_layout,
             address_space=other_addr_space,
             element_layout=other_element_layout,
         ],
@@ -794,8 +794,8 @@ struct LayoutTensor[
     ](
         self,
         src: LayoutTensor[
-            src_layout,
             dtype,
+            src_layout,
             address_space=src_addr_space,
             element_layout=src_element_layout,
         ],
@@ -933,8 +933,8 @@ struct TensorBuilder[
     address_space: AddressSpace = AddressSpace.GENERIC,
     layout: Layout = Layout(IntTuple(M, N), IntTuple(N, 1)),
 ]:
-    alias Type = LayoutTensor[layout, dtype, address_space=address_space]
-    alias AlignedType = LayoutTensor[Self._aligned_layout(), dtype]
+    alias Type = LayoutTensor[dtype, layout, address_space=address_space]
+    alias AlignedType = LayoutTensor[dtype, Self._aligned_layout()]
 
     @staticmethod
     fn Wrap(ptr: DTypePointer[dtype, address_space]) -> Self.Type:
@@ -964,16 +964,16 @@ struct TensorBuilder[
         alias data_layout = Layout(
             IntTuple(M, n_aligned), IntTuple(n_aligned, 1)
         )
-        return LayoutTensor[data_layout, dtype]._compute_tile_layout[M, N]()[0]
+        return LayoutTensor[dtype, data_layout]._compute_tile_layout[M, N]()[0]
 
     @staticmethod
     fn BuildAligned[
         *, __target_layout: Layout = Self._aligned_layout()
-    ]() -> LayoutTensor[__target_layout, dtype]:
+    ]() -> LayoutTensor[dtype, __target_layout]:
         var ptr = DTypePointer[dtype].alloc(
             M * int(__target_layout.stride[0]), alignment=alignof[SIMD[dtype]]()
         )
-        return LayoutTensor[__target_layout, dtype](ptr, owning=True)
+        return LayoutTensor[dtype, __target_layout](ptr, owning=True)
 
 
 fn stack_allocation_like[
@@ -983,10 +983,10 @@ fn stack_allocation_like[
     address_space: AddressSpace,
     target_address_space: AddressSpace = AddressSpace.GENERIC,
 ](
-    in_tensor: LayoutTensor[layout, dtype, address_space=address_space]
-) -> LayoutTensor[layout, dtype, address_space=target_address_space]:
+    in_tensor: LayoutTensor[dtype, layout, address_space=address_space]
+) -> LayoutTensor[dtype, layout, address_space=target_address_space]:
     return LayoutTensor[
-        layout, dtype, address_space=target_address_space
+        dtype, layout, address_space=target_address_space
     ].stack_allocation()
 
 
@@ -1003,9 +1003,9 @@ fn outer_product_acc[
     lhs_layout: Layout,
     rhs_layout: Layout,
 ](
-    res: LayoutTensor[res_layout, dtype, address_space=res_address_space],
-    lhs: LayoutTensor[lhs_layout, _, address_space=lhs_address_space],
-    rhs: LayoutTensor[rhs_layout, _, address_space=rhs_address_space],
+    res: LayoutTensor[dtype, res_layout, address_space=res_address_space],
+    lhs: LayoutTensor[_, lhs_layout, address_space=lhs_address_space],
+    rhs: LayoutTensor[_, rhs_layout, address_space=rhs_address_space],
 ):
     constrained[res.rank() == 2, "Only rank 2 res is allowed."]()
     constrained[lhs.rank() == 1, "Only rank 1 lhs is allowed."]()
@@ -1038,14 +1038,14 @@ fn copy_dram_to_sram_async[
     dst_element_layout: Layout,
 ](
     dst: LayoutTensor[
-        dst_layout,
         dtype,
+        dst_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=dst_element_layout,
     ],
     src: LayoutTensor[
-        src_layout,
         dtype,
+        src_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=src_element_layout,
     ],
@@ -1068,14 +1068,14 @@ fn warp_copy_sram_to_local[
     axis: Optional[Int] = None,
 ](
     dst: LayoutTensor[
-        dst_layout,
         dtype,
+        dst_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=dst_element_layout,
     ],
     src: LayoutTensor[
-        src_layout,
         dtype,
+        src_layout,
         address_space = _GPUAddressSpace.SHARED,
         element_layout=src_element_layout,
     ],
@@ -1106,14 +1106,14 @@ fn copy_local_to_dram[
     dst_element_layout: Layout,
 ](
     dst: LayoutTensor[
-        dst_layout,
         dtype,
+        dst_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=dst_element_layout,
     ],
     src: LayoutTensor[
-        src_layout,
         dtype,
+        src_layout,
         address_space = _GPUAddressSpace.GENERIC,
         element_layout=src_element_layout,
     ],

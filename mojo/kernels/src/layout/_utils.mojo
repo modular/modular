@@ -37,16 +37,16 @@ fn gpu_free[dtype: DType](ptr: DTypePointer[dtype]):
 
 
 struct ManagedLayoutTensor[
-    layout: Layout,
     dtype: DType,
+    layout: Layout,
     alloc_fn: alloc_fn_type = cpu_alloc,
     free_fn: free_fn_type = cpu_free,
 ]:
-    var tensor: LayoutTensor[layout, dtype]
+    var tensor: LayoutTensor[dtype, layout]
 
     @always_inline
     fn __init__(inout self):
-        self.tensor = LayoutTensor[layout, dtype](alloc_fn[layout, dtype]())
+        self.tensor = LayoutTensor[dtype, layout](alloc_fn[layout, dtype]())
 
     @always_inline
     fn __del__(owned self):

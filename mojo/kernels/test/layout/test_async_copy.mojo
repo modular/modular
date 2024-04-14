@@ -19,12 +19,12 @@ fn async_copy_kernel[
     input_layout: Layout,
     BM: Int,
     BN: Int,
-](input: LayoutTensor[input_layout, DType.float32]):
+](input: LayoutTensor[DType.float32, input_layout]):
     var input_tile = input.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
 
     var smem_tile = LayoutTensor[
-        Layout(IntTuple(BM, BN)),
         DType.float32,
+        Layout(IntTuple(BM, BN)),
         address_space = AddressSpace.SHARED,
     ].stack_allocation()
 
@@ -49,7 +49,7 @@ fn test_async_copy() raises:
 
     alias input_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
     var input = ManagedLayoutTensor[
-        input_layout, DType.float32, gpu_managed_alloc, gpu_free
+        DType.float32, input_layout, gpu_managed_alloc, gpu_free
     ]()
 
     input.tensor.linspace()
