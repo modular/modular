@@ -947,6 +947,26 @@ verifyVariadicPtrMap(ArrayRef<TypedAttr> operands, Type type,
   return success();
 }
 
+static LogicalResult
+verifyVariadicPtrRemoveMap(ArrayRef<TypedAttr> operands, Type type,
+                           function_ref<InFlightDiagnostic()> emitError) {
+  if (operands.size() != 1)
+    return emitError() << "'variadic_ptrremove_map' requires 1 operand";
+
+  auto srcVariadic = dyn_cast<VariadicType>(operands[0].getType());
+  if (!srcVariadic || // May still be parametric
+      !isa<TypeType>(srcVariadic.getElementType()))
+    return emitError() << "'variadic_ptrremove_map' operand should have "
+                          "!kgen.variadic<!kgen.type> type, not "
+                       << operands[0].getType();
+  auto dstVariadic = dyn_cast<VariadicType>(type);
+  if (!dstVariadic || !isa<TypeType>(dstVariadic.getElementType()))
+    return emitError() << "'variadic_ptrremove_map' result should be "
+                          "!kgen.variadic<!kgen.type> type, not "
+                       << type;
+  return success();
+}
+
 LogicalResult ParamOperatorAttr::verify(
     llvm::function_ref<mlir::InFlightDiagnostic()> emitError, POC opcode,
     ArrayRef<TypedAttr> operands, Type type) {
@@ -967,6 +987,7 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::GetLinkageName:
   case POC::GetTypeMethod:
   case POC::VariadicPtrMap:
+  case POC::VariadicPtrRemoveMap:
     break;
   default:
     if (!llvm::all_of(operands, [&](auto operand) {
@@ -1152,6 +1173,8 @@ LogicalResult ParamOperatorAttr::verify(
     return verifyGetTypeMethod(operands, type, emitError);
   case POC::VariadicPtrMap:
     return verifyVariadicPtrMap(operands, type, emitError);
+  case POC::VariadicPtrRemoveMap:
+    return verifyVariadicPtrRemoveMap(operands, type, emitError);
   }
   return success();
 }
@@ -2246,6 +2269,28 @@ static TypedAttr simplifyVariadicPtrMap(TypedAttr variadicOperand,
   return VariadicAttr::get(results, cast<VariadicType>(resultType));
 }
 
+static TypedAttr simplifyVariadicPtrRemoveMap(TypedAttr variadicOperand,
+                                              Type resultType) {
+  // Fold a concrete variadic list of types.
+  auto variadic = dyn_cast<VariadicAttr>(variadicOperand);
+  if (!variadic)
+    return {};
+
+  auto resultEltType = cast<VariadicType>(resultType).getElementType();
+
+  SmallVector<TypedAttr> results;
+  // Map each type from a PointerType of the element type.
+  for (auto elt : variadic.getValues()) {
+    auto eltCst = dyn_cast<TypeConstantAttr>(elt);
+    if (!eltCst || !isa<PointerType>(eltCst.getValue()))
+      return {};
+
+    results.push_back(ParameterizedTypeConstantAttr::get(
+        cast<PointerType>(eltCst.getValue()).getElementType(), resultEltType));
+  }
+  return VariadicAttr::get(results, cast<VariadicType>(resultType));
+}
+
 /// Construct a parameter operator attribute, folding it if possible.
 static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
                                   ArrayRef<TypedAttr> operandsIn,
@@ -2355,8 +2400,12 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     result = simplifyGetTypeMethod(operands, resultType);
     break;
   case POC::VariadicPtrMap:
-    assert(operands.size() == 2 && "variadic_ptr_map always has one operand");
+    assert(operands.size() == 2 && "variadic_ptr_map always has 2 operands");
     result = simplifyVariadicPtrMap(operands[0], operands[1], resultType);
+    break;
+  case POC::VariadicPtrRemoveMap:
+    assert(operands.size() == 1 && "variadic_ptrremove_map has 1 operand");
+    result = simplifyVariadicPtrRemoveMap(operands[0], resultType);
     break;
   }
 
@@ -2390,13 +2439,13 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
     resultType = operandsIn[1].getType();
   else if (opcode != POC::BindSignature)
     resultType = operandsIn.front().getType();
-  assert(llvm::is_contained({POC::BindSignature, POC::Apply,
-                             POC::ApplyResultSlot, POC::TargetHasFeature,
-                             POC::TargetGetField, POC::GetSizeOf,
-                             POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
-                             POC::CompileAssembly, POC::GetLinkageName,
-                             POC::GetTypeMethod, POC::VariadicPtrMap},
-                            opcode) ||
+  assert(llvm::is_contained(
+             {POC::BindSignature, POC::Apply, POC::ApplyResultSlot,
+              POC::TargetHasFeature, POC::TargetGetField, POC::GetSizeOf,
+              POC::GetAlignOf, POC::VariadicGet, POC::GetEnv,
+              POC::CompileAssembly, POC::GetLinkageName, POC::GetTypeMethod,
+              POC::VariadicPtrMap, POC::VariadicPtrRemoveMap},
+             opcode) ||
          llvm::all_of(operandsIn.drop_front(),
                       [&](auto op) { return op.getType() == resultType; }));
 

@@ -139,14 +139,20 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
   kgen.return %0, %1, %2, %4, %5 : si32, si32, si32, index, index
 }
 
-// test variadic_ptr_map
-
-// COM: Check that this gets elaborated to use the concrete function from the vtable below.
 // CHECK-LABEL: kgen.func @test_variadic_ptr_map
 kgen.generator @test_variadic_ptr_map() {
   // CHECK-NEXT: %variadic = kgen.param.constant: variadic<type> = <[pointer<i32, 42>, pointer<f32, 42>, pointer<i8, 42>]>
   kgen.param.declare types : variadic<!kgen.type> = <[i32, f32, i8]>
   %variadic = kgen.param.constant: variadic<!kgen.type> = <variadic_ptr_map(:variadic<!kgen.type> types, 42)>
+  // CHECK-NEXT: kgen.return
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func @test_variadic_ptrremove_map
+kgen.generator @test_variadic_ptrremove_map() {
+  // CHECK-NEXT: %variadic = kgen.param.constant: variadic<type> = <[i32, f32, i8]>
+  kgen.param.declare types : variadic<!kgen.type> = <[pointer<i32>, pointer<f32, 42>, pointer<i8>]>
+  %variadic = kgen.param.constant: variadic<!kgen.type> = <variadic_ptrremove_map(:variadic<!kgen.type> types)>
   // CHECK-NEXT: kgen.return
   kgen.return
 }
