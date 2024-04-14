@@ -13,12 +13,10 @@ struct TalkativeMem(Stringable):
 
     fn __init__(inout self, state: Int):
         self.state = state
-        print("initializing ", end="")
-        print(state)
+        print("initializing", state)
 
     fn __del__(owned self):
-        print("destroying ", end="")
-        print(self.state)
+        print("destroying", self.state)
 
     fn __str__(self) -> String:
         return "talkative " + self.state.__str__()
@@ -31,12 +29,30 @@ struct TalkativeReg(Stringable):
 
     fn __init__(inout self, state: Int):
         self.state = state
-        print("initializing ", end="")
-        print(state)
+        print("initializing", state)
 
     fn __del__(owned self):
-        print("destroying ", end="")
-        print(self.state)
+        print("destroying", self.state)
+
+    fn __str__(self) -> String:
+        return "talkative " + self.state.__str__()
+
+
+# This is copyable, movable, and talkative!
+@register_passable
+struct TalkativeCopableReg(Stringable):
+    var state: Int
+
+    fn __init__(inout self, state: Int):
+        self.state = state
+        print("initializing", state)
+
+    fn __copyinit__(inout self, existing: Self):
+        self.state = existing.state
+        print("copying", self.state)
+
+    fn __del__(owned self):
+        print("destroying", self.state)
 
     fn __str__(self) -> String:
         return "talkative " + self.state.__str__()
@@ -134,6 +150,39 @@ fn test_owned_reg_varargs():
 
     # CHECK-NEXT: after call
     print("after call")
+
+
+fn test_non_trivial_reg_varargs():
+    # CHECK: -- test_non_trivial_reg_varargs
+    print("\n-- test_non_trivial_reg_varargs")
+
+    fn callee(*args: TalkativeCopableReg):
+        var arg: TalkativeCopableReg
+
+        if len(args) == 1:
+            arg = args[0]
+        else:
+            arg = args[1]
+        print("here")
+        print(arg)
+
+    # CHECK-NEXT: initializing 1
+    # CHECK-NEXT: copying 1
+    # CHECK-NEXT: here
+    # CHECK-NEXT: talkative 1
+    # CHECK-NEXT: destroying 1
+    # CHECK-NEXT: destroying 1
+    callee(TalkativeCopableReg(1))
+
+    # CHECK-NEXT: initializing 2
+    # CHECK-NEXT: initializing 3
+    # CHECK-NEXT: copying 3
+    # CHECK-NEXT: here
+    # CHECK-NEXT: talkative 3
+    # CHECK-NEXT: destroying 3
+    # CHECK-NEXT: destroying 3
+    # CHECK-NEXT: destroying 2
+    callee(TalkativeCopableReg(2), TalkativeCopableReg(3))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -279,6 +328,7 @@ fn main():
     test_inout_varargs()
     test_owned_varargs()
     test_owned_reg_varargs()
+    test_non_trivial_reg_varargs()
     test_owned_variadic_pack()
     test_inout_variadic_pack()
     test_borrowed_variadic_pack()
