@@ -13,14 +13,12 @@ using namespace M::DebugInfo;
 // DIBuilder
 //===----------------------------------------------------------------------===//
 
-DICompileUnitAttr DIBuilder::initializeCompileUnit(unsigned sourceLanguage,
-                                                   DIFileAttr file,
-                                                   StringRef producer,
-                                                   bool isOptimized,
-                                                   EmissionKind emissionKind) {
+DICompileUnitAttr DIBuilder::initializeCompileUnit(
+    unsigned sourceLanguage, DIFileAttr file, StringRef producer,
+    bool isOptimized, EmissionKind emissionKind, NameTableKind nameTableKind) {
   assert(!compileUnit && "compile unit already initialized");
-  compileUnit = DICompileUnitAttr::get(sourceLanguage, file, producer,
-                                       isOptimized, emissionKind);
+  compileUnit = DICompileUnitAttr::get(
+      sourceLanguage, file, producer, isOptimized, emissionKind, nameTableKind);
   return compileUnit;
 }
 

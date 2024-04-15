@@ -26,10 +26,11 @@ public:
   /// Initialize the compilation unit for the builder. The compilation unit
   /// provides an anchor for all of the debug information generated during
   /// compilation.
-  DICompileUnitAttr initializeCompileUnit(unsigned sourceLanguage,
-                                          DIFileAttr file, StringRef producer,
-                                          bool isOptimized,
-                                          EmissionKind emissionKind);
+  DICompileUnitAttr
+  initializeCompileUnit(unsigned sourceLanguage, DIFileAttr file,
+                        StringRef producer, bool isOptimized,
+                        EmissionKind emissionKind,
+                        NameTableKind nameTableKind = NameTableKind::None);
 
   //===--------------------------------------------------------------------===//
   // Scopes
