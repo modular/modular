@@ -166,7 +166,9 @@ def slice(input: Symbol, s: Slice) -> Symbol:
     return slice(input, sym_slices, static_shape=dims)
 
 
-def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
+def slice[
+    keep_dims: Bool = False
+](input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
     """Slices out a `n-1`-d plane from the input symbolic tensor.
 
     Args:
@@ -195,7 +197,14 @@ def slice(input: Symbol, idx: Symbol, axis: Int = 0) -> Symbol:
         else:
             slices.append(SymbolicSlice(None, None, None))
             dims.append(input_type.dims[i])
-    return squeeze(slice(input, slices, static_shape=dims), axis)
+
+    var out_sliced = slice(input, slices, static_shape=dims)
+
+    @parameter
+    if keep_dims:
+        return out_sliced
+    else:
+        return squeeze(out_sliced, axis)
 
 
 # ===----------------------------------------------------------------------=== #
