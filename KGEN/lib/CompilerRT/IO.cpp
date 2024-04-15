@@ -149,14 +149,14 @@ struct FileHandle {
     return llvm::StringRef(ptr, *numReadOr);
   }
 
-  uint64_t seek(uint64_t offset, llvm::StringRef *errMsg) {
+  uint64_t seek(uint64_t offset, uint8_t whence, llvm::StringRef *errMsg) {
 #ifdef _WIN32
     uint64_t pos = _lseeki64(handle, offset, SEEK_SET);
     if (pos == (uint64_t)-1)
       *errMsg =
           copyString((Twine("seek error: ") + std::to_string(errno)).str());
 #else
-    uint64_t pos = lseek(handle, offset, SEEK_SET);
+    uint64_t pos = lseek(handle, offset, whence);
     if (pos == (uint64_t)-1)
       *errMsg = copyString((Twine("seek error: ") + strerror(errno)).str());
 #endif // _WIN32
@@ -234,8 +234,8 @@ KGEN_CompilerRT_IO_FileSize(FileHandleWrapper file, llvm::StringRef *errMsg) {
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint64_t
 KGEN_CompilerRT_IO_FileSeek(FileHandleWrapper file, uint64_t offset,
-                            llvm::StringRef *errMsg) {
-  return unwrap(file)->seek(offset, errMsg);
+                            uint8_t whence, llvm::StringRef *errMsg) {
+  return unwrap(file)->seek(offset, whence, errMsg);
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
