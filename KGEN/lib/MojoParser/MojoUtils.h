@@ -20,7 +20,6 @@ class InflightDiag;
 
 namespace M::KGEN {
 class SignatureType;
-class PackType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
@@ -37,10 +36,6 @@ inline const char *plural(size_t value, const char *one = "",
                           const char *other = "s") {
   return value == 1 ? one : other;
 }
-
-/// If the argument at the given index is of pack type, returns that type.
-/// therwise, returns null.
-PackType getIfPackType(LITSignatureType sig, size_t index);
 
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a rebind.  This means that values of the two types have exactly the

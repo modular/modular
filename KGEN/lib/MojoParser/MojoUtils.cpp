@@ -23,11 +23,6 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
-PackType LIT::getIfPackType(LITSignatureType sig, size_t index) {
-  return sig.isPackVarArg(index) ? ::cast<PackType>(sig.getArguments()[index])
-                                 : nullptr;
-}
-
 /// Returns if a value of the specified type can be coerced to the other type
 /// with a rebind.  This means that values of the two types have exactly the
 /// same representation post-elaboration.

@@ -223,13 +223,6 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     // Get the !lit.ref with the lifetime and other paraphernalia.
     expectedType = packType.getElementRefTypeFor(expectedType);
     convention = calleeSig.getPackVarArgConvention(argIdx);
-
-    // TODO(references): Remove this when PackType is no longer used.
-  } else if (auto packType = getIfPackType(calleeSig, argIdx)) {
-    // Operands being applied to a concrete pack type argument must be
-    // converted to the pack element type at that index.
-    expectedType =
-        ASTType(packType.getVariadicIfResolved().getValues()[sequenceIndex]);
   }
 
   switch (convention) {
@@ -365,7 +358,9 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       }
       auto newVarType = VariadicType::get(varElType, varType.getConvention());
       argValue = PValue(VariadicAttr::get(args, newVarType));
-    } else if (ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx)) {
+    } else {
+      ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx);
+      assert(variadicPackType && "Unknown variadic argument kind");
       // Bundle them up into a VariadicPack instance.
       argValue = emitVariadicPackConstructor(
           variadicPackType, convention, /*lifetime*/ {}, callExpr, emitter,
@@ -379,10 +374,6 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
           });
       if (!argValue)
         return failure();
-    } else {
-      assert(isa<PackType>(expectedType));
-      // TODO: Remove when packs move to memory form.
-      argValue = PValue(PackAttr::get(args, cast<PackType>(expectedType)));
     }
     argumentValues.push_back({argValue, remainingOperands[0].expr});
     return success();
@@ -411,9 +402,7 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
 
   // If there are lifetimes on anything, create a uniform representation and
   // cast to a common reference type.
-  if ( // TODO: Remove legacy PackType.
-      !isa<PackType>(expectedType) && !args.empty() &&
-      isa<RefType>(args.back().getType())) {
+  if (!args.empty() && isa<RefType>(args.back().getType())) {
     // If one arg is a reference, then they all are.
     SmallVector<TypedAttr> refLifetimes;
     for (auto arg : args)
@@ -468,10 +457,6 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
       argVal = SBValue(emitter.builder->create<POP::VariadicCreateOp>(
           loc, expectedType, args));
     }
-  } else if (isa<PackType>(expectedType)) {
-    // TODO: Remove when packs are always in memory
-    argVal =
-        SBValue(emitter.builder->create<PackCreateOp>(loc, expectedType, args));
   } else {
     // Bundle them up into a VariadicPack instance.
     ASTType variadicPackType = calleeSig.getIfVariadicPack(argIdx);
@@ -560,15 +545,6 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
         continue;
       }
 
-      // TODO(references): Remove this when PackType is no longer used.
-      if (auto packType = getIfPackType(calleeSig, argIdx)) {
-        // Pack arguments are fulfilled with an empty !kgen.pack sequence.
-        assert(packType.isEmpty() &&
-               "pack type already checked against operand count");
-        auto argAttr = PackAttr::get(ArrayRef<TypedAttr>(), packType);
-        argumentValues.push_back({PValue(argAttr), callExpr});
-        continue;
-      }
       if (calleeSig.isKwVarArg(argIdx)) {
         assert(!kwargsDict && "multiple **kwargs not supported yet");
         // If this is a variadic keyword argument, we initialize a dictionary.
