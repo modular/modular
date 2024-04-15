@@ -320,8 +320,10 @@ struct Device:
 
         var result = _get_dylib_function[
             "nvmlDeviceGetSupportedMemoryClocks",
-            fn (_DeviceImpl, Pointer[UInt32], Pointer[UInt32]) -> Result,
-        ]()(self.device, Pointer.address_of(num_clocks), Pointer[UInt32]())
+            fn (_DeviceImpl, Pointer[UInt32], UnsafePointer[UInt32]) -> Result,
+        ]()(
+            self.device, Pointer.address_of(num_clocks), UnsafePointer[UInt32]()
+        )
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
@@ -338,8 +340,88 @@ struct Device:
         )
 
         var res = List[Int]()
-        res.resize(int(num_clocks), 0)
-        for i in range(num_clocks):
-            res[i] = int(clocks[i])
+        for clock in clocks:
+            res.append(int(clock[]))
 
         return res
+
+    fn graphics_clocks(self, memory_clock_mhz: Int) raises -> List[Int]:
+        var num_clocks = UInt32()
+
+        var result = _get_dylib_function[
+            "nvmlDeviceGetSupportedGraphicsClocks",
+            fn (
+                _DeviceImpl, UInt32, Pointer[UInt32], UnsafePointer[UInt32]
+            ) -> Result,
+        ]()(
+            self.device,
+            UInt32(memory_clock_mhz),
+            Pointer.address_of(num_clocks),
+            UnsafePointer[UInt32](),
+        )
+        if result != Result.INSUFFICIENT_SIZE:
+            _check_error(result)
+
+        var clocks = List[UInt32]()
+        clocks.resize(int(num_clocks), 0)
+
+        _check_error(
+            _get_dylib_function[
+                "nvmlDeviceGetSupportedGraphicsClocks",
+                fn (
+                    _DeviceImpl, UInt32, Pointer[UInt32], UnsafePointer[UInt32]
+                ) -> Result,
+            ]()(
+                self.device,
+                UInt32(memory_clock_mhz),
+                Pointer.address_of(num_clocks),
+                clocks.data,
+            )
+        )
+
+        var res = List[Int]()
+        for clock in clocks:
+            res.append(int(clock[]))
+
+        return res
+
+    fn gpu_turbo_enabled(self) raises -> Bool:
+        """Returns True if the gpu turbo is enabled."""
+        var is_enabled = _EnableState.DISABLED
+        var default_is_enabled = _EnableState.DISABLED
+        _check_error(
+            _get_dylib_function[
+                "nvmlDeviceGetAutoBoostedClocksEnabled",
+                fn (
+                    _DeviceImpl, Pointer[_EnableState], Pointer[_EnableState]
+                ) -> Result,
+            ]()(
+                self.device,
+                Pointer.address_of(is_enabled),
+                Pointer.address_of(default_is_enabled),
+            )
+        )
+        return is_enabled == _EnableState.ENABLED
+
+    fn set_gpu_turbo(self, disable: Bool = True) raises:
+        """Sets the GPU turbo state."""
+        _check_error(
+            _get_dylib_function[
+                "nvmlDeviceSetAutoBoostedClocksEnabled",
+                fn (_DeviceImpl, _EnableState) -> Result,
+            ]()(
+                self.device,
+                _EnableState.DISABLED if disable else _EnableState.ENABLED,
+            )
+        )
+
+
+@value
+struct _EnableState:
+    var state: Int32
+
+    alias DISABLED = _EnableState(0)  # Feature disabled
+    alias ENABLED = _EnableState(1)  # Feature enabled
+
+    fn __eq__(self, other: Self) -> Bool:
+        return self.state == other.state
