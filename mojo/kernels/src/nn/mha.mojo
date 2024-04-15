@@ -8,7 +8,7 @@
 from math import align_down, div_ceil, exp, iota, max, min, sqrt
 from math.limit import neginf
 
-from algorithm import elementwise, unswitch
+from algorithm import elementwise
 from LinAlg.BatchedMatmul import batched_matmul
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
@@ -34,7 +34,7 @@ from LinAlg.transpose import transpose
 from utils.index import Index, StaticIntTuple
 from utils.static_tuple import StaticTuple
 
-from .softmax import softmax, softmax_3_pass
+from .softmax import softmax
 
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -160,85 +160,30 @@ fn fused_attention[
             fused_val.cast[score_type](),
         )
 
-    fn softmax_closure(
-        start_row: Int,
-        num_rows: Int,
-        c: NDBuffer[score_type, 2],
-    ):
-        var row_size = c.dim(1)
-        for i in range(start_row, start_row + num_rows):
-            var row_view = Buffer[DType.float32](
-                c.data.offset(i * row_size).bitcast[DType.float32](), row_size
-            )
-
-            @__copy_capture(row_view)
-            @parameter
-            @always_inline
-            fn input_fn_1d[
-                _width: Int
-            ](idx: Int) -> SIMD[DType.float32, _width]:
-                return rebind[SIMD[DType.float32, _width]](
-                    row_view.load[width=_width](idx)
-                )
-
-            softmax_3_pass[simd_size, Dim(), DType.float32, input_fn_1d](
-                row_view
-            )
-
-    # Fuse softmax when matmul is only partitioned in M.
-    # TODO: use portition function instead of copying heuristic.
-    # TODO(#26198) Disabled for now. Should be partition aware and has a req
-    # of `(M > N) or (M == N and K <= M)`.
-    var softmax_fusable = False
-
     # The transpose of Q K V swaps batch and matmul dimensions,
     # e.x. 1x128x12x64 -> 1x12x128x64, which batched_matmul can't handle.
     # They are properly transposed before this kernel.
-    @always_inline
-    @__copy_capture(score)
-    @parameter
-    fn bmm_query_key[fuse_softmax: Bool]():
-        batched_matmul[
-            rank,
-            q_type,
-            k_type,
-            score_type,
-            False,
-            transpose_k,
-            fuse_elementwise_fn,
-            fuse_softmax,
-        ](
-            score.make_dims_unknown(),
-            q.make_dims_unknown(),
-            k.make_dims_unknown(),
-            softmax_closure,
-        )
-
-    unswitch[bmm_query_key](softmax_fusable)
-
-    if not softmax_fusable:
-        softmax[score_type, simd_size, rank](score, score, rank - 1)
-
-    fn bmm_null_rowwise_epilogue(
-        start_row: Int,
-        num_rows: Int,
-        c: NDBuffer[output_type, 2],
-    ):
-        pass
-
-    # NOTE: synchronous, so the stack allocated score_mem is safe.
     batched_matmul[
         rank,
-        score_type,  # score type, TODO: quantization.
-        v_type,
-        output_type,
+        q_type,
+        k_type,
+        score_type,
         False,
-        False,
+        transpose_k,
+        fuse_elementwise_fn,
     ](
+        score.make_dims_unknown(),
+        q.make_dims_unknown(),
+        k.make_dims_unknown(),
+    )
+
+    softmax[score_type, simd_size, rank](score, score, rank - 1)
+
+    # NOTE: synchronous, so the stack allocated score_mem is safe.
+    batched_matmul[rank, score_type, v_type, output_type, False, False](
         output.make_dims_unknown(),
         score.make_dims_unknown(),
         v.make_dims_unknown(),
-        bmm_null_rowwise_epilogue,
     )
 
     # We did not reuse the output buffer, so we have to free the allocate
