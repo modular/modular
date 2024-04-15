@@ -38,7 +38,7 @@ from layout.layout_tensor import (
     LayoutTensor,
     outer_product_acc,
     copy_dram_to_sram_async,
-    warp_copy_sram_to_local,
+    copy_sram_to_local,
     copy_local_to_dram,
 )
 from gpu.device_print import _printf
@@ -181,14 +181,14 @@ fn sgemm_double_buffer[
     # Load A fragments to the first buffer.
     var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
     var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
-    warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
+    copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
         a_reg[0].vectorize[simd_size](), a_smem_warp_row.vectorize[simd_size]()
     )
 
     # Load B fragments to the first buffer.
     var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
     var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
-    warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
+    copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
         b_reg[0].vectorize[simd_size](), b_smem_warp_row.vectorize[simd_size]()
     )
 
@@ -223,7 +223,7 @@ fn sgemm_double_buffer[
             var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](
                 next_k, 0
             ).coalesce()
-            warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
+            copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
                 a_reg[next_buffer_id].vectorize[simd_size](),
                 a_smem_warp_row.vectorize[simd_size](),
             )
@@ -231,7 +231,7 @@ fn sgemm_double_buffer[
             var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
                 next_k, 0
             ).coalesce()
-            warp_copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
+            copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
                 b_reg[next_buffer_id].vectorize[simd_size](),
                 b_smem_warp_row.vectorize[simd_size](),
             )
