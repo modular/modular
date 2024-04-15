@@ -1,5 +1,7 @@
 load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
@@ -1106,6 +1108,58 @@ cc_library(
         "//Support:DebugInfoTransforms",
         "//Support:Telemetry",
         "@llvm-project//llvm:OrcJIT",
+    ],
+)
+
+cc_distributable_static_library(
+    name = "CompilerRT.distributable",
+    library_name = "libKGENCompilerRT-static.a",
+    deps = [
+        ":CompilerRT.static",
+        "//ArraySupport",
+        "//CUDASupport:Globals",
+        "//Config",
+        "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals.static",
+        "//LLCL:Support",
+        "//Support:ADT",
+        "//Support:Base",
+        "//Support:Configuration",
+        "//Support:Filesystem",
+        "//Support:Globals.static",
+        "//Support:Profiling",
+        "//Support:Threading",
+        "@llvm-project//llvm:Demangle",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+write_file(
+    name = "gen_link_test",
+    out = "LinkTest.cpp",
+    content = ["""
+#include "gtest/gtest.h"
+
+extern "C" bool KGEN_CompilerRT_Initialize();
+
+TEST(LinkTest, works) {
+    EXPECT_TRUE(KGEN_CompilerRT_Initialize());
+}
+"""],
+)
+
+cc_test(
+    name = "CompilerRTLinkTest",
+    srcs = [
+        "include/KGEN/CompilerRT/Registration.h",
+        ":gen_link_test",
+    ],
+    copts = ["-Wno-global-constructors"],
+    linkopts = ["-lz"],
+    deps = [
+        ":CompilerRT.distributable",
+        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
