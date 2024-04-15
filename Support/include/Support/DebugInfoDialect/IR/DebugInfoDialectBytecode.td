@@ -92,7 +92,8 @@ def DICompileUnitAttr : DialectAttribute<(attr
   ConcreteAttribute<"DIFileAttr">:$file,
   StringAttr:$producer,
   Bool:$isOptimized,
-  EnumAttr<"EmissionKind">:$emissionKind
+  EnumAttr<"EmissionKind">:$emissionKind,
+  EnumAttr<"NameTableKind">:$nameTableKind
 )>;
 
 def DIFileAttr : DialectAttribute<(attr

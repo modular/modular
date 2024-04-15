@@ -39,7 +39,7 @@ def DINameTableNone    : I64EnumAttrCase<"None", 2>;
 def DINameTableApple   : I64EnumAttrCase<"Apple", 3>;
 
 def DINameTableKind : I64EnumAttr<
-    "DINameTableKind",
+    "NameTableKind",
     "Debug name table kind", [
       DINameTableDefault,
       DINameTableGNU,
