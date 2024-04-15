@@ -52,6 +52,13 @@ fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
                 SIMD[DType.bfloat16, 4],
             ](x.bitcast[DType.bfloat16](), alignment)
         )
+    elif type == DType.float16:
+        return bitcast[type, 4](
+            llvm_intrinsic[
+                "llvm.nvvm.ldg.global.f.v4f16.p0v4f16",
+                SIMD[DType.bfloat16, 4],
+            ](x.bitcast[DType.bfloat16](), alignment)
+        )
     else:
         constrained[False, "Unhandled DType"]()
         return 0
