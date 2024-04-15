@@ -1139,13 +1139,6 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       continue;
     }
 
-    // PackVarArg arguments are always treated as their kgen.pack type
-    // by-value right now.  TODO(literals): Project to a tuple like thing.
-    if (isa<PackType>(bbArg.getType())) {
-      setDecl(SRValue(bbArg));
-      continue;
-    }
-
     // If this is an owned argument in a register, we project it into a vardecl
     // so that it is mutable in the callee.
     if (convention == ArgConvention::OwnedInReg) {

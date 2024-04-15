@@ -549,7 +549,7 @@ static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
 // If this argument is a pack vararg like "*args: *Ts" then the argument
 // expression is "Ts", and the star before it was syntactically parsed.
 // This expression must be a PValue of variadic metatype.  We need to
-// process it into a PackType.
+// process it into a VariadicPack.
 static Type
 typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
                                    ExprEmitter &emitter,
@@ -577,13 +577,6 @@ typeCheckVariadicPackTypeSpecifier(ParsedArgument &arg, size_t argIdx,
         << arg.typeExpr->getRange();
     return {};
   }
-
-  // If the pack is over an "AnyRegType" list, use the KGEN direct
-  // representation for compatibility.
-  // TODO: Move to RefPackType consistently.
-  if (isa<TypeType>(elementType) &&
-      arg.convention == ParsedArgument::kConventionBorrowed)
-    return PackType::get(param.get());
 
   if (isa<TypeType>(elementType)) {
     emitter.emitError(arg.loc)

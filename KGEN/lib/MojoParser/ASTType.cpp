@@ -657,13 +657,6 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       StringAttr name = sig.getArgName(idx);
       if (sig.isPackVarArg(idx)) {
         convention = sig.getPackVarArgConvention(idx);
-        TypedAttr variadic;
-        if (ASTType variadicPack = sig.getIfVariadicPack(idx)) {
-          variadic = variadicPack.getVariadicPackInfo().getVariadic();
-        } else {
-          // TODO: remove old PackType.
-          variadic = cast<PackType>(type).getVariadic();
-        }
         printConvention();
         os << '*';
         if (!name.empty())
@@ -671,6 +664,10 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
         else
           os << ' ';
         os << '*';
+
+        TypedAttr variadic = ASTType(sig.getIfVariadicPack(idx))
+                                 .getVariadicPackInfo()
+                                 .getVariadic();
         printParam(os, variadic, forDiag, demangleParams);
       } else {
         printConvention();
@@ -714,10 +711,6 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     llvm::interleaveComma(fnType.getResults(), os,
                           [&](Type type) { ASTType(type).print(os, forDiag); });
     os << ")";
-  } else if (auto packType = dyn_cast<PackType>(type)) {
-    // TODO: Remove this when packs switch to RefPackType
-    os << '*';
-    printParam(os, packType.getVariadic(), forDiag, demangleParams);
   } else {
     // Use KGEN pretty printing when printing bare MLIR types for diagnostics.
     if (forDiag)

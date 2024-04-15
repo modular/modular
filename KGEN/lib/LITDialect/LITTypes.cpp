@@ -980,11 +980,7 @@ bool LITSignatureType::isPackVarArg(size_t index) {
 Type LITSignatureType::getIfVariadicPack(size_t index) {
   if (!isPackVarArg(index))
     return {};
-  Type argType = getArguments()[index];
-  // TODO: Remove support for PackType.
-  if (::isa<PackType>(argType))
-    return {};
-  return argType;
+  return getArguments()[index];
 }
 
 /// For a PosVarArg, return the declared ArgConvention of the elements. For

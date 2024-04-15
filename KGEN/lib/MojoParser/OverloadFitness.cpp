@@ -297,12 +297,6 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
     if (auto expected = dyn_cast<VariadicType>(expectedType))
       return matchTypes(actual.getElementType(), expected.getElementType());
 
-  // Handle PackType.
-  // TODO: Remove PackType from the parser.
-  if (auto actual = dyn_cast<PackType>(actualType))
-    if (auto expected = dyn_cast<PackType>(expectedType))
-      return matchParams(actual.getVariadic(), expected.getVariadic());
-
   // Handle RefPackType.
   if (auto actual = dyn_cast<RefPackType>(actualType))
     if (auto expected = dyn_cast<RefPackType>(expectedType)) {
@@ -860,46 +854,6 @@ ParameterInferenceState::infer(LITSignatureType signature,
       continue;
     }
 
-    // TODO(references): Remove this when PackType is no longer used.
-    if (auto packType = getIfPackType(signature, expectedArgIdx)) {
-      SmallVector<TypedAttr> types;
-      auto variadicType = cast<VariadicType>(packType.getVariadic().getType());
-      Type elementType = variadicType.getElementType();
-      ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
-      SyntheticNode node(shared.getTopLevelDecl().getLoc());
-      while (posOperandIdx != numPosOperands) {
-        ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
-        ASTType toPush = getRValueTypeIfResolvable(operand.ir);
-        if (!toPush) {
-          shared.emitWarning(operand.expr->getLoc(),
-                             "could not infer parameter type for this value, "
-                             "because it is not concrete");
-          return {};
-        }
-        // Infer nonmaterializable types as their materialization target.
-        if (ASTType nmTarget = toPush.getNonmaterializableTarget(shared))
-          toPush = nmTarget;
-        Type metatype = toPush.getMetaType();
-        TypedAttr actualAttr = TypeConstantAttr::get(
-            toPush, metatype ? metatype : TypeType::get(shared.getContext()));
-        if (!emitter.canImplicitlyConvertToType({actualAttr, node},
-                                                elementType))
-          return {};
-        PValue result = emitter.emitPValue({actualAttr, node},
-                                           EC_TypeParamValue, elementType);
-        if (!result)
-          return {};
-        types.push_back(result);
-      }
-
-      if (failed(
-              matchTypes(PackType::get(VariadicAttr::get(types, variadicType)),
-                         expectedType)))
-        return {};
-
-      continue;
-    }
-
     // Handle case when there are no more provided positional operands.
     if (posOperandIdx == numPosOperands) {
       // Check if a keyword operand was provided for this argument
@@ -1297,16 +1251,6 @@ calculateRequiredPosOperandsForPacks(LITSignatureType signature) {
     // includes the pack itself (hence the "-1").
     size_t packSize = packed.getValues().size();
     return {numPosArgs - 1 + packSize, numPosArgs - 1 + packSize};
-  }
-
-  // TODO(references): Remove this when PackType is no longer used.
-  if (auto packType = getIfPackType(signature, lastPosIdx)) {
-    // NOTE: we adjust the number of user declared pos args since that
-    // includes the pack itself (hence the "-1").
-    if (VariadicAttr packed = packType.getVariadicIfResolved())
-      if (size_t packSize = packed.getValues().size())
-        return {numPosArgs - 1 + packSize, numPosArgs - 1 + packSize};
-    return {0, numPosArgs - 1};
   }
 
   return {0, numPosArgs};
@@ -1836,17 +1780,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         auto refType = packType.getElementRefTypeFor(ASTType(element).mlirType);
         if (auto result =
                 processPositionalOperand(refType, actualArgConvention))
-          return std::move(*result);
-        passesVarArgArgument = true;
-      }
-      continue;
-    }
-
-    // TODO(references): Remove this when PackType is no longer used.
-    if (PackType packType = getIfPackType(signature, expectedArgIdx)) {
-      for (TypedAttr element : packType.getVariadicIfResolved().getValues()) {
-        if (auto result =
-                processPositionalOperand(ASTType(element), expectedConvention))
           return std::move(*result);
         passesVarArgArgument = true;
       }

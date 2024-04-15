@@ -1804,15 +1804,19 @@ static AnyValue emitHeterogenousSequence(ValueDest &dest, ExprEmitter &emitter,
                                          ASTType type, const ExprNode *node,
                                          ArrayRef<ExprNode *> exprs) {
   // If we failed to look up the tuple/list type, fail.
-  if (!type || type.isTypeCheckErrorType())
+  if (!type || type.isTypeCheckErrorType()) {
+    dest.resetForError();
     return {};
+  }
 
   // Emit each of the tuple elements.
   SmallVector<ASTExprAnd<AnyValue>> elements;
   for (ExprNode *expr : exprs) {
     auto exprVal = emitter.emitExpr(expr, EC_TupleElement);
-    if (!exprVal)
+    if (!exprVal) {
+      dest.resetForError();
       return {};
+    }
     elements.push_back({std::move(exprVal), expr});
   }
 
