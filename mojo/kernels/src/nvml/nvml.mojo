@@ -417,7 +417,7 @@ struct Device:
         )
         return is_enabled == _EnableState.ENABLED
 
-    fn set_gpu_turbo(self, disable: Bool = True) raises:
+    fn set_gpu_turbo(self, enabled: Bool = True) raises:
         """Sets the GPU turbo state."""
         _check_error(
             _get_dylib_function[
@@ -425,7 +425,33 @@ struct Device:
                 fn (_DeviceImpl, _EnableState) -> Result,
             ]()(
                 self.device,
-                _EnableState.DISABLED if disable else _EnableState.ENABLED,
+                _EnableState.ENABLED if enabled else _EnableState.DISABLED,
+            )
+        )
+
+    fn get_persistence_mode(self) raises -> Bool:
+        """Returns True if the gpu persistence mode is enabled."""
+        var is_enabled = _EnableState.DISABLED
+        _check_error(
+            _get_dylib_function[
+                "nvmlDeviceGetPersistenceMode",
+                fn (_DeviceImpl, Pointer[_EnableState]) -> Result,
+            ]()(
+                self.device,
+                Pointer.address_of(is_enabled),
+            )
+        )
+        return is_enabled == _EnableState.ENABLED
+
+    fn set_persistence_mode(self, enabled: Bool = True) raises:
+        """Sets the persistence mode."""
+        _check_error(
+            _get_dylib_function[
+                "nvmlDeviceSetPersistenceMode",
+                fn (_DeviceImpl, _EnableState) -> Result,
+            ]()(
+                self.device,
+                _EnableState.ENABLED if enabled else _EnableState.DISABLED,
             )
         )
 
