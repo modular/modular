@@ -581,8 +581,6 @@ fn flash_attention_kernel[
     # != depth in global Q array because the stride is based on BSHD.
     alias row_stride = num_heads * depth
     # Index of the 1st row and col loaded by current thread.
-    var loadq_row = (tid * simd_size) // depth
-    var loadq_col = (tid * simd_size) % depth
 
     var q_gmem_base = LayoutTensor[
         DType.float32, Layout(IntTuple(BM, depth), IntTuple(row_stride, 1))
@@ -616,13 +614,9 @@ fn flash_attention_kernel[
 
     # K tile has shape [BN, depth] and is divided sub-tiles [BN, BK].
     # 1st row and col in k sub-tile loaded by current thread.
-    var loadk_row = (tid * simd_size) // BK
-    var loadk_col = (tid * simd_size) % BK
 
     # V tile has shape [BN, depth] and is divided sub-tiles [BK, depth].
     # 1st row and col in v sub-tile loaded by current thread.
-    var loadv_row = (tid * simd_size) // depth
-    var loadv_col = (tid * simd_size) % depth
 
     for kv_tile_start_row in range(0, seq_len, BN):
         # Clear thread tile results.
@@ -633,13 +627,13 @@ fn flash_attention_kernel[
         # K tile has shape [BN, depth]. Load sub-tile [BN, BK] each time and
         # multiply with the corresponding Q slice of shape [BM, BK].
         var k_gmem_base = LayoutTensor[
-            Layout(IntTuple(BN, depth), IntTuple(row_stride, 1)), DType.float32
+            DType.float32, Layout(IntTuple(BN, depth), IntTuple(row_stride, 1))
         ](k_ptr.offset(global_kv_offset))
 
         alias k_smem_layout = Layout.row_major(BK, BN_padded)
         var k_smem_base = LayoutTensor[
-            Layout.row_major(BK, BN_padded),
             DType.float32,
+            Layout.row_major(BK, BN_padded),
             address_space = AddressSpace.SHARED,
         ](kv_tile)
         var k_smem_tile = k_smem_base.slice[:, :BN]()
@@ -657,18 +651,6 @@ fn flash_attention_kernel[
                 Layout.col_major(BK, num_threads // BK)
             ](ThreadIdx.x())
             thread_loadk_smem_frags.copy_from_numa(thread_loadk_gmem_frags)
-            # @unroll
-            # for i in range(loadk_num_iters):
-            #     var row_in_tile = loadk_row + i * loadk_num_rows_per_iter
-            #     var global_idx = global_kv_offset + row_in_tile * row_stride + subtile_start_col + loadk_col
-            #     var vec = k_ptr.load[width=simd_size, alignment=alignment](
-            #         global_idx
-            #     )
-
-            #     # Transpose k tile.
-            #     @unroll
-            #     for j in range(4):
-            #         kv_tile[(loadk_col + j) * BN_padded + row_in_tile] = vec[j]
 
             # Gaurd write of q_tile and kv_tile.
             barrier()
