@@ -37,8 +37,8 @@ def test_roi_align_avg():
         output.make_dims_unknown(),
         input,
         rois,
-        Int(out_shape.at[1]().get()),
-        Int(out_shape.at[2]().get()),
+        out_shape.at[1]().get(),
+        out_shape.at[2]().get(),
         1.0,
         2.0,
     )
@@ -100,8 +100,8 @@ def test_roi_align_max():
         output.make_dims_unknown(),
         input,
         rois,
-        Int(out_shape.at[1]().get()),
-        Int(out_shape.at[2]().get()),
+        out_shape.at[1]().get(),
+        out_shape.at[2]().get(),
         1.0,
         2.0,
     )
