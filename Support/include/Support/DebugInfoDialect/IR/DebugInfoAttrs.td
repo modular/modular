@@ -167,7 +167,7 @@ def DebugInfo_DICompileUnitAttr : DIScopeAttr<"DICompileUnit", "compile_unit"> {
     AttrBuilderWithInferredContext<(ins
       "unsigned":$sourceLanguage, "DIFileAttr":$file, "StringRef":$producer,
       "bool":$isOptimized, "EmissionKind":$emissionKind,
-      CArg<"NameTableKind", "NameTableKind::Default">:$nameTableKind
+      "NameTableKind":$nameTableKind
     ), [{
       MLIRContext *ctx = file.getContext();
       return $_get(ctx, sourceLanguage, file, StringAttr::get(ctx, producer),

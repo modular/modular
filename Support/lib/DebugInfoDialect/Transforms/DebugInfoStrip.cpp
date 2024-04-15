@@ -44,7 +44,8 @@ void DebugInfoStrip::runOnOperation() {
           if (CU.getEmissionKind() == DebugInfo::EmissionKind::Full) {
             return DebugInfo::DICompileUnitAttr::get(
                 CU.getSourceLanguage(), CU.getFile(), CU.getProducer(),
-                CU.getIsOptimized(), DebugInfo::EmissionKind::LineTablesOnly);
+                CU.getIsOptimized(), DebugInfo::EmissionKind::LineTablesOnly,
+                CU.getNameTableKind());
           }
           return std::nullopt;
         });

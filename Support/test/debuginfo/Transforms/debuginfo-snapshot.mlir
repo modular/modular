@@ -5,7 +5,7 @@
 // CHECK-DAG: ![[SUBROUTINE:.*]] = !debuginfo.subroutine<(!basic, !basic1) -> (!basic): DW_CC_normal>
 
 // CHECK-DAG: #[[FILE:.*]] = #debuginfo.file<"{{.*}}" in "{{.*}}">
-// CHECK-DAG: #[[CU:.*]] = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #[[FILE]], producer = "MLIR", isOptimized = true, emissionKind = Full>
+// CHECK-DAG: #[[CU:.*]] = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #[[FILE]], producer = "MLIR", isOptimized = true, emissionKind = Full, nameTableKind = None>
 
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<compileUnit = #[[CU]], scope = #[[FILE]], name = <"foo">, linkageName = "foo", file = #[[FILE]], line = {{.*}}, scopeLine = {{.*}}, subprogramFlags = "Definition|Optimized"> : ![[SUBROUTINE]]
 

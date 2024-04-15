@@ -72,7 +72,8 @@ static void adaptDebugEmissionKind(ModuleOp module, StringRef targetTriple,
             return DebugInfo::DICompileUnitAttr::get(
                 CU.getSourceLanguage(), CU.getFile(), CU.getProducer(),
                 CU.getIsOptimized(),
-                DebugInfo::EmissionKind::DebugDirectivesOnly);
+                DebugInfo::EmissionKind::DebugDirectivesOnly,
+                CU.getNameTableKind());
           }
           return std::nullopt;
         });
