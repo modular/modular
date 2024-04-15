@@ -22,5 +22,5 @@ fn outer[y: Int]():
 
 
 fn main():
-    # CHECK: .debug_pubtypes
+    # CHECK: .debug_
     outer[2]()

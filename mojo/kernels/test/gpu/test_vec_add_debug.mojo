@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# REQUIRES: DISABLED
 # RUN: %mojo --debug-level=full %s | FileCheck %s
 
 from pathlib import Path
