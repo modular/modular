@@ -3,6 +3,8 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# TODO: Enable once https://github.com/modularml/modular/issues/37376 is resolved
+# UNSUPPORTED: asan
 # RUN: %mojo %s
 
 from subprocess import run
