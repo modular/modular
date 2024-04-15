@@ -303,6 +303,7 @@ struct _DeviceImpl:
 
 
 struct Device:
+    var idx: Int
     var device: _DeviceImpl
 
     fn __init__(inout self, idx: Int = 0) raises:
@@ -313,7 +314,12 @@ struct Device:
                 fn (UInt32, Pointer[_DeviceImpl]) -> Result,
             ]()(UInt32(idx), Pointer.address_of(device))
         )
+        self.idx = idx
         self.device = device
+
+    fn __copyinit__(inout self: Self, existing: Self):
+        self.idx = existing.idx
+        self.device = existing.device
 
     fn mem_clocks(self) raises -> List[Int]:
         var num_clocks = UInt32()
@@ -385,6 +391,14 @@ struct Device:
 
         return res
 
+    fn set_clock(self, mem_clock: Int, graphics_clock: Int) raises:
+        _check_error(
+            _get_dylib_function[
+                "nvmlDeviceSetApplicationsClocks",
+                fn (_DeviceImpl, UInt32, UInt32) -> Result,
+            ]()(self.device, UInt32(mem_clock), UInt32(graphics_clock))
+        )
+
     fn gpu_turbo_enabled(self) raises -> Bool:
         """Returns True if the gpu turbo is enabled."""
         var is_enabled = _EnableState.DISABLED
@@ -414,6 +428,9 @@ struct Device:
                 _EnableState.DISABLED if disable else _EnableState.ENABLED,
             )
         )
+
+    fn __str__(self) -> String:
+        return "Device(" + str(self.idx) + ")"
 
 
 @value
