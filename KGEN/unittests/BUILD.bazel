@@ -1,0 +1,15 @@
+load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
+
+kgen_kernel(
+    name = "test_kernels",
+    src = "test_kernels.mlir",
+)
+
+cc_test(
+    name = "unittests",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        ":test_kernels",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)

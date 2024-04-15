@@ -1,0 +1,21 @@
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+lit_tests(
+    srcs = glob(["**/*.mlir"]),
+    data = [
+        "//KGEN:CompilerRT.shared.file",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
+        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
+    },
+    tools = [
+        "//KGEN:hash-mlir",
+        "//KGEN:kgen",
+        "//KGEN:kgen-opt",
+        "//KGEN:kgen-translate",
+        "//KGEN:llvm-module-split",
+        "@llvm-project//llvm:llvm-objdump",
+    ],
+)
