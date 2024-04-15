@@ -1174,7 +1174,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   bool hadTypeSpec = false;
   for (auto &attr : unboundOp.getAttrs()) {
     if (attr.getName() == "_type") {
-      // We expect either a single type, `None`, or a `ListLiteral` of types.
+      // We expect either a single type, `None`, or a `Tuple` of types.
       if (isa<NoneAttr>(attr.getValue())) {
         hadTypeSpec = true;
         continue;
@@ -1200,8 +1200,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
             emitter.declScope, call.getLoc());
         // If the _type field is a Tuple of types, then the operation
         // returns multiple results, with types specified in the list.  We
-        // need to take apart the ListLiteral parameter value to get the types
-        // from inside it.
+        // need to take apart the Tuple value to get the types from inside it.
         if (valueMetaType.getSymbol() ==
             cast<AnyStructType>(tupleType.getMetaType()).getSymbol()) {
           // Dig out the types from the tuple.  Tuple literals must always

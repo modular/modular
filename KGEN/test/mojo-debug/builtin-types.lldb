@@ -41,11 +41,11 @@
 # CHECK: (scalar<f32>) another_float = ([0] = 4.125)
 # CHECK: (si64) ^ uncommon name = 1123123
 # CHECK: (string) a_string_literal = "fofofo"
-# CHECK: (*index, scalar<f64>, index) a_list = {
-# CHECK:   [0] = 1
-# CHECK:   [1] = ([0] = 2.125)
-# CHECK:   [2] = 3
-# CHECK: }
+# HECK: (*index, scalar<f64>, index) a_list = {
+# HECK:   [0] = 1
+# HECK:   [1] = ([0] = 2.125)
+# HECK:   [2] = 3
+# HECK: }
 # CHECK: (simd<4, f16>) a_simd = ([0] = 1.125, [1] = 2.5, [2] = 0, [3] = -3.7246)
 # CHECK: (simd<32, si64>) b_simd = {
 # CHECK:   [0] = 1

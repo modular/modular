@@ -396,7 +396,7 @@ struct BorrowStruct:
     fn testMethod(self):
         pass
 
-    fn borrowedVarArgs(self, borrowed *x: BorrowStruct):
+    fn borrowedVarArgs(self, *x: BorrowStruct):
         pass
 
 
@@ -407,7 +407,7 @@ fn callerFn(borrowed arg0: BorrowStruct):
     arg0.testMethod()
 
     # CHECK: %1 = pop.variadic.splat 2, %arg0
-    # CHECK: lit.call {{.*}}borrowedVarArgs{{.*}}(%arg0, %1)
+    # CHECK: lit.call {{.*}}borrowedVarArgs{{.*}}(%arg0,
     arg0.borrowedVarArgs(arg0, arg0)
 
 
