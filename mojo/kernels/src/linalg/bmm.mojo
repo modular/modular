@@ -245,13 +245,6 @@ fn batched_matmul[
             elementwise_epilogue_fn,
         ](c_buf, a_buf, b_buf)
 
-    fn null_rowwise_epilogue(
-        start_row: Int,
-        num_rows: Int,
-        c: NDBuffer[c_type, 2],
-    ):
-        pass
-
     batched_matmul[
         rank,
         a_type,
@@ -260,10 +253,9 @@ fn batched_matmul[
         transpose_a,
         transpose_b,
         elementwise_epilogue_fn,
-        rowwise_epilogue_enabled=False,
         saturated_vnni=saturated_vnni,
         target=target,
-    ](c_buf, a_buf, b_buf, null_rowwise_epilogue)
+    ](c_buf, a_buf, b_buf)
 
 
 @always_inline
@@ -275,13 +267,11 @@ fn _batched_matmul_cpu[
     transpose_a: Bool,
     transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-    rowwise_epilogue_enabled: Bool = False,
     saturated_vnni: Bool = False,
 ](
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
-    rowwise_epilogue: fn (Int, Int, NDBuffer[c_type, 2]) escaping -> None,
 ):
     constrained[
         not transpose_a, "batched matmul does not support transpose_a yet"
@@ -412,9 +402,6 @@ fn _batched_matmul_cpu[
                     alias func = elementwise_epilogue_fn.value()
                     func[c_type, width, rank](batch_coords, out_val)
 
-            fn rowwise_closure(start_row: Int, num_rows: Int):
-                rowwise_epilogue(start_row, num_rows, c_view)
-
             var sub_matmul_config = get_partitioned_matmul[
                 a_type, b_type, c_type, PartitionHeuristic.MOJO
             ](m, n, k, matmul_task_id, num_tasks_matmul)
@@ -444,7 +431,6 @@ fn _batched_matmul_cpu[
                 elementwise_lambda_fn = Optional[
                     matmul_elementwise_epilogue_type
                 ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
-                rowwise_epilogue_enabled=rowwise_epilogue_enabled,
             ](
                 rebind[NDBuffer[config.c_type, 2, config.c_shape]](c_view),
                 rebind[NDBuffer[config.a_type, 2, config.a_shape]](
@@ -453,7 +439,6 @@ fn _batched_matmul_cpu[
                 rebind[NDBuffer[config.b_type, 2, config.b_shape]](b_view),
                 sub_matmul_config.shape,
                 sub_matmul_config.offset,
-                rowwise_closure,
             )
             a_packed_ptr.free()
 
@@ -516,18 +501,12 @@ fn _batched_matmul_gpu[
     transpose_a: Bool,
     transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-    rowwise_epilogue_enabled: Bool = False,
     saturated_vnni: Bool = False,
 ](
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
-    rowwise_epilogue: fn (Int, Int, NDBuffer[c_type, 2]) escaping -> None,
 ):
-    constrained[
-        not rowwise_epilogue_enabled, "rowwise epilogue fusion isn't supported"
-    ]()
-
     var a_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(a_buf)
     var b_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(b_buf)
     var c_buf_reshaped = _reshape_nd_buffer_with_batch_to_3d(c_buf)
@@ -582,14 +561,12 @@ fn batched_matmul[
     transpose_a: Bool,
     transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
-    rowwise_epilogue_enabled: Bool = False,
     saturated_vnni: Bool = False,
     target: StringLiteral = "cpu",
 ](
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
-    rowwise_epilogue: fn (Int, Int, NDBuffer[c_type, 2]) escaping -> None,
 ):
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
     alias func = _batched_matmul_cpu if target == "cpu" else _batched_matmul_gpu
@@ -601,9 +578,8 @@ fn batched_matmul[
         transpose_a,
         transpose_b,
         elementwise_epilogue_fn,
-        rowwise_epilogue_enabled,
         saturated_vnni,
-    ](c_buf, a_buf, b_buf, rowwise_epilogue)
+    ](c_buf, a_buf, b_buf)
 
 
 @always_inline

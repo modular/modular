@@ -49,6 +49,7 @@ from .neon_intrinsics import _neon_dotprod, _neon_matmul
 from runtime.llcl import Runtime
 from .transpose import transpose_inplace
 from .vnni_intrinsics import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
+
 from .matmul_vnni import Inner_matmul_vnni
 from .matmul_i8mm import Inner_matmul_i8mm
 from .matmul_neon import Inner_matmul_neon
@@ -259,7 +260,6 @@ struct LoadStoreOutputTile[
 struct TiledMatmul[
     config: MatmulConfig,
     elementwise_epilogue_enabled: Bool,
-    rowwise_epilogue_enabled: Bool,
 ]:
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -287,55 +287,6 @@ struct TiledMatmul[
 
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None
 
-    var rowwise_epilogue_fn: fn (Int, Int) escaping -> None
-
-    # Interface method
-    @staticmethod
-    fn run(
-        c: NDBuffer[config.c_type, 2, config.c_shape],
-        a: NDBuffer[config.a_type, 2, config.a_shape],
-        b: NDBuffer[config.b_type, 2, config.b_shape],
-        global_tile_shape: GemmShape,
-        global_tile_offset: GemmShape = GemmShape {M: 0, N: 0, K: 0},
-    ):
-        fn null_elementwise_epilogue(offset: GemmShape, tile_len: GemmShape):
-            pass
-
-        fn null_rowwise_epilogue(offset: Int, num_rows: Int):
-            pass
-
-        Self.run(
-            c,
-            a,
-            b,
-            null_elementwise_epilogue,
-            null_rowwise_epilogue,
-            global_tile_shape,
-            global_tile_offset,
-        )
-
-    @staticmethod
-    fn run(
-        c: NDBuffer[config.c_type, 2, config.c_shape],
-        a: NDBuffer[config.a_type, 2, config.a_shape],
-        b: NDBuffer[config.b_type, 2, config.b_shape],
-        elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
-        global_tile_shape: GemmShape,
-        global_tile_offset: GemmShape,
-    ):
-        fn null_rowwise_epilogue(offset: Int, num_rows: Int):
-            pass
-
-        Self.run(
-            c,
-            a,
-            b,
-            elementwise_epilogue_fn,
-            null_rowwise_epilogue,
-            global_tile_shape,
-            global_tile_offset,
-        )
-
     # Interface method
     @staticmethod
     fn run(
@@ -343,7 +294,6 @@ struct TiledMatmul[
         a: NDBuffer[config.a_type, 2, config.a_shape],
         b: NDBuffer[config.b_type, 2, config.b_shape],
         elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
-        rowwise_epilogue_fn: fn (Int, Int) escaping -> None,
         global_tile_shape: GemmShape,
         global_tile_offset: GemmShape,
     ):
@@ -354,7 +304,6 @@ struct TiledMatmul[
             a: Operand A of the matmul.
             b: Operand B of the mamtul.
             elementwise_epilogue_fn: The elementwise epilogue function.
-            rowwise_epilogue_fn: The row-wise epilogue function.
             global_tile_shape: Tile shape this call will process.
             global_tile_offset: Tile offset on the original buffer.
         """
@@ -370,11 +319,7 @@ struct TiledMatmul[
             config.pack_data_size, config.pack_inner_size, factor
         ](global_tile_shape)
 
-        var matmul = TiledMatmul[
-            config,
-            elementwise_epilogue_enabled,
-            rowwise_epilogue_enabled,
-        ](
+        var matmul = TiledMatmul[config, elementwise_epilogue_enabled,](
             c,
             a,
             b,
@@ -385,7 +330,6 @@ struct TiledMatmul[
                 config, config.b_type, config.transpose_b, config.b_packed
             ].get(b, tile_n_k),
             elementwise_epilogue_fn,
-            rowwise_epilogue_fn,
         )
 
         matmul._outer_k_loop()
@@ -515,12 +459,6 @@ struct TiledMatmul[
                         GemmShape {
                             M: tile_size, N: sub_tile_n_k[0], K: sub_tile_n_k[1]
                         },
-                    )
-
-                @parameter
-                if rowwise_epilogue_enabled and last_n_tile and last_k_tile:
-                    self.rowwise_epilogue_fn(
-                        global_offset.M + row_offset, tile_size
                     )
 
             @parameter
@@ -993,14 +931,12 @@ fn matmul[
 fn _submatmul_sequential_sync[
     config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    rowwise_epilogue_enabled: Bool,
 ](
     c: NDBuffer[config.c_type, 2, config.c_shape],
     a: NDBuffer[config.a_type, 2, config.a_shape],
     b: NDBuffer[config.b_type, 2, config.b_shape],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
-    rowwise_epilogue_fn: fn (Int, Int) escaping -> None,
     kernel_type_m: Int = 0,
 ):
     constrained[not config.transpose_a, "transpose_a not yet supported"]()
@@ -1024,38 +960,11 @@ fn _submatmul_sequential_sync[
     TiledMatmul[
         config,
         elementwise_lambda_fn.__bool__(),
-        rowwise_epilogue_enabled,
     ].run(
         c,
         a,
         b,
         elementwise_closure,
-        rowwise_epilogue_fn,
         sub_matrix_shape,
         sub_matrix_offset,
-    )
-
-
-fn _submatmul_sequential_sync[
-    config: MatmulConfig,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-](
-    c: NDBuffer[config.c_type, 2, config.c_shape],
-    a: NDBuffer[config.a_type, 2, config.a_shape],
-    b: NDBuffer[config.b_type, 2, config.b_shape],
-    sub_matrix_shape: GemmShape,
-    sub_matrix_offset: GemmShape,
-    kernel_type_m: Int = 0,
-):
-    fn null_rowwise_epilogue(offset: Int, num_rows: Int):
-        pass
-
-    _submatmul_sequential_sync[config, elementwise_lambda_fn, False](
-        c,
-        a,
-        b,
-        sub_matrix_shape,
-        sub_matrix_offset,
-        null_rowwise_epilogue,
-        kernel_type_m,
     )
