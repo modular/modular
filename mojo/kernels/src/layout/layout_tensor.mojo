@@ -1055,10 +1055,10 @@ fn copy_dram_to_sram_async[
     dst_framgents.copy_from_async(src_framgents)
 
 
-# Warp level copy from SRAM to local memory.
+# Copy from SRAM to local memory.
 #
 @always_inline
-fn warp_copy_sram_to_local[
+fn copy_sram_to_local[
     src_layout: Layout,
     dst_layout: Layout,
     dtype: DType,
@@ -1080,17 +1080,14 @@ fn warp_copy_sram_to_local[
         element_layout=src_element_layout,
     ],
 ):
-    var tid = ThreadIdx.x()
-    var lane_id = tid % WARP_SIZE
-
     @parameter
     if axis:
         var src_fragments = src.distribute[
             src_warp_layout, axis = axis.value()
-        ](lane_id)
+        ](ThreadIdx.x())
         dst.copy_from_numa(src_fragments)
     else:
-        var src_fragments = src.distribute[src_warp_layout](lane_id)
+        var src_fragments = src.distribute[src_warp_layout](ThreadIdx.x())
         dst.copy_from_numa(src_fragments)
 
 
