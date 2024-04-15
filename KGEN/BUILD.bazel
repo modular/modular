@@ -3,6 +3,7 @@ load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
+load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
 load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
 
@@ -1846,5 +1847,21 @@ cc_library(
     deps = [
         "//Support:Base",
         "@llvm-project//mlir:MlirLspServerSupportLib",
+    ],
+)
+
+kgen_kernel(
+    name = "mojo_build_server",
+    src = "tools/mojo-build-server/mojo_build_server.mojo",
+)
+
+cc_binary(
+    name = "mojo-build-server",
+    deps = [
+        ":CompilerRT",
+        ":MojoBuild",
+        ":mojo_build_server",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
     ],
 )
