@@ -248,7 +248,6 @@ fn calculate_symmetric_vector[
 struct Q4sym[
     group_size: Int,
     float_dtype: DType = DType.float32,
-    are_nibbles_reversed: Bool = True,
 ]:
     """
     Q4sym: compresses values of type `float_dtype` to 4bit unsigned integers
@@ -264,23 +263,14 @@ struct Q4sym[
         Assume `group_size = 8` and we want to process uint4 numbers:
         A, B, C, D, E, F, G, H which have associated bits aaaa, bbbb, cccc, ....
 
-        If `are_nibbles_reversed`, then `bits` is 4 bytes and has a
-        layout like:
            eeeeaaaa|ffffbbbb|ggggcccc|hhhhdddd
 
-        Otherwise, if `not are_nibbles_reversed`, then `bits` has a layout
-        matching GGML Q4_0:
-           aaaaeeee|bbbbffff|ccccgggg|ddddhhhh
-
-
     To uncompress to floating point, take the decoded uint4 value, subtract
-    the implicit zero-point of 2^4=8, and muliply by the scale factor.
+    the implicit zero-point of 2^4=8, and multiply by the scale factor.
 
     Parameters:
         group_size: The number of encoded numbers stored in this struct.
         float_dtype: The floating point dtype this struct works with.
-        are_nibbles_reversed: If true, reverse nibble packing order from that
-         of GGML Q4_0.
     """
 
     var scale: StaticTuple[UInt8, 2]
@@ -336,19 +326,11 @@ struct Q4sym[
     fn _encode_bits(
         qdata: SIMD[DType.uint8, group_size]
     ) -> SIMD[DType.uint8, group_size // 2]:
-        @parameter
-        if are_nibbles_reversed:
-            var lower_elements = qdata.slice[group_size // 2]() << 4
-            var upper_elements = qdata.slice[
-                group_size // 2, offset = group_size // 2
-            ]()
-            return lower_elements | upper_elements
-        else:
-            var lower_elements = qdata.slice[group_size // 2]()
-            var upper_elements = qdata.slice[
-                group_size // 2, offset = group_size // 2
-            ]() << 4
-            return lower_elements | upper_elements
+        var lower_elements = qdata.slice[group_size // 2]()
+        var upper_elements = qdata.slice[
+            group_size // 2, offset = group_size // 2
+        ]() << 4
+        return lower_elements | upper_elements
 
     @always_inline
     fn _decode_bits(inout self) -> SIMD[DType.uint8, group_size]:
@@ -356,16 +338,9 @@ struct Q4sym[
         var bits_simd = _to_SIMD[DType.uint8, group_size // 2](self.bits)
         var bits_upper = (bits_simd & 0xF0) >> 4
         var bits_lower = (bits_simd & 0x0F)
-
-        @parameter
-        if are_nibbles_reversed:
-            return rebind[SIMD[DType.uint8, group_size]](
-                bits_upper.join(bits_lower)
-            )
-        else:
-            return rebind[SIMD[DType.uint8, group_size]](
-                bits_lower.join(bits_upper)
-            )
+        return rebind[SIMD[DType.uint8, group_size]](
+            bits_lower.join(bits_upper)
+        )
 
     @always_inline
     fn decode_scale(inout self) -> Float16:
@@ -528,23 +503,21 @@ struct Q4sym[
 
         var uint8_input_ptr = input_tensor.data.address
         var base_block_ptr = uint8_input_ptr.bitcast[
-            Q4sym[group_size, float_dtype, are_nibbles_reversed]
+            Q4sym[group_size, float_dtype]
         ]()
 
         # as we support only inner-most dim, treat like rank-2 tensor
         var output_inner_dim = output_shape[rank - 1]
         var outer_dim = prod_dims[0, rank - 1](output_tensor)
 
-        # Note: this is calculated assuming a pointer of Q5Sym's
+        # Note: this is calculated assuming a pointer of Q4Sym's
         var input_inner_dim = div_ceil(output_inner_dim, group_size)
 
         # TODO: vectorize parallelize, blah blah blah
         for i in range(outer_dim):
             for j in range(input_inner_dim):
                 var flat_index_input = input_inner_dim * i + j
-                var encoded = Q4sym[
-                    group_size, float_dtype, are_nibbles_reversed
-                ]()
+                var encoded = Q4sym[group_size, float_dtype]()
                 memcpy(
                     Pointer.address_of(encoded),
                     base_block_ptr + flat_index_input,
@@ -677,7 +650,6 @@ fn _matmul_int4_dotprod[
 fn _process_rows[
     group_size: Int,
     row_count: Int,
-    are_nibbles_reversed: Bool,
     type: DType,
 ](
     a_quant: NDBuffer[DType.int8, 2],
@@ -686,7 +658,7 @@ fn _process_rows[
     c: NDBuffer[type, 2],
     m: Int,
 ):
-    alias block_size = sizeof[Q4sym[group_size, type, are_nibbles_reversed]]()
+    alias block_size = sizeof[Q4sym[group_size, type]]()
     alias simd_width = min(simdwidthof[DType.int32](), group_size // 4)
 
     var N = b.dim[0]()
@@ -711,16 +683,9 @@ fn _process_rows[
             var b_scale = bitcast[DType.float16, 1](
                 b_ptr.offset(0).load[width=2]()
             ).cast[type]()
-            var b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
-            var b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
-
-            var b_data_i8: SIMD[DType.int8, 2 * b_data_i8_hi.size]
-
-            @parameter
-            if are_nibbles_reversed:
-                b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
-            else:
-                b_data_i8 = b_data_i8_hi.join(b_data_i8_lo)
+            var b_data_i8_lo = ((b_data_i4 & 15)).cast[DType.int8]()
+            var b_data_i8_hi = ((b_data_i4 >> 4)).cast[DType.int8]()
+            var b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
 
             @unroll
             for row in range(row_count):
@@ -751,13 +716,12 @@ fn _process_rows[
 fn matmul_int4[
     group_size: Int,
     type: DType,
-    are_nibbles_reversed: Bool = True,
 ](
     a: NDBuffer[type, 2],
     b: NDBuffer[DType.uint8, 2],
     c: NDBuffer[type, 2],
 ) raises:
-    alias block_size = sizeof[Q4sym[group_size, type, are_nibbles_reversed]]()
+    alias block_size = sizeof[Q4sym[group_size, type]]()
 
     var M = a.dim[0]()
     var N = b.dim[0]()
@@ -791,14 +755,12 @@ fn matmul_int4[
         var end_batch_item = align_down(end_item, row_batch_count)
 
         for m in range(start_item, end_batch_item, row_batch_count):
-            _process_rows[group_size, row_batch_count, are_nibbles_reversed](
+            _process_rows[group_size, row_batch_count](
                 a_quant, a_scale, b, c, m
             )
 
         for m in range(end_batch_item, end_item):
-            _process_rows[group_size, 1, are_nibbles_reversed](
-                a_quant, a_scale, b, c, m
-            )
+            _process_rows[group_size, 1](a_quant, a_scale, b, c, m)
 
     sync_parallelize[task_func](num_workers)
 
