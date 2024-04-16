@@ -11,29 +11,29 @@
 
 
 # CHECK-LABEL: lit.func @"test_elif_chain
-# CHECK-NEXT:       hlcf.elif {
-# CHECK-NEXT:         [[TEST_A:%.*]] = lit.call @{{.*}}::@Bool::@"__mlir_i1__{{.*}}"(%a)
-# CHECK-NEXT:         hlcf.elif.yield [[TEST_A]] : i1
-# CHECK-NEXT:       } then {
-# CHECK-NEXT:         %inside_a = lit.var.decl "inside_a"
-# CHECK-NEXT:         hlcf.yield
-# CHECK-NEXT:       } {
-# CHECK-NEXT:         [[B_EQ:%.*]] = lit.call @{{.*}}::@"__eq__{{.*}}"(%b, %d) : !lit.signature<("lhs": !Int borrow, "rhs": !Int borrow) -> !Bool>
-# CHECK-NEXT:         [[TEST_B:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"([[B_EQ]]) : !lit.signature<("self": !Bool borrow) -> i1>
-# CHECK-NEXT:         hlcf.elif.yield [[TEST_B]] : i1
-# CHECK-NEXT:       } then {
-# CHECK-NEXT:         %inside_b = lit.var.decl "inside_b"
-# CHECK-NEXT:         hlcf.yield
-# CHECK-NEXT:       } {
-# CHECK-NEXT:         [[TEST_C:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"(%c)
-# CHECK-NEXT:         hlcf.elif.yield [[TEST_C]] : i1
-# CHECK-NEXT:       } then {
-# CHECK-NEXT:         %inside_c = lit.var.decl "inside_c"
-# CHECK-NEXT:         hlcf.yield
-# CHECK-NEXT:       } else {
-# CHECK-NEXT:         %inside_else = lit.var.decl "inside_else"
-# CHECK-NEXT:         hlcf.yield
-# CHECK-NEXT:       }
+# CHECK-NEXT:    hlcf.elif {
+# CHECK-NEXT:      [[TEST_A:%.*]] = lit.call @{{.*}}::@Bool::@"__mlir_i1__{{.*}}"(%a)
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_A]] : i1
+# CHECK-NEXT:    } then {
+# CHECK-NEXT:      %inside_a = lit.var.decl "inside_a"
+# CHECK-NEXT:      hlcf.yield
+# CHECK-NEXT:    } {
+# CHECK-NEXT:      [[B_EQ:%.*]] = lit.call @{{.*}}::@"__eq__{{.*}}"(%b, %d) : !lit.signature<("lhs": !Int borrow, "rhs": !Int borrow) -> !Bool>
+# CHECK-NEXT:      [[TEST_B:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"([[B_EQ]]) : !lit.signature<("self": !Bool borrow) -> i1>
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_B]] : i1
+# CHECK-NEXT:    } then {
+# CHECK-NEXT:      %inside_b = lit.var.decl "inside_b"
+# CHECK-NEXT:      hlcf.yield
+# CHECK-NEXT:    } {
+# CHECK-NEXT:      [[TEST_C:%.*]] = lit.call @{{.*}}::@"__mlir_i1__{{.*}}"(%c)
+# CHECK-NEXT:      hlcf.elif.yield [[TEST_C]] : i1
+# CHECK-NEXT:    } then {
+# CHECK-NEXT:      %inside_c = lit.var.decl "inside_c"
+# CHECK-NEXT:      hlcf.yield
+# CHECK-NEXT:    } else {
+# CHECK-NEXT:      %inside_else = lit.var.decl "inside_else"
+# CHECK-NEXT:      hlcf.yield
+# CHECK-NEXT:    }
 fn test_elif_chain(a: Bool, b: Int, c: Bool, d: Int) -> Bool:
     if a:
         var inside_a: Int
@@ -320,9 +320,9 @@ def test_break_continue_inside_while(a: Bool) -> Bool:
     # CHECK: } body {
     while a:
         # CHECK:      hlcf.elif {
-        # CHECK-NEXT:    lit.ref.load
-        # CHECK-NEXT:    lit.call {{.*}}__mlir_i1__
-        # CHECK-NEXT:    hlcf.elif.yield
+        # CHECK-NEXT:   lit.ref.load
+        # CHECK-NEXT:   lit.call {{.*}}__mlir_i1__
+        # CHECK-NEXT:   hlcf.elif.yield
         # CHECK-NEXT: } then {
         if a:
             # CHECK-NEXT:   lit.break
@@ -341,9 +341,9 @@ def test_break_continue_inside_while(a: Bool) -> Bool:
 
 # CHECK-LABEL: lit.func @"test_early_return
 def test_early_return():
-    # CHECK:       hlcf.elif {
-    # CHECK:         hlcf.elif.yield
-    # CHECK:       } then {
+    # CHECK:  hlcf.elif {
+    # CHECK:    hlcf.elif.yield
+    # CHECK:  } then {
     var a: Bool
     if a:
         # CHECK: lit.return
