@@ -254,6 +254,88 @@ struct LoadStoreOutputTile[
         instance._load_store_pairwise[0]()
 
 
+fn matmul_inner_loop[
+    config: MatmulConfig,
+    a_row_size: Int,
+    pack_inner_size: Int,
+    skip_col_bound: Bool,
+    single_row_i8mm: Bool,
+](
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b_packed: NDBuffer[config.b_type, 3, config.packed_shape],
+    global_offset: GemmShape,
+    global_bound: GemmShape,
+    tile_n_k: StaticIntTuple[2],
+):
+    alias use_vnni = config.use_vnni
+    alias use_i8mm = config.use_i8mm
+
+    @parameter
+    if use_i8mm:
+        Inner_matmul_i8mm[
+            config,
+            a_row_size,
+            pack_inner_size,
+            skip_col_bound,
+            single_row_i8mm,
+        ](
+            c,
+            a,
+            b_packed,
+            global_offset,
+            global_bound,
+            tile_n_k,
+        ).__inner_matmul__()
+    elif has_neon() and not use_vnni and not use_i8mm:
+        Inner_matmul_neon[
+            config,
+            a_row_size,
+            pack_inner_size,
+            skip_col_bound,
+            single_row_i8mm,
+        ](
+            c,
+            a,
+            b_packed,
+            global_offset,
+            global_bound,
+            tile_n_k,
+        ).__inner_matmul__()
+    elif not use_vnni and not has_neon():
+        Inner_matmul_default[
+            config,
+            a_row_size,
+            pack_inner_size,
+            skip_col_bound,
+            single_row_i8mm,
+        ](
+            c,
+            a,
+            b_packed,
+            global_offset,
+            global_bound,
+            tile_n_k,
+        ).__inner_matmul__()
+    elif use_vnni:
+        Inner_matmul_vnni[
+            config,
+            a_row_size,
+            pack_inner_size,
+            skip_col_bound,
+            single_row_i8mm,
+        ](
+            c,
+            a,
+            b_packed,
+            global_offset,
+            global_bound,
+            tile_n_k,
+        ).__inner_matmul__()
+    else:
+        constrained[False, "no _run_inner_loop implementation"]()
+
+
 # Tiled Matmul Implementation.
 # TODO: not yet supporting transpose_a
 @value
@@ -385,72 +467,20 @@ struct TiledMatmul[
                 alias tile_size2 = 2 if tile_size == 1 else tile_size
                 alias a_row_size = tile_size2 // 2 if config.use_i8mm else tile_size
 
-                alias use_vnni = config.use_vnni
-                alias use_i8mm = config.use_i8mm
-
-                @parameter
-                if use_i8mm:
-                    Inner_matmul_i8mm[
-                        config,
-                        a_row_size,
-                        m_loop_pack_inner_size,
-                        skip_col_bound,
-                        tile_size == 1,
-                    ](
-                        self.c,
-                        self.a,
-                        b_packed_tile,
-                        global_offset + GemmShape(row_offset, 0, 0),
-                        self.global_tile_offset + self.global_tile_shape,
-                        sub_tile_n_k,
-                    ).__inner_matmul__()
-                elif has_neon() and not use_vnni and not use_i8mm:
-                    Inner_matmul_neon[
-                        config,
-                        a_row_size,
-                        m_loop_pack_inner_size,
-                        skip_col_bound,
-                        tile_size == 1,
-                    ](
-                        self.c,
-                        self.a,
-                        b_packed_tile,
-                        global_offset + GemmShape(row_offset, 0, 0),
-                        self.global_tile_offset + self.global_tile_shape,
-                        sub_tile_n_k,
-                    ).__inner_matmul__()
-                elif not use_vnni and not has_neon():
-                    Inner_matmul_default[
-                        config,
-                        a_row_size,
-                        m_loop_pack_inner_size,
-                        skip_col_bound,
-                        tile_size == 1,
-                    ](
-                        self.c,
-                        self.a,
-                        b_packed_tile,
-                        global_offset + GemmShape(row_offset, 0, 0),
-                        self.global_tile_offset + self.global_tile_shape,
-                        sub_tile_n_k,
-                    ).__inner_matmul__()
-                elif use_vnni:
-                    Inner_matmul_vnni[
-                        config,
-                        a_row_size,
-                        m_loop_pack_inner_size,
-                        skip_col_bound,
-                        tile_size == 1,
-                    ](
-                        self.c,
-                        self.a,
-                        b_packed_tile,
-                        global_offset + GemmShape(row_offset, 0, 0),
-                        self.global_tile_offset + self.global_tile_shape,
-                        sub_tile_n_k,
-                    ).__inner_matmul__()
-                else:
-                    constrained[False, "no _run_inner_loop implementation"]()
+                matmul_inner_loop[
+                    config,
+                    a_row_size,
+                    m_loop_pack_inner_size,
+                    skip_col_bound,
+                    tile_size == 1,
+                ](
+                    self.c,
+                    self.a,
+                    b_packed_tile,
+                    global_offset + GemmShape(row_offset, 0, 0),
+                    self.global_tile_offset + self.global_tile_shape,
+                    sub_tile_n_k,
+                )
 
                 @parameter
                 if elementwise_epilogue_enabled and last_k_tile:
