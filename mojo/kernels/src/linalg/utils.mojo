@@ -301,26 +301,26 @@ struct GemmShape:
 #  Returns (TileN, TileK)
 @always_inline
 fn calculate_tile_n_k[
-    # Max number of element to cache.
-    pack_cache_size: Int,
+    config: MatmulConfig,
     # Inner size of data layout.
     pack_inner_size: Int,
-    # Factor to adjust for vnni or i8mm
-    factor: Int,
 ](n: Int, k: Int) -> StaticIntTuple[2]:
     """Helper heuristic function to decide on tile size to partition the matmul
     given the cache size and desired data layout.
 
     Parameters:
-        pack_cache_size: Allocated space for packing elements, configuring as a
-            function of target cache size desired.
+        config: Matmul config struct of types and shapes.
         pack_inner_size: The desired inner dimension of the packed data
             layout.
-        factor: Factor to adjust for vnni or i8mm.
 
     Returns:
         The calculated tile size to partition the matmul as (TileN, TileK).
     """
+
+    alias pack_cache_size = get_pack_data_size[config.b_type]()
+    alias use_vnni = use_vnni_fn[config.a_type, config.b_type, config.c_type]()
+    alias use_i8mm = use_i8mm_fn[config.a_type, config.b_type, config.c_type]()
+    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
     var least_tile_n: Int = pack_inner_size
 
@@ -346,16 +346,31 @@ fn calculate_tile_n_k[
 
 
 fn calculate_tile_n_k[
-    # Max number of element to cache.
-    pack_cache_size: Int,
+    config: MatmulConfig,
     # Inner size of data layout.
     pack_inner_size: Int,
-    # Factor to adjust for vnni or i8mm
-    factor: Int,
 ](global_tile_shape: GemmShape) -> StaticIntTuple[2]:
-    return calculate_tile_n_k[pack_cache_size, pack_inner_size, factor](
+    return calculate_tile_n_k[config, pack_inner_size](
         global_tile_shape.N, global_tile_shape.K
     )
+
+
+@always_inline
+fn _get_tile_n_k[
+    config: MatmulConfig
+](b: NDBuffer[config.b_type, 2, config.b_shape]) -> StaticIntTuple[2]:
+    var tile_n_k: StaticIntTuple[2]
+
+    @parameter
+    if not config.transpose_b:
+        tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
+            b.dim(1), b.dim(0)
+        )
+    else:
+        tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
+            b.dim(0), b.dim(1)
+        )
+    return tile_n_k
 
 
 # The number of registers used for the inner kernel is:
@@ -905,35 +920,6 @@ fn dispatch_get_kernel_type[
         func[True]()
     else:
         func[False]()
-
-
-# TODO(16425): Unify this with the rest of the matmul impl
-@always_inline
-fn _get_tile_n_k[
-    config: MatmulConfig,
-    transpose_b: Bool,
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-](b: NDBuffer[b_type, 2, b_shape]) -> StaticIntTuple[2]:
-    var tile_n_k: StaticIntTuple[2]
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
-
-    @parameter
-    if not transpose_b:
-        tile_n_k = calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size, factor
-        ](b.dim(1), b.dim(0))
-    else:
-        tile_n_k = calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size, factor
-        ](b.dim(0), b.dim(1))
-    return tile_n_k
 
 
 @always_inline

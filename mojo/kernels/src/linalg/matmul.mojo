@@ -29,19 +29,15 @@ from .MatmulUtils import (
     MatmulConfig,
     PartitionHeuristic,
     SubMatmulConfig,
-    _get_tile_n_k,
     calculate_tile_n_k,
     dispatch_get_kernel_type,
     elementwise_epilogue_type,
     get_kernel_type,
-    get_matmul_arch_factor,
     get_min_task_size,
-    get_packB_unroll_factor,
     get_partitioned_matmul,
     packA_i8mm,
     get_mm_config,
     use_i8mm_fn,
-    use_vnni_fn,
 )
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
@@ -369,17 +365,10 @@ struct TiledMatmul[
             global_tile_shape: Tile shape this call will process.
             global_tile_offset: Tile offset on the original buffer.
         """
-        alias use_vnni = use_vnni_fn[
-            config.a_type, config.b_type, config.c_type
-        ]()
-        alias use_i8mm = use_i8mm_fn[
-            config.a_type, config.b_type, config.c_type
-        ]()
-        alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
-        var tile_n_k = calculate_tile_n_k[
-            config.pack_data_size, config.pack_inner_size, factor
-        ](global_tile_shape)
+        var tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
+            global_tile_shape
+        )
 
         var matmul = TiledMatmul[config, elementwise_epilogue_enabled,](
             c,
