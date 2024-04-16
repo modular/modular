@@ -2375,13 +2375,13 @@ void DestructorInsertion::checkUse(Value value, Operation &op, bool isDeref) {
 void DestructorInsertion::checkUse(Value value,
                                    mlir::ImplicitLocOpBuilder &builder,
                                    Operation *opWithUse, bool isDeref) {
-  SmallVector<ValueRef> accesses =
-      valueSet.getValueRefsForAccess(value, isDeref);
-
-  for (ValueRef valueRef : accesses) {
+  // If this is a direct reference to a value, we are tracking it, meaning there
+  // are dedicated bits in the consumeValues bitvector that represent the
+  // consumption state of this value.
+  if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
     ValueInfo &valueInfo = valueSet.getValueInfos()[valueRef.valueId];
     if (valueInfo.hasErrorDiagnosed)
-      continue;
+      return;
 
     // If this is the last use of some value that needs to be destroyed when
     // dead, emit the whole object destructor for the overall value.
@@ -2412,6 +2412,22 @@ void DestructorInsertion::checkUse(Value value,
     //
     // In this case, we need to destroy field1 after this use.
     destroyValueIfNeeded(value, valueRef, builder, /*opWithUse=*/opWithUse);
+    return;
+  }
+
+  // We are not tracking this value directly, but it is tied to a lifetime
+  // declared by a value we do track. If this is the case, check these values
+  // for destruction.
+  if (isDeref) {
+    SmallVector<ValueRef> lifetimeRelatedValues =
+        valueSet.getValueRefsForLifetime(
+            cast<RefType>(value.getType()).getLifetime());
+    for (auto lifetimeRelatedValue : lifetimeRelatedValues) {
+      ValueInfo &valueInfo =
+          valueSet.getValueInfos()[lifetimeRelatedValue.valueId];
+      destroyValueIfNeeded(valueInfo.value, lifetimeRelatedValue, builder,
+                           opWithUse);
+    }
   }
 }
 
