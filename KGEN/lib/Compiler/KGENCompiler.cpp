@@ -36,75 +36,6 @@ using namespace M;
 using namespace KGEN;
 
 //===----------------------------------------------------------------------===//
-// evaluateSpecializations
-//===----------------------------------------------------------------------===//
-
-ErrorOr<ElaboratorSearchFn>
-KGEN::evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
-                              LLCL::Runtime &runtime, TargetInfoAttr target,
-                              const CompilationOptions &options,
-                              ArrayRef<FuncOp> specializations) {
-  // TODO(#2717): Cross-compilation and execution for search!
-  if (target.getArch() != llvm::sys::getHostCPUName())
-    return Error("cross-compilation execution in search is not yet supported");
-
-  mlir::PassManager mgr(target.getContext());
-  configurePassManager(mgr);
-  ExecutionEngineOptions eeOptions;
-  if (options.debugLevel != CompilationOptions::kNoDebug)
-    eeOptions.registerDebugPlugins = true;
-  auto engineOr =
-      initializeExecutionEngine(runtime, mgr, options, std::move(eeOptions),
-                                /*isJIT=*/true, target, /*isSearch=*/true);
-  if (engineOr.isError())
-    return engineOr.takeError();
-  std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
-
-  // We only want the funcs passed-in and the evaluator to be code-generated.
-  SmallVector<FuncOp> funcsToCompile(specializations);
-  funcsToCompile.push_back(evaluator);
-
-  // Create the set of symbols to export.
-  ExportMap exportedSymbols;
-  for (FuncOp func : funcsToCompile) {
-    exportedSymbols.insert(
-        {func.getSymNameAttr(), ExportedSymbol(ExportKind::Exported)});
-  }
-
-  // Add the exported symbols to the ObjectCompilerLayer. This will not actually
-  // compile anything - that happens at lookup time.
-  if (auto err = engine->add<ObjectCompilerLayer>("evaluateSpecializations",
-                                                  symtab, exportedSymbols))
-    return err.takeError();
-
-  SmallVector<void *> candidatePtrs;
-  {
-    CompilerTimeTraceScope traceScope("compile-specializations");
-    // Get pointers to all the candidates.
-    for (FuncOp candidate : specializations) {
-      auto funcOr = engine->lookup(candidate.getNameAttr());
-      if (funcOr.isError())
-        return funcOr.takeError();
-      candidatePtrs.push_back(funcOr->getFunctionPointer());
-    }
-  }
-
-  // Lookup the evaluator function
-  auto evaluatorFuncOr = engine->lookup(evaluator.getNameAttr());
-  if (evaluatorFuncOr.isError())
-    return evaluatorFuncOr.takeError();
-  auto evaluatorFunc = std::move(*evaluatorFuncOr);
-
-  return
-      [engine = std::move(engine), evaluatorFunc = std::move(evaluatorFunc),
-       candidatePtrs = std::move(candidatePtrs)]() mutable -> ErrorOr<ssize_t> {
-        CompilerTimeTraceScope traceScope("execute-specializations");
-        return evaluatorFunc.invoke<ssize_t, void **, ssize_t>(
-            candidatePtrs.data(), candidatePtrs.size());
-      };
-}
-
-//===----------------------------------------------------------------------===//
 // compileElaboratorAsm
 //===----------------------------------------------------------------------===//
 
@@ -334,11 +265,6 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
   configurePassManager(pm);
   pm.addPass(createElaborateGenerators(
       runtime, target, elaboratorOptions,
-      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
-                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
-        return evaluateSpecializations(evaluator, symtab, runtime, target,
-                                       options, specializations);
-      },
       [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
                     StringAttr name, const SymbolTable &symtab,
                     TargetInfoAttr target, EmissionKind emissionKind) {
@@ -480,11 +406,6 @@ KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
   CompilationOptions options;
   return createElaborateGenerators(
       runtime, /*target=*/{}, /*options=*/{},
-      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
-                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
-        return evaluateSpecializations(evaluator, symtab, runtime, target,
-                                       options, specializations);
-      },
       [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
                     StringAttr name, const SymbolTable &symtab,
                     TargetInfoAttr target, EmissionKind emissionKind) {
@@ -509,13 +430,12 @@ std::unique_ptr<Pass> KGEN::createMaterializePackagesWithDefaultGen(
 // populateElaborateModulePasses
 //===----------------------------------------------------------------------===//
 
-void KGEN::populateElaborateModulePasses(
-    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    const CompilationOptions &options,
-    EvaluatorExecutorFn evaluatorExecutorFn) {
+void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
+                                         LLCL::Runtime &runtime,
+                                         TargetInfoAttr target,
+                                         const CompilationOptions &options) {
   buildElaborateModulePipeline(
-      pm, runtime, target, options, std::move(evaluatorExecutorFn),
-      /*compileAsmFn=*/
+      pm, runtime, target, options, /*compileAsmFn=*/
       [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
                     StringAttr name, const SymbolTable &symtab,
                     TargetInfoAttr target, EmissionKind emissionKind) {
@@ -527,20 +447,6 @@ void KGEN::populateElaborateModulePasses(
                                                              runtime, options);
       });
   buildPostElaborationPipeline(pm, runtime, options);
-}
-
-void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
-                                         LLCL::Runtime &runtime,
-                                         TargetInfoAttr target,
-                                         const CompilationOptions &options) {
-  populateElaborateModulePasses(
-      pm, runtime, target, options,
-      /*evaluatorExecutorFn=*/
-      [=, &runtime](FuncOp evaluator, const SymbolTable &symtab,
-                    TargetInfoAttr target, ArrayRef<FuncOp> specializations) {
-        return evaluateSpecializations(evaluator, symtab, runtime, target,
-                                       options, specializations);
-      });
 }
 
 //===----------------------------------------------------------------------===//

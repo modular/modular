@@ -178,47 +178,6 @@ kgen.generator @failed_apply() {
 
 // -----
 
-kgen.generator @evaluator(%fns: !kgen.pointer<() -> ()>, %size: index) -> index {
-  %idx0 = index.constant 0
-  kgen.return %idx0 : index
-}
-
-// expected-note @below {{no viable expansions found}}
-kgen.generator @no_valid_specializations() {
-  // expected-note @below {{constraint failed: none}}
-  kgen.param.assert <0>, "none"
-  kgen.return
-}
-
-// expected-error @below {{no viable expansions found}}
-kgen.generator export @entry() {
-  // expected-note @below {{call expansion failed - no concrete specialization}}
-  kgen.param.evaluate f: () -> () = [@no_valid_specializations] with
-    [(!kgen.pointer<() -> ()>, index) -> index: @evaluator]
-  kgen.return
-}
-
-// -----
-
-kgen.generator @evaluator(%fns: !kgen.pointer<() -> ()>, %size: index) -> index {
-  %idx1 = index.constant 1
-  kgen.return %idx1 : index
-}
-
-kgen.generator @one() {
-  kgen.return
-}
-
-// expected-error @below {{no viable expansions found}}
-kgen.generator export @entry() {
-  // expected-note @below {{user-provided evaluator returned an out-of-bounds result: 1}}
-  kgen.param.evaluate f: () -> () = [@one] with
-    [(!kgen.pointer<() -> ()>, index) -> index: @evaluator]
-  kgen.return
-}
-
-// -----
-
 // expected-note @below {{no viable expansions found}}
 kgen.generator @no_impls() {
 // expected-note @below {{constraint failed}}

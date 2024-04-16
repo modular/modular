@@ -33,11 +33,6 @@ class PackageLinkOp;
 void populateElaborateModulePasses(mlir::PassManager &pm,
                                    LLCL::Runtime &runtime,
                                    TargetInfoAttr target,
-                                   const CompilationOptions &options,
-                                   EvaluatorExecutorFn evaluatorExecutorFn);
-void populateElaborateModulePasses(mlir::PassManager &pm,
-                                   LLCL::Runtime &runtime,
-                                   TargetInfoAttr target,
                                    const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
@@ -107,14 +102,6 @@ private:
 //===----------------------------------------------------------------------===//
 // Default JIT Configuration
 //===----------------------------------------------------------------------===//
-
-/// A default specialization evaluator that JITs and invokes the specialized
-/// functions with the provided evaluator.
-ErrorOr<ElaboratorSearchFn>
-evaluateSpecializations(FuncOp evaluator, const SymbolTable &symtab,
-                        LLCL::Runtime &runtime, TargetInfoAttr target,
-                        const CompilationOptions &options,
-                        ArrayRef<FuncOp> specializations);
 
 /// Given the pre-elaboration function `func` belonging to a module with the
 /// symbol table `symtab`, slice out a standalone module rooted at `func` and

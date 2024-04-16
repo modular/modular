@@ -87,8 +87,7 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
 
 void KGEN::buildElaborateModulePipeline(
     mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
-    const CompilationOptions &options, EvaluatorExecutorFn evaluatorExecutorFn,
-    ElaboratorCompileAsmFn compileAsmFn,
+    const CompilationOptions &options, ElaboratorCompileAsmFn compileAsmFn,
     PackageGenLibraryFn packageGenLibraryFn) {
   pm.addPass(createEliminateDeadSymbols());
   // At the end of the LIT lowering pipeline, pull in the bodies of constructs
@@ -118,7 +117,6 @@ void KGEN::buildElaborateModulePipeline(
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   elaboratorOptions.diagAllFailures = options.emitAllElaboratorDiags;
   pm.addPass(createElaborateGenerators(runtime, target, elaboratorOptions,
-                                       std::move(evaluatorExecutorFn),
                                        std::move(compileAsmFn)));
 }
 
