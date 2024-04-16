@@ -41,6 +41,8 @@
 # CHECK: (scalar<f32>) another_float = ([0] = 4.125)
 # CHECK: (si64) ^ uncommon name = 1123123
 # CHECK: (string) a_string_literal = "fofofo"
+
+# FIXME: Disabled due to #37682
 # HECK: (*index, scalar<f64>, index) a_list = {
 # HECK:   [0] = 1
 # HECK:   [1] = ([0] = 2.125)
