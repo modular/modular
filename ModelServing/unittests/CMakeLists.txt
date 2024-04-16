@@ -21,30 +21,26 @@ add_custom_command(PRE_BUILD
 
 include_directories(PRIVATE ${CMAKE_SOURCE_DIR}/ModelServing/include/)
 
-# TODO(yihualou): Temporarily disable tests while we renovate.
 # add_modular_unittest(
 #   SUITE_NAME
-#   MuttUnitTests
+#   ServeRTUnitTests
 
 #   TEST_NAME
-#   MuttTests
+#   ServeRTTests
 
 #   server_test.cpp
-#   test_mutt.cpp
+#   test_serve_rt.cpp
 #   test_server_async.cpp
 #   test_server.cpp
 
 #   LINK_LIBS PRIVATE
-#   ModularMuttLib
+#   ServeRTLib
 #   tf
-
-#   TAGS
-#   asan-red
 # )
 
-# target_compile_definitions(MuttTests
+# target_compile_definitions(ServeRTTests
 #   PRIVATE
 #   MODULAR_MODEL_DIR="${CMAKE_BINARY_DIR}/GeneratedTests/BINARIES/models"
 # )
 
-# add_dependencies(MuttTests ExtractGenModels)
+# add_dependencies(ServeRTTests ExtractGenModels)
