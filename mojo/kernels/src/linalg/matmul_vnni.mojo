@@ -43,7 +43,6 @@ struct Inner_matmul_vnni[
     pack_inner_size: Int,
     # Skip the output c space boundary check if True.
     skip_boundary_check: Bool,
-    single_row_i8mm: Bool = False,
 ](InnerMatmulKernel):
     # Parameters for global reference.
     var c_stride: Int

@@ -35,7 +35,6 @@ struct Inner_matmul_i8mm[
     pack_inner_size: Int,
     # Skip the output c space boundary check if True.
     skip_boundary_check: Bool,
-    single_row_i8mm: Bool = False,
 ](InnerMatmulKernel):
     # Parameters for global reference.
     var c_stride: Int
@@ -48,8 +47,11 @@ struct Inner_matmul_i8mm[
     #  in (TileN, TileK).
     var tile_n_k: StaticIntTuple[2]
     # Boundary of valid output space within the
-    #  local tile, in (a_row_size, TileN).
+    #  local tile, in (self.a_row_size2, TileN).
     var c_bound: StaticIntTuple[2]
+
+    alias a_row_size2 = a_row_size // 2 if a_row_size != 1 else a_row_size
+    alias single_row_i8mm = a_row_size == 1
 
     fn __init__(
         inout self,
@@ -93,7 +95,7 @@ struct Inner_matmul_i8mm[
             NDBuffer[
                 config.c_type,
                 2,
-                DimList(a_row_size, pack_inner_size),
+                DimList(self.a_row_size2, pack_inner_size),
             ]
         ](c0_local)
 
@@ -108,7 +110,7 @@ struct Inner_matmul_i8mm[
                 SIMD[config.c_type, simd_size](0),
             )
 
-        unroll[outer_body, a_row_size, pack_inner_size // simd_size]()
+        unroll[outer_body, self.a_row_size2, pack_inner_size // simd_size]()
 
     @always_inline
     fn _load_c_tile(
@@ -129,7 +131,7 @@ struct Inner_matmul_i8mm[
             NDBuffer[
                 config.c_type,
                 2,
-                DimList(a_row_size, pack_inner_size),
+                DimList(self.a_row_size2, pack_inner_size),
             ]
         ](c0_local)
         var c_ptr = self.c_ptr.offset(tile_n_idx)
@@ -146,7 +148,7 @@ struct Inner_matmul_i8mm[
                 )
                 var t1 = c_ptr.load[width=2](
                     self.c_stride * (2 * idx0 + 1) + 2 * idx1
-                ) if not single_row_i8mm else SIMD[config.c_type, 2](0)
+                ) if not self.single_row_i8mm else SIMD[config.c_type, 2](0)
                 c_data = rebind[SIMD[config.c_type, simd_size]](t0.join(t1))
             elif idx1 * 2 <= self.c_bound[1]:
                 var t0 = partial_simd_load[2](
@@ -160,7 +162,7 @@ struct Inner_matmul_i8mm[
                     0,
                     self.c_bound[1] - tile_n_idx - idx1 * 2,
                     0,
-                ) if not single_row_i8mm else SIMD[config.c_type, 2](0)
+                ) if not self.single_row_i8mm else SIMD[config.c_type, 2](0)
                 c_data = rebind[SIMD[config.c_type, simd_size]](t0.join(t1))
 
             # Store data to local buffer.
@@ -169,7 +171,7 @@ struct Inner_matmul_i8mm[
                 rebind[SIMD[config.c_type, simd_size]](c_data),
             )
 
-        unroll[body, a_row_size, pack_inner_size // simd_size]()
+        unroll[body, self.a_row_size2, pack_inner_size // simd_size]()
 
     @always_inline
     fn _store_c_tile(
@@ -189,7 +191,7 @@ struct Inner_matmul_i8mm[
             NDBuffer[
                 config.c_type,
                 2,
-                DimList(a_row_size, pack_inner_size),
+                DimList(self.a_row_size2, pack_inner_size),
             ]
         ](c0_local)
         var c_ptr = self.c_ptr.offset(tile_n_idx)
@@ -208,7 +210,7 @@ struct Inner_matmul_i8mm[
                 ](c_data.slice[2]())
 
                 @parameter
-                if not single_row_i8mm:
+                if not self.single_row_i8mm:
                     c_ptr.offset(
                         self.c_stride * (2 * idx0 + 1) + 2 * idx1
                     ).store[width=2](c_data.slice[2, offset=2]())
@@ -221,7 +223,7 @@ struct Inner_matmul_i8mm[
                 )
 
                 @parameter
-                if not single_row_i8mm:
+                if not self.single_row_i8mm:
                     partial_simd_store(
                         c_ptr.offset(self.c_stride * (2 * idx0 + 1) + 2 * idx1),
                         0,
@@ -229,7 +231,7 @@ struct Inner_matmul_i8mm[
                         c_data.slice[2, offset=2](),
                     )
 
-        unroll[body, a_row_size, pack_inner_size // simd_size]()
+        unroll[body, self.a_row_size2, pack_inner_size // simd_size]()
 
     fn _accumulate_(
         self,
@@ -250,7 +252,7 @@ struct Inner_matmul_i8mm[
             NDBuffer[
                 config.c_type,
                 2,
-                DimList(a_row_size, pack_inner_size),
+                DimList(self.a_row_size2, pack_inner_size),
             ]
         ](c0_local)
 
@@ -277,7 +279,7 @@ struct Inner_matmul_i8mm[
 
         # Loop over local accumulator tiles.
         @unroll
-        for idx0 in range(a_row_size):
+        for idx0 in range(self.a_row_size2):
 
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
@@ -297,14 +299,14 @@ struct Inner_matmul_i8mm[
 
     fn __inner_matmul__(self):
         """Utility function on the inner loop. Run the inner kernel on the whole
-        (a_row_size, TileN, TileK) tile.
+        (self.a_row_size2, TileN, TileK) tile.
         """
 
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
             config.c_type,
             2,
-            DimList(a_row_size, pack_inner_size),
+            DimList(self.a_row_size2, pack_inner_size),
         ].aligned_stack_allocation[
             alignof[SIMD[config.c_type, config.simd_size]]()
         ]()

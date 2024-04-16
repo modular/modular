@@ -37,7 +37,6 @@ fn matmul_inner_loop[
         config.a_row_size,
         config.pack_inner_size,
         True,  # skip_col_bound
-        False,  # single_row_i8mm
     ](
         c,
         a,

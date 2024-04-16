@@ -259,7 +259,6 @@ fn matmul_inner_loop[
     a_row_size: Int,
     pack_inner_size: Int,
     skip_col_bound: Bool,
-    single_row_i8mm: Bool,
 ](
     c: NDBuffer[config.c_type, 2, config.c_shape],
     a: NDBuffer[config.a_type, 2, config.a_shape],
@@ -273,13 +272,7 @@ fn matmul_inner_loop[
 
     @parameter
     if use_i8mm:
-        Inner_matmul_i8mm[
-            config,
-            a_row_size,
-            pack_inner_size,
-            skip_col_bound,
-            single_row_i8mm,
-        ](
+        Inner_matmul_i8mm[config, a_row_size, pack_inner_size, skip_col_bound,](
             c,
             a,
             b_packed,
@@ -288,13 +281,7 @@ fn matmul_inner_loop[
             tile_n_k,
         ).__inner_matmul__()
     elif has_neon() and not use_vnni and not use_i8mm:
-        Inner_matmul_neon[
-            config,
-            a_row_size,
-            pack_inner_size,
-            skip_col_bound,
-            single_row_i8mm,
-        ](
+        Inner_matmul_neon[config, a_row_size, pack_inner_size, skip_col_bound,](
             c,
             a,
             b_packed,
@@ -308,7 +295,6 @@ fn matmul_inner_loop[
             a_row_size,
             pack_inner_size,
             skip_col_bound,
-            single_row_i8mm,
         ](
             c,
             a,
@@ -318,13 +304,7 @@ fn matmul_inner_loop[
             tile_n_k,
         ).__inner_matmul__()
     elif use_vnni:
-        Inner_matmul_vnni[
-            config,
-            a_row_size,
-            pack_inner_size,
-            skip_col_bound,
-            single_row_i8mm,
-        ](
+        Inner_matmul_vnni[config, a_row_size, pack_inner_size, skip_col_bound,](
             c,
             a,
             b_packed,
@@ -464,15 +444,11 @@ struct TiledMatmul[
             @parameter
             @always_inline
             fn row_iteration[tile_size: Int](row_offset: Int):
-                alias tile_size2 = 2 if tile_size == 1 else tile_size
-                alias a_row_size = tile_size2 // 2 if config.use_i8mm else tile_size
-
                 matmul_inner_loop[
                     config,
-                    a_row_size,
+                    tile_size,
                     m_loop_pack_inner_size,
                     skip_col_bound,
-                    tile_size == 1,
                 ](
                     self.c,
                     self.a,
