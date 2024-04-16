@@ -1,0 +1,13 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "driver-tblgen",
+    srcs = glob([
+        "*.cpp",
+        "*.h",
+    ]),
+    deps = [
+        "//Support:Base",
+        "@llvm-project//llvm:TableGen",
+    ],
+)
