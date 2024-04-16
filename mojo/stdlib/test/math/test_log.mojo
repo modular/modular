@@ -3,75 +3,181 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s
 
-from math import frexp, isinf, log, log2
-
-
-# CHECK-LABEL: test_frexp
-fn test_frexp():
-    print("== test_frexp")
-
-    # CHECK: 0.964453
-    # CHECL: 7.0
-    var res = frexp(Float32(123.45))
-    print(res[0])
-    print(res[1])
-
-    # CHECK: 0.8
-    # CHECK: -3.0
-    res = frexp(Float32(0.1))
-    print(res[0])
-    print(res[1])
-
-    # CHECK: -0.8
-    # CHECK: -3.0
-    res = frexp(Float32(-0.1))
-    print(res[0])
-    print(res[1])
-
-    # CHECK: [0.0, 0.5, 0.5, 0.625]
-    # CHECK: [0.0, 2.0, 3.0, 3.0]
-    var res2 = frexp(SIMD[DType.float32, 4](0, 2, 4, 5))
-    print(res2[0])
-    print(res2[1])
+from sys import has_neon
+from math import frexp, isinf, log, log2, isclose
+from testing import assert_true, assert_equal
 
 
-# CHECK-LABEL: test_log
-fn test_log():
-    print("== test_log")
+fn test_frexp[type: DType](atol: Float32, rtol: Float32) raises:
+    var res = frexp(Scalar[type](123.45))
+    assert_true(
+        isclose(
+            res[0].cast[DType.float32](),
+            0.964453,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+    assert_true(
+        isclose(
+            res[1].cast[DType.float32](),
+            7.0,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
 
-    # CHECK: 4.8158{{[0-9]+}}
-    print(log(Float32(123.45)))
+    res = frexp(Scalar[type](0.1))
+    assert_true(
+        isclose(
+            res[0].cast[DType.float32](),
+            0.8,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+    assert_true(
+        isclose(
+            res[1].cast[DType.float32](),
+            -3.0,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
 
-    # CHECK: -2.3025{{[0-9]+}}
-    print(log(Float32(0.1)))
+    res = frexp(Scalar[type](-0.1))
+    assert_true(
+        isclose(
+            res[0].cast[DType.float32](),
+            -0.8,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+    assert_true(
+        isclose(
+            res[1].cast[DType.float32](),
+            -3.0,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
 
-    # CHECK: [0.0, 0.693147{{[0-9]+}}, 1.38629{{[0-9]+}}, 1.6094{{[0-9]+}}]
-    print(log(SIMD[DType.float32, 4](1, 2, 4, 5)))
-
-    # CHECK: 1.0
-    print(log[DType.float32, 1](2.7182818284590452353602874713526624977572))
-
-    # CHECK: [True, False, True, True]
-    print(isinf(log(SIMD[DType.float32, 4](0, 1, 0, 0))))
-
-
-# CHECK-LABEL: test_log2
-fn test_log2():
-    print("== test_log2")
-
-    # CHECK: 6.9477{{[0-9]+}}
-    print(log2(Float32(123.45)))
-
-    # CHECK: -3.3219{{[0-9]+}}
-    print(log2(Float32(0.1)))
-
-    # CHECK: [0.0, 1.0, 2.0, 2.321{{[0-9]+}}]
-    print(log2(SIMD[DType.float32, 4](1, 2, 4, 5)))
+    var res2 = frexp(SIMD[type, 4](0, 2, 4, 5))
+    assert_true(
+        isclose(
+            res2[0].cast[DType.float32](),
+            SIMD[DType.float32, 4](0.0, 0.5, 0.5, 0.625),
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+    assert_true(
+        isclose(
+            res2[1].cast[DType.float32](),
+            SIMD[DType.float32, 4](-0.0, 2.0, 3.0, 3.0),
+            atol=atol,
+            rtol=rtol,
+        )
+    )
 
 
-fn main():
-    test_frexp()
-    test_log()
-    test_log2()
+fn test_log[type: DType](atol: Float32, rtol: Float32) raises:
+    var res0 = log(Scalar[type](123.45))
+    assert_true(
+        isclose(
+            res0.cast[DType.float32](),
+            4.8158,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+
+    var res1 = log(Scalar[type](0.1))
+    assert_true(
+        isclose(
+            res1.cast[DType.float32](),
+            -2.3025,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+
+    var res2 = log(SIMD[type, 4](1, 2, 4, 5))
+    assert_true(
+        isclose(
+            res2.cast[DType.float32](),
+            SIMD[DType.float32, 4](0.0, 0.693147, 1.38629, 1.6094),
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+
+    var res3 = log[type, 1](2.7182818284590452353602874713526624977572)
+    assert_true(
+        isclose(
+            res3.cast[DType.float32](),
+            1.0,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+
+    var res4 = isinf(log(SIMD[type, 4](0, 1, 0, 0)))
+    assert_equal(res4, SIMD[DType.bool, 4](True, False, True, True))
+
+
+fn test_log2[type: DType](atol: Float32, rtol: Float32) raises:
+    var res0 = log2(Scalar[type](123.45))
+    assert_true(
+        isclose(
+            res0.cast[DType.float32](),
+            6.9477,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+
+    var res1 = log2(Scalar[type](0.1))
+    assert_true(
+        isclose(
+            res1.cast[DType.float32](),
+            -3.3219,
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+
+    var res2 = log2(SIMD[type, 4](1, 2, 4, 5))
+    assert_true(
+        isclose(
+            res2.cast[DType.float32](),
+            SIMD[DType.float32, 4](0.0, 1.0, 2.0, 2.3219),
+            atol=atol,
+            rtol=rtol,
+        )
+    )
+
+
+fn main() raises:
+    var f32_atol = 1e-4
+    var f32_rtol = 1e-5
+    test_frexp[DType.float32](f32_atol, f32_rtol)
+    test_log[DType.float32](f32_atol, f32_rtol)
+    test_log2[DType.float32](f32_atol, f32_rtol)
+
+    var f16_atol = 1e-2
+    var f16_rtol = 1e-5
+    test_frexp[DType.float16](f16_atol, f16_rtol)
+    test_log[DType.float16](f16_atol, f16_rtol)
+    test_log2[DType.float16](f16_atol, f16_rtol)
+
+    @parameter
+    if not has_neon():
+        var bf16_atol = 1e-1
+        var bf16_rtol = 1e-5
+        test_frexp[DType.bfloat16](bf16_atol, bf16_rtol)
+        test_log[DType.bfloat16](bf16_atol, bf16_rtol)
+        test_log2[DType.bfloat16](bf16_atol, bf16_rtol)
