@@ -33,7 +33,6 @@ fn top() -> Int:
 # GENLIB: kgen.extern.generator [[TARGET_FN]]
 # GENLIB-SAME: preCompiledModuleRef = [[PKG:@.*target_dep_package.*]]}
 # MATER: kgen.generator [[TARGET_FN]]
-# MATER-SAME: preCompiledModuleRef = [[PKG:@.*target_dep_package.*]],
 # MATER-NEXT: kgen.param.if
 
 # GENLIB: kgen.package.link [[PKG]] dependencies([@stdlib]) post_parse(dense_resource<{{.*}})

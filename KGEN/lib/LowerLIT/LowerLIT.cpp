@@ -362,8 +362,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
         func.getLoc(), func.getSymNameAttr(), sigAttr, newFunctionTypeAttr,
         inputParamsArr, resParamsArr, func.getDecoratorsAttr(),
         func.getInlineLevelAttr(), func.getExportKindAttr(),
-        func.getLLVMMetadata(), PreservedAttr::get(sigAttr),
-        /*preCompiledBodyRef=*/nullptr);
+        func.getLLVMMetadata(), PreservedAttr::get(sigAttr));
     result = newFunc;
 
     // Move over the body.
