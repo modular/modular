@@ -124,8 +124,6 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
                        "' does not match result type '" +
                        mlir::debugString(op.getType()) + "'"));
     return failure();
-  case POC::GetAllImpls:
-    return evaluateGetAllImpls(op);
   case POC::CompileAssembly:
     return evaluateCompileAssembly(op);
   case POC::GetLinkageName:
@@ -133,30 +131,6 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
   default:
     return failure();
   }
-}
-
-FailureOr<TypedAttr> IREvaluator::evaluateGetAllImpls(ParamOperatorAttr op) {
-  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
-  if (!symbol)
-    return failure();
-  std::vector<FuncOp> funcs;
-  std::optional<ErrorTreeOrSuccess> err = elaborator->getAllConcreteFunctions(
-      parent, *errorLoc, cast<FlatSymbolRefAttr>(symbol.getSymbol()),
-      symbol.getParamValues(), funcs);
-  if (!err)
-    return TypedAttr();
-  if (err->isError()) {
-    emitError(err->takeError());
-    return TypedAttr();
-  }
-
-  std::vector<TypedAttr> refs;
-  refs.reserve(funcs.size());
-  for (FuncOp f : funcs)
-    refs.emplace_back(SymbolConstantAttr::get(
-        SymbolRefAttr::get(f.getSymNameAttr()), f.getSignature()));
-
-  return {VariadicAttr::get(refs, cast<VariadicType>(op.getType()))};
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,

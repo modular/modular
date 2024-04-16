@@ -1226,21 +1226,6 @@ kgen.generator @bat_binder(%arg0: index) {
 
 // -----
 
-// CHECK-LABEL: kgen.func export @main
-kgen.generator export @main() {
-  kgen.param.declare impls: variadic<!kgen.signature<() -> ()>> = <get_all_impls(@foo)>
-  kgen.return
-}
-
-// CHECK-LABEL: kgen.func @foo
-kgen.generator @foo() {
-  // CHECK-NEXT: call @foo
-  kgen.call @foo() : () -> ()
-  kgen.return
-}
-
-// -----
-
 kgen.generator @count_ops(%arg0: i1) -> index {
   %0 = hlcf.if %arg0 -> index {
     %idx0 = index.constant 0

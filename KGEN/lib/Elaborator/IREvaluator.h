@@ -74,8 +74,6 @@ private:
   /// Evaluate an apply-like operator.
   FailureOr<TypedAttr> evaluateApplyLike(ParamOperatorAttr op,
                                          bool withResultSlot);
-  /// Evaluate a `get_all_impls` operator.
-  FailureOr<TypedAttr> evaluateGetAllImpls(ParamOperatorAttr op);
   /// Evaluate a `get_env` operator.
   FailureOr<TypedAttr> evaluateGetEnv(ParamOperatorAttr op);
   /// Evaluate a `compile_assembly` operator.
