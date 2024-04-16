@@ -1696,10 +1696,17 @@ void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
   // Lets are mutable because they may be lazy initialized.
   auto resultType = RefType::get(
       elementType, ParamDeclRefAttr::get(lifetimeNameAttr, lifetimeType));
-  build(b, state, resultType, name, kind, lifetimeDecl, /*docString=*/{});
+  build(b, state, resultType, name, kind, lifetimeDecl, /*docString=*/{},
+        /*argShadowIndex=*/{});
 }
 
 bool VarDeclOp::isSynthetic() { return getKind() == VarDeclKind::Synthesized; }
+
+LogicalResult VarDeclOp::verify() {
+  if (getArgShadowIndex().has_value() && getKind() != VarDeclKind::Arg)
+    return emitOpError() << "cannot have arg index unless is arg kind";
+  return success();
+}
 
 //===----------------------------------------------------------------------===//
 // GlobalVarDeclOp

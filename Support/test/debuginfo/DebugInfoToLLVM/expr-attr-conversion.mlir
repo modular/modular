@@ -67,20 +67,24 @@
 #deref_expr = #debuginfo.expr.deref<#debuginfo.expr.irvalue : !debuginfo.ptr<i32 {sizeInBits = 64, alignInBits = 64}>> : !debuginfo.unresolved<i32>
 #agg_expr = #debuginfo.expr.agg<#deref_expr, 1> : !struct
 
-func.func @foo(%arg0: i32, %arg1: i32, %arg2: !llvm.ptr) {
+func.func @foo() {
+  %v0 = llvm.mlir.constant(2: i32) : i32
+  %v1 = llvm.mlir.constant(3: i32) : i32
+  %v2 = llvm.inttoptr %v0 : i32 to !llvm.ptr
+
   // CHECK: llvm.intr.dbg.value #[[LOCALVAR]] =
-  debuginfo.value #local_variable #trivial_expr = %arg0 : i32
+  debuginfo.value #local_variable #trivial_expr = %v0 : i32
   // COM: This will get removed as LLVM does not support implicit pointer yet.
   // COM: CHECK: llvm.intr.dbg.value #[[LOCALVAR_PTR]] #llvm.di_expression<[DW_OP_LLVM_implicit_pointer]>
-  debuginfo.value #local_variable_ptr #refof_expr = %arg1 : i32
+  debuginfo.value #local_variable_ptr #refof_expr = %v1 : i32
   // COM: This expr will be removed since it begins with a deref.
   // CHECK: llvm.intr.dbg.declare #[[LOCALVAR1]] =
-  debuginfo.value #local_variable1 #deref_expr = %arg2 : !llvm.ptr
+  debuginfo.value #local_variable1 #deref_expr = %v2 : !llvm.ptr
   // COM: This expr will be kept as a value since #local_variable is referenced multiple times.
   // CHECK: llvm.intr.dbg.value #[[LOCALVAR]] #llvm.di_expression<[DW_OP_deref]>
-  debuginfo.value #local_variable #deref_expr = %arg2 : !llvm.ptr
+  debuginfo.value #local_variable #deref_expr = %v2 : !llvm.ptr
   // CHECK: llvm.intr.dbg.declare #[[LOCALVAR_STRUCT]] #llvm.di_expression<[DW_OP_LLVM_fragment(32, 32)]>
-  debuginfo.value #local_variable_struct #agg_expr = %arg2 : !llvm.ptr
+  debuginfo.value #local_variable_struct #agg_expr = %v2 : !llvm.ptr
   return
 }
 

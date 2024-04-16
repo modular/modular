@@ -94,7 +94,7 @@ insertDebugValueForVarDecl(VarDeclOp op,
       DebugInfo::DIUnresolvedMLIRType::get(op.getType().getElementType());
   auto varAttr = DebugInfo::DILocalVariableAttr::get(
       localScope, op.getNameAttr(), funcSpAttr.getFile(), fileLoc.getLine(),
-      /*arg=*/0,
+      /*arg=*/op.getArgShadowIndex().value_or(-1) + 1,
       /*alignInBits=*/0, sourceType);
 
   // The IR type needs to be deref'ed to get the source type. Encode the IR
@@ -107,6 +107,57 @@ insertDebugValueForVarDecl(VarDeclOp op,
   OpBuilder b(op->getContext());
   b.setInsertionPointAfter(op);
   return b.create<DebugInfo::ValueOp>(loc, op, varAttr, conversion);
+}
+
+/// Inserts a DebugInfo::ValueOp for this block argument if necessary.
+/// `funcSpAttr` is the DISubprogramAttr of the surrounding function `func`.
+static void insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
+                                      BlockArgument arg,
+                                      ArrayRef<PogMetadataAttr> pogList,
+                                      DebugInfo::DISubprogramAttr funcSpAttr) {
+  // Skip synthesized args.
+  if (arg.getArgNumber() >= pogList.size())
+    return;
+
+  StringRef name = pogList[arg.getArgNumber()].getName();
+  if (name.empty())
+    return;
+
+  Location loc = arg.getLoc();
+  auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
+  if (!fileLoc)
+    return;
+
+  DebugInfo::DIType sourceType;
+  DebugInfo::DIExprAttr diExpr;
+  ArgConvention convention =
+      func.getSignature().getArgConvention(arg.getArgNumber());
+  if (SignatureType::hasAddress(convention)) {
+    // If this argument has address, its source type is the raw type.
+    if (auto argRefType = dyn_cast<RefType>(arg.getType())) {
+      sourceType =
+          DebugInfo::DIUnresolvedMLIRType::get(argRefType.getElementType());
+      auto diPointerType =
+          DebugInfo::DITargetIndependentPointerType::get(sourceType);
+      auto newIrValue = DebugInfo::DIIRValueExprAttr::get(diPointerType);
+      diExpr = DebugInfo::DIDerefExprAttr::get(newIrValue);
+    }
+  }
+
+  if (!sourceType) {
+    // Otherwise, its source type is the arg type itself.
+    sourceType = DebugInfo::DIUnresolvedMLIRType::get(arg.getType());
+    diExpr = DebugInfo::DIIRValueExprAttr::get(sourceType);
+  }
+
+  DebugInfo::DILocalVariableAttr varAttr = DebugInfo::DILocalVariableAttr::get(
+      funcSpAttr, name, funcSpAttr.getFile(), fileLoc.getLine(),
+      arg.getArgNumber() + 1,
+      /*alignInBits=*/0, sourceType);
+  auto scopedLoc =
+      FusedLoc::get(varAttr.getContext(), {loc}, varAttr.getScope());
+
+  builder.create<DebugInfo::ValueOp>(scopedLoc, arg, varAttr, diExpr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -3025,39 +3076,56 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
   const bool genDebugInfo = compileUnit && compileUnit.getEmissionKind() ==
                                                DebugInfo::EmissionKind::Full;
 
-  func->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) -> WalkResult {
-    // Skip looking at nested functions, they are handled as separate contexts.
-    if (op != func && isa<LIT::FuncOp>(op)) {
-      hasClosures = true;
-      return WalkResult::skip();
-    }
+  SmallVector<bool> argShadowed(func.getNumArguments(), false);
+  func.getBody()->walk<mlir::WalkOrder::PreOrder>(
+      [&](Operation *op) -> WalkResult {
+        // Skip looking at nested functions, they are handled as separate
+        // contexts.
+        if (isa<LIT::FuncOp>(op)) {
+          hasClosures = true;
+          return WalkResult::skip();
+        }
 
-    // All the ops that define trackable values have a single result.
-    if (op->getNumResults() == 1) {
-      Value result = op->getResult(0);
-      if (auto trackable = LifetimeTrackable(result)) {
-        // Generate debug info for VarDecls if needed.
-        DebugInfo::DILocalVariableAttr debugVariable;
-        if (genDebugInfo)
-          if (auto varDecl = result.getDefiningOp<VarDeclOp>())
-            if (DebugInfo::ValueOp debugValue =
-                    insertDebugValueForVarDecl(varDecl, funcSpAttr))
-              debugVariable = debugValue.getValueInfo();
+        // All the ops that define trackable values have a single result.
+        if (op->getNumResults() == 1) {
+          Value result = op->getResult(0);
+          if (auto trackable = LifetimeTrackable(result)) {
+            // Generate debug info for VarDecls if needed.
+            DebugInfo::DILocalVariableAttr debugVariable;
+            if (genDebugInfo) {
+              if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
+                if (DebugInfo::ValueOp debugValue =
+                        insertDebugValueForVarDecl(varDecl, funcSpAttr))
+                  debugVariable = debugValue.getValueInfo();
+                if (varDecl.getArgShadowIndex())
+                  argShadowed[*varDecl.getArgShadowIndex()] = true;
+              }
+            }
 
-        valueSet.addValue(result, trackable, debugVariable);
-      }
-    }
+            valueSet.addValue(result, trackable, debugVariable);
+          }
+        }
 
-    // If there are any regions, check the block arguments for arguments.
-    for (auto &region : op->getRegions()) {
-      for (auto &block : region)
-        for (auto arg : block.getArguments())
-          if (auto trackable = LifetimeTrackable(arg))
-            valueSet.addValue(arg, trackable);
-    }
+        // If there are any regions, check the block arguments for arguments.
+        for (auto &region : op->getRegions()) {
+          for (auto &block : region)
+            for (auto arg : block.getArguments())
+              if (auto trackable = LifetimeTrackable(arg))
+                valueSet.addValue(arg, trackable);
+        }
 
-    return WalkResult::advance();
-  });
+        return WalkResult::advance();
+      });
+
+  ArrayRef<PogMetadataAttr> pogList =
+      func.getSignature().getArgListAttrs().getPogs();
+  OpBuilder debugBuilder = OpBuilder::atBlockBegin(func.getBody());
+  for (BlockArgument arg : func.getArguments()) {
+    if (genDebugInfo && !argShadowed[arg.getArgNumber()])
+      insertDebugVariableForArg(debugBuilder, func, arg, pogList, funcSpAttr);
+    if (auto trackable = LifetimeTrackable(arg))
+      valueSet.addValue(arg, trackable);
+  }
 
   // Walk #2: Scan the function and identify any uses of values that are not
   // defined, emitting diagnostics as we go.

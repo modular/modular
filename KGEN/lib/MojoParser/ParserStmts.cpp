@@ -2370,9 +2370,6 @@ ParseResult StmtParser::parseMLIRRegionStmt(LexerCursor startCursor,
   builder.createBlock(&op.getRegion());
   for (auto [regionArg, parsedArg] :
        llvm::zip(op.getRegion().addArguments(argTypes, argLocs), args)) {
-    // Generate debug info for the region argument if requested.
-    shared.buildArgDebugInfo(builder, regionArg, parsedArg.name);
-
     // Add the declaration for the argument within the region declaration.
     getDeclResolver().addFullyResolvedDecl(SBValue(regionArg), parsedArg.name,
                                            parsedArg.loc, &decl);

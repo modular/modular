@@ -7,6 +7,9 @@
 // CHECK: #[[DISP:.*]] = #debuginfo.subprogram<compileUnit = #{{.*}}, scope = #{{.*}}, name = <"test">, linkageName = "test", file = #{{.*}}, line = 1, scopeLine = 1, subprogramFlags = Definition>
 // CHECK: #[[DIVAR_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10> : ![[DI_S_TYPE]]
 // CHECK: #[[DIVAR_Y:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "y", file = #{{.*}}, line = 13> : ![[DI_S_TYPE]]
+// CHECK: #[[DIARG_X:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "x", file = #{{.*}}, line = 10, arg = 1> : ![[DI_S_TYPE]]
+// CHECK: #[[DIARG_YS:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "ys", file = #{{.*}}, line = 13, arg = 2>
+// CHECK: #[[DIARG_Z:.*]] = #debuginfo.local_variable<scope = #[[DISP]], name = "z", file = #{{.*}}, line = 15, arg = 3>
 
 #file = #debuginfo.file<"test.mlir" in "">
 #compile_unit = #debuginfo.compile_unit<sourceLanguage = DW_LANG_Mojo, file = #file, producer = "LIT", isOptimized = true, emissionKind = Full>
@@ -16,6 +19,7 @@
 #locUse = loc(fused<#sp>["test.mlir":12:10])
 #locY = loc(fused<#sp>["test.mlir":13:10])
 #locRet = loc(fused<#sp>["test.mlir":14:10])
+#locZ = loc(fused<#sp>["test.mlir":15:10])
 
 lit.struct.decl @S attributes {
   destructor =
@@ -32,8 +36,8 @@ lit.struct.decl @S attributes {
   }
 }
 
-// CHECK-LABEL: lit.func @test
-lit.func @test() -> index {
+// CHECK-LABEL: lit.func @test_var
+lit.func @test_var() -> index {
   // Create `x`.
   // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
   // CHECK-NEXT: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
@@ -85,4 +89,25 @@ lit.func @test_consumed() -> index {
   %y_a = lit.ref.struct.ger %y[a] : <index, mut ylife> from @S loc(#locRet)
   %y_a_val = lit.ref.load %y_a : <index, mut ylife> loc(#locRet)
   kgen.return %y_a_val : index loc(#locRet)
+} loc(fused<#sp>["test.mlir":10:10])
+
+// CHECK-LABEL: lit.func @test_arg(%x: {{.*}}, %ys: {{.*}}, %z:
+lit.func @test_arg(%x: !lit.ref<@S, mut *"x"> loc(#locX) owned_in_mem, %ys: !kgen.variadic<!lit.ref<@S, imm *"ys">, borrow_in_mem> loc(#locY) borrow|var, %z: index loc(#locZ) owned) -> index {
+  // CHECK: debuginfo.value #[[DIARG_X]] #[[DIEXPR_DEREF]] = %x
+  // CHECK-NOT: debuginfo.value {{.*}} = %ys
+  // CHECK-NOT: debuginfo.value {{.*}} = %z
+  %x_a = lit.ref.struct.ger %x[a] : <index, mut *"x"> from @S loc(#locUse)
+  %x_a_val = lit.ref.load %x_a : <index, mut *"x"> loc(#locUse)
+
+  // `ys` is shadowed (using a fake shadowing type for simplicity).
+  %yshadow = lit.var.decl "ys" arg(1) : !lit.ref<!kgen.variadic<@S, owned_in_mem>, mut *"ys"> loc(#locY)
+  // CHECK: %[[YSHADOW:.*]] = lit.var.decl "ys"
+  // CHECK: debuginfo.value #[[DIARG_YS]] {{.*}} = %[[YSHADOW]]
+
+  // `z` is shadowed.
+  %zshadow = lit.var.decl "z" arg(2) : !lit.ref<index, mut *"z"> loc(#locZ)
+  // CHECK: %[[ZSHADOW:.*]] = lit.var.decl "z"
+  // CHECK: debuginfo.value #[[DIARG_Z]] {{.*}} = %[[ZSHADOW]]
+
+  kgen.return %x_a_val : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])

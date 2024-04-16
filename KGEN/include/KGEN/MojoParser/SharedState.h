@@ -259,8 +259,6 @@ public:
   //===--------------------------------------------------------------------===//
   // Debug Info
 
-  /// Builds the debug info for a block argument if needed.
-  void buildArgDebugInfo(OpBuilder &builder, BlockArgument arg, StringRef name);
   /// Generate a debug subprogram for this function and set it in its location.
   void setLocationDebugScope(LIT::FuncOp funcOp);
   /// Get the debug source name for a symbol.
