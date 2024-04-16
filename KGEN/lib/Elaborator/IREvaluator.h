@@ -130,11 +130,6 @@ struct ImplNode {
     error = std::move(err);
   }
 
-  /// Print this tree to the provided indented stream. This preserves any
-  /// indentation provided by the caller to make it possible to nest things
-  /// nicely.
-  void print(mlir::raw_indented_ostream &os, bool printBindings = true);
-
   /// Get the current active evaluator instance.
   IREvaluator &getEvaluator() { return evaluator; }
 
@@ -148,20 +143,6 @@ struct ImplNode {
   /// from the actual name of the function.
   std::string baseName;
 
-  /// Calls to the same interface/generator should resolve to the same thing in
-  /// each func.
-  /// FIXME(#14998): Propagating bindings up the expansion graph is superlinear
-  /// with respect to the depth of the callgraph, because each node retains a
-  /// copy of the map, and each caller node takes the union of its callees'
-  /// maps.
-  /// FIXME: Recursion creates cycles in the callgraph, which when broken can
-  /// lead to a race on `bindings` when bindings propagation on a node circles
-  /// back at the same time another node is reading the bindings. Making it
-  /// shared prevents crashes, but means bindings propagation across cycles is
-  /// nondeterministic. The only way to correctly propagate bindings in the
-  /// presence of cycles is through fixed-point iteration...
-  Shared<DenseMap<std::pair<ParameterExprArrayAttr, GeneratorOp>, ImplNode *>>
-      bindings;
   /// When you have result parameters, we need to store them to access them from
   /// outer scopes.
   ParameterExprArrayAttr resultParams;
@@ -302,11 +283,6 @@ struct ParamNode {
   /// Return an error if expansion of this parameter node failed. If any
   /// implementation succeeded, return success instead.
   ErrorTreeOrSuccess collectErrorsOrSuccess();
-
-  /// Print this tree to the provided indented stream. This preserves any
-  /// indentation provided by the caller to make it possible to nest things
-  /// nicely.
-  void print(mlir::raw_indented_ostream &os, bool printBindings = true);
 
   /// The generator represented by this node.
   GeneratorOp gen;
