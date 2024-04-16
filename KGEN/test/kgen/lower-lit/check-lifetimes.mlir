@@ -1158,3 +1158,93 @@ lit.func @respectLifetimes[mut mylife](%s2: i1 borrow) -> !kgen.none {
   kgen.return %none : !kgen.none
 }
 
+// -----
+
+!Error = !lit.declref<@Error>
+lit.struct.decl @Error {
+  lit.struct.field a : index
+}
+
+!PythonObject = !lit.declref<@PythonObject>
+lit.struct.decl @PythonObject attributes {
+  destructor =
+    #kgen.symbol.constant<@PythonObject::@__del__> : !lit.signature<[1](!lit.ref<@PythonObject, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+  lit.struct.field a : index
+}
+
+!Context = !lit.declref<@Context>
+lit.struct.decl @Context attributes {destructor = #kgen.symbol.constant<@Context::@__del__> : !lit.signature<[1](!lit.ref<@Context, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+  lit.struct.field __new_repl_var : !kgen.pointer<pointer<!PythonObject>>
+  lit.struct.field __new_repl_var2 : !kgen.pointer<pointer<!PythonObject>>
+}
+
+// CHECK-LABEL: lit.func @createConditionallyInitializedImmortalReferenceInRepl
+lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut localError, mut localResult](
+  %__mojo_repl_arg : !lit.ref<!Context, mut topArg> byref,?,
+  %__error___1: !lit.ref<!Error, mut localError> byref_error,
+  %__result___2: !lit.ref<none, mut localResult> byref_result) throws|capturing -> i1 {
+
+  %2 = lit.ref.struct.ger %__mojo_repl_arg[__new_repl_var] : <pointer<pointer<!PythonObject>>, mut topArg> from !Context
+  %3 = lit.ref.load %2 : <pointer<pointer<!PythonObject>>, mut topArg>
+  %index_3 = kgen.param.constant = <get_sizeof(!PythonObject, current_target())>
+  %index_4 = kgen.param.constant = <get_alignof(!PythonObject, current_target())>
+  %4 = pop.aligned_alloc %index_4, %index_3 : <!PythonObject>
+  pop.store %4, %3 : !kgen.pointer<pointer<!PythonObject>>
+
+  // CHECK:  kgen.param.declare LOCAL_LIFETIME2: lifetime<1> = <#lit.lifetime>
+  // CHECK-NEXT:  %[[V3:.*]] = lit.ref.from_pointer.repl {{.*}} : <@PythonObject, mut LOCAL_LIFETIME2> {name = "np"}
+  // CHECK-NEXT:  [[V4:%*.]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error___1, %[[V3]])
+  // CHECK-NEXT:  hlcf.if [[V4]] {
+  // CHECK-NEXT:    lit.ownership.mark_initialized %__error___1
+  // CHECK-NEXT:    kgen.param.constant: i1 = <1>
+  // CHECK-NEXT:    lit.error_return
+  // CHECK-NEXT:  } else {
+  // CHECK-NEXT:    lit.ownership.mark_initialized %[[V3]]
+  // CHECK-NEXT:    hlcf.yield
+  // CHECK-NEXT:  }
+  kgen.param.declare LOCAL_LIFETIME2: lifetime<1> = <#lit.lifetime>
+  %5 = lit.ref.from_pointer.repl %4 : <!PythonObject, mut LOCAL_LIFETIME2> {name = "np"}
+  %6 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME2](%__error___1, %5) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
+  hlcf.if %6 {
+    lit.ownership.mark_initialized %__error___1 : <!Error, mut localError>
+    %7 = kgen.param.constant: i1 = <1>
+    lit.error_return %7 : i1
+  } else {
+    lit.ownership.mark_initialized %5 : <!PythonObject, mut LOCAL_LIFETIME2>
+    hlcf.yield
+  }
+
+  %12 = lit.ref.struct.ger %__mojo_repl_arg[__new_repl_var2] : <pointer<pointer<!PythonObject>>, mut topArg> from !Context
+  %13 = lit.ref.load %12 : <pointer<pointer<!PythonObject>>, mut topArg>
+  %14 = pop.aligned_alloc %index_4, %index_3 : <!PythonObject>
+  pop.store %14, %13 : !kgen.pointer<pointer<!PythonObject>>
+  // CHECK:  kgen.param.declare LOCAL_LIFETIME3: lifetime<1> = <#lit.lifetime>
+  // CHECK-NEXT:  %[[V8:.*]] = lit.ref.from_pointer.repl {{.*}} : <@PythonObject, mut LOCAL_LIFETIME3> {name = "np2"}
+  // CHECK-NEXT:  %[[V9:.*]] = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error___1, %[[V8]])
+  // CHECK-NEXT:  hlcf.if %[[V9]] {
+  // CHECK-NEXT:    lit.call @PythonObject::@__del__[mut LOCAL_LIFETIME2](%[[V3]])
+  // CHECK-NEXT:    lit.ownership.mark_initialized %__error___1
+  // CHECK-NEXT:    kgen.param.constant: i1 = <1>
+  // CHECK-NEXT:    lit.error_return
+  // CHECK-NEXT:  } else {
+  // CHECK-NEXT:    lit.ownership.mark_initialized %[[V8]] : <@PythonObject, mut LOCAL_LIFETIME3>
+  // CHECK-NEXT:    hlcf.yield
+  // CHECK-NEXT:  }
+  kgen.param.declare LOCAL_LIFETIME3: lifetime<1> = <#lit.lifetime>
+  %15 = lit.ref.from_pointer.repl %14 : <!PythonObject, mut LOCAL_LIFETIME3> {name = "np2"}
+  %16 = lit.call @import_module[mut localError, mut LOCAL_LIFETIME3](%__error___1, %15) : !lit.signature<[2](?, "__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!PythonObject, mut *[0,1]> byref_result) throws -> i1>
+  hlcf.if %16 {
+    lit.ownership.mark_initialized %__error___1 : <!Error, mut localError>
+    %7 = kgen.param.constant: i1 = <1>
+    lit.error_return %7 : i1
+  } else {
+    lit.ownership.mark_initialized %15 : <!PythonObject, mut LOCAL_LIFETIME3>
+    hlcf.yield
+  }
+
+  %none_5 = kgen.param.constant: none = <#kgen.none>
+  lit.ref.store %none_5, %__result___2 : <none, mut localResult>
+  %17 = kgen.param.constant: i1 = <0>
+  kgen.return %17 : i1
+}
+
