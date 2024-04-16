@@ -597,25 +597,6 @@ private:
   ElaborationState specializeGenerator(ImplNode *inode, ParamNode *genNode,
                                        ParamNode *from, bool addWaiter);
 
-  /// Attempt to fulfill specialization of a generator by looking for an
-  /// implementation in a precompiled module.
-  void specializeFromPackage(ImplNode *parent, ParamNode *genNode,
-                             FlatSymbolRefAttr linkRef, bool addWaiter);
-
-  struct PackageState;
-
-  /// Prepare and load a package state into the elaborator to retrieve concrete
-  /// specializations.
-  void loadPackageState(PackageState *state, FlatSymbolRefAttr linkRef);
-
-  /// Complete specialization of a generator from a loaded package.
-  void completeSpecializationFromPackage(PackageState *state, ImplNode *parent,
-                                         ParamNode *genNode, bool addWaiter);
-
-  /// Specialize a generator by scheduling an elaboration task.
-  void specializeFromSource(ImplNode *inode, ParamNode *genNode, bool addWaiter,
-                            SymbolRefAttr precompiled = {});
-
   /// Attempt to diagnose concrete recursion and break recursion where possible.
   /// Return true if recursion was broken at least once. The "generation" is
   /// used to know whether a visited flag is valid. It must be at least 1,
@@ -635,9 +616,6 @@ private:
   /// The callgraph being expanded.
   ExpansionGraph g;
 
-  /// The mutex to use when verifying elaborated function candidates.
-  llvm::sys::SmartRWMutex<true> verifyMutex;
-
   /// This is the cached parameter collector analysis.
   ThreadLocalCache<ParameterCollector::Analysis> paramCache;
 
@@ -649,42 +627,6 @@ private:
 
   /// Deferred generated symbols to append to the module.
   SmallVector<mlir::SymbolOpInterface> deferredSymbols;
-
-  /// State for a package reader.
-  struct PackageReaderState {
-    ~PackageReaderState() {
-      if (failed(reader.finalize()))
-        llvm::report_fatal_error("failed to finalize bytecode reader");
-    }
-
-    std::shared_ptr<llvm::SourceMgr> sourceMgr;
-    mlir::ParserConfig config;
-    mlir::BytecodeReader reader;
-    Block block;
-    ModuleOp module;
-    std::optional<SymbolTable> symtab;
-    llvm::sys::SmartRWMutex<true> mutex;
-  };
-
-  /// This struct represents the state of a package being elaborated.
-  struct PackageState {
-    /// Completion chain of the package state.
-    LLCL::AsyncValueRef<LLCL::Chain> ch;
-
-    /// The package link op.
-    PackageLinkOp link;
-
-    /// An error if the package encountered one during loading.
-    std::optional<Error> error;
-
-    /// The package reader state when the package is ready. If this is nullopt
-    /// when the chain is set, that means no precompiled symbols are
-    /// available.
-    std::unique_ptr<PackageReaderState> reader;
-  };
-
-  /// States for all packages encountered during elaboration.
-  Shared<DenseMap<StringAttr, std::unique_ptr<PackageState>>> packages;
 };
 } // namespace
 
@@ -1402,18 +1344,6 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     break;
   }
 
-  // If this generator is from a package, then attempt to find its
-  // specialization within it.
-  if (FlatSymbolRefAttr linkRef = genNode->gen.getPreCompiledModuleRefAttr())
-    specializeFromPackage(inode, genNode, linkRef, addWaiter);
-  else
-    specializeFromSource(inode, genNode, addWaiter);
-  return ElaborationState::skipNode();
-}
-
-void ElaboratorImpl::specializeFromSource(ImplNode *inode, ParamNode *genNode,
-                                          bool addWaiter,
-                                          SymbolRefAttr precompiled) {
   GeneratorOp gen = genNode->gen;
 
   // Bind all parameter values in this scope.
@@ -1466,8 +1396,6 @@ void ElaboratorImpl::specializeFromSource(ImplNode *inode, ParamNode *genNode,
                          gen.getSignature().getFnEffects()),
       gen.getInlineLevel(), gen.getExportKind(), gen.getDecorators(),
       gen.getLLVMMetadata());
-  if (precompiled)
-    newFunc.setPrecompiledBodyRefAttr(precompiled);
 
   // Insert the newFunc into the symbol table which will then know about it,
   // but it will also auto-rename the symbol for us in the case of conflicts.
@@ -1575,80 +1503,7 @@ void ElaboratorImpl::specializeFromSource(ImplNode *inode, ParamNode *genNode,
   }
   assert(genNode->numActive == 0 && "expected first implementation");
   initialScheduleImplNode(newFuncNode);
-}
-
-//===----------------------------------------------------------------------===//
-// ElaboratorImpl::specializeFromPackage
-//===----------------------------------------------------------------------===//
-
-void ElaboratorImpl::specializeFromPackage(ImplNode *parent, ParamNode *genNode,
-                                           FlatSymbolRefAttr linkRef,
-                                           bool addWaiter) {
-  auto [state,
-        inserted] = packages.modify([name = linkRef.getAttr(), this](auto &map)
-                                        -> std::pair<PackageState *, bool> {
-    if (auto it = map.find(name); it != map.end())
-      return {it->second.get(), false};
-    auto state = std::make_unique<PackageState>();
-    state->ch = AsyncValueRef<Chain>::allocate(runtime);
-    return {map.try_emplace(name, std::move(state)).first->second.get(), true};
-  });
-
-  // Keep the workqueue chain alive while this occurs.
-  g.numWorkItems.fetch_add(1);
-  state->ch.andThenAsync([state = state, parent, genNode, addWaiter, this] {
-    completeSpecializationFromPackage(state, parent, genNode, addWaiter);
-    signalWorklist();
-  });
-
-  // The first thread to access a package state gets to initialize it. Other
-  // threads will just go wait on the chain.
-  if (inserted) {
-    // Launch this as a task on another thread so that elaboration of whatever
-    // called into this can continue uninterrupted.
-    g.numWorkItems.fetch_add(1);
-    runtime.getWorkQueue()->addTask([state = state, linkRef, this] {
-      loadPackageState(state, linkRef);
-      signalWorklist();
-    });
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// ElaboratorImpl::loadPackageState
-//===----------------------------------------------------------------------===//
-
-void ElaboratorImpl::loadPackageState(PackageState *state,
-                                      FlatSymbolRefAttr linkRef) {
-  // Find the package link operation in the non-concrete module.
-  auto link = oldSymTab.lookup<PackageLinkOp>(linkRef.getAttr());
-  assert(link && "package reference does not refer to a package link op");
-  state->link = link;
-
-  // No bytecode is avaiable. Just signal waiters to call into
-  // `specializeFromSource`.
-  state->ch.copy().emplace();
-}
-
-//===----------------------------------------------------------------------===//
-// ElaboratorImpl::completeSpecializationFromPackage
-//===----------------------------------------------------------------------===//
-
-void ElaboratorImpl::completeSpecializationFromPackage(PackageState *state,
-                                                       ImplNode *parent,
-                                                       ParamNode *genNode,
-                                                       bool addWaiter) {
-  // If the package does not have a precompiled module available, then just
-  // specialize from the existing IR.
-  if (!state->error && !state->reader)
-    return specializeFromSource(parent, genNode, addWaiter);
-
-  // FIXME(#32285): We cannot use the post-elaboration IR because it may have
-  // the incorrect ABI. We transform the ABI after elaboration, but do tag the
-  // precompiled reference to ensure we re-use the LLVM compilation results.
-  return specializeFromSource(
-      parent, genNode, addWaiter,
-      FlatSymbolRefAttr::get(state->link.getSymNameAttr()));
+  return ElaborationState::skipNode();
 }
 
 //===----------------------------------------------------------------------===//
