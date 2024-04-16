@@ -11,7 +11,8 @@ from sys.info import has_neon, has_vnni
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.Matmul import GemmShape, MatmulConfig, MatmulInnerLoopBPacked
+from LinAlg.Matmul import GemmShape, MatmulConfig
+from LinAlg.Matmul import matmul_inner_loop as _matmul_inner_loop
 from LinAlg.MatmulUtils import get_matmul_arch_factor, get_mm_config
 
 from utils.index import Index
@@ -31,12 +32,13 @@ fn matmul_inner_loop[
     n: Int,
     k: Int,
 ):
-    MatmulInnerLoopBPacked[
+    _matmul_inner_loop[
         config,
         config.a_row_size,
         config.pack_inner_size,
-        True,  # skip bound check
-    ].run(
+        True,  # skip_col_bound
+        False,  # single_row_i8mm
+    ](
         c,
         a,
         b_packed,

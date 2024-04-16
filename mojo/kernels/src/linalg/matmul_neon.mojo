@@ -15,7 +15,7 @@ from .MatmulUtils import (
 )
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
-from .Matmul_v2 import InnerMatmulKernel, LoadStoreOutputTile
+from .Matmul import InnerMatmulKernel, LoadStoreOutputTile
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll

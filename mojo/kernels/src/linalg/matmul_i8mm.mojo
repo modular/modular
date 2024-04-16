@@ -21,7 +21,7 @@ from .MatmulUtils import (
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from .neon_intrinsics import _neon_matmul
-from .Matmul_v2 import InnerMatmulKernel
+from .Matmul import InnerMatmulKernel
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
