@@ -1109,10 +1109,6 @@ LogicalResult ParamOperatorAttr::verify(
     if (operands.size() != 1)
       return emitError() << "'rebind' expects one operand";
     break;
-  case POC::GetAllImpls:
-    if (operands.size() != 1)
-      return emitError() << "'get_all_impls' expects one operand";
-    break;
   case POC::VariadicGet: {
     if (operands.size() != 2)
       return emitError() << "'variadic_get' expected two operands";
@@ -2377,9 +2373,6 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::Rebind:
     result = simplifyRebind(operands, resultType);
-    break;
-  case POC::GetAllImpls:
-    // Do nothing.
     break;
   case POC::VariadicGet:
     result = simplifyVariadicGet(operands, resultType);

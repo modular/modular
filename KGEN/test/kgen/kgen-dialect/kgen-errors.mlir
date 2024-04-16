@@ -558,14 +558,6 @@ kgen.generator @declareWrongType() {
 
 // -----
 
-kgen.generator @noArgumentForGetAllImpl() {
-  // expected-error @below {{'get_all_impls' expects one operand}}
-  kgen.param.declare impls: variadic<!kgen.signature<() -> index>> = <get_all_impls()>
-  kgen.return
-}
-
-// -----
-
 kgen.generator @duplicate_decl<() -> out>() {
   // expected-note @below {{previous declaration here}}
   kgen.param.declare a = <5>

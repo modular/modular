@@ -665,20 +665,6 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
         return failure();
     return success();
   }
-  case (uint32_t)POC::GetAllImpls: {
-    auto varTy = dyn_cast_or_null<VariadicType>(type);
-    if (!varTy)
-      return p.emitError(p.getCurrentLocation(),
-                         "expected a variadic type for 'get_all_impls'");
-    auto sigTy = dyn_cast<SignatureType>(varTy.getElementType());
-    if (!sigTy)
-      return p.emitError(
-          p.getCurrentLocation(),
-          "expected a variadic of signatures type for 'get_all_impls'");
-    if (parseParamValue(p, operands.emplace_back(), sigTy))
-      return failure();
-    return success();
-  }
   case (uint32_t)POC::VariadicGet: {
     if (parseParamValue(p, operands.emplace_back(), type) || p.parseComma() ||
         parseIndexParamValue(p, operands.emplace_back()))
