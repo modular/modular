@@ -533,14 +533,6 @@ private:
                                           ArrayRef<ParamDeclAttr> decls,
                                           ImplNode *thisNode, ImplNode *node);
 
-  /// Complete generator user processing with a list of valid concrete
-  /// implementations with consistent bindings. Multi-version the currente node
-  /// if required.
-  ElaborationState
-  completeGeneratorUserProcessing(GeneratorUserOpInterface user,
-                                  ArrayRef<ParamDeclAttr> decls,
-                                  ImplNode *parent, ImplNode *concrete);
-
   /// Given a user of a completed parameter node, collect concrete
   /// implementations whose bindings are consistent with the current node.
   FailureOr<ImplNode *> collectConcreteImplementations(Operation *user,
@@ -862,22 +854,7 @@ ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
   }
 
   // If this resolved to a direct function call, there are no parameters.
-  ArrayRef<ParamDeclAttr> decls = user.getParamDecls();
-  if (!inputParamKey)
-    return completeCallProcessing(user, decls, concrete, parent);
-
-  return completeGeneratorUserProcessing(user, decls, parent, concrete);
-}
-
-//===----------------------------------------------------------------------===//
-// ElaboratorImpl::completeGeneratorUserProcessing
-//===----------------------------------------------------------------------===//
-
-ElaborationState ElaboratorImpl::completeGeneratorUserProcessing(
-    GeneratorUserOpInterface user, ArrayRef<ParamDeclAttr> decls,
-    ImplNode *parent, ImplNode *concrete) {
-  // Call completeGeneratorUserProcessing on the first concrete thing.
-  return completeCallProcessing(user, decls, concrete, parent);
+  return completeCallProcessing(user, user.getParamDecls(), concrete, parent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1117,7 +1094,7 @@ void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
       // the forks will correctly get rescheduled on the worklists with no
       // stacks, and then immediately fallthrough to this function.
       ElaborationState result =
-          completeGeneratorUserProcessing(call, {}, inode, *concrete);
+          completeCallProcessing(call, {}, *concrete, inode);
       if (result.isError())
         break;
       assert(!result.shouldSkipNode() && !result.shouldSkipFrame() &&
@@ -1772,24 +1749,6 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
 }
 
 //===----------------------------------------------------------------------===//
-// elaborateGenerators
-//===----------------------------------------------------------------------===//
-
-static LogicalResult elaborateGenerators(
-    mlir::SymbolTableAnalysis &symtab, ParameterCollector::Analysis &paramCache,
-    LLCL::Runtime &runtime, TargetInfoAttr target,
-    ArrayRef<GeneratorOp> primaryGenerators, ElaboratorCallbacks callbacks,
-    const ElaborateGeneratorsOptions &config) {
-  CompilerTimeTraceScope traceScope("elaborate-generators");
-  ModuleOp theModule = symtab.getTopLevelOp<ModuleOp>();
-
-  // Now, construct and run the elaborator.
-  ElaboratorImpl impl(symtab.getTopLevelSymbolTable(), paramCache, target,
-                      std::move(callbacks), runtime, config);
-  return impl.run(theModule, primaryGenerators);
-}
-
-//===----------------------------------------------------------------------===//
 // ElaborateGeneratorsPass
 //===----------------------------------------------------------------------===//
 
@@ -1841,7 +1800,7 @@ public:
         });
     ModuleOp theModule = getOperation();
 
-    auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+    auto &symtab = getAnalysis<mlir::SymbolTableAnalysis>();
     auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
     // Root elaboration on exports and global variables. These are the
@@ -1849,7 +1808,7 @@ public:
     // generators, then elaborate anything with no input parameters.
     DenseSet<GeneratorOp> roots;
     auto addAsRoot = [&](SymbolRefAttr ref) {
-      roots.insert(analysis.getTopLevelSymbolTable().lookup<GeneratorOp>(
+      roots.insert(symtab.getTopLevelSymbolTable().lookup<GeneratorOp>(
           cast<FlatSymbolRefAttr>(ref).getValue()));
     };
     for (Operation &op : theModule.getOps()) {
@@ -1890,8 +1849,13 @@ public:
     ElaborateGeneratorsOptions config{enableSearch, allowMultiplePrimaryImpls,
                                       maxDepth, elaborateDebugInfo,
                                       diagAllFailures};
-    if (failed(elaborateGenerators(analysis, paramCache, *rt, target,
-                                   primaryGenerators, callbacks, config)))
+
+    CompilerTimeTraceScope traceScope("elaborate-generators");
+
+    // Now, construct and run the elaborator.
+    ElaboratorImpl impl(symtab.getTopLevelSymbolTable(), paramCache, target,
+                        std::move(callbacks), *runtime, config);
+    if (failed(impl.run(theModule, primaryGenerators)))
       return signalPassFailure();
   }
 
