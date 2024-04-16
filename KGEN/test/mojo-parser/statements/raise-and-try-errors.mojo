@@ -38,7 +38,6 @@ fn raise_bad_type() raises:
 # Parser crashes on incomplete decorator
 @ # expected-error {{missing decorator expression after '@'}}
 fn m # expected-error {{expected '(' for argument list}}
-#expected-error @-1 {{expected body statements; use 'pass' if none is required}}
 
 # Issue #6909
 # expected-error @below {{expected name for 'alias' declaration}}
