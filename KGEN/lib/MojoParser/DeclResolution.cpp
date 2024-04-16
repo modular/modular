@@ -22,6 +22,7 @@
 #include "KGEN/MojoParser/ParserBase.h"
 #include "KGEN/MojoParser/StructEmitter.h"
 #include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/ToolCommon/CompilationOptions.h"
 #include "Support/Compiler/OperationUtils.h"
 
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -1049,9 +1050,9 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
 /// Given a value of !kgen.variadic<..> construct a VariadicList and return
 /// the variable declaration holding it.
-static Operation *makeVarArgWrapper(const CValue &argValue, StringAttr argName,
-                                    ASTDecl &parentDecl, ExprEmitter &emitter,
-                                    SMLoc loc) {
+static VarDeclOp makeVarArgWrapper(const CValue &argValue, StringAttr argName,
+                                   ASTDecl &parentDecl, ExprEmitter &emitter,
+                                   SMLoc loc) {
   // Expr to provide location information.
   SyntheticNode srcLoc(loc);
 
@@ -1127,14 +1128,13 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
       shared.notifyListenerOnArgumentDecl(argDecl, argName, argDecl.getLoc());
     };
 
-    shared.buildArgDebugInfo(*emitter.builder, bbArg, argName);
-
     // VarArg arguments are projected into a VariadicList.
     if (funcSignature.isPosVarArg(argIdx)) {
       auto declOp = makeVarArgWrapper(SRValue(bbArg), argName, decl, emitter,
                                       argDecl.getLoc());
       if (!declOp)
         return failure();
+      declOp.setArgShadowIndex(bbArg.getArgNumber());
       setDecl(DeclIRValue(declOp));
       continue;
     }
@@ -1142,10 +1142,10 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
     // If this is an owned argument in a register, we project it into a vardecl
     // so that it is mutable in the callee.
     if (convention == ArgConvention::OwnedInReg) {
-      setDecl(
-          emitter
-              .makeArgLValueVarSlot(SRValue(bbArg), argName, argDecl.getLoc())
-              .getOperation());
+      VarDeclOp declOp = emitter.makeArgLValueVarSlot(SRValue(bbArg), argName,
+                                                      argDecl.getLoc());
+      declOp.setArgShadowIndex(bbArg.getArgNumber());
+      setDecl(declOp.getOperation());
       continue;
     }
 

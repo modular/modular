@@ -782,6 +782,9 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
     synthesized (which suppresses some warnings).  This type defines a lifetime
     and returns a mutable reference to its result in that lifetime.
 
+    For implicitly declared VarDecls, an optional `argShadowIndex` specifies
+    which argument number this VarDecl was created to shadow.
+
     Example:
 
     ```mlir
@@ -791,11 +794,13 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
 
   let arguments = (ins StrAttr:$name, LIT_VarDeclKindAttr:$kind,
                        KGEN_ParamDeclAttr:$paramDecl,
-                       OptionalAttr<LIT_DocStringAttr>:$docString);
+                       OptionalAttr<LIT_DocStringAttr>:$docString,
+                       OptionalAttr<I32Attr>:$argShadowIndex);
   let results = (outs LIT_RefType:$result);
 
   let assemblyFormat = [{
-    $name `` $kind `:` custom<VarDeclType>(type($result), $paramDecl) attr-dict
+    $name `` $kind (`(` $argShadowIndex^ `)`)? `:`
+    custom<VarDeclType>(type($result), $paramDecl) attr-dict
   }];
 
   let builders = [
@@ -806,6 +811,7 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
   let extraClassDeclaration = [{
     bool isSynthetic();
   }];
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

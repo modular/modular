@@ -139,18 +139,3 @@ void SharedState::setLocationDebugScope(LIT::FuncOp funcOp) {
       fileLineCol.getLine(), spFlags, type);
   funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
 }
-
-void SharedState::buildArgDebugInfo(OpBuilder &builder, BlockArgument arg,
-                                    StringRef name) {
-  if (!diBuilder || options.debugLevel != CompilationOptions::kFullDebugInfo)
-    return;
-
-  auto argLoc = arg.getLoc()->findInstanceOf<FileLineColLoc>();
-  DebugInfo::DILocalVariableAttr varAttr = diBuilder->createLocalVariable(
-      name, diBuilder->createFile(argLoc), argLoc.getLine(),
-      arg.getArgNumber() + 1,
-      /*alignInBits=*/0, DebugInfo::DIUnresolvedMLIRType::get(arg.getType()));
-  auto scopedLoc =
-      FusedLoc::get(varAttr.getContext(), {argLoc}, varAttr.getScope());
-  builder.create<DebugInfo::ValueOp>(scopedLoc, arg, varAttr);
-}

@@ -679,11 +679,12 @@ static void convertDbgValueToDeclare(ModuleOp module) {
         } else {
           ArrayRef<LLVM::DIExpressionElemAttr> location =
               op.getLocationExpr().getOperations();
-          if (!location.empty() &&
+          if (!isa<BlockArgument>(op.getValue()) && !location.empty() &&
               location.front().getOpcode() == llvm::dwarf::DW_OP_deref) {
             // For cases where the locationExpr begins with a deref, just
             // pop off the initial deref and convert directly into a
             // DbgDeclareOp. In this case no alloca needs to be created.
+            // Block args however are not compatible directly with DbgDeclare.
             auto refLocation = LLVM::DIExpressionAttr::get(
                 op->getContext(), location.drop_front());
             OpBuilder(op).create<LLVM::DbgDeclareOp>(

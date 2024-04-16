@@ -3,7 +3,6 @@
 
 // MAIN_IN_PACKAGE: defining 'main' within a package is not yet supported
 
-// CHECK-DAG: #local_variable{{[0-9]+}} =
 // CHECK-DAG: !subroutine{{[0-9]+}} =
 
 // CHECK: lit.package @test_package
@@ -14,7 +13,6 @@
 // CHECK:   lit.file_module @myfile
 // CHECK:     lit.struct.decl @Struct
 // CHECK:       lit.func @"parametric{{.*}}<{{.*}}>
-// CHECK-NEXT:    debuginfo.value
 // CHECK-NEXT:    kgen.param.constant
 // CHECK-NEXT:    lit.return
 // CHECK:       lit.func @"foo{{.*}}"{{.*}}preCompiledModuleRef = {{.*}}
@@ -22,7 +20,6 @@
 
 // CHECK: lit.struct.decl @ParametricStruct<{{.*}}: !Int>
 // CHECK:       lit.func @"foo(
-// CHECK-NEXT:    debuginfo.value
 // CHECK-NEXT:    kgen.param.constant
 // CHECK-NEXT:    lit.return
 
