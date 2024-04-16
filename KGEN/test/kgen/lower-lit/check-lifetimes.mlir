@@ -834,6 +834,60 @@ lit.struct.decl @ThrowingSelfInit attributes {destructor = #kgen.symbol.constant
 
 // -----
 
+// COM: Track Result References
+
+!Int = !lit.declref<@Int>
+lit.struct.decl @Int register_passable_trivial {
+  lit.struct.field value : index
+}
+
+!Node = !lit.declref<@Node>
+lit.struct.decl @Node attributes {
+  destructor =
+    #kgen.symbol.constant<@Node::@__del__> : !lit.signature<[1](!lit.ref<@Node, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+  lit.struct.field a : index
+}
+
+!Container = !lit.declref<@Container>
+lit.struct.decl @Container attributes {
+  destructor =
+    #kgen.symbol.constant<@Container::@__del__> : !lit.signature<[1](!lit.ref<@Container, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+  lit.struct.field z : !Node
+}
+
+!Wrapper = !lit.declref<@Wrapper>
+lit.struct.decl @Wrapper attributes {destructor = #kgen.symbol.constant<@Wrapper::@__del__> : !lit.signature<[1](!lit.ref<@Wrapper, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+  lit.struct.field tail : !Int
+  lit.struct.field y : !kgen.pointer<!Container>
+}
+
+// CHECK-LABEL: lit.func @indirectReferences
+lit.func @indirectReferences[mut mylife](%s2: i1 borrow, %wrapper: !lit.ref<@Wrapper, mut mylife> borrow_in_mem) -> !kgen.none {
+  // CHECK-NEXT:  hlcf.if %s2 {
+  // CHECK-NEXT:    %[[V4:.*]] = lit.call @Wrapper::@__get_ref[mut mylife](%wrapper)
+  // CHECK-NEXT:    %[[V5:.*]] = lit.ref.struct.ger %[[V4]][z] : <@Node, mut mylife> from @Container
+  // CHECK-NEXT:    %[[V6:.*]] = lit.call @Node::@__del__[mut mylife](%[[V5]])
+  // CHECK-NEXT:    lit.call @Node::@__init__[mut mylife](%[[V5]])
+  // CHECK-NEXT:    hlcf.yield
+  hlcf.if %s2 {
+    %trackedByLifetime0 = lit.call @Wrapper::@__get_ref[mut mylife](%wrapper) : !lit.signature<[1](!lit.ref<!Wrapper, mut *[0,0]> borrow_in_mem) -> !lit.ref<!Container, mut mylife>>
+    %trackedByLifetime1 = lit.ref.struct.ger %trackedByLifetime0[z] : <!Node, mut mylife> from !Container
+    %8 = lit.call @Node::@__init__[mut mylife](%trackedByLifetime1) : !lit.signature<[1](!lit.ref<@Node, mut *[0,0]> init_self) -> !kgen.none>
+    hlcf.yield
+  } else {
+    hlcf.yield
+  }
+
+  // overwrite 'tail' to trigger the reset of some bits within Wrapper
+  %tail = lit.ref.struct.ger %wrapper[tail] : <!Int, mut mylife> from !Wrapper
+  %6 = kgen.param.constant: !Int = <{0}>
+  lit.ref.store %6, %tail : <!Int, mut mylife>
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// -----
+
 // COM: Test Error/Success Region in Partially Initialized Value
 
 !DestructSome = !lit.declref<@DestructSome>
@@ -1056,3 +1110,51 @@ copy :!lit.signature<[2]("self": !lit.ref<!iter, mut *[0,0]> init_self, |, "exis
   lit.struct.field start : !Int
   lit.struct.field end : !Int
 }
+
+// -----
+
+// COM: Verify that lifetimes are respected.
+
+!Int = !lit.declref<@Int>
+lit.struct.decl @Int register_passable_trivial {
+  lit.struct.field value : index
+}
+!Reference = !lit.declref<@Reference>
+lit.struct.decl @Reference register_passable_trivial {
+  lit.struct.field value : !kgen.pointer<index>
+}
+
+!MyStruct = !lit.declref<@MyStruct>
+lit.struct.decl @MyStruct attributes {
+  destructor =
+    #kgen.symbol.constant<@MyStruct::@__del__> : !lit.signature<[1](!lit.ref<@MyStruct, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+  lit.struct.field a : !Int
+}
+
+!Wrapper = !lit.declref<@Wrapper>
+lit.struct.decl @Wrapper attributes {destructor = #kgen.symbol.constant<@Wrapper::@__del__> : !lit.signature<[1](!lit.ref<@Wrapper, mut *[0,0]> owned_in_mem) -> !kgen.none>} {
+  lit.struct.field y : !kgen.pointer<!Int>
+}
+
+// CHECK-LABEL: lit.func @respectLifetimes
+lit.func @respectLifetimes[mut mylife](%s2: i1 borrow) -> !kgen.none {
+  // CHECK-NEXT: %v = lit.var.decl "v" var : !lit.ref<@Wrapper, mut *"v`5">
+  // CHECK-NEXT: lit.call @Wrapper::@__init__[mut *"v`5"](%v)
+  // CHECK-NEXT: %[[V1:.*]] = lit.call @Wrapper::@__get_ref[mut *"v`5"](%v)
+  // CHECK-NEXT: %[[V2:.*]] = lit.call @Reference::@__get_ref[mut *"v`5"](%[[V1]])
+  // CHECK-NEXT: %[[V3:.*]] = lit.ref.struct.ger %[[V2]][a] : <@Int, mut *"v`5"> from @MyStruct
+  // CHECK-NEXT: %[[V4:.*]] = lit.ref.immut %[[V3]] : <@Int, mut *"v`5">
+  // CHECK-NEXT: lit.call @print[muttoimm *"v`5"](%[[V4]])
+  // CHECK-NEXT: lit.call @Wrapper::@__del__[mut *"v`5"](%v)
+
+  %v = lit.var.decl "v" var : !lit.ref<@Wrapper, mut *"v`5">
+  %1 = lit.call @Wrapper::@__init__[mut *"v`5"](%v) : !lit.signature<[1]("self" : !lit.ref<@Wrapper, mut *[0,0]> init_self, |) -> !kgen.none>
+  %refWrapper = lit.call @Wrapper::@__get_ref[mut *"v`5"](%v) : !lit.signature<[1](!lit.ref<!Wrapper, mut *[0,0]> borrow_in_mem) -> !Reference>
+  %ref = lit.call @Reference::@__get_ref[mut *"v`5"](%refWrapper) : !lit.signature<[1](!Reference borrow) -> !lit.ref<!MyStruct, mut *[0,0]>>
+  %35 = lit.ref.struct.ger %ref[a] : <!Int, mut *"v`5"> from !MyStruct
+  %36 = lit.ref.immut %35 : <!Int, mut *"v`5">
+  %41 = lit.call @print[muttoimm *"v`5"](%36) : !lit.signature<[1]("first": !lit.ref<!Int, imm *[0,0]> borrow_in_mem) -> !kgen.none>
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
