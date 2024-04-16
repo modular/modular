@@ -70,13 +70,6 @@ public:
   /// Get the pre-elaboration symbol table we can slice from.
   const SymbolTable &getSliceSymTab() const { return oldSymTab; }
 
-  /// Get all the concrete functions for the given symbol. If the symbol is a
-  /// function already, append it to the list and move on, otherwise,
-  /// elaborate it and append all the concrete implementations.
-  virtual std::optional<ErrorTreeOrSuccess> getAllConcreteFunctions(
-      ImplNode *parent, Location loc, FlatSymbolRefAttr symbolRef,
-      ArrayRef<TypedAttr> paramValues, std::vector<FuncOp> &funcs) = 0;
-
   /// Get the functor for compiling a generator to assembly.
   virtual ElaboratorCompileAsmFnRef
   getCompileAsmFn(ASMFormat format = ASMFormat::ASM) const = 0;

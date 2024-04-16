@@ -26,7 +26,7 @@ kgen.generator @call() {
   kgen.return
 }
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator export @main() {
   kgen.call @getattr() : () -> ()
   kgen.call @call() : () -> ()
