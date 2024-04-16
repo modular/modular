@@ -99,7 +99,7 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     name = refFromPtr.getNameAttr();
     isIndirect = true;
     startsUninit = true;
-    endInitState = EndsInit;
+    endInitState = InitOnNormal;
     return;
   }
 
