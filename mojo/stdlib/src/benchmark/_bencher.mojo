@@ -197,6 +197,13 @@ struct Mode:
         return self.value == other.value
 
 
+fn _argv_no_progress() -> Bool:
+    for arg in argv():
+        if arg == "--no-progress":
+            return True
+    return False
+
+
 @value
 struct Bench:
     """Defines the main Benchmark struct which executes a Benchmark and print result.
@@ -411,7 +418,8 @@ struct Bench:
             return b.elapsed
 
         var full_name = bench_id.func_name + "/" + bench_id.input_id.value() if bench_id.input_id else bench_id.func_name
-        print("Running", full_name, "...", end="")
+        if not _argv_no_progress():
+            print("Running", full_name, "...", end="")
 
         var res = _run_impl(
             _RunOptions[benchmark_fn](
@@ -422,7 +430,6 @@ struct Bench:
                 max_runtime_secs=self.config.max_runtime_secs,
             )
         )
-        print("done.")
 
         self.info_vec.append(
             BenchmarkInfo(
