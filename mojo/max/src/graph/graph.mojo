@@ -15,7 +15,7 @@ instructions. `Graph`s aren't called directly from Mojo, but are instead
 compiled and executed by MAX Engine, for example using the MAX Engine API.
 """
 
-from collections import Optional
+from collections import Optional, Set
 from sys.info import has_neon
 from tensor import Tensor
 
@@ -73,6 +73,7 @@ struct Graph(CollectionElement, Stringable):
         var function_type = _mlir.builtin_types.FunctionType(
             ctx, in_types.to_mlir(ctx), out_types.to_mlir(ctx)
         )
+
         var op = _c.graph_new(
             module,
             loc,
@@ -81,6 +82,25 @@ struct Graph(CollectionElement, Stringable):
                 ctx, in_types.to_mlir(ctx), out_types.to_mlir(ctx)
             ),
         )
+
+        var parameters = Set[String]()
+        for in_type in in_types.elts:
+            parameters |= in_type[].parameters()
+        var input_params_str = String("#kgen<param.decls[")
+        var i = 0
+        for parameter in parameters:
+            if i != 0:
+                input_params_str += ", "
+            i += 1
+            input_params_str += parameter[] + ": index"
+        input_params_str += "]>"
+        try:
+            var input_params = _mlir.Attribute.parse(ctx, input_params_str)
+            op.set_inherent_attr("inputParams", input_params)
+        except e:
+            print(e)
+            abort[NoneType]("failed to build kgen decl attr")
+
         self.__init__(op)
 
     fn __str__(self) -> String:

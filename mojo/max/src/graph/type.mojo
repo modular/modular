@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Library for graph Symbol Types."""
 
+from collections import Set
 from tensor import TensorSpec
 from utils.variant import Variant
 
@@ -599,6 +600,13 @@ struct MOTensor(CollectionElement):
         """
         return Self(dtype, self.dims, self.ranked)
 
+    fn parameters(self) -> Set[String]:
+        var parameters = Set[String]()
+        for dim in self.dims:
+            if dim[].is_symbolic():
+                parameters.add(dim[].value.get[SymbolicDim]()[].name)
+        return parameters^
+
 
 @value
 struct MOList(CollectionElement):
@@ -632,6 +640,9 @@ struct MOList(CollectionElement):
             An _mlir.Type in the specified Context.
         """
         return _c.list_type_new(ctx, self.eltype.to_mlir(ctx))
+
+    fn parameters(self) -> Set[String]:
+        return self.eltype.parameters()
 
 
 @value
@@ -725,6 +736,13 @@ struct AnyMOType(CollectionElement):
         else:
             debug_assert(_c.type_is_tensor(t), "MO type variants")
             return Self(MOTensor.from_mlir(t))
+
+    fn parameters(self) -> Set[String]:
+        if self.type.isa[MOTensor]():
+            return self.type.get[MOTensor]()[].parameters()
+        else:
+            debug_assert(self.type.isa[MOList](), "MO type variants")
+            return self.type.get[MOList]()[].parameters()
 
 
 @value
