@@ -2,7 +2,7 @@
 
 // Recursive expansions.
 
-// expected-note @below {{no viable expansions found}}
+// expected-note @below {{function instantiation failed}}
 // expected-note-re @below {{elaborator expansion is {{[0-9]+}} levels deep - infinite recursion?}}
 // expected-note-re @below {{error recurses {{[0-9]+}} times}}
 // expected-note @below {{remaining errors after}}
@@ -12,7 +12,7 @@ kgen.generator @genItf3<x>() {
   kgen.return
 }
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator @use_Itf3two() {
   // expected-note @+1 {{call expansion failed}}
   kgen.call @genItf3<2>() : () -> ()
@@ -28,7 +28,7 @@ kgen.generator @getSIMDLength<dt: dtype -> length>() {
   kgen.return
 }
 
-// expected-error @+1 {{no viable expansions found}}
+// expected-error @+1 {{function instantiation failed}}
 kgen.generator @brokenVLenAssert() {
   kgen.call @getSIMDLength<:dtype f32 -> flen>() : () -> ()
 
@@ -39,7 +39,7 @@ kgen.generator @brokenVLenAssert() {
 
 // -----
 
-// expected-error @+1 {{no viable expansions found}}
+// expected-error @+1 {{function instantiation failed}}
 kgen.generator @unfoldableIndex() {
   kgen.param.declare x = <4>
 
@@ -56,7 +56,7 @@ kgen.generator @unfoldableIndex() {
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator @sizeof_unknown() {
   // expected-note @below {{could not simplify operator get_sizeof}}
   %0 = kgen.param.constant = <get_sizeof(!opaque<"type">, #target)>
@@ -72,7 +72,7 @@ kgen.generator @cant_interpret(%arg0: index) -> index {
   kgen.return %0 : index
 }
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator @interp_func() {
   // expected-note @below {{failed to evaluate 'apply'}}
   %0 = kgen.param.constant = <apply(:(index) -> index @cant_interpret, 1)>
@@ -96,7 +96,7 @@ kgen.generator @passthrough() -> index {
   kgen.return %idx0 : index
 }
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator @call_it() {
   // expected-note @below {{failed to evaluate 'apply'}}
   kgen.param.constant = <apply(:() -> index @passthrough)>
@@ -106,7 +106,7 @@ kgen.generator @call_it() {
 
 // -----
 
-// expected-error @+1 {{no viable expansions found}}
+// expected-error @+1 {{function instantiation failed}}
 kgen.generator @brokenVLenAssert() {
   kgen.param.declare B : !kgen.string = <"foo">
 
@@ -117,7 +117,7 @@ kgen.generator @brokenVLenAssert() {
 
 // -----
 
-// expected-note @below {{no viable expansions found}}
+// expected-note @below {{function instantiation failed}}
 kgen.generator @paramRecurse<() -> out>() {
   // expected-note @below {{recursive call to function with result parameters}}
   kgen.call @paramRecurse<[] -> val>() : () -> ()
@@ -125,7 +125,7 @@ kgen.generator @paramRecurse<() -> out>() {
   kgen.return
 }
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator export @caller() {
   // expected-note @below {{call expansion failed - no concrete specializations}}
   kgen.call @paramRecurse<[] -> v>() : () -> ()
@@ -136,7 +136,7 @@ kgen.generator export @caller() {
 
 // COM: Unused `kgen.param.declare` should not be ignored.
 
-// expected-note @below {{no successful concrete nodes}}
+// expected-note @below {{function instantiation failed}}
 kgen.generator @fail_if_zero<value>() -> index {
   %0 = index.constant 0
   // expected-note @below {{constraint failed: must not be zero!}}
@@ -144,7 +144,7 @@ kgen.generator @fail_if_zero<value>() -> index {
   kgen.return %0 : index
 }
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator @unused_param_declare() {
   kgen.param.declare unused = <apply(:() -> index bind_signature(:<index>() -> index @fail_if_zero, 0))>
   kgen.return
@@ -152,7 +152,7 @@ kgen.generator @unused_param_declare() {
 
 // -----
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator @invalid_rebind(%arg0: !pop.scalar<si32>) {
   kgen.param.declare dt: dtype = <ui32>
   // expected-note @below {{error: rebind input type '!pop.scalar<si32>' does not match result type '!pop.scalar<ui32>'}}
@@ -168,7 +168,7 @@ kgen.generator @fails() -> index {
   kgen.unreachable
 }
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator @failed_apply() {
   // expected-note @below {{failed to evaluate 'apply'}}
   kgen.param.apply value = [() -> index: @fails]()
@@ -178,7 +178,7 @@ kgen.generator @failed_apply() {
 
 // -----
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator @failed_param_rebind() {
   // expected-note @below {{rebind input type 'i64' does not match result type 'i32'}}
   kgen.param.declare value: i32 = <rebind(:i64 2)>
@@ -203,7 +203,7 @@ kgen.generator @function<param>() {
   kgen.return
 }
 
-// expected-error @below {{no viable expansions found}}
+// expected-error @below {{function instantiation failed}}
 kgen.generator export @invalid_param_ref() {
   // expected-note @below {{cannot reference parametric function}}
   kgen.cost_of[<index>() -> (): @function]

@@ -268,16 +268,6 @@ struct ParamNode {
   /// if the node has been concretized, then the op is a FuncOp.
   ErrorTreeOr<FuncOp> getFirstConcreteFunc();
 
-  /// Get all the concrete nodes in the tree rooted on `this`. This is useful
-  /// when you have something like a GeneratorInterface that can concretize to
-  /// multiple valid generators, and from that multiple functions.
-  void getAllConcreteNodes(std::vector<ImplNode *> &nodes);
-
-  /// Get all the concrete functions in the tree rooted on `this`. Exactly the
-  /// same as `getAllConcreteNodes` above, but only returns the FuncOp. Useful
-  /// when you don't need the full ParamNode.
-  void getAllConcreteFuncs(std::vector<FuncOp> &funcs);
-
   /// Return an error if expansion of this parameter node failed. If any
   /// implementation succeeded, return success instead.
   ErrorTreeOrSuccess collectErrorsOrSuccess();
@@ -290,10 +280,8 @@ struct ParamNode {
   /// order of the callgraph.
   size_t depth;
 
-  /// The children of a node are specializations. They may not be fully concrete
-  /// in the case of e.g. an interface - where the children are generators that
-  /// themselves have children.
-  std::vector<std::unique_ptr<ImplNode>> impls;
+  /// The instantiation of the parametric function.
+  std::unique_ptr<ImplNode> impl;
   /// The mutex for accessing the implementation list.
   llvm::sys::SmartRWMutex<true> implsMutex;
 
