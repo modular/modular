@@ -1627,13 +1627,18 @@ cc_binary(
     ],
 )
 
-# TODO: Missing some compiler flags from cmake
 cc_binary(
     name = "mojo-repl-entry-point",
     srcs = glob([
         "tools/mojo-repl-entry-point/*.cpp",
         "tools/mojo-repl-entry-point/*.h",
     ]),
+    # We need to prevent inline function expansion to guarentee our entry
+    # point function is correctly invoked.
+    copts = [
+        "-O0",
+        "-g0",
+    ],
     deps = [
         ":CompilerRT.static",
         ":MojoParser",
