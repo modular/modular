@@ -622,13 +622,6 @@ private:
     });
   }
 
-  /// Implement the evaluator hook. This function ensures that all active work
-  /// items on the workqueue are completed or suspended before running the
-  /// evaluator, to ensure that, at least with respect to this compiler
-  /// instance, the machine is quiet.
-  ErrorOrSuccess evaluateFunctions(ImplNode *inode, FuncOp evaluator,
-                                   std::vector<FuncOp> options);
-
   /// Once a concrete function has finished specializing, finish processing the
   /// function and call the verifier.
   void finalizeFunction(ImplNode *node);
@@ -643,10 +636,6 @@ private:
   /// symbol or the call and passing them on to processGeneratorUser.
   ElaborationState processCallOp(ImplNode *parent,
                                  GeneratorUserOpInterface call);
-
-  /// Process an evaluate operation by concretizing the evaluator function and
-  /// the function candidates.
-  ElaborationState processEvaluateOp(ImplNode *parent, ParamEvaluateOp op);
 
   /// Instantiate a generator reference by retrieving the concrete
   /// implementations of a reference. If this function returns `advance` but
@@ -760,10 +749,6 @@ private:
   void specializeFromSource(ImplNode *inode, ParamNode *genNode, bool addWaiter,
                             SymbolRefAttr precompiled = {});
 
-  /// Process all deferred search functions serially, re-queuing nodes as it
-  /// completes. Returns true if there were deferred search functions.
-  bool processDeferredSearchFns();
-
   /// Attempt to diagnose concrete recursion and break recursion where possible.
   /// Return true if recursion was broken at least once. The "generation" is
   /// used to know whether a visited flag is valid. It must be at least 1,
@@ -794,18 +779,6 @@ private:
 
   /// Callbacks to use for JIT functionalities.
   ElaboratorCallbacks callbacks;
-
-  /// This struct contains information about a deferred search job.
-  struct DeferredSearch {
-    /// Deferred search functor.
-    ElaboratorSearchFn searchFn;
-    /// The node that was suspended.
-    ImplNode *inode;
-    /// The candidates.
-    std::vector<FuncOp> candidates;
-  };
-  /// The deferred search jobs.
-  Shared<std::vector<DeferredSearch>> deferredSearchFns;
 
   /// The LLCL runtime instance to use.
   LLCL::Runtime &runtime;
@@ -1017,39 +990,6 @@ void ElaboratorImpl::addDeferredFunction(OwningOpRef<FuncOp> func) {
     symtab.insert(op);
     deferredSymbols.push_back(op);
   });
-}
-
-//===----------------------------------------------------------------------===//
-// ElaboratorImpl::evaluateFunctions
-//===----------------------------------------------------------------------===//
-
-ErrorOrSuccess ElaboratorImpl::evaluateFunctions(ImplNode *inode,
-                                                 FuncOp evaluator,
-                                                 std::vector<FuncOp> options) {
-  CompilerTimeTraceScope traceScope("evaluateFunctions", [evaluator, options] {
-    std::string detail;
-    llvm::raw_string_ostream os(detail);
-    os << "evaluator: " << FuncOp(evaluator).getSymName() << "\n";
-    for (FuncOp opt : options)
-      os << " - " << opt.getSymName();
-    return os.str();
-  });
-
-  // Cheeky copy. The state of the symbol right at this moment is sufficient to
-  // produce a standalone object for the functions being JIT'd.
-  SymbolTable symtabCopy = newSymTab.read(
-      [](const SymbolTable &symtab) -> SymbolTable { return symtab; });
-  ErrorOr<ElaboratorSearchFn> searchFn =
-      callbacks.evaluateFn(evaluator, symtabCopy, getTarget(), options);
-  if (searchFn.isError())
-    return searchFn.takeError();
-  // Suspend elaboration. The search has to be performed in isolation.
-  deferredSearchFns.modify([inode, fn = searchFn.takeValue(),
-                            candidates =
-                                std::move(options)](auto &fns) mutable {
-    fns.push_back(DeferredSearch{std::move(fn), inode, std::move(candidates)});
-  });
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1475,57 +1415,6 @@ ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processEvaluateOp
-//===----------------------------------------------------------------------===//
-
-ElaborationState ElaboratorImpl::processEvaluateOp(ImplNode *parent,
-                                                   ParamEvaluateOp op) {
-  Attribute evaluatorFn;
-  HANDLE_EVALUATOR_CONC(evaluatorFn, parent, op.getLoc(), op.getEvaluator());
-
-  ParameterExprArrayAttr inputParamKey;
-  GeneratorOp gen;
-  std::vector<ImplNode *> evaluators;
-  ElaborationState result = instantiateGeneratorReference(
-      parent, op, cast<SymbolConstantAttr>(evaluatorFn), inputParamKey, gen,
-      evaluators);
-  if (result.isError() || result.shouldSkipNode())
-    return result;
-
-  if (evaluators.size() != 1) {
-    parent->setToError(ErrorTree(
-        op.getLoc(), "evaluator did not resolve to a single candidate"));
-    return ElaborationState::error();
-  }
-
-  Attribute candidates;
-  HANDLE_EVALUATOR_CONC(candidates, parent, op.getLoc(), op.getCandidates());
-
-  std::vector<ImplNode *> concrete;
-  for (TypedAttr value : cast<VariadicAttr>(candidates).getValues()) {
-    ElaborationState result = instantiateGeneratorReference(
-        parent, op, cast<SymbolConstantAttr>(value), inputParamKey, gen,
-        concrete);
-    if (result.isError() || result.shouldSkipNode())
-      return result;
-  }
-
-  std::vector<FuncOp> candidateFns;
-  candidateFns.reserve(concrete.size());
-  for (ImplNode *node : concrete)
-    candidateFns.push_back(node->func);
-  if (ErrorOrSuccess evalResult = evaluateFunctions(
-          parent, evaluators.front()->func, std::move(candidateFns));
-      evalResult.isError()) {
-    parent->setToError(ErrorTree(op.getLoc(), evalResult.takeError()));
-    return ElaborationState::error();
-  }
-  // Suspend elaboration. The actual search will be performed in isolation
-  // later.
-  return ElaborationState::skipNode();
-}
-
-//===----------------------------------------------------------------------===//
 // ElaboratorImpl::processParamIfOp
 //===----------------------------------------------------------------------===//
 
@@ -1827,8 +1716,6 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
     return processParamIfOp(node, ifOp);
   } else if (auto call = dyn_cast<GeneratorUserOpInterface>(op)) {
     return processCallOp(node, call);
-  } else if (auto evaluate = dyn_cast<ParamEvaluateOp>(op)) {
-    return processEvaluateOp(node, evaluate);
   } else if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
     // Delay elaboration of the DILocalVariableAttr until when locations are
     // elaborated.
@@ -2193,63 +2080,6 @@ void ElaboratorImpl::completeSpecializationFromPackage(PackageState *state,
 }
 
 //===----------------------------------------------------------------------===//
-// ElaboratorImpl::processedDeferredSearchFns
-//===----------------------------------------------------------------------===//
-
-bool ElaboratorImpl::processDeferredSearchFns() {
-  if (deferredSearchFns.get().empty())
-    return false;
-
-  std::vector<ImplNode *> reschedule;
-  reschedule.reserve(deferredSearchFns.get().size());
-  for (DeferredSearch &search : deferredSearchFns.get()) {
-    ImplNode *parent = search.inode;
-    auto op = cast<ParamEvaluateOp>(parent->stack.back().ops.back());
-    parent->stack.back().ops.pop_back();
-
-    auto completeWithError = [&](Error err) {
-      parent->setToError(ErrorTree(op.getLoc(), std::move(err)));
-      g.numWorkItems.fetch_add(1);
-      completeImplNodeProcessing(parent);
-    };
-
-    ErrorOr<ssize_t> bestIdx = search.searchFn();
-    if (bestIdx.isError()) {
-      completeWithError(bestIdx.takeError());
-      continue;
-    }
-    if (*bestIdx == -1) {
-      completeWithError("user-provided evaluator returned failure (-1)");
-      continue;
-    }
-    if (*bestIdx < 0 ||
-        *bestIdx >= static_cast<ssize_t>(search.candidates.size())) {
-      completeWithError(
-          "user-provided evaluator returned an out-of-bounds result: " +
-          Twine(*bestIdx));
-      continue;
-    }
-    FuncOp best = search.candidates[*bestIdx];
-    LLVM_DEBUG(logger.logOp("best specialization", best));
-    parent->getEvaluator().setParameterValue(
-        op.getParamDecl(),
-        SymbolConstantAttr::get(SymbolRefAttr::get(best.getSymNameAttr()),
-                                best.getSignature()));
-    // Handle the operation.
-    reschedule.push_back(parent);
-    op.erase();
-  }
-  deferredSearchFns.get().clear();
-
-  // Now reschedule the nodes.
-  for (ImplNode *inode : reschedule) {
-    g.numWorkItems.fetch_add(1);
-    scheduleImplNode(inode);
-  }
-  return true;
-}
-
-//===----------------------------------------------------------------------===//
 // ElaboratorImpl::diagnoseAndBreakRecursion
 //===----------------------------------------------------------------------===//
 
@@ -2441,9 +2271,6 @@ LogicalResult ElaboratorImpl::run(ModuleOp theModule,
       // Re-initialize the worklist chain.
       g.worklistCh = AsyncValueRef<Chain>::allocate(runtime);
 
-      // Check for deferred search.
-      if (processDeferredSearchFns())
-        continue;
       // The only other possibility is a cycle due to recursion.
       if (diagnoseAndBreakRecursion(++cycleGeneration, primaryNodes))
         continue;
@@ -2578,11 +2405,6 @@ static LogicalResult elaborateGenerators(
   CompilerTimeTraceScope traceScope("elaborate-generators");
   ModuleOp theModule = symtab.getTopLevelOp<ModuleOp>();
 
-  auto noopEvaluator = [](FuncOp, const SymbolTable &, TargetInfoAttr,
-                          ArrayRef<FuncOp>) { return [] { return 0; }; };
-  if (!config.enableSearch)
-    callbacks.evaluateFn = noopEvaluator;
-
   // Now, construct and run the elaborator.
   ElaboratorImpl impl(symtab.getTopLevelSymbolTable(), paramCache, target,
                       std::move(callbacks), runtime, config);
@@ -2608,10 +2430,8 @@ public:
   ElaborateGeneratorsPass(const ElaborateGeneratorsOptions &options = {},
                           LLCL::Runtime *runtime = nullptr,
                           TargetInfoAttr target = nullptr,
-                          EvaluatorExecutorFn evaluatorExecutorFn = {},
                           ElaboratorCompileAsmFn compileAsmFn = {})
       : ElaborateGeneratorsBase(options), runtime(runtime), target(target),
-        evaluatorExecutorFn(std::move(evaluatorExecutorFn)),
         compileAsmFn(std::move(compileAsmFn)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
@@ -2623,12 +2443,6 @@ public:
       if (targetOr.isError())
         return mlir::emitError(UnknownLoc::get(ctx), targetOr.getError());
       target = targetOr.takeValue();
-    }
-
-    // Default the evaluator to selecting the first specialization.
-    if (!evaluatorExecutorFn) {
-      evaluatorExecutorFn = +[](FuncOp, const SymbolTable &, TargetInfoAttr,
-                                ArrayRef<FuncOp>) { return [] { return 0; }; };
     }
 
     // Default compile assembly hook will just error.
@@ -2694,7 +2508,7 @@ public:
                          EnvAttr::get(DictionaryAttr::get(&getContext())));
     }
 
-    ElaboratorCallbacks callbacks{evaluatorExecutorFn, compileAsmFn};
+    ElaboratorCallbacks callbacks{compileAsmFn};
     ElaborateGeneratorsOptions config{enableSearch, allowMultiplePrimaryImpls,
                                       maxDepth, elaborateDebugInfo,
                                       diagAllFailures};
@@ -2708,8 +2522,6 @@ private:
   LLCL::Runtime *runtime;
   /// The compilation target.
   TargetInfoAttr target;
-  /// The functor used for evaluating generator specializations.
-  EvaluatorExecutorFn evaluatorExecutorFn;
   /// The functor used to compile a module to assembly.
   ElaboratorCompileAsmFn compileAsmFn;
 };
@@ -2718,9 +2530,7 @@ private:
 std::unique_ptr<mlir::Pass>
 KGEN::createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                                 const ElaborateGeneratorsOptions &options,
-                                EvaluatorExecutorFn evaluatorExecutorFn,
                                 ElaboratorCompileAsmFn compileAsmFn) {
-  return std::make_unique<ElaborateGeneratorsPass>(
-      options, &runtime, target, std::move(evaluatorExecutorFn),
-      std::move(compileAsmFn));
+  return std::make_unique<ElaborateGeneratorsPass>(options, &runtime, target,
+                                                   std::move(compileAsmFn));
 }

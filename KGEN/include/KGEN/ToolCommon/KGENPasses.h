@@ -92,21 +92,6 @@ void registerDefaultKGENPasses(LLCL::Runtime &runtime);
 // Elaborator
 //===----------------------------------------------------------------------===//
 
-/// This function kind represents a callback to invoke a compiled evaluator
-/// function with the compiled candidate functions. This function performs the
-/// actual benchmarking of search and must be invoked in isolation. The
-/// elaborator ensures that the compiler process is quiet before invoking this
-/// function, which is required for stable and accurate results.
-using ElaboratorSearchFn = llvm::unique_function<ErrorOr<ssize_t>()>;
-
-/// This function kind represents a callback given the IR for an evaluator
-/// function and a list of candidate functions and should perform all necessary
-/// JIT compilation on those functions, in preparation for search. The function
-/// should return a search execute function, which the elaborator then
-/// guarantees executes in isolation.
-using EvaluatorExecutorFn = std::function<ErrorOr<ElaboratorSearchFn>(
-    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
-
 /// This struct represents the result of a cross-device compilation, which is a
 /// function or closure reference.
 struct CrossDeviceFunction {
@@ -134,7 +119,6 @@ using ElaboratorCompileAsmFn = std::function<ErrorOr<CrossDeviceFunction>(
 std::unique_ptr<mlir::Pass>
 createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
                           const ElaborateGeneratorsOptions &options = {},
-                          EvaluatorExecutorFn evaluatorExecutorFn = {},
                           ElaboratorCompileAsmFn compileAsmFn = {});
 
 //===----------------------------------------------------------------------===//
@@ -287,7 +271,6 @@ void buildGenerateLibraryPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 void buildElaborateModulePipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
                                   TargetInfoAttr target,
                                   const CompilationOptions &options,
-                                  EvaluatorExecutorFn evaluatorExecutorFn,
                                   ElaboratorCompileAsmFn compileAsmFn,
                                   PackageGenLibraryFn packageGenLibraryFn);
 

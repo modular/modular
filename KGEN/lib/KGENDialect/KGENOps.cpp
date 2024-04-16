@@ -351,65 +351,6 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamEvaluateOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseParamEvaluateOp(AsmParser &p, ParamDeclAttr &paramDecl,
-                                        TypedAttr &evaluator,
-                                        TypedAttr &candidates) {
-  SignatureType evaluatorType;
-  if (parseParamDecl(p, paramDecl) || p.parseEqual() ||
-      parseParamValue(p, candidates, VariadicType::get(paramDecl.getType())) ||
-      p.parseKeyword("with") || p.parseLSquare() ||
-      parseKGENType(p, evaluatorType) || p.parseColon() ||
-      parseParamValue(p, evaluator, evaluatorType) || p.parseRSquare())
-    return failure();
-  return success();
-}
-
-static void printParamEvaluateOp(AsmPrinter &p, Operation *op,
-                                 ParamDeclAttr paramDecl, TypedAttr evaluator,
-                                 TypedAttr candidates) {
-  printParamDecl(p, paramDecl);
-  p << " = ";
-  printParamValue(p, candidates);
-  p << " with [";
-  printKGENType(p, evaluator.getType());
-  p << ": ";
-  printParamValue(p, evaluator);
-  p << ']';
-}
-
-void ParamEvaluateOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  ParamDefValue def;
-  def.exprs.push_back(getEvaluator());
-  def.exprs.push_back(getCandidates());
-  walkDef(getParamDecl(), def);
-}
-
-void ParamEvaluateOp::walkDeclarations(
-    function_ref<void(ParamDeclAttr)> walkDecl) {
-  walkDecl(getParamDecl());
-}
-
-void ParamEvaluateOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
-  assert(decls.size() == 1);
-  setParamDeclAttr(decls.front());
-}
-
-LogicalResult ParamEvaluateOp::verify() {
-  auto sigType = cast<VariadicType>(getCandidates().getType()).getElementType();
-  if (sigType != getParamDecl().getType())
-    return emitOpError("candidates type does not match parameter type");
-  auto evalType = cast<SignatureType>(getEvaluator().getType());
-  if (!evalType.getInputParamTypes().empty() ||
-      !evalType.getResultParamTypes().empty())
-    return emitOpError("evaluator cannot be parametric");
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // ParamResultBind
 //===----------------------------------------------------------------------===//
 

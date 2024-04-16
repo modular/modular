@@ -33,15 +33,11 @@ std::string mangleParameterValues(GeneratorOp generator,
 // Elaborator
 //===----------------------------------------------------------------------===//
 
-using EvaluatorExecutorFnRef = function_ref<ErrorOr<ElaboratorSearchFn>(
-    FuncOp, const SymbolTable &, TargetInfoAttr, ArrayRef<FuncOp>)>;
 using ElaboratorCompileAsmFnRef = function_ref<ErrorOr<CrossDeviceFunction>(
     GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
     TargetInfoAttr, EmissionKind)>;
 
 struct ElaboratorCallbacks {
-  /// The functor used for evaluating generator specializations.
-  EvaluatorExecutorFnRef evaluateFn;
   /// The functor used to compile a module to assembly.
   ElaboratorCompileAsmFnRef compileAsmFn;
 };

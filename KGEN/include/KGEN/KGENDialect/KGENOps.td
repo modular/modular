@@ -608,40 +608,6 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
 }
 
 //===----------------------------------------------------------------------===//
-// ParamEvaluateOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamEvaluateOp : KGENOp<"param.evaluate",
-    [DeclareOpInterfaceMethods<ParamOpInterface>]> {
-  let summary = "Evaluate candidates of functions with an evaluator.";
-  let description = [{
-    The `kgen.param.evaluate` operation takes an evaluator function reference
-    and variadic function references and declares a parameter that represents
-    the selected function candidate using the evaluator.
-
-    This form of the 'evaluate' operator is beneficial for the elaborator,
-    because it gives the elaborator a "save point" for multiversioning
-    functions.
-
-    Example:
-
-    ```mlir
-    kgen.param.evaluate best: (index) -> i1 = [@fooImpl, @barImpl]
-      with [(!kgen.pointer<(index) -> i1>, index) -> index: @evaluator]
-    ```
-  }];
-
-  let arguments = (ins KGEN_ParamDeclAttr:$paramDecl,
-                       AttrOfType<KGEN_SignatureType>:$evaluator,
-                       AttrOfType<KGEN_VariadicType>:$candidates);
-  let assemblyFormat = [{
-    custom<ParamEvaluateOp>($paramDecl, $evaluator, $candidates) attr-dict
-  }];
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // ParamResultBindOp
 //===----------------------------------------------------------------------===//
 
