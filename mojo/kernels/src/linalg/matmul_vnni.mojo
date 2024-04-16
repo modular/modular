@@ -309,12 +309,10 @@ struct Inner_matmul_vnni[
                 @parameter
                 if has_neon_int8_dotprod():
                     var a_val2 = SIMD[config.c_type, simd_size].splat(a_val)
-                    c_val = _neon_dotprod[
-                        config.a_type, config.b_type, config.c_type, simd_size
-                    ](
+                    c_val = _neon_dotprod(
                         c_val,
-                        bitcast[config.a_type, 16](a_val2),
-                        bitcast[config.b_type, 16](b_val),
+                        bitcast[config.a_type, simd_size * 4](a_val2),
+                        bitcast[config.b_type, simd_size * 4](b_val),
                     )
                 elif config.saturated_vnni:
                     c_val = dot_i8_to_i32_saturated_x86[simd_size](

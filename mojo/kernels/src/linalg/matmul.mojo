@@ -12,15 +12,11 @@ from sys.info import (
     has_neon_int8_dotprod,
     simdwidthof,
 )
-from sys.intrinsics import PrefetchOptions
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
-from algorithm.functional import tile_and_unswitch
 from buffer.buffer import (
     Buffer,
     NDBuffer,
-    partial_simd_load,
-    partial_simd_store,
 )
 from buffer.list import Dim, DimList
 from .Gemv import gemv
@@ -41,10 +37,7 @@ from .MatmulUtils import (
 )
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
-from .neon_intrinsics import _neon_dotprod, _neon_matmul
 from runtime.llcl import Runtime
-from .transpose import transpose_inplace
-from .vnni_intrinsics import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 
 from .matmul_vnni import Inner_matmul_vnni
 from .matmul_i8mm import Inner_matmul_i8mm
