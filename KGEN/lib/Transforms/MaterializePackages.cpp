@@ -133,10 +133,6 @@ LogicalResult PackageState::materializeExternGenerator(ExternGeneratorOp func,
   operationsToInflate.push_back(result);
   result->moveAfter(func);
 
-  // Propagate the precompiled reference to the materialized generator to
-  // indicate that it has an external implementation.
-  result.setPreCompiledModuleRefAttr(func.getPreCompiledModuleRefAttr());
-
   // Replace the original function with the parsed KGEN Func.
   symtab.erase(func);
   symtab.insert(result);

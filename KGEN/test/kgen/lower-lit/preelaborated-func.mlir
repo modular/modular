@@ -53,7 +53,6 @@ lit.func export @exported_func(%arg0: index) -> index attributes {
 
 // CHECK: kgen.package.link @link_precompiled_func
 // CHECK-LABEL: kgen.generator @precompiled_func
-// CHECK-SAME: preCompiledModuleRef = @link_precompiled_func
 lit.func @precompiled_func(%arg0: index) -> index attributes {
   test.target.0 = #module_target
 } {
