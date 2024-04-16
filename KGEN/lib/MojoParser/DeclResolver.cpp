@@ -518,6 +518,11 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
     // in the decl during resolution.
     decl.resolvedness = DeclResolvedness::fully;
 
+    // If the decl is already erroneous, trying to process further may crash or
+    // cause spurious error messages.
+    if (decl.isErroneous())
+      return failure();
+
     // Handle each operation that can be name bound.
     TypeSwitch<ASTDecl &>(decl)
         .Case<FileModuleOp, LIT::FuncOp, StructDeclOp, StructFieldOp,

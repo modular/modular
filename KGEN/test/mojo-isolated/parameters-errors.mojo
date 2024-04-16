@@ -110,7 +110,6 @@ fn default_after_non_default[a: Int = 7, b: Int]():
 # Variadic Parameters
 ##===----------------------------------------------------------------------===##
 
-# expected-error @+2 {{unexpected token in expression}}
 # expected-error @+1 {{variadic keyword parameters not supported yet}}
 fn variadic_kw_result_binding[**a: Int]():
     pass

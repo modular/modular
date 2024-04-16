@@ -289,7 +289,6 @@ fn badParamAnd[a: Bool, b: WeirdBoolish]():
 
 # expected-error @+1 {{'Self' type may only be used inside a struct or trait}}
 fn badSelf(a: Self):
-  # expected-error @+1 {{'Self' type may only be used inside a struct or trait}}
   var x: Self.field
 
 # Structs convertible to each other.

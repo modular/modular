@@ -35,11 +35,9 @@ def missing_colon_2()
     test_never_declared_fn()
 
 # expected-error @below {{expected parameter name}}
-# expected-error @below {{unexpected token in expression}}
 fn missing_argument_name(*: int): pass
 
 # expected-error @below {{expected parameter name}}
-# expected-error @below {{unexpected token in expression}}
 fn missing_parameter_name[: int](): pass
 
 # expected-error @+1 {{use of unknown declaration 'InvalidType'}}
@@ -47,7 +45,6 @@ fn test_unknown_arg_type(a: InvalidType):
     _ = a.value  # Should not produce a follow-on error.
     return
 
-# expected-error @+2 {{unexpected token in expression}}
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
 fn two_stars(a: int, *, *, b: int):
     pass
@@ -68,12 +65,10 @@ fn leading_slash(/, a: int):
 fn trailing_star(a: int, *):
     pass
 
-# expected-error @+2 {{unexpected token in expression}}
 # # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
 fn two_variadics(*a: int, *b: int):
     pass
 
-# expected-error @+2 {{unexpected token in expression}}
 # expected-error @+1 {{cannot have two '*' markers in the same argument list}}
 fn two_variadic_packs[*Ts: AnyRegType](*a: *Ts, *b: *Ts):
     pass
@@ -83,6 +78,5 @@ fn foo(x: fn[a: int] () -> None):
     pass
 
 # expected-error @below {{non-owned variadic keyword arguments are not supported yet}}
-# expected-error @below {{unexpected token in expression}}
 fn borrowed_kwargs(borrowed **kwargs: int):
     pass

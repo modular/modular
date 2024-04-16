@@ -84,6 +84,13 @@ async fn throwing_coroutine() raises:
 async fn async_mem_result() -> MemType:
   pass
 
+# COM: Issue https://github.com/modularml/modular/issues/37758 where the
+# COM: key test is that the below is not crashing due to assertion violation.
+# expected-error @+1 {{expected ':' in function definition}}
+fn missingColon(x: Int)
+  return x
+
+
 ##===----------------------------------------------------------------------===##
 # Default Arguments, VarArgs, and Packs
 ##===----------------------------------------------------------------------===##
@@ -122,11 +129,9 @@ fn defaultArgumentBadType(a: Int = 1.0): pass
 # expected-error @+1 {{inout arguments may not have defaults}}
 fn byref_default(inout x: Int = 2): pass
 
-# expected-error @below {{unexpected token in expression}}
 # expected-error @below {{'**' marker must be at end of argument list}}
 fn starStarLast(**a: Int, b: Int): pass
 
-# expected-error @below {{unexpected token in expression}}
 # expected-error @below {{'**' marker must be at end of argument list}}
 fn twoStarStar(**a: Int, **b: Int): pass
 
