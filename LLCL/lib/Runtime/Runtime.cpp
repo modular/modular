@@ -70,9 +70,6 @@ Runtime::~Runtime() {
   // off before invalidating the workQueue pointer.
   workQueue->shutdown();
 
-  // Clear cancellation value if present.
-  restartFromCancellation();
-
   // Remove association of runtime to runtime index.
   Detail::RuntimeTable::getSingleton().clearRuntime(runtimeIndex);
 
@@ -81,35 +78,6 @@ Runtime::~Runtime() {
     if (auto E = profiler->write("-"))
       llvm::report_fatal_error("unable to write time trace profile");
   }
-}
-
-/// Cancel the current MEF Execution. This transitions this Runtime to the
-/// canceled state, which causes all asynchronously executing threads to be
-/// canceled when they check the cancellation state (e.g. in MEFExecutor).
-void Runtime::cancelExecution(EncodedDiagnostic message) {
-  AnyAsyncValueRef messageVal =
-      AnyAsyncValueRef::createError(*this, std::move(message));
-
-  AsyncValue *expectedValue = nullptr;
-  // Use memory_order_release for the success case so that error_value is
-  // visible to other threads when they load with memory_order_acquire. For the
-  // failure case, we do not care about expectedValue, so we can use
-  // memory_order_relaxed.
-  if (cancelValue.compare_exchange_strong(
-          expectedValue, messageVal.getPointer(), std::memory_order_release,
-          std::memory_order_relaxed))
-    (void)messageVal.releasePointer();
-}
-
-/// restartFromCancellation() transitions Runtime from the canceled state to
-/// the normal execution state.
-void Runtime::restartFromCancellation() {
-  // Use memory_order_acq_rel so that previous writes on this thread are visible
-  // to other threads and previous writes from other threads (e.g. the return
-  // 'value') are visible to this thread.
-  AsyncValue *value = cancelValue.exchange(nullptr, std::memory_order_acq_rel);
-  // Deallocate the value.
-  AnyAsyncValueRef::take(value);
 }
 
 std::unique_ptr<Allocator> LLCL::getAllocator(const RuntimeOptions &options) {

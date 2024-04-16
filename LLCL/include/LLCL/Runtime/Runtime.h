@@ -395,26 +395,6 @@ public:
   /// interface with the higher level algorithms in Algorithms.h.
   WorkQueue *getWorkQueue() { return workQueue.get(); }
 
-  //===--------------------------------------------------------------------===//
-  // Cancel the current execution
-  //===--------------------------------------------------------------------===//
-
-  /// Cancel the current MEF Execution. This transitions this Runtime to the
-  /// canceled state, which causes all asynchronously executing threads to be
-  /// canceled when they check the cancellation state (e.g. in MEFExecutor).
-  void cancelExecution(EncodedDiagnostic message);
-
-  /// restartFromCancellation() transitions Runtime from the canceled state to
-  /// the normal execution state.
-  void restartFromCancellation();
-
-  /// When this Runtime is in a canceled state, getCancelValue() returns a
-  /// non-null AsyncValue containing the message for the cancellation.
-  /// Otherwise, it returns nullptr.
-  AsyncValue *getCancelValue() const {
-    return cancelValue.load(std::memory_order_acquire);
-  }
-
   /// Reference to our shared global context. Note that this doesn't hold the
   /// reference properly, in order to fix the cycle. This should be removed as
   /// soon as possible.
@@ -449,10 +429,6 @@ private:
   /// This is a preallocated Chain value that is marked as ready, for use by
   /// getReadyChain.
   AsyncValueRef<Chain> readyChain;
-
-  /// If execution is cancelled, this holds the error value to forward into the
-  /// results of computations.
-  std::atomic<AsyncValue *> cancelValue{nullptr};
 
   friend void checkUniqueRuntime(const Runtime &runtime);
   friend void checkKnownCallingThread(const Runtime &runtime);
