@@ -149,6 +149,16 @@ struct FileHandle {
     return llvm::StringRef(ptr, *numReadOr);
   }
 
+  /// Reads `size` bytes from file or to EOF if less than `size` bytes remain.
+  void readToAddress(char *ptr, int64_t *size, llvm::StringRef *errMsg) {
+    llvm::MutableArrayRef<char> buf(ptr, *size);
+
+    auto numReadOr = llvm::sys::fs::readNativeFile(
+        llvm::sys::fs::convertFDToNativeFile(handle), buf);
+    if (auto err = numReadOr.takeError())
+      *errMsg = copyString(llvm::toString(std::move(err)));
+  }
+
   uint64_t seek(uint64_t offset, uint8_t whence, llvm::StringRef *errMsg) {
 #ifdef _WIN32
     uint64_t pos = _lseeki64(handle, offset, SEEK_SET);
@@ -238,6 +248,13 @@ KGEN_CompilerRT_IO_FileSeek(FileHandleWrapper file, uint64_t offset,
   return unwrap(file)->seek(offset, whence, errMsg);
 }
 
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_IO_FileReadToAddress(FileHandleWrapper file, char *ptr,
+                                     int64_t *size, llvm::StringRef *errMsg) {
+  FileHandle *handle = unwrap(file);
+  handle->readToAddress(ptr, size, errMsg);
+}
+
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT const char *
 KGEN_CompilerRT_IO_FileRead(FileHandleWrapper file, int64_t *size,
                             llvm::StringRef *errMsg) {
@@ -287,4 +304,7 @@ void M::KGEN::registerIO(
   funcs.emplace_back(
       std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileReadBytes"),
                 (void *)&KGEN_CompilerRT_IO_FileReadBytes});
+  funcs.emplace_back(
+      std::pair{llvm::StringLiteral("KGEN_CompilerRT_IO_FileReadToAddress"),
+                (void *)&KGEN_CompilerRT_IO_FileReadToAddress});
 }
