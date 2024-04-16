@@ -1177,17 +1177,6 @@ cc_test(
     ],
 )
 
-cc_binary(
-    name = "driver-tblgen",
-    srcs = glob([
-        "tools/driver-tblgen/*.cpp",
-        "tools/driver-tblgen/*.h",
-    ]),
-    deps = [
-        ":Base",
-        "@llvm-project//llvm:TableGen",
-    ],
-)
 
 td_library(
     name = "DriverCommandTdFiles",
