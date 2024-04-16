@@ -1128,6 +1128,7 @@ cc_distributable_static_library(
         "//Support:Configuration",
         "//Support:Filesystem",
         "//Support:Globals.static",
+        "//Support:ML",
         "//Support:Profiling",
         "//Support:Threading",
         "@llvm-project//llvm:Demangle",
