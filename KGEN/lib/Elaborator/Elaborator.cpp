@@ -101,33 +101,6 @@ ImplNode::ImplNode(ParamNode *parent)
     : parent(parent), paramGraph(parent->gen.getBodyRegion()),
       evaluator(parent->gen.getContext()) {}
 
-void ImplNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
-  os << "ImplNode <" << func.getSymName() << ">";
-  auto _ = os.scope(" {\n", "}\n");
-  if (func) {
-    auto opScope = os.scope("Op: {\n", "}\n");
-    func.print(os);
-    os << "\n";
-  }
-  if (resultParams && !resultParams.empty())
-    os << "ResultParams: " << resultParams << "\n";
-  {
-    auto _ = os.scope("Bindings: {\n", "}\n");
-    for (const auto &[_, bind] : bindings.get()) {
-      if (bind != this)
-        bind->print(os, false);
-      else
-        os << "Self\n";
-    }
-  }
-  // Errors are leaves.
-  if (error) {
-    // Only print the top level error.
-    os << "Error: " << error->getError() << "\n";
-    return;
-  }
-}
-
 void ParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
   expansionGraph->didAddTask();
   paramCh.andThenAsync([waiter = std::move(waiter), this]() mutable {
@@ -153,25 +126,6 @@ void ParamNode::setToError() {
   isError = true;
   if (!isReady())
     paramCh.copy().emplace();
-}
-
-void ParamNode::print(mlir::raw_indented_ostream &os, bool printBindings) {
-  os << "ImplNode <" << gen.getSymName() << ">";
-  auto _ = os.scope(" {\n", "}\n");
-  {
-    auto opScope = os.scope("Op: {\n", "}\n");
-    gen.print(os);
-    os << "\n";
-  }
-  if (inputParams && !inputParams.empty())
-    os << "InputParams: " << inputParams << "\n";
-
-  // Print the children.
-  if (!impls.empty()) {
-    auto childrenScope = os.scope("Children: {\n", "}\n");
-    for (ImplNode &child : llvm::make_pointee_range(impls))
-      child.print(os);
-  }
 }
 
 ExpansionGraph::~ExpansionGraph() {
@@ -803,7 +757,6 @@ ImplNode *ElaboratorImpl::fork(ImplNode *cur, IRMapping &map,
   auto n =
       std::make_unique<ImplNode>(clone, cur->parent, cur->paramGraph.copy(map),
                                  std::move(name), cur->evaluator);
-  n->bindings.get() = cur->bindings.read([](auto &map) { return map; });
 
   // Copy over the current work stack.
   for (const ImplNode::WorkItem &item : cur->stack) {
@@ -1008,13 +961,6 @@ ElaborationState ElaboratorImpl::instantiateGeneratorReference(
 
   // If we already have a binding for this, we're done.
   gen = cast<GeneratorOp>(calleeOp);
-  if (ImplNode *existing =
-          parent->bindings.read([inputParamKey, gen](auto &map) {
-            return map.lookup({inputParamKey, gen});
-          })) {
-    concrete.push_back(existing);
-    return ElaborationState::advance();
-  }
 
   // Check for excessive instantiation depth.
   if (parent->parent->depth > config.maxDepth) {
@@ -1045,31 +991,6 @@ LogicalResult ElaboratorImpl::collectConcreteImplementations(
     std::vector<ImplNode *> &concrete) {
   // Get all valid implementations of the callee node.
   calleeNode->getAllConcreteNodes(concrete);
-
-  // If the concrete thing has bindings, they must be consistent with the
-  // parent's bindings for us to consider it. Remove nodes from the vector that
-  // have bindings that are inconsistent with the parent.
-  //
-  // NOTE: Concurrent access here is very unlikely. It can only happen after
-  // breaking recursion. Use coarse-grained locking for simplicity.
-  parent->bindings.read([&](auto &parentBindings) {
-    auto newEnd = llvm::remove_if(concrete, [&](ImplNode *node) {
-      return node->bindings.read([&](auto &nodeBindings) {
-        bool hasConsistentBindings = llvm::all_of(nodeBindings, [&](auto pair) {
-          // The binding is only inconsistent if it (a) does exist and (b)
-          // is different.
-          if (ImplNode *found = parentBindings.lookup(pair.first))
-            return found == pair.second;
-          // Otherwise, we're good.
-          return true;
-        });
-        // If it has inconsistent bindings
-        return !hasConsistentBindings && !nodeBindings.empty() &&
-               !parentBindings.empty();
-      });
-    });
-    concrete.erase(newEnd, concrete.end());
-  });
 
   // If there are no implementations, return the callee's errors.
   if (concrete.empty()) {
@@ -1161,8 +1082,6 @@ ElaborationState ElaboratorImpl::completeGeneratorUserProcessing(
 
     // This is a sibling to the parent, and it clones the parent's evaluator.
     ImplNode *newNode = fork(parent, map, "", c->func.getNameAttr());
-    // Bind this concrete impl to this callee for this node.
-    newNode->bindings.modify([=](auto &map) { map[{inputParamKey, gen}] = c; });
 
     // The call operation in the cloned function wil be handled by
     // `completeCallProcessing` below, so take it off the clone's worklist
@@ -1190,13 +1109,7 @@ ElaborationState ElaboratorImpl::completeGeneratorUserProcessing(
     initialScheduleImplNode(newNode);
   }
 
-  // Bind this concrete impl to this callee for this node.
-  parent->bindings.modify([&](auto &map) {
-    map[{inputParamKey, gen}] = concrete.front();
-  });
-
-  // Call completeGeneratorUserProcessing on the first concrete thing. This will
-  // flow nested bindings upward correctly.
+  // Call completeGeneratorUserProcessing on the first concrete thing.
   return completeCallProcessing(user, decls, concrete.front(), parent);
 }
 
@@ -1231,43 +1144,6 @@ static ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
 ElaborationState ElaboratorImpl::completeCallProcessing(
     GeneratorUserOpInterface user, ArrayRef<ParamDeclAttr> decls,
     ImplNode *thisNode, ImplNode *node, bool invertLockOrder) {
-  // Add the callee's bindings to the parent of the call. This ensures that we
-  // don't re-bind something we've already bound.
-  //
-  // NOTE: Concurrent access here is very unlikely. It can only happen after
-  // breaking recursion. Use coarse-grained locking for simplicity. Also, the
-  // nodes may be the same in cases of recursion, in which case nothing needs to
-  // be done and avoid deadlocking.
-  if (thisNode != node) {
-    // NOTE: The mutexes on `bindings` must be acquired in the same order as in
-    // `collectConcreteImplementations`, where the parent (caller node) acquires
-    // the mutexes of callee nodes. Otherwise, a deadlock can occur if two
-    // threads each hit one of the two pieces of code with the same nodes at the
-    // same time. In normal call completion, acquire the parent lock first. When
-    // breaking recursion, however, `invertLockOrder` is set to reverse the
-    // order, because in breaking recursion, the child node becomes a parent.
-    auto addBindings = [](auto &nodeBindings, auto &thisNodeBindings) {
-      for (const auto &[k, v] : thisNodeBindings) {
-        auto &oldV = nodeBindings[k];
-        assert(!oldV || oldV == v);
-        oldV = v;
-      }
-    };
-    if (invertLockOrder) {
-      thisNode->bindings.read([node, addBindings](auto &thisNodeBindings) {
-        node->bindings.modify([&](auto &nodeBindings) {
-          addBindings(nodeBindings, thisNodeBindings);
-        });
-      });
-    } else {
-      node->bindings.modify([thisNode, addBindings](auto &nodeBindings) {
-        thisNode->bindings.read([&](auto &thisNodeBindings) {
-          addBindings(nodeBindings, thisNodeBindings);
-        });
-      });
-    }
-  }
-
   if (thisNode->error) {
     node->setToError(ErrorTree(user.getLoc(), "call expansion failed",
                                thisNode->error->copy()));
@@ -1464,17 +1340,6 @@ void ElaboratorImpl::completeImplNodeProcessing(ImplNode *inode) {
       inode->dependencies.pop_back();
 
       // Check for an existing binding.
-      if (ImplNode *existing = inode->bindings.read([p = genNode](auto &map) {
-            return map.lookup({p->inputParams, p->gen});
-          })) {
-        ElaborationState result =
-            completeCallProcessing(call, {}, existing, inode);
-        if (result.isError())
-          break;
-        assert(!result.shouldSkipNode() && !result.shouldSkipFrame() &&
-               "expected all dependencies to be ready");
-        continue;
-      }
       // Otherwise, get all bound nodes.
       std::vector<ImplNode *> concrete;
       if (failed(
