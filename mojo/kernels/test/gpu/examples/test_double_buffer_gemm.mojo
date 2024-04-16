@@ -259,6 +259,8 @@ fn sgemm_double_buffer[
     var c_gmem_tile = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
     # Copy results to global memory.
+    # Vectorize by [simd_size, simd_size] because the outer product results are
+    # implicitly organized by simd_size x simd_size tiles.
     copy_local_to_dram[dst_thread_layout=thread_layout](
         c_gmem_warp_tile.vectorize[simd_size, simd_size](),
         c_reg.vectorize[simd_size, simd_size](),
@@ -353,8 +355,8 @@ fn test() raises:
 
         var nstime = time_function[run_func](stream) / nrun
         var sectime = nstime * 1e-9
-        var TFlog = 2.0 * M * N * K * 1e-12
-        print(nrun, "runs avg(s)", sectime, "TFlogs/s", TFlog / sectime)
+        var TFlop = 2.0 * M * N * K * 1e-12
+        print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
 
     func(
         c_tensor,
