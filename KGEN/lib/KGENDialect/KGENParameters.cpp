@@ -129,18 +129,35 @@ void ParameterCollector::collectUsesFromAttr(
                                << (indexRef.getIsResult() ? "result" : "input")
                                << " parameters";
           }
-      // FIXME(#36583): Bug in parameter index verifier
-      // Need to re-enable this - can we just remove the adjuster?
-#if 0
+          // The index parameter reference can exist in a different scope than
+          // the one in which the referenced parameter was declared. This means
+          // the type of the reference and the type of the declaration can also
+          // exist in different scopes, and thus have different relative depths.
+          // In order to correctly compare the types, we have to map the types
+          // into the same scope. If there are currently N scopes, and the index
+          // reference depth is M where M <= N, then the type of the declaration
+          // is M scopes higher. To map the parameter type into the current
+          // scope, adjust escaping index references on type by M.
+          //
+          // For example, consider the following scopes:
+          //
+          // ```
+          // 0: <type,               // T: type
+          // 1:  <*(1,0),            // :T a
+          // 2:   <:*(2,0) *(1,0)>   // :a T
+          // ```
+          //
+          // In the innermost scope, there is a reference to a parameter 1 scope
+          // up. Thus, one scope up, the type of the referenced parameter
+          // requires 1 less in the depths of index references in its type.
           Type type = types[indexRef.getIndex()];
-          IndexDepthAdjuster adjuster(signatures.size() - 1);
+          IndexDepthAdjuster adjuster(indexRef.getDepth());
           Type expectedType = adjuster.replace(type);
           if (expectedType != indexRef.getType()) {
             return emitError()
-                   << "type of index reference " << indexRef << " "
+                   << "type of index reference " << indexRef
                    << " does not match parameter type " << expectedType;
           }
-#endif
           return success();
         });
     return;
