@@ -15,6 +15,14 @@ fn shiftl(a: Int, s: Int) -> Int:
     return a << s if s > 0 else shiftr(a, -s)
 
 
+fn shiftr(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
+    return a >> s if s > 0 else shiftl(a, -s)
+
+
+fn shiftl(a: Scalar, s: Scalar[a.type]) -> Scalar[a.type]:
+    return a << s if s > 0 else shiftr(a, -s)
+
+
 ## A generic Swizzle functor
 # 0bxxxxxxxxxxxxxxxYYYxxxxxxxZZZxxxx
 #                               ^--^  Base is the number of least-sig bits to keep constant
@@ -31,8 +39,8 @@ fn shiftl(a: Int, s: Int) -> Int:
 
 @register_passable("trivial")
 struct Swizzle[bits: Int, base: Int, shift: Int]:
-    var yyy_mask: Int
-    var zzz_mask: Int
+    alias yyy_mask = ((1 << bits) - 1) << (base + max(0, shift))
+    alias zzz_mask = ((1 << bits) - 1) << (base - min(0, shift))
 
     fn __init__(inout self):
         constrained[
@@ -42,11 +50,10 @@ struct Swizzle[bits: Int, base: Int, shift: Int]:
             abs(shift) >= bits, "Require shift greater than mask bits"
         ]()
 
-        var bit_msk = (1 << bits) - 1
-        self.yyy_mask = bit_msk << (base + max(0, shift))
-        self.zzz_mask = bit_msk << (base - min(0, shift))
-
     fn __call__(self, offset: Int) -> Int:
+        return offset ^ shiftr(offset & self.yyy_mask, shift)
+
+    fn __call__(self, offset: Scalar) -> Scalar[offset.type]:
         return offset ^ shiftr(offset & self.yyy_mask, shift)
 
     fn size(self) -> Int:

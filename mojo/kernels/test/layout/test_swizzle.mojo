@@ -56,7 +56,9 @@ fn test_swizzle_basic():
     # CHECK: 54 55 52 53 50 51 48 49
     # CHECK: 62 63 60 61 58 59 56 57
     for tid in range(thread_layout.size()):
-        print(swizzle_bits2_base1_per8(tid), end=" ")
+        # Verify the operator overloaded for different index types.
+        var tid_u32 = UInt32(tid)
+        print(swizzle_bits2_base1_per8(tid_u32), end=" ")
         if (tid + 1) % 8 == 0:
             print()
 
