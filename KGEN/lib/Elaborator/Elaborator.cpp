@@ -986,7 +986,7 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [this, resultBool](ImplNode *node) -> LogicalResult {
+  item.onComplete = [resultBool](ImplNode *node) -> LogicalResult {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
     ImplNode::WorkItem &parentFrame = *std::next(node->stack.rbegin());
