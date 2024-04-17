@@ -756,16 +756,55 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
 /// Otherwise, it returns a SubscriptDLValue for later materializing calls to
 /// the getter or setter as appropriate. When doing this it  takes ownership of
 /// the operands because it might move them to a SubscriptDLValue, if emitted.
-static AnyValue
-emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
-                       ValueDest &dest, ExprEmitter &emitter, ASTType baseType,
-                       StringRef refferName, StringRef getterName,
-                       StringRef setterName, CallSyntax syntax,
-                       function_ref<void()> lookupError,
-                       SmallVectorImpl<ASTExprAnd<AnyValue>> &&posOperands,
-                       KeywordOperands &&kwOperands = {}) {
+static AnyValue emitGetterSetterAccess(const ExprNode *node,
+                                       ASTExprAnd<CValue> base,
+                                       ArrayRef<Operand> exprOperands,
+                                       ValueDest &dest, ExprEmitter &emitter) {
+  ASTType baseType = base.ir.getRValueType();
+
+  // This is either a SubscriptNode for x[i,j] or a AttributeRefNode for x.name.
+  bool isSubscript = isa<SubscriptNode>(node);
+  CallSyntax syntax =
+      isSubscript ? CallSyntax::kSubscript : CallSyntax::kAttribute;
+
+  auto lookupError = [&] {
+    auto diagType = baseType;
+    // Complain about "SomeType" in 'SomeType.foo' not 'AnyStruct[SomeType]'.
+    if (auto anyStruct = dyn_cast<AnyStructType>(diagType))
+      diagType = anyStruct.getStructType();
+    else if (auto anyTrait = dyn_cast<AnyTraitType>(diagType))
+      diagType = anyTrait.getTraitType();
+
+    auto diag = emitter.emitError(node->getLoc())
+                << diagType << base.expr->getRange();
+
+    if (isSubscript)
+      diag << " is not subscriptable, it does not implement the "
+              "`__getitem__`/`__setitem__` or `__refitem__` methods";
+    else
+      diag << " value has no attribute '"
+           << cast<StringLiteralNode>(exprOperands[0].value)->getValue() << "'";
+  };
+
+  // Emit each of the index values, which will be passed to the __getitem__ and
+  // __setitem__ calls.
+  SmallVector<ASTExprAnd<AnyValue>> posOperands{base};
+  KeywordOperands kwOperands;
+  for (const Operand &operand : exprOperands) {
+    ExprNode *expr = operand.value;
+    AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);
+    if (!exprVal)
+      return {};
+
+    if (operand.isKeywordOrUnpackedKeyword())
+      kwOperands.try_emplace(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
+    else
+      posOperands.push_back({exprVal, expr});
+  }
+
   // If there is a ref method, prefer it.
   CallOperands callOperands(posOperands, &kwOperands);
+  StringRef refferName = isSubscript ? "__refitem__" : "__refattr__";
   if (PValue reffer =
           OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
                               refferName, callOperands, node, syntax,
@@ -844,6 +883,10 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
     return emitter.emitResult(result, node, dest);
   }
 
+  // Otherwise if we have no refitem, try the getter and setter.
+  StringRef getterName = isSubscript ? "__getitem__" : "__getattr__";
+  StringRef setterName = isSubscript ? "__setitem__" : "__setattr__";
+
   // If there is no getter at all, then this is not a subscriptable type.
   auto getter = OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
                                     getterName, node, syntax,
@@ -857,7 +900,8 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
                                     /*no error on failure*/ {});
 
   if (getter.isNull() && setter.isNull()) {
-    lookupError();
+    if (!getter.isErroneous() && !setter.isErroneous())
+      lookupError();
     return {};
   }
 
@@ -932,6 +976,8 @@ emitGetterSetterAccess(const ExprNode *node, const ExprNode *base,
 /// Emit a qualified attribute reference to MLIR.  On error, emit an error and
 /// return a null value.
 AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
+  auto &shared = emitter.shared;
+
   // In-order to allow parameter expressions which technically include a runtime
   // reference, i.e `x.static_field` we allow some values which would otherwise
   // produce a value in a parameter context to still propagate up.
@@ -960,7 +1006,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Find the decl for the type we're looking up into.
-  ASTDecl *typeDecl = baseRVType.getDecl(emitter.shared);
+  ASTDecl *typeDecl = baseRVType.getDecl(shared);
   if (!typeDecl) {
     // If the attribute spelling is empty, we couldn't find a name to look up.
     // This was already diagnosed during initial parsing, so we can just bail
@@ -974,8 +1020,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Handle __mlir_op.`xxx` references, lazily synthesizing values when
     // they are referenced.
     if (isa<MagicMLIRAttrType>(baseMLIRType)) {
-      PValue result =
-          synthesizeMLIRAttrFromString(spelling, getLoc(), emitter.shared);
+      PValue result = synthesizeMLIRAttrFromString(spelling, getLoc(), shared);
       return emitter.emitResult(result, this, dest);
     }
     if (isa<MagicMLIROpType>(baseMLIRType)) {
@@ -983,7 +1028,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       return emitter.emitResult(result, this, dest);
     }
     if (isa<MagicMLIRTypeType>(baseMLIRType)) {
-      ASTType result = parseMLIRType(spelling, this, emitter.shared);
+      ASTType result = parseMLIRType(spelling, this, shared);
       return emitter.emitResult(result, this, dest);
     }
 
@@ -993,7 +1038,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   // Notify the listener of a member lookup.
-  emitter.shared.notifyListenerOnMemberLookup(*typeDecl, getIdentifierLoc());
+  shared.notifyListenerOnMemberLookup(*typeDecl, getIdentifierLoc());
 
   // If the attribute spelling is empty, we couldn't find a name to look up.
   // This was already diagnosed during initial parsing, so we can just bail
@@ -1006,13 +1051,13 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Look up the unqualified identifier in the right scope.
     DeclRefNode declRef(spelling);
     if (emitter.builder) {
-      ExprEmitter moduleEmitter(emitter.shared, *typeDecl, *emitter.builder,
+      ExprEmitter moduleEmitter(shared, *typeDecl, *emitter.builder,
                                 emitter.varDeclCursor);
 
       return declRef.emitIR(dest, moduleEmitter);
     }
-    ExprEmitter moduleEmitter(emitter.shared, *typeDecl, emitter.paramContext);
 
+    ExprEmitter moduleEmitter(shared, *typeDecl, emitter.paramContext);
     return declRef.emitIR(dest, moduleEmitter);
   }
 
@@ -1024,47 +1069,35 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Find the member being accessed.
   LookupResult lookup =
-      emitter.shared.lookupAndResolveDecl(spelling, getLoc(), *typeDecl,
-                                          /*searchParentScopes=*/false);
+      shared.lookupAndResolveDecl(spelling, getLoc(), *typeDecl,
+                                  /*searchParentScopes=*/false);
   ArrayRef<ASTDecl *> memberDecls = lookup.getIfSuccess();
+
+  // If the struct has no static member of the required name, try to look for
+  // dynamic lookup attribute methods (__getattr__ etc) on the type.
   if (memberDecls.empty()) {
-    // The struct has no static member of the required name, but try to look for
-    // dynamic lookup attribute methods on the type.
-    auto lookupError = [&] {
-      // If the error hasn't been diagnosed, handle it now.
-      if (lookup.isFailure())
-        emitter.emitError(getLoc()) << baseRVType << " value has no attribute '"
-                                    << spelling << "'" << getRange();
-    };
-
-    // Emit the value as a StringLiteral.
-    ASTType type =
-        emitter.shared.getBuiltinStringLiteralType(emitter.declScope, getLoc());
-
-    auto attr =
-        StringAttr::get(spelling, StringType::get(emitter.getContext()));
-    ValueDest keyDest(EC_AttributeRefBase);
-    AnyValue key = emitter.emitConstructorCall(
-        type, CallOperands({{AnyValue(attr), this}}), this,
-        CallSyntax::kImplicitConvert, keyDest);
-    if (!key)
-      return {};
-
+    // Convert the attribute name to a StringLiteralNode since that's how the
+    // operand will be emitted.  We need to allocate it persistently to enable
+    // DLValues to capture it.
+    std::string quotedName = '"' + spelling.str() + '"';
+    StringRef quotedNameRef = shared.getPersistentCopy(StringRef(quotedName));
+    // StringLiteral wants ArrayRef<StringRef>.
+    auto strRefs = shared.getPersistentCopy(ArrayRef(quotedNameRef));
+    auto *strLiteral = shared.allocPersistent<StringLiteralNode>(strRefs);
     return emitGetterSetterAccess(
-        this, base, dest, emitter, baseRVType, "__refattr__", "__getattr__",
-        "__setattr__", CallSyntax::kAttribute, lookupError,
-        SmallVector<ASTExprAnd<AnyValue>>{{baseVal, base}, {key, base}});
+        this, {baseVal, base},
+        Operand(strLiteral, getLoc(), Operand::kPositional), dest, emitter);
   }
-  emitter.shared.notifyListenerOnRef(memberDecls, spelling, this);
+  shared.notifyListenerOnRef(memberDecls, spelling, this);
 
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
     // Build an overload set of all matching function declarations.
-    auto result = OverloadSetUValue::create(
-        spelling, memberDecls,
-        ParamBindings::getForDeclaredType(emitter.declScope, emitter.shared,
-                                          baseRVType),
-        this, CallSyntax::kDirectCall);
+    auto result =
+        OverloadSetUValue::create(spelling, memberDecls,
+                                  ParamBindings::getForDeclaredType(
+                                      emitter.declScope, shared, baseRVType),
+                                  this, CallSyntax::kDirectCall);
     result->baseType = baseVal.getRValueType();
     if (auto pValue = baseVal.getIfPValue())
       if (LIT::isTypeExpr(pValue))
@@ -1090,7 +1123,7 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Parameters form a meta-value.
   if (auto param = dyn_cast<AliasDeclOp>(memberDecl)) {
     PValue result = resolveAliasDeclareValue(
-        param, baseRVType.getParamBindings(), getLoc(), emitter.shared);
+        param, baseRVType.getParamBindings(), getLoc(), shared);
     return emitter.emitResult(result.get(), this, dest);
   }
 
@@ -1764,34 +1797,8 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
   // Otherwise, if there is no symbol, it is just an LValue or RValue being
   // subscript, invoking a dynamic subscript with __getitem__ and __setitem__.
-
-  // Emit each of the index values, which will be passed to the __getitem__ and
-  // __setitem__ calls.
-  SmallVector<ASTExprAnd<AnyValue>> posOperands{{baseValue, base}};
-  KeywordOperands kwOperands;
-  for (const Operand &operand : operands) {
-    ExprNode *expr = operand.value;
-    AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);
-    if (!exprVal)
-      return {};
-
-    if (operand.isKeywordOrUnpackedKeyword())
-      kwOperands.try_emplace(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
-    else
-      posOperands.push_back({exprVal, expr});
-  }
-
-  auto lookupError = [&] {
-    emitter.emitError(getLoc())
-        << baseType
-        << " is not subscriptable, it does not implement the "
-           "`__getitem__`/`__setitem__` or `__refitem__` methods"
-        << base->getRange();
-  };
-  return emitGetterSetterAccess(this, base, dest, emitter, baseType,
-                                "__refitem__", "__getitem__", "__setitem__",
-                                CallSyntax::kSubscript, lookupError,
-                                std::move(posOperands), std::move(kwOperands));
+  return emitGetterSetterAccess(this, {baseValue, base}, operands, dest,
+                                emitter);
 }
 
 AnyValue ParenNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

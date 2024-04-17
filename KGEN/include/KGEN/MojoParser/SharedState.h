@@ -160,6 +160,12 @@ public:
     return ArrayRef<T>(result, elements.size());
   }
 
+  /// memcpy the specified string data into the persistent allocator.
+  StringRef getPersistentCopy(StringRef str) {
+    auto result = getPersistentCopy(ArrayRef<char>(str.data(), str.size()));
+    return StringRef(result.data(), result.size());
+  }
+
   /// Lookup an operation inside the symbol table of the container decl.
   Operation *lookupSymbolIn(ASTDecl *container, StringAttr name);
   template <typename OpT>
