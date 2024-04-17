@@ -419,7 +419,7 @@ int main(int argc, char **argv) {
   }
   registerContext(mlirCtx, *ctxOr);
 
-  KGEN::registerDefaultKGENPasses(*(*ctxOr)->get<LLCL::Runtime>());
+  KGEN::registerDefaultKGENPasses();
 
   if (auto err = reducer.run()) {
     llvm::errs() << "ERROR: " << err.getError() << "\n";

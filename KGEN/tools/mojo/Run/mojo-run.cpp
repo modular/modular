@@ -273,7 +273,7 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
   if (options.debugLevel != CompilationOptions::kNoDebug)
     eeOptions.registerDebugPlugins = true;
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      initializeExecutionEngine(runtime, pm, options, std::move(eeOptions),
+      initializeExecutionEngine(pm, options, std::move(eeOptions),
                                 /*isJIT=*/true, target);
   if (failed(execEngineOr))
     return state.reportError(execEngineOr.getError());

@@ -135,7 +135,7 @@ compileModuleToArchive(const State &state, LLCL::Runtime &runtime,
   mlir::PassManager pm(&context);
   configurePassManager(pm);
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
-      initializeExecutionEngine(runtime, pm, options, ExecutionEngineOptions(),
+      initializeExecutionEngine(pm, options, ExecutionEngineOptions(),
                                 /*isJIT=*/false, target);
   if (failed(execEngineOr))
     return state.reportError(execEngineOr.getError());

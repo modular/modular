@@ -41,12 +41,7 @@ namespace M::KGEN {
 namespace {
 struct DeadArgumentEliminationPass
     : impl::DeadArgumentEliminationBase<DeadArgumentEliminationPass> {
-  explicit DeadArgumentEliminationPass(LLCL::Runtime *runtime = nullptr)
-      : runtime(runtime) {}
-
   void runOnOperation() override;
-
-  LLCL::Runtime *runtime;
 };
 } // namespace
 
@@ -66,8 +61,7 @@ struct CallGraphNode
 };
 
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
-  explicit CallGraph(LLCL::Runtime &runtime, const SymbolTable &symtab)
-      : symtab(symtab) {}
+  explicit CallGraph(const SymbolTable &symtab) : symtab(symtab) {}
 
   bool shouldAddToGraph(KGENCallOpInterface call, CallGraphNode *node) {
     return !node->func.isExternal();
@@ -672,23 +666,11 @@ void DeadArgumentEliminationPass::runOnOperation() {
   CompilerTimeTraceScope traceScope(
       "DeadArgumentEliminationPass::runOnOperation");
 
-  // Create a runtime instance if needed.
-  auto rt =
-      ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-        return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
-            .release();
-      });
-
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
-  CallGraph cg(*rt, symtab);
+  CallGraph cg(symtab);
   cg.build(getOperation(), symtab);
   DeadArgumentElimination dae(cg, getOperation().getContext());
   dae.run();
-}
-
-std::unique_ptr<mlir::Pass>
-KGEN::createDeadArgumentElimination(LLCL::Runtime &runtime) {
-  return std::make_unique<DeadArgumentEliminationPass>(&runtime);
 }

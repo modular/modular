@@ -18,7 +18,9 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Config.h"
+#include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "Support/MDialect/MDialect.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -204,10 +206,11 @@ static ErrorOr<CrossDeviceFunction> readCaptureArgs(MLIRContext *ctx,
   return CrossDeviceFunction{contents, (unsigned)numCaptures, std::move(func)};
 }
 
-ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
-    GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
-    const SymbolTable &symtab, LLCL::Runtime &runtime, TargetInfoAttr target,
-    EmissionKind emissionKind, CompilationOptions options) {
+ErrorOr<CrossDeviceFunction>
+KGEN::compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
+                           StringAttr name, const SymbolTable &symtab,
+                           TargetInfoAttr target, EmissionKind emissionKind,
+                           CompilationOptions options) {
   // Configure the compilation options given the new target.
   options.targetTriple = target.getTripleStr();
   options.targetCpu = target.getArch();
@@ -218,7 +221,7 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
   mlir::PassManager compilerPm(target.getContext());
   configurePassManager(compilerPm);
   ErrorOr<ObjectCompiler> compilerOr = ObjectCompiler::create(
-      runtime, compilerPm, ".mojo_cache", options, /*isJIT=*/false);
+      compilerPm, ".mojo_cache", options, /*isJIT=*/false);
   if (compilerOr.isError())
     return compilerOr.takeError();
   ObjectCompiler compiler = compilerOr.takeValue();
@@ -264,21 +267,20 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
   mlir::PassManager pm(target.getContext());
   configurePassManager(pm);
   pm.addPass(createElaborateGenerators(
-      runtime, target, elaboratorOptions,
-      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
-                    StringAttr name, const SymbolTable &symtab,
-                    TargetInfoAttr target, EmissionKind emissionKind) {
+      target, elaboratorOptions,
+      [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
+          const SymbolTable &symtab, TargetInfoAttr target,
+          EmissionKind emissionKind) {
         // Recursion...!
-        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
+        return compileElaboratorAsm(func, symbol, name, symtab, target,
                                     emissionKind, options);
       }));
-  buildPostElaborationPipeline(pm, runtime, options);
+  buildPostElaborationPipeline(pm, options);
 
   // This functor runs the desired transformation to cache.
   auto compileToAsm =
-      [&pm, &compiler, &options, &runtime, tm = std::move(tm), name,
-       emissionKind](Operation *op,
-                     WriteableBufferRef buffer) mutable -> ErrorOrSuccess {
+      [&pm, &compiler, &options, tm = std::move(tm), name, emissionKind](
+          Operation *op, WriteableBufferRef buffer) mutable -> ErrorOrSuccess {
     if (failed(pm.run(op)))
       return Error("failed to run the pass manager");
     if (failed(writeCaptureArgs(cast<ModuleOp>(op), name, buffer.copy())))
@@ -292,6 +294,8 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
       return success();
     }
 
+    LLCL::Runtime &runtime =
+        *loadContext(pm.getContext())->get<LLCL::Runtime>();
     if (failed(compileLLVMToObject(*llvmModule, *tm, *buffer, options, runtime,
                                    /*emitAssembly=*/true)))
       return Error("failed to emit assembly");
@@ -324,6 +328,8 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
       };
   // On cache hit, just return the assembly buffer.
   auto onCacheHit = [](Operation *op, BufferRef buf) { return buf.copy(); };
+  LLCL::Runtime &runtime =
+      *loadContext(target.getContext())->get<LLCL::Runtime>();
   AnyAsyncValueRef result = Cache::cachedTransform(
       *module, compiler.getTransformCache(),
       AsyncValueRef<Chain>::createReady(runtime), std::move(key),
@@ -341,10 +347,9 @@ ErrorOr<CrossDeviceFunction> KGEN::compileElaboratorAsm(
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess KGEN::runLibraryGenerationPipeline(
-    ModuleOp module, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &compileOptions,
+    ModuleOp module, const KGEN::CompilationOptions &compileOptions,
     bool materializeDependencies) {
-  auto cacheBackend = getMojoCacheBackend(runtime);
+  auto cacheBackend = getMojoCacheBackend();
   if (cacheBackend.isError())
     return cacheBackend.takeError();
   auto transformCache =
@@ -354,11 +359,12 @@ ErrorOrSuccess KGEN::runLibraryGenerationPipeline(
   // elaboration phase.
   mlir::PassManager genLibPM(module.getContext());
   configurePassManager(genLibPM);
-  buildGenerateLibraryPipeline(genLibPM, runtime, compileOptions);
+  buildGenerateLibraryPipeline(genLibPM, compileOptions);
   if (materializeDependencies) {
-    genLibPM.addPass(
-        createMaterializePackagesWithDefaultGen(runtime, compileOptions));
+    genLibPM.addPass(createMaterializePackagesWithDefaultGen(compileOptions));
   }
+  LLCL::Runtime &runtime =
+      *loadContext(module.getContext())->get<LLCL::Runtime>();
   LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
       module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
       genLibPM);
@@ -376,15 +382,13 @@ ErrorOrSuccess KGEN::runLibraryGenerationPipeline(
 
 static ErrorOr<DenseResourceElementsAttr>
 specializePackageLinkForPreElaborationLinking(
-    PackageLinkOp packageLink, LLCL::Runtime &runtime,
-    const KGEN::CompilationOptions &compileOptions) {
+    PackageLinkOp packageLink, const KGEN::CompilationOptions &compileOptions) {
   DenseResourceElementsAttr bytecodeAttr = packageLink.getPostParseModuleAttr();
   OwningOpRef<ModuleOp> packageModuleOr =
       readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
   if (!packageModuleOr)
     return Error("unable to load parsed module bytecode");
-  if (auto err = runLibraryGenerationPipeline(*packageModuleOr, runtime,
-                                              compileOptions))
+  if (auto err = runLibraryGenerationPipeline(*packageModuleOr, compileOptions))
     return err.takeError();
 
   DenseResourceElementsAttr bytecodeResource =
@@ -401,15 +405,14 @@ specializePackageLinkForPreElaborationLinking(
 /// Create an instance of the elaborator pass using the given configuration.
 /// The created elaborator pass uses a default specialization executor that
 /// JITs and executes in-process.
-std::unique_ptr<Pass>
-KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
+std::unique_ptr<Pass> KGEN::createElaborateGeneratorsWithDefaultJIT() {
   CompilationOptions options;
   return createElaborateGenerators(
-      runtime, /*target=*/{}, /*options=*/{},
-      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
-                    StringAttr name, const SymbolTable &symtab,
-                    TargetInfoAttr target, EmissionKind emissionKind) {
-        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
+      /*target=*/{}, /*options=*/{},
+      [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
+          const SymbolTable &symtab, TargetInfoAttr target,
+          EmissionKind emissionKind) {
+        return compileElaboratorAsm(func, symbol, name, symtab, target,
                                     emissionKind, options);
       });
 }
@@ -419,10 +422,9 @@ KGEN::createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime) {
 //===----------------------------------------------------------------------===//
 
 std::unique_ptr<Pass> KGEN::createMaterializePackagesWithDefaultGen(
-    LLCL::Runtime &runtime, const CompilationOptions &options) {
+    const CompilationOptions &options) {
   return createMaterializePackages([&](KGEN::PackageLinkOp packageLink) {
-    return specializePackageLinkForPreElaborationLinking(packageLink, runtime,
-                                                         options);
+    return specializePackageLinkForPreElaborationLinking(packageLink, options);
   });
 }
 
@@ -431,30 +433,28 @@ std::unique_ptr<Pass> KGEN::createMaterializePackagesWithDefaultGen(
 //===----------------------------------------------------------------------===//
 
 void KGEN::populateElaborateModulePasses(mlir::PassManager &pm,
-                                         LLCL::Runtime &runtime,
                                          TargetInfoAttr target,
                                          const CompilationOptions &options) {
   buildElaborateModulePipeline(
-      pm, runtime, target, options, /*compileAsmFn=*/
-      [=, &runtime](GeneratorOp func, SymbolConstantAttr symbol,
-                    StringAttr name, const SymbolTable &symtab,
-                    TargetInfoAttr target, EmissionKind emissionKind) {
-        return compileElaboratorAsm(func, symbol, name, symtab, runtime, target,
+      pm, target, options, /*compileAsmFn=*/
+      [=](GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
+          const SymbolTable &symtab, TargetInfoAttr target,
+          EmissionKind emissionKind) {
+        return compileElaboratorAsm(func, symbol, name, symtab, target,
                                     emissionKind, options);
       },
-      [=, &runtime](PackageLinkOp packageLink) {
+      [=](PackageLinkOp packageLink) {
         return specializePackageLinkForPreElaborationLinking(packageLink,
-                                                             runtime, options);
+                                                             options);
       });
-  buildPostElaborationPipeline(pm, runtime, options);
+  buildPostElaborationPipeline(pm, options);
 }
 
 //===----------------------------------------------------------------------===//
 // Caching
 //===----------------------------------------------------------------------===//
 
-ErrorOr<RCRef<Cache::BlobCacheBackend>>
-KGEN::getMojoCacheBackend(LLCL::Runtime &runtime) {
+ErrorOr<RCRef<Cache::BlobCacheBackend>> KGEN::getMojoCacheBackend() {
   return Cache::getLocalDefaultBackendChain(
       std::filesystem::path(".mojo_cache") / "transform", KGEN_VERSION_STRING);
 }
@@ -511,15 +511,14 @@ private:
 //===----------------------------------------------------------------------===//
 
 KGENCompilerLayer::KGENCompilerLayer(
-    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
+    mlir::PassManager &pm, TargetInfoAttr target,
     const CompilationOptions &options, ObjectCompilerLayer &base,
     RCRef<Cache::BlobCacheBackend> transformCacheBackend,
     llvm::orc::ExecutionSession &sess, const llvm::DataLayout &dl,
     MaterializationLayer::AddToSearchOrderFn add)
     : MaterializationLayer(LayerKind::kKGENCompilerLayer, sess, dl,
                            std::move(add)),
-      pm(pm), runtime(runtime), target(target), options(options),
-      baseLayer(base) {
+      pm(pm), target(target), options(options), baseLayer(base) {
   // Construct the caches.
   transformCache =
       RCRef<Cache::TransformCache>::create(std::move(transformCacheBackend));
@@ -540,8 +539,8 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
   setTargetInfo(theModule, target);
 
   // Populate the passes.
-  buildGenerateLibraryPipeline(pm, runtime, options);
-  populateElaborateModulePasses(pm, runtime, target, options);
+  buildGenerateLibraryPipeline(pm, options);
+  populateElaborateModulePasses(pm, target, options);
 
   llvm::StringMap<Telemetry::MetricAttributeValue> attrs;
   auto fileLine = theModule.getLoc()->findInstanceOf<mlir::FileLineColLoc>();
@@ -550,14 +549,15 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
 
   // Run the passes as a cached transform.
   {
-
+    ContextRef ctx = loadContext(target.getContext());
     [[maybe_unused]] auto timeScope =
-        runtime.context->emplaceIfMissing<M::Telemetry::TelemetryContext>()
-            .createUInt64Timer<std::chrono::milliseconds>(
+        ctx->get<M::Telemetry::TelemetryContext>()
+            ->createUInt64Timer<std::chrono::milliseconds>(
                 "mojo.kgen.compile.time", M::Telemetry::Level::L2, attrs);
 
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
-        theModule, transformCache.copy(), runtime.getReadyChain().copy(), pm);
+        theModule, transformCache.copy(),
+        ctx->get<LLCL::Runtime>()->getReadyChain().copy(), pm);
     LLCL::await(ready);
     if (ready.isError())
       return ready.takeDiagnostic().getMessage().copy();
@@ -605,12 +605,10 @@ KGENCompilerLayer::getInterface(const ExportMap &exports) {
 // Default JIT Configuration
 //===----------------------------------------------------------------------===//
 
-ErrorOr<std::unique_ptr<ExecutionEngine>>
-KGEN::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
-                                const CompilationOptions &compilationOptions,
-                                ExecutionEngineOptions executionEngineOptions,
-                                bool isJIT, TargetInfoAttr target,
-                                bool isSearch) {
+ErrorOr<std::unique_ptr<ExecutionEngine>> KGEN::initializeExecutionEngine(
+    mlir::PassManager &pm, const CompilationOptions &compilationOptions,
+    ExecutionEngineOptions executionEngineOptions, bool isJIT,
+    TargetInfoAttr target, bool isSearch) {
 
   // Now create the execution engine so we can JIT.
   auto tmOr = createTargetMachine(compilationOptions, isJIT);
@@ -624,8 +622,8 @@ KGEN::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
   std::unique_ptr<ExecutionEngine> engine = std::move(*engineOr);
 
   // Add the object compiler layer.
-  auto compiler = ObjectCompiler::create(runtime, pm, ".mojo_cache",
-                                         compilationOptions, isJIT, isSearch);
+  auto compiler = ObjectCompiler::create(pm, ".mojo_cache", compilationOptions,
+                                         isJIT, isSearch);
   if (failed(compiler))
     return compiler.takeError();
 
@@ -634,11 +632,11 @@ KGEN::initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
 
   // Add the KGEN compiler layer. First though, get the backend chains to pass
   // into the compile layer.
-  auto cacheBackend = getMojoCacheBackend(runtime);
+  auto cacheBackend = getMojoCacheBackend();
   if (cacheBackend.isError())
     return cacheBackend.takeError();
 
-  engine->addLayer<KGENCompilerLayer>(pm, runtime, target, compilationOptions,
-                                      objLayer, std::move(*cacheBackend));
+  engine->addLayer<KGENCompilerLayer>(pm, target, compilationOptions, objLayer,
+                                      std::move(*cacheBackend));
   return std::move(engine);
 }

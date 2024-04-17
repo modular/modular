@@ -12,6 +12,8 @@
 #include "KGEN/TransformUtils/CallGraphUtils.h"
 #include "KGEN/TransformUtils/Walkers.h"
 #include "LLCL/Support/ForkJoin.h"
+#include "Support/Context.h"
+#include "Support/MDialect/MDialect.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
@@ -30,19 +32,9 @@ namespace M::KGEN {
 namespace {
 struct ResolveCompilerPromisesPass
     : impl::ResolveCompilerPromisesBase<ResolveCompilerPromisesPass> {
-  explicit ResolveCompilerPromisesPass(LLCL::Runtime *runtime = nullptr)
-      : runtime(runtime) {}
-
   void runOnOperation() override;
-
-  LLCL::Runtime *runtime;
 };
 } // namespace
-
-std::unique_ptr<Pass>
-KGEN::createResolveCompilerPromises(LLCL::Runtime &runtime) {
-  return std::make_unique<ResolveCompilerPromisesPass>(&runtime);
-}
 
 namespace {
 /// Op-like wrapper for call operations and capture list operations that must
@@ -543,15 +535,11 @@ void CallGraph::run() {
 void ResolveCompilerPromisesPass::runOnOperation() {
   CompilerTimeTraceScope traceScope(
       "ResolveCompilerPromisesPass::runOnOperation");
-  auto rt =
-      ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-        return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
-            .release();
-      });
   const SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
-  CallGraph cg(*rt, symtab, getTargetInfo(getOperation()));
+  LLCL::Runtime &runtime = *loadContext(&getContext())->get<LLCL::Runtime>();
+  CallGraph cg(runtime, symtab, getTargetInfo(getOperation()));
   cg.build(getOperation(), symtab);
   cg.run();
 }

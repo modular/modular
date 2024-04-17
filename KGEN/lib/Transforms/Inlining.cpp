@@ -19,7 +19,9 @@
 #include "LLCL/Support/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Compiler/Threading.h"
+#include "Support/Context.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "Support/MDialect/MDialect.h"
 #include "Support/STLExtras.h"
 #include "Support/Threading/ThreadLocalCache.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -851,13 +853,9 @@ namespace M::KGEN {
 
 namespace {
 struct InlineParametricPass : impl::InlineParametricBase<InlineParametricPass> {
-  explicit InlineParametricPass(const InlineParametricOptions &options = {},
-                                LLCL::Runtime *runtime = nullptr)
-      : InlineParametricBase(options), runtime(runtime) {}
-
+  explicit InlineParametricPass(const InlineParametricOptions &options = {})
+      : InlineParametricBase(options) {}
   void runOnOperation() override;
-
-  LLCL::Runtime *runtime;
 };
 } // namespace
 
@@ -899,19 +897,13 @@ void InlineParametricPass::runOnOperation() {
     ops.push_back(&op);
   parallelForEach(&getContext(), ops, substTrivialFuncs, replacer);
 
-  // Create a runtime instance if needed.
-  auto rt =
-      ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-        return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
-            .release();
-      });
-
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();
 
+  LLCL::Runtime &runtime = *loadContext(&getContext())->get<LLCL::Runtime>();
   ParametricInliningGraph graph(
-      nodebugOnly ? InlineLevel::AlwaysNoDebug : InlineLevel::Always, *rt,
+      nodebugOnly ? InlineLevel::AlwaysNoDebug : InlineLevel::Always, runtime,
       paramCache, optimizationLevel, updateDebugInfo);
   graph.build(getOperation(), symtab);
   graph.process();
@@ -941,17 +933,11 @@ void InlineParametricPass::runOnOperation() {
 
   // Note: use the same threadpool as before, because that's what the thread
   // local caches are initialized for.
-  LLCL::ForkJoin state(*rt);
+  LLCL::ForkJoin state(runtime);
   for (ParametricInliningGraphNode &caller :
        llvm::make_second_range(graph.nodes))
     state.fork([&] { inlineReadyFn(caller); });
   state.join();
-}
-
-std::unique_ptr<mlir::Pass>
-KGEN::createInlineParametric(LLCL::Runtime &runtime,
-                             const InlineParametricOptions &options) {
-  return std::make_unique<InlineParametricPass>(options, &runtime);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1179,10 +1165,9 @@ namespace M::KGEN {
 namespace {
 struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
   explicit ForceInlinePass(
-      const ForceInlineOptions &options = {}, LLCL::Runtime *runtime = nullptr,
+      const ForceInlineOptions &options = {},
       std::function<void(mlir::OpPassManager &)> buildFuncPasses = nullptr)
-      : ForceInlineBase(options), runtime(runtime),
-        buildFuncPasses(std::move(buildFuncPasses)) {}
+      : ForceInlineBase(options), buildFuncPasses(std::move(buildFuncPasses)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
     // Parse the pass pipeline if provided.
@@ -1206,8 +1191,6 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
 
   void runOnOperation() override;
 
-  /// The LLCL runtime to use.
-  LLCL::Runtime *runtime;
   /// The function pass pipeline builder.
   std::function<void(mlir::OpPassManager &)> buildFuncPasses;
 };
@@ -1215,13 +1198,6 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
 
 void ForceInlinePass::runOnOperation() {
   CompilerTimeTraceScope traceScope("ForceInlinePass::runOnOperation");
-
-  // Create a runtime instance if needed.
-  auto rt =
-      ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-        return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
-            .release();
-      });
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
@@ -1237,8 +1213,9 @@ void ForceInlinePass::runOnOperation() {
     break;
   }
 
+  LLCL::Runtime &runtime = *loadContext(&getContext())->get<LLCL::Runtime>();
   PerThreadPassManagers pms(&getContext(), buildFuncPasses);
-  InliningGraph graph(*rt, pms, updateAttrName);
+  InliningGraph graph(runtime, pms, updateAttrName);
   graph.build(getOperation(), symtab);
   graph.process();
 
@@ -1255,7 +1232,7 @@ void ForceInlinePass::runOnOperation() {
   // If we deferred debuginfo update, do that now.
   if (updateDebugInfo == InlinerDebugInfoUpdateTime::kDeferred) {
     CompilerTimeTraceScope traceScope("updateDebugInfo");
-    LLCL::ForkJoin state(*rt);
+    LLCL::ForkJoin state(runtime);
     std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
       // Update root nodes that call `always_inline` functions.
@@ -1279,8 +1256,7 @@ void ForceInlinePass::runOnOperation() {
 }
 
 std::unique_ptr<mlir::Pass> KGEN::createForceInline(
-    LLCL::Runtime &runtime, const ForceInlineOptions &options,
+    const ForceInlineOptions &options,
     std::function<void(mlir::OpPassManager &)> buildFuncPasses) {
-  return std::make_unique<ForceInlinePass>(options, &runtime,
-                                           std::move(buildFuncPasses));
+  return std::make_unique<ForceInlinePass>(options, std::move(buildFuncPasses));
 }

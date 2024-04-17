@@ -15,6 +15,8 @@
 #include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/ForkJoin.h"
+#include "Support/Context.h"
+#include "Support/MDialect/MDialect.h"
 #include "Support/STLExtras.h"
 #include "mlir/Analysis/CallGraph.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -315,11 +317,9 @@ namespace {
 struct AutomaticInline : impl::AutomaticInlineBase<AutomaticInline> {
   explicit AutomaticInline(
       const AutomaticInlineOptions &options = {},
-      LLCL::Runtime *runtime = nullptr,
       std::function<void(mlir::OpPassManager &)> buildFuncPasses =
           [](mlir::OpPassManager &) {})
-      : AutomaticInlineBase(options), runtime(runtime),
-        buildFuncPasses(buildFuncPasses) {}
+      : AutomaticInlineBase(options), buildFuncPasses(buildFuncPasses) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
     // Parse the pass pipeline if provided.
@@ -342,8 +342,6 @@ struct AutomaticInline : impl::AutomaticInlineBase<AutomaticInline> {
   }
 
   void runOnOperation() override;
-
-  LLCL::Runtime *runtime;
 
   /// The function pass pipeline builder.
   std::function<void(mlir::OpPassManager &)> buildFuncPasses;
@@ -370,12 +368,6 @@ uint64_t AutomaticInline::getInlineThreshold() {
 }
 
 void AutomaticInline::runOnOperation() {
-  auto rt =
-      ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-        return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
-            .release();
-      });
-
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
 
@@ -391,8 +383,9 @@ void AutomaticInline::runOnOperation() {
     break;
   }
 
+  LLCL::Runtime &runtime = *loadContext(&getContext())->get<LLCL::Runtime>();
   PerThreadPassManagers pms(&getContext(), buildFuncPasses);
-  CallGraph graph(*rt, pms, updateAttrName);
+  CallGraph graph(runtime, pms, updateAttrName);
 
   graph.build(getOperation(), symtab);
   graph.performInlining(getInlineThreshold());
@@ -402,7 +395,7 @@ void AutomaticInline::runOnOperation() {
   // If we deferred debuginfo update, do that now.
   if (updateDebugInfo == InlinerDebugInfoUpdateTime::kDeferred) {
     CompilerTimeTraceScope traceScope("updateDebugInfo");
-    LLCL::ForkJoin state(*rt);
+    LLCL::ForkJoin state(runtime);
     std::atomic<bool> innerPipelineFailed = false;
     for (auto &[func, node] : graph.nodes) {
       if (!func ||
@@ -426,7 +419,7 @@ void AutomaticInline::runOnOperation() {
 }
 
 std::unique_ptr<mlir::Pass> KGEN::createAutomaticInline(
-    LLCL::Runtime &runtime, const AutomaticInlineOptions &options,
+    const AutomaticInlineOptions &options,
     std::function<void(mlir::OpPassManager &)> buildFuncPasses) {
-  return std::make_unique<AutomaticInline>(options, &runtime, buildFuncPasses);
+  return std::make_unique<AutomaticInline>(options, buildFuncPasses);
 }

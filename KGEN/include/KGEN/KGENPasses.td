@@ -235,6 +235,7 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
 
   // We generate the LLVM dialect.
   let dependentDialects = [
+    "MDialect",
     "mlir::LLVM::LLVMDialect",
     "mlir::NVVM::NVVMDialect",
     "mlir::index::IndexDialect",
@@ -432,7 +433,10 @@ def InlineParametric : Pass<"inline-param", "mlir::ModuleOp"> {
     'always_inline(nodebug)'. This pass can only run on parametric KGEN IR.
   }];
 
-  let dependentDialects = ["HLCF::HLCFDialect"];
+  let dependentDialects = [
+    "MDialect",
+    "HLCF::HLCFDialect",
+  ];
 
   let options = [
     Option<"nodebugOnly", "nodebug-only", "bool", "false",
@@ -458,7 +462,10 @@ def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
     run on concrete KGEN IR.
   }];
 
-  let dependentDialects = ["HLCF::HLCFDialect"];
+  let dependentDialects = [
+    "MDialect",
+    "HLCF::HLCFDialect",
+  ];
 
   let options = [
     Option<"updateDebugInfo", "update-debug-info",
@@ -486,7 +493,10 @@ def ResolveCompilerPromises : Pass<"resolve-compiler-promises", "ModuleOp"> {
     TODO
   }];
 
-  let dependentDialects = ["mlir::index::IndexDialect"];
+  let dependentDialects = [
+    "MDialect",
+    "mlir::index::IndexDialect",
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -500,7 +510,10 @@ def EliminateDeadSymbols: Pass<"eliminate-dead-symbols", "ModuleOp"> {
     if they aren't exported and have no uses.
   }];
 
-  let dependentDialects = ["KGENDialect"];
+  let dependentDialects = [
+    "MDialect",
+    "KGENDialect",
+  ];
 
   let statistics = [
     Statistic<"numErased", "num-erased", "the number of dead symbols removed">,
@@ -934,7 +947,11 @@ def AutomaticInline: Pass<"automatic-inline", "mlir::ModuleOp"> {
     to improve over time.
   }];
 
-  let dependentDialects = ["HLCF::HLCFDialect"];
+  let dependentDialects = [
+    "MDialect",
+    "HLCF::HLCFDialect",
+  ];
+
   let options = [
     Option<"updateDebugInfo", "update-debug-info",
            "M::KGEN::InlinerDebugInfoUpdateTime",
@@ -983,4 +1000,6 @@ def DeadArgumentElimination:
     results whose values are not being used in the program, and update function
     callsites with fewer arguments and return values.
   }];
+
+  let dependentDialects = ["MDialect"];
 }
