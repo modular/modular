@@ -124,6 +124,7 @@ private:
   /// Lower the given LLVM module to an object file.
   LLCL::AnyAsyncValueRef
   lowerLLVMModuleToObject(llvm::Module &module, Location loc,
+                          MLIRContext *mlirContext,
                           std::optional<size_t> moduleIdx = std::nullopt);
 
   /// The caches needed for compilation.

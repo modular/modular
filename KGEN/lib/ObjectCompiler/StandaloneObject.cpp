@@ -6,6 +6,7 @@
 
 #include "KGEN/Compiler/ObjectCompiler.h"
 
+#include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
@@ -166,8 +167,24 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
   auto runTransformation = [&](Operation *op, WriteableBufferRef buf,
                                LLCL::AnyAsyncValueRef chain) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
+#ifdef MODULAR_ENABLE_TELEMETRY
+    CacheTelemetryContext::getCacheTelemetryContext(
+        loadContext(op->getContext()))
+        .recordCacheMiss("ObjectCompiler::produceArchive");
+#endif
     chain.andThenSync([this, &runtime, op, output = output.copy(), standalone,
                        buf = buf.copy()]() mutable {
+
+#ifdef MODULAR_ENABLE_TELEMETRY
+      [[maybe_unused]] auto timeScope =
+          loadContext(op->getContext())
+              ->emplaceIfMissing<M::Telemetry::TelemetryContext>()
+              .createUInt64Timer<std::chrono::milliseconds>(
+                  "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
+                  {{"pipeline", "ObjectCompiler::produceArchive"}});
+
+#endif
+
       SmallVector<llvm::NewArchiveMember> archiveMembers;
       SmallVector<BufferRef> archiveBuffers;
 
@@ -214,8 +231,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       };
 
       if (noSplitting) {
-        cacheResults.push_back(
-            lowerLLVMModuleToObject(*llvmModule, op->getLoc()));
+        cacheResults.push_back(lowerLLVMModuleToObject(
+            *llvmModule, op->getLoc(), op->getContext()));
       } else {
         if (!options.saveTempsPrefix.empty()) {
           std::string outPath = options.saveTempsPrefix + ".pre-split.ll";
@@ -232,8 +249,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
               *llvmModule, runtime.getWorkQueue()->getParallelismLevel(),
               [&](llvm::Module *inputModule, int64_t idx, bool sync) {
                 if (inputModule) {
-                  cacheResults.push_back(
-                      lowerLLVMModuleToObject(*inputModule, op->getLoc(), idx));
+                  cacheResults.push_back(lowerLLVMModuleToObject(
+                      *inputModule, op->getLoc(), op->getContext(), idx));
                 }
                 if (sync)
                   processSync();
@@ -246,8 +263,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
           // compilation and needs better heuristics to improve.
           splitPerExported(
               *llvmModule, [&](llvm::Module &inputModule, int64_t idx) {
-                cacheResults.push_back(
-                    lowerLLVMModuleToObject(inputModule, op->getLoc(), idx));
+                cacheResults.push_back(lowerLLVMModuleToObject(
+                    inputModule, op->getLoc(), op->getContext(), idx));
               });
         }
       }
@@ -259,6 +276,17 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
              archiveMembers = std::move(archiveMembers), buf = buf.copy(),
              output = output.copy(),
              generatingPtx](MutableArrayRef<AnyAsyncValueRef> values) mutable {
+
+#ifdef MODULAR_ENABLE_TELEMETRY
+              [[maybe_unused]] auto timeScope =
+                  loadContext(op->getContext())
+                      ->emplaceIfMissing<M::Telemetry::TelemetryContext>()
+                      .createUInt64Timer<std::chrono::milliseconds>(
+                          "mojo.compile.cache.miss.time",
+                          M::Telemetry::Level::L2,
+                          {{"pipeline", "ObjectCompiler::produceArchive"}});
+#endif
+
               // If any of the cache results failed, propagate the error.
               for (auto &result : values) {
                 if (result.isError())
@@ -329,7 +357,14 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
     });
     return output;
   };
-  auto onCacheHit = [](Operation *op, BufferRef buf) { return buf.copy(); };
+  auto onCacheHit = [](Operation *op, BufferRef buf) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    CacheTelemetryContext::getCacheTelemetryContext(
+        loadContext(op->getContext()))
+        .recordCacheHit("ObjectCompiler::produceArchive");
+#endif
+    return buf.copy();
+  };
 
   WriteableBufferRef produceArchiveKey = WriteableBuffer::get();
   options.print(*produceArchiveKey << "produceArchive(");
@@ -360,6 +395,7 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
 
 LLCL::AnyAsyncValueRef
 ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
+                                        MLIRContext *mlirContext,
                                         std::optional<size_t> moduleIdx) {
   WriteableBufferRef keyBuf = WriteableBuffer::get();
   options.print(*keyBuf << "lowerLLVMModuleToObject(");
@@ -379,13 +415,25 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
   LLCL::Runtime &runtime =
       *loadContext(mgr->getContext())->get<LLCL::Runtime>();
   auto runTransformation = [this, nonBitcodeKeySize, loc, moduleIdx,
-                            keyBuf = keyBuf.copy(),
+                            mlirContext, keyBuf = keyBuf.copy(),
                             &runtime](WriteableBufferRef buf,
                                       LLCL::AnyAsyncValueRef chain) mutable {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-    chain.andThenAsync([this, nonBitcodeKeySize, loc, moduleIdx,
+#ifdef MODULAR_ENABLE_TELEMETRY
+    CacheTelemetryContext::getCacheTelemetryContext(loadContext(mlirContext))
+        .recordCacheMiss("ObjectCompiler::lowerLLVMModuleToObject");
+#endif
+    chain.andThenAsync([this, mlirContext, nonBitcodeKeySize, loc, moduleIdx,
                         output = output.copy(), keyBuf = std::move(keyBuf),
                         buf = buf.copy(), &runtime]() mutable {
+#ifdef MODULAR_ENABLE_TELEMETRY
+      [[maybe_unused]] auto timeScope =
+          loadContext(mlirContext)
+              ->emplaceIfMissing<M::Telemetry::TelemetryContext>()
+              .createUInt64Timer<std::chrono::milliseconds>(
+                  "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
+                  {{"pipeline", "ObjectCompiler::lowerLLVMModuleToObject"}});
+#endif
       // Extract out the bitcode from the key, as LLVM bitcode dies if the
       // buffer contains other data.
       BufferRef keyBufRef(std::move(keyBuf));
@@ -430,7 +478,13 @@ ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
     });
     return output;
   };
-  auto onCacheHit = [](BufferRef buf) { return buf.copy(); };
+  auto onCacheHit = [mlirContext](BufferRef buf) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    CacheTelemetryContext::getCacheTelemetryContext(loadContext(mlirContext))
+        .recordCacheHit("ObjectCompiler::lowerLLVMModuleToObject");
+#endif
+    return buf.copy();
+  };
 
   return cachedTransform(
       LLCL::MLIRLocationDecoder::getEncodedLocation(loc), transformCache.copy(),

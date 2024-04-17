@@ -310,10 +310,13 @@ cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
 /// update to the RegionHashArrayAttr on `target` - it will update the region
 /// hashes from the old versions (pre-transform) to the new versions (transform
 /// applied).
-LLCL::AnyAsyncValueRef cachedTransform(Operation *target,
-                                       RCRef<TransformCache> transformCache,
-                                       LLCL::AnyAsyncValueRef chain,
-                                       mlir::PassManager &pm);
+/// moreOnMiss and moreOnHit are two callbacks for extra functionality to
+/// perform for cache miss and hit accordingly if needed.
+LLCL::AnyAsyncValueRef cachedTransform(
+    Operation *target, RCRef<TransformCache> transformCache,
+    LLCL::AnyAsyncValueRef chain, mlir::PassManager &pm,
+    std::function<void(Operation *)> moreOnMiss = [](Operation *) {},
+    std::function<void(Operation *)> moreOnHit = [](Operation *) {});
 
 } // namespace M::Cache
 

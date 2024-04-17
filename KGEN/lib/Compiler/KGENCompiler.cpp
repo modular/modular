@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/KGENCompiler.h"
+#include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/JITSupport.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -310,24 +311,47 @@ KGEN::compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
   // Encode the cache key to disambiguiate between different emission kinds.
   *key << (int)emissionKind;
   // Functor to adapt the transform functor to the required API.
-  auto runTransformation =
-      [func = std::move(compileToAsm)](Operation *op, WriteableBufferRef buf,
-                                       AnyAsyncValueRef chain) mutable {
-        auto output = AsyncValueRef<BufferRef>::allocate(chain.getRuntime());
-        std::move(chain).andThenSync(
-            [op, func = std::move(func), output = output.copy(),
-             buf = std::move(buf)](AnyAsyncValueRef &&chain) mutable {
-              if (chain.isError())
-                return std::move(output).setToError(chain.takeDiagnostic());
-              if (ErrorOrSuccess err = func(op, buf.copy()); err.isError())
-                return std::move(output).setToError(
-                    LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
-              return std::move(output).emplace(std::move(buf));
-            });
-        return output;
-      };
+  auto runTransformation = [func = std::move(compileToAsm)](
+                               Operation *op, WriteableBufferRef buf,
+                               AnyAsyncValueRef chain) mutable {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    Cache::CacheTelemetryContext::getCacheTelemetryContext(
+        loadContext(op->getContext()))
+        .recordCacheMiss("KGEN::compileElaboratorAsm");
+#endif
+
+    auto output = AsyncValueRef<BufferRef>::allocate(chain.getRuntime());
+    std::move(chain).andThenSync(
+        [op, func = std::move(func), output = output.copy(),
+         buf = std::move(buf)](AnyAsyncValueRef &&chain) mutable {
+
+#ifdef MODULAR_ENABLE_TELEMETRY
+          [[maybe_unused]] auto timeScope =
+              loadContext(op->getContext())
+                  ->emplaceIfMissing<M::Telemetry::TelemetryContext>()
+                  .createUInt64Timer<std::chrono::milliseconds>(
+                      "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
+                      {{"pipeline", "KGEN::compileElaboratorAsm"}});
+#endif
+          if (chain.isError())
+            return std::move(output).setToError(chain.takeDiagnostic());
+          if (ErrorOrSuccess err = func(op, buf.copy()); err.isError())
+            return std::move(output).setToError(
+                LLCL::getMLIRDiagnostic(err.takeError(), op->getLoc()));
+          return std::move(output).emplace(std::move(buf));
+        });
+    return output;
+  };
   // On cache hit, just return the assembly buffer.
-  auto onCacheHit = [](Operation *op, BufferRef buf) { return buf.copy(); };
+  auto onCacheHit = [](Operation *op, BufferRef buf) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    Cache::CacheTelemetryContext::getCacheTelemetryContext(
+        loadContext(op->getContext()))
+        .recordCacheHit("KGEN::compileElaboratorAsm");
+#endif
+
+    return buf.copy();
+  };
   LLCL::Runtime &runtime =
       *loadContext(target.getContext())->get<LLCL::Runtime>();
   AnyAsyncValueRef result = Cache::cachedTransform(
@@ -367,7 +391,12 @@ ErrorOrSuccess KGEN::runLibraryGenerationPipeline(
       *loadContext(module.getContext())->get<LLCL::Runtime>();
   LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
       module, transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
-      genLibPM);
+      genLibPM,
+      Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
+          "KGEN::runLibraryGenerationPipeline", "mojo.compiler.cache.miss.time",
+          {{"pipeline", "KGEN"}}),
+      Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
+          "KGEN::runLibraryGenerationPipeline"));
   LLCL::await(ready);
   if (ready.isError())
     return ready.takeDiagnostic().getMessage().copy();
@@ -557,7 +586,12 @@ ErrorOrSuccess KGENCompilerLayer::add(StringRef libName, ModuleOp theModule) {
 
     LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
         theModule, transformCache.copy(),
-        ctx->get<LLCL::Runtime>()->getReadyChain().copy(), pm);
+        ctx->get<LLCL::Runtime>()->getReadyChain().copy(), pm,
+        Cache::CacheTelemetryContext::getTelemetryOnMissLambda(
+            "KGENCompilerLayer::add", "mojo.compiler.cache.miss.time",
+            {{"pipeline", "KGEN"}}),
+        Cache::CacheTelemetryContext::getTelemetryOnHitLambda(
+            "KGENCompilerLayer::add"));
     LLCL::await(ready);
     if (ready.isError())
       return ready.takeDiagnostic().getMessage().copy();
