@@ -16,10 +16,6 @@
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/BuiltinOps.h"
 
-namespace M::LLCL {
-class Runtime;
-} // namespace M::LLCL
-
 namespace M::KGEN {
 class PackageLinkOp;
 
@@ -30,9 +26,7 @@ class PackageLinkOp;
 /// This populates the passes to produce a fully concrete KGEN module. It's the
 /// equivalent of the `buildElaborateModulePipeline` function, but with common
 /// defaults for elaboration handlers.
-void populateElaborateModulePasses(mlir::PassManager &pm,
-                                   LLCL::Runtime &runtime,
-                                   TargetInfoAttr target,
+void populateElaborateModulePasses(mlir::PassManager &pm, TargetInfoAttr target,
                                    const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
@@ -41,8 +35,7 @@ void populateElaborateModulePasses(mlir::PassManager &pm,
 
 /// Returns Mojo transform backend, or an error if the backend could not be
 /// created.
-ErrorOr<RCRef<Cache::BlobCacheBackend>>
-getMojoCacheBackend(LLCL::Runtime &runtime);
+ErrorOr<RCRef<Cache::BlobCacheBackend>> getMojoCacheBackend();
 
 //===----------------------------------------------------------------------===//
 // KGENCompilerLayer
@@ -57,8 +50,8 @@ class ObjectCompilerLayer;
 /// MaterializationUnit and uses that to emit symbols on-demand.
 class KGENCompilerLayer : public MaterializationLayer {
 public:
-  KGENCompilerLayer(mlir::PassManager &pm, LLCL::Runtime &runtime,
-                    TargetInfoAttr target, const CompilationOptions &options,
+  KGENCompilerLayer(mlir::PassManager &pm, TargetInfoAttr target,
+                    const CompilationOptions &options,
                     ObjectCompilerLayer &base,
                     RCRef<Cache::BlobCacheBackend> transformCacheBackend,
                     llvm::orc::ExecutionSession &sess,
@@ -91,7 +84,6 @@ private:
 
 private:
   mlir::PassManager &pm;
-  LLCL::Runtime &runtime;
   TargetInfoAttr target;
   CompilationOptions options;
   ObjectCompilerLayer &baseLayer;
@@ -109,38 +101,34 @@ private:
 ErrorOr<CrossDeviceFunction>
 compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
                      StringAttr name, const SymbolTable &symtab,
-                     LLCL::Runtime &runtime, TargetInfoAttr target,
-                     EmissionKind emissionKind, CompilationOptions options);
+                     TargetInfoAttr target, EmissionKind emissionKind,
+                     CompilationOptions options);
 
 /// Sets up an ExecutionEngine instance for compiling Mojo. It handles
 /// initializing the target machine, the cache backends, and the execution
 /// engine itself. On success, the execution engine is returned.
-ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>>
-initializeExecutionEngine(LLCL::Runtime &runtime, mlir::PassManager &pm,
-                          const KGEN::CompilationOptions &compilationOptions,
-                          KGEN::ExecutionEngineOptions executionEngineOptions,
-                          bool isJIT, TargetInfoAttr target,
-                          bool isSearch = false);
+ErrorOr<std::unique_ptr<KGEN::ExecutionEngine>> initializeExecutionEngine(
+    mlir::PassManager &pm, const KGEN::CompilationOptions &compilationOptions,
+    KGEN::ExecutionEngineOptions executionEngineOptions, bool isJIT,
+    TargetInfoAttr target, bool isSearch = false);
 
 /// Run the library generation pipeline on the given module. If
 /// `materializeDependencies` is true, the pipeline will ensure all dependencies
 /// are materialized in the final module.
 ErrorOrSuccess
-runLibraryGenerationPipeline(ModuleOp module, LLCL::Runtime &runtime,
+runLibraryGenerationPipeline(ModuleOp module,
                              const KGEN::CompilationOptions &compileOptions,
                              bool materializeDependencies = false);
 
 /// This creates the materialize packages pass with the default library
 /// generation pipeline, i.e. `runLibraryGenerationPipeline`.
 std::unique_ptr<Pass>
-createMaterializePackagesWithDefaultGen(LLCL::Runtime &runtime,
-                                        const CompilationOptions &options);
+createMaterializePackagesWithDefaultGen(const CompilationOptions &options);
 
 /// Create an instance of the elaborator pass using the given configuration.
 /// The created elaborator pass uses a default specialization executor that
 /// JITs and executes in-process.
-std::unique_ptr<Pass>
-createElaborateGeneratorsWithDefaultJIT(LLCL::Runtime &runtime);
+std::unique_ptr<Pass> createElaborateGeneratorsWithDefaultJIT();
 
 } // namespace M::KGEN
 

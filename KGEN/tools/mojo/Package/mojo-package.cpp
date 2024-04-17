@@ -342,7 +342,7 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   // user.
   mlir::PassManager pm(theModule.getContext());
   configurePassManager(pm);
-  buildCheckLITPipeline(pm, runtime, packageArgs.compileOptions);
+  buildCheckLITPipeline(pm, packageArgs.compileOptions);
   if (failed(pm.run(theModule)))
     return Error("errors occurred during compilation");
 

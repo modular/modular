@@ -34,6 +34,7 @@ class LLVMFuncOp;
 
 namespace M {
 class TargetInfoAttr;
+class MDialect;
 
 namespace HLCF {
 class HLCFDialect;
@@ -85,8 +86,8 @@ enum class InlinerDebugInfoUpdateTime {
 #define GEN_PASS_REGISTRATION
 #include "KGEN/KGENPasses.h.inc"
 
-/// Register all passes with default options and the provided runtime.
-void registerDefaultKGENPasses(LLCL::Runtime &runtime);
+/// Register all passes with default options.
+void registerDefaultKGENPasses();
 
 //===----------------------------------------------------------------------===//
 // Elaborator
@@ -117,7 +118,7 @@ using ElaboratorCompileAsmFn = std::function<ErrorOr<CrossDeviceFunction>(
 /// Create an instance of the elaborator pass that captures all of the
 /// referenced include files.
 std::unique_ptr<mlir::Pass>
-createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
+createElaborateGenerators(TargetInfoAttr target,
                           const ElaborateGeneratorsOptions &options = {},
                           ElaboratorCompileAsmFn compileAsmFn = {});
 
@@ -125,30 +126,15 @@ createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
 // Inlining
 //===----------------------------------------------------------------------===//
 
-/// Create a ForceInline pass with an LLCL runtime.
-std::unique_ptr<mlir::Pass>
-createInlineParametric(LLCL::Runtime &runtime,
-                       const InlineParametricOptions &options = {});
-
-/// Create a ForceInline pass with an LLCL runtime instance and a
-/// function pass pipeline to run.
+/// Create a ForceInline pass with a function pass pipeline to run.
 std::unique_ptr<mlir::Pass> createForceInline(
-    LLCL::Runtime &runtime, const ForceInlineOptions &options = {},
+    const ForceInlineOptions &options = {},
     std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
 
-/// Create an AutomaticInline pass with an LLCL runtime instance and a
-/// function pass pipeline to run.
+/// Create an AutomaticInline pass with a function pass pipeline to run.
 std::unique_ptr<mlir::Pass> createAutomaticInline(
-    LLCL::Runtime &runtime, const AutomaticInlineOptions &options = {},
+    const AutomaticInlineOptions &options = {},
     std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
-
-/// Create a ResolveCompilerPromises pass with an LLCL runtime.
-std::unique_ptr<mlir::Pass>
-createResolveCompilerPromises(LLCL::Runtime &runtime);
-
-/// Create a DeadArgumentElimination pass with an LLCL runtime.
-std::unique_ptr<mlir::Pass>
-createDeadArgumentElimination(LLCL::Runtime &runtime);
 
 //===----------------------------------------------------------------------===//
 // LowerToLLVMPipeline
@@ -241,7 +227,7 @@ using PackageGenLibraryFn =
 
 /// Create a MaterializePackages pass with the specified behavior.
 std::unique_ptr<mlir::Pass>
-createMaterializePackages(PackageGenLibraryFn packageGenLibraryFn = nullptr);
+createMaterializePackages(PackageGenLibraryFn packageGenLibraryFn);
 
 //===----------------------------------------------------------------------===//
 // CHECKLITPipeline
@@ -249,7 +235,7 @@ createMaterializePackages(PackageGenLibraryFn packageGenLibraryFn = nullptr);
 
 /// This populates the post-parser pipeline that checks and lowers source-level
 /// LIT constructs.
-void buildCheckLITPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
+void buildCheckLITPipeline(mlir::PassManager &pm,
                            const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
@@ -259,7 +245,7 @@ void buildCheckLITPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 /// This populates the pre-elaboration phase passes of the KGEN compiler. The
 /// distribution format of a KGEN library is essentially what comes just before
 /// elaboration because the parameter system allows significant extension.
-void buildGenerateLibraryPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
+void buildGenerateLibraryPipeline(mlir::PassManager &pm,
                                   const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
@@ -268,8 +254,7 @@ void buildGenerateLibraryPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 
 /// This populates the passes to produce a fully concrete KGEN module. That
 /// means it runs the elaborator and any dependent passes.
-void buildElaborateModulePipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
-                                  TargetInfoAttr target,
+void buildElaborateModulePipeline(mlir::PassManager &pm, TargetInfoAttr target,
                                   const CompilationOptions &options,
                                   ElaboratorCompileAsmFn compileAsmFn,
                                   PackageGenLibraryFn packageGenLibraryFn);
@@ -280,7 +265,7 @@ void buildElaborateModulePipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 
 /// This populates the post-elaboration optimization and simplification passes.
 /// These passes are intended to run immediately after the elaborator.
-void buildPostElaborationPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
+void buildPostElaborationPipeline(mlir::PassManager &pm,
                                   const CompilationOptions &options);
 
 } // namespace KGEN

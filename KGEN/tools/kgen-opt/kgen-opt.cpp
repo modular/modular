@@ -304,7 +304,7 @@ int main(int argc, char **argv) {
   registerContext(registry, *ctxOr);
 
   // Register passes.
-  KGEN::registerDefaultKGENPasses(*(*ctxOr)->get<LLCL::Runtime>());
+  KGEN::registerDefaultKGENPasses();
 
   // Register cl options.
   static llvm::cl::opt<bool> dummyOpt{"llcl-single-thread"};

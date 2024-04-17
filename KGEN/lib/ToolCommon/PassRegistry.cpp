@@ -15,7 +15,7 @@
 using namespace M;
 using namespace KGEN;
 
-void KGEN::registerDefaultKGENPasses(LLCL::Runtime &runtime) {
+void KGEN::registerDefaultKGENPasses() {
   // Register the standard passes we want.
   mlir::registerCSEPass();
   mlir::registerCanonicalizerPass();
@@ -61,20 +61,17 @@ void KGEN::registerDefaultKGENPasses(LLCL::Runtime &runtime) {
   KGEN::MOGGPreElab::registerOutlineMOGGFuncs();
   KGEN::MOGGPreElab::registerSliceMOGGFuncs();
 
-  // Register passes that require a runtime.
+  // Passes that require a runtime.
   mlir::registerPass(
-      [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(runtime); });
-  mlir::registerPass([&] { return KGEN::createForceInline(runtime); });
-  mlir::registerPass([&] { return KGEN::createInlineParametric(runtime); });
-  mlir::registerPass([&] { return KGEN::createAutomaticInline(runtime); });
-  mlir::registerPass(
-      [&] { return KGEN::createDeadArgumentElimination(runtime); });
-  mlir::registerPass(
-      [&] { return KGEN::createResolveCompilerPromises(runtime); });
+      [&] { return KGEN::createElaborateGeneratorsWithDefaultJIT(); });
+  KGEN::registerForceInline();
+  KGEN::registerInlineParametric();
+  KGEN::registerAutomaticInline();
+  KGEN::registerDeadArgumentElimination();
+  KGEN::registerResolveCompilerPromises();
 
   // Register passes that require other arguments.
   KGEN::CompilationOptions options;
-  mlir::registerPass([=, &runtime] {
-    return KGEN::createMaterializePackagesWithDefaultGen(runtime, options);
-  });
+  mlir::registerPass(
+      [=] { return KGEN::createMaterializePackagesWithDefaultGen(options); });
 }

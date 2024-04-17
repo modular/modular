@@ -18,7 +18,9 @@ add_modular_library(KGENCompiler
   KGENEmitObject
   KGENTransforms
   LowerLIT
+  MSupport
 
+  MDialect
   KGENDialect
   LITDialect
   POPDialect

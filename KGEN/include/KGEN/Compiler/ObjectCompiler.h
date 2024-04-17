@@ -36,9 +36,10 @@ namespace M::KGEN {
 class ObjectCompiler {
 public:
   /// Construct an ObjectCompiler that infers the exports from the module.
-  static ErrorOr<ObjectCompiler>
-  create(LLCL::Runtime &runtime, mlir::PassManager &mgr, StringRef basePath,
-         CompilationOptions options, bool isJIT, bool isSearch = false);
+  static ErrorOr<ObjectCompiler> create(mlir::PassManager &mgr,
+                                        StringRef basePath,
+                                        CompilationOptions options, bool isJIT,
+                                        bool isSearch = false);
 
   /// Allow the user to update the pass manager. This is useful when you'd like
   /// to use the same ObjectCompiler instance with multiple PassManager objects.
@@ -116,7 +117,7 @@ public:
 
 private:
   /// Construct an ObjectCompiler with a specific set of exports.
-  ObjectCompiler(LLCL::Runtime &runtime, mlir::PassManager &mgr,
+  ObjectCompiler(mlir::PassManager &mgr,
                  RCRef<Cache::BlobCacheBackend> transformCache,
                  CompilationOptions options, bool isJIT, bool isSearch);
 
@@ -127,9 +128,6 @@ private:
 
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
-
-  /// The async runtime to use during lowering.
-  LLCL::Runtime &runtime;
 
   /// The configured MLIR pass manager to use.
   mlir::PassManager *mgr;

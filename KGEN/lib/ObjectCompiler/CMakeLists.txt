@@ -30,9 +30,11 @@ add_modular_library(KGENEmitObject
   KGENToolCommon
   KGENPipeline
 
+  MDialect
   MCache
   MCompilerSupport
   MTelemetry
+  MSupport
 
   MLIRIndexToLLVM
   MLIRTargetLLVMIRExport

@@ -123,8 +123,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
       if (!packageModuleOr)
         std::move(out).setToError(LLCL::getMLIRDiagnostic(
             "unable to load parsed module bytecode", packageOp->getLoc()));
-      if (auto err =
-              runLibraryGenerationPipeline(*packageModuleOr, runtime, options))
+      if (auto err = runLibraryGenerationPipeline(*packageModuleOr, options))
         std::move(out).setToError(
             LLCL::getMLIRDiagnostic(err.takeError(), packageOp->getLoc()));
       else
@@ -193,11 +192,22 @@ int main(int argc, char **argv) {
   sourceManager.AddNewSourceBuffer(clOptions.openInputFileOrExit(),
                                    llvm::SMLoc());
 
+  // Create our execution context.
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo-prime-package-package",
+      Init::Options().withRuntimeOptions(
+          LLCL::RuntimeOptions().withMainWillNotDonate().withCPUAffinity(
+              false)));
+  if (ctxOr.isError())
+    return clOptions.reportError(Twine("unable to create context: ") +
+                                 ctxOr.getError());
+
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) {
         DialectRegistry registry;
         registerAllKGENDialects(registry);
         registerKGENToLLVMTranslation(registry);
+        registerContext(registry, *ctxOr);
         ctx->appendDialectRegistry(registry);
         ctx->loadAllAvailableDialects();
 

@@ -324,7 +324,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   // Generate a library file or go all the way through elaboration.
   if (clOptions.cmd == Command::kGenLibraryFile) {
-    buildGenerateLibraryPipeline(pm, runtime, options);
+    buildGenerateLibraryPipeline(pm, options);
     if (failed(pm.run(*theModule)))
       return failure(clOptions.reportError("compilation failed"));
     return emitModuleIR(*theModule, clOptions);
@@ -338,7 +338,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   eeOptions.crossCompiling = options.targetCpu != llvm::sys::getHostCPUName();
 
   auto engineOr = initializeExecutionEngine(
-      runtime, pm, options, std::move(eeOptions),
+      pm, options, std::move(eeOptions),
       /*isJIT=*/clOptions.cmd == Command::kExecute, target);
   if (failed(engineOr))
     return failure(clOptions.reportError(engineOr.getError()));

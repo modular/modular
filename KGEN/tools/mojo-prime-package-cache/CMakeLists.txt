@@ -21,6 +21,7 @@ add_modular_tool(mojo-prime-package-cache
   LLCLRuntimeGlobals
   MArchTarget
   MSupportGlobals
+  MSupportInit
   MVersion
   MojoParser
   MojoToolsCommon

@@ -24,6 +24,7 @@
 #include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "Support/Context.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/MDialect.h"
@@ -453,11 +454,12 @@ class ElaboratorImpl : public Elaborator {
 public:
   ElaboratorImpl(SymbolTable &symtab, ParameterCollector::Analysis &paramCache,
                  TargetInfoAttr target, ElaboratorCallbacks callbacks,
-                 LLCL::Runtime &runtime,
                  const ElaborateGeneratorsOptions &config)
-      : Elaborator(symtab, target, config), g(runtime),
+      : Elaborator(symtab, target, config),
+        runtime(*loadContext(target.getContext())->get<LLCL::Runtime>()),
+        g(this->runtime),
         paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
-        callbacks(std::move(callbacks)), runtime(runtime) {}
+        callbacks(std::move(callbacks)) {}
 
   std::optional<ErrorTreeOr<FuncOp>>
   getConcreteFunction(ImplNode *parent, Location loc,
@@ -605,6 +607,9 @@ private:
   Shared<DenseMap<GeneratorOp, std::unique_ptr<ParameterUseDefGraph>>>
       knownGraphs;
 
+  /// The LLCL runtime instance to use.
+  LLCL::Runtime &runtime;
+
   /// The callgraph being expanded.
   ExpansionGraph g;
 
@@ -613,9 +618,6 @@ private:
 
   /// Callbacks to use for JIT functionalities.
   ElaboratorCallbacks callbacks;
-
-  /// The LLCL runtime instance to use.
-  LLCL::Runtime &runtime;
 
   /// Deferred generated symbols to append to the module.
   SmallVector<mlir::SymbolOpInterface> deferredSymbols;
@@ -1765,10 +1767,9 @@ class ElaborateGeneratorsPass
     : public KGEN::impl::ElaborateGeneratorsBase<ElaborateGeneratorsPass> {
 public:
   ElaborateGeneratorsPass(const ElaborateGeneratorsOptions &options = {},
-                          LLCL::Runtime *runtime = nullptr,
                           TargetInfoAttr target = nullptr,
                           ElaboratorCompileAsmFn compileAsmFn = {})
-      : ElaborateGeneratorsBase(options), runtime(runtime), target(target),
+      : ElaborateGeneratorsBase(options), target(target),
         compileAsmFn(std::move(compileAsmFn)) {}
 
   LogicalResult initialize(MLIRContext *ctx) override {
@@ -1793,11 +1794,6 @@ public:
   }
 
   void runOnOperation() override {
-    auto rt =
-        ConditionallyOwnedPointer<LLCL::Runtime>::takeIfNeeded(runtime, []() {
-          return LLCL::createUniqueRuntime(LLCL::RuntimeOptions().forDebug())
-              .release();
-        });
     ModuleOp theModule = getOperation();
 
     auto &symtab = getAnalysis<mlir::SymbolTableAnalysis>();
@@ -1854,14 +1850,12 @@ public:
 
     // Now, construct and run the elaborator.
     ElaboratorImpl impl(symtab.getTopLevelSymbolTable(), paramCache, target,
-                        std::move(callbacks), *runtime, config);
+                        std::move(callbacks), config);
     if (failed(impl.run(theModule, primaryGenerators)))
       return signalPassFailure();
   }
 
 private:
-  /// An optional LLCL runtime pointer.
-  LLCL::Runtime *runtime;
   /// The compilation target.
   TargetInfoAttr target;
   /// The functor used to compile a module to assembly.
@@ -1870,9 +1864,9 @@ private:
 } // namespace
 
 std::unique_ptr<mlir::Pass>
-KGEN::createElaborateGenerators(LLCL::Runtime &runtime, TargetInfoAttr target,
+KGEN::createElaborateGenerators(TargetInfoAttr target,
                                 const ElaborateGeneratorsOptions &options,
                                 ElaboratorCompileAsmFn compileAsmFn) {
-  return std::make_unique<ElaborateGeneratorsPass>(options, &runtime, target,
+  return std::make_unique<ElaborateGeneratorsPass>(options, target,
                                                    std::move(compileAsmFn));
 }

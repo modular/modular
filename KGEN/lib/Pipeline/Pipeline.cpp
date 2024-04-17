@@ -14,7 +14,7 @@
 using namespace M;
 using namespace KGEN;
 
-void KGEN::buildCheckLITPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
+void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
                                  const CompilationOptions &options) {
   // Lower semantic control flow operations like lit.return to terminators and
   // diagnose unreachable code.
@@ -27,7 +27,6 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm, LLCL::Runtime &runtime,
 }
 
 void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
-                                        LLCL::Runtime &runtime,
                                         const CompilationOptions &options) {
   // If the compilation options aren't for full debug, strip the extra info from
   // the module.
@@ -36,7 +35,7 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
         {/*preserveLineTables*/ options.debugLevel ==
          CompilationOptions::kLineTablesOnly}));
   }
-  buildCheckLITPipeline(pm, runtime, options);
+  buildCheckLITPipeline(pm, options);
 
   pm.addPass(createLowerLIT(
       {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
@@ -67,7 +66,7 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
       options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug;
   // FIXME(#32286): The bodies of precompiled functions are not available to the
   // parametric inliner.
-  pm.addPass(createInlineParametric(runtime, inlinerOpts));
+  pm.addPass(createInlineParametric(inlinerOpts));
   if (options.optimizationLevel >= 1) {
     pm.addPass(createVerifyParameters(
         VerifyParametersOptions{/*simplifyParameters=*/true}));
@@ -86,7 +85,7 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
 }
 
 void KGEN::buildElaborateModulePipeline(
-    mlir::PassManager &pm, LLCL::Runtime &runtime, TargetInfoAttr target,
+    mlir::PassManager &pm, TargetInfoAttr target,
     const CompilationOptions &options, ElaboratorCompileAsmFn compileAsmFn,
     PackageGenLibraryFn packageGenLibraryFn) {
   pm.addPass(createEliminateDeadSymbols());
@@ -116,18 +115,17 @@ void KGEN::buildElaborateModulePipeline(
       options.debugLevel == CompilationOptions::kLineTablesOnly ||
       options.debugLevel == CompilationOptions::kFullDebugInfo;
   elaboratorOptions.diagAllFailures = options.emitAllElaboratorDiags;
-  pm.addPass(createElaborateGenerators(runtime, target, elaboratorOptions,
+  pm.addPass(createElaborateGenerators(target, elaboratorOptions,
                                        std::move(compileAsmFn)));
 }
 
 void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
-                                        LLCL::Runtime &runtime,
                                         const CompilationOptions &options) {
   // Run DCE first coming out of the elaborator.
   pm.addPass(createEliminateDeadSymbols());
 
   // Then immediately resolve compiler promises.
-  pm.addPass(createResolveCompilerPromises(runtime));
+  pm.addPass(createResolveCompilerPromises());
 
   // We lower argument input conventions.
   pm.addNestedPass<FuncOp>(createLowerArgConventions());
@@ -156,7 +154,6 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   };
 
   pm.addPass(createForceInline(
-      runtime,
       {options.debugLevel == CompilationOptions::DebugInfoLevel::kNoDebug
            ? InlinerDebugInfoUpdateTime::kNever
            : (options.optimizationLevel == 0
@@ -204,7 +201,6 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   };
 
   pm.addPass(createAutomaticInline(
-      runtime,
       {options.debugLevel == CompilationOptions::DebugInfoLevel::kNoDebug
            ? InlinerDebugInfoUpdateTime::kNever
            : (options.optimizationLevel == 0

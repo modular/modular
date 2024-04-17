@@ -16,6 +16,7 @@
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
+#include "Support/MDialect/MDialect.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/TypeRange.h"

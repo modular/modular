@@ -116,8 +116,7 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   // Build the compilation pipeline.
   compilationPM =
       std::make_unique<mlir::PassManager>(ctx, ModuleOp::getOperationName());
-  buildGenerateLibraryPipeline(*compilationPM, typeSystem->getRuntime(),
-                               *compilationOptions);
+  buildGenerateLibraryPipeline(*compilationPM, *compilationOptions);
 
   // TODO(#33931) HACK, HACK, HACK!!!
   // To make CompilationOptions being properly passed to KGEN compiler
@@ -125,12 +124,11 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   KGEN::CompilationOptions hackCompilationOptions;
   hackCompilationOptions.enableLLVMPerFunctionSplitting = false;
 
-  populateElaborateModulePasses(*compilationPM, typeSystem->getRuntime(),
-                                targetInfo, hackCompilationOptions);
+  populateElaborateModulePasses(*compilationPM, targetInfo,
+                                hackCompilationOptions);
 
   // Create the compiler instance.
-  auto compilerOr = ObjectCompiler::create(typeSystem->getRuntime(),
-                                           *compilationPM, ".mojo_cache",
+  auto compilerOr = ObjectCompiler::create(*compilationPM, ".mojo_cache",
                                            *compilationOptions, /*isJIT=*/true);
   if (failed(compilerOr))
     return;
