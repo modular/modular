@@ -173,7 +173,7 @@ fn tensor_type_new(
         ctx.c,
         dtype.c,
         ranked,
-        Pointer[_mlir.Attribute](dims.data.value).bitcast[
+        Pointer[_mlir.Attribute](dims.data.address).bitcast[
             _mlir.Attribute.c_type
         ](),
         len(dims),

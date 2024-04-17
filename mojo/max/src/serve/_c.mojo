@@ -18,7 +18,7 @@ struct Int64ArrayRef(Boolable):
     var length: Int
 
     fn __init__(inout self, vec: List[Int64]):
-        self.data = Pointer[Int64](vec.data.value)
+        self.data = Pointer[Int64](vec.data.address)
         self.length = len(vec)
 
     fn __bool__(self) -> Bool:
