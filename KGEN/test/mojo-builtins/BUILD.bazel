@@ -1,0 +1,24 @@
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+lit_tests(
+    srcs = glob([
+        "**/*.test",
+        "**/*.mojo",
+    ]),
+    data = [
+        "//KGEN:CompilerRT.shared.file",
+        "//Kernels/mojo/stdlib:stdlib_srcs",
+        "@llvm-project//compiler-rt:orc_rt",
+    ],
+    env = {
+        "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
+        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //Kernels/mojo/stdlib:stdlib_srcs)",
+    },
+    tools = [
+        "//KGEN:hash-mlir",
+        "//KGEN:kgen-opt",
+        "//KGEN:kgen-translate",
+        "//KGEN:mojo",
+    ],
+)
