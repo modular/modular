@@ -1858,7 +1858,7 @@ void SharedState::notifyListenerOnParameterBinding(ArrayRef<ASTDecl *> decls,
                                                    ArrayRef<Operand> operands) {
   if (isListenerInterestedInLoc(parserListener, rsquareLoc)) {
     SmallVector<ExprNode *> parameters = llvm::map_to_vector(
-        operands, [](const Operand &operand) { return operand.value; });
+        operands, [](const Operand &operand) { return operand.expr; });
     parserListener->onParameterBinding(decls, rsquareLoc, parameters);
   }
 }

@@ -236,7 +236,7 @@ static void applyExport(SMLoc loc, SharedState &shared, ASTDecl &decl,
   std::optional<std::string> exportABI;
   std::optional<std::string> aliasName;
   for (const Operand &operand : operands) {
-    auto strNode = dyn_cast<StringLiteralNode>(operand.value);
+    auto strNode = dyn_cast<StringLiteralNode>(operand.expr);
     if (strNode && operand.isKeyword() && operand.name == "ABI") {
       exportABI = strNode->getValue();
       if (*exportABI != "C") {
@@ -570,7 +570,7 @@ void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
   // HACK(#16110): Need to implement proper capture list syntax rather than rely
   // on a special decorator.
   for (const Operand &operand : node.operands) {
-    auto *declRef = dyn_cast<DeclRefNode>(operand.value);
+    auto *declRef = dyn_cast<DeclRefNode>(operand.expr);
     if (!declRef) {
       emitError(operand.getLoc(), "'@")
           << decoratorSpelling << "' expected a declaration";
@@ -670,7 +670,7 @@ void FnDecorators::applyLLVMMetadata(const CallNode &node) {
       emitError(value.getLoc(), "LLVM metadata requires a name");
       continue;
     }
-    if (PValue attr = emitter.emitExprPValue(value.value, EC_Decorator))
+    if (PValue attr = emitter.emitExprPValue(value.expr, EC_Decorator))
       attrs.append(value.name, attr);
   }
   funcOp.setLLVMMetadataAttr(attrs.getDictionary(getContext()));
@@ -1615,7 +1615,7 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
       // @nonmaterializable(TargetType)
       if (declRef->spelling == "nonmaterializable" &&
           callNode->operands.size() == 1) {
-        if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].value)) {
+        if (auto drn = dyn_cast<DeclRefNode>(callNode->operands[0].expr)) {
           ASTDecl *parentDecl = structDecl.getParentDecl();
           ExprEmitter emitter(shared, *parentDecl, EC_Type);
           if (ASTType t = emitter.emitExprType(drn)) {
