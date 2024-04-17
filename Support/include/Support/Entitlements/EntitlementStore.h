@@ -16,7 +16,9 @@
 #include "Support/ErrorOr.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/Support/Process.h"
 #include <filesystem>
+#include <thread>
 
 namespace M {
 /// Forward-declaration for a single entitlement.

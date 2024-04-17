@@ -13,6 +13,7 @@
 
 #include "llvm/ADT/StringRef.h"
 
+#include "LLCL/Support/Atomics.h"
 #include "Support/ErrorOr.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "Support/MArchTarget/Host.h"

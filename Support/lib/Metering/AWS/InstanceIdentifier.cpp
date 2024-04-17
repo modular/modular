@@ -6,6 +6,7 @@
 
 #include "Support/Metering/AWS/InstanceIdentifier.h"
 
+#include "Support/Buffer.h"
 #include "Support/LLVMForwardDecls.h"
 
 #define DEBUG_TYPE "modular-metering"

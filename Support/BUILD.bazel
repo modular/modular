@@ -489,6 +489,7 @@ cc_library(
         ":Configuration",
         ":URI",
         "@curl",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -502,9 +503,10 @@ cc_library(
         ":Base64",
         ":Buffer",
         ":Configuration",
+        ":Threading",
         ":URI",
-        "//Cache",
         "@curl",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -1177,7 +1179,6 @@ cc_test(
     ],
 )
 
-
 td_library(
     name = "DriverCommandTdFiles",
     srcs = glob(
@@ -1286,8 +1287,10 @@ cc_library(
     strip_include_prefix = "include",
     deps = [
         ":Base",
+        ":Buffer",
         ":HTTP",
         ":Telemetry",
+        "//LLCL:Support",
     ],
 )
 

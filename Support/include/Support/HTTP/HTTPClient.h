@@ -7,12 +7,15 @@
 #ifndef SUPPORT_HTTP_HTTPCLIENT_H
 #define SUPPORT_HTTP_HTTPCLIENT_H
 
-#include "Cache/BlobCache.h"
 #include "Support/ErrorOr.h"
 #include "Support/Progress.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
 #include "Support/Threading/Shared.h"
+#include "llvm/ADT/FunctionExtras.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Support/Debug.h"
 #include <filesystem>
 #include <string>
 
