@@ -582,6 +582,9 @@ fn unqualifiedNameLookup(a: StructWithField):
   # expected-error @+1 {{StructWithField' value has no attribute 'badPropertyError'}}
   StructWithField.badPropertyError
 
+  # expected-error @+1 {{'EverythingIsWrongTrait' value has no attribute 'value'}}
+  EverythingIsWrongTrait.value
+
   # expected-error @+1 {{cannot access instance field 'field' without an instance of 'StructWithField'}}
   StructWithField.field
 
