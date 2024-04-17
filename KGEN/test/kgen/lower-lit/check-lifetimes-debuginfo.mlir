@@ -99,6 +99,10 @@ lit.func @test_arg(%x: !lit.ref<@S, mut *"x"> loc(#locX) owned_in_mem, %ys: !kge
   %x_a = lit.ref.struct.ger %x[a] : <index, mut *"x"> from @S loc(#locUse)
   %x_a_val = lit.ref.load %x_a : <index, mut *"x"> loc(#locUse)
 
+  // `x` can be destroyed here.
+  // CHECK: debuginfo.kill #[[DIARG_X]] loc(#[[LOC_USE]])
+  // CHECK-NEXT: lit.call @S::@__del__{{.*}}(%x) : {{.*}} loc(#[[LOC_USE]])
+
   // `ys` is shadowed (using a fake shadowing type for simplicity).
   %yshadow = lit.var.decl "ys" arg(1) : !lit.ref<!kgen.variadic<@S, owned_in_mem>, mut *"ys"> loc(#locY)
   // CHECK: %[[YSHADOW:.*]] = lit.var.decl "ys"
