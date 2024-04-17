@@ -7,6 +7,7 @@
 add_modular_library(MCache
   BlobCache.cpp
   CachedTransform.cpp
+  CacheTelemetryContext.cpp
 
   Backends/HTTPCacheBackend.cpp
 
@@ -16,9 +17,12 @@ add_modular_library(MCache
   LLCLSupport
   LLVMSupport
   MCompilerSupport
+  MDialect
   MLIRBytecodeWriter
   MSupport
+  MSupportEntitlements
   MSupportFilesystem
+  MTelemetry
   MVersion
   )
 

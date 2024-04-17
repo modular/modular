@@ -146,25 +146,30 @@ static Diagnostic copyDiag(const Diagnostic &diag) {
 }
 
 /// Run a pass manager's passes as a cached transform.
-AnyAsyncValueRef Cache::cachedTransform(Operation *target,
-                                        RCRef<TransformCache> transformCache,
-                                        AnyAsyncValueRef chain,
-                                        mlir::PassManager &pm) {
+AnyAsyncValueRef
+Cache::cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
+                       AnyAsyncValueRef chain, mlir::PassManager &pm,
+                       std::function<void(Operation *)> moreOnMiss,
+                       std::function<void(Operation *)> moreOnHit) {
   auto keyBuf = WriteableBuffer::get();
   pm.printAsTextualPipeline(*keyBuf);
 
   // Callback that runs the pass manager and puts the correct region hash attr
   // on the op.
-  auto runTransform = [&pm](Operation *op, WriteableBufferRef buf,
-                            AnyAsyncValueRef chain) -> AsyncValueRef<Chain> {
+  auto runTransform =
+      [&pm, moreOnMiss](Operation *op, WriteableBufferRef buf,
+                        AnyAsyncValueRef chain) -> AsyncValueRef<Chain> {
     TimeTraceScope traceScope(CacheProfilerEntry::create(
         "Cache::cachedTransform(Operation *)::runTransform"));
     // Allocate a space to put the result of the pass manager (the emitted
     // diagnostics). We'll chain off that for the deflation.
     auto pmResult =
         AsyncValueRef<std::vector<Diagnostic>>::allocate(chain.getRuntime());
-    std::move(chain).andThenSync([op, &pm, pmResult = pmResult.copy()](
+    std::move(chain).andThenSync([op, &pm, moreOnMiss,
+                                  pmResult = pmResult.copy()](
                                      AnyAsyncValueRef &&chain) mutable {
+      moreOnMiss(op);
+
       if (chain.isError())
         return std::move(pmResult).setToError(chain.takeDiagnostic());
 
@@ -220,7 +225,9 @@ AnyAsyncValueRef Cache::cachedTransform(Operation *target,
 
   // Callback that on a cache hit reads the region hashes out of the cache and
   // places them on the operation.
-  auto onCacheHit = [](Operation *op, BufferRef buf) -> ErrorOrSuccess {
+  auto onCacheHit = [moreOnHit](Operation *op,
+                                BufferRef buf) -> ErrorOrSuccess {
+    moreOnHit(op);
     TimeTraceScope traceScope(CacheProfilerEntry::create(
         "Cache::cachedTransform(Operation *)::onCacheHit"));
     StringRef buffer = buf->getBuffer();
