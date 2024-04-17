@@ -14,7 +14,7 @@ fn get_number() -> Int:
 
 
 fn take_string(owned s: String):
-    print(s)
+    print(s)  # breakpoint
 
 
 fn take_number(owned i: Int):

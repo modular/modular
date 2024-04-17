@@ -35,7 +35,7 @@ class TestLifetime(LLDBTestBase):
         lifetime of the value is reflected in DWARF."""
         with self.build_and_launch("full_eager_destruction.mojo") as ctx:
             text = ctx.frame.FindVariable("text")
-            assert text.GetSummary()
+            assert text.GetSummary() == '"hello"'
             self.assert_var_not_available(ctx, "number")
             self.assert_var_not_available(ctx, "simd")
 
@@ -66,7 +66,14 @@ class TestLifetime(LLDBTestBase):
             ctx = ctx.resume()
             assert ctx
             text_moved = ctx.frame.FindVariable("text_moved")
-            assert text_moved.GetSummary()
+            assert text_moved.GetSummary() == '"hello"'
+
+            # This breakpoint is inside `take_string`.
+            # `s` should be alive when breaking on the print call.
+            ctx = ctx.resume()
+            assert ctx
+            s = ctx.frame.FindVariable("s")
+            assert s.GetSummary() == '"hello"'
 
             # `text_moved` should be dead now.
             # `text_copied` should be alive when breaking on the call.
@@ -74,16 +81,22 @@ class TestLifetime(LLDBTestBase):
             assert ctx
             self.assert_var_not_available(ctx, "text_moved")
             text_copied = ctx.frame.FindVariable("text_copied")
-            assert text_copied.GetSummary()
+            assert text_copied.GetSummary() == '"hello"'
 
-            # `text_copied` should be dead now.
+            # This breakpoint is inside `take_string`.
+            # `s` should be alive when breaking on the print call.
+            ctx = ctx.resume()
+            assert ctx
+            s = ctx.frame.FindVariable("s")
+            assert s.GetSummary() == '"hello"'
+
             # `text_before` should be dead after the move.
             ctx = ctx.resume()
             assert ctx
             self.assert_var_not_available(ctx, "text_copied")
             self.assert_var_not_available(ctx, "text_before")
             text_after = ctx.frame.FindVariable("text_after")
-            assert text_after.GetSummary()
+            assert text_after.GetSummary() == '"hello"'
 
             # `text_after` should be dead now.
             # `number2` should be alive when breaking on the call.

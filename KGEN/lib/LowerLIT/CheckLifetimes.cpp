@@ -73,21 +73,22 @@ collectFunctionsAndTypes(Operation *module) {
 
 /// Create DebugInfo::ValueOp if this VarDecl needs it.
 /// `funcSpAttr` is the DISubprogramAttr of the surrounding function.
-static DebugInfo::ValueOp
+/// Returns the VarInfo of the inserted ValueOp.
+static DebugInfo::DILocalVariableAttr
 insertDebugValueForVarDecl(VarDeclOp op,
                            DebugInfo::DISubprogramAttr funcSpAttr) {
   if (op.getKind() == VarDeclKind::Synthesized)
-    return nullptr;
+    return {};
 
   Location loc = op->getLoc();
   auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
   if (!fileLoc)
-    return nullptr;
+    return {};
 
   auto localScope = DebugInfo::extractScopeFrom<DebugInfo::DILocalScopeAttr>(
       loc, DebugInfo::LocWalkPolicy::CalleePriority);
   if (!localScope)
-    return nullptr;
+    return {};
 
   // The source type is the decl type with ref unwrapped.
   auto sourceType =
@@ -106,27 +107,29 @@ insertDebugValueForVarDecl(VarDeclOp op,
 
   OpBuilder b(op->getContext());
   b.setInsertionPointAfter(op);
-  return b.create<DebugInfo::ValueOp>(loc, op, varAttr, conversion);
+  b.create<DebugInfo::ValueOp>(loc, op, varAttr, conversion);
+  return varAttr;
 }
 
 /// Inserts a DebugInfo::ValueOp for this block argument if necessary.
 /// `funcSpAttr` is the DISubprogramAttr of the surrounding function `func`.
-static void insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
-                                      BlockArgument arg,
-                                      ArrayRef<PogMetadataAttr> pogList,
-                                      DebugInfo::DISubprogramAttr funcSpAttr) {
+/// Returns the VarInfo of the inserted ValueOp.
+static DebugInfo::DILocalVariableAttr
+insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
+                          BlockArgument arg, ArrayRef<PogMetadataAttr> pogList,
+                          DebugInfo::DISubprogramAttr funcSpAttr) {
   // Skip synthesized args.
   if (arg.getArgNumber() >= pogList.size())
-    return;
+    return {};
 
   StringRef name = pogList[arg.getArgNumber()].getName();
   if (name.empty())
-    return;
+    return {};
 
   Location loc = arg.getLoc();
   auto fileLoc = loc->findInstanceOf<FileLineColLoc>();
   if (!fileLoc)
-    return;
+    return {};
 
   DebugInfo::DIType sourceType;
   DebugInfo::DIExprAttr diExpr;
@@ -158,6 +161,7 @@ static void insertDebugVariableForArg(OpBuilder &builder, LIT::FuncOp func,
       FusedLoc::get(varAttr.getContext(), {loc}, varAttr.getScope());
 
   builder.create<DebugInfo::ValueOp>(scopedLoc, arg, varAttr, diExpr);
+  return varAttr;
 }
 
 //===----------------------------------------------------------------------===//
@@ -3110,9 +3114,7 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
             DebugInfo::DILocalVariableAttr debugVariable;
             if (genDebugInfo) {
               if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
-                if (DebugInfo::ValueOp debugValue =
-                        insertDebugValueForVarDecl(varDecl, funcSpAttr))
-                  debugVariable = debugValue.getValueInfo();
+                debugVariable = insertDebugValueForVarDecl(varDecl, funcSpAttr);
                 if (varDecl.getArgShadowIndex())
                   argShadowed[*varDecl.getArgShadowIndex()] = true;
               }
@@ -3137,10 +3139,12 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
       func.getSignature().getArgListAttrs().getPogs();
   OpBuilder debugBuilder = OpBuilder::atBlockBegin(func.getBody());
   for (BlockArgument arg : func.getArguments()) {
+    DebugInfo::DILocalVariableAttr debugVariable;
     if (genDebugInfo && !argShadowed[arg.getArgNumber()])
-      insertDebugVariableForArg(debugBuilder, func, arg, pogList, funcSpAttr);
+      debugVariable = insertDebugVariableForArg(debugBuilder, func, arg,
+                                                pogList, funcSpAttr);
     if (auto trackable = LifetimeTrackable(arg))
-      valueSet.addValue(arg, trackable);
+      valueSet.addValue(arg, trackable, debugVariable);
   }
 
   // Walk #2: Scan the function and identify any uses of values that are not
