@@ -56,10 +56,9 @@ public:
   /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
   /// elaborate the generator or interface and return the first concrete
   /// implementation. Return none if the specialization is not ready yet.
-  virtual std::optional<ErrorTreeOr<FuncOp>>
+  virtual ErrorTreeOr<FuncOp>
   getConcreteFunction(ImplNode *parent, Location loc,
-                      FlatSymbolRefAttr symbolRef,
-                      ArrayRef<TypedAttr> paramValues) = 0;
+                      SymbolConstantAttr symbol) = 0;
 
   /// Lookup an existing concrete function.
   FuncOp lookupConcreteFunction(SymbolRefAttr symbol);
