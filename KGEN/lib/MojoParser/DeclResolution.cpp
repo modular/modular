@@ -627,16 +627,6 @@ void FnDecorators::applyCopyOrMoveCapture(const CallNode &node, bool isMove,
     if (!captureRVal)
       return;
 
-    if (!effects.isEscaping() &&
-        !captureRVal.getRValueType().isRegisterPassable(decl.getLoc(),
-                                                        shared)) {
-      emitError(declRef->getLoc(), "cannot capture '")
-          << declRef->spelling
-          << "' because capturing instances of memory only types in "
-             "parametric functions is not supported";
-      continue;
-    }
-
     // How is this transfering the RValue into the closure?
     DeclIRValue resultVal;
     if (auto srVal = captureRVal.getIfSRValue())
