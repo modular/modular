@@ -189,9 +189,13 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   registerKGENToLLVMTranslation(registry);
 
   // Create our context, with a runtime; this should not fail.
+  LLCL::RuntimeOptions &runtimeOpts = clOptions.parser.options;
+  if (runtimeOpts.workQueueType ==
+      LLCL::RuntimeOptions::WorkQueueType::kSingleThread)
+    runtimeOpts.singleThreaded = true;
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "kgen", Init::Options().withRuntimeOptions(
-                  LLCL::RuntimeOptions().withCPUAffinity(false)));
+                  clOptions.parser.options.withCPUAffinity(false)));
   if (ctxOr.isError())
     return failure();
   registerContext(registry, *ctxOr);
