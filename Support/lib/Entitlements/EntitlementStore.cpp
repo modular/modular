@@ -457,9 +457,9 @@ static ErrorOr<llvm::json::Value> requestDeviceCode(HTTPClient &client) {
 /// function may take a long time to complete, as it polls for at most 256 *
 /// `interval` seconds. Note also that the server may respond with "slow_down",
 /// which will cause us to increment `interval` by 5 seconds each time.
-static ErrorOr<std::pair<std::string, std::string>>
-pollForOAuthTokens(HTTPClient &client, std::chrono::seconds interval,
-                   llvm::StringRef deviceCode) {
+static ErrorOr<std::string> pollForOAuthTokens(HTTPClient &client,
+                                               std::chrono::seconds interval,
+                                               llvm::StringRef deviceCode) {
   // Now poll `modularAuthURL`/v1/oauth/token for the token from the
   // user.
   HTTPRequest pollRequest = {modularAuthURL + "/v1/oauth/token"};
@@ -476,13 +476,13 @@ pollForOAuthTokens(HTTPClient &client, std::chrono::seconds interval,
   pollRequest.bodyLen = pollRequestBody.size();
 
   // Poll for 256 iterations, or until the token is non-empty.
-  std::string accessToken, idToken;
+  std::string accessToken;
   int maxIters = 256;
   size_t maxSize = 1024;
   // TODO: https://datatracker.ietf.org/doc/html/rfc8628#section-3.5 says we
   //       should unilaterally implement a backoff mechanism if we hit a
   //       timeout.
-  while (accessToken.empty() && idToken.empty() && maxIters-- > 0) {
+  while (accessToken.empty() && maxIters-- > 0) {
     // Set the body on the request - we have to do this every time because the
     // iterators get advanced while we do the read.
     pollRequest.body = ContainerReadCallbackAdaptor(pollRequestBody);
@@ -535,23 +535,94 @@ pollForOAuthTokens(HTTPClient &client, std::chrono::seconds interval,
                    "response payload");
     }
     accessToken = *accessTokOr;
-
-    // Pull out the ID token.
-    auto idTokOr = responseJSON->getString("id_token");
-    if (!idTokOr) {
-      return Error("/oauth/token invalid response, expected 'id_token' in "
-                   "response payload");
-    }
-    idToken = *idTokOr;
   }
 
   // If the token is still empty, return.
-  if (accessToken.empty() || idToken.empty()) {
+  if (accessToken.empty()) {
     return Error(
         "max number of requests reached (256) to /oauth/token endpoint");
   }
 
-  return std::make_pair(accessToken, idToken);
+  return accessToken;
+}
+
+//===----------------------------------------------------------------------===//
+// authAndFetchToken
+//===----------------------------------------------------------------------===//
+
+/// This function uses the OAuth Device Authorization Flow to do initial
+/// authentication and bootstrap the client certificate.
+static ErrorOr<std::string> authAndFetchToken(HTTPClient &client) {
+  auto jsonOr = requestDeviceCode(client);
+  if (jsonOr.isError())
+    return jsonOr.takeError();
+
+  llvm::json::Object *jsonResponse = jsonOr->getAsObject();
+  if (!jsonResponse)
+    return Error("/oauth/device/code invalid response, expected JSON object");
+
+  auto deviceCodeOr = jsonResponse->getString("device_code");
+  if (!deviceCodeOr) {
+    return Error(
+        "/oauth/device/code invalid response, expected 'device_code' in "
+        "response payload");
+  }
+
+  auto userCodeOr = jsonResponse->getString("user_code");
+  if (!userCodeOr) {
+    return Error("/oauth/device/code invalid response, expected 'user_code' in "
+                 "response payload");
+  }
+
+  auto intervalOr = jsonResponse->getInteger("interval");
+  if (!intervalOr) {
+    return Error("/oauth/device/code invalid response, expected 'interval' in "
+                 "response payload");
+  }
+
+  auto verifURIOr = jsonResponse->getString("verification_uri_complete");
+  if (!verifURIOr) {
+    return Error("/oauth/device/code invalid response, expected "
+                 "'verification_uri_complete' in response payload");
+  }
+
+  llvm::outs() << "To complete auth, open this web page:\n"
+               << *verifURIOr << "\n\n"
+               << "Verify using this code:\n"
+               << *userCodeOr << "\n\n";
+  llvm::outs() << "Waiting for confirmation...\n";
+
+  return pollForOAuthTokens(client, std::chrono::seconds(*intervalOr),
+                            *deviceCodeOr);
+}
+
+static ErrorOr<llvm::json::Value>
+requestUserInfo(HTTPClient &client, std::optional<std::string> accessToken) {
+  HTTPRequest request = {
+      modularAuthURL + "/v1/oidc/userinfo",
+  };
+  request.method = HTTPRequest::Method::GET;
+  request.headers.try_emplace("content-type", "application/json");
+  if (accessToken)
+    request.accessToken.emplace(std::move(*accessToken));
+
+  // Get the JSON object back.
+  size_t maxSize = 1024;
+  WriteableBufferRef responseBuf = WriteableBuffer::get();
+
+  // Execute the request!
+  auto response = client.executeRequest(
+      request, *responseBuf, std::chrono::milliseconds::zero(), maxSize);
+  if (response.isError())
+    return response.asError().takeError();
+
+  // Parse the JSON looking for the device code and the
+  // verification_uri_complete to give to the user.
+  auto jsonOr = llvm::json::parse(responseBuf->Buffer::getBuffer());
+  if (!jsonOr)
+    return Error(llvm::toString(jsonOr.takeError()));
+
+  return std::move(*jsonOr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -742,11 +813,77 @@ ErrorOr<EntitlementStore> EntitlementStore::fromConfig(Config &config) {
 }
 
 //===----------------------------------------------------------------------===//
+// JWT
+//===----------------------------------------------------------------------===//
+
+/// This class provides a read adaptor for JWTs. This will parse the token,
+/// decoding it and making the fields available as raw JSON.
+///
+/// WARNING: This does NOT verify the token in any way! Only trust tokens that
+///          come from trusted sources!
+namespace {
+class JWT {
+public:
+  static ErrorOr<JWT> parse(StringRef str) {
+    SmallVector<StringRef, 3> parts;
+    str.split(parts, '.');
+
+    JWT out;
+
+    // Parse the header.
+    auto decodedOr = decodeURLSafeBase64(parts[0]);
+    if (decodedOr.isError())
+      return decodedOr.takeError();
+    out.headerStr = std::move(*decodedOr);
+
+    auto headerOr = llvm::json::parse(out.headerStr);
+    if (!headerOr)
+      return Error(llvm::toString(headerOr.takeError()));
+    out.headerVal = std::move(*headerOr);
+
+    if (!out.headerVal.getAsObject())
+      return Error("invalid JWT - expected a JSON object header");
+
+    // Parse the payload
+    decodedOr = decodeURLSafeBase64(parts[1]);
+    if (decodedOr.isError())
+      return decodedOr.takeError();
+    out.payloadStr = std::move(*decodedOr);
+
+    auto payloadOr = llvm::json::parse(out.payloadStr);
+    if (!payloadOr)
+      return Error(llvm::toString(payloadOr.takeError()));
+    out.payloadVal = std::move(*payloadOr);
+
+    if (!out.payloadVal.getAsObject())
+      return Error("invalid JWT - expected a JSON object payload");
+
+    return std::move(out);
+  }
+
+  llvm::json::Object *getHeader() { return headerVal.getAsObject(); }
+  llvm::json::Object *getPayload() { return payloadVal.getAsObject(); }
+
+  JWT(const JWT &other) = delete;
+  JWT(JWT &&other) = default;
+
+private:
+  JWT() = default;
+
+  std::string headerStr;
+  std::string payloadStr;
+  llvm::json::Value headerVal = {};
+  llvm::json::Value payloadVal = {};
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // EntitlementStore::generate
 //===----------------------------------------------------------------------===//
 
-ErrorOr<EntitlementStore> EntitlementStore::generate(Config &config,
-                                                     HTTPContextRef httpCtx) {
+ErrorOr<EntitlementStore>
+EntitlementStore::generate(Config &config, HTTPContextRef httpCtx,
+                           std::optional<std::string> accessTokenOr) {
   std::unique_ptr<HTTPClient> client = httpCtx->client();
 
   // Key files and certificate paths.
@@ -765,8 +902,34 @@ ErrorOr<EntitlementStore> EntitlementStore::generate(Config &config,
   if (keysOr.isError())
     return keysOr.takeError();
 
+  std::string accessToken;
+  if (accessTokenOr && !accessToken.empty()) {
+    accessToken = *accessTokenOr;
+  } else {
+    // Fetch the token.
+    auto toksOr = authAndFetchToken(*client);
+    if (toksOr.isError())
+      return toksOr.takeError();
+    accessToken = std::move(*toksOr);
+  }
+
+  auto userInfoOr = requestUserInfo(*client, accessToken);
+  if (userInfoOr.isError())
+    return userInfoOr.takeError();
+
+  llvm::json::Object *userInfo = userInfoOr->getAsObject();
+  if (!userInfo)
+    return Error("/v1/oidc/userinfo invalid response, expected JSON object");
+
+  // The user ID is the `sub` field in the token.
+  auto subjectOr = userInfo->getString("sub");
+  if (!subjectOr) {
+    return Error("/v1/oidc/userinfo invalid response, expected 'sub'");
+  }
+
   // Fetch the certificate.
-  auto certOr = EntitlementStore::authAndFetchCertificate(*client, *keysOr);
+  auto certOr = EntitlementStore::fetchCertificate(*client, *keysOr, subjectOr,
+                                                   accessToken);
   if (certOr.isError())
     return certOr.takeError();
 
@@ -959,139 +1122,17 @@ ErrorOrSuccess EntitlementStore::parseCertificateChain() {
 }
 
 //===----------------------------------------------------------------------===//
-// JWT
+// EntitlementStore::fetchCertificate
 //===----------------------------------------------------------------------===//
 
-/// This class provides a read adaptor for JWTs. This will parse the token,
-/// decoding it and making the fields available as raw JSON.
-///
-/// WARNING: This does NOT verify the token in any way! Only trust tokens that
-///          come from trusted sources!
-namespace {
-class JWT {
-public:
-  static ErrorOr<JWT> parse(StringRef str) {
-    SmallVector<StringRef, 3> parts;
-    str.split(parts, '.');
-
-    JWT out;
-
-    // Parse the header.
-    auto decodedOr = decodeURLSafeBase64(parts[0]);
-    if (decodedOr.isError())
-      return decodedOr.takeError();
-    out.headerStr = std::move(*decodedOr);
-
-    auto headerOr = llvm::json::parse(out.headerStr);
-    if (!headerOr)
-      return Error(llvm::toString(headerOr.takeError()));
-    out.headerVal = std::move(*headerOr);
-
-    if (!out.headerVal.getAsObject())
-      return Error("invalid JWT - expected a JSON object header");
-
-    // Parse the payload
-    decodedOr = decodeURLSafeBase64(parts[1]);
-    if (decodedOr.isError())
-      return decodedOr.takeError();
-    out.payloadStr = std::move(*decodedOr);
-
-    auto payloadOr = llvm::json::parse(out.payloadStr);
-    if (!payloadOr)
-      return Error(llvm::toString(payloadOr.takeError()));
-    out.payloadVal = std::move(*payloadOr);
-
-    if (!out.payloadVal.getAsObject())
-      return Error("invalid JWT - expected a JSON object payload");
-
-    return std::move(out);
-  }
-
-  llvm::json::Object *getHeader() { return headerVal.getAsObject(); }
-  llvm::json::Object *getPayload() { return payloadVal.getAsObject(); }
-
-  JWT(const JWT &other) = delete;
-  JWT(JWT &&other) = default;
-
-private:
-  JWT() = default;
-
-  std::string headerStr;
-  std::string payloadStr;
-  llvm::json::Value headerVal = {};
-  llvm::json::Value payloadVal = {};
-};
-} // namespace
-
-//===----------------------------------------------------------------------===//
-// EntitlementStore::authAndFetchCertificate
-//===----------------------------------------------------------------------===//
-
-/// This function uses the OAuth Device Authorization Flow to do initial
-/// authentication and bootstrap the client certificate. Note that this does
-/// not validate the client certificate, since that validation will happen
-/// when the cert is read in EntitlementStore::refresh.
+/// This function uses a token to bootstrap the client certificate.
+/// Note that this does not validate the client certificate, since
+/// that validation will happen when the cert is read in
+/// EntitlementStore::refresh.
 ErrorOr<BufferRef>
-EntitlementStore::authAndFetchCertificate(HTTPClient &client,
-                                          Keypair &clientKeys) {
-  auto jsonOr = requestDeviceCode(client);
-  if (jsonOr.isError())
-    return jsonOr.takeError();
-
-  llvm::json::Object *jsonResponse = jsonOr->getAsObject();
-  if (!jsonResponse)
-    return Error("/oauth/device/code invalid response, expected JSON object");
-
-  auto deviceCodeOr = jsonResponse->getString("device_code");
-  if (!deviceCodeOr) {
-    return Error(
-        "/oauth/device/code invalid response, expected 'device_code' in "
-        "response payload");
-  }
-
-  auto userCodeOr = jsonResponse->getString("user_code");
-  if (!userCodeOr) {
-    return Error("/oauth/device/code invalid response, expected 'user_code' in "
-                 "response payload");
-  }
-
-  auto intervalOr = jsonResponse->getInteger("interval");
-  if (!intervalOr) {
-    return Error("/oauth/device/code invalid response, expected 'interval' in "
-                 "response payload");
-  }
-
-  auto verifURIOr = jsonResponse->getString("verification_uri_complete");
-  if (!verifURIOr) {
-    return Error("/oauth/device/code invalid response, expected "
-                 "'verification_uri_complete' in response payload");
-  }
-
-  llvm::outs() << "To complete auth, open this web page:\n"
-               << *verifURIOr << "\n\n"
-               << "Verify using this code:\n"
-               << *userCodeOr << "\n\n";
-  llvm::outs() << "Waiting for confirmation...\n";
-
-  auto toksOr = pollForOAuthTokens(client, std::chrono::seconds(*intervalOr),
-                                   *deviceCodeOr);
-  if (toksOr.isError())
-    return toksOr.takeError();
-  auto [accessToken, idToken] = std::move(*toksOr);
-
-  // Now, parse the ID token to get the user ID.
-  auto jwtOr = JWT::parse(idToken);
-  if (jwtOr.isError())
-    return jwtOr.takeError();
-  JWT jwt = std::move(*jwtOr);
-
-  // The user ID is the `sub` field in the token.
-  auto subjectOr = jwt.getPayload()->getString("sub");
-  if (!subjectOr) {
-    return Error("/oauth/token invalid response, expected 'sub' in the "
-                 "returned ID token");
-  }
-
+EntitlementStore::fetchCertificate(HTTPClient &client, Keypair &clientKeys,
+                                   std::optional<llvm::StringRef> subjectOr,
+                                   std::optional<std::string> accessToken) {
   // Generate the CSR. This will be in PEM format.
   WriteableBufferRef csrBuf = WriteableBuffer::get();
   if (auto err = generateCSR(clientKeys, *subjectOr, csrBuf.copy()))

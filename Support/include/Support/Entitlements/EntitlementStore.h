@@ -69,8 +69,9 @@ public:
   /// fetch a new one. This always returns an EntitlementStore on success,
   /// because the only case where we cannot fetch a certificate is the one where
   /// an actual error occurred.
-  static ErrorOr<EntitlementStore> generate(Config &config,
-                                            HTTPContextRef httpCtx);
+  static ErrorOr<EntitlementStore>
+  generate(Config &config, HTTPContextRef httpCtx,
+           std::optional<std::string> accessTokenOr);
 
   /// Always open an EntitlementStore, and simply default to an empty
   /// EntitlementStore if we don't have the required infrastructure, we don't
@@ -125,6 +126,10 @@ public:
     return llvm::sys::Process::GetEnv("MODULAR_AUTH_TOKEN");
   };
 
+  static std::optional<std::string> getAccessTokenFromEnv() {
+    return llvm::sys::Process::GetEnv("MODULAR_ACCESS_TOKEN");
+  };
+
   static ErrorOr<EntitlementStore> fromToken(const EntitlementToken &token);
 
   static ErrorOr<EntitlementStore> fromConfig(Config &config);
@@ -146,13 +151,14 @@ private:
   /// called by `create` exclusively.
   ErrorOrSuccess parseCertificateChain();
 
-  /// Use the OAuth Device Authorization Flow to do initial authentication and
-  /// bootstrap the client certificate. Note that this does not validate the
+  /// Bootstrap the client certificate. Note that this does not validate the
   /// client certificate, since that validation will happen when the cert is
   /// read in EntitlementStore::refresh. The client certificate will be stored
   /// in clientCertDER on successful completion.
-  static ErrorOr<BufferRef> authAndFetchCertificate(HTTPClient &client,
-                                                    Keypair &clientKeys);
+  static ErrorOr<BufferRef>
+  fetchCertificate(HTTPClient &client, Keypair &clientKeys,
+                   std::optional<llvm::StringRef> subjectOr,
+                   std::optional<std::string> accessToken);
 
   /// Takes a CSR and requests a certificate. The certificate is returned in PEM
   /// form and decoded. Once the certificate is received, it is stored to
