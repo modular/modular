@@ -378,12 +378,22 @@ public:
 
   /// Lookup of a named method on the specified type, filtered to match a
   /// concrete operand set. If successful, this provides a non-null PValue for a
-  /// single callee. If non-null, it invokes errorHandler if the lookup of the
-  /// named method fails.
+  /// single callee. If non-null, it invokes lookupFailureErrorHandler if the
+  /// lookup of the named method fails.  If that succeeds, it will complain
+  /// about overload resolution when 'shouldPrintOverloadErrors' is true.
   static PValue lookup(ASTDecl &declScope, SharedState &shared, ASTType type,
                        StringRef methodName, const CallOperands &callOperands,
                        const ExprNode *callExpr, CallSyntax syntax,
-                       function_ref<void()> errorHandler = {});
+                       function_ref<void()> lookupFailureErrorHandler,
+                       bool shouldPrintOverloadErrors);
+
+  /// Same as the above but a convenience when never emitting an error.
+  static PValue lookup(ASTDecl &declScope, SharedState &shared, ASTType type,
+                       StringRef methodName, const CallOperands &callOperands,
+                       const ExprNode *callExpr, CallSyntax syntax) {
+    return lookup(declScope, shared, type, methodName, callOperands, callExpr,
+                  syntax, {}, false);
+  }
 
   bool isNull() const { return fnDecls.empty(); }
   bool operator!() const { return isNull(); }

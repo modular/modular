@@ -1103,12 +1103,13 @@ PValue OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
                            ASTType type, StringRef methodName,
                            const CallOperands &callOperands,
                            const ExprNode *callExpr, CallSyntax syntax,
-                           function_ref<void()> errorHandler) {
+                           function_ref<void()> lookupFailureErrorHandler,
+                           bool shouldPrintOverloadErrors) {
   ASTType nmTarget = type.getNonmaterializableTarget(shared);
-  bool shouldPrintError = bool(errorHandler);
   auto doLookup = [&](ASTType type, bool shouldPrintError) -> PValue {
-    auto ovSet = OverloadSet::lookup(declScope, shared, type, methodName,
-                                     callExpr, syntax, errorHandler);
+    auto ovSet =
+        OverloadSet::lookup(declScope, shared, type, methodName, callExpr,
+                            syntax, lookupFailureErrorHandler);
 
     // If the core lookup failed, don't filter.
     if (ovSet.isNull())
@@ -1130,7 +1131,7 @@ PValue OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
       return ret;
     type = nmTarget;
   }
-  return doLookup(type, shouldPrintError);
+  return doLookup(type, shouldPrintOverloadErrors);
 }
 
 /// Try to resolve the overload set to a single function candidate, using the
@@ -1348,25 +1349,6 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 
   ASTType type = selfVal.getRValueType();
 
-  auto emitNoMethodError = [&]() {
-    auto diag = emitError(callNode->getLoc(), "")
-                << type << " does not implement the '" << methodName
-                << "' method";
-    switch (syntax) {
-    case CallSyntax::kMethodCallSynthetic:
-    case CallSyntax::kMethodCall:
-      [[fallthrough]];
-    case CallSyntax::kOperator:
-      diag << posOperands[0].expr->getRange();
-      break;
-    case CallSyntax::kReversedOperator:
-      diag << posOperands[1].expr->getRange();
-      break;
-    default:
-      break;
-    }
-  };
-
   PValue callee = {};
   if (ASTType nmTarget = type.getNonmaterializableTarget(shared)) {
     // If the type doesn't have the specified method, but it's
@@ -1392,10 +1374,29 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     }
   }
 
+  auto emitNoMethodError = [&]() {
+    auto diag = emitError(callNode->getLoc(), "")
+                << type << " does not implement the '" << methodName
+                << "' method";
+    switch (syntax) {
+    case CallSyntax::kMethodCallSynthetic:
+    case CallSyntax::kMethodCall:
+      [[fallthrough]];
+    case CallSyntax::kOperator:
+      diag << posOperands[0].expr->getRange();
+      break;
+    case CallSyntax::kReversedOperator:
+      diag << posOperands[1].expr->getRange();
+      break;
+    default:
+      break;
+    }
+  };
+
   // If the type doesn't have the specified method, emit an error.
   if (!callee)
     callee = OverloadSet::lookup(declScope, shared, type, methodName, operands,
-                                 callNode, syntax, emitNoMethodError);
+                                 callNode, syntax, emitNoMethodError, true);
   if (!callee) {
     dest.resetForError();
     return {};

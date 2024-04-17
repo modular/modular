@@ -30,8 +30,10 @@ struct Settable:
 
 
 fn test_setitem_kwargs(c: Settable, x: int):
-    # expected-error @+1 {{keyword operands for __setitem__ not supported yet}}
+    # Issue #22580: Allow keyword arguments in __setitem__ calls
     c[x=x] = x
+    # weird, but ok.
+    c[y=x] = x
 
 
 struct MultiSetItem:

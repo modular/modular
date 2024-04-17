@@ -788,7 +788,11 @@ static AnyValue emitGetterSetterAccess(const ExprNode *node,
 
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
-  SmallVector<ASTExprAnd<AnyValue>> posOperands{base};
+  SmallVector<ASTExprAnd<AnyValue>> posOperands;
+  // Reserve an extra element so we can handle setter lookup easily.
+  posOperands.reserve(exprOperands.size() + 1);
+  posOperands.push_back(base);
+
   KeywordOperands kwOperands;
   for (const Operand &operand : exprOperands) {
     ExprNode *expr = operand.value;
@@ -807,8 +811,7 @@ static AnyValue emitGetterSetterAccess(const ExprNode *node,
   StringRef refferName = isSubscript ? "__refitem__" : "__refattr__";
   if (PValue reffer =
           OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
-                              refferName, callOperands, node, syntax,
-                              /*no error on failure*/ {})) {
+                              refferName, callOperands, node, syntax)) {
     // If we have at least one getter implementation then filter it based on the
     // subscriptArgs we have.  This will ensure we treat its presence of
     // indication that the type was intended to be subscriptable, but whine
@@ -887,59 +890,50 @@ static AnyValue emitGetterSetterAccess(const ExprNode *node,
   StringRef getterName = isSubscript ? "__getitem__" : "__getattr__";
   StringRef setterName = isSubscript ? "__setitem__" : "__setattr__";
 
-  // If there is no getter at all, then this is not a subscriptable type.
-  auto getter = OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
-                                    getterName, node, syntax,
-                                    /*no error on failure*/ {});
+  bool hadNoGetters = false;
+  PValue getter = OverloadSet::lookup(
+      emitter.declScope, emitter.shared, baseType, getterName, callOperands,
+      node, syntax,
+      /*invoked on lookup failure*/ [&] { hadNoGetters = true; },
+      /*shouldPrintOverloadErrors*/ false);
 
-  // Check for the presence of a setitem but don't provide index values because
-  // we don't know what the ultimate element type is.  It may be overloaded and
-  // we don't know which candidate to pick until it is actually invoked.
-  auto setter = OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
-                                    setterName, node, syntax,
-                                    /*no error on failure*/ {});
-
-  if (getter.isNull() && setter.isNull()) {
-    if (!getter.isErroneous() && !setter.isErroneous())
-      lookupError();
-    return {};
-  }
-
-  // Ok, we have a getter and/or setter.  Check to see if there is one
-  // specific known element type.
+  // Looking up the setter is more complicated because we don't know the
+  // ultimate element that will be stored into it.  If we have a getter, we can
+  // use the element type from it.
   ASTType elementType;
-  if (!getter.isNull()) {
-    // If we have at least one getter implementation then filter it based on the
-    // subscriptArgs we have.  This will ensure we treat its presence of
-    // indication that the type was intended to be subscriptable, but whine
-    // about index values and base type if they aren't actually compatible at
-    // this usage site.
-    PValue getterCallee = getter.filterOverloadSet(
-        callOperands, /*allowImplicitConversions=*/true,
-        /*emitDiagnosticOnFailure=*/true);
-    if (!getterCallee)
-      return {};
-
-    // If we /just/ have a getter, emit this as a call to the getter
-    // immediately. The getter is allowed to return a reference if it has a
-    // physical lvalue.
-    if (setter.isNull())
-      return emitter.emitIndirectCall(getterCallee, callOperands, dest, node);
-
-    elementType = getterCallee.getType().getSignatureUserResultType();
+  if (getter) {
+    elementType = getter.getType().getSignatureUserResultType();
   } else {
     // If we don't have a getter then check to see if we have a setter.  This is
-    // a bit tricky in that the setter candidate set is completely unfiltered.
+    // tricky: get an unfiltered candidate set and try to sort it out.
+    auto setterSet = OverloadSet::lookup(emitter.declScope, emitter.shared,
+                                         baseType, setterName, node, syntax);
+    // If there is no getter or setter, then we need to fail.
+    if (setterSet.fnDecls.empty()) {
+      // If there were no getitem calls at all, then emit a custom error.
+      if (hadNoGetters) {
+        lookupError();
+        return {};
+      }
+
+      // Otherwise emit again to get the error message, because it would be an
+      // overloading issue or type mismatch with the operands.
+      auto result = emitter.emitNamedMethodCall(getterName, callOperands, dest,
+                                                syntax, node);
+      assert(!result && "getter emission should fail");
+      (void)result;
+      return {};
+    }
 
     // Cannot support overloaded setter.  We could make this more flexible in
     // the future if needed, eg if they have common set values but different
     // subscriptArgs.
-    if (setter.fnDecls.size() != 1) {
+    if (setterSet.fnDecls.size() != 1) {
       auto diag = emitter.emitError(node->getLoc())
                   << baseType << " has overloaded " << setterName
                   << " implementations, which isn't supported"
                   << node->getRange();
-      for (auto candidate : setter.fnDecls)
+      for (auto candidate : setterSet.fnDecls)
         diag.attachNote(candidate->getLoc()) << "candidate declared here";
       return {};
     }
@@ -948,16 +942,18 @@ static AnyValue emitGetterSetterAccess(const ExprNode *node,
     // parameter types.  We should use something like
     // `filterOverloadSetForValueType` or use a dummy value to filter the
     // overload set.
-    auto directSymbolAttr = setter.getBoundConstantAttr();
-    if (!directSymbolAttr)
+    auto directSymbolAttr = setterSet.getBoundConstantAttr();
+    if (!directSymbolAttr) {
+      lookupError();
       return {}; // Getter invalid.
+    }
     auto sigType = cast<SignatureType>(directSymbolAttr.getType());
     // Check basic sanity.
     size_t setValueIdx = posOperands.size();
     if (sigType.getNumArguments() <= setValueIdx) {
       auto diag = emitter.emitError(node->getLoc())
                   << setterName << " has too few arguments";
-      diag.attachNote(setter.fnDecls[0]->getLoc())
+      diag.attachNote(setterSet.fnDecls[0]->getLoc())
           << setterName << " declared here";
       return {};
     }
@@ -968,8 +964,24 @@ static AnyValue emitGetterSetterAccess(const ExprNode *node,
       elementType = elementType.getReferenceElementType();
   }
 
+  // Ok, now that we know the element type, we can look up any setter.
+  posOperands.push_back({PValue(UnknownAttr::get(elementType)), node});
+  CallOperands setterOperands(posOperands, &kwOperands);
+  PValue setter =
+      OverloadSet::lookup(emitter.declScope, emitter.shared, baseType,
+                          setterName, setterOperands, node, syntax);
+  posOperands.pop_back();
+
+  callOperands = CallOperands(posOperands, &kwOperands);
+
+  // If we /just/ have a getter, emit this as a call to the getter immediately.
+  if (!setter)
+    return emitter.emitIndirectCall(getter, callOperands, dest, node);
+
+  // Otherwise, this expression may be used as an LValue so form it.
   DLValue result(RCRef<SubscriptDLValue>::create(
-      std::move(posOperands), std::move(kwOperands), elementType, node));
+      getter, setter, std::move(posOperands), std::move(kwOperands),
+      elementType, node));
   return emitter.emitResult(result, node, dest);
 }
 
@@ -1493,8 +1505,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     // Check to see if we can invoke an __init__ method to convert it.
     auto callee =
         OverloadSet::lookup(emitter.declScope, emitter.shared, calledType,
-                            "__init__", this, CallSyntax::kTypeCall,
-                            /*errorHandler=*/{});
+                            "__init__", this, CallSyntax::kTypeCall);
     emitter.shared.notifyListenerOnCall(callee.fnDecls, rparenLoc, operands);
     return emitter.emitConstructorCall(calledType, callee, operands, this,
                                        CallSyntax::kTypeCall, dest);
@@ -2074,8 +2085,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     CallOperands operands(argValues);
     if (PValue callee = OverloadSet::lookup(
             emitter.declScope, emitter.shared, lhsCV.getRValueType(),
-            specialFnInfo.name, operands, callExpr, CallSyntax::kOperator,
-            /*no error*/ {}))
+            specialFnInfo.name, operands, callExpr, CallSyntax::kOperator))
       return emitter.emitIndirectCall(callee, operands, dest, callExpr);
   }
 
@@ -2089,7 +2099,7 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
       if (PValue callee = OverloadSet::lookup(
               emitter.declScope, emitter.shared, rhsCV.getRValueType(),
               reversedFnInfo.name, operands, callExpr,
-              CallSyntax::kReversedOperator, /*no error*/ {}))
+              CallSyntax::kReversedOperator))
         return emitter.emitIndirectCall(callee, operands, dest, callExpr);
     }
 
