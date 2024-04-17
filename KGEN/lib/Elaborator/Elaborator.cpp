@@ -461,10 +461,8 @@ public:
         paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
         callbacks(std::move(callbacks)) {}
 
-  std::optional<ErrorTreeOr<FuncOp>>
-  getConcreteFunction(ImplNode *parent, Location loc,
-                      FlatSymbolRefAttr symbolRef,
-                      ArrayRef<TypedAttr> paramValues) override;
+  ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
+                                          SymbolConstantAttr symbol) override;
 
   ElaboratorCompileAsmFnRef
   getCompileAsmFn(Elaborator::ASMFormat format) const override {
@@ -643,11 +641,10 @@ void ElaboratorImpl::finalizeFunction(ImplNode *node) {
 // ElaboratorImpl::getConcreteFunction
 //===----------------------------------------------------------------------===//
 
-std::optional<ErrorTreeOr<FuncOp>>
+ErrorTreeOr<FuncOp>
 ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
-                                    FlatSymbolRefAttr symbolRef,
-                                    ArrayRef<TypedAttr> paramValues) {
-  StringAttr name = symbolRef.getAttr();
+                                    SymbolConstantAttr symbol) {
+  StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   Operation *gen = oldSymTab.lookup(name);
   // If this doesn't reference anything in the existing module, then it must
   // refer to a concrete function in the new module.
@@ -659,7 +656,8 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
     return concrete;
   }
 
-  auto vals = ParameterExprArrayAttr::get(symbolRef.getContext(), paramValues);
+  auto vals =
+      ParameterExprArrayAttr::get(loc.getContext(), symbol.getParamValues());
 
   // Lookup the node if it already exists.
   ParamNode *node =
@@ -668,7 +666,7 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
   ElaborationState result =
       specializeGenerator(parent, node, /*from=*/nullptr, /*addWaiter=*/true);
   if (result.shouldSkipNode())
-    return std::nullopt;
+    return FuncOp();
   return node->getFirstConcreteFunc();
 }
 
@@ -704,19 +702,17 @@ ElaborationState ElaboratorImpl::processParamConstantOp(ImplNode *parent,
         // Ignore parametric constants.
         if (!cst.getType().getInputParamTypes().empty())
           return {cst, WalkResult::advance()};
-        std::optional<ErrorTreeOr<FuncOp>> func = getConcreteFunction(
-            parent, op.getLoc(), cast<FlatSymbolRefAttr>(cst.getSymbol()),
-            cst.getParamValues());
-        if (!func) {
+        ErrorTreeOr<FuncOp> func =
+            getConcreteFunction(parent, op.getLoc(), cst);
+        if (func.isError()) {
+          parent->setToError(func.takeError());
           return {cst, WalkResult::interrupt()};
         }
-        if (func->isError()) {
-          parent->setToError(func->takeError());
+        if (!*func)
           return {cst, WalkResult::interrupt()};
-        }
 
         return {SymbolConstantAttr::get(
-                    FlatSymbolRefAttr::get(func->takeValue().getSymNameAttr()),
+                    FlatSymbolRefAttr::get(func.takeValue().getSymNameAttr()),
                     cst.getType()),
                 WalkResult::advance()};
       });
