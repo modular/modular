@@ -419,10 +419,13 @@ struct PackMatrixCols[
         """Copy the B tile from the original matrix to the packed buffer for VNNI.
         """
         constrained[use_vnni]()
+
+        alias vnni_cols = 4
+
         var kc = self.valid_data_dim[0]
         var nc = self.valid_data_dim[1]
         var nr = column_inner_size
-        for i in range(0, align_up(kc, 4), 4):
+        for i in range(0, align_up(kc, vnni_cols), vnni_cols):
             for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(nr):
 
@@ -435,20 +438,23 @@ struct PackMatrixCols[
                             self.global_offset + local_idx
                         ]
                         self.packed_matrix.store[width=1](
-                            (j, i // 4, 4 * p + l),
+                            (j, i // vnni_cols, vnni_cols * p + l),
                             val,
                         )
 
     fn _pack_i8mm(self):
+        alias i8mm_rows = 2
+        alias i8mm_cols = 8
+
         constrained[use_i8mm]()
         var kc = self.valid_data_dim[0]
         var nc = self.valid_data_dim[1]
         alias column_inner_size2 = column_inner_size // 2
-        for i in range(0, align_up(kc, 8), 8):
+        for i in range(0, align_up(kc, i8mm_cols), i8mm_cols):
             for j in range(div_ceil(nc, column_inner_size2)):
-                for p in range(0, column_inner_size2, 2):
-                    for i2 in range(8):
-                        for p2 in range(2):
+                for p in range(0, column_inner_size2, i8mm_rows):
+                    for i2 in range(i8mm_cols):
+                        for p2 in range(i8mm_rows):
                             var local_idx = Index(
                                 i + i2, column_inner_size2 * j + p + p2
                             )
@@ -458,7 +464,11 @@ struct PackMatrixCols[
                                 self.global_offset + local_idx
                             ]
                             self.packed_matrix.store[width=1](
-                                Index(j, i // 8, 8 * p + 8 * p2 + i2),
+                                Index(
+                                    j,
+                                    i // i8mm_cols,
+                                    i8mm_cols * p + i8mm_cols * p2 + i2,
+                                ),
                                 val,
                             )
 
