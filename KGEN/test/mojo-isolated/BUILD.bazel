@@ -1,0 +1,34 @@
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+_DATA = [
+    "**/debuginfo_module.mojo",
+    "**/docs_package/**/*.mojo",
+    "**/imported_cached_module.mojo",
+    "**/imported_module.mojo",
+    "**/test_bad_package/**",
+    "**/test_package.foo",
+    "**/test_package/**",
+    "**/test_package_user/**/*.mojo",
+]
+
+lit_tests(
+    srcs = glob(
+        ["**/*.mojo"],
+        exclude = _DATA,
+    ),
+    custom_substitutions = {
+        "%parse-mojo-isolated": "$(rlocationpath //KGEN:kgen-translate) -import-mojo -mojo-enable-prebuilt-packages",
+    },
+    data = [
+        "//KGEN/test/test-packages",
+        "//KGEN/test/test-packages:stdlib/__init__.mojo",
+    ] + glob(_DATA),
+    env = {
+        "MODULAR_MOJO_IMPORT_SRCS": "$(location //KGEN/test/test-packages:stdlib/__init__.mojo)",
+    },
+    tools = [
+        "//KGEN:kgen-opt",
+        "//KGEN:kgen-translate",
+        "//KGEN:mojo",
+    ],
+)

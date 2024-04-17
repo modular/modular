@@ -1,0 +1,16 @@
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+lit_tests(
+    srcs = glob(["**/*.mojo"]),
+    data = [
+        "//Kernels/mojo/stdlib:stdlib_srcs",
+    ],
+    env = {
+        "MODULAR_MOJO_IMPORT_SRCS": "$(locations //Kernels/mojo/stdlib:stdlib_srcs)",
+    },
+    tools = [
+        "//KGEN:kgen-opt",
+        "//KGEN:kgen-translate",
+        "//KGEN:mojo",
+    ],
+)
