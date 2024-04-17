@@ -10,6 +10,8 @@ from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from collections import OptionalReg as Optional
 from buffer.buffer import NDBuffer
+from .BatchedMatmul import _reshape_nd_buffer_with_batch_to_3d
+from utils.index import Index
 
 # ===----------------------------------------------------------------------===#
 # Constants
@@ -25,12 +27,12 @@ alias LIB_ACC_PLIST = "/System/Library/Frameworks/Accelerate.framework/Versions/
 
 
 fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
-    var ptr = Pointer[DLHandle].alloc(1)
-    ptr[] = DLHandle(LIB_ACC_PATH)
-    var res = ptr.bitcast[NoneType]()
-    if not res:
+    var handle = DLHandle(LIB_ACC_PATH)
+    if not handle:
         abort("the accelerate library was not found at " + LIB_ACC_PATH)
-    return res
+    var ptr = Pointer[DLHandle].alloc(1)
+    ptr[] = handle
+    return ptr.bitcast[NoneType]()
 
 
 fn _destroy_dylib(ptr: Pointer[NoneType]):
@@ -159,3 +161,40 @@ fn matmul[
         return _cblas_f32[transpose_b=transpose_b](c, a, b)
 
     constrained[False, "unsupported type in apple accelerate"]()
+
+
+# ===----------------------------------------------------------------------===#
+# Batched Matmul
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn batched_matmul[
+    *,
+    transpose_b: Bool = False,
+](c: NDBuffer, a: NDBuffer, b: NDBuffer):
+    var c3 = _reshape_nd_buffer_with_batch_to_3d(c)
+    var a3 = _reshape_nd_buffer_with_batch_to_3d(a)
+    var b3 = _reshape_nd_buffer_with_batch_to_3d(b)
+    var batch_size = c.dim[0]()
+
+    var m = c3.dim[1]()
+    var n = c3.dim[2]()
+    var k = a3.dim[2]()
+
+    var c_shape = Index(c3.dim[1](), c3.dim[2]())
+    var a_shape = Index(a3.dim[1](), a3.dim[2]())
+    var b_shape = Index(b3.dim[1](), b3.dim[2]())
+
+    for batch in range(batch_size):
+        var c2 = NDBuffer[c.type, 2, address_space = c.address_space](
+            c3.data + (c_shape[0] * c_shape[1]) * batch, c_shape
+        )
+        var a2 = NDBuffer[a.type, 2, address_space = a.address_space](
+            a3.data + (a_shape[0] * a_shape[1]) * batch, a_shape
+        )
+        var b2 = NDBuffer[b.type, 2, address_space = b.address_space](
+            b3.data + (b_shape[0] * b_shape[1]) * batch, b_shape
+        )
+
+        matmul[transpose_b=transpose_b](c2, a2, b2)

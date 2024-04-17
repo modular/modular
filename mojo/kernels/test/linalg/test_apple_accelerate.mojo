@@ -9,7 +9,7 @@ from sys.info import os_is_macos
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.apple_accelerate import matmul
+from LinAlg.apple_accelerate import matmul, batched_matmul
 from utils.index import Index, StaticIntTuple
 from testing import *
 
@@ -38,16 +38,20 @@ fn gemm_naive(
 
 
 def test_matmul(c: NDBuffer, a: NDBuffer, b: NDBuffer, m: Int, n: Int, k: Int):
+    @parameter
+    if not os_is_macos():
+        return
+
     var golden_ptr = DTypePointer[c.type].alloc(m * n, alignment=alignment)
     var golden = NDBuffer[c.type, 2](golden_ptr, Index(m, n))
 
     for i in range(m):
         for j in range(k):
-            a[(i, j)] = 1  # i * 0.001 + j * 0.001
+            a[(i, j)] = i * 0.001 + j * 0.001
 
     for i in range(k):
         for j in range(n):
-            b[(i, j)] = 1  # i * 0.001 + k * 0.001
+            b[(i, j)] = i * 0.001 + k * 0.001
 
     for i in range(m):
         for j in range(n):
@@ -96,7 +100,7 @@ def test_matmul(m: Int, n: Int, k: Int):
     a_ptr.free()
 
 
-def test_shapes():
+def test_matmul():
     test_matmul(256, 1024, 4096)
     test_matmul(4, 5, 6)
     test_matmul(15, 16, 17)
@@ -107,9 +111,120 @@ def test_shapes():
     test_matmul(2, 65, 1200)
 
 
+fn bmm_naive(
+    c: NDBuffer,
+    a: NDBuffer,
+    b: NDBuffer,
+    batches: Int,
+    m: Int,
+    n: Int,
+    k: Int,
+):
+    for batch in range(batches):
+        for i in range(m):
+            for p in range(k):
+                for j in range(n):
+                    var a_val = a[batch, i, p].cast[c.type]()
+                    var b_val = b[batch, p, j].cast[c.type]()
+                    c[(batch, i, j)] += a_val * b_val
+
+
+def test_batched_matmul(
+    c: NDBuffer, a: NDBuffer, b: NDBuffer, batches: Int, m: Int, n: Int, k: Int
+):
+    @parameter
+    if not os_is_macos():
+        return
+
+    var golden_ptr = DTypePointer[c.type].alloc(
+        batches * m * n, alignment=alignment
+    )
+    var golden = NDBuffer[c.type, 3](golden_ptr, Index(batches, m, n))
+
+    for batch in range(batches):
+        for i in range(m):
+            for j in range(k):
+                a[(batch, i, j)] = i * 0.001 + j * 0.001
+
+    for batch in range(batches):
+        for i in range(k):
+            for j in range(n):
+                b[(batch, i, j)] = i * 0.001 + k * 0.001
+
+    for batch in range(batches):
+        for i in range(m):
+            for j in range(n):
+                c[(batch, i, j)] = 0
+                golden[(batch, i, j)] = 0
+
+    batched_matmul(c, a, b)
+    bmm_naive(golden, a, b, batches, m, n, k)
+
+    var errors: Int = 0
+    for batch in range(batches):
+        for i in range(m):
+            for j in range(n):
+                if c[batch, i, j] != golden[batch, i, j]:
+                    if errors < 10:
+                        print(
+                            c[batch, i, j] - golden[batch, i, j],
+                            "at",
+                            batch,
+                            i,
+                            j,
+                        )
+                    errors += 1
+
+    assert_true(
+        errors == 0,
+        "num of errors must be 0, but got "
+        + str(errors)
+        + " for dimensions Batch="
+        + str(batches)
+        + " M="
+        + str(m)
+        + ", N="
+        + str(n)
+        + ", K="
+        + str(k),
+    )
+
+    golden_ptr.free()
+
+
+def test_batched_matmul(batch: Int, m: Int, n: Int, k: Int):
+    var c_ptr = DTypePointer[c_type].alloc(batch * m * n, alignment=alignment)
+    var a_ptr = DTypePointer[a_type].alloc(batch * m * k, alignment=alignment)
+    var b_ptr = DTypePointer[b_type].alloc(batch * k * n, alignment=alignment)
+
+    var c = NDBuffer[c_type, 3](c_ptr, Index(batch, m, n))
+    var a = NDBuffer[a_type, 3](a_ptr, Index(batch, m, k))
+    var b = NDBuffer[b_type, 3](b_ptr, Index(batch, k, n))
+
+    test_batched_matmul(c, a, b, batch, m, n, k)
+
+    c_ptr.free()
+    b_ptr.free()
+    a_ptr.free()
+
+
+def test_batched_matmul():
+    for batch_ref in List[Int](1, 2, 4, 9, 12):
+        var batch = batch_ref[]
+        test_batched_matmul(batch, 256, 1024, 4096)
+        test_batched_matmul(batch, 4, 5, 6)
+        test_batched_matmul(batch, 15, 16, 17)
+        test_batched_matmul(batch, 24, 32, 64)
+        test_batched_matmul(batch, 61, 73, 79)
+        test_batched_matmul(batch, 123, 456, 321)
+        test_batched_matmul(batch, 256, 256, 256)
+        test_batched_matmul(batch, 2, 65, 1200)
+
+
 def main():
     @parameter
     if not os_is_macos():
         return
 
-    test_shapes()
+    test_matmul()
+    test_batched_matmul()
