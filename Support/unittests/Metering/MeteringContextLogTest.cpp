@@ -122,7 +122,7 @@ public:
 
 class MeteringContextLogTest : public ::testing::Test {
 protected:
-  ~MeteringContextLogTest() {
+  ~MeteringContextLogTest() override {
     if (context)
       context->shutdown();
   }
@@ -133,7 +133,7 @@ protected:
         options,
         MeteringContext::InstanceInfo{"aws", "us-west-2", "c5.4xlarge"},
         maxProcessors);
-    context->setLogCallback(mockTelemetryCtx);
+    ASSERT_FALSE(context->setDefaultCallback(mockTelemetryCtx).isError());
   }
 
   static HTTPResponse emptyResponse(const HTTPRequest &request) { return {}; }
@@ -156,16 +156,7 @@ protected:
         [=](HTTPContextRef ref) { return createHTTPClient(std::move(ref)); });
     context =
         MeteringContext::create(options, mockHttpClientRef, maxProcessors);
-    context->setLogCallback(mockTelemetryCtx);
-  }
-
-  void expectFixedAttributes(
-      const llvm::StringMap<Logs::AttributeValue> &attrs) const {
-    EXPECT_EQ(llvm::print(attrs.at("event_type")), MeteringContext::kEventType);
-    EXPECT_EQ(llvm::print(attrs.at("cloud")), "aws");
-    EXPECT_EQ(llvm::print(attrs.at("region")), "us-west-2");
-    EXPECT_EQ(llvm::print(attrs.at("instance.class")), "c5");
-    EXPECT_EQ(llvm::print(attrs.at("instance.type")), "c5.4xlarge");
+    ASSERT_FALSE(context->setDefaultCallback(mockTelemetryCtx).isError());
   }
 
   void expectValuesAdded() {
@@ -175,6 +166,27 @@ protected:
                    const llvm::StringMap<Logs::AttributeValue> &attrs) {
               values.push_back(attrs);
             });
+  }
+
+  void expectStringValue(const llvm::StringMap<Logs::AttributeValue> &values,
+                         StringRef key, StringRef str) const {
+    ASSERT_TRUE(values.contains(key)) << "Missing key: " << key;
+    const auto printed = llvm::print(values.at(key));
+    EXPECT_EQ(printed, str) << "Wrong value for key: " << key;
+  }
+
+  void expectContainsKey(const llvm::StringMap<Logs::AttributeValue> &values,
+                         StringRef key, bool contained = true) const {
+    EXPECT_EQ(values.contains(key), contained) << "For key: " << key;
+  }
+
+  void expectFixedAttributes(
+      const llvm::StringMap<Logs::AttributeValue> &values) const {
+    expectStringValue(values, "event_type", MeteringContext::kEventType);
+    expectStringValue(values, "cloud", "aws");
+    expectStringValue(values, "region", "us-west-2");
+    expectStringValue(values, "instance_class", "c5");
+    expectStringValue(values, "instance_type", "c5.4xlarge");
   }
 
   NiceMock<MockTelemetryContext> mockTelemetryCtx;
@@ -187,7 +199,7 @@ protected:
 
 TEST_F(MeteringContextLogTest, EmptyInstanceInfo) {
   EXPECT_CALL(*mockTelemetryCtx.mockLogger, emitL0Event(_, _))
-      .Times(2)
+      .Times(3) // start(), flush(), destructor flush()
       .WillRepeatedly(
           [this](llvm::StringRef eventName,
                  const llvm::StringMap<Logs::AttributeValue> &attributes) {
@@ -203,12 +215,12 @@ TEST_F(MeteringContextLogTest, EmptyInstanceInfo) {
                   "http://169.254.169.254/latest/meta-data/placement/region",
                   "http://169.254.169.254/latest/meta-data/instance-type"));
 
-  auto result = context->flush();
+  auto result = context->flush(); // Another in the callback registration.
   EXPECT_FALSE(result.isError());
-  EXPECT_EQ(values.size(), 1u);
-  EXPECT_EQ(llvm::print(values[0].at("region")), "");
-  EXPECT_EQ(llvm::print(values[0].at("instance.class")), "");
-  EXPECT_EQ(llvm::print(values[0].at("instance.type")), "");
+  EXPECT_EQ(values.size(), 2u);
+  expectContainsKey(values[0], "region", false);
+  expectContainsKey(values[0], "instance_class", false);
+  expectContainsKey(values[0], "instance_type", false);
 }
 
 TEST_F(MeteringContextLogTest, Flush) {
@@ -219,9 +231,10 @@ TEST_F(MeteringContextLogTest, Flush) {
   auto result = context->flush();
 
   EXPECT_FALSE(result.isError());
-  EXPECT_EQ(values.size(), 1u);
+  EXPECT_EQ(values.size(), 2u);
   expectFixedAttributes(values[0]);
-  EXPECT_EQ(std::get<int>(values[0].at("metering.cpu_seconds")), 8);
+  expectStringValue(values[0], "cpu_seconds", "0");
+  expectStringValue(values[1], "cpu_seconds", "8");
 }
 
 TEST_F(MeteringContextLogTest, FlushWithLimits) {
@@ -233,8 +246,9 @@ TEST_F(MeteringContextLogTest, FlushWithLimits) {
   auto result = context->flush();
 
   EXPECT_FALSE(result.isError());
-  EXPECT_EQ(values.size(), 1u);
+  EXPECT_EQ(values.size(), 2u);
   expectFixedAttributes(values[0]);
-  EXPECT_EQ(std::get<int>(values[0].at("metering.cpu_seconds")), maxProcessors);
+  expectStringValue(values[0], "cpu_seconds", "0");
+  expectStringValue(values[1], "cpu_seconds", std::to_string(maxProcessors));
 }
 } // namespace M::Metering

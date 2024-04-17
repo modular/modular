@@ -4,12 +4,14 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_METERING_BILLINGCONTEXT_H
-#define SUPPORT_METERING_BILLINGCONTEXT_H
+#ifndef SUPPORT_METERING_METERINGCONTEXT_H
+#define SUPPORT_METERING_METERINGCONTEXT_H
 
 #include <chrono>
 #include <condition_variable>
 #include <thread>
+
+#include "llvm/ADT/StringRef.h"
 
 #include "Support/ErrorOr.h"
 #include "Support/HTTP/HTTPClient.h"
@@ -27,25 +29,27 @@ class MeteringContext {
 public:
   using ClockType = std::chrono::steady_clock;
   using TimePoint = std::chrono::time_point<ClockType>;
-  using Duration = std::chrono::duration<double>;
+  using DurationType = std::chrono::duration<ClockType::rep, ClockType::period>;
 
-  /// Called every interval with elapsed CPU seconds + shutdown status.
-  using MeterCallbackFn = std::function<ErrorOrSuccess(int, bool)>;
+  // Called every interval with elapsed seconds + shutdown status.
+  using MeterCallbackFn = std::function<ErrorOrSuccess(DurationType, bool)>;
   using MeterAttributes = llvm::StringMap<M::Telemetry::Logs::AttributeValue>;
 
-  static constexpr llvm::StringRef kEventDomain = "metering";
-  static constexpr llvm::StringRef kEventName = "meter";
-  static constexpr llvm::StringRef kEventType = "cpu_usage_v1";
+  // Telemetry attribute names/values.
+  static constexpr StringLiteral kEventDomain = "metering";
+  static constexpr StringLiteral kEventName = "meter";
+  static constexpr StringLiteral kEventType = "cpu_usage_v1";
+
+  static constexpr StringLiteral kEventTypeKey = "event_type";
+  static constexpr StringLiteral kCpuSecondsKey = "cpu_seconds";
+  static constexpr StringLiteral kCloudTypeKey = "cloud";
+  static constexpr StringLiteral kRegionTypeKey = "region";
+  static constexpr StringLiteral kInstanceTypeKey = "instance_type";
+  static constexpr StringLiteral kInstanceClassKey = "instance_class";
 
   struct Options {
-    // Logs to stdout if true, otherwise uploads.
-    bool dryRun{true};
-
-    // Times to retry registration if throttled.
-    size_t retryCount{4};
-
-    // Interval between metering requests. Defaults to 1h.
-    size_t intervalMs{60 * 60 * 1000};
+    // Interval between metering requests. Defaults to 30m.
+    DurationType interval = std::chrono::minutes(30);
   };
 
   /// Generic compute instance identifiers.
@@ -68,11 +72,11 @@ public:
                                         InstanceInfo &instInfo);
 
   MeteringContext(Options o, InstanceInfo ii, size_t mp)
-      : options(std::move(o)), instInfo(std::move(ii)), maxProcessors(mp),
-        interval(options.intervalMs), meterCallback({}) {}
+      : interval(o.interval), options(o), instInfo(std::move(ii)),
+        maxProcessors(mp), meterCallback({}) {}
   MeteringContext(MeteringContext &&other)
-      : options(other.options), instInfo(other.instInfo),
-        maxProcessors(other.maxProcessors), interval(other.interval),
+      : interval(other.interval), options(other.options),
+        instInfo(other.instInfo), maxProcessors(other.maxProcessors),
         meterCallback(other.meterCallback) {}
   virtual ~MeteringContext() = default;
 
@@ -83,8 +87,13 @@ public:
     (void)flush();
   }
 
-  void setLogCallback(M::Telemetry::TelemetryContext &telemetryCtx);
+  // Mutually exclusive callback setters.
+  ErrorOrSuccess
+  setDefaultCallback(M::Telemetry::TelemetryContext &telemetryCtx);
   void setMeterCallback(MeterCallbackFn fn) { meterCallback = std::move(fn); }
+
+  /// Call to send the initial 0-valued metering.
+  ErrorOrSuccess start();
 
   /// Call to send a usage log immediately.
   ErrorOrSuccess flush();
@@ -96,12 +105,12 @@ public:
   TimePoint getLastMeterTime() const { return lastMeterTime.load(); }
 
 private:
+  LLCL::AlignedAtomic<TimePoint> lastMeterTime{ClockType::now()};
+  const DurationType interval;
+
   const Options options;
   const InstanceInfo instInfo;
   const size_t maxProcessors; // May be less than host physical limit.
-
-  const std::chrono::milliseconds interval;
-  std::atomic<TimePoint> lastMeterTime{ClockType::now()};
 
   MeterCallbackFn meterCallback;
 
@@ -112,8 +121,9 @@ private:
   bool stopped{false};
 
   MeteringContext::MeterAttributes getMeterAttributes() const;
+  ErrorOrSuccess invokeMeterCallback(DurationType elapsed, bool stopped) const;
 };
 
 } // namespace M::Metering
 
-#endif // SUPPORT_METERING_BILLINGCONTEXT_H
+#endif // SUPPORT_METERING_METERINGCONTEXT_H

@@ -9,6 +9,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Threading.h"
+#include <iostream>
 
 // AWS
 #include "Support/Metering/AWS/InstanceIdentifier.h"
@@ -21,13 +22,18 @@ namespace {
 
 void addInstanceFields(const MeteringContext::InstanceInfo &info,
                        MeteringContext::MeterAttributes &attrs) {
-  StringRef instance_type(info.type);
-  attrs["instance.type"] = instance_type;
+  if (info.type.empty())
+    return;
 
-  auto found = info.type.find(".");
-  attrs["instance.class"] =
-      found != std::string::npos ? instance_type.take_front(found) : "";
+  StringRef instance_type(info.type);
+  attrs[MeteringContext::kInstanceTypeKey] = instance_type;
+
+  auto dot_found = info.type.find(".");
+  attrs[MeteringContext::kInstanceClassKey] =
+      dot_found != std::string::npos ? instance_type.take_front(dot_found) : "";
 }
+
+constexpr StringLiteral kCloudAws = "aws";
 
 MeteringContext::InstanceInfo resolveInstanceInfo(HTTPContextRef httpCtx) {
   MeteringContext::InstanceInfo info;
@@ -38,16 +44,12 @@ MeteringContext::InstanceInfo resolveInstanceInfo(HTTPContextRef httpCtx) {
       LLVM_DEBUG(llvm::dbgs() << "Failed to identify AWS instance with error: "
                               << result.getError() << "\n");
     } else {
-      info.cloud = "aws";
+      info.cloud = kCloudAws;
       info.region = identifier.getRegion();
       info.type = identifier.getInstanceType();
     }
   }
   return info;
-}
-
-std::string prefixedName(StringRef name) {
-  return (MeteringContext::kEventDomain + "." + name).str();
 }
 
 } // namespace
@@ -56,39 +58,38 @@ std::unique_ptr<MeteringContext>
 MeteringContext::create(MeteringContext::Options options,
                         HTTPContextRef httpCtx, size_t maxProcessors) {
   InstanceInfo info = resolveInstanceInfo(std::move(httpCtx));
-  return std::make_unique<MeteringContext>(std::move(options), std::move(info),
+  return std::make_unique<MeteringContext>(options, std::move(info),
                                            maxProcessors);
 }
 
-void MeteringContext::setLogCallback(
+ErrorOrSuccess MeteringContext::setDefaultCallback(
     M::Telemetry::TelemetryContext &telemetryCtx) {
-  setMeterCallback(
-      [logger = telemetryCtx.getLogger(MeteringContext::kEventDomain),
-       fixed = getMeterAttributes()](int cpuSeconds, bool stopped) {
-        auto attrs = fixed;
-        attrs[prefixedName("cpu_seconds")] = cpuSeconds;
-        logger->emitL0Event(MeteringContext::kEventName, attrs);
-        return success();
-      });
+  auto logger = telemetryCtx.getLogger(MeteringContext::kEventDomain);
+  setMeterCallback([this, logger = std::move(logger),
+                    fixed = getMeterAttributes()](DurationType duration,
+                                                  bool stopped) {
+    auto attrs = fixed;
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(duration);
+    attrs[kCpuSecondsKey] = static_cast<int>(seconds.count() * maxProcessors);
+    logger->emitL0Event(MeteringContext::kEventName, attrs);
+    return success();
+  });
+  // Send initial 0-valued data point.
+  return start();
+}
+
+ErrorOrSuccess MeteringContext::start() {
+  return invokeMeterCallback(std::chrono::seconds(0), stopped);
 }
 
 ErrorOrSuccess MeteringContext::flush() {
   const auto now = ClockType::now();
   const auto last = lastMeterTime.load();
-  const auto duration = now - last;
   // TODO: Buffer batch usage (for up to 6 hours in the past) if network dies.
-  const auto seconds =
-      std::chrono::duration_cast<
-          std::chrono::duration<double, std::chrono::seconds::period>>(duration)
-          .count();
-  if (meterCallback) {
-    auto outcome = meterCallback(maxProcessors * seconds, stopped);
-    if (outcome.isError())
-      return Error("Received error from meter callback: " +
-                   llvm::StringRef(outcome.getError()));
-  }
-  lastMeterTime = now;
-  return success();
+  const auto elapsed = std::chrono::ceil<std::chrono::seconds>(
+      std::chrono::duration_cast<std::chrono::seconds>(now - last));
+  lastMeterTime.store(now);
+  return invokeMeterCallback(elapsed, stopped);
 }
 
 void MeteringContext::startMeterThread() {
@@ -123,16 +124,27 @@ void MeteringContext::stopMeterThread() {
 }
 
 MeteringContext::MeterAttributes MeteringContext::getMeterAttributes() const {
-  MeteringContext::MeterAttributes attrs = {
-      {"event_type", MeteringContext::kEventType},
-  };
+  MeteringContext::MeterAttributes attrs = {{kEventTypeKey, kEventType}};
   // Instance info
   {
-    attrs["cloud"] = instInfo.cloud;
-    attrs["region"] = instInfo.region;
+    if (!instInfo.cloud.empty())
+      attrs[kCloudTypeKey] = instInfo.cloud;
+    if (!instInfo.region.empty())
+      attrs[kRegionTypeKey] = instInfo.region;
     addInstanceFields(instInfo, attrs);
   }
   return attrs;
+}
+
+ErrorOrSuccess MeteringContext::invokeMeterCallback(DurationType elapsed,
+                                                    bool stopped) const {
+  if (meterCallback) {
+    auto outcome = meterCallback(elapsed, stopped);
+    if (outcome.isError())
+      return Error("Received error from meter callback: " +
+                   llvm::StringRef(outcome.getError()));
+  }
+  return success();
 }
 
 } // namespace M::Metering

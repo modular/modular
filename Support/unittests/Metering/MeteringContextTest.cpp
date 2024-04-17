@@ -19,7 +19,7 @@ using ::testing::Unused;
 
 class MeteringContextTest : public ::testing::Test {
 protected:
-  ~MeteringContextTest() {
+  ~MeteringContextTest() override {
     if (context)
       context->shutdown();
   }
@@ -29,28 +29,32 @@ protected:
     context = std::make_unique<MeteringContext>(
         options, MeteringContext::InstanceInfo{"", "", ""}, 5);
     expectValuesAdded(err);
+    ASSERT_FALSE(context->start().isError());
   }
 
-  int elapsedSeconds() const {
-    return std::chrono::duration_cast<
-               std::chrono::duration<double, std::chrono::seconds::period>>(
-               std::chrono::steady_clock::now() - context->getLastMeterTime())
-        .count();
+  MeteringContext::DurationType elapsedSeconds() const {
+    return std::chrono::ceil<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - context->getLastMeterTime());
   }
 
   void expectValuesAdded(bool err = false) {
-    context->setMeterCallback([=](int millis, bool stopped) -> ErrorOrSuccess {
-      if (err)
-        return Error("error");
-      if (!stopped) {
-        {
-          std::lock_guard<std::mutex> lk(mu);
-          values.emplace_back(std::this_thread::get_id(), millis);
-        }
-        cv.notify_all();
-      }
-      return success();
-    });
+    context->setMeterCallback(
+        [=, first = true](MeteringContext::DurationType duration,
+                          bool stopped) mutable -> ErrorOrSuccess {
+          if (first)
+            first = false;
+          else if (err)
+            return Error("error");
+
+          if (!stopped) {
+            {
+              std::lock_guard<std::mutex> lk(mu);
+              values.emplace_back(std::this_thread::get_id(), duration);
+            }
+            cv.notify_all();
+          }
+          return success();
+        });
   }
 
   void waitForValues() {
@@ -62,38 +66,39 @@ protected:
 
   std::mutex mu;
   std::condition_variable cv;
-  std::vector<std::pair<std::thread::id, int>> values;
+  std::vector<std::pair<std::thread::id, MeteringContext::DurationType>> values;
 };
 
-constexpr static double kEps = 10;
+constexpr static double kSecondsEps = 2;
 
 TEST_F(MeteringContextTest, FlushSuccess) {
   createContext({});
 
   auto errOr = context->flush();
   ASSERT_FALSE(errOr.isError()) << errOr.getError();
-  ASSERT_EQ(values.size(), 1u);
-  const auto numCores = getNumPhysicalCores();
-  EXPECT_NEAR(values.back().second, numCores * elapsedSeconds(), kEps);
+  ASSERT_EQ(values.size(), 2u);
+  EXPECT_NEAR(values.back().second.count(), std::chrono::seconds(1).count(),
+              kSecondsEps); // Rounds up to 1.
 }
 
 TEST_F(MeteringContextTest, FlushSuccessMultiple) {
   createContext({});
+  ErrorOrSuccess errOr;
 
-  std::this_thread::sleep_for(std::chrono::seconds(1));
-  auto errOr = context->flush();
-  auto fn = [&] {
-    ASSERT_FALSE(errOr.isError()) << errOr.getError();
-    const auto numCores = getNumPhysicalCores();
-    EXPECT_NEAR(values.back().second, numCores * elapsedSeconds(), kEps);
-  };
-  fn();
+  ASSERT_FALSE(errOr.isError()) << errOr.getError();
+  EXPECT_EQ(values.back().second, std::chrono::seconds(0));
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
   errOr = context->flush();
-  fn();
+  ASSERT_FALSE(errOr.isError()) << errOr.getError();
+  EXPECT_NEAR(values.back().second.count(), elapsedSeconds().count(),
+              kSecondsEps);
 
-  ASSERT_EQ(values.size(), 2u); // fn() will check each value individually.
+  std::this_thread::sleep_for(std::chrono::seconds(1));
+  errOr = context->flush();
+  ASSERT_FALSE(errOr.isError()) << errOr.getError();
+  EXPECT_NEAR(values.back().second.count(), elapsedSeconds().count(),
+              kSecondsEps);
 }
 
 TEST_F(MeteringContextTest, FlushFailure) {
@@ -105,15 +110,15 @@ TEST_F(MeteringContextTest, FlushFailure) {
 TEST_F(MeteringContextTest, FlushOnShutdown) {
   createContext({});
   context->shutdown();
-  ASSERT_FALSE(values.empty());
+  ASSERT_EQ(values.size(), 2u);
 }
 
 TEST_F(MeteringContextTest, FlushWithThreadIdempotent) {
   MeteringContext::Options opts;
-  opts.intervalMs = 1;
+  opts.interval = std::chrono::milliseconds(1);
 
   context = std::make_unique<MeteringContext>(
-      std::move(opts), MeteringContext::InstanceInfo{"", "", ""}, 5);
+      opts, MeteringContext::InstanceInfo{"", "", ""}, 5);
   expectValuesAdded();
   context->startMeterThread();
   context->startMeterThread();
