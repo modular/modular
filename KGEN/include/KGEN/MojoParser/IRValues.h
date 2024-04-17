@@ -722,16 +722,20 @@ public:
 /// We allow DLValues to have getter+setter or just setter.
 class SubscriptDLValue : public BaseDLValue {
 public:
-  const ExprNode *expr;
+  // The getter and setter to use; these may both be null.
+  PValue getter, setter;
   // Positional operands (including self) for the setter/getter call.
   SmallVector<FuncOperand> posOperands;
   // Keyword operands for the setter/getter call.
   KeywordOperands kwOperands;
 
+  const ExprNode *expr;
+
   /// Return true if this is a subscript, false if this is an attribute access.
   bool isSubscript() const;
 
-  SubscriptDLValue(SmallVectorImpl<FuncOperand> &&posOperands,
+  SubscriptDLValue(PValue getter, PValue setter,
+                   SmallVectorImpl<FuncOperand> &&posOperands,
                    KeywordOperands &&kwOperands, ASTType elementType,
                    const ExprNode *expr);
 

@@ -1958,33 +1958,33 @@ void StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 }
 
 CValue SubscriptDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
-  auto methodName =
-      isSubscript() ? StringRef("__getitem__") : StringRef("__getattr__");
-  auto result = emitter.emitNamedMethodCall(
-      methodName, CallOperands(posOperands, &kwOperands), dest,
-      CallSyntax::kSubscript, expr);
-  // TODO: The result could be another LValue in the future.
-  assert(!result || result.getIfRValue() || result.getIfBValue());
-  return result;
+  // We got an elementType, so we know it has at least a getter or a setter.
+  if (!getter) {
+    emitter.emitError(expr->getLoc(),
+                      "cannot read from set-only value of type ")
+        << elementType << expr->getRange();
+    return {};
+  }
+
+  return emitter.emitIndirectCall(
+      getter, CallOperands(posOperands, &kwOperands), dest, expr);
 }
 
 void SubscriptDLValue::emitStore(ASTExprAnd<CValue> value,
                                  ExprEmitter &emitter) const {
-  // TODO(#22580): support keyword operands in __setitem__
-  if (isSubscript() && !kwOperands.empty()) {
-    emitter.emitError(expr->getLoc())
-        << "keyword operands for __setitem__ not supported yet"
-        << expr->getRange();
+  // We got an elementType, so we know it has at least a getter or a setter.
+  if (!setter) {
+    emitter.emitError(expr->getLoc(), "cannot store to get-only value of type ")
+        << elementType << expr->getRange();
     return;
   }
 
-  auto methodName =
-      isSubscript() ? StringRef("__setitem__") : StringRef("__setattr__");
+  // Add the set value to the positional operand list.
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithValue(posOperands);
   posOperandsWithValue.push_back(value);
   ValueDest storeDest(EC_Assignment);
-  emitter.emitNamedMethodCall(methodName, posOperandsWithValue, storeDest,
-                              CallSyntax::kSubscript, expr);
+  emitter.emitIndirectCall(
+      setter, CallOperands(posOperandsWithValue, &kwOperands), storeDest, expr);
 }
 
 /// Loading a tuple RValue loads all the elements and returns a tuple instance.

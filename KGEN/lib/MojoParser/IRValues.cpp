@@ -335,11 +335,13 @@ void StoredAttributeRefDLValue::print(raw_ostream &os) const {
 // SubscriptDLValue
 //===----------------------------------------------------------------------===//
 
-SubscriptDLValue::SubscriptDLValue(SmallVectorImpl<FuncOperand> &&posOperands,
+SubscriptDLValue::SubscriptDLValue(PValue getter, PValue setter,
+                                   SmallVectorImpl<FuncOperand> &&posOperands,
                                    KeywordOperands &&kwOperands,
                                    ASTType elementType, const ExprNode *expr)
-    : BaseDLValue(elementType), expr(expr), posOperands(std::move(posOperands)),
-      kwOperands(std::move(kwOperands)) {}
+    : BaseDLValue(elementType), getter(getter), setter(setter),
+      posOperands(std::move(posOperands)), kwOperands(std::move(kwOperands)),
+      expr(expr) {}
 
 /// Return true if this is a subscript, false if this is an attribute access.
 bool SubscriptDLValue::isSubscript() const {
@@ -347,7 +349,7 @@ bool SubscriptDLValue::isSubscript() const {
 }
 
 void SubscriptDLValue::print(raw_ostream &os) const {
-  os << (isSubscript() ? "(subscript): " : "(property): ") << elementType
+  os << (isSubscript() ? "(subscript): " : "(attribute): ") << elementType
      << " ";
 }
 
