@@ -262,15 +262,16 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size, size_t alignment,
 //===----------------------------------------------------------------------===//
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_GetValueFromAsync(void *async) {
-  AnyAsyncValueRef &value = *reinterpret_cast<AnyAsyncValueRef *>(async);
+KGEN_CompilerRT_GetValueFromAsync(LLCLWrapper<AnyAsyncValueRef> async) {
+  AnyAsyncValueRef &value = unwrap(async);
   return value.getPointerToData();
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_GetValueFromAsyncVoidStar(void *async) {
-  AnyAsyncValueRef &value = *reinterpret_cast<AnyAsyncValueRef *>(async);
-  return value.get<void *>();
+KGEN_CompilerRT_GetDataFromBuffer(LLCLWrapper<AnyAsyncValueRef> async) {
+  AnyAsyncValueRef &value = unwrap(async);
+  auto &buffer = value.get<GML::BufferRef>();
+  return buffer.getBuffer();
 }
 
 void M::KGEN::registerLLCL(
