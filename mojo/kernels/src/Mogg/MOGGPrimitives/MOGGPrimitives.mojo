@@ -96,6 +96,18 @@ fn unpack_async(
     ](async_ptr)
 
 
+@mogg_register("builtin.unpack_buffer_data")
+@always_inline
+@export
+fn unpack_buffer_data(
+    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+) -> __mlir_type.`!kgen.pointer<scalar<invalid>>`:
+    return external_call[
+        "KGEN_CompilerRT_GetDataFromBuffer",
+        __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    ](async_ptr)
+
+
 # ===----------------------------------------------------------------------===#
 # MIP Index Primitives
 # ===----------------------------------------------------------------------===#

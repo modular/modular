@@ -389,3 +389,12 @@ fn test_type_parameter_deduction[
     A: AnyRegType, B: AnyRegType
 ](arg0: A, arg1: B) -> A:
     return arg0
+
+
+@mogg_register("print_tensor_test")
+@export
+fn print_tensor_test[type: DType, rank: Int](buffer: NDBuffer[type, rank]):
+    print("Rank:", rank)
+    print("Shape:", buffer.dynamic_shape)
+    for i in range(buffer.num_elements()):
+        print(buffer.data.load(i))
