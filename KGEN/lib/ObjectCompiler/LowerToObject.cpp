@@ -129,8 +129,8 @@ LogicalResult KGEN::runLLVMOptPasses(llvm::Module &module,
                                      LLCL::Runtime &runtime) {
   CompilerTimeTraceScope traceScope("llvm-optimize", module.getName());
   [[maybe_unused]] auto timeScope =
-      runtime.context->emplaceIfMissing<M::Telemetry::TelemetryContext>()
-          .createUInt64Timer<std::chrono::milliseconds>(
+      runtime.context->get<M::Telemetry::TelemetryContext>()
+          ->createUInt64Timer<std::chrono::milliseconds>(
               "mojo.llvm.optimize.time", M::Telemetry::Level::L2);
   using namespace llvm;
 
@@ -262,12 +262,11 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
     outFile->keep();
   }
 
-  if (failed(runLlcPasses(
-          module, targetMachine, objStream,
-          emitAssembly ? llvm::CodeGenFileType::AssemblyFile
-                       : llvm::CodeGenFileType::ObjectFile,
-          &runtime.context
-               ->emplaceIfMissing<M::Telemetry::TelemetryContext>())))
+  if (failed(
+          runLlcPasses(module, targetMachine, objStream,
+                       emitAssembly ? llvm::CodeGenFileType::AssemblyFile
+                                    : llvm::CodeGenFileType::ObjectFile,
+                       runtime.context->get<M::Telemetry::TelemetryContext>())))
     return failure();
 
   if (!options.saveTempsPrefix.empty()) {

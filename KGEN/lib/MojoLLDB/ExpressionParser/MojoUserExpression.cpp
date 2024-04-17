@@ -266,8 +266,8 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   // Do manual telemetry flush after each REPL cell.
   [[maybe_unused]] auto flushTelemetry =
       impl->typeSystem.getRuntime()
-          .context->emplaceIfMissing<M::Telemetry::TelemetryContext>()
-          .autoFlush();
+          .context->get<M::Telemetry::TelemetryContext>()
+          ->autoFlush();
 
   // Initialize the persistent state.
   impl->resultDelegate.RegisterPersistentState(impl->persistentState);
