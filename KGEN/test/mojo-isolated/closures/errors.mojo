@@ -19,7 +19,7 @@ struct StringNoCopy:
 
 
 fn makes_escaping_closurenocopy(m: StringNoCopy):
-    fn myclosure() escaping -> StringNoCopy:
+    fn myclosure() -> StringNoCopy:
         # expected-error @below {{'StringNoCopy' is not copyable because it has no '__copyinit__'}}
         return m
 

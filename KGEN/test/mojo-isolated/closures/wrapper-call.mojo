@@ -37,8 +37,8 @@ struct MemType:
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure
 fn makes_escaping_closure(m: MemType):
-    fn myclosure(n: MemType) escaping -> MemType:
+    fn myclosure(n: MemType) -> MemType:
         return n + m
 
-    fn myclosure2(n: MemType, j: Int) escaping -> Int:
+    fn myclosure2(n: MemType, j: Int) -> Int:
         return m.__len__()

@@ -15,5 +15,5 @@ alias ptr = __mlir_type.`!kgen.pointer<none>`
 
 
 fn bare_ptr(x: ptr):
-    fn capture() escaping -> ptr:
+    fn capture() -> ptr:
         return x

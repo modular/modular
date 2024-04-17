@@ -6,7 +6,7 @@
 
 
 fn pass_int(x: Int) -> fn () escaping -> Int:
-    fn closure() escaping -> Int:
+    fn closure() -> Int:
         return x
 
     return closure

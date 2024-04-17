@@ -69,6 +69,6 @@ fn use(x: MemType):
 
 
 fn thing(m: MemType):
-    fn nested(n: MemType) escaping -> MemType:
+    fn nested(n: MemType) -> MemType:
         use(m)
         return n

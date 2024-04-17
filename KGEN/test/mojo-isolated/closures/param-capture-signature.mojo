@@ -36,7 +36,7 @@ fn test_captures_are_ordered_correctly[
 ](c: Int) -> fn (x: Int, y: Foo[b]) escaping -> Foo[a]:
     alias Y = foo[aa, bb]()
 
-    fn p_capture(x: Int, y: Foo[b]) escaping -> Foo[a]:
+    fn p_capture(x: Int, y: Foo[b]) -> Foo[a]:
         return Foo[a](c + Y + b)
 
     return p_capture

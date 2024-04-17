@@ -12,8 +12,8 @@
 
 
 fn make_diff_closures(m: string, z: int):
-    fn ret_mem() escaping -> string:
+    fn ret_mem() -> string:
         return m
 
-    fn ret_mlir_type() escaping -> int:
+    fn ret_mlir_type() -> int:
         return z

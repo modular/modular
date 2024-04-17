@@ -13,7 +13,7 @@ fn use(x: int):
 # CHECK-LABEL: lit.func @"direct
 fn direct(output: int):
     # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%anonymous2A, %output)
-    fn closure() escaping:
+    fn closure():
         @parameter
         fn body():
             if __mlir_attr.true:
@@ -22,15 +22,11 @@ fn direct(output: int):
 
 # CHECK-LABEL: lit.func @"deep_runtime_capture
 fn deep_runtime_capture(
-    m: __mlir_type.index,
-) -> fn (n: __mlir_type.index) escaping -> fn (
-    o: __mlir_type.index
-) escaping -> __mlir_type.index:
+    m: int,
+) -> fn (n: int) escaping -> fn (o: int) escaping -> int:
     # CHECK: lit.call {{.*}}_CI_{{.*}}__init__{{.*}}(%anonymous2A, %m)
-    fn myclosure(
-        n: __mlir_type.index,
-    ) escaping -> fn (o: __mlir_type.index) escaping -> __mlir_type.index:
-        fn my_inner_closure(o: __mlir_type.index) escaping -> __mlir_type.index:
+    fn myclosure(n: int) -> fn (o: int) escaping -> int:
+        fn my_inner_closure(o: int) -> int:
             var x = __mlir_op.`index.add`(o, m)
             return __mlir_op.`index.add`(x, n)
 

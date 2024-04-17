@@ -20,7 +20,7 @@ struct Foo[a: Int]:
 fn parameter_capture[a: Int](c: Int) -> fn (x: Int) escaping -> Int:
     alias X = Foo[a](1)
 
-    fn p_capture(x: Int) escaping -> Int:
+    fn p_capture(x: Int) -> Int:
         return X.b + c
 
     return p_capture

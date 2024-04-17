@@ -21,7 +21,7 @@
 
 
 fn func[pf: fn () capturing -> Int](x: Int):
-    fn escaping(y: Int) escaping -> Int:
+    fn escaping(y: Int) -> Int:
         return y + x + pf()  # this use of 'pf' is a parameter capture
         # ParamDeclRefAttr
 
