@@ -7,7 +7,9 @@
 #ifndef KGEN_LIB_MOGGPREELAB_MOGGDECORATORS_H
 #define KGEN_LIB_MOGGPREELAB_MOGGDECORATORS_H
 
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "llvm/ADT/StringRef.h"
+
 namespace M::KGEN::MOGGPreElab {
 
 // The decorators we will look for on the generator to identify it as a MO
@@ -35,6 +37,10 @@ constexpr llvm::StringLiteral tensorInputFusionHook =
     "register::register::mogg_input_fusion_hook";
 constexpr llvm::StringLiteral tensorOutputFusionHook =
     "register::register::mogg_output_fusion_hook";
+
+inline bool hasRegisteredKernelDecorator(GeneratorOp gen) {
+  return hasAnyDecorator(gen, {registerDecorator, registerOverrideDecorator});
+}
 
 } // namespace M::KGEN::MOGGPreElab
 
