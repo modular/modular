@@ -170,14 +170,14 @@ protected:
 
   void expectStringValue(const llvm::StringMap<Logs::AttributeValue> &values,
                          StringRef key, StringRef str) const {
-    ASSERT_TRUE(values.contains(key)) << "Missing key: " << key;
+    ASSERT_TRUE(values.contains(key)) << "Missing key: " << key.str();
     const auto printed = llvm::print(values.at(key));
-    EXPECT_EQ(printed, str) << "Wrong value for key: " << key;
+    EXPECT_EQ(printed, str) << "Wrong value for key: " << key.str();
   }
 
   void expectContainsKey(const llvm::StringMap<Logs::AttributeValue> &values,
                          StringRef key, bool contained = true) const {
-    EXPECT_EQ(values.contains(key), contained) << "For key: " << key;
+    EXPECT_EQ(values.contains(key), contained) << "For key: " << key.str();
   }
 
   void expectFixedAttributes(
