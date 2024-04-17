@@ -82,7 +82,9 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
 
   // Finally, we don't have one, and we've decided we must have one - generate
   // it.
-  auto genOr = EntitlementStore::generate(*cfgOr, std::move(httpCtx));
+  auto accessTokenOr = EntitlementStore::getAccessTokenFromEnv();
+  auto genOr =
+      EntitlementStore::generate(*cfgOr, std::move(httpCtx), accessTokenOr);
   if (genOr.isError())
     return genOr.takeError();
 

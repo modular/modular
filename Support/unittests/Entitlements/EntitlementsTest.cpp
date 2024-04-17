@@ -129,6 +129,10 @@ private:
       func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
         return oauthToken(os, request);
       };
+    } else if (requestURL.ends_with_insensitive("/oidc/userinfo")) {
+      func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
+        return userinfo(os, request);
+      };
     } else if (requestURL.ends_with_insensitive("/certificate/issue")) {
       func = [&](llvm::raw_ostream &os, const HTTPRequest &request) {
         return issueCertificate(os, request);
@@ -187,6 +191,15 @@ private:
                             R"(", "access_token": ")" + token + R"("})")
                                .str();
 
+    os << response;
+    return success();
+  }
+
+  ErrorOrSuccess userinfo(llvm::raw_ostream &os, const HTTPRequest &request) {
+    EXPECT_TRUE(oauthRegisterCalled)
+        << "the client did not attempt to get the device code";
+    constexpr llvm::StringLiteral sub = "mut_abcdefg";
+    std::string response = (R"({"sub": ")" + sub + R"("})").str();
     os << response;
     return success();
   }
@@ -371,7 +384,7 @@ TEST(TestEntitlementStore, Bootstrap) {
 
   HTTPContextRef httpCtx = getHTTPContextRef();
   Config config; // Use empty config.
-  auto storeOr = EntitlementStore::generate(config, httpCtx.copy());
+  auto storeOr = EntitlementStore::generate(config, httpCtx.copy(), "");
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
@@ -385,7 +398,7 @@ TEST(TestEntitlementStore, BootstrapAndOpen) {
   HTTPContextRef httpCtx = getHTTPContextRef();
   { // Scope to call the entitlement store's destructor so we can `open` it.
     Config config; // Use empty config.
-    auto storeOr = EntitlementStore::generate(config, httpCtx.copy());
+    auto storeOr = EntitlementStore::generate(config, httpCtx.copy(), "");
     ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
   }
 
@@ -480,7 +493,7 @@ TEST(TestEntitlementStore, Refresh) {
 
   HTTPContextRef httpCtx = getHTTPContextRef();
   Config config; // Use empty config.
-  auto storeOr = EntitlementStore::generate(config, httpCtx.copy());
+  auto storeOr = EntitlementStore::generate(config, httpCtx.copy(), "");
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
