@@ -135,24 +135,30 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
 
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
-  if (!llvm::all_of(op.getOperands(), ParameterAttr::isSimpleConstant))
+  SmallVector<TypedAttr> operands = llvm::to_vector(op.getOperands());
+  if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant))
     return failure();
 
-  // Lookup the symbol reference and resolve it.
-  auto symbol = cast<SymbolConstantAttr>(op.getOperand(0));
-  ErrorTreeOr<FuncOp> func =
-      elaborator->getConcreteFunction(parent, *errorLoc, symbol);
-  if (func.isError()) {
-    emitError(func.takeError());
-    return TypedAttr();
+  for (TypedAttr &operand : operands) {
+    ErrorTreeOr<TypedAttr> result =
+        elaborator->concretizeSymbolsWithin(operand, parent, *errorLoc);
+    if (result.isError()) {
+      emitError(result.takeError());
+      return failure();
+    }
+    operand = result.takeValue();
+    if (!operand)
+      return TypedAttr();
   }
-  if (!*func)
-    return TypedAttr();
 
-  ArrayRef<TypedAttr> operands = op.getOperands().drop_front();
+  // Lookup the symbol reference and resolve it.
+  FuncOp func = elaborator->lookupConcreteFunction(
+      cast<SymbolConstantAttr>(operands.front()).getSymbol());
+
+  ArrayRef<TypedAttr> args = ArrayRef(operands).drop_front();
   ErrorTreeOr<TypedAttr> result =
-      withResultSlot ? evaluateFunctionWithResultSlot(*func, operands)
-                     : evaluateFunction(*func, operands);
+      withResultSlot ? evaluateFunctionWithResultSlot(func, args)
+                     : evaluateFunction(func, args);
   if (TypedAttr value = result.tryGetValue())
     return value;
   emitError(result.takeError());

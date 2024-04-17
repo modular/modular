@@ -461,11 +461,11 @@ public:
         paramCache(paramCache, runtime.getWorkQueue()->getParallelismLevel()),
         callbacks(std::move(callbacks)) {}
 
-  ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
-                                          SymbolConstantAttr symbol) override;
+  ErrorTreeOr<TypedAttr> concretizeSymbolsWithin(TypedAttr value,
+                                                 ImplNode *parent,
+                                                 Location loc) override;
 
-  ElaboratorCompileAsmFnRef
-  getCompileAsmFn(Elaborator::ASMFormat format) const override {
+  ElaboratorCompileAsmFnRef getCompileAsmFn() const override {
     return callbacks.compileAsmFn;
   }
 
@@ -496,11 +496,22 @@ private:
   /// function and call the verifier.
   void finalizeFunction(ImplNode *node);
 
+  /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
+  /// elaborate the generator or interface and return the first concrete
+  /// implementation. Return none if the specialization is not ready yet.
+  ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
+                                          SymbolConstantAttr symbol);
+
   /// Parameter constants are the only operation that can bridge the parameter
   /// domain into the runtime domain. Use it to root concretization of nested
   /// symbol references.
   template <typename OpT>
   ElaborationState processParamConstantOp(ImplNode *parent, OpT op);
+
+  /// Process a `kgen.param.apply` operation by concretizing its operands and
+  /// callee and then invoking the interpreter.
+  ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
+                                       FuncOp func);
 
   /// Process a call op by binding any necessary input parameters from the
   /// symbol or the call and passing them on to processGeneratorUser.
@@ -670,6 +681,39 @@ ElaboratorImpl::getConcreteFunction(ImplNode *parent, Location loc,
   return node->getFirstConcreteFunc();
 }
 
+ErrorTreeOr<TypedAttr> ElaboratorImpl::concretizeSymbolsWithin(TypedAttr value,
+                                                               ImplNode *parent,
+                                                               Location loc) {
+  mlir::AttrTypeReplacer replacer;
+  std::optional<ErrorTree> error;
+  replacer.addReplacement(
+      [&](SymbolConstantAttr cst) -> std::pair<Attribute, WalkResult> {
+        // Ignore parametric constants.
+        if (!cst.getType().getInputParamTypes().empty())
+          return {cst, WalkResult::advance()};
+        ErrorTreeOr<FuncOp> func = getConcreteFunction(parent, loc, cst);
+        if (func.isError()) {
+          error = func.takeError();
+          return {cst, WalkResult::interrupt()};
+        }
+        if (!*func)
+          return {cst, WalkResult::interrupt()};
+
+        return {SymbolConstantAttr::get(
+                    FlatSymbolRefAttr::get(func.takeValue().getSymNameAttr()),
+                    cst.getType()),
+                WalkResult::skip()};
+      });
+  replacer.addReplacement([](VTableAttr vtable) {
+    return std::make_pair(vtable, WalkResult::skip());
+  });
+  if (auto result = cast_or_null<TypedAttr>(replacer.replace(value)))
+    return result;
+  if (error)
+    return std::move(*error);
+  return TypedAttr();
+}
+
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::addDeferredFunction
 //===----------------------------------------------------------------------===//
@@ -696,29 +740,13 @@ ElaborationState ElaboratorImpl::processParamConstantOp(ImplNode *parent,
 
   // Root elaboration at the constant value and concretize any generator
   // references inside it. Multi-versioning is disallowed.
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&](SymbolConstantAttr cst) -> std::pair<Attribute, WalkResult> {
-        // Ignore parametric constants.
-        if (!cst.getType().getInputParamTypes().empty())
-          return {cst, WalkResult::advance()};
-        ErrorTreeOr<FuncOp> func =
-            getConcreteFunction(parent, op.getLoc(), cst);
-        if (func.isError()) {
-          parent->setToError(func.takeError());
-          return {cst, WalkResult::interrupt()};
-        }
-        if (!*func)
-          return {cst, WalkResult::interrupt()};
-
-        return {SymbolConstantAttr::get(
-                    FlatSymbolRefAttr::get(func.takeValue().getSymNameAttr()),
-                    cst.getType()),
-                WalkResult::advance()};
-      });
-  value = cast_or_null<TypedAttr>(replacer.replace(value));
-  if (parent->error)
+  ErrorTreeOr<TypedAttr> concrete =
+      concretizeSymbolsWithin(value, parent, op.getLoc());
+  if (concrete.isError()) {
+    parent->setToError(concrete.takeError());
     return ElaborationState::error();
+  }
+  value = concrete.takeValue();
   if (!value)
     return ElaborationState::skipNode();
 
@@ -861,13 +889,22 @@ ElaboratorImpl::processGeneratorUser(GeneratorUserOpInterface user,
 
 /// Complete processing of a `kgen.param.apply` operation by invoking the
 /// interpreter on the concrete callee and binding its result.
-static ElaborationState processParamApplyOp(ImplNode *inode, ParamApplyOp op,
-                                            FuncOp func) {
+ElaborationState ElaboratorImpl::processParamApplyOp(ImplNode *inode,
+                                                     ParamApplyOp op,
+                                                     FuncOp func) {
   SmallVector<TypedAttr> operands;
   for (TypedAttr operand : op.getOperands()) {
     Attribute value;
     HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), operand);
-    operands.push_back(cast<TypedAttr>(value));
+    ErrorTreeOr<TypedAttr> result =
+        concretizeSymbolsWithin(cast<TypedAttr>(value), inode, op.getLoc());
+    if (result.isError()) {
+      inode->setToError(result.takeError());
+      return failure();
+    }
+    operands.push_back(result.takeValue());
+    if (!operands.back())
+      return ElaborationState::skipNode();
   }
   ErrorTreeOr<TypedAttr> result =
       inode->getEvaluator().evaluateFunction(func, operands);
