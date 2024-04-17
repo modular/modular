@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from pathlib import Path
 from sys.info import os_is_macos
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
@@ -26,12 +25,12 @@ alias LIB_ACC_PLIST = "/System/Library/Frameworks/Accelerate.framework/Versions/
 
 
 fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
-    if not Path(LIB_ACC_PATH).exists():
-        abort("the accelerate library was not found at" + LIB_ACC_PATH)
-
     var ptr = Pointer[DLHandle].alloc(1)
     ptr[] = DLHandle(LIB_ACC_PATH)
-    return ptr.bitcast[NoneType]()
+    var res = ptr.bitcast[NoneType]()
+    if not res:
+        abort("the accelerate library was not found at " + LIB_ACC_PATH)
+    return res
 
 
 fn _destroy_dylib(ptr: Pointer[NoneType]):
@@ -59,6 +58,7 @@ fn _get_dylib_function[
 
 
 @value
+@register_passable("trivial")
 struct _CBLASOrder:
     var value: Int32
     alias ROW_MAJOR = _CBLASOrder(101)
@@ -66,6 +66,7 @@ struct _CBLASOrder:
 
 
 @value
+@register_passable("trivial")
 struct _CBLASTranspose:
     var value: Int32
     alias NO_TRANSPOSE = _CBLASTranspose(111)
@@ -75,16 +76,22 @@ struct _CBLASTranspose:
 
 @always_inline
 fn _cblas_f32[
+    *,
     transpose_b: Bool = False,
-](c: NDBuffer[_, 2], a: NDBuffer[_, 2], b: NDBuffer[_, 2]):
+](c: NDBuffer, a: NDBuffer, b: NDBuffer):
+    constrained[a.rank == b.rank == c.rank == 2, "rank must be 2"]()
     constrained[
         a.type == b.type == c.type == DType.float32,
         "input and output types must be float32",
     ]()
 
-    var M = a.dim[0]()
-    var N = b.dim[0]() if transpose_b else b.dim[1]()
-    var K = a.dim[1]()
+    var M = Int32(a.dim[0]())
+    var N = Int32(b.dim[0]() if transpose_b else b.dim[1]())
+    var K = Int32(a.dim[1]())
+
+    var lda = K
+    var ldb = N
+    var ldc = N
 
     # void cblas_sgemm(const enum CBLAS_ORDER ORDER,
     #                  const enum CBLAS_TRANSPOSE TRANSA,
@@ -100,7 +107,7 @@ fn _cblas_f32[
     #                  const float BETA,
     #                  float *C,
     #                  const int LDC);
-    _get_dylib_function[
+    var cblas_gemm = _get_dylib_function[
         "cblas_sgemm",
         fn (
             _CBLASOrder,
@@ -118,19 +125,37 @@ fn _cblas_f32[
             DTypePointer[DType.float32],
             Int32,
         ) -> NoneType,
-    ]()(
+    ]()
+    cblas_gemm(
         _CBLASOrder.ROW_MAJOR,
         _CBLASTranspose.NO_TRANSPOSE,
         _CBLASTranspose.TRANSPOSE if transpose_b else _CBLASTranspose.NO_TRANSPOSE,
-        Int32(M),
-        Int32(N),
-        Int32(K),
+        M,
+        N,
+        K,
         Float32(1.0),
         rebind[DTypePointer[DType.float32]](a.data),
-        Int32(K),
+        lda,
         rebind[DTypePointer[DType.float32]](b.data),
-        Int32(b.dim[1]()),
+        ldb,
         Float32(0.0),
         rebind[DTypePointer[DType.float32]](c.data),
-        Int32(N),
+        ldc,
     )
+
+
+# ===----------------------------------------------------------------------===#
+# Matmul
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn matmul[
+    *,
+    transpose_b: Bool = False,
+](c: NDBuffer, a: NDBuffer, b: NDBuffer):
+    @parameter
+    if a.type == b.type == c.type == DType.float32:
+        return _cblas_f32[transpose_b=transpose_b](c, a, b)
+
+    constrained[False, "unsupported type in apple accelerate"]()
