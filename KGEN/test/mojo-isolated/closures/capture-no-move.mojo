@@ -29,5 +29,5 @@ fn use(x: StringNoMove):
 # CHECK: lit.func @"__copyinit__
 # CHECK: lit.func @"__moveinit__
 fn makes_escaping_closure_from_nomove(m: StringNoMove):
-    fn foo() escaping:
+    fn foo():
         use(m)

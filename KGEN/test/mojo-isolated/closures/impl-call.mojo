@@ -69,15 +69,15 @@ fn use(x: Int):
 fn make_diff_closures(m: MemType, z: __mlir_type.index, owned w: Int):
     var x = w
 
-    fn ret_mem(y: MemType) escaping -> MemType:
+    fn ret_mem(y: MemType) -> MemType:
         return m + y
 
-    fn ret_mlir_type() escaping -> __mlir_type.index:
+    fn ret_mlir_type() -> __mlir_type.index:
         return __mlir_op.`index.mul`(z, w.value)
 
-    fn ret_none(p: Int) escaping:
+    fn ret_none(p: Int):
         use(m)
 
-    fn capture_slvalue(owned q: Int, ww: Int) escaping:
+    fn capture_slvalue(owned q: Int, ww: Int):
         x = x + x
         use(w)

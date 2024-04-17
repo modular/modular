@@ -62,5 +62,5 @@ struct MemType:
 
 
 fn materialize_escaping_closure(m: MemType):
-    fn unique(n: MemType) escaping -> MemType:
+    fn unique(n: MemType) -> MemType:
         return m + n

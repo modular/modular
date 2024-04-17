@@ -15,7 +15,7 @@ fn use(x: int):
 
 
 fn makes_escaping_closure(x: int):
-    fn bar() escaping:
+    fn bar():
         try:
             use(x)
         except:

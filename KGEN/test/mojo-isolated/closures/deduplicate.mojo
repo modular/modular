@@ -16,8 +16,8 @@ fn use(a: int):
 
 
 fn makes_escaping_closure(a: int):
-    fn dummy(n: int) escaping:
+    fn dummy(n: int):
         use(a)
 
-    fn duplicate(n: int) escaping:
+    fn duplicate(n: int):
         use(a)

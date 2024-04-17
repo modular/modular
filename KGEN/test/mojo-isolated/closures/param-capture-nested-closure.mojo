@@ -27,8 +27,8 @@ struct MemType:
 fn makes_escaping_closure[
     A: Int
 ](m: MemType) -> fn (n: MemType) escaping -> MemType:
-    fn myclosure(n: MemType) escaping -> MemType:
-        fn nested_nested(k: MemType, l: MemType) escaping -> MemType:
+    fn myclosure(n: MemType) -> MemType:
+        fn nested_nested(k: MemType, l: MemType) -> MemType:
             return n + k + A
 
         return nested_nested(n, m)

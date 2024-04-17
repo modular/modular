@@ -17,7 +17,7 @@ struct MemType:
 
 
 fn makes_escaping_closure(m: Int) -> fn (n: Int) escaping -> Int:
-    fn myclosure(n: Int) escaping -> Int:
+    fn myclosure(n: Int) -> Int:
         return n + m
 
     return myclosure
@@ -33,7 +33,7 @@ struct Foo[a: Int]:
 
 
 fn legal_type_ref[a: Int](c: Int) -> fn (x: Int, y: Int) escaping -> Int:
-    fn p_capture(x: Int, y: Int) escaping -> Int:
+    fn p_capture(x: Int, y: Int) -> Int:
         return Foo[a](x + c + y).get()
 
     return p_capture
@@ -42,7 +42,7 @@ fn legal_type_ref[a: Int](c: Int) -> fn (x: Int, y: Int) escaping -> Int:
 fn parameter_capture[a: Int, b: Int](c: Int) -> fn (x: Int) escaping -> Int:
     alias X = Foo[a](1)
 
-    fn p_capture(x: Int) escaping -> Int:
+    fn p_capture(x: Int) -> Int:
         return X.get() + c + b
 
     return p_capture
@@ -62,7 +62,7 @@ struct Bat[A: Int]:
     var b: Int
 
     fn get[B: Int](self) -> fn (y: Int) escaping -> Bar[B, A]:
-        fn bar(y: Int) escaping -> Bar[B, A]:
+        fn bar(y: Int) -> Bar[B, A]:
             var w = B + self.b + y
             return Bar[B, A](w + A)
 
@@ -72,7 +72,7 @@ struct Bat[A: Int]:
 fn makes_escaping_closure_position_only(
     m: MemType,
 ) -> fn (n: MemType, /) escaping -> MemType:
-    fn myclosure(n: MemType, /) escaping -> MemType:
+    fn myclosure(n: MemType, /) -> MemType:
         return n + m
 
     return myclosure
@@ -87,7 +87,7 @@ fn test_captures_are_ordered_correctly[
 ](c: Int) -> fn (x: Int, y: Foo[b]) escaping -> Foo[a]:
     alias Y = foo[aa, bb]()
 
-    fn p_capture(x: Int, y: Foo[b]) escaping -> Foo[a]:
+    fn p_capture(x: Int, y: Foo[b]) -> Foo[a]:
         return Foo[a](c + Y + b)
 
     return p_capture
@@ -100,7 +100,7 @@ fn bar[a: Int](x: Foo[a]) -> Int:
 fn captureCallable[
     callable: fn[A: Int] (p: Foo[A]) -> Int
 ](a: Int) -> fn (x: Int) escaping -> Int:
-    fn foo(x: Int) escaping -> Int:
+    fn foo(x: Int) -> Int:
         var w = callable[3](Foo[3](a))
         return w + a
 
@@ -123,7 +123,7 @@ fn take_closure[
 
 
 fn make_closure[c_type: DType]() -> fn (z: C[c_type]) escaping -> None:
-    fn foo(z: C[c_type]) escaping -> None:
+    fn foo(z: C[c_type]) -> None:
         print(z.get())
 
     return foo
@@ -135,12 +135,8 @@ fn deep_runtime_capture(
     if flag:
         var q = m + m
 
-        fn myclosure2(
-            n: Int,
-        ) escaping -> fn (o: Int) escaping -> Int:
-            fn my_inner_closure(
-                o: Int,
-            ) escaping -> Int:
+        fn myclosure2(n: Int) -> fn (o: Int) escaping -> Int:
+            fn my_inner_closure(o: Int) -> Int:
                 var x = o + q
                 return x + n
 
@@ -158,7 +154,7 @@ fn takeClosure(formatter: fn (v: Int) escaping -> Int, value: Int):
 fn makeEscapingClosure[
     parametricClosure: fn (v: Int) capturing -> Int
 ](x: Int) -> fn (v: Int) escaping -> Int:
-    fn formatter(v: Int) escaping -> Int:
+    fn formatter(v: Int) -> Int:
         return parametricClosure(x + v)
 
     return formatter
@@ -168,7 +164,7 @@ fn makeEscapingClosureWithUselessCopyDecorator(
     y: String,
 ) -> fn (x: String) escaping -> String:
     @__copy_capture(y)
-    fn ec(x: String) escaping -> String:
+    fn ec(x: String) -> String:
         return x + y
 
     return ec

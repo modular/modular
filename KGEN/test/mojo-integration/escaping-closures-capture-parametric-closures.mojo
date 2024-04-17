@@ -50,7 +50,7 @@ fn takeClosure(formatter: fn (v: Int) escaping -> Int, value: Int):
 fn makeEscapingClosure[
     parametricClosure: fn[x: Int] (v: Int) capturing -> Int
 ](x: Int) -> fn (v: Int) escaping -> Int:
-    fn formatter(v: Int) escaping -> Int:
+    fn formatter(v: Int) -> Int:
         return parametricClosure[__mlir_attr.`2 : index`](use(x, v))
 
     return formatter

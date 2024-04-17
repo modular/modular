@@ -28,7 +28,7 @@ fn parameter_capture_multiple_levels[
     alias X = bar[a, a]
     alias Y = Foo[X()](2)
 
-    fn p_capture(x: Int) escaping -> Int:
+    fn p_capture(x: Int) -> Int:
         return Y.b + c
 
     return p_capture

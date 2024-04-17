@@ -25,8 +25,8 @@ struct MemType:
 # CHECK-NEXT: lit.return [[V3]]
 # CHECK-NEXT: lit.end_func
 fn makes_escaping_closure(m: MemType):
-    fn myclosure(n: MemType) escaping -> MemType:
-        fn nested_nested(k: MemType, l: MemType) escaping -> MemType:
+    fn myclosure(n: MemType) -> MemType:
+        fn nested_nested(k: MemType, l: MemType) -> MemType:
             return n + k
 
         return n + m

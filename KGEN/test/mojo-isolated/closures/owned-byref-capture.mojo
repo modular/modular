@@ -34,5 +34,5 @@ fn foo(x: int, y: MemType, z: MemType):
 
 # CHECK-LABEL: lit.func @"makes_escaping_closure_3
 fn makes_escaping_closure_3(owned x: int, owned y: MemType, inout z: MemType):
-    fn take_owned_and_escape() escaping:
+    fn take_owned_and_escape():
         foo(x, y, z)

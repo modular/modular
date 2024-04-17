@@ -20,7 +20,7 @@
 
 
 fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
-    fn myclosure(n: int) escaping -> int:
+    fn myclosure(n: int) -> int:
         return m
 
     return myclosure
@@ -51,7 +51,7 @@ fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
 fn closure_in_block(m: int, z: int, b: Bool) -> int:
     if b:
 
-        fn myclosure(n: int) escaping -> int:
+        fn myclosure(n: int) -> int:
             return m
 
         return myclosure(z)
