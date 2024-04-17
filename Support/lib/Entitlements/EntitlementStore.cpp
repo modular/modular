@@ -903,7 +903,7 @@ EntitlementStore::generate(Config &config, HTTPContextRef httpCtx,
     return keysOr.takeError();
 
   std::string accessToken;
-  if (accessTokenOr && !accessToken.empty()) {
+  if (accessTokenOr && !accessTokenOr->empty()) {
     accessToken = *accessTokenOr;
   } else {
     // Fetch the token.
