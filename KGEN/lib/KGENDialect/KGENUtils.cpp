@@ -1981,3 +1981,32 @@ ExportMap KGEN::getExportedSymbols(ModuleOp module) {
   }
   return exportedSymbols;
 }
+
+bool KGEN::isDecorator(TypedAttr decorator, StringLiteral annotation) {
+  if (auto apply = dyn_cast<KGEN::ParamOperatorAttr>(decorator))
+    if (auto sym = dyn_cast<KGEN::SymbolConstantAttr>(apply.getOperand(0))) {
+      StringRef decoratorName = sym.getSymbol().getLeafReference().strref();
+      if (decoratorName.starts_with(annotation))
+        return true;
+    }
+  return false;
+}
+
+bool KGEN::hasDecorator(GeneratorOp gen, StringLiteral annotation) {
+  llvm::ArrayRef<TypedAttr> decorators = gen.getDecorators();
+  return std::any_of(
+      decorators.begin(), decorators.end(),
+      [&](TypedAttr decorator) { return isDecorator(decorator, annotation); });
+}
+
+bool KGEN::hasAnyDecorator(GeneratorOp gen,
+                           llvm::ArrayRef<StringLiteral> annotations) {
+  llvm::ArrayRef<TypedAttr> decorators = gen.getDecorators();
+  return std::any_of(
+      decorators.begin(), decorators.end(), [&](TypedAttr decorator) {
+        return std::any_of(annotations.begin(), annotations.end(),
+                           [&](const StringLiteral &annot) {
+                             return isDecorator(decorator, annot);
+                           });
+      });
+}
