@@ -7,6 +7,7 @@
 #ifndef CACHE_CACHE_TELEMETRY_CONTEXT_H
 #define CACHE_CACHE_TELEMETRY_CONTEXT_H
 
+#include "Support/Context.h"
 #include "Support/Telemetry/Telemetry.h"
 #include "mlir/IR/OpDefinition.h"
 

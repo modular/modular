@@ -16,6 +16,7 @@
 #include "Support/Settings/Settings.h"
 #include "Support/Telemetry/Exporters/FileLogExporter.h"
 #include "Support/Telemetry/Exporters/FileMetricExporter.h"
+#include "Support/Threading/HWInfo.h"
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/Threading.h"
 

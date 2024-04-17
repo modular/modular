@@ -6,7 +6,6 @@
 
 #include "Support/HTTP/HTTPClient.h"
 
-#include "Cache/BlobCache.h"
 #include "Support/Base64.h"
 #include "Support/Configuration.h"
 #include "Support/Threading/Shared.h"
