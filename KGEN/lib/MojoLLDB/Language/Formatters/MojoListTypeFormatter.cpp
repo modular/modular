@@ -90,7 +90,7 @@ MojoListSyntheticFrontEnd::parseList(lldb::ValueObjectSP valobj) {
   // pointer.
   ValueObjectSP dataPointer = dataVal->IsPointerType()
                                   ? dataVal
-                                  : dataVal->GetChildMemberWithName("value");
+                                  : dataVal->GetChildMemberWithName("address");
 
   if (!dataPointer || !dataPointer->GetError().Success())
     return {};
