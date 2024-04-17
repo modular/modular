@@ -24,6 +24,7 @@ from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import LayoutTensor, copy_dram_to_sram_async
 from layout.int_tuple import int
+from layout.swizzle import Swizzle
 from math import div_ceil, isclose, max
 from memory.unsafe import DTypePointer
 from pathlib import Path
@@ -168,6 +169,7 @@ fn multistage_copy[
 
 
 fn test_multistage_copy() raises:
+    print("=== test_multistage_copy")
     alias num_threads = 256
     alias num_pipeline_stages = 4
     alias M = 128
@@ -238,6 +240,124 @@ fn test_multistage_copy() raises:
     _ = stream^
 
 
+fn swizzle_copy[
+    type: DType,
+    a_layout: Layout,
+    b_layout: Layout,
+    BM: Int,
+    BK: Int,
+    num_threads: Int,
+](a: LayoutTensor[type, a_layout], b: LayoutTensor[type, b_layout]):
+    alias simd_size = simdwidthof[type]()
+
+    var M = a.dim[0]()
+    var K = a.dim[1]()
+
+    # Double buffer in shared memory.
+    var a_smem_tile = LayoutTensor[
+        type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    alias thread_layout = Layout.row_major(
+        num_threads * simd_size // BK, BK // simd_size
+    )
+
+    # Mask ^ tid's 2 least significant and every 8 threads share one mask.
+    # This reproduces the thread map in Cutlass when BK=16.
+    @always_inline
+    fn xor_2bits_per8T[type: DType](tid: Scalar[type]) -> Scalar[type]:
+        return Swizzle[2, 0, 3]()(tid)
+
+    copy_dram_to_sram_async[
+        src_thread_layout=thread_layout,
+        dst_thread_layout=thread_layout,
+        swizzle=xor_2bits_per8T,
+    ](
+        a_smem_tile.vectorize[1, simd_size](),
+        a.tile[BM, BK](BlockIdx.x(), 0).vectorize[1, simd_size](),
+    )
+
+    async_copy_wait_all()
+    barrier()
+
+    # Write current stage to global memory.
+    var b_gmem_tile = b.tile[BM, BK](BlockIdx.x(), 0)
+    var b_gmem_frag = b_gmem_tile.vectorize[1, simd_size]().distribute[
+        thread_layout
+    ](ThreadIdx.x())
+    var a_smem_frag = a_smem_tile.vectorize[1, simd_size]().distribute[
+        thread_layout
+    ](ThreadIdx.x())
+    b_gmem_frag.copy_from_numa(a_smem_frag)
+
+
+fn test_swizzle_copy() raises:
+    print("=== test_swizzle_copy")
+    alias num_threads = 32
+    alias M = 8
+    alias K = 16
+    alias BM = 8
+    alias BK = 16
+
+    var stream = Stream()
+
+    alias a_layout = Layout.row_major(M, K)
+    alias b_layout = Layout.row_major(M, K)
+
+    var a_host = DTypePointer[DType.float32].alloc(M * K)
+    var b_host = DTypePointer[DType.float32].alloc(M * K)
+
+    for i in range(M * K):
+        a_host[i] = i
+        b_host[i] = 0
+
+    var a_device = _malloc[Float32](M * K)
+    var b_device = _malloc[Float32](M * K)
+
+    _copy_host_to_device(a_device, a_host, M * K)
+
+    var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
+    var b_tensor = LayoutTensor[DType.float32, b_layout](b_device)
+
+    alias copy = swizzle_copy[
+        DType.float32,
+        a_layout,
+        b_layout,
+        BM,
+        BK,
+        num_threads,
+    ]
+    var func = Function[__type_of(copy), copy](threads_per_block=num_threads)
+
+    func(
+        a_tensor,
+        b_tensor,
+        grid_dim=(div_ceil(M, BM), 1, 1),
+        block_dim=(num_threads, 1, 1),
+        stream=stream,
+    )
+
+    synchronize()
+
+    _copy_device_to_host(b_host, b_device, M * K)
+
+    for m in range(M):
+        for k in range(K):
+            print(b_host[m * K + k], end=" ")
+        print()
+
+    _free(a_device)
+    _free(b_device)
+
+    a_host.free()
+    b_host.free()
+
+    _ = func^
+    _ = stream^
+
+
 fn main() raises:
     with Context() as ctx:
         # CHECK: === test_async_copy
@@ -248,4 +368,17 @@ fn main() raises:
         # CHECK: 24.0   26.0   28.0   27.0   28.0   29.0
         # CHECK: 30.0   31.0   32.0   33.0   34.0   35.0
         test_async_copy()
+
+        # CHECK: === test_multistage_copy
         test_multistage_copy()
+
+        # CHECK: === test_swizzle_copy
+        # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+        # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+        # CHECK: 36.0 37.0 38.0 39.0 32.0 33.0 34.0 35.0 44.0 45.0 46.0 47.0 40.0 41.0 42.0 43.0
+        # CHECK: 52.0 53.0 54.0 55.0 48.0 49.0 50.0 51.0 60.0 61.0 62.0 63.0 56.0 57.0 58.0 59.0
+        # CHECK: 72.0 73.0 74.0 75.0 76.0 77.0 78.0 79.0 64.0 65.0 66.0 67.0 68.0 69.0 70.0 71.0
+        # CHECK: 88.0 89.0 90.0 91.0 92.0 93.0 94.0 95.0 80.0 81.0 82.0 83.0 84.0 85.0 86.0 87.0
+        # CHECK: 108.0 109.0 110.0 111.0 104.0 105.0 106.0 107.0 100.0 101.0 102.0 103.0 96.0 97.0 98.0 99.0
+        # CHECK: 124.0 125.0 126.0 127.0 120.0 121.0 122.0 123.0 116.0 117.0 118.0 119.0 112.0 113.0 114.0 115.0
+        test_swizzle_copy()

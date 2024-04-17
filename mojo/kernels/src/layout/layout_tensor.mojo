@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections.optional import Optional
+from collections.optional import Optional, OptionalReg
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
 
@@ -68,6 +68,9 @@ fn _get_index_type(layout: Layout, address_space: AddressSpace) -> DType:
         return DType.int32
     else:
         return DType.index
+
+
+alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 
 
 @register_passable
@@ -428,6 +431,7 @@ struct LayoutTensor[
     fn distribute[
         threads_layout: Layout,
         axis: Optional[Int] = None,
+        swizzle: OptionalReg[_swizzle_signature] = None,
         tiled_layout: Layout = _compute_distribute_layout[
             layout, threads_layout, axis
         ](),
@@ -479,12 +483,24 @@ struct LayoutTensor[
 
         unroll[compute_offset, len(fragments_layout_stride)]()
 
+        # Swizzling applies to the index of elements rather than scalars because
+        # the former is the unit in distribution.
+        var swizzled_offset = offset
+
+        @parameter
+        if swizzle:
+            alias swizzle_fn = swizzle.value()
+            swizzled_offset = (
+                swizzle_fn[Self.index_type](offset // self.element_size)
+                * self.element_size
+            )
+
         return LayoutTensor[
             dtype,
             tiled_layout[1],
             address_space=address_space,
             element_layout=element_layout,
-        ](self.ptr.offset(offset))
+        ](self.ptr.offset(swizzled_offset))
 
     @always_inline
     fn vectorize[
@@ -1036,6 +1052,7 @@ fn copy_dram_to_sram_async[
     dst_thread_layout: Layout,
     src_element_layout: Layout,
     dst_element_layout: Layout,
+    swizzle: OptionalReg[_swizzle_signature] = None,
 ](
     dst: LayoutTensor[
         dtype,
@@ -1051,7 +1068,9 @@ fn copy_dram_to_sram_async[
     ],
 ):
     var src_framgents = src.distribute[src_thread_layout](ThreadIdx.x())
-    var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
+    var dst_framgents = dst.distribute[dst_thread_layout, swizzle=swizzle](
+        ThreadIdx.x()
+    )
     dst_framgents.copy_from_async(src_framgents)
 
 
