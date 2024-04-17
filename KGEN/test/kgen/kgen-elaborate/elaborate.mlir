@@ -1706,3 +1706,31 @@ kgen.generator export @conditional_alias() {
   kgen.param.declare value = <cond(apply(:() -> i1 @make_true), 1, apply(:() -> index @no_impl))>
   kgen.return
 }
+
+// -----
+
+kgen.generator @call_it(%arg0: !kgen.signature<() -> index>) -> index {
+  %0 = kgen.call_indirect %arg0() : () -> index
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.func @"give,a=1"
+kgen.generator @give<a>() -> index {
+  %idx0 = kgen.param.constant = <a>
+  kgen.return %idx0 : index
+}
+
+// CHECK-LABEL: kgen.func export @apply_expr
+kgen.generator export @apply_expr() {
+  // CHECK-NEXT: <1>
+  kgen.param.constant = <apply(:(!kgen.signature<() -> index>) -> index @call_it, @give<1>)>
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @apply_op
+kgen.generator export @apply_op() {
+  // CHECK-NEXT: <2>
+  kgen.param.apply x = [(!kgen.signature<() -> index>) -> index: @call_it](@give<2>)
+  kgen.param.constant = <x>
+  kgen.return
+}

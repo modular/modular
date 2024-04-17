@@ -53,12 +53,10 @@ public:
 
   virtual ~Elaborator() = default;
 
-  /// Look up the callee symbol. If it's a FuncOp, return it. Otherwise,
-  /// elaborate the generator or interface and return the first concrete
-  /// implementation. Return none if the specialization is not ready yet.
-  virtual ErrorTreeOr<FuncOp>
-  getConcreteFunction(ImplNode *parent, Location loc,
-                      SymbolConstantAttr symbol) = 0;
+  /// Concretize all non-parametric symbol references within the provided
+  /// parameter expression.
+  virtual ErrorTreeOr<TypedAttr>
+  concretizeSymbolsWithin(TypedAttr value, ImplNode *parent, Location loc) = 0;
 
   /// Lookup an existing concrete function.
   FuncOp lookupConcreteFunction(SymbolRefAttr symbol);
@@ -70,8 +68,7 @@ public:
   const SymbolTable &getSliceSymTab() const { return oldSymTab; }
 
   /// Get the functor for compiling a generator to assembly.
-  virtual ElaboratorCompileAsmFnRef
-  getCompileAsmFn(ASMFormat format = ASMFormat::ASM) const = 0;
+  virtual ElaboratorCompileAsmFnRef getCompileAsmFn() const = 0;
 
   /// Add an owned function operation that should be appended to the module at
   /// the end of elaboration. This is where generated functions during
