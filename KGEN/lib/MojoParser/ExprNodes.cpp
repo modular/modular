@@ -1676,10 +1676,11 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     return emitter.emitResult(result, this, dest);
   }
 
-  // Otherwise, this must be a concrete node to be able to further subscript it.
+  // Otherwise, this must be a concrete value to be able to subscript it.
   CValue baseValue = emitter.emitCValue({baseAnyValue, base}, EC_SubscriptBase);
   if (!baseValue)
     return {};
+  ASTType baseType = baseValue.getRValueType();
 
   if (auto value = baseValue.getIfPValue()) {
     // Check for attribute bindings to an MLIR operation.
@@ -1692,7 +1693,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // If this is a signature-type PValue callable, this is binding parameter
     // values to a call.
-    if (auto sig = dyn_cast<LITSignatureType>(value.getType())) {
+    if (auto sig = dyn_cast<LITSignatureType>(baseType)) {
       PValue result =
           bindToIndirectCall(value, sig, operands, emitter, getIndexRange());
       if (!result)
@@ -1701,10 +1702,10 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
-  // If the sub-value is an unbound Type, try binding things to it!
+  // If the sub-value is an unbound Type, try binding parameters to it!
   if (Type typeValue = baseValue.getIfTypeValue()) {
     // Handle user-defined types.
-    if (isa<AnyStructType>(baseValue.getType())) {
+    if (isa<AnyStructType>(baseType)) {
       PValue result = substituteParametersIntoUserDefinedType(
           baseValue.getIfPValue(), operands, getLoc(), lsquareLoc, rsquareLoc,
           emitter);
@@ -1729,8 +1730,40 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
   }
 
+  // Support subscripting a variadic in a parameter list.  This enables us to
+  // work with parameter backs in a more natural way, e.g.
+  // fn thing[*Ts: CollectionElement]():
+  //      type = Ts[123]
+  // We should really remove this when going to a better parameter pack rep.
+  //
+  // FIXME(#13015): We shouldn't need this code. Variadic arguments should emit
+  // a standard library type that implements `__getitem__` and `__setitem__`.
+  if (auto variadic = dyn_cast<VariadicType>(baseType)) {
+    // Attempt to convert the index.
+    if (operands.size() != 1 || operands[0].isKeywordOrUnpackedKeyword()) {
+      emitter.emitError(getLoc()) << "variadic can only be subscripted with a "
+                                     "single positional operand";
+      return {};
+    }
+
+    // We're going to emit the index as a PValue even if in a dynamic context.
+    auto paramEmitter = emitter.getParamEmitter(EC_Subscript);
+    CValue index = paramEmitter.emitMLIRIndex(operands[0].value, EC_Subscript);
+    if (!index)
+      return {};
+    // Inside a parameter context, emit a parameter operator.
+    if (auto indexPV = index.getIfPValue())
+      if (auto basePV = baseValue.getIfPValue()) {
+        auto res = ParamOperatorAttr::get(POC::VariadicGet, {basePV, indexPV});
+        return emitter.emitResult(PValue(res), this, dest);
+      }
+    emitter.emitError(getLoc())
+        << "can only subscript variadics in parameter expressions";
+    return {};
+  }
+
   // Otherwise, if there is no symbol, it is just an LValue or RValue being
-  // subscript, invoking a dynamic subscript.
+  // subscript, invoking a dynamic subscript with __getitem__ and __setitem__.
 
   // Emit each of the index values, which will be passed to the __getitem__ and
   // __setitem__ calls.
@@ -1746,39 +1779,6 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       kwOperands.try_emplace(operand.name, ASTExprAnd<AnyValue>{exprVal, expr});
     else
       posOperands.push_back({exprVal, expr});
-  }
-
-  // Okay, we're doing a normal value subscript.  Check for compatible
-  // __getitem__ and __setitem__ implementations.
-  ASTType baseType = baseValue.getRValueType();
-
-  // Support subscripting a variadic in a parameter list.  This enables us to
-  // work with parameter backs in a more natural way, e.g.
-  // fn thing[*Ts: CollectionElement]():
-  //      type = Ts[123]
-  // We should really remove this when going to a better parameter pack rep.
-  //
-  // FIXME(#13015): We shouldn't need this code. Variadic arguments should emit
-  // a standard library type that implements `__getitem__` and `__setitem__`.
-  if (auto variadic = dyn_cast<VariadicType>(baseType)) {
-    // Attempt to convert the index.
-    if (posOperands.size() != 2 || !kwOperands.empty()) {
-      emitter.emitError(getLoc()) << "variadic can only be subscripted with a "
-                                     "single positional operand";
-      return {};
-    }
-    CValue index = emitter.emitMLIRIndex(posOperands.back(), EC_Subscript);
-    if (!index)
-      return {};
-    // Inside a parameter context, emit a parameter operator.
-    if (auto indexPV = index.getIfPValue())
-      if (auto basePV = baseValue.getIfPValue()) {
-        auto res = ParamOperatorAttr::get(POC::VariadicGet, {basePV, indexPV});
-        return emitter.emitResult(PValue(res), this, dest);
-      }
-    emitter.emitError(getLoc())
-        << "can only subscript variadics in parameter expressions";
-    return {};
   }
 
   auto lookupError = [&] {
