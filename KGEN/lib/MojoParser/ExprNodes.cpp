@@ -745,6 +745,133 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   return emitter.emitCResult(SBValue(extractVal), expr, dest);
 }
 
+/// Return a ParamBindings set for a list of PValue operands. If any operand
+/// fails be emitted as a PValue, the function returns null.
+static std::optional<ParamBindings>
+getBindingsForParameterOperands(ArrayRef<Operand> operands,
+                                ExprEmitter &emitter) {
+  ParamBindings paramBindings(emitter);
+  for (const Operand &operand : operands) {
+    // _ and *_ in parameter expressions are magically treated as special syntax
+    // for unbound values, which get a special representation in a parameter
+    // list.  They are not general expressions, so don't emit them as such.
+    TypedAttr value;
+    if (operand.value->kind == ExprNode::kDiscardLiteral) {
+      value =
+          PValue(UnboundAttr::get(UnresolvedType::get(emitter.getContext())));
+    } else if (operand.value->kind == ExprNode::kUnpack &&
+               cast<UnaryOpNode>(operand.value)->subExpr->kind ==
+                   ExprNode::kDiscardLiteral) {
+      // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
+      // specially.
+      value = PValue(UnpackedAttr::get(emitter.getContext()));
+    } else {
+      auto pValue = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
+      if (!pValue)
+        return std::nullopt;
+      value = pValue.get();
+    }
+
+    if (operand.isKeywordOrUnpackedKeyword())
+      paramBindings.add(operand.value, value, operand.name);
+    else
+      paramBindings.add(operand.value, value);
+  }
+  return std::move(paramBindings);
+}
+
+/// Given a value of type type, substitute parameters into the type, producing
+/// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
+static PValue substituteParametersIntoUserDefinedType(
+    PValue typeValue, ArrayRef<Operand> operands, SMLoc loc, SMLoc lhsLoc,
+    SMLoc rhsLoc, ExprEmitter &emitter) {
+  auto metaType = cast<AnyStructType>(typeValue.getType());
+  ASTDecl *typeDecl = ASTType(metaType).getDecl(emitter.shared);
+  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
+  if (!structOp) {
+    auto diag = emitter.emitError(loc);
+    if (isa<FileModuleOp, PackageOp>(typeDecl)) {
+      // Emit helpful error message when user tried to subscript a module.
+      emitModuleCallSubscriptDiag(diag, metaType, "subscript", loc,
+                                  emitter.shared);
+    } else {
+      diag << "unknown parameterized type " << ASTType(typeValue)
+           << SourceRange{loc, rhsLoc};
+    }
+    return {};
+  }
+
+  // Notify the listener on the parameter binding.
+  emitter.shared.notifyListenerOnParameterBinding(typeDecl, rhsLoc, operands);
+
+  // Build up a ParamBindings set to validate and check the bindings.
+  std::optional<ParamBindings> paramBindings =
+      getBindingsForParameterOperands(operands, emitter);
+  if (!paramBindings)
+    return {};
+
+  // Check the bindings.
+  // FIXME: The error messages are bad for partial binding, because the
+  // diagnostic emitter points to the original struct definition.
+  ParameterExprArrayAttr bindingValuesAttr =
+      paramBindings->verifyBindings(structOp, metaType.getSignature(), loc,
+                                    ParamBindings::Boundness::Partial);
+  if (!bindingValuesAttr)
+    return {};
+
+  // Ok, we succeeded at reparameterizing the type.
+  return PValue(BindTypeAttr::get(typeValue, bindingValuesAttr));
+}
+
+/// Returns the next expected parameter type for a function candidate given a
+/// set of bindings.
+static Type getNextParamType(ASTDecl *fnDecl,
+                             const ParamBindings &paramBindings) {
+  LITSignatureType signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
+  const auto &[_, fitness] = paramBindings.verifyBindings(signature);
+  return fitness.lastExpectedType;
+}
+
+/// When subscripting a callable with a bound symbol (i.e. a direct method call
+/// or call to a method), apply parameter bindings to it.
+static LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
+                                                 ArrayRef<Operand> operands,
+                                                 ExprEmitter &emitter) {
+  // Process each subscript entry as a binding.
+  for (const Operand &operand : operands) {
+    // If all entries in this overload set take a parameter with a common type,
+    // use it for parameter type inference.
+    ASTType paramType;
+    if (operand.isPositional() && !overloadSet.fnDecls.empty()) {
+      paramType =
+          getNextParamType(overloadSet.fnDecls[0], overloadSet.paramBindings);
+      auto hasDifferentNextParam = [&](ASTDecl *decl) {
+        return !paramType.isEqualCanon(
+            getNextParamType(decl, overloadSet.paramBindings));
+      };
+      if (paramType && overloadSet.fnDecls.size() != 1 &&
+          llvm::any_of(overloadSet.fnDecls, hasDifferentNextParam))
+        paramType = ASTType();
+    }
+
+    auto val =
+        emitter.emitExprPValue(operand.value, EC_CallParamValue, paramType);
+    if (!val)
+      return failure();
+
+    // We don't do any checking to see if the value is compatible with the
+    // expected type - this is deferred until when the symbol is actually
+    // emitted for something.  This allow us to use the provided parameters to
+    // filter down the overload set.
+    if (operand.isKeyword())
+      overloadSet.paramBindings.add(operand.value, val.get(), operand.name);
+    else
+      overloadSet.paramBindings.add(operand.value, val.get());
+  }
+  // The bindings will be checked for validity when a reference is formed.
+  return success();
+}
+
 /// Given a base value, emit access to a base value element using either a
 /// reference-producing-method or getter-and-setter-methods using the provided
 /// operands.
@@ -1551,139 +1678,6 @@ AnyValue SliceNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   return emitter.emitResult(InitializerUValue::create(operands), this, dest);
 }
 
-/// Return a ParamBindings set for a list of PValue operands. If any operand
-/// fails be emitted as a PValue, the function returns null.
-static std::optional<ParamBindings>
-getBindingsForParameterOperands(ArrayRef<Operand> operands,
-                                ExprEmitter &emitter) {
-  ParamBindings paramBindings(emitter);
-  for (const Operand &operand : operands) {
-    // _ and *_ in parameter expressions are magically treated as special syntax
-    // for unbound values, which get a special representation in a parameter
-    // list.  They are not general expressions, so don't emit them as such.
-    TypedAttr value;
-    if (operand.value->kind == ExprNode::kDiscardLiteral) {
-      value =
-          PValue(UnboundAttr::get(UnresolvedType::get(emitter.getContext())));
-    } else if (operand.value->kind == ExprNode::kUnpack &&
-               cast<UnaryOpNode>(operand.value)->subExpr->kind ==
-                   ExprNode::kDiscardLiteral) {
-      // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
-      // specially.
-      value = PValue(UnpackedAttr::get(emitter.getContext()));
-    } else {
-      auto pValue = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
-      if (!pValue)
-        return std::nullopt;
-      value = pValue.get();
-    }
-
-    if (operand.isKeywordOrUnpackedKeyword())
-      paramBindings.add(operand.value, value, operand.name);
-    else
-      paramBindings.add(operand.value, value);
-  }
-  return std::move(paramBindings);
-}
-
-/// Given a value of type type, substitute parameters into the type, producing
-/// a more concrete type.  This syntax is `SomeType[1, 4, Int]`.
-static PValue substituteParametersIntoUserDefinedType(
-    PValue typeValue, ArrayRef<Operand> operands, SMLoc loc, SMLoc lhsLoc,
-    SMLoc rhsLoc, ExprEmitter &emitter) {
-  auto metaType = cast<AnyStructType>(typeValue.getType());
-  ASTDecl *typeDecl = ASTType(metaType).getDecl(emitter.shared);
-  auto structOp = dyn_cast_or_null<StructDeclOp>(typeDecl);
-  if (!structOp) {
-    auto diag = emitter.emitError(loc);
-    if (isa<FileModuleOp, PackageOp>(typeDecl)) {
-      // Emit helpful error message when user tried to subscript a module.
-      emitModuleCallSubscriptDiag(diag, metaType, "subscript", loc,
-                                  emitter.shared);
-    } else {
-      diag << "unknown parameterized type " << ASTType(typeValue)
-           << SourceRange{loc, rhsLoc};
-    }
-    return {};
-  }
-
-  // Notify the listener on the parameter binding.
-  emitter.shared.notifyListenerOnParameterBinding(typeDecl, rhsLoc, operands);
-
-  // Build up a ParamBindings set to validate and check the bindings.
-  std::optional<ParamBindings> paramBindings =
-      getBindingsForParameterOperands(operands, emitter);
-  if (!paramBindings)
-    return {};
-
-  // Check the bindings.
-  // FIXME: The error messages are bad for partial binding, because the
-  // diagnostic emitter points to the original struct definition.
-  ParameterExprArrayAttr bindingValuesAttr =
-      paramBindings->verifyBindings(structOp, metaType.getSignature(), loc,
-                                    ParamBindings::Boundness::Partial);
-  if (!bindingValuesAttr)
-    return {};
-
-  // Ok, we succeeded at reparameterizing the type.
-  return PValue(BindTypeAttr::get(typeValue, bindingValuesAttr));
-}
-
-/// Returns the next expected parameter type for a function candidate given a
-/// set of bindings.
-static Type getNextParamType(ASTDecl *fnDecl,
-                             const ParamBindings &paramBindings) {
-  LITSignatureType signature = cast<LIT::FuncOp>(*fnDecl).getFullSignature();
-  const auto &[_, fitness] = paramBindings.verifyBindings(signature);
-  return fitness.lastExpectedType;
-}
-
-/// When subscripting a callable with a bound symbol (i.e. a direct method call
-/// or call to a method), apply parameter bindings to it.
-static OverloadSetUValue bindParamValuesToDirectCall(OverloadSetUValue value,
-                                                     ArrayRef<Operand> operands,
-                                                     ExprEmitter &emitter) {
-  // If the subscript operands are a single () expression, then we treat this as
-  // having no parameters.  This is used with arrow expressions to allow `f[()
-  // -> x]`.
-  if (operands.size() == 1 &&
-      operands[0].value->getWithoutParens()->isEmptyTuple())
-    return value;
-
-  // Process each subscript entry as a binding.
-  for (const Operand &operand : operands) {
-    // If all entries in this overload set take a parameter with a common type,
-    // use it for parameter type inference.
-    ASTType paramType;
-    if (operand.isPositional() && !value->fnDecls.empty()) {
-      paramType = getNextParamType(value->fnDecls[0], value->paramBindings);
-      auto hasDifferentNextParam = [&](ASTDecl *decl) {
-        return !paramType.isEqualCanon(
-            getNextParamType(decl, value->paramBindings));
-      };
-      if (paramType && value->fnDecls.size() != 1 &&
-          llvm::any_of(value->fnDecls, hasDifferentNextParam))
-        paramType = ASTType();
-    }
-
-    auto val =
-        emitter.emitExprPValue(operand.value, EC_CallParamValue, paramType);
-    if (!val)
-      return {};
-
-    // We don't do any checking to see if the value is compatible with the
-    // expected type - this is deferred until when the symbol is actually
-    // emitted for something.  This allow us to use the provided parameters to
-    // filter down the overload set.
-    if (operand.isKeyword())
-      value->paramBindings.add(operand.value, val.get(), operand.name);
-    else
-      value->paramBindings.add(operand.value, val.get());
-  }
-  // The bindings will be checked for validity when a reference is formed.
-  return value;
-}
-
 /// Bind parameter operands to a callable parameter.
 static PValue bindToIndirectCall(PValue callable, LITSignatureType sig,
                                  ArrayRef<Operand> operands,
@@ -1716,8 +1710,11 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (auto overloads = baseAnyValue.getIfOverloadSet()) {
     emitter.shared.notifyListenerOnParameterBinding(overloads->fnDecls,
                                                     rsquareLoc, operands);
-    auto result = bindParamValuesToDirectCall(overloads, operands, emitter);
-    return emitter.emitResult(result, this, dest);
+    // Mutate the overloadset directly.  This is a bit gross, but we know we're
+    // the only user of it.
+    if (failed(bindParamValuesToDirectCall(*overloads, operands, emitter)))
+      return {};
+    return emitter.emitResult(overloads, this, dest);
   }
 
   // Otherwise, this must be a concrete value to be able to subscript it.
