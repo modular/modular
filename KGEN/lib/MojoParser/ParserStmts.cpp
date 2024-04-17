@@ -869,14 +869,19 @@ static ParseResult parseLoopDecorators(StmtParser &parser,
         }
       } else if (auto *callNode = dyn_cast<CallNode>(decorator)) {
         if (auto dre = dyn_cast<DeclRefNode>(callNode->callee)) {
-          int32_t factor;
           if (dre->spelling == "unroll" && callNode->operands.size() == 1) {
-            if (callNode->operands[0].isPositionalIntLiteral(factor)) {
-              unrollAttr =
-                  HLCF::UnrollLevelAttr::get(parser.getContext(), factor);
-              continue;
+            ExprNode *unrollFactorExpr = callNode->operands[0].expr;
+            if (callNode->operands[0].isPositional()) {
+              if (auto *intExpr = dyn_cast<IntLiteralNode>(unrollFactorExpr)) {
+                int32_t factor;
+                if (llvm::to_integer(intExpr->spelling, factor)) {
+                  unrollAttr =
+                      HLCF::UnrollLevelAttr::get(parser.getContext(), factor);
+                  continue;
+                }
+              }
             }
-            ExprNode *unrollFactorExpr = callNode->operands[0].value;
+
             CValue unrollFactor =
                 parser.getParamEmitter(EC_Decorator)
                     .emitMLIRIndex(unrollFactorExpr, EC_Decorator);

@@ -108,7 +108,7 @@ static std::string substituteMLIRMagic(const SubscriptNode &node,
 
   SMLoc loc = node.getLoc();
   for (const Operand &operand : node.operands) {
-    ExprNode *expr = operand.value;
+    ExprNode *expr = operand.expr;
     if (!operand.isPositional()) {
       emitter.emitError(loc, "only positional operands allowed in mlir magic")
           << expr->getRange();
@@ -222,7 +222,7 @@ bindAttributesToMLIROperatorCall(const SubscriptNode &subscript,
   // PValue.
   SmallVector<NamedAttribute> attrValues;
   for (const Operand &operand : subscript.operands) {
-    ExprNode *valueExpr = operand.value;
+    ExprNode *valueExpr = operand.expr;
     if (!operand.isKeyword()) {
       InflightDiag diag =
           emitter.emitError(loc, "attribute spec requires a keyword parameter");
@@ -441,7 +441,7 @@ AnyValue StringLiteralNode::emitIR(ValueDest &dest,
 
 bool Operand::isPositionalStringLiteral(StringRef str) const {
   if (isPositional())
-    if (auto *strExpr = dyn_cast<StringLiteralNode>(value))
+    if (auto *strExpr = dyn_cast<StringLiteralNode>(expr))
       return strExpr->getValue() == str;
   return false;
 }
@@ -756,26 +756,26 @@ getBindingsForParameterOperands(ArrayRef<Operand> operands,
     // for unbound values, which get a special representation in a parameter
     // list.  They are not general expressions, so don't emit them as such.
     TypedAttr value;
-    if (operand.value->kind == ExprNode::kDiscardLiteral) {
+    if (operand.expr->kind == ExprNode::kDiscardLiteral) {
       value =
           PValue(UnboundAttr::get(UnresolvedType::get(emitter.getContext())));
-    } else if (operand.value->kind == ExprNode::kUnpack &&
-               cast<UnaryOpNode>(operand.value)->subExpr->kind ==
+    } else if (operand.expr->kind == ExprNode::kUnpack &&
+               cast<UnaryOpNode>(operand.expr)->subExpr->kind ==
                    ExprNode::kDiscardLiteral) {
       // Handle the *_ syntax, which is parsed as an Unpack(DiscardLiteral)
       // specially.
       value = PValue(UnpackedAttr::get(emitter.getContext()));
     } else {
-      auto pValue = emitter.emitExprPValue(operand.value, EC_TypeParamValue);
+      auto pValue = emitter.emitExprPValue(operand.expr, EC_TypeParamValue);
       if (!pValue)
         return std::nullopt;
       value = pValue.get();
     }
 
     if (operand.isKeywordOrUnpackedKeyword())
-      paramBindings.add(operand.value, value, operand.name);
+      paramBindings.add(operand.expr, value, operand.name);
     else
-      paramBindings.add(operand.value, value);
+      paramBindings.add(operand.expr, value);
   }
   return std::move(paramBindings);
 }
@@ -855,7 +855,7 @@ static LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
     }
 
     auto val =
-        emitter.emitExprPValue(operand.value, EC_CallParamValue, paramType);
+        emitter.emitExprPValue(operand.expr, EC_CallParamValue, paramType);
     if (!val)
       return failure();
 
@@ -864,9 +864,9 @@ static LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
     // emitted for something.  This allow us to use the provided parameters to
     // filter down the overload set.
     if (operand.isKeyword())
-      overloadSet.paramBindings.add(operand.value, val.get(), operand.name);
+      overloadSet.paramBindings.add(operand.expr, val.get(), operand.name);
     else
-      overloadSet.paramBindings.add(operand.value, val.get());
+      overloadSet.paramBindings.add(operand.expr, val.get());
   }
   // The bindings will be checked for validity when a reference is formed.
   return success();
@@ -910,7 +910,7 @@ static AnyValue emitGetterSetterAccess(const ExprNode *node,
               "`__getitem__`/`__setitem__` or `__refitem__` methods";
     else
       diag << " value has no attribute '"
-           << cast<StringLiteralNode>(exprOperands[0].value)->getValue() << "'";
+           << cast<StringLiteralNode>(exprOperands[0].expr)->getValue() << "'";
   };
 
   // Emit each of the index values, which will be passed to the __getitem__ and
@@ -922,7 +922,7 @@ static AnyValue emitGetterSetterAccess(const ExprNode *node,
 
   KeywordOperands kwOperands;
   for (const Operand &operand : exprOperands) {
-    ExprNode *expr = operand.value;
+    ExprNode *expr = operand.expr;
     AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);
     if (!exprVal)
       return {};
@@ -1332,7 +1332,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
                         "MLIR operators only support positional arguments");
       return {};
     }
-    Value value = emitter.emitExprSRValue(argument.value, EC_MLIRMagic);
+    Value value = emitter.emitExprSRValue(argument.expr, EC_MLIRMagic);
     if (!value)
       return {};
     opOperands.push_back(value);
@@ -1597,7 +1597,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   for (const Operand &operand : operands) {
     if (operand.isUnpacked()) {
       auto diag = emitter.emitError(operand.getLoc());
-      ExprNode *packedExpr = dyn_cast<UnaryOpNode>(operand.value)->subExpr;
+      ExprNode *packedExpr = dyn_cast<UnaryOpNode>(operand.expr)->subExpr;
       if (packedExpr && packedExpr->kind == ExprNode::kDiscardLiteral)
         diag << "unbound packs not supported yet in runtime arguments";
       else
@@ -1606,7 +1606,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
 
     ASTExprAnd<AnyValue> exprAndVal = {
-        emitter.emitExpr(operand.value, EC_CallArgValue), operand.value};
+        emitter.emitExpr(operand.expr, EC_CallArgValue), operand.expr};
     if (!exprAndVal)
       return {};
     if (operand.isPositional()) {
@@ -1789,7 +1789,7 @@ AnyValue SubscriptNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
     // We're going to emit the index as a PValue even if in a dynamic context.
     auto paramEmitter = emitter.getParamEmitter(EC_Subscript);
-    CValue index = paramEmitter.emitMLIRIndex(operands[0].value, EC_Subscript);
+    CValue index = paramEmitter.emitMLIRIndex(operands[0].expr, EC_Subscript);
     if (!index)
       return {};
     // Inside a parameter context, emit a parameter operator.

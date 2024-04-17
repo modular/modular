@@ -215,14 +215,14 @@ struct Operand {
     kStarStar,   ///< Splat list of keyword values like: foo(**x)
   };
 
-  Operand(ExprNode *value, SMLoc startLoc, PassKind passKind,
+  Operand(ExprNode *expr, SMLoc startLoc, PassKind passKind,
           StringAttr name = StringAttr())
-      : value(value), startLoc(startLoc), passKind(passKind), name(name) {
+      : expr(expr), startLoc(startLoc), passKind(passKind), name(name) {
     assert(passKind != kKeyword || name);
   }
 
   /// This is the expression for the operand value.
-  ExprNode *value;
+  ExprNode *expr;
 
   /// The location where the keyword (if given) or the value starts.
   const SMLoc startLoc;
@@ -254,16 +254,6 @@ struct Operand {
   /// Return true if this is a positional operand with a string literal
   /// containing the specified string.
   bool isPositionalStringLiteral(StringRef str) const;
-
-  /// Return true if this is a positional operand with an int literal
-  /// containing the specified value of the (optionally given base).
-  template <typename IntType>
-  bool isPositionalIntLiteral(IntType &value, unsigned base = 0) const {
-    if (isPositional())
-      if (auto *intExpr = dyn_cast<IntLiteralNode>(this->value))
-        return llvm::to_integer(intExpr->spelling, value, base);
-    return false;
-  }
 };
 
 struct CallNode final : public ExprNode {
