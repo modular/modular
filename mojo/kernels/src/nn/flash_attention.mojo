@@ -640,8 +640,6 @@ fn flash_attention[
     output: NDBuffer[type, rank, output_static_shape],
     scale: Float32,
 ):
-    alias simd_width = simdwidthof[type]()
-
     _FlashAttention[
         type,
         rank,
