@@ -1070,5 +1070,3 @@ fn call_variadic_pack_with_function():
   # CHECK: [[FP:%.*]]  = kgen.param.constant: !lit.signature<("x": !Int borrow) -> !kgen.none> = <@parameters::@"indirect_function(
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)
-
-

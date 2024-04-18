@@ -40,7 +40,7 @@
 
 // -----
 
-// expected-error @+1 {{variadic cannot have a default value}}
+// expected-error @+1 {{default value of variadic must be UnknownAttr}}
 #variadic_with_default = #lit.pog_list<
   [<"a", pos, false>, <"b", pos_or_kw, true>, <"c", kw, false>, <"d", kw, false>],
   [1 : i8], [], -1, none
@@ -56,7 +56,7 @@
 
 // -----
 
-// expected-error @+1 {{variadic pack cannot have a default value}}
+// expected-error @+1 {{default value of variadic pack must be UnknownAttr}}
 #pack_with_default = #lit.pog_list<
   [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, false>],
   [1 : i8], [], 1, owned_in_mem

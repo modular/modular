@@ -80,8 +80,8 @@ TypeSignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
   }
 
   return verifyDefaultTypes(emitError, paramListAttrs.getDefaultPos(),
-                            paramListAttrs.getDefaultKwOnly(),
-                            paramListAttrs.getPogs(), paramTypes, "parameter");
+                            paramListAttrs.getDefaultKwOnly(), paramListAttrs,
+                            paramTypes, "parameter");
 }
 
 bool TypeSignatureType::isVarParam(size_t idx) const {

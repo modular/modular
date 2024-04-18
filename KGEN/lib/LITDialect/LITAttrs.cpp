@@ -101,9 +101,12 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                          << "index must be less than the number of elements: "
                          << idx << " vs. " << numEl;
     }
-    if (defaultHandler.getDefault(idx))
-      return emitError() << "variadic " << (isPack ? "pack " : "")
-                         << "cannot have a default value";
+    if (TypedAttr varDefault = defaultHandler.getDefault(idx)) {
+      if (::isa<UnknownAttr>(varDefault))
+        return success();
+      return emitError() << "default value of variadic "
+                         << (isPack ? "pack " : "") << "must be UnknownAttr";
+    }
     return success();
   };
 
@@ -373,13 +376,12 @@ LogicalResult FnMetadataAttr::verifySignature(
     }
   }
 
-  if (failed(verifyDefaultTypes(emitError, getDefaultPosArgs(),
-                                getDefaultKwOnlyArgs(),
-                                getArgListAttrs().getPogs(), values.getInputs(),
-                                "argument", argConventions)) ||
-      failed(verifyDefaultTypes(
-          emitError, getDefaultPosParams(), getDefaultKwOnlyParams(),
-          paramListAttr.getPogs(), inputParamTypes, "parameter")))
+  if (failed(verifyDefaultTypes(
+          emitError, getDefaultPosArgs(), getDefaultKwOnlyArgs(),
+          getArgListAttrs(), values.getInputs(), "argument", argConventions)) ||
+      failed(verifyDefaultTypes(emitError, getDefaultPosParams(),
+                                getDefaultKwOnlyParams(), paramListAttr,
+                                inputParamTypes, "parameter")))
     return failure();
 
   return success();

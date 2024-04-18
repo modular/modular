@@ -147,12 +147,14 @@ fn generic_trait_fn[T: Trait](x: T):
 fn existential_arg(x: Trait):
     pass
 
+
 trait SimpleTrait:
     fn method(self, y: int):
         ...
 
     fn param_method[x: int](self):
         ...
+
 
 struct TraitStruct(SimpleTrait):
     fn method(self, y: int):
@@ -250,7 +252,7 @@ fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: [[VI:%.*]] = kgen.rebind %value {{.*}}#lit.invalid.ref.lifetime
     # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership [[VI]]
     # CHECK-NEXT: call[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value28transfer29)
-    return value^
+    return value ^
 
 
 # COM: Just check that conformance checking succeeds.
@@ -893,52 +895,57 @@ fn test_infer_sub_trait[T: OtherEmptyTrait](owned foo: Foo[T], bar: Bar[T]):
 
 # AnyTrait subtyping.
 
+
 # CHECK-LABEL: lit.func @"test_anytrait_subtyping
 # CHECK-SAME: <ty: !lit.anytrait<!AnyType>>
 fn test_anytrait_subtyping[ty: __mlir_type[`!lit.anytrait<`, AnyType, `>`]]():
-  # Call !lit.anytrait subtyping.
-  # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !AnyType>()
-  test_anytrait_subtyping[AnyType]()
-  # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !SimpleTrait>()
-  test_anytrait_subtyping[SimpleTrait]()
+    # Call !lit.anytrait subtyping.
+    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !AnyType>()
+    test_anytrait_subtyping[AnyType]()
+    # CHECK-NEXT: lit.call {{.*}}test_anytrait_subtyping{{.*}}<:!lit.anytrait<!AnyType> !SimpleTrait>()
+    test_anytrait_subtyping[SimpleTrait]()
+
 
 # CHECK-LABEL: lit.func @"take_many_things_of_specified_trait
 # CHECK-SAME: <element_type: !lit.anytrait<!AnyType>,
 # CHECK-SAME: element_types: variadic<:!lit.anytrait<!AnyType> element_type> var>()
 fn take_many_things_of_specified_trait[
     element_type: __mlir_type[`!lit.anytrait<`, AnyType, `>`],
-    *element_types: element_type]():
-  pass
+    *element_types: element_type,
+]():
+    pass
 
 
 # CHECK-LABEL: lit.func @"call_many_things_of_specified_trait
 fn call_many_things_of_specified_trait(a: TraitStruct):
-  # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-  # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> {{.}}[!TraitStruct
-  take_many_things_of_specified_trait[AnyType, TraitStruct]()
+    # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
+    # CHECK-SAME: <:!lit.anytrait<!AnyType> !AnyType, :variadic<!AnyType> {{.}}[!TraitStruct
+    take_many_things_of_specified_trait[AnyType, TraitStruct]()
 
-  # Int is movable.
-  # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-  # CHECK-SAME: <:!lit.anytrait<!AnyType> !Movable, :variadic<!Movable> {{.}}[!Int
-  take_many_things_of_specified_trait[Movable, Int]()
+    # Int is movable.
+    # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
+    # CHECK-SAME: <:!lit.anytrait<!AnyType> !Movable, :variadic<!Movable> {{.}}[!Int
+    take_many_things_of_specified_trait[Movable, Int]()
 
-  # TraitStruct conforms to SimpleTrait.
-  # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
-  # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :variadic<!SimpleTrait> {{.}}[!TraitStruct
-  take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
+    # TraitStruct conforms to SimpleTrait.
+    # CHECK-NEXT: lit.call {{.*}}take_many_things_of_specified_trait
+    # CHECK-SAME: <:!lit.anytrait<!AnyType> !SimpleTrait, :variadic<!SimpleTrait> {{.}}[!TraitStruct
+    take_many_things_of_specified_trait[SimpleTrait, TraitStruct, TraitStruct]()
 
 
 alias _AnyTypeMetaType = __mlir_type[`!lit.anytrait<`, AnyType, `>`]
+
 
 # CHECK-LABEL: lit.struct.decl @TestAnyTrait
 struct TestAnyTrait[element_trait: _AnyTypeMetaType]:
     # CHECK: lit.func @"take_any_type
     # CHECK-SAME: <b_type: !AnyType>(%self:
     # CHECK-SAME: %b_value: !lit.ref<:!AnyType b_type, imm {{.*}} borrow_in_mem)
-    fn take_any_type[b_type: AnyType](self, b_value: b_type): pass
+    fn take_any_type[b_type: AnyType](self, b_value: b_type):
+        pass
 
     # CHECK: lit.func @"test
     # CHECK-SAME: <a_type: !kgen.paramref<:!lit.anytrait<!AnyType> element_trait>>(%self:
     # CHECK-SAME: %a_value: !lit.ref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait> a_type, imm {{.*}}> borrow_in_mem
     fn test[a_type: element_trait](self, a_value: a_type):
-       self.take_any_type(a_value)
+        self.take_any_type(a_value)
