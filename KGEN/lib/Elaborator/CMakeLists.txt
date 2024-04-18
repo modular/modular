@@ -24,4 +24,5 @@ add_modular_library(KGENElaborator
   MLIRIndexDialect
   MLIRSupport
   MSupport
+  LLCLCompilerSupport
 )

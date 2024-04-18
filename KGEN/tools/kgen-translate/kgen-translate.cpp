@@ -10,6 +10,7 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "LLCL/CompilerSupport/Context.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Init/Init.h"
 #include "Support/MDialect/MDialect.h"

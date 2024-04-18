@@ -24,6 +24,7 @@
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/DebugInfoEncoding.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "LLCL/CompilerSupport/Context.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "MojoTypeDataLayout.h"
 #include "Plugins/SymbolFile/DWARF/DWARFDIE.h"

@@ -1106,6 +1106,7 @@ cc_library(
         ":Pipeline",
         ":ToolCommonHeaders",
         ":VersionHeader",
+        "//LLCL:CompilerSupport",
         "//Support:DebugInfoTransforms",
         "//Support:Telemetry",
         "@llvm-project//llvm:OrcJIT",
@@ -1274,6 +1275,7 @@ cc_library(
         ":ToolCommonHeaders",
         ":VersionHeader",
         "//Cache",
+        "//LLCL:CompilerSupport",
     ],
 )
 
@@ -1320,6 +1322,7 @@ cc_library(
         ":Compiler",
         ":KGENToLLVM",
         ":Pipeline",
+        "//LLCL:CompilerSupport",
         "@llvm-project//mlir:BytecodeWriter",
     ],
 )

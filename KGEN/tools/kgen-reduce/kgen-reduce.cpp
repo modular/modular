@@ -11,6 +11,7 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/Walkers.h"
+#include "LLCL/CompilerSupport/Context.h"
 #include "PreOrderRegionIterator.h"
 #include "Support/Context.h"
 #include "Support/Init/Init.h"

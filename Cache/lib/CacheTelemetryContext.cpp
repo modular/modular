@@ -5,7 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Cache/CacheTelemetryContext.h"
-#include "Support/MDialect/MDialect.h"
+#include "LLCL/CompilerSupport/Context.h"
 
 using namespace M;
 using namespace M::Cache;

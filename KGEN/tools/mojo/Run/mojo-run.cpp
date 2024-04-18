@@ -18,6 +18,7 @@
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
+#include "LLCL/CompilerSupport/Context.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Config.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
@@ -26,7 +27,6 @@
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "Support/MDialect/MAttrs.h"
-#include "Support/MDialect/MDialect.h"
 #include "Support/Telemetry/Telemetry.h"
 
 #include "mlir/Dialect/Index/IR/IndexDialect.h"

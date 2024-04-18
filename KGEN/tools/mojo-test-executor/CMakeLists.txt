@@ -11,6 +11,7 @@ add_modular_tool(mojo-test-executor
   MLIRLspServerSupportLib
   KGENCompilerRT
   KGENSupport
+  LLCLCompilerSupport
   LLCLRuntimeGlobals
   MSupportGlobals
   MSupportInit
