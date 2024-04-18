@@ -219,10 +219,10 @@ def issue_1625():
     var evens_and_odds = x.deinterleave()
 
     assert_equal(
-        evens_and_odds[0], SIMD[DType.int64, 8](0, 2, 4, 6, 8, 10, 12, 14)
+        evens_and_odds.get[0](), SIMD[DType.int64, 8](0, 2, 4, 6, 8, 10, 12, 14)
     )
     assert_equal(
-        evens_and_odds[1], SIMD[DType.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)
+        evens_and_odds.get[1](), SIMD[DType.int64, 8](1, 3, 5, 7, 9, 11, 13, 15)
     )
     ptr.free()
 
