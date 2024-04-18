@@ -326,7 +326,7 @@ cc_library(
         ":Buffer",
         ":Configuration",
         ":JSON",
-        "@com_github_mbedtls//:mbedtls",
+        "@mbedtls",
     ],
 )
 

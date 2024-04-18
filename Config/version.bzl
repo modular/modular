@@ -1,3 +1,5 @@
+"""Create version status template file"""
+
 def _status_template_impl(ctx):
     ctx.actions.run_shell(
         arguments = [
