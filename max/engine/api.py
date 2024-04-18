@@ -28,54 +28,6 @@ else:
 version_string = __version__
 
 
-@dataclass
-class TorchLoadOptions:
-    """Configures how to load TorchScript models.
-
-    When using a TorchScript model, you must pass this to
-    :obj:`~InferenceSession.load()` in order to `specify the input specs
-    </engine/model-formats#specify-torchscript-input-specs>`_.
-    """
-
-    input_specs: List["TorchInputSpec"] = field(default_factory=list)
-    """The tensor specifications (shape and data type) for each of the
-    model inputs. This is required when loading serialized TorchScript models
-    because they do not include type and shape annotations.
-
-    If the model supports an input with dynamic shapes, use ``None`` as the
-    dimension size in ``shape``.
-
-    For example:
-
-    .. code-block:: python
-
-        session = engine.InferenceSession()
-        torch_options = engine.TorchLoadOptions()
-        torch_options.input_specs = [
-            engine.TorchInputSpec(
-                shape=[1, 16], dtype=engine.DType.int32
-            ),
-            engine.TorchInputSpec(
-                shape=[1, 3, 224, 224], dtype=engine.DType.float32
-            ),
-            engine.TorchInputSpec(
-                shape=[1, 16], dtype=engine.DType.int32
-            ),
-        ]
-        model = session.load("clip-vit.torchscript", torch_options)
-    """
-
-    type: str = "torch"
-
-
-@dataclass
-class CommonLoadOptions:
-    """Common options for how to load models."""
-
-    custom_ops_path: str = field(default="")
-    """The path to your custom ops. (This feature is coming soon.)"""
-
-
 class Model:
     """A loaded model that you can execute.
 
@@ -329,9 +281,10 @@ class TorchInputSpec:
     Specifies valid input specification for a TorchScript model.
 
     Before you load a TorchScript model, you must create an instance of this class
-    for each input tensor, and pass it to :obj:`TorchLoadOptions`.
+    for each input tensor, and pass them to the `input_specs` argument of
+    :meth:`InferenceSession.load`.
 
-    For example code, see :obj:`TorchLoadOptions`.
+    For example code, see :meth:`InferenceSession.load`.
     """
 
     _impl: _TorchInputSpec
@@ -372,25 +325,22 @@ class TorchInputSpec:
         return DType._from(self._impl.dtype)
 
 
-def _unwrap_pybind_objects_dict_factory(
-    data: List[Tuple[str, Any]]
-) -> Dict[str, Any]:
+def _unwrap_pybind_objects(value: Any) -> Any:
     """Unwraps pybind objects from python class wrappers."""
-
-    def convert(
-        value: Any,
-    ) -> Union[List[Any], _TensorSpec, _TorchInputSpec, Any]:
-        if isinstance(value, list):
-            return [convert(v) for v in value]
-        if isinstance(value, TensorSpec):
-            # Unwrap TensorSpec to _TensorSpec.
-            return value._impl
-        if isinstance(value, TorchInputSpec):
-            # Unwrap TorchInputSpec to _TorchInputSpec.
-            return value._impl
-        return value
-
-    return {field: convert(value) for field, value in data if value}
+    if isinstance(value, list):
+        return [_unwrap_pybind_objects(v) for v in value]
+    if isinstance(value, dict):
+        return {
+            _unwrap_pybind_objects(k): _unwrap_pybind_objects(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, TensorSpec):
+        # Unwrap TensorSpec to _TensorSpec.
+        return value._impl
+    if isinstance(value, TorchInputSpec):
+        # Unwrap TorchInputSpec to _TorchInputSpec.
+        return value._impl
+    return value
 
 
 class InferenceSession:
@@ -436,8 +386,9 @@ class InferenceSession:
     def load(
         self,
         model_path: Union[str, Path],
-        *options: Union[CommonLoadOptions, TorchLoadOptions],
-        **kwargs,
+        *,
+        custom_ops_path: Optional[str] = None,
+        input_specs: Optional[List["TorchInputSpec"]] = None,
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
@@ -450,8 +401,36 @@ class InferenceSession:
             Path to a model. May be a TensorFlow model in the SavedModel
             format, a serialized TorchScript model, or an ONNX model.
 
-        *options: Union[CommonLoadOptions, TorchLoadOptions]
-            Load options for configuring how the model should be compiled.
+        custom_ops_path: str
+            The path to your custom ops. (This feature is coming soon.)
+
+        input_specs:
+            The tensor specifications (shape and data type) for each of the
+            model inputs. This is required when loading serialized TorchScript
+            models because they do not include type and shape annotations.
+
+            If the model supports an input with dynamic shapes, use ``None`` as
+            the dimension size in ``shape``.
+
+            For example:
+
+            .. code-block:: python
+
+                session = engine.InferenceSession()
+                model = session.load(
+                    "clip-vit.torchscript",
+                    input_specs = [
+                        engine.TorchInputSpec(
+                            shape=[1, 16], dtype=engine.DType.int32
+                        ),
+                        engine.TorchInputSpec(
+                            shape=[1, 3, 224, 224], dtype=engine.DType.float32
+                        ),
+                        engine.TorchInputSpec(
+                            shape=[1, 16], dtype=engine.DType.int32
+                        ),
+                    ],
+                )
 
         Returns
         -------
@@ -465,20 +444,13 @@ class InferenceSession:
         """
 
         options_dict = {}
-        for options_obj in options:
-            if not is_dataclass(options_obj):
-                raise TypeError(
-                    "Invalid load options object; must be dataclass."
-                )
-            # Unwrap dataclass options to a dictionary, and furthermore unwrap
-            # any nested objects that are not pybind classes so that the values
-            # passed to the compile implementation can be interpreted.
-            options_dict.update(
-                asdict(
-                    options_obj,
-                    dict_factory=_unwrap_pybind_objects_dict_factory,
-                ).items()
+
+        if custom_ops_path is not None:
+            options_dict["custom_ops_path"] = _unwrap_pybind_objects(
+                custom_ops_path
             )
+        if input_specs is not None:
+            options_dict["input_specs"] = _unwrap_pybind_objects(input_specs)
 
         model_path = Path(str(model_path))
         _model = self._impl.compile(model_path, options_dict)
