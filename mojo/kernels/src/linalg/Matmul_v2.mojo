@@ -39,10 +39,10 @@ from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 from runtime.llcl import Runtime
 
-from .matmul_vnni import Inner_matmul_vnni
-from .matmul_i8mm import Inner_matmul_i8mm
-from .matmul_neon import Inner_matmul_neon
-from .matmul_default import Inner_matmul_default
+from .matmul_v2_vnni import Inner_matmul_vnni
+from .matmul_v2_i8mm import Inner_matmul_i8mm
+from .matmul_v2_neon import Inner_matmul_neon
+from .matmul_v2_default import Inner_matmul_default
 
 from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple
@@ -66,29 +66,25 @@ from .MatmulPack import (
 # - _run_inner_loop_neon()
 # - _run_inner_loop_default()
 # - _run_inner_loop_vnni()
-trait InnerMatmulKernel:
-    fn _initialize_c_tile(
+trait InnerMatmulKernel(Copyable):
+    fn __inner_matmul__[
+        a_row_size: Int,
+        pack_inner_size: Int,
+        # Skip the output c space boundary check if True.
+        skip_boundary_check: Bool,
+    ](
         self,
-        c0_local: NDBuffer,
+        c0: NDBuffer,
+        a0: NDBuffer,
+        b0_packed: NDBuffer,
+        global_offset: GemmShape,  # TODO: This was inverted with below. Now OK.
+        global_bound: GemmShape,
+        tile_n_k: StaticIntTuple[2],
     ):
         ...
 
-    fn _load_c_tile(
-        self,
-        c0_local: NDBuffer,
-        tile_n_idx: Int,
-    ):
-        ...
-
-    fn _store_c_tile(
-        self,
-        c0_local: NDBuffer,
-        tile_n_idx: Int,
-    ):
-        ...
-
-    fn __inner_matmul__(self):
-        ...
+    # fn __init__(inout self):
+    #     ...
 
 
 fn elementwise_epilogue_c_tile[
@@ -261,46 +257,21 @@ fn matmul_inner_loop[
 
     @parameter
     if use_i8mm:
-        Inner_matmul_i8mm[config, a_row_size, pack_inner_size, skip_col_bound,](
-            c,
-            a,
-            b_packed,
-            global_offset,
-            global_bound,
-            tile_n_k,
-        ).__inner_matmul__()
+        Inner_matmul_i8mm[config,]().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif has_neon() and not use_vnni and not use_i8mm:
-        Inner_matmul_neon[config, a_row_size, pack_inner_size, skip_col_bound,](
-            c,
-            a,
-            b_packed,
-            global_offset,
-            global_bound,
-            tile_n_k,
-        ).__inner_matmul__()
+        Inner_matmul_neon[config,]().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif not use_vnni and not has_neon():
-        Inner_matmul_default[
-            config,
-            a_row_size,
-            pack_inner_size,
-            skip_col_bound,
-        ](
-            c,
-            a,
-            b_packed,
-            global_offset,
-            global_bound,
-            tile_n_k,
-        ).__inner_matmul__()
+        Inner_matmul_default[config,]().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif use_vnni:
-        Inner_matmul_vnni[config, a_row_size, pack_inner_size, skip_col_bound,](
-            c,
-            a,
-            b_packed,
-            global_offset,
-            global_bound,
-            tile_n_k,
-        ).__inner_matmul__()
+        Inner_matmul_vnni[config,]().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     else:
         constrained[False, "no _run_inner_loop implementation"]()
 
