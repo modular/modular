@@ -276,12 +276,60 @@ fn matmul_inner_loop[
         constrained[False, "no _run_inner_loop implementation"]()
 
 
+# Interface method
+fn tiledMatmulRun[
+    config: MatmulConfig,
+    elementwise_epilogue_enabled: Bool,
+    algorithm: InnerMatmulKernel,
+](
+    alg: algorithm,
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b: NDBuffer[config.b_type, 2, config.b_shape],
+    elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
+    global_tile_shape: GemmShape,
+    global_tile_offset: GemmShape,
+):
+    """Interface function to run tiled matmul on a given sub-tile.
+
+    Args:
+        alg: InnerMatmulKernel algorithm for microkernel.
+        c: Pre-allocated buffer space for result.
+        a: Operand A of the matmul.
+        b: Operand B of the mamtul.
+        elementwise_epilogue_fn: The elementwise epilogue function.
+        global_tile_shape: Tile shape this call will process.
+        global_tile_offset: Tile offset on the original buffer.
+    """
+
+    var tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
+        global_tile_shape
+    )
+
+    var matmul = TiledMatmul[config, elementwise_epilogue_enabled,](
+        alg,  # TODO: KK: Here want to pass alg.
+        # Inner_matmul_default[config](),  # KK: switch to above when bubbling up
+        c,
+        a,
+        b,
+        tile_n_k,
+        global_tile_offset,
+        global_tile_shape,
+        BTileGenerator[
+            config, config.b_type, config.transpose_b, config.b_packed
+        ].get(b, tile_n_k),
+        elementwise_epilogue_fn,
+    )
+    matmul._outer_k_loop()
+
+
 # Tiled Matmul Implementation.
 # TODO: not yet supporting transpose_a
 @value
 struct TiledMatmul[
     config: MatmulConfig,
     elementwise_epilogue_enabled: Bool,
+    algorithm: InnerMatmulKernel,
 ]:
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -291,6 +339,7 @@ struct TiledMatmul[
     TODO: add fusion hooks.
     """
 
+    var alg: algorithm
     var c: NDBuffer[config.c_type, 2, config.c_shape]
     var a: NDBuffer[config.a_type, 2, config.a_shape]
     var b: NDBuffer[config.b_type, 2, config.b_shape]
@@ -308,46 +357,6 @@ struct TiledMatmul[
     ]
 
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None
-
-    # Interface method
-    @staticmethod
-    fn run(
-        c: NDBuffer[config.c_type, 2, config.c_shape],
-        a: NDBuffer[config.a_type, 2, config.a_shape],
-        b: NDBuffer[config.b_type, 2, config.b_shape],
-        elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
-        global_tile_shape: GemmShape,
-        global_tile_offset: GemmShape,
-    ):
-        """Interface function to run tiled matmul on a given sub-tile.
-
-        Args:
-            c: Pre-allocated buffer space for result.
-            a: Operand A of the matmul.
-            b: Operand B of the mamtul.
-            elementwise_epilogue_fn: The elementwise epilogue function.
-            global_tile_shape: Tile shape this call will process.
-            global_tile_offset: Tile offset on the original buffer.
-        """
-
-        var tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
-            global_tile_shape
-        )
-
-        var matmul = TiledMatmul[config, elementwise_epilogue_enabled,](
-            c,
-            a,
-            b,
-            tile_n_k,
-            global_tile_offset,
-            global_tile_shape,
-            BTileGenerator[
-                config, config.b_type, config.transpose_b, config.b_packed
-            ].get(b, tile_n_k),
-            elementwise_epilogue_fn,
-        )
-
-        matmul._outer_k_loop()
 
     fn _outer_m_loop[
         last_n_tile: Bool,
@@ -397,8 +406,7 @@ struct TiledMatmul[
             @parameter
             @always_inline
             fn row_iteration[tile_size: Int](row_offset: Int):
-                matmul_inner_loop[
-                    config,
+                self.alg.__inner_matmul__[
                     tile_size,
                     m_loop_pack_inner_size,
                     skip_col_bound,
@@ -767,14 +775,52 @@ fn _matmul_cpu[
             ):
                 return
 
-            _submatmul_sequential_sync[config, elementwise_lambda_fn](
-                c,
-                a_packed if use_i8mm else a,
-                b,
-                sub_matmul_config.shape,
-                sub_matmul_config.offset,
-                kernel_type_m,
-            )
+            alias use_vnni = config.use_vnni
+            alias use_i8mm = config.use_i8mm
+
+            @parameter
+            if use_i8mm:
+                _submatmul_sequential_sync[config, elementwise_lambda_fn](
+                    Inner_matmul_i8mm[config](),
+                    c,
+                    a_packed if use_i8mm else a,
+                    b,
+                    sub_matmul_config.shape,
+                    sub_matmul_config.offset,
+                    kernel_type_m,
+                )
+            elif has_neon() and not use_vnni and not use_i8mm:
+                _submatmul_sequential_sync[config, elementwise_lambda_fn](
+                    Inner_matmul_neon[config](),
+                    c,
+                    a_packed if use_i8mm else a,
+                    b,
+                    sub_matmul_config.shape,
+                    sub_matmul_config.offset,
+                    kernel_type_m,
+                )
+            elif not use_vnni and not has_neon():
+                _submatmul_sequential_sync[config, elementwise_lambda_fn](
+                    Inner_matmul_default[config](),
+                    c,
+                    a_packed if use_i8mm else a,
+                    b,
+                    sub_matmul_config.shape,
+                    sub_matmul_config.offset,
+                    kernel_type_m,
+                )
+            elif use_vnni:
+                _submatmul_sequential_sync[config, elementwise_lambda_fn](
+                    Inner_matmul_vnni[config](),
+                    c,
+                    a_packed if use_i8mm else a,
+                    b,
+                    sub_matmul_config.shape,
+                    sub_matmul_config.offset,
+                    kernel_type_m,
+                )
+            else:
+                constrained[False, "no _run_inner_loop implementation"]()
 
         # i8mm partition needs to be optimized as a function of m, n and k
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
@@ -890,7 +936,9 @@ fn matmul[
 fn _submatmul_sequential_sync[
     config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    algorithm: InnerMatmulKernel,
 ](
+    alg: algorithm,
     c: NDBuffer[config.c_type, 2, config.c_shape],
     a: NDBuffer[config.a_type, 2, config.a_shape],
     b: NDBuffer[config.b_type, 2, config.b_shape],
@@ -916,10 +964,8 @@ fn _submatmul_sequential_sync[
         else:
             pass
 
-    TiledMatmul[
-        config,
-        elementwise_lambda_fn.__bool__(),
-    ].run(
+    tiledMatmulRun[config, elementwise_lambda_fn.__bool__(),](
+        alg,
         c,
         a,
         b,
