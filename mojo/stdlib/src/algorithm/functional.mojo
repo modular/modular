@@ -183,7 +183,7 @@ fn vectorize[
             print("storing", simd_width, "els at pos", i)
             p.store[width=simd_width](i, i)
 
-        vectorize[closure, simd_width, size]()
+        vectorize[closure, simd_width, size=size]()
         print(p.load[width=size]())
     ```
 
