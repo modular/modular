@@ -20,8 +20,7 @@ CacheTelemetryContext::CacheTelemetryContext(Telemetry::TelemetryContext &ctx)
 
 CacheTelemetryContext &
 CacheTelemetryContext::getCacheTelemetryContext(ContextRef context) {
-  auto &telemetryCtx =
-      context->emplaceIfMissing<M::Telemetry::TelemetryContext>();
+  auto &telemetryCtx = *context->get<M::Telemetry::TelemetryContext>();
   return context->emplaceIfMissing<CacheTelemetryContext>(telemetryCtx);
 }
 
@@ -49,8 +48,8 @@ CacheTelemetryContext::getTelemetryOnMissLambda(
 
     [[maybe_unused]] auto timeScope =
         loadContext(op->getContext())
-            ->emplaceIfMissing<M::Telemetry::TelemetryContext>()
-            .createUInt64Timer<std::chrono::milliseconds>(
+            ->get<M::Telemetry::TelemetryContext>()
+            ->createUInt64Timer<std::chrono::milliseconds>(
                 timerName, M::Telemetry::Level::L2, attrs);
 #endif
   };

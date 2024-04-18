@@ -96,7 +96,8 @@ public:
 
 class MockTelemetryContext : public Telemetry::TelemetryContext {
 public:
-  MockTelemetryContext() {
+  MockTelemetryContext(Settings &settings)
+      : Telemetry::TelemetryContext(settings) {
     mockEventLogger = std::make_shared<testing::NiceMock<MockEventLogger>>();
     mockLogger = std::make_shared<testing::NiceMock<MockLogger>>(
         mockEventLogger, M::Telemetry::Level::L0);
@@ -189,7 +190,11 @@ protected:
     expectStringValue(values, "instance_type", "c5.4xlarge");
   }
 
-  NiceMock<MockTelemetryContext> mockTelemetryCtx;
+  // N.B. Initialize the underlying telemetry with empty settings.
+  Settings empty =
+      Settings(Config(), EntitlementStore::alwaysOpen(llvm::errs()));
+  NiceMock<MockTelemetryContext> mockTelemetryCtx =
+      NiceMock<MockTelemetryContext>(empty);
   std::unique_ptr<MeteringContext> context;
   std::vector<llvm::StringMap<Logs::AttributeValue>> values;
 

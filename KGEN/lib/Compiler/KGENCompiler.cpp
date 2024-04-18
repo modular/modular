@@ -328,8 +328,8 @@ KGEN::compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
 #ifdef MODULAR_ENABLE_TELEMETRY
           [[maybe_unused]] auto timeScope =
               loadContext(op->getContext())
-                  ->emplaceIfMissing<M::Telemetry::TelemetryContext>()
-                  .createUInt64Timer<std::chrono::milliseconds>(
+                  ->get<M::Telemetry::TelemetryContext>()
+                  ->createUInt64Timer<std::chrono::milliseconds>(
                       "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
                       {{"pipeline", "KGEN::compileElaboratorAsm"}});
 #endif
