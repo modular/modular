@@ -47,6 +47,7 @@ struct BufferRefABI[type: DType]:
 
 
 @register_passable("trivial")
+# TODO #38039: Remove this wrapper when we can pass TensorSpec directly
 struct TensorSpecABI[rank: Int]:
     """Defines a `TensorSpecABI` struct that contains the shape/DType.
     The purpose of this structure is to preserve information needed for the ABI interface
@@ -118,6 +119,7 @@ fn create_tensor_spec_async[
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
     # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
     # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
+    # TODO #38039: We should not need to allocate and free once we can pass TensorSpec
     var shape_ptr = DTypePointer[DType.index].alloc(rank)
     for i in range(rank):
         shape_ptr[i] = spec.shape[i]
@@ -317,6 +319,7 @@ fn mgp_tensor_spec_create_cpu[
     aRawDims: DimList,
     aRawDimsRank: Int,
 ](*runtimeDims: Int) -> TensorSpecABI[aRawDimsRank]:
+    # TODO #38039: Cannot return a TensorSpec until KGENStubBuilder supports DPS for it
     var dType = DType._from_ui8(bRawDType.value)
     var static_shape = IntList[aRawDims]()
     var shape = StaticIntTuple[aRawDimsRank]()
@@ -329,3 +332,11 @@ fn mgp_tensor_spec_create_cpu[
             shape[i] = runtimeDims[runtimeIndex]
             runtimeIndex = runtimeIndex + 1
     return TensorSpecABI[aRawDimsRank](shape, dType)
+
+
+@mogg_register("mgp.cpu.tensor_spec.size")
+@export
+fn mgp_tensor_spec_size(raw_spec_ptr: DTypePointer[DType.int8]) -> Int:
+    # TODO #38039: Cannot return a TensorSpec until KGENStubBuilder supports DPS for it
+    var spec_ptr = raw_spec_ptr._as_scalar_pointer().bitcast[TensorSpec]()
+    return spec_ptr[].bytecount()
