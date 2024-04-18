@@ -56,8 +56,8 @@ fn __nvvm_ldg_f4[type: DType](x: DTypePointer[type]) -> SIMD[type, 4]:
         return bitcast[type, 4](
             llvm_intrinsic[
                 "llvm.nvvm.ldg.global.f.v4f16.p0v4f16",
-                SIMD[DType.bfloat16, 4],
-            ](x.bitcast[DType.bfloat16](), alignment)
+                SIMD[DType.float16, 4],
+            ](x.bitcast[DType.float16](), alignment)
         )
     else:
         constrained[False, "Unhandled DType"]()
@@ -327,6 +327,7 @@ fn gemv_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: DTypePointer[c_type],
@@ -338,17 +339,17 @@ fn gemv_kernel[
 ):
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var warpId = x // WARP_SIZE
-    var accum = SIMD[c_type, 1]()
+    var accum = SIMD[s_type, 1]()
 
     if warpId < m:
         # Every warp processes a single row of the resultant vector
         for i in range(div_ceil(k, WARP_SIZE)):
             var idx = i * WARP_SIZE + int(lane_id())
-            var val = SIMD[c_type, 1]()
+            var val = SIMD[s_type, 1]()
             if idx < k:
                 val = (
-                    a.load(warpId * k + idx).cast[c_type]()
-                    * b.load(idx).cast[c_type]()
+                    a.load(warpId * k + idx).cast[s_type]()
+                    * b.load(idx).cast[s_type]()
                 )
 
             @parameter
@@ -368,9 +369,11 @@ fn gemv_kernel[
             @parameter
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda[c_type, 1](Index(warpId, 0), accum)
+                elementwise_lambda[c_type, 1](
+                    Index(warpId, 0), accum.cast[c_type]()
+                )
             else:
-                c[warpId] = accum
+                c[warpId] = accum.cast[c_type]()
 
 
 # Matrix-Column Vector Multiplication utilizing Tensor Cores
@@ -378,6 +381,7 @@ fn gemv_tc_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: DTypePointer[c_type],
@@ -389,7 +393,7 @@ fn gemv_tc_kernel[
 ):
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var warpId = x // WARP_SIZE
-    var accum = Scalar[c_type]()
+    var accum = Scalar[s_type]()
 
     if warpId < m:
         # Every warp processes a single row of the resultant vector
@@ -399,8 +403,8 @@ fn gemv_tc_kernel[
             if idx < k:
                 val = a.load(warpId * k + idx) * b.load(idx).cast[a_type]()
 
-            var out_val = Scalar[c_type]()
-            out_val = tc_reduce[c_type, a_type](val)
+            var out_val = Scalar[s_type]()
+            out_val = tc_reduce[s_type, a_type](val)
 
             if lane_id() == 0:
                 accum += out_val
@@ -410,9 +414,11 @@ fn gemv_tc_kernel[
             @parameter
             if elementwise_lambda_fn:
                 alias elementwise_lambda = elementwise_lambda_fn.value()
-                elementwise_lambda[c_type, 1](Index(warpId, 0), accum)
+                elementwise_lambda[c_type, 1](
+                    Index(warpId, 0), accum.cast[c_type]()
+                )
             else:
-                c[warpId] = accum
+                c[warpId] = accum.cast[c_type]()
 
 
 # Row Vector-Matrix multiplication
@@ -421,6 +427,7 @@ fn gevm_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
+    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c: DTypePointer[c_type],
@@ -432,14 +439,14 @@ fn gevm_kernel[
 ):
     var warpsPerBlock = BlockDim.x() // WARP_SIZE
     var warpId = ThreadIdx.x() // WARP_SIZE
-    var accum = SIMD[c_type, 1]()
+    var accum = SIMD[s_type, 1]()
     var col = BlockIdx.x() * WARP_SIZE + int(lane_id())
     var x = BlockIdx.x() * BlockDim.x() + ThreadIdx.x()
     var globalWarpId = x // WARP_SIZE
 
     var x_shared = stack_allocation[
         tile_size,
-        c_type,
+        s_type,
         address_space = AddressSpace.SHARED,
     ]()
 
@@ -450,7 +457,7 @@ fn gevm_kernel[
         if lane_id() == 0:
             val = a.load(row).cast[c_type]()
         val = shuffle_idx(val, 0)
-        accum += val * b.load(row * n + col).cast[c_type]()
+        accum += val.cast[s_type]() * b.load(row * n + col).cast[s_type]()
 
     x_shared[int(lane_id()) * WARP_SIZE + warpId] = accum
     barrier()
@@ -462,8 +469,8 @@ fn gevm_kernel[
     ](x: SIMD[type, width], y: SIMD[type, width]) -> SIMD[type, width]:
         return x + y
 
-    var total = SIMD[c_type, 1]()
-    total = x_shared.load(ThreadIdx.x()).cast[c_type]()
+    var total = SIMD[s_type, 1]()
+    total = x_shared.load(ThreadIdx.x()).cast[s_type]()
     total = warp_reduce[shuffle_down, reduce_add](total)
 
     if lane_id() == 0:
@@ -471,9 +478,11 @@ fn gevm_kernel[
         @parameter
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](Index(0, globalWarpId), total)
+            elementwise_lambda[c_type, 1](
+                Index(0, globalWarpId), total.cast[c_type]()
+            )
         else:
-            c[globalWarpId] = total
+            c[globalWarpId] = total.cast[c_type]()
 
 
 fn matmul_kernel[
@@ -481,6 +490,7 @@ fn matmul_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
+    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     c_ptr: DTypePointer[c_type],
@@ -526,7 +536,7 @@ fn matmul_kernel[
     var localRow = ThreadIdx.y()
 
     # Result of current thread in C.
-    var result = SIMD[c_type, 1](0.0)
+    var result = SIMD[s_type, 1](0.0)
 
     var K_roundbytile = align_down(k, tile_size)
     # Can't use 0 as tile size so set to 1 when the remainder is 0.
@@ -568,8 +578,8 @@ fn matmul_kernel[
 
         for kk in range(tile_size):
             result += (
-                a_shared[localRow * tile_size + kk].cast[c_type]()
-                * b_shared[kk * tile_size + localCol].cast[c_type]()
+                a_shared[localRow * tile_size + kk].cast[s_type]()
+                * b_shared[kk * tile_size + localCol].cast[s_type]()
             )
 
         barrier()
@@ -583,9 +593,11 @@ fn matmul_kernel[
         @parameter
         if elementwise_lambda_fn:
             alias elementwise_lambda = elementwise_lambda_fn.value()
-            elementwise_lambda[c_type, 1](Index(row, col), result)
+            elementwise_lambda[c_type, 1](
+                Index(row, col), result.cast[c_type]()
+            )
         else:
-            c[Index(row, col)] = result
+            c[Index(row, col)] = result.cast[c_type]()
 
 
 fn matmul_kernel_naive[
@@ -650,18 +662,6 @@ fn _matmul_gpu[
     constrained[not config.b_packed, "pre-packing not yet supported"]()
     constrained[
         not config.saturated_vnni, "saturated_vnni_flag not applicable"
-    ]()
-    constrained[
-        config.a_type == DType.float32 or config.a_type == DType.bfloat16,
-        "only Float32/BFloat16 types are supported",
-    ]()
-    constrained[
-        config.b_type == DType.float32 or config.b_type == DType.bfloat16,
-        "only Float32/BFloat16 types are supported",
-    ]()
-    constrained[
-        config.c_type == DType.float32 or config.c_type == DType.bfloat16,
-        "only Float32/BFloat16 types are supported",
     ]()
 
     var shape = GemmShape.get[False, False](c, a, b)
@@ -743,56 +743,9 @@ fn _matmul_gpu_dispatch[
     try:
         var stream = Stream.get_current_stream()
 
-        # TODO implement optimized matmul for half types #33364
-        @parameter
-        if (
-            a_type == DType.bfloat16
-            or b_type == DType.bfloat16
-            or c_type == DType.bfloat16
-        ):
-            alias BLOCK_DIM = 16
-            var gpu_func = Function[
-                fn (
-                    DTypePointer[a_type],
-                    DTypePointer[b_type],
-                    DTypePointer[c_type],
-                    Int,
-                    Int,
-                    Int,
-                ) capturing -> None, matmul_kernel_naive[
-                    a_type,
-                    b_type,
-                    c_type,
-                    BLOCK_DIM,
-                    DType.float32,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                ]
-            ]()
-            gpu_func(
-                c.data,
-                a.data,
-                b.data,
-                m,
-                n,
-                k,
-                grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
-                block_dim=(BLOCK_DIM, BLOCK_DIM),
-                stream=stream,
-            )
-            return
-
-        constrained[
-            a_type == DType.float32,
-            "Only Float32 types have optimized implementations",
-        ]()
-        constrained[
-            b_type == DType.float32,
-            "Only Float32 types have optimized implementations",
-        ]()
-        constrained[
-            c_type == DType.float32,
-            "Only Float32 types have optimized implementations",
-        ]()
+        alias s_type = DType.float32 if (
+            a_type == DType.bfloat16 or a_type == DType.float16
+        ) else c_type
 
         # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
         # no elementwise_epilogue, fallback to generic matmul_kernel.
@@ -867,6 +820,7 @@ fn _matmul_gpu_dispatch[
                     c_type,
                     a_type,
                     b_type,
+                    s_type,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ]()
@@ -897,6 +851,7 @@ fn _matmul_gpu_dispatch[
                     a_type,
                     b_type,
                     WARP_SIZE * WARPS_PER_BLOCK,
+                    s_type,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ]()
@@ -930,6 +885,7 @@ fn _matmul_gpu_dispatch[
                         a_type,
                         b_type,
                         tile_size,
+                        s_type,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
@@ -959,6 +915,7 @@ fn _matmul_gpu_dispatch[
                         b_type,
                         c_type,
                         BLOCK_DIM,
+                        s_type,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
