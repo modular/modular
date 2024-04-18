@@ -1,5 +1,26 @@
 // RUN: kgen-opt -inline-param=optimization-level=3 -verify-parameters -split-input-file -allow-unregistered-dialect %s -mlir-print-debuginfo | FileCheck %s
 
+#subprogram = #debuginfo.subprogram<name = <"parent">> : !debuginfo.subroutine<() -> (index): DW_CC_normal>
+#subprogram1 = #debuginfo.subprogram<name = <"callee">> : !debuginfo.subroutine<() -> (index): DW_CC_normal>
+#loc = loc("foo.mlir":1:1)
+#loc1 = loc("foo.mlir":10:10)
+#loc2 = loc("foo.mlir":20:20)
+#loc3 = loc("foo.mlir":30:30)
+#loc4 = loc("foo.mlir":40:40)
+#loc5 = loc("foo.mlir":50:50)
+#loc6 = loc("foo.mlir":60:60)
+#loc7 = loc("foo.mlir":70:70)
+#loc8 = loc("foo.mlir":80:80)
+#parentLoc = loc(fused<#subprogram>[#loc])
+#callOpLoc = loc(fused<#subprogram>[#loc1])
+#parentRetLoc = loc(fused<#subprogram>[#loc2])
+#calleeLoc = loc(fused<#subprogram1>[#loc3])
+#ret0 = loc(fused<#subprogram1>[#loc4])
+#ret1 = loc(fused<#subprogram1>[#loc5])
+#closure = loc(fused<#subprogram1>[#loc6])
+#closureRet = loc(fused<#subprogram1>[#loc7])
+#calleeMisc = loc(fused<#subprogram1>[#loc8])
+
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() -> index {
   // CHECK: %[[RES:.*]] = hlcf.loop "[[LABEL:.*]]" () -> index
@@ -12,31 +33,31 @@ kgen.generator @parent() -> index {
     // CHECK: hlcf.break "[[LABEL]]" %idx0 : index loc(#[[BREAK_LOC1:.*]])
   // CHECK-NEXT: } loc(#[[CALL_LOC:.*]])
   // CHECK-NOT: kgen.call @callee
-  %0 = kgen.call @callee() : () -> index
+  %0 = kgen.call @callee() : () -> index loc(#callOpLoc)
   // CHECK: return %[[RES]]
-  kgen.return %0 : index
-}
+  kgen.return %0 : index loc(#parentRetLoc)
+} loc(#parentLoc)
 
 // CHECK: kgen.generator @callee
 kgen.generator @callee() -> index always_inline {
   // CHECK: index.constant 0 loc(#[[CALLEE_LOC:.*]])
-  %0 = index.constant 0
-  %false = index.bool.constant false
+  %0 = index.constant 0 loc(#calleeMisc)
+  %false = index.bool.constant false loc(#calleeMisc)
   hlcf.if %false {
     // CHECK: kgen.return %idx0 : index loc(#[[RET_LOC0:.*]])
-    kgen.return %0 : index
+    kgen.return %0 : index loc(#ret0)
   } else {
-    hlcf.yield
-  }
+    hlcf.yield loc(#calleeMisc)
+  } loc(#calleeMisc)
   // CHECK: kgen.param.declare.region SomeClosure = () {
     // CHECK-NEXT: kgen.return loc(#[[CL_RET_LOC]])
   // CHECK-NEXT: } {{.*}} loc(#[[CL_LOC]])
   kgen.param.declare.region SomeClosure = () -> () {
-    kgen.return
-  }
+    kgen.return loc(#closureRet)
+  } loc(#closure)
   // CHECK: kgen.return %idx0 : index loc(#[[RET_LOC1:.*]])
-  kgen.return %0 : index
-}
+  kgen.return %0 : index loc(#ret1)
+} loc(#calleeLoc)
 
 // CHECK: #[[INLINED_LOC]] = loc(callsite(#[[CALLEE_LOC]] at #[[CALL_LOC]]))
 // CHECK: #[[LOC0:.*]] = loc(callsite(#[[RET_LOC0]] at #[[CALL_LOC]]))
