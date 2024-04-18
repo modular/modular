@@ -3,25 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Symbolic value primitives.
-
-A `Symbol` can represent the output of a `Node`, the arguments of a `Graph` (as
-seen from within its body), and more generally any symbolic value available
-within the `Graph`. Other `Node`s receive `Symbol`s as inputs to form a
-computation graph.
-
-`Symbol`s may also be used to refer to an existing input or output of a `Node`,
-and one may change these, for instance by swapping a new `Symbol`.
-
-Conceptually, `Symbol`s are the equivalent of variables in Mojo. A `Symbol` can
-also be thought of as the end of an edge in the dataflow graph (the other end
-being one use of that symbol).
-
-Similar to regular variables, `Symbol`s have a data type.
-
-Note: All the helpers in this module are documented as "Creates foo". This is
-a shorthand notation for "Adds a node representing an op that returns foo".
-"""
+"""Symbolic value primitives."""
 
 from collections.optional import Optional
 from tensor import Tensor, TensorShape, TensorSpec
@@ -52,7 +34,25 @@ from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 @value
 struct Symbol(CollectionElement, Stringable):
-    """Represents a symbolic value within a `Graph`."""
+    """Represents a symbolic value within a `Graph`.
+
+    A `Symbol` can represent the output of a node, the arguments of a `Graph`
+    (as seen from within its body), and more generally any symbolic value
+    available within the `Graph`. Other nodes receive `Symbol` values as inputs
+    to form a computation graph.
+
+    A `Symbol` may also refer to an existing input or output of a node, and you
+    can change them, such as by swapping a new `Symbol`.
+
+    Conceptually, a `Symbol` is the equivalent of a variable in Mojo. A `Symbol`
+    can also be thought of as the end of an edge in the dataflow graph (the
+    other end being one use of that symbol).
+
+    Similar to a regular variable, a `Symbol` has a data type.
+
+    Note: All the methods in this type are documented as "Creates foo". This is
+    a shorthand notation for "Adds a node representing an op that returns foo".
+    """
 
     var handle: _mlir.Value
     """An handle to this `Symbol`'s internal representation."""
@@ -101,7 +101,7 @@ struct Symbol(CollectionElement, Stringable):
         """Returns a `String` representation of this `Symbol`.
 
         The representation uses an internal MLIR Assembly format, and typically
-        shows the `Node` that outputs this `Symbol`. Its structure
+        shows the node that outputs this `Symbol`. Its structure
         is subject to change without notice, and should not be used for
         serialization. For debugging purposes only.
 

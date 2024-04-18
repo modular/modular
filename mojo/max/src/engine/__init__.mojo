@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Mojo APIs to run inference with MAX Engine.
+"""APIs to run inference with MAX Engine.
 
 Although there are several modules in this `max.engine` package, you'll get
 everything you need from this top-level `engine` namespace, so you don't need
@@ -14,7 +14,7 @@ For example, the basic code you need to run an inference looks like this:
 ```mojo
 from max import engine
 
-fn main() raises:
+def main():
     # Load your model:
     var session = engine.InferenceSession()
     var model = session.load(model_path)

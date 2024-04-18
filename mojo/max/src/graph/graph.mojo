@@ -3,17 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Core graph primitives.
-
-`Graph`s are callable routines in
-[MAX Engine](/engine/), similar to functions in Mojo.
-Like functions, graphs have a name and signature. Unlike functions, which
-follow an imperative programming model, `Graph`s follow a
-[dataflow](https://en.wikipedia.org/wiki/Dataflow_programming) programming
-model, using lazily-executed, parallel operations instead of sequential
-instructions. `Graph`s aren't called directly from Mojo, but are instead
-compiled and executed by MAX Engine, for example using the MAX Engine API.
-"""
+"""Core graph primitives."""
 
 from collections import Optional, Set
 from sys.info import has_neon
@@ -31,38 +21,85 @@ from .type import MOList, MOTensor, TypeTuple
 
 @value
 struct Graph(CollectionElement, Stringable):
-    """Represents a single MAX graph."""
+    """Represents a single MAX graph.
+
+    A `Graph` is a callable routine in [MAX Engine](/engine/), similar to a
+    function in Mojo. Like functions, graphs have a name and signature. Unlike
+    a function, which follows an imperative programming model, a `Graph`
+    follows a [dataflow](https://en.wikipedia.org/wiki/Dataflow_programming)
+    programming model, using lazily-executed, parallel operations instead of
+    sequential instructions.
+
+    When you instantiate a graph, you must specify the input and output shapes,
+    as one or more [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
+    [`MOList`](/engine/reference/mojo/graph/type/MOList) values. Then, build a
+    sequence of ops and set the graph output with [`output()`](#output). For
+    example:
+
+    ```mojo
+    from max.graph import Graph, MOTensor, ops
+    from tensor import Tensor, TensorShape
+
+    def build_model() -> Graph:
+        var graph = Graph(
+            in_types=MOTensor(DType.float32, 2, 6),
+            out_types=MOTensor(DType.float32, 2, 1),
+        )
+
+        var matmul_constant_value = Tensor[DType.float32](TensorShape(6, 1), 0.15)
+        var matmul_constant = graph.constant(matmul_constant_value)
+
+        var matmul = graph[0] @ matmul_constant
+        var relu = ops.elementwise.relu(matmul)
+        var softmax = ops.softmax(relu)
+        graph.output(softmax)
+
+        return graph
+    ```
+
+    You can't call a `Graph` directly from Mojo. You must compile it and
+    execute it with MAX Engine. For more detail, see the tutorial about how to
+    [build a graph with MAX Graph](/engine/graph/get-started).
+    """
 
     var _op: _mlir.Operation
 
     fn __init__(inout self, in_types: TypeTuple, out_types: TypeTuple):
-        """Constructs a new `Graph`.
+        """Constructs a new `Graph` using the default graph name.
 
-        The constructed Graph will not be valid unless it has no outputs;
-        a graph with outputs will need a `graph.output` call to tell it
-        what to return. The graph's validity can be checked by calling
-        `graph.verify()`.
+        Although a `Graph` is technically valid once constructed, it is not
+        usable for inference until you specify outputs by calling `output()`.
+        You can check the graph validity can be checked by calling
+        `verify()`.
 
         Args:
-            in_types: The `Graph`'s input types.
-            out_types: The `Graph`'s output types.
+            in_types: The graph's input types, as one or more
+                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
+                [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
+            out_types: The graph's output types, as one or more
+                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
+                [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
         """
         self.__init__("graph", in_types, out_types)
 
     fn __init__(
         inout self, name: String, in_types: TypeTuple, out_types: TypeTuple
     ):
-        """Constructs a new `Graph`.
+        """Constructs a new `Graph` with a custom graph name.
 
-        The constructed Graph will not be valid unless it has no outputs;
-        a graph with outputs will need a `graph.output` call to tell it
-        what to return. The graph's validity can be checked by calling
-        `graph.verify()`.
+        Although a `Graph` is technically valid once constructed, it is not
+        usable for inference until you specify outputs by calling `output()`.
+        You can check the graph validity can be checked by calling
+        `verify()`.
 
         Args:
             name: A name for the graph.
-            in_types: The `Graph`'s input types.
-            out_types: The `Graph`'s output types.
+            in_types: The graph's input types, as one or more
+                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
+                [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
+            out_types: The graph's output types, as one or more
+                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
+                [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
         """
         var ctx = _mlir.Context()
         ctx.load_modular_dialects()
@@ -154,10 +191,14 @@ struct Graph(CollectionElement, Stringable):
         return self._module().context()
 
     fn __getitem__(self, n: Int) raises -> Symbol:
-        """Returns the `n`th argument of this `Graph`.
+        """Returns the n'th argument of this `Graph`.
 
-        The `Symbol` that the argument is returned as can be used as input to
-        other `Graph` `Node`s.
+        By argument, we mean the graph input. For example, `graph[0]` gets the
+        first input and `graph[1]` gets the second input (as specified with
+        the `Graph` constructor's `in_types`).
+
+        This provides the argument as a `Symbol`, which you can use as input to
+        other nodes in the graph.
 
         Args:
             n: The argument number. First argument is at position 0.
@@ -189,16 +230,16 @@ struct Graph(CollectionElement, Stringable):
         attrs: AttrMap = AttrMap(),
         enable_result_type_inference: Bool = False,
     ) raises -> SymbolTuple:
-        """Adds a new `Node` to the `Graph`.
+        """Adds a new node to the `Graph`.
 
-        The `Node` represents a single MAX Graph operation.
+        The node represents a single MAX Graph operation.
 
         This is a very low level API meant to enable creating any supported op.
         In general, it's less ergonomic compared to the higher level helpers in
-        the `ops` module.
+        the `ops` package.
 
-        Note that these `Node`s don't take concrete values as inputs, but rather
-        symbolic values representing the outputs of other `Node`s or the
+        Note that these nodes don't take concrete values as inputs, but rather
+        symbolic values representing the outputs of other nodes or the
         `Graph`s arguments.
 
         Args:
@@ -209,7 +250,7 @@ struct Graph(CollectionElement, Stringable):
             enable_result_type_inference: Will infer the result type if True.
 
         Returns:
-            The symbolic outputs of the newly-added `Node`.
+            The symbolic outputs of the newly-added node.
         """
         # TODO: Add input verification.
         var ctx = self._op.context()
@@ -245,7 +286,7 @@ struct Graph(CollectionElement, Stringable):
     fn op(
         self, name: String, out_type: AnyMOType, attrs: AttrMap = AttrMap()
     ) raises -> Symbol:
-        """Adds a new single-output, nullary `Node` to the `Graph`.
+        """Adds a new single-output, nullary node to the `Graph`.
 
         See `Graph.nvop` for details. This overload can be used for operations
         that take no inputs and return a single result, such as `mo.constant`.
@@ -256,7 +297,7 @@ struct Graph(CollectionElement, Stringable):
             attrs: Any attributes that the operation might require.
 
         Returns:
-            The symbolic output of the newly-added `Node`.
+            The symbolic output of the newly-added node.
         """
         return self.nvop(name, out_types=out_type, attrs=attrs)[0]
 
@@ -267,7 +308,7 @@ struct Graph(CollectionElement, Stringable):
         out_type: AnyMOType,
         attrs: AttrMap = AttrMap(),
     ) raises -> Symbol:
-        """Adds a new single-output `Node` to the `Graph`.
+        """Adds a new single-output node to the `Graph`.
 
         See `Graph.nvop` for details. This overload can be used for operations
         that return a single result.
@@ -279,7 +320,7 @@ struct Graph(CollectionElement, Stringable):
             attrs: Any attributes that the operation might require.
 
         Returns:
-            The symbolic output of the newly-added `Node`.
+            The symbolic output of the newly-added node.
         """
         return self.nvop(name, inputs, out_type, attrs)[0]
 
@@ -290,7 +331,7 @@ struct Graph(CollectionElement, Stringable):
     fn constant[
         dtype: DType
     ](self, owned value: Tensor[dtype]) raises -> Symbol:
-        """Adds a `Node` representing a `mo.constant` operation.
+        """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` with the same
         shape and dtype as `value`.
@@ -302,7 +343,7 @@ struct Graph(CollectionElement, Stringable):
             value: The constant's value.
 
         Returns:
-            The symbolic output of this `Node`.
+            The symbolic output of this node.
         """
         return self.op(
             "mo.constant",
@@ -311,7 +352,7 @@ struct Graph(CollectionElement, Stringable):
         )
 
     fn vector[dtype: DType](self, values: List[Scalar[dtype]]) raises -> Symbol:
-        """Adds a `Node` representing a `mo.constant` operation.
+        """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` with 1-D shape,
         consistent with the size of `values`.
@@ -323,7 +364,7 @@ struct Graph(CollectionElement, Stringable):
             values: A vector represneting the constant's value.
 
         Returns:
-            The symbolic output of this `Node`.
+            The symbolic output of this node.
         """
         return self.op(
             "mo.constant",
@@ -334,7 +375,7 @@ struct Graph(CollectionElement, Stringable):
     fn scalar[
         dtype: DType
     ](self, value: Scalar[dtype], rank: Int = 0) raises -> Symbol:
-        """Adds a `Node` representing a `mo.constant` operation.
+        """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type scalar `MOTensor`
         (0-D shape), when `rank` is 0, or a higher-rank `MOTensor` of a single
@@ -348,7 +389,7 @@ struct Graph(CollectionElement, Stringable):
             rank: The output tensor's rank.
 
         Returns:
-            The symbolic output of this `Node`.
+            The symbolic output of this node.
         """
         var shape = List[Int](capacity=rank)
         for i in range(rank):
@@ -356,7 +397,7 @@ struct Graph(CollectionElement, Stringable):
         return self.constant[dtype](Tensor(shape, value))
 
     fn scalar(self, value: Int, dtype: ElementType) raises -> Symbol:
-        """Adds a `Node` representing a `mo.constant` operation.
+        """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` of the same
         element type as `dtype`, and scalar (0-D) shape.
@@ -366,7 +407,7 @@ struct Graph(CollectionElement, Stringable):
             dtype: The constant's element type.
 
         Returns:
-            The symbolic output of this `Node`.
+            The symbolic output of this node.
 
         Raises:
             If `value` cannot be instantiated as a tensor of element `dtype`.
@@ -407,7 +448,7 @@ struct Graph(CollectionElement, Stringable):
         raise "unimplemented Int conversion dtype: " + str(dtype.dtype)
 
     fn scalar(self, value: Float64, dtype: ElementType) raises -> Symbol:
-        """Adds a `Node` representing a `mo.constant` operation.
+        """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` of the same
         element type as `dtype`, and scalar (0-D) shape.
@@ -417,7 +458,7 @@ struct Graph(CollectionElement, Stringable):
             dtype: The constant's element type.
 
         Returns:
-            The symbolic output of this `Node`.
+            The symbolic output of this node.
 
         Raises:
             If `value` cannot be instantiated as a tensor of element `dtype`.
@@ -445,7 +486,7 @@ struct Graph(CollectionElement, Stringable):
     ](
         self, start: Scalar[dtype], stop: Scalar[dtype], step: Scalar[dtype]
     ) raises -> Symbol:
-        """Adds a `Node` representing a `mo.range` operation.
+        """Adds a node representing a `mo.range` operation.
 
         Parameters:
             dtype: The output tensor's element type.
@@ -456,7 +497,7 @@ struct Graph(CollectionElement, Stringable):
             step: The step value.
 
         Returns:
-            The symbolic output of this `Node`.
+            The symbolic output of this node.
         """
         return self.op(
             "mo.range",
@@ -498,12 +539,13 @@ struct Graph(CollectionElement, Stringable):
         )
 
     fn output(self, outs: SymbolTuple) raises:
-        """Adds a `Node` representing a `mo.output` operation.
+        """Adds an output for the graph.
 
-        This is a special `Node` that all `Graph`s must have. The inputs must
-        match the `Graph`s signature (specifically, its return values).
+        This is a special node that all graphs must have in order to deliver
+        inference results. The `outs` symbol given here must match the shape
+        and type of the `out_types` given when constructing the graph.
 
         Args:
-            outs: The `Graph`s return values.
+            outs: The return values, usually the result from one or more ops.
         """
         _ = self.nvop("mo.output", outs)

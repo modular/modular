@@ -3,7 +3,21 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements various ops for the graph-building APIs."""
+"""Implements various ops used when building a graph.
+
+Although the following modules provide a lot of the ops you want when building
+a graph, you can also use functions in
+[`Graph`](/engine/reference/mojo/graph/graph/Graph) to add constant values,
+such as [`constant()`](/engine/reference/mojo/graph/graph/Graph#constant),
+[`vector()`](/engine/reference/mojo/graph/graph/Graph#vector), and
+[`scalar()`](/engine/reference/mojo/graph/graph/Graph#scalar).
+
+The [`Symbol`](/engine/reference/mojo/graph/symbol/Symbol) type (returned by
+all ops) also implements various dunder methods to support operations between
+symbols, such as `+` add, `*` multiply, and `@` matmul, plus convenience
+methods such as
+[`reshape()`](/engine/reference/mojo/graph/symbol/Symbol#reshape) and
+[`swapaxes()`](/engine/reference/mojo/graph/symbol/Symbol#swapaxes). """
 
 from .casting import (
     shape_of,
