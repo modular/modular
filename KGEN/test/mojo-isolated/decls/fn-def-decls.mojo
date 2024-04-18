@@ -59,3 +59,20 @@ fn default_args(a: int, b: int = `8`, *, c: int, d: int = `9`):
 # CHECK-SAME: (%a: index borrow, %b: index borrow, %args: !kgen.variadic<index> borrow|var, *, %c: index borrow, %d: index borrow = 9)
 fn variadic_and_kw_only(a: int, b: int, *args: int, c: int, d: int = `9`):
     pass
+
+
+# CHECK-LABEL: lit.func @"variadic_arg_after_default
+# CHECK-SAME: (%a: index borrow, %b: index borrow = 0, %args: !kgen.variadic<index> borrow|var = *?,
+# CHECK-SAME:  *, %c: index borrow, %d: index borrow = 1, %kwargs: {{.*}}|var = *?)
+fn variadic_arg_after_default(
+    a: int, b: int = `0`, *args: int, c: int, d: int = `1`, **kwargs: int
+):
+    pass
+
+
+# CHECK-LABEL: lit.func @"variadic_param_after_default
+# CHECK-SAME: <a, b = 0, args: {{.*}} var = *?, *, c, d = 1>()
+fn variadic_param_after_default[
+    a: int, b: int = `0`, *args: int, c: int, d: int = `1`
+]():
+    pass

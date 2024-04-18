@@ -830,12 +830,13 @@ LogicalResult
 LIT::verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
                         ArrayRef<TypedAttr> defaultsPos,
                         ArrayRef<TypedAttr> defaultsKwOnly,
-                        ArrayRef<PogMetadataAttr> pogs, ArrayRef<Type> types,
+                        PogListAttr pogListAttr, ArrayRef<Type> types,
                         StringRef argOrParam, ArrayRef<ArgConvention> convs) {
+  ArrayRef<PogMetadataAttr> pogs = pogListAttr.getPogs();
   DefaultValueHandler defaultHandler(pogs, defaultsPos, defaultsKwOnly);
   for (size_t idx = 0; idx < pogs.size(); ++idx) {
     TypedAttr defaultOr = defaultHandler.getDefault(idx);
-    if (!defaultOr)
+    if (!defaultOr || pogListAttr.isPack(idx) || pogListAttr.isVariadic(idx))
       continue;
 
     Type expectedType = types[idx];

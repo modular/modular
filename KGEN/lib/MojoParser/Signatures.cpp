@@ -318,6 +318,41 @@ static InflightDiag emitOptionalAfterRequired(ExprEmitter &emitter,
          << " " << argOrParam;
 }
 
+/// Helper to emit a default argument/parameter value. Variadic and pack
+/// arguments/parameters get a placeholder default iff there are already
+/// defaults in the given array of default (i.e. only if a variadic comes after
+/// an optional argument/parameter).
+static LogicalResult
+emitDefaultIfPossible(const ParsedArgument &arg, ASTType type,
+                      SmallVectorImpl<TypedAttr> &defaultPos,
+                      SmallVectorImpl<TypedAttr> &defaultKwOnly,
+                      ExprEmitter &emitter, ExprContext exprContext) {
+  SmallVectorImpl<TypedAttr> &defaults =
+      arg.kwArgHandling == KWArgHandling::kKeywordOnly ? defaultKwOnly
+                                                       : defaultPos;
+  auto emitDefaultIfPossible = [&]() -> PValue {
+    if (const ExprNode *initExpr = arg.initExpr) {
+      if (PValue value = emitter.emitExprPValue(initExpr, exprContext, type))
+        return value;
+      arg.isErroneous = true;
+      return UnknownAttr::get(type);
+    }
+
+    // If we have a variadic argument, we add a placeholder default value so
+    // that invariants about default values always correspond to the trailing
+    // arguments. This allows us the have default values before a variadic.
+    if (arg.vararg != VarArgKind::None && !defaults.empty())
+      return UnknownAttr::get(mlir::NoneType::get(type.mlirType.getContext()));
+    return {};
+  };
+
+  if (PValue value = emitDefaultIfPossible()) {
+    defaults.push_back(value);
+    return success();
+  }
+  return failure();
+}
+
 TypeCheckedParamList::TypeCheckedParamList(
     ArrayRef<ParsedArgument> parsedParams, ASTDecl &declScope,
     SharedState &shared)
@@ -347,21 +382,9 @@ TypeCheckedParamList::TypeCheckedParamList(
       variadicIndices.push_back(idx);
     }
 
-    if (const ExprNode *initExpr = arg.initExpr) {
-      Type paramType = type;
-      PValue value =
-          emitter.emitExprPValue(initExpr, EC_DefaultParam, paramType);
-      if (!value) {
-        arg.isErroneous = true;
-        value = PValue(UnknownAttr::get(paramType));
-      }
-
-      if (arg.kwArgHandling == KWArgHandling::kKeywordOnly)
-        defaultKwOnlyParams.push_back(value);
-      else
-        defaultPosParams.push_back(value);
-
-    } else {
+    if (failed(emitDefaultIfPossible(arg, type, defaultPosParams,
+                                     defaultKwOnlyParams, emitter,
+                                     EC_DefaultParam))) {
       // Diagnose an invalid missing default argument: if we have any positional
       // defaults, then we require all the rest to have defaults until the
       // keyword-only section.
@@ -709,18 +732,9 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   }
 
   // Emit default argument values if present.
-  if (const ExprNode *initExpr = arg.initExpr) {
-    PValue value =
-        typeEmitter.emitExprPValue(initExpr, EC_DefaultArgument, type);
-    if (!value) {
-      arg.isErroneous = true;
-      value = PValue(UnknownAttr::get(type));
-    }
-    if (arg.kwArgHandling == KWArgHandling::kKeywordOnly)
-      tcSignature.defaultKwOnlyArgs.push_back(value);
-    else
-      tcSignature.defaultPosArgs.push_back(value);
-  } else {
+  if (failed(emitDefaultIfPossible(arg, type, tcSignature.defaultPosArgs,
+                                   tcSignature.defaultKwOnlyArgs, typeEmitter,
+                                   EC_DefaultArgument))) {
     // Diagnose an invalid missing default argument: if we have any positional
     // defaults, then we require all the rest to have defaults until the
     // keyword-only section.

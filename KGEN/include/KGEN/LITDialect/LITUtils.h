@@ -306,8 +306,8 @@ private:
 LogicalResult verifyDefaultTypes(function_ref<InFlightDiagnostic()> emitError,
                                  ArrayRef<TypedAttr> defaultsPos,
                                  ArrayRef<TypedAttr> defaultsKwOnly,
-                                 ArrayRef<PogMetadataAttr> pogs,
-                                 ArrayRef<Type> types, StringRef argOrParam,
+                                 PogListAttr pogListAttr, ArrayRef<Type> types,
+                                 StringRef argOrParam,
                                  ArrayRef<ArgConvention> convs = {});
 
 /// Verify the the order of passing kinds, and that the number of defaults
