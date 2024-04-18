@@ -13,6 +13,7 @@
 #include "KGEN/MojoTooling/ParserDriver.h"
 #include "KGEN/Support/Configuration.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "LLCL/CompilerSupport/Context.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Filesystem/Paths.h"
 #include "Support/Init/Init.h"

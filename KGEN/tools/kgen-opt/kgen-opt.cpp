@@ -18,6 +18,7 @@
 #include "KGEN/ToolCommon/CLOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
+#include "LLCL/CompilerSupport/Context.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/MLIRDenseAttr.h"
 #include "Support/Context.h"

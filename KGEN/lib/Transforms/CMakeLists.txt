@@ -41,6 +41,6 @@ add_modular_library(KGENTransforms
   POPDialect
   LITDialect
   MLIRTransformUtils
-  MDialect
   MSupport
+  LLCLCompilerSupport
 )

@@ -22,6 +22,7 @@ add_modular_tool(kgen-opt
   KGENTransforms
   LowerLIT
 
+  LLCLCompilerSupport
   LLCLRuntimeGlobals
   MSupportGlobals
   MSupportInit

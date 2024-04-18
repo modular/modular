@@ -15,9 +15,9 @@ add_modular_library(MCache
   LLCLCompilerSupport
   LLCLRuntime
   LLCLSupport
+  LLCLCompilerSupport
   LLVMSupport
   MCompilerSupport
-  MDialect
   MLIRBytecodeWriter
   MSupport
   MSupportEntitlements

@@ -6,11 +6,13 @@
 
 add_modular_library(LLCLCompilerSupport
   AsyncSideEffectMap.cpp
+  Context.cpp
   LLVMThreadPool.cpp
   MLIRLocationDecoder.cpp
 
   LINK_LIBS PUBLIC
   LLCLSupport
+  LLCLRuntime
+  LLCLRuntimeGlobals
   MLIRIR
 )
-target_link_libraries(MDialect PRIVATE LLCLCompilerSupport)
