@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil, isclose
+from math import div_ceil, isclose, min, max
 from LinAlg.BatchedMatmul import batched_matmul
 from buffer import NDBuffer
 from buffer.list import DimList
@@ -20,19 +20,22 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.sync import syncwarp
+from LinAlg.Matmul import matmul as _matmul
 from LinAlg.MatmulGPU import (
     matmul_kernel,
     matmul_kernel_naive,
+    gemv_kernel,
+    gevm_kernel,
 )
 from memory.unsafe import DTypePointer, bitcast
 
 from utils.index import Index
-from random import random_float64
+from random import random_float64, random_si64
 from testing import *
 
 
-fn run_matmul(M: Int, N: Int, K: Int) raises:
-    print("== run_matmul kernel")
+fn run_matmul_naive(M: Int, N: Int, K: Int) raises:
+    print("== run_matmul naive kernel")
 
     var stream = Stream()
     var a_host = Pointer[BFloat16].alloc(M * K)
@@ -46,12 +49,12 @@ fn run_matmul(M: Int, N: Int, K: Int) raises:
     var rand_max = 1.0
 
     for i in range(M * K):
-        var val = random_float64(rand_min, rand_max)
+        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
         a_host[i] = val.cast[DType.bfloat16]()
         a_host_n[i] = a_host[i].cast[DType.float32]()
 
     for i in range(K * N):
-        var val = random_float64(rand_min, rand_max)
+        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
         b_host[i] = val.cast[DType.bfloat16]()
         b_host_n[i] = b_host[i].cast[DType.float32]()
 
@@ -172,6 +175,139 @@ fn run_matmul(M: Int, N: Int, K: Int) raises:
 
     _ = func_gemm_bf16^
     _ = func_gemm_fp32^
+    _ = stream^
+
+
+fn run_matmul[
+    type: DType, M: Int, N: Int, K: Int
+](
+    rtol: Scalar[type] = 1e-05,
+    rng_width: Float64 = Float64(100.0),
+    debug: Bool = False,
+) raises:
+    print("== run_matmul kernel => ", str(type), M, N, K)
+
+    var stream = Stream()
+
+    var a_host = Pointer[Scalar[type]].alloc(M * K)
+    var b_host = Pointer[Scalar[type]].alloc(K * N)
+    var c_host = Pointer[Scalar[type]].alloc(M * N)
+    var a_host_n = Pointer[Scalar[type]].alloc(M * K)
+    var b_host_n = Pointer[Scalar[type]].alloc(K * N)
+    var c_host_n = Pointer[Scalar[type]].alloc(M * N)
+
+    var rand_min = -1 * rng_width
+    var rand_max = rng_width
+
+    for i in range(M * K):
+        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        a_host[i] = val.cast[type]()
+        a_host_n[i] = a_host[i]
+
+    for i in range(K * N):
+        var val = random_float64(rand_min, rand_max).cast[DType.float32]()
+        b_host[i] = val.cast[type]()
+        b_host_n[i] = b_host[i]
+
+    for i in range(M * N):
+        var val = Float32(0)
+        c_host[i] = val.cast[type]()
+        c_host_n[i] = c_host[i]
+
+    alias a_shape = DimList(M, K)
+    alias b_shape = DimList(K, N)
+    alias c_shape = DimList(M, N)
+
+    var a_device = _malloc[Scalar[type]](M * K)
+    var b_device = _malloc[Scalar[type]](K * N)
+    var c_device = _malloc[Scalar[type]](M * N)
+    var a_buf = NDBuffer[type, 2, a_shape](a_device, Index(M, K))
+    var b_buf = NDBuffer[type, 2, b_shape](b_device, Index(K, N))
+    var c_buf = NDBuffer[type, 2, c_shape](c_device, Index(M, N))
+
+    var a_device_n = _malloc[Scalar[type]](M * K)
+    var b_device_n = _malloc[Scalar[type]](K * N)
+    var c_device_n = _malloc[Scalar[type]](M * N)
+
+    _copy_host_to_device(a_device, a_host, M * K)
+    _copy_host_to_device(b_device, b_host, K * N)
+
+    _matmul[type, a_shape, type, b_shape, type, c_shape, target="cuda",](
+        c_buf,
+        a_buf,
+        b_buf,
+    )
+    synchronize()
+    _copy_device_to_host(c_host, c_device, M * N)
+
+    # running naive
+    _copy_host_to_device(a_device_n, a_host_n, M * K)
+    _copy_host_to_device(b_device_n, b_host_n, K * N)
+
+    alias BLOCK_DIM = 16
+    var func_gemm_naive = Function[
+        fn (
+            DTypePointer[type],
+            DTypePointer[type],
+            DTypePointer[type],
+            Int,
+            Int,
+            Int,
+        ) capturing -> None, matmul_kernel_naive[
+            type,
+            type,
+            type,
+            BLOCK_DIM,
+            DType.float32,
+        ]
+    ]()
+
+    @always_inline
+    @__copy_capture(func_gemm_naive, c_device_n, a_device_n, b_device_n)
+    @parameter
+    fn run_func_naive(stream: Stream) raises:
+        func_gemm_naive(
+            c_device_n,
+            a_device_n,
+            b_device_n,
+            M,
+            N,
+            K,
+            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+            stream=stream,
+        )
+
+    run_func_naive(stream)
+    stream.synchronize()
+
+    _copy_device_to_host(c_host_n, c_device_n, M * N)
+
+    for i in range(M * N):
+        var out_val = c_host.load(i)
+        var out_ref = c_host_n.load(i)
+        if debug:
+            if not math.isclose[type, 1](out_val, out_ref, rtol=rtol):
+                print(i, out_val, out_ref)
+        testing.assert_true(math.isclose[type, 1](out_val, out_ref, rtol=rtol))
+
+    _free(a_device)
+    _free(b_device)
+    _free(c_device)
+
+    _free(a_device_n)
+    _free(b_device_n)
+    _free(c_device_n)
+
+    _ = a_host
+    _ = b_host
+    _ = c_host
+
+    _ = a_host_n
+    _ = b_host_n
+    _ = c_host_n
+
+    _ = func_gemm_naive^
     _ = stream^
 
 
@@ -298,7 +434,18 @@ fn run_batched_matmul(B: Int, M: Int, N: Int, K: Int) raises:
 def main():
     try:
         with Context() as ctx:
-            run_matmul(32, 32, 32)
+            run_matmul_naive(32, 32, 32)
+
+            run_matmul[DType.bfloat16, 128, 128, 128]()
+            run_matmul[DType.bfloat16, 32, 32, 32]()
+            run_matmul[DType.bfloat16, 1024, 1, 1024]()
+            run_matmul[DType.bfloat16, 1, 1024, 1024]()
+
+            run_matmul[DType.float16, 128, 128, 128](rng_width=10.0)
+            run_matmul[DType.float16, 32, 32, 32](rng_width=10.0)
+            run_matmul[DType.float16, 1024, 1, 1024](1e-03, rng_width=10.0)
+            run_matmul[DType.float16, 1, 1024, 1024](1e-01, rng_width=10.0)
+
             run_batched_matmul(3, 32, 32, 32)
     except e:
         print("CUDA_ERROR:", e)

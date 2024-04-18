@@ -295,7 +295,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
             DType.float32,
             DType.float32,
             DType.float32,
-            epilogue_fn,
+            elementwise_lambda_fn=epilogue_fn,
         ]
     ]()
 
@@ -312,7 +312,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
             DType.float32,
             DType.float32,
             WARP_SIZE * WARPS_PER_BLOCK,
-            epilogue_fn,
+            elementwise_lambda_fn=epilogue_fn,
         ]
     ]()
 
