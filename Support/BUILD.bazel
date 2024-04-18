@@ -1,6 +1,7 @@
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
+load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect")
 
 package(
     default_visibility = ["//visibility:public"],
@@ -713,53 +714,9 @@ td_library(
     ],
 )
 
-gentbl_cc_library(
-    name = "MTypes",
-    includes = ["include"],
-    strip_include_prefix = "include",
-    tbl_outs = [
-        (
-            [
-                "-gen-op-decls",
-            ],
-            "include/Support/MDialect/M.h.inc",
-        ),
-        (
-            [
-                "-gen-op-defs",
-            ],
-            "include/Support/MDialect/M.cpp.inc",
-        ),
-        (
-            [
-                "-gen-typedef-decls",
-                "-typedefs-dialect=M",
-            ],
-            "include/Support/MDialect/MTypes.h.inc",
-        ),
-        (
-            [
-                "-gen-typedef-defs",
-                "-typedefs-dialect=M",
-            ],
-            "include/Support/MDialect/MTypes.cpp.inc",
-        ),
-        (
-            [
-                "-gen-dialect-defs",
-                "-dialect=M",
-            ],
-            "include/Support/MDialect/MDialect.cpp.inc",
-        ),
-        (
-            [
-                "-gen-dialect-decls",
-                "-dialect=M",
-            ],
-            "include/Support/MDialect/MDialect.h.inc",
-        ),
-    ],
-    tblgen = "@llvm-project//mlir:mlir-tblgen",
+gentbl_mlir_dialect(
+    name = "MDialectIncGen",
+    dialect = "M",
     td_file = "include/Support/MDialect/M.td",
     deps = [":MTdFiles"],
 )
@@ -872,9 +829,9 @@ cc_library(
         ":MAttrInterfaces",
         ":MAttrs",
         ":MDialectByteCode",
+        ":MDialectIncGen",
         ":ML",
         ":MTypeInterfaces",
-        ":MTypes",
         "//LLCL:CompilerSupportHeaders",
         "@llvm-project//llvm:MC",
         "@llvm-project//llvm:Target",
@@ -912,53 +869,9 @@ gentbl_cc_library(
     ],
 )
 
-gentbl_cc_library(
-    name = "DebugInfoTypes",
-    includes = ["include"],
-    strip_include_prefix = "include",
-    tbl_outs = [
-        (
-            [
-                "-gen-op-decls",
-            ],
-            "include/Support/DebugInfoDialect/IR/DebugInfo.h.inc",
-        ),
-        (
-            [
-                "-gen-op-defs",
-            ],
-            "include/Support/DebugInfoDialect/IR/DebugInfo.cpp.inc",
-        ),
-        (
-            [
-                "-gen-typedef-decls",
-                "-typedefs-dialect=debuginfo",
-            ],
-            "include/Support/DebugInfoDialect/IR/DebugInfoTypes.h.inc",
-        ),
-        (
-            [
-                "-gen-typedef-defs",
-                "-typedefs-dialect=debuginfo",
-            ],
-            "include/Support/DebugInfoDialect/IR/DebugInfoTypes.cpp.inc",
-        ),
-        (
-            [
-                "-gen-dialect-decls",
-                "-dialect=debuginfo",
-            ],
-            "include/Support/DebugInfoDialect/IR/DebugInfoDialect.h.inc",
-        ),
-        (
-            [
-                "-gen-dialect-defs",
-                "-dialect=debuginfo",
-            ],
-            "include/Support/DebugInfoDialect/IR/DebugInfoDialect.cpp.inc",
-        ),
-    ],
-    tblgen = "@llvm-project//mlir:mlir-tblgen",
+gentbl_mlir_dialect(
+    name = "DebugInfoIncGen",
+    dialect = "debuginfo",
     td_file = "include/Support/DebugInfoDialect/IR/DebugInfo.td",
     deps = [
         ":Base",
@@ -1005,8 +918,8 @@ cc_library(
         ":DebugInfoDialectAttrs",
         ":DebugInfoDialectBytecode",
         ":DebugInfoExprAttrInterfaces",
+        ":DebugInfoIncGen",
         ":DebugInfoTypeInterfaces",
-        ":DebugInfoTypes",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//mlir:IR",
     ],
