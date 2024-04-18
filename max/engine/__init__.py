@@ -5,13 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from .api import (
-    CommonLoadOptions,
     DType,
     InferenceSession,
     Model,
     TensorSpec,
     TorchInputSpec,
-    TorchLoadOptions,
     version_string,
 )
 
