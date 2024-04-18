@@ -9,8 +9,8 @@ cc_binary(
     deps = [
         "//Cache",
         "//LLCL:RuntimeGlobals",
-        "//Support:Globals",
         "//Support:CommonCLOptions",
+        "//Support:Globals",
         "//Support:Init",
         "@llvm-project//mlir:Support",
     ],
