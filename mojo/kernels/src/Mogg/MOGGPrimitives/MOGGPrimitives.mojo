@@ -10,6 +10,12 @@ from math import (
     min,
 )
 from register import *
+from buffer.list import DimList
+from buffer.buffer import (
+    _MAX_RANK,
+)
+from tensor import TensorSpec, TensorShape
+from MOGGIntList import IntList
 
 
 # ===----------------------------------------------------------------------===#
@@ -18,8 +24,8 @@ from register import *
 
 
 @register_passable("trivial")
-struct BufferRef[type: DType]:
-    """Defines a `BufferRef` struct that contains an unsafe pointer and the size/alignment.
+struct BufferRefABI[type: DType]:
+    """Defines a `BufferRefABI` struct that contains an unsafe pointer and the size/alignment.
     The purpose of this structure is to preserve information needed for the ABI interface
     which needs this information for the subsequent unpacking/packing call.
     """
@@ -38,6 +44,21 @@ struct BufferRef[type: DType]:
             self.ref = DTypePointer[type].alloc(
                 int(self.size), alignment=int(self.alignment)
             )
+
+
+@register_passable("trivial")
+struct TensorSpecABI[rank: Int]:
+    """Defines a `TensorSpecABI` struct that contains the shape/DType.
+    The purpose of this structure is to preserve information needed for the ABI interface
+    which needs this information for the subsequent unpacking/packing call.
+    """
+
+    var shape: StaticIntTuple[rank]
+    var dType: DType
+
+    fn __init__(inout self, shape: StaticIntTuple[rank], dType: DType):
+        self.shape = shape
+        self.dType = dType
 
 
 # ===----------------------------------------------------------------------===#
@@ -75,13 +96,35 @@ fn create_i1_async(
 @always_inline
 @export
 fn create_buffer_ref_async(
-    value: BufferRef[DType.uint8],
+    value: BufferRefABI[DType.uint8],
     async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
     runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
         value.ref, value.size, value.alignment, async_ptr, runtime
     )
+
+
+@mogg_register("builtin.create_tensor_spec_async")
+@always_inline
+@export
+fn create_tensor_spec_async[
+    rank: Int
+](
+    spec: TensorSpecABI[rank],
+    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+):
+    # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
+    # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
+    # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
+    var shape_ptr = DTypePointer[DType.index].alloc(rank)
+    for i in range(rank):
+        shape_ptr[i] = spec.shape[i]
+    external_call["KGEN_CompilerRT_CreateAsyncTensorSpec", NoneType](
+        shape_ptr, rank, spec.dType._as_i8(), async_ptr, runtime
+    )
+    shape_ptr.free()
 
 
 @mogg_register("builtin.unpack_async")
@@ -263,5 +306,26 @@ fn mgp_buffer_alloc_static[
     bSize: UInt64,
     cRawAlign: UInt64,
     dDevice: StringLiteral,
-]() -> BufferRef[DType.uint8]:
-    return BufferRef[DType.uint8](bSize, cRawAlign)
+]() -> BufferRefABI[DType.uint8]:
+    return BufferRefABI[DType.uint8](bSize, cRawAlign)
+
+
+@mogg_register("mgp.cpu.tensor_spec.create")
+@export
+fn mgp_tensor_spec_create_cpu[
+    bRawDType: UInt8,
+    aRawDims: DimList,
+    aRawDimsRank: Int,
+](*runtimeDims: Int) -> TensorSpecABI[aRawDimsRank]:
+    var dType = DType._from_ui8(bRawDType.value)
+    var static_shape = IntList[aRawDims]()
+    var shape = StaticIntTuple[aRawDimsRank]()
+    var runtimeIndex = 0
+    # Update Shape with runtime elements.
+    for i in range(aRawDimsRank):
+        if static_shape[i] > -1:
+            shape[i] = static_shape[i]
+        else:
+            shape[i] = runtimeDims[runtimeIndex]
+            runtimeIndex = runtimeIndex + 1
+    return TensorSpecABI[aRawDimsRank](shape, dType)
