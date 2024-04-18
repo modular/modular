@@ -33,6 +33,7 @@ add_modular_library(KGENCompilerRT
   LLCLRuntimeGlobals
   MProfiling
   MSupport
+  MSupportML
   MThreading
 )
 
@@ -51,6 +52,7 @@ add_modular_library(KGENCompilerRTShared SHARED
   MProfiling
   MSupport
   MSupportGlobals
+  MSupportML
   MThreading
 )
 
@@ -103,6 +105,7 @@ set(COMPILER_RT_OBJECT_SRCS
   $<TARGET_OBJECTS:obj.LLCLRuntimeGlobals-static>
   $<TARGET_OBJECTS:obj.ArraySupport>
   $<TARGET_OBJECTS:obj.MSupport>
+  $<TARGET_OBJECTS:obj.MSupportML>
   $<TARGET_OBJECTS:obj.MThreading>
   $<TARGET_OBJECTS:obj.MProfiling>
   $<TARGET_OBJECTS:obj.MVersion>

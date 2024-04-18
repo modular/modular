@@ -14,6 +14,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
+#include "Support/ML/TensorSpec.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -252,9 +253,24 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size, size_t alignment,
                                      LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
-  value = value.createReady<void *>(runtime, data);
   value = AnyAsyncValueRef::createReady<GML::BufferRef>(
       runtime, ::M::GML::BufferRef::take(runtime, size, alignment, data));
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CreateAsyncTensorSpec(void *data, ssize_t rank,
+                                      uint8_t raw_dtype,
+                                      LLCLWrapper<AnyAsyncValueRef> async,
+                                      LLCLWrapper<Runtime> runtimePtr) {
+  Runtime &runtime = unwrap(runtimePtr);
+  AnyAsyncValueRef &value = unwrap(async);
+  llvm::SmallVector<size_t> dims;
+  auto shape_ptr = reinterpret_cast<ssize_t *>(data);
+  for (int i = 0; i < rank; i++) {
+    dims.push_back(shape_ptr[i]);
+  }
+  value = AnyAsyncValueRef::createReady<TensorSpec>(
+      runtime, TensorSpec(dims, DType(raw_dtype)));
 }
 
 //===----------------------------------------------------------------------===//
@@ -313,6 +329,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_CreateAsync_bool});
   funcs.push_back({"KGEN_CompilerRT_CreateAsyncBufferRef",
                    (void *)&KGEN_CompilerRT_CreateAsyncBufferRef});
+  funcs.push_back({"KGEN_CompilerRT_CreateAsyncTensorSpec",
+                   (void *)&KGEN_CompilerRT_CreateAsyncTensorSpec});
   funcs.push_back({"KGEN_CompilerRT_GetValueFromAsync",
                    (void *)&KGEN_CompilerRT_GetValueFromAsync});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_Complete",

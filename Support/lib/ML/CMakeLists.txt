@@ -5,6 +5,8 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MSupportML
+  OBJECT # Always generate an obj.${name} target.
+
   BroadcastShape.cpp
   CompiledFrameworkLabel.cpp
   DType.cpp
