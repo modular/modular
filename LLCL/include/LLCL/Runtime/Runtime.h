@@ -95,7 +95,7 @@ struct RuntimeOptions {
   ///
   /// LLCL::RuntimeOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = LLCL::createRuntimeIfNeeded(rtOpt);
+  /// auto rt = LLCL::createUniqueRuntime(rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.
   uint64_t runtimeProfilingTypeMask = Trace::kFullyEnabled;
@@ -445,11 +445,6 @@ getAllocator(const RuntimeOptions &options = RuntimeOptions());
 /// Creates a runtime with the given options, on the assumption the caller
 /// is not within any outer runtime's thread (main or worker).
 ///
-/// Consider using createRuntimeIfNeeded if it is possible an existing
-/// runtime has already been established by an outer context, such as
-/// within the Modular Execution Engine, and the caller is not particular
-/// about the runtime options.
-///
 /// Consider using createNestedRuntime if it is possible an existing runtime
 /// has already been established by an outer context, yet the caller must
 /// use a runtime with the given options.
@@ -460,12 +455,6 @@ createUniqueRuntime(const RuntimeOptions &options = RuntimeOptions());
 /// to be within an outer runtime's thread (main or worker).
 std::unique_ptr<Runtime>
 createNestedRuntime(const RuntimeOptions &options = RuntimeOptions());
-
-/// Returns the current runtime for the caller's thread (main or worker). If
-/// no such runtime has been associated, creates a runtime with the given
-/// options.
-ConditionallyOwnedPointer<Runtime>
-createRuntimeIfNeeded(const RuntimeOptions &options = RuntimeOptions());
 
 //===----------------------------------------------------------------------===//
 // Debugging helpers

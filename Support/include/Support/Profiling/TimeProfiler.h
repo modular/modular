@@ -738,7 +738,7 @@ struct TimeTraceThreadProfiler {
   ///
   /// LLCL::RuntimeOptions rtOpt;
   /// rtOpt.runtimeProfilingTypeMask = 1 << Trace::typeBitshift(Trace::kOther);
-  /// auto rt = LLCL::createRuntimeIfNeeded(rtOpt);
+  /// auto rt = LLCL::createUniqueRuntime(rtOpt);
   ///
   /// Creates a Runtime that will only record `kOther` type events.
   uint64_t runtimeProfilingTypeMask;

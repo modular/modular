@@ -137,10 +137,3 @@ LLCL::createNestedRuntime(const RuntimeOptions &options) {
   else
     return createRuntimeImpl(nullptr, options);
 }
-
-ConditionallyOwnedPointer<Runtime>
-LLCL::createRuntimeIfNeeded(const RuntimeOptions &options) {
-  return ConditionallyOwnedPointer<Runtime>::takeIfNeeded(
-      Runtime::getCurrentRuntimeOrNull(),
-      [&options]() { return createRuntimeImpl(nullptr, options).release(); });
-}
