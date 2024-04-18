@@ -41,6 +41,11 @@ fn test_int8_dotprod():
     # CHECK: [10014, 20038, 30062, 40086]
     print(_neon_dotprod_lane[2](c, a, b))
 
+    var b8 = SIMD[DType.int8, 8](-8, -6, -4, -2, 0, 2, 4, 6)
+
+    # CHECK: [10028, 20076, 30124, 40172]
+    print(_neon_dotprod_lane[1](c, a, b8))
+
 
 # CHECK-LABEL: test_uint8_dotprod
 fn test_uint8_dotprod():
@@ -59,6 +64,11 @@ fn test_uint8_dotprod():
 
     # CHECK: [10608, 22016, 33424, 44832]
     print(_neon_dotprod_lane[1](c, a, b))
+
+    var b8 = SIMD[DType.uint8, 8](1, 3, 5, 7, 9, 11, 13, 15)
+
+    # CHECK: [10034, 20098, 30162, 40226]
+    print(_neon_dotprod_lane[0](c, a, b8))
 
 
 fn main():

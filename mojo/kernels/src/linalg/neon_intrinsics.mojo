@@ -16,7 +16,7 @@ from memory.unsafe import bitcast
 fn _neon_dotprod[
     a_type: DType, b_type: DType, c_type: DType, width: Int
 ](
-    r: SIMD[c_type, width],
+    c: SIMD[c_type, width],
     a: SIMD[a_type, width * 4],
     b: SIMD[b_type, width * 4],
 ) -> SIMD[c_type, width]:
@@ -25,20 +25,14 @@ fn _neon_dotprod[
 
     @parameter
     @always_inline
-    fn dotprod_intrinsic[intrin: StringLiteral]() -> SIMD[c_type, width]:
-        return rebind[SIMD[c_type, width]](
-            llvm_intrinsic[intrin, SIMD[DType.int32, 4]](
-                rebind[SIMD[c_type, 4]](r),
-                rebind[SIMD[a_type, 16]](a),
-                rebind[SIMD[b_type, 16]](b),
-            )
-        )
+    fn call_intrinsic[intrin: StringLiteral]() -> SIMD[c_type, width]:
+        return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
     @parameter
-    if a_type == DType.uint8 and b_type == DType.uint8:
-        return dotprod_intrinsic["llvm.aarch64.neon.udot.v4i32.v16i8"]()
-    elif a_type == DType.int8 and b_type == DType.int8:
-        return dotprod_intrinsic["llvm.aarch64.neon.sdot.v4i32.v16i8"]()
+    if a_type.is_uint8() and b_type.is_uint8():
+        return call_intrinsic["llvm.aarch64.neon.udot.v4i32.v16i8"]()
+    elif a_type.is_int8() and b_type.is_int8():
+        return call_intrinsic["llvm.aarch64.neon.sdot.v4i32.v16i8"]()
     else:
         constrained[False, "unsupported A and B types"]()
         return SIMD[c_type, width]()
@@ -52,7 +46,7 @@ fn _neon_dotprod_lane[
     width: Int,
     b_width: Int,
 ](
-    r: SIMD[c_type, width],
+    c: SIMD[c_type, width],
     a: SIMD[a_type, width * 4],
     b: SIMD[b_type, b_width],
 ) -> SIMD[c_type, width]:
@@ -63,7 +57,7 @@ fn _neon_dotprod_lane[
     # Helper to generate `sdot r, a, b[lane]` instruction form.
     var tuple = bitcast[DType.int32, b_width // 4](b)[lane]
     var splat = bitcast[b_type, width * 4](SIMD[DType.int32, width](tuple))
-    return _neon_dotprod(r, a, splat)
+    return _neon_dotprod(c, a, splat)
 
 
 # ===----------------------------------------------------------------------===#
@@ -74,7 +68,7 @@ fn _neon_dotprod_lane[
 fn _neon_matmul[
     a_type: DType, b_type: DType, c_type: DType, width: Int
 ](
-    r: SIMD[c_type, width],
+    c: SIMD[c_type, width],
     a: SIMD[a_type, width * 4],
     b: SIMD[b_type, width * 4],
 ) -> SIMD[c_type, width]:
@@ -83,22 +77,16 @@ fn _neon_matmul[
 
     @parameter
     @always_inline
-    fn matmul_intrinsic[intrin: StringLiteral]() -> SIMD[c_type, width]:
-        return rebind[SIMD[c_type, width]](
-            llvm_intrinsic[intrin, SIMD[DType.int32, 4]](
-                rebind[SIMD[c_type, 4]](r),
-                rebind[SIMD[a_type, 16]](a),
-                rebind[SIMD[b_type, 16]](b),
-            )
-        )
+    fn call_intrinsic[intrin: StringLiteral]() -> SIMD[c_type, width]:
+        return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
     @parameter
-    if a_type == DType.uint8 and b_type == DType.uint8:
-        return matmul_intrinsic["llvm.aarch64.neon.ummla.v4i32.v16i8"]()
-    elif a_type == DType.uint8 and b_type == DType.int8:
-        return matmul_intrinsic["llvm.aarch64.neon.usmmla.v4i32.v16i8"]()
-    elif a_type == DType.int8 and b_type == DType.int8:
-        return matmul_intrinsic["llvm.aarch64.neon.smmla.v4i32.v16i8"]()
+    if a_type.is_uint8() and b_type.is_uint8():
+        return call_intrinsic["llvm.aarch64.neon.ummla.v4i32.v16i8"]()
+    elif a_type.is_uint8() and b_type.is_int8():
+        return call_intrinsic["llvm.aarch64.neon.usmmla.v4i32.v16i8"]()
+    elif a_type.is_int8() and b_type.is_int8():
+        return call_intrinsic["llvm.aarch64.neon.smmla.v4i32.v16i8"]()
     else:
         constrained[False, "unsupported A and B types"]()
         return SIMD[c_type, width]()
