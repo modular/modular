@@ -9,8 +9,6 @@ add_modular_library(MCache
   CachedTransform.cpp
   CacheTelemetryContext.cpp
 
-  Backends/HTTPCacheBackend.cpp
-
   LINK_LIBS PUBLIC
   LLCLCompilerSupport
   LLCLRuntime
