@@ -19,8 +19,8 @@
 # CHECK-SAME: !lit.signature<[1]("self": !lit.ref<@"{{.*}}"::@"`_CI_{{.*}}"<:!Int [[BLoc]], :!Int [[ALoc]]>
 
 # COM: Check that the closure wrapper parameter is bound to the struct parameter:
-# CHECK-NEXT:  %anonymous2A_0 = lit.var.decl
-# CHECK-NEXT: lit.call @"{{.*}}"::@"fn{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]], :!Int [[ALoc:.*]]>(%anonymous2A_0, %anonymous2A)
+# CHECK-NEXT: %bar = lit.var.decl
+# CHECK-NEXT: lit.call @"{{.*}}"::@"fn{{.*}}"::@"__init__{{.*}}<:!Int [[BLoc:.*]], :!Int [[ALoc:.*]]>(%bar, %anonymous2A)
 # CHECK-SAME: !lit.signature<[2]("self": !lit.ref<@"{{.*}}"::@"fn{{.*}}"<:!Int [[BLoc]], :!Int [[ALoc]]>
 
 
