@@ -75,26 +75,6 @@ public:
                    ArrayRef<uint32_t>, ArrayRef<double>, uint64_t,
                    ArrayRef<uint64_t>, ArrayRef<uint8_t>>;
 
-  /// Construct a TelemetryContext with additional resource strings. These will
-  /// be added to the OTel resources that are attached to every log message. The
-  /// TelemetryContext does not currently, but will soon require an
-  /// EntitlementStore in order to find the user ID from the secure location.
-  /// NOTE: `config` parameter is only used by tests right now, to isolate
-  /// telemetry test config from Modular's centralized config.
-  TelemetryContext(const EntitlementStore &entitlementStore,
-                   const llvm::StringMap<AttributeValue> &resources = {},
-                   std::optional<Config> config = std::nullopt);
-
-  TelemetryContext(const llvm::StringMap<AttributeValue> &resources = {},
-                   std::optional<Config> config = std::nullopt)
-      : TelemetryContext(EntitlementStore::alwaysOpen(llvm::errs()), resources,
-                         std::move(config)) {}
-
-  /// Construct a TelemetryContext from a config.
-  TelemetryContext(Config config)
-      : TelemetryContext(EntitlementStore::alwaysOpen(llvm::errs()), {},
-                         std::move(config)){};
-
   /// Set up a TelemetryContext from a Settings object.
   TelemetryContext(Settings &settings,
                    const llvm::StringMap<AttributeValue> &resources = {});

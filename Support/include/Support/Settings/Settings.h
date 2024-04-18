@@ -34,6 +34,10 @@ public:
   Settings(const Settings &other) = delete;
   Settings(Settings &&other) = default;
 
+  /// Create new settings. Note that this should be used for tests only,
+  /// all regular code paths should use Settings::open.
+  Settings(Config &&cfg, EntitlementStore &&store);
+
   /// Get a setting by its key. This corresponds to Config::getValue.
   const Setting *get(StringRef key);
 
@@ -122,8 +126,6 @@ public:
                                 RefreshPolicy policy = nullptr);
 
 private:
-  Settings(Config &&cfg, EntitlementStore &&store);
-
   /// Used internally on creation.
   ErrorOrSuccess refresh(HTTPContextRef httpCtx,
                          RefreshPolicy shouldRefreshEntitlements);
