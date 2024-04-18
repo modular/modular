@@ -5,10 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import Optional
+from pathlib import Path
 from tensor import Tensor
 from testing import assert_almost_equal, assert_equal
 
-from max.engine import InferenceSession, TensorMap, TorchLoadOptions
+from max.engine import InferenceSession, TensorMap
 
 
 fn assert_tensors_almost_equal[
@@ -35,18 +36,26 @@ fn assert_tensors_equal[
 fn execute_nullary[
     outtype: DType = DType.float32
 ](
-    graph: Graph, load_options: Optional[TorchLoadOptions] = None
-) raises -> Tensor[outtype]:
-    var result_map = execute_no_args(graph, load_options)
+    graph: Graph,
+    *,
+    custom_ops_path: Optional[Path] = None,
+) raises -> Tensor[
+    outtype
+]:
+    var result_map = execute_no_args(graph, custom_ops_path=custom_ops_path)
     return result_map.get[outtype]("output0")
 
 
 fn execute_nullary_list[
     outtype: DType = DType.float32
-](graph: Graph, load_options: Optional[TorchLoadOptions] = None) raises -> List[
+](
+    graph: Graph,
+    *,
+    custom_ops_path: Optional[Path] = None,
+) raises -> List[
     Tensor[outtype]
 ]:
-    var result_map = execute_no_args(graph, load_options)
+    var result_map = execute_no_args(graph, custom_ops_path=custom_ops_path)
     var engine_list = result_map.get_value("output0").as_list()
     var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
@@ -60,9 +69,10 @@ fn execute_unary[
 ](
     graph: Graph,
     input: Tensor[intype],
-    load_options: Optional[TorchLoadOptions] = None,
+    *,
+    custom_ops_path: Optional[Path] = None,
 ) raises -> Tensor[outtype]:
-    var result_map = execute_base(graph, input, load_options=load_options)
+    var result_map = execute_base(graph, input, custom_ops_path=custom_ops_path)
     return result_map.get[outtype]("output0")
 
 
@@ -71,9 +81,10 @@ fn execute_unary_list[
 ](
     graph: Graph,
     input: Tensor[intype],
-    load_options: Optional[TorchLoadOptions] = None,
+    *,
+    custom_ops_path: Optional[Path] = None,
 ) raises -> List[Tensor[outtype]]:
-    var result_map = execute_base(graph, input, load_options=load_options)
+    var result_map = execute_base(graph, input, custom_ops_path=custom_ops_path)
     var engine_list = result_map.get_value("output0").as_list()
     var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
@@ -90,12 +101,13 @@ fn execute_binary[
     graph: Graph,
     x: Tensor[intype1],
     y: Tensor[intype2],
-    load_options: Optional[TorchLoadOptions] = None,
+    *,
+    custom_ops_path: Optional[Path] = None,
 ) raises -> Tensor[outtype]:
     graph.verify()
 
     var session = InferenceSession()
-    var model = session.load(graph, load_options)
+    var model = session.load(graph, custom_ops_path=custom_ops_path)
 
     var input_map = session.new_tensor_map()
     input_map.borrow("input0", x)
@@ -107,12 +119,14 @@ fn execute_binary[
 
 
 fn execute_no_args(
-    g: Graph, load_options: Optional[TorchLoadOptions] = None
+    g: Graph,
+    *,
+    custom_ops_path: Optional[Path] = None,
 ) raises -> TensorMap:
     g.verify()
 
     var session = InferenceSession()
-    var model = session.load(g, load_options)
+    var model = session.load(g, custom_ops_path=custom_ops_path)
 
     var input_map = session.new_tensor_map()
     var result_map = model.execute(input_map)
@@ -129,12 +143,13 @@ fn execute_n_args[
     t3: Tensor[dt3],
     t4: Tensor[dt4],
     t5: Tensor[dt5],
-    load_options: Optional[TorchLoadOptions] = None,
+    *,
+    custom_ops_path: Optional[Path] = None,
 ) raises -> TensorMap:
     g.verify()
 
     var session = InferenceSession()
-    var model = session.load(g, load_options)
+    var model = session.load(g, custom_ops_path=custom_ops_path)
 
     var input_map = session.new_tensor_map()
     input_map.borrow("input0", t1)
@@ -149,12 +164,14 @@ fn execute_n_args[
 
 
 fn execute_base(
-    g: Graph, *tensors: Tensor, load_options: Optional[TorchLoadOptions] = None
+    g: Graph,
+    *tensors: Tensor,
+    custom_ops_path: Optional[Path] = None,
 ) raises -> TensorMap:
     g.verify()
 
     var session = InferenceSession()
-    var model = session.load(g, load_options)
+    var model = session.load(g, custom_ops_path=custom_ops_path)
 
     var input_map = session.new_tensor_map()
     for i in range(len(tensors)):

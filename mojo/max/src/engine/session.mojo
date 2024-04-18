@@ -59,7 +59,7 @@ struct _InferenceSessionImpl(Movable):
 
     fn _compile_model_from_config(
         self,
-        owned config: TorchLoadOptions,
+        owned config: _TorchLoadOptions,
         owned session: InferenceSession,
     ) raises -> CompiledModel:
         var context = self.context.borrow_ptr()
@@ -90,11 +90,11 @@ struct _InferenceSessionImpl(Movable):
         var spec_count = len(config._input_specs)
         for i in range(spec_count):
             var _spec = config._input_specs[i]
-            if _spec.static:
-                compile_config.add_input_spec(_spec.static.value())
+            if _spec._static:
+                compile_config.add_input_spec(_spec._static.value())
             else:
-                var dtype = _spec.dtype
-                compile_config.add_input_spec(_spec.dynamic, dtype)
+                var dtype = _spec._dtype
+                compile_config.add_input_spec(_spec._dynamic, dtype)
 
         compile_config.set_torch_input_specs()
 
@@ -151,7 +151,7 @@ struct _InferenceSessionImpl(Movable):
 
     fn load(
         self,
-        owned config: TorchLoadOptions,
+        owned config: _TorchLoadOptions,
         owned session: InferenceSession,
     ) raises -> Model:
         """
@@ -225,23 +225,61 @@ struct _InferenceSessionImpl(Movable):
 
 
 @value
-struct _Specs(CollectionElement):
-    var static: Optional[TensorSpec]
+struct InputSpec(CollectionElement):
+    var _static: Optional[TensorSpec]
 
-    alias legacy_dynamic_type = Optional[List[Optional[Int64]]]
-    alias dynamic_type = Optional[List[ShapeElement]]
-    var dynamic: Self.dynamic_type
-    var dtype: DType
+    alias _legacy_dynamic_type = Optional[List[Optional[Int64]]]
+    alias _dynamic_type = Optional[List[ShapeElement]]
+    var _dynamic: Self._dynamic_type
+    var _dtype: DType
 
     fn __init__(inout self, spec: TensorSpec):
-        self.static = spec
-        self.dynamic = None
-        self.dtype = spec.dtype()
+        """
+        Create input specifications for one input tensor, as a
+        [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
+        Only applicable for TorchScript models.
+
+        For example:
+
+        ```mojo
+        var batch = 1
+        var seqlen = 128
+        var input_ids_spec = TensorSpec(DType.int64, batch, seqlen)
+        var attention_mask_spec = TensorSpec(DType.int64, batch, seqlen)
+
+        var session = engine.InferenceSession()
+        var model = session.load(
+            "roberta.torchscript",
+            input_specs=List[InputSpec](
+                InputSpec(input_ids_spec), InputSpec(attention_mask_spec)
+            ),
+        )
+        ```
+
+        Args:
+            spec: Spec for the input. This is the standard library
+                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
+        """
+        self._static = spec
+        self._dynamic = None
+        self._dtype = spec.dtype()
 
     fn __init__(
         inout self, spec: Optional[List[Optional[Int64]]], dtype: DType
     ):
-        self.static = None
+        """
+        Create specifications for one input tensor, as a list of integers.
+        Only applicable for TorchScript models.
+
+        If an input supports dynamic shapes, use `None` for that dimension
+        size.
+
+        Args:
+            spec: Shape of the input, as a list of integers.
+            dtype: Datatype of the input, from the standard library
+                   [`DType`](/mojo/stdlib/builtin/dtype#dtype).
+        """
+        self._static = None
         if spec:
             var dyn_spec = List[ShapeElement]()
             for item in spec.value():
@@ -249,46 +287,66 @@ struct _Specs(CollectionElement):
                     dyn_spec.append(item[].value())
                 else:
                     dyn_spec.append(None)
-            self.dynamic = dyn_spec^
+            self._dynamic = dyn_spec^
         else:
-            self.dynamic = None
-        self.dtype = dtype
+            self._dynamic = None
+        self._dtype = dtype
 
     fn __init__(inout self, spec: Optional[List[ShapeElement]], dtype: DType):
-        self.static = None
-        self.dynamic = spec
-        self.dtype = dtype
+        """
+        Create specifications for one input tensor, as a list of shape
+        elements.  Only applicable for TorchScript models.
+
+        If an input supports dynamic shapes, use `None` or a string dimension
+        name for that dimension size.
+
+        Args:
+            spec: Shape of the input, as a list of `ShapeElement`s.
+            dtype: Datatype of the input, from the standard library
+                   [`DType`](/mojo/stdlib/builtin/dtype#dtype).
+        """
+        self._static = None
+        self._dynamic = spec
+        self._dtype = dtype
 
     fn __init__(inout self, spec: NoneType, dtype: DType):
-        self.static = None
-        self.dynamic = None
-        self.dtype = dtype
+        """
+        Create a specification for a dynamic-rank input.  Only applicable for
+        TorchScript models.
+
+        Args:
+            spec: Always `None`.
+            dtype: Datatype of the input, from the standard library
+                   [`DType`](/mojo/stdlib/builtin/dtype#dtype).
+        """
+        self._static = None
+        self._dynamic = None
+        self._dtype = dtype
 
 
 @value
-struct TorchLoadOptions(CollectionElement):
+struct _TorchLoadOptions(CollectionElement):
     """
     Configuration options to load PyTorch models with MAX Engine.
 
-    You must create an instance of this type and call
-    [`add_input_spec()`](#add_input_spec) for each input.
-    Then, pass `TorchLoadOptions` along with your TorchScript model to
+    This is used only internally.  To provide load options, pass them as
+    keyword arguments to
     [`Session.load()`](/engine/reference/mojo/engine/session#load).
     """
 
     var _source: Optional[ModelSource]
     var _model_path: Optional[Path]
     var _custom_ops_path: Optional[Path]
-    var _input_specs: List[_Specs]
+    var _input_specs: List[InputSpec]
 
     fn __init__(inout self):
-        """Creates a new TorchLoadOptions object."""
+        """Creates a new _TorchLoadOptions object."""
         self._source = None
         self._model_path = None
         self._custom_ops_path = None
-        self._input_specs = List[_Specs]()
+        self._input_specs = List[InputSpec]()
 
-    fn _set_model_source(inout self, graph: Graph) raises:
+    fn set_model_source(inout self, graph: Graph) raises:
         """Specifies the MAX Graph to load model from.
            Use either this function or `set_model_path` function
            to specify model source.
@@ -300,7 +358,7 @@ struct TorchLoadOptions(CollectionElement):
             graph._module().c.ptr, FrameworkFormat.MAXGraph
         )
 
-    fn _set_model_path(inout self, path: Path):
+    fn set_model_path(inout self, path: Path):
         """Specifies the loaction in filesystem to load model from.
            Use either this function or `set_model_source` function
            to specify model source.
@@ -319,123 +377,13 @@ struct TorchLoadOptions(CollectionElement):
         """
         self._custom_ops_path = path
 
-    fn add_input_spec(inout self, spec: TensorSpec):
-        """Add specifications for one input tensor, as a
-           [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
-           Only applicable for TorchScript models.
-
-           For example:
-
-           ```mojo
-           var batch = 1
-           var seqlen = 128
-           var input_ids_spec = TensorSpec(DType.int64, batch, seqlen)
-           var attention_mask_spec = TensorSpec(DType.int64, batch, seqlen)
-
-           var options = engine.TorchLoadOptions()
-           options.add_input_spec(input_ids_spec)
-           options.add_input_spec(attention_mask_spec)
-
-           var session = engine.InferenceSession()
-           var model = session.load("roberta.torchscript", options)
-           ```
-
-           If an input supports dynamic shapes, use `None` for that dimension
-           size in the `TensorSpec`.
+    fn set_input_specs(inout self, specs: List[InputSpec]):
+        """Set input specs to the given list of specs.
 
         Args:
-            spec: Spec for the input. This is the standard library
-                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
-
+            specs: The list of specs to replace the current list of input specs.
         """
-        self._input_specs.append(_Specs(spec))
-
-    fn add_input_spec(
-        inout self,
-        shape: _Specs.dynamic_type,
-        dtype: DType,
-    ):
-        """Add specifications for one input tensor, as a list of integers.
-           Only applicable for TorchScript models.
-
-           If an input supports dynamic shapes, use `None` for that dimension
-           size.
-
-        Args:
-            shape: Shape of the input, as a list of integers.
-            dtype: Datatype of the input, from the standard library
-                   [`DType`](/mojo/stdlib/builtin/dtype#dtype).
-        """
-        self._input_specs.append(_Specs(shape, dtype))
-
-    fn add_input_spec(
-        inout self,
-        shape: _Specs.legacy_dynamic_type,
-        dtype: DType,
-    ):
-        """Add valid input specs for model to be given at compile time.
-           Only applicable for PyTorch.
-
-        Args:
-            shape: Shape of the input.
-            dtype: Datatype of the input.
-        """
-        self._input_specs.append(_Specs(shape, dtype))
-
-    fn add_input_specs(
-        inout self,
-        specs: List[TensorSpec],
-    ) raises:
-        """Add specifications for multiple input tensors, as a list of
-           [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec) objects.
-           Only applicable for TorchScript models.
-
-           If an input supports dynamic shapes, use `None` for that dimension
-           size in the `TensorSpec`.
-
-        Args:
-            specs: A list of specs for the inputs. This is the standard library
-                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
-        """
-
-        for i in range(len(specs)):
-            self._input_specs.append(_Specs(specs[i]))
-
-    fn add_input_specs(
-        inout self,
-        shapes: List[_Specs.dynamic_type],
-        dtypes: InlinedFixedVector[DType],
-    ) raises:
-        """Add specifications for multiple input tensors, using lists of
-           integers. Only applicable for TorchScript models.
-
-           If an input supports dynamic shapes, use `None` for that dimension
-           size.
-
-        Args:
-            shapes: A list of input shapes, in which each input shape is
-                    specified as a list if integers.
-            dtypes: Datatypes of the inputs, as a collection of
-                   [`DType`](/mojo/stdlib/builtin/dtype#dtype) values in an
-                   [`InlinedFixedVector`](/mojo/stdlib/collections/vector#inlinedfixedvector).
-        """
-        for i in range(len(shapes)):
-            self._input_specs.append(_Specs(shapes[i], dtypes[i]))
-
-    fn add_input_specs(
-        inout self,
-        shapes: List[_Specs.legacy_dynamic_type],
-        dtypes: InlinedFixedVector[DType],
-    ) raises:
-        """Add valid input specs for model to be given at compile time.
-           Only applicable for PyTorch.
-
-        Args:
-            shapes: Shapes of the input.
-            dtypes: Datatypes of the input.
-        """
-        for i in range(len(shapes)):
-            self._input_specs.append(_Specs(shapes[i], dtypes[i]))
+        self._input_specs = specs
 
 
 @value
@@ -480,7 +428,11 @@ struct InferenceSession:
         self._ptr = Arc(_InferenceSessionImpl(path, options._device))
 
     fn load(
-        self, path: Path, config: Optional[TorchLoadOptions] = None
+        self,
+        path: Path,
+        *,
+        custom_ops_path: Optional[Path] = None,
+        input_specs: Optional[List[InputSpec]] = None,
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
            model path and config.
@@ -488,10 +440,10 @@ struct InferenceSession:
         Note: PyTorch models must be in TorchScript format, and TensorFlow
         models must be in SavedModel format. Or pass any ONNX model.
 
-        If you're loading a TorchScript model, you must specify the `config`
-        argument with an instance of
-        [`TorchLoadOptions`](/engine/reference/mojo/engine/session#loadoptions) that
-        specifies the model's input specs (which may have dynamic shapes).
+        If you're loading a TorchScript model, you must specify the `input_specs`
+        argument with a list of
+        [`InputSpec`](/engine/reference/mojo/engine/session#inputspec) objects
+        that specify the model's input specs (which may have dynamic shapes).
         For details, see how to [specify input
         specs](/engine/model-formats#specify-torchscript-input-specs).
 
@@ -499,41 +451,54 @@ struct InferenceSession:
             path: Location of model in filesystem. You may pass a string here
                   because the [`Path`](/mojo/stdlib/pathlib/path#path) object
                   supports implicit casting from a string.
-            config: Configurations need for compiling model. This is required
-                    only when loading a TorchScript model.
+            custom_ops_path:
+                Path to Mojo custom op package, to replace Modular kernels in
+                model with user-defined kernels.
+            input_specs:
+                Provide shapes and dtypes for model inputs.  Required for
+                TorchScript models, optional for other input formats.
 
         Returns:
             Initialized model ready for inference.
 
         """
-        var load_config: TorchLoadOptions
-        if config:
-            load_config = config.value()
-        else:
-            load_config = TorchLoadOptions()
-        load_config._set_model_path(path)
+        var load_config = _TorchLoadOptions()
+        load_config.set_model_path(path)
+        if custom_ops_path:
+            load_config.set_custom_ops_path(custom_ops_path.value())
+        if input_specs:
+            load_config.set_input_specs(input_specs.value())
         return self._ptr[].load(load_config^, self)
 
     fn load(
-        self, graph: Graph, config: Optional[TorchLoadOptions] = None
+        self,
+        graph: Graph,
+        *,
+        custom_ops_path: Optional[Path] = None,
+        input_specs: Optional[List[InputSpec]] = None,
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
            [`Graph`](/engine/reference/mojo/graph/graph#graph) and config.
 
         Args:
             graph: MAX Graph.
-            config: Configurations need for compiling model.
+            custom_ops_path:
+                Path to Mojo custom op package, to replace Modular kernels in
+                model with user-defined kernels.
+            input_specs:
+                Provide shapes and dtypes for model inputs.  Required for
+                TorchScript models, optional for other input formats.
 
         Returns:
             Initialized model ready for inference.
 
         """
-        var load_config: TorchLoadOptions
-        if config:
-            load_config = config.value()
-        else:
-            load_config = TorchLoadOptions()
-        load_config._set_model_source(graph)
+        var load_config = _TorchLoadOptions()
+        load_config.set_model_source(graph)
+        if custom_ops_path:
+            load_config.set_custom_ops_path(custom_ops_path.value())
+        if input_specs:
+            load_config.set_input_specs(input_specs.value())
         return self._ptr[].load(load_config^, self)
 
     fn get_as_engine_tensor_spec(
