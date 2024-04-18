@@ -705,9 +705,10 @@ DeclResolver::createSelfContainedSignature(LITSignatureType original) {
   return {std::move(captured), unbound};
 }
 
-static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
+static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
                                    SMLoc loc) {
   LIT::FuncOp nestedFn = cast<LIT::FuncOp>(nestedFnDecl);
+  StringAttr fnName = nestedFn.getSourceNameAttr();
   Location mlirLoc = shared.translateLocation(loc);
   if (shared.diBuilder)
     mlirLoc = shared.diBuilder->createScopedLoc(mlirLoc);
@@ -768,17 +769,20 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   for (auto &[_, capture] : shared.getCaptureRangeInScope(nestedFnDecl))
     closureImplInitArgs.push_back({capture.getValue(), node});
 
-  ValueDest closureDest;
-
   // Create Closure Impl type by adding captured parameters to the ClosureImpl
   // DeclType.
+  ValueDest closureDest;
   Type closureImplType = closureImpl.bindReference(llvm::map_to_vector(
       paramCaptures, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
   CValue value = exprEmitter.emitConstructorCall(
       ASTType(closureImplType), closureImplInitArgs, node,
       CallSyntax::kTypeCall, closureDest, /*allowImplicitConversion=*/false);
+
   // Emit the Closure Wrapper instance.
-  ValueDest closureWrapperDest;
+  VarDeclOp var = exprEmitter.emitVarDecl(
+      fnName, UnresolvedType::get(shared.getContext()),
+      exprEmitter.translateLocation(loc), VarDeclKind::Var);
+  ValueDest closureWrapperDest(var, EC_VarInit);
   SmallVector<ASTExprAnd<AnyValue>> closureWrapperInitArgs;
   closureWrapperInitArgs.push_back({value, node});
 
@@ -788,15 +792,11 @@ static MRValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   DeclRefType closureWrapperType =
       closureWrapper.bindReference(llvm::map_to_vector(
           capturedRefs, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
-  CValue closureWrapperInstance = exprEmitter.emitConstructorCall(
-      ASTType(closureWrapperType), closureWrapperInitArgs, node,
-      CallSyntax::kTypeCall, closureWrapperDest,
-      /*allowImplicitConversion=*/false);
-
-  if (!closureWrapperInstance)
-    return {};
-  assert(closureWrapperInstance.getIfMRValue());
-  return closureWrapperInstance.getIfMRValue();
+  exprEmitter.emitConstructorCall(ASTType(closureWrapperType),
+                                  closureWrapperInitArgs, node,
+                                  CallSyntax::kTypeCall, closureWrapperDest,
+                                  /*allowImplicitConversion=*/false);
+  return MLValue(var);
 }
 
 PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {

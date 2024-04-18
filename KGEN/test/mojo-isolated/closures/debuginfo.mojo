@@ -10,9 +10,10 @@
 # CHECK-LABEL:    lit.func @"makes_escaping_closure
 # CHECK-NEXT:    %anonymous2A = lit.var.decl "anonymous*" synth : !lit.ref<!escaping
 # CHECK-NEXT:    %0 = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m)
-# CHECK-NEXT:    %anonymous2A_0 = lit.var.decl "anonymous*" synth : !lit.ref<!index
-# CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A)
-# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%__result__, %anonymous2A_0){{.*}} loc(#[[LOC26:.*]])
+# CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : !lit.ref<!index
+# CHECK-NEXT:    %1 = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%myclosure, %anonymous2A)
+# CHECK-NEXT:    [[XFER:%.*]] = lit.transfer_mem_ownership %myclosure
+# CHECK-NEXT:    lit.call {{.*}}fn{{.*}}__moveinit__{{.*}}(%__result__, [[XFER]]){{.*}} loc(#[[LOC26:.*]])
 
 # CHECK-DAG: #makes_escaping_closure_name = #debuginfo.source_name<(fn)"makes_escaping_closure"(<"index">, <"index">) from <(module)"debuginfo">>
 # CHECK-DAG: #[[SP9:.*]] = #debuginfo.subprogram<compileUnit = #compile_unit, scope = #file, name = #makes_escaping_closure_name, linkageName = "makes_escaping_closure{{.*}}", file = #file, line = [[#LN42:]],
@@ -23,7 +24,7 @@ fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
     fn myclosure(n: int) -> int:
         return m
 
-    return myclosure
+    return myclosure^
 
 
 # // -----
@@ -36,9 +37,9 @@ fn makes_escaping_closure(m: int, z: int) -> fn (n: int) escaping -> int:
 # CHECK:       hlcf.elif
 # CHECK:         %anonymous2A = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0:.*]])
 # CHECK-NEXT:     = lit.call {{.*}}CI{{.*}}__init__{{.*}}"[{{.*}}](%anonymous2A, %m) : {{.*}} loc(#[[LOC0]])
-# CHECK-NEXT:    %anonymous2A_0 = lit.var.decl "anonymous*" synth : {{.*}} loc(#[[LOC0]])
-# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%anonymous2A_0, %anonymous2A) : {{.*}} loc(#[[LOC0]])
-# CHECK-NEXT:     = lit.ref.immut %anonymous2A_0 : {{.*}} loc(#[[LOC1:.*]])
+# CHECK-NEXT:    %myclosure = lit.var.decl "myclosure" var : {{.*}} loc(#[[LOC0]])
+# CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__init__{{.*}}(%myclosure, %anonymous2A) : {{.*}} loc(#[[LOC0]])
+# CHECK-NEXT:     = lit.ref.immut %myclosure : {{.*}} loc(#[[LOC1:.*]])
 # CHECK-NEXT:     = lit.call {{.*}}fn{{.*}}__call__({{.*}}) : {{.*}} loc(#[[LOC1]])
 
 # CHECK-DAG: #closure_in_block_name = #debuginfo.source_name<(fn)"closure_in_block"(<"index">, <"index">, #Bool_name) from <(module)"debuginfo">>
