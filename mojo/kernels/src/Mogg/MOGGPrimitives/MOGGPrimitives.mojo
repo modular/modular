@@ -340,3 +340,28 @@ fn mgp_tensor_spec_size(raw_spec_ptr: DTypePointer[DType.int8]) -> Int:
     # TODO #38039: Cannot return a TensorSpec until KGENStubBuilder supports DPS for it
     var spec_ptr = raw_spec_ptr._as_scalar_pointer().bitcast[TensorSpec]()
     return spec_ptr[].bytecount()
+
+
+@mogg_register("mgp.chain.create")
+@always_inline
+@export
+fn mgp_chain_create[
+    aOtherRuntimeSlot: UInt64,
+    bHostDevice: StringLiteral,
+    cOtherDevice: StringLiteral,
+]():
+    return
+
+
+@mogg_register("mgp.chain.device_to_host")
+@always_inline
+@export
+fn mgp_chain_device_to_host[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
+    return
+
+
+@mogg_register("mgp.chain.host_to_device")
+@always_inline
+@export
+fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
+    return
