@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from os import abort
-from sys.info import os_is_macos
+from sys.info import os_is_macos, bitwidthof
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
 from collections import OptionalReg as Optional
@@ -172,6 +172,9 @@ struct _BNNSNDArrayFlags:
     only be used for output variables with names ending _delta).
     """
 
+    fn __init__(inout self):
+        self.value = 0
+
 
 @value
 @register_passable("trivial")
@@ -227,6 +230,9 @@ struct _BNNSDataLayout:
     alias LAST_MAJOR_8D = _BNNSDataLayout(0x88000)
     alias FIRST_MAJOR_8D = _BNNSDataLayout(0x88001)
 
+    fn __init__(inout self):
+        self.value = 0
+
 
 @value
 @register_passable("trivial")
@@ -264,6 +270,40 @@ struct _BNNSDataType:
 
     alias MISC_BIT = _BNNSDataType(0x100000)
     alias BOOL = Self.MISC_BIT | 8
+
+    fn __init__(inout self):
+        self.value = 0
+
+    fn __init__(inout self, type: DType):
+        if type == DType.bool:
+            self = Self.BOOL
+        elif type == DType.float16:
+            self = Self.FLOAT16
+        elif type == DType.bfloat16:
+            self = Self.BFLOAT16
+        elif type == DType.float32:
+            self = Self.FLOAT32
+        elif type == DType.int8:
+            self = Self.INT8
+        elif type == DType.uint8:
+            self = Self.UINT8
+        elif type == DType.int16:
+            self = Self.INT16
+        elif type == DType.uint16:
+            self = Self.UINT16
+        elif type == DType.int32:
+            self = Self.INT32
+        elif type == DType.uint32:
+            self = Self.UINT32
+        elif type == DType.int64:
+            self = Self.INT64
+        elif type == DType.uint64:
+            self = Self.UINT64
+        elif type == DType.index:
+            self = Self.INT64 if bitwidthof[DType.index]() == 64 else Self.INT32
+        else:
+            abort("invalid dtype " + str(type))
+            self = Self.MISC_BIT
 
     @always_inline
     fn __or__(self, other: Self) -> Self:
@@ -312,6 +352,150 @@ struct _BNNSNDArrayDescriptor:
     """Used in the conversion of integer values to floating point; used only
     when data_type is Int<K> or UInt<K>.
     """
+
+    fn __init__(inout self):
+        self.flags = _BNNSNDArrayFlags()
+        self.layout = _BNNSDataLayout()
+
+        self.size = StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION](0)
+        self.stride = StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION](0)
+
+        self.data = Pointer[NoneType]()
+        self.data_type = _BNNSDataType()
+
+        self.table_data = Pointer[NoneType]()
+        self.table_data_type = _BNNSDataType()
+
+        self.data_scale = 0
+        self.data_bias = 0
+
+    fn __init__(
+        inout self,
+        *,
+        flags: _BNNSNDArrayFlags,
+        layout: _BNNSDataLayout,
+        size: StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION],
+        stride: StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION],
+        data: Pointer[NoneType],
+        data_type: _BNNSDataType,
+        table_data: Pointer[NoneType] = Pointer[NoneType](),
+        table_data_type: _BNNSDataType = _BNNSDataType(),
+        data_scale: Float32 = 1,
+        data_bias: Float32 = 0,
+    ):
+        self.flags = flags
+        self.layout = layout
+        self.size = size
+        self.stride = stride
+        self.data = data
+        self.data_type = data_type
+        self.table_data = table_data
+        self.table_data_type = table_data_type
+        self.data_scale = data_scale
+        self.data_bias = data_bias
+
+
+@value
+@register_passable("trivial")
+struct _BNNSLayerParametersBroadcastMatMul:
+    var alpha: Float32
+    var beta: Float32
+    var trans_a: Bool
+    var trans_b: Bool
+    var quadratic: Bool
+    var a_is_weights: Bool
+    var b_is_weights: Bool
+    var a_desc: _BNNSNDArrayDescriptor
+    var b_desc: _BNNSNDArrayDescriptor
+    var o_desc: _BNNSNDArrayDescriptor
+
+    fn __init__(
+        inout self,
+        alpha: Float32 = 1,
+        beta: Float32 = 0,
+        trans_a: Bool = False,
+        trans_b: Bool = False,
+        a_is_weights: Bool = False,
+        b_is_weights: Bool = True,
+        a_desc: _BNNSNDArrayDescriptor = _BNNSNDArrayDescriptor(),
+        b_desc: _BNNSNDArrayDescriptor = _BNNSNDArrayDescriptor(),
+        o_desc: _BNNSNDArrayDescriptor = _BNNSNDArrayDescriptor(),
+    ):
+        self.alpha = alpha
+        self.beta = beta
+        self.trans_a = trans_a
+        self.trans_b = trans_b
+        self.quadratic = False
+        self.a_is_weights = a_is_weights
+        self.b_is_weights = b_is_weights
+        self.a_desc = a_desc
+        self.b_desc = b_desc
+        self.o_desc = o_desc
+
+
+@always_inline
+fn _bnns_matmul[
+    *,
+    transpose_b: Bool = False,
+](c: NDBuffer, a: NDBuffer, b: NDBuffer):
+    constrained[a.rank == b.rank == c.rank == 2, "rank must be 2"]()
+
+    var M = a.dim[0]()
+    var N = b.dim[0]() if transpose_b else b.dim[1]()
+    var K = a.dim[1]()
+
+    var lda = K
+    var ldb = N
+    var ldc = N
+
+    var a_desc = _BNNSNDArrayDescriptor(
+        flags=_BNNSNDArrayFlags.BACK_PROP_SET,
+        layout=_BNNSDataLayout.ROW_MAJOR_MATRIX,
+        size=StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION](M, K, 0, 0, 0, 0, 0, 0),
+        stride=StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION](
+            1, lda, 0, 0, 0, 0, 0, 0
+        ),
+        data=a.data.address.bitcast[
+            NoneType, address_space = AddressSpace.GENERIC
+        ](),
+        data_type=a.type,
+    )
+
+    var b_desc = _BNNSNDArrayDescriptor(
+        flags=_BNNSNDArrayFlags.BACK_PROP_SET,
+        layout=_BNNSDataLayout.ROW_MAJOR_MATRIX,
+        size=StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION](K, N, 0, 0, 0, 0, 0, 0),
+        stride=StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION](
+            1, ldb, 0, 0, 0, 0, 0, 0
+        ),
+        data=b.data.address.bitcast[
+            NoneType, address_space = AddressSpace.GENERIC
+        ](),
+        data_type=b.type,
+    )
+
+    var c_desc = _BNNSNDArrayDescriptor(
+        flags=_BNNSNDArrayFlags.BACK_PROP_SET,
+        layout=_BNNSDataLayout.ROW_MAJOR_MATRIX,
+        size=StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION](M, N, 0, 0, 0, 0, 0, 0),
+        stride=StaticIntTuple[_BNNS_MAX_TENSOR_DIMENSION](
+            1, ldc, 0, 0, 0, 0, 0, 0
+        ),
+        data=c.data.address.bitcast[
+            NoneType, address_space = AddressSpace.GENERIC
+        ](),
+        data_type=c.type,
+    )
+
+    var params = _BNNSLayerParametersBroadcastMatMul(
+        alpha=1,
+        beta=0,
+        trans_b=transpose_b,
+        b_is_weights=True,
+        a_desc=a_desc,
+        b_desc=b_desc,
+        o_desc=c_desc,
+    )
 
 
 # ===----------------------------------------------------------------------===#
