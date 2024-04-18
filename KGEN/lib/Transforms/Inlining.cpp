@@ -540,9 +540,9 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   }
 
   // Nuke debuginfo if inlining an `always_inline_no_debug` function, or if the
-  // callee lacks debuginfo but the caller does not.
+  // either the callee or caller lack debuginfo.
   bool stripDebugInfo = level == InlineLevel::AlwaysNoDebug ||
-                        (!callee.getLocScope() && caller.getLocScope()) ||
+                        !callee.getLocScope() || !caller.getLocScope() ||
                         !updateDebugInfo;
 
   scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
