@@ -7,12 +7,7 @@
 # RUN: mojo package %S/../../Inputs/test_user_op -o %t.mojopkg
 # RUN: %mojo -debug-level full %s %S/mo.mlir %t.mojopkg
 
-from max.engine import (
-    InferenceSession,
-    TensorMap,
-    EngineTensorView,
-    TorchLoadOptions,
-)
+from max.engine import InferenceSession, TensorMap, EngineTensorView
 from sys import argv
 from tensor import Tensor, TensorShape
 from testing import assert_equal
@@ -25,9 +20,9 @@ fn test_model_metadata() raises:
     var user_defined_ops_path = args[2]
 
     var session = InferenceSession()
-    var config = TorchLoadOptions()
-    config.set_custom_ops_path(Path(user_defined_ops_path))
-    var compiled_model = session.load(Path(model_path), config)
+    var compiled_model = session.load(
+        Path(model_path), custom_ops_path=Path(user_defined_ops_path)
+    )
     assert_equal(compiled_model.num_model_inputs(), 1)
 
     var input_names = compiled_model.get_model_input_names()
@@ -52,9 +47,9 @@ fn test_model() raises:
     var user_defined_ops_path = args[2]
 
     var session = InferenceSession()
-    var config = TorchLoadOptions()
-    config.set_custom_ops_path(Path(user_defined_ops_path))
-    var model = session.load(Path(model_path), config^)
+    var model = session.load(
+        Path(model_path), custom_ops_path=Path(user_defined_ops_path)
+    )
     var input_tensor = Tensor[DType.float32](5)
 
     for i in range(5):

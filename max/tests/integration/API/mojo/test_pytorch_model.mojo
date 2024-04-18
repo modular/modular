@@ -8,11 +8,11 @@
 # RUN: %mojo -debug-level full %s %S/../../Inputs/relu3x100x100.torchscript
 
 from max.engine import (
-    InferenceSession,
-    TensorMap,
     EngineTensorView,
+    InferenceSession,
+    InputSpec,
     ShapeElement,
-    TorchLoadOptions,
+    TensorMap,
 )
 from sys import argv
 from tensor import Tensor, TensorSpec
@@ -26,9 +26,10 @@ fn test_pytorch_model() raises:
     var model_path = args[1]
 
     var session = InferenceSession()
-    var config = TorchLoadOptions()
-    config.add_input_spec(TensorSpec(DType.float32, 1, 3, 100, 100))
-    var compiled_model = session.load(Path(model_path), config)
+    var compiled_model = session.load(
+        Path(model_path),
+        input_specs=List[InputSpec](TensorSpec(DType.float32, 1, 3, 100, 100)),
+    )
 
     assert_equal(compiled_model.num_model_inputs(), 1)
 
@@ -46,14 +47,15 @@ fn test_pytorch_model2() raises:
     var model_path = args[1]
 
     var session = InferenceSession()
-    var config = TorchLoadOptions()
     var shape = List[Optional[Int64]]()
     shape.append(Int64(1))
     shape.append(Int64(3))
     shape.append(Int64(100))
     shape.append(Int64(100))
-    config.add_input_spec(shape, DType.float32)
-    var compiled_model = session.load(Path(model_path), config)
+    var compiled_model = session.load(
+        Path(model_path),
+        input_specs=List[InputSpec](InputSpec(shape, DType.float32)),
+    )
 
     assert_equal(compiled_model.num_model_inputs(), 1)
 
@@ -72,24 +74,25 @@ fn test_named_input_dims() raises:
 
     var model_path = Path(argv()[1])
     var session = InferenceSession()
-    var config = TorchLoadOptions()
     var shape = List[ShapeElement]()
     shape.append("batch")
     shape.append(3)
     shape.append(100)
     shape.append(100)
-    config.add_input_spec(shape, DType.float32)
-    _ = session.load(model_path, config)
+    _ = session.load(
+        model_path, input_specs=List[InputSpec](InputSpec(shape, DType.float32))
+    )
 
     shape.clear()
-    config = TorchLoadOptions()
     shape.append("1two3")
     shape.append(3)
     shape.append(100)
     shape.append(100)
     with assert_raises():
-        config.add_input_spec(shape, DType.float32)
-        _ = session.load(model_path, config)
+        _ = session.load(
+            model_path,
+            input_specs=List[InputSpec](InputSpec(shape, DType.float32)),
+        )
 
 
 fn test_model_execute() raises:
@@ -97,9 +100,10 @@ fn test_model_execute() raises:
     var model_path = args[1]
 
     var session = InferenceSession()
-    var config = TorchLoadOptions()
-    config.add_input_spec(TensorSpec(DType.float32, 1, 3, 100, 100))
-    var model = session.load(Path(model_path), config)
+    var model = session.load(
+        Path(model_path),
+        input_specs=List[InputSpec](TensorSpec(DType.float32, 1, 3, 100, 100)),
+    )
     var input_tensor = Tensor[DType.float32](1, 3, 100, 100)
     input_tensor._to_buffer().fill(-1)
     var outputs = model.execute("x", input_tensor)

@@ -104,13 +104,14 @@ def test_execute_multi_framework(
     relu_torchscript_model_path: Path,
 ):
     session = me.InferenceSession()
-    trch_options = me.TorchLoadOptions()
-    trch_options.input_specs = [
+    trch_input_specs = [
         me.TorchInputSpec(shape=[1, 3, 100, 100], dtype=me.DType.float32)
     ]
     tf_model = session.load(relu_tf_model_path)
     onnx_model = session.load(relu_onnx_model_path)
-    trch_model = session.load(relu_torchscript_model_path, trch_options)
+    trch_model = session.load(
+        relu_torchscript_model_path, input_specs=trch_input_specs
+    )
     np_input = np.ones((1, 3, 100, 100))
     np_input[:, 1, :, :] *= -1
     tf_output = tf_model.execute(inputs=np_input)["output_0"]
@@ -147,9 +148,9 @@ def test_custom_ops(
         np.array([2.0]).astype(np.float32),
     )
 
-    options = me.CommonLoadOptions()
-    options.custom_ops_path = str(custom_ops_package_path)
-    model_with_custom_op = session.load(mo_custom_ops_model_path, options)
+    model_with_custom_op = session.load(
+        mo_custom_ops_model_path, custom_ops_path=str(custom_ops_package_path)
+    )
     inputs = np.ones((1)) * 4
     output = model_with_custom_op.execute(input0=inputs)
     assert "output" in output.keys()
@@ -161,8 +162,7 @@ def test_custom_ops(
 
 def test_list_io(mo_listio_model_path: Path):
     session = me.InferenceSession()
-    options = me.CommonLoadOptions()
-    model_with_list_io = session.load(mo_listio_model_path, options)
+    model_with_list_io = session.load(mo_listio_model_path)
     output = model_with_list_io.execute(
         input_list=[np.zeros(2)], input_tensor=np.ones(5)
     )
