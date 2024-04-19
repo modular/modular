@@ -32,17 +32,23 @@ struct GeneralDelegate(ElementDelegate):
 
     @always_inline
     @staticmethod
-    fn to_string[T: CollectionElement](a: Variant[T]) -> String:
-        if a.isa[General]():
-            var v = a.get[General]()[]
-            if v.isa[Int]():
-                return v.get[Int]()[]
-            if v.isa[Float32]():
-                return v.get[Float32]()[]
-            if v.isa[String]():
-                return v.get[String]()[]
-        abort("Unexpected data type.")
-        return "#"
+    fn format_element_to[
+        T: CollectionElement
+    ](inout writer: Formatter, a: Variant[T]):
+        if not a.isa[General]():
+            abort("Unexpected data type.")
+
+        var v = a.get[General]()[]
+
+        if v.isa[Int]():
+            write_to(writer, v.get[Int]()[])
+        if v.isa[Float32]():
+            # FIXME(#37912):
+            #   Implement a Mojo float formatting algorithm that can be used
+            #   format floating point values even on GPU, and use it here.
+            write_to(writer, "<UnsupportedFormattedFloat:#37912>")
+        if v.isa[String]():
+            write_to(writer, v.get[String]()[])
 
 
 alias GeneralTupleBase = DynamicTupleBase[General, GeneralDelegate]
@@ -67,13 +73,13 @@ fn test_tuple_general() raises:
     # CHECK: 1
     # CHECK: 3.5
     # CHECK: Mojo
-    # CHECK: (1, (3.5, Mojo))
+    # CHECK: (1, (<UnsupportedFormattedFloat:#37912>, Mojo))
     print(gt[0].value().get[Int]()[])
     print(gt[1][0].value().get[Float32]()[])
     print(gt[1][1].value().get[String]()[])
     print(gt)
 
-    # CHECK: (7, (3.5, Mojo))
+    # CHECK: (7, (<UnsupportedFormattedFloat:#37912>, Mojo))
     gt[0] = General(7)
     print(gt)
 

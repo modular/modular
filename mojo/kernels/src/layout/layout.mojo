@@ -6,6 +6,7 @@
 
 from builtin.io import _printf
 from builtin.string import _calc_initial_buffer_size_int32
+from utils._format import Formattable, Formatter, write_to
 
 from .dynamic_tuple import *
 from .int_tuple import (
@@ -53,9 +54,19 @@ struct _LayoutIter:
         return len(self.layout.shape) - self.index
 
 
-struct Layout(Sized, Stringable, CollectionElement, EqualityComparable):
+struct Layout(
+    Sized,
+    Stringable,
+    Formattable,
+    CollectionElement,
+    EqualityComparable,
+):
     var shape: IntTuple
     var stride: IntTuple
+
+    # ===------------------------------------------------------------------===#
+    # Initializers
+    # ===------------------------------------------------------------------===#
 
     @always_inline
     fn __init__(inout self):
@@ -105,8 +116,26 @@ struct Layout(Sized, Stringable, CollectionElement, EqualityComparable):
         self.shape = existing.shape
         self.stride = existing.stride
 
+    # ===------------------------------------------------------------------===#
+    # Methods
+    # ===------------------------------------------------------------------===#
+
     fn __str__(self) -> String:
-        return "(" + str(self.shape) + ":" + str(self.stride) + ")"
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        # FIXME(#38125):
+        #   The following variadic invocation of `write_to` failed with a
+        #   compiler assertion, but the expanded 1-arg-per-write_to-call below
+        #   does not crash.
+        #
+        # write_to(writer, "(", self.shape, ":", self.stride, ")")
+
+        write_to(writer, "(")
+        write_to(writer, self.shape)
+        write_to(writer, ":")
+        write_to(writer, self.stride)
+        write_to(writer, ")")
 
     fn __eq__(self, other: Layout) -> Bool:
         return self.shape == other.shape and self.stride == other.stride

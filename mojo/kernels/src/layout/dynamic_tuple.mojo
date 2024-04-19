@@ -8,6 +8,8 @@ import math
 from utils.variant import Variant
 from algorithm.functional import _get_start_indices_of_nth_subvolume
 
+from utils._format import Formatter
+
 
 # FIXME: This is a horrible hack around Mojo's lack or proper trait inheritance
 trait ElementDelegate:
@@ -16,7 +18,9 @@ trait ElementDelegate:
         pass
 
     @staticmethod
-    fn to_string[T: CollectionElement](a: Variant[T]) -> String:
+    fn format_element_to[
+        T: CollectionElement
+    ](inout writer: Formatter, a: Variant[T]):
         pass
 
 
@@ -26,13 +30,15 @@ struct DefaultDelegate(ElementDelegate):
         return False
 
     @staticmethod
-    fn to_string[T: CollectionElement](a: Variant[T]) -> String:
-        return "#"
+    fn format_element_to[
+        T: CollectionElement
+    ](inout writer: Formatter, a: Variant[T]):
+        writer.write_str("#")
 
 
 struct DynamicTupleBase[
     T: CollectionElement, D: ElementDelegate = DefaultDelegate
-](CollectionElement, Sized, Stringable, EqualityComparable):
+](CollectionElement, Sized, Stringable, Formattable, EqualityComparable):
     alias Element = Variant[T, Self]
 
     var _elements: List[Self.Element]
@@ -101,19 +107,19 @@ struct DynamicTupleBase[
         return len(self._elements)
 
     @staticmethod
-    fn to_string(v: Self.Element) -> String:
+    fn format_element_to(inout writer: Formatter, v: Self.Element):
         if v.isa[T]():
-            return D.to_string[T](v.get[T]()[])
+            return D.format_element_to[T](writer, v.get[T]()[])
         else:
-            var result = String("(")
+            writer.write_str("(")
             if v.isa[Self]():
                 var _elements = v.get[Self]()[]._elements
                 for i in range(len(_elements)):
                     var e: Self.Element = _elements[i]
-                    result += Self.to_string(e)
+                    Self.format_element_to(writer, e)
                     if i < len(_elements) - 1:
-                        result += ", "
-            return result + ")"
+                        writer.write_str(", ")
+            writer.write_str(")")
 
     @staticmethod
     fn is_equal(a: Self.Element, b: Self.Element) -> Bool:
@@ -131,7 +137,10 @@ struct DynamicTupleBase[
 
     @always_inline
     fn __str__(self) -> String:
-        return Self.to_string(self)
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        Self.format_element_to(writer, self)
 
     @always_inline
     fn __eq__(self, other: Self) -> Bool:
@@ -320,7 +329,10 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn __str__(self) -> String:
-        return Self.BaseType.to_string(self._value)
+        return String.format_sequence(self)
+
+    fn format_to(self, inout writer: Formatter):
+        Self.BaseType.format_element_to(writer, self._value)
 
 
 # ===----------------------------------------------------------------------===#

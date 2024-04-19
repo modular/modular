@@ -9,6 +9,7 @@ import math
 from layout.dynamic_tuple import *
 
 from utils.variant import Variant
+from utils._format import Formatter, write_to
 
 # IntTuple definition
 
@@ -26,12 +27,13 @@ struct IntDelegate(ElementDelegate):
 
     @always_inline
     @staticmethod
-    fn to_string[T: CollectionElement](a: Variant[T]) -> String:
+    fn format_element_to[
+        T: CollectionElement
+    ](inout writer: Formatter, a: Variant[T]):
         if a.isa[Int]():
-            return a.get[Int]()[]
+            write_to(writer, a.get[Int]()[])
         else:
             abort("Unexpected data type.")
-            return "#"
 
 
 alias IntTuple = DynamicTuple[Int, IntDelegate]
