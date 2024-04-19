@@ -178,15 +178,16 @@ LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
   return failure(res.wasInterrupted());
 }
 
-Location InlinedSubprogramScoped::getLocNoInlinedImpl() {
+Location impl::getLocNoInlined(InlinedSubprogramScoped iss) {
   if (auto fusedCallLoc =
-          dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(getLoc())) {
+          dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(
+              iss.getLoc())) {
     assert(fusedCallLoc.getLocations().size() >= 1 &&
            "callLoc fused loc bad size");
     return fusedCallLoc.getLocations()[0];
   }
   if (auto fusedLoc =
-          dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(getLoc())) {
+          dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(iss.getLoc())) {
     auto locs = fusedLoc.getLocations();
     assert(locs.size() >= 1 && "callLoc fused loc bad size");
     if (auto innerFused =
@@ -194,21 +195,22 @@ Location InlinedSubprogramScoped::getLocNoInlinedImpl() {
       auto innerLocs = innerFused.getLocations();
       assert(innerLocs.size() >= 1 && "callLoc inner fused bad size");
       // Re-fuse the inner location with the scope.
-      return FusedLoc::get(getContext(), innerLocs[0], fusedLoc.getMetadata());
+      return FusedLoc::get(iss.getContext(), innerLocs[0],
+                           fusedLoc.getMetadata());
     } else {
-      return getLoc();
+      return iss.getLoc();
     }
   }
-  return getLoc();
+  return iss.getLoc();
 }
 
-mlir::LocationAttr InlinedSubprogramScoped::getCallLocAttrImpl() {
+mlir::LocationAttr impl::getCallLocAttr(InlinedSubprogramScoped iss) {
   if (auto fusedImmediate =
-          dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(getLoc()))
+          dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(iss.getLoc()))
     return fusedImmediate.getMetadata().getCallLoc();
 
   auto fusedLoc =
-      dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(getLoc());
+      dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(iss.getLoc());
   if (!fusedLoc)
     return {};
 
@@ -222,21 +224,22 @@ mlir::LocationAttr InlinedSubprogramScoped::getCallLocAttrImpl() {
     return {};
 }
 
-void InlinedSubprogramScoped::setCallLocAttrImpl(mlir::LocationAttr callLoc) {
-  Location callLocStripped = getLocNoInlined();
+void impl::setCallLocAttr(InlinedSubprogramScoped iss,
+                          mlir::LocationAttr callLoc) {
+  Location callLocStripped = iss.getLocNoInlined();
   if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(
           callLocStripped)) {
     auto locs = fusedLoc.getLocations();
     assert(locs.size() >= 1 && "callLoc fused loc bad size");
     Location fusedInner =
-        FusedLoc::get(getContext(), locs[0],
-                      DebugInfo::DICallLocAttr::get(getContext(), callLoc));
-    getOperation()->setLoc(
-        FusedLoc::get(getContext(), fusedInner, fusedLoc.getMetadata()));
+        FusedLoc::get(iss.getContext(), locs[0],
+                      DebugInfo::DICallLocAttr::get(iss.getContext(), callLoc));
+    iss.getOperation()->setLoc(
+        FusedLoc::get(iss.getContext(), fusedInner, fusedLoc.getMetadata()));
   } else {
-    getOperation()->setLoc(
-        FusedLoc::get(getContext(), callLocStripped,
-                      DebugInfo::DICallLocAttr::get(getContext(), callLoc)));
+    iss.getOperation()->setLoc(FusedLoc::get(
+        iss.getContext(), callLocStripped,
+        DebugInfo::DICallLocAttr::get(iss.getContext(), callLoc)));
   }
 }
 

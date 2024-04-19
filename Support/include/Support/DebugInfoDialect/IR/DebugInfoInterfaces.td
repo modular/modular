@@ -102,26 +102,14 @@ def DebugInfo_InlinedSubprogramScoped : OpInterface<
   let dependentTraits = [DebugInfo_ScopedLocation];
   let cppNamespace = "::M::DebugInfo";
 
-  let extraClassDeclaration = [{
-    Location getLocNoInlinedImpl();
-    mlir::LocationAttr getCallLocAttrImpl();
-    void setCallLocAttrImpl(mlir::LocationAttr attr);
-  }];
   let extraSharedClassDeclaration = [{
     /// Return the location of the op after removing any encoded callLoc info.
-    Location getLocNoInlined() {
-      return cast<DebugInfo::InlinedSubprogramScoped>(this->getOperation())
-             .getLocNoInlinedImpl();
-    }
+    Location getLocNoInlined() { return impl::getLocNoInlined($_op); }
     /// Return any callLoc info encoded in the location.
-    mlir::LocationAttr getCallLocAttr() {
-      return cast<DebugInfo::InlinedSubprogramScoped>(this->getOperation())
-             .getCallLocAttrImpl();
-    }
+    mlir::LocationAttr getCallLocAttr() { return impl::getCallLocAttr($_op); }
     /// Adjust location info to encode the callLoc info.
     void setCallLocAttr(mlir::LocationAttr callLoc) {
-      cast<DebugInfo::InlinedSubprogramScoped>(this->getOperation())
-          .setCallLocAttrImpl(callLoc);
+      impl::setCallLocAttr($_op, callLoc);
     }
   }];
 }
