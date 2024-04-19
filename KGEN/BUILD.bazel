@@ -1523,6 +1523,7 @@ cc_binary(
         ":Index.inc_files",
         ":KGENDialect",
         ":LITDialect",
+        ":MojoBuild",
         ":MojoDebugHeader",
         ":MojoParser",
         ":MojoTesting",
@@ -1630,6 +1631,7 @@ cc_library(
     strip_include_prefix = "include",
     deps = [
         "//Support:Base",
+        "//Support:Filesystem",
         "@llvm-project//mlir:MlirLspServerSupportLib",
     ],
 )

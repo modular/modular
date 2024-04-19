@@ -6,6 +6,7 @@
 
 #include "Support/CommandLine.h"
 #include "Support/CrashReporting.h"
+#include "Support/Init/Init.h"
 
 using namespace M;
 
@@ -21,7 +22,12 @@ struct CLOptions {
 int main(int argc, char **argv) {
   CLOptions clOptions;
   llvm::cl::ParseCommandLineOptions(argc, argv, "Modular Crash Test Dummy");
-  initCrashpadForProgram("crash-test-dummy");
+
+  auto ctxOr = Init::createContext("crash-test-dummy");
+  if (ctxOr.isError()) {
+    llvm::errs() << "could not create context: " << ctxOr.getError() << "\n";
+    return EXIT_FAILURE;
+  }
 
   if (clOptions.simulate)
     generateNonFatalDump();
