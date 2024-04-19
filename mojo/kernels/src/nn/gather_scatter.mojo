@@ -10,7 +10,6 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm import elementwise, sync_parallelize, vectorize, parallel_memcpy
 from algorithm.functional import (
-    _async_elementwise_impl,
     _elementwise_impl,
     tile,
 )
@@ -547,92 +546,6 @@ fn gather[
             ](
                 output_shape,
             )
-
-
-@always_inline
-async fn async_gather[
-    type: DType,
-    input_rank: Int,
-    indices_type: DType,
-    indices_rank: Int,
-    output_rank: Int,
-    input_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[type, width],
-    indices_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank]
-    ) capturing -> SIMD[indices_type, width],
-    output_fn: fn[width: Int, rank: Int] (
-        StaticIntTuple[rank], SIMD[type, width]
-    ) capturing -> None,
-    prefetch_fn: Optional[
-        fn[
-            input_rank: Int, indices_rank: Int
-        ] (
-            StaticIntTuple[input_rank], StaticIntTuple[indices_rank]
-        ) capturing -> None
-    ] = None,
-    target: StringLiteral = "cpu",
-](
-    axis: Axis,
-    input_shape: StaticIntTuple[input_rank],
-    indices_shape: StaticIntTuple[indices_rank],
-    output_shape: StaticIntTuple[output_rank],
-) -> _OptionalError:
-    """Gather operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#Gather.
-
-    Note that this is NOT the same as the default PyTorch gather (which is equivalent to
-    https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
-    """
-    try:
-        gather_guards(axis, input_shape, indices_shape, output_shape)
-        with Trace[TraceLevel.OP]("mojo.gather") as t:
-            if (
-                input_shape.flattened_length() == 0
-                or indices_shape.flattened_length() == 0
-            ):
-                return _OptionalError()
-
-            @parameter
-            @always_inline
-            fn gather_elementwise_fn[
-                simd_width: Int, rank: Int
-            ](idx: StaticIntTuple[rank]):
-                gather_elementwise_fn_wrapper[
-                    type,
-                    input_rank,
-                    indices_type,
-                    indices_rank,
-                    output_rank,
-                    input_fn,
-                    indices_fn,
-                    output_fn,
-                    simd_width=simd_width,
-                    prefetch_fn=prefetch_fn,
-                ](axis, input_shape, indices_shape, output_shape, idx)
-
-            # If we are gathering on the last dimension then we have to be scalar.
-            if int(axis) == input_rank - 1:
-                await _async_elementwise_impl[
-                    gather_elementwise_fn,
-                    1,
-                    output_rank,
-                    target=target,
-                ](
-                    output_shape,
-                )
-            else:
-                await _async_elementwise_impl[
-                    gather_elementwise_fn,
-                    simdwidthof[type](),
-                    output_rank,
-                    target=target,
-                ](
-                    output_shape,
-                )
-        return _OptionalError()
-    except e:
-        return _OptionalError(e^)
 
 
 # ===----------------------------------------------------------------------===#
