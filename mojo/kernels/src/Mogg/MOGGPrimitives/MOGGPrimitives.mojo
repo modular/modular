@@ -34,16 +34,12 @@ struct BufferRefABI[type: DType]:
     var size: UInt64
     var alignment: UInt64
 
-    fn __init__(inout self, size: UInt64, alignment: UInt64):
+    fn __init__(
+        inout self, ref: DTypePointer[type], size: UInt64, alignment: UInt64
+    ):
         self.size = size
-        if alignment == UInt64.MAX:
-            self.alignment = alignof[type]()
-            self.ref = DTypePointer[type].alloc(int(self.size))
-        else:
-            self.alignment = alignment
-            self.ref = DTypePointer[type].alloc(
-                int(self.size), alignment=int(self.alignment)
-            )
+        self.ref = ref
+        self.alignment = alignment
 
 
 @register_passable("trivial")
@@ -302,14 +298,28 @@ fn mgp_assert[message: StringLiteral](cond: Bool) raises:
 
 
 @mogg_register("mgp.buffer.alloc.static")
+@always_inline
 @export
 fn mgp_buffer_alloc_static[
     aRuntimeSlot: UInt64,
     bSize: UInt64,
     cRawAlign: UInt64,
     dDevice: StringLiteral,
-]() -> BufferRefABI[DType.uint8]:
-    return BufferRefABI[DType.uint8](bSize, cRawAlign)
+]() -> BufferRefABI[DType.int8]:
+    if cRawAlign == UInt64.MAX:
+        return BufferRefABI[DType.int8](
+            DTypePointer[DType.int8].alloc(int(bSize)),
+            int(bSize),
+            alignof[DType.int8](),
+        )
+    else:
+        return BufferRefABI[DType.int8](
+            DTypePointer[DType.int8].alloc(
+                int(bSize), alignment=int(cRawAlign)
+            ),
+            int(bSize),
+            int(cRawAlign),
+        )
 
 
 @mogg_register("mgp.cpu.tensor_spec.create")
