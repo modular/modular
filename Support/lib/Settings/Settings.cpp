@@ -70,6 +70,17 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
     return std::move(s);
   }
 
+  // If MODULAR_ACCESS_TOKEN is set, we request user info using that access
+  // token and extract the subject, then we request and save a certificate using
+  // that subject. We fail open and don't propagate errors in this case.
+  if (auto accessTokenOr = EntitlementStore::getAccessTokenFromEnv()) {
+    auto genOr =
+        EntitlementStore::generate(*cfgOr, httpCtx.copy(), accessTokenOr);
+    if (!genOr.isError()) {
+      return Settings(cfgOr.takeValue(), std::move(*genOr));
+    }
+  }
+
   // If we have decided that we should not create a new one if it's missing,
   // then simply return an empty one. In the future, this may instead propagate
   // the error above, as entitlements are not available.
@@ -82,9 +93,8 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
 
   // Finally, we don't have one, and we've decided we must have one - generate
   // it.
-  auto accessTokenOr = EntitlementStore::getAccessTokenFromEnv();
   auto genOr =
-      EntitlementStore::generate(*cfgOr, std::move(httpCtx), accessTokenOr);
+      EntitlementStore::generate(*cfgOr, std::move(httpCtx), std::nullopt);
   if (genOr.isError())
     return genOr.takeError();
 
