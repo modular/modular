@@ -65,11 +65,6 @@ void DebugInfoStrip::runOnOperation() {
       return WalkResult::skip();
     }
 
-    // If this is a function without debug info, skip the body.
-    if (isa<mlir::FunctionOpInterface>(op) &&
-        !isa<mlir::FusedLocWith<DIAttr>>(op->getLoc()))
-      return WalkResult::skip();
-
     // For everything else, update the location.
     replacer.replaceElementsIn(op, /*replaceAttrs=*/false,
                                /*replaceLocs=*/true);

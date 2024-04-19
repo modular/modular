@@ -114,6 +114,13 @@ void SharedState::setLocationDebugScope(LIT::FuncOp funcOp) {
   FileLineColLoc fileLineCol =
       funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
 
+  // Synthesized functions do not correspond to any source code, so we do not
+  // want to generate debug info and step into them.
+  if (funcOp.isSynthetic()) {
+    funcOp->setLoc(fileLineCol);
+    return;
+  }
+
   // Compute the subprogram flags.
   /// If we have any optimizations, mark the subprogram as optimized.
   DebugInfo::SubprogramFlags spFlags =

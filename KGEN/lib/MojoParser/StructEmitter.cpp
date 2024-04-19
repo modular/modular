@@ -32,7 +32,8 @@ LIT::FuncOp StructEmitter::createFunction(
     PogListAttr paramListAttrs, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
-    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix) {
+    ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
+    bool synthetic) {
   // If the result of the function is a non-trivial type, mark the function
   // effect as having an owned result so ownership tracking will notice it.
   if (ASTType(resultType).getRegisterPassability(loc, shared) !=
@@ -136,25 +137,26 @@ std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     Type resultType, ASTDecl &structDecl, SpecialFunctionKind specialFnID,
-    FnEffects fnEffects, StringRef suffix) {
+    FnEffects fnEffects, StringRef suffix, bool synthetic) {
   return synthesizeMethodInStruct(
       name, /*params=*/{}, /*paramListAttrs=*/PogListAttr::get(getContext()),
       argTypes, argConventions, argListAttrs, resultType, structDecl,
-      specialFnID, fnEffects, suffix);
+      specialFnID, fnEffects, suffix, synthetic);
 }
 
 std::pair<LIT::FuncOp, ASTDecl *> StructEmitter::synthesizeMethodInStruct(
     StringRef name, ArrayRef<ParamDeclAttr> params, PogListAttr paramListAttrs,
     ArrayRef<Type> argTypes, ArrayRef<ArgConvention> argConventions,
     PogListAttr argListAttrs, Type resultType, ASTDecl &structDecl,
-    SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix) {
+    SpecialFunctionKind specialFnID, FnEffects fnEffects, StringRef suffix,
+    bool synthetic) {
   StructDeclOp structOp = cast<StructDeclOp>(structDecl);
   ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockEnd(
       structOp.getLoc(), &structOp.getFields().front());
-  LIT::FuncOp funcOp =
-      createFunction(structDecl, name, params, paramListAttrs, argTypes,
-                     argConventions, argListAttrs, resultType, specialFnID,
-                     structDecl.getLoc(), builder, fnEffects, suffix);
+  LIT::FuncOp funcOp = createFunction(
+      structDecl, name, params, paramListAttrs, argTypes, argConventions,
+      argListAttrs, resultType, specialFnID, structDecl.getLoc(), builder,
+      fnEffects, suffix, synthetic);
 
   // Return null if the function already exists with the same signature.
   if (!funcOp)

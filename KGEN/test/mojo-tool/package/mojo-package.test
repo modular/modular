@@ -1,9 +1,7 @@
-// RUN: mojo package %S/test_package -o - | kgen-opt | FileCheck %s
+// RUN: mojo package %S/test_package -o - | kgen-opt -mlir-print-debuginfo | FileCheck %s
 // RUN: not mojo package %S/test_package_with_main -o - 2>&1 | FileCheck %s --check-prefix=MAIN_IN_PACKAGE
 
 // MAIN_IN_PACKAGE: defining 'main' within a package is not yet supported
-
-// CHECK-DAG: !subroutine{{[0-9]+}} =
 
 // CHECK: lit.package @test_package
 // CHECK-SAME: dependencies = #kgen<link.dependencies[@stdlib]>
@@ -27,6 +25,8 @@
 // CHECK:   lit.file_module @myfile2
 // CHECK:     lit.func export @"bar()"{{.*}}linkageName = "bar", preCompiledModuleRef = {{.*}}
 // CHECK-NEXT: lit.extern_func
+
+// CHECK-DAG: !subroutine{{[0-9]+}} =
 
 // CHECK: {-#
 // CHECK: dialect_resources
