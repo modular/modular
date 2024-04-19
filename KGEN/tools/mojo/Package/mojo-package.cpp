@@ -17,7 +17,7 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "LLCL/CompilerSupport/Context.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "Support/Compiler/MLIRDenseAttr.h"
+#include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Config.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Init/Init.h"
@@ -200,27 +200,6 @@ buildPackageModule(LIT::PackageOp parsedPackageOp) {
   return std::make_pair(std::move(packageModule), thePackage);
 }
 
-/// Attach the given post-parse module as an attribute to the package op being
-/// built. The attribute contains the serialized MLIR bytecode of the
-/// pre-elaboration module.
-static ErrorOrSuccess buildPostParseModule(ModuleOp theModule,
-                                           LIT::PackageOp thePackage) {
-  // Serialize the pre-elaboration module as MLIR bytecode.
-  WriteableBufferRef str = WriteableBuffer::get();
-  if (failed(mlir::writeBytecodeToFile(theModule, *str)))
-    return Error("could not write bytecode for package module");
-
-  // Attach the pre-elaboration module bytecode to the package op. Hash the
-  // bytecode data to generate a unique name for the attribute.
-  auto hash = llvm::BLAKE3::hash(
-      ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
-                        (const uint8_t *)str->getBufferEnd()));
-  thePackage.setPostParseModuleAttr(
-      createResourceAttr(theModule.getContext(), str->getBuffer(),
-                         "bytecode_" + llvm::toHex(hash, /*LowerCase=*/true)));
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // parsePackageArgs
 //===----------------------------------------------------------------------===//
@@ -336,8 +315,12 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   });
 
   // Attach the post-parse module to the package.
-  if (auto err = buildPostParseModule(theModule, thePackage))
-    return Error(llvm::formatv("compilation failed: {0}", err.getError()));
+  auto postParseModuleAttr = writeModuleToBytecodeAttr(theModule);
+  if (!postParseModuleAttr) {
+    return Error(
+        "compilation failed: unable to write bytecode for package module");
+  }
+  thePackage.setPostParseModuleAttr(postParseModuleAttr);
 
   // Run various check passes now to propagate warnings and errors up to the
   // user.
