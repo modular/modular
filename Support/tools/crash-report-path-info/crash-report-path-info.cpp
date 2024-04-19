@@ -8,6 +8,7 @@
 #include "Support/Configuration.h"
 #include "Support/CrashReporting.h"
 #include "Support/ErrorOr.h"
+#include "Support/Init/Init.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace M;
@@ -36,13 +37,12 @@ int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "Modular Crash Report Path Info Tool");
 
-  Config config;
-  if (ErrorOr<Config> configOr = Config::open()) {
-    llvm::errs() << "could not open configuration: " << configOr.getError()
-                 << '\n';
+  auto ctxOr = Init::createContext(
+      "crash-report-path-info",
+      Init::Options().withEntitlementPolicy(Settings::kAlwaysSucceed));
+  if (ctxOr.isError()) {
+    llvm::errs() << "could not create context: " << ctxOr.getError() << "\n";
     return EXIT_FAILURE;
-  } else {
-    config = std::move(*configOr);
   }
 
   auto modularHomeOr = Config::getModularDataFolderPath(/*create=*/false);
@@ -54,13 +54,13 @@ int main(int argc, char **argv) {
 
   switch (clOptions.property) {
   case Property::CrashDBPath: {
-    auto path = getCrashDatabasePath(config, *modularHomeOr);
+    auto path = getCrashDatabasePath((*ctxOr)->get<Settings>(), *modularHomeOr);
     llvm::outs() << path.native() << '\n';
     break;
   }
   case Property::HandlerPath:
     std::filesystem::path path;
-    if (auto pathOr = getCrashpadHandlerPath(config, argv[0])) {
+    if (auto pathOr = getCrashpadHandlerPath((*ctxOr)->get<Settings>())) {
       llvm::errs() << "could not determine crashpad handler path: "
                    << pathOr.getError() << '\n';
       return EXIT_FAILURE;

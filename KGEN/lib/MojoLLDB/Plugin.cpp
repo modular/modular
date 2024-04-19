@@ -31,14 +31,15 @@ using namespace M::KGEN::Mojo;
 //===--------------------------------------------------------------===//
 
 static ErrorOr<ContextRef> getOrCreateGlobalContext() {
-  // Disable crash reporting because this is being loaded as a plugin to
-  // another process. It is difficult to guarantee this is problem-free.
+  // Crash reporting should only really be used when we "own" the program, and
+  // that's not necessarily the case for LLDB... but we have no real better
+  // place to put this, since the only better place ('main' function of the
+  // LLDB driver) is upstream and hard to patch in our build.
   static ErrorOr<ContextRef> ctxOr = Init::createContext(
-      "mojo-lldb-plugin", Init::Options()
-                              .withRuntimeOptions(LLCL::RuntimeOptions()
-                                                      .withCPUAffinity(false)
-                                                      .withMainWillNotDonate())
-                              .withForceDisableCrashReporting(true));
+      "mojo-lldb-plugin",
+      Init::Options().withRuntimeOptions(LLCL::RuntimeOptions()
+                                             .withCPUAffinity(false)
+                                             .withMainWillNotDonate()));
   if (ctxOr.isError())
     return Error(ctxOr.getError());
   return ctxOr->copy();
@@ -53,12 +54,6 @@ static ContextRef getGlobalContext() {
 /// enabled, initialization will go through `lldb::PluginInitialize`.
 
 MODULAR_EXPORT bool LLDBPluginInitialize() {
-  // initCrashpadForProgram should only really be used when we "own" the
-  // program, and that's not necessarily the case for LLDB... but we have no
-  // real better place to put this, since the only better place ('main'
-  // function of the LLDB driver) is upstream and hard to patch in our build.
-  initCrashpadForProgram("lldb", "mojo-lldb");
-
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmParsers();
