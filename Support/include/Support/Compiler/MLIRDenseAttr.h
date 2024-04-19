@@ -7,6 +7,7 @@
 #ifndef SUPPORT_COMPILER_MLIRDENSEATTR_H
 #define SUPPORT_COMPILER_MLIRDENSEATTR_H
 
+#include "Support/Buffer.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M {
@@ -28,6 +29,11 @@ inline bool shouldUseOutOfLineAttrStorage(size_t numElements) {
 /// `data`. The data is always copied into the MLIR context.
 DenseResourceElementsAttr
 createResourceAttr(MLIRContext *ctx, ArrayRef<char> data, const Twine &name);
+
+/// Returns an attribute with the given `name` that represents the serialized
+/// `data`.
+DenseResourceElementsAttr createResourceAttr(MLIRContext *ctx, BufferRef data,
+                                             const Twine &name);
 } // namespace M
 
 #endif // SUPPORT_COMPILER_MLIRDENSEATTR_H

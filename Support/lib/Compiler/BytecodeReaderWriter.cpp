@@ -86,7 +86,7 @@ DenseResourceElementsAttr M::writeModuleToBytecodeAttr(ModuleOp module) {
   auto hash = llvm::BLAKE3::hash(
       ArrayRef<uint8_t>((const uint8_t *)str->getBufferStart(),
                         (const uint8_t *)str->getBufferEnd()));
-  return createResourceAttr(module->getContext(), str->getBuffer(),
+  return createResourceAttr(module->getContext(), std::move(str),
                             "bytecode_" +
                                 llvm::toHex(hash, /*LowerCase=*/true));
 }
