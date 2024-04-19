@@ -23,19 +23,6 @@ fn mogg_register(name: StringLiteral):
     return
 
 
-# TODO(#27757): This is a temporary decorator until kernels can be written
-#               with Mojo async/await, in which case we can inspect the kernel
-#               signature directly.
-fn mogg_will_become_async():
-    """
-    This decorator indicates the decorated Mojo function should be called on a
-    sub-task so as to not to block the main executor. Once kernels are
-    rewritten to use Mojo async/await this responsibility will fall back to the
-    kernel author, and no decorator will be necessary.
-    """
-    return
-
-
 fn mogg_register_override(name: StringLiteral, priority: Int):
     """
     This decorator registers a given mojo function as being an implementation
