@@ -1,0 +1,17 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "mojo-test-executor",
+    srcs = ["main.cpp"],
+    deps = [
+        "//KGEN:ExecutionEngine",
+        "//KGEN:LITDialect",
+        "//KGEN:LLDB",
+        "//KGEN:MojoJupyter",
+        "//KGEN:MojoTesting",
+        "//KGEN:ObjectCompiler",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
+        "//Support:Init",
+    ],
+)
