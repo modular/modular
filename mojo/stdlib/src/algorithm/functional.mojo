@@ -278,95 +278,6 @@ fn _perfect_vectorized_impl[
 
 
 @always_inline
-async fn async_parallelize[
-    func: fn (Int) capturing -> None
-](num_work_items: Int):
-    """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
-    and asynchronously completes when all are complete.
-
-    Parameters:
-        func: The function to invoke.
-
-    Args:
-        num_work_items: Number of parallel tasks.
-    """
-
-    @always_inline
-    @parameter
-    fn func_wrapper(i: Int) raises:
-        func(i)
-
-    # Defer to the raising overload.
-    await async_parallelize[func_wrapper](num_work_items)
-
-
-@always_inline
-async fn async_parallelize[
-    func: fn (Int) raises capturing -> None
-](num_work_items: Int):
-    """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
-    and asynchronously completes when all are complete.
-
-    TODO: Currently exceptions raised by func will cause a trap rather than
-          be propagated back to the caller.
-
-    Parameters:
-        func: The function to invoke.
-
-    Args:
-        num_work_items: Number of parallel tasks.
-    """
-    # We have no tasks, so do nothing.
-    if num_work_items == 0:
-        # No-op
-        return
-
-    # If profiling is enabled, and the caller's thread has an active profile
-    # entry, each sub-task will also be profiled with a reference back to the
-    # parent. Otherwise parent_id will be zero.
-    var parent_id = tracing.get_current_trace_id()
-
-    @parameter
-    @__copy_capture(parent_id)
-    @always_inline
-    fn func_wrapped(i: Int):
-        with FlushDenormals():
-            with Trace[TraceLevel.OP](
-                "task", task_id=i, parent_id=parent_id
-            ) as t:
-                try:
-                    func(i)
-                except e:
-                    abort(e)
-
-    # We'll run sub-tasks using the 'default' runtime. If the caller is part
-    # of a Mojo kernel invoked by the Modular Inference Engine then the
-    # default runtime will be that established by the engine. Otherwise a
-    # suitable runtime will be created if it does not already exist.
-    var rt = Runtime()
-
-    if num_work_items == 1 and rt.parallelism_level() == 1:
-        # Since there's only one item, and there's no support for parallelism,
-        # just run the work item now.
-        func_wrapped(0)
-        return
-
-    @always_inline
-    @parameter
-    async fn task_fn(i: Int):
-        func_wrapped(i)
-
-    var tasks = TaskGroupTaskList[NoneType](num_work_items)
-    var tg = TaskGroup(rt)
-    for i in range(num_work_items):
-        var task = tg.create_task[NoneType](task_fn(i))
-        tasks.add(task^)
-
-    await tg
-    _ = tasks^
-
-
-@always_inline
 fn sync_parallelize[func: fn (Int) capturing -> None](num_work_items: Int):
     """Executes func(0) ... func(num_work_items-1) as parallel sub-tasks,
     and returns when all are complete.
@@ -1247,20 +1158,6 @@ fn _elementwise_impl[
 
 
 @always_inline
-async fn _async_elementwise_impl[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-    simd_width: Int,
-    rank: Int,
-    /,
-    *,
-    target: StringLiteral = "cpu",
-](shape: StaticIntTuple[rank]):
-    constrained[target == "cpu", "unsupported target"]()
-    alias impl = _async_elementwise_impl_cpu_1d if rank == 1 else _async_elementwise_impl_cpu_nd
-    await impl[func, simd_width, rank](shape)
-
-
-@always_inline
 fn _elementwise[
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
@@ -1383,52 +1280,6 @@ fn _elementwise_impl_cpu_1d[
 
 
 @always_inline
-async fn _async_elementwise_impl_cpu_1d[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-    simd_width: Int,
-    rank: Int,
-](shape: StaticIntTuple[rank]):
-    """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
-    suitable combination of width and indices so as to cover shape. Returns when
-    all sub-tasks have completed.
-
-    Parameters:
-        func: The body function.
-        simd_width: The SIMD vector width to use.
-        rank: The rank of the buffer.
-
-    Args:
-        shape: The shape of the buffer.
-    """
-    constrained[rank == 1, "Specialization for 1D"]()
-
-    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
-
-    var problem_size = shape.flattened_length()
-    var num_workers = _get_num_workers(problem_size)
-    var chunk_size = div_ceil(problem_size, num_workers)
-
-    @always_inline
-    @__copy_capture(chunk_size, problem_size)
-    @parameter
-    fn task_func(i: Int):
-        var start_offset = i * chunk_size
-        var end_offset = min((i + 1) * chunk_size, problem_size)
-        var len = end_offset - start_offset
-
-        @always_inline
-        @__copy_capture(start_offset)
-        @parameter
-        fn func_wrapper[simd_width: Int](idx: Int):
-            var offset = start_offset + idx
-            func[simd_width, rank](offset)
-
-        vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](len)
-
-    await async_parallelize[task_func](num_workers)
-
-
-@always_inline
 fn _elementwise_impl_cpu_nd[
     func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
     simd_width: Int,
@@ -1521,73 +1372,6 @@ fn _elementwise_impl_cpu_nd[
             )
 
     sync_parallelize[task_func](num_workers)
-
-
-@always_inline
-async fn _async_elementwise_impl_cpu_nd[
-    func: fn[width: Int, rank: Int] (StaticIntTuple[rank]) capturing -> None,
-    simd_width: Int,
-    rank: Int,
-](shape: StaticIntTuple[rank]):
-    """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
-    suitable combination of width and indices so as to cover shape. Returns
-    when all sub-tasks have completed.
-
-    Parameters:
-        func: The body function.
-        simd_width: The SIMD vector width to use.
-        rank: The rank of the buffer.
-
-    Args:
-        shape: The shape of the buffer.
-    """
-    constrained[rank > 1, "Specialization for ND where N > 1"]()
-
-    alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
-
-    # Strategy: we parallelize over all dimensions except the innermost and
-    # vectorize over the innermost dimension. We unroll the innermost dimension
-    # by a factor of unroll_factor.
-
-    # Compute the number of workers to allocate based on ALL work, not just
-    # the dimensions we split across.
-    var total_size: Int = shape.flattened_length()
-    var num_workers = _get_num_workers(total_size)
-    var parallelism_size = total_size // shape[rank - 1]
-    var chunk_size = div_ceil(parallelism_size, num_workers)
-
-    @always_inline
-    @__copy_capture(chunk_size, parallelism_size)
-    @parameter
-    fn task_func(i: Int):
-        var start_parallel_offset = i * chunk_size
-        var end_parallel_offset = min((i + 1) * chunk_size, parallelism_size)
-
-        var len = end_parallel_offset - start_parallel_offset
-        if len <= 0:
-            return
-
-        for parallel_offset in range(
-            start_parallel_offset, end_parallel_offset
-        ):
-            var indices = _get_start_indices_of_nth_subvolume[rank, 1](
-                parallel_offset, shape
-            )
-
-            @always_inline
-            @parameter
-            fn func_wrapper[simd_width: Int](idx: Int):
-                # The inner most dimension is vectorized, so we set it
-                # to the index offset.
-                indices[rank - 1] = idx
-                func[simd_width, rank](indices)
-
-            # We vectorize over the innermost dimension.
-            vectorize[func_wrapper, simd_width, unroll_factor=unroll_factor](
-                shape[rank - 1]
-            )
-
-    await async_parallelize[task_func](num_workers)
 
 
 @always_inline

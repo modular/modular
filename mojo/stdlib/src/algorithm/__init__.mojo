@@ -8,7 +8,6 @@
 from .functional import (
     map,
     vectorize,
-    async_parallelize,
     sync_parallelize,
     parallelize,
     Static1DTileUnitFunc,
