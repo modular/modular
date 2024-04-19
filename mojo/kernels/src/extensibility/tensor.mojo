@@ -123,12 +123,13 @@ struct Tensor[type: DType, static_rank: Int]:
         return flat_index
 
     @always_inline
-    fn store(inout self, index: StaticIntTuple[static_rank], value: SIMD):
-        var val = rebind[SIMD[type, value.size]](value)
-        self._simd_store_internal(index, val)
+    fn store[
+        width: Int
+    ](inout self, index: StaticIntTuple[static_rank], value: SIMD[type, width]):
+        self._simd_store_internal(index, value)
 
     @always_inline
-    fn store(inout self, index: Int, value: SIMD):
+    fn store[width: Int](inout self, index: Int, value: SIMD[type, width]):
         constrained[
             self.static_rank == 1,
             (
@@ -141,12 +142,11 @@ struct Tensor[type: DType, static_rank: Int]:
         self.store(as_nd, value)
 
     @always_inline
-    fn _simd_store_internal(
-        inout self, index: StaticIntTuple[static_rank], val: SIMD
-    ):
+    fn _simd_store_internal[
+        width: Int
+    ](inout self, index: StaticIntTuple[static_rank], val: SIMD[type, width]):
         var flat_index = self._compute_flat_index(index)
-        var value = rebind[SIMD[type, val.size]](val)
-        self.data.store[width = val.size](flat_index, value)
+        self.data.store[width = val.size](flat_index, val)
 
     @always_inline
     fn get_nd_indices(self) -> StaticIntTuple[static_rank]:
