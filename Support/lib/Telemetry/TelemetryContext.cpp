@@ -188,6 +188,7 @@ TelemetryContext::TelemetryContext(
   assert(!hostInfoOr.isError() && "could not get the host machine info");
   // Set the CPU and architecture.
   attrs.SetAttribute("cpu.description", hostInfoOr->cpuModelName);
+  // WARNING: Metering & billing depends on cpu.arch. Do not remove!
   attrs.SetAttribute("cpu.arch", hostInfoOr->cpuArch);
   // Set the CPU features.
   std::vector<std::string_view> featuresView;
@@ -219,6 +220,7 @@ TelemetryContext::TelemetryContext(
 
   // Set the local machineid.
   static std::pair<std::string, std::string> local_ids = createLocalIDs();
+  // WARNING: Metering & billing depends on machineid. Do not remove!
   attrs.SetAttribute("machineid", local_ids.first);
   attrs.SetAttribute("sessionid", local_ids.second);
 
