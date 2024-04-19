@@ -1651,3 +1651,128 @@ cc_binary(
         "//Support:Globals",
     ],
 )
+
+genrule(
+    name = "gen_exports_file_linux",
+    srcs = ["@llvm-project//lldb:source/API/liblldb-private.exports"],
+    outs = ["exports_linux.txt"],
+    cmd = """
+cat > $(OUTS) <<EOF
+{
+  global:
+    $$(sed 's/$$/;/g' $(SRCS))
+};
+EOF
+""",
+)
+
+genrule(
+    name = "gen_exports_file_macos",
+    srcs = ["@llvm-project//lldb:source/API/liblldb-private.exports"],
+    outs = ["exports_macos.txt"],
+    cmd = "sed 's/^/_/g' $(SRCS) > $(OUTS)",
+)
+
+globals_library(
+    name = "LLDB",
+    srcs = [],
+    additional_linker_inputs = [
+        "@llvm-project//lldb:source/API/liblldb-private.exports",
+        ":gen_exports_file_linux",
+        ":gen_exports_file_macos",
+    ],
+    linkopts = ["-ledit"] + select({
+        "@platforms//os:linux": [
+            "-Wl,--export-dynamic-symbol-list=$(location :gen_exports_file_linux)",
+        ],
+        "@platforms//os:macos": [
+            "-Wl,-exported_symbols_list-=$(location :gen_exports_file_macos)",
+        ],
+    }),
+    deps = ["@llvm-project//lldb:liblldb.static"],
+)
+
+globals_library(
+    name = "MojoLLDB",
+    srcs = glob(["lib/MojoLLDB/**/*.cpp"]),
+    hdrs = glob(["lib/MojoLLDB/**/*.h"]),
+    copts = [
+        "-fvisibility=default",
+        "-iquoteexternal/",
+    ],
+    local_defines = [
+        "MODULAR_BUILDING_LIBRARY",
+    ],
+    deps = [
+        ":ExecutionEngine",
+        ":KGENDialect",
+        ":LLDB",
+        ":LLDB.headers",
+        ":MojoTooling",
+        ":ObjectCompiler",
+        "//Support:Base",
+        "//Support:CrashReporting",
+        "//Support:Init",
+        "@llvm-project//lldb/source/Plugins:PluginSymbolFileDWARFHeaders",
+    ],
+)
+
+genrule(
+    name = "gen_maptlotlib_initialization_script",
+    outs = ["gen_maptlotlib_initialization_tool.py"],
+    cmd = """
+cat > $(OUTS) <<EOF
+import sys
+
+print(
+    open(sys.argv[1]).read()
+    .replace("@ENABLE_MATPLOTLIB_STR@", open(sys.argv[2]).read())
+    .replace("@MATPLOTLIB_BACKEND_STR@", open(sys.argv[3]).read())
+)
+EOF
+""",
+)
+
+py_binary(
+    name = "gen_maptlotlib_initialization_tool",
+    srcs = [":gen_maptlotlib_initialization_script"],
+)
+
+genrule(
+    name = "gen_maptlotlib_initialization",
+    srcs = [
+        "lib/MojoJupyter/MatplotlibInitialization.h.in",
+        "lib/MojoJupyter/matplotlib_backend.py",
+        "lib/MojoJupyter/enable_matplotlib.py",
+    ],
+    outs = ["MojoJupyter/MatplotlibInitialization.h"],
+    cmd = """
+$(location :gen_maptlotlib_initialization_tool) \
+    $(location :lib/MojoJupyter/MatplotlibInitialization.h.in) \
+    $(location :lib/MojoJupyter/enable_matplotlib.py) \
+    $(location :lib/MojoJupyter/matplotlib_backend.py) > $(OUTS)
+""",
+    tools = [":gen_maptlotlib_initialization_tool"],
+)
+
+cc_library(
+    name = "MojoJupyter",
+    srcs = glob(["lib/MojoJupyter/*.cpp"]) + [":gen_maptlotlib_initialization"],
+    hdrs = glob([
+        "include/KGEN/MojoJupyter/*.h",
+    ]),
+    copts = [
+        "-fvisibility=default",
+        "-iquoteexternal/",
+    ],
+    local_defines = [
+        "MODULAR_BUILDING_JUPYTER_LIBRARY",
+    ],
+    strip_include_prefix = "include",
+    deps = [
+        ":KGENDialect",
+        ":MojoLLDB",
+        ":MojoTooling",
+        "@llvm-project//lldb/source/Plugins:PluginSymbolFileDWARFHeaders",
+    ],
+)

@@ -1,0 +1,23 @@
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+lit_tests(
+    srcs = glob(
+        ["**/*.mojo"],
+    ),
+    data = [
+        "//KGEN:LLDB.shared.file",
+        "//KGEN:MojoLLDB.shared.file",
+        "//KGEN:mojo-repl-entry-point",
+        "//Kernels/mojo/stdlib",
+        "@llvm-project//lldb:lldb-server",
+    ],
+    env = {
+        "LLDB_DEBUGSERVER_PATH": "$(location @llvm-project//lldb:lldb-server)",
+        "MODULAR_MOJO_IMPORT_PATH": "$(location //Kernels/mojo/stdlib)",
+        "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB.shared.file)",
+        "MODULAR_MOJO_REPL_ENTRY_POINT": "$(location //KGEN:mojo-repl-entry-point)",
+    },
+    tools = [
+        "//KGEN/tools/mojo-test-executor",
+    ],
+)
