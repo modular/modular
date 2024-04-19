@@ -9,4 +9,7 @@ add_modular_tool(crash-report-path-info
 
   LINK_LIBS PRIVATE
   MCrashReporting
+  MSupportInit
+  MSupportGlobals
+  LLCLRuntimeGlobals
 )

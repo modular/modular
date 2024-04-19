@@ -92,7 +92,7 @@ ErrorOr<ContextRef> Init::createContext(StringRef programName,
   // Enable crash logging, if appropriate.
   if (!options.forceDisableCrashReporting &&
       settings.getBool("crash_reporting.enabled", true)) {
-    initCrashpadForProgram(programName, settings);
+    initCrashpadForProgram(programName, &settings);
     registerSignalHandler(programName);
   }
 

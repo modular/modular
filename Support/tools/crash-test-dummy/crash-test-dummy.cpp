@@ -21,7 +21,7 @@ struct CLOptions {
 int main(int argc, char **argv) {
   CLOptions clOptions;
   llvm::cl::ParseCommandLineOptions(argc, argv, "Modular Crash Test Dummy");
-  initCrashpadForProgram(argv[0], "crash-test-dummy");
+  initCrashpadForProgram("crash-test-dummy");
 
   if (clOptions.simulate)
     generateNonFatalDump();
