@@ -4,5 +4,5 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: mojo build-project | FileCheck %s
-# CHECK: "displayName": "mojo-build-server"
+# RUN: mojo build-project 2>&1 | FileCheck %s
+# CHECK: client build/initialize/reply: displayName='mojo-build-server'

@@ -57,6 +57,7 @@ add_modular_tool(mojo
   MCrashReporting
   MojoToolsCommon
   MojoParser
+  MojoBuild
   MojoTesting
   MojoTooling
   MSupportFilesystem

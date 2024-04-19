@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MojoBuild
+  BSPClient.cpp
   BSPServer.cpp
   Protocol.cpp
   Server.cpp
