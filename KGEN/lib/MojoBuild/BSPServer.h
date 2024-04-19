@@ -8,7 +8,11 @@
 #define KGEN_MOJOBUILD_BSPSERVER_H
 
 #include "KGEN/MojoBuild/Protocol.h"
+#include "Support/ErrorOr.h"
+
 #include "mlir/Tools/lsp-server-support/Transport.h"
+
+#include <cstddef>
 
 namespace M::Build {
 
@@ -20,21 +24,32 @@ namespace M::Build {
 /// Mojo and building Mojo projects.
 class BSPServer {
 public:
-  BSPServer();
+  /// Initializes the server. When `debug` is true, the underlying JSON
+  /// transport is configured to accept messages delimited by `// -----`, for
+  /// testing and debugging purposes.
+  BSPServer(bool debug);
 
-  /// Executes the underlying JSON-RPC transport for the server.
-  mlir::LogicalResult run();
+  /// Starts the server runloop, blocking until an error occurs or the server
+  /// receives a shutdown request and exits normally.
+  ErrorOrSuccess run();
 
 private:
   /// Handles the `build/initialize` request.
   void onBuildInitialize(const InitializeBuildParams &params,
                          mlir::lsp::Callback<InitializeBuildResult> callback);
+  /// Handles the `build/shutdown` request.
+  void onBuildShutdown(const NoParams &params,
+                       mlir::lsp::Callback<std::nullptr_t> callback);
 
   /// A JSON-RPC transport that reads requests from stdin, and writes responses
   /// and notifications to stdout.
   mlir::lsp::JSONTransport transport;
   /// A message handler that maps request types to response callbacks.
   mlir::lsp::MessageHandler messageHandler;
+
+  /// Internal state to track whether the server has received a `build/shutdown`
+  /// request, indicating that it should shut down and exit successfully.
+  bool shutdownRequestReceived = false;
 };
 } // namespace M::Build
 

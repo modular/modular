@@ -19,6 +19,12 @@ fn print_help():
     print("        Mojo projects.")
     print("")
     print("OPTIONS")
+    print("    Debugging options")
+    print("        --debug")
+    print("            Use delimited text for JSON input to the server, and ")
+    print("            print pretty JSON output from the server, for")
+    print("            debugging and testing purposes.")
+    print("")
     print("    Common options")
     print("        --help, -h")
     print("            Displays help information.")
@@ -37,6 +43,8 @@ fn main():
         var a = args[i]
         if a == "-h" or a == "--help":
             help = True
+        elif a == "--debug":
+            debug = True
         else:
             unrecognized.append(a)
 
@@ -52,4 +60,4 @@ fn main():
         exit(1)
 
     # Launch the server by calling into the MojoBuild library.
-    exit(external_call["mojoBuildServerMain", Int]())
+    exit(external_call["mojoBuildServerMain", Int](debug))

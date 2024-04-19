@@ -1,0 +1,108 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/MojoBuild/BSPClient.h"
+#include "KGEN/MojoBuild/Protocol.h"
+#include "Support/ErrorOr.h"
+
+#include "mlir/Tools/lsp-server-support/Transport.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Program.h"
+
+#include <cstdio>
+#include <filesystem>
+#include <string>
+#ifndef _WIN32_
+#include <unistd.h>
+#endif
+
+using namespace M;
+using namespace M::Build;
+using namespace mlir;
+
+BSPClient::BSPClient(TempFile &&in, std::FILE *inFile, TempFile &&out,
+                     int outFD, const std::string &displayName,
+                     const std::filesystem::path &serverPath)
+    : in(std::move(in)), inFile(inFile), out(std::move(out)),
+      outOS(outFD, /*shouldClose=*/true), transport(inFile, outOS),
+      messageHandler(transport), displayName(displayName),
+      serverPath(serverPath) {
+  messageHandler.notification("build/initialize/reply", this,
+                              &BSPClient::onBuildInitializeReply);
+}
+
+ErrorOrSuccess BSPClient::run() {
+  // Launch the build server, redirecting its stdin (where it reads data from)
+  // from the output of the client, and its stdout (where it writes data to) to
+  // the input of the client.
+  const std::optional<StringRef> redirects[] = {
+      /*stdin=*/out.getPath().c_str(),
+      /*stdout=*/in.getPath().c_str(),
+      /*stderr=*/std::nullopt,
+  };
+  std::string executeError;
+  bool executionFailed = false;
+  llvm::sys::ProcessInfo processInfo = llvm::sys::ExecuteNoWait(
+      serverPath.c_str(), {serverPath.c_str()},
+      /*Env=*/std::nullopt, redirects,
+      /*MemoryLimit=*/0, &executeError, &executionFailed);
+  if (executionFailed)
+    return Error(llvm::formatv("could not execute '{0}': {1}", serverPath,
+                               executeError));
+
+  // Send the initialization request to the server.
+  lsp::Logger::debug("--> client build/initialize: displayName='{0}'",
+                     displayName);
+  transport.call("build/initialize", toJSON(InitializeBuildParams{displayName}),
+                 currentRequestID++);
+
+  // Repeatedly wait on the server until it exits.
+  while (true) {
+    std::string waitError;
+    llvm::sys::ProcessInfo waitInfo =
+        llvm::sys::Wait(processInfo, /*SecondsToWait=*/0, &waitError);
+    // The error message is populated whenever the process could not be waited
+    // upon, or whenever it exits abnormally, such as due to a core dump.
+    if (!waitError.empty())
+      return Error(
+          llvm::formatv("'{0}' exited abnormally: {1}", serverPath, waitError));
+
+    // The process ID is not set if the process being waited upon has not
+    // changed state. If it is set, the server must have exited.
+    if (waitInfo.Pid) {
+      if (waitInfo.ReturnCode == 0)
+        return success();
+      return Error(llvm::formatv("'{0}' exited unsuccessfully: exit code {0}",
+                                 serverPath, waitInfo.ReturnCode));
+    }
+
+    // We've checked above that the server is actually running; pump our client
+    // JSON transport to send and receive messages.
+    if (llvm::Error error = transport.run(messageHandler)) {
+      llvm::consumeError(std::move(error));
+      if (feof(inFile)) {
+        // We're using a temporary file as a message buffer; we don't care about
+        // reaching EOF, even though the transport treats this as an error.
+        // Clear the error and move on.
+        clearerr(inFile);
+      } else {
+        lsp::Logger::error("client transport error: {0}", error);
+        return Error(llvm::formatv("JSON transport error: {0}", error));
+      }
+    }
+  }
+}
+
+void BSPClient::onBuildInitializeReply(const InitializeBuildResult &result) {
+  lsp::Logger::debug("<-- client build/initialize/reply: displayName='{0}'",
+                     result.displayName);
+
+  lsp::Logger::debug("--> client build/shutdown");
+  transport.call("build/shutdown", nullptr, currentRequestID++);
+
+  lsp::Logger::debug("--> client exit");
+  transport.notify("exit", nullptr);
+}

@@ -35,6 +35,8 @@ struct InitializeBuildParams {
   std::string displayName;
 };
 
+/// Serialize a parameters object to JSON.
+llvm::json::Value toJSON(const InitializeBuildParams &value);
 /// Deserialize a parameters object from JSON.
 bool fromJSON(const llvm::json::Value &value, InitializeBuildParams &result,
               llvm::json::Path path);
@@ -45,7 +47,24 @@ struct InitializeBuildResult {
 };
 
 /// Serialize a result object to JSON.
-llvm::json::Value toJSON(const M::Build::InitializeBuildResult &value);
+llvm::json::Value toJSON(const InitializeBuildResult &value);
+/// Deserialize a result object from JSON.
+bool fromJSON(const llvm::json::Value &value, InitializeBuildResult &result,
+              llvm::json::Path path);
+
+//===----------------------------------------------------------------------===//
+// build/shutdown
+//===----------------------------------------------------------------------===//
+
+/// An empty set of parameters, such as for the `build/shutdown` method.
+struct NoParams {};
+
+/// Serialize an empty parameters object to JSON.
+llvm::json::Value toJSON(const NoParams &value);
+/// Deserialize an empty parameters object from JSON.
+bool fromJSON(const llvm::json::Value &value, NoParams &result,
+              llvm::json::Path path);
+
 } // namespace Build
 } // namespace M
 

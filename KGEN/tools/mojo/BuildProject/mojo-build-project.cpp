@@ -7,12 +7,14 @@
 #include "mojo-build-project.h"
 #include "../../common/Telemetry.h"
 
+#include "KGEN/MojoBuild/BSPClient.h"
 #include "KGEN/Support/Configuration.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Init/Init.h"
 #include "Support/MDialect/MDialect.h"
 
+#include "mlir/Tools/lsp-server-support/Logging.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
@@ -21,6 +23,10 @@
 
 #include <optional>
 #include <string>
+
+#ifndef _WIN32_
+#include <unistd.h>
+#endif
 
 using namespace M;
 
@@ -100,24 +106,34 @@ static int buildProject(const State &state) {
     return state.reportError(serverPathOr.getError());
   std::string serverPath = *serverPathOr;
 
-  // For now, as a proof of concept, send delimited messages to the build
-  // server.
-  auto inOr = writeTempFile(
-      "mojo-build-project-%%%%%%.json", [](llvm::raw_ostream &in) {
-        in << "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"build/initialize\","
-           << "\"params\":{\"displayName\":\"mojo-build-project\"}}\n";
-        in << "// -----\n";
-        in << "{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}\n";
-      });
+  // Create temporary files to marshall the input to, and output from, the
+  // client (which in this case is this executable, the `mojo build-project`
+  // command).
+  auto inOr = TempFile::create("mojo-build-project-in-%%%%%%.json");
+  auto outOr = TempFile::create("mojo-build-project-out-%%%%%%.json");
   if (inOr.isError())
     return state.reportError(inOr.getError());
+  if (outOr.isError())
+    return state.reportError(outOr.getError());
   TempFile in = std::move(*inOr);
+  TempFile out = std::move(*outOr);
 
-  return llvm::sys::ExecuteAndWait(
-      serverPath, {serverPath},
-      /*Env=*/std::nullopt,
-      /*Redirects=*/
-      {in.getPath().c_str(), std::nullopt, std::nullopt});
+#ifndef _WIN32_
+  std::FILE *inFile = fdopen(dup(in.getFD()), "r");
+  int outFD = dup(out.getFD());
+#else
+  std::FILE *inFile = fdopen(_dup(in.getFD()), "r");
+  int outFD = _dup(out.getFD());
+#endif
+
+  mlir::lsp::Logger::setLogLevel(mlir::lsp::Logger::Level::Debug);
+  Build::BSPClient client(std::move(in), inFile, std::move(out), outFD,
+                          "mojo-build-project", serverPath);
+  ErrorOrSuccess result = client.run();
+  if (result.isError())
+    return state.reportError(result.getError());
+
+  return 0;
 }
 
 void M::registerBuildProjectSubcommand(SubcommandRegistry &registry) {

@@ -15,6 +15,10 @@ using namespace M::Build;
 // build/initialize
 //===----------------------------------------------------------------------===//
 
+llvm::json::Value M::Build::toJSON(const InitializeBuildParams &value) {
+  return llvm::json::Object{{"displayName", value.displayName}};
+}
+
 bool M::Build::fromJSON(const llvm::json::Value &value,
                         InitializeBuildParams &result, llvm::json::Path path) {
   llvm::json::ObjectMapper o(value, path);
@@ -23,4 +27,21 @@ bool M::Build::fromJSON(const llvm::json::Value &value,
 
 llvm::json::Value M::Build::toJSON(const InitializeBuildResult &value) {
   return llvm::json::Object{{"displayName", value.displayName}};
+}
+
+bool M::Build::fromJSON(const llvm::json::Value &value,
+                        InitializeBuildResult &result, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("displayName", result.displayName);
+}
+
+//===----------------------------------------------------------------------===//
+// build/shutdown
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value M::Build::toJSON(const NoParams &) { return nullptr; }
+
+bool M::Build::fromJSON(const llvm::json::Value &, NoParams &,
+                        llvm::json::Path) {
+  return true;
 }
