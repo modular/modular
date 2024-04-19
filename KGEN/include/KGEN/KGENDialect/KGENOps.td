@@ -955,13 +955,11 @@ def KGEN_StageClosureOp : KGENOp<"stage_closure",
     ```
   }];
 
-  let arguments = (ins OptionalAttr<Builtin_LocationAttr>:$callLoc);
   let results = (outs KGEN_SignatureType:$result);
   let regions = (region SizedRegion<1>:$bodyRegion);
 
   let assemblyFormat = [{
     custom<StageClosureOp>(type($result), $bodyRegion) attr-dict
-    (`callLoc` `(` $callLoc^ `)`)?
   }];
 
   let extraClassDeclaration = [{

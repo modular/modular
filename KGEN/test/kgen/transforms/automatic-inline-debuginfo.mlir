@@ -9,13 +9,10 @@
 
 #callerSp = #debuginfo.subprogram<name = <"caller">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
-// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = <"call_async">
 #asyncCallerSp = #debuginfo.subprogram<name = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
 #local_variable0 = #debuginfo.local_variable<scope = #callee0Sp, name = "foo"> : !debuginfo.unresolved<index>
 #local_variable1 = #debuginfo.local_variable<scope = #callee1Sp, name = "bar"> : !debuginfo.unresolved<index>
 
-// CHECK-DAG: #[[LOC_ASYNC_CALLER:.*]] = loc("bar.mlir":18:7)
-// CHECK-DAG: #[[LOC_SCOPED_CALLER:.*]] = loc(fused<#[[SP_ASYNC]]>[#[[LOC_ASYNC_CALLER]]])
 #locAsyncCaller = loc(fused<#asyncCallerSp>["bar.mlir":18:7])
 
 // COM: Test location handling for two-level of fully-inlined exported function
@@ -64,18 +61,25 @@ kgen.func @nodebug_inline_me(%arg0: index) -> index {
 
 // CHECK-LABEL: kgen.func @call_async
 kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
-  // CHECK-NEXT: [[IDX2:%.*]] = index.constant 2 loc(#[[LOC_SCOPED_CALLER]])
+  // CHECK-NEXT: [[IDX2:%.*]] = index.constant 2 loc(#[[LOC_SCOPED_CALLER:.*]])
   %idx2 = index.constant 2 loc(#locAsyncCaller)
   // CHECK-NEXT: [[V0:%.*]]lit.async.execute <() -> index> {
   // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
-  // DEFERRED-NEXT: } {inliner_debuginfo_update = 3 : i8} callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
-  // IMMEDIATE-NEXT: } callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_END:.*]])
+  // DEFERRED-NEXT: } {inliner_debuginfo_update = 3 : i8} loc(#[[LOC_ASYNC_EXECUTE]])
+  // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE]])
   %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
   kgen.return %0: !pop.coroutine<() -> (index)> loc(#locAsyncCaller)
 // CHECK-NEXT: } loc(#[[LOC_SCOPED_CALLER]])
 } loc(#locAsyncCaller)
+
+
+// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = <"call_async">
+// CHECK-DAG: #[[LOC_ASYNC_CALLER:.*]] = loc("bar.mlir":18:7)
+// CHECK-DAG: #[[LOC_SCOPED_CALLER]] = loc(fused<#[[SP_ASYNC]]>[#[[LOC_ASYNC_CALLER]]])
+// CHECK-DAG: #[[CALL_LOC:.*]] = #debuginfo.call_loc<#[[LOC_SCOPED_CALLER]]>
+// CHECK-DAG: #[[LOC_ASYNC_EXECUTE]] = loc(fused<#[[CALL_LOC]]>[#[[LOC_ASYNC_FILE_LOC:.*]]])
 
 // -----
 

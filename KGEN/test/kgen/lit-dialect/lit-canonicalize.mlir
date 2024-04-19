@@ -80,6 +80,9 @@ lit.func @struct_ops_fold() -> (!lit.declref<@FooStruct>, !lit.declref<@FooStruc
 #loc4 = loc(fused<#subprogram>[#loc1])
 #loc5 = loc(fused<#subprogram1>[#loc2])
 #loc6 = loc(fused<#subprogram1>[#loc3])
+#call_loc = #debuginfo.call_loc<#loc4>
+#loc7 = loc(fused<#call_loc>[#loc2])
+#loc8 = loc(fused<#subprogram1>[#loc7])
 
 // CHECK-LABEL: kgen.func @no_hoist
 kgen.func @no_hoist() -> !pop.coroutine<() -> ()> {
@@ -90,7 +93,7 @@ kgen.func @no_hoist() -> !pop.coroutine<() -> ()> {
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
     kgen.return  loc(#loc5)
-  } callLoc(#loc4) loc(#loc5)
+  } loc(#loc8)
   kgen.return %0 : !pop.coroutine<() -> ()> loc(#loc4)
 } loc(#loc4)
 

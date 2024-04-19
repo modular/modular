@@ -36,12 +36,16 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
                                    ValueRange(), label);
   } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
     // Nested function-like op should retain scoped location of the callee.
-    scope = b.create<LIT::AsyncExecuteOp>(region.getParentOp()->getLoc(),
-                                          asyncCall.getType(), call.getLoc());
+    auto inlinedSubScoped = b.create<LIT::AsyncExecuteOp>(
+        region.getParentOp()->getLoc(), asyncCall.getType());
+    inlinedSubScoped.setCallLocAttr(call.getLoc());
+    scope = inlinedSubScoped;
   } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {
     // Nested function-like op should retain scoped location of the callee.
-    scope = b.create<StageClosureOp>(region.getParentOp()->getLoc(),
-                                     createClosure.getType(), call.getLoc());
+    auto inlinedSubScoped = b.create<StageClosureOp>(
+        region.getParentOp()->getLoc(), createClosure.getType());
+    inlinedSubScoped.setCallLocAttr(call.getLoc());
+    scope = inlinedSubScoped;
   } else {
     llvm::report_fatal_error("unknown call operation '" +
                              call->getName().getStringRef() +

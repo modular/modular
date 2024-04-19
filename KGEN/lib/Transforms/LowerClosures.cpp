@@ -121,12 +121,19 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
                               Shared<SymbolTable &> &sharedTable,
                               size_t &nameCounter,
                               mlir::DominanceInfo &domInfo) {
+  // Gather location info from encoded CallLoc, and set the op's location to the
+  // unencoded location so that inlined body ops get the right callsite loc.
+  mlir::LocationAttr callLoc = op.getCallLocAttr();
+  Location unencodedLoc = op.getLocNoInlined();
+  op.getOperation()->setLoc(unencodedLoc);
+
   SmallVector<Value> captures;
   Region &body = op.getBodyRegion();
   liftClosureRegion(body, captures, domInfo);
 
   // Insert the coroutine handle.
-  ImplicitLocOpBuilder b(op.getLoc(), OpBuilder::atBlockBegin(&body.front()));
+  ImplicitLocOpBuilder b(op.getLocNoInlined(),
+                         OpBuilder::atBlockBegin(&body.front()));
   Value coroHdl = b.create<CoroutineHandleOp>(op.getType());
 
   // Replace all returns.
@@ -158,7 +165,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
 
   // Create the call with a dummy callee.
   b.setInsertionPoint(op);
-  if (mlir::LocationAttr callLoc = op.getCallLocAttr())
+  if (callLoc)
     b.setLoc(callLoc);
   auto call = b.create<CallOp>(
       op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
@@ -184,6 +191,12 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
                               Shared<SymbolTable &> &sharedTable,
                               size_t &nameCounter,
                               mlir::DominanceInfo &domInfo) {
+  // Gather location info from encoded CallLoc, and set the op's location to the
+  // unencoded location so that inlined body ops get the right callsite loc.
+  mlir::LocationAttr callLoc = op.getCallLocAttr();
+  Location unencodedLoc = op.getLocNoInlined();
+  op.getOperation()->setLoc(unencodedLoc);
+
   Region &body = op.getBodyRegion();
   unsigned numArgs = body.getNumArguments();
   SmallVector<Value> captures;
@@ -221,7 +234,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   else
     name = b.getStringAttr(parent.getSymName() + "_closure_" +
                            Twine(nameCounter++));
-  auto lifted = b.create<FuncOp>(op->getLoc(), name, sig, InlineLevel::Never);
+  auto lifted = b.create<FuncOp>(op.getLoc(), name, sig, InlineLevel::Never);
   lifted.getBodyRegion().takeBody(body);
 
   // Insert the function into the symbol table. Lock the symbol table, which
@@ -232,7 +245,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
       });
 
   b.setInsertionPoint(op);
-  if (mlir::LocationAttr callLoc = op.getCallLocAttr())
+  if (callLoc)
     b.setLoc(callLoc);
   auto create = b.create<CreateClosureOp>(
       op.getType(), SymbolConstantAttr::get(FlatSymbolRefAttr::get(name), sig),
