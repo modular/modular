@@ -9,11 +9,33 @@
 from gpu.device_print import _printf
 from gpu.host import Context, Function
 
+from layout import Layout
 
-# CHECK: Hello I got 42 7.2
+from builtin.io import _print_fmt
+from utils.inlined_string import _FixedString
+
+
 fn main() raises:
     fn do_print(x: Int, y: Float64):
-        _printf("Hello I got %lld %g\n", x, y)
+        #
+        # Test printing primitive types
+        #
+
+        # CHECK: Hello I got 42 7.2
+        _print_fmt("Hello I got ", x, end="")
+        # TODO: Make Float64 support Formattable
+        _printf(" %g\n", [y])
+
+        #
+        # Test printing some non-primitive types
+        #
+
+        alias layout_str = _FixedString[50].format_sequence(
+            Layout.row_major(2, 3)
+        )
+
+        # CHECK: layout from GPU: ((2, 3):(3, 1))
+        _print_fmt("layout from GPU: ", layout_str)
 
     with Context() as ctx:
         var func = Function[__type_of(do_print), do_print]()
