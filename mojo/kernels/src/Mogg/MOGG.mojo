@@ -52,7 +52,7 @@ from sys.param_env import is_defined
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
 from algorithm import reduce_shape, sync_parallelize, vectorize
-from algorithm.functional import _async_elementwise_impl, _elementwise_impl
+from algorithm.functional import _elementwise_impl
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
     _reduce_generator,
@@ -99,7 +99,6 @@ from nn.conv_transpose import (
 from nn.cumsum import cumsum as _cumsum
 from nn.flash_attention import flash_attention as cpu_flash_attention
 from nn.gather_scatter import Axis
-from nn.gather_scatter import async_gather as _async_gather
 from nn.gather_scatter import gather as _gather
 from nn.gather_scatter import gather_nd as _gather_nd
 from nn.gather_scatter import (
@@ -538,7 +537,6 @@ fn destruct_buffer_list[
 
 # TODO(#27757): All calls with concrete body functions are as if annotated with
 #               @mogg_register("mo.original_op")
-#               @mogg_will_become_async
 @always_inline
 fn elementwise_wrapper[
     trace_description: StringLiteral,
@@ -573,29 +571,15 @@ fn elementwise_wrapper[
         "mojo.elementwise",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ) as t:
-
-        @parameter
-        if single_thread_blocking_override:
-            _elementwise_impl[
-                func,
-                simd_width,
-                rank,
-                use_blocking_impl=single_thread_blocking_override,
-                target=target,
-            ](
-                buffer.dynamic_shape,
-            )
-        else:
-            var coro = _async_elementwise_impl[
-                func,
-                simd_width,
-                rank,
-                target=target,
-            ](
-                buffer.dynamic_shape,
-            )
-            var task = MojoCallTask(coro^, ctx)
-            (task^)()
+        _elementwise_impl[
+            func,
+            simd_width,
+            rank,
+            use_blocking_impl=single_thread_blocking_override,
+            target=target,
+        ](
+            buffer.dynamic_shape,
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -2066,7 +2050,6 @@ fn mogg_gather_sum[
 
 
 @mogg_register("mo.gather")
-@mogg_will_become_async
 @always_inline
 @export
 fn gather[
@@ -2107,41 +2090,20 @@ fn gather[
         )
 
     # FIXME(#26008): async raising functions are temporarily disabled.
-    @parameter
-    if single_thread_blocking_override:
-        _gather[
-            type,
-            indices_type,
-            input_0_fn,
-            load_indices,
-            output_0_fn,
-            target=target,
-            single_thread_blocking_override=single_thread_blocking_override,
-        ](
-            Axis(axis_buffer[0], in_rank),
-            input_shape,
-            indices.dynamic_shape,
-            output_shape,
-        )
-    else:
-        var coro = _async_gather[
-            type,
-            in_rank,
-            indices_type,
-            indices_rank,
-            output_rank,
-            input_0_fn,
-            load_indices,
-            output_0_fn,
-            target=target,
-        ](
-            Axis(axis_buffer[0], in_rank),
-            input_shape,
-            indices.dynamic_shape,
-            output_shape,
-        )
-        var task = MojoCallRaisingTask(coro^, ctx)
-        (task^)()
+    _gather[
+        type,
+        indices_type,
+        input_0_fn,
+        load_indices,
+        output_0_fn,
+        target=target,
+        single_thread_blocking_override=single_thread_blocking_override,
+    ](
+        Axis(axis_buffer[0], in_rank),
+        input_shape,
+        indices.dynamic_shape,
+        output_shape,
+    )
 
 
 # ===----------------------------------------------------------------------===#
