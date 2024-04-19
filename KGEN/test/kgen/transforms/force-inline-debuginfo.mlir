@@ -10,20 +10,14 @@
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = <"inline_me">
 #calleeSp = #debuginfo.subprogram<name = <"inline_me">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 #callerSp = #debuginfo.subprogram<name = <"caller">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
-// CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = <"call_async">
 #asyncCallerSp = #debuginfo.subprogram<name = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!pop.coroutine<() -> (index)>>): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #calleeSp, name = "foo"> : !debuginfo.unresolved<index>
 
-// CHECK-DAG: #[[LOC_ASYNC_CALLER:.*]] = loc("bar.mlir":18:7)
-// CHECK-DAG: #[[LOC_SCOPED_CALLER:.*]] = loc(fused<#[[SP_ASYNC]]>[#[[LOC_ASYNC_CALLER]]])
 #locAsyncCaller = loc(fused<#asyncCallerSp>["bar.mlir":18:7])
 
-// CHECK-DAG: #[[LOC_CALLSITE_FILE:.*]] = loc("bar.mlir":27:8)
 #locCallsite = loc("bar.mlir":27:8)
 
-// CHECK-DAG: #[[LOC_CALLSITE:.*]] = loc(fused<{{.*}}#[[LOC_CALLSITE_FILE]]
 #locCaller = loc(fused<#callerSp>[#locCallsite])
-// CHECK-DAG: #[[INLINED_LOC:.*]] = loc(callsite(#[[LOC_SCOPED_CALLER]] at
 
 #valueLoc = loc(fused<#calleeSp>[#locCallsite])
 
@@ -68,13 +62,13 @@ kgen.func @call_inline_me() -> index {
 
 // CHECK-LABEL: kgen.func @call_async
 kgen.func @call_async() -> !pop.coroutine<() -> (index)> {
-  // CHECK-NEXT: %idx2 = index.constant 2 loc(#[[LOC_SCOPED_CALLER]])
+  // CHECK-NEXT: %idx2 = index.constant 2 loc(#[[LOC_SCOPED_CALLER:.*]])
   %idx2 = index.constant 2 loc(#locAsyncCaller)
   // CHECK-NEXT: lit.async.execute <() -> index>
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx2 : index loc(#[[LOC_VALUE:.*]])
-  // CHECK-NEXT:   kgen.return %idx2 : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
-  // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_EXECUTE]])
-  // IMMEDIATE-NEXT: } callLoc(#[[LOC_SCOPED_CALLER]]) loc(#[[LOC_ASYNC_EXECUTE]])
+  // CHECK-NEXT:   kgen.return %idx2 : index loc(#[[LOC_ASYNC_EXECUTE_RET:.*]])
+  // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} loc(#[[LOC_ASYNC_EXECUTE1:.*]])
+  // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE1:.*]])
   %coroHdl = lit.async.call[(index) async -> index: @inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
   kgen.return %coroHdl : !pop.coroutine<() -> (index)> loc(#locAsyncCaller)
@@ -91,12 +85,12 @@ kgen.func @async_wrapper() -> !pop.coroutine<() -> (index)> always_inline {
 
 // CHECK-LABEL: kgen.func @call_async_indirect
 kgen.func @call_async_indirect() -> !pop.coroutine<() -> (index)> {
-  // CHECK-NEXT: %idx3 = index.constant 3 loc(#[[INLINED_LOC]])
+  // CHECK-NEXT: %idx3 = index.constant 3 loc(#[[INLINED_LOC:.*]])
   // CHECK-NEXT: lit.async.execute <() -> index>
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE]])
-  // CHECK-NEXT:   kgen.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE]])
-  // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} callLoc(#[[INLINED_LOC]]) loc(#[[LOC_ASYNC_EXECUTE]])
-  // IMMEDIATE-NEXT: } callLoc(#[[INLINED_LOC]]) loc(#[[LOC_ASYNC_EXECUTE]])
+  // CHECK-NEXT:   kgen.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE_RET2:.*]])
+  // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} loc(#[[LOC_ASYNC_EXECUTE2:.*]])
+  // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE2:.*]])
   %1 = kgen.call @async_wrapper() : () -> !pop.coroutine<() -> (index)> loc(#locCaller)
   kgen.return %1 : !pop.coroutine<() -> (index)> loc(#locCaller)
 } loc(#locCaller)
@@ -134,12 +128,24 @@ kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
   kgen.return %1 : index
 }
 
+// CHECK-DAG: #[[LOC_ASYNC_CALLER:.*]] = loc("bar.mlir":18:7)
+// CHECK-DAG: #[[LOC_SCOPED_CALLER]] = loc(fused<#[[SP_ASYNC:.*]]>[#[[LOC_ASYNC_CALLER]]])
+// CHECK-DAG: #[[LOC_CALLSITE_FILE:.*]] = loc("bar.mlir":27:8)
+// CHECK-DAG: #[[LOC_CALLSITE:.*]] = loc(fused<{{.*}}#[[LOC_CALLSITE_FILE]]
+// CHECK-DAG: #[[INLINED_LOC]] = loc(callsite(#[[LOC_SCOPED_CALLER]] at
+
+// CHECK-DAG: #[[SP_ASYNC]] = #debuginfo.subprogram<name = <"call_async">
 // CHECK-DAG: #[[LOC:loc[0-9]+]] = loc("foo.mlir":13:1)
 // CHECK-DAG: #[[LOC_ARG:loc[0-9]+]] = loc("foo.mlir":13:12)
 
 // CHECK-DAG: #[[LOC_VALUE_INLINED]] = loc(callsite(#[[LOC_VALUE:loc[0-9]+]] at #[[LOC_CALLSITE]]))
 // CHECK-DAG: #[[LOC_VALUE]] = loc(fused<#[[SP]]>[#[[LOC_ARG]]])
-// CHECK-DAG: #[[LOC_ASYNC_EXECUTE]] = loc(fused<#[[SP]]>[#[[LOC]]])
+// CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_LOC1:.*]] = #debuginfo.call_loc<#[[LOC_SCOPED_CALLER]]>
+// CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_LOC2:.*]] = #debuginfo.call_loc<#[[INLINED_LOC]]>
+// CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_ENCODED1:.*]] = loc(fused<#[[LOC_ASYNC_EXEC_CALL_LOC1]]>[#[[LOC]]])
+// CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_ENCODED2:.*]] = loc(fused<#[[LOC_ASYNC_EXEC_CALL_LOC2]]>[#[[LOC]]])
+// CHECK-DAG: #[[LOC_ASYNC_EXECUTE1]] = loc(fused<#[[SP]]>[#[[LOC_ASYNC_EXEC_CALL_ENCODED1]]])
+// CHECK-DAG: #[[LOC_ASYNC_EXECUTE2]] = loc(fused<#[[SP]]>[#[[LOC_ASYNC_EXEC_CALL_ENCODED2]]])
 
 // -----
 

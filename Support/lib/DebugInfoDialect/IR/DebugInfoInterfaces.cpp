@@ -102,27 +102,48 @@ static LogicalResult verifyScope(InlinedSubprogramScoped inlined,
 }
 
 LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
+
+  auto verifyNormal = [&](Location loc) -> LogicalResult {
+    if (!isa<FileLineColLoc>(loc)) {
+      return op.emitOpError(
+                 "must contain only file/line/col location, but got ")
+             << loc;
+    }
+    return success();
+  };
+
+  auto verifyInlinedSubprogramScoped = [&](Location loc,
+                                           bool verifyInner) -> LogicalResult {
+    if (auto fused = dyn_cast<mlir::FusedLocWith<DICallLocAttr>>(loc)) {
+      ArrayRef<Location> locs = fused.getLocations();
+      if (locs.size() != 1)
+        return op.emitOpError("must contain exactly one location");
+      if (verifyInner)
+        return verifyNormal(locs[0]);
+    } else {
+      if (verifyInner)
+        return verifyNormal(loc);
+    }
+    return success();
+  };
+
   Location funcLoc = op->getLoc();
+  bool inlinedSPS = dyn_cast<InlinedSubprogramScoped>(op.getOperation());
   auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(funcLoc);
   if (!fusedLoc) {
     // If the function doesn't contain a debuginfo scope, we don't need to
-    // verify anything. Named locations indicate that we are dealing with some
-    // external location, which may not comply with our rules.
+    // verify anything, except InlinedSubprogramScoped structure. Named
+    // locations indicate that we are dealing with some external location, which
+    // may not comply with our rules.
     if (funcLoc->findInstanceOf<mlir::FusedLocWith<DIScopeAttr>>()) {
       return op.emitOpError("without debuginfo scope must contain only "
                             "file/line/col location but it is ")
              << funcLoc;
     }
+    if (inlinedSPS)
+      return verifyInlinedSubprogramScoped(funcLoc, false);
     return success();
   }
-
-  ArrayRef<Location> locs = fusedLoc.getLocations();
-  if (locs.size() != 1)
-    return op.emitOpError("must contain exactly one location");
-
-  if (!isa<FileLineColLoc>(locs[0]))
-    return op.emitOpError("must contain only file/line/col location, but got ")
-           << locs[0];
 
   DIScopeAttr scope = fusedLoc.getMetadata();
   auto funcScope = dyn_cast<DISubprogramAttr>(scope);
@@ -130,6 +151,14 @@ LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
     return op.emitOpError("must have subprogram scope in location, but got ")
            << scope;
   }
+  ArrayRef<Location> locs = fusedLoc.getLocations();
+  if (locs.size() != 1)
+    return op.emitOpError("must contain exactly one location");
+  LogicalResult innerCheck = inlinedSPS
+                                 ? verifyInlinedSubprogramScoped(locs[0], true)
+                                 : verifyNormal(locs[0]);
+  if (innerCheck.failed())
+    return innerCheck;
 
   // We walk pre-order, and skip nested functions.
   WalkResult res =
@@ -147,6 +176,68 @@ LogicalResult impl::verifySubprogramScoped(SubprogramScoped op) {
         return WalkResult::advance();
       });
   return failure(res.wasInterrupted());
+}
+
+Location InlinedSubprogramScoped::getLocNoInlinedImpl() {
+  if (auto fusedCallLoc =
+          dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(getLoc())) {
+    assert(fusedCallLoc.getLocations().size() >= 1 &&
+           "callLoc fused loc bad size");
+    return fusedCallLoc.getLocations()[0];
+  }
+  if (auto fusedLoc =
+          dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(getLoc())) {
+    auto locs = fusedLoc.getLocations();
+    assert(locs.size() >= 1 && "callLoc fused loc bad size");
+    if (auto innerFused =
+            dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(locs[0])) {
+      auto innerLocs = innerFused.getLocations();
+      assert(innerLocs.size() >= 1 && "callLoc inner fused bad size");
+      // Re-fuse the inner location with the scope.
+      return FusedLoc::get(getContext(), innerLocs[0], fusedLoc.getMetadata());
+    } else {
+      return getLoc();
+    }
+  }
+  return getLoc();
+}
+
+mlir::LocationAttr InlinedSubprogramScoped::getCallLocAttrImpl() {
+  if (auto fusedImmediate =
+          dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(getLoc()))
+    return fusedImmediate.getMetadata().getCallLoc();
+
+  auto fusedLoc =
+      dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(getLoc());
+  if (!fusedLoc)
+    return {};
+
+  auto locs = fusedLoc.getLocations();
+  assert(locs.size() >= 1 && "callLoc fused loc bad size");
+
+  if (auto innerFused =
+          dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(locs[0]))
+    return innerFused.getMetadata().getCallLoc();
+  else
+    return {};
+}
+
+void InlinedSubprogramScoped::setCallLocAttrImpl(mlir::LocationAttr callLoc) {
+  Location callLocStripped = getLocNoInlined();
+  if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(
+          callLocStripped)) {
+    auto locs = fusedLoc.getLocations();
+    assert(locs.size() >= 1 && "callLoc fused loc bad size");
+    Location fusedInner =
+        FusedLoc::get(getContext(), locs[0],
+                      DebugInfo::DICallLocAttr::get(getContext(), callLoc));
+    getOperation()->setLoc(
+        FusedLoc::get(getContext(), fusedInner, fusedLoc.getMetadata()));
+  } else {
+    getOperation()->setLoc(
+        FusedLoc::get(getContext(), callLocStripped,
+                      DebugInfo::DICallLocAttr::get(getContext(), callLoc)));
+  }
 }
 
 #include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.cpp.inc"

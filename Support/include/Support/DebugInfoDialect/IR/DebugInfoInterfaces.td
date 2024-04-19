@@ -69,19 +69,61 @@ def DebugInfo_InlinedSubprogramScoped : OpInterface<
     callsite to the subprogram represented by the op's body region. These ops
     have to carry additional location information of where the call is, which
     could contain callstack information due to inlining, etc.
+
+    This extra location info needs to be stored in the op's location, because if
+    it is stored as an attribute, then different locations change an op's
+    identity for optimizations like CSE.
+
+    We encode the callLoc in the location as a fused location with a
+    DICallLocAttr.  However, we maintain that a fused location with a
+    DIScopeAttr is the top level location where applicable.
+
+    So locations on InlinedSubprogramScoped ops can be (where fileLoc represents
+    a location with no DIScope):
+
+    * No callLoc -> Normal location, IE fileLoc or fused<scop>[fileLoc]
+    * With callLoc, no DIScope -> fused<call_loc<callLoc>>[fileLoc]
+    * With callLoc, with DIScope ->
+      fused<scope>[fused<call_loc<callLoc>>[fileLoc]]
+
+    Example:
+
+    ```mlir
+    #loc1 = loc("foo.mlir":12:34)
+    #loc2 = loc("foo.mlir":45:67)
+    #subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+    #call_loc = #debuginfo.call_loc<#loc1>
+    #loc3 = loc(fused<#call_loc>[#loc2])
+    #loc4 = loc(fused<#subprogram>[#loc3])
+    ```
+
   }];
 
   let dependentTraits = [DebugInfo_ScopedLocation];
   let cppNamespace = "::M::DebugInfo";
 
-  let methods = [
-    InterfaceMethod<[{
-      Return the location of the call to the subprogram.
-    }], "mlir::LocationAttr", "getCallLocAttr", (ins)>,
-    InterfaceMethod<[{
-      Set the location of the call to the subprogram.
-    }], "void", "setCallLocAttr", (ins "mlir::LocationAttr":$attr)>,
-  ];
+  let extraClassDeclaration = [{
+    Location getLocNoInlinedImpl();
+    mlir::LocationAttr getCallLocAttrImpl();
+    void setCallLocAttrImpl(mlir::LocationAttr attr);
+  }];
+  let extraSharedClassDeclaration = [{
+    /// Return the location of the op after removing any encoded callLoc info.
+    Location getLocNoInlined() {
+      return cast<DebugInfo::InlinedSubprogramScoped>(this->getOperation())
+             .getLocNoInlinedImpl();
+    }
+    /// Return any callLoc info encoded in the location.
+    mlir::LocationAttr getCallLocAttr() {
+      return cast<DebugInfo::InlinedSubprogramScoped>(this->getOperation())
+             .getCallLocAttrImpl();
+    }
+    /// Adjust location info to encode the callLoc info.
+    void setCallLocAttr(mlir::LocationAttr callLoc) {
+      cast<DebugInfo::InlinedSubprogramScoped>(this->getOperation())
+          .setCallLocAttrImpl(callLoc);
+    }
+  }];
 }
 
 #endif // SUPPORT_DEBUGINFODIALECT_DEBUGINFOINTERFACES_TD

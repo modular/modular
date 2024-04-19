@@ -177,6 +177,10 @@ kgen.generator @callNested() {
 #loc4 = loc(fused<#subprogram>[#loc1])
 #loc5 = loc(fused<#subprogram1>[#loc2])
 #loc6 = loc(fused<#subprogram1>[#loc3])
+#call_loc = #debuginfo.call_loc<#loc4>
+#loc7 = loc(fused<#call_loc>[#loc2])
+#loc8 = loc(fused<#subprogram1>[#loc7])
+#loc9 = loc(fused<#call_loc>[#loc2])
 
 // CHECK-LABEL: kgen.func @no_hoist
 kgen.func @no_hoist() {
@@ -187,7 +191,7 @@ kgen.func @no_hoist() {
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
     kgen.return loc(#loc5)
-  } callLoc(#loc4) loc(#loc5)
+  } loc(#loc8)
   kgen.call_indirect %0() : () -> () loc(#loc4)
   kgen.return loc(#loc4)
 } loc(#loc4)
@@ -202,7 +206,7 @@ kgen.func @no_hoist_nodebug_callee() {
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
     kgen.return loc(#loc5)
-  } callLoc(#loc4) loc(#loc2)
+  } loc(#loc9)
   kgen.call_indirect %0() : () -> () loc(#loc4)
   kgen.return loc(#loc4)
 } loc(#loc4)

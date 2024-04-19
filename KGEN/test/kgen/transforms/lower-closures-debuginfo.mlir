@@ -13,6 +13,9 @@
 #loc7 = loc(fused<#subprogram1>[#loc3])
 #loc8 = loc(fused<#subprogram2>[#loc4])
 
+#loc9 = loc(fused<#subprogram1>[fused<#debuginfo.call_loc<#loc6>>[#loc3]])
+#loc10 = loc(fused<#subprogram2>[fused<#debuginfo.call_loc<#loc6>>[#loc4]])
+
 // CHECK-LABEL: kgen.func @foo_async_closure_0()
 // CHECK-NEXT:    %0 = pop.coroutine.handle : <() -> !pop.array<0, i1>> loc(#[[FOO_ASYNC_CL_LOC:.*]])
 // CHECK-NEXT:    %array = kgen.param.constant: array<0, i1> = <[]> loc(#[[FOO_ASYNC_CL_CONST_LOC:.*]])
@@ -34,13 +37,13 @@ kgen.func @foo() {
   %0 = lit.async.execute <() -> !pop.array<0, i1>> {
     %array_1 = kgen.param.constant: array<1, i1> = <[1]> loc(#loc7)
     kgen.return %array : !pop.array<0, i1> loc(#loc7)
-  } {inliner_debuginfo_update = 1 : i8} callLoc(#loc6) loc(#loc7)
+  } {inliner_debuginfo_update = 1 : i8} loc(#loc9)
 
   // CHECK-NEXT: kgen.create_closure[() capturing -> !pop.array<0, i1>: @foo_closure_1]()  loc(#[[LOC_CALLSITE]])
   %1 = kgen.stage_closure = () capturing -> !pop.array<0, i1> {
     %array_1 = kgen.param.constant: array<2, i1> = <[1, 1]> loc(#loc8)
     kgen.return %array : !pop.array<0, i1> loc(#loc8)
-  } callLoc(#loc6) loc(#loc8)
+  } loc(#loc10)
 
   // CHECK-NEXT: kgen.return
   kgen.return loc(#loc5)

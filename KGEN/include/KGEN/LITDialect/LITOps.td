@@ -969,11 +969,10 @@ def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock,
     ```
   }];
 
-  let arguments = (ins OptionalAttr<Builtin_LocationAttr>:$callLoc);
   let results = (outs Res<POP_CoroutineType, "", [MemAlloc]>:$coroutine);
   let regions = (region SizedRegion<1>:$bodyRegion);
   let assemblyFormat = [{
-    type($coroutine) $bodyRegion attr-dict (`callLoc` `(` $callLoc^ `)`)?
+    type($coroutine) $bodyRegion attr-dict
   }];
 }
 
