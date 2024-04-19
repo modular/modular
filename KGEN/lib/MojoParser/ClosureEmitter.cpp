@@ -387,11 +387,14 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   LITSignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(
           refToSelfType, ArgConvention::BorrowedInMem, signatureType);
+  // The __call__ method is effectively the in-source body of the function. Mark
+  // it as *not* synthetic so that debugging will step into the body.
   auto [callMethod, _] = synthesizeMethodInStruct(
       "__call__", closureMethodSignatureType.getArguments(),
       closureMethodSignatureType.getArgConventions(),
       closureMethodSignatureType.getArgListAttrs(), resultType, structDecl,
-      SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects());
+      SpecialFunctionKind::kNormal, closureMethodSignatureType.getFnEffects(),
+      /*suffix=*/"", /*synthetic=*/false);
 
   // Populate the body of ClosureWrapper::__call__.
   {
