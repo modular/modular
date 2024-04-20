@@ -28,10 +28,7 @@ include_directories(PRIVATE ${CMAKE_SOURCE_DIR}/ModelServing/include/)
 #   TEST_NAME
 #   ServeRTTests
 
-#   server_test.cpp
-#   test_serve_rt.cpp
 #   test_server_async.cpp
-#   test_server.cpp
 
 #   LINK_LIBS PRIVATE
 #   ServeRTLib
