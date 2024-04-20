@@ -65,14 +65,17 @@ public:
   }
 
 private:
-  PackageState(llvm::MemoryBufferRef buffer, const mlir::ParserConfig &config,
+  PackageState(BufferRef buffer, const mlir::ParserConfig &config,
                const std::shared_ptr<llvm::SourceMgr> &bufferOwnerRef)
-      : reader(buffer, config, /*lazyLoad=*/true, bufferOwnerRef) {}
+      : bytecodeBuffer(std::move(buffer)),
+        reader(bytecodeBuffer->getMemBufferRef(), config,
+               /*lazyLoad=*/true, bufferOwnerRef) {}
 
   /// A set of operations that need to be inflated.
   SmallVector<Operation *> operationsToInflate;
 
   /// The bytecode parser state.
+  BufferRef bytecodeBuffer;
   Block block;
   mlir::BytecodeReader reader;
   std::unique_ptr<SymbolTable> bytecodeSymtab;
@@ -89,28 +92,17 @@ std::unique_ptr<PackageState> PackageState::create(
     return nullptr;
   }
 
-  ErrorOr<DenseResourceElementsAttr> bytecodeOr =
-      packageGenLibraryFn(packageLink);
+  ErrorOr<BufferRef> bytecodeOr = packageGenLibraryFn(packageLink);
   if (bytecodeOr.isError()) {
     mlir::emitError(packageLink.getLoc(),
                     "failed to load precompiled module and its dependencies "
                     "for this package");
     return nullptr;
   }
-  DenseResourceElementsAttr bytecode = bytecodeOr.takeValue();
 
   // Get the data for the imported module body.
-  mlir::AsmResourceBlob *blob = bytecode.getRawHandle().getBlob();
-  if (!blob) {
-    mlir::emitError(packageLink.getLoc(),
-                    "unable to find the precompiled body blob");
-    return nullptr;
-  }
-  ArrayRef<char> bytecodeData = blob->getData();
-  llvm::MemoryBufferRef bufferRef(
-      StringRef(bytecodeData.begin(), bytecodeData.size()), "");
-  std::unique_ptr<PackageState> state(
-      new PackageState(bufferRef, config, std::make_shared<llvm::SourceMgr>()));
+  std::unique_ptr<PackageState> state(new PackageState(
+      std::move(*bytecodeOr), config, std::make_shared<llvm::SourceMgr>()));
 
   // Parse in the top-level module.
   if (failed(state->reader.readTopLevel(&state->block)) ||

@@ -218,12 +218,10 @@ void registerLowerToLLVMPipeline();
 /// When materializing packages, `kgen.package_link` ops that link to `.mojopkg`
 /// packages may appear in the module. These linked packages may only contain
 /// post-parse MLIR bytecode. In that case, this callback is invoked. The
-/// callback is expected to return an attribute containing the MLIR bytecode
-/// that the `materialize-packages` pass will load into the module that is
-/// importing the package (i.e.: the module that contains the
-/// `kgen.package_link` op).
-using PackageGenLibraryFn =
-    std::function<ErrorOr<DenseResourceElementsAttr>(PackageLinkOp)>;
+/// callback is expected to return a buffer containing the MLIR bytecode that
+/// the `materialize-packages` pass will load into the module that is importing
+/// the package (i.e.: the module that contains the `kgen.package_link` op).
+using PackageGenLibraryFn = std::function<ErrorOr<BufferRef>(PackageLinkOp)>;
 
 /// Create a MaterializePackages pass with the specified behavior.
 std::unique_ptr<mlir::Pass>
