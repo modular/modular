@@ -25,12 +25,14 @@ fn test_getitem(owned a: WeirdArray, f: float, x: int):
 
 
 struct Settable:
+    # expected-note @+1 {{function declared here}}
     fn __setitem__(self, x: int, y: int):
         pass
 
 
 fn test_setitem_kwargs(c: Settable, x: int):
     # Issue #22580: Allow keyword arguments in __setitem__ calls
+    # expected-error @+1 {{invalid call to '__setitem__': argument passed both as positional and keyword operand: 'x'}}
     c[x=x] = x
     # weird, but ok.
     c[y=x] = x
