@@ -159,3 +159,32 @@ struct RegWeirdArray:
 fn test_dlvalue_to_pvalue[arr: RegWeirdArray, y: int]():
     # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <apply({{.*}}@RegWeirdArray::@"__getitem__{{.*}}", arr, y)>
     alias x = arr[y]
+
+
+
+
+struct XYZ:
+   fn __getattr__[name: StringLiteral](self) -> Int:
+      @parameter
+      if name == "x":
+        return 4
+      elif name == "y":
+        return 6
+      else:
+        # Constrained is not supported with stubs library.
+        #constrained[name == "z", "can only index with x, y, or z"]()
+        return 8
+struct ParamIndex:
+  fn __getitem__[a: Int, b: Int](self) -> Int: return 42
+
+
+# CHECK-LABEL: lit.func @"test_param_indexing
+fn test_param_indexing(a: XYZ, b: ParamIndex) -> Int:
+  # Issue #35662: Support parameter input to getattr
+  # CHECK: lit.call {{.*}}__getattr__{{.*}}<:!StringLiteral {:string "x"}>(%a)
+  _ = a.x 
+  # CHECK: lit.call {{.*}}__getattr__{{.*}}<:!StringLiteral {:string "y"}>(%a)
+  _ = a.y
+  # CHECK: lit.call {{.*}}__getitem__{{.*}}<:!Int {2}, :!Int {4}>(%b)
+  _ = b[2, 4]
+

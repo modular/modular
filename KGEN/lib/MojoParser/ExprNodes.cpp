@@ -927,11 +927,35 @@ static AnyValue emitGetterSetterAccess(const ExprNode *node,
   // into the overload set if they correspond to parameters instead of operands.
   bool emittedOperands = false;
   auto emitOperands = [&](OverloadSet &set, bool isSetter) -> LogicalResult {
+    assert(set && "overload set shouldn't be empty");
+
     // Only do this once, even if there is both a getter and setter.
     if (emittedOperands)
       return success();
     emittedOperands = true;
 
+    // The exprOperands provided may be binding either to parameters or to
+    // arguments, and may even be mixed in the theoretical future.  For now, we
+    // keep things simple and just decide to bind all of the expressions to
+    // parameters if no candidates have an argument (other than the set value if
+    // this is a setter list).
+    bool shouldBindParameters = true;
+    for (ASTDecl *elt : set.fnDecls) {
+      // TODO: This is really naive: it doesn't account for default arguments,
+      // variadic etc etc etc.
+      if (cast<LIT::FuncOp>(*elt).getSignature().getArguments().size() !=
+          size_t(isSetter) + /*self*/ 1) {
+        shouldBindParameters = false;
+        break;
+      }
+    }
+
+    // If we're binding these indices to parameters, do so and leave the
+    // arguments lists empty.
+    if (shouldBindParameters)
+      return bindParamValuesToDirectCall(set, exprOperands, emitter);
+
+    // Otherwise we're passing these exprOperands as normal arguments.
     for (const Operand &operand : exprOperands) {
       ExprNode *expr = operand.expr;
       AnyValue exprVal = emitter.emitExpr(expr, EC_Subscript);

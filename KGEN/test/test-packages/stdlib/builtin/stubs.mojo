@@ -124,6 +124,10 @@ struct Int(Copyable):
 struct StringLiteral:
     var value: __mlir_type.`!kgen.string`
 
+    @always_inline("nodebug")
+    fn __eq__(self, other: Self) -> Bool:
+        return Bool()
+
 
 struct String(KeyElement):
     fn __init__(inout self, literal: StringLiteral):
@@ -134,6 +138,14 @@ struct String(KeyElement):
 @register_passable("trivial")
 struct Bool(AnyType):
     var value: __mlir_type.i1
+
+    @always_inline("nodebug")
+    fn __init__() -> Self:
+        return Self {value: __mlir_attr.`0 : i1`}
+
+    @always_inline("nodebug")
+    fn __init__(value: __mlir_type.i1) -> Self:
+        return Self {value: value}
 
     fn __mlir_i1__(self) -> __mlir_type.i1:
         return self.value
