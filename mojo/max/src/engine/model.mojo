@@ -135,7 +135,7 @@ struct Model:
         """
         var input_map = TensorMap(self._ctx, self._lib, self._session)
         for pair in inputs:
-            input_map.borrow(pair[].get[0](), pair[].get[1]())
+            input_map.borrow(pair[][0], pair[][1])
         return self.execute(input_map)
 
     fn execute[
