@@ -43,12 +43,12 @@ fn _bilinear_interpolate[
     bin_size_w: Float32,
     roi_bin_grid_h: Int,
     roi_bin_grid_w: Int,
-) -> Tuple[
+) -> (
     Weighted2DPoint[type],
     Weighted2DPoint[type],
     Weighted2DPoint[type],
     Weighted2DPoint[type],
-]:
+):
     # Compute centeral point (y, x) by mapping (py, ph) into a  grid of size
     # [roi_bin_grid_h, roi_bin_grid_w] shifted by (roi_start_h, roi_start_w)
     var y = math.max(
