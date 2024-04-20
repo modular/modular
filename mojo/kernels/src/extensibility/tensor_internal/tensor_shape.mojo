@@ -727,7 +727,7 @@ struct TensorShape(Stringable, CollectionElement, EqualityComparable):
 
         @parameter
         fn _fill[i: Int]():
-            tuple[i] = shapes.get[i, Int]()
+            tuple[i] = rebind[Int](shapes[i])
 
         unroll[_fill, rank]()
 
