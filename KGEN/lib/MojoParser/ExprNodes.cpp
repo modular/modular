@@ -447,7 +447,8 @@ bool Operand::isPositionalStringLiteral(StringRef str) const {
 }
 
 AnyValue SyntheticNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
-  llvm_unreachable("emitIR is undefined for synthetic nodes.");
+  assert(irValue && "emitIR is undefined for synthetic nodes.");
+  return emitter.emitResult(irValue, this, dest);
 }
 
 /// Emit IR for an unqualified declaration reference "x" looked up in current
@@ -883,10 +884,9 @@ static LogicalResult bindParamValuesToDirectCall(OverloadSet &overloadSet,
 /// Otherwise, it returns a SubscriptDLValue for later materializing calls to
 /// the getter or setter as appropriate. When doing this it  takes ownership of
 /// the operands because it might move them to a SubscriptDLValue, if emitted.
-static AnyValue emitGetterSetterAccess(const ExprNode *node,
-                                       ASTExprAnd<CValue> base,
-                                       ArrayRef<Operand> exprOperands,
-                                       ValueDest &dest, ExprEmitter &emitter) {
+AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
+                                ArrayRef<Operand> exprOperands, ValueDest &dest,
+                                ExprEmitter &emitter) {
   ASTType baseType = base.ir.getRValueType();
 
   // This is either a SubscriptNode for x[i,j] or a AttributeRefNode for x.name.
