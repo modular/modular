@@ -47,15 +47,15 @@ def test_swap_Tuple_Int():
 
     swap(a, b)
 
-    assert_equal(a.get[0](), 5)
-    assert_equal(a.get[1](), 6)
-    assert_equal(a.get[2](), 7)
-    assert_equal(a.get[3](), 8)
+    assert_equal(a[0], 5)
+    assert_equal(a[1], 6)
+    assert_equal(a[2], 7)
+    assert_equal(a[3], 8)
 
-    assert_equal(b.get[0](), 1)
-    assert_equal(b.get[1](), 2)
-    assert_equal(b.get[2](), 3)
-    assert_equal(b.get[3](), 4)
+    assert_equal(b[0], 1)
+    assert_equal(b[1], 2)
+    assert_equal(b[2], 3)
+    assert_equal(b[3], 4)
 
 
 def test_swap_Tuple_Mixed():
@@ -64,13 +64,13 @@ def test_swap_Tuple_Mixed():
 
     swap(a, b)
 
-    assert_equal(a.get[0](), 4)
-    assert_equal(a.get[1](), "World")
-    assert_equal(a.get[2](), 6)
+    assert_equal(a[0], 4)
+    assert_equal(a[1], "World")
+    assert_equal(a[2], 6)
 
-    assert_equal(b.get[0](), 1)
-    assert_equal(b.get[1](), "Hello")
-    assert_equal(b.get[2](), 3)
+    assert_equal(b[0], 1)
+    assert_equal(b[1], "Hello")
+    assert_equal(b[2], 3)
 
 
 def main():
