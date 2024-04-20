@@ -312,8 +312,8 @@ struct Q4sym[
         var quantization_tuple = calculate_symmetric_vector[
             float_dtype, group_size, 4
         ](data)
-        var qdata = quantization_tuple.get[0, SIMD[DType.uint8, group_size]]()
-        var f_scale = quantization_tuple.get[1, SIMD[float_dtype, 1]]()
+        var qdata = quantization_tuple[0]
+        var f_scale = quantization_tuple[1]
 
         # TODO: add warning if we overflow/underflow
         var f16_scale = f_scale.cast[DType.float16]()
