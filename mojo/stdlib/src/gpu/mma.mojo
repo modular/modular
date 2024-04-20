@@ -47,8 +47,8 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             _RegisterPackType[SIMD[DType.float16, 2], SIMD[DType.float16, 2]],
         ](sa[0], sa[1], b, sc[0], sc[1])
 
-        var d0 = r.get[0, SIMD[DType.float16, 2]]()
-        var d1 = r.get[1, SIMD[DType.float16, 2]]()
+        var d0 = r[0]
+        var d1 = r[1]
 
         d[0] = rebind[Scalar[d.type]](d0[0])
         d[1] = rebind[Scalar[d.type]](d0[1])
@@ -69,11 +69,8 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             _RegisterPackType[Float16, Float16],
         ](a, b, c)
 
-        var d0 = r.get[0, Float16]()
-        var d1 = r.get[1, Float16]()
-
-        d[0] = rebind[Scalar[d.type]](d0[0])
-        d[1] = rebind[Scalar[d.type]](d1[0])
+        d[0] = rebind[Scalar[d.type]](r[0][0])
+        d[1] = rebind[Scalar[d.type]](r[1][0])
 
     # ===------------------------------------------------------------------===#
     # F32 = F16 * F16 + F32
@@ -106,10 +103,10 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[3],
         )
 
-        d[0] = rebind[Scalar[d.type]](r.get[0, Float32]())
-        d[1] = rebind[Scalar[d.type]](r.get[1, Float32]())
-        d[2] = rebind[Scalar[d.type]](r.get[2, Float32]())
-        d[3] = rebind[Scalar[d.type]](r.get[3, Float32]())
+        d[0] = rebind[Scalar[d.type]](r[0])
+        d[1] = rebind[Scalar[d.type]](r[1])
+        d[2] = rebind[Scalar[d.type]](r[2])
+        d[3] = rebind[Scalar[d.type]](r[3])
     elif (
         d.type == DType.float32
         and d.size == 2
@@ -125,11 +122,8 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             _RegisterPackType[Float32, Float32],
         ](a, b, c)
 
-        var d0 = r.get[0, Float32]()
-        var d1 = r.get[1, Float32]()
-
-        d[0] = rebind[Scalar[d.type]](d0)
-        d[1] = rebind[Scalar[d.type]](d1)
+        d[0] = rebind[Scalar[d.type]](r[0])
+        d[1] = rebind[Scalar[d.type]](r[1])
 
     # ===------------------------------------------------------------------===#
     # F32 = BF16 * BF16 + F32
@@ -162,10 +156,10 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[3],
         )
 
-        d[0] = rebind[Scalar[d.type]](r.get[0, Float32]())
-        d[1] = rebind[Scalar[d.type]](r.get[1, Float32]())
-        d[2] = rebind[Scalar[d.type]](r.get[2, Float32]())
-        d[3] = rebind[Scalar[d.type]](r.get[3, Float32]())
+        d[0] = rebind[Scalar[d.type]](r[0])
+        d[1] = rebind[Scalar[d.type]](r[1])
+        d[2] = rebind[Scalar[d.type]](r[2])
+        d[3] = rebind[Scalar[d.type]](r[3])
 
     elif (
         d.type == DType.float32
@@ -201,10 +195,10 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[3],
         )
 
-        d[0] = rebind[Scalar[d.type]](r.get[0, Float32]())
-        d[1] = rebind[Scalar[d.type]](r.get[1, Float32]())
-        d[2] = rebind[Scalar[d.type]](r.get[2, Float32]())
-        d[3] = rebind[Scalar[d.type]](r.get[3, Float32]())
+        d[0] = rebind[Scalar[d.type]](r[0])
+        d[1] = rebind[Scalar[d.type]](r[1])
+        d[2] = rebind[Scalar[d.type]](r[2])
+        d[3] = rebind[Scalar[d.type]](r[3])
 
     # ===------------------------------------------------------------------===#
     # F32 = tf32 * tf32 + F32
@@ -240,10 +234,10 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[3],
         )
 
-        d[0] = rebind[Scalar[d.type]](r.get[0, Float32]())
-        d[1] = rebind[Scalar[d.type]](r.get[1, Float32]())
-        d[2] = rebind[Scalar[d.type]](r.get[2, Float32]())
-        d[3] = rebind[Scalar[d.type]](r.get[3, Float32]())
+        d[0] = rebind[Scalar[d.type]](r[0])
+        d[1] = rebind[Scalar[d.type]](r[1])
+        d[2] = rebind[Scalar[d.type]](r[2])
+        d[3] = rebind[Scalar[d.type]](r[3])
 
     elif (
         d.type == DType.float32
@@ -279,10 +273,10 @@ fn mma(inout d: SIMD, a: SIMD, b: SIMD, c: SIMD):
             c_ptr[3],
         )
 
-        d[0] = rebind[Scalar[d.type]](r.get[0, Float32]())
-        d[1] = rebind[Scalar[d.type]](r.get[1, Float32]())
-        d[2] = rebind[Scalar[d.type]](r.get[2, Float32]())
-        d[3] = rebind[Scalar[d.type]](r.get[3, Float32]())
+        d[0] = rebind[Scalar[d.type]](r[0])
+        d[1] = rebind[Scalar[d.type]](r[1])
+        d[2] = rebind[Scalar[d.type]](r[2])
+        d[3] = rebind[Scalar[d.type]](r[3])
     else:
         constrained[False, "no valid implementation of mma"]()
 
