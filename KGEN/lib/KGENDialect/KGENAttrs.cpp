@@ -216,6 +216,12 @@ TypedAttr ConcreteTypeConstantAttr::get(Type value, Type type) {
   return get(value, type, VTableAttr::get(type.getContext(), {}));
 }
 
+ConcreteTypeConstantAttr
+ConcreteTypeConstantAttr::getFromBytecode(Type value, Type type,
+                                          VTableAttr vtable) {
+  return Base::get(value.getContext(), value, type, vtable);
+}
+
 /// Always a constant by definition.
 bool ConcreteTypeConstantAttr::isConstant() const { return true; }
 
@@ -248,6 +254,12 @@ TypedAttr ParameterizedTypeConstantAttr::get(Type value, Type type,
 
 TypedAttr ParameterizedTypeConstantAttr::get(Type value, Type type) {
   return get(type.getContext(), value, type);
+}
+
+ParameterizedTypeConstantAttr
+ParameterizedTypeConstantAttr::getFromBytecode(Type value, Type type,
+                                               VTableAttr vtable) {
+  return Base::get(value.getContext(), value, type, vtable);
 }
 
 /// Always not a constant by definition.
@@ -637,6 +649,12 @@ TypedAttr StructExtractAttr::get(MLIRContext *context, TypedAttr structValue,
     return value.getValues()[fieldNo];
 
   return Base::get(context, structValue, fieldNo, resultType);
+}
+
+StructExtractAttr StructExtractAttr::getFromBytecode(TypedAttr structValue,
+                                                     unsigned fieldNo,
+                                                     Type resultType) {
+  return Base::get(resultType.getContext(), structValue, fieldNo, resultType);
 }
 
 //===----------------------------------------------------------------------===//

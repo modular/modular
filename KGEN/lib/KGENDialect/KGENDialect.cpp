@@ -100,6 +100,39 @@ struct KGENDialectOpAsmDialectInterface : public mlir::OpAsmDialectInterface {
 // KGENDialectBytecodeInterface
 //===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
+// WrappedAttrType
+
+namespace {
+/// This class provides a bytecode specific wrapper that invokes a special
+/// bytecode `get` method of an attribute or type. This is useful for types that
+/// override their `get` methods to perform additional logic (which we want to
+/// avoid for bytecode, where we already know the values are in the canonical
+/// form).
+template <typename T>
+struct WrappedAttrType : public T {
+  using T::T;
+
+  template <typename... Ts>
+  static T get(Ts &&...ts) {
+    return T::getFromBytecode(std::forward<Ts>(ts)...);
+  }
+};
+} // namespace
+
+using WrappedParamRefType = WrappedAttrType<ParamRefType>;
+using WrappedVariantType = WrappedAttrType<VariantType>;
+
+using WrappedConcreteTypeConstantAttr =
+    WrappedAttrType<ConcreteTypeConstantAttr>;
+using WrappedParameterizedTypeConstantAttr =
+    WrappedAttrType<ParameterizedTypeConstantAttr>;
+using WrappedStructExtractAttr = WrappedAttrType<StructExtractAttr>;
+
+//===----------------------------------------------------------------------===//
+// Utilities
+
+using OptionalIPRational = std::optional<IPRational>;
 using KGEN::NoneType;
 using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
@@ -142,10 +175,59 @@ static LogicalResult readIPInt(DialectBytecodeReader &reader, IPInt &value) {
   return success();
 }
 
+static LogicalResult readOptionalIPInt(DialectBytecodeReader &reader,
+                                       std::optional<IPInt> &value) {
+  bool hasValue;
+  uint64_t width;
+  if (failed(reader.readVarIntWithFlag(width, hasValue)))
+    return failure();
+  if (!hasValue)
+    return success();
+
+  FailureOr<APInt> result = reader.readAPIntWithKnownWidth(width);
+  if (failed(result))
+    return failure();
+  value = IPInt(std::move(*result));
+  return success();
+}
+
 static void writeIPInt(DialectBytecodeWriter &writer, const IPInt &value) {
   uint64_t width = value.getAPInt().getSignificantBits();
   writer.writeVarInt(width);
   writer.writeAPIntWithKnownWidth(value.getAPInt().trunc(width));
+}
+
+static void writeOptionalIPInt(DialectBytecodeWriter &writer,
+                               const std::optional<IPInt> &value) {
+  if (!value)
+    return writer.writeVarIntWithFlag(0, /*flag=*/false);
+
+  uint64_t width = value->getAPInt().getSignificantBits();
+  writer.writeVarIntWithFlag(width, /*flag=*/true);
+  writer.writeAPIntWithKnownWidth(value->getAPInt().trunc(width));
+}
+
+static LogicalResult readOptionalIPRational(DialectBytecodeReader &reader,
+                                            std::optional<IPRational> &value) {
+  std::optional<IPInt> numerator;
+  if (failed(readOptionalIPInt(reader, numerator)))
+    return failure();
+  if (!numerator)
+    return success();
+
+  IPInt denominator;
+  if (failed(readIPInt(reader, denominator)))
+    return failure();
+  value = IPRational(*numerator, denominator);
+  return success();
+}
+
+static void writeOptionalIPRational(DialectBytecodeWriter &writer,
+                                    const std::optional<IPRational> &value) {
+  if (!value)
+    return writeOptionalIPInt(writer, std::nullopt);
+  writeOptionalIPInt(writer, value->getNumerator());
+  writeIPInt(writer, value->getDenominator());
 }
 
 #include "KGEN/KGENDialect/KGENDialectBytecode.cpp.inc"

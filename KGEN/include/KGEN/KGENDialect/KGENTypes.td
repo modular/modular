@@ -48,6 +48,12 @@ def KGEN_ParamRefType : KGENType<"ParamRef", "paramref"> {
                                         "TypedAttr":$param),
                                    [{ return get(param); }], "Type">,
   ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the type from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static ParamRefType getFromBytecode(TypedAttr param);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -614,6 +620,10 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
   ];
 
   let extraClassDeclaration = [{
+    /// A specific builder used to build the type from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static VariantType getFromBytecode(TypedAttr variadic);
+
     /// Get an element type as a parameterized type.
     Type getType(unsigned index) const;
 

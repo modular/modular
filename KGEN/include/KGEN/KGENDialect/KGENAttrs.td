@@ -356,6 +356,13 @@ def KGEN_ConcreteTypeConstantAttr : KGEN_ExprAttr<"ConcreteTypeConstant",
                                    "", "TypedAttr">,
   ];
 
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static ConcreteTypeConstantAttr getFromBytecode(
+        Type value, Type type, VTableAttr vtable);
+  }];
+
   let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
 }
 
@@ -402,6 +409,13 @@ def KGEN_ParameterizedTypeConstantAttr : KGEN_ExprAttr<
                                         "VTableAttr":$vtable),
                                    "", "TypedAttr">,
   ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static ParameterizedTypeConstantAttr getFromBytecode(
+        Type value, Type type, VTableAttr vtable);
+  }];
 
   let assemblyFormat = "`<` $value (`,` `vtable` `=` `{` $vTable^ `}` )? `>`";
   let skipDefaultBuilders = 1;
@@ -648,8 +662,14 @@ def KGEN_StructExtractAttr : KGENAttr<"StructExtract", "struct.extract",
                      "", "TypedAttr">,
     AttrBuilder<(ins "TypedAttr":$structValue, "unsigned":$fieldNo,
                      "Type":$resultType), "", "TypedAttr">
-
   ];
+
+  let extraClassDeclaration = [{
+    /// A specific builder used to build the attribute from a bytecode context,
+    /// providing a slightly different context from the normal builder.
+    static StructExtractAttr getFromBytecode(
+        TypedAttr structValue, unsigned fieldNo, Type resultType);
+  }];
 }
 
 //===----------------------------------------------------------------------===//
