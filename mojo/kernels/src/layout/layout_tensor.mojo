@@ -77,6 +77,7 @@ alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 struct LayoutTensor[
     dtype: DType,
     layout: Layout,
+    rank: Int = layout.rank(),
     /,
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
@@ -288,11 +289,6 @@ struct LayoutTensor[
         for i in range(rank_1):
             offset += vals[i] * stride[i]
         return offset
-
-    @always_inline
-    @staticmethod
-    fn rank() -> Int:
-        return layout.shape.__len__()
 
     @always_inline
     @staticmethod
@@ -1023,9 +1019,9 @@ fn outer_product_acc[
     lhs: LayoutTensor[_, lhs_layout, address_space=lhs_address_space],
     rhs: LayoutTensor[_, rhs_layout, address_space=rhs_address_space],
 ):
-    constrained[res.rank() == 2, "Only rank 2 res is allowed."]()
-    constrained[lhs.rank() == 1, "Only rank 1 lhs is allowed."]()
-    constrained[rhs.rank() == 1, "Only rank 1 rhs is allowed."]()
+    constrained[res.rank == 2, "Only rank 2 res is allowed."]()
+    constrained[lhs.rank == 1, "Only rank 1 lhs is allowed."]()
+    constrained[rhs.rank == 1, "Only rank 1 rhs is allowed."]()
 
     alias M = res.shape[0]()
     alias N = res.shape[1]()
