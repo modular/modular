@@ -42,12 +42,18 @@ def MemRefAttr : DialectAttribute<(attr
   Type:$type
 )>;
 
+def StoreToMemAttr : DialectAttribute<(attr
+  TypedAttr:$value,
+  Type:$type
+)>;
+
 def InterpreterDialectAttributes : DialectAttributes<"interp"> {
   let elems = [
     PointerAttr,
     MemoryBlobAttr,
     MemorySpaceAttr,
-    MemRefAttr
+    MemRefAttr,
+    StoreToMemAttr
   ];
 }
 

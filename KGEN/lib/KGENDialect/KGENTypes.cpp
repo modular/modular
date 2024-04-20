@@ -72,6 +72,10 @@ Type ParamRefType::get(TypedAttr param) {
   return Base::get(param.getContext(), param);
 }
 
+ParamRefType ParamRefType::getFromBytecode(TypedAttr param) {
+  return Base::get(param.getContext(), param);
+}
+
 //===----------------------------------------------------------------------===//
 // TypeType
 //===----------------------------------------------------------------------===//
@@ -1214,6 +1218,10 @@ VariantType VariantType::get(ArrayRef<Type> types) {
   for (Type type : types)
     values.push_back(TypeConstantAttr::get(type, metatype));
   return get(ctx, VariadicAttr::get(values, VariadicType::get(metatype)));
+}
+
+VariantType VariantType::getFromBytecode(TypedAttr variadic) {
+  return Base::get(variadic.getContext(), variadic);
 }
 
 llvm::iterator_range<

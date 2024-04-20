@@ -41,7 +41,7 @@ def TraitType : DialectType<(type
 )>;
 
 def AnyTraitType : DialectType<(type
-  ConcreteAttribute<"SymbolRefAttr">:$symbol
+  ConcreteType<"TraitType">:$traitType
 )>;
 
 def LifetimeType : DialectType<(type
@@ -50,6 +50,12 @@ def LifetimeType : DialectType<(type
 
 def RefType : DialectType<(type
   Type:$elementType,
+  TypedAttr:$lifetime,
+  TypedAttr:$addressSpace
+)>;
+
+def RefPackType : DialectType<(type
+  TypedAttr:$variadic,
   TypedAttr:$lifetime,
   TypedAttr:$addressSpace
 )>;
@@ -78,7 +84,9 @@ def LITDialectTypes : DialectTypes<"lit"> {
     REPLResultRefType,
     MagicMLIRAttrType,
     MagicMLIROpType,
-    MagicMLIRTypeType
+    MagicMLIRTypeType,
+    RefPackType,
+    AnyTraitType
   ];
 }
 
@@ -131,10 +139,13 @@ def BindTypeAttr : DialectAttribute<(attr
 )>;
 
 def LifetimeAttr : DialectAttribute<(attr
-  ConcreteType<"LifetimeType">:$type)>;
+  ConcreteType<"LifetimeType">:$type
+)>;
 
 def LifetimeUnionAttr : DialectAttribute<(attr
-  TypedAttrArray:$values)>;
+  TypedAttrArray:$operands,
+  ConcreteType<"LifetimeType">:$type
+)>;
 
 def LifetimeMutCastAttr : DialectAttribute<(attr
   TypedAttr:$operand,
@@ -181,6 +192,19 @@ def VarDeclKindAttr : DialectAttribute<(attr
   EnumAttr<"VarDeclKind">:$value
 )>;
 
+def InvalidRefLifetimeAttr : DialectAttribute<(attr
+  ConcreteType<"LifetimeType">:$type
+)>;
+
+def RefPackAttr : DialectAttribute<(attr
+  TypedAttrArray:$values,
+  ConcreteType<"RefPackType">:$type
+)>;
+
+def TypeLineageArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"TypeLineageAttr">:$value
+)>;
+
 def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
     PogMetadataAttr,
@@ -198,7 +222,12 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     StructExtractAttr,
     TypeLineageAttr,
     TypeConventionAttr,
-    VarDeclKindAttr
+    LifetimeUnionAttr,
+    LifetimeMutCastAttr,
+    VarDeclKindAttr,
+    InvalidRefLifetimeAttr,
+    RefPackAttr,
+    TypeLineageArrayAttr
   ];
 }
 

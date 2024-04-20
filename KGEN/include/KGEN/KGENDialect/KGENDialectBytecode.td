@@ -13,7 +13,7 @@ include "Support/Compiler/Bytecode.td"
 // KGENDialect Types
 //===----------------------------------------------------------------------===//
 
-def ParamRefType : DialectType<(type
+def WrappedParamRefType : DialectType<(type
   TypedAttr:$param
 )>;
 
@@ -59,13 +59,15 @@ def PackType : DialectType<(type
   TypedAttr:$variadic
 )>;
 
-def VariantType : DialectType<(type
+def WrappedVariantType : DialectType<(type
   TypedAttr:$variadic
 )>;
 
+def FloatLiteralType : DialectType<(type)>;
+
 def KGENDialectTypes : DialectTypes<"kgen"> {
   let elems = [
-    ParamRefType,
+    WrappedParamRefType,
     TypeType,
     DTypeType,
     StringType,
@@ -78,7 +80,8 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     BuildInfoType,
     StructType,
     PackType,
-    VariantType
+    WrappedVariantType,
+    FloatLiteralType
   ];
 }
 
@@ -135,13 +138,13 @@ def VTableEntryAttr : DialectAttribute<(attr
   ConcreteAttribute<"TypedAttr">:$method
 )>;
 
-def ConcreteTypeConstantAttr : DialectAttribute<(attr
+def WrappedConcreteTypeConstantAttr : DialectAttribute<(attr
   Type:$value,
   Type:$type,
   ConcreteAttribute<"VTableAttr">:$vTable
 )>;
 
-def ParameterizedTypeConstantAttr : DialectAttribute<(attr
+def WrappedParameterizedTypeConstantAttr : DialectAttribute<(attr
   Type:$value,
   Type:$type,
   ConcreteAttribute<"VTableAttr">:$vTable
@@ -194,7 +197,7 @@ def StructAttr : DialectAttribute<(attr
   ConcreteType<"StructType">:$type
 )>;
 
-def StructExtractAttr : DialectAttribute<(attr
+def WrappedStructExtractAttr : DialectAttribute<(attr
   TypedAttr:$structValue,
   VarInt:$fieldNo,
   Type:$type
@@ -215,6 +218,15 @@ def LinkDependencyArrayAttr : DialectAttribute<(attr
   ConcreteAttrArray<"FlatSymbolRefAttr">:$value
 )>;
 
+def FloatLiteralAttr : DialectAttribute<(attr
+  ConcreteAttribute<"FloatLiteralSpecialValuesAttr">:$special,
+  Custom<"OptionalIPRational">:$rational
+)>;
+
+def PreservedAttr : DialectAttribute<(attr
+  Attribute:$value
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
@@ -228,8 +240,8 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ParamIndexRefAttr,
     VTableAttr,
     VTableEntryAttr,
-    ConcreteTypeConstantAttr,
-    ParameterizedTypeConstantAttr,
+    WrappedConcreteTypeConstantAttr,
+    WrappedParameterizedTypeConstantAttr,
     DTypeConstantAttr,
     IntLiteralAttr,
     SymbolConstantAttr,
@@ -240,10 +252,12 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     DecoratorsAttr,
     ExportKindAttr,
     StructAttr,
-    StructExtractAttr,
+    WrappedStructExtractAttr,
     PackAttr,
     VariantAttr,
-    LinkDependencyArrayAttr
+    LinkDependencyArrayAttr,
+    FloatLiteralAttr,
+    PreservedAttr
   ];
 }
 
