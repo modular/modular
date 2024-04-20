@@ -714,11 +714,7 @@ struct SymbolTuple(Sized):
         Args:
             symbols: A tuple of two `Symbol`s.
         """
-        var ptr = Pointer.address_of(symbols).bitcast[Int8]()
-        self.__init__(
-            ptr.bitcast[Symbol]()[],
-            ptr.offset(symbols._offset[1]()).bitcast[Symbol]()[],
-        )
+        self.__init__(symbols[0], symbols[1])
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol)):
         """Convenience constructor from a 3-tuple.
@@ -726,12 +722,7 @@ struct SymbolTuple(Sized):
         Args:
             symbols: A tuple of three `Symbol`s.
         """
-        var ptr = Pointer.address_of(symbols).bitcast[Int8]()
-        self.__init__(
-            ptr.bitcast[Symbol]()[],
-            ptr.offset(symbols._offset[1]()).bitcast[Symbol]()[],
-            ptr.offset(symbols._offset[2]()).bitcast[Symbol]()[],
-        )
+        self.__init__(symbols[0], symbols[1], symbols[2])
 
     fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol, Symbol)):
         """Convenience constructor from a 4-tuple.
@@ -739,13 +730,7 @@ struct SymbolTuple(Sized):
         Args:
             symbols: A tuple of four `Symbol`s.
         """
-        var ptr = Pointer.address_of(symbols).bitcast[Int8]()
-        self.__init__(
-            ptr.bitcast[Symbol]()[],
-            ptr.offset(symbols._offset[1]()).bitcast[Symbol]()[],
-            ptr.offset(symbols._offset[2]()).bitcast[Symbol]()[],
-            ptr.offset(symbols._offset[3]()).bitcast[Symbol]()[],
-        )
+        self.__init__(symbols[0], symbols[1], symbols[2], symbols[3])
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
