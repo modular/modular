@@ -1994,13 +1994,18 @@ CValue TupleDLValue::emitLoad(ValueDest &dest, ExprEmitter &emitter) const {
                                      CallSyntax::kImplicitConvert, dest);
 }
 
+// TODO: Move this somewhere common like ExprEmitter
+AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
+                                ArrayRef<Operand> exprOperands, ValueDest &dest,
+                                ExprEmitter &emitter);
+
 /// Storing to a tuple LValue extracts the elements out of the provided value
 /// stores them into each component LValue.
 void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
                              ExprEmitter &emitter) const {
   auto emitError = [&]() -> InflightDiag {
-    return (emitter.emitError(expr->getLoc())
-            << value.expr->getRange() << expr->getRange());
+    return emitter.emitError(expr->getLoc())
+           << value.expr->getRange() << expr->getRange();
   };
 
   // If the value is a type with a staticly known length, check that it agrees
@@ -2043,43 +2048,27 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     return;
   }
 
-  // Tuple has a get method with a signature of:
-  //    get[i: Int](self)
-  // For the dynamic case we'd use __getitem__.
-  auto getDecl =
-      OverloadSet::lookup(emitter.declScope, emitter.shared, elementType, "get",
-                          expr, CallSyntax::kTupleGetItem,
-                          /*errorHandler*/ {});
-
-  if (getDecl.isNull()) {
-    emitError() << "expected Tuple to have a get method";
-    return;
-  }
-
-  // Bind the Tuple type parameters.
-  ParamBindings &bindings = getDecl.paramBindings;
-  if (bindings.empty())
-    bindings.addPrechecked(packVariadic);
-
   // Ok, we have a tuple with the right number of elements, extract each element
   // and store into the corresponding lvalue.
   for (auto [index, lvalue] : llvm::enumerate(eltLValues)) {
-    // Bind the i parameters.  Int implicitly constructs from index type.
-    TypedAttr iParam =
-        IntegerAttr::get(IndexType::get(emitter.getContext()), index);
-    if (index == 0)
-      bindings.add(expr, iParam);
-    else
-      bindings.replace(1, expr, iParam);
-
-    // Emit the call to get the item from the tuple into the corresponding
-    // LValue.
+    // Get the item from the tuple into the corresponding LValue.
     LValue lv = lvalue.ir.getIfLValue();
     assert(lv && "Each dest is known to be an lvalue");
     ValueDest eltDest(lv, EC_TupleElement);
 
-    if (!getDecl.emitCall(CallOperands({{value.ir, value.expr}}), eltDest,
-                          emitter)) {
+    // Bind the i parameters.  Int implicitly constructs from index type.
+    TypedAttr iParam =
+        IntegerAttr::get(IndexType::get(emitter.getContext()), index);
+
+    SyntheticNode indexExpr(expr->getLoc(), PValue(iParam));
+    Operand exprOperand(&indexExpr, expr->getLoc(),
+                        Operand::PassKind::kPositional);
+    SubscriptNode subscript(expr, expr->getLoc(), {}, expr->getLoc());
+
+    // We emit the extraction from the tuple as a synthesized subscript with
+    // this value as an index.
+    if (!emitGetterSetterAccess(&subscript, {value.ir, value.expr}, exprOperand,
+                                eltDest, emitter)) {
       eltDest.resetForError();
       return;
     }

@@ -60,7 +60,7 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
    var i2 = 2
 
    # CHECK: %iTup = lit.var.decl "iTup"
-   var iTup : Tuple[Int, Int]
+   var iTup : (Int, Int)
 
    # Tuple Rvalue
    # CHECK: [[TUP:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}(%iTup,
@@ -70,10 +70,15 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
    # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
    # CHECK: [[TUP:%.*]] = lit.ref.immut %iTup
    # CHECK: lit.call {{.*}}@"__copyinit__{{.*}}([[TMPVAR]], [[TUP]])
-   # CHECK: [[TUPTMP:%.*]] = lit.ref.immut [[TMPVAR]]
-   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"get{{.*}}([[TUPTMP]], %i1)
-   # CHECK: [[TUPTMP:%.*]] = lit.ref.immut [[TMPVAR]]
-   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"get{{.*}}([[TUPTMP]], %i2)
+   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[TMPVAR]])
+   # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+   # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+   # CHECK: lit.ref.store [[ELTV]], %i1
+
+   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[TMPVAR]])
+   # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+   # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+   # CHECK: lit.ref.store [[ELTV]], %i2
    (i1, i2) = iTup
 
    # Check that the swap idiom is correct, this requires producing a copy of the
@@ -82,16 +87,27 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
    # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
    # CHECK:  = lit.ref.pack.create
    # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[TMPVAR]],
-   # CHECK-NEXT: [[TUPTMP:%.*]] = lit.ref.immut [[TMPVAR]]
-   # CHECK-NEXT: [[I1VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {0}>([[TUPTMP]], %i1)
-   # CHECK-NEXT: [[TUPTMP:%.*]] = lit.ref.immut [[TMPVAR]]
-   # CHECK-NEXT: [[I2VAL:%.*]] =  lit.call {{.*}}Tuple::@"get{{.*}}({{.*}}, :!Int {1}>([[TUPTMP]], %i2)
+
+   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>([[TMPVAR]])
+   # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+   # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+   # CHECK: lit.ref.store [[ELTV]], %i1
+
+   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>([[TMPVAR]])
+   # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+   # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+   # CHECK: lit.ref.store [[ELTV]], %i2
    (i1, i2) = (i2, i1)
+
+   # CHECK: [[ELT:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%iTup) 
+   # CHECK-NEXT: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
+   # CHECK-NEXT: lit.ref.store [[TMP]], [[ELTR]]
+   iTup[1] = i1
 
    var f1 : FloatDyn
    # Mixed element types should work.  Don't need check lines though.
    (i1, f1) = (i0, f0)
-
 
 
 ##===----------------------------------------------------------------------===##

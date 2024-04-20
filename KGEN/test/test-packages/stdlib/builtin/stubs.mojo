@@ -27,6 +27,22 @@ alias `123` = __mlir_attr.`123 : index`
 alias `True` = __mlir_attr.`1 : i1`
 alias `False` = __mlir_attr.`0 : i1`
 
+
+struct AnyLifetime[is_mutable: __mlir_type.i1]:
+    """This represents a lifetime reference of potentially parametric type.
+    TODO: This should be replaced with a parametric type alias.
+
+    Parameters:
+        is_mutable: Whether the lifetime reference is mutable.
+    """
+
+    alias type = __mlir_type[
+        `!lit.lifetime<`,
+        is_mutable,
+        `>`,
+    ]
+
+
 # ===----------------------------------------------------------------------=== #
 # Builtin Types
 # ===----------------------------------------------------------------------=== #
@@ -318,6 +334,39 @@ struct __ParameterClosureCaptureList[fn_type: AnyRegType, fn_ref: fn_type]:
         __mlir_op.`kgen.capture_list.expand`(self.value)
 
 
+@value
+@register_passable("trivial")
+struct AddressSpace:
+    """Address space of the pointer."""
+
+    var _value: Int
+
+    alias GENERIC = AddressSpace(0)
+
+
+@value
+@register_passable("trivial")
+struct Reference[
+    type: AnyType,
+    is_mutable: __mlir_type.i1,
+    lifetime: AnyLifetime[is_mutable].type,
+    address_space: AddressSpace = AddressSpace.GENERIC,
+]:
+    alias _mlir_type = __mlir_type[
+        `!lit.ref<`,
+        type,
+        `, `,
+        lifetime,
+        `, `,
+        address_space._value.value,
+        `>`,
+    ]
+
+    fn __mlir_ref__(self) -> Self._mlir_type:
+        while __mlir_attr.true:
+            pass
+
+
 struct Tuple[*element_types: AnyType]:
     fn __init__(inout self, *args: *element_types):
         pass
@@ -328,6 +377,12 @@ struct Tuple[*element_types: AnyType]:
     fn __moveinit__(inout self, owned existing: Self):
         pass
 
-    fn get[i: Int](self) -> element_types[i.value]:
+    fn __refitem__[
+        i: Int,
+        mutability: __mlir_type.i1,
+        self_life: AnyLifetime[mutability].type,
+    ](self_lit: Reference[Self, mutability, self_life]._mlir_type) -> Reference[
+        element_types[i.value], mutability, self_life
+    ]:
         while __mlir_attr.true:
             pass

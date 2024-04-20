@@ -37,9 +37,15 @@ class SRValue;
 /// synthetic code. To solve this, we use the synthetic node which will vend a
 /// location to the emitter but has no value.
 struct SyntheticNode final : public ExprNode {
-  SyntheticNode(SMLoc loc) : ExprNode(kSynthetic), location(loc) {}
+  // If SyntheticNode is created with a value, then emitIR will produce that
+  // value.  If not, emitIR will abort.
+  SyntheticNode(SMLoc loc, AnyValue irValue = AnyValue())
+      : ExprNode(kSynthetic), location(loc), irValue(irValue) {}
 
   const SMLoc location;
+
+  // If null, emitIR will explode, otherwise it will produce this.
+  AnyValue irValue;
 
   static bool classof(const ExprNode *node) { return node->kind == kSynthetic; }
   SMLoc getLoc() const override { return location; }
@@ -257,12 +263,12 @@ struct Operand {
 };
 
 struct CallNode final : public ExprNode {
-  CallNode(ExprNode *callee, SMLoc lparenLoc, ArrayRef<Operand> operands,
+  CallNode(const ExprNode *callee, SMLoc lparenLoc, ArrayRef<Operand> operands,
            SMLoc rparenLoc)
       : ExprNode(kCall), callee(callee), lparenLoc(lparenLoc),
         operands(operands), rparenLoc(rparenLoc) {}
 
-  ExprNode *const callee;
+  const ExprNode *const callee;
   const SMLoc lparenLoc;
   const ArrayRef<Operand> operands;
   const SMLoc rparenLoc;
@@ -279,12 +285,12 @@ struct CallNode final : public ExprNode {
 /// This represents `A[i,j]`.  In the case of slices (e.g. `A[i, ::]`), the
 /// slice will be represented with a subexpression.
 struct SubscriptNode final : public ExprNode {
-  SubscriptNode(ExprNode *base, SMLoc lsquareLoc, ArrayRef<Operand> operands,
-                SMLoc rsquareLoc)
+  SubscriptNode(const ExprNode *base, SMLoc lsquareLoc,
+                ArrayRef<Operand> operands, SMLoc rsquareLoc)
       : ExprNode(kSubscript), base(base), lsquareLoc(lsquareLoc),
         operands(operands), rsquareLoc(rsquareLoc) {}
 
-  ExprNode *const base;
+  const ExprNode *const base;
   const SMLoc lsquareLoc;
   const ArrayRef<Operand> operands;
   const SMLoc rsquareLoc;
