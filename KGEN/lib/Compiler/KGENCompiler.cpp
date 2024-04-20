@@ -30,6 +30,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
+#include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -409,22 +410,69 @@ ErrorOrSuccess KGEN::runLibraryGenerationPipeline(
   return success();
 }
 
-static ErrorOr<DenseResourceElementsAttr>
-specializePackageLinkForPreElaborationLinking(
+static ErrorOr<BufferRef> specializePackageLinkForPreElaborationLinking(
     PackageLinkOp packageLink, const KGEN::CompilationOptions &compileOptions) {
+  auto cacheBackend = getMojoCacheBackend();
+  if (cacheBackend.isError())
+    return cacheBackend.takeError();
+  auto transformCache =
+      RCRef<Cache::TransformCache>::create(std::move(*cacheBackend));
   DenseResourceElementsAttr bytecodeAttr = packageLink.getPostParseModuleAttr();
-  OwningOpRef<ModuleOp> packageModuleOr =
-      readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
-  if (!packageModuleOr)
-    return Error("unable to load parsed module bytecode");
-  if (auto err = runLibraryGenerationPipeline(*packageModuleOr, compileOptions))
-    return err.takeError();
+  if (!bytecodeAttr || !bytecodeAttr.getRawHandle().getBlob())
+    return Error("package link does not contain post parser bytecode data");
+  ArrayRef<char> bytecodeData =
+      bytecodeAttr.getRawHandle().getBlob()->getData();
 
-  DenseResourceElementsAttr bytecodeResource =
-      writeModuleToBytecodeAttr(cast<ModuleOp>(**packageModuleOr));
-  if (!bytecodeResource)
-    return Error("failed to write bytecode for package module");
-  return bytecodeResource;
+  auto runTransform = [&](WriteableBufferRef buf,
+                          LLCL::AnyAsyncValueRef chain) mutable {
+    auto output = AsyncValueRef<BufferRef>::allocate(chain.getRuntime());
+    std::move(chain).andThenSync(
+        [&, output = output.copy(),
+         buf = std::move(buf)](AnyAsyncValueRef &&chain) mutable {
+          if (chain.isError())
+            return std::move(output).setToError(chain.takeDiagnostic());
+          auto setError = [&](Error err) {
+            return std::move(output).setToError(
+                LLCL::getMLIRDiagnostic(std::move(err), packageLink->getLoc()));
+          };
+
+          // Read in the bytecode and run the library generation pipeline.
+          OwningOpRef<ModuleOp> packageModuleOr =
+              readOpFromBytecodeFile<ModuleOp>(bytecodeAttr);
+          if (!packageModuleOr)
+            return setError("unable to load parsed module bytecode");
+          if (auto err = runLibraryGenerationPipeline(*packageModuleOr,
+                                                      compileOptions))
+            return setError(err.takeError());
+
+          // Write the bytecode back out to the buffer.
+          if (failed(mlir::writeBytecodeToFile(*packageModuleOr, *buf)))
+            return setError("failed to write bytecode for package module");
+          return std::move(output).emplace(std::move(buf));
+        });
+    return output;
+  };
+  auto onCacheHit = [](BufferRef buf) { return buf; };
+
+  // Build the cache key for the specialization.
+  auto bytecodeHash = llvm::BLAKE3::hash(ArrayRef<uint8_t>(
+      (const uint8_t *)bytecodeData.data(), bytecodeData.size()));
+  WriteableBufferRef key = WriteableBuffer::get();
+  *key << "specializePackageForPreElaboration";
+  compileOptions.print(*key);
+  key->write_impl((const char *)bytecodeHash.data(), bytecodeHash.size());
+
+  LLCL::Runtime &runtime =
+      *loadContext(packageLink.getContext())->get<LLCL::Runtime>();
+  LLCL::AnyAsyncValueRef ready = cachedTransform(
+      LLCL::MLIRLocationDecoder::getEncodedLocation(packageLink->getLoc()),
+      transformCache.copy(), AsyncValueRef<Chain>::createReady(runtime),
+      std::move(key), runTransform, onCacheHit);
+  await(ready);
+  if (ready.isError())
+    return std::move(ready.takeDiagnostic().getMessage());
+
+  return std::move(ready.get<BufferRef>());
 }
 
 //===----------------------------------------------------------------------===//
