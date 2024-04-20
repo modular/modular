@@ -72,7 +72,6 @@ add_subdirectory(tools/mojo-repl-entry-point)
 add_subdirectory(tools/mojo-test-executor)
 
 add_subdirectory(tools/mojo)
-add_subdirectory(tools/mojo-prime-package-cache)
 
 # This function reads ${KGEN_LINK_LIBS} and puts the include flags into
 # ${KGEN_INCLUDE_FLAGS}. It also read ${KGEN_LINK_DIRS} and appends those
@@ -212,7 +211,7 @@ endfunction()
 # having too many search paths.
 function(add_mojo_package target visibility)
   cmake_parse_arguments(KGEN
-                        "STDLIB;DISABLE_PRIME_CACHE"
+                        "STDLIB"
                         "PACKAGE_DIR;PACKAGE_OUTPUT_DIR;OUTPUT_NAME;DOCS_DIR"
                         "LINK_LIBS;LINK_DIRS;DEPENDS" ${ARGN})
 
@@ -258,9 +257,9 @@ function(add_mojo_package target visibility)
 
   set(KGEN_PACKAGE_FILENAME "${KGEN_PACKAGE_DIR}/__init__.mojo")
 
-  # Add the command used to generate the archive for the kernel.
+  # Add the command used to generate the package.
   add_custom_command(
-    OUTPUT ${package_file_name}
+    OUTPUT ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}
 
     COMMAND $<TARGET_FILE:mojo> package
     ${KGEN_PACKAGE_DIR} -o ${package_file_name_rel} ${KGEN_INCLUDE_FLAGS}
@@ -268,21 +267,7 @@ function(add_mojo_package target visibility)
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DEPENDS mojo ${KGEN_SOURCE_FILES} ${KGEN_LIB_DEPENDS} ${KGEN_PACKAGE_FILENAME} ${KGEN_DEPENDS}
   )
-
-  # Run a custom command to prime the cache with the current target. This
-  # ensures that in the common case for development we have an archive for the
-  # current target already compiled.
-  if (NOT KGEN_DISABLE_PRIME_CACHE)
-    add_custom_command(OUTPUT ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}.prime
-      COMMAND $<TARGET_FILE:mojo-prime-package-cache> ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}
-              ${KGEN_INCLUDE_FLAGS}
-      COMMAND ${CMAKE_COMMAND} -E touch ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}.prime
-      DEPENDS ${package_file_name} mojo-prime-package-cache
-    )
-    add_custom_target(${target} DEPENDS ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name}.prime)
-  else ()
-    add_custom_target(${target} DEPENDS ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name})
-  endif ()
+  add_custom_target(${target} DEPENDS ${KGEN_PACKAGE_OUTPUT_DIR}/${package_file_name})
 
   set_target_properties(${target}
     PROPERTIES
