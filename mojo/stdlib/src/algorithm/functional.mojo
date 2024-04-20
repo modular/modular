@@ -1623,8 +1623,8 @@ fn stencil[
                     indices[stencil_axis[0]], indices[stencil_axis[1]]
                 )
                 var bounds = map_fn(stencil_indices)
-                var lower_bound = bounds.get[0, StaticIntTuple[stencil_rank]]()
-                var upper_bound = bounds.get[1, StaticIntTuple[stencil_rank]]()
+                var lower_bound = bounds[0]
+                var upper_bound = bounds[1]
                 var step_i = map_strides(0)
                 var step_j = map_strides(1)
                 var result = compute_init_fn[simd_width]()
