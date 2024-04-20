@@ -209,7 +209,7 @@ struct DimList(Sized, Stringable):
     """The underlying storage for the list of dimensions."""
 
     @always_inline("nodebug")
-    fn __init__(values: Tuple[Int]) -> Self:
+    fn __init__(values: (Int,)) -> Self:
         """Creates a dimension list from the given list of values.
 
         Args:
@@ -218,10 +218,10 @@ struct DimList(Sized, Stringable):
         Returns:
             A dimension list.
         """
-        return Self {value: VariadicList[Dim](values.get[0]())}
+        return Self {value: VariadicList[Dim](values[0])}
 
     @always_inline("nodebug")
-    fn __init__(values: Tuple[Int, Int]) -> Self:
+    fn __init__(values: (Int, Int)) -> Self:
         """Creates a dimension list from the given list of values.
 
         Args:
@@ -230,10 +230,10 @@ struct DimList(Sized, Stringable):
         Returns:
             A dimension list.
         """
-        return Self {value: VariadicList[Dim](values.get[0](), values.get[1]())}
+        return Self {value: VariadicList[Dim](values[0], values[1])}
 
     @always_inline("nodebug")
-    fn __init__(values: Tuple[Int, Int, Int]) -> Self:
+    fn __init__(values: (Int, Int, Int)) -> Self:
         """Creates a dimension list from the given list of values.
 
         Args:
@@ -242,11 +242,7 @@ struct DimList(Sized, Stringable):
         Returns:
             A dimension list.
         """
-        return Self {
-            value: VariadicList[Dim](
-                values.get[0](), values.get[1](), values.get[2]()
-            )
-        }
+        return Self {value: VariadicList[Dim](values[0], values[1], values[2])}
 
     @always_inline("nodebug")
     fn __init__(values: VariadicList[Dim]) -> Self:
