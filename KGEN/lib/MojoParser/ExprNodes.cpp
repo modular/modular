@@ -1682,11 +1682,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     }
 
     // Check to see if we can invoke an __init__ method to convert it.
-    auto callee =
-        OverloadSet::lookup(emitter.declScope, emitter.shared, calledType,
-                            "__init__", this, CallSyntax::kTypeCall);
-    emitter.shared.notifyListenerOnCall(callee.fnDecls, rparenLoc, operands);
-    return emitter.emitConstructorCall(calledType, callee, operands, this,
+    return emitter.emitConstructorCall(calledType, operands, this,
                                        CallSyntax::kTypeCall, dest);
   }
 
