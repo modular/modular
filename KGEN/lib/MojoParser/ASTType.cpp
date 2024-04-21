@@ -756,3 +756,88 @@ RefType ASTType::getRefForArgument(const Twine &argName, bool isMut) {
                                             LifetimeType::get(ctx, isMut));
   return RefType::get(mlirType, selfLifetime, /*addressSpace=*/0);
 }
+
+namespace {
+// Class to determine if there are any parameter references in the attribute
+// value.
+class ParamIndexRefAttrFinder {
+public:
+  bool hasReferences(TypedAttr value) { return hasReferencesImpl(value); }
+  bool hasReferences(Type type) { return hasReferencesImpl(type); }
+
+private:
+  template <typename T>
+  bool hasReferencesImpl(T value) {
+    if (!value)
+      return false;
+
+    // If we've already processed this value, just reuse the memoized result.
+    auto it = cached.find(value.getAsOpaquePointer());
+    if (it != cached.end())
+      return it->second;
+
+    bool hasReference = false;
+    if constexpr (std::is_base_of_v<Attribute, T>)
+      hasReference |= isa<ParamIndexRefAttr>(value);
+
+    value.walkImmediateSubElements(
+        [&](Attribute attr) { hasReference |= hasReferencesImpl(attr); },
+        [&](Type type) { hasReference |= hasReferencesImpl(type); });
+
+    cached[value.getAsOpaquePointer()] = hasReference;
+    return hasReference;
+  }
+
+private:
+  // Don't revisit types and attributes multiple times.
+  DenseMap<const void *, bool> cached;
+};
+} // namespace
+
+/// If this type is parameterized, and if any of the parameters refer to a
+/// ParamIndexRefAttr, replace it with an UnboundAttr so parameter inference
+/// will infer it.
+///
+/// This makes parameter inference sensitive to what to propagate vs infer. For
+/// example, if expectedType is known to be 'SIMD[uint8, 1]', then we can infer
+/// which constructor to use when the input is an IntLiteral.
+///
+/// On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
+/// argument is an Int8, then we need the implicit conversion to infer the
+/// base element.  Our solution to this is to rip and replace parameters that
+/// contain unbound parameters, replacing them with UnboundAttr so inference
+/// can find them.
+ASTType ASTType::getWithUnknownParametersReplaced(SharedState &shared) const {
+  // If this is a struct type, try unbinding just the parameters that have
+  // parameter references in it.
+  if (auto drt = dyn_cast<DeclRefType>(*this)) {
+    ParamIndexRefAttrFinder finder;
+
+    // Otherwise, check each bound parameter to see if it is unknown.  If so,
+    // replace it.
+    SmallVector<TypedAttr> newParms;
+    bool anyBound = false;
+    for (auto curValue : getParamBindings()) {
+      if (!finder.hasReferences(curValue)) {
+        // Keep this value if it has no references.
+        anyBound = true;
+      } else {
+        // Keep the argument type if it has no references.
+        Type paramType = curValue.getType();
+        if (finder.hasReferences(paramType))
+          paramType =
+              ASTType(UnboundAttr::get(TypeType::get(paramType.getContext())));
+        curValue = UnboundAttr::get(paramType);
+      }
+      newParms.push_back(curValue);
+    }
+
+    if (anyBound)
+      return cast<StructDeclOp>(getDecl(shared)).bindReference(newParms);
+  }
+
+  // Otherwise return it with all parameters replaced.
+  if (Type nonParam = getWithoutParameters(shared))
+    return nonParam;
+  return *this;
+}

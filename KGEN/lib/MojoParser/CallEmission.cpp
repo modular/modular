@@ -1455,7 +1455,8 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
       // parameters to be inferred, and those may depend on other value
       // arguments.  Handle this by setting up a placeholder with the type
       // we know so far, and use that to filter the overload set.
-      auto attr = UnknownAttr::get(RefType::getImmortal(type, true));
+      auto inferType = type.getWithUnknownParametersReplaced(shared);
+      auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
       posOperandsWithSelf.push_back({PValue(attr), expr});
       posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
       operands.posOperands = posOperandsWithSelf;
