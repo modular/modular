@@ -329,6 +329,20 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       }
     }
 
+  // If the actual type is a reference to a parameter, it might be a local
+  // parameter within a function.  The type checker will resolve this using the
+  // metatype of the parameter, something like AnyStruct[someType].  This tells
+  // us the actual type of the parameter.
+  // TODO: Why isn't this a general solution?
+  if (auto actualParamRef = dyn_cast<ParamRefType>(actualType)) {
+    if (auto actualMetaType = ASTType(actualType).getMetaType()) {
+      if (auto structMeta = dyn_cast<AnyStructType>(actualMetaType))
+        return matchTypes(structMeta.getStructType(), expectedType);
+      if (auto traitMeta = dyn_cast<AnyTraitType>(actualMetaType))
+        return matchTypes(traitMeta.getTraitType(), expectedType);
+    }
+  }
+
   // TODO: We're not handling a lot of important things, e.g. conversion from
   // AnyStruct -> TraitType; conversion from AnyStruct -> AnyRegType; implicit
   // conversions that cause us to see i1->Bool and similar things here, etc.
@@ -351,6 +365,10 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     // TypeConstantAttr(T, SomeStruct) <-> TypeConstantAttr(Param, AnyRegType)
     (void)matchTypes(actualAttr.getType(), expectedAttr.getType());
   }
+
+  // If the actual value is a ? then we never bind to it.
+  if (isa<UnboundAttr>(actualAttr))
+    return success();
 
   // If we are dealing with two type constants, we match their values.
   auto actualTypeConst = dyn_cast<TypeConstantAttr>(actualAttr);
@@ -472,10 +490,13 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   switch (expectedConvention) {
   case ArgConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for type
-    // checking, just let it pass.
+    // checking, match up the types, but otherwise let it pass.
     if (PValue pValue = value.getIfPValue())
-      if (isa<UnknownAttr>(pValue.get()))
-        return success();
+      if (isa<UnknownAttr>(pValue.get())) {
+        ASTType argType(pValue.get().getType());
+        return matchTypes(argType.getReferenceElementType(),
+                          expectedType.getReferenceElementType());
+      }
     [[fallthrough]];
   case ArgConvention::ByRef:
   case ArgConvention::ByRefResult:
