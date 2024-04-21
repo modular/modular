@@ -1371,3 +1371,7 @@ struct StructWithStaticMethods:
    fn thing(self):
      var x = 42
      Self._init_op_state(x, x)
+
+fn infer_through_alias():
+  alias MyType = MemoryOnlyInt
+  _ = MyType(4)
