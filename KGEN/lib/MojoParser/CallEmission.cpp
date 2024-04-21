@@ -1528,12 +1528,8 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
       // FIXME: Why are we duplicating this logic? Just let overload resolution
       // do its job.
       bool isReference = false;
-      if (auto declRef = dyn_cast<DeclRefType>(type)) {
-        auto symbolNestedRefs = declRef.getSymbol().getNestedReferences();
-        if (!symbolNestedRefs.empty() &&
-            symbolNestedRefs.back().getAttr().str() == "Reference")
-          isReference = true;
-      }
+      if (auto declRef = dyn_cast<DeclRefType>(type))
+        isReference = declRef.getName() == "Reference";
 
       if (syntax == CallSyntax::kImplicitConvert && !isReference) {
         // Handle common type mismatches with tailored errors.

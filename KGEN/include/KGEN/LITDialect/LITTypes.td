@@ -177,8 +177,8 @@ def KGEN_DeclRefType : LITType<"DeclRef", "declref", [
   let extraClassDeclaration = [{
     SymbolRefAttr getSymbol() const;
 
-    /// Get the name of the referenced type.
-    StringAttr getName() { return getSymbol().getRootReference(); }
+    /// Get the name of the referenced type, ignoring packages.
+    StringAttr getName();
 
     /// Return an alias name if the DeclRefType should be printed with an alias.
     std::optional<StringRef> getAliasName();

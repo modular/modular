@@ -1375,3 +1375,16 @@ struct StructWithStaticMethods:
 fn infer_through_alias():
   alias MyType = MemoryOnlyInt
   _ = MyType(4)
+
+
+# CHECK-LABEL: lit.func @"infer_address_space
+fn infer_address_space[
+# FIXME should just use _ here: https://github.com/modularml/modular/issues/38281
+    is_mutable: __mlir_type.i1,
+    lifetime: AnyLifetime[is_mutable].type
+](a: Reference[Int,is_mutable, lifetime, AddressSpace(4)]._mlir_type):
+  # Show that we can infer the address space parameter of Reference from a
+  # !lit.ref.
+
+  # CHECK: lit.call {{.*}}@Reference::@"__init__{{.*}}:!AddressSpace {_value: !Int = {4}}>
+  var x = Reference(a)
