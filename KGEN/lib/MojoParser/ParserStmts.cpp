@@ -409,15 +409,10 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
     auto declRef = dyn_cast<DeclRefType>(type.mlirType);
     if (!declRef || !declRef.getParamValues().empty())
       return false;
-    auto symbol = declRef.getSymbol();
-
-    StringRef name = (symbol.getNestedReferences().empty()
-                          ? symbol.getRootReference()
-                          : symbol.getNestedReferences().back().getAttr())
-                         .getValue();
 
     // object is implicitly returned by 'def's, PythonObject is pervasive in
     // interop.
+    StringRef name = declRef.getName().getValue();
     return name == "object" || name == "PythonObject";
   };
 

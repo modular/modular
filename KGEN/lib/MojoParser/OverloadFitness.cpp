@@ -151,6 +151,8 @@ public:
 private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+  LogicalResult matchAddressSpace(TypedAttr actualAddrSpace,
+                                  TypedAttr expectedAddrSpace);
 
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not
@@ -257,23 +259,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
         return failure();
       if (failed(matchParams(actual.getLifetime(), expected.getLifetime())))
         return failure();
-
-      // FIXME: Enforce address space matching.  This currently fails inferring
-      // a constant address space zero against the parametric value in
-      // Reference.  By disabling this, we fail to infer it, but it defaults to
-      // zero anyway, accidentally working!
-      //   ActualAttr = 0 : index
-      //   Expected=#lit.struct.extract<:@Int #lit.struct.extract<:@AddressSpace
-      //          *(0,3), "_value">, "value"> : index
-      //
-      // We cannot generally invert operator attrs like extract, but we could
-      // special case struct.extract when the memberwise constructor is
-      // synthesized by @value, which handles both Int and AddressSpace and a
-      // wide range of other trivial-but-critical-for-inference types.
-      //
-      // In this case, it would allow us to infer '*(0,3)' == '0 : index'.
-      (void)matchParams(actual.getAddressSpace(), expected.getAddressSpace());
-      return success();
+      return matchAddressSpace(actual.getAddressSpace(),
+                               expected.getAddressSpace());
     }
 
   // Handle LifetimeType.
@@ -287,9 +274,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       if (failed(
               matchTypes(actual.getElementType(), expected.getElementType())))
         return failure();
-      // FIXME: Enforce address space matching as per Reference above.
-      (void)matchParams(actual.getAddressSpace(), expected.getAddressSpace());
-      return success();
+      return matchAddressSpace(actual.getAddressSpace(),
+                               expected.getAddressSpace());
     }
 
   // Handle VariadicType.
@@ -474,6 +460,60 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
              expectedAttr.dump(); llvm::errs() << parameterIndex << "\n");
   return failure();
+}
+
+// Special Hack (tm) for address space matching for pointers and references.
+// Both are defined like this:
+//   struct YourPointer[type: ..., address_space: AddressSpace]:
+//     alias _mlir_type =
+//        `!kgen.pointer<`, type, `,`, address_space._value.value, `>`
+//     fn __init__(inout self, address: Self._mlir_type):
+//
+// When inferring the "address_space" constructor from a concrete pointer type,
+// we end up seeing a concrete value in the !kgen.pointer, e.g. "3" as an index
+// value.  However, we need to realize a value for the address_space parameter,
+// which is a struct of a struct of an index.
+//
+// This ends up looking like:
+//   ActualAttr = 0 : index
+//   Expected=#lit.struct.extract<:@Int #lit.struct.extract<:@AddressSpace
+//          *(0,3), "_value">, "value"> : index
+//
+// The "right" solution is to change pointer and reference to take an
+// AddressSpace directly.  Until then we do a special hack for these things.
+LogicalResult ParameterInferenceState::matchAddressSpace(TypedAttr actual,
+                                                         TypedAttr expected) {
+  if (actual == expected)
+    return success();
+
+  // If it is an extract from a known struct, then we know there is one field in
+  // the struct - we can form a StructAttr around our actual value and recurse.
+  if (auto expExtract = dyn_cast<LIT::StructExtractAttr>(expected)) {
+    // If these are two lined up extracts, look through them.
+    if (auto actExtract = dyn_cast<LIT::StructExtractAttr>(actual)) {
+      if (expExtract.getField() != actExtract.getField())
+        return failure();
+      return matchAddressSpace(actExtract.getStructValue(),
+                               expExtract.getStructValue());
+    }
+
+    if (actual.getType() != expected.getType())
+      return failure();
+
+    auto expStruct = expExtract.getStructValue();
+    // Figure out if the struct is something we can handle.
+    auto expDRT = cast<DeclRefType>(expStruct.getType());
+    // Conservatively only handle the types we know have a single field.
+    if (expDRT.getName().strref() != "AddressSpace" &&
+        expDRT.getName().strref() != "Int")
+      return failure();
+    std::tuple<StringAttr, TypedAttr> actualField(expExtract.getField(),
+                                                  actual);
+    auto wrappedActual = LITStructAttr::get(actualField, expDRT);
+    return matchAddressSpace(wrappedActual, expStruct);
+  }
+
+  return matchParams(actual, expected);
 }
 
 /// Infer parameters from an operand being passed into this function. This is

@@ -305,6 +305,14 @@ static void printOptionalMetaType(AsmPrinter &p, Type metatype,
   printKGENType(p, metatype);
 }
 
+/// Get the name of the referenced type, ignoring packages.
+StringAttr DeclRefType::getName() {
+  auto symbol = getSymbol();
+  if (symbol.getNestedReferences().empty())
+    return symbol.getRootReference();
+  return symbol.getNestedReferences().back().getAttr();
+}
+
 //===----------------------------------------------------------------------===//
 // AnyStructType
 //===----------------------------------------------------------------------===//
