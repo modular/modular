@@ -1439,6 +1439,7 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
 }
 
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
+                                          ASTDecl *funcIfDirect,
                                           const OverloadSet &callable,
                                           const CallOperands &callOperands,
                                           bool allowImplicitConversions) {
@@ -1496,9 +1497,9 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
         } else {
           // Hide the implicit trait parameter from the diagnostic.
           size_t hidden = 0;
-          if (ASTType type = callable.baseType)
-            if (isa_and_nonnull<TraitType>(type.getMetaType()))
-              hidden = 1;
+          if (funcIfDirect &&
+              isa<TraitDeclOp>(cast<LIT::FuncOp>(*funcIfDirect)->getParentOp()))
+            hidden = 1;
           size_t numExpected = signature.getNumParams() - hidden -
                                countNumImplicitKinds(paramListAttr);
           diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);
@@ -1540,13 +1541,17 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
           else
             diag << nameForPosOnly(paramIdx, "parameter");
         };
-        if (ASTDecl *decl = callable.baseType.getDecl(shared)) {
-          emitMessage(cast<StructDeclOp>(decl).getSignature());
-          diag << " of parent struct '" << *decl->getNameIfOperation() << "'";
-          diag.attachNote(decl->getLoc()) << " struct declared here";
-          return;
-        }
 
+        if (funcIfDirect) {
+          if (auto structOp = dyn_cast<StructDeclOp>(
+                  cast<LIT::FuncOp>(*funcIfDirect)->getParentOp())) {
+            emitMessage(structOp.getSignature());
+            diag << " of parent struct '" << structOp.getDeclName().getValue()
+                 << "'";
+            diag.attachNote(structOp.getLoc()) << " struct declared here";
+            return;
+          }
+        }
         emitMessage(signature);
         diag << " of callee '" << callable.baseName << "'";
       },
