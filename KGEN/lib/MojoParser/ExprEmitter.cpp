@@ -874,7 +874,8 @@ std::pair<PValue, bool> ExprEmitter::canConstructType(
   SmallVector<ASTExprAnd<AnyValue>> posOperands(operands.posOperands.begin(),
                                                 operands.posOperands.end());
   if (hasInitSelf) {
-    auto attr = UnknownAttr::get(RefType::getImmortal(requiredType, true));
+    auto inferType = requiredType.getWithUnknownParametersReplaced(shared);
+    auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
     posOperands.insert(posOperands.begin(), {PValue(attr), expr});
   }
 

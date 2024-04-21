@@ -150,6 +150,21 @@ public:
   /// needed.
   ASTType getSignatureUserResultType() const;
 
+  /// If this type is parameterized, and if any of the parameters refer to a
+  /// ParamIndexRefAttr, replace it with an UnboundAttr so parameter inference
+  /// will infer it.
+  ///
+  /// This makes parameter inference sensitive to what to propagate vs infer.
+  /// For example, if expectedType is known to be 'SIMD[uint8, 1]', then we can
+  /// infer which constructor to use when the input is an IntLiteral.
+  ///
+  /// On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
+  /// argument is an Int8, then we need the implicit conversion to infer the
+  /// base element.  Our solution to this is to rip and replace parameters that
+  /// contain unbound parameters, replacing them with UnboundAttr so inference
+  /// can find them.
+  ASTType getWithUnknownParametersReplaced(SharedState &shared) const;
+
   /// Convert this type to a human readable string representation so it can be
   /// printed out for diagnostics.  This may also be inserted into raw_ostream
   /// and diagnostics.

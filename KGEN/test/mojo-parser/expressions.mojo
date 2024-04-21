@@ -1364,3 +1364,10 @@ fn test_thing_taking_reference(inout x: String):
 # CHECK: lit.call {{.*}}@Reference::@"__init__
 # CHECK-SAME: <:!AnyType #String1, :i1 1, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
   thing_taking_reference(x)
+
+struct StructWithStaticMethods:
+   @staticmethod
+   fn _init_op_state(state: Reference[Int, _, _], foo: Int): pass
+   fn thing(self):
+     var x = 42
+     Self._init_op_state(x, x)
