@@ -183,8 +183,8 @@ public:
                           ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
                           bool allowImplicitConversions)
-      : declScope(declScope), shared(shared), parameterIndex(index),
-        evaluator(evaluator), paramIndexRefDepth(0), diags(diags),
+      : declScope(declScope), shared(shared), evaluator(evaluator),
+        parameterIndex(index), paramIndexRefDepth(0), diags(diags),
         allowImplicitConversions(allowImplicitConversions) {}
 
   /// Given an incomplete parameter binding set for a call to the specified
@@ -213,9 +213,12 @@ private:
 
   ASTDecl &declScope;
   SharedState &shared;
-  size_t parameterIndex;
   ParserParamEvaluator &evaluator;
-  SmallVector<PValue> inferredValues;
+
+  /// This is the index of the parameter we're trying to infer.
+  size_t parameterIndex;
+  /// If non-null, we've already inferred a value for this parameter.
+  TypedAttr inferredValue;
   size_t paramIndexRefDepth;
   ParameterInferenceDiagnostics &diags;
 
@@ -426,34 +429,37 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
     if (ire.getDepth() == paramIndexRefDepth && !ire.getIsResult() &&
         ire.getIndex() == parameterIndex) {
-      Type expectedType = expectedAttr.getType();
-      if (actualAttr.getType() == expectedType) {
-        // Microoptimization: first just check the common case of the types
-        // matching exactly, so that we don't always need to rebound.
-        inferredValues.push_back(actualAttr);
-        return success();
-      }
-      // Otherwise, compare the rebound types to handle dependent types.
-      expectedType = evaluator.getReboundType(expectedType);
-      if (actualAttr.getType() == expectedType) {
-        inferredValues.push_back(actualAttr);
-        return success();
-      }
-      // Otherwise, attempt an implicit conversion between the inferred type and
-      // the expected type.
-      ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
-      SyntheticNode node(declScope.getLoc());
-      if (emitter.canImplicitlyConvertToType({actualAttr, node},
-                                             expectedType)) {
-        if (PValue result = emitter.emitPValue(
-                {actualAttr, node}, EC_TypeParamValue, expectedType)) {
-          inferredValues.push_back(result);
-          return success();
+      // Compare the rebound types to handle dependent types.
+      Type expectedType = evaluator.getReboundType(expectedAttr.getType());
+
+      // If the types don't agree, attempt an implicit conversion between the
+      // actual value and the expected type.
+      if (actualAttr.getType() != expectedType) {
+        ExprEmitter emitter(shared, declScope, EC_TypeParamValue);
+        SyntheticNode node(declScope.getLoc());
+        if (emitter.canImplicitlyConvertToType({actualAttr, node},
+                                               expectedType)) {
+          if (PValue result = emitter.emitPValue(
+                  {actualAttr, node}, EC_TypeParamValue, expectedType))
+            actualAttr = result;
         }
       }
-      // Otherwise, we failed to infer the parameter. Record this failure.
-      addFailure(TypeConflictFailure{expectedType, actualAttr.getType()});
-      return failure();
+      // If that didn't work, then we fail due to the type mismatch.
+      if (actualAttr.getType() != expectedType) {
+        // Otherwise, we failed to infer the parameter. Record this failure.
+        addFailure(TypeConflictFailure{expectedType, actualAttr.getType()});
+        return failure();
+      }
+
+      // Otherwise we succeeded in finding a value, see if it is compatible with
+      // other values we've inferred.
+      if (inferredValue && inferredValue != actualAttr) {
+        addFailure(ValueConflictFailure{inferredValue, actualAttr});
+        return failure();
+      }
+
+      inferredValue = actualAttr;
+      return success();
     }
     // If this is some parameter other than the one we're inferring, assume it
     // will work out.
@@ -945,19 +951,11 @@ ParameterInferenceState::infer(LITSignatureType signature,
   if (posOperandIdx != numPosOperands && !signature.hasParamVarArgs())
     return {};
 
-  // We succeed iff we were able to infer a single (unique) value.
-  if (!inferredValues.empty()) {
-    PValue first = inferredValues.front();
-    auto sameAsFirst = [&](PValue v) { return v.get() == first.get(); };
-    if (llvm::all_of(inferredValues, sameAsFirst))
-      return first;
+  // We succeed iff we inferred a value for this parameter.
+  if (inferredValue)
+    return inferredValue;
 
-    // If not, add a diagnostic so the user knows why.
-    TypedAttr other = *llvm::find_if_not(inferredValues, sameAsFirst);
-    addFailure(ValueConflictFailure{first, other});
-    return {};
-  }
-
+  // Otherwise complain about not seeing it.
   addFailure(NotFoundFailure());
   return {};
 }
