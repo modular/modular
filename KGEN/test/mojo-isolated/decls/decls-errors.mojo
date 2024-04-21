@@ -186,11 +186,14 @@ fn badCalls(arg: Int):
   parameterizedVariadic()
   # expected-error @+1 {{could not deduce parameter 'T' of parent struct 'ParameterizedStruct'}}
   var z = ParameterizedStruct()
+
   # We can't infer `T` with two arguments of different types.
-  # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
+  # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
+  # expected-note @below {{failed to infer parameter 'T', parameter inferred to two different values: 'Int' and 'FloatDyn'}}
   parameterizedVariadic(1, 2.0)
 
   # expected-error @below {{callee expects 3 parameters, but 2 were specified}}
+  # expected-note @below {{failed to infer parameter 'j', parameter isn't used in any argument}}
   TestTuple[Int, FloatLiteral]().test[1]()
 
 fn badError(a: ParameterizedStruct[Int]):
@@ -416,8 +419,9 @@ fn test_param_deduction_failure[
     # expected-error @+1 {{missing 1 required positional argument: 'd'}}
     func[_](u)
 
-    # COM: TODO: improve this error message
-    # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
+    # TODO: This note is because we're not inferring signatures correctly
+    # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
+    # expected-note @below {{failed to infer parameter 'y', parameter isn't used in any argument}}
     func[_](u, v)
 
 struct InitOverloaded:
@@ -735,7 +739,9 @@ trait TraitWithParams[T: AnyRegType]: # expected-error {{TODO: trait declaration
     ...
 
 fn bad_trait_params[T: EverythingIsWrongTrait](x: T):
-  x.parametric() # expected-error {{invalid call to 'parametric': callee expects 1 parameter, but 0 were specified}}
+  # expected-error @below {{invalid call to 'parametric': callee expects 1 parameter, but 0 were specified}}
+  # expected-note @below {{failed to infer parameter 'x', parameter isn't used in any argument}}
+  x.parametric()
 
 trait Shape(Copyable, Movable):
 	fn area(self) -> int:
@@ -784,8 +790,9 @@ fn trait_fn_infer[T: CFMTrait](x: T): # expected-note {{function declared here}}
 
 # expected-error @+1 {{no 'f1' candidates have type 'fn(self: CFMStructFail) -> None'}}
 fn dont_crash_pvalue_convert(x: CFMStructFail):
-    # expected-note @+1 {{failed to infer parameter 'T', argument type 'CFMStructFail' does not conform to trait 'CFMTrait'}}
-    trait_fn_infer(x) # expected-error {{invalid call to 'trait_fn_infer': callee expects 1 parameter, but 0 were specified}}
+    # expected-error @below {{invalid call to 'trait_fn_infer': callee expects 1 parameter, but 0 were specified}}
+    # expected-note @below {{failed to infer parameter 'T', argument type 'CFMStructFail' does not conform to trait 'CFMTrait'}}
+    trait_fn_infer(x)
 
 trait GrandFather: # expected-note {{trait 'GrandFather' declared here}}
     fn foo(self): # expected-note {{required function 'foo' is not implemented}}
