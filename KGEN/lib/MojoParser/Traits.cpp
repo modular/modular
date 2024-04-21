@@ -297,7 +297,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
                                       SpecialFunctionKind kind) {
   StructEmitter gen(shared);
   auto selfRefType =
-      structDecl.getSelfType().getRefForArgument("self", /*isMut=*/true);
+      structDecl.getTypeDeclSelf().getRefForArgument("self", /*isMut=*/true);
   MLIRContext *ctx = shared.getContext();
   auto empty = StringAttr::get(ctx);
 
@@ -333,7 +333,7 @@ static void synthesizeSpecialFunction(ASTDecl &structDecl, SharedState &shared,
     Type existingType;
     bool isMut = existingConv == ArgConvention::OwnedInMem;
     existingType =
-        structDecl.getSelfType().getRefForArgument("existing", isMut);
+        structDecl.getTypeDeclSelf().getRefForArgument("existing", isMut);
     auto [ctor, _] = gen.synthesizeMethodInStruct(
         name, {selfRefType, existingType},
         {ArgConvention::InitSelf, existingConv},
@@ -372,7 +372,7 @@ LogicalResult LIT::verifyConformance(ASTDecl &structDecl,
   bool hadErrors = false;
   SyntheticNode node(structDecl.getLoc());
   ExprEmitter emitter(shared, structDecl, EC_Trait);
-  ASTType selfType = structDecl.getSelfType();
+  ASTType selfType = structDecl.getTypeDeclSelf();
 
   // For register-passable types, this is the set of stubs that need to be
   // synthesized for calling convention conversion. This maps a function name

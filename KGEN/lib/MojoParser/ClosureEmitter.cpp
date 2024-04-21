@@ -98,7 +98,7 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
   ASTDecl &structDecl = shared.declResolver->addFullyResolvedDecl(
       &*declOp, name, moduleDecl.getLoc(), &moduleDecl);
 
-  structDecl.setSelfType(ASTDecl::computeSelfTypeForStruct(declOp));
+  structDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(declOp));
   return {structDecl, declOp};
 }
 
@@ -382,7 +382,7 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
     return {};
 
   // Add the __call__ Method.
-  ASTType selfType = structDecl.getSelfType();
+  ASTType selfType = structDecl.getTypeDeclSelf();
   auto refToSelfType = selfType.getRefForArgument("self", /*isMut=*/false);
   LITSignatureType closureMethodSignatureType =
       addClosureSelfArgToFunctionSignature(
@@ -490,7 +490,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
 
   // Currently Closure Impls are not register passable, so use BorrowedInMem
   // convention.
-  ASTType structSelfType = structDecl.getSelfType();
+  ASTType structSelfType = structDecl.getTypeDeclSelf();
   callInputTypes.push_back(
       ASTType(structSelfType).getRefForArgument("self", /*isMut=*/false));
   callConventions.push_back(ArgConvention::BorrowedInMem);

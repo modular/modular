@@ -1081,7 +1081,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
       // The parent decl must be fully resolved in order to resolve any of its
       // members.
       assert(parent->resolvedness == DeclResolvedness::fully);
-      selfType = parent->getSelfType();
+      selfType = parent->getTypeDeclSelf();
     }
   }
 

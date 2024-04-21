@@ -277,7 +277,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
     ASTDecl &structDecl, ArrayRef<Type> argTypes,
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs) {
   auto structOp = cast<StructDeclOp>(structDecl);
-  ASTType selfType = structDecl.getSelfType();
+  ASTType selfType = structDecl.getTypeDeclSelf();
 
   // Are we initializing a mutable 'self' or returning legacy register style.
   // TODO: Remove legacy initializer support and always generate InitSelf.
@@ -492,7 +492,7 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
 
   // Figure out the type of the 'self' argument.  It is the struct's `Self`
   // type for register passable things, or indirect for a memory-only type.
-  ASTType selfType = structDecl.getSelfType();
+  ASTType selfType = structDecl.getTypeDeclSelf();
   // The argument is always owned.
   ArgConvention convention = ArgConvention::OwnedInReg;
   if (!selfType.isRegisterPassable(structDecl.getLoc(), shared)) {
@@ -538,7 +538,7 @@ static LIT::FuncOp synthesizeEmptyMoveOrCopyInit(StructEmitter &emitter,
                                                  ASTDecl &structDecl,
                                                  bool isMove) {
   auto structOp = cast<StructDeclOp>(structDecl);
-  ASTType selfType = structDecl.getSelfType();
+  ASTType selfType = structDecl.getTypeDeclSelf();
   StringRef name = isMove ? "__moveinit__" : "__copyinit__";
   MLIRContext *ctx = emitter.shared.getContext();
   Builder b(ctx);
@@ -679,7 +679,7 @@ std::optional<GeneratedStubs> StructEmitter::addMissingValueMemberStubsToStruct(
   bool isMemoryOnly = !declOp.isRegisterPassable();
   OpBuilder b(&declOp.getFields().front(), declOp.getFields().front().end());
 
-  ASTType selfType = structDecl.getSelfType();
+  ASTType selfType = structDecl.getTypeDeclSelf();
   Type refToSelf = selfType.getRefForArgument("self", /*isMut=*/true);
 
   LIT::FuncOp destructorFunc;

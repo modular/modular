@@ -111,16 +111,16 @@ public:
     return OpBuilder(getContext());
   }
 
-  /// This return the 'self' type, which includes parameters bound to
-  /// references to the struct parameter declarations.
-  ASTType getSelfType() const {
+  /// This return the 'Self' type for a struct or trait, which includes
+  /// parameters bound to references to the struct parameter declarations.
+  ASTType getTypeDeclSelf() const {
     assert(resolvedness != DeclResolvedness::unparsed &&
            "signature must be resolved to get a resolved type");
-    return selfType;
+    return typeDeclSelf;
   }
-  void setSelfType(ASTType type) {
+  void setTypeDeclSelf(ASTType type) {
     assert(type && "Cannot set null types");
-    selfType = type;
+    typeDeclSelf = type;
   }
 
   /// Given an MLIR op for a struct declaration, return the self type.
@@ -247,15 +247,9 @@ private:
   /// debug information.
   llvm::SMLoc loc;
 
-  /// This is set to true when an error is detected and reported about this
-  /// declaration that could cause references to it to cause spurious downstream
-  /// errors.  For example, "var x : SomeUndeclaredType" will cause errors for
-  /// every reference to 'x' because the type will be bogus.
-  bool hasReferenceError = false;
-
   /// For a type declaration like a struct, this is the type of 'self' in a
   /// member.  This is only valid after signature resolution.
-  ASTType selfType;
+  ASTType typeDeclSelf;
 
   /// This the parent scope that should continue name lookup, or null for the
   /// top scope.
@@ -279,6 +273,12 @@ private:
   /// the signatures of all the children to register them in the symbol table.
   /// Cache this process using a flag on the decl.
   bool referencedFromBytecode = false;
+
+  /// This is set to true when an error is detected and reported about this
+  /// declaration that could cause references to it to cause spurious downstream
+  /// errors.  For example, "var x : SomeUndeclaredType" will cause errors for
+  /// every reference to 'x' because the type will be bogus.
+  bool hasReferenceError = false;
 
   /// These are the declarations defined within this scope.
   llvm::MapVector<StringAttr, TinyPtrVector<ASTDecl *>> declsInScope;

@@ -309,7 +309,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
     // The parent decl must be fully resolved in order to resolve any of its
     // members.
     assert(parent->resolvedness == DeclResolvedness::fully);
-    selfType = parent->getSelfType();
+    selfType = parent->getTypeDeclSelf();
   }
 
   // Check any special function information.
@@ -1685,7 +1685,7 @@ LogicalResult DeclResolver::resolveSignature(StructDeclOp structOp,
 
   // This is a struct, so we can use 'computeSelfTypeForStruct' to figure out
   // the self type.
-  decl.setSelfType(ASTDecl::computeSelfTypeForStruct(structOp));
+  decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structOp));
 
   // Structs are memory-only unless they opt-in to being passed in registers.
   structOp.setConvention(TypeConvention::MemoryOnly);
@@ -1962,7 +1962,7 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   if (auto dtorAttr = lookupDestructor(structDecl, shared)) {
     // Check to see if we have an explicitly declared destructor.
     structOp.setDestructorAttr(dtorAttr);
-  } else if (structDecl.getSelfType() &&
+  } else if (structDecl.getTypeDeclSelf() &&
              !structOp.isRegisterPassableTrivial() &&
              structDecl
                  .lookupInCurrentScope(StringAttr::get(getContext(), "__del__"))
@@ -2135,7 +2135,7 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
   traitOp.setSignature(sig);
   traitOp.setParentTypes(parentTypes);
 
-  decl.setSelfType(ASTDecl::computeSelfTypeForTrait(traitOp));
+  decl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(traitOp));
 
   shared.notifyListenerOnTraitDecl(decl, identifierLoc);
 
@@ -2240,7 +2240,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
 
   // Get our Self type, which will be a reference to the T parameter on this
   // trait.
-  ASTType traitSelfType = traitDecl.getSelfType();
+  ASTType traitSelfType = traitDecl.getTypeDeclSelf();
 
   // Now just pull in the functions in the bodies of all parents.
   Block &body = *traitOp.getBody();
@@ -2250,7 +2250,7 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
     if (failed(resolveFully(parentDecl, traitDecl.getLoc())))
       continue;
 
-    ASTType parentSelfType = parentDecl.getSelfType();
+    ASTType parentSelfType = parentDecl.getTypeDeclSelf();
 
     // Inherit function members, which we can override without worry because
     // they are all just declarations.
