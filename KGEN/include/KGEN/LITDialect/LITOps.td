@@ -52,7 +52,7 @@ def LIT_FuncOp : LITOp<"func", [
     The `lit.func` operation models a def/fn declaration at the Lit source
     level.
 
-    @staticmethod decorators in Lit correspond to the attribute `isStatic`.
+    @staticmethod decorators correspond to the attribute `isStatic`.
   }];
 
   let arguments = (ins

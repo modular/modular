@@ -1293,10 +1293,6 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
                                   ParamBindings::getForDeclaredType(
                                       emitter.declScope, shared, baseRVType),
                                   this, CallSyntax::kDirectCall);
-    result->baseType = baseVal.getRValueType();
-    if (auto pValue = baseVal.getIfPValue())
-      if (LIT::isTypeExpr(pValue))
-        result->baseType = ASTType(pValue);
 
     // If the callee is a static method, we can directly reference it
     // without binding a self parameter.  If this is an instance method, we

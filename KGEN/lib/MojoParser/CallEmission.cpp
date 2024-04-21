@@ -635,19 +635,20 @@ OverloadSet::OverloadSet(StringRef baseName, ArrayRef<ASTDecl *> fnDecls,
       paramBindings(std::move(paramBindings)), expr(expr), syntax(syntax),
       erroneous(erroneous) {}
 
-TypedAttr ParamBindings::getBoundConstAttrFor(ASTType baseType,
-                                              LIT::FuncOp funcOp,
+TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
                                               StringRef baseName,
                                               const ExprNode *expr) const {
+  LITSignatureType signature = funcOp.getFullSignature();
 
-  if (!isa_and_nonnull<TraitType>(baseType.getMetaType())) {
+  // If this is a global function or struct reference, bind it directly.
+  auto parentTrait = dyn_cast<TraitDeclOp>(funcOp->getParentOp());
+  if (!parentTrait) {
     // If there are no parameters specified and if we allow unbound symbols,
     // just return the unbound symbol.
     if (empty())
       return funcOp.getBoundReference();
 
     // Check that the signature can be rebound with our set of bindings.
-    LITSignatureType signature = funcOp.getFullSignature();
     ParameterExprArrayAttr newBindings =
         verifyBindings(signature, baseName, expr->getLoc(), funcOp.getLoc());
     if (!newBindings)
@@ -657,14 +658,18 @@ TypedAttr ParamBindings::getBoundConstAttrFor(ASTType baseType,
     return funcOp.getBoundReference(newBindings);
   }
 
+  // The first parameter to the fully bound signature will be the type (confined
+  // to the current trait type) that ultimately expands to the concrete type
+  // that conforms to the trait.
+  assert(!posBindings.empty());
+  PValue selfExpr = posBindings.front().value;
+
   // When referencing a trait function, bind the reference using a parameter
-  // expression instead of the direct reference and drop the implicit trait
+  // expression instead of the direct reference. Also, drop the implicit trait
   // parameter.
-  LITSignatureType signature = funcOp.getFullSignature();
   ParamBindings bindings = *this;
-  assert(!bindings.posBindings.empty());
   SmallVector<TypedAttr> paramValues;
-  paramValues.push_back(bindings.posBindings.front().value);
+  paramValues.push_back(selfExpr);
 
   auto it = bindings.posBindings.begin();
   bindings.posBindings.erase(it, it + 1);
@@ -678,7 +683,7 @@ TypedAttr ParamBindings::getBoundConstAttrFor(ASTType baseType,
 
   TypedAttr fnRef = ParamOperatorAttr::get(
       POC::GetTypeMethod,
-      {PValue(baseType),
+      {PValue(selfExpr),
        StringAttr::get(baseName, StringType::get(funcOp.getContext()))},
       signature);
   if (bindings.empty())
@@ -696,12 +701,12 @@ TypedAttr ParamBindings::getBoundConstAttrFor(ASTType baseType,
 }
 
 /// Resolve the callee into a single PValue callee.
-static PValue getCallee(ASTType baseType, ArrayRef<ASTDecl *> fnDecls,
-                        StringRef baseName, const ParamBindings &paramBindings,
+static PValue getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
+                        const ParamBindings &paramBindings,
                         const ExprNode *expr) {
   assert(fnDecls.size() == 1 && "expected a single resolved callee");
   auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
-  return paramBindings.getBoundConstAttrFor(baseType, funcOp, baseName, expr);
+  return paramBindings.getBoundConstAttrFor(funcOp, baseName, expr);
 }
 
 /// Return if the given fitness is valid, and drop the diagnostics otherwise.
@@ -808,9 +813,9 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     if (func.getIsStatic() && operands.hasSelfOperand)
       callOperands.posOperands = callOperands.posOperands.drop_front();
 
-    evaluations.push_back(OverloadFitness::evaluate(func.getFullSignature(),
-                                                    *this, callOperands,
-                                                    allowImplicitConversions));
+    evaluations.push_back(
+        OverloadFitness::evaluate(func.getFullSignature(), candidate, *this,
+                                  callOperands, allowImplicitConversions));
     anyValid |= evaluations.back().isValid();
   }
 
@@ -880,7 +885,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     ParamBindings newBindings(paramBindings.declScope, getShared());
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(bind);
-    return getCallee(baseType, newFnDecls, baseName, newBindings, expr);
+    return getCallee(newFnDecls, baseName, newBindings, expr);
   }
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
@@ -992,8 +997,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   // If we have exactly one viable candidate, then we succeed.
   if (validCandidates.size() == 1) {
     if (paramBindings.empty())
-      return getCallee(baseType, validCandidates, baseName, paramBindings,
-                       expr);
+      return getCallee(validCandidates, baseName, paramBindings, expr);
 
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
@@ -1001,7 +1005,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     ParamBindings newBindings(paramBindings.declScope, getShared());
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
-    return getCallee(baseType, validCandidates, baseName, newBindings, expr);
+    return getCallee(validCandidates, baseName, newBindings, expr);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
@@ -1050,8 +1054,8 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
     return {};
   }
 
-  return paramBindings.getBoundConstAttrFor(
-      baseType, cast<LIT::FuncOp>(*fnDecls[0]), baseName, expr);
+  return paramBindings.getBoundConstAttrFor(cast<LIT::FuncOp>(*fnDecls[0]),
+                                            baseName, expr);
 }
 
 /// Get a OverloadSet for a lookup of a named method on the specified type.
@@ -1089,11 +1093,9 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
     return OverloadSet(declScope, shared, expr, syntax,
                        lookupResult.isErroneous());
 
-  OverloadSet result(methodName, resultDecls,
+  return OverloadSet(methodName, resultDecls,
                      ParamBindings::getForDeclaredType(declScope, shared, type),
                      expr, syntax, lookupResult.isErroneous());
-  result.baseType = type;
-  return result;
 }
 
 /// Lookup of a named named method on the specified type, filtered to match a
@@ -1169,8 +1171,8 @@ PValue OverloadSet::getIfPValue() const {
   if (fnDecls.size() != 1)
     return {};
 
-  return paramBindings.getBoundConstAttrFor(
-      baseType, cast<LIT::FuncOp>(*fnDecls[0]), baseName, expr);
+  return paramBindings.getBoundConstAttrFor(cast<LIT::FuncOp>(*fnDecls[0]),
+                                            baseName, expr);
 }
 
 /// Emit this as a RValue if it can be resolved, otherwise emit an ambiguity
@@ -1285,7 +1287,8 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
   // Check to see if we can apply these operands to the callee signature.
   OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindings(*this), callExpr,
                        CallSyntax::kIndirectCall};
-  auto fitness = OverloadFitness::evaluate(calleeSig, bindings, callOperands,
+  auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
+                                           bindings, callOperands,
                                            /*allowImplicitConversions=*/true);
   if (!fitness.isValid()) {
     // If not, diagnose it with an error.

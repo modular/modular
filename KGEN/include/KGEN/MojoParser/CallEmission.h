@@ -125,8 +125,7 @@ public:
   /// Utility function to perform substitutions of the bindings into the symbol
   /// for the given function declaration. It returns the resultant
   /// SymbolConstantAttr or produces an error message and returns null.
-  TypedAttr getBoundConstAttrFor(ASTType baseType, LIT::FuncOp funcOp,
-                                 StringRef baseName,
+  TypedAttr getBoundConstAttrFor(LIT::FuncOp funcOp, StringRef baseName,
                                  const ExprNode *expr) const;
 
   /// Return whether there are any bindings given.
@@ -325,16 +324,19 @@ raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);
 /// an incompletely bound function (e.g. one with result parameters).  This is
 /// resolved when emitted to an RValue or when binding more things into it as
 /// part of the expression tree.
+///
+/// Note that it is possible to have an overload set with methods from multiple
+/// different self types that are related to each other.  For example when Mojo
+/// has classes, it will be common to have super-class methods that expect
+/// 'self' to be converted to a different type in order to invoke it.  For
+/// nonmaterializable types like IntLiteral, we can have methods on both Int and
+/// IntLiteral, etc.  Filtering the overload set will pick the appropriate
+/// method.
 class OverloadSet {
 public:
   /// In a method reference like `x.foo`, this is the base object being invoked,
   /// e.g. `x`.
   ASTExprAnd<AnyValue> baseValue;
-
-  /// In a method or static method reference, this is the base user defined
-  /// type. This is used to emit better diagnostics and emit trait function
-  /// references.
-  ASTType baseType;
 
   /// This is the basename of the declaration set, used in diagnostics.
   StringRef baseName;

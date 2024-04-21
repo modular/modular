@@ -62,7 +62,11 @@ struct OverloadFitness {
   /// Determine whether the specified signature can be invoked with the
   /// parameter bindings specified in `callable` and the arguments specified in
   /// `callOperands`.
+  ///
+  /// The 'funcIfDirect' member is set if this is a direct call, or null if
+  /// indirect.  It can be used to tune diagnostics.
   static OverloadFitness evaluate(LITSignatureType signature,
+                                  ASTDecl *funcIfDirect,
                                   const OverloadSet &callable,
                                   const CallOperands &callOperands,
                                   bool allowImplicitConversions);
