@@ -551,14 +551,17 @@ class LookupResult {
     kErroneous, //<- Lookup found an error, but it is already diagnosed.
   } kind;
 
-  /// This is non-empty when the Kind is kSuccess.  This points to the symbol
-  /// entry in an ASTDecl, so the pointer is stable.
+  /// This is non-empty when we find something: in the case of a failure, we
+  /// found entities that we can't use, e.g. we found things in our local scope
+  /// that are not "self." qualified.  This points to the symbol entry in an
+  /// ASTDecl, so the pointer is stable.
   ArrayRef<ASTDecl *> decls;
   LookupResult(Kind kind, ArrayRef<ASTDecl *> decls)
       : kind(kind), decls(decls) {}
 
 public:
   static LookupResult getSuccess(ArrayRef<ASTDecl *> decls) {
+    assert(!decls.empty() && "cannot form successful lookup without decls");
     return {kSuccess, decls};
   }
   /// Failure means that lookup failed, but they can still have decls
