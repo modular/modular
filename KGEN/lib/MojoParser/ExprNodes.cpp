@@ -414,7 +414,7 @@ AnyValue SimpleLiteralNode::emitIR(ValueDest &dest,
   // Once we have the type in question we can just return its Self type as an
   // PValue.  This already includes bound parameters etc.
   assert(astDecl->resolvedness >= DeclResolvedness::signature);
-  return emitter.emitResult(astDecl->getSelfType(), this, dest);
+  return emitter.emitResult(astDecl->getTypeDeclSelf(), this, dest);
 }
 
 /// The value of a string is the concatenated value with escapes and quotes

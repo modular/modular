@@ -754,7 +754,7 @@ void FunctionDeclView::initFromSignature(MojoASTDeclRef declRef,
   // If this is a method, grab the expected "Self" type.
   std::optional<ASTType> selfType;
   if (isa<StructDeclOp>(*declRef.getParentDecl()))
-    selfType = declRef->getParentDecl()->getSelfType();
+    selfType = declRef->getParentDecl()->getTypeDeclSelf();
 
   // Grab the types of the arguments to the function.
   DefaultValueHandler defaultArgHandler(signature.getArgListAttrs());

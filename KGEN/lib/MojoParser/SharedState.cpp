@@ -1420,7 +1420,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           })
           .Case([&](StructDeclOp op) {
             ASTDecl &structDecl = addDeclForOp(op, op.getSymNameAttr());
-            structDecl.setSelfType(ASTDecl::computeSelfTypeForStruct(op));
+            structDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(op));
             for (ParamDeclAttr param : op.getParams()) {
               // Add the parameters as accessible member decls. Make sure
               // to demangle the parameter name.
@@ -1432,7 +1432,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           })
           .Case([&](TraitDeclOp op) {
             ASTDecl &traitDecl = addDeclForOp(op, op.getSymNameAttr());
-            traitDecl.setSelfType(ASTDecl::computeSelfTypeForTrait(op));
+            traitDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(op));
             // TODO(traits): Add decls for parameters, when they exist.
           })
           .Case([&](AliasDeclOp op) {
