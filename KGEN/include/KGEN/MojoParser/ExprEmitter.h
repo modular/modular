@@ -378,14 +378,6 @@ public:
                              const ExprNode *expr, CallSyntax syntax,
                              ValueDest &dest,
                              bool allowImplicitConversion = true);
-  /// Emit a call to __new__ or __init__, represented by `callee`, returning an
-  /// instance of the specified type.  If `allowImplicitConversion` is true, the
-  /// provided args are allowed to implicitly convert to the expectations of the
-  /// constructor signatures.
-  CValue emitConstructorCall(ASTType type, const OverloadSet &callee,
-                             const CallOperands &operands, const ExprNode *expr,
-                             CallSyntax syntax, ValueDest &dest,
-                             bool allowImplicitConversion = true);
 
   //===--------------------------------------------------------------------===//
   // Type conversion helpers.

@@ -1408,6 +1408,9 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
   return emitIndirectCall(callee, operands, dest, callNode);
 }
 
+/// Emit a call to __new__ or __init__, returning an instance of the specified
+/// type.  If `allowImplicitConversion` is true, the provided args are allowed
+/// to implicitly convert to the expectations of the constructor signatures.
 CValue ExprEmitter::emitConstructorCall(ASTType type,
                                         const CallOperands &callOperands,
                                         const ExprNode *expr, CallSyntax syntax,
@@ -1420,15 +1423,9 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // Check to see if we can invoke an __init__ method to convert it.
   auto callee =
       OverloadSet::lookup(declScope, shared, type, "__init__", expr, syntax);
-  return emitConstructorCall(type, callee, callOperands, expr, syntax, dest,
-                             allowImplicitConversion);
-}
+  shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(),
+                              callOperands);
 
-CValue ExprEmitter::emitConstructorCall(ASTType type, const OverloadSet &callee,
-                                        const CallOperands &callOperands,
-                                        const ExprNode *expr, CallSyntax syntax,
-                                        ValueDest &dest,
-                                        bool allowImplicitConversion) {
   // Init gets a self argument passed in as the first argument by-ref.
   ArrayRef<ASTExprAnd<AnyValue>> origPosOperands = callOperands.posOperands;
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = origPosOperands;
