@@ -40,6 +40,61 @@ static ASTType getRValueTypeIfResolvable(AnyValue value) {
   return ASTType();
 }
 
+namespace {
+/// This failure happens when a parameter is found of the wrong type.
+struct TypeConflictFailure {
+  ASTType paramType, argParamType;
+};
+
+// This failure happens when a parameter is inferred to two different values.
+struct ValueConflictFailure {
+  TypedAttr v1, v2;
+};
+
+// This failure happens when the parameter isn't found at all.
+struct NotFoundFailure {};
+
+// These are the different failure modes that we know happen.
+struct InferenceFailure {
+  template <typename Failure>
+  InferenceFailure(Failure info) : info(info) {}
+  // Describe what went wrong.
+  void emitSpecificNote(function_ref<InflightDiag &()> attachNote) const;
+
+private:
+  SmartVariant<TypeConflictFailure, ValueConflictFailure, NotFoundFailure> info;
+};
+} // namespace
+
+void InferenceFailure::emitSpecificNote(
+    function_ref<InflightDiag &()> attachNote) const {
+  if (isa<NotFoundFailure>(info)) {
+    attachNote() << "parameter isn't used in any argument";
+    return;
+  }
+
+  if (isa<ValueConflictFailure>(info)) {
+    auto failure = cast<ValueConflictFailure>(info);
+    attachNote() << "parameter inferred to two different values: " << failure.v1
+                 << " and " << failure.v2;
+    return;
+  }
+
+  auto failure = cast<TypeConflictFailure>(info);
+  if (isa<TraitType>(failure.paramType)) {
+    if (auto anyStruct = dyn_cast<AnyStructType>(failure.argParamType)) {
+      attachNote() << "argument type " << anyStruct.getStructType()
+                   << " does not conform to trait " << failure.paramType;
+      return;
+    }
+    if (isa<TraitType>(failure.argParamType)) {
+      attachNote() << "argument type " << failure.argParamType
+                   << " is not a child trait of " << failure.paramType;
+      return;
+    }
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // ParameterInferenceDiagnostics
 //===----------------------------------------------------------------------===//
@@ -49,10 +104,9 @@ class ParameterInferenceDiagnostics {
 public:
   /// Indicate that parameter inference failed to infer the parameter at
   /// `paramIdx` from the argument at `argPos`.
-  void addFailedInference(size_t paramIdx, const ExprNode *argExpr,
-                          ASTType paramType, ASTType argParamType) {
-    diags[paramIdx].push_back(
-        FailedInference{argExpr, paramType, argParamType});
+  void addFailure(size_t paramIdx, const ExprNode *argExpr,
+                  InferenceFailure &&info) {
+    diags.push_back({paramIdx, argExpr, std::move(info)});
   }
 
   /// Attach failed parameter inference diagnostics for parameters with no
@@ -60,17 +114,18 @@ public:
   void attach(LITSignatureType signature, InflightDiag &diag, size_t numActual,
               const CallOperands &operands);
 
-private:
-  void emitSpecificNote(function_ref<InflightDiag &()> attachNote,
-                        ASTType paramType, ASTType argParamType);
-
   struct FailedInference {
+    size_t paramIdx;
     const ExprNode *argExpr;
-    ASTType paramType;
-    ASTType argParamType;
+    InferenceFailure info;
   };
+  using DiagStorage = SmallVector<FailedInference, 1>;
 
-  llvm::MapVector<size_t, SmallVector<FailedInference, 1>> diags;
+  DiagStorage saveDiags() { return diags; }
+  void resetDiags(DiagStorage &&newDiags) { diags = std::move(newDiags); }
+
+private:
+  DiagStorage diags;
 };
 } // namespace
 
@@ -86,41 +141,33 @@ static void printNameOrIdx(StringAttr name, size_t idx, InflightDiag &diag) {
 void ParameterInferenceDiagnostics::attach(LITSignatureType signature,
                                            InflightDiag &diag, size_t numActual,
                                            const CallOperands &operands) {
-  for (auto &[idx, diags] : diags) {
-    if (idx < numActual)
+  // Pick the first diagnostic for the earliest parameter after numActual.
+  const FailedInference *best = nullptr;
+  for (const FailedInference &failure : diags) {
+    // Ignore failures for things we know.  Why?
+    if (failure.paramIdx < numActual)
       continue;
-    for (const FailedInference &failed : diags) {
-      // Don't report diagnostics when failure occurred from a default value.
-      if (!failed.argExpr)
-        continue;
-      const ExprNode *expr = failed.argExpr;
-      emitSpecificNote(
-          [&, idx = idx]() -> InflightDiag & {
-            diag.attachNote(expr->getLoc())
-                << expr->getRange() << "failed to infer parameter ";
-            printNameOrIdx(signature.getParamName(idx), idx, diag);
-            return diag << ", ";
-          },
-          failed.paramType, failed.argParamType);
-    }
+    // Don't report diagnostics when failure occurred from a default value,
+    // we need a location.
+    if (!failure.argExpr)
+      continue;
+    // If we have a best match for an earlier parameter, ignore this one.
+    if (best && best->paramIdx <= failure.paramIdx)
+      continue;
+    // Otherwise this is the best we've found.
+    best = &failure;
   }
-}
 
-void ParameterInferenceDiagnostics::emitSpecificNote(
-    function_ref<InflightDiag &()> attachNote, ASTType paramType,
-    ASTType argParamType) {
-  if (isa<TraitType>(paramType)) {
-    if (auto anyStruct = dyn_cast<AnyStructType>(argParamType)) {
-      attachNote() << "argument type " << anyStruct.getStructType()
-                   << " does not conform to trait " << paramType;
-      return;
-    }
-    if (isa<TraitType>(argParamType)) {
-      attachNote() << "argument type " << argParamType
-                   << " is not a child trait of " << paramType;
-      return;
-    }
-  }
+  if (!best)
+    return;
+
+  best->info.emitSpecificNote([&]() -> InflightDiag & {
+    diag.attachNote(best->argExpr->getLoc())
+        << best->argExpr->getRange() << "failed to infer parameter ";
+    printNameOrIdx(signature.getParamName(best->paramIdx), best->paramIdx,
+                   diag);
+    return diag << ", ";
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -160,9 +207,8 @@ private:
   LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand,
                                 ASTType expectedType,
                                 ArgConvention expectedConvention);
-  void addFailedInference(ASTType paramType, ASTType argParamType) {
-    diags.addFailedInference(parameterIndex, curArgExpr, paramType,
-                             argParamType);
+  void addFailure(InferenceFailure &&info) {
+    diags.addFailure(parameterIndex, curArgExpr, std::move(info));
   }
 
   ASTDecl &declScope;
@@ -406,7 +452,8 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
         }
       }
       // Otherwise, we failed to infer the parameter. Record this failure.
-      addFailedInference(expectedType, actualAttr.getType());
+      addFailure(TypeConflictFailure{expectedType, actualAttr.getType()});
+      return failure();
     }
     // If this is some parameter other than the one we're inferring, assume it
     // will work out.
@@ -641,6 +688,10 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       }
     }
 
+    // We're speculatively trying something.  If we have errors on one path we
+    // need to roll them back.
+    auto savedDiags = diags.saveDiags();
+
     // Otherwise, we pass as an r-value if we know what the type must be.
     if (succeeded(matchTypes(argType, expectedType)))
       return success();
@@ -648,10 +699,8 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // If implicit conversions are enabled and the target type is known, then
     // we can check to see if any of the constructors for the result type can
     // work.
-    if (!allowImplicitConversions)
-      return failure();
     ASTDecl *expectedDecl = expectedType.getDecl(shared);
-    if (!expectedDecl)
+    if (!allowImplicitConversions || !expectedDecl)
       return failure();
 
     // Determine if we can construct the requested type given the existing value
@@ -679,6 +728,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       // TODO: Because we're not passing known params from expectedType down, we
       // can't reliably resolve the implicit conversion in the case of
       // overloads.  Need to investigate what is holding this up.
+      // diags.resetDiags(std::move(savedDiags));
       return success();
     }
 
@@ -694,9 +744,25 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     else // FIXME: get rid of -> Self initializers.
       inferredSelf = initSig.getResultType();
 
+    // Before we check with the implicit conversion, save any diagnostics
+    // accumulated without it.  If both fail, we default to the non-implicit
+    // conversion diagnostics.
+    auto noImplicitConversionDiags = diags.saveDiags();
+    // Go back to diagnostics before we did the thing that failed.
+    diags.resetDiags(std::move(savedDiags));
+
     // Infer the parameters of this overload candidate against the computed
     // result type of the initializer.
-    return matchTypes(inferredSelf, expectedType);
+    auto result = matchTypes(inferredSelf, expectedType);
+
+    // If the implicit conversion worked then we're good.
+    if (succeeded(result))
+      return success();
+
+    // Otherwise restore the diags from the non-implicit conversion path,
+    // they'll be less confusing.
+    diags.resetDiags(std::move(noImplicitConversionDiags));
+    return failure();
   }
   case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
@@ -885,8 +951,14 @@ ParameterInferenceState::infer(LITSignatureType signature,
     auto sameAsFirst = [&](PValue v) { return v.get() == first.get(); };
     if (llvm::all_of(inferredValues, sameAsFirst))
       return first;
+
+    // If not, add a diagnostic so the user knows why.
+    TypedAttr other = *llvm::find_if_not(inferredValues, sameAsFirst);
+    addFailure(ValueConflictFailure{first, other});
+    return {};
   }
 
+  addFailure(NotFoundFailure());
   return {};
 }
 
@@ -1069,14 +1141,6 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
     return;
   }
 
-  auto attrToString = [&](TypedAttr attr) -> std::string {
-    std::string str;
-    llvm::raw_string_ostream os(str);
-    ASTType::printParam(os, attr, /*forDiag*/ true,
-                        /*demangleParams*/ false);
-    return os.str();
-  };
-
   auto operandRefTy = cast<RefType>(operand.ir.getMValueReference().getType());
   if (!ASTType(argType.getElementType())
            .isEqualCanon(operandRefTy.getElementType())) {
@@ -1086,20 +1150,18 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
                          << ASTType(argType.getElementType());
   } else if (argType.getAddressSpace() != operandRefTy.getAddressSpace()) {
     diag.attachNote(loc) << "operand address space "
-                         << attrToString(operandRefTy.getAddressSpace())
+                         << operandRefTy.getAddressSpace()
                          << " doesn't match expected address space "
-                         << attrToString(argType.getAddressSpace());
+                         << argType.getAddressSpace();
   } else if (!canConvertWithRebind(operandRefTy.getLifetimeType(),
                                    argType.getLifetimeType(), shared)) {
-    diag.attachNote(loc) << "operand mutability "
-                         << attrToString(operandRefTy.isMutable())
+    diag.attachNote(loc) << "operand mutability " << operandRefTy.isMutable()
                          << " doesn't match expected mutability "
-                         << attrToString(argType.isMutable());
+                         << argType.isMutable();
   } else if (!canConvertWithRebind(operandRefTy, argType, shared)) {
-    diag.attachNote(loc) << "operand lifetime "
-                         << attrToString(operandRefTy.getLifetime())
+    diag.attachNote(loc) << "operand lifetime " << operandRefTy.getLifetime()
                          << " doesn't match expected lifetime "
-                         << attrToString(argType.getLifetime());
+                         << argType.getLifetime();
   }
 }
 

@@ -302,6 +302,7 @@ fn autoparams[a: Int](x: ParamType):
 
 fn invalid_params[f: fn(ParamType) -> None]():
   # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
+  # expected-note @below {{failed to infer parameter 'a', parameter isn't used in any argument}}
   autoparams[](ParamType[1]())
   # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
   autoparams[1, 2](ParamType[2]())

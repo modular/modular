@@ -193,6 +193,9 @@ public:
   /// Print the specified parameter like we would in AST type printing.
   static void printParam(raw_ostream &os, TypedAttr param, bool forDiag,
                          bool demangleParams);
+  /// Get the specified parameter as a string.
+  static std::string getParamAsString(TypedAttr param, bool forDiag,
+                                      bool demangleParams);
 
   /// Create and return a reference type with 'this' as the underlying element
   /// type an implicit lifetime reference with the specified arg name.
@@ -203,6 +206,7 @@ raw_ostream &operator<<(raw_ostream &os, ASTType type);
 } // namespace KGEN::LIT
 
 void addToDiagnostic(KGEN::LIT::ASTType type, InflightDiag &diag);
+void addToDiagnostic(TypedAttr paramValue, InflightDiag &diag);
 
 } // namespace M
 

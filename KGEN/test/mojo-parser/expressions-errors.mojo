@@ -554,10 +554,10 @@ fn test_bad_ref_errors(a: MemoryOnlyPair, b: MemoryOnlyPair):
 
 fn test_bad_ref_errors[T: AnyType](a: Reference[T, _, _, _]):
   # expected-error @below {{invalid call to '__init__': argument #1 cannot be converted from 'T' to 'Reference['T', ...]}}
-  # expected-note @below {{operand address space address_space._value.value doesn't match expected address space 0}}
+  # expected-note @below {{operand address space 'address_space._value.value' doesn't match expected address space '0'}}
   var x : Reference[T, a.is_mutable, a.lifetime] = a[]
 
   # expected-error @below {{invalid call to '__init__': argument #1 cannot be converted from 'T' to 'Reference['T', ...]}}
-  # expected-note @below {{operand mutability is_mutable doesn't match expected mutability 1}}
+  # expected-note @below {{operand mutability 'is_mutable' doesn't match expected mutability '1'}}
   var y : Reference[T, __mlir_attr.`1: i1`, __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
 

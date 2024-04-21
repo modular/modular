@@ -739,12 +739,28 @@ std::string ASTType::getAsString(bool forDiag, bool demangleParams) const {
   return os.str();
 }
 
+/// Get the specified parameter as a string.
+std::string ASTType::getParamAsString(TypedAttr param, bool forDiag,
+                                      bool demangleParams) {
+  std::string result;
+  llvm::raw_string_ostream os(result);
+  printParam(os, param, forDiag, demangleParams);
+  return os.str();
+}
+
 void PValue::printForDiag(raw_ostream &os) const {
   ASTType::printParam(os, *this, /*forDiag=*/true, /*demangleParams=*/false);
 }
 
 void M::addToDiagnostic(ASTType type, InflightDiag &diag) {
   diag << '\'' << type.getAsString(/*forDiag=*/true) << '\'';
+}
+
+void M::addToDiagnostic(TypedAttr paramValue, InflightDiag &diag) {
+  diag << '\'';
+  diag << ASTType::getParamAsString(paramValue, /*forDiag=*/true,
+                                    /*demangleParams=*/true);
+  diag << '\'';
 }
 
 /// Print to standard error with newline after it, for use in a debugger.
