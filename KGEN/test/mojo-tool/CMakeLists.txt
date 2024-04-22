@@ -14,9 +14,6 @@ configure_lit_site_cfg(
 add_modular_testsuite(check-mojo-tool
   TOP_LEVEL_CHECK check-mojo
 
-  DEPENDS
-  mojo-layout
-
   TOOLS
   llvm-objdump
   mojo
