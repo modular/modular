@@ -1250,6 +1250,11 @@ cc_binary(
     ],
 )
 
+opt_wrapper(
+    name = "kgen.opt",
+    dep = ":kgen",
+)
+
 cc_binary(
     name = "kgen-opt",
     srcs = glob(["tools/kgen-opt/*.cpp"]),
