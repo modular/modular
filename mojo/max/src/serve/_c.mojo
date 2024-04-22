@@ -9,34 +9,23 @@
 from sys.ffi import DLHandle
 from memory.unsafe import DTypePointer, Pointer
 
-
-@register_passable("trivial")
-struct Int64ArrayRef(Boolable):
-    """Represent a constant reference to an Int64 array."""
-
-    var data: Pointer[Int64]
-    var length: Int
-
-    fn __init__(inout self, vec: List[Int64]):
-        self.data = Pointer[Int64](vec.data.address)
-        self.length = len(vec)
-
-    fn __bool__(self) -> Bool:
-        return self.length != 0
-
-    fn _as_int_vector(self) -> List[Int]:
-        var vec = List[Int]()
-        for i in range(self.length):
-            vec.append(int(self.data[i]))
-        return vec^
+from max.engine._utils import call_dylib_func
 
 
 @value
 @register_passable
 struct TensorView:
-    """Corresponds to the M_tensorView C type."""
+    """Corresponds to the M_TensorView C type."""
 
     var name: StringRef
     var dtype: StringRef
-    var shape: Int64ArrayRef
-    var contents: StringRef
+    var shape: Pointer[Int64]
+    var shapeSize: Int
+    var contents: Pointer[UInt8]
+    var contentsSize: Int
+
+    alias _FreeValueFnName = "M_freeTensorView"
+
+    @staticmethod
+    fn free(borrowed lib: DLHandle, ptr: Pointer[TensorView]):
+        call_dylib_func(lib, Self._FreeValueFnName, ptr)

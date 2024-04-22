@@ -9,8 +9,8 @@ from max.engine import TensorMap
 
 
 @value
-struct ModelInfo:
-    """Model artifact details."""
+struct FileModel:
+    """File-backed model artifact details."""
 
     var name: String
     var path: String
@@ -72,7 +72,7 @@ trait InferenceService:
 
     fn infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
-    ](self, request: req_type, inout response: resp_type) raises -> None:
+    ](self, request: req_type, inout response: resp_type) -> None:
         """Runs a single inference request.
 
         Parameters:

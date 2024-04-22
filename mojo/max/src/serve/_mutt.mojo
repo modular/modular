@@ -17,7 +17,6 @@ from .kserve import (
     CModelInferRequest,
     CModelInferResponse,
 )
-from .service import ModelInfo
 
 
 @value
@@ -25,10 +24,15 @@ from .service import ModelInfo
 struct CBatch:
     var ptr: DTypePointer[DType.invalid]
 
+    alias _NewFnName = "M_newBatch"
     alias _FreeFnName = "M_freeBatch"
     alias _SizeFnName = "M_batchSize"
     alias _RequestAtFn = "M_batchRequestAt"
     alias _ResponseAtFn = "M_batchResponseAt"
+
+    @staticmethod
+    fn new(lib: DLHandle) -> CBatch:
+        return call_dylib_func[CBatch](lib, Self._NewFnName)
 
     fn free(owned self, lib: DLHandle):
         call_dylib_func(lib, Self._FreeFnName, self.ptr)
@@ -51,6 +55,11 @@ struct Batch(Sized, CollectionElement):
     var _ptr: CBatch
     var _lib: DLHandle
     var _session: InferenceSession
+
+    fn __init__(inout self, lib: DLHandle, owned session: InferenceSession):
+        self._ptr = CBatch.new(lib)
+        self._lib = lib
+        self._session = session^
 
     fn __init__(
         inout self, ptr: CBatch, lib: DLHandle, owned session: InferenceSession
@@ -126,7 +135,8 @@ struct CMuttServerAsync:
     fn run(owned self, lib: DLHandle):
         call_dylib_func(lib, Self._RunFnName, self.ptr)
 
-    fn pop_ready(owned self, lib: DLHandle) -> CBatch:
+    # TODO(yihualou): Should be backed by an AsyncValueRef.
+    async fn async_pop_ready(owned self, lib: DLHandle) -> CBatch:
         return call_dylib_func[CBatch](lib, self._PopReadyFnName, self.ptr)
 
     fn push_complete(
@@ -179,8 +189,9 @@ struct MuttServerAsync:
     fn run(self):
         self._ptr.run(self._lib)
 
-    fn pop_ready(self) -> Batch:
-        return Batch(self._ptr.pop_ready(self._lib), self._lib, self._session)
+    async fn async_pop_ready(self, inout batch: Batch) -> None:
+        var ptr = await self._ptr.async_pop_ready(self._lib)
+        batch = Batch(ptr, self._lib, self._session)
 
     fn push_complete(self, batch: Batch, index: Int64):
         self._ptr.push_complete(self._lib, batch._ptr, index)

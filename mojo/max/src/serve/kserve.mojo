@@ -5,30 +5,38 @@
 # ===----------------------------------------------------------------------=== #
 """Provides C bindings to KServe and basic RPC server implementations."""
 
-from sys.ffi import DLHandle
-from memory.unsafe import DTypePointer
 
-from max.engine import (
-    InferenceSession,
-    Model,
-    TensorMap,
+from algorithm import parallelize
+from collections import Dict
+from memory.unsafe import DTypePointer
+from runtime.llcl import (
+    MojoCallContextPtr,
+    MojoCallRaisingTask,
+    MojoCallTask,
+    Runtime,
+    TaskGroup,
+    TaskGroupTask,
+    TaskGroupTaskList,
 )
+from sys.ffi import DLHandle
+from tensor import Tensor, TensorSpec
+
+from max.engine import InferenceSession, Model, TensorMap
 from max.engine._utils import (
     CString,
     call_dylib_func,
     exchange,
     handle_from_config,
 )
-from tensor import Tensor, TensorSpec
 
+from ._mutt import Batch, MuttServerAsync
+from ._c import TensorView
 from .service import (
     InferenceRequest,
     InferenceResponse,
     InferenceService,
-    ModelInfo,
+    FileModel,
 )
-from ._mutt import Batch, MuttServerAsync
-from ._c import Int64ArrayRef, TensorView
 
 # ===----------------------------------------------------------------------=== #
 # Utilities
@@ -37,7 +45,10 @@ from ._c import Int64ArrayRef, TensorView
 
 fn get_tensor_spec(view: TensorView) -> TensorSpec:
     var dtype = view.dtype
-    var shape = view.shape._as_int_vector()
+    var shape = List[Int](capacity=view.shapeSize)
+    for i in range(view.shapeSize):
+        shape.append(int(view.shape[i]))
+
     if dtype == "BOOL":
         return TensorSpec(DType.bool, shape)
     elif dtype == "UINT8":
@@ -80,8 +91,8 @@ fn get_tensors[
             lib, get_tensor_fn, ptr, i
         )
         var view = view_ptr.load()
-        map.borrow(view.name, get_tensor_spec(view), view.contents._as_ptr())
-        view_ptr.free()
+        map.borrow(view.name, get_tensor_spec(view), view.contents)
+        TensorView.free(lib, view_ptr)
     return map^
 
 
@@ -145,21 +156,21 @@ fn set_tensors[
             dtype_str = "BYTES"
             contents_str = buffer_str[DType.int8](map, name)
 
-        var shape = List[Int64]()
-        shape.reserve(spec.rank())
+        var shape = List[Int64](capacity=spec.rank())
         for i in range(spec.rank()):
             shape.append(spec[i])
 
-        call_dylib_func(
+        call_dylib_func[NoneType](
             lib,
             add_tensor_fn,
             ptr,
             name._strref_dangerous(),
             dtype_str,
-            Int64ArrayRef(shape),
+            shape.data,
+            spec.rank(),
         )
-        shape.steal_data().free()
         name._strref_keepalive()
+        _ = shape^
 
         call_dylib_func(lib, add_tensor_contents_fn, ptr, contents_str)
 
@@ -181,7 +192,9 @@ struct CModelInferRequest:
         return call_dylib_func[Int64](lib, Self._OutputsSizeFnName, self.ptr)
 
     fn output_name(owned self, lib: DLHandle, index: Int64) -> CString:
-        return call_dylib_func[CString](lib, Self._OutputNameFnName, self.ptr)
+        return call_dylib_func[CString](
+            lib, Self._OutputNameFnName, self.ptr, index
+        )
 
 
 struct ModelInferRequest(InferenceRequest, CollectionElement):
@@ -291,57 +304,114 @@ struct SingleModelInferenceService(InferenceService):
     """Inference service that serves a single model."""
 
     var _model: Model
-    var _lib: DLHandle
     var _session: InferenceSession
 
     fn __init__(
         inout self,
-        model: ModelInfo,
-        lib: DLHandle,
+        model: FileModel,
         owned session: InferenceSession,
     ) raises:
-        self._lib = lib
         self._session = session^
         self._model = self._session.load(model.path)
 
     fn infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
-    ](self, request: req_type, inout response: resp_type) raises -> None:
-        var inputs = request.get_input_tensors()
-        var outputs = self._model.execute(inputs^)
-        response.set_output_tensors(request.get_requested_outputs(), outputs)
+    ](self, request: req_type, inout response: resp_type) -> None:
+        _ = self.async_infer(request, response)()
 
     async fn async_infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
     ](self, request: req_type, inout response: resp_type) -> None:
-        pass
+        try:
+            var inputs = request.get_input_tensors()
+            var outputs = self._model.execute(inputs^)
+            response.set_output_tensors(
+                request.get_requested_outputs(), outputs
+            )
+        except e:
+            pass
 
 
-struct KServeGRPCInferenceServer:
+struct GRPCInferenceServer:
     """Inference server implementing the KServe protocol over gRPC."""
 
-    var _model: ModelInfo
     var _lib: DLHandle
-    var _service: SingleModelInferenceService
+    var _session: InferenceSession
     var _impl: MuttServerAsync
+    var _num_listeners: Int
 
     fn __init__(
-        inout self, address: String, model: ModelInfo, session: InferenceSession
+        inout self,
+        address: String,
+        owned session: InferenceSession,
+        num_listeners: Int = 8,
     ) raises:
-        self._model = model
-        self._lib = handle_from_config("serving", "max.serve_lib")
-        self._service = SingleModelInferenceService(model, self._lib, session)
-        self._impl = MuttServerAsync(address, self._lib, session)
+        """Constructs a gRPC inference server.
 
-    fn serve(self) raises:
-        self._impl.run()
-        # TODO(yihualou) Add shutdown ability.
-        while True:
-            var batch = self._impl.pop_ready()
+        Args:
+            address: Address to serve on.
+            session: Current inference context.
+            num_listeners: Number of listener tasks.
+        """
+
+        self._lib = handle_from_config("serving", "max.serve_lib")
+        self._session = session^
+        self._impl = MuttServerAsync(address, self._lib, self._session)
+        self._num_listeners = num_listeners
+
+    fn serve[
+        service_type: InferenceService
+    ](self, service: service_type) -> None:
+        @always_inline
+        @parameter
+        async fn handle(
+            request: ModelInferRequest, inout response: ModelInferResponse
+        ) capturing -> None:
+            service.infer(request, response)
+
+        self.serve[handle]()
+
+    fn serve[
+        handle_fn:
+        async fn (ModelInferRequest, inout ModelInferResponse) capturing -> None
+    ](self) -> None:
+        var rt = Runtime()
+        var task = rt.create_task[NoneType](self.async_serve[handle_fn]())
+        task.wait()
+
+    async fn async_serve[
+        handle_fn:
+        async fn (ModelInferRequest, inout ModelInferResponse) capturing -> None
+    ](self) -> None:
+        @always_inline
+        @parameter
+        async fn process(batch: Batch) capturing -> None:
             var requests = batch.requests()
             var responses = batch.responses()
             for i in range(len(batch)):
-                self._service.infer[ModelInferRequest, ModelInferResponse](
-                    requests[i], responses[i]
-                )
+                var req = requests[i]
+                var resp = responses[i]
+                await handle_fn(req, resp)
                 self._impl.push_complete(batch, i)
+                _ = resp^
+
+        @always_inline
+        @parameter
+        async fn listen() capturing -> None:
+            while True:
+                var batch = Batch(self._lib, self._session)
+                await self._impl.async_pop_ready(batch)
+                await process(batch)
+                _ = batch^
+
+        self._impl.run()
+
+        var tasks = TaskGroupTaskList[NoneType](self._num_listeners)
+        var rt = Runtime()
+        var tg = TaskGroup(rt)
+        for i in range(self._num_listeners):
+            var task = tg.create_task[NoneType](listen())
+            tasks.add(task^)
+
+        await tg
+        _ = tasks^
