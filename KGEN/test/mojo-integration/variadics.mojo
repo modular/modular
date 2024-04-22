@@ -361,9 +361,7 @@ fn test_tuple():
     # CHECK-NEXT: initializing 1
     # CHECK-NEXT: initializing 2
     # CHECK-NEXT: copying 1
-    # CHECK-NEXT: moving 1
     # CHECK-NEXT: copying 2
-    # CHECK-NEXT: moving 2
     # CHECK-NEXT: destroying 1
     # CHECK-NEXT: destroying 2
     var t1 = TalkativeCopableMovableMem(1), TalkativeCopableMovableMem(2)
@@ -372,9 +370,7 @@ fn test_tuple():
     print("p1:", t1[1], "before copy")
 
     # CHECK-NEXT: copying 1
-    # CHECK-NEXT: moving 1
     # CHECK-NEXT: copying 2
-    # CHECK-NEXT: moving 2
     var t2 = t1
 
     # CHECK-NEXT: p2: talkative 1 before transfer
