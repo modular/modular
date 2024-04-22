@@ -991,7 +991,6 @@ cc_library(
 cc_library(
     name = "LowerLIT",
     srcs = glob(["lib/LowerLIT/*.cpp"]),
-    hdrs = glob(["include/KGEN/LowerLIT/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":KGENDialect",
@@ -1008,12 +1007,12 @@ cc_library(
         "lib/KGENToLLVM/*.cpp",
         "lib/KGENToLLVM/*.h",
     ]),
-    hdrs = glob(["include/KGEN/KGENToLLVM/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":HLCFDialectAnalysis",
         ":KGENDialect",
         ":ToolCommon",
+        ":ToolCommonHeaders",
         "//Support:DebugInfoTransforms",
         "@llvm-project//mlir:IR",
     ],
@@ -1022,7 +1021,6 @@ cc_library(
 cc_library(
     name = "Transforms",
     srcs = glob(["lib/Transforms/*.cpp"]),
-    hdrs = glob(["include/KGEN/Transforms/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":HLCFDialect",
@@ -1042,7 +1040,6 @@ cc_library(
         "lib/Elaborator/*.cpp",
         "lib/Elaborator/*.h",
     ]),
-    hdrs = glob(["include/KGEN/Elaborator/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":KGENDialect",
@@ -1057,7 +1054,6 @@ cc_library(
 cc_library(
     name = "Pipeline",
     srcs = glob(["lib/Pipeline/*.cpp"]),
-    hdrs = glob(["include/KGEN/Pipeline/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":Elaborator",
@@ -1091,7 +1087,6 @@ cc_library(
         "lib/ObjectCompiler/*.cpp",
         "lib/ObjectCompiler/*.h",
     ]),
-    hdrs = glob(["include/KGEN/ObjectCompiler/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":Compiler",
@@ -1125,10 +1120,7 @@ cc_library(
         "lib/MojoTooling/*.cpp",
         "lib/MojoTooling/*.h",
     ]),
-    hdrs = glob([
-        "include/KGEN/MojoTooling/*.h",
-        "include/KGEN/MojoTooling/*.def",
-    ]),
+    hdrs = glob(["include/KGEN/MojoTooling/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":MojoParser",
@@ -1137,14 +1129,8 @@ cc_library(
 
 cc_library(
     name = "MojoTesting",
-    srcs = glob([
-        "lib/MojoTesting/*.cpp",
-        "lib/MojoTesting/*.h",
-    ]),
-    hdrs = glob([
-        "include/KGEN/MojoTesting/*.h",
-        "include/KGEN/MojoTesting/*.def",
-    ]),
+    srcs = glob(["lib/MojoTesting/*.cpp"]),
+    hdrs = glob(["include/KGEN/MojoTesting/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":MojoParser",
@@ -1187,14 +1173,7 @@ cc_library(
 
 cc_library(
     name = "ExecutionEngine",
-    srcs = glob([
-        "lib/ExecutionEngine/*.cpp",
-        "lib/ExecutionEngine/*.h",
-    ]),
-    hdrs = glob([
-        "include/KGEN/ExecutionEngine/*.h",
-        "include/KGEN/ExecutionEngine/*.def",
-    ]),
+    srcs = glob(["lib/ExecutionEngine/*.cpp"]),
     strip_include_prefix = "include",
     deps = [
         ":FakeCASIDHeaders",
@@ -1203,22 +1182,6 @@ cc_library(
         ":VersionHeader",
         "@llvm-project//llvm:OrcDebugging",
         "@llvm-project//mlir:MlirLspServerSupportLib",
-    ],
-)
-
-cc_library(
-    name = "Package",
-    srcs = glob([
-        "lib/Package/*.cpp",
-    ]),
-    hdrs = glob([
-        "include/KGEN/Package/*.h",
-    ]),
-    strip_include_prefix = "include",
-    deps = [
-        ":Compiler",
-        ":KGENDialect",
-        "@llvm-project//mlir:BytecodeWriter",
     ],
 )
 
@@ -1239,7 +1202,8 @@ cc_library(
         ":LITDialect",
         ":MOGGPreElab",
         ":POPDialect",
-        ":Package",
+        ":ToolCommonHeaders",
+        "//Cache",
         "//Support:CommonCLOptions",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
@@ -1271,7 +1235,6 @@ cc_binary(
         ":KGENDialect",
         ":MojoParser",
         ":ObjectCompiler",
-        ":Package",
         ":Pipeline",
         ":Support",
         ":ToolCommon",
@@ -1299,7 +1262,6 @@ cc_binary(
         ":MOGGPreElab",
         ":MojoParser",
         ":ObjectCompiler",
-        ":Package",
         ":Pipeline",
         ":Support",
         ":ToolCommon",
@@ -1341,10 +1303,7 @@ cc_binary(
 
 cc_binary(
     name = "kgen-translate",
-    srcs = glob([
-        "tools/kgen-translate/*.cpp",
-        "tools/kgen-translate/*.h",
-    ]),
+    srcs = glob(["tools/kgen-translate/*.cpp"]),
     deps = [
         ":Compiler",
         ":CompilerRT",
@@ -1407,10 +1366,7 @@ cc_binary(
 
 cc_binary(
     name = "mojo-repl-entry-point",
-    srcs = glob([
-        "tools/mojo-repl-entry-point/*.cpp",
-        "tools/mojo-repl-entry-point/*.h",
-    ]),
+    srcs = glob(["tools/mojo-repl-entry-point/*.cpp"]),
     # We need to prevent inline function expansion to guarentee our entry
     # point function is correctly invoked.
     copts = [
@@ -1450,10 +1406,7 @@ cc_library(
 
 cc_binary(
     name = "mojo-prime-package-cache",
-    srcs = glob([
-        "tools/mojo-prime-package-cache/*.cpp",
-        "tools/mojo-prime-package-cache/*.h",
-    ]),
+    srcs = glob(["tools/mojo-prime-package-cache/*.cpp"]),
     deps = [
         ":CompilerRT",
         ":ExecutionEngine",
@@ -1463,7 +1416,6 @@ cc_binary(
         ":MojoTooling",
         ":MojoToolsCommon",
         ":ObjectCompiler",
-        ":Package",
         ":Pipeline",
         ":ToolCommon",
         "//Config",
@@ -1531,7 +1483,6 @@ cc_binary(
         ":MojoToolsCommon",
         ":ObjectCompiler",
         ":POPDialect",
-        ":Package",
         ":Package.inc_files",
         ":REPL.inc_files",
         ":Run.inc_files",

@@ -1165,28 +1165,6 @@ cc_test(
 )
 
 cc_library(
-    name = "Billing",
-    srcs = glob(["lib/Billing/**/*.cpp"]),
-    hdrs = glob(["include/Support/Billing/**/*.h"]),
-    strip_include_prefix = "include",
-    deps = [
-        ":Base",
-        ":HTTP",
-    ],
-)
-
-cc_test(
-    name = "BillingTest",
-    srcs = glob(["unittests/Billing/*.cpp"]),
-    tags = ["manual"],  # FIXME: Currently crashes with cmake too
-    deps = [
-        ":Billing",
-        ":Threading",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "FrameworkSupport",
     srcs = glob(["lib/Frameworks/*.cpp"]),
     hdrs = glob(["include/Support/Frameworks/*.h"]),
