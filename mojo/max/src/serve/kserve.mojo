@@ -7,12 +7,8 @@
 
 
 from algorithm import parallelize
-from collections import Dict
 from memory.unsafe import DTypePointer
 from runtime.llcl import (
-    MojoCallContextPtr,
-    MojoCallRaisingTask,
-    MojoCallTask,
     Runtime,
     TaskGroup,
     TaskGroupTask,
@@ -29,8 +25,7 @@ from max.engine._utils import (
     handle_from_config,
 )
 
-from ._mutt import Batch, MuttServerAsync
-from ._c import TensorView
+from ._mutt import Batch, MuttServerAsync, TensorView
 from .service import (
     InferenceRequest,
     InferenceResponse,
@@ -335,6 +330,10 @@ struct SingleModelInferenceService(InferenceService):
 struct GRPCInferenceServer:
     """Inference server implementing the KServe protocol over gRPC."""
 
+    alias handle_fn_type = async fn (
+        ModelInferRequest, inout ModelInferResponse
+    ) capturing -> None
+
     var _lib: DLHandle
     var _session: InferenceSession
     var _impl: MuttServerAsync
@@ -344,7 +343,7 @@ struct GRPCInferenceServer:
         inout self,
         address: String,
         owned session: InferenceSession,
-        num_listeners: Int = 8,
+        num_listeners: Int = 4,
     ) raises:
         """Constructs a gRPC inference server.
 
@@ -371,24 +370,18 @@ struct GRPCInferenceServer:
 
         self.serve[handle]()
 
-    fn serve[
-        handle_fn:
-        async fn (ModelInferRequest, inout ModelInferResponse) capturing -> None
-    ](self) -> None:
+    fn serve[handle_fn: Self.handle_fn_type](self) -> None:
         var rt = Runtime()
-        var task = rt.create_task[NoneType](self.async_serve[handle_fn]())
-        task.wait()
+        rt.run(self.async_serve[handle_fn]())
 
-    async fn async_serve[
-        handle_fn:
-        async fn (ModelInferRequest, inout ModelInferResponse) capturing -> None
-    ](self) -> None:
+    async fn async_serve[handle_fn: Self.handle_fn_type](self) -> None:
         @always_inline
         @parameter
         async fn process(batch: Batch) capturing -> None:
             var requests = batch.requests()
             var responses = batch.responses()
-            for i in range(len(batch)):
+            var size = len(batch)
+            for i in range(size):
                 var req = requests[i]
                 var resp = responses[i]
                 await handle_fn(req, resp)
@@ -400,14 +393,14 @@ struct GRPCInferenceServer:
         async fn listen() capturing -> None:
             while True:
                 var batch = Batch(self._lib, self._session)
-                await self._impl.async_pop_ready(batch)
+                await self._impl.pop_ready(batch)
                 await process(batch)
                 _ = batch^
 
         self._impl.run()
 
-        var tasks = TaskGroupTaskList[NoneType](self._num_listeners)
         var rt = Runtime()
+        var tasks = TaskGroupTaskList[NoneType](self._num_listeners)
         var tg = TaskGroup(rt)
         for i in range(self._num_listeners):
             var task = tg.create_task[NoneType](listen())

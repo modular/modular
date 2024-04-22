@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Includes traits and common data types for inference services."""
+"""Includes common traits and data types for inference services."""
 
 from max.engine import TensorMap
 

@@ -7,9 +7,10 @@
 
 from sys.ffi import DLHandle
 from memory.unsafe import DTypePointer, Pointer
+from builtin.coroutine import _coro_resume_fn
 
 from max.engine import InferenceSession
-from max.engine._utils import call_dylib_func, exchange, CString
+from max.engine._utils import call_dylib_func, exchange
 
 from .kserve import (
     ModelInferRequest,
@@ -17,6 +18,25 @@ from .kserve import (
     CModelInferRequest,
     CModelInferResponse,
 )
+
+
+@value
+@register_passable
+struct TensorView:
+    """Corresponds to the M_TensorView C type."""
+
+    var name: StringRef
+    var dtype: StringRef
+    var shape: Pointer[Int64]
+    var shapeSize: Int
+    var contents: Pointer[UInt8]
+    var contentsSize: Int
+
+    alias _FreeValueFnName = "M_freeTensorView"
+
+    @staticmethod
+    fn free(borrowed lib: DLHandle, ptr: Pointer[TensorView]):
+        call_dylib_func(lib, Self._FreeValueFnName, ptr)
 
 
 @value
@@ -116,6 +136,55 @@ struct Batch(Sized, CollectionElement):
 
 @value
 @register_passable("trivial")
+struct AsyncCBatch:
+    var ptr: DTypePointer[DType.invalid]
+
+    alias _AsyncAndThenFnName = "M_asyncBatchAndThen"
+    alias _GetFnName = "M_asyncBatchGet"
+    alias _FreeValueFnName = "M_freeAsyncBatch"
+
+    fn get(self, borrowed lib: DLHandle) -> CBatch:
+        return call_dylib_func[CBatch](lib, Self._GetFnName, self)
+
+    fn free(self, borrowed lib: DLHandle):
+        call_dylib_func(lib, Self._FreeValueFnName, self)
+
+
+struct AwaitableCBatch:
+    var _ptr: AsyncCBatch
+    var _lib: DLHandle
+
+    fn __init__(
+        inout self,
+        ptr: AsyncCBatch,
+        lib: DLHandle,
+    ):
+        self._ptr = ptr
+        self._lib = lib
+
+    fn __del__(owned self):
+        self._ptr.free(self._lib)
+
+    @always_inline
+    fn __await__(self) -> CBatch:
+        var cur_hdl = __mlir_op.`pop.coroutine.opaque_handle`()
+
+        __mlir_region await_body():
+            call_dylib_func(
+                self._lib,
+                AsyncCBatch._AsyncAndThenFnName,
+                _coro_resume_fn,
+                self._ptr,
+                cur_hdl,
+            )
+            __mlir_op.`pop.coroutine.await.end`()
+
+        __mlir_op.`pop.coroutine.await`[_region = "await_body".value]()
+        return self._ptr.get(self._lib)
+
+
+@value
+@register_passable("trivial")
 struct CMuttServerAsync:
     var ptr: DTypePointer[DType.invalid]
 
@@ -135,9 +204,12 @@ struct CMuttServerAsync:
     fn run(owned self, lib: DLHandle):
         call_dylib_func(lib, Self._RunFnName, self.ptr)
 
-    # TODO(yihualou): Should be backed by an AsyncValueRef.
-    async fn async_pop_ready(owned self, lib: DLHandle) -> CBatch:
-        return call_dylib_func[CBatch](lib, self._PopReadyFnName, self.ptr)
+    async fn pop_ready(owned self, lib: DLHandle) -> CBatch:
+        var ptr = call_dylib_func[AsyncCBatch](
+            lib, self._PopReadyFnName, self.ptr
+        )
+        var batch = AwaitableCBatch(ptr, lib)
+        return await batch
 
     fn push_complete(
         owned self,
@@ -189,8 +261,8 @@ struct MuttServerAsync:
     fn run(self):
         self._ptr.run(self._lib)
 
-    async fn async_pop_ready(self, inout batch: Batch) -> None:
-        var ptr = await self._ptr.async_pop_ready(self._lib)
+    async fn pop_ready(self, inout batch: Batch) -> None:
+        var ptr = await self._ptr.pop_ready(self._lib)
         batch = Batch(ptr, self._lib, self._session)
 
     fn push_complete(self, batch: Batch, index: Int64):
