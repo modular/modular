@@ -89,7 +89,7 @@ def slice(
 
     var out_shape: List[Dim]
     if static_shape:
-        out_shape = static_shape.value()
+        out_shape = static_shape._value_copy()
     else:
         var dims = List[Dim]()
         for axis in range(input_type.rank()):
@@ -115,15 +115,15 @@ def slice(
 
         # TODO: Fix start/stop for negative step. Needs a select op.
         if start:
-            starts.append(start.value())
+            starts.append(start._value_copy())
         else:
             starts.append(g.scalar(Int64(0)))
         if stop:
-            stops.append(stop.value())
+            stops.append(stop._value_copy())
         else:
             stops.append(input_shape[axis])
         if step:
-            steps.append(step.value())
+            steps.append(step._value_copy())
         else:
             steps.append(g.scalar(Int64(1)))
 

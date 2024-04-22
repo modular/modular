@@ -70,13 +70,13 @@ struct _InferenceSessionImpl(Movable):
 
         var model_path = config._model_path
         if model_path:
-            var path = model_path.value()
+            var path = model_path._value_copy()
             compile_config.set_model_path(path.path._strref_dangerous())
             path.path._strref_keepalive()
 
         var custom_ops_path = config._custom_ops_path
         if custom_ops_path:
-            var path = custom_ops_path.value()
+            var path = custom_ops_path._value_copy()
             compile_config.set_replace_ops_path(path.path._strref_dangerous())
             path.path._strref_keepalive()
 
@@ -85,13 +85,13 @@ struct _InferenceSessionImpl(Movable):
             raise "give either module source or path"
 
         if model_source:
-            compile_config.set_model_source(model_source.value())
+            compile_config.set_model_source(model_source._value_copy())
 
         var spec_count = len(config._input_specs)
         for i in range(spec_count):
             var _spec = config._input_specs[i]
             if _spec._static:
-                compile_config.add_input_spec(_spec._static.value())
+                compile_config.add_input_spec(_spec._static._value_copy())
             else:
                 var dtype = _spec._dtype
                 compile_config.add_input_spec(_spec._dynamic, dtype)
@@ -282,9 +282,9 @@ struct InputSpec(CollectionElement):
         self._static = None
         if spec:
             var dyn_spec = List[ShapeElement]()
-            for item in spec.value():
+            for item in spec._value_copy():
                 if item[]:
-                    dyn_spec.append(item[].value())
+                    dyn_spec.append(item[]._value_copy())
                 else:
                     dyn_spec.append(None)
             self._dynamic = dyn_spec^
@@ -465,9 +465,9 @@ struct InferenceSession:
         var load_config = _TorchLoadOptions()
         load_config.set_model_path(path)
         if custom_ops_path:
-            load_config.set_custom_ops_path(custom_ops_path.value())
+            load_config.set_custom_ops_path(custom_ops_path._value_copy())
         if input_specs:
-            load_config.set_input_specs(input_specs.value())
+            load_config.set_input_specs(input_specs._value_copy())
         return self._ptr[].load(load_config^, self)
 
     fn load(
@@ -496,9 +496,9 @@ struct InferenceSession:
         var load_config = _TorchLoadOptions()
         load_config.set_model_source(graph)
         if custom_ops_path:
-            load_config.set_custom_ops_path(custom_ops_path.value())
+            load_config.set_custom_ops_path(custom_ops_path._value_copy())
         if input_specs:
-            load_config.set_input_specs(input_specs.value())
+            load_config.set_input_specs(input_specs._value_copy())
         return self._ptr[].load(load_config^, self)
 
     fn get_as_engine_tensor_spec(
