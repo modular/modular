@@ -275,7 +275,7 @@ struct _Accumulator[
                 for j in range(num_cols):
                     (
                         b_ptr
-                        + prefetch_offset.value() * kernel_width
+                        + prefetch_offset._value_copy() * kernel_width
                         + j * simd_width
                     ).prefetch[
                         PrefetchOptions()
@@ -336,7 +336,7 @@ struct _Accumulator[
                 for j in range(num_cols):
                     (
                         b_ptr
-                        + prefetch_offset.value() * kernel_width
+                        + prefetch_offset._value_copy() * kernel_width
                         + j * simd_width
                     ).prefetch[
                         PrefetchOptions()
@@ -504,7 +504,7 @@ fn _simd_load_maybe_partial[
     @parameter
     if partial_load:
         return partial_simd_load[simd_width](
-            ptr + offset, 0, partial_load_size.value(), 0.0
+            ptr + offset, 0, partial_load_size.value()[], 0.0
         )
     else:
         return ptr.load[width=simd_width](offset)
@@ -528,7 +528,7 @@ fn _simd_store_maybe_partial[
     if partial_store:
         # TODO: check if partial_store_size is present.
         return partial_simd_store[simd_width](
-            ptr + offset, 0, partial_store_size.value(), vec
+            ptr + offset, 0, partial_store_size.value()[], vec
         )
     else:
         return ptr.store[width=simd_width](offset, vec)
@@ -774,7 +774,7 @@ fn _accumulate_x86_simd[
             for j in range(num_cols):
                 (
                     b_ptr
-                    + prefetch_offset.value() * kernel_width
+                    + prefetch_offset._value_copy() * kernel_width
                     + j * simd_width
                 ).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
@@ -844,7 +844,7 @@ fn _accumulate_x86_simd[
             for j in range(num_cols):
                 (
                     b_ptr
-                    + prefetch_offset.value() * kernel_width
+                    + prefetch_offset._value_copy() * kernel_width
                     + j * simd_width
                 ).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
