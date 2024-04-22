@@ -154,7 +154,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
             The throughput values as a floating point 64.
         """
 
-        return self.elems.value() * 1e-9 / self.result.mean(unit=Unit.s)
+        return self.elems.value()[] * 1e-9 / self.result.mean(unit=Unit.s)
 
     fn __str__(self) -> String:
         """Formats Benchmark Statistical Info.
@@ -228,7 +228,7 @@ struct Bench:
             mode: Benchmark mode object representing benchmark or test mode.
         """
 
-        self.config = config.value() if config else BenchConfig()
+        self.config = config.value()[] if config else BenchConfig()
         self.mode = mode
         self.info_vec = List[BenchmarkInfo]()
 
@@ -417,7 +417,7 @@ struct Bench:
             bench_fn(b)
             return b.elapsed
 
-        var full_name = bench_id.func_name + "/" + bench_id.input_id.value() if bench_id.input_id else bench_id.func_name
+        var full_name = bench_id.func_name + "/" + bench_id.input_id.value()[] if bench_id.input_id else bench_id.func_name
         if not _argv_no_progress():
             print("Running", full_name, "...", end="")
 
@@ -453,7 +453,7 @@ struct Bench:
         print(report)
 
         if self.config.out_file:
-            with open(self.config.out_file.value(), "w") as f:
+            with open(self.config.out_file.value()[], "w") as f:
                 f.write(report)
 
 
