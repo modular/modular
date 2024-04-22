@@ -38,7 +38,7 @@ struct TalkativeReg(Stringable):
         return "talkative " + self.state.__str__()
 
 
-# This is copyable, movable, and talkative!
+# This is copyable, movable, and talkative!  It doesn't print on move.
 @register_passable
 struct TalkativeCopableReg(Stringable):
     var state: Int
@@ -50,6 +50,29 @@ struct TalkativeCopableReg(Stringable):
     fn __copyinit__(inout self, existing: Self):
         self.state = existing.state
         print("copying", self.state)
+
+    fn __del__(owned self):
+        print("destroying", self.state)
+
+    fn __str__(self) -> String:
+        return "talkative " + self.state.__str__()
+
+
+# This is copyable, movable, and talkative!  It prints on move.
+struct TalkativeCopableMovableMem(Stringable, CollectionElement):
+    var state: Int
+
+    fn __init__(inout self, state: Int):
+        self.state = state
+        print("initializing", state)
+
+    fn __copyinit__(inout self, existing: Self):
+        self.state = existing.state
+        print("copying", self.state)
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.state = existing.state
+        print("moving", self.state)
 
     fn __del__(owned self):
         print("destroying", self.state)
@@ -312,7 +335,7 @@ fn sum_intable[*Ts: Intable](*pack: *Ts) -> Int:
 
 # Check to see if we can do packs at comptime.
 fn test_comptime_pack():
-    # CHECK: test_comptime_pack
+    # CHECK-LABEL: test_comptime_pack
     print("test_comptime_pack")
 
     var str1 = sum_intable(4, 5.0, 7)
@@ -324,6 +347,60 @@ fn test_comptime_pack():
     # CHECK: 16
 
 
+fn use_value[T: AnyType](value: T):
+    pass
+
+
+fn test_tuple():
+    # CHECK-LABEL: -- test_tuple
+    print("-- test_tuple")
+
+    # TODO: The initializer for tuple is copying+destroying the elements
+    # unnecessarily.
+
+    # CHECK-NEXT: initializing 1
+    # CHECK-NEXT: initializing 2
+    # CHECK-NEXT: copying 1
+    # CHECK-NEXT: moving 1
+    # CHECK-NEXT: copying 2
+    # CHECK-NEXT: moving 2
+    # CHECK-NEXT: destroying 1
+    # CHECK-NEXT: destroying 2
+    var t1 = TalkativeCopableMovableMem(1), TalkativeCopableMovableMem(2)
+
+    # CHECK-NEXT: p1: talkative 2 before copy
+    print("p1:", t1[1], "before copy")
+
+    # CHECK-NEXT: copying 1
+    # CHECK-NEXT: moving 1
+    # CHECK-NEXT: copying 2
+    # CHECK-NEXT: moving 2
+    var t2 = t1
+
+    # CHECK-NEXT: p2: talkative 1 before transfer
+    print("p2:", t2[0], "before transfer")
+
+    # CHECK-NEXT: moving 1
+    # CHECK-NEXT: moving 2
+    var t3 = t1^
+
+    # CHECK-NEXT: before use t2
+    print("before use t2")
+
+    use_value(t2)
+    # CHECK-NEXT: destroying 1
+    # CHECK-NEXT: destroying 2
+
+    # CHECK-NEXT: before use t3
+    print("before use t3")
+    use_value(t3)
+    # CHECK-NEXT: destroying 1
+    # CHECK-NEXT: destroying 2
+
+    # CHECK-NEXT: test_tuple done!
+    print("test_tuple done!")
+
+
 fn main():
     test_inout_varargs()
     test_owned_varargs()
@@ -333,3 +410,4 @@ fn main():
     test_inout_variadic_pack()
     test_borrowed_variadic_pack()
     test_comptime_pack()
+    test_tuple()
