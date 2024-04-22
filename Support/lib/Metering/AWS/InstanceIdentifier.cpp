@@ -59,23 +59,25 @@ HTTPRequest instanceTypeRequest(StringRef baseUrl, StringRef token = "") {
   return req;
 }
 
-ErrorOr<std::string> send(HTTPClient &client, const HTTPRequest &req) {
+} // namespace
+
+ErrorOr<std::string> InstanceIdentifier::send(const HTTPRequest &req) {
   auto writeBuf = WriteableBuffer::get();
-  HTTPResponse response = client.executeRequest(req, *writeBuf);
+  HTTPResponse response = client->executeRequest(
+      req, *writeBuf,
+      std::chrono::duration_cast<std::chrono::milliseconds>(timeout));
   if (response.isError())
     return response.asError().takeError();
   return writeBuf->getBuffer().data();
 }
 
-} // namespace
-
 ErrorOrSuccess InstanceIdentifier::fetchInfo(StringRef token, bool isIPv4) {
   const auto &baseURL = isIPv4 ? kIPv4BaseUrl : kIPv6BaseUrl;
-  auto regionOr = send(*client, regionRequest(baseURL, token));
+  auto regionOr = send(regionRequest(baseURL, token));
   if (regionOr.isError())
     return regionOr.takeError();
 
-  auto instanceTypeOr = send(*client, instanceTypeRequest(baseURL, token));
+  auto instanceTypeOr = send(instanceTypeRequest(baseURL, token));
   if (instanceTypeOr.isError())
     return instanceTypeOr.takeError();
 
@@ -100,11 +102,9 @@ ErrorOrSuccess InstanceIdentifier::fetchV2() {
   // Try IPv4 first and fallback to IPv6.
   bool isIPv4 = true;
   std::string token;
-  if (auto resultV4 = send(*client, tokenRequest(kIPv4BaseUrl));
-      resultV4.isError()) {
+  if (auto resultV4 = send(tokenRequest(kIPv4BaseUrl)); resultV4.isError()) {
     isIPv4 = false;
-    if (auto resultV6 = send(*client, tokenRequest(kIPv6BaseUrl));
-        resultV6.isError()) {
+    if (auto resultV6 = send(tokenRequest(kIPv6BaseUrl)); resultV6.isError()) {
       return Error(
           llvm::Twine("Could not reach the IMDSv2 API with errors: {") +
           resultV4.getError() + " | " + resultV6.getError() + "}");
