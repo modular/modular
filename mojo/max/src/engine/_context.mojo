@@ -36,6 +36,7 @@ struct CRuntimeConfig:
     alias SetAllocatorTypeFnName = "M_setAllocatorType"
     alias SetDeviceFnName = "M_setDevice"
     alias SetMaxContextFnName = "M_setMaxContext"
+    alias SetAPILanguageFnName = "M_setAPILanguage"
 
     fn free(self, lib: DLHandle):
         call_dylib_func(lib, Self.FreeRuntimeConfigFnName, self)
@@ -44,6 +45,9 @@ struct CRuntimeConfig:
         var device_ref = device._strref_dangerous()
         call_dylib_func(lib, Self.SetDeviceFnName, self, device_ref.data, 0)
         device._strref_keepalive()
+
+    fn set_api_language(self, lib: DLHandle, source: String):
+        call_dylib_func(lib, Self.SetAPILanguageFnName, self, source._as_ptr())
 
     fn set_allocator_type(self, lib: DLHandle, allocator_type: AllocatorType):
         call_dylib_func(lib, Self.SetAllocatorTypeFnName, self, allocator_type)
@@ -114,6 +118,8 @@ struct RuntimeConfig:
         else:
             if device == _Device.CUDA:
                 self.ptr.set_device(self.lib, device)
+
+        self.ptr.set_api_language(self.lib, "mojo")
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ptr = exchange[CRuntimeConfig](
