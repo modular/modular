@@ -138,7 +138,7 @@ struct FunctionHandle(Boolable):
         block_dim: Dim,
         stream: Optional[Stream] = None,
     ) raises:
-        var stream_value = stream.value().stream if stream else Stream()
+        var stream_value = stream.value()[].stream if stream else Stream()
         _check_error(
             _get_dylib_function[
                 "cuLaunchKernel",
@@ -354,9 +354,9 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
         var info = _get_global_cache_info[func_type, func](
             debug=debug,
             verbose=verbose,
-            max_registers=max_registers.value() if max_registers else -1,
-            threads_per_block=threads_per_block.value() if threads_per_block else -1,
-            cache_config=cache_config.value().code if cache_config else -1,
+            max_registers=max_registers.value()[] if max_registers else -1,
+            threads_per_block=threads_per_block.value()[] if threads_per_block else -1,
+            cache_config=cache_config.value()[].code if cache_config else -1,
         )
 
         if info.error:
