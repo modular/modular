@@ -35,7 +35,7 @@ fn _compute_distribute_layout[
     @parameter
     if axis:
         return zipped_divide(
-            data_layout, Layout(threads_layout.shape[axis.value()])
+            data_layout, Layout(threads_layout.shape[axis._value_copy()])
         )
 
     for dim in threads_layout.shape:
@@ -54,7 +54,7 @@ fn _project_on_axis[
         return p_t
     var p_t = fill_like(t, 1)
     p_t[axis] = fill_like(t[axis], 0)
-    p_t[axis][submode_axis.value()] = 1
+    p_t[axis][submode_axis._value_copy()] = 1
     return p_t
 
 
@@ -415,7 +415,7 @@ struct LayoutTensor[
         @parameter
         if axis:
             return zipped_divide(
-                data_layout, Layout(threads_layout.shape[axis.value()])
+                data_layout, Layout(threads_layout.shape[axis._value_copy()])
             )
         else:
             for dim in threads_layout.shape:
@@ -458,11 +458,13 @@ struct LayoutTensor[
         # coordinates since thread 2 and 3 are getting the same tile.
         alias thread_projected_stride = flatten(
             threads_layout.stride[
-                axis.value()
+                axis._value_copy()
             ] if axis else threads_layout.stride
         )
         alias thread_projected_shape = flatten(
-            threads_layout.shape[axis.value()] if axis else threads_layout.shape
+            threads_layout.shape[
+                axis._value_copy()
+            ] if axis else threads_layout.shape
         )
 
         var offset: Scalar[Self.index_type] = 0
@@ -1098,7 +1100,7 @@ fn copy_sram_to_local[
     @parameter
     if axis:
         var src_fragments = src.distribute[
-            src_warp_layout, axis = axis.value()
+            src_warp_layout, axis = axis._value_copy()
         ](ThreadIdx.x())
         dst.copy_from_numa(src_fragments)
     else:
