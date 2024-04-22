@@ -308,7 +308,7 @@ struct OwningVector[T: Movable](Sized):
 
     fn emplace_back(inout self, owned value: T):
         if self.size < self.capacity:
-            initialize_pointee(self.ptr + self.size, value^)
+            initialize_pointee_move(self.ptr + self.size, value^)
             self.size += 1
             return
 
