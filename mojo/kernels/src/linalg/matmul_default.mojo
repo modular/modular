@@ -28,58 +28,18 @@ from utils.loop import unroll
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
 # implements the default microkernel.
+@value
 struct Inner_matmul_default[
     config: MatmulConfig,
-    a_row_size: Int,
-    pack_inner_size: Int,
-    # Skip the output c space boundary check if True.
-    skip_boundary_check: Bool,
 ](InnerMatmulKernel):
     # Parameters for global reference.
-    var c_stride: Int
-    var c_ptr: DTypePointer[config.c_type]
-    var a: NDBuffer[config.a_type, 2, config.a_shape]
-    var b_packed: NDBuffer[config.b_type, 3, config.packed_shape]
-    # 3D global offset within the whole matmul problem space.
-    var global_offset: GemmShape
-    # Dynamic tiling parameter for this inner loop
-    #  in (TileN, TileK).
-    var tile_n_k: StaticIntTuple[2]
-    # Boundary of valid output space within the
-    #  local tile, in (a_row_size, TileN).
-    var c_bound: StaticIntTuple[2]
 
-    fn __init__(
-        inout self,
-        c0: NDBuffer,
-        a0: NDBuffer,
-        b0_packed: NDBuffer,
-        global_offset: GemmShape,
-        global_bound: GemmShape,
-        tile_n_k: StaticIntTuple[2],
-    ):
-        var a = rebind[NDBuffer[config.a_type, 2, config.a_shape]](a0)
-        var b_packed = rebind[NDBuffer[config.b_type, 3, config.packed_shape]](
-            b0_packed
-        )
-        var c = rebind[NDBuffer[config.c_type, 2, config.c_shape]](c0)
-
-        self.c_stride = c.dim[1]()
-        self.c_ptr = c.data.offset(
-            global_offset.M * self.c_stride + global_offset.N
-        )
-        self.a = a
-        self.b_packed = b_packed
-        self.global_offset = global_offset
-        self.tile_n_k = tile_n_k
-        self.c_bound = Index(global_bound.M, global_bound.N) - Index(
-            global_offset.M, global_offset.N
-        )
-
-    fn _initialize_c_tile(
-        self,
-        c0_local: NDBuffer,
-    ):
+    fn _initialize_c_tile[
+        a_row_size: Int,
+        pack_inner_size: Int,
+        # Skip the output c space boundary check if True.
+        skip_boundary_check: Bool,
+    ](self, c0_local: NDBuffer,):
         """Utility function on the inner loop. Initializes a local c buffer with
         all zeros.
 
@@ -109,18 +69,29 @@ struct Inner_matmul_default[
         unroll[outer_body, a_row_size, pack_inner_size // simd_size]()
 
     @always_inline
-    fn _load_c_tile(
+    fn _load_c_tile[
+        a_row_size: Int,
+        pack_inner_size: Int,
+        # Skip the output c space boundary check if True.
+        skip_boundary_check: Bool,
+    ](
         self,
+        c_ptr: DTypePointer[config.c_type],
+        c_stride: Int,
         c0_local: NDBuffer,
         tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
     ):
         """Utility function on the inner loop. Loads a local c_buffer with the
         value stored in the output buffer space, given the indices within the
         tile being processed.
 
         Args:
+            c_ptr: TODO.
+            c_stride: TODO.
             c0_local: pre-allocated local buffer for c partial sums.
             tile_n_idx: n coordinate within the current processing tile.
+            c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
         """
         alias simd_size = config.simd_size
         var c_local = rebind[
@@ -130,24 +101,24 @@ struct Inner_matmul_default[
                 DimList(a_row_size, pack_inner_size),
             ]
         ](c0_local)
-        var c_ptr = self.c_ptr.offset(tile_n_idx)
+        var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
             var c_data: SIMD[config.c_type, simd_size] = 0
             if skip_boundary_check or (
-                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_n_idx
+                idx1 * simd_size + simd_size <= c_bound[1] - tile_n_idx
             ):
                 # Use simd load if all within bound
-                c_data = c_ptr.load[width=simd_size](idx1 * simd_size)
-            elif idx1 * simd_size <= self.c_bound[1]:
+                c_data = c_ptr_loc.load[width=simd_size](idx1 * simd_size)
+            elif idx1 * simd_size <= c_bound[1]:
                 # Use partial load if row inbound but col not
                 #  in simd bound.
                 c_data = partial_simd_load[simd_size](
-                    c_ptr.offset(idx1 * simd_size),
+                    c_ptr_loc.offset(idx1 * simd_size),
                     0,
-                    self.c_bound[1] - tile_n_idx - idx1 * simd_size,
+                    c_bound[1] - tile_n_idx - idx1 * simd_size,
                     0,
                 )
             else:
@@ -159,22 +130,33 @@ struct Inner_matmul_default[
 
             @parameter
             if idx1 == pack_inner_size // simd_size - 1:
-                c_ptr = c_ptr.offset(self.c_stride)
+                c_ptr_loc = c_ptr_loc.offset(c_stride)
 
         unroll[body, a_row_size, pack_inner_size // simd_size]()
 
     @always_inline
-    fn _store_c_tile(
+    fn _store_c_tile[
+        a_row_size: Int,
+        pack_inner_size: Int,
+        # Skip the output c space boundary check if True.
+        skip_boundary_check: Bool,
+    ](
         self,
+        c_ptr: DTypePointer[config.c_type],
+        c_stride: Int,
         c0_local: NDBuffer,
         tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
     ):
         """Utility function on the inner loop. Stores the value of a local c
         buffer to the corresponding position in the output buffer space.
 
         Args:
+            c_ptr: TODO.
+            c_stride: TODO.
             c0_local: pre-allocated local buffer for c partial sums.
             tile_n_idx: n coordinate within the current processing tile.
+            c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
         """
         alias simd_size = config.simd_size
         var c_local = rebind[
@@ -184,7 +166,7 @@ struct Inner_matmul_default[
                 DimList(a_row_size, pack_inner_size),
             ]
         ](c0_local)
-        var c_ptr = self.c_ptr.offset(tile_n_idx)
+        var c_ptr_loc = c_ptr.offset(tile_n_idx)
 
         @always_inline
         @parameter
@@ -193,33 +175,47 @@ struct Inner_matmul_default[
                 Index(idx0, idx1 * simd_size)
             )
             if skip_boundary_check or (
-                idx1 * simd_size + simd_size <= self.c_bound[1] - tile_n_idx
+                idx1 * simd_size + simd_size <= c_bound[1] - tile_n_idx
             ):
                 # Use simd store if all within bound
-                c_ptr.offset(idx1 * simd_size).store[width=simd_size](c_data)
-            elif idx1 * simd_size <= self.c_bound[1]:
+                c_ptr_loc.offset(idx1 * simd_size).store[width=simd_size](
+                    c_data
+                )
+            elif idx1 * simd_size <= c_bound[1]:
                 # Use partial store if col not in simd bound.
                 partial_simd_store(
-                    c_ptr.offset(idx1 * simd_size),
+                    c_ptr_loc.offset(idx1 * simd_size),
                     0,
-                    self.c_bound[1] - tile_n_idx - idx1 * simd_size,
+                    c_bound[1] - tile_n_idx - idx1 * simd_size,
                     c_data,
                 )
 
             @parameter
             if idx1 == pack_inner_size // simd_size - 1:
-                c_ptr = c_ptr.offset(self.c_stride)
+                c_ptr_loc = c_ptr_loc.offset(c_stride)
 
         unroll[body, a_row_size, pack_inner_size // simd_size]()
 
     fn _accumulate_default[
-        a_col_size: Int
-    ](self, c0_local: NDBuffer, tile_n_k_idx: StaticIntTuple[2],):
+        a_col_size: Int,
+        a_row_size: Int,
+        pack_inner_size: Int,
+    ](
+        self,
+        a: NDBuffer[config.a_type, 2, config.a_shape],
+        b_packed: NDBuffer[config.b_type, 3, config.packed_shape],
+        c0_local: NDBuffer,
+        global_offset: GemmShape,
+        tile_n_k_idx: StaticIntTuple[2],
+    ):
         """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing a single column of A.
 
         Args:
+            a: TODO.
+            b_packed: : TODO.
             c0_local: Pre-allocated local buffer for c partial sums.
+            global_offset: TODO.
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
@@ -238,11 +234,9 @@ struct Inner_matmul_default[
         var n_outer_idx = tile_n_k_idx[0] // pack_inner_size
 
         # Global K index.
-        var global_k = self.global_offset.K + tile_n_k_idx[1]
+        var global_k = global_offset.K + tile_n_k_idx[1]
 
-        var b_ptr = self.b_packed._offset(
-            Index(n_outer_idx, tile_n_k_idx[1], 0)
-        )
+        var b_ptr = b_packed._offset(Index(n_outer_idx, tile_n_k_idx[1], 0))
 
         # Prefetch B matrix.
         @parameter
@@ -256,8 +250,8 @@ struct Inner_matmul_default[
                 ]()
 
         # This inner kernels works with non-transposed A.
-        var K = self.a.dim[1]()
-        var a_ptr = self.a.data.offset(self.global_offset.M * K + global_k)
+        var K = a.dim[1]()
+        var a_ptr = a.data.offset(global_offset.M * K + global_k)
 
         # Loop over local accumulator tiles.
         @unroll
@@ -279,10 +273,39 @@ struct Inner_matmul_default[
                     c_idx, c_val
                 )
 
-    fn __inner_matmul__(self):
+    fn __inner_matmul__[
+        a_row_size: Int,
+        pack_inner_size: Int,
+        # Skip the output c space boundary check if True.
+        skip_boundary_check: Bool,
+    ](
+        self,
+        c0: NDBuffer,
+        a0: NDBuffer,
+        b0_packed: NDBuffer,
+        global_offset: GemmShape,
+        global_bound: GemmShape,
+        tile_n_k: StaticIntTuple[2],
+    ):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size, TileN, TileK) tile.
         """
+
+        var a = rebind[NDBuffer[config.a_type, 2, config.a_shape]](a0)
+
+        var c = rebind[NDBuffer[config.c_type, 2, config.c_shape]](c0)
+
+        var c_stride = c.dim[1]()
+
+        var b_packed = rebind[NDBuffer[config.b_type, 3, config.packed_shape]](
+            b0_packed
+        )
+
+        var c_ptr = c.data.offset(global_offset.M * c_stride + global_offset.N)
+
+        var c_bound = Index(global_bound.M, global_bound.N) - Index(
+            global_offset.M, global_offset.N
+        )
 
         # Allocate accumulation buffer.
         var c_local = NDBuffer[
@@ -293,18 +316,37 @@ struct Inner_matmul_default[
             alignof[SIMD[config.c_type, config.simd_size]]()
         ]()
 
-        for idx_n in range(0, self.tile_n_k[0], pack_inner_size):
+        for idx_n in range(0, tile_n_k[0], pack_inner_size):
             # Initialize accumulation buffer
             #  either zero filling or load existing value.
-            if self.global_offset.K == 0:
-                self._initialize_c_tile(c_local)
+            if global_offset.K == 0:
+                self._initialize_c_tile[
+                    a_row_size,
+                    pack_inner_size,
+                    # Skip the output c space boundary check if True.
+                    skip_boundary_check,
+                ](c_local)
             else:
-                self._load_c_tile(c_local, idx_n)
+                self._load_c_tile[
+                    a_row_size,
+                    pack_inner_size,
+                    # Skip the output c space boundary check if True.
+                    skip_boundary_check,
+                ](c_ptr, c_stride, c_local, idx_n, c_bound)
 
             # Iterate on tile K dimension.
             # Not unrolled on K path.
-            for idx_k in range(self.tile_n_k[1]):
+            for idx_k in range(tile_n_k[1]):
                 # accumulate data for this (n, k) index
-                self._accumulate_default[1](c_local, Index(idx_n, idx_k))
+                self._accumulate_default[
+                    1,
+                    a_row_size,
+                    pack_inner_size,
+                ](a, b_packed, c_local, global_offset, Index(idx_n, idx_k))
 
-            self._store_c_tile(c_local, idx_n)
+            self._store_c_tile[
+                a_row_size,
+                pack_inner_size,
+                # Skip the output c space boundary check if True.
+                skip_boundary_check,
+            ](c_ptr, c_stride, c_local, idx_n, c_bound)

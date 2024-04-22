@@ -34,11 +34,6 @@ struct Inner_matmul_default[
 ](InnerMatmulKernel):
     # Parameters for global reference.
 
-    # var a: Int
-
-    # fn __init__(inout self):
-    #     self.a = 0
-
     fn _initialize_c_tile[
         a_row_size: Int,
         pack_inner_size: Int,

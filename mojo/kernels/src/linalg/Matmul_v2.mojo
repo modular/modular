@@ -778,49 +778,14 @@ fn _matmul_cpu[
             alias use_vnni = config.use_vnni
             alias use_i8mm = config.use_i8mm
 
-            @parameter
-            if use_i8mm:
-                _submatmul_sequential_sync[config, elementwise_lambda_fn](
-                    Inner_matmul_i8mm[config](),
-                    c,
-                    a_packed if use_i8mm else a,
-                    b,
-                    sub_matmul_config.shape,
-                    sub_matmul_config.offset,
-                    kernel_type_m,
-                )
-            elif has_neon() and not use_vnni and not use_i8mm:
-                _submatmul_sequential_sync[config, elementwise_lambda_fn](
-                    Inner_matmul_neon[config](),
-                    c,
-                    a_packed if use_i8mm else a,
-                    b,
-                    sub_matmul_config.shape,
-                    sub_matmul_config.offset,
-                    kernel_type_m,
-                )
-            elif not use_vnni and not has_neon():
-                _submatmul_sequential_sync[config, elementwise_lambda_fn](
-                    Inner_matmul_default[config](),
-                    c,
-                    a_packed if use_i8mm else a,
-                    b,
-                    sub_matmul_config.shape,
-                    sub_matmul_config.offset,
-                    kernel_type_m,
-                )
-            elif use_vnni:
-                _submatmul_sequential_sync[config, elementwise_lambda_fn](
-                    Inner_matmul_vnni[config](),
-                    c,
-                    a_packed if use_i8mm else a,
-                    b,
-                    sub_matmul_config.shape,
-                    sub_matmul_config.offset,
-                    kernel_type_m,
-                )
-            else:
-                constrained[False, "no _run_inner_loop implementation"]()
+            _submatmul_sequential_sync[config, elementwise_lambda_fn](
+                c,
+                a_packed if use_i8mm else a,
+                b,
+                sub_matmul_config.shape,
+                sub_matmul_config.offset,
+                kernel_type_m,
+            )
 
         # i8mm partition needs to be optimized as a function of m, n and k
         # Also parallelize currently is slower than asyn_parallelize which is depreciated now.
@@ -973,3 +938,62 @@ fn _submatmul_sequential_sync[
         sub_matrix_shape,
         sub_matrix_offset,
     )
+
+
+fn _submatmul_sequential_sync[
+    config: MatmulConfig,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+](
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b: NDBuffer[config.b_type, 2, config.b_shape],
+    sub_matrix_shape: GemmShape,
+    sub_matrix_offset: GemmShape,
+    kernel_type_m: Int = 0,
+):
+    alias use_vnni = config.use_vnni
+    alias use_i8mm = config.use_i8mm
+
+    @parameter
+    if use_i8mm:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            Inner_matmul_i8mm[config](),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    elif has_neon() and not use_vnni and not use_i8mm:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            Inner_matmul_neon[config](),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    elif not use_vnni and not has_neon():
+        _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            Inner_matmul_default[config](),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    elif use_vnni:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            Inner_matmul_vnni[config](),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    else:
+        constrained[False, "no _run_inner_loop implementation"]()
