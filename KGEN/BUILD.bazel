@@ -1404,34 +1404,6 @@ cc_library(
     ],
 )
 
-cc_binary(
-    name = "mojo-prime-package-cache",
-    srcs = glob(["tools/mojo-prime-package-cache/*.cpp"]),
-    deps = [
-        ":CompilerRT",
-        ":ExecutionEngine",
-        ":KGENDialect",
-        ":LITDialect",
-        ":MojoParser",
-        ":MojoTooling",
-        ":MojoToolsCommon",
-        ":ObjectCompiler",
-        ":Pipeline",
-        ":ToolCommon",
-        "//Config",
-        "//LLCL:CompilerSupport",
-        "//LLCL:Runtime",
-        "//LLCL:RuntimeGlobals",
-        "//Support:Base",
-        "//Support:Compiler",
-        "//Support:Driver",
-        "//Support:Globals",
-        "//Support:Init",
-        "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:MlirLspServerLib",
-    ],
-)
-
 expand_template(
     name = "MojoDebugHeaderGen",
     out = "MojoDebug.h",
