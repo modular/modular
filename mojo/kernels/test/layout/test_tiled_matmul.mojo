@@ -36,10 +36,13 @@ trait TiledOp:
         layout_m_k: Layout,
         layout_n_k: Layout,
         dtype: DType,
+        dst_mask: Bool,
+        lhs_mask: Bool,
+        rhs_mask: Bool,
     ](
-        inout dst: LayoutTensor[dtype, layout_m_n],
-        lhs: LayoutTensor[dtype, layout_m_k],
-        rhs: LayoutTensor[dtype, layout_n_k],
+        inout dst: LayoutTensor[dtype, layout_m_n, masked=dst_mask],
+        lhs: LayoutTensor[dtype, layout_m_k, masked=lhs_mask],
+        rhs: LayoutTensor[dtype, layout_n_k, masked=rhs_mask],
     ):
         pass
 
@@ -52,10 +55,13 @@ struct MMA(TiledOp):
         layout_m_k: Layout,
         layout_n_k: Layout,
         dtype: DType,
+        dst_mask: Bool,
+        lhs_mask: Bool,
+        rhs_mask: Bool,
     ](
-        inout dst: LayoutTensor[dtype, layout_m_n],
-        lhs: LayoutTensor[dtype, layout_m_k],
-        rhs: LayoutTensor[dtype, layout_n_k],
+        inout dst: LayoutTensor[dtype, layout_m_n, masked=dst_mask],
+        lhs: LayoutTensor[dtype, layout_m_k, masked=lhs_mask],
+        rhs: LayoutTensor[dtype, layout_n_k, masked=rhs_mask],
     ):
         alias M = dst.dim[0]()
         alias N = dst.dim[1]()
@@ -75,10 +81,13 @@ struct MMA_Vec(TiledOp):
         layout_m_k: Layout,
         layout_n_k: Layout,
         dtype: DType,
+        dst_mask: Bool,
+        lhs_mask: Bool,
+        rhs_mask: Bool,
     ](
-        inout dst: LayoutTensor[dtype, layout_m_n],
-        lhs: LayoutTensor[dtype, layout_m_k],
-        rhs: LayoutTensor[dtype, layout_n_k],
+        inout dst: LayoutTensor[dtype, layout_m_n, masked=dst_mask],
+        lhs: LayoutTensor[dtype, layout_m_k, masked=lhs_mask],
+        rhs: LayoutTensor[dtype, layout_n_k, masked=rhs_mask],
     ):
         alias M = dst.dim[0]()
         alias N = dst.dim[1]()
@@ -110,10 +119,13 @@ fn gemm_l2_cache[
     layout_m_k: Layout,
     layout_k_n: Layout,
     dtype: DType,
+    dst_mask: Bool,
+    lhs_mask: Bool,
+    rhs_mask: Bool,
 ](
-    dst: LayoutTensor[dtype, layout_m_n],
-    lhs: LayoutTensor[dtype, layout_m_k],
-    rhs: LayoutTensor[dtype, layout_k_n],
+    dst: LayoutTensor[dtype, layout_m_n, masked=dst_mask],
+    lhs: LayoutTensor[dtype, layout_m_k, masked=lhs_mask],
+    rhs: LayoutTensor[dtype, layout_k_n, masked=rhs_mask],
 ):
     alias M = dst.dim[0]()
     alias N = dst.dim[1]()
@@ -172,10 +184,13 @@ fn gemm_l1_cache[
     layout_m_k: Layout,
     layout_k_n: Layout,
     dtype: DType,
+    dst_mask: Bool,
+    lhs_mask: Bool,
+    rhs_mask: Bool,
 ](
-    dst: LayoutTensor[dtype, layout_m_n],
-    lhs: LayoutTensor[dtype, layout_m_k],
-    rhs: LayoutTensor[dtype, layout_k_n],
+    dst: LayoutTensor[dtype, layout_m_n, masked=dst_mask],
+    lhs: LayoutTensor[dtype, layout_m_k, masked=lhs_mask],
+    rhs: LayoutTensor[dtype, layout_k_n, masked=rhs_mask],
 ):
     alias M = dst.dim[0]()
     alias N = dst.dim[1]()

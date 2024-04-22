@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
+from math import ceildiv
+
 from layout._utils import ManagedLayoutTensor
 from layout.int_tuple import product
 from layout.layout import Layout
@@ -21,8 +23,8 @@ fn print_raw_major_tensor[
 
 
 fn print_tile_tensor[
-    layout: Layout, dtype: DType
-](tensor: LayoutTensor[dtype, layout]):
+    layout: Layout, dtype: DType, mask: Bool
+](tensor: LayoutTensor[dtype, layout, masked=mask]):
     for i in range(tensor.dim[0]()):
         for j in range(tensor.dim[1]()):
             print(tensor[i, j], "\t", end="")
@@ -910,6 +912,425 @@ fn test_split():
     _ = tensor_4x4^
 
 
+# CHECK-LABEL: test_copy_subtiles_scalars
+fn test_copy_subtiles_scalars():
+    print("== test_copy_subtiles_scalars")
+    var tensor_13x7 = LayoutTensor[
+        DType.float32, Layout.row_major(13, 7)
+    ].stack_allocation()
+    tensor_13x7.linspace()
+    tensor_13x7.print()
+
+    alias tile_m_size = 4
+    alias tile_n_size = 2
+
+    # CHECK: ----tile-data[ 0 , 0 ]----
+    # CHECK: 0.0 1.0
+    # CHECK: 7.0 8.0
+    # CHECK: 14.0 15.0
+    # CHECK: 21.0 22.0
+    # CHECK: ----tile-data[ 0 , 1 ]----
+    # CHECK: 2.0 3.0
+    # CHECK: 9.0 10.0
+    # CHECK: 16.0 17.0
+    # CHECK: 23.0 24.0
+    # CHECK: ----tile-data[ 0 , 2 ]----
+    # CHECK: 4.0 5.0
+    # CHECK: 11.0 12.0
+    # CHECK: 18.0 19.0
+    # CHECK: 25.0 26.0
+    # CHECK: ----tile-data[ 0 , 3 ]----
+    # CHECK: 6.0 0.0
+    # CHECK: 13.0 0.0
+    # CHECK: 20.0 0.0
+    # CHECK: 27.0 0.0
+    # CHECK: ----tile-data[ 1 , 0 ]----
+    # CHECK: 28.0 29.0
+    # CHECK: 35.0 36.0
+    # CHECK: 42.0 43.0
+    # CHECK: 49.0 50.0
+    # CHECK: ----tile-data[ 1 , 1 ]----
+    # CHECK: 30.0 31.0
+    # CHECK: 37.0 38.0
+    # CHECK: 44.0 45.0
+    # CHECK: 51.0 52.0
+    # CHECK: ----tile-data[ 1 , 2 ]----
+    # CHECK: 32.0 33.0
+    # CHECK: 39.0 40.0
+    # CHECK: 46.0 47.0
+    # CHECK: 53.0 54.0
+    # CHECK: ----tile-data[ 1 , 3 ]----
+    # CHECK: 34.0 0.0
+    # CHECK: 41.0 0.0
+    # CHECK: 48.0 0.0
+    # CHECK: 55.0 0.0
+    # CHECK: ----tile-data[ 2 , 0 ]----
+    # CHECK: 56.0 57.0
+    # CHECK: 63.0 64.0
+    # CHECK: 70.0 71.0
+    # CHECK: 77.0 78.0
+    # CHECK: ----tile-data[ 2 , 1 ]----
+    # CHECK: 58.0 59.0
+    # CHECK: 65.0 66.0
+    # CHECK: 72.0 73.0
+    # CHECK: 79.0 80.0
+    # CHECK: ----tile-data[ 2 , 2 ]----
+    # CHECK: 60.0 61.0
+    # CHECK: 67.0 68.0
+    # CHECK: 74.0 75.0
+    # CHECK: 81.0 82.0
+    # CHECK: ----tile-data[ 2 , 3 ]----
+    # CHECK: 62.0 0.0
+    # CHECK: 69.0 0.0
+    # CHECK: 76.0 0.0
+    # CHECK: 83.0 0.0
+    # CHECK: ----tile-data[ 3 , 0 ]----
+    # CHECK: 84.0 85.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 3 , 1 ]----
+    # CHECK: 86.0 87.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 3 , 2 ]----
+    # CHECK: 88.0 89.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 3 , 3 ]----
+    # CHECK: 90.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    for tile_m in range(ceildiv(13, tile_m_size)):
+        for tile_n in range(ceildiv(7, tile_n_size)):
+            var tile_4x2 = tensor_13x7.tile[tile_m_size, tile_n_size](
+                tile_m, tile_n
+            )
+            print("----tile-data[", tile_m, ",", tile_n, "]----")
+            var tile_4x2_cache = LayoutTensor[
+                DType.float32, Layout.row_major(tile_m_size, tile_n_size)
+            ].stack_allocation()
+            tile_4x2_cache.fill(0)
+            tile_4x2_cache.copy_from_numa(tile_4x2)
+            tile_4x2_cache.print()
+
+
+# CHECK-LABEL: test_copy_distributed_subtiles_scalars
+fn test_copy_distributed_subtiles_scalars():
+    print("== test_copy_distributed_subtiles_scalars")
+    var tensor_13x7 = LayoutTensor[
+        DType.float32, Layout.row_major(13, 7)
+    ].stack_allocation()
+    tensor_13x7.linspace()
+
+    alias tile_m_size = 4
+    alias tile_n_size = 4
+
+    # CHECK: ----tile-data[ 0 , 0 ]----
+    # CHECK: 0.0 1.0 2.0 3.0
+    # CHECK: 7.0 8.0 9.0 10.0
+    # CHECK: 14.0 15.0 16.0 17.0
+    # CHECK: 21.0 22.0 23.0 24.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 0.0 2.0
+    # CHECK: 14.0 16.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 1.0 3.0
+    # CHECK: 15.0 17.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 7.0 9.0
+    # CHECK: 21.0 23.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 8.0 10.0
+    # CHECK: 22.0 24.0
+    # CHECK: ----tile-data[ 0 , 1 ]----
+    # CHECK: 4.0 5.0 6.0 0.0
+    # CHECK: 11.0 12.0 13.0 0.0
+    # CHECK: 18.0 19.0 20.0 0.0
+    # CHECK: 25.0 26.0 27.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 4.0 6.0
+    # CHECK: 18.0 20.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 5.0 0.0
+    # CHECK: 19.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 11.0 13.0
+    # CHECK: 25.0 27.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 12.0 0.0
+    # CHECK: 26.0 0.0
+    # CHECK: ----tile-data[ 1 , 0 ]----
+    # CHECK: 28.0 29.0 30.0 31.0
+    # CHECK: 35.0 36.0 37.0 38.0
+    # CHECK: 42.0 43.0 44.0 45.0
+    # CHECK: 49.0 50.0 51.0 52.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 28.0 30.0
+    # CHECK: 42.0 44.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 29.0 31.0
+    # CHECK: 43.0 45.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 35.0 37.0
+    # CHECK: 49.0 51.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 36.0 38.0
+    # CHECK: 50.0 52.0
+    # CHECK: ----tile-data[ 1 , 1 ]----
+    # CHECK: 32.0 33.0 34.0 0.0
+    # CHECK: 39.0 40.0 41.0 0.0
+    # CHECK: 46.0 47.0 48.0 0.0
+    # CHECK: 53.0 54.0 55.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 32.0 34.0
+    # CHECK: 46.0 48.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 33.0 0.0
+    # CHECK: 47.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 39.0 41.0
+    # CHECK: 53.0 55.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 40.0 0.0
+    # CHECK: 54.0 0.0
+    # CHECK: ----tile-data[ 2 , 0 ]----
+    # CHECK: 56.0 57.0 58.0 59.0
+    # CHECK: 63.0 64.0 65.0 66.0
+    # CHECK: 70.0 71.0 72.0 73.0
+    # CHECK: 77.0 78.0 79.0 80.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 56.0 58.0
+    # CHECK: 70.0 72.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 57.0 59.0
+    # CHECK: 71.0 73.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 63.0 65.0
+    # CHECK: 77.0 79.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 64.0 66.0
+    # CHECK: 78.0 80.0
+    # CHECK: ----tile-data[ 2 , 1 ]----
+    # CHECK: 60.0 61.0 62.0 0.0
+    # CHECK: 67.0 68.0 69.0 0.0
+    # CHECK: 74.0 75.0 76.0 0.0
+    # CHECK: 81.0 82.0 83.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 60.0 62.0
+    # CHECK: 74.0 76.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 61.0 0.0
+    # CHECK: 75.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 67.0 69.0
+    # CHECK: 81.0 83.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 68.0 0.0
+    # CHECK: 82.0 0.0
+    # CHECK: ----tile-data[ 3 , 0 ]----
+    # CHECK: 84.0 85.0 86.0 87.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 84.0 86.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 85.0 87.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----tile-data[ 3 , 1 ]----
+    # CHECK: 88.0 89.0 90.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: 0.0 0.0 0.0 0.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 88.0 90.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 89.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 0.0 0.0
+    # CHECK: 0.0 0.0
+
+    for tile_m in range(ceildiv(13, tile_m_size)):
+        for tile_n in range(ceildiv(7, tile_n_size)):
+            print("----tile-data[", tile_m, ",", tile_n, "]----")
+            var tile_4x4 = tensor_13x7.tile[tile_m_size, tile_n_size](
+                tile_m, tile_n
+            )
+            var tile_4x4_cache = LayoutTensor[
+                DType.float32, Layout.row_major(tile_m_size, tile_n_size)
+            ].stack_allocation()
+            tile_4x4_cache.fill(0)
+            tile_4x4_cache.copy_from_numa(tile_4x4)
+            tile_4x4_cache.print()
+
+            for th_id in range(4):
+                print("----fragments-data[", th_id, "]----")
+                var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](
+                    th_id
+                )
+                var tile_2x2_cache = LayoutTensor[
+                    DType.float32, Layout.row_major(2, 2)
+                ].stack_allocation()
+                tile_2x2_cache.fill(0)
+                tile_2x2_cache.copy_from_numa(tile_2x2)
+                tile_2x2_cache.print()
+
+
+fn test_copy_subtiles_scalars_back():
+    print("== test_copy_subtiles_scalars_back")
+
+    var tensor_13x7 = LayoutTensor[
+        DType.float32, Layout.row_major(13, 7)
+    ].stack_allocation()
+
+    alias tile_m_size = 4
+    alias tile_n_size = 4
+
+    tensor_13x7.fill(-1)
+
+    # CHECK: ----tile-data[ 0 , 0 ]----
+    # CHECK: 0.0 1.0 2.0 3.0 -1.0 -1.0 -1.0
+    # CHECK: 4.0 5.0 6.0 7.0 -1.0 -1.0 -1.0
+    # CHECK: 8.0 9.0 10.0 11.0 -1.0 -1.0 -1.0
+    # CHECK: 12.0 13.0 14.0 15.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: ----tile-data[ 0 , 1 ]----
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: ----tile-data[ 1 , 0 ]----
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 -1.0 -1.0 -1.0
+    # CHECK: 4.0 5.0 6.0 7.0 -1.0 -1.0 -1.0
+    # CHECK: 8.0 9.0 10.0 11.0 -1.0 -1.0 -1.0
+    # CHECK: 12.0 13.0 14.0 15.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: ----tile-data[ 1 , 1 ]----
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: ----tile-data[ 2 , 0 ]----
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 -1.0 -1.0 -1.0
+    # CHECK: 4.0 5.0 6.0 7.0 -1.0 -1.0 -1.0
+    # CHECK: 8.0 9.0 10.0 11.0 -1.0 -1.0 -1.0
+    # CHECK: 12.0 13.0 14.0 15.0 -1.0 -1.0 -1.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: ----tile-data[ 2 , 1 ]----
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: -1.0 -1.0 -1.0 -1.0 -1.0 -1.0 -1.0
+    # CHECK: ----tile-data[ 3 , 0 ]----
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 -1.0 -1.0 -1.0
+    # CHECK: ----tile-data[ 3 , 1 ]----
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+    # CHECK: 4.0 5.0 6.0 7.0 4.0 5.0 6.0
+    # CHECK: 8.0 9.0 10.0 11.0 8.0 9.0 10.0
+    # CHECK: 12.0 13.0 14.0 15.0 12.0 13.0 14.0
+    # CHECK: 0.0 1.0 2.0 3.0 0.0 1.0 2.0
+
+    for tile_m in range(ceildiv(13, tile_m_size)):
+        for tile_n in range(ceildiv(7, tile_n_size)):
+            print("----tile-data[", tile_m, ",", tile_n, "]----")
+            var tensor_4x4 = tensor_13x7.tile[tile_m_size, tile_n_size](
+                tile_m, tile_n
+            )
+            var tile_4x4_cache = LayoutTensor[
+                DType.float32, Layout.row_major(tile_m_size, tile_n_size)
+            ].stack_allocation()
+            tile_4x4_cache.linspace()
+            tensor_4x4.copy_from_numa(tile_4x4_cache)
+            tensor_13x7.print()
+
+
 fn main():
     test_basic_tensor_ops()
     test_tesnsor_fragments()
@@ -925,3 +1346,6 @@ fn main():
     test_distribute_vectorized()
     test_distribute_axis_projection()
     test_split()
+    test_copy_subtiles_scalars()
+    test_copy_distributed_subtiles_scalars()
+    test_copy_subtiles_scalars_back()
