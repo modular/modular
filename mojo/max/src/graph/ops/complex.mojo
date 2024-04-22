@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Ops working with complex types.
+"""Ops that work with complex types.
 
 We don't have a formal complex type yet, so we represent complex numbers
 as having a final dimension of size 2, representing the real and complex
@@ -49,8 +49,8 @@ def as_interleaved_complex(interleaved: Symbol) -> Symbol:
 
     Returns:
         A symbolic tensor representing the complex-valued tensor, but with the
-        values pulled out as complex numbers. The result will have the same
-        dimensions for all dimensions except the last, which will be halved,
+        values pulled out as complex numbers. The result has the same dimensions
+        for all dimensions except the last dimension, which is halved,
         and then a final dimension of size 2 representing the complex value.
     """
     # """Reshape the input tensor as complex, interpreting the last dimension

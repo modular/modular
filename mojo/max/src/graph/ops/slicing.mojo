@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Ops which slice/index/stack/concat etc."""
+"""Ops that slice, index, stack, concat etc."""
 
 from collections.optional import Optional
 from tensor import TensorShape

@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Operations which operate on the shape or dtype of symbolic tensor."""
+"""Ops that modify the shape or data type of a symbolic tensor."""
 
 from tensor import Tensor, TensorShape
 from utils.variant import Variant
@@ -20,7 +20,7 @@ from max.graph.type import Dim, ElementType
 
 
 def shape_of(v: Symbol) -> Symbol:
-    """Gets the shape of an existing tensor as a rank-1 symbolic tensor.
+    """Gets the shape of a symbolic tensor as a rank-1 symbolic tensor.
 
     Args:
         v: The symbolic tensor whose shape is returned.
@@ -38,7 +38,7 @@ def shape_of(v: Symbol) -> Symbol:
 
 
 def cast(v: Symbol, dtype: ElementType) -> Symbol:
-    """Casts a symbolic tensor to a different dtype.
+    """Casts a symbolic tensor to a different data type.
 
     Args:
         v: The input tensor to cast.
@@ -57,17 +57,23 @@ def cast(v: Symbol, dtype: ElementType) -> Symbol:
 
 
 fn rebind(v: Symbol, out_dims: List[Dim]) raises -> Symbol:
-    """Rebinds a symbolic tensor to a specified set of Dims.
+    """Rebinds a symbolic tensor to a specified set of dimensions.
+
+    This does not mutate the symbolic tensor passed in, but instead adds a
+    runtime assert that the input symbolic shape is equivalent to `out_dims`
+    shape. For example, if the input tensor shape has dynamic/unknown sizes,
+    this will assert a fixed sizes that may be required for a subsequent
+    operation.
 
     Args:
         v: The input symbolic tensor to rebind.
-        out_dims: The new symbolic shape in the graph.
+        out_dims: The symbolic shape to assert for `v`, as a list of
+                  [`Dim`](/engine/reference/mojo/graph/type/Dim) values.
 
     Returns:
-        A symbolic tensor with the same elements and shape as the original tensor.
+        A symbolic tensor with the same elements and shape as the given
+        tensor, but with the symbolic shape asserted to `out_dims`.
 
-        Its symbolic shape will be changed to `out_dims`.
-        A runtime assert will be added that the original symbolic shape is equivalent to the new symbolic shape.
     """
     var g = v.graph()
     if v.tensor_type().rank() != len(out_dims):
@@ -90,9 +96,9 @@ def squeeze(v: Symbol, axis: Int) -> Symbol:
 
     Args:
         v: The input symbolic tensor to squeeze.
-        axis: The dimension to remove from the input's shape. If negative,
-            indexes from the end of the tensor, eg. `squeeze(v, -1)` will
-            squeeze the last dimension.
+        axis: The dimension to remove from the input's shape. If negative, this
+            indexes from the end of the tensor. For example, `squeeze(v, -1)`
+            squeezes the last dimension.
 
     Returns:
         A symbolic tensor with the same number of elements as the input tensor,
@@ -124,16 +130,16 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
     Args:
         v: The input symbolic tensor to unsqueeze.
         axis: The index at which to insert a new dimension into the input's
-            shape. Dimensions with that index or higher will be shifted back.
-            If negative, it indexes relative _1 plus_ the rank of the tensor,
-            in other words `unsqueeze(v, -1)` will add the new dimension at the
-            end, `unsqueeze(v, -2)` will insert the dimension immediately before
-            the last dimension, etc.
+            shape. Elements at that index or higher are shifted back.
+            If negative, it indexes relative _1 plus_ the rank of the tensor.
+            For example, `unsqueeze(v, -1)` adds a new dimension at the end,
+            and `unsqueeze(v, -2)` inserts the dimension immediately before
+            the last dimension.
 
     Returns:
         A symbolic tensor with the same muber of elements as the input tensor,
         whose rank is 1 larger than the rank of the input tensor. The result's
-        shape at the `axis` dimension will be a static dimension of size 1.
+        shape at the `axis` dimension is a static dimension of size 1.
     """
     var g = v.graph()
     var type = v.tensor_type()
@@ -168,28 +174,28 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
 
 
 fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
-    """Reshapes a symbolic tensor to a specified shape.
+    """Reshapes a symbolic tensor.
+
+    The number and order of the elements in the tensor is unchanged.
+    In other words, if you were to iterate over elements in the tensor
+    by major dimension to minor dimension, the iteration order would stay
+    the same.
+
+    If a value of -1 is present in the shape, that dimension becomes
+    a dynamic dimension collecting all unspecified dimensions.
+    Its length becomes the number of elements in the original tensor
+    divided by the product of elements of the reshape.
 
     Args:
         v: The input symbolic tensor to reshape.
-        shape: The shape to reshape to as a symbolic rank-1 tensor.
+        shape: The new shape as a symbolic rank-1 tensor.
             The input must have integer dtype, and must either be all
             non-negative elements or allows a single element of -1.
         out_dims: A type hint for the tensor's symbolic shape in the graph.
 
     Returns:
-        A symbolic tensor with the same elements as the original tensor
-        in a new shape. Its symbolic shape will be the same as `out_dims`.
-
-        The number and order of the elements in the tensor is unchanged.
-        In other words, if you were to iterate over elements in the tensor
-        by major dimension to minor dimension, the iteration order would stay
-        the same.
-
-        If a value of -1 is present in the shape, that dimension will become
-        a dynamic dimension collecting all unspecified dimensions.
-        Its length will be the number of elements in the original tensor
-        divided by the product of elements of the reshape.
+        A symbolic tensor with the same elements as the original tensor, but
+        in a new shape. Its symbolic shape is the same as `out_dims`.
     """
     var g = v.graph()
     var dtype = shape.tensor_type().dtype.dtype
@@ -203,28 +209,28 @@ fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
 
 
 fn reshape(v: Symbol, shape: SymbolTuple) raises -> Symbol:
-    """Reshapes a symbolic tensor to a specified shape.
+    """Reshapes a symbolic tensor.
+
+    The number and order of the elements in the tensor is unchanged.
+    In other words, if you were to iterate over elements in the tensor
+    by major dimension to minor dimension, the iteration order would stay
+    the same.
+
+    If a value of -1 is present in the shape, that dimension becomes
+    a dynamic dimension collecting all unspecified dimensions.
+    Its length becomes the number of elements in the original tensor
+    divided by the product of elements of the reshape.
 
     Args:
         v: The input symbolic tensor to reshape.
-        shape: A list of rank-0 symbolic tensors to reshape to.
+        shape: The new shape as a list of rank-0 symbolic tensors.
             The inputs must have integer dtype, and must either be all
             non-negative elements or allows a single element of -1.
 
     Returns:
-        A symbolic tensor with the same elements as the original tensor
-        in a new shape. It will have rank equal to the length of `shape`,
-        but every symbolic dimension of the result will be dynamic size.
-
-        The number and order of the elements in the tensor is unchanged.
-        In other words, if you were to iterate over elements in the tensor
-        by major dimension to minor dimension, the iteration order would stay
-        the same.
-
-        If a value of -1 is present in the shape, that dimension will become
-        a dynamic dimension collecting all unspecified dimensions.
-        Its length will be the number of elements in the original tensor
-        divided by the product of elements of the reshape.
+        A symbolic tensor with the same elements as the original tensor, but
+        in a new shape. It has a rank equal to the length of `shape`,
+        but every symbolic dimension of the result is a dynamic size.
     """
     var g = v.graph()
 
@@ -241,28 +247,28 @@ fn reshape(v: Symbol, shape: SymbolTuple) raises -> Symbol:
 
 
 fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
-    """Reshapes a symbolic tensor to a specified shape.
+    """Reshapes a symbolic tensor.
+
+    The number and order of the elements in the tensor is unchanged.
+    In other words, if you were to iterate over elements in the tensor
+    by major dimension to minor dimension, the iteration order would stay
+    the same.
+
+    If a value of -1 is present in the shape, that dimension becomes
+    a dynamic dimension collecting all unspecified dimensions.
+    Its length becomes the number of elements in the original tensor
+    divided by the product of elements of the reshape.
 
     Args:
         v: The input symbolic tensor to reshape.
-        shape: The shape to reshape to as a symbolic rank-1 tensor.
+        shape: The new shape as a symbolic rank-1 tensor.
             The input must have integer dtype, and must either be all
             non-negative elements or allows a single element of -1.
 
     Returns:
-        A symbolic tensor with the same elements as the original tensor
-        in a new shape. It will have rank equal to the static size of `shape`,
-        but every symbolic dimension of the result will be dynamic size.
-
-        The number and order of the elements in the tensor is unchanged.
-        In other words, if you were to iterate over elements in the tensor
-        by major dimension to minor dimension, the iteration order would stay
-        the same.
-
-        If a value of -1 is present in the shape, that dimension will become
-        a dynamic dimension collecting all unspecified dimensions.
-        Its length will be the number of elements in the original tensor
-        divided by the product of elements of the reshape.
+        A symbolic tensor with the same elements as the original tensor, but
+        in a new shape. It has a rank equal to the static size of `shape`,
+        but every symbolic dimension of the result is a dynamic size.
     """
     var g = v.graph()
 
@@ -277,21 +283,21 @@ fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
 
 
 fn reshape_like(v: Symbol, like: Symbol) raises -> Symbol:
-    """Reshapes a symbolic tensor to the same shape as another tensor.
+    """Reshapes a symbolic tensor to the same shape as another symbolic tensor.
+
+    The number and order of the elements in the tensor is unchanged.
+    In other words, if you were to iterate over elements in the tensor
+    by major dimension to minor dimension, the iteration order would stay
+    the same.
 
     Args:
         v: The input symbolic tensor to reshape.
         like: A symbolic tensor whose shape should be used as the reshape.
 
     Returns:
-        A symbolic tensor with the same elements as the original tensor
-        in a new shape. The shape of the new tensor will be the same as
+        A symbolic tensor with the same elements as the original tensor, but
+        in a new shape. The shape of the new tensor is the same as
         the shape of the `like` tensor.
-
-        The number and order of the elements in the tensor is unchanged.
-        In other words, if you were to iterate over elements in the tensor
-        by major dimension to minor dimension, the iteration order would stay
-        the same.
     """
     return reshape(v, shape_of(like), like.tensor_type().dims)
 
@@ -306,16 +312,16 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
 
     Args:
         input: The input symbolic tensor to transpose.
-        x: One of the two dimensions to transpose. If negative,
-            indexes from the end of the tensor, eg. `transpose(v, -1, -2)` will
-            transpose the last two dimensions.
+        x: One of the two dimensions to transpose. If negative, this indexes
+            from the end of the tensor. For example,  `transpose(v, -1, -2)`
+            transposes the last two dimensions.
         y: The other dimension to transpose. May also be negative to index from
             the end of the tensor.
 
     Returns:
         A new symbolic tensor with the two specified dimensions transposed.
-        It will have the same elements and dtype, but the order of the elements
-        will be different according to the transposition.
+        It has the same elements and dtype, but the order of the elements
+        is different according to the transposition.
     """
     var g = input.graph()
     var input_type = input.tensor_type()
@@ -358,7 +364,7 @@ def transpose_matrix(matrix: Symbol) -> Symbol:
 
     Returns:
         A new symbolic tensor with its last two dimensions transposed.
-        It will have the same elements and dtype, but the order of the elements
-        will be different according to the transposition.
+        It has the same elements and dtype, but the order of the elements
+        is different according to the transposition.
     """
     return transpose(matrix, -1, -2)

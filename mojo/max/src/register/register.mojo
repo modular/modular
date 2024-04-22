@@ -3,22 +3,22 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+"""Implements decorators to register MAX custom ops."""
 
 
 fn op(name: StringLiteral, priority: Int = -1):
-    """
-    This decorator registers a given mojo function as being an implementation
-    of an operation.
+    """Registers a function as an op implementation.
 
-    For instance:
+    The decorator takes the name of the op as its argument.
+
+    For example, this registers `my_op` as an implementation of `mo.add`:
 
     ```mojo
-    import max
-    @max.register.op("mo.add")
+    from max import register
+
+    @register.op("mo.add")
     fn my_op[...](...):
     ```
-
-    registers `my_op` as an implementation of `mo.add`.
 
     Args:
       name: The name of the op to register.
@@ -28,15 +28,19 @@ fn op(name: StringLiteral, priority: Int = -1):
 
 
 fn elementwise():
-    """
-    This decorator marks a kernel as being elementwise. This implies the
-    kernel represents a lambda to be executed in the inner loop of an
+    """Declares an elementwise operator.
+
+    This decorator marks an op as being elementwise. This implies that the op
+    represents a lambda that should be executed in the inner loop of an
     elementwise function.
 
-    For instance:
+    For example:
+
     ```mojo
-    @max.register.op("mo.add")
-    @max.register.elementwise()
+    from max import register
+
+    @register.op("mo.add")
+    @register.elementwise()
     fn my_add[...](x: SIMD[...], y: SIMD[...]) -> SIMD[...]:
     ```
     """

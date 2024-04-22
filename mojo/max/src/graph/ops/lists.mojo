@@ -3,11 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""List operations.
-
-Note: All the helpers in this module are documented as "Creates foo". This is
-a shorthand notation for "Adds a node representing an op that returns foo".
-"""
+"""Ops that create lists."""
 
 from collections import Optional
 

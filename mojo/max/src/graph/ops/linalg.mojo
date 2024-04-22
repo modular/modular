@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Linear algebra operations."""
+"""Ops that perform linear algebra."""
 
 from math import max
 

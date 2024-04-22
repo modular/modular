@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Ops which accumulate or reduce a tensor along an axis."""
+"""Ops that accumulate or reduce a tensor along an axis."""
 
 from collections import Optional
 

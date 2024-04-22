@@ -3,6 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Implements the Mojo extensibility registration mechanism."""
+"""Implements the MAX extensibility registration mechanism."""
 
 from .register import op, elementwise

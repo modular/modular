@@ -3,13 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Elementwise operations on graph tensor `Symbol`s.
+"""Ops that perform element-wise computations/comparisons.
 
-Operations in this library are split into two main kinds:
+Operations in this module are split into either unary or binary operations.
 
 <h3 id="unary_operations">Unary Operations</h3>
 
 Elementwise-unary-operations all have the following properties:
+
 - They operate on a single symbolic tensor value of any shape
 - Their output is a single symbolic tensor value with the same shape as their
     input
@@ -20,6 +21,7 @@ Elementwise-unary-operations all have the following properties:
 <h3 id="binary_operations">Binary Operations</h3>
 
 Elementwise-binary-operations all have the following properties:
+
 - They operate on two symbolic tensor values, a `left` value and a `right`
     value.
 - The input tensor types must be compatible according to the
@@ -59,6 +61,7 @@ All inputs will be cast to the promotion candidate before the underlying operati
 <h3 id="broadcasting_rules">Broadcasting Rules</h3>
 
 Given two input tensor shapes, broadcasting works as following:
+
 1. Prepend static 1 dimensions onto the tensor with lower rank to make it so that both tensors have the same rank.
 2. If a dimension is a static 1 dimension, it will broadcast to the size of the dimension in the other tensor.
 3. All other dimensions will be asserted to be equivalent. If they are not, an exception will be raised.
@@ -88,10 +91,13 @@ def add(lhs: Symbol, rhs: Symbol) -> Symbol:
     and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the [dtype promotion
+        rules](/engine/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to [broadcasting
+        rules](/engine/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the addition.
@@ -119,10 +125,13 @@ def div(lhs: Symbol, rhs: Symbol) -> Symbol:
     and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the [dtype promotion
+        rules](/engine/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to [broadcasting
+        rules](/engine/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the division.
@@ -150,10 +159,13 @@ def max(lhs: Symbol, rhs: Symbol) -> Symbol:
     and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the [dtype promotion
+        rules](/engine/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to [broadcasting
+        rules](/engine/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the maximum.
@@ -181,10 +193,13 @@ def min(lhs: Symbol, rhs: Symbol) -> Symbol:
     and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the [dtype promotion
+        rules](/engine/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to [broadcasting
+        rules](/engine/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the minimum.
@@ -212,10 +227,13 @@ def mod(lhs: Symbol, rhs: Symbol) -> Symbol:
     and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the [dtype promotion
+        rules](/engine/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to [broadcasting
+        rules](/engine/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the maximum.
@@ -243,10 +261,13 @@ def mul(lhs: Symbol, rhs: Symbol) -> Symbol:
     and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the [dtype promotion
+        rules](/engine/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to [broadcasting
+        rules](/engine/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the multiplication.
@@ -274,10 +295,13 @@ def pow(lhs: Symbol, rhs: Symbol) -> Symbol:
     and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the [dtype promotion
+        rules](/engine/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to [broadcasting
+        rules](/engine/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the exponentiation.
@@ -305,10 +329,13 @@ def sub(lhs: Symbol, rhs: Symbol) -> Symbol:
     and adds it to the graph, returning the symbolic result.
 
     - If `lhs` and `rhs` have different dtypes, they will be promoted according
-        to the [dtype promotion rules](#dtype_promotion_rules) before the operation.
+        to the [dtype promotion
+        rules](/engine/reference/mojo/graph/ops/elementwise/#dtype_promotion_rules)
+        before the operation.
     - If `lhs` and `rhs` have different shapes, they will be broadcast to the
-        same shape according to [broadcasting rules](#broadcasting_rules) before
-        the operation.
+        same shape according to [broadcasting
+        rules](/engine/reference/mojo/graph/ops/elementwise/#broadcasting_rules)
+        before the operation.
 
     Args:
         lhs: The symbol to use as left side of the subtraction.

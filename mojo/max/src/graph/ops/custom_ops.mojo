@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Helpers for custom ops."""
+"""Helpers for building custom ops."""
 
 from max.graph._attributes import _string_attr
 from max.graph.symbol import SymbolTuple
@@ -16,15 +16,15 @@ def custom[
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with
-    the `max.register.op` decorator. That function should have exactly one
-    output.
+    the [`max.register.op`](/engine/reference/mojo/register/register/op)
+    decorator.
 
     Parameters:
         name: The op name provided to `max.register.op`.
 
     Args:
-        values: The inputs to the op function.
-        out_type: The type of the single output to the function.
+        values: The op function's arguments.
+        out_type: The op function's return type.
 
     Returns:
         A symbolic value representing the output of the op in the graph.
@@ -39,15 +39,15 @@ def custom_nv[
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with
-    the `max.register.op` decorator. That function should have exactly one
-    output.
+    the [`max.register.op`](/engine/reference/mojo/register/register/op)
+    decorator.
 
     Parameters:
         name: The op name provided to `max.register.op`.
 
     Args:
-        values: The inputs to the op function.
-        out_types: The types of each output to the function.
+        values: The op function's arguments.
+        out_types: The op function's return type.
 
     Returns:
         Symbolic values representing the outputs of the op in the graph.
