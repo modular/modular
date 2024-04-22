@@ -839,6 +839,7 @@ cc_library(
     deps = [
         ":ADT",
         ":Base",
+        ":Buffer",
         ":DeviceSpecs",
         ":MAttrInterfaces",
         ":MAttrs",
