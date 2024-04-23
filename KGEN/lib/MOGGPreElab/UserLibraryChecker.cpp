@@ -50,7 +50,7 @@ LogicalResult checkCallsiteErrorInternal(CallOp call, GeneratorOp root,
                                          GeneratorOp gen) {
   auto checkFunc = [&](const StringLiteral &decorator, StringRef msg,
                        GeneratorOp root) -> LogicalResult {
-    if (hasDecorator(gen, decorator)) {
+    if (gen->hasAttr(decorator)) {
       mlir::emitError(call->getLoc(), msg)
           << ", see kernel at " << root->getLoc() << ".";
       return failure();
@@ -58,12 +58,12 @@ LogicalResult checkCallsiteErrorInternal(CallOp call, GeneratorOp root,
     return success();
   };
 
-  if (failed(checkFunc(tensorAllocDecorator,
+  if (failed(checkFunc(DECORATOR_TENSOR_ALLOC,
                        "Tensor allocations are currently only supported inside "
                        "the top level kernel",
                        root)))
     return failure();
-  if (failed(checkFunc(tensorEnableFusion,
+  if (failed(checkFunc(DECORATOR_ENABLE_FUSION_HOOK,
                        "Calling enable_fusion outside of kernel entry point is "
                        "not supported",
                        root)))
@@ -81,10 +81,8 @@ LogicalResult checkParamRegionCallsiteLocation(
   LogicalResult res = success();
 
   for (ParamDeclareRegionOp region : paramDeclRegions) {
-    // Scan through the decorators to see if the region is inside a registered
-    // kernel.
-    if (MOGGPreElab::hasRegisteredKernelDecorator(
-            region->getParentOfType<GeneratorOp>()))
+    // Check if the region is inside a kenrel.
+    if (isKernel(region->getParentOfType<GeneratorOp>()))
       registeredRegions.push_back(region);
   }
 
@@ -114,7 +112,7 @@ LogicalResult checkGeneratorCallsiteLocation(
 
   for (auto &[gen, node] : cg->nodes) {
     // Scan through the decorators to see if the kernel is registered.
-    if (MOGGPreElab::hasRegisteredKernelDecorator(gen))
+    if (isKernel(gen))
       kernels.push_back(gen);
   }
 

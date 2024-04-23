@@ -8,6 +8,8 @@
 #define KGEN_LIB_MOGGPREELAB_HELPERS_H
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MOGGPreElab/MOGGTensorAccessor.h"
 
 namespace M::KGEN::MOGGPreElab {
 
@@ -35,31 +37,6 @@ struct LambdaTemplate {
   // This call shows us how the lambda needs to be bound.
   KGEN::CallOp callUsingLambda;
 };
-
-template <typename LambdaToApply>
-SmallVector<TypedAttr> forEachDecorator(GeneratorOp userKernel,
-                                        LambdaToApply lambda) {
-  SmallVector<TypedAttr> decoratorsToCopy;
-  for (TypedAttr decorator : userKernel.getDecorators()) {
-    // Keep track of the non mogg decorators to preserve them on the user
-    // kernel.
-    decoratorsToCopy.push_back(decorator);
-
-    // Decorators are expected to the the apply of a symbol.
-    auto apply = dyn_cast<KGEN::ParamOperatorAttr>(decorator);
-    if (!apply)
-      continue;
-
-    // The first operand is expected to be the symbol we are applying.
-    auto sym = dyn_cast<KGEN::SymbolConstantAttr>(apply.getOperand(0));
-    if (!sym)
-      continue;
-
-    StringRef decoratorName = sym.getSymbol().getLeafReference().strref();
-    lambda(decorator, decoratorName, decoratorsToCopy);
-  }
-  return decoratorsToCopy;
-}
 
 bool isTensor(KGEN::LIT::DeclRefType maybeTensor) {
   // Look at the top level symbol name, it is structured like
@@ -145,6 +122,10 @@ getTensorRepFromFunctionInput(GeneratorOp generator, size_t index) {
 }
 
 } // namespace
+
+/// Remove the decorators from the function. Return true if any function had the
+/// kernel decorators.
+bool stripDecorators(GeneratorOp func);
 
 } // namespace M::KGEN::MOGGPreElab
 

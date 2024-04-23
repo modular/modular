@@ -58,3 +58,23 @@ def OutlineMOGGFuncs : Pass<"mogg-outline", "mlir::ModuleOp"> {
     ```
   }];
 }
+
+def RemoveDecorators : Pass<"remove-mogg-decorators", "KGEN::GeneratorOp"> {
+  let summary = "Strips MOGG decorators and replaces them with attributes";
+  let description = [{
+    A mogg domain specific pass which replaces each intrinsic mogg decorator
+    with an attribute. This allows us to concentrate all the decorator access
+    into one place and allow all the other passes to access just the decorator. 
+  }];
+}
+
+def MOGGPreElabPipeline : Pass<"mogg-pre-elab-pipeline", "mlir::ModuleOp"> {
+  let summary = "Run all the mogg pre elab passes";
+  let description = [{
+    Run the pipeline of MOGG PreElaborated functions.
+  }];
+  let options = [
+    Option<"debugBuild", "debugBuild", "bool", "false",
+           "True when the build is a debug build. Will disable some passes">
+  ];
+}

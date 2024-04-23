@@ -327,12 +327,9 @@ public:
           // Allowed to fail as it could be a call to an ExternalGenerator
           if (!func)
             continue;
-          auto identifyCalls = [&](TypedAttr decorator, StringRef decoratorName,
-                                   SmallVector<TypedAttr> &attrsToCopy) {
-            if (decoratorName.starts_with(elementwiseHook))
-              elementwiseOp = call;
-          };
-          forEachDecorator(func, identifyCalls);
+
+          if (func->hasAttr(DECORATOR_ELEM_HOOK))
+            elementwiseOp = call;
         }
 
         // Ensure elementwise kernels are actually elementwise.

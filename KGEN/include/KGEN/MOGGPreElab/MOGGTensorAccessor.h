@@ -8,6 +8,7 @@
 #define GENERICML_GRAPH_COMPILER_MOGGSUPPORT_MOGGTENSORACCESSOR_H
 
 #include "KGEN/KGENDialect/KGENAttrs.h"
+#include "KGEN/LITDialect/LITTypes.h"
 
 namespace M::MOGG {
 
