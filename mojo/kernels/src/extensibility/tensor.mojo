@@ -69,10 +69,6 @@ struct Tensor[type: DType, static_rank: Int]:
         self.strides = existing.strides
         existing.data = DTypePointer[type]()
 
-    @always_inline
-    fn refcount(self) -> Pointer[SIMD[DType.index, 1]]:
-        return self.storage_ref_count._underlying_value
-
     fn __del__(owned self):
         if self.data != DTypePointer[type]():
             self.data.free()
