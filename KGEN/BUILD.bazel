@@ -146,6 +146,7 @@ gentbl_mlir_dialect(
         ":HLCFDialectTdFiles",
         ":InterpreterTdFiles",
         ":KGENDialectTdFiles",
+        ":KGENEnumsIncGen",
         "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
         "@llvm-project//mlir:FunctionInterfacesTdFiles",
         "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
@@ -234,7 +235,6 @@ gentbl_cc_library(
     tblgen = "@llvm-project//mlir:mlir-tblgen",
     td_file = "include/KGEN/KGENDialect/KGENAttrs.td",
     deps = [
-        ":KGENDialectIncGen",
         ":KGENDialectTdFiles",
     ],
 )
@@ -477,10 +477,7 @@ cc_library(
 cc_library(
     name = "HLCFDialect",
     srcs = glob(["lib/HLCFDialect/*.cpp"]),
-    hdrs = glob([
-        "include/KGEN/HLCFDialect/*.h",
-        "include/KGEN/KGENDialect/*.h",
-    ]),
+    hdrs = glob(["include/KGEN/HLCFDialect/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":HLCFAttrsIncGen",
@@ -488,12 +485,7 @@ cc_library(
         ":HLCFEnumsIncGen",
         ":HLCFInterfacesIncGen",
         ":Interpreter",
-        ":KGENAttrInterfacesIncGen",
-        ":KGENAttrsIncGen",
-        ":KGENDialectIncGen",
-        ":KGENEnumsIncGen",
-        ":KGENInterfacesIncGen",
-        ":KGENTypeInterfacesIncGen",
+        ":KGENDialectHeaders",
         "//Support:ADT",
         "//Support:Base",
         "//Support:Compiler",
@@ -642,37 +634,26 @@ cc_library(
     name = "LITDialect",
     srcs = glob(["lib/LITDialect/*.cpp"]),
     hdrs = glob([
-        "include/KGEN/HLCFDialect/*.h",
-        "include/KGEN/KGENDialect/*.h",
         "include/KGEN/LITDialect/*.h",
         "include/KGEN/LITDialect/*.def",
-        "include/KGEN/POPDialect/*.h",
     ]),
     strip_include_prefix = "include",
     deps = [
-        ":HLCFAttrsIncGen",
-        ":HLCFDialectIncGen",
-        ":HLCFEnumsIncGen",
-        ":HLCFInterfacesIncGen",
         ":Interpreter",
-        ":KGENAttrInterfacesIncGen",
-        ":KGENAttrsIncGen",
-        ":KGENDialectIncGen",
-        ":KGENEnumsIncGen",
-        ":KGENInterfacesIncGen",
-        ":KGENTypeInterfacesIncGen",
+        ":KGENDialect",
         ":LITAttrsIncGen",
         ":LITDialectBytecodeIncGen",
         ":LITDialectIncGen",
         ":LITEnumsIncGen",
         ":LITInterfacesIncGen",
-        ":POPAttrsIncGen",
-        ":POPDialectIncGen",
-        ":POPEnumsIncGen",
+        ":POPDialect",
         "//Support:Base",
         "//Support:DebugInfoDialect",
         "//Support:IPInt",
         "//Support:IPRational",
+        "//Support:MDialect",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -773,24 +754,11 @@ gentbl_cc_library(
 cc_library(
     name = "POPDialect",
     srcs = glob(["lib/POPDialect/*.cpp"]),
-    hdrs = glob([
-        "include/KGEN/HLCFDialect/*.h",
-        "include/KGEN/Interpreter/*.h",
-        "include/KGEN/KGENDialect/*.h",
-        "include/KGEN/POPDialect/*.h",
-    ]),
+    hdrs = glob(["include/KGEN/POPDialect/*.h"]),
     strip_include_prefix = "include",
     deps = [
-        ":HLCFInterfacesIncGen",
-        ":InterpreterAttrsIncGen",
-        ":InterpreterDialectIncGen",
-        ":InterpreterOpInterfaceIncGen",
-        ":KGENAttrInterfacesIncGen",
-        ":KGENAttrsIncGen",
-        ":KGENDialectIncGen",
-        ":KGENEnumsIncGen",
-        ":KGENInterfacesIncGen",
-        ":KGENTypeInterfacesIncGen",
+        ":Interpreter",
+        ":KGENDialect",
         ":MemoryableTypeInterfaceIncGen",
         ":POPAttrsIncGen",
         ":POPDialectBytecodeIncGen",
@@ -809,11 +777,23 @@ cc_library(
 )
 
 cc_library(
+    name = "KGENDialectHeaders",
+    hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":KGENAttrInterfacesIncGen",
+        ":KGENAttrsIncGen",
+        ":KGENDialectIncGen",
+        ":KGENEnumsIncGen",
+        ":KGENInterfacesIncGen",
+        ":KGENTypeInterfacesIncGen",
+    ],
+)
+
+cc_library(
     name = "KGENDialect",
     srcs = glob(["lib/KGENDialect/*.cpp"]),
-    hdrs = glob([
-        "include/KGEN/KGENDialect/*.h",
-    ]),
+    hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
     strip_include_prefix = "include",
     deps = [
         ":HLCFDialect",
@@ -937,6 +917,7 @@ cc_test(
     linkopts = ["-lz"],
     deps = [
         ":CompilerRT.distributable",
+        "@com_github_google_googletest//:gtest",
         "@com_github_google_googletest//:gtest_main",
     ],
 )
@@ -958,10 +939,15 @@ globals_library(
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
         "//LLCL:RuntimeHeaders",
+        "//LLCL:Support",
         "//Support:Base",
         "//Support:Configuration",
+        "//Support:Filesystem",
         "//Support:Globals",
+        "//Support:ML",
+        "//Support:Profiling",
         "//Support:Threading",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -985,6 +971,8 @@ cc_library(
         "//Support:Configuration",
         "//Support:ML",
         "//Support:Profiling",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -1560,6 +1548,7 @@ cc_library(
     deps = [
         "//Support:Base",
         "//Support:Filesystem",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirLspServerSupportLib",
     ],
 )
