@@ -59,7 +59,7 @@ static void generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
     DebugInfo::DIAttrTypeReplacer replacer;
     replacer.addReplacement(
         [scope](DebugInfo::DISubprogramAttr) { return scope; });
-    b.setLoc(cast<mlir::LocationAttr>(replacer.replace(b.getLoc())));
+    b.setLoc(cast<LocationAttr>(replacer.replace(b.getLoc())));
   }
 
   sliced.setNotExported();
@@ -113,7 +113,7 @@ static LogicalResult writeCaptureArgs(ModuleOp module, StringAttr name,
   replacer.addReplacement([](mlir::FusedLocWith<DebugInfo::DIAttr> loc) {
     return FusedLoc::get(loc.getContext(), loc.getLocations());
   });
-  loc = cast<mlir::LocationAttr>(replacer.replace(loc));
+  loc = cast<LocationAttr>(replacer.replace(loc));
 
   // Generate a function on the host side that opaquely populates a piece of
   // memory with the capture values.

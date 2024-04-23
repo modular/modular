@@ -22,8 +22,8 @@ namespace impl {
 LogicalResult verifySubprogramScoped(SubprogramScoped op);
 
 Location getLocNoInlined(InlinedSubprogramScoped iss);
-mlir::LocationAttr getCallLocAttr(InlinedSubprogramScoped iss);
-void setCallLocAttr(InlinedSubprogramScoped iss, mlir::LocationAttr attr);
+LocationAttr getCallLocAttr(InlinedSubprogramScoped iss);
+void setCallLocAttr(InlinedSubprogramScoped iss, LocationAttr attr);
 } // namespace impl
 } // namespace M::DebugInfo
 

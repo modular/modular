@@ -123,7 +123,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
                               mlir::DominanceInfo &domInfo) {
   // Gather location info from encoded CallLoc, and set the op's location to the
   // unencoded location so that inlined body ops get the right callsite loc.
-  mlir::LocationAttr callLoc = op.getCallLocAttr();
+  LocationAttr callLoc = op.getCallLocAttr();
   Location unencodedLoc = op.getLocNoInlined();
   op.getOperation()->setLoc(unencodedLoc);
 
@@ -193,7 +193,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
                               mlir::DominanceInfo &domInfo) {
   // Gather location info from encoded CallLoc, and set the op's location to the
   // unencoded location so that inlined body ops get the right callsite loc.
-  mlir::LocationAttr callLoc = op.getCallLocAttr();
+  LocationAttr callLoc = op.getCallLocAttr();
   Location unencodedLoc = op.getLocNoInlined();
   op.getOperation()->setLoc(unencodedLoc);
 

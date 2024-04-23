@@ -1279,8 +1279,8 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
     StringAttr boundName = builder.getStringAttr(name);
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
         op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
-        /*importNameLoc=*/mlir::LocationAttr(),
-        /*destNameLoc=*/mlir::LocationAttr());
+        /*importNameLoc=*/LocationAttr(),
+        /*destNameLoc=*/LocationAttr());
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
                               LexerCursor(), LexerCursor(), /*indentation=*/-1);
 
@@ -1289,8 +1289,8 @@ ParseResult DeclResolver::resolveBody(LIT::PackageOp op, ASTDecl &decl) {
     boundName = builder.getStringAttr(name);
     importDecl = builder.create<LIT::UnresolvedImportOp>(
         op->getLoc(), importName, boundName, /*declName=*/StringAttr(),
-        /*importNameLoc=*/mlir::LocationAttr(),
-        /*declNameLoc=*/mlir::LocationAttr());
+        /*importNameLoc=*/LocationAttr(),
+        /*declNameLoc=*/LocationAttr());
     getDeclResolver().addDecl(importDecl, decl.loc, boundName, &decl,
                               LexerCursor(), LexerCursor(), /*indentation=*/-1);
   }

@@ -112,6 +112,7 @@ struct MyPointer[elType: __mlir_type.`!kgen.type`]:
     fn __init__(value: Self.StorageTy) -> MyPointer[elType]:
         return MyPointer[elType] {value: value}
 
+
 # CHECK-LABEL: lit.func @"structured_for_loop()"
 fn structured_for_loop() -> __mlir_type.index:
     # CHECK: %0 = hlcf.loop (%arg0 = %index0 : index) -> index {

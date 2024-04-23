@@ -101,7 +101,7 @@ static ErrorOrSuccess decodeDiagnostics(const char *&dataIt,
     StringRef locationStr;
     if (auto err = readString(locationStr))
       return err;
-    mlir::LocationAttr loc = dyn_cast_if_present<mlir::LocationAttr>(
+    LocationAttr loc = dyn_cast_if_present<LocationAttr>(
         mlir::parseAttribute(locationStr, ctx, Type(), /*numRead=*/nullptr,
                              /*isKnownNullTerminated=*/true));
     if (!loc)

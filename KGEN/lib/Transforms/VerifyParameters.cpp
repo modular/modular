@@ -118,7 +118,7 @@ static void propagateTrivialParameters(Region *region,
   };
   region->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
     if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op))
-      if (mlir::LocationAttr loc = inlined.getCallLocAttr())
+      if (LocationAttr loc = inlined.getCallLocAttr())
         inlined.setCallLocAttr(rebindLoc(loc));
     // DeclInterface's location might reference parameters declared by it (e.g.
     // in case of a parametric argument making it into a subprogram scope type),

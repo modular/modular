@@ -1909,7 +1909,7 @@ ParseResult StmtParser::parseImportStmt() {
       return failure();
 
     // Check for a name binding.
-    mlir::LocationAttr boundModuleLocAttr;
+    LocationAttr boundModuleLocAttr;
     if (consumeIf(Token::kw_as)) {
       boundModuleName = getTokenSpelling();
       boundModuleLocAttr = translateLocation(getToken().getLoc());
@@ -1922,7 +1922,7 @@ ParseResult StmtParser::parseImportStmt() {
     auto importDecl = builder.create<LIT::UnresolvedImportOp>(
         translateLocation(importLoc), moduleAttr, importDestNameAttr,
         /*declName=*/StringAttr(), boundModuleLocAttr,
-        /*declNameLoc=*/mlir::LocationAttr());
+        /*declNameLoc=*/LocationAttr());
     getDeclResolver().addDecl(importDecl, importLoc, importDestNameAttr,
                               curDeclScope, getLexer().getCursor(),
                               getLexer().getCursor(), /*indentation=*/-1);

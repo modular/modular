@@ -242,8 +242,7 @@ void AttrTypeMangler::mangleElementsIn(Operation *op, bool mangleLocs) {
   CompilerTimeTraceScope traceScope("AttrTypeMangler::mangleElementsIn");
   op->setAttrs(cast<DictionaryAttr>(mangleRefsIn(op->getAttrDictionary())));
   if (mangleLocs) {
-    op->setLoc(cast<mlir::LocationAttr>(
-        mangleRefsIn(mlir::LocationAttr(op->getLoc()))));
+    op->setLoc(cast<LocationAttr>(mangleRefsIn(LocationAttr(op->getLoc()))));
   }
 
   for (OpResult result : op->getResults())
@@ -253,8 +252,8 @@ void AttrTypeMangler::mangleElementsIn(Operation *op, bool mangleLocs) {
     for (Block &block : region) {
       for (BlockArgument arg : block.getArguments()) {
         if (mangleLocs) {
-          arg.setLoc(cast<mlir::LocationAttr>(
-              mangleRefsIn(mlir::LocationAttr(arg.getLoc()))));
+          arg.setLoc(
+              cast<LocationAttr>(mangleRefsIn(LocationAttr(arg.getLoc()))));
         }
         arg.setType(mangleRefsIn(arg.getType()));
       }
@@ -282,13 +281,12 @@ void AttrTypeMangler::recursivelyMangle(Region *scope,
 
   // We need to mangle location in all ops, not just parametric ones.
   for (Operation &op : uses.scope->getOps()) {
-    op.setLoc(cast<mlir::LocationAttr>(
-        mangleRefsIn(mlir::LocationAttr(op.getLoc()))));
+    op.setLoc(cast<LocationAttr>(mangleRefsIn(LocationAttr(op.getLoc()))));
     for (Region &region : op.getRegions()) {
       for (Block &block : region) {
         for (BlockArgument arg : block.getArguments()) {
-          arg.setLoc(cast<mlir::LocationAttr>(
-              mangleRefsIn(mlir::LocationAttr(arg.getLoc()))));
+          arg.setLoc(
+              cast<LocationAttr>(mangleRefsIn(LocationAttr(arg.getLoc()))));
         }
       }
     }
@@ -553,8 +551,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     }
     if (updateDebugInfo && needsMangling) {
       // Mangle locations.
-      op->setLoc(cast<mlir::LocationAttr>(
-          mangler.mangleRefsIn(mlir::LocationAttr(op->getLoc()))));
+      op->setLoc(
+          cast<LocationAttr>(mangler.mangleRefsIn(LocationAttr(op->getLoc()))));
     }
     // Inline the location, and recurse into the body if allowed.
     DebugInfo::updateInlinedLoc(op, call.getLoc(), stripDebugInfo);
@@ -583,8 +581,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
         auto declOp = b.create<ParamDeclareOp>(bind.getLoc(), decl, rebound);
         if (updateDebugInfo && needsMangling) {
           // Mangle locations.
-          declOp->setLoc(cast<mlir::LocationAttr>(
-              mangler.mangleRefsIn(mlir::LocationAttr(declOp->getLoc()))));
+          declOp->setLoc(cast<LocationAttr>(
+              mangler.mangleRefsIn(LocationAttr(declOp->getLoc()))));
         }
         DebugInfo::updateInlinedLoc(declOp, call.getLoc(), stripDebugInfo);
       }
@@ -595,8 +593,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
 
       if (updateDebugInfo && needsMangling) {
         // Mangle locations.
-        breakOp->setLoc(cast<mlir::LocationAttr>(
-            mangler.mangleRefsIn(mlir::LocationAttr(breakOp->getLoc()))));
+        breakOp->setLoc(cast<LocationAttr>(
+            mangler.mangleRefsIn(LocationAttr(breakOp->getLoc()))));
       }
       DebugInfo::updateInlinedLoc(breakOp, call.getLoc(), stripDebugInfo);
     }

@@ -106,9 +106,9 @@ def DebugInfo_InlinedSubprogramScoped : OpInterface<
     /// Return the location of the op after removing any encoded callLoc info.
     Location getLocNoInlined() { return impl::getLocNoInlined($_op); }
     /// Return any callLoc info encoded in the location.
-    mlir::LocationAttr getCallLocAttr() { return impl::getCallLocAttr($_op); }
+    LocationAttr getCallLocAttr() { return impl::getCallLocAttr($_op); }
     /// Adjust location info to encode the callLoc info.
-    void setCallLocAttr(mlir::LocationAttr callLoc) {
+    void setCallLocAttr(LocationAttr callLoc) {
       impl::setCallLocAttr($_op, callLoc);
     }
   }];

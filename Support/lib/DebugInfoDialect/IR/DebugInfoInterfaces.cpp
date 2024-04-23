@@ -92,7 +92,7 @@ static LogicalResult verifyScope(Operation *op, DISubprogramAttr funcScope) {
 /// Verify the location scope of InlinedSubprogramScoped within a subprogram.
 static LogicalResult verifyScope(InlinedSubprogramScoped inlined,
                                  DISubprogramAttr funcScope) {
-  if (mlir::LocationAttr callLoc = inlined.getCallLocAttr()) {
+  if (LocationAttr callLoc = inlined.getCallLocAttr()) {
     // Allow ops to not carry location (due to constant folding or inlining).
     if (isa<UnknownLoc>(callLoc))
       return success();
@@ -204,7 +204,7 @@ Location impl::getLocNoInlined(InlinedSubprogramScoped iss) {
   return iss.getLoc();
 }
 
-mlir::LocationAttr impl::getCallLocAttr(InlinedSubprogramScoped iss) {
+LocationAttr impl::getCallLocAttr(InlinedSubprogramScoped iss) {
   if (auto fusedImmediate =
           dyn_cast<mlir::FusedLocWith<DebugInfo::DICallLocAttr>>(iss.getLoc()))
     return fusedImmediate.getMetadata().getCallLoc();
@@ -224,8 +224,7 @@ mlir::LocationAttr impl::getCallLocAttr(InlinedSubprogramScoped iss) {
     return {};
 }
 
-void impl::setCallLocAttr(InlinedSubprogramScoped iss,
-                          mlir::LocationAttr callLoc) {
+void impl::setCallLocAttr(InlinedSubprogramScoped iss, LocationAttr callLoc) {
   Location callLocStripped = iss.getLocNoInlined();
   if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(
           callLocStripped)) {

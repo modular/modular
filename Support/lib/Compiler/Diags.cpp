@@ -207,7 +207,7 @@ Location Diags::translateLocation(SMLoc loc) const {
                              lineAndColumn.second);
 }
 
-SMLoc Diags::convertLocToSMLoc(mlir::LocationAttr loc) const {
+SMLoc Diags::convertLocToSMLoc(LocationAttr loc) const {
   if (!loc)
     return SMLoc();
   if (FileLineColLoc fileLoc = loc.findInstanceOf<FileLineColLoc>())
