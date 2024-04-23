@@ -451,7 +451,12 @@ struct LayoutTensor[
         __tile_size: Int = layout.shape[axis].value() // count,
         __tiled_layout: Layout = Self._compute_tile_layout[__tile_size, axis](),
     ](self) -> StaticTuple[
-        LayoutTensor[dtype, __tiled_layout[0], address_space=address_space],
+        LayoutTensor[
+            dtype,
+            __tiled_layout[0],
+            address_space=address_space,
+            element_layout=element_layout,
+        ],
         count,
     ]:
         constrained[
@@ -467,14 +472,22 @@ struct LayoutTensor[
         alias stride = layout.stride[axis].value()
 
         var tiles = StaticTuple[
-            LayoutTensor[dtype, __tiled_layout[0], address_space=address_space],
+            LayoutTensor[
+                dtype,
+                __tiled_layout[0],
+                address_space=address_space,
+                element_layout=element_layout,
+            ],
             count,
         ]()
 
         @unroll
         for i in range(count):
             tiles[i] = LayoutTensor[
-                dtype, __tiled_layout[0], address_space=address_space
+                dtype,
+                __tiled_layout[0],
+                address_space=address_space,
+                element_layout=element_layout,
             ](self.ptr.offset(i * __tile_size * stride))
 
         return tiles

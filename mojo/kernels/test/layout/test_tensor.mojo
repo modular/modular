@@ -909,6 +909,14 @@ fn test_split():
     # CHECK: 14.0 15.0
     tiles_axis1[1].print()
 
+    var tiles_vec2_axis0 = tensor_4x4.vectorize[1, 2]().split[2]()
+    # CHECK: [0.0, 1.0] [2.0, 3.0]
+    # CHECK: [4.0, 5.0] [6.0, 7.0]
+    tiles_vec2_axis0[0].print()
+    # CHECK: [8.0, 9.0] [10.0, 11.0]
+    # CHECK: [12.0, 13.0] [14.0, 15.0]
+    tiles_vec2_axis0[1].print()
+
     _ = tensor_4x4^
 
 
