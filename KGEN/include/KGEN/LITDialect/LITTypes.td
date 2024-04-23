@@ -141,7 +141,7 @@ def LIT_UnpackedType : LITType<"Unpacked", "unpacked"> {
 // DeclRefType
 //===----------------------------------------------------------------------===//
 
-def KGEN_DeclRefType : LITType<"DeclRef", "declref", [
+def LIT_DeclRefType : LITType<"DeclRef", "declref", [
     DeclareTypeInterfaceMethods<DeclRefTypeInterface>,
     DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
   let summary = "Reference to a type declaration.";
