@@ -24,7 +24,6 @@ lit_tests(
         "//KGEN:mojo-build-server",
         "//Kernels/mojo/layout",
         "//Kernels/mojo/stdlib",
-        "@crashpad//:modular-crashpad-handler",
         "@llvm-project//compiler-rt:orc_rt",
     ] + glob([
         "**/inputs/**",
@@ -38,7 +37,7 @@ lit_tests(
         "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
         "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
         "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
-        "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(location @crashpad//:modular-crashpad-handler)",
+        "MODULAR_CRASH_REPORTING_ENABLED": "false",
         "MODULAR_MOJO_IMPORT_PATH": "$(location //Kernels/mojo/stdlib),$(location //Kernels/mojo/layout)",
         "MODULAR_MOJO_BUILD_SERVER_PATH": "$(location //KGEN:mojo-build-server)",
     },
