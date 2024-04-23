@@ -317,7 +317,7 @@ def DebugInfo_DICallLocAttr : DIAttr<"DICallLoc", "call_loc", []> {
     ```
   }];
 
-  let parameters = (ins "mlir::LocationAttr":$callLoc);
+  let parameters = (ins "LocationAttr":$callLoc);
   let assemblyFormat = "`<` $callLoc `>`";
 }
 

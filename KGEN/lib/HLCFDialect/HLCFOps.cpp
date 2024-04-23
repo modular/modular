@@ -742,7 +742,7 @@ void ElifYieldOp::getBranchTargets(
   // The first operand is the condition and the subsequent operands are likely
   // stack values that were promoted to register values and thus now rely on
   // block arguments.
-  assert(operands.size() >= 1);
+  assert(!operands.empty());
   unsigned myIndex = getOperation()->getParentRegion()->getRegionNumber();
   unsigned nextValueRegion = myIndex + 1;
   unsigned nextConditionRegion = nextValueRegion + 1;

@@ -392,7 +392,7 @@ WalkResult DebugInfo::walkLocation(Location loc, LocWalkPolicy policy,
     return WalkResult::interrupt();
   return TypeSwitch<Location, WalkResult>(loc)
       .Case([&](mlir::CallSiteLoc callLoc) -> WalkResult {
-        mlir::LocationAttr firstChoice, secondChoice;
+        LocationAttr firstChoice, secondChoice;
         switch (policy) {
         case LocWalkPolicy::CalleePriority:
           secondChoice = callLoc.getCaller();
@@ -487,14 +487,15 @@ void DebugInfo::updateInlinedLoc(Operation *op, Location callerLoc,
   if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
     if (stripDebugInfo)
       inlined.setCallLocAttr(callerLoc);
-    else if (mlir::LocationAttr callLoc = inlined.getCallLocAttr())
+    else if (LocationAttr callLoc = inlined.getCallLocAttr())
       inlined.setCallLocAttr(mlir::CallSiteLoc::get(callLoc, callerLoc));
   } else if (!isa<DebugInfo::SubprogramScoped>(op)) {
-    if (stripDebugInfo)
+    if (stripDebugInfo) {
       op->setLoc(op->hasTrait<OpTrait::ConstantLike>()
                      ? UnknownLoc::get(op->getContext())
                      : callerLoc);
-    else
+    } else {
       op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callerLoc));
+    }
   }
 }

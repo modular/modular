@@ -573,7 +573,7 @@ static ErrorTreeOrSuccess interpretCallOp(mlir::CallOpInterface op,
   return success();
 }
 
-/// Interpreter a return-like operation.
+/// Interpret a return-like operation.
 static void interpretReturnOp(Operation *op, ArrayRef<Attribute> operands,
                               InterpreterState &state) {
   // Pop the current frame and transfer control flow back to the call operation,
@@ -583,7 +583,7 @@ static void interpretReturnOp(Operation *op, ArrayRef<Attribute> operands,
   state.transferControlFlowTo(call);
 }
 
-/// Interpreter a generic operation by trying to use its operation folder.
+/// Interpret a generic operation by trying to use its operation folder.
 static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
                                                 ArrayRef<Attribute> operands,
                                                 InterpreterState &state) {

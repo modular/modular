@@ -66,7 +66,7 @@ public:
   /// Decode the specific MLIR location information into an SMLoc for use with
   /// the SourceMgr. This returns an invalid SMLoc if the location is not
   /// understood.
-  SMLoc convertLocToSMLoc(mlir::LocationAttr loc) const;
+  SMLoc convertLocToSMLoc(LocationAttr loc) const;
 
   /// Convert the given source range to an SMRange.
   llvm::SMRange convertToSMRange(SourceRange range) const;

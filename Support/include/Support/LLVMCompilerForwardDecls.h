@@ -199,6 +199,7 @@ using mlir::InFlightDiagnostic;
 using mlir::IntegerAttr;
 using mlir::IntegerType;
 using mlir::Location;
+using mlir::LocationAttr;
 using mlir::MemRefAccess;
 using mlir::MemRefType;
 using mlir::MLIRContext;

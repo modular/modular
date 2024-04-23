@@ -1285,9 +1285,8 @@ static AttrType concretizeAttr(AttrType attr, mlir::Location loc,
 /// Concretizes the location of an op or a block argument.
 template <typename ArgOrOp>
 static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
-  mlir::LocationAttr loc = argOrOp.getLoc();
-  if (mlir::LocationAttr newLocAttr =
-          concretizeAttr<mlir::LocationAttr>(loc, loc, inode)) {
+  LocationAttr loc = argOrOp.getLoc();
+  if (LocationAttr newLocAttr = concretizeAttr<LocationAttr>(loc, loc, inode)) {
     argOrOp.setLoc(newLocAttr);
     return success();
   }
@@ -1479,9 +1478,9 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
         // To be defensive, we only concretize location attributes if we know
         // what we are dealing with.
         if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
-          if (mlir::LocationAttr callLoc = inlined.getCallLocAttr()) {
-            inlined.setCallLocAttr(concretizeAttr<mlir::LocationAttr>(
-                callLoc, op->getLoc(), inode));
+          if (LocationAttr callLoc = inlined.getCallLocAttr()) {
+            inlined.setCallLocAttr(
+                concretizeAttr<LocationAttr>(callLoc, op->getLoc(), inode));
           }
         }
 

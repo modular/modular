@@ -53,7 +53,7 @@ void DebugInfoStrip::runOnOperation() {
     // Otherwise, we strip debug info from locations.
   } else {
     replacer.addReplacement(
-        [&](mlir::FusedLocWith<DIAttr> diLoc) -> mlir::LocationAttr {
+        [&](mlir::FusedLocWith<DIAttr> diLoc) -> LocationAttr {
           return FusedLoc::get(diLoc.getContext(), diLoc.getLocations());
         });
   }

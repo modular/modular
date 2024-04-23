@@ -676,7 +676,7 @@ void LITTypeLowerer::replaceElementsIn(Operation *op) {
 
   // Update the location.
   if (Attribute newLoc = replaceIfDifferent(op->getLoc()))
-    op->setLoc(cast<mlir::LocationAttr>(newLoc));
+    op->setLoc(cast<LocationAttr>(newLoc));
 
   // Update the result types.
   for (OpResult result : op->getResults())
@@ -691,7 +691,7 @@ void LITTypeLowerer::replaceElementsIn(Operation *op) {
     Block &block = region.front();
     for (BlockArgument &arg : block.getArguments()) {
       if (Attribute newLoc = replaceIfDifferent(arg.getLoc()))
-        arg.setLoc(cast<mlir::LocationAttr>(newLoc));
+        arg.setLoc(cast<LocationAttr>(newLoc));
 
       if (Type newType = replaceIfDifferent(arg.getType()))
         arg.setType(newType);
