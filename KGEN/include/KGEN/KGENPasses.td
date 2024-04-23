@@ -400,25 +400,6 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// PruneImpossibleVariants
-//===----------------------------------------------------------------------===//
-
-def PruneImpossibleVariants: Pass<"prune-impossible-variants",
-                                  "mlir::ModuleOp"> {
-  let summary = "remove variant cases that are known to be impossible";
-  let description = [{
-    The `prune-impossible-variants` pass runs a simple forward data-flow
-    analysis to determine variant cases that are impossible.
-
-    The pass folds `kgen.variant.is` operations to constants when the operand is
-    known to be or not to be the queried type and rewrites function signatures
-    that contain variants of known types to those types.
-
-    This pass must run post-elaboration.
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // InlineParametric
 //===----------------------------------------------------------------------===//
 

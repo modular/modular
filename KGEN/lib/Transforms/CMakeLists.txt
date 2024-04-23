@@ -12,7 +12,6 @@ add_modular_library(KGENTransforms
   FoldGlobalConstLoads.cpp
   HoistTrivialInvariants.cpp
   Inlining.cpp
-  KnownVariant.cpp
   LiftAndFoldApply.cpp
   LoopUnrolling.cpp
   LowerClosures.cpp
