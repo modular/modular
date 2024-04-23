@@ -44,7 +44,6 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerLowerLITTypes();
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
-  KGEN::registerPruneImpossibleVariants();
   KGEN::registerRaiseForLoops();
   KGEN::registerSROA();
   KGEN::registerSimplifyCF();
