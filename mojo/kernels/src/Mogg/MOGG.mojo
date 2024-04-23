@@ -42,7 +42,7 @@ from math import (
     tanh,
     trunc,
 )
-from builtin.simd import UInt8, UInt64, Int64
+from builtin.simd import UInt8, UInt64, Int64, _pow
 from random import randn, seed
 from sys import external_call
 from sys.info import simdwidthof
@@ -1315,7 +1315,7 @@ fn pow_wrapped[
 ](value: SIMD[type, simd_width], power: SIMD[power_type, simd_width]) -> SIMD[
     type, simd_width
 ]:
-    return pow[type, power_type, simd_width](value, power)
+    return _pow(value, power)
 
 
 # ===----------------------------------------------------------------------===#
