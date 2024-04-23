@@ -5,7 +5,10 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(MOGGPreElabPasses
+  Helpers.cpp
   OutlineMOGGFuncs.cpp
+  MOGGPreElabPipeline.cpp
+  RemoveDecorators.cpp
   SliceMOGGFuncs.cpp
   UserLibraryChecker.cpp
 

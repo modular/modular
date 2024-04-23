@@ -43,19 +43,6 @@ class SliceMOGGFuncsPass
     : public M::KGEN::MOGGPreElab::impl::SliceMOGGFuncsBase<
           SliceMOGGFuncsPass> {
 private:
-  struct AnnotatedKernel {
-    /// Every mogg kernel should have a registration hook mapping it onto an op.
-    TypedAttr moggRegister;
-
-    /// If true, indicates the kernel will be implemented by an 'async' Mojo
-    /// function.
-    bool isAsync = false;
-
-    /// When cloning the kernel we want to preserve the decorators unrelated to
-    /// mogg.
-    SmallVector<TypedAttr> nonMOGGDecorators;
-  };
-
   /// Rewrite a given call to reflect a change in the parameters being passed.
   /// Which parameters are controlled by the caller of this function through the
   /// given lambda.
@@ -112,35 +99,6 @@ private:
     // Point the call to the new rebinding.
     call.setCalleeAttr(
         KGEN::SymbolConstantAttr::get(flatSym, newParams, newSig));
-  }
-
-  std::optional<AnnotatedKernel> checkForMOGGAttrs(GeneratorOp userFunc) {
-    AnnotatedKernel metadata;
-
-    // Look for the mogg attributes on the kernels.
-    auto lambda = [&](TypedAttr decorator, StringRef decoratorName,
-                      SmallVector<TypedAttr> &attrsToCopy) {
-      if (decoratorName.starts_with(registerDecorator) ||
-          decoratorName.starts_with(registerOverrideDecorator)) {
-        metadata.moggRegister = decorator;
-        // Drop the mogg decorator
-        attrsToCopy.pop_back();
-      } else if (decoratorName.starts_with(willBecomeAsyncDecorator)) {
-        // TODO(#27757): Temporary while transition to Mojo async/await.
-        // Eventually this will be implied by the generator op's signature.
-        metadata.isAsync = true;
-        // Drop the mogg decorator
-        attrsToCopy.pop_back();
-      }
-    };
-
-    // Capture the decorators unrelated to mogg so they can be preserved.
-    metadata.nonMOGGDecorators = forEachDecorator(userFunc, lambda);
-
-    // This is not a mogg kernel if it doesn't have a register.
-    if (!metadata.moggRegister)
-      return std::nullopt;
-    return metadata;
   }
 
   // We have a special mojo hook which show us what the canonical lambda
@@ -806,6 +764,9 @@ private:
       b.clone(*op, mapper);
     b.create<KGEN::ReturnOp>(shape.getLoc(), mapper.lookup(shape));
 
+    // Remove the kernel attr from the shape func.
+    slicedShapeFunction->removeAttr(kernelRegistrationAttr);
+
     // Attached the used inputs as attribute. This allows the graph compiler to
     // discard unused inputs on the op.
     SmallVector<NamedAttribute> newAttrs;
@@ -839,14 +800,10 @@ public:
     // Scan the generators to find the global helper functions we will need to
     // call or inspect.
     for (GeneratorOp func : mod.getOps<GeneratorOp>()) {
-      auto lambda = [&](TypedAttr decorator, StringRef decoratorName,
-                        SmallVector<TypedAttr> &attrsToCopy) {
-        if (decoratorName.starts_with(tensorInputFusionHook))
-          inLambdaTemplate = LambdaTemplate{func};
-        else if (decoratorName.starts_with(tensorOutputFusionHook))
-          outLambdaTemplate = LambdaTemplate{func};
-      };
-      forEachDecorator(func, lambda);
+      if (func->hasAttr(DECORATOR_INPUT_FUSION_HOOK))
+        inLambdaTemplate = LambdaTemplate{func};
+      else if (func->hasAttr(DECORATOR_OUTPUT_FUSION_HOOK))
+        outLambdaTemplate = LambdaTemplate{func};
     }
 
     DenseSet<GeneratorOp> seenFuncs;
@@ -863,9 +820,8 @@ public:
       if (seenFuncs.contains(userKernel))
         continue;
 
-      std::optional<AnnotatedKernel> kernelMetadata =
-          checkForMOGGAttrs(userKernel);
-      if (!kernelMetadata.has_value())
+      // Skip non kernels.
+      if (!isKernel(userKernel))
         continue;
 
       // If there are no tensors detected on the API then it's not a new API
@@ -903,19 +859,14 @@ public:
         if (!func)
           continue;
 
-        auto identifyCalls = [&](TypedAttr decorator, StringRef decoratorName,
-                                 SmallVector<TypedAttr> &attrsToCopy) {
-          if (decoratorName.starts_with(tensorAllocDecorator)) {
-            allocationFunc = call;
-          } else if (decoratorName.starts_with(tensorCopyConstructDecorator)) {
-            constructor = call;
-          } else if (decoratorName.starts_with(tensorEnableFusion)) {
-            enableFusionFuncs.push_back(call);
-          } else if (decoratorName.starts_with(tensorDeconstructDecorator)) {
-            deconstructors.push_back(call);
-          }
-        };
-        forEachDecorator(func, identifyCalls);
+        if (func->hasAttr(DECORATOR_TENSOR_ALLOC))
+          allocationFunc = call;
+        else if (func->hasAttr(DECORATOR_TENSOR_COPY_CONSTRUCT))
+          constructor = call;
+        else if (func->hasAttr(DECORATOR_ENABLE_FUSION_HOOK))
+          enableFusionFuncs.push_back(call);
+        else if (func->hasAttr(DECORATOR_TENSOR_DECONSTRUCT))
+          deconstructors.push_back(call);
       }
 
       // Strip all debug info. Its too annoying to maintain and there is no way
@@ -1035,10 +986,8 @@ public:
                                 outputLambdaNames, slicedShapeFunction,
                                 kgenTensorParams, isView);
 
-      // Remove the attributes from the user kernel as that should remain
-      // untouched for the user to use directly in their code.
-      userKernel.setDecorators(
-          KGEN::DecoratorsAttr::get(ctx, kernelMetadata->nonMOGGDecorators));
+      // Remove the kernel attr from the user kernel.
+      userKernel->removeAttr(kernelRegistrationAttr);
 
       //  Don't process the function we just added if we see it again.
       seenFuncs.insert(slicedComputeFunction);

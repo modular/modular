@@ -54,8 +54,7 @@ kgen.generator export @BASE_KERNEL() capturing -> !kgen.none attributes {_in_lam
 
 
 // Dummy for elementwise for each function.
-kgen.generator @elementwise_gen<ty: dtype, ELEMWISE_BODY: () capturing -> !kgen.none>() capturing -> !kgen.none no_inline
-    decorators <:none apply(:() -> !kgen.none @"register::register::mogg_elementwise_hook()")> {
+kgen.generator @elementwise_gen<ty: dtype, ELEMWISE_BODY: () capturing -> !kgen.none>() capturing -> !kgen.none no_inline attributes {"register::register::mogg_elementwise_hook"} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
