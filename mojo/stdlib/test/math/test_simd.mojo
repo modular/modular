@@ -141,22 +141,22 @@ fn test_pow():
     var simd_val = iota[DType.float32, simd_width]()
 
     # CHECK: [0.0, 1.0, 4.0, 9.0]
-    print(pow[DType.float32, DType.float32, simd_width](simd_val, 2.0))
+    print(pow(simd_val, 2.0))
 
     # CHECK: [inf, 1.0, 0.5, 0.3333333432674408]
     print(pow(simd_val, -1))
 
     # CHECK: [0.0, 1.0, 1.41421{{[0-9]+}}, 1.73205{{[0-9]+}}]
-    print(pow[DType.float32, DType.float32, simd_width](simd_val, 0.5))
+    print(pow(simd_val, 0.5))
 
     # CHECK: [0.70710{{[0-9]+}}, 0.57735{{[0-9]+}}, 0.5, 0.44721{{[0-9]+}}]
-    print(pow[DType.float32, DType.float32, simd_width](simd_val + 2, -0.5))
+    print(pow(simd_val + 2, -0.5))
 
     # CHECK: [0.0, 1.0, 4.0, 9.0]
-    print(pow(simd_val, SIMD[DType.int32, simd_width](2)))
+    print(pow(simd_val, 2))
 
     # CHECK: [0.0, 1.0, 8.0, 27.0]
-    print(pow(simd_val, SIMD[DType.int32, simd_width](3)))
+    print(pow(simd_val, 3))
 
     var simd_val_int = iota[DType.int32, simd_width]()
 
