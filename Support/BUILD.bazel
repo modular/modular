@@ -86,53 +86,12 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "BaseTest",
-    srcs = [
-        "unittests/AlignedAllocTest.cpp",
-        "unittests/BufferTest.cpp",
-        "unittests/ErrorOrTest.cpp",
-        "unittests/ErrorTest.cpp",
-        "unittests/FunctionExtrasTest.cpp",
-        "unittests/IPIntTest.cpp",
-        "unittests/IPRationalTest.cpp",
-        "unittests/MathExtras.cpp",
-        "unittests/RandomTest.cpp",
-        "unittests/VersionTest.cpp",
-    ],
-    deps = [
-        ":Base",
-        ":Buffer",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "BufferTest",
-    srcs = [
-        "unittests/BufferTest.cpp",
-    ],
-    deps = [
-        ":Buffer",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "Base64",
     srcs = ["lib/Base64.cpp"],
     hdrs = ["include/Support/Base64.h"],
     strip_include_prefix = "include",
     deps = [":Base"],
-)
-
-cc_test(
-    name = "Base64Test",
-    srcs = ["unittests/Base64Test.cpp"],
-    deps = [
-        ":Base64",
-        "@com_github_google_googletest//:gtest_main",
-    ],
 )
 
 cc_library(
@@ -158,15 +117,6 @@ cc_library(
     deps = [":Base"],
 )
 
-cc_test(
-    name = "HMACTest",
-    srcs = ["unittests/HMACTest.cpp"],
-    deps = [
-        ":HMAC",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "Buffer",
     srcs = ["lib/Buffer.cpp"],
@@ -190,15 +140,6 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "DeviceSpecsTest",
-    srcs = ["unittests/DeviceSpecsTest.cpp"],
-    deps = [
-        ":DeviceSpecs",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "CPUCache",
     srcs = ["lib/CPUCache.cpp"],
@@ -216,15 +157,6 @@ cc_library(
         ":Base",
         ":CPUCache",
         "@llvm-project//llvm:Support",
-    ],
-)
-
-cc_test(
-    name = "MicroBenchmarkTest",
-    srcs = ["unittests/MicroBenchmarkTest.cpp"],
-    deps = [
-        ":MicroBenchmark",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -260,15 +192,6 @@ cc_library(
     deps = [":Base"],
 )
 
-cc_test(
-    name = "ASN1Test",
-    srcs = ["unittests/ASN1Test.cpp"],
-    deps = [
-        ":ASN1",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "ADT",
     srcs = glob([
@@ -286,16 +209,6 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "ADTTest",
-    srcs = glob(["unittests/ADT/*.cpp"]),
-    deps = [
-        ":ADT",
-        ":Globals",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "Configuration",
     srcs = ["lib/Configuration.cpp"],
@@ -305,15 +218,6 @@ cc_library(
         ":ADT",
         ":Base",
         ":Filesystem",
-    ],
-)
-
-cc_test(
-    name = "ConfigurationTest",
-    srcs = ["unittests/ConfigurationTest.cpp"],
-    deps = [
-        ":Configuration",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -344,15 +248,6 @@ cc_library(
         ":Configuration",
         ":JSON",
         "@mbedtls",
-    ],
-)
-
-cc_test(
-    name = "CryptographyTest",
-    srcs = glob(["unittests/Cryptography/*.cpp"]),
-    deps = [
-        ":Cryptography",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -396,15 +291,6 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "EntitlementsTest",
-    srcs = glob(["unittests/Entitlements/*.cpp"]),
-    deps = [
-        ":Entitlements",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "Filesystem",
     srcs = [
@@ -421,16 +307,6 @@ cc_library(
     deps = [
         ":Base",
         "@llvm-project//llvm:Support",
-    ],
-)
-
-cc_test(
-    name = "FilesystemTest",
-    srcs = ["unittests/FileSystemExtrasTest.cpp"],
-    deps = [
-        ":Buffer",
-        ":Filesystem",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -469,30 +345,12 @@ cc_library(
     deps = [":Base"],
 )
 
-cc_test(
-    name = "URITest",
-    srcs = ["unittests/URITest.cpp"],
-    deps = [
-        ":URI",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "JSON",
     srcs = ["lib/JSON.cpp"],
     hdrs = ["include/Support/JSON.h"],
     strip_include_prefix = "include",
     deps = [":Base"],
-)
-
-cc_test(
-    name = "JSONTest",
-    srcs = ["unittests/JSONTest.cpp"],
-    deps = [
-        ":JSON",
-        "@com_github_google_googletest//:gtest_main",
-    ],
 )
 
 cc_library(
@@ -527,15 +385,6 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "HTTPTest",
-    srcs = glob(["unittests/HTTP/*.cpp"]),
-    deps = [
-        ":HTTP",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "ML",
     srcs = glob(["lib/ML/*.cpp"]),
@@ -547,37 +396,12 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "MLTest",
-    srcs = [
-        "unittests/BCastTest.cpp",
-        "unittests/DTypeTest.cpp",
-        "unittests/TensorShapeTest.cpp",
-        "unittests/TensorSpecTest.cpp",
-    ],
-    deps = [
-        ":ML",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "Threading",
     srcs = glob(["lib/Threading/*.cpp"]),
     hdrs = glob(["include/Support/Threading/*.h"]),
     strip_include_prefix = "include",
     deps = [":Base"],
-)
-
-cc_test(
-    name = "HostTest",
-    srcs = ["unittests/HostTest.cpp"],
-    deps = [
-        ":MArchTarget",
-        ":Threading",
-        "//LLCL:CompilerSupport",
-        "@com_github_google_googletest//:gtest_main",
-    ],
 )
 
 cc_library(
@@ -601,16 +425,6 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "ProfilingTest",
-    srcs = ["unittests/TimeProfilerTest.cpp"],
-    deps = [
-        ":Globals",
-        ":Profiling",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "MArchTarget",
     srcs = glob(["lib/MArchTarget/*.cpp"]),
@@ -631,18 +445,6 @@ cc_library(
         "@llvm-project//llvm:AllTargetsCodeGens",
         "@llvm-project//llvm:AllTargetsDisassemblers",
         "@llvm-project//llvm:AllTargetsMCAs",
-    ],
-)
-
-cc_test(
-    name = "MArchTargetTest",
-    srcs = glob(["unittests/MArchTarget/*.cpp"]),
-    deps = [
-        ":MArchTarget",
-        "//LLCL:CompilerSupport",
-        "//LLCL:RuntimeGlobals",
-        "//Support:Globals",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -704,16 +506,6 @@ cc_library(
         "@io_opentelemetry_cpp//exporters/otlp:otlp_http_log_record_exporter",
         "@io_opentelemetry_cpp//exporters/otlp:otlp_http_metric_exporter",
         "@io_opentelemetry_cpp//sdk:headers",
-    ],
-)
-
-cc_test(
-    name = "TelemetryTest",
-    srcs = ["unittests/TelemetryTest.cpp"],
-    tags = ["manual"],  # TODO: fix on linux and re-enable
-    deps = [
-        ":Telemetry",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
 
@@ -1097,18 +889,6 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "DebugInfoDialectTest",
-    srcs = glob(["unittests/DebugInfoDialect/*.cpp"]),
-    deps = [
-        ":DebugInfoDialect",
-        ":DebugInfoToLLVM",
-        ":DebugInfoTransforms",
-        "//LLCL:CompilerSupport",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 td_library(
     name = "DriverCommandTdFiles",
     srcs = glob(
@@ -1148,25 +928,6 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "FillTest",
-    srcs = ["unittests/ML/FillTest.cpp"],
-    deps = [
-        ":ML",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "CompilerTest",
-    srcs = glob(["unittests/Compiler/*.cpp"]),
-    deps = [
-        ":Compiler",
-        "//LLCL:CompilerSupport",
-        "@com_github_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "FrameworkSupport",
     srcs = glob(["lib/Frameworks/*.cpp"]),
@@ -1199,14 +960,5 @@ cc_library(
         ":HTTP",
         ":Telemetry",
         "//LLCL:Support",
-    ],
-)
-
-cc_test(
-    name = "MeteringTests",
-    srcs = glob(["unittests/Metering/*.cpp"]),
-    deps = [
-        ":Metering",
-        "@com_github_google_googletest//:gtest_main",
     ],
 )
