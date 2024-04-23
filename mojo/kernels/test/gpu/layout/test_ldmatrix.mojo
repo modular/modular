@@ -69,15 +69,22 @@ fn test_ldmatrix(
 
     for i in range(tid, mma_m * mma_k, WARP_SIZE):
         a_shared[i] = a_ptr[i]
+
+    # Transpose B to fit ld_matrix layout.
     for i in range(tid, mma_k * mma_n, WARP_SIZE):
-        b_shared[i] = b_ptr[i]
+        var x = i % mma_n
+        var y = i // mma_n
+        b_shared[x * mma_k + y] = b_ptr[i]
 
     barrier()
 
     var a_reg = ld_matrix[DType.float32, 4](
         a_shared + ((lane_id() % 16) * 8 + (lane_id() // 16) * 4)
     )
-    var b_reg = load_matrix_b[mma_m, mma_n, mma_k](b_shared, 0, 0, n)
+    var b_reg = ld_matrix[DType.float32, 2](
+        b_shared + ((lane_id() % 8) * 8 + (lane_id() // 8) * 4)
+    )
+
     mma(d_reg, a_reg, b_reg, d_reg)
     store_matrix_d[DType.float32, mma_m, mma_n, mma_k](c_ptr, d_reg, 0, 0, n)
 
