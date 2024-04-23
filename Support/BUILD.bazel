@@ -3,10 +3,7 @@ load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect")
 
-package(
-    default_visibility = ["//visibility:public"],
-    licenses = ["notice"],
-)
+package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "SymbolExport",

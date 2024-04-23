@@ -7,10 +7,7 @@ load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
 load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
 load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen", "gentbl_mlir_dialect")
 
-package(
-    default_visibility = ["//visibility:public"],
-    licenses = ["notice"],
-)
+package(default_visibility = ["//visibility:public"])
 
 td_library(
     name = "HLCFDialectTdFiles",

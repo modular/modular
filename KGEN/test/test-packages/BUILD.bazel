@@ -1,9 +1,6 @@
 load("//utils/bazel/build/rules:mojo.bzl", "mojo_library")
 
-package(
-    default_visibility = ["//visibility:public"],
-    licenses = ["notice"],
-)
+package(default_visibility = ["//visibility:public"])
 
 exports_files(["stdlib/__init__.mojo"])
 
