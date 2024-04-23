@@ -19,10 +19,10 @@ struct DType:
     alias int32 = __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`
 
 # CHECK-LABEL: lit.struct.decl @SIMD
-# CHECK-SAMEL <[[SIMDSIZE:.*]]: !Int, [[SIMDDT:.*]]: !DType>
+# CHECK-SAMEL <[[SIMDDT:.*]]: !DType, [[SIMDSIZE:.*]]: !Int>
 # CHECK-SAME: register_passable
 @register_passable
-struct SIMD[size: Int, dt: DType]:
+struct SIMD[dt: DType, size: Int]:
     var value: __mlir_type[`!pop.simd<`, size.value, `, `, dt.value, `>`]
 
     fn __copyinit__(existing: Self) -> Self:
@@ -50,11 +50,11 @@ fn take_3index(a: Int, b: Int, c: Int) -> Int:
     return a
 
 # CHECK-LABEL: lit.func @"fancy_signature{{.*}}"<dt: !DType, size: !Int>
-# CHECK-SAME: (%x: {{.*}}#SIMD <:!Int size, :!DType dt>{{.*}}> borrow,
-# CHECK-SAME: %exp: {{.*}}#SIMD <:!Int size, :!DType dt>{{.*}}> borrow) -> !Int
+# CHECK-SAME: (%x: {{.*}}#SIMD <:!DType dt, :!Int size>{{.*}}> borrow,
+# CHECK-SAME: %exp: {{.*}}#SIMD <:!DType dt, :!Int size>{{.*}}> borrow) -> !Int
 fn fancy_signature[dt: DType, size: Int](
-    x: SIMD[size, dt],
-    exp: (SIMD)[size, dt]
+    x: SIMD[dt, size],
+    exp: (SIMD)[dt, size]
 ) -> Int:
   # CHECK: %local = lit.var.decl "local" var
   # CHECK: %[[TMP1:.*]] = kgen.param.constant: !Int = <size>
@@ -79,8 +79,8 @@ fn call_generic[dt: DType]():
   generic_fn[dt, 42, DType](57)
 
   # CHECK: %[[C57_2:.*]] = {{.*}}constant{{.*}}57
-  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type @parameters::@SIMD<:!Int {4}{{.*}}, :!DType dt>{{.*}}>(%[[C57_2]])
-  generic_fn[dt, 13, SIMD[4, dt]](57)
+  # CHECK: lit.call @parameters::@"generic_fn{{.*}}"<:!DType dt, :!Int {13}, :type @parameters::@SIMD<{{.*}}:!DType dt, :!Int {4}>{{.*}}>(%[[C57_2]])
+  generic_fn[dt, 13, SIMD[dt, 4]](57)
 
 # CHECK-LABEL: lit.struct.decl @TestParamStruct<
 # CHECK-SAME: [[A:.*]]: !Int>
@@ -125,18 +125,18 @@ fn testTestParamStruct(a: TestParamStruct[4]):
   a.method[7](arg11)
 
 # CHECK-LABEL: lit.func @"testSIMD(
-fn testSIMD(a: SIMD[1, DType.float32],
-            b: SIMD[1, DType.int32],
-            inout reff: SIMD[1, DType.int32]):
+fn testSIMD(a: SIMD[DType.float32, 1],
+            b: SIMD[DType.int32, 1],
+            inout reff: SIMD[DType.int32, 1]):
   # CHECK: %field1 = lit.var.decl {{.*}} : !lit.ref<scalar<f32>,
   var field1 = a.value
   # CHECK: %field2 = lit.var.decl {{.*}} : !lit.ref<scalar<si32>,
   var field2 = reff.value
 
   # Test calls to methods and operators on parameterized type.
-  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!Int {1}, :!DType {:dtype f32}>(%a, %a)
+  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {:dtype f32}, :!Int {1}>(%a, %a)
   var x = a+a
-  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!Int {1}, :!DType {:dtype si32}>(%b, %b)
+  # CHECK: lit.call {{.*}}@SIMD::@"__add__{{.*}}<:!DType {:dtype si32}, :!Int {1}>(%b, %b)
   var y = b+b
 
 # Show that forward references of parameter names can be correctly resolved.
@@ -162,16 +162,16 @@ fn implConversion[a: StructWithIntParam[42]]():
 # CHECK-LABEL: lit.struct.decl @Pair<dt: !DType>
 @register_passable
 struct Pair[dt: DType]:
- # CHECK: lit.struct.field a : {{.*}}#SIMD <:!Int {{.*}}42{{.*}}, :!DType dt>{{.*}}>
+ # CHECK: lit.struct.field a : {{.*}}#SIMD <:!DType dt, :!Int {{.*}}42{{.*}}>{{.*}}>
  # CHECK: lit.struct.field b : !Int
-  var a : SIMD[42, dt]
+  var a : SIMD[dt, 42]
   var b : Int
 
   # CHECK: lit.func @"__init__{{.*}} -> {{.*}}#Pair <:!DType dt>{{.*}}> attributes {{.*}}isStatic
-  fn __init__(a: SIMD[42, dt]) -> Pair[dt]:
+  fn __init__(a: SIMD[dt, 42]) -> Pair[dt]:
     # CHECK: [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
     # CHECK: %1 = kgen.param.constant: !Int = <{4}>
-    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : ({{.*}}#SIMD <:!Int {42}, :!DType dt>{{.*}}>, !Int) -> {{.*}}#Pair <:!DType dt>
+    # CHECK: %2 = lit.struct.create(a=%0, b=%1) : ({{.*}}#SIMD <:!DType dt, :!Int {42}>{{.*}}>, !Int) -> {{.*}}#Pair <:!DType dt>
     return Pair[dt]{a: a, b: 4}
   # CHECK: }
 
@@ -182,11 +182,11 @@ struct Pair[dt: DType]:
 # CHECK: useParameterizedField
 fn useParameterizedField[x: Pair[DType.float32]]():
   # CHECK: lit.alias.decl *"y{{.*}}":
-  alias y : SIMD[42, DType.float32] = x.a
+  alias y : SIMD[DType.float32, 42] = x.a
 
 
 # CHECK-LABEL: lit.func @"makePair
-fn makePair(a: SIMD[42, DType.float32], b: Int) -> Pair[DType.float32]:
+fn makePair(a: SIMD[DType.float32, 42], b: Int) -> Pair[DType.float32]:
   # CHECK: [[TMP1:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
   # CHECK:  = lit.struct.create(a=[[TMP1]], b=%b)
   return Pair[DType.float32]{a: a, b: b}
@@ -436,7 +436,7 @@ struct A[v: Int]:
 # CHECK-LABEL: lit.func @"testUseOfAliases
 fn testUseOfAliases():
   # This type checks.
-  SIMD[4, DType(boolDtype)].splat()
+  SIMD[DType(boolDtype), 4].splat()
   # CHECK: lit.alias.decl *"y{{.*}}": !Int = <{{.*}}44
   alias y = A[2].member
 
@@ -715,6 +715,16 @@ fn test_deduce_kw_only(a: Abstraction[3]):
     # CHECK: call {{.*}}@"deduce_kw_only{{.*}}<:variadic<!Int> [{1}, {2}], :!Int {3}>(%a)
     deduce_kw_only[1, 2](a)
 
+# Make sure the +1 in the 'a' argument doesn't break inference.
+fn test_infer_add(a: SIMD[DType.float32, 4], b: SIMD[DType.int32, 5]):
+   _ = take_two(a, b)
+
+fn take_two[a_type: DType, c_type: DType, width: Int](
+    c: SIMD[c_type, width], a: SIMD[a_type, width + 1],
+) -> SIMD[c_type, width]: pass
+
+
+
 ##===----------------------------------------------------------------------===##
 # Access parameter through structure
 ##===----------------------------------------------------------------------===##
@@ -811,7 +821,7 @@ fn test_indirect_default_params():
 
 # COM: check that inferred parameter values take precedence over defaults
 # CHECK-LABEL: lit.func @"inferred_default_param
-fn inferred_default_param[dt: DType, w: Int = 8](a: SIMD[w, dt]):
+fn inferred_default_param[dt: DType, w: Int = 8](a: SIMD[dt, w]):
     pass
 
 
@@ -820,7 +830,7 @@ fn inferred_default_param[dt: DType, w: Int = 8](a: SIMD[w, dt]):
 # CHECK: lit.call @{{.*}}@"inferred_default_param{{.*}}"<:!DType {:dtype f32}, :!Int x>
 fn test_inferred_default_param[
     x: Int
-](concrete: SIMD[4, DType.float32], p: SIMD[x, DType.float32]):
+](concrete: SIMD[DType.float32, 4], p: SIMD[DType.float32, x]):
     inferred_default_param(concrete)
     inferred_default_param(p)
 
@@ -1014,12 +1024,12 @@ fn dependent_default_ctad():
     alias value = DependentDefault()
 
 
-alias Scalar = SIMD[1, _]
+alias Scalar = SIMD[_, 1]
 
 
 # CHECK-LABEL: lit.func @"scalar_type{{.*}}"<dt: !DType>
 fn scalar_type[dt: DType]():
-    # CHECK: alias.decl [[T:.*]]: anystruct<{{.*}}SIMD<:!Int {1}, :!DType dt>
+    # CHECK: alias.decl [[T:.*]]: anystruct<{{.*}}SIMD<:!DType dt, :!Int {1}>
     alias T = Scalar[dt]
 
     #FIXME(29495): reenable.

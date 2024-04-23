@@ -609,171 +609,186 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     // Otherwise,we expect an r-value to match up, ignoring the reference type
     // from the convention.
     expectedType = expectedType.getReferenceElementType();
-    [[fallthrough]];
+    break;
   case ArgConvention::OwnedInReg:
-  case ArgConvention::BorrowedInReg: {
-    CValue argVal = value.getIfCValue();
-
-    if (!argVal) {
-      if (auto initValue = operand.ir.getIfInitializer()) {
-        // Check to see if the expected type has an initializer with the
-        // specified operands.  Remove any parameters from the expected type
-        // since those are what we're inferring from the arguments.  The result
-        // 'actualType' will have those newly inferred parameters.
-        ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
-        auto [initFn, erroneousDecl] = emitter.canConstructType(
-            expectedType.getWithoutParameters(emitter.shared), initValue.get(),
-            operand.expr);
-        // If there were declaration errors, assume success to not raise
-        // spurious errors due to not resolving to those erroneous
-        // declarations.
-        return success(bool(initFn) || erroneousDecl);
-      }
-
-      OverloadSetUValue orValue = value.getIfOverloadSet();
-      assert(orValue && "Unknown UValue!");
-      // Try to refine the OverloadSetUValue into a PValue.
-      argVal = orValue->getDirectSymbol(expectedType);
-      if (!argVal)
-        return failure();
-      // If we have a reference to an overloaded method like foo(a.method),
-      // then we can't resolve it.
-      // TODO(partial application => closures): Given we just resolved argVal,
-      // we could form the "a.method" expression with a closure.
-      if (orValue->baseValue) // Cannot merge base value.
-        return failure();
-    }
-
-    ASTType argType = argVal.getRValueType();
-    // Otherwise, we pass as an r-value.  If the argument types match, then
-    // they are good.
-    if (argType.isEqualCanon(expectedType))
-      return success();
-
-#if 0
-    // FIXME: We need to add this, but parameter inference isn't substituting
-    // dependent types into later arguments when partially bound, and there is
-    // code in the tree that depends on this. For example:
-    //    fn call_it[dtype: DType](ptr: DTypePointer[dtype]):
-    //        callee(ptr, 0.0)
-    //    fn callee[dt: DType](p: DTypePointer[dt], v: Scalar[p.type]):
-    // Note that Scalar is using p.type instead of dt.
-    if (auto nonmaterializableTarget =
-            argType.getNonmaterializableTarget(shared)) {
-      // Implicit conversion for nonmaterializable types to their target
-      // type is allowed even if !allowImplicitConversions.
-      if (nonmaterializableTarget.isEqualCanon(expectedType))
-        return success();
-      // Otherwise, assume it is the non-materializable target for other
-      // conversions.  This cannot be materialized afterall.
-      argType = nonmaterializableTarget;
-    }
-#endif
-
-    // Argument name mismatches don't count as implicit conversions.
-    if (canConvertWithRebind(argType, expectedType, shared))
-      return success();
-
-    // If the argument is an explicit !lit.ref type and the argument value is an
-    // MValue, then we allow matching it to its underlying element type,
-    // addrspace, mutability, lifetime etc.
-    //
-    // This is magic used by Reference.__init__, allowing Reference(someMValue)
-    // to infer the lifetime and mutability of the MValue.
-    if (auto expectedRef = dyn_cast<RefType>(expectedType.mlirType)) {
-      if (expectedConvention == ArgConvention::BorrowedInReg &&
-          !isa<RefType>(argType) && value.isMValue()) {
-        auto valueRefType = cast<RefType>(value.getMValueReference().getType());
-        // If the MValue is an MBValue specifically, make sure to strip off
-        // any mutability from the reference.  The parser allows the IR
-        // representation of an MBValue to be mutable, but we don't want to
-        // infer mutability of a reference from that.
-        if (value.getIfMBValue() && !valueRefType.isMutableKnown(false))
-          valueRefType = valueRefType.getWithMutability(false);
-        return matchTypes(valueRefType, expectedRef);
-      }
-    }
-
-    // We're speculatively trying something.  If we have errors on one path we
-    // need to roll them back.
-    auto savedDiags = diags.saveDiags();
-
-    // Otherwise, we pass as an r-value if we know what the type must be.
-    if (succeeded(matchTypes(argType, expectedType)))
-      return success();
-
-    // If implicit conversions are enabled and the target type is known, then
-    // we can check to see if any of the constructors for the result type can
-    // work.
-    ASTDecl *expectedDecl = expectedType.getDecl(shared);
-    if (!allowImplicitConversions || !expectedDecl)
-      return failure();
-
-    // Determine if we can construct the requested type given the existing value
-    // we have.  If so, get the type inferred signature of the init method that
-    // would make it work.
-    ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
-
-    // The expected type may be parameterized, and that type may both have
-    // parameters that we are trying to infer as well as parameters that are
-    // already known.  For example, if expectedType is known to be
-    // 'SIMD[uint8, 1]', then we can infer which constructor to use when the
-    // input is an IntLiteral.
-    //
-    // On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
-    // argument is an Int8, then we need the implicit conversion to infer the
-    // base element.  Our solution to this is to rip and replace parameters that
-    // contain unbound parameters, replacing them with UnboundAttr so inference
-    // can find them.
-    auto nonParamType =
-        expectedType.getWithUnknownParametersReplaced(emitter.shared);
-    auto [pValue, _] = emitter.canConstructType(
-        nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
-        /*allowImplicitConversions=*/false);
-    if (!pValue) {
-      // TODO: Because we're not passing known params from expectedType down, we
-      // can't reliably resolve the implicit conversion in the case of
-      // overloads.  Need to investigate what is holding this up.
-      // diags.resetDiags(std::move(savedDiags));
-      return success();
-    }
-
-    // If we found one, we recursively call inferOneOperand (but with implicit
-    // conversions disabled of course) to resolve our value as the init
-    // methods argument.  This allows us to infer parameters from it.
-    auto initSig = cast<LITSignatureType>(pValue.getType());
-    // We expected to args: 0=self, 1=value we're converting from.
-    ASTType inferredSelf;
-    if (initSig.getArgConvention(0) == ArgConvention::InitSelf)
-      inferredSelf =
-          ASTType(initSig.getArguments()[0]).getReferenceElementType();
-    else // FIXME: get rid of -> Self initializers.
-      inferredSelf = initSig.getResultType();
-
-    // Before we check with the implicit conversion, save any diagnostics
-    // accumulated without it.  If both fail, we default to the non-implicit
-    // conversion diagnostics.
-    auto noImplicitConversionDiags = diags.saveDiags();
-    // Go back to diagnostics before we did the thing that failed.
-    diags.resetDiags(std::move(savedDiags));
-
-    // Infer the parameters of this overload candidate against the computed
-    // result type of the initializer.
-    auto result = matchTypes(inferredSelf, expectedType);
-
-    // If the implicit conversion worked then we're good.
-    if (succeeded(result))
-      return success();
-
-    // Otherwise restore the diags from the non-implicit conversion path,
-    // they'll be less confusing.
-    diags.resetDiags(std::move(noImplicitConversionDiags));
-    return failure();
-  }
+  case ArgConvention::BorrowedInReg:
+    break;
   case ArgConvention::None:
     llvm_unreachable("none convention not permitted in lit");
   }
-  llvm_unreachable("invalid argument convention");
+
+  // Okay, we got a normal value argument convention and stripped off any
+  // ArgConvention-related !lit.ref from the expected type.
+  CValue argVal = value.getIfCValue();
+  if (!argVal) {
+    if (auto initValue = operand.ir.getIfInitializer()) {
+      // Check to see if the expected type has an initializer with the
+      // specified operands.  Remove any parameters from the expected type
+      // since those are what we're inferring from the arguments.  The result
+      // 'actualType' will have those newly inferred parameters.
+      ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
+      auto [initFn, erroneousDecl] = emitter.canConstructType(
+          expectedType.getWithoutParameters(emitter.shared), initValue.get(),
+          operand.expr);
+      // If there were declaration errors, assume success to not raise
+      // spurious errors due to not resolving to those erroneous
+      // declarations.
+      return success(bool(initFn) || erroneousDecl);
+    }
+
+    OverloadSetUValue orValue = value.getIfOverloadSet();
+    assert(orValue && "Unknown UValue!");
+    // Try to refine the OverloadSetUValue into a PValue.
+    argVal = orValue->getDirectSymbol(expectedType);
+    if (!argVal)
+      return failure();
+    // If we have a reference to an overloaded method like foo(a.method),
+    // then we can't resolve it.
+    // TODO(partial application => closures): Given we just resolved argVal,
+    // we could form the "a.method" expression with a closure.
+    if (orValue->baseValue) // Cannot merge base value.
+      return failure();
+  }
+
+  // If the argument types exactly match, then they are good.
+  ASTType argType = argVal.getRValueType();
+  if (argType.isEqualCanon(expectedType))
+    return success();
+
+  // Zero cost conversions don't count as implicit conversions.
+  if (canConvertWithRebind(argType, expectedType, shared))
+    return success();
+
+  // We're speculatively trying different options.  If we have errors on one
+  // path we need to roll them back.
+  auto savedDiags = diags.saveDiags();
+
+  // See if the types match with inference, if not, remember why.
+  if (succeeded(matchTypes(argType, expectedType)))
+    return success();
+
+  // Before we check with the implicit conversions, save any diagnostics
+  // accumulated without it.  If both fail, we default to the non-implicit
+  // conversion diagnostics.
+  auto noImplicitConversionDiags = diags.saveDiags();
+
+  // Go back to diagnostics before we did the thing that failed.
+  diags.resetDiags(std::move(savedDiags));
+  savedDiags = diags.saveDiags();
+
+  // If the argument is an explicit !lit.ref type and the argument value is an
+  // MValue, then we allow matching it to its underlying element type,
+  // addrspace, mutability, lifetime etc.
+  //
+  // This is magic used by Reference.__init__, allowing Reference(someMValue)
+  // to infer the lifetime and mutability of the MValue.
+  if (auto expectedRef = dyn_cast<RefType>(expectedType.mlirType)) {
+    if (expectedConvention == ArgConvention::BorrowedInReg &&
+        !isa<RefType>(argType) && value.isMValue()) {
+      auto valueRefType = cast<RefType>(value.getMValueReference().getType());
+      // If the MValue is an MBValue specifically, make sure to strip off
+      // any mutability from the reference.  The parser allows the IR
+      // representation of an MBValue to be mutable, but we don't want to
+      // infer mutability of a reference from that.
+      if (value.getIfMBValue() && !valueRefType.isMutableKnown(false))
+        valueRefType = valueRefType.getWithMutability(false);
+
+      if (succeeded(matchTypes(valueRefType, expectedRef)))
+        return success();
+
+      // If that didn't work out, keep going, but with the original
+      // diagnostics.
+      diags.resetDiags(std::move(savedDiags));
+      savedDiags = diags.saveDiags();
+    }
+  }
+
+  // Handle values of nonmaterializable types.  These freely convert to their
+  // nonmaterializableTarget type even when implicit conversions are disabled,
+  // so we can accept this argument if that converted type is compatible with
+  // our expected type.
+  if (auto nonmaterializableTarget =
+          argType.getNonmaterializableTarget(shared)) {
+
+    // Infer the parameters of this overload candidate against the computed
+    // result type of the initializer.
+    if (succeeded(matchTypes(nonmaterializableTarget, expectedType)))
+      return success();
+
+    // If that didn't work out, keep going, but with the original
+    // diagnostics.
+    diags.resetDiags(std::move(savedDiags));
+    savedDiags = diags.saveDiags();
+  }
+
+  // If implicit conversions are enabled and the target type is known, then
+  // we can check to see if any of the constructors for the result type can
+  // work.
+  ASTDecl *expectedDecl = expectedType.getDecl(shared);
+  if (!allowImplicitConversions || !expectedDecl) {
+    diags.resetDiags(std::move(noImplicitConversionDiags));
+    return failure();
+  }
+
+  // Determine if we can construct the requested type given the existing value
+  // we have.  If so, get the type inferred signature of the init method that
+  // would make it work.
+  ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
+
+  // The expected type may be parameterized, and that type may both have
+  // parameters that we are trying to infer as well as parameters that are
+  // already known.  For example, if expectedType is known to be
+  // 'SIMD[uint8, 1]', then we can infer which constructor to use when the
+  // input is an IntLiteral.
+  //
+  // On the other hand, if expectedType is something like 'SIMD[?, 1]' and the
+  // argument is an Int8, then we need the implicit conversion to infer the
+  // base element.  Our solution to this is to rip and replace parameters that
+  // contain unbound parameters, replacing them with UnboundAttr so inference
+  // can find them.
+  auto nonParamType =
+      expectedType.getWithUnknownParametersReplaced(emitter.shared);
+  auto [pValue, _] = emitter.canConstructType(
+      nonParamType, CallOperands({{argVal, curArgExpr}}), curArgExpr,
+      /*allowImplicitConversions=*/false);
+  if (!pValue) {
+    // If we had a fully formed type that we were inferring into, then this is
+    // a failure.
+    if (nonParamType.mlirType == expectedType.mlirType) {
+      diags.resetDiags(std::move(noImplicitConversionDiags));
+      return failure();
+    }
+
+    // Otherwise, it could be because it is using a later parameter that we
+    // haven't bound or that is defaulting.  We aren't currently inferring the
+    // entire set of parameters all at once, so we just treat that as "not a
+    // failure" and assume it will work out.
+    return success();
+  }
+
+  // If we found one, we recursively call inferOneOperand (but with implicit
+  // conversions disabled of course) to resolve our value as the init
+  // methods argument.  This allows us to infer parameters from it.
+  auto initSig = cast<LITSignatureType>(pValue.getType());
+  // We expected to args: 0=self, 1=value we're converting from.
+  ASTType inferredSelf;
+  if (initSig.getArgConvention(0) == ArgConvention::InitSelf)
+    inferredSelf = ASTType(initSig.getArguments()[0]).getReferenceElementType();
+  else // FIXME: get rid of -> Self initializers.
+    inferredSelf = initSig.getResultType();
+
+  // Infer the parameters of this overload candidate against the computed
+  // result type of the initializer.
+  auto result = matchTypes(inferredSelf, expectedType);
+
+  // If the implicit conversion worked then we're good.
+  if (succeeded(result))
+    return success();
+
+  // Otherwise restore the diags from the non-implicit conversion path,
+  // they'll be less confusing.
+  diags.resetDiags(std::move(noImplicitConversionDiags));
+  return failure();
 };
 
 /// Given a signature type that has some of its parameter bindings known, burn
@@ -781,27 +796,42 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
 /// infer them.
 static LITSignatureType
 getPartiallySpecializedSignature(LITSignatureType signature,
-                                 ArrayRef<TypedAttr> bindingsSoFar) {
+                                 ArrayRef<TypedAttr> bindingsSoFar,
+                                 ParserParamEvaluator &evaluator) {
   if (bindingsSoFar.empty())
     return signature;
 
   struct Substitutor : IndexParameterReplacer<Substitutor> {
+    Substitutor(ArrayRef<TypedAttr> bindingsSoFar,
+                ParserParamEvaluator &evaluator)
+        : bindingsSoFar(bindingsSoFar), evaluator(evaluator) {}
+
     Type tryReplace(Type, size_t) { return {}; }
     Attribute tryReplace(Attribute attr, size_t depth) {
-      if (auto ref = ::dyn_cast<ParamIndexRefAttr>(attr);
-          ref && ref.getDepth() == depth &&
-          ref.getIndex() < bindingsSoFar.size()) {
-        auto result = bindingsSoFar[ref.getIndex()];
-        assert(result.getType() == ref.getType() && "Parameter type mismatch");
-        return result;
-      }
-      return nullptr;
+      // Depth-1 because we're matching against the signature parameters,
+      // and that pushes level of depth immediately.
+      auto ref = ::dyn_cast<ParamIndexRefAttr>(attr);
+      if (!ref || ref.getDepth() != depth - 1 ||
+          ref.getIndex() >= bindingsSoFar.size())
+        return {};
+      auto result = bindingsSoFar[ref.getIndex()];
+      assert(result.getType() == evaluator.getReboundType(ref.getType()) &&
+             "Parameter type mismatch");
+      return result;
     }
 
     ArrayRef<TypedAttr> bindingsSoFar;
-  } substitutor;
-  substitutor.bindingsSoFar = bindingsSoFar;
-  return substitutor.replace(signature);
+    ParserParamEvaluator &evaluator;
+  } substitutor(bindingsSoFar, evaluator);
+
+  auto newSignature = substitutor.replace(signature);
+  if (newSignature == signature)
+    return signature;
+
+  // If we changed something, then we substituted constants into the type tree.
+  // This can cause some expressions to fold with the interpreter, so see if we
+  // can simplify the result.
+  return cast<LITSignatureType>(evaluator.refineType(newSignature));
 }
 
 /// Given an incomplete parameter binding set for a call to the specified
@@ -821,20 +851,44 @@ ParameterInferenceState::infer(LITSignatureType signature,
   // getSpecializedSignature so we benefit from the already-fixed substitutions
   // being applied to the input types.  This can make them more concrete and
   // help with inferring dependent types based on already-bound parameters.
-  signature = getPartiallySpecializedSignature(signature, bindingsSoFar);
+  signature =
+      getPartiallySpecializedSignature(signature, bindingsSoFar, evaluator);
+
+  // This keeps track of whether we already substituted in the parameter value
+  // we found into the signature.  We do this once per analysis.
+  bool refinedBasedOnValue = false;
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
   // careful here!
   size_t posOperandIdx = 0;
   DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  for (auto [expectedArgIdx, expectedType, expectedConvention] :
-       llvm::enumerate(signature.getArguments(),
-                       signature.getArgConventions())) {
+  for (auto [expectedArgIdx, expectedConvention] :
+       llvm::enumerate(signature.getArgConventions())) {
 
     // There is no provided operand for a by-ref result.
     if (SignatureType::isResultSlot(expectedConvention))
       continue;
+
+    // If we inferred a value for the parameter from previous arguments,
+    // substitute it into the expected types of subsequent arguments.  This
+    // allows us to handle dependent argument types like:
+    //    fn foo[dt: DType](p: DTypePointer[dt], v: Scalar[p.type]):
+    // where the type of 'v' depends on 'dt' being inferred.
+    if (inferredValue && !refinedBasedOnValue) {
+      SmallVector<TypedAttr> effectiveBindings(bindingsSoFar.begin(),
+                                               bindingsSoFar.end());
+      effectiveBindings.push_back(inferredValue);
+      signature = getPartiallySpecializedSignature(signature, effectiveBindings,
+                                                   evaluator);
+      defaultHandler = DefaultValueHandler(signature.getArgListAttrs());
+      // Only do this once.
+      refinedBasedOnValue = true;
+    }
+
+    // Note that 'signature' changes the type as we go, so don't use
+    // llvm::enumerate on the argument type list!
+    Type expectedType = signature.getArguments()[expectedArgIdx];
 
     if (signature.isKwVarArg(expectedArgIdx)) {
       Type valTy = ASTType(expectedType).getKwargsDictRefValueType();
@@ -929,7 +983,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
       // check to make sure that the default value doesn't contradict already
       // inferred parameters.
       if (TypedAttr defaultOr = defaultHandler.getDefault(expectedArgIdx)) {
-        if (failed(inferOneOperand({defaultOr, /*expr=*/nullptr}, expectedType,
+        if (failed(inferOneOperand({defaultOr, curArgExpr}, expectedType,
                                    expectedConvention)))
           return {};
         continue;
