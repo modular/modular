@@ -19,7 +19,7 @@ fn ones[
         return 1
 
     output.for_each[func]()
-    return output
+    return output^
 
 
 fn my_add[
@@ -33,7 +33,7 @@ fn my_add[
         return x.simd_load[width](i) + y.simd_load[width](i)
 
     out.for_each[func]()
-    return out
+    return out^
 
 
 # CHECK-LABEL: == test_add
@@ -64,42 +64,6 @@ fn test_add():
     # CHECK-NEXT: 4.0
     # CHECK-NEXT: 4.0
     # CHECK-NEXT: 4.0
-
-
-# CHECK-LABEL: == test_ref_count
-fn test_ref_count():
-    print("== test_ref_count")
-
-    var shape = StaticIntTuple[2](5, 2)
-    var t1 = ones[DType.float32](shape)
-
-    print(t1.storage_ref_count._value())
-    # CHECK-NEXT: 1
-
-    var t2 = t1
-
-    print(t1.storage_ref_count._value())
-    print(t2.storage_ref_count._value())
-    # CHECK-NEXT: 2
-    # CHECK-NEXT: 2
-
-    var t3 = t1
-    print(t1.storage_ref_count._value())
-    print(t2.storage_ref_count._value())
-    print(t3.storage_ref_count._value())
-    # CHECK-NEXT: 3
-    # CHECK-NEXT: 3
-    # CHECK-NEXT: 3
-
-    # We are past the last use of `t3` so it now will be freed
-    print(t1.storage_ref_count._value())
-    print(t2.storage_ref_count._value())
-    # CHECK-NEXT: 2
-    # CHECK-NEXT: 2
-
-    # Stop tensor from being freed early.
-    _ = t1
-    _ = t2
 
 
 # CHECK-LABEL: == test_default_strides
@@ -144,7 +108,6 @@ fn test_get_nd_indices():
 
 fn main():
     test_add()
-    test_ref_count()
     test_default_strides()
     test_scalar_index_access()
     test_get_nd_indices()

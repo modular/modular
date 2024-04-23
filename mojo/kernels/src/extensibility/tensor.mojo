@@ -13,7 +13,7 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from memory.unsafe import Pointer, bitcast
 from register import *
-from .tensor_helpers import UnsafeRefCounter, InnerStride
+from .tensor_helpers import InnerStride
 
 from collections import OptionalReg as Optional
 
@@ -24,16 +24,13 @@ fn empty_tensor[
     type: DType, rank: Int
 ](shape: StaticIntTuple[rank]) -> Tensor[type, rank]:
     var ptr = DTypePointer[type].alloc(shape.flattened_length())
-    var ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
-    ref_cnt[0] = 0
-    return Tensor[type, rank](ptr, shape, ref_cnt)
+    return Tensor[type, rank](ptr, shape)
 
 
 struct Tensor[type: DType, static_rank: Int]:
     var data: DTypePointer[type]
     var shape: StaticIntTuple[static_rank]
     var strides: StaticIntTuple[static_rank]
-    var storage_ref_count: UnsafeRefCounter[DType.index]
 
     # Empty strides...
     @always_inline
@@ -41,7 +38,6 @@ struct Tensor[type: DType, static_rank: Int]:
         inout self,
         ptr: DTypePointer[type],
         shape: StaticIntTuple[static_rank],
-        ref_count_ptr: Pointer[Scalar[DType.index]],
     ):
         self.data = ptr
         self.shape = shape
@@ -55,48 +51,30 @@ struct Tensor[type: DType, static_rank: Int]:
             self.strides[i] = stride
             stride *= self.shape[i]
 
-        # Increment the refcount if we own the memory otherwise create an
-        # empty counter.
-        self.storage_ref_count = UnsafeRefCounter[DType.index](ref_count_ptr)
-        _ = self.storage_ref_count.increment()
-
     @always_inline
     fn __init__(
         inout self,
         ptr: DTypePointer[type],
         shape: StaticIntTuple[static_rank],
         strides: StaticIntTuple[static_rank],
-        ref_count_ptr: Pointer[Scalar[DType.index]],
     ):
         self.data = ptr
         self.shape = shape
         self.strides = strides
 
-        # Increment the refcount if we own the memory otherwise create an
-        # empty counter.
-        self.storage_ref_count = UnsafeRefCounter[DType.index](ref_count_ptr)
-        _ = self.storage_ref_count.increment()
-
     @no_inline
-    fn __copyinit__(inout self, existing: Self):
-        self.storage_ref_count = existing.storage_ref_count
-        _ = self.storage_ref_count.increment()
-
+    fn __moveinit__(inout self, owned existing: Self):
         self.data = existing.data
         self.shape = existing.shape
         self.strides = existing.strides
+        existing.data = DTypePointer[type]()
 
     @always_inline
     fn refcount(self) -> Pointer[SIMD[DType.index, 1]]:
         return self.storage_ref_count._underlying_value
 
     fn __del__(owned self):
-        var res = self.storage_ref_count.decrement()
-        if res == 1:
-            # Clean up the managed refcount itself
-            self.storage_ref_count.deallocate()
-
-            # TODO: Invoke parameterized deconstructor.
+        if self.data != DTypePointer[type]():
             self.data.free()
 
     @always_inline
