@@ -7,7 +7,7 @@
 
 from math import abs, div_ceil, isclose, min
 from random import rand
-from sys.info import has_avx2, has_avx512f, simdwidthof
+from sys.info import simdwidthof
 
 from buffer import NDBuffer
 from buffer.list import Dim, DimList
@@ -35,13 +35,6 @@ fn test[
     pad_h: StaticIntTuple[2],
     pad_w: StaticIntTuple[2],
 ]() raises:
-    # Skip architectures other than avx512 for now.
-    # TODO: tune on other architectures and enable testing.
-    @parameter
-    if not (has_avx512f() or has_avx2()):
-        print("Succeed")
-        return
-
     # Output Shape.
     # fmt: off
     alias HO = (H + pad_h[0] + pad_h[1] - dilation[1] * (R - 1) - 1) // stride[0] + 1
