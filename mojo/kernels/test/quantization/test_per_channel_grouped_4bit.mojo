@@ -39,8 +39,8 @@ fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
         var l2_norm_err = (
             (input_vec - decoded_result) * (input_vec - decoded_result)
         ).reduce_add()
-        l2_norm_err = l2_norm_err**0.5
-        var l2_norm_input = (input_vec * input_vec).reduce_add() ** 0.5
+        l2_norm_err = l2_norm_err ** Float32(0.5)
+        var l2_norm_input = (input_vec * input_vec).reduce_add() ** Float32(0.5)
         var rel_l2_norm = l2_norm_err / l2_norm_input
         print("rel-l2-norm      :", rel_l2_norm)
 
@@ -62,18 +62,18 @@ fn test_fake_quant_error[l2_tolerance: FloatLiteral]():
     print("------------test_fake_quant_error------------")
     print("********** GROUP SIZE 08 **********")
     var g8_result = _run_test_quant[8, l2_tolerance]()
-    print("G08 PASS" if g8_result else "FAIL")
+    print("G08 PASS" if g8_result else "G08 FAIL")
     print()
 
     print("********** GROUP SIZE 16 **********")
     var g16_result = _run_test_quant[16, l2_tolerance]()
-    print("G16 PASS" if g16_result else "FAIL")
+    print("G16 PASS" if g16_result else "G16 FAIL")
     print()
 
     print("********** GROUP SIZE 32 **********")
     var g32_result = _run_test_quant[32, l2_tolerance]()
-    print("------------test_fake_quant_error------------")
-    print("G32 PASS" if g32_result else "FAIL")
+    print("------------end test_fake_quant_error------------")
+    print("G32 PASS" if g32_result else "G32 FAIL")
     print()
 
 
@@ -116,7 +116,7 @@ fn test_alignment_and_size():
     # 2 + 16 = 18
     # Bits per weight: (8 * 18) / 32 = 4.5bpw
     constrained[sizeof[Q4sym[32]]() == 18]()
-    print("-------test_alignment_and_size-------")
+    print("-------end test_alignment_and_size-------")
     print()
 
 
@@ -195,41 +195,41 @@ fn _read_write_to_tensors[
 
 
 fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]():
-    print("------------test_fake_quant_error------------")
+    print("------------test_read_write_to_tensors------------")
 
     print("********** GROUP SIZE 08 **********")
     var g8_result = _read_write_to_tensors[8, rtol, atol]()
-    print("G08 PASS" if g8_result else "FAIL")
+    print("G08 PASS" if g8_result else "G08 FAIL")
     print()
 
     print("********** GROUP SIZE 16 **********")
     var g16_result = _read_write_to_tensors[16, rtol, atol]()
-    print("G16 PASS" if g8_result else "FAIL")
+    print("G16 PASS" if g8_result else "G16 FAIL")
     print()
 
     print("********** GROUP SIZE 32 **********")
     var g32_result = _read_write_to_tensors[32, rtol, atol]()
-    print("G32 PASS" if g8_result else "FAIL")
+    print("G32 PASS" if g8_result else "G32 FAIL")
     print()
 
-    print("------------test_fake_quant_error------------")
+    print("------------end test_read_write_to_tensors------------")
     print()
 
 
 fn main():
     alias l2_tolerance: FloatLiteral = 0.1
 
-    # CHECK-LABEL: G08 PASS
-    # CHECK-LABEL: G16 PASS
-    # CHECK-LABEL: G32 PASS
+    # CHECK: G08 PASS
+    # CHECK: G16 PASS
+    # CHECK: G32 PASS
     test_fake_quant_error[l2_tolerance]()
 
-    # CHECK-LABEL: G08 PASS
-    # CHECK-LABEL: G16 PASS
-    # CHECK-LABEL: G32 PASS
-    alias rtol: FloatLiteral = 0.1
-    alias atol: FloatLiteral = 1.0
-    test_read_write_to_tensors[rtol, atol]()
+    # CHECK-LABEL: test_read_write_to_tensors
+    # CHECK: G08 PASS
+    # CHECK: G16 PASS
+    # CHECK: G32 PASS
+    test_read_write_to_tensors[rtol=0.1, atol=1.0]()
 
     # Tests via compile-time constraints on sizeof(Q4Sym)
+    # CHECK-LABEL: test_alignment_and_size
     test_alignment_and_size()

@@ -553,7 +553,9 @@ fn _block_quantize_a[
             var fp_data = a_ptr.load[width=group_size]()
             var max_value = abs(fp_data).reduce_max()
             var scale = max_value / 127.0
-            var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
+            var multiplier = Scalar[type](
+                127.0
+            ) / max_value if max_value != 0.0 else 0.0
 
             var quant_data = roundeven(fp_data * multiplier).cast[DType.int8]()
             a_quant_ptr.store(quant_data)
