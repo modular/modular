@@ -6,7 +6,7 @@ lit_tests(
         "**/*.td",
     ]),
     custom_substitutions = {
-        "%driver-tblgen": "$(rlocationpath //Support/tools/driver-tblgen) -I $(dirname $(dirname $(dirname ../../../../$(location //Support:include/Support/Driver/DriverCommand.td)))) -I $(dirname $(dirname $(dirname ../../../../$(location @llvm-project//llvm:include/llvm/Option/OptParser.td))))",
+        "%driver-tblgen": "$(rlocationpath //Support/tools/driver-tblgen) -I $(dirname $(dirname $(dirname ../../../../$(location //Support:include/Support/Driver/DriverCommand.td)))) -I $(dirname $(dirname $(dirname ../../../../../$(rlocationpath @llvm-project//llvm:include/llvm/Option/OptParser.td))))",
     },
     data = [
         "//Support:DriverCommandTdFiles",
