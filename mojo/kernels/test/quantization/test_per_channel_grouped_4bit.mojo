@@ -39,8 +39,8 @@ fn _run_test_quant[group_size: Int, tolerance: FloatLiteral]() -> Bool:
         var l2_norm_err = (
             (input_vec - decoded_result) * (input_vec - decoded_result)
         ).reduce_add()
-        l2_norm_err = l2_norm_err ** Float32(0.5)
-        var l2_norm_input = (input_vec * input_vec).reduce_add() ** Float32(0.5)
+        l2_norm_err = l2_norm_err**0.5
+        var l2_norm_input = (input_vec * input_vec).reduce_add() ** 0.5
         var rel_l2_norm = l2_norm_err / l2_norm_input
         print("rel-l2-norm      :", rel_l2_norm)
 
