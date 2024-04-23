@@ -486,7 +486,7 @@ def LIT_StructCreateOp : LITOp<"struct.create", [Pure,
 
   let arguments = (ins Variadic<AnyType>:$operands,
                        StringArrayAttr:$fields);
-  let results = (outs KGEN_DeclRefType:$result);
+  let results = (outs LIT_DeclRefType:$result);
   let hasFolder = 1;
   let assemblyFormat = [{
     `` custom<OperandsAndFields>($operands,$fields) attr-dict `:`
@@ -520,8 +520,8 @@ def LIT_StructInsertOp : LITOp<"struct.insert", [Pure,
   }];
 
   let arguments = (ins StrAttr:$field, AnyType:$value,
-                       KGEN_DeclRefType:$container);
-  let results = (outs KGEN_DeclRefType:$result);
+                       LIT_DeclRefType:$container);
+  let results = (outs LIT_DeclRefType:$result);
   let assemblyFormat = [{
     $value `,` $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
     type($value) `into` qualified(type($container))
@@ -553,7 +553,7 @@ def LIT_StructExtractOp : LITOp<"struct.extract", [Pure,
     ```
   }];
 
-  let arguments = (ins KGEN_DeclRefType:$container, StrAttr:$field);
+  let arguments = (ins LIT_DeclRefType:$container, StrAttr:$field);
   let results = (outs AnyType:$value);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
@@ -1629,7 +1629,7 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
     ```
   }];
 
-  let arguments = (ins StrAttr:$field, RefOf<KGEN_DeclRefType>:$container);
+  let arguments = (ins StrAttr:$field, RefOf<LIT_DeclRefType>:$container);
   let results = (outs LIT_RefType:$result);
   let assemblyFormat = [{
     $container `[` custom<KeywordAsString>($field) `]` attr-dict `:`
