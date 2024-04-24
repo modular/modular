@@ -7,11 +7,24 @@
 
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-import builtin
-import gpu.host as gpu_host
-from gpu import ThreadIdx, memory
-from gpu.memory import AddressSpace as _AddressSpace
+from gpu.host import Context, Function, synchronize, Stream
+from gpu.host.memory import (
+    _malloc_managed,
+    _copy_device_to_host,
+    _copy_host_to_device,
+    _free,
+    _malloc,
+)
+from gpu import ThreadIdx
+from gpu.memory import (
+    AddressSpace,
+    async_copy,
+    async_copy_wait_all,
+    async_copy_commit_group,
+    async_copy_wait_group,
+)
 from memory import stack_allocation
+from testing import assert_equal
 
 
 fn copy_via_shared(
@@ -19,20 +32,20 @@ fn copy_via_shared(
     dst: DTypePointer[DType.float32],
 ):
     var thread_id = ThreadIdx.x()
-    var mem_buff: Pointer[Float32, _AddressSpace.SHARED] = stack_allocation[
-        16, Float32, address_space = _AddressSpace.SHARED
+    var mem_buff: Pointer[Float32, AddressSpace.SHARED] = stack_allocation[
+        16, Float32, address_space = AddressSpace.SHARED
     ]()
     var src_global: Pointer[
-        Float32, _AddressSpace.GLOBAL
-    ] = src._as_scalar_pointer().bitcast[address_space = _AddressSpace.GLOBAL]()
+        Float32, AddressSpace.GLOBAL
+    ] = src._as_scalar_pointer().bitcast[address_space = AddressSpace.GLOBAL]()
 
-    memory.async_copy[4](
+    async_copy[4](
         src_global.offset(thread_id),
         mem_buff.offset(thread_id),
     )
 
-    memory.async_copy_commit_group()
-    memory.async_copy_wait_group(0)
+    async_copy_commit_group()
+    async_copy_wait_group(0)
 
     dst[thread_id] = mem_buff[thread_id]
 
@@ -40,18 +53,18 @@ fn copy_via_shared(
 # CHECK-LABEL: run_copy_via_shared
 fn run_copy_via_shared() raises:
     print("== run_copy_via_shared")
-    var in_data = gpu_host.memory._malloc_managed[DType.float32](16)
-    var out_data = gpu_host.memory._malloc_managed[DType.float32](16)
+    var in_data = _malloc_managed[DType.float32](16)
+    var out_data = _malloc_managed[DType.float32](16)
 
     for i in range(16):
         in_data[i] = i + 1
         out_data[i] = 0
 
-    var copy_via_shared_gpu = gpu_host.Function[
+    var copy_via_shared_gpu = Function[
         __type_of(copy_via_shared), copy_via_shared
     ]()
 
-    var stream = gpu_host.Stream()
+    var stream = Stream()
     copy_via_shared_gpu(
         in_data, out_data, grid_dim=(1,), block_dim=(16), stream=stream
     )
@@ -76,9 +89,67 @@ fn run_copy_via_shared() raises:
         print(out_data[i])
 
 
+fn copy_with_src_size(
+    src: DTypePointer[DType.float32, address_space = AddressSpace.GLOBAL],
+    dst: DTypePointer[DType.float32, address_space = AddressSpace.GLOBAL],
+    src_size: Int,
+):
+    var smem = stack_allocation[
+        4, DType.float32, address_space = AddressSpace.SHARED
+    ]()
+
+    async_copy[16](src.address, smem.address, src_size)
+    async_copy_wait_all()
+    dst[0] = smem[0]
+    dst[1] = smem[1]
+    dst[2] = smem[2]
+    dst[3] = smem[3]
+
+
+fn test_copy_with_src_size() raises:
+    var stream = Stream()
+
+    alias size = 4
+    var a_host = DTypePointer[DType.float32].alloc(size)
+    var b_host = DTypePointer[DType.float32].alloc(size)
+
+    for i in range(size):
+        a_host[i] = i + 1
+
+    var a_device = _malloc[Float32](size)
+    var b_device = _malloc[Float32](size)
+
+    _copy_host_to_device(a_device, a_host, size)
+
+    alias kernel = copy_with_src_size
+    var func = Function[__type_of(kernel), kernel](threads_per_block=1)
+
+    alias src_size = 3 * sizeof[DType.float32]()
+
+    func(a_device, b_device, src_size, grid_dim=(1, 1, 1), block_dim=(1, 1, 1))
+
+    synchronize()
+
+    _copy_device_to_host(b_host, b_device, size)
+
+    assert_equal(b_host[0], 1)
+    assert_equal(b_host[1], 2)
+    assert_equal(b_host[2], 3)
+    assert_equal(b_host[3], 0)
+
+    _free(a_device)
+    _free(b_device)
+    a_host.free()
+    b_host.free()
+
+    _ = func^
+    _ = stream^
+
+
 fn main():
     try:
-        with gpu_host.Context() as ctx:
+        with Context() as ctx:
             run_copy_via_shared()
+            test_copy_with_src_size()
     except e:
         print("CUDA_ERROR:", e)
