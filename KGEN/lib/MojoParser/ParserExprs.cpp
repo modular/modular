@@ -408,7 +408,6 @@ static bool isPrimaryExprToken(Token::Kind tokKind) {
   case Token::kw___get_address_as_uninit_lvalue:
   case Token::kw___lifetime_of:
   case Token::kw___type_of:
-  case Token::kw___source_location:
     return true;
   default:
     return false;
@@ -557,7 +556,6 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw___get_address_as_uninit_lvalue:
   case Token::kw___lifetime_of:
   case Token::kw___type_of:
-  case Token::kw___source_location:
     if (failed(parseMagicFunction(result)))
       return failure();
     break;
@@ -1055,17 +1053,13 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
   case Token::kw___type_of:
     nodeKind = ExprNode::kTypeOf;
     break;
-  case Token::kw___source_location:
-    nodeKind = ExprNode::kSourceLocation;
-    break;
   }
   SMLoc baseLoc = consumeToken().getLoc();
 
   ExprNode *subExpr = nullptr;
   SMLoc rpLoc;
-  // All "magic" functions take an argument with the exception of __location().
-  if (parseToken(Token::l_paren, "expected '('") ||
-      ((nodeKind != ExprNode::kSourceLocation) && parseExpression(subExpr)) ||
+  // All "magic" functions take an argument.
+  if (parseToken(Token::l_paren, "expected '('") || parseExpression(subExpr) ||
       parseToken(Token::r_paren, "expected ')'", &rpLoc))
     return failure();
 

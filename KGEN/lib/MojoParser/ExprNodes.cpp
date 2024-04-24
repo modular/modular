@@ -3003,9 +3003,6 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   if (kind == kTypeOf)
     return emitTypeOf(dest, emitter);
 
-  if (kind == kSourceLocation)
-    return emitSourceLocation(dest, emitter);
-
   if (!emitter.builder)
     return emitter.emitErrorForDynamicValueInParameter(this);
 
@@ -3119,28 +3116,6 @@ AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
     return {};
 
   return emitter.emitResult(PValue(subExprValue.getRValueType()), this, dest);
-}
-
-AnyValue MagicFunctionNode::emitSourceLocation(ValueDest &dest,
-                                               ExprEmitter &emitter) const {
-  Builder b(emitter.getContext());
-  auto stringType = StringType::get(emitter.getContext());
-
-  auto loc =
-      cast<FileLineColLoc>(emitter.shared.diags.translateLocation(getLoc()));
-  auto func = dyn_cast_or_null<LIT::FuncOp>(
-      emitter.declScope.getNearestDeclOfType<LIT::FuncOp>());
-
-  return emitter.emitConstructorCall(
-      emitter.shared.getBuiltinSourceLocationType(getLoc()),
-      ArrayRef<ASTExprAnd<AnyValue>>{
-          {StringAttr::get(loc.getFilename().getValue(), stringType), this},
-          {StringAttr::get(func && func.getSourceName() ? *func.getSourceName()
-                                                        : "None",
-                           stringType),
-           this},
-          {b.getIndexAttr(loc.getLine()), this}},
-      this, CallSyntax::kImplicitConvert, dest);
 }
 
 // There are two options. We are either emitting a type or an instance of Tuple.

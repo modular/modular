@@ -420,7 +420,6 @@ public:
     return lookupNamedType("RaisingCoroutine", context, loc);
   }
   ASTType getOwnedKwargsDictType(llvm::SMLoc loc);
-  ASTType getBuiltinSourceLocationType(llvm::SMLoc loc);
   ASTType getBuiltinCaptureListType(llvm::SMLoc loc);
   ASTType getBuiltinStubsMLIRType(llvm::SMLoc loc);
 
