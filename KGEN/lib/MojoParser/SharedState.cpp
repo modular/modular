@@ -31,7 +31,6 @@
 #include "KGEN/ToolCommon/CompilationOptions.h"
 #include "KGEN/ToolCommon/InitAllDialects.h"
 
-#include "Cache/CachedTransform.h"
 #include "Support/Buffer.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/Configuration.h"
@@ -169,6 +168,10 @@ struct SharedState::Impl {
   /// function.
   llvm::DenseMap<ASTDecl *, llvm::MapVector<ASTDecl *, Capture>>
       capturesInScope;
+
+  /// This caches non-trivial implicit convertibility checks from one type to
+  /// another.
+  DenseMap<std::pair<Type, Type>, bool> cachedImplicitConvertibility;
 };
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
@@ -1855,4 +1858,37 @@ void SharedState::notifyListenerOnParameterBinding(ArrayRef<ASTDecl *> decls,
         operands, [](const Operand &operand) { return operand.expr; });
     parserListener->onParameterBinding(decls, rsquareLoc, parameters);
   }
+}
+
+/// These two methods are used to memoize whether a type is implicitly
+/// convertible to another type, which includes overload resolution etc.
+std::optional<bool> SharedState::getCachedImplicitConvertibility(ASTType from,
+                                                                 ASTType to) {
+  DenseMap<std::pair<Type, Type>, bool> &cache =
+      getImpl().cachedImplicitConvertibility;
+  auto it = cache.find({from, to});
+  if (it == cache.end())
+    return {};
+
+#ifndef NDEBUG
+  // If this is the 64th convertibility hit, allow it to fail so we can detect
+  // if the cache ever starts to depend on new state like declContext.  This is
+  // a small bit a paranoia to make it possible to track down subtle bugs that
+  // may happen in the future.
+  if ((cache.size() & 63) == 0)
+    return {};
+#endif
+  return it->second;
+}
+void SharedState::cacheImplicitConvertibility(ASTType from, ASTType to,
+                                              bool isConvertible) {
+  DenseMap<std::pair<Type, Type>, bool> &cache =
+      getImpl().cachedImplicitConvertibility;
+  auto [it, newlyInserted] = cache.insert({{from, to}, isConvertible});
+
+  // If the entry is already present, make sure all checks agree.
+  if (!newlyInserted)
+    assert(it->second == isConvertible &&
+           "convertibility cache disagrees from actual computation! Must need "
+           "to include more information in the hash key");
 }
