@@ -38,11 +38,9 @@ fn execute_nullary[
 ](
     graph: Graph,
     *,
-    custom_ops_path: Optional[Path] = None,
-) raises -> Tensor[
-    outtype
-]:
-    var result_map = execute_no_args(graph, custom_ops_path=custom_ops_path)
+    custom_ops_paths: List[Path] = List[Path](),
+) raises -> Tensor[outtype]:
+    var result_map = execute_no_args(graph, custom_ops_paths=custom_ops_paths)
     return result_map.get[outtype]("output0")
 
 
@@ -51,11 +49,11 @@ fn execute_nullary_list[
 ](
     graph: Graph,
     *,
-    custom_ops_path: Optional[Path] = None,
+    custom_ops_paths: List[Path] = List[Path](),
 ) raises -> List[
     Tensor[outtype]
 ]:
-    var result_map = execute_no_args(graph, custom_ops_path=custom_ops_path)
+    var result_map = execute_no_args(graph, custom_ops_paths=custom_ops_paths)
     var engine_list = result_map.get_value("output0").as_list()
     var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
@@ -70,9 +68,11 @@ fn execute_unary[
     graph: Graph,
     input: Tensor[intype],
     *,
-    custom_ops_path: Optional[Path] = None,
+    custom_ops_paths: List[Path] = List[Path](),
 ) raises -> Tensor[outtype]:
-    var result_map = execute_base(graph, input, custom_ops_path=custom_ops_path)
+    var result_map = execute_base(
+        graph, input, custom_ops_paths=custom_ops_paths
+    )
     return result_map.get[outtype]("output0")
 
 
@@ -82,9 +82,11 @@ fn execute_unary_list[
     graph: Graph,
     input: Tensor[intype],
     *,
-    custom_ops_path: Optional[Path] = None,
+    custom_ops_paths: List[Path] = List[Path](),
 ) raises -> List[Tensor[outtype]]:
-    var result_map = execute_base(graph, input, custom_ops_path=custom_ops_path)
+    var result_map = execute_base(
+        graph, input, custom_ops_paths=custom_ops_paths
+    )
     var engine_list = result_map.get_value("output0").as_list()
     var results = List[Tensor[outtype]]()
     for i in range(len(engine_list)):
@@ -102,12 +104,12 @@ fn execute_binary[
     x: Tensor[intype1],
     y: Tensor[intype2],
     *,
-    custom_ops_path: Optional[Path] = None,
+    custom_ops_paths: List[Path] = List[Path](),
 ) raises -> Tensor[outtype]:
     graph.verify()
 
     var session = InferenceSession()
-    var model = session.load(graph, custom_ops_path=custom_ops_path)
+    var model = session.load(graph, custom_ops_paths=custom_ops_paths)
 
     var input_map = session.new_tensor_map()
     input_map.borrow("input0", x)
@@ -121,12 +123,12 @@ fn execute_binary[
 fn execute_no_args(
     g: Graph,
     *,
-    custom_ops_path: Optional[Path] = None,
+    custom_ops_paths: List[Path] = List[Path](),
 ) raises -> TensorMap:
     g.verify()
 
     var session = InferenceSession()
-    var model = session.load(g, custom_ops_path=custom_ops_path)
+    var model = session.load(g, custom_ops_paths=custom_ops_paths)
 
     var input_map = session.new_tensor_map()
     var result_map = model.execute(input_map)
@@ -144,12 +146,12 @@ fn execute_n_args[
     t4: Tensor[dt4],
     t5: Tensor[dt5],
     *,
-    custom_ops_path: Optional[Path] = None,
+    custom_ops_paths: List[Path] = List[Path](),
 ) raises -> TensorMap:
     g.verify()
 
     var session = InferenceSession()
-    var model = session.load(g, custom_ops_path=custom_ops_path)
+    var model = session.load(g, custom_ops_paths=custom_ops_paths)
 
     var input_map = session.new_tensor_map()
     input_map.borrow("input0", t1)
@@ -166,12 +168,12 @@ fn execute_n_args[
 fn execute_base(
     g: Graph,
     *tensors: Tensor,
-    custom_ops_path: Optional[Path] = None,
+    custom_ops_paths: List[Path] = List[Path](),
 ) raises -> TensorMap:
     g.verify()
 
     var session = InferenceSession()
-    var model = session.load(g, custom_ops_path=custom_ops_path)
+    var model = session.load(g, custom_ops_paths=custom_ops_paths)
 
     var input_map = session.new_tensor_map()
     for i in range(len(tensors)):

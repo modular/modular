@@ -74,9 +74,10 @@ struct _InferenceSessionImpl(Movable):
             compile_config.set_model_path(path.path._strref_dangerous())
             path.path._strref_keepalive()
 
-        var custom_ops_path = config._custom_ops_path
-        if custom_ops_path:
-            var path = custom_ops_path._value_copy()
+        var custom_ops_paths = config._custom_ops_paths
+        # TODO: Use a direct for loop (#38478).
+        for i in range(len(custom_ops_paths)):
+            var path = custom_ops_paths[i]
             compile_config.set_replace_ops_path(path.path._strref_dangerous())
             path.path._strref_keepalive()
 
@@ -336,14 +337,14 @@ struct _TorchLoadOptions(CollectionElement):
 
     var _source: Optional[ModelSource]
     var _model_path: Optional[Path]
-    var _custom_ops_path: Optional[Path]
+    var _custom_ops_paths: List[Path]
     var _input_specs: List[InputSpec]
 
     fn __init__(inout self):
         """Creates a new _TorchLoadOptions object."""
         self._source = None
         self._model_path = None
-        self._custom_ops_path = None
+        self._custom_ops_paths = List[Path]()
         self._input_specs = List[InputSpec]()
 
     fn set_model_source(inout self, graph: Graph) raises:
@@ -369,13 +370,13 @@ struct _TorchLoadOptions(CollectionElement):
         """
         self._model_path = path
 
-    fn set_custom_ops_path(inout self, path: Path) raises:
+    fn set_custom_ops_paths(inout self, paths: List[Path]) raises:
         """Replace Modular kernels in given model with user-defined kernels.
 
         Args:
-            path: Path to mojo custom op package.
+            paths: List of paths to mojo custom op packages.
         """
-        self._custom_ops_path = path
+        self._custom_ops_paths = paths
 
     fn set_input_specs(inout self, specs: List[InputSpec]):
         """Set input specs to the given list of specs.
@@ -431,7 +432,7 @@ struct InferenceSession:
         self,
         path: Path,
         *,
-        custom_ops_path: Optional[Path] = None,
+        custom_ops_paths: List[Path] = List[Path](),
         input_specs: Optional[List[InputSpec]] = None,
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
@@ -451,9 +452,9 @@ struct InferenceSession:
             path: Location of model in filesystem. You may pass a string here
                   because the [`Path`](/mojo/stdlib/pathlib/path#path) object
                   supports implicit casting from a string.
-            custom_ops_path:
-                Path to Mojo custom op package, to replace Modular kernels in
-                model with user-defined kernels.
+            custom_ops_paths:
+                List of paths to Mojo custom op packages, to replace Modular kernels in
+                models with user-defined kernels.
             input_specs:
                 Provide shapes and dtypes for model inputs.  Required for
                 TorchScript models, optional for other input formats.
@@ -464,8 +465,7 @@ struct InferenceSession:
         """
         var load_config = _TorchLoadOptions()
         load_config.set_model_path(path)
-        if custom_ops_path:
-            load_config.set_custom_ops_path(custom_ops_path._value_copy())
+        load_config.set_custom_ops_paths(custom_ops_paths)
         if input_specs:
             load_config.set_input_specs(input_specs._value_copy())
         return self._ptr[].load(load_config^, self)
@@ -474,7 +474,7 @@ struct InferenceSession:
         self,
         graph: Graph,
         *,
-        custom_ops_path: Optional[Path] = None,
+        custom_ops_paths: List[Path] = List[Path](),
         input_specs: Optional[List[InputSpec]] = None,
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
@@ -482,9 +482,9 @@ struct InferenceSession:
 
         Args:
             graph: MAX Graph.
-            custom_ops_path:
-                Path to Mojo custom op package, to replace Modular kernels in
-                model with user-defined kernels.
+            custom_ops_paths:
+                List of paths to Mojo custom op packages, to replace Modular kernels in
+                models with user-defined kernels.
             input_specs:
                 Provide shapes and dtypes for model inputs.  Required for
                 TorchScript models, optional for other input formats.
@@ -495,8 +495,7 @@ struct InferenceSession:
         """
         var load_config = _TorchLoadOptions()
         load_config.set_model_source(graph)
-        if custom_ops_path:
-            load_config.set_custom_ops_path(custom_ops_path._value_copy())
+        load_config.set_custom_ops_paths(custom_ops_paths)
         if input_specs:
             load_config.set_input_specs(input_specs._value_copy())
         return self._ptr[].load(load_config^, self)
