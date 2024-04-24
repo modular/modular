@@ -444,6 +444,12 @@ public:
   /// ASTDecl, store the capture associated with the nested function.
   void addCaptureToScope(ASTDecl &scope, ASTDecl *captureDecl, Capture capture);
 
+  /// These two methods are used to memoize whether a type is implicitly
+  /// convertible to another type, which includes overload resolution etc.
+  std::optional<bool> getCachedImplicitConvertibility(ASTType from, ASTType to);
+  void cacheImplicitConvertibility(ASTType from, ASTType to,
+                                   bool isConvertible);
+
 private:
   /// The internal state of an imported module or package.
   struct ModuleState;

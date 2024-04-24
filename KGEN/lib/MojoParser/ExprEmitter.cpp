@@ -902,6 +902,18 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
       canConvertWithRebind(rvType, requiredType, shared))
     return true;
 
+  // Check to see if we already cached this convertibility check.
+  std::optional<bool> cache =
+      shared.getCachedImplicitConvertibility(rvType, requiredType);
+  if (cache.has_value())
+    return cache.value();
+
+  auto cacheAndReturnVal = [&](bool isConvertible) -> bool {
+    // Cache the result of this convertibility check.
+    shared.cacheImplicitConvertibility(rvType, requiredType, isConvertible);
+    return isConvertible;
+  };
+
   // Values of known {struct/trait/mlir} type can convert to any trait type they
   // implement.
   if (auto traitType = dyn_cast<TraitType>(requiredType)) {
@@ -910,7 +922,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     if (isa<AnyStructType, TraitType>(rvType) &&
         rvType.getDecl(shared)->doesNominalTypeConformsTo(traitType, diag,
                                                           shared))
-      return true;
+      return cacheAndReturnVal(true);
     if (diag)
       diag->abandon();
 
@@ -919,8 +931,8 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
     // destructor (e.g. AnyType) since all traits have that.
     if (isa<TypeType>(rvType) &&
         checkMLIRTypeConformance(shared, value.expr->getLoc(), traitType))
-      return true;
-    return false;
+      return cacheAndReturnVal(true);
+    return cacheAndReturnVal(false);
   }
 
   // We can implicitly convert to the specified type if we can construct it with
@@ -931,7 +943,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   auto [ctor, erroneousDecl] =
       canConstructType(requiredType, CallOperands({value}), value.expr,
                        /*allowImplicitConversions=*/false);
-  return (bool)ctor;
+  return cacheAndReturnVal(bool(ctor));
 }
 
 //===----------------------------------------------------------------------===//
