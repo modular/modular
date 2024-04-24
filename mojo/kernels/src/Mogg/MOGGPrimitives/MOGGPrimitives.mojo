@@ -10,6 +10,7 @@ from math import (
     min,
 )
 from register import *
+from buffer import NDBuffer
 from buffer.list import DimList
 from buffer.buffer import (
     _MAX_RANK,
@@ -21,25 +22,6 @@ from MOGGIntList import IntList
 # ===----------------------------------------------------------------------===#
 # Helper Structures
 # ===----------------------------------------------------------------------===#
-
-
-@register_passable("trivial")
-struct BufferRefABI[type: DType]:
-    """Defines a `BufferRefABI` struct that contains an unsafe pointer and the size/alignment.
-    The purpose of this structure is to preserve information needed for the ABI interface
-    which needs this information for the subsequent unpacking/packing call.
-    """
-
-    var ref: DTypePointer[type]
-    var size: UInt64
-    var alignment: UInt64
-
-    fn __init__(
-        inout self, ref: DTypePointer[type], size: UInt64, alignment: UInt64
-    ):
-        self.size = size
-        self.ref = ref
-        self.alignment = alignment
 
 
 # ===----------------------------------------------------------------------===#
@@ -77,12 +59,12 @@ fn create_i1_async(
 @always_inline
 @export
 fn create_buffer_ref_async(
-    value: BufferRefABI[DType.uint8],
+    buffer: NDBuffer[DType.int8, 1],
     async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
     runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
-        value.ref, value.size, async_ptr, runtime
+        buffer.data, len(buffer), async_ptr, runtime
     )
 
 
@@ -297,20 +279,38 @@ fn mgp_buffer_alloc_static[
     bSize: UInt64,
     cRawAlign: UInt64,
     dDevice: StringLiteral,
-]() -> BufferRefABI[DType.int8]:
+]() -> NDBuffer[DType.int8, 1]:
+    var shape = StaticIntTuple[1](int(bSize))
     if cRawAlign == UInt64.MAX:
-        return BufferRefABI[DType.int8](
-            DTypePointer[DType.int8].alloc(int(bSize)),
-            int(bSize),
-            alignof[DType.int8](),
+        return NDBuffer[DType.int8, 1](
+            DTypePointer[DType.int8].alloc(int(bSize)), shape
         )
     else:
-        return BufferRefABI[DType.int8](
+        return NDBuffer[DType.int8, 1](
             DTypePointer[DType.int8].alloc(
                 int(bSize), alignment=int(cRawAlign)
             ),
-            int(bSize),
-            int(cRawAlign),
+            shape,
+        )
+
+
+@mogg_register("mgp.buffer.alloc.dynamic")
+@always_inline
+@export
+fn mgp_buffer_alloc_dynamic[
+    aRuntimeSlot: UInt64,
+    bRawAlign: UInt64,
+    cDevice: StringLiteral,
+](byte_size: Int) -> NDBuffer[DType.int8, 1]:
+    var shape = StaticIntTuple[1](byte_size)
+    if bRawAlign == UInt64.MAX:
+        return NDBuffer[DType.int8, 1](
+            DTypePointer[DType.int8].alloc(byte_size), shape
+        )
+    else:
+        return NDBuffer[DType.int8, 1](
+            DTypePointer[DType.int8].alloc(byte_size, alignment=int(bRawAlign)),
+            shape,
         )
 
 
