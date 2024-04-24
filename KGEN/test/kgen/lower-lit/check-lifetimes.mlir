@@ -1248,3 +1248,100 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
   kgen.return %17 : i1
 }
 
+// -----
+
+// COM: Verify that unreachable code is ignored in the context of error handling.
+
+!Error = !lit.declref<@Error>
+!FileHandle = !lit.declref<@FileHandle>
+!LegacyPointer = !lit.declref<@LegacyPointer>
+!GGUFFile = !lit.declref<@GGUFFile>
+!Int = !lit.declref<@Int>
+!iter = !lit.declref<@my_iter>
+
+lit.struct.decl @Error register_passable
+  destructor :!lit.signature<("self": !Error, |) -> !kgen.none> @stdlib::@builtin::@stubs::@Error::@"__del__(stdlib::builtin::stubs::Error)"{
+}
+
+lit.struct.decl @Int register_passable_trivial {
+  lit.struct.field value : index
+}
+
+lit.struct.decl @my_iter
+  destructor :!lit.signature<[1]("self": !lit.ref<!iter, mut *[0,0]> owned_in_mem, |) -> !kgen.none> @small::@my_iter::@"__del__(small::my_iter)"
+  copy :!lit.signature<[2]("self": !lit.ref<!iter, mut *[0,0]> init_self, |, "existing": !lit.ref<!iter, imm *[0,1]> borrow_in_mem) -> !kgen.none> @small::@my_iter::@"__copyinit__(small::my_iter=&,small::my_iter)"{
+  lit.struct.field start : !Int
+}
+
+lit.struct.decl @FileHandle
+  destructor :!lit.signature<[1]("self": !lit.ref<!FileHandle, mut *[0,0]> owned_in_mem, |) -> !kgen.none> @small::@FileHandle::@"__del__(small::FileHandle)"{
+  lit.struct.field str : !Int
+}
+lit.struct.decl @LegacyPointer register_passable_trivial {
+  lit.struct.field address : !Int
+}
+
+lit.struct.decl @GGUFFile
+  destructor :!lit.signature<[1]("self": !lit.ref<!GGUFFile, mut *[0,0]> owned_in_mem, |) -> !kgen.none> @GGUFFile::@__del__{
+  lit.struct.field fp : !FileHandle
+  lit.struct.field infos : !LegacyPointer
+  // CHECK-LABEL: lit.func @__init__
+  lit.func @__init__[mut selfLife, mut errorLife, mut rangeLife](
+    %self: !lit.ref<!GGUFFile, mut selfLife> init_self, |,
+    %iter: !lit.ref<!iter, mut rangeLife> borrow_in_mem, ?,
+    %__error__: !lit.ref<!Error, mut errorLife> byref_error) throws -> i1 {
+
+
+    %3 = lit.call @LegacyPointer::@alloc() : !lit.signature<() -> !LegacyPointer>
+    %4 = lit.ref.struct.ger %self[infos] : <@LegacyPointer, mut selfLife> from !GGUFFile
+    lit.ref.store %3, %4 : <@LegacyPointer, mut selfLife>
+
+    %i = lit.var.decl "i" imp : !lit.ref<!Int, mut iLife>
+    hlcf.loop "_loop_0" {
+      %9 = lit.call @my_iter::@__len__[mut rangeLife](%iter) : !lit.signature<[1]("self": !lit.ref<!iter, mut *[0,0]> byref) -> index>
+      %idx0 = index.constant 0
+      %11 = index.cmp sgt(%9, %idx0)
+      hlcf.if %11 {
+        hlcf.yield
+      } else {
+        hlcf.break "_loop_0"
+      }
+      %12 = lit.call @my_iter::@__next__[mut rangeLife](%iter) : !lit.signature<[1]("self": !lit.ref<!iter, mut *[0,0]> byref) -> !Int>
+      lit.ref.store %12, %i : <!Int, mut iLife>
+
+      // Conditionally set use ref method
+      %20 = lit.ref.struct.ger %self[infos] : <@LegacyPointer, mut selfLife> from !GGUFFile
+      %21 = lit.ref.load %20 : <@LegacyPointer, mut selfLife>
+      %22 = lit.ref.immut %i : <!Int, mut iLife>
+      %23 = lit.call @LegacyPointer::@__refitem__[muttoimm iLife](%21, %22) : !lit.signature<[1]("self": !LegacyPointer borrow, "offset": !lit.ref<!Int, imm *[0,0]> borrow_in_mem) -> !lit.ref<!Int, mut #lit.lifetime>>
+      %__call_result_tmp__ = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!Int, mut resultLife>
+      %24 = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__) : !lit.signature<[2]("__error__": !lit.ref<!Error, mut *[0,0]> byref_error, "__result__": !lit.ref<!Int, mut *[0,1]> byref_result) throws -> i1>
+      // CHECK: %[[V0:.*]] = lit.call @raising_function[mut errorLife, mut resultLife](%__error__, %__call_result_tmp__) : !lit.signature<[2]("__error__": !lit.ref<@Error, mut *[0,0]> byref_error, "__result__": !lit.ref<@Int, mut *[0,1]> byref_result) throws -> i1>
+      // CHECK-NEXT:  hlcf.if %[[V0]] {
+      // CHECK-NEXT:      lit.ownership.mark_initialized %__error__ : <@Error, mut errorLife>
+      // CHECK-NEXT:      kgen.param.constant: i1 = <1>
+      // CHECK-NEXT:      lit.error_return
+      // CHECK-NEXT:    } else {
+      // CHECK-NEXT:      lit.ownership.mark_initialized %__call_result_tmp__ : <@Int, mut resultLife>
+      // CHECK-NEXT:      hlcf.yield
+      // CHECK-NEXT:    }
+      hlcf.if %24 {
+          lit.ownership.mark_initialized %__error__ : <!Error, mut errorLife>
+          %26 = kgen.param.constant: i1 = <1>
+          lit.error_return %26 : i1
+      } else {
+          lit.ownership.mark_initialized %__call_result_tmp__ : <!Int, mut resultLife>
+          hlcf.yield
+      }
+      %25 = lit.load.consume %__call_result_tmp__ : !lit.ref<!Int, mut resultLife>
+      lit.ref.store %25, %23 : <!Int, mut #lit.lifetime>
+      hlcf.continue
+    }
+    // Causes bits in the self to be reset, which will trigger erroneous destructors if unreachable code is not ignored.
+    %6 = lit.ref.struct.ger %self[fp] : <!FileHandle, mut selfLife> from !GGUFFile
+    %7 = lit.call @FileHandle::@__init__[mut selfLife](%6) : !lit.signature<[1]("self": !lit.ref<!FileHandle, mut *[0,0]> init_self) -> !kgen.none>
+    %8 = kgen.param.constant: i1 = <0>
+    kgen.return %8 : i1
+  }
+}
+

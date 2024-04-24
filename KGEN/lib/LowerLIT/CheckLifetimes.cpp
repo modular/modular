@@ -1982,10 +1982,12 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
       int succRegionCandidate = successors[1];
       bool candidateIsError =
           errorRegions.contains(errorRegionCandidate) &&
-          consumedValuesInRegion[errorRegionCandidate].test(selfInitIndex);
+          consumedValuesInRegion[errorRegionCandidate].test(selfInitIndex) &&
+          consumedValuesInRegion[errorRegionCandidate].test(0);
       hasSuccessorSetThatMarksSelfInitialized =
           candidateIsError &&
-          !consumedValuesInRegion[succRegionCandidate].test(selfInitIndex);
+          !consumedValuesInRegion[succRegionCandidate].test(selfInitIndex) &&
+          consumedValuesInRegion[succRegionCandidate].test(0);
     }
     for (unsigned successor : successors) {
       assert(consumedValuesInRegion.contains(successor) &&
