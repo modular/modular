@@ -248,13 +248,13 @@ KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size, size_t alignment,
+KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
                                      LLCLWrapper<AnyAsyncValueRef> async,
                                      LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
   value = AnyAsyncValueRef::createReady<GML::BufferRef>(
-      runtime, ::M::GML::BufferRef::take(runtime, size, alignment, data));
+      runtime, ::M::GML::BufferRef::take(runtime, size, data));
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
