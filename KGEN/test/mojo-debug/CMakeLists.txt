@@ -14,8 +14,10 @@ configure_lit_site_cfg(
 add_modular_testsuite(check-mojo-debug
   TOP_LEVEL_CHECK check-mojo
   TOOLS
+  is-cuda-available
   mojo-sdk
   mojo
 )
 
 add_subdirectory(python-tests)
+add_subdirectory(NVPTX)

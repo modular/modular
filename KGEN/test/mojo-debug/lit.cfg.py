@@ -27,6 +27,8 @@ config.test_exec_root = os.path.join(
     config.modular_obj_root, "KGEN", "test", "mojo-debug"
 )
 
+config.excludes.add("NVPTX")
+
 config.substitutions.append(
     (
         "%debug",
