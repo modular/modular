@@ -4,7 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down
 from sys.info import (
     alignof,
     has_avx512f,
@@ -19,16 +18,22 @@ from buffer.buffer import (
     partial_simd_load,
     partial_simd_store,
 )
-from buffer.list import Dim, DimList
+from buffer.list import DimList
 from .MatmulUtils import (
     GemmShape,
     MatmulConfig,
 )
 from memory import stack_allocation
 from memory.unsafe import DTypePointer, bitcast
+from math import align_down
 from .neon_intrinsics import _neon_dotprod
 from .vnni_intrinsics import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 from .Matmul_v2 import InnerMatmulKernel
+from .MatmulLoadStore import (
+    _initialize_c_tile_default,
+    _load_c_tile_default,
+    _store_c_tile_default,
+)
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -40,39 +45,13 @@ from utils.loop import unroll
 struct Inner_matmul_vnni[
     config: MatmulConfig,
 ](InnerMatmulKernel):
-    # if not has_neon() this is 4 by default.
-    alias prefetch_b_distance = 4
+    # Parameters for global reference.
 
     fn _initialize_c_tile[
         a_row_size: Int,
         pack_inner_size: Int,
-    ](self, c0_local: NDBuffer,):
-        """Utility function on the inner loop. Initializes a local c buffer with
-        all zeros.
-        Args:
-            c0_local: pre-allocated local buffer for c partial sums.
-        """
-        alias simd_size = config.simd_size
-        var c_local = rebind[
-            NDBuffer[
-                config.c_type,
-                2,
-                DimList(a_row_size, pack_inner_size),
-            ]
-        ](c0_local)
-
-        @always_inline
-        @parameter
-        fn outer_body[idx0: Int, idx1: Int]():
-            c_local.store[
-                width=simd_size,
-                alignment = alignof[SIMD[config.c_type, simd_size]](),
-            ](
-                Index(idx0, idx1 * simd_size),
-                SIMD[config.c_type, simd_size](0),
-            )
-
-        unroll[outer_body, a_row_size, pack_inner_size // simd_size]()
+    ](self, c0_local: NDBuffer):
+        _initialize_c_tile_default[a_row_size, pack_inner_size](c0_local)
 
     @always_inline
     fn _load_c_tile[
@@ -85,53 +64,9 @@ struct Inner_matmul_vnni[
         tile_n_idx: Int,
         c_bound: StaticIntTuple[2],
     ):
-        """Utility function on the inner loop. Loads a local c_buffer with the
-        value stored in the output buffer space, given the indices within the
-        tile being processed.
-        Args:
-            c0_local: pre-allocated local buffer for c partial sums.
-            tile_n_idx: n coordinate within the current processing tile.
-        """
-        alias simd_size = config.simd_size
-        var c_local = rebind[
-            NDBuffer[
-                config.c_type,
-                2,
-                DimList(a_row_size, pack_inner_size),
-            ]
-        ](c0_local)
-        var c_ptr_loc = c_ptr.offset(tile_n_idx)
-
-        @always_inline
-        @parameter
-        fn body[idx0: Int, idx1: Int]():
-            var c_data: SIMD[config.c_type, simd_size] = 0
-            if skip_boundary_check or (
-                idx1 * simd_size + simd_size <= c_bound[1] - tile_n_idx
-            ):
-                # Use simd load if all within bound
-                c_data = c_ptr_loc.load[width=simd_size](idx1 * simd_size)
-            elif idx1 * simd_size <= c_bound[1]:
-                # Use partial load if row inbound but col not
-                #  in simd bound.
-                c_data = partial_simd_load[simd_size](
-                    c_ptr_loc.offset(idx1 * simd_size),
-                    0,
-                    c_bound[1] - tile_n_idx - idx1 * simd_size,
-                    0,
-                )
-            else:
-                # Fill zero if row out of bound
-                c_data = 0
-
-            # Store data to local buffer.
-            c_local.store(Index(idx0, idx1 * simd_size), c_data)
-
-            @parameter
-            if idx1 == pack_inner_size // simd_size - 1:
-                c_ptr_loc = c_ptr_loc.offset(c_stride)
-
-        unroll[body, a_row_size, pack_inner_size // simd_size]()
+        _load_c_tile_default[a_row_size, pack_inner_size, skip_boundary_check](
+            c_ptr, c_stride, c0_local, tile_n_idx, c_bound
+        )
 
     @always_inline
     fn _store_c_tile[
@@ -144,49 +79,9 @@ struct Inner_matmul_vnni[
         tile_n_idx: Int,
         c_bound: StaticIntTuple[2],
     ):
-        """Utility function on the inner loop. Stores the value of a local c
-        buffer to the corresponding position in the output buffer space.
-        Args:
-            c_local: pre-allocated local buffer for c partial sums.
-            tile_n_idx: n coordinate within the current processing tile.
-        """
-        alias simd_size = config.simd_size
-        var c_local = rebind[
-            NDBuffer[
-                config.c_type,
-                2,
-                DimList(a_row_size, pack_inner_size),
-            ]
-        ](c0_local)
-        var c_ptr_loc = c_ptr.offset(tile_n_idx)
-
-        @always_inline
-        @parameter
-        fn body[idx0: Int, idx1: Int]():
-            var c_data = c_local.load[width=simd_size](
-                Index(idx0, idx1 * simd_size)
-            )
-            if skip_boundary_check or (
-                idx1 * simd_size + simd_size <= c_bound[1] - tile_n_idx
-            ):
-                # Use simd store if all within bound
-                c_ptr_loc.offset(idx1 * simd_size).store[width=simd_size](
-                    c_data
-                )
-            elif idx1 * simd_size <= c_bound[1]:
-                # Use partial store if col not in simd bound.
-                partial_simd_store(
-                    c_ptr_loc.offset(idx1 * simd_size),
-                    0,
-                    c_bound[1] - tile_n_idx - idx1 * simd_size,
-                    c_data,
-                )
-
-            @parameter
-            if idx1 == pack_inner_size // simd_size - 1:
-                c_ptr_loc = c_ptr_loc.offset(c_stride)
-
-        unroll[body, a_row_size, pack_inner_size // simd_size]()
+        _store_c_tile_default[a_row_size, pack_inner_size, skip_boundary_check](
+            c_ptr, c_stride, c0_local, tile_n_idx, c_bound
+        )
 
     fn _accumulate_[
         a_row_size: Int,
@@ -203,10 +98,15 @@ struct Inner_matmul_vnni[
     ):
         """Utility function on the inner loop. Launch one tile of fma on the
         local accumulation buffer while processing a single column of A.
+
         Args:
-            c_local: Pre-allocated local buffer for c partial sums.
+            a: TODO.
+            b_packed: TODO.
+            c0_local: Pre-allocated local buffer for c partial sums.
+            global_offset: TODO.
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
+            tile_n_k: TODO
         """
         alias simd_size = config.simd_size
         var c_local = rebind[
@@ -229,17 +129,21 @@ struct Inner_matmul_vnni[
         @parameter
         if not is_tail:
             # Prefetch B matrix.
-            # prefetch_b_distance > 0 (=4 if not has_neon() as in this case)
-            alias prefetch_offset = self.prefetch_b_distance * pack_inner_size
+            @parameter
+            if config.prefetch_b_distance_k > 0:
+                alias prefetch_offset = config.prefetch_b_distance_k * pack_inner_size
 
-            @unroll
-            for idx in range(pack_inner_size // simd_size):
-                b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
-                    PrefetchOptions().for_read().high_locality().to_data_cache()
-                ]()
+                @unroll
+                for idx in range(pack_inner_size // simd_size):
+                    b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
+                        PrefetchOptions()
+                        .for_read()
+                        .high_locality()
+                        .to_data_cache()
+                    ]()
 
         # This inner kernels works with non-transposed A.
-        var K = a.dim(1)
+        var K = a.dim[1]()
 
         var a_local = Buffer[config.a_type, 4 * a_row_size].stack_allocation()
         var a_base_ptr = a.data.offset(global_offset.M * K + global_k)
@@ -337,8 +241,6 @@ struct Inner_matmul_vnni[
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )
-
-        alias simd_size = config.simd_size
 
         # Allocate accumulation buffer.
         var c_local = NDBuffer[

@@ -13,9 +13,16 @@ from .MatmulUtils import (
     GemmShape,
     MatmulConfig,
 )
+from .MatmulLoadStore import (
+    _initialize_c_tile_default,
+    _load_c_tile_neon,
+    _store_c_tile_neon,
+)
+
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
-from .Matmul_v2 import InnerMatmulKernel, LoadStoreOutputTile
+from .Matmul_v2 import InnerMatmulKernel
+from .MatmulLoadStore import LoadStoreOutputTile
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -31,33 +38,7 @@ struct Inner_matmul_neon[
         a_row_size: Int,
         pack_inner_size: Int,
     ](self, c0_local: NDBuffer,):
-        """Utility function on the inner loop. Initializes a local c buffer with
-        all zeros.
-
-        Args:
-            c0_local: pre-allocated local buffer for c partial sums.
-        """
-        alias simd_size = config.simd_size
-        var c_local = rebind[
-            NDBuffer[
-                config.c_type,
-                2,
-                DimList(a_row_size, pack_inner_size),
-            ]
-        ](c0_local)
-
-        @always_inline
-        @parameter
-        fn outer_body[idx0: Int, idx1: Int]():
-            c_local.store[
-                width=simd_size,
-                alignment = alignof[SIMD[config.c_type, simd_size]](),
-            ](
-                Index(idx0, idx1 * simd_size),
-                SIMD[config.c_type, simd_size](0),
-            )
-
-        unroll[outer_body, a_row_size, pack_inner_size // simd_size]()
+        _initialize_c_tile_default[a_row_size, pack_inner_size](c0_local)
 
     @always_inline
     fn _load_c_tile[
@@ -71,38 +52,8 @@ struct Inner_matmul_neon[
         tile_n_idx: Int,
         c_bound: StaticIntTuple[2],
     ):
-        """Utility function on the inner loop. Loads a local c_buffer with the
-        value stored in the output buffer space, given the indices within the
-        tile being processed.
-
-        Args:
-            c_ptr: TODO.
-            c_stride: TODO.
-            c0_local: pre-allocated local buffer for c partial sums.
-            tile_n_idx: n coordinate within the current processing tile.
-            c_bound: TODO.
-        """
-        alias simd_size = config.simd_size
-        var c_local = rebind[
-            NDBuffer[
-                config.c_type,
-                2,
-                DimList(a_row_size, pack_inner_size),
-            ]
-        ](c0_local)
-        var c_ptr_loc = c_ptr.offset(tile_n_idx)
-
-        self._initialize_c_tile[
-            a_row_size,
-            pack_inner_size,
-        ](c_local)
-        return LoadStoreOutputTile[
-            config.c_type, simd_size, a_row_size, pack_inner_size, True
-        ].run(
-            c_local,
-            c_ptr_loc,
-            c_stride,
-            min(c_bound[1] - tile_n_idx, pack_inner_size),
+        _load_c_tile_neon[a_row_size, pack_inner_size](
+            c_ptr, c_stride, c0_local, tile_n_idx, c_bound
         )
 
     @always_inline
@@ -117,33 +68,8 @@ struct Inner_matmul_neon[
         tile_n_idx: Int,
         c_bound: StaticIntTuple[2],
     ):
-        """Utility function on the inner loop. Stores the value of a local c
-        buffer to the corresponding position in the output buffer space.
-
-        Args:
-            c_ptr: TODO.
-            c_stride: TODO.
-            c0_local: pre-allocated local buffer for c partial sums.
-            tile_n_idx: n coordinate within the current processing tile.
-            c_bound: TODO.
-        """
-        alias simd_size = config.simd_size
-        var c_local = rebind[
-            NDBuffer[
-                config.c_type,
-                2,
-                DimList(a_row_size, pack_inner_size),
-            ]
-        ](c0_local)
-        var c_ptr_loc = c_ptr.offset(tile_n_idx)
-
-        return LoadStoreOutputTile[
-            config.c_type, simd_size, a_row_size, pack_inner_size, False
-        ].run(
-            c_local,
-            c_ptr_loc,
-            c_stride,
-            min(c_bound[1] - tile_n_idx, pack_inner_size),
+        _store_c_tile_neon[a_row_size, pack_inner_size](
+            c_ptr, c_stride, c0_local, tile_n_idx, c_bound
         )
 
     fn _accumulate_lane[
