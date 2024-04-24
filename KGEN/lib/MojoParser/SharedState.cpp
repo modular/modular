@@ -47,6 +47,7 @@
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Support/EndianStream.h"
 #include "llvm/Support/Process.h"
+#include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
 #include <filesystem>
 
@@ -80,11 +81,146 @@ static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
     paths.push_back(path.str());
 }
 
+//===----------------------------------------------------------------------===//
+// BytecodeResolutionReferenceWalker
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This class defines an attribute and type walker that resolves references to
+/// decls defined within bytecode files.
+class BytecodeResolutionReferenceWalker {
+public:
+  BytecodeResolutionReferenceWalker(SharedState &shared) : shared(shared) {}
+
+  /// Set and save the context location for the current bytecode resolution.
+  llvm::SaveAndRestore<SMLoc> saveResolutionContextLoc(SMLoc loc) {
+    return llvm::SaveAndRestore<SMLoc>(this->resolutionContextLoc, loc);
+  }
+
+  /// Walk the given attribute or type element, resolving references found
+  /// within.
+  template <typename T>
+  WalkResult walk(T element) {
+    const void *key = element.getAsOpaquePointer();
+
+    // Check if we've already walk this element before.
+    auto it = visitedAttrTypes.find(key);
+    if (it != visitedAttrTypes.end())
+      return it->second;
+
+    // Walk this element, bailing if skipped or interrupted.
+    WalkResult walkResult = processBytecodeReferences(element);
+    if (walkResult.wasInterrupted())
+      return visitedAttrTypes[key] = WalkResult::interrupt();
+    if (walkResult.wasSkipped())
+      return WalkResult::advance();
+
+    // Walk the sub-elements, checking for bytecode references.
+    WalkResult result = WalkResult::advance();
+    auto walkFn = [&](auto element) {
+      if (element && !result.wasInterrupted())
+        result = walk(element);
+    };
+    element.walkImmediateSubElements(walkFn, walkFn);
+
+    visitedAttrTypes.try_emplace(key, WalkResult::advance());
+    return result.wasInterrupted() ? result : WalkResult::advance();
+  }
+  void walkRange(TypeRange types) {
+    for (Type type : types)
+      walk(type);
+  }
+
+private:
+  /// Given a symbol reference, fully resolve the parents of the symbol assuming
+  /// that the parent references do not contain any mangling.
+  ASTDecl *resolveRefParentDecl(SharedState &shared, SymbolRefAttr symbol) {
+    StringAttr rootAttr = symbol.getRootReference();
+    auto nestedRefs = symbol.getNestedReferences().drop_back();
+    auto it = resolvedSymbolParents.find({rootAttr, nestedRefs});
+    if (it != resolvedSymbolParents.end())
+      return it->second;
+
+    // Resolve the top-level container for the reference. This should be a
+    // package or module.
+    ASTDecl *decl = &shared.importModule(rootAttr, /*currentPackage=*/nullptr,
+                                         resolutionContextLoc);
+    if (decl->isErroneous() ||
+        failed(shared.declResolver->resolveFully(*decl, resolutionContextLoc)))
+      return {};
+    for (FlatSymbolRefAttr name : nestedRefs) {
+      if (!(decl = shared.lookupAndResolveMangledDecl(
+                name.getAttr(), resolutionContextLoc, *decl,
+                DeclResolvedness::fully)))
+        return {};
+    }
+    resolvedSymbolParents.try_emplace({rootAttr, nestedRefs}, decl);
+    return decl;
+  }
+
+  /// Resolve the reference to a bytecode decl represented by the given symbol.
+  ASTDecl *resolveBytecodeReferenceSignature(SharedState &shared,
+                                             SymbolRefAttr symbol) {
+    ASTDecl *moduleDecl = resolveRefParentDecl(shared, symbol);
+    if (!moduleDecl)
+      return nullptr;
+    return shared.lookupAndResolveMangledDecl(symbol.getLeafReference(),
+                                              resolutionContextLoc, *moduleDecl,
+                                              DeclResolvedness::signature);
+  }
+
+  /// Process the given attributes and types for bytecode references.
+  WalkResult processBytecodeReferences(Attribute attr) {
+    return TypeSwitch<Attribute, WalkResult>(attr)
+        .Case([&](SymbolConstantAttr ref) {
+          ASTDecl *decl =
+              resolveBytecodeReferenceSignature(shared, ref.getSymbol());
+          if (!decl)
+            return failure();
+
+          // Don't fully resolve containers, they'll get resolved if something
+          // is needed from within them.
+          if (isa_and_nonnull<FileModuleOp, PackageOp, StructDeclOp,
+                              TraitDeclOp>(decl->getIfOperation()))
+            return mlir::success();
+
+          // Fully resolve every other decl.
+          return shared.declResolver->resolveFully(*decl, resolutionContextLoc);
+        })
+        .Default(WalkResult::advance());
+  }
+  WalkResult processBytecodeReferences(Type type) {
+    return TypeSwitch<Type, WalkResult>(type)
+        .Case<AnyStructType, DeclRefType, TraitType>([&](auto ref) {
+          return success(
+              resolveBytecodeReferenceSignature(shared, ref.getSymbol()));
+        })
+        .Default(WalkResult::advance());
+  }
+
+  /// The parent shared state.
+  SharedState &shared;
+  /// A mapping from the parent reference of a SymbolRefAttr to the
+  /// corresponding resolved ASTDecl.
+  DenseMap<std::pair<Attribute, ArrayRef<FlatSymbolRefAttr>>, ASTDecl *>
+      resolvedSymbolParents;
+  /// The current bytecode resolution context location.
+  SMLoc resolutionContextLoc;
+  /// The set of cached attributes/types from which nested references have
+  /// already been either successfully or erroneously resolved.
+  DenseMap<const void *, WalkResult> visitedAttrTypes;
+};
+} // namespace
+
+//===----------------------------------------------------------------------===//
+// SharedState
+//===----------------------------------------------------------------------===//
+
 struct SharedState::Impl {
   Impl(SharedState &shared)
       : sourceNames(shared),
-        bytecodeParserContext(shared.getContext(), /*verifyAfterParse=*/false) {
-  }
+        bytecodeParserContext(shared.getContext(), /*verifyAfterParse=*/false),
+        bytecodeRefResolutionWalker(shared) {}
   virtual ~Impl() = default;
 
   /// This MLIR block is owned by SharedState, and vended to clients that have a
@@ -172,6 +308,9 @@ struct SharedState::Impl {
   /// This caches non-trivial implicit convertibility checks from one type to
   /// another.
   DenseMap<std::pair<Type, Type>, bool> cachedImplicitConvertibility;
+
+  /// An attribute walker used to resolve bytecode references.
+  BytecodeResolutionReferenceWalker bytecodeRefResolutionWalker;
 };
 
 SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
@@ -1204,75 +1343,12 @@ SharedState::lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
   return nullptr;
 }
 
-/// Builds an attribute/type walker to resolve references originating from
-/// bytecode decls.
-static mlir::AttrTypeWalker
-buildBytecodeDeclReferenceResolver(SharedState &shared, ASTDecl &decl) {
-  mlir::AttrTypeWalker walker;
-  SMLoc loc = decl.getLoc();
-
-  // Given a symbol reference, this functor fully resolves the parents of the
-  // symbol assuming that the parent references do not contain any mangling.
-  auto resolveParents = [&shared, loc](SymbolRefAttr symbol) -> ASTDecl * {
-    // Resolve the top-level container for the reference. This should be a
-    // package or module.
-    StringRef moduleName = symbol.getRootReference();
-    ASTDecl *decl =
-        &shared.importModule(moduleName, /*currentPackage=*/nullptr, loc);
-    if (decl->isErroneous() ||
-        failed(shared.declResolver->resolveFully(*decl, loc)))
-      return {};
-    ArrayRef<FlatSymbolRefAttr> nestedRefs = symbol.getNestedReferences();
-    for (FlatSymbolRefAttr name : nestedRefs.drop_back()) {
-      if (!(decl = shared.lookupAndResolveMangledDecl(
-                name.getAttr(), loc, *decl, DeclResolvedness::fully)))
-        return {};
-    }
-    return decl;
-  };
-
-  walker.addWalk([=, &shared](SymbolConstantAttr funcRef) -> WalkResult {
-    ASTDecl *moduleDecl = resolveParents(funcRef.getSymbol());
-    if (!moduleDecl)
-      return WalkResult::interrupt();
-    if (shared.lookupAndResolveMangledDecl(
-            funcRef.getSymbol().getLeafReference(), loc, *moduleDecl,
-            DeclResolvedness::fully))
-      return WalkResult::advance();
-    return WalkResult::interrupt();
-  });
-
-  auto visitTypeRef = [=, &shared](auto typeRef) -> WalkResult {
-    ASTDecl *moduleDecl = resolveParents(typeRef.getSymbol());
-    if (!moduleDecl)
-      return WalkResult::interrupt();
-    // Resolve the base type.
-    StringAttr leaf = typeRef.getSymbol().getLeafReference();
-    if (!shared.lookupAndResolveMangledDecl(leaf, loc, *moduleDecl,
-                                            DeclResolvedness::signature))
-      return WalkResult::interrupt();
-    return WalkResult::advance();
-  };
-
-  walker.addWalk([=](DeclRefType typeRef) { return visitTypeRef(typeRef); });
-  walker.addWalk([=](AnyStructType typeRef) { return visitTypeRef(typeRef); });
-  walker.addWalk([=](TraitType typeRef) { return visitTypeRef(typeRef); });
-
-  return walker;
-}
-
 LogicalResult
 SharedState::resolveDeclFromBytecode(ASTDecl &decl,
                                      DeclResolvedness resolvedness) {
   Operation *declOp = decl.getIfOperation();
-
-  // Collect the referenced types that need to be resolved.
-  mlir::AttrTypeWalker typeWalker =
-      buildBytecodeDeclReferenceResolver(*this, decl);
-  auto resolveTypes = [&](TypeRange types) {
-    for (Type type : types)
-      typeWalker.walk<mlir::WalkOrder::PreOrder>(type);
-  };
+  auto &refWalker = getImpl().bytecodeRefResolutionWalker;
+  auto savedContextLoc = refWalker.saveResolutionContextLoc(decl.getLoc());
 
   // Handle resolving the signature of the decl.
   if (decl.resolvedness < DeclResolvedness::signature) {
@@ -1284,18 +1360,15 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               declResolver->declForFuncSymbol[decl.getSymbolRef()] = &decl;
 
               // Resolve the references from the signature.
-              typeWalker.walk<mlir::WalkOrder::PreOrder>(
-                  declOp->getAttrDictionary());
+              refWalker.walk(declOp->getAttrDictionary());
               return success();
             })
             .Case([&](StructDeclOp structOp) {
               // Resolve the types of any parameters.
-              typeWalker.walk<mlir::WalkOrder::PreOrder>(
-                  structOp.getParamsAttr());
-              typeWalker.walk<mlir::WalkOrder::PreOrder>(
-                  structOp.getParentTypesAttr());
+              refWalker.walk(structOp.getParamsAttr());
+              refWalker.walk(structOp.getParentTypesAttr());
               if (TypeAttr nmTarget = structOp.getNonmaterializableTargetAttr())
-                typeWalker.walk<mlir::WalkOrder::PreOrder>(nmTarget);
+                refWalker.walk(nmTarget);
               return success();
             })
             .Case([&](TraitDeclOp traitOp) {
@@ -1311,16 +1384,31 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               return mlir::success();
             })
             .Case([&](GlobalVarDeclOp varDecl) {
-              typeWalker.walk<mlir::WalkOrder::PreOrder>(varDecl.getType());
+              refWalker.walk(varDecl.getType());
               return mlir::success();
             })
             .Case([&](AliasDeclOp aliasDecl) {
-              typeWalker.walk<mlir::WalkOrder::PreOrder>(aliasDecl.getType());
-              typeWalker.walk<mlir::WalkOrder::PreOrder>(aliasDecl.getValue());
+              refWalker.walk(aliasDecl.getType());
+              refWalker.walk(aliasDecl.getValue());
               return mlir::success();
             })
             .Case([&](StructFieldOp field) {
-              typeWalker.walk<mlir::WalkOrder::PreOrder>(field.getType());
+              refWalker.walk(field.getType());
+              return mlir::success();
+            })
+            .Case([&](PackageOp packageOp) {
+              // Fully resolve any dependencies of the package.
+              if (LinkDependencyArrayAttr deps =
+                      packageOp.getDependenciesAttr()) {
+                for (FlatSymbolRefAttr dep : deps) {
+                  ASTDecl &depDecl =
+                      importModule(dep.getValue(), /*currentPackage=*/nullptr,
+                                   decl.getLoc());
+                  if (failed(declResolver->resolve(
+                          depDecl, DeclResolvedness::signature, decl.getLoc())))
+                    return failure();
+                }
+              }
               return mlir::success();
             })
             .Default([](auto) { return mlir::success(); });
@@ -1356,10 +1444,10 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
     for (Region &region : op->getRegions())
       for (Block &block : region)
-        resolveTypes(block.getArgumentTypes());
-    resolveTypes(op->getOperandTypes());
-    resolveTypes(op->getResultTypes());
-    typeWalker.walk<mlir::WalkOrder::PreOrder>(op->getAttrDictionary());
+        refWalker.walkRange(block.getArgumentTypes());
+    refWalker.walkRange(op->getOperandTypes());
+    refWalker.walkRange(op->getResultTypes());
+    refWalker.walk(op->getAttrDictionary());
     return mlir::success();
   };
 
@@ -1382,19 +1470,8 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
   // If this decl is a package, this is its corresponding module state.
   ModuleState *packageState = nullptr;
-  if (auto declPackage = dyn_cast<PackageOp>(declOp)) {
+  if (auto declPackage = dyn_cast<PackageOp>(declOp))
     packageState = impl->moduleStates[&decl];
-
-    // Fully resolve any dependencies of the package.
-    if (LinkDependencyArrayAttr deps = declPackage.getDependenciesAttr()) {
-      for (FlatSymbolRefAttr dep : deps) {
-        ASTDecl *depDecl = &importModule(
-            dep.getValue(), /*currentPackage=*/nullptr, decl.getLoc());
-        if (failed(declResolver->resolveFully(*depDecl, decl.getLoc())))
-          return failure();
-      }
-    }
-  }
 
   // Materialize the body of the decl.
   if (bytecodeReader->isMaterializable(declOp)) {
@@ -1467,7 +1544,7 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
   // After processing the region, make sure any non-signature attributes get
   // resolved.
-  typeWalker.walk<mlir::WalkOrder::PreOrder>(declOp->getAttrDictionary());
+  refWalker.walk(declOp->getAttrDictionary());
   return success();
 }
 
