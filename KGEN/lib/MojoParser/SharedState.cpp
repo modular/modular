@@ -933,12 +933,6 @@ ASTType SharedState::getOwnedKwargsDictType(llvm::SMLoc loc) {
   return lookupNamedType("OwnedKwargsDict", collectionsModule, loc);
 }
 
-ASTType SharedState::getBuiltinSourceLocationType(llvm::SMLoc loc) {
-  ASTDecl &locationModule =
-      importModule("builtin._location", /*currentPackage=*/nullptr, loc);
-  return lookupNamedType("_SourceLocation", locationModule, loc);
-}
-
 ASTType SharedState::getBuiltinCaptureListType(llvm::SMLoc loc) {
   ASTDecl &closureModule =
       importModule("builtin._closure", /*currentPackage=*/nullptr, loc);

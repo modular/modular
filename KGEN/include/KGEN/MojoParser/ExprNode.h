@@ -64,9 +64,8 @@ public:
     kGetAddressAsOwned,        // __get_address_as_owned_value(x)
     kLifetimeOf,               // __lifetime_of(x)
     kTypeOf,                   // __type_of(x)
-    kSourceLocation,           // __source_location()
     kFirstMagicFunction = kGetMValueAsLitRef,
-    kLastMagicFunction = kSourceLocation,
+    kLastMagicFunction = kTypeOf,
 
     // Prefix and Postfix unary expressions.
     kNeg,      // -x
