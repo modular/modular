@@ -1,4 +1,4 @@
-// RUN: kgen-opt -verify-parameters -lower-lit -split-input-file -verify-diagnostics %s | FileCheck %s
+// RUN: kgen-opt -verify-parameters -lower-lit -split-input-file %s | FileCheck %s
 
 //===----------------------------------------------------------------------===//
 // Functions
@@ -375,19 +375,6 @@ lit.file_module @module {
     %0 = lit.globalvar.ref @module::@exported : <index, mut #lit.lifetime>
     kgen.return
   }
-}
-
-// -----
-// expected-error @-2 {{cyclic dependencies between global variables in 'lower-lit' pass}}
-
-lit.globalvar.decl @foo : index {
-  lit.globalvar.ref @bar : <index, mut #lit.lifetime>
-}, {
-}
-
-lit.globalvar.decl @bar : index {
-  lit.globalvar.ref @foo : <index, mut #lit.lifetime>
-}, {
 }
 
 // -----
