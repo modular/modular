@@ -82,7 +82,7 @@ fn create_buffer_ref_async(
     runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
 ):
     external_call["KGEN_CompilerRT_CreateAsyncBufferRef", NoneType](
-        value.ref, value.size, value.alignment, async_ptr, runtime
+        value.ref, value.size, async_ptr, runtime
     )
 
 
