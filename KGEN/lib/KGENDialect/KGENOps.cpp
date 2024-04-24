@@ -919,6 +919,19 @@ ErrorTreeOrSuccess CreateClosureOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
+// SourceLocOp
+//===----------------------------------------------------------------------===//
+
+static ParseResult parseIntProperty(OpAsmParser &parser, int64_t &value) {
+  return parser.parseInteger(value);
+}
+
+static void printIntProperty(OpAsmPrinter &printer, Operation *op,
+                             int64_t value) {
+  printer << value;
+}
+
+//===----------------------------------------------------------------------===//
 // GlobalOp
 //===----------------------------------------------------------------------===//
 

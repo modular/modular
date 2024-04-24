@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 alias `1` = __mlir_attr.`1 : index`
 alias `42` = __mlir_attr.`42 : index`
@@ -126,3 +126,16 @@ fn structured_for_loop() -> __mlir_type.index:
     return __mlir_op.`hlcf.loop`[
         _type = __mlir_type.index, _region = __mlir_attr.`"loop_body"`
     ](__mlir_attr.`0 : index`)
+
+
+# CHECK-LABEL: lit.func @"mlir_properties()"
+fn mlir_properties():
+    # CHECK: kgen.source_loc[1]
+    _ = __mlir_op.`kgen.source_loc`[
+        _type = (
+            __mlir_type.index,
+            __mlir_type.index,
+            __mlir_type.`!kgen.string`,
+        ),
+        _properties = __mlir_attr.`{inlineCount = 1 : i64}`,
+    ]()

@@ -1396,6 +1396,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
 
   // Process the attributes and figure out the result type if specified.
   bool hadTypeSpec = false;
+  std::optional<Attribute> propsAttr = std::nullopt;
   for (auto &attr : unboundOp.getAttrs()) {
     if (attr.getName() == "_type") {
       // We expect either a single type, `None`, or a `Tuple` of types.
@@ -1477,6 +1478,10 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
       state.addRegion(std::move(region));
       continue;
     }
+    if (attr.getName() == "_properties") {
+      propsAttr = attr.getValue();
+      continue;
+    }
     state.addAttributes(attr);
   }
 
@@ -1542,6 +1547,14 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
   }
 
   Operation *resultOp = emitter.builder->create(state);
+
+  // Set the properties if needed. We do this here, because errors result in a
+  // crash in the op builder if we simply set state.propertiesAttr.
+  if (propsAttr) {
+    if (failed(resultOp->setPropertiesFromAttribute(
+            *propsAttr, [&]() { return resultOp->emitError(); })))
+      return {};
+  }
 
   // Explicitly run the verifier on the new operation so we make sure to
   // catch problems early.
