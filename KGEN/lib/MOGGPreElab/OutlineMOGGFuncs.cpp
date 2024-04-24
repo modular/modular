@@ -290,7 +290,7 @@ public:
 
     for (GeneratorOp kernel : mod.getOps<GeneratorOp>()) {
       // Skip non-kernels.
-      if (!kernel->hasAttr("_sliced"))
+      if (!(kernel->hasAttr("_sliced") || kernel->hasAttr("_alloc")))
         continue;
 
       // Pull the lambda names off the kernel so we can find their decl in the

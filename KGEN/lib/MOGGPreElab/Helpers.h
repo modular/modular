@@ -55,6 +55,24 @@ bool isTensor(KGEN::LIT::DeclRefType maybeTensor) {
   return false;
 }
 
+[[maybe_unused]] bool
+isExtensibilityTensor(KGEN::LIT::DeclRefType maybeTensor) {
+  // Look at the top level symbol name, it is structured like
+  // Folder::File::ClassName.
+  ArrayRef<FlatSymbolRefAttr> attr =
+      maybeTensor.getSymbol().getNestedReferences();
+  if (attr.size() < 2)
+    return false;
+
+  if (maybeTensor.getSymbol().getRootReference() != "extensibility")
+    return false;
+
+  StringRef className = attr[attr.size() - 1].getValue();
+  if (className == "Tensor")
+    return true;
+  return false;
+}
+
 std::optional<LIT::LITSignatureType> getSourceSig(GeneratorOp gen) {
   std::optional<PreservedAttr> sig = gen.getSourceSignature();
   if (!sig.has_value())

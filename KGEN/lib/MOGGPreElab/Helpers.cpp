@@ -11,6 +11,50 @@
 
 namespace M::KGEN::MOGGPreElab {
 
+// Returns true if all inputs are extensibility tensors.
+static bool isExtensibilityKernel(GeneratorOp generator) {
+  std::optional<LIT::LITSignatureType> litSig = getSourceSig(generator);
+  if (!litSig.has_value())
+    return false;
+
+  for (Type metadata : litSig->getValues().getInputs()) {
+    // Tensors are expected to be passed as references.
+    auto asLitRef = dyn_cast<LIT::RefType>(metadata);
+    if (!asLitRef)
+      return false;
+
+    auto asDeclRef =
+        dyn_cast<KGEN::LIT::DeclRefType>(asLitRef.getElementType());
+    if (!asDeclRef)
+      return false;
+
+    if (!isExtensibilityTensor(asDeclRef))
+      return false;
+  }
+
+  return true;
+}
+
+static void annotateExtensibilityKernels(GeneratorOp func,
+                                         SmallVector<NamedAttribute> &newAttrs,
+                                         OpBuilder &b) {
+  // If we are a kernel and we are using the extensibility tensors we should
+  // mark ourselves as allocating.
+  if (isExtensibilityKernel(func)) {
+    SmallVector<int64_t> allocs;
+
+    // Mark any by ref outputs as allocating.
+    for (auto [idx, convention] :
+         llvm::enumerate(func.getSignature().getArgConventions())) {
+      if (convention == KGEN::ArgConvention::ByRefResult)
+        allocs.push_back(idx);
+    }
+
+    newAttrs.push_back(
+        NamedAttribute{b.getStringAttr("_alloc"), b.getIndexArrayAttr(allocs)});
+  }
+}
+
 bool stripDecorators(GeneratorOp func) {
   SmallVector<TypedAttr> decoratorsToCopy;
   OpBuilder builder{func.getContext()};
@@ -108,6 +152,13 @@ bool stripDecorators(GeneratorOp func) {
       decoratorsToCopy.pop_back();
       areAnyKernels = true;
     }
+  }
+
+  // Implicity export all kernels and also add annotations to mark extensibility
+  // types.
+  if (areAnyKernels) {
+    annotateExtensibilityKernels(func, newAttrs, builder);
+    func.setExportKind(ExportKind::Exported);
   }
 
   // We don't need to do anything if we don't have any decorators.
