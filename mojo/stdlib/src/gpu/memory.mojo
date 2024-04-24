@@ -86,6 +86,46 @@ fn async_copy[
 
 
 @always_inline
+fn async_copy[
+    size: Int, type: AnyRegType
+](
+    src: Pointer[type, AddressSpace.GLOBAL],
+    dst: Pointer[type, AddressSpace.SHARED],
+    src_size: Int32,
+):
+    """Asynchronously copy `size` amount of bytes from src global memory address
+    to shared memory `dst` address.
+
+    Parameters:
+        size: Number of bytes to copy.
+        type: The pointer type.
+
+    Args:
+        src: Global memory pointer.
+        dst: Shared memory pointer.
+        src_size: Size of data transferred from src. If `src_size` < `size`,
+            the remainder is filled with zero. It's undefined if `src_size`
+            is greater.
+    """
+    # TODO: Constrained on device capability.
+    constrained[size == 4 or size == 8 or size == 16]()
+
+    @parameter
+    if size == 4:
+        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.4.s", NoneType](
+            dst, src, src_size
+        )
+    elif size == 8:
+        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.8.s", NoneType](
+            dst, src, src_size
+        )
+    else:
+        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.16.s", NoneType](
+            dst, src, src_size
+        )
+
+
+@always_inline
 fn async_copy_commit_group():
     """Commits all prior initiated but uncommitted cp.async instructions into
     a cp.async-group.
