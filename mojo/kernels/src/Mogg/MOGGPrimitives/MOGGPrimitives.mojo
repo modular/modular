@@ -314,10 +314,10 @@ fn mgp_buffer_alloc_dynamic[
         )
 
 
-@mogg_register("mgp.cpu.tensor_spec.create")
+@mogg_register("mgp.tensor_spec.create")
 @always_inline
 @export
-fn mgp_tensor_spec_create_cpu[
+fn mgp_tensor_spec_create[
     bRawDType: UInt8,
     aRawDims: DimList,
     aRawDimsRank: Int,
@@ -336,7 +336,7 @@ fn mgp_tensor_spec_create_cpu[
     return TensorSpec(dType, shape)
 
 
-@mogg_register("mgp.cpu.tensor_spec.size")
+@mogg_register("mgp.tensor_spec.size")
 @always_inline
 @export
 fn mgp_tensor_spec_size(spec: TensorSpec) -> Int:
