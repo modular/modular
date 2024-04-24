@@ -258,19 +258,14 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size, size_t alignment,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsyncTensorSpec(void *data, ssize_t rank,
-                                      uint8_t raw_dtype,
+KGEN_CompilerRT_CreateAsyncTensorSpec(LLCLWrapper<TensorSpec> specPtr,
                                       LLCLWrapper<AnyAsyncValueRef> async,
                                       LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
   llvm::SmallVector<size_t> dims;
-  auto shape_ptr = reinterpret_cast<ssize_t *>(data);
-  for (int i = 0; i < rank; i++) {
-    dims.push_back(shape_ptr[i]);
-  }
-  value = AnyAsyncValueRef::createReady<TensorSpec>(
-      runtime, TensorSpec(dims, DType(raw_dtype)));
+  TensorSpec &spec = unwrap(specPtr);
+  value = AnyAsyncValueRef::createReady<TensorSpec>(runtime, TensorSpec(spec));
 }
 
 //===----------------------------------------------------------------------===//
