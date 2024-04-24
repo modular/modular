@@ -17,7 +17,6 @@ from python import Python
 
 from layout import *
 from layout.layout_tensor import LayoutTensor, TensorBuilder
-from layout.int_tuple import int
 
 
 alias M = 512  # rows of A and C
