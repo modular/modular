@@ -58,16 +58,6 @@ private:
   SymbolTableCollection &symbolTable;
 };
 
-namespace KGEN {
-//===----------------------------------------------------------------------===//
-// Source location utilities
-//===----------------------------------------------------------------------===//
-
-/// Extract the original source location from a call location, taking into
-/// account debuginfo and other structure within locations.
-FileLineColLoc extractSourceLoc(Location callLoc);
-} // namespace KGEN
-
 } // namespace M
 
 //===----------------------------------------------------------------------===//

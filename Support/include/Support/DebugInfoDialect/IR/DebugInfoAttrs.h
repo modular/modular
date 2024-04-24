@@ -159,6 +159,11 @@ WalkResult walkLocation(Location loc, LocWalkPolicy policy,
 WalkResult walkScope(Location loc, LocWalkPolicy policy,
                      function_ref<WalkResult(DIScopeAttr)> walkFn);
 
+/// Extract the original source location from a call location, taking into
+/// account debuginfo and other structure within locations. Returns null if a
+/// FileLineColLoc cannot be found.
+FileLineColLoc extractSourceLoc(Location callLoc);
+
 /// Extract the first scope found in a location based on a LocWalkPolicy.
 template <typename ScopeT>
 ScopeT extractScopeFrom(Location loc, LocWalkPolicy policy) {

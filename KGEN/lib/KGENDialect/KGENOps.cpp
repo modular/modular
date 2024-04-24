@@ -931,16 +931,6 @@ static void printIntProperty(OpAsmPrinter &printer, Operation *op,
   printer << value;
 }
 
-FileLineColLoc KGEN::extractSourceLoc(Location callLoc) {
-  Location resolvedLoc = callLoc;
-  DebugInfo::walkLocation(callLoc, DebugInfo::LocWalkPolicy::CalleeOnly,
-                          [&](Location loc) {
-                            resolvedLoc = loc;
-                            return mlir::WalkResult::advance();
-                          });
-  return resolvedLoc->findInstanceOf<FileLineColLoc>();
-}
-
 /// Core implementation for interpreting kgen.source_loc.
 static SmallVector<Attribute> sourceLocInterpretImpl(Operation *callOp,
                                                      MLIRContext *ctx) {
@@ -948,7 +938,7 @@ static SmallVector<Attribute> sourceLocInterpretImpl(Operation *callOp,
   auto strType = b.getType<StringType>();
 
   if (callOp) {
-    FileLineColLoc fileLoc = extractSourceLoc(callOp->getLoc());
+    FileLineColLoc fileLoc = DebugInfo::extractSourceLoc(callOp->getLoc());
     return {b.getIndexAttr(fileLoc.getLine()),
             b.getIndexAttr(fileLoc.getColumn()),
             StringAttr::get(fileLoc.getFilename().getValue(), strType)};
