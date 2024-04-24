@@ -19,6 +19,9 @@ add_modular_unittest(
   SampleTest.cpp
   Support.cpp
 
+  DEPENDS
+  mojo-sdk
+
   LINK_LIBS PRIVATE
   mojo-lsp-test-client
 )
