@@ -23,5 +23,5 @@ module attributes {onnx.ir_version = 7 : si64} {
 // CHECK-METRICS-DAG: max.engine.failure.compilation_error
 // CHECK-METRICS-DAG: value{{.*}}: 1
 
-// CHECK-LOGS: max.engine.error_code: max.engine.failure.graph_lowering_error
-// CHECK-LOGS: failed to legalize operation 'monnx.rlu_v14' that was explicitly marked illegal
+// CHECK-LOGS-DAG: max.engine.error_code: max.engine.failure.graph_lowering_error
+// CHECK-LOGS-DAG: failed to legalize operation 'monnx.rlu_v14' that was explicitly marked illegal
