@@ -30,8 +30,12 @@ LifetimeTrackable::LifetimeTrackable(Value v) {
     return;
 
   // VarDeclOp is uninit and ends that way.
-  if (auto varLet = v.getDefiningOp<VarDeclOp>()) {
-    name = varLet.getNameAttr();
+  if (auto varDecl = v.getDefiningOp<VarDeclOp>()) {
+    // Implicit temporaries get names like "*anonymous", don't print that!
+    if (varDecl.getKind() == VarDeclKind::Synthesized)
+      name = StringAttr::get(v.getContext(), "(expression temporary)");
+    else
+      name = varDecl.getNameAttr();
     isIndirect = true;
     startsUninit = true;
     endInitState = EndsUninit;
