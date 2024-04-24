@@ -617,6 +617,10 @@ fn testDependentType[
 ]():
     pass
 
+@no_inline
+fn dont_interpret():
+  pass
+
 # CHECK-LABEL: lit.func @"testParameterEvaluator()"
 fn testParameterEvaluator():
   # CHECK-NEXT: lit.alias.decl *"x{{.*}}" = <1>
@@ -632,6 +636,9 @@ fn testParameterEvaluator():
   Abstraction[1].pull[2](y)
   # CHECK-NEXT: lit.call {{.*}}@"testDependentType{{.*}}"<:!Int {1}, :array<1, index> [0]>
   testDependentType[1, __mlir_attr.`#pop.array<0> : !pop.array<1, index>`]()
+
+  # CHECK: lit.call {{.*}}dont_interpret
+  dont_interpret()
 
 
 fn takeAbstraction2(value: Abstraction[2]):

@@ -82,7 +82,8 @@ ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
     return Error("failed to resolve function signature");
 
   auto func = cast<LIT::FuncOp>(*decl);
-  if (func.getInlineLevel() == InlineLevel::Automatic)
+  if (func.getInlineLevel() == InlineLevel::Automatic ||
+      func.getInlineLevel() == InlineLevel::Never)
     return Error("function is not always_inline");
   LITSignatureType fullSig = func.getFullSignature();
   if (!fullSig.getParamTypes().empty() ||
