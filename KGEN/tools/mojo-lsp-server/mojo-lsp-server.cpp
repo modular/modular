@@ -40,8 +40,11 @@ int main(int argc, char **argv) {
   llvm::cl::opt<bool> mojoTest{
       "mojo-test",
       llvm::cl::desc(
-          "Abbreviation for -input-style=delimited -pretty -log=verbose. "
-          "Intended to simplify mojo tests"),
+          "This flags sets up the server in test mode. It effectively sets the "
+          "options `-input-style=delimited -pretty -log=verbose`, and "
+          "indicates the LSP server to run in single-thread mode and to ensure "
+          "that all the requests are resolved once the shutdown packet is "
+          "received, to avoid early invalidations."),
       llvm::cl::init(false),
   };
   llvm::cl::opt<Logger::Level> logLevel{

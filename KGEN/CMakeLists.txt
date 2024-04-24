@@ -66,6 +66,7 @@ add_subdirectory(tools/kgen-reduce)
 add_subdirectory(tools/kgen-translate)
 add_subdirectory(tools/llvm-module-split)
 add_subdirectory(tools/mojo-lsp-server)
+add_subdirectory(tools/mojo-lsp-test-client)
 
 add_subdirectory(tools/mojo-jupyter-executor)
 add_subdirectory(tools/mojo-repl-entry-point)
