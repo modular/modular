@@ -360,13 +360,15 @@ struct MOTensor(CollectionElement):
     """The element type of the tensor value."""
     var dims: List[Dim]
     """The dimensions of the tensor value, if it is known-rank."""
+    var ranked: Bool
+    """Whether the tensor has a known static rank or not."""
 
     # ===------------------------------------------------------------------=== #
     # Constructors
     # ===------------------------------------------------------------------=== #
 
     fn __init__(inout self, dtype: ElementType, *dims: Dim):
-        """Constructs a tensor type.
+        """Constructs a ranked tensor type.
 
         Args:
             dtype: The element type of the tensor data.
@@ -377,6 +379,33 @@ struct MOTensor(CollectionElement):
         self.dims = List[Dim](capacity=len(dims))
         for d in dims:
             self.dims.append(d[])
+        self.ranked = True
+
+    fn __init__(inout self, dtype: ElementType, ranked: Bool):
+        """Constructs a fully dynamic tensor or 0-dimensional tensor type.
+
+        Args:
+            dtype: The element type of the tensor data.
+            ranked: If False, create a fully dynamic tensor.
+                    If True, create a rank 0 tensor. This is the same as calling
+                    the constructor with just a dtype argument.
+        """
+        self.dtype = dtype
+        self.dims = List[Dim]()
+        self.ranked = ranked
+
+    fn __init__(inout self, dtype: ElementType, dim: Int):
+        """Constructs a rank-1 static tensor type.
+
+        This is a temporary overload that exists to prevent an overload
+        ambiguity via implicit conversion to a DynamicTensor. It's functionally
+        the same as the ranked tensor variadic constructor.
+
+        Args:
+            dtype: The element type of the tensor data.
+            dim: The static shape of the singular dimension.
+        """
+        self.__init__(dtype, Dim(dim))
 
     fn __init__(inout self, dtype: ElementType, dims: List[Dim]):
         """Constructs a ranked tensor type.
@@ -388,6 +417,7 @@ struct MOTensor(CollectionElement):
         """
         self.dtype = dtype
         self.dims = dims
+        self.ranked = True
 
     # ===------------------------------------------------------------------=== #
     # Auxiliary factories
@@ -423,7 +453,7 @@ struct MOTensor(CollectionElement):
             ctx,
             self.dtype.to_mlir(ctx),
             dims,
-            ranked=True,
+            self.ranked,
         )
 
     @staticmethod
@@ -438,28 +468,28 @@ struct MOTensor(CollectionElement):
         """
         var dtype = _c.tensor_type_get_dtype(t)
         var ranked = _c.tensor_type_is_ranked(t)
-        if not ranked:
-            raise "Unranked tensor types are unsupported!"
-
-        var rank = _c.tensor_type_get_rank(t)
-        var dims = List[Dim](capacity=int(rank))
-        for i in range(rank):
-            var dim_attr = _c.tensor_type_get_dim(t, i)
-            var dim: Dim
-            if _c.dim_is_dynamic(dim_attr):
-                dim = Dim.dynamic()
-            elif _c.dim_is_static(dim_attr):
-                dim = Dim.static(_c.dim_static_value(dim_attr))
-            elif _c.dim_is_symbolic(dim_attr):
-                dim = Dim.symbolic(str(_c.dim_symbolic_name(dim_attr)))
-            else:
-                debug_assert(
-                    _c.dim_is_symbolic_expression(dim_attr),
-                    "unknown dim variant",
-                )
-                raise "Unsupported dim type: symbolic expression"
-            dims.append(dim)
-        return Self(dtype, dims)
+        if ranked:
+            var rank = _c.tensor_type_get_rank(t)
+            var dims = List[Dim](capacity=int(rank))
+            for i in range(rank):
+                var dim_attr = _c.tensor_type_get_dim(t, i)
+                var dim: Dim
+                if _c.dim_is_dynamic(dim_attr):
+                    dim = Dim.dynamic()
+                elif _c.dim_is_static(dim_attr):
+                    dim = Dim.static(_c.dim_static_value(dim_attr))
+                elif _c.dim_is_symbolic(dim_attr):
+                    dim = Dim.symbolic(str(_c.dim_symbolic_name(dim_attr)))
+                else:
+                    debug_assert(
+                        _c.dim_is_symbolic_expression(dim_attr),
+                        "unknown dim variant",
+                    )
+                    raise "Unsupported dim type: symbolic expression"
+                dims.append(dim)
+            return Self(dtype, dims)
+        else:
+            return Self(dtype, ranked)
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -468,12 +498,15 @@ struct MOTensor(CollectionElement):
     fn is_static(self) -> Bool:
         """Checks whether the tensor type has a fully static shape or not.
 
-        A tensor must have all of its dimensions be `static` (or be 0-dimensional)
+        This is _not_ the same as `ranked`. A tensor must be both `ranked`
+        and have all of its dimensions be `static` (or be 0-dimensional)
         in order to be `static`.
 
         Returns:
             True if the tensor has a fully static shape, False otherwise.
         """
+        if not self.ranked:
+            return False
         for i in range(self.rank()):
             if self.dims[i].is_dynamic():
                 return False
@@ -504,6 +537,8 @@ struct MOTensor(CollectionElement):
         Raises:
             If the dimension is out-of-bounds, or if the tensor is unranked.
         """
+        if not self.ranked:
+            raise "Cannot get dim of unranked type"
         return self.dims[pos + (self.rank() if pos < 0 else 0)]
 
     fn __eq__(self, other: MOTensor) -> Bool:
@@ -518,11 +553,14 @@ struct MOTensor(CollectionElement):
         """
         if self.dtype.dtype != other.dtype.dtype:
             return False
-        if self.rank() != other.rank():
+        if self.ranked != other.ranked:
             return False
-        for i in range(self.rank()):
-            if self.dims[i] != other.dims[i]:
+        if self.ranked:
+            if self.rank() != other.rank():
                 return False
+            for i in range(self.rank()):
+                if self.dims[i] != other.dims[i]:
+                    return False
         return True
 
     # ===------------------------------------------------------------------=== #
@@ -536,8 +574,9 @@ struct MOTensor(CollectionElement):
         This is the number of elements the tensor will hold _during execution_,
         MOTensor doesn't actually hold any element values at all.
 
-        For any non-static tensor, ie. a tensor having any symbolic or dynamic
-        dimensions, the return value will be meaningless.
+        For any non-static tensor, ie. a tensor having dynamic rank
+        or having any symbolic or dynamic dimensions, the return value will
+        be meaningless.
 
         Returns:
             The number of elements the tensor contains.
@@ -559,7 +598,7 @@ struct MOTensor(CollectionElement):
         Returns:
             A new tensor type with the same shape, and the new element type.
         """
-        return Self(dtype, self.dims)
+        return Self(dtype, self.dims, self.ranked)
 
     fn parameters(self) -> Set[String]:
         var parameters = Set[String]()
@@ -587,7 +626,8 @@ struct MOList(CollectionElement):
     as `[batch, ?, 2, ?]`, holding dynamic dimensions for those that vary among
     its list elements.
 
-    Lists may not contain tensor elements of different ranks.
+    A list that can contain tensors of different ranks must be typed as holding
+    unranked tensors.
     """
 
     fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
@@ -718,14 +758,6 @@ struct TypeTuple(Sized):
     # ===------------------------------------------------------------------=== #
     # Basic constructors and accessors
     # ===------------------------------------------------------------------=== #
-
-    fn __init__(inout self, _empty: ListLiteral[]):
-        """Implicit conversion constructor for an empty TypeTuple.
-
-        Args:
-            _empty: Unused.
-        """
-        self.elts = List[AnyMOType]()
 
     fn __init__(inout self, *elts: AnyMOType):
         """Constructs a TypeTuple from any number of types.
