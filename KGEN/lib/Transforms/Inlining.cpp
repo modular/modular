@@ -540,35 +540,38 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   // Nuke debuginfo if inlining an `always_inline_no_debug` function, or if the
   // either the callee or caller lack debuginfo.
   bool stripDebugInfo = level == InlineLevel::AlwaysNoDebug ||
-                        !callee.getLocScope() || !caller.getLocScope() ||
-                        !updateDebugInfo;
+                        !callee.getLocScope() || !caller.getLocScope();
 
-  scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    // Erase `debuginfo.value` operations when inlining without debug info.
-    if (stripDebugInfo && isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
-      op->erase();
-      return WalkResult::skip();
-    }
-    if (updateDebugInfo && needsMangling) {
-      // Mangle locations.
-      op->setLoc(
-          cast<LocationAttr>(mangler.mangleRefsIn(LocationAttr(op->getLoc()))));
-    }
+  if (updateDebugInfo) {
+    scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+      // Erase `debuginfo.value` operations when inlining without debug info.
+      if (stripDebugInfo && isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
+        op->erase();
+        return WalkResult::skip();
+      }
+      if (needsMangling) {
+        // Mangle locations.
+        op->setLoc(cast<LocationAttr>(
+            mangler.mangleRefsIn(LocationAttr(op->getLoc()))));
+      }
 
-    DebugInfo::updateInlinedLoc(op, call.getLoc(), stripDebugInfo);
+      DebugInfo::updateInlinedLoc(op, call.getLoc(), stripDebugInfo);
 
-    if (isa<DebugInfo::SubprogramScoped>(op))
-      return WalkResult::skip();
+      if (isa<DebugInfo::SubprogramScoped>(op))
+        return WalkResult::skip();
 
-    if (auto sourceLocOp = dyn_cast<SourceLocOp>(op))
-      processSourceLocOp(sourceLocOp, call.getLoc(), b);
-
-    return WalkResult::advance();
-  });
+      return WalkResult::advance();
+    });
+  }
 
   // Handle all terminators.
   unsigned numReturns = 0;
   callee.getBodyRegion().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+    if (isa<SourceLocOp>(op)) {
+      processSourceLocOp(cast<SourceLocOp>(map.lookup(op)), call.getLoc(), b);
+      return WalkResult::advance();
+    }
+
     // Walk over nested functions. Control-flow does not cross them.
     if (isa<FuncInterface>(op))
       return WalkResult::skip();
@@ -588,7 +591,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
           declOp->setLoc(cast<LocationAttr>(
               mangler.mangleRefsIn(LocationAttr(declOp->getLoc()))));
         }
-        DebugInfo::updateInlinedLoc(declOp, call.getLoc(), stripDebugInfo);
+        if (updateDebugInfo)
+          DebugInfo::updateInlinedLoc(declOp, call.getLoc(), stripDebugInfo);
       }
     } else {
       ++numReturns;
@@ -600,7 +604,8 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
         breakOp->setLoc(cast<LocationAttr>(
             mangler.mangleRefsIn(LocationAttr(breakOp->getLoc()))));
       }
-      DebugInfo::updateInlinedLoc(breakOp, call.getLoc(), stripDebugInfo);
+      if (updateDebugInfo)
+        DebugInfo::updateInlinedLoc(breakOp, call.getLoc(), stripDebugInfo);
     }
     cloned->erase();
     return WalkResult::advance();
