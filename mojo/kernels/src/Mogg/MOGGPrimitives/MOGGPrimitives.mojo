@@ -42,22 +42,6 @@ struct BufferRefABI[type: DType]:
         self.alignment = alignment
 
 
-@register_passable("trivial")
-# TODO #38039: Remove this wrapper when we can pass TensorSpec directly
-struct TensorSpecABI[rank: Int]:
-    """Defines a `TensorSpecABI` struct that contains the shape/DType.
-    The purpose of this structure is to preserve information needed for the ABI interface
-    which needs this information for the subsequent unpacking/packing call.
-    """
-
-    var shape: StaticIntTuple[rank]
-    var dType: DType
-
-    fn __init__(inout self, shape: StaticIntTuple[rank], dType: DType):
-        self.shape = shape
-        self.dType = dType
-
-
 # ===----------------------------------------------------------------------===#
 # Async Packing/Unpacking functions
 # ===----------------------------------------------------------------------===#
@@ -108,21 +92,15 @@ fn create_buffer_ref_async(
 fn create_tensor_spec_async[
     rank: Int
 ](
-    spec: TensorSpecABI[rank],
+    spec: TensorSpec,
     async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
     runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
 ):
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
-    # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
-    # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
-    # TODO #38039: We should not need to allocate and free once we can pass TensorSpec
-    var shape_ptr = DTypePointer[DType.index].alloc(rank)
-    for i in range(rank):
-        shape_ptr[i] = spec.shape[i]
+    # and pass it back to C++
     external_call["KGEN_CompilerRT_CreateAsyncTensorSpec", NoneType](
-        shape_ptr, rank, spec.dType._as_i8(), async_ptr, runtime
+        Pointer.address_of(spec), async_ptr, runtime
     )
-    shape_ptr.free()
 
 
 @mogg_register("builtin.unpack_async")
@@ -147,6 +125,20 @@ fn unpack_buffer_data(
         "KGEN_CompilerRT_GetDataFromBuffer",
         __mlir_type.`!kgen.pointer<scalar<invalid>>`,
     ](async_ptr)
+
+
+@mogg_register("builtin.unpack_tensor_spec")
+@always_inline
+@export
+fn unpack_tensor_spec(
+    async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+) -> TensorSpec:
+    var raw_spec_ptr = external_call[
+        "KGEN_CompilerRT_GetValueFromAsync",
+        __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+    ](async_ptr)
+    var spec = Pointer(raw_spec_ptr).bitcast[TensorSpec]()
+    return spec[]
 
 
 # ===----------------------------------------------------------------------===#
@@ -323,13 +315,13 @@ fn mgp_buffer_alloc_static[
 
 
 @mogg_register("mgp.cpu.tensor_spec.create")
+@always_inline
 @export
 fn mgp_tensor_spec_create_cpu[
     bRawDType: UInt8,
     aRawDims: DimList,
     aRawDimsRank: Int,
-](*runtimeDims: Int) -> TensorSpecABI[aRawDimsRank]:
-    # TODO #38039: Cannot return a TensorSpec until KGENStubBuilder supports DPS for it
+](*runtimeDims: Int) -> TensorSpec:
     var dType = DType._from_ui8(bRawDType.value)
     var static_shape = IntList[aRawDims]()
     var shape = StaticIntTuple[aRawDimsRank]()
@@ -341,15 +333,14 @@ fn mgp_tensor_spec_create_cpu[
         else:
             shape[i] = runtimeDims[runtimeIndex]
             runtimeIndex = runtimeIndex + 1
-    return TensorSpecABI[aRawDimsRank](shape, dType)
+    return TensorSpec(dType, shape)
 
 
 @mogg_register("mgp.cpu.tensor_spec.size")
+@always_inline
 @export
-fn mgp_tensor_spec_size(raw_spec_ptr: DTypePointer[DType.int8]) -> Int:
-    # TODO #38039: Cannot return a TensorSpec until KGENStubBuilder supports DPS for it
-    var spec_ptr = raw_spec_ptr._as_scalar_pointer().bitcast[TensorSpec]()
-    return spec_ptr[].bytecount()
+fn mgp_tensor_spec_size(spec: TensorSpec) -> Int:
+    return spec.bytecount()
 
 
 @mogg_register("mgp.chain.create")
