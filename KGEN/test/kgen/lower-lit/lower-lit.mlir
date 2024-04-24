@@ -1,16 +1,17 @@
-// RUN: kgen-opt -lower-lit -split-input-file -verify-diagnostics %s | FileCheck %s
-
-// FIXME(https://github.com/modularml/modular/issues/28335): This file contains
-// many busted examples that don't pass -verify-parameters.  :-(
+// RUN: kgen-opt -verify-parameters -lower-lit -split-input-file -verify-diagnostics %s | FileCheck %s
 
 //===----------------------------------------------------------------------===//
 // Functions
 //===----------------------------------------------------------------------===//
 
+lit.func @callee[imm a, mut b]() {
+  kgen.return
+}
+
 // CHECK-LABEL: kgen.generator @calls
 lit.func @calls[imm a, mut b]<f: !lit.signature<[2]() -> ()>>(%arg0: !lit.signature<[2]() -> ()>) {
-  // CHECK: kgen.call @calls() : () -> ()
-  lit.call @calls[imm a, mut b]() : !lit.signature<[2]() -> ()>
+  // CHECK: kgen.call @callee() : () -> ()
+  lit.call @callee[imm a, mut b]() : !lit.signature<[2]() -> ()>
   // CHECK: kgen.call_param[() -> (): f]()
   lit.call[!lit.signature<[2]() -> ()>: f][imm a, mut b]()
   // CHECK: kgen.call_indirect %arg0() : () -> ()
@@ -64,7 +65,7 @@ lit.func @decorator() {
 // CHECK-LABEL: kgen.generator @decorated_fn
 lit.func @decorated_fn()
   // CHECK-NEXT: decorators <:() -> () @decorator>
-  decorators<:() -> () @decorator> {
+  decorators<:!lit.signature<() -> ()> @decorator> {
   kgen.return
 }
 
@@ -91,7 +92,7 @@ lit.func @generic_callee<T: type>(%p: !kgen.paramref<T> borrow){
 // CHECK-LABEL: @call_generic
 lit.func @call_generic(%p: index borrow) {
   // CHECK: kgen.call @generic_callee<:type index>({{.*}}) : (index borrow) -> ()
-  kgen.call @generic_callee<:type index>(%p) : !lit.signature<(index borrow) -> ()>
+  kgen.call @generic_callee<:type index>(%p) : !lit.signature<("p": index borrow) -> ()>
   kgen.return
 }
 
@@ -115,7 +116,7 @@ lit.struct.decl @StructWithNestedFn<a_param> {
       kgen.return
     }
     // CHECK: kgen.param.declare c: () -> () = <bind_signature(:<index>() -> () paramNestedFunc, 2)>
-    kgen.param.declare c: !lit.signature<() -> ()> = <bind_signature(:!lit.signature<<index>() -> ()> paramNestedFunc, 2)>
+    kgen.param.declare c: !lit.signature<() -> ()> = <bind_signature(:!lit.signature<<"c_param": index>() -> ()> paramNestedFunc, 2)>
 
     %idx0_0 = index.constant 0
     kgen.return %idx0_0 : index
@@ -188,22 +189,22 @@ lit.struct.decl @A {
 }
 
 // CHECK-LABEL: kgen.generator @"B::foo"
-// CHECK-NEXT: call_param[(!lit.declref<@A>) -> (): @"A::foo"]
+// CHECK-NEXT: call_param[(!lit.declref<@A> owned) -> (): @"A::foo"]
 
 // CHECK-LABEL: lit.struct.decl @B
 lit.struct.decl @B {
   lit.func @foo(%self: !lit.declref<@B>, %a: !lit.declref<@A>) {
-    kgen.call_param[(!lit.declref<@A>) -> (): @A::@foo](%a)
+    kgen.call_param[!lit.signature<("self": !lit.declref<@A>) -> ()>: @A::@foo](%a)
     kgen.return
   }
 }
 
 // CHECK-LABEL: kgen.generator @main
 lit.func @main(%a: !lit.declref<@A>, %b: !lit.declref<@B>) {
-  // CHECK-NEXT: call_param[(!lit.declref<@B>, !lit.declref<@A>) -> (): @"B::foo"]
-  kgen.call_param[(!lit.declref<@B>, !lit.declref<@A>) -> (): @B::@foo](%b, %a)
-  // CHECK-NEXT: constant: (!lit.declref<@A>) -> () = <@"A::foo">
-  %0 = kgen.param.constant: (!lit.declref<@A>) -> () = <@A::@foo>
+  // CHECK-NEXT: call_param[(!lit.declref<@B> owned, !lit.declref<@A> owned) -> (): @"B::foo"]
+  kgen.call_param[!lit.signature<("self": !lit.declref<@B>, "a": !lit.declref<@A>) -> ()>: @B::@foo](%b, %a)
+  // CHECK-NEXT: constant: (!lit.declref<@A> owned) -> () = <@"A::foo">
+  %0 = kgen.param.constant: !lit.signature<("self": !lit.declref<@A>) -> ()> = <@A::@foo>
   kgen.return
 }
 
@@ -221,8 +222,8 @@ lit.struct.decl @A<N> {
 
 // CHECK-LABEL: kgen.generator @main
 lit.func @main(%a: !lit.declref<@A<1>>) {
-  // CHECK-NEXT: call_param[(!lit.declref<@A<1>>) -> index: @"A::foo"<1, 2>]
-  %0 = kgen.call_param[(!lit.declref<@A<1>>) -> index: @A::@foo<1, 2>](%a)
+  // CHECK-NEXT: call_param[(!lit.declref<@A<1>> owned) -> index: @"A::foo"<1, 2>]
+  %0 = kgen.call_param[!lit.signature<("self": !lit.declref<@A<1>>) -> index>: @A::@foo<1, 2>](%a)
   kgen.return
 }
 
@@ -257,7 +258,7 @@ lit.struct.decl @A {
 // CHECK-LABEL: @callIt
 lit.func @callIt() {
   // CHECK-NEXT: kgen.call @"A::B"
-  kgen.call @A::@B() : () -> ()
+  lit.call @A::@B() : !lit.signature<() -> ()>
   kgen.return
 }
 
@@ -417,7 +418,7 @@ lit.file_module @module {
     // CHECK-LABEL: kgen.generator @"module::Adder::__add__"<size>(%arg0: !lit.declref<#Adder <size>> owned)
     // CHECK-NEXT:    kgen.call @"module::test"() : () -> ()
     lit.func @__add__(%self: !lit.declref<@module::@Adder<size>>)  {
-      kgen.call @module::@test() : () -> ()
+      lit.call @module::@test() : !lit.signature<() -> ()>
       kgen.return
     }
   }
@@ -428,7 +429,7 @@ lit.file_module @module {
 // CHECK-LABEL: kgen.generator @caller(%arg0: !lit.declref<#Adder <10>> owned)
 lit.func @caller(%ref: !lit.declref<@module::@Adder<10>>)  {
   // CHECK: kgen.call @"module::Adder::__add__"
-  kgen.call @module::@Adder::@__add__<10>(%ref) : (!lit.declref<@module::@Adder<10>>) -> ()
+  kgen.call @module::@Adder::@__add__<10>(%ref) : !lit.signature<("self": !lit.declref<@module::@Adder<10>>) -> ()>
   kgen.return
 }
 
@@ -487,7 +488,7 @@ lit.package @main {
 
 !Mem = !lit.declref<@Mem>
 lit.struct.decl @Mem   {
-  lit.func @"__init__($test::Mem=&)"[mut a](%self: !lit.ref<!Mem, mut a> init_self, |) -> !kgen.none attributes {isParametric, sourceName = "__init__", specialFnKind = 2 : i8} {
+  lit.func @__init__[mut a](%self: !lit.ref<!Mem, mut a> init_self, |) -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }
@@ -495,22 +496,22 @@ lit.struct.decl @Mem   {
 
 // CHECK-LABEL: kgen.generator @getThing
 // CHECK-SAME:(%arg0: !lit.ref<@Mem, mut *[0,0]> byref_result)
-lit.func @getThing[mut *"abc`"](%res: !lit.ref<!Mem, mut *"abc`"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "getThing", specialFnKind = 0 : i8} {
-  // CHECK-NEXT: kgen.param.declare *"abc`": lifetime<1> = <#lit.lifetime>
-  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut *"abc`">
+lit.func @getThing[mut abc](%res: !lit.ref<!Mem, mut abc> byref_result, |) -> !kgen.none {
+  // CHECK-NEXT: kgen.param.declare abc: lifetime<1> = <#lit.lifetime>
+  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut abc>
 
   // CHECK-NEXT: kgen.param.declare.region localTest = (%arg1: !lit.ref<@Mem, mut *[0,0]> byref_result) capturing
-  lit.func localTest[mut *"__result__`0"](%__result__[__result__]: !lit.ref<!Mem, mut *"__result__`0"> byref_result, |) capturing -> !kgen.none attributes {sourceName = "localTest", specialFnKind = 0 : i8} {
-    // CHECK-NEXT: kgen.param.declare *"__result__`0": lifetime
-    // CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %arg1 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut *"__result__`0">
-    %1 = lit.call @"$test"::@Mem::@"__init__($test::Mem=&)"[mut *"__result__`0"](%__result__) : !lit.signature<[1]("self": !lit.ref<!Mem, mut *"__result__`0"> init_self, |) -> !kgen.none>
+  lit.func localTest[mut lt](%__result__[__result__]: !lit.ref<!Mem, mut lt> byref_result, |) capturing -> !kgen.none {
+    // CHECK-NEXT: kgen.param.declare lt: lifetime
+    // CHECK-NEXT: %3 = builtin.unrealized_conversion_cast %arg1 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut lt>
+    %1 = lit.call @Mem::@__init__[mut lt](%__result__) : !lit.signature<[1]("self": !lit.ref<!Mem, mut *[0,0]> init_self, |) -> !kgen.none>
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
   }
   // CHECK: }
   // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0
   // CHECK-NEXT: %2 = kgen.call_param[(!lit.ref<@Mem, mut *[0,0]> byref_result) capturing -> !kgen.none: localTest](%1)
-  %0 = lit.call[!lit.signature<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut *"abc`"](%res)
+  %0 = lit.call[!lit.signature<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) capturing -> !kgen.none>: localTest][mut abc](%res)
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
@@ -518,12 +519,12 @@ lit.func @getThing[mut *"abc`"](%res: !lit.ref<!Mem, mut *"abc`"> byref_result, 
 
 // CHECK-LABEL: kgen.generator @callThing
 // CHECK-SAME: (%arg0: !lit.ref<@Mem, mut *[0,0]> byref_result)
-lit.func @callThing[mut *"__result__`"](%__result__: !lit.ref<!Mem, mut *"__result__`"> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "callThing", specialFnKind = 0 : i8} {
-  // CHECK-NEXT: kgen.param.declare *"__result__`": lifetime<1> = <#lit.lifetime>
-  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut *"__result__`">
-  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !lit.ref<@Mem, mut *"__result__`"> to !lit.ref<@Mem, mut *[0,0]>
+lit.func @callThing[mut lt](%__result__: !lit.ref<!Mem, mut lt> byref_result, |) -> !kgen.none attributes {isParametric, sourceName = "callThing", specialFnKind = 0 : i8} {
+  // CHECK-NEXT: kgen.param.declare lt: lifetime<1> = <#lit.lifetime>
+  // CHECK-NEXT: %0 = builtin.unrealized_conversion_cast %arg0 : !lit.ref<@Mem, mut *[0,0]> to !lit.ref<@Mem, mut lt>
+  // CHECK-NEXT: %1 = builtin.unrealized_conversion_cast %0 : !lit.ref<@Mem, mut lt> to !lit.ref<@Mem, mut *[0,0]>
   // CHECK-NEXT: kgen.call @getThing(%1)
-  %0 = lit.call @getThing[mut *"__result__`"](%__result__) : !lit.signature<[1]("__result__": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
+  %0 = lit.call @getThing[mut lt](%__result__) : !lit.signature<[1]("res": !lit.ref<!Mem, mut *[0,0]> byref_result, |) -> !kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
