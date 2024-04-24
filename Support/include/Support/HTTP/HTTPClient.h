@@ -8,10 +8,10 @@
 #define SUPPORT_HTTP_HTTPCLIENT_H
 
 #include "Support/ErrorOr.h"
-#include "Support/Progress.h"
 #include "Support/RCRef.h"
 #include "Support/ReferenceCounted.h"
 #include "Support/Threading/Shared.h"
+#include "Support/UI/DataProgressBar.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Twine.h"
@@ -121,8 +121,9 @@ struct HTTPRequest {
   /// If you know exactly how many bytes you want to send up front, set this
   /// field. This allows libcurl to avoid some length checking.
   std::optional<size_t> bodyLen = std::nullopt;
+
   /// Potential progress callbacks.
-  Progress *progress = nullptr;
+  std::optional<DataProgressBar *> progress = std::nullopt;
 };
 
 /// This struct provides a libcurl-compatible read adaptor for a container that

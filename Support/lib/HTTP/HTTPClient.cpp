@@ -149,40 +149,35 @@ HTTPResponse HTTPClient::executeRequest(const HTTPRequest &request,
   return executeRequestImpl(request, os, timeout, maxLength);
 }
 
-class ProgressWrapper {
-public:
-  ProgressWrapper(Progress *underlying) : progress(underlying) {}
-  ~ProgressWrapper() {
-    if (total > finished)
-      progress->skippedBytes(total - finished);
-  }
+struct ProgressWrapper {
+  DataProgressBar *progress = nullptr;
+  size_t total = 0;
+  size_t finished = 0;
+
   void callback(curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal,
                 curl_off_t ulnow) {
+    if (!progress)
+      return;
     // It's possible that the total will change over time (if e.g. no length is
     // provided and we have a chunked encoding), so we need to use the grow
     // call appropriately here.
     size_t cur_total =
         static_cast<size_t>(dltotal) + static_cast<size_t>(ultotal);
-    if (cur_total > total) {
-      progress->addBytes(cur_total - total);
+    if (cur_total > total && progress->getExpectedWork() < cur_total) {
+      progress->setExpectedWork(cur_total);
       total = cur_total;
     }
     size_t new_finished =
         static_cast<size_t>(dlnow) + static_cast<size_t>(ulnow);
     if (new_finished > finished) {
-      if (new_finished > total) {
-        progress->addBytes(new_finished - total);
+      if (new_finished > total && progress->getExpectedWork() < new_finished) {
+        progress->setExpectedWork(new_finished);
         total = new_finished;
       }
-      progress->finishedBytes(new_finished - finished);
+      progress->addProgress(new_finished - finished);
       finished = new_finished;
     }
   }
-
-private:
-  Progress *progress;
-  size_t total = 0;
-  size_t finished = 0;
 };
 
 static size_t progressCallback(void *clientp, curl_off_t dltotal,
@@ -294,8 +289,9 @@ HTTPResponse HTTPClient::executeRequestImpl(const HTTPRequest &request,
 
   // If there is a progress function, set up the callback appropriately. We
   // pass the progress object itself as the callback data.
-  ProgressWrapper progress(request.progress);
+  ProgressWrapper progress;
   if (request.progress) {
+    progress.progress = *request.progress;
     CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0),
                      "set no progress");
     CHECK_CURL_ERROR(curl_easy_setopt(curl, CURLOPT_XFERINFODATA,

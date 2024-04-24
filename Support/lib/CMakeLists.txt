@@ -28,8 +28,6 @@ add_modular_library(MSupport
   MicroBenchmark.cpp
   PlatformLibNames.cpp
   Process.cpp
-  Progress.cpp
-  ProgressBar.cpp
   Random.cpp
   ReferenceCounted.cpp
   Stats.cpp
@@ -69,7 +67,6 @@ add_subdirectory(ADT)
 add_subdirectory(ASN1)
 add_subdirectory(Cryptography)
 add_subdirectory(Driver)
-add_subdirectory(HTTP)
 add_subdirectory(MDialect)
 add_subdirectory(Threading)
 add_subdirectory(MArchTarget)
@@ -79,6 +76,10 @@ add_subdirectory(DebugInfoDialect)
 add_subdirectory(Globals)
 add_subdirectory(CUDA)
 add_subdirectory(Profiling)
+add_subdirectory(UI)
+
+# HTTP requires UI
+add_subdirectory(HTTP)
 
 # Entitlements is a composite, it requires ASN1, Cryptography, and HTTP.
 add_subdirectory(Entitlements)
