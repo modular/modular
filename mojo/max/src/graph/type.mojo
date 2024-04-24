@@ -759,6 +759,14 @@ struct TypeTuple(Sized):
     # Basic constructors and accessors
     # ===------------------------------------------------------------------=== #
 
+    fn __init__(inout self, _empty: ListLiteral[]):
+        """Implicit conversion constructor for an empty TypeTuple.
+
+        Args:
+            _empty: Unused.
+        """
+        self.elts = List[AnyMOType]()
+
     fn __init__(inout self, *elts: AnyMOType):
         """Constructs a TypeTuple from any number of types.
 

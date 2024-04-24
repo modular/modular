@@ -11,6 +11,8 @@ from sys.info import has_neon
 from tensor import Tensor
 
 import _mlir
+from _mlir.builtin_attributes import TypeAttr
+from _mlir.builtin_types import FunctionType
 
 from ._attributes import AttrMap, _tensor_attr, _vector_attr
 from .symbol import Symbol, SymbolTuple
@@ -95,7 +97,7 @@ struct Graph(CollectionElement, Stringable):
 
     var _graph: _GraphRef
 
-    fn __init__(inout self, in_types: TypeTuple, out_types: TypeTuple):
+    fn __init__(inout self, in_types: TypeTuple, out_types: TypeTuple = []):
         """Constructs a new `Graph` using the default graph name.
 
         Although a `Graph` is technically valid once constructed, it is not
@@ -110,11 +112,12 @@ struct Graph(CollectionElement, Stringable):
             out_types: The graph's output types, as one or more
                 [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
                 [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
+                Deprecated. This will be inferred by the `output` call.
         """
         self.__init__("graph", in_types, out_types)
 
     fn __init__(
-        inout self, name: String, in_types: TypeTuple, out_types: TypeTuple
+        inout self, name: String, in_types: TypeTuple, out_types: TypeTuple = []
     ):
         """Constructs a new `Graph` with a custom graph name.
 
@@ -131,6 +134,7 @@ struct Graph(CollectionElement, Stringable):
             out_types: The graph's output types, as one or more
                 [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
                 [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
+                Deprecated.  This will be inferred by the `output` call.
         """
         var ctx = _mlir.Context()
         ctx.load_modular_dialects()
@@ -566,7 +570,7 @@ struct Graph(CollectionElement, Stringable):
             MOTensor(dtype, out_dims),
         )
 
-    fn output(self, outs: SymbolTuple) raises:
+    fn output(inout self, outs: SymbolTuple) raises:
         """Adds an output for the graph.
 
         This is a special node that all graphs must have in order to deliver
@@ -576,4 +580,22 @@ struct Graph(CollectionElement, Stringable):
         Args:
             outs: The return values, usually the result from one or more ops.
         """
+        var ctx = self._context()
+        var results = List[_mlir.Type]()
+        for output in outs.symbols:
+            results.append(output[].type().to_mlir(ctx))
+        var op = self._graph[].op
+
+        var function_type = FunctionType.from_mlir(
+            TypeAttr.from_mlir(op.get_inherent_attr("functionType")).type
+        )
+        function_type.results = results^
+        var signature = _mlir.Type.parse(
+            ctx, "!kgen.signature<" + str(function_type.to_mlir()) + ">"
+        )
+        op.set_inherent_attr(
+            "functionType", TypeAttr(function_type.to_mlir()).to_mlir()
+        )
+        op.set_inherent_attr("signature", TypeAttr(signature).to_mlir())
+
         _ = self.nvop("mo.output", outs)
