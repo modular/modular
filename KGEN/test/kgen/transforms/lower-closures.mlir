@@ -1,7 +1,7 @@
 // RUN: kgen-opt -lower-closures -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: kgen.func @coroutine
-// CHECK-SAME: (%arg0: i1) -> !pop.coroutine<() -> index> no_inline
+// CHECK-SAME: (%arg0: i1) -> !pop.coroutine<() -> index>
 kgen.func @coroutine(%arg0: i1) async -> index {
   // CHECK: %[[HDL:.*]] = pop.coroutine.handle : <() -> index>
   // CHECK: hlcf.if
@@ -32,12 +32,12 @@ kgen.func @call_coroutine() {
 }
 
 // CHECK-LABEL: kgen.func @async_execute_async_closure
-// CHECK-SAME: (%arg0: index) -> !pop.coroutine<() -> index> no_inline
+// CHECK-SAME: (%arg0: index) -> !pop.coroutine<() -> index>
 // CHECK-NEXT: %0 = pop.coroutine.handle : <() -> index>
 // CHECK: kgen.return %0
 
 // CHECK-LABEL: kgen.func @async_execute_async_closure_{{[0-9]}}
-// CHECK-SAME: (%arg0: index, %arg1: index) -> !pop.coroutine<() -> index> no_inline
+// CHECK-SAME: (%arg0: index, %arg1: index) -> !pop.coroutine<() -> index>
 // CHECK-NEXT: %0 = pop.coroutine.handle : <() -> index>
 // CHECK-NEXT: %idx1 = index.constant 1
 // CHECK-NEXT: %1 = index.add %idx1, %arg0
@@ -71,7 +71,7 @@ kgen.func @async_execute(%arg0: index) {
   kgen.return
 }
 
-// CHECK: kgen.func @some_closure(%arg0: index) capturing -> index no_inline
+// CHECK: kgen.func @some_closure(%arg0: index) capturing -> index
 
 // CHECK-LABEL: kgen.func @main_closure_arg
 kgen.func @main_closure_arg(%arg0: index) {

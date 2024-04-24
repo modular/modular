@@ -153,7 +153,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
                                          ArgConvention::None);
   auto sig = SignatureType::get(
       b.getFunctionType(body.getArgumentTypes(), op.getType()), conventions);
-  auto lifted = b.create<FuncOp>(name, sig, InlineLevel::Never);
+  auto lifted = b.create<FuncOp>(name, sig);
   lifted.getBodyRegion().takeBody(body);
 
   // Insert the function into the symbol table. Lock the symbol table, which
@@ -234,7 +234,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
   else
     name = b.getStringAttr(parent.getSymName() + "_closure_" +
                            Twine(nameCounter++));
-  auto lifted = b.create<FuncOp>(op.getLoc(), name, sig, InlineLevel::Never);
+  auto lifted = b.create<FuncOp>(op.getLoc(), name, sig);
   lifted.getBodyRegion().takeBody(body);
 
   // Insert the function into the symbol table. Lock the symbol table, which
@@ -288,8 +288,6 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     func.setSignature(
         SignatureType::get(b.getFunctionType(origSig.getArguments(), coroType),
                            origSig.getArgConventions()));
-    // It is no longer valid to inline this function.
-    func.setInlineLevel(InlineLevel::Never);
   }
 
   WalkResult result = func.walk([&](Operation *op) -> WalkResult {
