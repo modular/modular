@@ -560,7 +560,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     if (isa<DebugInfo::SubprogramScoped>(op))
       return WalkResult::skip();
 
-    if (auto sourceLocOp = dyn_cast<KGEN::SourceLocOp>(op))
+    if (auto sourceLocOp = dyn_cast<SourceLocOp>(op))
       processSourceLocOp(sourceLocOp, call.getLoc(), b);
 
     return WalkResult::advance();
