@@ -16,7 +16,7 @@ from memory import memcpy
 from memory.unsafe import DTypePointer
 from memory.reference import AddressSpace, _GPUAddressSpace
 
-from .int_tuple import flatten, idx2crd, int, product, fill_like
+from .int_tuple import flatten, idx2crd, to_int, product, fill_like
 from .layout import *
 from math.limit import max_finite
 from builtin.int import int as _int
@@ -88,7 +88,7 @@ fn _need_mask[*tile_sizes: Int](shape: IntTuple) -> Bool:
     @parameter
     fn dim_masked[i: Int]():
         alias tile_size = tile_sizes[i]
-        no_mask = no_mask and (int(shape[i]) % tile_size == 0)
+        no_mask = no_mask and (to_int(shape[i]) % tile_size == 0)
 
     unroll[dim_masked, __get_len[tile_sizes]()]()
     return not no_mask
@@ -167,7 +167,7 @@ struct LayoutTensor[
 
         @parameter
         fn can_access_dim[i: Int]():
-            alias dim = int(idx[i])
+            alias dim = to_int(idx[i])
             var tile_offset_i = self.dim_offset[i]
             var tile_stride_i = self.dim_stride[i]
             var offset = tile_offset_i + dim * tile_stride_i
@@ -314,7 +314,7 @@ struct LayoutTensor[
 
         @unroll
         for i in range(len(t)):
-            st[i] = int(t[i])
+            st[i] = to_int(t[i])
         return st
 
     @staticmethod
@@ -417,7 +417,7 @@ struct LayoutTensor[
 
         @parameter
         fn compute_offset[i: Int]():
-            alias stride = int(__tiled_layout[1].stride[i])
+            alias stride = to_int(__tiled_layout[1].stride[i])
             offset += tile_coords[i] * stride
 
         unroll[compute_offset, num_tiles]()
@@ -436,7 +436,7 @@ struct LayoutTensor[
 
             @parameter
             fn fill_mask_bounds[i: Int]():
-                res.max_dim[i] = int(Self.layout.shape[i])
+                res.max_dim[i] = to_int(Self.layout.shape[i])
                 alias tile_size_i = tile_sizes[i]
                 res.dim_offset[i] = tile_size_i * tile_coords[i]
 
@@ -570,9 +570,9 @@ struct LayoutTensor[
 
         @parameter
         fn compute_offset[i: Int]():
-            alias fragments_stride_i = int(fragments_layout_stride[i])
-            alias shape_i = int(thread_projected_shape[i])
-            alias stride_i = int(thread_projected_stride[i])
+            alias fragments_stride_i = to_int(fragments_layout_stride[i])
+            alias shape_i = to_int(thread_projected_shape[i])
+            alias stride_i = to_int(thread_projected_stride[i])
             var thread_coord_i = (thread_id // stride_i) % shape_i
             offset += thread_coord_i * fragments_stride_i
 
@@ -620,7 +620,9 @@ struct LayoutTensor[
 
     @staticmethod
     fn __get_slice_size(slice: Slice, dim: Int) -> Int:
-        var end = slice.end if slice._has_end() else int(Self.layout.shape[dim])
+        var end = slice.end if slice._has_end() else to_int(
+            Self.layout.shape[dim]
+        )
         return end - slice.start
 
     @staticmethod
@@ -655,8 +657,8 @@ struct LayoutTensor[
             d0_slice.step == 1 and d1_slice.step == 1,
             "Slice should have no gaps",
         ]()
-        alias stride_m = int(__slice_layout.stride[0])
-        alias stride_n = int(__slice_layout.stride[1])
+        alias stride_m = to_int(__slice_layout.stride[0])
+        alias stride_n = to_int(__slice_layout.stride[1])
         var offset = d0_slice.start * stride_m + d1_slice.start * stride_n
         return LayoutTensor[
             dtype,
@@ -720,8 +722,8 @@ struct LayoutTensor[
 
             @parameter
             if (
-                int(self.layout.stride[1]) <= 1
-                and int(other.layout.stride[1]) <= 1
+                to_int(self.layout.stride[1]) <= 1
+                and to_int(other.layout.stride[1]) <= 1
                 and not triple_is_nvidia_cuda()
             ):
                 # Optimize copy for row major layouts.
@@ -1111,7 +1113,8 @@ struct TensorBuilder[
         *, __target_layout: Layout = Self._aligned_layout()
     ]() -> LayoutTensor[dtype, __target_layout]:
         var ptr = DTypePointer[dtype].alloc(
-            M * int(__target_layout.stride[0]), alignment=alignof[SIMD[dtype]]()
+            M * to_int(__target_layout.stride[0]),
+            alignment=alignof[SIMD[dtype]](),
         )
         return LayoutTensor[dtype, __target_layout](ptr, owning=True)
 

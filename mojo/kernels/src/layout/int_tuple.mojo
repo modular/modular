@@ -45,7 +45,7 @@ fn signum(a: Int) -> Int:
 
 
 @always_inline
-fn int(owned v: IntTuple) -> Int:
+fn to_int(owned v: IntTuple) -> Int:
     return v.value()
 
 
@@ -113,9 +113,9 @@ fn _insertion_sort[
 
 fn lt(a: IntTuple, b: IntTuple) -> Bool:
     for z in zip(a, b):
-        if int(z[0]) == int(z[1]):
+        if to_int(z[0]) == to_int(z[1]):
             continue
-        elif int(z[0]) < int(z[1]):
+        elif to_int(z[0]) < to_int(z[1]):
             return True
         else:
             return False
@@ -132,7 +132,7 @@ fn sum(t: IntTuple) -> Int:
     @always_inline
     @parameter
     fn reducer(owned a: Int, b: IntTuple) -> Int:
-        return a + (int(b) if is_int(b) else sum(b))
+        return a + (to_int(b) if is_int(b) else sum(b))
 
     return reduce[Int, reducer](t, 0)
 
@@ -142,7 +142,7 @@ fn product(t: IntTuple) -> Int:
     @always_inline
     @parameter
     fn reducer(owned a: Int, b: IntTuple) -> Int:
-        return a * (int(b) if is_int(b) else product(b))
+        return a * (to_int(b) if is_int(b) else product(b))
 
     return reduce[Int, reducer](t, 1)
 
@@ -151,7 +151,7 @@ fn max(t: IntTuple) -> Int:
     @always_inline
     @parameter
     fn reducer(owned a: Int, b: IntTuple) -> Int:
-        return math.max(a, int(b) if is_int(b) else max(b))
+        return math.max(a, to_int(b) if is_int(b) else max(b))
 
     # FIXME: limit.min_finite[DType.index]() doesn't seem to work
     alias int_min_val = -2147483648
@@ -160,7 +160,7 @@ fn max(t: IntTuple) -> Int:
 
 fn apply[func: fn (Int) capturing -> Int](t: IntTuple) -> IntTuple:
     if is_int(t):
-        return func(int(t))
+        return func(to_int(t))
     var res = IntTuple()
     for e in t:
         res.append(apply[func](e))
@@ -228,7 +228,7 @@ fn min(a: IntTuple, b: IntTuple) -> IntTuple:
     if len(a) != len(b):
         abort("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
     if is_int(a):
-        return math.min(int(a), int(b))
+        return math.min(to_int(a), to_int(b))
     return apply_zip[min](a, b)
 
 
@@ -236,7 +236,7 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
     if len(a) != len(b):
         abort("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
     if is_int(a):
-        return int(a) * int(b)
+        return to_int(a) * to_int(b)
     var r: Int = 0
     for z in zip(a, b):
         r += inner_product(z[0], z[1])
@@ -264,7 +264,7 @@ fn abs(t: IntTuple) -> IntTuple:
 #
 fn mul(lhs: IntTuple, rhs: Int) -> IntTuple:
     if is_int(lhs):
-        return int(lhs) * rhs
+        return to_int(lhs) * rhs
 
     var res = IntTuple()
     for e in lhs:
@@ -325,7 +325,7 @@ fn weakly_congruent(a: IntTuple, b: IntTuple) -> Bool:
 #
 fn compatible(a: IntTuple, b: IntTuple) -> Bool:
     fn predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return int(a) == size(b)
+        return to_int(a) == size(b)
 
     return apply_predicate[predicate](a, b)
 
@@ -337,7 +337,7 @@ fn compatible(a: IntTuple, b: IntTuple) -> Bool:
 @always_inline
 fn weakly_compatible(a: IntTuple, b: IntTuple) -> Bool:
     fn predicate(a: IntTuple, b: IntTuple) -> Bool:
-        return size(b) % int(a) == 0
+        return size(b) % to_int(a) == 0
 
     return apply_predicate[predicate](a, b)
 
@@ -352,7 +352,7 @@ fn prefix_product(a: IntTuple, init: IntTuple = 1) -> IntTuple:
 
             return apply_zip[prefix_product](a, init)
         else:  # tuple "int"
-            var v_init = int(init)
+            var v_init = to_int(init)
             var r = IntTuple()
             for v in a:
                 r.append(prefix_product(v, v_init))
@@ -390,18 +390,18 @@ fn shape_div(a: IntTuple, b: IntTuple) -> IntTuple:
                 )
             return apply_zip[shape_div](a, b)
         else:  # tuple "int"
-            var vb = int(b)
+            var vb = to_int(b)
             var r = IntTuple()
             for v in a:
                 r.append(shape_div(v, vb))
-                vb = int(shape_div(vb, product(v)))
+                vb = to_int(shape_div(vb, product(v)))
             return r
     else:
         if is_tuple(b):  # "int" tuple
             return shape_div(a, product(b))
         else:  # "int" "int"
-            var va = int(a)
-            var vb = int(b)
+            var va = to_int(a)
+            var vb = to_int(b)
 
             if not (va % vb == 0 or vb % va == 0):
                 abort("Incompatible shape values: " + str(va) + " " + str(vb))
@@ -443,7 +443,7 @@ fn idx2crd(
 
             return apply_zip[idx2crd2](shape, stride)
         else:  # "int" "int" "int"
-            return (int(idx) // int(stride)) % int(shape)
+            return (to_int(idx) // to_int(stride)) % to_int(shape)
 
 
 # Map a logical coordinate to a linear index
@@ -467,7 +467,7 @@ fn crd2idx(
             abort("Illegal input types")
             return 0
     else:
-        var int_crd: Int = 0 if len(crd) == 0 else int(crd)
+        var int_crd: Int = 0 if len(crd) == 0 else to_int(crd)
 
         if is_tuple(shape):  # "int" tuple tuple
             if len(shape) != len(stride):
@@ -480,7 +480,7 @@ fn crd2idx(
                 int_crd = int_crd // product(shape[i])
             return result + crd2idx(int_crd, shape[-1], stride[-1])
         else:  # "int" "int" "int"
-            return int_crd * int(stride)
+            return int_crd * to_int(stride)
 
 
 # Returns an IntTuple with same strcture as src filled with val.

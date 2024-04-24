@@ -15,7 +15,7 @@ from .int_tuple import (
     crd2idx,
     flatten,
     inner_product,
-    int,
+    to_int,
     is_int,
     is_tuple,
     min,
@@ -232,8 +232,8 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
     var result_stride = IntTuple(0)
 
     for z in zip(flatten(layout.shape), flatten(layout.stride)):
-        var shape = int(z[0])
-        var stride = int(z[1])
+        var shape = to_int(z[0])
+        var stride = to_int(z[1])
 
         # skip their shape-1s
         if shape == 1:
@@ -243,8 +243,8 @@ fn coalesce(layout: Layout, keep_rank: Bool = False) -> Layout:
             result_shape[-1] = shape
             result_stride[-1] = stride
         # merge modes if the shape*stride match
-        elif int(result_shape[-1]) * int(result_stride[-1]) == stride:
-            result_shape[-1] = int(result_shape[-1]) * shape
+        elif to_int(result_shape[-1]) * to_int(result_stride[-1]) == stride:
+            result_shape[-1] = to_int(result_shape[-1]) * shape
         # append a new mode
         else:
             result_shape.append(shape)
@@ -275,8 +275,8 @@ fn composition(layoutA: Layout, layoutB: Layout) -> Layout:
         var rest_stride = layoutB.stride
 
         for z in zip(flatten(layoutA.shape)[:-1], flatten(layoutA.stride)[:-1]):
-            var s = int(z[0])
-            var d = int(z[1])
+            var s = to_int(z[0])
+            var d = to_int(z[1])
 
             var s1 = shape_div(s, rest_stride)
             result_shape.append(min(s1, rest_shape))
@@ -285,7 +285,9 @@ fn composition(layoutA: Layout, layoutB: Layout) -> Layout:
             rest_stride = shape_div(rest_stride, s)
 
         result_shape.append(rest_shape)
-        result_stride.append(mul(rest_stride, int(flatten(layoutA.stride)[-1])))
+        result_stride.append(
+            mul(rest_stride, to_int(flatten(layoutA.stride)[-1]))
+        )
 
         return coalesce(Layout(result_shape, result_stride))
 
@@ -304,8 +306,8 @@ fn complement(layout: Layout, size: Int = 1) -> Layout:
     var current_idx = 1
 
     for z in sorted(zip(flatten(layout.stride), flatten(layout.shape))):
-        var stride = int(z[0])
-        var shape = int(z[1])
+        var stride = to_int(z[0])
+        var shape = to_int(z[1])
 
         if stride == 0 or shape == 1:
             continue

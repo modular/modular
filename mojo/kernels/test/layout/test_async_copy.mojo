@@ -23,7 +23,6 @@ from gpu.memory import (
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import LayoutTensor, copy_dram_to_sram_async
-from layout.int_tuple import int
 from layout.swizzle import Swizzle
 from math import div_ceil, isclose, max
 from memory.unsafe import DTypePointer

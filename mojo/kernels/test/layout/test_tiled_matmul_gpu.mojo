@@ -13,7 +13,6 @@ from gpu.mma import mma
 from gpu.sync import barrier
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from layout.int_tuple import int
 from layout.layout_tensor import outer_product_acc
 from gpu.device_print import _printf
 
