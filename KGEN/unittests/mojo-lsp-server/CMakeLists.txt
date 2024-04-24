@@ -6,32 +6,19 @@
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
-add_kgen_kernel(test_kernels
-  SOURCE
-  ${CMAKE_CURRENT_SOURCE_DIR}/test_kernels.mlir
-)
-
 add_modular_unittest(
   TOP_LEVEL_CHECK
-  check-mojo
+  check-mojo-lsp-server
 
   SUITE_NAME
-  KGENUnitTests
+  MojoLSPServerUnitTests
 
   TEST_NAME
-  KGENTests
+  MojoLSPServerTests
 
-  KGENKernelTest.cpp
-
-  DEPENDS
-  test_kernels-headers
+  SampleTest.cpp
+  Support.cpp
 
   LINK_LIBS PRIVATE
-  LLCLRuntime
-  LLCLRuntimeGlobals
-  MSupportML
-  MSupportGlobals
-  test_kernels
+  mojo-lsp-test-client
 )
-
-add_subdirectory(mojo-lsp-server)

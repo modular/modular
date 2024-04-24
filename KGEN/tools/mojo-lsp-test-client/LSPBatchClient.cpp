@@ -1,0 +1,213 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "LSPBatchClient.h"
+#include "Document.h"
+#include "KGEN/Support/Configuration.h"
+#include "Protocol.h"
+#include "Support/ErrorOr.h"
+#include "Support/FileSystemExtras.h"
+#include "Support/LLVMForwardDecls.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/JSON.h"
+#include <fstream>
+#include <llvm/Support/Program.h>
+#include <type_traits>
+
+namespace lsp = mlir::lsp;
+using namespace M;
+
+/// Helper callback that ignores a response from the server. It helps
+/// simplifying the response dispatch code.
+static void doNothing(const llvm::json::Value &response) {}
+
+LSPServerStdioFiles::LSPServerStdioFiles(const std::filesystem::path &parentDir)
+    : serverStdin(parentDir / "stdin.txt"),
+      serverStdout(parentDir / "stdout.txt"),
+      serverStderr(parentDir / "stderr.txt") {}
+
+LSPBatchClient::LSPBatchClient(
+    std::optional<std::function<void(const ExecutionResult &)>>
+        onExecuteCallback)
+    : onExecuteCallback(std::move(onExecuteCallback)),
+      serverJSONInputOS(serverJSONInput) {
+  llvm::json::Value initialize = llvm::json::Object{{"processId", 123},
+                                                    {"rootPath", "mojo"},
+                                                    {"capabilities", {}},
+                                                    {"trace", "off"}};
+  request("initialize", initialize, std::function(doNothing));
+}
+
+LSPBatchClient &LSPBatchClient::open(const Document &doc) {
+  lsp::DidOpenTextDocumentParams params{lsp::TextDocumentItem{
+      doc.getURI(), "mojo", doc.getContents().str(), /*version=*/0}};
+  notify("textDocument/didOpen", toJSON(params));
+  return *this;
+}
+
+LSPBatchClient &LSPBatchClient::definition(
+    const Document &doc, const lsp::Position &position,
+    std::function<void(const std::vector<lsp::Location> &)> callback) {
+  lsp::TextDocumentPositionParams params{
+      lsp::TextDocumentIdentifier{doc.getURI()}, position};
+  request("textDocument/definition", toJSON(params), std::move(callback));
+  return *this;
+}
+
+LSPBatchClient &
+LSPBatchClient::hover(const Document &doc, const lsp::Position &position,
+                      std::function<void(const lsp::Hover2 &)> callback) {
+  lsp::TextDocumentPositionParams params{
+      lsp::TextDocumentIdentifier{doc.getURI()}, position};
+  request("textDocument/hover", toJSON(params), std::move(callback));
+  return *this;
+}
+
+void LSPBatchClient::appendJSONRequest(RequestId id, StringRef method,
+                                       const llvm::json::Value &params) {
+  llvm::json::Value jsonRequest = llvm::json::Object{
+      {"jsonrpc", "2.0"}, {"method", method}, {"id", id}, {"params", params}};
+  serverJSONInputOS << llvm::formatv("{0:2}\n", jsonRequest) << "// -----\n";
+}
+
+void LSPBatchClient::appendShutdownAndExit() {
+  request("shutdown", llvm::json::Object{}, std::function(doNothing));
+  serverJSONInputOS << llvm::json::Object{{"jsonrpc", "2.0"},
+                                          {"method", "exit"}}
+                    << "\n";
+}
+
+ErrorOrSuccess LSPBatchClient::dispatchResponse(StringRef json) {
+  if (llvm::Expected<llvm::json::Value> valueOr = llvm::json::parse(json)) {
+    if (llvm::json::Object *obj = valueOr->getAsObject()) {
+      if (std::optional<int64_t> id = obj->getInteger("id")) {
+        auto it = responseHandlers.find(*id);
+        if (auto errOr = it->second->onResponse(*obj->get("result")))
+          return errOr;
+        responseHandlers.erase(it);
+      }
+      return success();
+    }
+  } else {
+    // Return the entire malformed JSON below and hide this `llvm::Error`
+    // because its error message is not very actionable.
+    llvm::consumeError(valueOr.takeError());
+  }
+  return Error("Malformed JSON message returned by the server:\n" + json);
+}
+
+ErrorOrSuccess LSPBatchClient::dispatchResponses(StringRef serverStdout) {
+  // A Language Server Protocol message starts with a set of headers,
+  // delimited by \r\n, and terminated by an empty line (\r\n).
+
+  // The following parser is extremely simple because its intention is not to
+  // test the correctness of the JSON printing code.
+  auto bufferOr = toModularErrorOr(llvm::MemoryBuffer::getFile(serverStdout));
+  if (failed(bufferOr))
+    return Error(Twine("Error reading the servers's output: ") +
+                 bufferOr.getError());
+
+  llvm::MemoryBuffer &buffer = *bufferOr->get();
+  StringRef output = buffer.getBuffer();
+
+  size_t contentLength;
+  std::string header;
+  while (output.consume_front("Content-Length: ") &&
+         !output.consumeInteger(10, contentLength) &&
+         output.consume_front("\r\n\r\n")) {
+    StringRef response = output.substr(0, contentLength);
+    output = output.drop_front(contentLength);
+    if (auto err = dispatchResponse(response))
+      return err;
+  }
+
+  if (!output.empty())
+    return Error("Malformed server output. Not all data could be parsed");
+
+  if (!responseHandlers.empty()) {
+    std::string errorMsg;
+    llvm::raw_string_ostream os(errorMsg);
+    os << "Not all requests received a response: ";
+    llvm::interleave(llvm::make_first_range(responseHandlers), os, " ");
+    return Error(errorMsg);
+  }
+
+  return success();
+}
+
+ErrorOrSuccess LSPBatchClient::doExecute(const LSPServerStdioFiles &ioFiles,
+                                         StringRef lspServerPath) {
+  appendShutdownAndExit();
+
+  if (llvm::Error err =
+          llvm::writeToOutput(ioFiles.serverStdin, [&](raw_ostream &os) {
+            os << serverJSONInput;
+            return llvm::Error::success();
+          })) {
+    return Error(Twine("Error writing the server's input file: ") +
+                 toModularError(std::move(err)).get());
+  }
+
+  std::string errMsg;
+  int exitCode =
+      llvm::sys::ExecuteAndWait(lspServerPath, {lspServerPath, "-mojo-test"},
+                                /*Env=*/std::nullopt, /*redirects=*/
+                                {
+                                    ioFiles.serverStdin,
+                                    ioFiles.serverStdout,
+                                    ioFiles.serverStderr,
+                                },
+                                /*SecondsToWait=*/0,
+                                /*MemoryLimit=*/0,
+                                /*ErrMsg=*/&errMsg);
+  if (exitCode != 0)
+    return Error(llvm::formatv("Server failed with exit code {0}. {1}",
+                               exitCode, errMsg));
+
+  return dispatchResponses(ioFiles.serverStdout);
+}
+
+LSPBatchClient::ExecutionResult LSPBatchClient::execute() {
+  if (std::exchange(didExecute, true))
+    llvm::report_fatal_error("`LSPBatchClient::execute` invoked twice");
+
+  // Find the path to the LLDB executable and the MojoLLDB plugin library.
+  // Read the mojo configuration.
+  ErrorOr<KGEN::MojoConfig> configOr = KGEN::MojoConfig::open();
+  if (failed(configOr))
+    return {
+        Error(Twine("Failed to parse 'modular.cfg': ") + configOr.getError())};
+
+  StringRef lspServerPath = configOr->getLSPServerPath();
+
+  ErrorOr<TempDir> tempDirOr = TempDir::create("lsp-test-client.%%%%%%");
+  if (failed(tempDirOr))
+    return {tempDirOr.takeError()};
+  LSPServerStdioFiles ioFiles(tempDirOr->getPath());
+
+  if (auto err = doExecute(ioFiles, lspServerPath)) {
+    tempDirOr->keep();
+
+    LSPBatchClient::ExecutionResult result{std::move(err), std::move(ioFiles)};
+    if (onExecuteCallback)
+      (*onExecuteCallback)(result);
+    return result;
+  }
+  return {};
+}
+
+LSPBatchClient::~LSPBatchClient() {
+  if (!didExecute) {
+    llvm::report_fatal_error("LSPBatchClient being destroyed without "
+                             "`execute` having been invoked.");
+  }
+}
+
+void LSPBatchClient::notify(StringRef method, const llvm::json::Value &params) {
+  llvm::json::Value notification = llvm::json::Object{
+      {"jsonrpc", "2.0"}, {"method", method}, {"params", params}};
+  serverJSONInputOS << llvm::formatv("{0:2}\n", notification) << "// -----\n";
+}
