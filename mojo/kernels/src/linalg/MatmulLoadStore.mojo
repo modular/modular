@@ -57,11 +57,11 @@ fn _load_c_tile_default[
     tile being processed.
 
     Args:
-    c_ptr: TODO.
-    c_stride: TODO.
-    c0_local: pre-allocated local buffer for c partial sums.
-    tile_n_idx: n coordinate within the current processing tile.
-    c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
+        c_ptr: pointer to the C matrix buffer.
+        c_stride: strice of the C matrix.
+        c0_local: pre-allocated local buffer for c partial sums.
+        tile_n_idx: n coordinate within the current processing tile.
+        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
     """
     alias simd_size = simdwidthof[c0_local.type]()
     alias c_type = c0_local.type
@@ -120,11 +120,11 @@ fn _store_c_tile_default[
     buffer to the corresponding position in the output buffer space.
 
     Args:
-    c_ptr: TODO.
-    c_stride: TODO.
-    c0_local: pre-allocated local buffer for c partial sums.
-    tile_n_idx: n coordinate within the current processing tile.
-    c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
+        c_ptr: pointer to the C matrix buffer.
+        c_stride: strice of the C matrix.
+        c0_local: pre-allocated local buffer for c partial sums.
+        tile_n_idx: n coordinate within the current processing tile.
+        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
     """
     alias simd_size = simdwidthof[c0_local.type]()
     alias c_type = c0_local.type
@@ -182,11 +182,11 @@ fn _load_c_tile_i8mm[
     tile being processed.
 
     Args:
-    c_ptr: TODO.
-    c_stride: TODO.
-    c0_local: pre-allocated local buffer for c partial sums.
-    tile_n_idx: n coordinate within the current processing tile.
-    c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
+        c_ptr: pointer to the C matrix buffer.
+        c_stride: strice of the C matrix.
+        c0_local: pre-allocated local buffer for c partial sums.
+        tile_n_idx: n coordinate within the current processing tile.
+        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
     """
     alias simd_size = simdwidthof[c0_local.type]()
     alias c_type = c0_local.type
@@ -252,11 +252,11 @@ fn _store_c_tile_i8mm[
     buffer to the corresponding position in the output buffer space.
 
     Args:
-    c_ptr: TODO.
-    c_stride: TODO.
-    c0_local: pre-allocated local buffer for c partial sums.
-    tile_n_idx: n coordinate within the current processing tile.
-    c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
+        c_ptr: pointer to the C matrix buffer.
+        c_stride: strice of the C matrix.
+        c0_local: pre-allocated local buffer for c partial sums.
+        tile_n_idx: n coordinate within the current processing tile.
+        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
     """
 
     alias simd_size = simdwidthof[c0_local.type]()
@@ -322,11 +322,11 @@ fn _load_c_tile_neon[
     tile being processed.
 
     Args:
-        c_ptr: TODO.
-        c_stride: TODO.
+        c_ptr: pointer to the C matrix buffer.
+        c_stride: strice of the C matrix.
         c0_local: pre-allocated local buffer for c partial sums.
         tile_n_idx: n coordinate within the current processing tile.
-        c_bound: TODO.
+        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
     """
     alias simd_size = simdwidthof[c0_local.type]()
     alias c_type = c0_local.type
@@ -369,11 +369,11 @@ fn _store_c_tile_neon[
     buffer to the corresponding position in the output buffer space.
 
     Args:
-        c_ptr: TODO.
-        c_stride: TODO.
+        c_ptr: pointer to the C matrix buffer.
+        c_stride: strice of the C matrix.
         c0_local: pre-allocated local buffer for c partial sums.
         tile_n_idx: n coordinate within the current processing tile.
-        c_bound: TODO.
+        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
     """
     alias simd_size = simdwidthof[c0_local.type]()
     alias c_type = c0_local.type
