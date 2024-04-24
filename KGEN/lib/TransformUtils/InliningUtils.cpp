@@ -117,7 +117,7 @@ void KGEN::processSourceLocOp(SourceLocOp sourceLocOp, Location callLoc,
   }
 
   // Extract the source location, even in the presence of debuginfo.
-  FileLineColLoc fileLoc = extractSourceLoc(callLoc);
+  FileLineColLoc fileLoc = DebugInfo::extractSourceLoc(callLoc);
   Location opLoc = sourceLocOp.getLoc();
 
   // Replace the source location op with constants.

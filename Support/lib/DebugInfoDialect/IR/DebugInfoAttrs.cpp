@@ -437,6 +437,16 @@ WalkResult DebugInfo::walkScope(Location loc, LocWalkPolicy policy,
   });
 }
 
+FileLineColLoc DebugInfo::extractSourceLoc(Location callLoc) {
+  Location resolvedLoc = callLoc;
+  DebugInfo::walkLocation(callLoc, DebugInfo::LocWalkPolicy::CalleeOnly,
+                          [&](Location loc) {
+                            resolvedLoc = loc;
+                            return mlir::WalkResult::advance();
+                          });
+  return resolvedLoc->findInstanceOf<FileLineColLoc>();
+}
+
 DISubprogramAttr DebugInfo::extractScope(mlir::FunctionOpInterface funcOp) {
   if (auto fusedLoc =
           dyn_cast<mlir::FusedLocWith<DISubprogramAttr>>(funcOp->getLoc()))
