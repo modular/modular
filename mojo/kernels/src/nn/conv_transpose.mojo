@@ -41,10 +41,7 @@ from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 
 from .accumulate import (
-    accumulate,
-    init_register_tile,
-    load_register_tile,
-    store_register_tile,
+    _Accumulator,
 )
 from .conv_utils import (
     ConvInfoStatic,
@@ -971,11 +968,6 @@ fn update_w_tile_2d[
 
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
-    var register_tile = NDBuffer[
-        output.type,
-        2,
-        DimList(micro_kernel_height, micro_kernel_width * simd_size),
-    ].stack_allocation()
 
     for r in range(conv_shape.r()):
         # Skip the row if it falls into padding.
@@ -1004,7 +996,6 @@ fn update_w_tile_2d[
                 has_residual,
             ](
                 c_tile_size,
-                register_tile.data,
                 output_ptr,
                 conv_shape.f * conv_shape.stride[1],
                 input,
@@ -1061,11 +1052,6 @@ fn update_w_tile_3d[
 
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
-    var register_tile = NDBuffer[
-        output.type,
-        2,
-        DimList(micro_kernel_height, micro_kernel_width * simd_size),
-    ].stack_allocation()
 
     for q in range(conv_shape.q()):
         var do_nbr = howo[0] + q * conv_shape.dilation[0]
@@ -1103,7 +1089,6 @@ fn update_w_tile_3d[
                     has_residual,
                 ](
                     c_tile_size,
-                    register_tile.data,
                     output_ptr,
                     conv_shape.f * conv_shape.stride[2],
                     input,
@@ -1122,7 +1107,6 @@ fn accumulate_wo_tile[
     partial_load: Bool,
 ](
     c_tile_size: Int,
-    register_tile: DTypePointer,
     output: DTypePointer,
     output_stride: Int,
     input: DTypePointer,
@@ -1131,27 +1115,18 @@ fn accumulate_wo_tile[
     filter_stride: Int,
     partial_load_size: Int,
 ):
-    load_register_tile[
-        micro_kernel_height,
-        micro_kernel_width,
-        simd_size,
-        partial_load=partial_load,
-    ](
-        register_tile,
+    var acc = _Accumulator[
+        output.type, micro_kernel_height, micro_kernel_width, simd_size
+    ]()
+
+    acc.load[partial_load=partial_load](
         output,
         output_stride,
         partial_load_size,
     )
 
-    accumulate[
-        micro_kernel_height,
-        micro_kernel_width,
-        simd_size,
-        prefetch_offset=4,
-        partial_load_b=partial_load,
-    ](
+    acc.accumulate[prefetch_offset=4, partial_load_b=partial_load](
         c_tile_size,
-        register_tile,
         input,
         input_stride,
         filter,
@@ -1159,15 +1134,9 @@ fn accumulate_wo_tile[
         partial_load_size,
     )
 
-    store_register_tile[
-        micro_kernel_height,
-        micro_kernel_width,
-        simd_size,
-        partial_store=partial_load,
-    ](
+    acc.store[partial_store=partial_load](
         output,
         output_stride,
-        register_tile,
         partial_load_size,
     )
 

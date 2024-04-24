@@ -12,8 +12,6 @@ from buffer import Buffer
 from memory import stack_allocation
 from nn.accumulate import (
     _simd_load_maybe_partial,
-    load_register_tile,
-    store_register_tile,
     _Accumulator,
 )
 from testing import *
@@ -66,6 +64,7 @@ def test_accumulate[
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
+    acc.init(0)
     acc.accumulate(length, a, length, b, kernel_width)
 
     # C results:
@@ -150,21 +149,12 @@ def test_accumulate_with_offsets[
         for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
-    # alias c_size = num_rows * num_cols * simd_size
-    # var c = stack_allocation[c_size, type]()
-
-    # @__copy_capture(c)
-    # @parameter
-    # fn fill_c[widthj: Int](offset: Int):
-    #     (c + offset).store(SIMD[type, simd_size](0.0))
-
-    # vectorize[fill_c, simd_size, size=c_size]()
-
     var a_base_offsets = Buffer[DType.int32, num_rows].stack_allocation()
     a_base_offsets[0] = 0
     a_base_offsets[1] = length
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
+    acc.init(0)
     acc.accumulate(length, a, a_base_offsets, 0, b, kernel_width)
 
     # C results:
@@ -232,7 +222,7 @@ def test_accumulate_with_offsets[
     )
 
 
-def test_load_store_register_tile[
+def test_load_store[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
 ]():
     alias type = DType.float32
@@ -261,56 +251,60 @@ def test_load_store_register_tile[
             SIMD[type, residual](-1.0),
         )
 
-    var tile0 = stack_allocation[num_rows * num_cols * simd_size, type]()
-
-    load_register_tile[num_rows, num_cols, simd_size](tile0, a, row_size)
+    var tile0 = _Accumulator[type, num_rows, num_cols, simd_size]()
+    tile0.load(a, row_size)
 
     assert_equal(
-        tile0.load[width=simd_size](),
+        tile0[0, 0],
         SIMD[type, simd_size](0.0),
     )
     assert_equal(
-        tile0.load[width=simd_size](simd_size),
+        tile0[0, 1],
         SIMD[type, simd_size](1.0),
     )
     assert_equal(
-        tile0.load[width=simd_size](2 * simd_size),
+        tile0[1, 0],
         SIMD[type, simd_size](1.0),
     )
     assert_equal(
-        tile0.load[width=simd_size](3 * simd_size),
+        tile0[1, 1],
         SIMD[type, simd_size](2.0),
     )
 
     # Update A: [[ 4x1.0, 4x1.0, -1.0],
     #            [ 4x1.0, 4x1.0, -1.0],]
-    tile0.store(one_vec)
-    tile0.store(3 * simd_size, one_vec)
-    store_register_tile[num_rows, num_cols, simd_size](a, row_size, tile0)
+    tile0[0, 0] = one_vec
+    tile0[1, 1] = one_vec
+    tile0.store(a, row_size)
 
-    var tile1 = stack_allocation[num_rows * (num_cols + 1) * simd_size, type]()
+    var tile1 = _Accumulator[type, num_rows, num_cols + 1, simd_size]()
 
-    load_register_tile[num_rows, num_cols + 1, simd_size, partial_load=True](
-        tile1, a, row_size, residual
-    )
+    tile1.load[partial_load=True](a, row_size, residual)
 
-    assert_equal(tile1.load[width=simd_size](), one_vec)
-    assert_equal(tile1.load[width=simd_size](simd_size), one_vec)
-    assert_equal(tile1.load[width=simd_size](2 * simd_size), residual_vec)
-    assert_equal(tile1.load[width=simd_size](3 * simd_size), one_vec)
-    assert_equal(tile1.load[width=simd_size](4 * simd_size), one_vec)
-    assert_equal(tile1.load[width=simd_size](5 * simd_size), residual_vec)
+    assert_equal(tile1[0, 0], one_vec)
+    assert_equal(tile1[0, 1], one_vec)
+    assert_equal(tile1[0, 2], residual_vec)
+    assert_equal(tile1[1, 0], one_vec)
+    assert_equal(tile1[1, 1], one_vec)
+    assert_equal(tile1[1, 2], residual_vec)
 
-    alias residual_vec1 = SIMD[type, residual](-2.0)
+    var residual_vec1 = SIMD[type, residual](-2.0)
 
-    tile1.store(num_cols * simd_size, residual_vec1)
-    tile1.store((2 * num_cols + 1) * simd_size, residual_vec1)
+    # TODO: replace the following with simd.mojo:insert (after resolving its issue).
+    @always_inline
+    fn simd_insert(inout x: SIMD[type, _], y: SIMD[type, _]):
+        constrained[x.size >= y.size]()
+
+        @unroll
+        for i in range(y.size):
+            x[i] = y[i]
+
+    simd_insert(tile1[0, 2], residual_vec1)
+    simd_insert(tile1[1, 2], residual_vec1)
 
     # Update A: [[ 4x1.0, 4x1.0, -2.0],
     #            [ 4x1.0, 4x1.0, -2.0],]
-    store_register_tile[num_rows, num_cols + 1, simd_size, partial_store=True](
-        a, row_size, tile1, residual
-    )
+    tile1.store[partial_store=True](a, row_size, residual)
 
     assert_equal(a.load[width=residual](row_size - residual), residual_vec1)
     assert_equal(a.load[width=residual](2 * row_size - residual), residual_vec1)
@@ -320,4 +314,4 @@ def main():
     test_maybe_partial_load()
     test_accumulate()
     test_accumulate_with_offsets()
-    test_load_store_register_tile()
+    test_load_store()

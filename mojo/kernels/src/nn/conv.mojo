@@ -49,10 +49,7 @@ from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 
 from .accumulate import (
-    accumulate,
-    init_register_tile,
-    load_register_tile,
-    store_register_tile,
+    _Accumulator,
 )
 from .conv_utils import (
     ConvInfoStatic,
@@ -725,33 +722,26 @@ struct ConvDirectNHWC[
             )
 
         alias alignment = alignof[SIMD[output_type, simd_size]]()
-        var output_micro_tile = NDBuffer[
+
+        var acc = _Accumulator[
             output_type,
-            2,
-            DimList(micro_kernel_height, micro_kernel_width * simd_size),
-        ].aligned_stack_allocation[alignment]()
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+        ]()
 
         var output_offset = self.conv_shape.f * (
             n * self.conv_shape.output_image_flat_size() + output_flat_coord
         ) + f_tile_offset
 
         if self.is_new_c_accum(c_tile_offset):
-            init_register_tile[
-                micro_kernel_height, micro_kernel_width, simd_size
-            ](output_micro_tile.data)
+            acc.init(0)
         else:
-            load_register_tile[
-                micro_kernel_height,
-                micro_kernel_width,
-                simd_size,
-                partial_load=has_residual,
-            ](
-                output_micro_tile.data,
+            acc.load[partial_load=has_residual](
                 self.output.data + output_offset,
                 self.conv_shape.f,
                 self.conv_shape.f_per_group() % simd_size,
             )
-
         var filter_ptr: DTypePointer[filter_type] = self.filter.data
 
         @parameter
@@ -807,7 +797,7 @@ struct ConvDirectNHWC[
                     c_tile_size,
                     self.input.data,
                     filter_ptr,
-                    output_micro_tile.data,
+                    acc,
                 )
 
                 # Shift C*f to get the next point in stencil (s+1) for FRSCf layout.
@@ -816,15 +806,9 @@ struct ConvDirectNHWC[
                         self.conv_shape.c_per_group() * micro_kernel_f_size
                     )
 
-        store_register_tile[
-            micro_kernel_height,
-            micro_kernel_width,
-            simd_size,
-            partial_store=has_residual,
-        ](
+        acc.store[partial_store=has_residual](
             self.output.data + output_offset,
             self.conv_shape.f,
-            output_micro_tile.data,
             self.conv_shape.f_per_group() % simd_size,
         )
 
@@ -1019,22 +1003,23 @@ struct ConvDirectNHWC[
         c_tile_size: Int,
         input: DTypePointer[input_type],
         filter: DTypePointer[filter_type],
-        output: DTypePointer[output_type],
+        inout acc: _Accumulator[
+            output_type,
+            micro_kernel_height,
+            micro_kernel_width,
+            simd_size,
+        ],
     ):
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         var F = self.output.dim[3]()
         var filter_stride = micro_kernel_f_size if filter_packed else F
 
-        accumulate[
-            micro_kernel_height,
-            micro_kernel_width,
-            simd_size,
+        acc.accumulate[
             prefetch_offset=prefetch_offset,
             partial_load_b = has_residual and not filter_packed,
         ](
             c_tile_size,
-            output,
             input,
             input_base_offsets,
             input_offset,
@@ -1050,28 +1035,40 @@ struct ConvDirectNHWC[
         simd_size: Int,
         has_residual: Bool,
         prefetch_offset: Int,
+        row_start: Int,
+        row_stop: Int,
     ](
         self,
         c_tile_size: Int,
         input_stride: Int,
         input_base: DTypePointer[input_type],
         filter_base: DTypePointer[filter_type],
-        output_ptr: DTypePointer[output_type],
+        inout acc_in: _Accumulator[
+            output_type, micro_kernel_height, micro_kernel_width, simd_size
+        ],
     ):
         alias micro_kernel_f_size = micro_kernel_width * simd_size
 
         var F = self.output.dim[3]()
         var filter_stride = micro_kernel_f_size if filter_packed else F
 
-        accumulate[
+        # NOTE: To avoid initial load and final store after accumulation, this
+        # function is rewritten to use a subset of storage in acc_in for rows
+        # in range [row_start, row_stop].
+        var acc = _Accumulator[
+            output_type,
             micro_kernel_height,
             micro_kernel_width,
             simd_size,
+            row_start,
+            row_stop,
+        ](acc_in._storage)
+
+        acc.accumulate[
             prefetch_offset=prefetch_offset,
             partial_load_b = has_residual and not filter_packed,
         ](
             c_tile_size,
-            output_ptr,
             input_base,
             input_stride,
             filter_base,
@@ -1120,7 +1117,7 @@ struct ConvDirectNHWC[
 
         # After the loop can't be stepped with micro_kernel_height,
         # it will step by 5, 4, 3, 2, 1.
-        tile[iteration, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1),](
+        tile[iteration, VariadicList[Int](micro_kernel_height, 5, 4, 3, 2, 1)](
             self.partition.ho_or_howo_offset,
             self.partition.ho_or_howo_offset + self.partition.ho_or_howo_size,
         )
@@ -1765,6 +1762,11 @@ struct ConvDirectNHWC[
                 has_residual,
             ](output_base, output_micro_tile)
 
+        var acc = _Accumulator[
+            output_type, micro_kernel_height, micro_kernel_width, simd_size
+        ]()
+        acc.load(output_micro_tile.data, micro_kernel_width * simd_size)
+
         alias W = input_shape.get[2]()  # NHWC
         alias H = input_shape.get[1]()  # NHWC
         alias WO = output_shape.get[2]()  # NHWC
@@ -1805,30 +1807,36 @@ struct ConvDirectNHWC[
                     0,
                 ) if padded_right else 0
                 # fmt: on
-                self._accumulate[
-                    micro_kernel_height - left_adjust - right_adjust,
-                    micro_kernel_width,
-                    simd_size,
-                    has_residual,
-                    # prefetch offset, default to 4 for now
-                    4,
-                ](
-                    c_tile_size,
-                    wo_stride_in_input,
-                    input_ptr.offset(left_adjust * wo_stride_in_input),
-                    filter_ptr,
-                    output_micro_tile.data.offset(
-                        left_adjust * micro_kernel_f_size
-                    ),
-                )
+
+                # Revised calculation of tile_height to avoid cases of tile_height<=0.
+                alias tile_height = micro_kernel_height - left_adjust - right_adjust
+
+                @parameter
+                if tile_height > 0:
+                    self._accumulate[
+                        micro_kernel_height,
+                        micro_kernel_width,
+                        simd_size,
+                        has_residual,
+                        # prefetch offset, default to 4 for now
+                        4,
+                        left_adjust,
+                        left_adjust + tile_height,
+                    ](
+                        c_tile_size,
+                        wo_stride_in_input,
+                        input_ptr.offset(0),
+                        filter_ptr,
+                        acc,
+                    )
 
                 filter_ptr = filter_ptr.offset(filter_S_stride)
                 input_ptr = input_ptr.offset(s_stride_in_input)
 
             unroll[body, S]()
-
             h_shift += conv_attr.dilations()[0]
 
+        acc.store(output_micro_tile.data, micro_kernel_width * simd_size)
         # Store the micro tile
         self._store_output_micro_tile[
             micro_kernel_height,
@@ -1859,6 +1867,7 @@ struct ConvDirectNHWC[
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
 fn accumulate_wo_tile_1d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
@@ -1868,7 +1877,7 @@ fn accumulate_wo_tile_1d[
 ](
     c_tile_size: Int,
     S: Int,
-    output: DTypePointer,
+    inout acc: _Accumulator,
     input: DTypePointer,
     input_stride: Int,
     input_stride_to_nbr: Int,
@@ -1892,7 +1901,7 @@ fn accumulate_wo_tile_1d[
     Args:
         c_tile_size: Tile size in input channel.
         S: Filter window width.
-        output: Output registers.
+        acc: Pointer to register tile accumulator.
         input: Pointer to the first input point in WO tile.
         input_stride: Stride between two input points, i.e., C w/ NHWC layout.
         input_stride_to_nbr: Stride between an input point and its neighbor.
@@ -1925,15 +1934,8 @@ fn accumulate_wo_tile_1d[
                 continue
 
         # Accumulat in output registers.
-        accumulate[
-            micro_kernel_height,
-            micro_kernel_width,
-            simd_size,
-            prefetch_offset=4,
-            partial_load_b=partial_load_filter,
-        ](
+        acc.accumulate[prefetch_offset=4, partial_load_b=partial_load_filter](
             c_tile_size,
-            output,
             input_ptr,
             input_stride,
             filter_ptr,
@@ -1985,26 +1987,14 @@ fn conv1d_update_wo_tile[
 
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
-    var register_tile = NDBuffer[
-        output.type,
-        2,
-        DimList(micro_kernel_height, micro_kernel_width * simd_size),
-    ].stack_allocation()
+    var acc = _Accumulator[
+        output.type, micro_kernel_height, micro_kernel_width, simd_size
+    ]()
 
     if first_c_tile:
-        init_register_tile[
-            micro_kernel_height,
-            micro_kernel_width,
-            simd_size,
-        ](register_tile.data)
+        acc.init(0)
     else:
-        load_register_tile[
-            micro_kernel_height,
-            micro_kernel_width,
-            simd_size,
-            partial_load=has_residual,
-        ](
-            register_tile.data,
+        acc.load[partial_load=has_residual](
             output,
             conv_shape.f,
             conv_shape.f_per_group() % simd_size,
@@ -2019,7 +2009,7 @@ fn conv1d_update_wo_tile[
     ](
         c_tile_size,
         conv_shape.s(),
-        register_tile.data,
+        acc,
         input,
         conv_shape.c * conv_shape.stride[0],
         input_stride_by_s,
@@ -2033,15 +2023,9 @@ fn conv1d_update_wo_tile[
     )
 
     # Store the micro tile
-    store_register_tile[
-        micro_kernel_height,
-        micro_kernel_width,
-        simd_size,
-        partial_store=has_residual,
-    ](
+    acc.store[partial_store=has_residual](
         output,
         conv_shape.f,
-        register_tile.data,
         conv_shape.f_per_group() % simd_size,
     )
 
@@ -2070,6 +2054,7 @@ fn conv1d_update_wo_tile[
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
 fn accumulate_wo_tile_2d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
@@ -2079,7 +2064,7 @@ fn accumulate_wo_tile_2d[
 ](
     c_tile_size: Int,
     RS: StaticIntTuple[2],
-    output: DTypePointer,
+    inout acc: _Accumulator,
     input: DTypePointer,
     input_stride: Int,
     input_stride_to_nbr: StaticIntTuple[2],
@@ -2109,7 +2094,7 @@ fn accumulate_wo_tile_2d[
         ](
             c_tile_size,
             RS[1],
-            output,
+            acc,
             input_ptr,
             input_stride,
             input_stride_to_nbr[1],
@@ -2174,26 +2159,14 @@ fn conv2d_update_wo_tile[
 
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
-    var register_tile = NDBuffer[
-        output.type,
-        2,
-        DimList(micro_kernel_height, micro_kernel_width * simd_size),
-    ].stack_allocation()
+    var acc = _Accumulator[
+        output.type, micro_kernel_height, micro_kernel_width, simd_size
+    ]()
 
     if first_c_tile:
-        init_register_tile[
-            micro_kernel_height,
-            micro_kernel_width,
-            simd_size,
-        ](register_tile.data)
+        acc.init(0)
     else:
-        load_register_tile[
-            micro_kernel_height,
-            micro_kernel_width,
-            simd_size,
-            partial_load=has_residual,
-        ](
-            register_tile.data,
+        acc.load[partial_load=has_residual](
             output,
             conv_shape.f,
             conv_shape.f_per_group() % simd_size,
@@ -2208,7 +2181,7 @@ fn conv2d_update_wo_tile[
     ](
         c_tile_size,
         Index(conv_shape.r(), conv_shape.s()),
-        register_tile.data,
+        acc,
         input,
         conv_shape.c * conv_shape.stride[1],
         Index(input_stride_by_r, input_stride_by_s),
@@ -2222,15 +2195,9 @@ fn conv2d_update_wo_tile[
     )
 
     # Store the micro tile
-    store_register_tile[
-        micro_kernel_height,
-        micro_kernel_width,
-        simd_size,
-        partial_store=has_residual,
-    ](
+    acc.store[partial_store=has_residual](
         output,
         conv_shape.f,
-        register_tile.data,
         conv_shape.f_per_group() % simd_size,
     )
 
@@ -2265,6 +2232,7 @@ fn conv2d_update_wo_tile[
 
 
 # TODO: Simplify this with a rank parameter + recursion.
+@always_inline
 fn accumulate_wo_tile_3d[
     micro_kernel_height: Int,
     micro_kernel_width: Int,
@@ -2274,7 +2242,7 @@ fn accumulate_wo_tile_3d[
 ](
     c_tile_size: Int,
     QRS: StaticIntTuple[3],
-    output: DTypePointer,
+    inout acc: _Accumulator,
     input: DTypePointer,
     input_stride: Int,
     input_stride_to_nbr: StaticIntTuple[3],
@@ -2303,7 +2271,7 @@ fn accumulate_wo_tile_3d[
         ](
             c_tile_size,
             Index(QRS[1], QRS[2]),
-            output,
+            acc,
             input_ptr,
             input_stride,
             Index(input_stride_to_nbr[1], input_stride_to_nbr[2]),
@@ -2371,26 +2339,14 @@ fn conv3d_update_wo_tile[
 
     # This will be all lifted to simd registers for FMA unless the micro
     # kernel is too large that spills named registers.
-    var register_tile = NDBuffer[
-        output.type,
-        2,
-        DimList(micro_kernel_height, micro_kernel_width * simd_size),
-    ].stack_allocation()
+    var acc = _Accumulator[
+        output.type, micro_kernel_height, micro_kernel_width, simd_size
+    ]()
 
     if first_c_tile:
-        init_register_tile[
-            micro_kernel_height,
-            micro_kernel_width,
-            simd_size,
-        ](register_tile.data)
+        acc.init(0)
     else:
-        load_register_tile[
-            micro_kernel_height,
-            micro_kernel_width,
-            simd_size,
-            partial_load=has_residual,
-        ](
-            register_tile.data,
+        acc.load[partial_load=has_residual](
             output,
             conv_shape.f,
             conv_shape.f_per_group() % simd_size,
@@ -2405,7 +2361,7 @@ fn conv3d_update_wo_tile[
     ](
         c_tile_size,
         conv_shape.filter_dims,
-        register_tile.data,
+        acc,
         input,
         conv_shape.c * conv_shape.stride[2],
         Index(input_stride_by_q, input_stride_by_r, input_stride_by_s),
@@ -2419,15 +2375,9 @@ fn conv3d_update_wo_tile[
     )
 
     # Store the micro tile
-    store_register_tile[
-        micro_kernel_height,
-        micro_kernel_width,
-        simd_size,
-        partial_store=has_residual,
-    ](
+    acc.store[partial_store=has_residual](
         output,
         conv_shape.f,
-        register_tile.data,
         conv_shape.f_per_group() % simd_size,
     )
 

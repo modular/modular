@@ -189,6 +189,8 @@ struct _Matmul[
 
                 if accumulate:
                     c_tile.load(cn_ptr, c_stride)
+                else:
+                    c_tile.init(0.0)
 
                 @parameter
                 if has_neon():
