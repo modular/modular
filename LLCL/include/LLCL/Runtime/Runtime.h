@@ -76,6 +76,9 @@ struct RuntimeOptions {
     kNoProfiler,
     /// Generating debug info for Linux `perf`.
     kPerfProfiler,
+    /// Generate debug info by loading kernels as a shared library. Should work
+    /// will all profilers.
+    kSOProfiler
   };
 
   size_t numThreads = 0;

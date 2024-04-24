@@ -152,7 +152,10 @@ private:
           clEnumValN(RuntimeOptions::ProfilerDebuginfo::kNoProfiler, "none",
                      "Do not generate debuginfo"),
           clEnumValN(RuntimeOptions::ProfilerDebuginfo::kPerfProfiler, "perf",
-                     "Generate debuginfo for perf.")),
+                     "Generate debuginfo for perf."),
+          clEnumValN(RuntimeOptions::ProfilerDebuginfo::kSOProfiler, "so",
+                     "Generate debuginfo by loading compiled kernels into a "
+                     "shared library. Should work with all profilers.")),
       llvm::cl::location(options.profilerDebuginfo),
       llvm::cl::cat(RuntimeOptionsCategory)};
 

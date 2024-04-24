@@ -349,6 +349,12 @@ public:
 
   /// Get the base object linking layer.
   llvm::orc::ObjectLinkingLayer &getLinkingLayer() { return *objectLayer; }
+  const llvm::DataLayout &getDataLayout() const { return dataLayout; }
+
+  /// Add a JITDylib to the search order for symbol resolution. Asserts if the
+  /// dylib already exists - users should generally be cautious about adding
+  /// dylibs to the search order.
+  ErrorOrSuccess addToSearchOrder(StringRef name, llvm::orc::JITDylib *dylib);
 
 private:
   explicit ExecutionEngine(std::unique_ptr<llvm::orc::ExecutionSession> session,
@@ -359,11 +365,6 @@ private:
 
   /// Mangle and intern a string name.
   llvm::orc::SymbolStringPtr mangleAndIntern(StringRef name);
-
-  /// Add a JITDylib to the search order for symbol resolution. Asserts if the
-  /// dylib already exists - users should generally be cautious about adding
-  /// dylibs to the search order.
-  ErrorOrSuccess addToSearchOrder(StringRef name, llvm::orc::JITDylib *dylib);
 
   /// Look up the provided symbol with the given search order. This is a
   /// generalization of the two lookup methods above, we just don't want to
