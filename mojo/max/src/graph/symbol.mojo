@@ -12,7 +12,7 @@ from utils.variant import Variant
 import _mlir
 
 from ._attributes import AttrMap, _string_attr
-from .graph import Graph
+from .graph import Graph, _GraphRef
 from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
 # TODO: The overloads are incomplete, and make unverified assumptions about
@@ -54,8 +54,9 @@ struct Symbol(CollectionElement, Stringable):
     a shorthand notation for "Adds a node representing an op that returns foo".
     """
 
+    var _graph: _GraphRef
     var handle: _mlir.Value
-    """An handle to this `Symbol`'s internal representation."""
+    """A handle to this `Symbol`'s internal representation."""
 
     # ===------------------------------------------------------------------=== #
     # Constructors and basic accessors
@@ -67,16 +68,7 @@ struct Symbol(CollectionElement, Stringable):
         Returns:
             The parent `Graph`.
         """
-        var parent = self.handle.parent()
-        var block: _mlir.Block
-        if parent.isa[_mlir.Block]():
-            block = parent.get[_mlir.Block]()[]
-        else:
-            var op = parent.get[_mlir.Operation]()[]
-            block = op.block()
-
-        var graph_op = block.parent()
-        return Graph(graph_op)
+        return Graph(self._graph)
 
     fn type(self) raises -> AnyMOType:
         """Returns this `Symbol`'s type.
@@ -700,7 +692,7 @@ struct SymbolTuple(Sized):
         for symbol in symbols:
             self.symbols.append(symbol[])
 
-    fn __init__(inout self, owned symbols: ()):
+    fn __init__(inout self, owned symbols: Tuple[]):
         """Convenience constructor for an empty tuple.
 
         Args:
@@ -708,7 +700,7 @@ struct SymbolTuple(Sized):
         """
         self.__init__()
 
-    fn __init__(inout self, owned symbols: (Symbol, Symbol)):
+    fn __init__(inout self, owned symbols: Tuple[Symbol, Symbol]):
         """Convenience constructor from a 2-tuple.
 
         Args:
@@ -716,7 +708,7 @@ struct SymbolTuple(Sized):
         """
         self.__init__(symbols[0], symbols[1])
 
-    fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol)):
+    fn __init__(inout self, owned symbols: Tuple[Symbol, Symbol, Symbol]):
         """Convenience constructor from a 3-tuple.
 
         Args:
@@ -724,7 +716,9 @@ struct SymbolTuple(Sized):
         """
         self.__init__(symbols[0], symbols[1], symbols[2])
 
-    fn __init__(inout self, owned symbols: (Symbol, Symbol, Symbol, Symbol)):
+    fn __init__(
+        inout self, owned symbols: Tuple[Symbol, Symbol, Symbol, Symbol]
+    ):
         """Convenience constructor from a 4-tuple.
 
         Args:

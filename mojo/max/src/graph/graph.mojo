@@ -6,6 +6,7 @@
 """Core graph primitives."""
 
 from collections import Optional, Set
+from memory._arc import Arc
 from sys.info import has_neon
 from tensor import Tensor
 
@@ -17,6 +18,36 @@ from .type import MOList, MOTensor, TypeTuple
 
 
 # TODO: Add examples throughout.
+
+
+struct _OwnedGraph(Movable):
+    var ctx: _mlir.Context
+    var op: _mlir.Operation
+
+    fn __init__(
+        inout self,
+        owned ctx: _mlir.Context,
+        owned op: _mlir.Operation,
+    ):
+        self.ctx = ctx^
+        self.op = op^
+
+    fn module(self) -> _mlir.Module:
+        try:
+            return _mlir.Module.from_op(self.op.parent())
+        except:
+            return abort[_mlir.Module]("invalid MLIR state for graph")
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.ctx = existing.ctx^
+        self.op = existing.op^
+
+    fn __del__(owned self):
+        self.module().as_op().destroy()
+        self.ctx.__exit__()
+
+
+alias _GraphRef = Arc[_OwnedGraph]
 
 
 @value
@@ -62,7 +93,7 @@ struct Graph(CollectionElement, Stringable):
     [build a graph with MAX Graph](/engine/graph/get-started).
     """
 
-    var _op: _mlir.Operation
+    var _graph: _GraphRef
 
     fn __init__(inout self, in_types: TypeTuple, out_types: TypeTuple):
         """Constructs a new `Graph` using the default graph name.
@@ -138,7 +169,7 @@ struct Graph(CollectionElement, Stringable):
             print(e)
             abort[NoneType]("failed to build kgen decl attr")
 
-        self.__init__(op)
+        self._graph = Arc(_OwnedGraph(ctx^, op^))
 
     fn __str__(self) -> String:
         """Returns a `String` representation of this `Graph`.
@@ -149,10 +180,7 @@ struct Graph(CollectionElement, Stringable):
         Returns:
             A human-readable string representation of the graph.
         """
-        try:
-            return str(self._module())
-        except:
-            return str(self._op)
+        return str(self._module())
 
     fn verify(self) raises:
         """Verifies the `Graph` and its contents.
@@ -168,7 +196,7 @@ struct Graph(CollectionElement, Stringable):
             If the `Graph` did not pass verification. In this case it will also
             print a diagnostic message indicating the error.
         """
-        if not self._op.verify():
+        if not self._graph[].op.verify():
             raise "graph did not verify"
 
     # ===------------------------------------------------------------------=== #
@@ -176,15 +204,15 @@ struct Graph(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn _body(self) raises -> _mlir.Block:
-        return self._op.region(0).first_block()
+        return self._graph[].op.region(0).first_block()
 
-    fn _module(self) raises -> _mlir.Module:
+    fn _module(self) -> _mlir.Module:
         """Returns the `Graph`'s parent `Module`s.
 
         Returns:
             The `Module` that holds this `Graph`.
         """
-        return _mlir.Module.from_op(self._op.parent())
+        return self._graph[].module()
 
     fn _context(self) raises -> _mlir.Context:
         """Returns the `Graph`'s MLIR context."""
@@ -216,7 +244,7 @@ struct Graph(CollectionElement, Stringable):
             raise "index out of bounds: " + str(
                 n
             ) + ", graph has " + num_args + " arguments"
-        return Symbol(self._body().argument(n))
+        return Symbol(self._graph, self._body().argument(n))
 
     # ===------------------------------------------------------------------=== #
     # nvop - the most generic op builder
@@ -253,7 +281,7 @@ struct Graph(CollectionElement, Stringable):
             The symbolic outputs of the newly-added node.
         """
         # TODO: Add input verification.
-        var ctx = self._op.context()
+        var ctx = self._graph[].ctx
 
         var operands = List[_mlir.Value]()
         for i in range(len(inputs)):
@@ -276,7 +304,7 @@ struct Graph(CollectionElement, Stringable):
 
         var results = List[Symbol]()
         for i in range(op.num_results()):
-            results.append(op.result(i))
+            results.append(Symbol(self._graph, op.result(i)))
         return results
 
     # ===------------------------------------------------------------------=== #

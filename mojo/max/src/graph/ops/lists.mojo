@@ -24,7 +24,7 @@ fn list(elements: SymbolTuple) raises -> Symbol:
         raise "`elements` cannot be empty"
 
     var g = elements[0].graph()
-    var ctx = g._op.context()
+    var ctx = g._context()
     var type = elements[0].tensor_type()
 
     for i in range(1, len(elements)):
