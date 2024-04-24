@@ -21,7 +21,8 @@ fn test_model_metadata() raises:
 
     var session = InferenceSession()
     var compiled_model = session.load(
-        Path(model_path), custom_ops_path=Path(user_defined_ops_path)
+        Path(model_path),
+        custom_ops_paths=List[Path](Path(user_defined_ops_path)),
     )
     assert_equal(compiled_model.num_model_inputs(), 1)
 
@@ -48,7 +49,8 @@ fn test_model() raises:
 
     var session = InferenceSession()
     var model = session.load(
-        Path(model_path), custom_ops_path=Path(user_defined_ops_path)
+        Path(model_path),
+        custom_ops_paths=List[Path](Path(user_defined_ops_path)),
     )
     var input_tensor = Tensor[DType.float32](5)
 
