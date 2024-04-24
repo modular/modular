@@ -1050,7 +1050,7 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
     if (!isDef)
       diag << "use of uninitialized value ";
     else
-      diag << "potential indirect mutation of uninitialized value ";
+      diag << "potential indirect access to uninitialized value ";
 
     // If some fields are present and others are missing, complain about the
     // first whole field that is missing.

@@ -416,3 +416,21 @@ fn testConditionalMut(cond: __mlir_type.i1):
 fn bad_addr_space[addr_space: AddressSpace](ptr: Pointer[MemExample, addr_space]):
   # expected-error @+1 {{cannot destroy value in non-default address space}}
   _ = __get_address_as_owned_value(ptr.address)
+
+
+# Returning a reference to the caller's stack.
+# https://github.com/modularml/modular/issues/38421
+# This is valid to declare...
+fn return_owned_arg_ref(owned x: String) -> Reference[
+  String, True.__mlir_i1__(), __lifetime_of(x)]:
+   return x
+
+fn test38421():
+   # this is getting a reference to the expression temporary for the string.
+   # expected-note @+1 {{'(expression temporary)' declared here}}
+   var reference = return_owned_arg_ref(String("abc"))
+
+   # This is an error since the rvalue temp slot is uninitialized here.
+   # expected-error @+1 {{potential indirect access to uninitialized value '(expression temporary)'}}
+   _ = reference[].__len__()
+
