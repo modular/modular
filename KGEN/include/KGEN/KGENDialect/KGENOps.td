@@ -1010,6 +1010,36 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
+// SourceLocOp
+//===----------------------------------------------------------------------===//
+
+def KGEN_SourceLocOp : KGENOp<"source_loc"> {
+  let summary = "Track source location and update conditionally during inlining";
+  let description = [{
+    The `kgen.source_loc` operation enables implementing location capture of
+    call stacks. When defined in an `@always_inline` or
+    `@always_inline("nodebug")` function, it will return the capturing the call
+    location of the enclosing function. By specifying an `inlineCount` larger
+    than 0, it can generalize this behavior, e.g. for `inlineCount = 1`, it will
+    return the call location of two steps up the call stack (as long as both
+    calls are to `@always_inline` or `@always_inline("nodebug")` functions). In
+    parameter contexts, no location context can be recovered, so the op will be
+    interpreted as a constant of dummy location info.
+
+    Example:
+    ```mlir
+     %line, %col, %fileName = kgen.source_loc[0]
+    ```
+  }];
+
+  let arguments = (ins IntProperty<"int64_t">:$inlineCount);
+  let results = (outs Index:$line, Index:$col, KGEN_StringType:$fileName);
+  let assemblyFormat = [{
+    `[` custom<IntProperty>($inlineCount) `]` attr-dict
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // GlobalOp
 //===----------------------------------------------------------------------===//
 

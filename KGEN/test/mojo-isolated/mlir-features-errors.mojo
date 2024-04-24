@@ -94,3 +94,14 @@ fn bad_signature_type[func: __mlir_type[`!kgen.signature<(index byref) -> !kgen.
 fn mlir_magic_keyword_param():
     # expected-error @below {{only positional operands allowed in mlir magic}}
     alias a = __mlir_type[a=`!pop.scalar<bool>`]
+
+
+fn mlir_properties():
+    _ = __mlir_op.`kgen.source_loc`[
+        _type = (
+            __mlir_type.index,
+            __mlir_type.index,
+            __mlir_type.`!kgen.string`,
+        ),
+        _properties = __mlir_attr.`1 : i64`,
+    ]() # expected-error {{expected DictionaryAttr to set properties}}
