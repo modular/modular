@@ -931,6 +931,41 @@ static void printIntProperty(OpAsmPrinter &printer, Operation *op,
   printer << value;
 }
 
+FileLineColLoc KGEN::extractSourceLoc(Location callLoc) {
+  Location resolvedLoc = callLoc;
+  DebugInfo::walkLocation(callLoc, DebugInfo::LocWalkPolicy::CalleeOnly,
+                          [&](Location loc) {
+                            resolvedLoc = loc;
+                            return mlir::WalkResult::advance();
+                          });
+  return resolvedLoc->findInstanceOf<FileLineColLoc>();
+}
+
+/// Core implementation for interpreting kgen.source_loc.
+static SmallVector<Attribute> sourceLocInterpretImpl(Operation *callOp,
+                                                     MLIRContext *ctx) {
+  OpBuilder b(ctx);
+  auto strType = b.getType<StringType>();
+
+  if (callOp) {
+    FileLineColLoc fileLoc = extractSourceLoc(callOp->getLoc());
+    return {b.getIndexAttr(fileLoc.getLine()),
+            b.getIndexAttr(fileLoc.getColumn()),
+            StringAttr::get(fileLoc.getFilename().getValue(), strType)};
+  }
+
+  auto zero = b.getIndexAttr(0);
+  return {zero, zero,
+          StringAttr::get("<unknown location in parameter context>", strType)};
+}
+
+ErrorTreeOrSuccess SourceLocOp::interpret(ArrayRef<Attribute> operands,
+                                          InterpreterState &state) {
+  state.mapResults(sourceLocInterpretImpl(
+      state.getOrigin(getProperties().getInlineCount()), getContext()));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // GlobalOp
 //===----------------------------------------------------------------------===//

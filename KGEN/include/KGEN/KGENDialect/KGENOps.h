@@ -26,11 +26,12 @@
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+namespace M {
+
 //===----------------------------------------------------------------------===//
 // KGENModule
 //===----------------------------------------------------------------------===//
 
-namespace M {
 /// A KGEN module wraps a `ModuleOp` and a `SymbolTableCollection` for
 /// convenient nested symbol lookups across the module.
 class KGENModule {
@@ -56,6 +57,17 @@ private:
   /// A collection of symbol tables.
   SymbolTableCollection &symbolTable;
 };
+
+namespace KGEN {
+//===----------------------------------------------------------------------===//
+// Source location utilities
+//===----------------------------------------------------------------------===//
+
+/// Extract the original source location from a call location, taking into
+/// account debuginfo and other structure within locations.
+FileLineColLoc extractSourceLoc(Location callLoc);
+} // namespace KGEN
+
 } // namespace M
 
 //===----------------------------------------------------------------------===//

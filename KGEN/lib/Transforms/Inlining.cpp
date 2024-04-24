@@ -554,11 +554,15 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
       op->setLoc(
           cast<LocationAttr>(mangler.mangleRefsIn(LocationAttr(op->getLoc()))));
     }
-    // Inline the location, and recurse into the body if allowed.
+
     DebugInfo::updateInlinedLoc(op, call.getLoc(), stripDebugInfo);
 
     if (isa<DebugInfo::SubprogramScoped>(op))
       return WalkResult::skip();
+
+    if (auto sourceLocOp = dyn_cast<KGEN::SourceLocOp>(op))
+      processSourceLocOp(sourceLocOp, call.getLoc(), b);
+
     return WalkResult::advance();
   });
 

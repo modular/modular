@@ -11,11 +11,16 @@
 #include "mlir/Pass/PassManager.h"
 #include "llvm/Support/ThreadPool.h"
 
+namespace mlir {
+class IRRewriter;
+} // namespace mlir
+
 namespace M::KGEN {
 class CallOp;
 class FuncOp;
 class KGENCallOpInterface;
 class GeneratorOp;
+class SourceLocOp;
 
 /// Replace the call operation with the given region using values from args for
 /// the region inputs.
@@ -27,6 +32,11 @@ std::pair<Operation *, bool> inlineRegion(IRMapping &map,
                                           KGENCallOpInterface call,
                                           Region &region,
                                           bool takeBody = false);
+
+/// Decrement the counter of a SourceLocOp and lower it to file, line, and
+/// column constants (extracted from the given call location) if needed.
+void processSourceLocOp(SourceLocOp sourceLocOp, Location callLoc,
+                        mlir::IRRewriter &b);
 
 /// Inlining might create trivial loops with a single break at the end. This
 /// function cleans it up.

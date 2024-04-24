@@ -768,6 +768,12 @@ Operation *InterpreterState::popFrame() {
   return origin;
 }
 
+Operation *InterpreterState::getOrigin(size_t depth) {
+  if (depth >= stack.size())
+    return nullptr;
+  return stack[stack.size() - 1 - depth].origin;
+}
+
 void InterpreterState::transferControlFlowTo(Operation *target) {
   pc = target;
   if (pc) {

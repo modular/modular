@@ -92,10 +92,49 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
     }
     if (isa<LIT::AsyncExecuteOp, StageClosureOp>(op))
       return WalkResult::skip();
+
+    if (auto sourceLocOp = dyn_cast<SourceLocOp>(op))
+      processSourceLocOp(sourceLocOp, call.getLoc(), b);
+
     return WalkResult::advance();
   });
   b.replaceOp(call, scope->getResults());
   return std::make_pair(scope, numReturns == 1 && returnAtEnd);
+}
+
+//===----------------------------------------------------------------------===//
+// processSourceLocOp
+//===----------------------------------------------------------------------===//
+
+void KGEN::processSourceLocOp(SourceLocOp sourceLocOp, Location callLoc,
+                              mlir::IRRewriter &b) {
+  // The inline count is decremented until it reaches 0. When that happens, we
+  // capture the caller's location, and replace the op.
+  if (auto &props = sourceLocOp.getProperties();
+      int64_t inlineCount = props.getInlineCount()) {
+    props.setInlineCount(inlineCount - 1);
+    return;
+  }
+
+  // Extract the source location, even in the presence of debuginfo.
+  FileLineColLoc fileLoc = extractSourceLoc(callLoc);
+  Location opLoc = sourceLocOp.getLoc();
+
+  // Replace the source location op with constants.
+  b.setInsertionPoint(sourceLocOp);
+  b.replaceAllUsesWith(
+      sourceLocOp.getLine(),
+      b.create<ParamConstantOp>(opLoc, b.getIndexAttr(fileLoc.getLine())));
+  b.replaceAllUsesWith(
+      sourceLocOp.getCol(),
+      b.create<ParamConstantOp>(opLoc, b.getIndexAttr(fileLoc.getColumn())));
+  b.replaceAllUsesWith(
+      sourceLocOp.getFileName(),
+      b.create<ParamConstantOp>(
+          opLoc, StringAttr::get(fileLoc.getFilename().getValue(),
+                                 b.getType<StringType>())));
+
+  b.eraseOp(sourceLocOp);
 }
 
 //===----------------------------------------------------------------------===//

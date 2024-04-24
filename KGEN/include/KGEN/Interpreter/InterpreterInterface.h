@@ -143,6 +143,10 @@ public:
   /// Pop the current stack frame, returning the origin operation.
   Operation *popFrame();
 
+  /// Return the origin operation of the frame at the given depth in the stack.
+  /// If the stack is not deep enough, return null.
+  Operation *getOrigin(size_t depth);
+
   /// Set the return values.
   void setReturnValues(ArrayRef<Attribute> values) {
     assert(!returnValues && "already have return values");
