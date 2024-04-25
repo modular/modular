@@ -151,20 +151,11 @@ from utils.loop import unroll
 # Prevent these functions from being DCE'd by explicitly exporting them.
 @export
 fn MOGGExport():
-    alias _indices = TensorIndicesTypeDef
-    alias _mojo_call_context = MojoCallContextDef
-    alias _simd_typedef = SimdTypeDef
-    alias _index_typedef = IndexTypeDef
-    alias _to_buffer = to_buffer
-    alias _to_buffer_list = to_buffer_list
-    alias _destruct_buffer_list = destruct_buffer_list
-    alias _to_shape = to_shape
     alias _add = add
     alias _avg_pool_shape = pool_shape
     alias _avg_pool_shape_ceil = pool_shape_ceil
     alias _cast = cast
     alias _ceil = ceil
-    alias _concat_shape = concat_shape
     alias _concat_from_list_shape = concat_from_list_shape
     alias _conv_shape = conv_shape
     alias _conv_transpose_shape = conv_transpose_shape
@@ -178,8 +169,6 @@ fn MOGGExport():
     alias _gather_nd_shape = gather_nd_shape
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
-    alias _pack_conv_filter_shape = pack_conv_filter_shape
-    alias _pack_conv_transpose_filter_shape = pack_conv_transpose_filter_shape
     alias _pad_shape = pad_shape
     alias _greater = greater
     alias _greater_equal = greater_equal
@@ -193,16 +182,10 @@ fn MOGGExport():
     alias _log1p = log1p
     alias _pack_b_ndbuffer = pack_b_ndbuffer
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
-    alias _pack_conv_filter = pack_conv_filter
-    alias _pack_conv_transpose_filter = pack_conv_transpose_filter
     alias _max_pool_shape = pool_shape
     alias _max_pool_shape_ceil = pool_shape_ceil
-    alias _matrix_solve = mogg_matrix_solve
     alias _matrix_solve_shape = matrix_solve_shape
     alias _matrix_band_part = matrix_band_part
-    alias _non_maximum_suppression = non_maximum_suppression
-    alias _non_maximum_suppression_shape_func = non_maximum_suppression_shape_func
-    alias _batched_matmul = batched_matmul
     alias _batched_matmul_shape = batched_matmul_shape
     alias _mod = mod
     alias _mul = mul
@@ -219,28 +202,16 @@ fn MOGGExport():
     alias _reshape = reshape
     alias _reshape_shape = reshape_shape
     alias _ndbuffer_reshape = ndbuffer_reshape
-    alias _broadcast_to_shape = broadcast_to_shape
-    alias _broadcast_to_tensor = broadcast_to_tensor
     alias _scatter_shape = scatter_shape
     alias _scatter_nd_shape = scatter_nd_shape
     alias _slice = slice
-    alias _simd_target = get_target_simd
-    alias _simd_target_cuda = get_target_simd_cuda
-    alias _simd_width_to_int = simd_width_to_int
-    alias _split_ith_output_shape = split_ith_output_shape
     alias _reduce_shape = reduce_shape
-    alias _resize_shape = resize_shape
     alias _random_shape = random_shape
     alias _round = round
     alias _roundeven = roundeven
     alias _roi_align_shape = roi_align_shape
     alias _slice_shape = slice_shape
-    alias _transpose_shape = transpose_shape
     alias _trunc = trunc
-    alias _elementwise_wrapper = elementwise_wrapper
-    alias _get_int_from_shape = get_int_from_shape
-    alias _shape_to_ndbuffer = shape_to_ndbuffer
-    alias _tensor_to_shape = tensor_to_shape
     alias _arg_nonzero = arg_nonzero
     alias _arg_nonzero_shape = arg_nonzero_shape
     alias _top_k_shape = top_k_shape
@@ -380,12 +351,14 @@ fn MojoCallContextDef(ty: MojoCallContextPtr):
     pass
 
 
+@mogg_register("simd")
 fn SimdTypeDef[
     type: DType, width: Int
 ](ty: SIMD[type, width]) -> SIMD[type, width]:
     return ty
 
 
+@mogg_register("indices")
 fn TensorIndicesTypeDef[
     rank: Int
 ](ty: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
@@ -420,6 +393,7 @@ fn create_known_dim[known_val: Int]() -> Dim:
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("to_buffer")
 @always_inline
 fn to_buffer[
     type: DType, rank: Int
@@ -450,6 +424,7 @@ fn to_buffer[
     )
 
 
+@mogg_register("to_shape")
 @always_inline
 fn to_shape[
     rank: Int
@@ -469,6 +444,7 @@ fn to_shape[
 
 
 # Convert a tensor into a shape.
+@mogg_register("tensor_to_shape")
 @always_inline
 fn tensor_to_shape[
     type: DType,
@@ -482,6 +458,7 @@ fn tensor_to_shape[
 
 
 # Extract a value from a shape.
+@mogg_register("get_int_from_shape")
 @always_inline
 fn get_int_from_shape[
     param_index: Int, rank: Int
@@ -489,6 +466,7 @@ fn get_int_from_shape[
     return shape[param_index]
 
 
+@mogg_register("shape_to_ndbuffer")
 @always_inline
 fn shape_to_ndbuffer[
     shape_rank: Int, buf_rank: Int, type: DType
@@ -498,6 +476,7 @@ fn shape_to_ndbuffer[
         buf[i] = shape[i]
 
 
+@mogg_register("to_buffer_list")
 @always_inline
 fn to_buffer_list[
     type: DType, rank: Int
@@ -527,6 +506,7 @@ fn to_buffer_list[
     return out_list
 
 
+@mogg_register("destruct_buffer_list")
 @always_inline
 fn destruct_buffer_list[
     type: DType, rank: Int
@@ -537,6 +517,7 @@ fn destruct_buffer_list[
 
 # TODO(#27757): All calls with concrete body functions are as if annotated with
 #               @mogg_register("mo.original_op")
+@mogg_register("elementwise")
 @always_inline
 fn elementwise_wrapper[
     trace_description: StringLiteral,
@@ -905,6 +886,7 @@ fn broadcast_to_tensor[
     return out
 
 
+@mogg_register("broadcast_to_shape")
 @always_inline
 fn broadcast_to_shape[
     input_rank: Int,
@@ -949,14 +931,17 @@ fn broadcast_to_shape[
 # When we have many SIMD types in one kernel we need to use the `min` of them.
 # This involves applying parameter expressions to this result which must be
 # `mlir.index` typed so we need to return as `mlir.index` and then cast to int.
+@mogg_register("simd_target")
 fn get_target_simd[type: DType]() -> __mlir_type.index:
     return simdwidthof[type]().value
 
 
+@mogg_register("simd_target_cuda")
 fn get_target_simd_cuda[type: DType]() -> __mlir_type.index:
     return simdwidthof[Scalar[type], target = _get_nvptx_target()]().value
 
 
+@mogg_register("simd_target_to_int")
 fn simd_width_to_int[simd_width: __mlir_type.index]() -> Int:
     return Int(simd_width)
 
@@ -1100,6 +1085,7 @@ fn concat[
         ins._del_old()
 
 
+@mogg_register("concat_shape")
 @always_inline
 fn concat_shape[
     input_type: DType,
@@ -1841,6 +1827,7 @@ fn calculate_squeeze_shape[
         output_shape_index += 1
 
 
+@mogg_register("squeeze_shape_shape")
 @always_inline
 @export
 fn squeeze_shape_shape[
@@ -1919,8 +1906,8 @@ fn calculate_unsqueeze_shape[
         orig_shape_index += 1
 
 
+@mogg_register("unsqueeze_shape_shape")
 @always_inline
-@export
 fn unsqueeze_shape_shape[
     type: DType, indices_type: DType, single_thread_blocking_override: Bool
 ](
@@ -1970,6 +1957,7 @@ fn transpose[
     return NDBuffer[type, rank](input.data, new_shape, new_stride)
 
 
+@mogg_register("transpose_shape")
 @always_inline
 fn transpose_shape[
     rank: Int,
@@ -2218,6 +2206,7 @@ fn matmul[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.batch_matmul")
 @always_inline
 fn batched_matmul[
     rank: Int,
@@ -2707,6 +2696,8 @@ fn logsoftmax[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("mo.non_maximum_suppression")
+@always_inline
 fn non_maximum_suppression[
     type: DType
 ](
@@ -2732,6 +2723,8 @@ fn non_maximum_suppression[
     )
 
 
+@mogg_register("non_maximum_suppression_shape")
+@always_inline
 fn non_maximum_suppression_shape_func[
     type: DType, single_thread_blocking_override: Bool
 ](
@@ -2872,6 +2865,7 @@ fn resize_linear[
     )
 
 
+@mogg_register("resize_shape")
 @always_inline
 fn resize_shape[
     rank: Int,
@@ -2926,6 +2920,7 @@ fn roi_align[
     )
 
 
+@mogg_register("roi_align_shape")
 @always_inline
 fn roi_align_shape[
     inpTy: DType,
@@ -2955,6 +2950,7 @@ fn roi_align_shape[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("split_ith_output_shape")
 @always_inline
 fn split_ith_output_shape[
     output_idx: Int,
@@ -3447,6 +3443,8 @@ fn gather_nd[
 # Wrappers that take `num_groups` as a parameter.
 # This is required unti `mo.layout.transform` passes `num_groups` as a runtime
 # value.
+@mogg_register("layout_transform_QRSCF_to_FQRSCf")
+@mogg_register("layout_transform_RSCF_to_FRSCf")
 @always_inline
 fn pack_conv_filter[
     filter_type: DType,
@@ -3461,6 +3459,8 @@ fn pack_conv_filter[
     _pack_conv_filter(filter, packed_filter, num_groups)
 
 
+@mogg_register("layout_transform_RSFC_to_FRSCf")
+@mogg_register("layout_transform_QRSFC_to_FQRSCf")
 @always_inline
 fn pack_conv_transpose_filter[
     filter_type: DType,
@@ -3475,6 +3475,7 @@ fn pack_conv_transpose_filter[
     _pack_conv_transpose_filter(filter, packed_filter, 1)
 
 
+@mogg_register("pack_conv_filter_shape")
 @always_inline
 fn pack_conv_filter_shape[
     rank: Int,
@@ -3524,6 +3525,7 @@ fn pack_conv_filter_shape[
     ](filter_buf)
 
 
+@mogg_register("pack_conv_transpose_filter_shape")
 @always_inline
 fn pack_conv_transpose_filter_shape[
     rank: Int,
@@ -4109,6 +4111,7 @@ fn qmatmul_Af32_BTQ4symG32_Cf32_shape_func[
     return StaticIntTuple[2](a.dim[0](), b.dim[0]())
 
 
+@mogg_register("mo.linalg.solve")
 @always_inline
 fn mogg_matrix_solve[
     type: DType,
