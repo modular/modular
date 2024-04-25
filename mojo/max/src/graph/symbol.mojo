@@ -599,7 +599,7 @@ struct Symbol(CollectionElement, Stringable):
         """
         var g = self.graph()
         var attrs = AttrMap(_string_attr(g._context(), "label", label))
-        _ = g.nvop("mo.debug.tensor.print", self, TypeTuple(), attrs)
+        _ = g.nvop("mo.debug.tensor.print", self, List[AnyMOType](), attrs)
 
     # ===------------------------------------------------------------------=== #
     # Graph manipulation

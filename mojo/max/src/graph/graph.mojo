@@ -16,7 +16,7 @@ from _mlir.builtin_types import FunctionType
 
 from ._attributes import AttrMap, _tensor_attr, _vector_attr
 from .symbol import Symbol
-from .type import MOList, MOTensor, TypeTuple
+from .type import MOList, MOTensor, AnyMOType
 
 
 # TODO: Add examples throughout.
@@ -63,20 +63,19 @@ struct Graph(CollectionElement, Stringable):
     programming model, using lazily-executed, parallel operations instead of
     sequential instructions.
 
-    When you instantiate a graph, you must specify the input and output shapes,
+    When you instantiate a graph, you must specify the input shapes
     as one or more [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
     [`MOList`](/engine/reference/mojo/graph/type/MOList) values. Then, build a
     sequence of ops and set the graph output with [`output()`](#output). For
     example:
 
     ```mojo
-    from max.graph import Graph, MOTensor, ops
+    from max.graph import AnyMOType, Graph, MOTensor, ops
     from tensor import Tensor, TensorShape
 
     def build_model() -> Graph:
         var graph = Graph(
             in_types=MOTensor(DType.float32, 2, 6),
-            out_types=MOTensor(DType.float32, 2, 1),
         )
 
         var matmul_constant_value = Tensor[DType.float32](TensorShape(6, 1), 0.15)
@@ -97,13 +96,30 @@ struct Graph(CollectionElement, Stringable):
 
     var _graph: _GraphRef
 
-    fn __init__(inout self, in_types: TypeTuple, out_types: TypeTuple = []):
+    fn __init__(inout self, in_type: AnyMOType):
+        """Constructs a new `Graph` with a single input type.
+
+        Although a `Graph` is technically valid once constructed, it is not
+        usable for inference until you specify outputs by calling `output()`.
+        Check the graph validity by calling `verify()`.
+
+        Args:
+            in_type: The graph's input type, as a single
+                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
+                [`MOList`](/engine/reference/mojo/graph/type/MOList) value.
+        """
+        self.__init__("graph", List[AnyMOType](in_type))
+
+    fn __init__(
+        inout self,
+        in_types: List[AnyMOType],
+        out_types: List[AnyMOType] = List[AnyMOType](),
+    ):
         """Constructs a new `Graph` using the default graph name.
 
         Although a `Graph` is technically valid once constructed, it is not
         usable for inference until you specify outputs by calling `output()`.
-        You can check the graph validity can be checked by calling
-        `verify()`.
+        Check the graph validity by calling `verify()`.
 
         Args:
             in_types: The graph's input types, as one or more
@@ -117,14 +133,16 @@ struct Graph(CollectionElement, Stringable):
         self.__init__("graph", in_types, out_types)
 
     fn __init__(
-        inout self, name: String, in_types: TypeTuple, out_types: TypeTuple = []
+        inout self,
+        name: String,
+        in_types: List[AnyMOType],
+        out_types: List[AnyMOType] = List[AnyMOType](),
     ):
         """Constructs a new `Graph` with a custom graph name.
 
         Although a `Graph` is technically valid once constructed, it is not
         usable for inference until you specify outputs by calling `output()`.
-        You can check the graph validity can be checked by calling
-        `verify()`.
+        Check the graph validity by calling `verify()`.
 
         Args:
             name: A name for the graph.
@@ -142,8 +160,17 @@ struct Graph(CollectionElement, Stringable):
         var module = _mlir.Module(_mlir.Location.unknown(ctx))
         var loc = _mlir.Location.unknown(ctx)
 
+        var in_types_mlir = List[_mlir.Type]()
+        for type in in_types:
+            in_types_mlir.append(type[].to_mlir(ctx))
+        var out_types_mlir = List[_mlir.Type]()
+        for type in out_types:
+            out_types_mlir.append(type[].to_mlir(ctx))
+
         var function_type = _mlir.builtin_types.FunctionType(
-            ctx, in_types.to_mlir(ctx), out_types.to_mlir(ctx)
+            ctx,
+            in_types_mlir,
+            out_types_mlir,
         )
 
         var op = _c.graph_new(
@@ -151,12 +178,12 @@ struct Graph(CollectionElement, Stringable):
             loc,
             name,
             _mlir.builtin_types.FunctionType(
-                ctx, in_types.to_mlir(ctx), out_types.to_mlir(ctx)
+                ctx, in_types_mlir, out_types_mlir
             ),
         )
 
         var parameters = Set[String]()
-        for in_type in in_types.elts:
+        for in_type in in_types:
             parameters |= in_type[].parameters()
         var input_params_str = String("#kgen<param.decls[")
         var i = 0
@@ -258,7 +285,7 @@ struct Graph(CollectionElement, Stringable):
         self,
         name: String,
         inputs: List[Symbol] = List[Symbol](),
-        out_types: TypeTuple = TypeTuple(),
+        out_types: List[AnyMOType] = List[AnyMOType](),
         attrs: AttrMap = AttrMap(),
         enable_result_type_inference: Bool = False,
     ) raises -> List[Symbol]:
@@ -291,11 +318,15 @@ struct Graph(CollectionElement, Stringable):
         for i in range(len(inputs)):
             operands.append(inputs[i].handle)
 
+        var out_types_mlir = List[_mlir.Type]()
+        for type in out_types:
+            out_types_mlir.append(type[].to_mlir(ctx))
+
         var op = _mlir.Operation(
             name=name,
             location=_mlir.Location.unknown(ctx),
             operands=operands,
-            results=out_types.to_mlir(ctx),
+            results=out_types_mlir,
             attributes=attrs.attrs,
             enable_result_type_inference=enable_result_type_inference,
         )

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import _mlir
 
-from .type import MOTensor, TypeTuple
+from .type import MOTensor
 import ._c
 
 

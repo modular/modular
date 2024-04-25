@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Ops that create lists."""
 
-from collections import Optional
+from collections import List, Optional
 
 
 fn list(elements: List[Symbol]) raises -> Symbol:

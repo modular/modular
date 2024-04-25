@@ -5,8 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Helpers for building custom ops."""
 
+from collections import List
+
 from max.graph._attributes import _string_attr
-from max.graph.type import AnyMOType, TypeTuple
+from max.graph.type import AnyMOType
 
 
 def custom[
@@ -28,13 +30,13 @@ def custom[
     Returns:
         A symbolic value representing the output of the op in the graph.
     """
-    return custom_nv[name](values, TypeTuple(out_type))[0]
+    return custom_nv[name](values, List[AnyMOType](out_type))[0]
 
 
 # We'll be able to make this an overload once we can get rid of `TypeTuple`.
 def custom_nv[
     name: StringLiteral
-](values: List[Symbol], out_types: TypeTuple) -> List[Symbol]:
+](values: List[Symbol], out_types: List[AnyMOType]) -> List[Symbol]:
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with

@@ -56,5 +56,4 @@ from .type import (
     MOList,
     MOTensor,
     StaticDim,
-    TypeTuple,
 )

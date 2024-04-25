@@ -237,7 +237,7 @@ def split[
     var norm_axis = axis + type.rank() if axis < 0 else axis
 
     var split_sizes = List[Int64]()
-    var out_types = TypeTuple()
+    var out_types = List[AnyMOType]()
     for i in range(n):
         split_sizes.append(sizes[i])
         var out_dims = type.dims
