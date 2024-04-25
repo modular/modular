@@ -9,7 +9,11 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from utils.index import Index
 from random import random_ui64
-from nn.index_tensor import index_tensor, index_tensor_shape
+from nn.index_tensor import (
+    index_tensor,
+    index_tensor_shape,
+    index_tensor_1d,
+)
 from nn.gather_scatter import gather_nd, gather_nd_shape, gather, gather_shape
 
 
@@ -100,7 +104,7 @@ fn test_index_tensor_DLRM() raises:
         output_data_data, output_shape
     )
 
-    index_tensor[
+    index_tensor_1d[
         input_type,
         DType.uint64,
         input_rank,

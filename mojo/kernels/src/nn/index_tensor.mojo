@@ -9,6 +9,9 @@ from buffer.list import DimList
 from utils.index import Index
 from random import random_ui64
 from nn.gather_scatter import normalize_neg_index
+from math import div_ceil, min
+from algorithm import sync_parallelize
+from runtime.llcl import Runtime
 
 
 @always_inline
@@ -128,6 +131,88 @@ fn index_tensor_shape[
 # FOLLOW-UP: Simplify if not needed to be that complex.
 # Note: We could have used original gather_nd but then would need to materialize
 # an unneded huge index tensor (would broadcast to : dimension(s)).
+
+
+# Note: this is an extremely specialized version of the kernel that only handles
+# the [:, :, x, y] case where x and y are are 1D tensors.
+# Batch dims refer to the number of sliced dimensions at the beginning
+fn index_tensor_1d[
+    type: DType,
+    indices_type: DType,
+    data_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    batch_dims: Int,
+](
+    data: NDBuffer[type, data_rank],
+    indices: NDBuffer[indices_type, indices_rank],
+    output: NDBuffer[type, output_rank],
+):
+    constrained[
+        data_rank >= 2 and indices_rank == 2,
+        "Constraint: data_rank >= 2 and indices_rank == 2",
+    ]()
+
+    var last_index_dim = indices.get_shape()[indices_rank - 1]
+
+    debug_assert(
+        last_index_dim + batch_dims == data_rank,
+        "kernel doesn't support slicing after specified dims",
+    )
+
+    var data_shape = data.get_shape()
+    var batch_volume: Int = 1
+
+    @unroll
+    for i in range(batch_dims):
+        batch_volume *= data_shape[i]
+
+    # Flatten data to array of shape (batch_dim_size, data.shape[batch_dims:])
+    alias reshaped_data_rank = data_rank - batch_dims + 1
+    var reshaped_data_tuple = StaticIntTuple[reshaped_data_rank]()
+
+    reshaped_data_tuple[0] = batch_volume
+    var counter = 1
+    for i in range(batch_dims, data_rank):
+        reshaped_data_tuple[counter] = data_shape[i]
+        counter += 1
+
+    var reshaped_data = reshape.reshape[
+        data_rank, reshaped_data_rank, type, True
+    ](data.make_dims_unknown(), reshaped_data_tuple)
+    var reshaped_data_shape = reshaped_data.get_shape()
+
+    # TODO: Find a heuristic to replace the magic number
+    #       to also take into account the data size per line.
+    alias MIN_LINES = 32
+    var num_threads = Runtime().parallelism_level()
+    var num_tasks = min(
+        div_ceil(
+            batch_volume,
+            MIN_LINES,
+        ),
+        num_threads,
+    )
+    var work_per_thread = div_ceil(batch_volume, num_tasks)
+
+    @parameter
+    fn calc_batch_dim(task_id: Int):
+        # each thread gets a chunk of output embedding vectors to avoid inter-thread reduction
+        var work_start = task_id * work_per_thread
+        var work_end = min((task_id + 1) * work_per_thread, batch_volume)
+
+        for i in range(work_start, work_end):
+            for j in range(indices.get_shape()[0]):
+                var data_coord = StaticIntTuple[reshaped_data_rank]()
+                data_coord[0] = i
+                for k in range(last_index_dim):
+                    data_coord[k + 1] = int(indices[(j, k)])
+
+                output.data[i * indices.get_shape()[0] + j] = reshaped_data[
+                    data_coord
+                ]
+
+    sync_parallelize[calc_batch_dim](num_tasks)
 
 
 fn index_tensor[
