@@ -4,6 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+from builtin._startup import _get_current_or_global_runtime
+from memory import UnsafePointer
 from memory.unsafe import Pointer
 from os import getenv
 from tensor import Tensor
@@ -107,8 +109,15 @@ fn attr_new_tensor[
             UnsafePointer[T],
             _mlir.Type.cType,
             Bool,
+            UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
-    ]()(name._strref_dangerous(), data.data, type.c, is_owned)
+    ]()(
+        name._strref_dangerous(),
+        data.data,
+        type.c,
+        is_owned,
+        _get_current_or_global_runtime(),
+    )
 
 
 fn attr_new_tensor(
@@ -124,8 +133,15 @@ fn attr_new_tensor(
             DTypePointer[DType.invalid],
             _mlir.Type.cType,
             Bool,
+            UnsafePointer[NoneType],
         ) -> _mlir.NamedAttribute.cType,
-    ]()(name._strref_dangerous(), data, type.c, is_owned)
+    ]()(
+        name._strref_dangerous(),
+        data,
+        type.c,
+        is_owned,
+        _get_current_or_global_runtime(),
+    )
 
 
 fn attr_new_tensor_from_file(
@@ -134,9 +150,14 @@ fn attr_new_tensor_from_file(
     return cfunc[
         "MAXG_attrNewTensorFromFile",
         fn (
-            StringRef, StringRef, _mlir.Type.cType
+            StringRef, StringRef, _mlir.Type.cType, UnsafePointer[NoneType]
         ) -> _mlir.NamedAttribute.cType,
-    ]()(name._strref_dangerous(), file_name._strref_dangerous(), type.c)
+    ]()(
+        name._strref_dangerous(),
+        file_name._strref_dangerous(),
+        type.c,
+        _get_current_or_global_runtime(),
+    )
 
 
 # ===----------------------------------------------------------------------===#
