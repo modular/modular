@@ -760,8 +760,10 @@ static ASTDecl &buildAndResolveREPLModule(
   }
 
   // With the top-level of the file parsed, we can now go ahead and resolve all
-  // of the deferred declarations.
-  sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
+  // of the deferred declarations. Make sure not to delete unparsed decls, these
+  // may get referenced in a later expression.
+  sharedState.declResolver->resolveAllReferencedFrom(
+      moduleDecl, /*eraseUnparsedDecls=*/false);
 
   // Resolve any imported wildcard decls, this ensures those decls will be
   // available for future cells.
