@@ -542,28 +542,6 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   bool stripDebugInfo = level == InlineLevel::AlwaysNoDebug ||
                         !callee.getLocScope() || !caller.getLocScope();
 
-  if (updateDebugInfo) {
-    scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-      // Erase `debuginfo.value` operations when inlining without debug info.
-      if (stripDebugInfo && isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
-        op->erase();
-        return WalkResult::skip();
-      }
-      if (needsMangling) {
-        // Mangle locations.
-        op->setLoc(cast<LocationAttr>(
-            mangler.mangleRefsIn(LocationAttr(op->getLoc()))));
-      }
-
-      DebugInfo::updateInlinedLoc(op, call.getLoc(), stripDebugInfo);
-
-      if (isa<DebugInfo::SubprogramScoped>(op))
-        return WalkResult::skip();
-
-      return WalkResult::advance();
-    });
-  }
-
   // Handle all terminators.
   unsigned numReturns = 0;
   callee.getBodyRegion().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
@@ -585,32 +563,40 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
            llvm::zip(call.getParamDecls(), bind.getParameters())) {
         auto rebound = ParamOperatorAttr::get(b.getContext(), POC::Rebind,
                                               value, decl.getType());
-        auto declOp = b.create<ParamDeclareOp>(bind.getLoc(), decl, rebound);
-        if (updateDebugInfo && needsMangling) {
-          // Mangle locations.
-          declOp->setLoc(cast<LocationAttr>(
-              mangler.mangleRefsIn(LocationAttr(declOp->getLoc()))));
-        }
-        if (updateDebugInfo)
-          DebugInfo::updateInlinedLoc(declOp, call.getLoc(), stripDebugInfo);
+        b.create<ParamDeclareOp>(bind.getLoc(), decl, rebound);
       }
     } else {
       ++numReturns;
-      auto breakOp = b.create<HLCF::BreakOp>(
-          cloned->getLoc(), rebindReturnOperands(b, cloned, call), label);
-
-      if (updateDebugInfo && needsMangling) {
-        // Mangle locations.
-        breakOp->setLoc(cast<LocationAttr>(
-            mangler.mangleRefsIn(LocationAttr(breakOp->getLoc()))));
-      }
-      if (updateDebugInfo)
-        DebugInfo::updateInlinedLoc(breakOp, call.getLoc(), stripDebugInfo);
+      b.create<HLCF::BreakOp>(cloned->getLoc(),
+                              rebindReturnOperands(b, cloned, call), label);
     }
     cloned->erase();
     return WalkResult::advance();
   });
+  Location callLoc = call.getLoc();
   b.replaceOp(call, scope.getResults());
+
+  if (updateDebugInfo) {
+    scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
+      // Erase `debuginfo.value` operations when inlining without debug info.
+      if (stripDebugInfo && isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
+        op->erase();
+        return WalkResult::skip();
+      }
+      if (needsMangling) {
+        // Mangle locations.
+        op->setLoc(cast<LocationAttr>(
+            mangler.mangleRefsIn(LocationAttr(op->getLoc()))));
+      }
+
+      DebugInfo::updateInlinedLoc(op, callLoc, stripDebugInfo);
+
+      if (isa<DebugInfo::SubprogramScoped>(op))
+        return WalkResult::skip();
+
+      return WalkResult::advance();
+    });
+  }
 
   // If the scope was trivial (one return at the end), fold it away.
   if (numReturns == 1 && isa<ReturnOp>(callee.getBody()->getTerminator())) {

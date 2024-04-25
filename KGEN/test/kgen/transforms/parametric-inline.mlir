@@ -60,10 +60,8 @@ kgen.generator @callee() -> index always_inline {
 } loc(#calleeLoc)
 
 // CHECK: #[[INLINED_LOC]] = loc(callsite(#[[CALLEE_LOC]] at #[[CALL_LOC]]))
-// CHECK: #[[LOC0:.*]] = loc(callsite(#[[RET_LOC0]] at #[[CALL_LOC]]))
-// CHECK: #[[LOC1:.*]] = loc(callsite(#[[RET_LOC1]] at #[[CALL_LOC]]))
-// CHECK: #[[BREAK_LOC0:.*]] = loc(callsite(#[[LOC0]] at #[[CALL_LOC]]))
-// CHECK: #[[BREAK_LOC1:.*]] = loc(callsite(#[[LOC1]] at #[[CALL_LOC]]))
+// CHECK: #[[BREAK_LOC0]] = loc(callsite(#[[RET_LOC0]] at #[[CALL_LOC]]))
+// CHECK: #[[BREAK_LOC1]] = loc(callsite(#[[RET_LOC1]] at #[[CALL_LOC]]))
 
 // -----
 
