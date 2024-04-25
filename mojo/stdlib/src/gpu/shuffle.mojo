@@ -22,11 +22,6 @@ alias _WIDTH_MASK_SHUFFLE_UP = 0
 
 
 @always_inline("nodebug")
-fn _is_half_like[type: DType]() -> Bool:
-    return type.is_bfloat16() or type.is_float16()
-
-
-@always_inline("nodebug")
 fn _shuffle[
     mnemonic: StringLiteral,
     type: DType,
@@ -37,7 +32,7 @@ fn _shuffle[
     type, simd_width
 ]:
     constrained[
-        _is_half_like[type]() or simd_width == 1,
+        type.is_half_float() or simd_width == 1,
         "Unsupported simd_width",
     ]()
 
@@ -50,7 +45,7 @@ fn _shuffle[
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[type]
         ](Int32(mask), val, UInt32(offset), Int32(WIDTH_MASK))
-    elif _is_half_like[type]():
+    elif type.is_half_float():
 
         @parameter
         if simd_width == 1:
