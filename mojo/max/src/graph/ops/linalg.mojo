@@ -7,7 +7,7 @@
 
 from math import max
 
-from max.graph.type import Dim, MOTensor
+from max.graph.type import Dim, TensorType
 from max.graph.ops.casting import reshape
 
 
@@ -62,7 +62,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> List[Symbol]:
     var broadcast_dims_shape = g.op(
         "mo.broadcast_shape",
         List[Symbol](lhs_broadcast_dims, rhs_broadcast_dims),
-        MOTensor(DType.int64, broadcast_rank - 2),
+        TensorType(DType.int64, broadcast_rank - 2),
     )
 
     var lhs_final_dims = List[Dim]()
@@ -82,7 +82,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> List[Symbol]:
     var broadcast_lhs = g.op(
         "mo.broadcast_to",
         List[Symbol](lhs, lhs_broadcast_shape),
-        MOTensor(lhs_type.dtype, lhs_final_dims),
+        TensorType(lhs_type.dtype, lhs_final_dims),
     )
 
     var rhs_broadcast_shape = concat(
@@ -92,7 +92,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> List[Symbol]:
     var broadcast_rhs = g.op(
         "mo.broadcast_to",
         List[Symbol](rhs, rhs_broadcast_shape),
-        MOTensor(rhs_type.dtype, rhs_final_dims),
+        TensorType(rhs_type.dtype, rhs_final_dims),
     )
 
     return List[Symbol](broadcast_lhs, broadcast_rhs)
@@ -161,7 +161,7 @@ def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     for i in range(lhs_type.rank() - 1):
         dims.append(lhs_type.dims[i])
     dims.append(rhs_type.dim(-1))
-    var out_type = MOTensor(lhs_type.dtype, dims)
+    var out_type = TensorType(lhs_type.dtype, dims)
 
     return g.op(
         "mo.batch_matmul", List[Symbol](broadcast_lhs, broadcast_rhs), out_type
@@ -210,7 +210,7 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
     var matmul_out = g.op(
         "mo.matmul",
         List[Symbol](reshape(lhs, reshape_shape, matmul_dims), rhs),
-        MOTensor(lhs_type.dtype, Dim.dynamic(), rhs_type.dim(-1)),
+        TensorType(lhs_type.dtype, Dim.dynamic(), rhs_type.dim(-1)),
     )
 
     return reshape(matmul_out, final_shape, final_dims)

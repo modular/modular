@@ -29,7 +29,9 @@ def shape_of(v: Symbol) -> Symbol:
         A symbolic rank-1 tensor representing the input's shape.
     """
     var g = v.graph()
-    return g.op("mo.shape_of", v, MOTensor(DType.int64, v.tensor_type().rank()))
+    return g.op(
+        "mo.shape_of", v, TensorType(DType.int64, v.tensor_type().rank())
+    )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -82,7 +84,7 @@ fn rebind(v: Symbol, out_dims: List[Dim]) raises -> Symbol:
     return g.op(
         "rmo.rebind_tensor_shape",
         (v),
-        MOTensor(v.tensor_type().dtype, out_dims),
+        TensorType(v.tensor_type().dtype, out_dims),
     )
 
 
@@ -113,7 +115,7 @@ def squeeze(v: Symbol, axis: Int) -> Symbol:
     var new_shape = g.op(
         "mo.squeeze_shape",
         List[Symbol](shape_of(v), g.scalar(Int64(axis), rank=1)),
-        MOTensor(DType.int64, rank - 1),
+        TensorType(DType.int64, rank - 1),
     )
 
     var squeezed_dims = List[Dim]()
@@ -159,7 +161,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
     var new_shape = g.op(
         "mo.unsqueeze_shape",
         List[Symbol](shape_of(v), g.scalar(Int64(axis), rank=1)),
-        MOTensor(DType.int64, rank + 1),
+        TensorType(DType.int64, rank + 1),
     )
 
     var dims = List[Dim]()
@@ -206,7 +208,7 @@ fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
     return g.op(
         "mo.reshape",
         List[Symbol](v, shape),
-        MOTensor(v.tensor_type().dtype, out_dims),
+        TensorType(v.tensor_type().dtype, out_dims),
     )
 
 
@@ -354,7 +356,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
     return g.op(
         "mo.transpose",
         List[Symbol](input, transpose_indices),
-        MOTensor(input_type.dtype, dims),
+        TensorType(input_type.dtype, dims),
     )
 
 

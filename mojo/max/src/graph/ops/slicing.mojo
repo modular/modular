@@ -58,7 +58,7 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     return g.op(
         "mo.gather",
         List[Symbol](input, indices, g.scalar(Int64(axis))),
-        MOTensor(input_type.dtype, dims),
+        TensorType(input_type.dtype, dims),
     )
 
 
@@ -134,7 +134,7 @@ def slice(
     return g.op(
         "mo.slice",
         List[Symbol](input, start, stop, step),
-        MOTensor(input_type.dtype, out_shape),
+        TensorType(input_type.dtype, out_shape),
     )
 
 
@@ -237,12 +237,12 @@ def split[
     var norm_axis = axis + type.rank() if axis < 0 else axis
 
     var split_sizes = List[Int64]()
-    var out_types = List[AnyMOType]()
+    var out_types = List[Type]()
     for i in range(n):
         split_sizes.append(sizes[i])
         var out_dims = type.dims
         out_dims[norm_axis] = Dim.static(sizes[i])
-        out_types.append(MOTensor(type.dtype, out_dims))
+        out_types.append(TensorType(type.dtype, out_dims))
 
     return g.nvop(
         "mo.split",
@@ -323,7 +323,7 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
         dims.append(v0_type.dims[i])
     dims[norm_axis] = concat_dim
 
-    return g.op("mo.concat", concat_args, MOTensor(v0_type.dtype, dims))
+    return g.op("mo.concat", concat_args, TensorType(v0_type.dtype, dims))
 
 
 def stack(values: List[Symbol], axis: Int = 0) -> Symbol:

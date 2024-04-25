@@ -70,18 +70,18 @@ struct Symbol(CollectionElement, Stringable):
         """
         return Graph(self._graph)
 
-    fn type(self) raises -> AnyMOType:
+    fn type(self) raises -> Type:
         """Returns this `Symbol`'s type.
 
         Returns:
             The `Symbol`'s type.
         """
-        return AnyMOType.from_mlir(self.handle.type())
+        return Type.from_mlir(self.handle.type())
 
-    fn tensor_type(self) raises -> MOTensor:
-        """Returns this `Symbol`'s type, as `MOTensor`.
+    fn tensor_type(self) raises -> TensorType:
+        """Returns this `Symbol`'s type, as `TensorType`.
 
-        Implicitly asserts that the type is indeed `MOTensor`, and raises an
+        Implicitly asserts that the type is indeed `TensorType`, and raises an
         error otherwise.
 
         Returns:
@@ -115,7 +115,7 @@ struct Symbol(CollectionElement, Stringable):
     fn reshape(self, *dims: Variant[Symbol, Int]) raises -> Symbol:
         """Reshapes this `Symbol`.
 
-        Uses the `mo.reshape` op. Requires the symbol to be a `MOTensor`.
+        Uses the `mo.reshape` op. Requires the symbol to be a `TensorType`.
 
         Args:
             dims: The new dimensions.
@@ -601,7 +601,7 @@ struct Symbol(CollectionElement, Stringable):
         _ = g.nvop(
             "mo.debug.tensor.print",
             self,
-            List[AnyMOType](),
+            List[Type](),
             _string_attr(g._context(), "label", label),
         )
 

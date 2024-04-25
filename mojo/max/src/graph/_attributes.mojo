@@ -21,7 +21,7 @@ from pathlib import Path
 
 import _mlir
 
-from .type import MOTensor
+from .type import TensorType
 import ._c
 
 
@@ -37,7 +37,7 @@ fn _tensor_attr[
 ) -> _mlir.NamedAttribute:
     """Creates a new `Tensor`-valued `Attribute`.
 
-    The value of this attribute will have the type `MOTensor` with the same
+    The value of this attribute will have the type `TensorType` with the same
     shape and dtype as `value`.
     This method takes ownership of `value` and is suitable for use with
     very large `Tensor` values (such as model weights).
@@ -53,7 +53,7 @@ fn _tensor_attr[
     Returns:
         An internal representation of an `Attribute`.
     """
-    var t = MOTensor(value.spec()).to_mlir(ctx)
+    var t = TensorType(value.spec()).to_mlir(ctx)
     return _c.attr_new_tensor(
         name,
         value._steal_ptr().bitcast[DType.invalid](),
@@ -63,7 +63,7 @@ fn _tensor_attr[
 
 
 fn _tensor_resource_attr(
-    ctx: _mlir.Context, name: String, file_name: String, type: MOTensor
+    ctx: _mlir.Context, name: String, file_name: String, type: TensorType
 ) -> _mlir.NamedAttribute:
     """Creates a new `Tensor` `Attribute` from an external file.
 
@@ -90,7 +90,7 @@ fn _vector_attr[
 ) -> _mlir.NamedAttribute:
     """Creates a new `Tensor`-valued `Attribute`.
 
-    The value of this attribute will have the type `MOTensor` with 1D shape,
+    The value of this attribute will have the type `TensorType` with 1D shape,
     consistent with the size of `values`.
 
     Parameters:
@@ -107,7 +107,7 @@ fn _vector_attr[
     return _c.attr_new_tensor(
         name,
         values,
-        MOTensor(dtype, len(values)).to_mlir(ctx),
+        TensorType(dtype, len(values)).to_mlir(ctx),
         is_owned=False,
     )
 

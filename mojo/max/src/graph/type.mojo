@@ -50,7 +50,7 @@ struct SymbolicDim(CollectionElement):
     value, which can often allow important speedups.
 
     Create a symbolic dimension via `Dim.symbolic("name")`, or just by passing
-    the string name, eg. `MOTensor(DType.bool, "batch", Dim.dynamic(), 10)`.
+    the string name, eg. `TensorType(DType.bool, "batch", Dim.dynamic(), 10)`.
     """
 
     var name: String
@@ -81,7 +81,7 @@ struct StaticDim(CollectionElement):
     and are key to good model performance.
 
     Static dimensions can be created implicitly in most cases:
-    `MOTensor(DType.int64, 4, 5)` is a tensor with 2 static dimensions,
+    `TensorType(DType.int64, 4, 5)` is a tensor with 2 static dimensions,
     `4` and `5` respectively.
     """
 
@@ -121,8 +121,8 @@ struct Dim(CollectionElement):
     on conversion constructors, for instance you can specify a tensor type as
 
     ```mojo
-    from max.graph import Dim, MOTensor
-    var tensor_type = MOTensor(DType.int64, "batch", 10, Dim.dynamic())
+    from max.graph import Dim, TensorType
+    var tensor_type = TensorType(DType.int64, "batch", 10, Dim.dynamic())
     ```
     will create a tensor type with 3 dimensions: a symbolic "batch" dimension,
     a static dimension of size 10, and a dynamic dimension.
@@ -316,7 +316,7 @@ struct Dim(CollectionElement):
 
 
 @value
-struct MOTensor(CollectionElement):
+struct TensorType(CollectionElement):
     """A symbolic tensor type.
 
     It is _not_ an eager tensor type!! It contains no actual data, but instead
@@ -492,7 +492,7 @@ struct MOTensor(CollectionElement):
         """
         return self.dims[pos + (self.rank() if pos < 0 else 0)]
 
-    fn __eq__(self, other: MOTensor) -> Bool:
+    fn __eq__(self, other: TensorType) -> Bool:
         """Checks whether the two tensors are identical (same rank, type, shape).
 
         Args:
@@ -520,7 +520,7 @@ struct MOTensor(CollectionElement):
 
         For a static tensor, returns the product of all static dimensions.
         This is the number of elements the tensor will hold _during execution_,
-        MOTensor doesn't actually hold any element values at all.
+        TensorType doesn't actually hold any element values at all.
 
         For any non-static tensor, ie. a tensor having any symbolic or dynamic
         dimensions, the return value will be meaningless.
@@ -556,14 +556,14 @@ struct MOTensor(CollectionElement):
 
 
 @value
-struct MOList(CollectionElement):
+struct ListType(CollectionElement):
     """A type representing a flat list of tensor values.
 
     This isn't an eager list type! It doesn't contain any data, but represents
     a runtime list that contains tensors.
     """
 
-    var eltype: MOTensor
+    var eltype: TensorType
     """The tensor type of elements in the list.
 
     The list can currently only hold tensors, and it has a single known tensor
@@ -592,18 +592,18 @@ struct MOList(CollectionElement):
 
 
 @value
-struct AnyMOType(CollectionElement):
+struct Type(CollectionElement):
     """Represents any possible type for Graph Symbol values.
 
-    Every Symbol has a Type, and that type is represented by an AnyMOType.
+    Every Symbol has a Type, and that type is represented by an Type.
     This type may be inspected to get finer-grained types and learn more
     about an individual Value.
     """
 
-    var type: Variant[MOTensor, MOList]
+    var type: Variant[TensorType, ListType]
     """The type data."""
 
-    fn __init__(inout self, t: MOTensor):
+    fn __init__(inout self, t: TensorType):
         """Constructs a type from a tensor type.
 
         Args:
@@ -611,7 +611,7 @@ struct AnyMOType(CollectionElement):
         """
         self.type = t
 
-    fn __init__(inout self, t: MOList):
+    fn __init__(inout self, t: ListType):
         """Constructs a type from a list type.
 
         Args:
@@ -619,7 +619,7 @@ struct AnyMOType(CollectionElement):
         """
         self.type = t
 
-    fn list(self) raises -> MOList:
+    fn list(self) raises -> ListType:
         """Extracts the type as a list type.
 
         This doesn't have any impact at graph execution time, it just retrieves
@@ -631,11 +631,11 @@ struct AnyMOType(CollectionElement):
         Raises:
             If the type is some other data type besides a list.
         """
-        if not self.type.isa[MOList]():
+        if not self.type.isa[ListType]():
             raise "Not a list type!"
-        return self.type.get[MOList]()[]
+        return self.type.get[ListType]()[]
 
-    fn tensor(self) raises -> MOTensor:
+    fn tensor(self) raises -> TensorType:
         """Extracts the type as a tensor type.
 
         This doesn't have any impact at graph execution time, it just retrieves
@@ -647,9 +647,9 @@ struct AnyMOType(CollectionElement):
         Raises:
             If the type is some other data type besides a tensor.
         """
-        if not self.type.isa[MOTensor]():
+        if not self.type.isa[TensorType]():
             raise "Not a tensor type!"
-        return self.type.get[MOTensor]()[]
+        return self.type.get[TensorType]()[]
 
     fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
         """Converts to an _mlir.Type instance.
@@ -660,11 +660,11 @@ struct AnyMOType(CollectionElement):
         Returns:
             An _mlir.Type in the specified Context.
         """
-        if self.type.isa[MOTensor]():
-            return self.type.get[MOTensor]()[].to_mlir(ctx)
+        if self.type.isa[TensorType]():
+            return self.type.get[TensorType]()[].to_mlir(ctx)
         else:
-            debug_assert(self.type.isa[MOList](), "MO type variants")
-            return self.type.get[MOList]()[].to_mlir(ctx)
+            debug_assert(self.type.isa[ListType](), "MO type variants")
+            return self.type.get[ListType]()[].to_mlir(ctx)
 
     @staticmethod
     fn from_mlir(t: _mlir.Type) raises -> Self:
@@ -677,15 +677,17 @@ struct AnyMOType(CollectionElement):
             The type represented by the _mlir Type value.
         """
         if _c.type_is_list(t):
-            var element_type = MOTensor.from_mlir(_c.list_type_element_type(t))
-            return Self(MOList(element_type))
+            var element_type = TensorType.from_mlir(
+                _c.list_type_element_type(t)
+            )
+            return Self(ListType(element_type))
         else:
             debug_assert(_c.type_is_tensor(t), "MO type variants")
-            return Self(MOTensor.from_mlir(t))
+            return Self(TensorType.from_mlir(t))
 
     fn parameters(self) -> Set[String]:
-        if self.type.isa[MOTensor]():
-            return self.type.get[MOTensor]()[].parameters()
+        if self.type.isa[TensorType]():
+            return self.type.get[TensorType]()[].parameters()
         else:
-            debug_assert(self.type.isa[MOList](), "MO type variants")
-            return self.type.get[MOList]()[].parameters()
+            debug_assert(self.type.isa[ListType](), "MO type variants")
+            return self.type.get[ListType]()[].parameters()

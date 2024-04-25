@@ -19,13 +19,13 @@ custom ops, and add them to the graph by setting the output op(s) with
 For example:
 
 ```mojo
-from max.graph import Graph, MOTensor, ops
+from max.graph import Graph, TensorType, ops
 from tensor import Tensor, TensorShape
 
 def build_model() -> Graph:
     var graph = Graph(
-        in_types=MOTensor(DType.float32, 2, 6),
-        out_types=MOTensor(DType.float32, 2, 1),
+        in_types=TensorType(DType.float32, 2, 6),
+        out_types=TensorType(DType.float32, 2, 1),
     )
 
     var matmul_constant_value = Tensor[DType.float32](TensorShape(6, 1), 0.15)
@@ -50,9 +50,8 @@ Graph](/engine/graph/get-started).
 from .graph import Graph
 from .symbol import Symbol
 from .type import (
-    AnyMOType,
     Dim,
-    MOList,
-    MOTensor,
-    StaticDim,
+    ListType,
+    TensorType,
+    Type,
 )

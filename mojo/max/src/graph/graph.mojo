@@ -16,7 +16,7 @@ from _mlir.builtin_types import FunctionType
 
 from ._attributes import _tensor_attr, _vector_attr
 from .symbol import Symbol
-from .type import MOList, MOTensor, AnyMOType
+from .type import ListType, TensorType, Type
 
 
 # TODO: Add examples throughout.
@@ -64,17 +64,17 @@ struct Graph(CollectionElement, Stringable):
     sequential instructions.
 
     When you instantiate a graph, you must specify the input shapes
-    as one or more [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
-    [`MOList`](/engine/reference/mojo/graph/type/MOList) values. Then, build a
+    as one or more [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
+    [`ListType`](/engine/reference/mojo/graph/type/ListType) values. Then, build a
     sequence of ops and set the graph output with [`output()`](#output). For
     example:
 
     ```mojo
-    from max.graph import AnyMOType, Graph, MOTensor, ops
+    from max.graph import Type, Graph, TensorType, ops
     from tensor import Tensor, TensorShape
 
     def build_model() -> Graph:
-        var graph = Graph(MOTensor(DType.float32, 2, 6))
+        var graph = Graph(TensorType(DType.float32, 2, 6))
 
         var matmul_constant_value = Tensor[DType.float32](TensorShape(6, 1), 0.15)
         var matmul_constant = graph.constant(matmul_constant_value)
@@ -94,7 +94,7 @@ struct Graph(CollectionElement, Stringable):
 
     var _graph: _GraphRef
 
-    fn __init__(inout self, in_type: AnyMOType):
+    fn __init__(inout self, in_type: Type):
         """Constructs a new `Graph` with a single input type.
 
         Although a `Graph` is technically valid once constructed, it is not
@@ -103,15 +103,15 @@ struct Graph(CollectionElement, Stringable):
 
         Args:
             in_type: The graph's input type, as a single
-                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
-                [`MOList`](/engine/reference/mojo/graph/type/MOList) value.
+                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/engine/reference/mojo/graph/type/ListType) value.
         """
-        self.__init__("graph", List[AnyMOType](in_type))
+        self.__init__("graph", List[Type](in_type))
 
     fn __init__(
         inout self,
-        in_types: List[AnyMOType],
-        out_types: List[AnyMOType] = List[AnyMOType](),
+        in_types: List[Type],
+        out_types: List[Type] = List[Type](),
     ):
         """Constructs a new `Graph` using the default graph name.
 
@@ -121,11 +121,11 @@ struct Graph(CollectionElement, Stringable):
 
         Args:
             in_types: The graph's input types, as one or more
-                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
-                [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
+                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/engine/reference/mojo/graph/type/ListType) values.
             out_types: The graph's output types, as one or more
-                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
-                [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
+                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/engine/reference/mojo/graph/type/ListType) values.
                 Deprecated. This will be inferred by the `output` call.
         """
         self.__init__("graph", in_types, out_types)
@@ -133,8 +133,8 @@ struct Graph(CollectionElement, Stringable):
     fn __init__(
         inout self,
         name: String,
-        in_types: List[AnyMOType],
-        out_types: List[AnyMOType] = List[AnyMOType](),
+        in_types: List[Type],
+        out_types: List[Type] = List[Type](),
     ):
         """Constructs a new `Graph` with a custom graph name.
 
@@ -145,11 +145,11 @@ struct Graph(CollectionElement, Stringable):
         Args:
             name: A name for the graph.
             in_types: The graph's input types, as one or more
-                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
-                [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
+                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/engine/reference/mojo/graph/type/ListType) values.
             out_types: The graph's output types, as one or more
-                [`MOTensor`](/engine/reference/mojo/graph/type/MOTensor) or
-                [`MOList`](/engine/reference/mojo/graph/type/MOList) values.
+                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/engine/reference/mojo/graph/type/ListType) values.
                 Deprecated.  This will be inferred by the `output` call.
         """
         var ctx = _mlir.Context()
@@ -283,7 +283,7 @@ struct Graph(CollectionElement, Stringable):
         self,
         name: String,
         inputs: List[Symbol] = List[Symbol](),
-        out_types: List[AnyMOType] = List[AnyMOType](),
+        out_types: List[Type] = List[Type](),
         attrs: List[_mlir.NamedAttribute] = List[_mlir.NamedAttribute](),
         enable_result_type_inference: Bool = False,
     ) raises -> List[Symbol]:
@@ -347,7 +347,7 @@ struct Graph(CollectionElement, Stringable):
     fn op(
         self,
         name: String,
-        out_type: AnyMOType,
+        out_type: Type,
         attrs: List[_mlir.NamedAttribute] = List[_mlir.NamedAttribute](),
     ) raises -> Symbol:
         """Adds a new single-output, nullary node to the `Graph`.
@@ -369,7 +369,7 @@ struct Graph(CollectionElement, Stringable):
         self,
         name: String,
         inputs: List[Symbol],
-        out_type: AnyMOType,
+        out_type: Type,
         attrs: List[_mlir.NamedAttribute] = List[_mlir.NamedAttribute](),
     ) raises -> Symbol:
         """Adds a new single-output node to the `Graph`.
@@ -397,7 +397,7 @@ struct Graph(CollectionElement, Stringable):
     ](self, owned value: Tensor[dtype]) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
-        The value of this constant will have the type `MOTensor` with the same
+        The value of this constant will have the type `TensorType` with the same
         shape and dtype as `value`.
 
         Parameters:
@@ -411,14 +411,14 @@ struct Graph(CollectionElement, Stringable):
         """
         return self.op(
             "mo.constant",
-            MOTensor(value.spec()),
+            TensorType(value.spec()),
             List(_tensor_attr(self._context(), "value", value)),
         )
 
     fn vector[dtype: DType](self, values: List[Scalar[dtype]]) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
-        The value of this constant will have the type `MOTensor` with 1-D shape,
+        The value of this constant will have the type `TensorType` with 1-D shape,
         consistent with the size of `values`.
 
         Parameters:
@@ -432,7 +432,7 @@ struct Graph(CollectionElement, Stringable):
         """
         return self.op(
             "mo.constant",
-            MOTensor(dtype, len(values)),
+            TensorType(dtype, len(values)),
             List(_vector_attr[dtype](self._context(), "value", values)),
         )
 
@@ -441,8 +441,8 @@ struct Graph(CollectionElement, Stringable):
     ](self, value: Scalar[dtype], rank: Int = 0) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
-        The value of this constant will have the type scalar `MOTensor`
-        (0-D shape), when `rank` is 0, or a higher-rank `MOTensor` of a single
+        The value of this constant will have the type scalar `TensorType`
+        (0-D shape), when `rank` is 0, or a higher-rank `TensorType` of a single
         element.
 
         Parameters:
@@ -463,7 +463,7 @@ struct Graph(CollectionElement, Stringable):
     fn scalar(self, value: Int, dtype: DType) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
-        The value of this constant will have the type `MOTensor` of the same
+        The value of this constant will have the type `TensorType` of the same
         element type as `dtype`, and scalar (0-D) shape.
 
         Args:
@@ -514,7 +514,7 @@ struct Graph(CollectionElement, Stringable):
     fn scalar(self, value: Float64, dtype: DType) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
-        The value of this constant will have the type `MOTensor` of the same
+        The value of this constant will have the type `TensorType` of the same
         element type as `dtype`, and scalar (0-D) shape.
 
         Args:
@@ -570,7 +570,7 @@ struct Graph(CollectionElement, Stringable):
                 self.scalar[dtype](stop),
                 self.scalar[dtype](step),
             ),
-            MOTensor(dtype, len(range(start, stop, step))),
+            TensorType(dtype, len(range(start, stop, step))),
         )
 
     fn full[
@@ -599,7 +599,7 @@ struct Graph(CollectionElement, Stringable):
         return self.op(
             "mo.broadcast_to",
             List[Symbol](self.scalar(value), ops.stack(shape)),
-            MOTensor(dtype, out_dims),
+            TensorType(dtype, out_dims),
         )
 
     fn output(inout self, outputs: List[Symbol]) raises:

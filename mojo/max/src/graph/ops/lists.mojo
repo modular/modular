@@ -18,7 +18,7 @@ fn list(elements: List[Symbol]) raises -> Symbol:
         elements: The list's elements.
 
     Returns:
-        The list filled with `elements`. It's type will be `MOList`.
+        The list filled with `elements`. It's type will be `ListType`.
     """
     if len(elements) == 0:
         raise "`elements` cannot be empty"
@@ -39,11 +39,11 @@ fn list(elements: List[Symbol]) raises -> Symbol:
                 + str(i)
             )
 
-    return g.op("mo.list.create", elements, MOList(type))
+    return g.op("mo.list.create", elements, ListType(type))
 
 
-fn list(type: MOTensor, g: Graph) raises -> Symbol:
-    """Creates a new empty list of `MOTensor` elements.
+fn list(type: TensorType, g: Graph) raises -> Symbol:
+    """Creates a new empty list of `TensorType` elements.
 
     This uses the `mo.list.create` operation.
 
@@ -52,6 +52,6 @@ fn list(type: MOTensor, g: Graph) raises -> Symbol:
         g: The `Graph` to add nodes to.
 
     Returns:
-        A new empty list. It's type will be `MOList`.
+        A new empty list. It's type will be `ListType`.
     """
-    return g.op("mo.list.create", MOList(type))
+    return g.op("mo.list.create", ListType(type))
