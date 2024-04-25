@@ -85,6 +85,12 @@ public:
       const Document &doc, const mlir::lsp::Position &position,
       std::function<void(const std::vector<mlir::lsp::Location> &)> callback);
 
+  /// testDocument/codeAction
+  LSPBatchClient &codeAction(
+      const Document &doc, const mlir::lsp::Range &range,
+      std::initializer_list<mlir::lsp::Diagnostic> diags,
+      std::function<void(const std::vector<mlir::lsp::CodeAction> &)> callback);
+
   /// textDocument/hover
   LSPBatchClient &
   hover(const Document &doc, const mlir::lsp::Position &position,

@@ -29,6 +29,10 @@ llvm::json::Value toJSON(const DidOpenTextDocumentParams &params);
 
 llvm::json::Value toJSON(const TextDocumentPositionParams &params);
 
+llvm::json::Value toJSON(const CodeActionContext &context);
+
+llvm::json::Value toJSON(const CodeActionParams &params);
+
 llvm::json::Value toJSON(const Hover2 &hover);
 
 bool fromJSON(const llvm::json::Value &value, Hover2 &range,
@@ -38,6 +42,9 @@ bool fromJSON(const llvm::json::Value &value, MarkupKind &kind,
               llvm::json::Path path);
 
 bool fromJSON(const llvm::json::Value &value, MarkupContent &mc,
+              llvm::json::Path path);
+
+bool fromJSON(const llvm::json::Value &value, CodeAction &codeAction,
               llvm::json::Path path);
 } // namespace mlir::lsp
 
