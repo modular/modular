@@ -13,3 +13,10 @@ cc_test(
         "@com_github_google_googletest//:gtest_main",
     ],
 )
+
+# TODO: Remove this and fix the weird import in Support.h
+cc_library(
+    name = "include_shim",
+    includes = ["."],
+    visibility = ["//KGEN/unittests:__subpackages__"],
+)

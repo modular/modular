@@ -1,0 +1,45 @@
+cc_library(
+    name = "Support",
+    srcs = glob(["Support.*"]),
+    deps = [
+        "//KGEN/tools/mojo-lsp-test-client",
+        "//KGEN/unittests:include_shim",
+        "@com_github_google_googletest//:gtest",
+    ],
+)
+
+cc_test(
+    name = "CodeActionTest",
+    srcs = ["CodeActionTest.cpp"],
+    data = [
+        "//KGEN:mojo-lsp-server",
+        "//Kernels/mojo/stdlib",
+    ],
+    env = {
+        "MODULAR_MOJO_IMPORT_PATH": "Kernels/mojo/stdlib",
+        "MODULAR_MOJO_LSP_SERVER_PATH": "$(location //KGEN:mojo-lsp-server)",
+    },
+    deps = [
+        ":Support",
+        "@com_github_google_googletest//:gtest",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "SampleTest",
+    srcs = ["SampleTest.cpp"],
+    data = [
+        "//KGEN:mojo-lsp-server",
+        "//Kernels/mojo/stdlib",
+    ],
+    env = {
+        "MODULAR_MOJO_IMPORT_PATH": "Kernels/mojo/stdlib",
+        "MODULAR_MOJO_LSP_SERVER_PATH": "$(location //KGEN:mojo-lsp-server)",
+    },
+    deps = [
+        ":Support",
+        "@com_github_google_googletest//:gtest",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
