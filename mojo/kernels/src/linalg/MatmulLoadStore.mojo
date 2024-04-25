@@ -96,12 +96,12 @@ fn _load_c_tile_default[
             # Fill zero if row out of bound
             c_data = 0
 
-            # Store data to local buffer.
-            c_local.store(Index(idx0, idx1 * simd_size), c_data)
+        # Store data to local buffer.
+        c_local.store(Index(idx0, idx1 * simd_size), c_data)
 
-            @parameter
-            if idx1 == pack_inner_size // simd_size - 1:
-                c_ptr_loc = c_ptr_loc.offset(c_stride)
+        @parameter
+        if idx1 == pack_inner_size // simd_size - 1:
+            c_ptr_loc = c_ptr_loc.offset(c_stride)
 
     unroll[body, a_row_size, pack_inner_size // simd_size]()
 
