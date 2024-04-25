@@ -316,29 +316,6 @@ struct Dim(CollectionElement):
 
 
 @value
-struct ElementType:
-    """The element type of a data container, like a tensor or scalar.
-
-    Prefer to use the standard library DType and implicitly convert
-    to this type rather than using it directly.
-    """
-
-    var dtype: DType
-    """The underlying dtype."""
-
-    fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
-        """Converts to an _mlir.Type instance.
-
-        Args:
-            ctx: The mlir.Context in which to create the type.
-
-        Returns:
-            An _mlir.Type in the specified Context.
-        """
-        return _c.dtype_new(ctx, self.dtype)
-
-
-@value
 struct MOTensor(CollectionElement):
     """A symbolic tensor type.
 
@@ -356,7 +333,7 @@ struct MOTensor(CollectionElement):
     prevents many classes of optimizations.
     """
 
-    var dtype: ElementType
+    var dtype: DType
     """The element type of the tensor value."""
     var dims: List[Dim]
     """The dimensions of the tensor value, if it is known-rank."""
@@ -365,7 +342,16 @@ struct MOTensor(CollectionElement):
     # Constructors
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(inout self, dtype: ElementType, *dims: Dim):
+    fn __init__(inout self, dtype: DType):
+        """Constructs a 0-d tensor type.
+
+        Args:
+            dtype: The element type of the tensor data.
+        """
+        self.dtype = dtype
+        self.dims = List[Dim]()
+
+    fn __init__(inout self, dtype: DType, *dims: Dim):
         """Constructs a tensor type.
 
         Args:
@@ -378,7 +364,7 @@ struct MOTensor(CollectionElement):
         for d in dims:
             self.dims.append(d[])
 
-    fn __init__(inout self, dtype: ElementType, dims: List[Dim]):
+    fn __init__(inout self, dtype: DType, dims: List[Dim]):
         """Constructs a ranked tensor type.
 
         Args:
@@ -421,7 +407,7 @@ struct MOTensor(CollectionElement):
             dims.append(self.dims[i].to_mlir(ctx))
         return _c.tensor_type_new(
             ctx,
-            self.dtype.to_mlir(ctx),
+            _c.dtype_new(ctx, self.dtype),
             dims,
             ranked=True,
         )
@@ -516,7 +502,7 @@ struct MOTensor(CollectionElement):
             True if the tensors have identical element type and shape,
             False otherwise.
         """
-        if self.dtype.dtype != other.dtype.dtype:
+        if self.dtype != other.dtype:
             return False
         if self.rank() != other.rank():
             return False
@@ -550,7 +536,7 @@ struct MOTensor(CollectionElement):
             n *= self.dims[i].num_elements()
         return n
 
-    fn cast(self, dtype: ElementType) -> Self:
+    fn cast(self, dtype: DType) -> Self:
         """Constructs a new tensor type of the same shape with the new dtype.
 
         Args:

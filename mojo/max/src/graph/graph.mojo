@@ -459,7 +459,7 @@ struct Graph(CollectionElement, Stringable):
             shape.append(1)
         return self.constant[dtype](Tensor(shape, value))
 
-    fn scalar(self, value: Int, dtype: ElementType) raises -> Symbol:
+    fn scalar(self, value: Int, dtype: DType) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` of the same
@@ -475,42 +475,42 @@ struct Graph(CollectionElement, Stringable):
         Raises:
             If `value` cannot be instantiated as a tensor of element `dtype`.
         """
-        if dtype.dtype == DType.uint8:
+        if dtype == DType.uint8:
             return self.scalar(UInt8(value))
-        if dtype.dtype == DType.uint16:
+        if dtype == DType.uint16:
             return self.scalar(UInt16(value))
-        if dtype.dtype == DType.uint32:
+        if dtype == DType.uint32:
             return self.scalar(UInt32(value))
-        if dtype.dtype == DType.uint64:
+        if dtype == DType.uint64:
             return self.scalar(UInt64(value))
 
-        if dtype.dtype == DType.int8:
+        if dtype == DType.int8:
             return self.scalar(Int8(value))
-        if dtype.dtype == DType.int16:
+        if dtype == DType.int16:
             return self.scalar(Int16(value))
-        if dtype.dtype == DType.int32:
+        if dtype == DType.int32:
             return self.scalar(Int32(value))
-        if dtype.dtype == DType.int64:
+        if dtype == DType.int64:
             return self.scalar(Int64(value))
 
         # TODO(#30525): Enable once LLVM bfloat16 emulation support matures.
         @parameter
         if not has_neon():
-            if dtype.dtype == DType.bfloat16:
+            if dtype == DType.bfloat16:
                 return self.scalar(BFloat16(value))
 
         # TODO(#33932): Enable once KGENCompilerRT provides __truncdfhf2.
-        # if dtype.dtype == DType.float16:
+        # if dtype == DType.float16:
         #     return self.scalar(Float16(value))
 
-        if dtype.dtype == DType.float32:
+        if dtype == DType.float32:
             return self.scalar(Float32(value))
-        if dtype.dtype == DType.float64:
+        if dtype == DType.float64:
             return self.scalar(Float64(value))
 
-        raise "unimplemented Int conversion dtype: " + str(dtype.dtype)
+        raise "unimplemented Int conversion dtype: " + str(dtype)
 
-    fn scalar(self, value: Float64, dtype: ElementType) raises -> Symbol:
+    fn scalar(self, value: Float64, dtype: DType) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
         The value of this constant will have the type `MOTensor` of the same
@@ -530,19 +530,19 @@ struct Graph(CollectionElement, Stringable):
         # TODO(#30525): Enable once LLVM bfloat16 emulation support matures.
         @parameter
         if not has_neon():
-            if dtype.dtype == DType.bfloat16:
+            if dtype == DType.bfloat16:
                 return self.scalar(BFloat16(value))
 
         # TODO(#33932): Enable once KGENCompilerRT provides __truncdfhf2.
-        # if dtype.dtype == DType.float16:
+        # if dtype == DType.float16:
         #     return self.scalar(Float16(value))
 
-        if dtype.dtype == DType.float32:
+        if dtype == DType.float32:
             return self.scalar(Float32(value))
-        if dtype.dtype == DType.float64:
+        if dtype == DType.float64:
             return self.scalar(Float64(value))
 
-        raise "unimplemented FloatLiteral conversion dtype: " + str(dtype.dtype)
+        raise "unimplemented FloatLiteral conversion dtype: " + str(dtype)
 
     fn range[
         dtype: DType

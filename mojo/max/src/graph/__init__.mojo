@@ -52,7 +52,6 @@ from .symbol import Symbol
 from .type import (
     AnyMOType,
     Dim,
-    ElementType,
     MOList,
     MOTensor,
     StaticDim,

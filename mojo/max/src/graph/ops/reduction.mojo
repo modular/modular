@@ -7,8 +7,6 @@
 
 from collections import Optional
 
-from max.graph.type import ElementType, MOTensor
-
 
 fn _reduce[
     op: StringLiteral

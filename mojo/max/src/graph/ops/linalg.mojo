@@ -7,7 +7,7 @@
 
 from math import max
 
-from max.graph.type import Dim, ElementType, MOTensor
+from max.graph.type import Dim, MOTensor
 from max.graph.ops.casting import reshape
 
 

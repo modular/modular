@@ -8,7 +8,7 @@
 from tensor import Tensor, TensorShape
 from utils.variant import Variant
 
-from max.graph.type import Dim, ElementType
+from max.graph.type import Dim
 
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
@@ -37,7 +37,7 @@ def shape_of(v: Symbol) -> Symbol:
 # ===----------------------------------------------------------------------=== #
 
 
-def cast(v: Symbol, dtype: ElementType) -> Symbol:
+def cast(v: Symbol, dtype: DType) -> Symbol:
     """Casts a symbolic tensor to a different data type.
 
     Args:
@@ -198,7 +198,7 @@ fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
         in a new shape. Its symbolic shape is the same as `out_dims`.
     """
     var g = v.graph()
-    var dtype = shape.tensor_type().dtype.dtype
+    var dtype = shape.tensor_type().dtype
     if not (dtype == DType.int64 or dtype == DType.int32):
         raise "reshape shape must be int32 or int64"
     if shape.tensor_type().rank() != 1:
