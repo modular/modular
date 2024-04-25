@@ -165,16 +165,19 @@ struct Trace {
   };
 
   // Each profiling type has 3 bits worth of levels to use
-  static constexpr int kProfilingTypeWidthBits = 3;
-  static constexpr int kProfilingTypeBitmask =
+  static constexpr uint64_t kProfilingTypeWidthBits = 3;
+  static constexpr uint64_t kProfilingTypeBitmask =
       ((1 << kProfilingTypeWidthBits) - 1);
   static constexpr uint64_t kFullyEnabled =
       std::numeric_limits<uint64_t>::max();
-  static constexpr int typeBitshift(Type type) {
+  static constexpr uint64_t typeBitshift(Type type) {
     return type * kProfilingTypeWidthBits;
   }
+  static constexpr uint64_t disableMaskType(uint64_t bitMask, Type type) {
+    return bitMask & ~(kProfilingTypeBitmask << typeBitshift(type));
+  }
 
-  static constexpr bool EnableTrace(Type type, int level) {
+  static constexpr bool EnableTrace(Type type, uint64_t level) {
     return level <= ((MODULAR_LLCL_MAX_PROFILING_LEVEL >> typeBitshift(type)) &
                      kProfilingTypeBitmask);
   }
