@@ -15,7 +15,7 @@ from _mlir.builtin_attributes import TypeAttr
 from _mlir.builtin_types import FunctionType
 
 from ._attributes import AttrMap, _tensor_attr, _vector_attr
-from .symbol import Symbol, SymbolTuple
+from .symbol import Symbol
 from .type import MOList, MOTensor, TypeTuple
 
 
@@ -257,11 +257,11 @@ struct Graph(CollectionElement, Stringable):
     fn nvop(
         self,
         name: String,
-        inputs: SymbolTuple = SymbolTuple(),
+        inputs: List[Symbol] = List[Symbol](),
         out_types: TypeTuple = TypeTuple(),
         attrs: AttrMap = AttrMap(),
         enable_result_type_inference: Bool = False,
-    ) raises -> SymbolTuple:
+    ) raises -> List[Symbol]:
         """Adds a new node to the `Graph`.
 
         The node represents a single MAX Graph operation.
@@ -336,7 +336,7 @@ struct Graph(CollectionElement, Stringable):
     fn op(
         self,
         name: String,
-        inputs: SymbolTuple,
+        inputs: List[Symbol],
         out_type: AnyMOType,
         attrs: AttrMap = AttrMap(),
     ) raises -> Symbol:
@@ -533,7 +533,7 @@ struct Graph(CollectionElement, Stringable):
         """
         return self.op(
             "mo.range",
-            (
+            List[Symbol](
                 self.scalar[dtype](start),
                 self.scalar[dtype](stop),
                 self.scalar[dtype](step),
@@ -543,7 +543,7 @@ struct Graph(CollectionElement, Stringable):
 
     fn full[
         dtype: DType
-    ](self, value: Scalar[dtype], dims: SymbolTuple) raises -> Symbol:
+    ](self, value: Scalar[dtype], dims: List[Symbol]) raises -> Symbol:
         """Creates a constant-valued symbolic tensor of a specified shape.
 
         Parameters:
@@ -566,11 +566,11 @@ struct Graph(CollectionElement, Stringable):
             out_dims.append(Dim.dynamic())
         return self.op(
             "mo.broadcast_to",
-            (self.scalar(value), ops.stack(shape)),
+            List[Symbol](self.scalar(value), ops.stack(shape)),
             MOTensor(dtype, out_dims),
         )
 
-    fn output(inout self, outs: SymbolTuple) raises:
+    fn output(inout self, outputs: List[Symbol]) raises:
         """Adds an output for the graph.
 
         This is a special node that all graphs must have in order to deliver
@@ -578,11 +578,11 @@ struct Graph(CollectionElement, Stringable):
         and type of the `out_types` given when constructing the graph.
 
         Args:
-            outs: The return values, usually the result from one or more ops.
+            outputs: The return values, usually the result from one or more ops.
         """
         var ctx = self._context()
         var results = List[_mlir.Type]()
-        for output in outs.symbols:
+        for output in outputs:
             results.append(output[].type().to_mlir(ctx))
         var op = self._graph[].op
 
@@ -598,4 +598,4 @@ struct Graph(CollectionElement, Stringable):
         )
         op.set_inherent_attr("signature", TypeAttr(signature).to_mlir())
 
-        _ = self.nvop("mo.output", outs)
+        _ = self.nvop("mo.output", outputs)

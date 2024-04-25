@@ -6,13 +6,12 @@
 """Helpers for building custom ops."""
 
 from max.graph._attributes import _string_attr
-from max.graph.symbol import SymbolTuple
 from max.graph.type import AnyMOType, TypeTuple
 
 
 def custom[
     name: StringLiteral
-](values: SymbolTuple, out_type: AnyMOType) -> Symbol:
+](values: List[Symbol], out_type: AnyMOType) -> Symbol:
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with
@@ -35,7 +34,7 @@ def custom[
 # We'll be able to make this an overload once we can get rid of `TypeTuple`.
 def custom_nv[
     name: StringLiteral
-](values: SymbolTuple, out_types: TypeTuple) -> SymbolTuple:
+](values: List[Symbol], out_types: TypeTuple) -> List[Symbol]:
     """Creates a node to execute a custom graph operation in the graph.
 
     The custom op should be registered by annotating a function with

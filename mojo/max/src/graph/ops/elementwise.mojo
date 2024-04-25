@@ -80,7 +80,9 @@ from max.graph.type import Dim, ElementType, MOTensor
 
 def _binary_op[op_name: StringLiteral](lhs: Symbol, rhs: Symbol) -> Symbol:
     return lhs.graph().nvop(
-        op_name, inputs=(lhs, rhs), enable_result_type_inference=True
+        op_name,
+        inputs=List[Symbol](lhs, rhs),
+        enable_result_type_inference=True,
     )[0]
 
 

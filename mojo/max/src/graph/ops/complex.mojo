@@ -36,7 +36,7 @@ def as_complex(real: Symbol, imag: Symbol) -> Symbol:
         `real` and `imag`. Each element is paired elementwise.
     """
     # """Builds a complex symbolic tensor from two real-valued symbolic tensors.
-    return stack((real, imag), axis=-1)
+    return stack(List[Symbol](real, imag), axis=-1)
 
 
 def as_interleaved_complex(interleaved: Symbol) -> Symbol:
@@ -61,7 +61,7 @@ def as_interleaved_complex(interleaved: Symbol) -> Symbol:
 
     var shape = shape_of(interleaved)
     var back_dims = g.constant(Tensor[DType.int64](TensorShape(2), -1, 2))
-    var new_shape = concat((shape[:last_d], back_dims))
+    var new_shape = concat(List[Symbol](shape[:last_d], back_dims))
 
     var new_dims = interleaved_t.dims
     var last_dim = new_dims[last_d]
@@ -73,7 +73,7 @@ def as_interleaved_complex(interleaved: Symbol) -> Symbol:
     return reshape(interleaved, new_shape, new_dims)
 
 
-def as_real(complex: Symbol) -> SymbolTuple:
+def as_real(complex: Symbol) -> List[Symbol]:
     """Splits out the real and imaginary components of a symbolic tensor.
 
     Args:
@@ -88,7 +88,7 @@ def as_real(complex: Symbol) -> SymbolTuple:
     var splits = split[2](complex, (1, 1), axis=-1)
     var real = splits[0]
     var imag = splits[1]
-    return (squeeze(real, axis=-1), squeeze(imag, axis=-1))
+    return List[Symbol](squeeze(real, axis=-1), squeeze(imag, axis=-1))
 
 
 # ===----------------------------------------------------------------------=== #

@@ -112,7 +112,7 @@ def squeeze(v: Symbol, axis: Int) -> Symbol:
 
     var new_shape = g.op(
         "mo.squeeze_shape",
-        (shape_of(v), g.scalar(Int64(axis), rank=1)),
+        List[Symbol](shape_of(v), g.scalar(Int64(axis), rank=1)),
         MOTensor(DType.int64, rank - 1),
     )
 
@@ -158,7 +158,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
     # TODO: Bug - passing v_type.rank() + 1 into a variadic Int64 corrupts it.
     var new_shape = g.op(
         "mo.unsqueeze_shape",
-        (shape_of(v), g.scalar(Int64(axis), rank=1)),
+        List[Symbol](shape_of(v), g.scalar(Int64(axis), rank=1)),
         MOTensor(DType.int64, rank + 1),
     )
 
@@ -204,11 +204,13 @@ fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
     if shape.tensor_type().rank() != 1:
         raise "reshape shape must be rank 1"
     return g.op(
-        "mo.reshape", (v, shape), MOTensor(v.tensor_type().dtype, out_dims)
+        "mo.reshape",
+        List[Symbol](v, shape),
+        MOTensor(v.tensor_type().dtype, out_dims),
     )
 
 
-fn reshape(v: Symbol, shape: SymbolTuple) raises -> Symbol:
+fn reshape(v: Symbol, shape: List[Symbol]) raises -> Symbol:
     """Reshapes a symbolic tensor.
 
     The number and order of the elements in the tensor is unchanged.
@@ -351,7 +353,7 @@ def transpose(input: Symbol, x: Int, y: Int) -> Symbol:
 
     return g.op(
         "mo.transpose",
-        (input, transpose_indices),
+        List[Symbol](input, transpose_indices),
         MOTensor(input_type.dtype, dims),
     )
 

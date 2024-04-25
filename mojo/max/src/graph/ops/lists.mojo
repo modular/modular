@@ -8,7 +8,7 @@
 from collections import Optional
 
 
-fn list(elements: SymbolTuple) raises -> Symbol:
+fn list(elements: List[Symbol]) raises -> Symbol:
     """Creates a new list and fills it with elements.
 
     This uses the `mo.list.create` operation. The elements must have the same

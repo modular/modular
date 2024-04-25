@@ -30,7 +30,7 @@ def outer(lhs: Symbol, rhs: Symbol) -> Symbol:
     return lhs.reshape(-1, 1) * rhs.reshape(1, -1)
 
 
-def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
+def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> List[Symbol]:
     """Computes the broadcasting of two symbolic tensors for a matmul.
 
     Args:
@@ -61,7 +61,7 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
 
     var broadcast_dims_shape = g.op(
         "mo.broadcast_shape",
-        (lhs_broadcast_dims, rhs_broadcast_dims),
+        List[Symbol](lhs_broadcast_dims, rhs_broadcast_dims),
         MOTensor(DType.int64, broadcast_rank - 2),
     )
 
@@ -75,23 +75,27 @@ def matmul_broadcast(lhs: Symbol, rhs: Symbol) -> SymbolTuple:
     rhs_final_dims.append(rhs_type.dim(-2))
     rhs_final_dims.append(rhs_type.dim(-1))
 
-    var lhs_broadcast_shape = concat((broadcast_dims_shape, lhs_matrix_dims))
+    var lhs_broadcast_shape = concat(
+        List[Symbol](broadcast_dims_shape, lhs_matrix_dims)
+    )
 
     var broadcast_lhs = g.op(
         "mo.broadcast_to",
-        (lhs, lhs_broadcast_shape),
+        List[Symbol](lhs, lhs_broadcast_shape),
         MOTensor(lhs_type.dtype, lhs_final_dims),
     )
 
-    var rhs_broadcast_shape = concat((broadcast_dims_shape, rhs_matrix_dims))
+    var rhs_broadcast_shape = concat(
+        List[Symbol](broadcast_dims_shape, rhs_matrix_dims)
+    )
 
     var broadcast_rhs = g.op(
         "mo.broadcast_to",
-        (rhs, rhs_broadcast_shape),
+        List[Symbol](rhs, rhs_broadcast_shape),
         MOTensor(rhs_type.dtype, rhs_final_dims),
     )
 
-    return (broadcast_lhs, broadcast_rhs)
+    return List[Symbol](broadcast_lhs, broadcast_rhs)
 
 
 def matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
@@ -159,7 +163,9 @@ def batch_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     dims.append(rhs_type.dim(-1))
     var out_type = MOTensor(lhs_type.dtype, dims)
 
-    return g.op("mo.batch_matmul", (broadcast_lhs, broadcast_rhs), out_type)
+    return g.op(
+        "mo.batch_matmul", List[Symbol](broadcast_lhs, broadcast_rhs), out_type
+    )
 
 
 def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
@@ -186,8 +192,12 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
     var lhs_shape = shape_of(lhs)
     var rhs_shape = shape_of(rhs)
     last_lhs_axis = lhs_type.rank() - 1
-    var reshape_shape = stack((g.scalar(Int64(-1)), lhs_shape[last_lhs_axis]))
-    var final_shape = concat((lhs_shape[:last_lhs_axis], rhs_shape[1:2]))
+    var reshape_shape = stack(
+        List[Symbol](g.scalar(Int64(-1)), lhs_shape[last_lhs_axis])
+    )
+    var final_shape = concat(
+        List[Symbol](lhs_shape[:last_lhs_axis], rhs_shape[1:2])
+    )
 
     var final_dims = List[Dim]()
     for i in range(lhs_type.rank() - 1):
@@ -199,7 +209,7 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
     matmul_dims.append(lhs_type.dim(-1))
     var matmul_out = g.op(
         "mo.matmul",
-        (reshape(lhs, reshape_shape, matmul_dims), rhs),
+        List[Symbol](reshape(lhs, reshape_shape, matmul_dims), rhs),
         MOTensor(lhs_type.dtype, Dim.dynamic(), rhs_type.dim(-1)),
     )
 
@@ -245,7 +255,7 @@ def band_part(
     var g = input.graph()
     return g.op(
         "mo.linalg.band_part",
-        (
+        List[Symbol](
             input,
             num_lower.reshape(),
             num_upper.reshape(),

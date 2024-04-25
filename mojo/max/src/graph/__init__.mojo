@@ -48,7 +48,7 @@ Graph](/engine/graph/get-started).
 """
 
 from .graph import Graph
-from .symbol import Symbol, SymbolTuple
+from .symbol import Symbol
 from .type import (
     AnyMOType,
     Dim,

@@ -25,7 +25,7 @@ fn _reduce[
     if dtype:
         v_type.dtype = dtype._value_copy()
 
-    return g.op(op, (v, g.scalar[DType.int64](axis)), v_type)
+    return g.op(op, List[Symbol](v, g.scalar[DType.int64](axis)), v_type)
 
 
 def mean(v: Symbol, axis: Int = -1) -> Symbol:

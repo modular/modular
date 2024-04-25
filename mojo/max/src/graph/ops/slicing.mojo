@@ -8,7 +8,7 @@
 from collections.optional import Optional
 from tensor import TensorShape
 
-from max.graph.symbol import SymbolTuple, SymbolicSlice
+from max.graph.symbol import SymbolicSlice
 
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
@@ -57,7 +57,7 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
 
     return g.op(
         "mo.gather",
-        (input, indices, g.scalar(Int64(axis))),
+        List[Symbol](input, indices, g.scalar(Int64(axis))),
         MOTensor(input_type.dtype, dims),
     )
 
@@ -133,7 +133,7 @@ def slice(
 
     return g.op(
         "mo.slice",
-        (input, start, stop, step),
+        List[Symbol](input, start, stop, step),
         MOTensor(input_type.dtype, out_shape),
     )
 
@@ -214,7 +214,7 @@ def slice[
 
 def split[
     n: Int
-](input: Symbol, sizes: StaticIntTuple[n], axis: Int = 0) -> SymbolTuple:
+](input: Symbol, sizes: StaticIntTuple[n], axis: Int = 0) -> List[Symbol]:
     """Splits a symbolic tensor into specified bucket sizes along the axis.
 
     Parameters:
@@ -246,7 +246,9 @@ def split[
 
     return g.nvop(
         "mo.split",
-        (input, g.vector[DType.int64](split_sizes), g.scalar(Int64(axis))),
+        List[Symbol](
+            input, g.vector[DType.int64](split_sizes), g.scalar(Int64(axis))
+        ),
         out_types,
     )
 
@@ -256,7 +258,7 @@ def split[
 # ===----------------------------------------------------------------------=== #
 
 
-def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
+def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
     """Concatenates a list of symbolic tensors along an axis.
 
     Args:
@@ -324,7 +326,7 @@ def concat(values: SymbolTuple, axis: Int = 0) -> Symbol:
     return g.op("mo.concat", concat_args, MOTensor(v0_type.dtype, dims))
 
 
-def stack(values: SymbolTuple, axis: Int = 0) -> Symbol:
+def stack(values: List[Symbol], axis: Int = 0) -> Symbol:
     """Stacks a list of tensors along a new axis.
 
     Args:
