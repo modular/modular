@@ -111,6 +111,7 @@ from nn.gather_scatter import (
 from nn.gather_scatter import scatter_elements_shape as scatter_shape
 from nn.gather_scatter import scatter_nd as _scatter_nd
 from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
+from nn.index_tensor import index_tensor_1d as _index_tensor
 from nn.mha import flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -3436,6 +3437,29 @@ fn gather_nd[
     ctx: MojoCallContextPtr,
 ):
     _gather_nd[
+        type, indices_type, data_rank, indices_rank, output_rank, batch_dims
+    ](data, indices, output)
+
+
+# Note: this is not a "real" index_tensor op that covers all cases, but rather
+# a stopgap measure for some important models (DLRM, CLIP-ViT, LLaMa2)
+@mogg_register("index_tensor")
+@always_inline
+@export
+fn index_tensor[
+    type: DType,
+    indices_type: DType,
+    data_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
+    batch_dims: Int,
+](
+    data: NDBuffer[type, data_rank],
+    indices: NDBuffer[indices_type, indices_rank],
+    output: NDBuffer[type, output_rank],
+    ctx: MojoCallContextPtr,
+):
+    _index_tensor[
         type, indices_type, data_rank, indices_rank, output_rank, batch_dims
     ](data, indices, output)
 
