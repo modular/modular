@@ -24,6 +24,7 @@ from gpu.memory import AddressSpace
 from memory import stack_allocation
 
 from utils.static_tuple import StaticTuple
+from utils._numerics import get_accum_type
 
 
 @always_inline
@@ -164,10 +165,10 @@ fn row_reduce[
     reduce_fn: fn[type: DType, width: Int] (
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
-    accum_type: DType,
     type: DType,
     simd_width: Int,
     rank: Int,
+    accum_type: DType = get_accum_type[type](),
 ](
     inout row_coords: StaticIntTuple[rank],
     axis: Int,
@@ -191,10 +192,10 @@ fn row_reduce[
         num_reductions,
         input_fn,
         reduce_wrapper,
-        accum_type,
         type,
         simd_width,
         rank,
+        accum_type=accum_type,
     ](row_coords, axis, init_tup, row_size)[0]
 
 
@@ -208,10 +209,10 @@ fn row_reduce[
     reduce_fn: fn[type: DType, width: Int, reduction_idx: Int] (
         SIMD[type, width], SIMD[type, width]
     ) capturing -> SIMD[type, width],
-    accum_type: DType,
     type: DType,
     simd_width: Int,
     rank: Int,
+    accum_type: DType = get_accum_type[type](),
 ](
     inout row_coords: StaticIntTuple[rank],
     axis: Int,
@@ -251,7 +252,11 @@ fn row_reduce[
         unroll[unrolled_reduce_wrapper, num_reductions]()
 
     var scalar_accum = block_reduce[
-        BLOCK_SIZE, num_reductions, reduce_fn, accum_type, simd_width
+        BLOCK_SIZE,
+        num_reductions,
+        reduce_fn,
+        accum_type,
+        simd_width,
     ](accum, init_cast)
 
     # handle trailing values
@@ -286,7 +291,7 @@ fn reduce_kernel[
     ) capturing -> SIMD[ty, width],
     type: DType,
     simd_width: Int,
-    accum_type: DType = type,
+    accum_type: DType = get_accum_type[type](),
 ](
     shape: StaticIntTuple[rank],
     axis: Int,
@@ -309,10 +314,10 @@ fn reduce_kernel[
             num_reductions,
             input_fn,
             reduce_fn,
-            accum_type,
             type,
             simd_width,
             rank,
+            accum_type=accum_type,
         ](row_coords, axis, init, row_size)
 
         if ThreadIdx.x() == 0:
@@ -349,7 +354,6 @@ fn reduce_launch[
     alias register_width = 32
 
     alias packing_factor = 1
-    alias accum_type = DType.float32 if type.is_bfloat16() or type.is_float16() else type
 
     var func = Function[
         fn (
