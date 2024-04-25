@@ -54,6 +54,42 @@ struct CacheConfig(CollectionElement, EqualityComparable):
 
 
 # ===----------------------------------------------------------------------===#
+# Function Attribute
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable("trivial")
+struct FuncAttribute(CollectionElement, EqualityComparable):
+    """Implement Cuda's CUfunction_attribute enum.
+    https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__TYPES.html#group__CUDA__TYPES_1g9d955dde0904a9b43ca4d875ac1551bc.
+
+    Only add 'max_dynamic_shared_size_bytes`.
+    """
+
+    var code: Int32
+    var value: Int32
+
+    alias NULL = FuncAttribute(-1, -1)
+
+    @always_inline("nodebug")
+    fn __eq__(self, other: Self) -> Bool:
+        return self.code == other.code and self.value == other.value
+
+    @always_inline("nodebug")
+    fn __ne__(self, other: Self) -> Bool:
+        return not (self == other)
+
+    @always_inline
+    @staticmethod
+    fn MAX_DYNAMIC_SHARED_SIZE_BYTES(val: Int32) -> FuncAttribute:
+        """The maximum size in bytes of dynamically-allocated shared memory that
+        can be used by this function. If the user-specified dynamic shared memory
+        size is larger than this value, the launch will fail."""
+        return FuncAttribute(8, val)
+
+
+# ===----------------------------------------------------------------------===#
 # FunctionHandle
 # ===----------------------------------------------------------------------===#
 
@@ -226,6 +262,7 @@ struct _GlobalPayload:
     var max_registers: Int32
     var threads_per_block: Int32
     var cache_config: Int32
+    var func_attribute: FuncAttribute
 
     fn __init__(
         debug: Bool,
@@ -233,6 +270,7 @@ struct _GlobalPayload:
         max_registers: Int32,
         threads_per_block: Int32,
         cache_config: Int32,
+        func_attribute: FuncAttribute,
     ) -> Self:
         return Self {
             debug: debug,
@@ -240,6 +278,7 @@ struct _GlobalPayload:
             max_registers: max_registers,
             threads_per_block: threads_per_block,
             cache_config: cache_config,
+            func_attribute: func_attribute,
         }
 
 
@@ -268,6 +307,17 @@ fn _init_fn[
                     "cuFuncSetCacheConfig", fn (FunctionHandle, Int32) -> Result
                 ]()(func_handle, payload.cache_config)
             )
+        if payload.func_attribute.code != -1:
+            _check_error(
+                _get_dylib_function[
+                    "cuFuncSetAttribute",
+                    fn (FunctionHandle, Int32, Int32) -> Result,
+                ]()(
+                    func_handle,
+                    payload.func_attribute.code,
+                    payload.func_attribute.value,
+                )
+            )
         var res = Pointer[_CachedFunctionInfo].alloc(1)
         res.store(_CachedFunctionInfo(mod_handle._steal_handle(), func_handle))
         return res.bitcast[NoneType]()
@@ -295,11 +345,17 @@ fn _get_global_cache_info[
     max_registers: Int = -1,
     threads_per_block: Int = -1,
     cache_config: Int32 = -1,
+    func_attribute: FuncAttribute = FuncAttribute.NULL,
 ) -> _CachedFunctionInfo:
     alias fn_name = _get_nvptx_fn_name[func_type, func]()
 
     var payload = _GlobalPayload(
-        debug, verbose, max_registers, threads_per_block, cache_config
+        debug,
+        verbose,
+        max_registers,
+        threads_per_block,
+        cache_config,
+        func_attribute,
     )
 
     var info_ptr = _get_global[
@@ -335,6 +391,7 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
         cache_config: Optional[CacheConfig] = None,
+        func_attribute: Optional[FuncAttribute] = None,
     ) raises:
         fn dump_q(val: Variant[Path, Bool]) -> Bool:
             if val.isa[Bool]():
@@ -365,6 +422,7 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
             max_registers=max_registers.value()[] if max_registers else -1,
             threads_per_block=threads_per_block.value()[] if threads_per_block else -1,
             cache_config=cache_config.value()[].code if cache_config else -1,
+            func_attribute=func_attribute.value()[] if func_attribute else FuncAttribute.NULL,
         )
 
         if info.error:
