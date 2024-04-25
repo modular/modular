@@ -1,0 +1,19 @@
+load("@pip_deps//:requirements.bzl", "requirement")
+load("@rules_python//python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "mblack",
+    srcs = glob(["src/**/*.py"]),
+    data = glob(["src/**/*.txt"]),
+    imports = ["src"],
+    main = "src/mblack/__main__.py",
+    deps = [
+        requirement("click"),
+        requirement("mypy_extensions"),
+        requirement("pathspec"),
+        requirement("platformdirs"),
+        requirement("tomli"),
+    ],
+)

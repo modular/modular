@@ -13,5 +13,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 from mblack import patched_main
+import os
+
+if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
+    os.chdir(directory)
 
 patched_main()
