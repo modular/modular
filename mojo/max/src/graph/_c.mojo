@@ -79,11 +79,11 @@ fn graph_new(
     return cfunc[
         "MAXG_graphNew",
         fn (
-            _mlir.Module.c_type,
-            _mlir.Location.c_type,
+            _mlir.Module.cType,
+            _mlir.Location.cType,
             StringRef,
-            _mlir.Type.c_type,
-        ) -> _mlir.Operation.c_type,
+            _mlir.Type.cType,
+        ) -> _mlir.Operation.cType,
     ]()(module.c, loc.c, name._strref_dangerous(), signature.to_mlir().c)
 
 
@@ -105,9 +105,9 @@ fn attr_new_tensor[
         fn (
             StringRef,
             UnsafePointer[T],
-            _mlir.Type.c_type,
+            _mlir.Type.cType,
             Bool,
-        ) -> _mlir.NamedAttribute.c_type,
+        ) -> _mlir.NamedAttribute.cType,
     ]()(name._strref_dangerous(), data.data, type.c, is_owned)
 
 
@@ -122,9 +122,9 @@ fn attr_new_tensor(
         fn (
             StringRef,
             DTypePointer[DType.invalid],
-            _mlir.Type.c_type,
+            _mlir.Type.cType,
             Bool,
-        ) -> _mlir.NamedAttribute.c_type,
+        ) -> _mlir.NamedAttribute.cType,
     ]()(name._strref_dangerous(), data, type.c, is_owned)
 
 
@@ -134,8 +134,8 @@ fn attr_new_tensor_from_file(
     return cfunc[
         "MAXG_attrNewTensorFromFile",
         fn (
-            StringRef, StringRef, _mlir.Type.c_type
-        ) -> _mlir.NamedAttribute.c_type,
+            StringRef, StringRef, _mlir.Type.cType
+        ) -> _mlir.NamedAttribute.cType,
     ]()(name._strref_dangerous(), file_name._strref_dangerous(), type.c)
 
 
@@ -146,7 +146,7 @@ fn attr_new_tensor_from_file(
 
 fn dtype_new(ctx: _mlir.Context, dtype: DType) -> _mlir.Type:
     return cfunc[
-        "MAXG_dTypeNew", fn (_mlir.Context.c_type, UInt8) -> _mlir.Type.c_type
+        "MAXG_dTypeNew", fn (_mlir.Context.cType, UInt8) -> _mlir.Type.cType
     ]()(ctx.c, dtype._as_i8())
 
 
@@ -163,18 +163,18 @@ fn tensor_type_new(
     var result = cfunc[
         "MAXG_tensorTypeNew",
         fn (
-            _mlir.Context.c_type,
-            _mlir.Type.c_type,
+            _mlir.Context.cType,
+            _mlir.Type.cType,
             Bool,
-            Pointer[_mlir.Attribute.c_type],
+            Pointer[_mlir.Attribute.cType],
             Int32,
-        ) -> _mlir.Type.c_type,
+        ) -> _mlir.Type.cType,
     ]()(
         ctx.c,
         dtype.c,
         ranked,
         Pointer[_mlir.Attribute](dims.data.address).bitcast[
-            _mlir.Attribute.c_type
+            _mlir.Attribute.cType
         ](),
         len(dims),
     )
@@ -184,19 +184,19 @@ fn tensor_type_new(
 
 fn tensor_type_get_dtype(v: _mlir.Type) -> DType:
     var dtype = cfunc[
-        "MAXG_tensorTypeGetDType", fn (_mlir.Type.c_type) -> UInt8
+        "MAXG_tensorTypeGetDType", fn (_mlir.Type.cType) -> UInt8
     ]()(v.c)
     return DType._from_ui8(dtype.value)
 
 
 fn tensor_type_is_ranked(v: _mlir.Type) -> Bool:
-    return cfunc["MAXG_tensorTypeIsRanked", fn (_mlir.Type.c_type) -> Bool]()(
+    return cfunc["MAXG_tensorTypeIsRanked", fn (_mlir.Type.cType) -> Bool]()(
         v.c
     )
 
 
 fn tensor_type_get_rank(t: _mlir.Type) -> Int64:
-    return cfunc["MAXG_tensorTypeGetRank", fn (_mlir.Type.c_type) -> Int64]()(
+    return cfunc["MAXG_tensorTypeGetRank", fn (_mlir.Type.cType) -> Int64]()(
         t.c
     )
 
@@ -204,55 +204,53 @@ fn tensor_type_get_rank(t: _mlir.Type) -> Int64:
 fn tensor_type_get_dim(t: _mlir.Type, dim: Int64) -> _mlir.Attribute:
     return cfunc[
         "MAXG_tensorTypeShapeGetDim",
-        fn (_mlir.Type.c_type, Int64) -> _mlir.Attribute.c_type,
+        fn (_mlir.Type.cType, Int64) -> _mlir.Attribute.cType,
     ]()(t.c, dim)
 
 
 fn dim_new_dynamic(ctx: _mlir.Context) -> _mlir.Attribute:
     return cfunc[
         "MAXG_dimNewDynamic",
-        fn (_mlir.Context.c_type) -> _mlir.Attribute.c_type,
+        fn (_mlir.Context.cType) -> _mlir.Attribute.cType,
     ]()(ctx.c)
 
 
 fn dim_new_static(ctx: _mlir.Context, dim: Int64) -> _mlir.Attribute:
     return cfunc[
         "MAXG_dimNewStatic",
-        fn (_mlir.Context.c_type, Int64) -> _mlir.Attribute.c_type,
+        fn (_mlir.Context.cType, Int64) -> _mlir.Attribute.cType,
     ]()(ctx.c, dim)
 
 
 fn dim_new_symbolic(ctx: _mlir.Context, name: String) -> _mlir.Attribute:
     return cfunc[
         "MAXG_dimNewSymbolic",
-        fn (_mlir.Context.c_type, StringRef) -> _mlir.Attribute.c_type,
+        fn (_mlir.Context.cType, StringRef) -> _mlir.Attribute.cType,
     ]()(ctx.c, name._strref_dangerous())
 
 
 fn dim_is_dynamic(a: _mlir.Attribute) -> Bool:
-    return cfunc["MAXG_dimIsDynamic", fn (_mlir.Attribute.c_type) -> Bool]()(
-        a.c
-    )
+    return cfunc["MAXG_dimIsDynamic", fn (_mlir.Attribute.cType) -> Bool]()(a.c)
 
 
 fn dim_is_static(a: _mlir.Attribute) -> Bool:
-    return cfunc["MAXG_dimIsStatic", fn (_mlir.Attribute.c_type) -> Bool]()(a.c)
+    return cfunc["MAXG_dimIsStatic", fn (_mlir.Attribute.cType) -> Bool]()(a.c)
 
 
 fn dim_is_symbolic(a: _mlir.Attribute) -> Bool:
-    return cfunc["MAXG_dimIsSymbolic", fn (_mlir.Attribute.c_type) -> Bool]()(
+    return cfunc["MAXG_dimIsSymbolic", fn (_mlir.Attribute.cType) -> Bool]()(
         a.c
     )
 
 
 fn dim_is_symbolic_expression(a: _mlir.Attribute) -> Bool:
     return cfunc[
-        "MAXG_dimIsSymbolicExpression", fn (_mlir.Attribute.c_type) -> Bool
+        "MAXG_dimIsSymbolicExpression", fn (_mlir.Attribute.cType) -> Bool
     ]()(a.c)
 
 
 fn dim_static_value(a: _mlir.Attribute) -> Int64:
-    return cfunc["MAXG_dimStaticValue", fn (_mlir.Attribute.c_type) -> Int64]()(
+    return cfunc["MAXG_dimStaticValue", fn (_mlir.Attribute.cType) -> Int64]()(
         a.c
     )
 
@@ -260,26 +258,26 @@ fn dim_static_value(a: _mlir.Attribute) -> Int64:
 fn dim_symbolic_name(a: _mlir.Attribute) -> _mlir.Identifier:
     return cfunc[
         "MAXG_dimSymbolicName",
-        fn (_mlir.Attribute.c_type) -> _mlir.Identifier.c_type,
+        fn (_mlir.Attribute.cType) -> _mlir.Identifier.cType,
     ]()(a.c)
 
 
 fn list_type_new(ctx: _mlir.Context, eltype: _mlir.Type) -> _mlir.Type:
     return cfunc[
         "MAXG_listTypeNew",
-        fn (_mlir.Context.c_type, _mlir.Type.c_type) -> _mlir.Type.c_type,
+        fn (_mlir.Context.cType, _mlir.Type.cType) -> _mlir.Type.cType,
     ]()(ctx.c, eltype.c)
 
 
 fn list_type_element_type(t: _mlir.Type) -> _mlir.Type:
     return cfunc[
-        "MAXG_listTypeElementType", fn (_mlir.Type.c_type) -> _mlir.Type.c_type
+        "MAXG_listTypeElementType", fn (_mlir.Type.cType) -> _mlir.Type.cType
     ]()(t.c)
 
 
 fn type_is_list(t: _mlir.Type) -> Bool:
-    return cfunc["MAXG_typeIsList", fn (_mlir.Type.c_type) -> Bool]()(t.c)
+    return cfunc["MAXG_typeIsList", fn (_mlir.Type.cType) -> Bool]()(t.c)
 
 
 fn type_is_tensor(t: _mlir.Type) -> Bool:
-    return cfunc["MAXG_typeIsTensor", fn (_mlir.Type.c_type) -> Bool]()(t.c)
+    return cfunc["MAXG_typeIsTensor", fn (_mlir.Type.cType) -> Bool]()(t.c)
