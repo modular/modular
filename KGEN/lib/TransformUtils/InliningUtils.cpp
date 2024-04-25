@@ -194,6 +194,10 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
     if (noDebug || scopeIsNotSubprogram)
       DebugInfo::updateInlinedLoc(op, callLoc, noDebug);
 
+    // Don't recurse into nested functions.
+    if (isa<FuncInterface>(op))
+      return WalkResult::skip();
+
     // Recurse into the body if needed and allowed.
     if (isa<DebugInfo::InlinedSubprogramScoped>(op)) {
       // Recurse inside if the inlined subprogram has a tag (deferred update),

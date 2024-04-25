@@ -576,36 +576,12 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
   Location callLoc = call.getLoc();
   b.replaceOp(call, scope.getResults());
 
-  if (updateDebugInfo) {
-    scope.getBody().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-      // Erase `debuginfo.value` operations when inlining without debug info.
-      if (stripDebugInfo && isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
-        op->erase();
-        return WalkResult::skip();
-      }
-      if (needsMangling) {
-        // Mangle locations.
-        op->setLoc(cast<LocationAttr>(
-            mangler.mangleRefsIn(LocationAttr(op->getLoc()))));
-      }
-
-      DebugInfo::updateInlinedLoc(op, callLoc, stripDebugInfo);
-
-      if (isa<DebugInfo::SubprogramScoped>(op))
-        return WalkResult::skip();
-
-      return WalkResult::advance();
-    });
-  }
-
-  // If the scope was trivial (one return at the end), fold it away.
-  if (numReturns == 1 && isa<ReturnOp>(callee.getBody()->getTerminator())) {
-    Operation *term = scope.getBody().front().getTerminator();
-    scope->getBlock()->getOperations().splice(
-        scope->getIterator(), scope.getBody().front().getOperations());
-    b.replaceOp(scope, term->getOperands());
-    term->erase();
-  }
+  std::optional<StringAttr> updateAttrName;
+  if (updateDebugInfo)
+    updateAttrName = StringAttr();
+  bool singleExit =
+      numReturns == 1 && isa<ReturnOp>(callee.getBody()->getTerminator());
+  maybeUpdateDebugInfo(scope, updateAttrName, singleExit, stripDebugInfo);
 }
 
 //===----------------------------------------------------------------------===//
