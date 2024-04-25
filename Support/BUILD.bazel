@@ -880,7 +880,10 @@ cc_library(
 
 cc_library(
     name = "DebugInfoToLLVM",
-    srcs = glob(["lib/DebugInfoDialect/DebugInfoToLLVM/*.cpp"]),
+    srcs = glob([
+        "lib/DebugInfoDialect/DebugInfoToLLVM/**/*.cpp",
+        "lib/DebugInfoDialect/DebugInfoToLLVM/**/*.h",
+    ]),
     hdrs = glob(["include/Support/DebugInfoDialect/DebugInfoToLLVM/*.h"]),
     strip_include_prefix = "include",
     deps = [
