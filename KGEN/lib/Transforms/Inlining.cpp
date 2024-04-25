@@ -1040,8 +1040,8 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
     callee->mutex.lock_shared();
     // Nuke debuginfo from the callee if inlining a function without debuginfo
     // into one that does.
-    bool nukeDebugInfo =
-        !callee->func.getLocScope() && caller->func.getLocScope();
+    bool noDebug = callee->level == InlineLevel::AlwaysNoDebug ||
+                   (!callee->func.getLocScope() && caller->func.getLocScope());
     if (callee->numTimesInlined.fetch_add(1) + 1 == callee->callers.size()) {
       // If so, we can take the body instead of cloning it. Acquire an exclusive
       // lock to wait for all other users to finish cloning.
@@ -1059,26 +1059,7 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
       callee->mutex.unlock_shared();
     }
 
-    if (updateAttrName) {
-      // We don't know where the op will end up, so tag it with an attribute.
-      // Encode information {singleExit, noDebug} as bits.
-      bool noDebug =
-          callee->level == InlineLevel::AlwaysNoDebug || nukeDebugInfo;
-      uint8_t tagValue = singleExit | (noDebug << 1);
-      IntegerAttr tag =
-          OpBuilder(scope->getContext()).getI8IntegerAttr(tagValue);
-
-      if (*updateAttrName) {
-        // Deferred debuginfo update.
-        scope->setAttr(*updateAttrName, tag);
-      } else {
-        // Immediate debuginfo update.
-        // This will also foldTrivialLoops if applicable.
-        updateScopeDebugInfoFrom(scope, tag, nullptr);
-      }
-    } else if (singleExit) {
-      foldTrivialLoop(scope);
-    }
+    maybeUpdateDebugInfo(scope, updateAttrName, singleExit, noDebug);
   }
 
   // Run the function pipeline. Make sure the verifier is off. Note that

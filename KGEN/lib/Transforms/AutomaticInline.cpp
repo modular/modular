@@ -258,29 +258,12 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
       IRMapping map;
       // Nuke debuginfo from the callee if inlining a function without
       // debuginfo into one that does.
-      bool nukeDebugInfo =
-          !callee->func.getLocScope() && caller->func.getLocScope();
+      bool noDebug = !callee->func.getLocScope() && caller->func.getLocScope();
       // Inline the callee.
       auto [scope, singleExit] =
           inlineRegion(map, call, callee->func.getBodyRegion());
 
-      if (updateAttrName) {
-        // We don't know where the op will end up, so tag it with an
-        // attribute. Encode information {singleExit, noDebug} as bits.
-        IntegerAttr tag =
-            OpBuilder(scope->getContext())
-                .getI8IntegerAttr(singleExit | (nukeDebugInfo << 1));
-        if (*updateAttrName) {
-          // Deferred debuginfo update.
-          scope->setAttr(*updateAttrName, tag);
-        } else {
-          // Immediate debuginfo update.
-          // This will also foldTrivialLoops if applicable.
-          updateScopeDebugInfoFrom(scope, tag, nullptr);
-        }
-      } else if (singleExit) {
-        foldTrivialLoop(scope);
-      }
+      maybeUpdateDebugInfo(scope, updateAttrName, singleExit, noDebug);
       callee->numTimesInlined++;
     }
 

@@ -51,6 +51,11 @@ void updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
 /// from there.
 void updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName);
 
+/// After inlining a region, update its debuginfo if required.
+void maybeUpdateDebugInfo(Operation *scope,
+                          std::optional<StringAttr> updateAttrName,
+                          bool singleExit, bool noDebug);
+
 /// This class manages a pass manager instance for each thread.
 class PerThreadPassManagers {
 public:
