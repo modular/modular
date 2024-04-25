@@ -328,6 +328,10 @@ private:
       // which contains the canonical lambda we remap onto the argument of
       // this function which invoked the enable fusion method.
       mlir::IRMapping mapper;
+
+      if (!lambda->templateOp)
+        return newLambdas;
+
       mapper.map(lambda->templateOp.getBody()->getArgument(0),
                  tensorFusionEnabledOn);
       OpBuilder b{computeBlock, computeBlock->begin()};
