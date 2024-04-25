@@ -1326,12 +1326,22 @@ SharedState::lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
     return nullptr;
   // Retrieve the proper decl name.
   StringAttr name = declOp.getDeclName();
-  // Perform the lookup.
-  LookupResult result =
-      lookupAndResolveDecl(name, loc, container, /*searchParentScopes=*/false);
+
+  // If the container is loaded from bytecode, the decl should already be
+  // defined within the container decl, look it up directly. This avoids going
+  // through the more complex resolution paths (which also resolve other things
+  // in the container that aren't needed for this lookup).
+  ArrayRef<ASTDecl *> result;
+  if (container.loadedFromBytecode) {
+    result = container.lookupInCurrentScope(name);
+  } else {
+    LookupResult lookup = lookupAndResolveDecl(name, loc, container,
+                                               /*searchParentScopes=*/false);
+    result = lookup.getIfSuccess();
+  }
 
   // Find the entry that matches the full symbol name.
-  for (ASTDecl *decl : result.getIfSuccess()) {
+  for (ASTDecl *decl : result) {
     if (decl->getIfOperation() != declOp)
       continue;
     if (failed(declResolver->resolve(*decl, howResolved, loc)))
