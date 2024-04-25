@@ -573,7 +573,6 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     cloned->erase();
     return WalkResult::advance();
   });
-  Location callLoc = call.getLoc();
   b.replaceOp(call, scope.getResults());
 
   std::optional<StringAttr> updateAttrName;
