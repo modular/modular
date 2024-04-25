@@ -147,3 +147,23 @@ fn async_copy_wait_group(n: Int32):
 fn async_copy_wait_all():
     """Wait for the completion of all commited cp.async-groups."""
     llvm_intrinsic["llvm.nvvm.cp.async.wait.all", NoneType]()
+
+
+@always_inline
+fn dynamic_shared_memory[
+    type: AnyRegType,
+    alignment: Int,
+]() -> Pointer[type, _GPUAddressSpace.SHARED]:
+    """Gets a pointer to dynamic shared memory.
+
+    Parameters:
+        type: The pointer's type.
+        alignment: The pointer's address alignment.
+
+    Returns:
+        A pointer to dynamic shared memory.
+    """
+    return __mlir_op.`pop.extern_ptr_symbol`[
+        _type = Pointer[type, _GPUAddressSpace.SHARED]._mlir_type,
+        alignment = alignment.value,
+    ]()
