@@ -25,6 +25,17 @@ llvm::json::Value lsp::toJSON(const TextDocumentPositionParams &params) {
                             {"position", params.position}};
 }
 
+llvm::json::Value lsp::toJSON(const CodeActionContext &context) {
+  return llvm::json::Object{{"diagnostics", context.diagnostics},
+                            {"only", context.only}};
+}
+
+llvm::json::Value lsp::toJSON(const CodeActionParams &params) {
+  return llvm::json::Object{{"textDocument", params.textDocument},
+                            {"range", params.range},
+                            {"context", params.context}};
+}
+
 llvm::json::Value lsp::toJSON(const Hover2 &hover) {
   return toJSON(static_cast<Hover>(hover));
 }
@@ -56,4 +67,14 @@ bool lsp::fromJSON(const llvm::json::Value &value, MarkupContent &mc,
                    llvm::json::Path path) {
   llvm::json::ObjectMapper o(value, path);
   return o && o.map("kind", mc.kind) && o.map("value", mc.value);
+}
+
+bool lsp::fromJSON(const llvm::json::Value &value, CodeAction &codeAction,
+                   llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("title", codeAction.title) &&
+         o.map("kind", codeAction.kind) &&
+         o.map("diagnostics", codeAction.diagnostics) &&
+         o.map("isPreferred", codeAction.isPreferred) &&
+         o.map("edit", codeAction.edit);
 }

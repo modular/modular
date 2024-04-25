@@ -57,6 +57,16 @@ LSPBatchClient &LSPBatchClient::definition(
   return *this;
 }
 
+LSPBatchClient &LSPBatchClient::codeAction(
+    const Document &doc, const lsp::Range &range,
+    std::initializer_list<lsp::Diagnostic> diags,
+    std::function<void(const std::vector<lsp::CodeAction> &)> callback) {
+  lsp::CodeActionParams params{
+      lsp::TextDocumentIdentifier{doc.getURI()}, range, {diags, /*only=*/{}}};
+  request("textDocument/codeAction", toJSON(params), std::move(callback));
+  return *this;
+}
+
 LSPBatchClient &
 LSPBatchClient::hover(const Document &doc, const lsp::Position &position,
                       std::function<void(const lsp::Hover2 &)> callback) {

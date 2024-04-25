@@ -16,6 +16,7 @@ add_modular_unittest(
   TEST_NAME
   MojoLSPServerTests
 
+  CodeActionTest.cpp
   SampleTest.cpp
   Support.cpp
 
