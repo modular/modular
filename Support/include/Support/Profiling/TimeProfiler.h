@@ -77,6 +77,7 @@
 #include <chrono>
 #include <mutex>
 #include <optional>
+#include <unordered_set>
 
 #ifdef MODULAR_PROFILING_NSIGHT
 #include "CUDASupport/Globals/Globals.h"
@@ -283,7 +284,15 @@ struct BlockList {
 // ProfilingDetail::Label
 //===----------------------------------------------------------------------===//
 
-using StringArena = BlockList<std::string>;
+/// Use an unordered_set as `StringArena`.
+/// This is because the majority of profiler events' names are static strings
+/// and the ratio of events to names is large.
+/// NOTE: `Label::intern()` returns a pointer into this `StringArena`.
+/// So it is important that those pointers are still valid after further
+/// insertion into the `StringArena`.
+/// `unordered_set` satisfies this property, but not that for example
+/// `llvm::DenseSet` does not.
+using StringArena = std::unordered_set<std::string>;
 
 /// A way to derive the name or detail string for a profiling entry. When safe,
 /// allows string copies to be avoided until either the final profile is being
@@ -394,12 +403,12 @@ public:
 private:
   /// Copies data of stringRef into stringArena and returns a StringRef to it.
   static StringRef intern(StringArena &stringArena, StringRef stringRef) {
-    return StringRef(stringArena.emplace_back(stringRef.str()));
+    return StringRef(*stringArena.insert(stringRef.str()).first);
   }
 
   // Moves string into stringArena and returns a StringRef to it.
   static StringRef intern(StringArena &stringArena, std::string string) {
-    return StringRef(stringArena.emplace_back(std::move(string)));
+    return StringRef(*stringArena.insert(std::move(string)).first);
   }
 
   /// Reference to string, which we are ether borrowing, or which resides in
