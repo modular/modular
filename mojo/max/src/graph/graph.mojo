@@ -14,7 +14,7 @@ import _mlir
 from _mlir.builtin_attributes import TypeAttr
 from _mlir.builtin_types import FunctionType
 
-from ._attributes import AttrMap, _tensor_attr, _vector_attr
+from ._attributes import _tensor_attr, _vector_attr
 from .symbol import Symbol
 from .type import MOList, MOTensor, AnyMOType
 
@@ -74,9 +74,7 @@ struct Graph(CollectionElement, Stringable):
     from tensor import Tensor, TensorShape
 
     def build_model() -> Graph:
-        var graph = Graph(
-            in_types=MOTensor(DType.float32, 2, 6),
-        )
+        var graph = Graph(MOTensor(DType.float32, 2, 6))
 
         var matmul_constant_value = Tensor[DType.float32](TensorShape(6, 1), 0.15)
         var matmul_constant = graph.constant(matmul_constant_value)
@@ -286,7 +284,7 @@ struct Graph(CollectionElement, Stringable):
         name: String,
         inputs: List[Symbol] = List[Symbol](),
         out_types: List[AnyMOType] = List[AnyMOType](),
-        attrs: AttrMap = AttrMap(),
+        attrs: List[_mlir.NamedAttribute] = List[_mlir.NamedAttribute](),
         enable_result_type_inference: Bool = False,
     ) raises -> List[Symbol]:
         """Adds a new node to the `Graph`.
@@ -327,7 +325,7 @@ struct Graph(CollectionElement, Stringable):
             location=_mlir.Location.unknown(ctx),
             operands=operands,
             results=out_types_mlir,
-            attributes=attrs.attrs,
+            attributes=attrs,
             enable_result_type_inference=enable_result_type_inference,
         )
 
@@ -347,7 +345,10 @@ struct Graph(CollectionElement, Stringable):
     # ===------------------------------------------------------------------=== #
 
     fn op(
-        self, name: String, out_type: AnyMOType, attrs: AttrMap = AttrMap()
+        self,
+        name: String,
+        out_type: AnyMOType,
+        attrs: List[_mlir.NamedAttribute] = List[_mlir.NamedAttribute](),
     ) raises -> Symbol:
         """Adds a new single-output, nullary node to the `Graph`.
 
@@ -369,7 +370,7 @@ struct Graph(CollectionElement, Stringable):
         name: String,
         inputs: List[Symbol],
         out_type: AnyMOType,
-        attrs: AttrMap = AttrMap(),
+        attrs: List[_mlir.NamedAttribute] = List[_mlir.NamedAttribute](),
     ) raises -> Symbol:
         """Adds a new single-output node to the `Graph`.
 
@@ -411,7 +412,7 @@ struct Graph(CollectionElement, Stringable):
         return self.op(
             "mo.constant",
             MOTensor(value.spec()),
-            AttrMap(_tensor_attr(self._context(), "value", value)),
+            List(_tensor_attr(self._context(), "value", value)),
         )
 
     fn vector[dtype: DType](self, values: List[Scalar[dtype]]) raises -> Symbol:
@@ -432,7 +433,7 @@ struct Graph(CollectionElement, Stringable):
         return self.op(
             "mo.constant",
             MOTensor(dtype, len(values)),
-            AttrMap(_vector_attr[dtype](self._context(), "value", values)),
+            List(_vector_attr[dtype](self._context(), "value", values)),
         )
 
     fn scalar[

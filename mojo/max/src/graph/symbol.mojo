@@ -11,7 +11,7 @@ from utils.variant import Variant
 
 import _mlir
 
-from ._attributes import AttrMap, _string_attr
+from ._attributes import _string_attr
 from .graph import Graph, _GraphRef
 from .ops import add, div, matmul, mul, pow, reshape, sub, transpose
 
@@ -598,8 +598,12 @@ struct Symbol(CollectionElement, Stringable):
             label: A label to accompany the printout.
         """
         var g = self.graph()
-        var attrs = AttrMap(_string_attr(g._context(), "label", label))
-        _ = g.nvop("mo.debug.tensor.print", self, List[AnyMOType](), attrs)
+        _ = g.nvop(
+            "mo.debug.tensor.print",
+            self,
+            List[AnyMOType](),
+            _string_attr(g._context(), "label", label),
+        )
 
     # ===------------------------------------------------------------------=== #
     # Graph manipulation

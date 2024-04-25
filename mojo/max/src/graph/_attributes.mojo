@@ -25,35 +25,6 @@ from .type import MOTensor
 import ._c
 
 
-@value
-struct AttrMap(Sized):
-    """Holds a set of attributes."""
-
-    var attrs: List[_mlir.NamedAttribute]
-    """The list of attributes held by this map.
-
-    The list values are internal `Attribute` representations.
-    """
-
-    # ===------------------------------------------------------------------=== #
-    # Basic constructors and accessors
-    # ===------------------------------------------------------------------=== #
-
-    fn __init__(inout self, *attrs: _mlir.NamedAttribute):
-        """Constructs an `AttrMap` from internal `Attribute` representations.
-
-        Args:
-            attrs: Variadic list of internal `Attribute` representations.
-        """
-        self.attrs = List[_mlir.NamedAttribute]()
-        for attr in attrs:
-            self.attrs.append(attr[])
-
-    fn __len__(self) -> Int:
-        """Returns the size of this map."""
-        return len(self.attrs)
-
-
 # ===------------------------------------------------------------------=== #
 # Attribute factories
 # ===------------------------------------------------------------------=== #
