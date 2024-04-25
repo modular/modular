@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
 
-from collections import Optional, Set
-from memory._arc import Arc
+from collections import Optional
 from sys.info import has_neon
 from tensor import Tensor
 
@@ -179,24 +178,6 @@ struct Graph(CollectionElement, Stringable):
                 ctx, in_types_mlir, out_types_mlir
             ),
         )
-
-        var parameters = Set[String]()
-        for in_type in in_types:
-            parameters |= in_type[].parameters()
-        var input_params_str = String("#kgen<param.decls[")
-        var i = 0
-        for parameter in parameters:
-            if i != 0:
-                input_params_str += ", "
-            i += 1
-            input_params_str += parameter[] + ": index"
-        input_params_str += "]>"
-        try:
-            var input_params = _mlir.Attribute.parse(ctx, input_params_str)
-            op.set_inherent_attr("inputParams", input_params)
-        except e:
-            print(e)
-            abort[NoneType]("failed to build kgen decl attr")
 
         self._graph = Arc(_OwnedGraph(ctx^, op^))
 
