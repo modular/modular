@@ -29,10 +29,29 @@ std::optional<lsp::Position> Document::findFirstPos(StringRef substr) const {
   return {};
 }
 
+std::optional<lsp::Position> Document::findLastPos(StringRef substr) const {
+  if (std::optional<lsp::Range> range = findLastRange(substr))
+    return range->start;
+
+  return {};
+}
+
 std::optional<mlir::lsp::Range>
 Document::findFirstRange(StringRef substr) const {
   for (size_t line = 0, e = lines.size(); line < e; ++line)
     if (size_t pos = lines[line].find(substr); pos != StringRef::npos)
+      return lsp::Range{lsp::Position(line, pos),
+                        lsp::Position(line, pos + substr.size())};
+
+  return {};
+}
+
+std::optional<mlir::lsp::Range>
+Document::findLastRange(StringRef substr) const {
+  if (lines.empty())
+    return {};
+  for (size_t line = lines.size() - 1; line; --line)
+    if (size_t pos = lines[line].rfind(substr); pos != StringRef::npos)
       return lsp::Range{lsp::Position(line, pos),
                         lsp::Position(line, pos + substr.size())};
 

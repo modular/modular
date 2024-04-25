@@ -18,6 +18,7 @@ add_modular_unittest(
 
   CodeActionTest.cpp
   CodeBlockTest.cpp
+  CompletionTest.cpp
   SampleTest.cpp
   Support.cpp
 
