@@ -90,10 +90,10 @@ fn create_tensor_spec_async[
 @export
 fn unpack_async(
     async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-) -> __mlir_type.`!kgen.pointer<scalar<invalid>>`:
+) -> __mlir_type.`!kgen.pointer<none>`:
     return external_call[
         "KGEN_CompilerRT_GetValueFromAsync",
-        __mlir_type.`!kgen.pointer<scalar<invalid>>`,
+        __mlir_type.`!kgen.pointer<none>`,
     ](async_ptr)
 
 
