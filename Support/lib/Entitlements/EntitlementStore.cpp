@@ -187,7 +187,7 @@ public:
   /// Return the subject of the leaf certificate. This asserts that the
   /// certificate has been verified. This returns a reference to the string data
   /// contained directly in the certificate.
-  ErrorOr<StringRef> getSubject() const;
+  ErrorOr<Detail::CertSubject> getSubject() const;
 
   /// Apply `policy` to the validity period of the parsed leaf certificate.
   ErrorOr<bool> applyToValidity(
@@ -314,20 +314,46 @@ ErrorOrSuccess Detail::CertificateChain::verify(Keypair &clientKeys) {
 // Detail::CertificateChain::getSubject
 //===----------------------------------------------------------------------===//
 
-ErrorOr<StringRef> Detail::CertificateChain::getSubject() const {
+ErrorOr<Detail::CertSubject> Detail::CertificateChain::getSubject() const {
   assert(verified && "must have a verified certificate chain");
   // The subject is exactly the value of the ASN.1 subject for the previous
   // certificate, which is the user ID. The subject is a linked-list of C/O/CN
   // so we have to find the common name, which is identified by OID 2.5.4.3.
   auto cnOr = ASN1::ObjectID::fromString("2.5.4.3");
-  if (cnOr.isError())
+  if (cnOr.isError()) {
+    // Error resolving OID. Should never happen since 2.5.4.3 is a legit OID.
     return cnOr.takeError();
+  }
   SmallVector<uint8_t> encoded = cnOr->getEncoded();
 
   auto *commonName = mbedtls_asn1_find_named_data(
       &getLeafCertificate()->subject, (const char *)encoded.data(),
       encoded.size());
-  return StringRef{(const char *)commonName->val.p, commonName->val.len};
+  if (commonName == nullptr) {
+    // Did not find CN!
+    return Error("CN missing from cert");
+  }
+
+  auto CN = StringRef{(const char *)commonName->val.p, commonName->val.len};
+
+  // Look for OU
+  auto ouOr = ASN1::ObjectID::fromString("2.5.4.11");
+  if (ouOr.isError()) {
+    // Error resolving OID. Should never happen since 2.5.4.11 is a legit OID.
+    // If it does fail for some reason, return a valid-enough Subject with OU=CN
+    return Detail::CertSubject{CN.str(), CN.str()};
+  }
+  SmallVector<uint8_t> encodedOU = ouOr->getEncoded();
+
+  auto *ou = mbedtls_asn1_find_named_data(&getLeafCertificate()->subject,
+                                          (const char *)encodedOU.data(),
+                                          encodedOU.size());
+  if (ou == nullptr) {
+    // If OU is not defined, backfill OU=CommonName
+    return Detail::CertSubject{CN.str(), CN.str()};
+  }
+  auto OU = StringRef{(const char *)ou->val.p, ou->val.len};
+  return Detail::CertSubject{CN.str(), OU.str()};
 }
 
 //===----------------------------------------------------------------------===//
@@ -633,17 +659,17 @@ requestUserInfo(HTTPClient &client, std::optional<std::string> accessToken) {
 /// certificate of the kind we expect to receive. This generates the data in PEM
 /// format because it's always sent directly over the wire. The entitlements are
 /// added by the service, so we don't have to fetch the list.
-static ErrorOrSuccess generateCSR(Keypair &keys, llvm::StringRef subject,
-                                  WriteableBufferRef buf) {
+static ErrorOrSuccess generateCSR(Keypair &keys,
+                                  const Detail::CertSubject &subject,
+                                  const WriteableBufferRef &buf) {
   mbedtls_x509write_csr csr;
   mbedtls_x509write_csr_init(&csr);
   auto freeCSR =
       llvm::make_scope_exit([&] { mbedtls_x509write_csr_free(&csr); });
 
   // Set the subject name fields.
-  auto subjectStr = llvm::formatv("C=US,O=Modular Inc,CN={0}", subject);
   int rc =
-      mbedtls_x509write_csr_set_subject_name(&csr, subjectStr.str().c_str());
+      mbedtls_x509write_csr_set_subject_name(&csr, subject.format().c_str());
   if (rc != 0)
     return Error(mbedTLSErrorToString(rc));
 
@@ -729,7 +755,7 @@ ErrorOr<StringRef> EntitlementStore::getUserID() const {
   if (subjOr.isError())
     return subjOr.takeError();
 
-  return subjOr.takeValue();
+  return subjOr.takeValue().UserId;
 }
 
 //===----------------------------------------------------------------------===//
@@ -882,7 +908,7 @@ private:
 //===----------------------------------------------------------------------===//
 
 ErrorOr<EntitlementStore>
-EntitlementStore::generate(Config &config, HTTPContextRef httpCtx,
+EntitlementStore::generate(Config &config, const HTTPContextRef &httpCtx,
                            std::optional<std::string> accessTokenOr) {
   std::unique_ptr<HTTPClient> client = httpCtx->client();
 
@@ -922,13 +948,22 @@ EntitlementStore::generate(Config &config, HTTPContextRef httpCtx,
     return Error("/v1/oidc/userinfo invalid response, expected JSON object");
 
   // The user ID is the `sub` field in the token.
-  auto subjectOr = userInfo->getString("sub");
-  if (!subjectOr) {
+  auto commonNameOr = userInfo->getString("sub");
+  if (!commonNameOr) {
     return Error("/v1/oidc/userinfo invalid response, expected 'sub'");
   }
+  auto tokenIdOr = userInfo->getString("access_token_id");
+  StringRef tokenId;
+  StringRef commonName = commonNameOr.value();
+  if (tokenIdOr) {
+    tokenId = tokenIdOr.value();
+  } else {
+    tokenId = commonNameOr.value();
+  }
+  Detail::CertSubject subject(commonName.str(), tokenId.str());
 
   // Fetch the certificate.
-  auto certOr = EntitlementStore::fetchCertificate(*client, *keysOr, subjectOr,
+  auto certOr = EntitlementStore::fetchCertificate(*client, *keysOr, subject,
                                                    accessToken);
   if (certOr.isError())
     return certOr.takeError();
@@ -979,7 +1014,7 @@ EntitlementStore EntitlementStore::alwaysOpen(llvm::raw_ostream &warnStream) {
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess EntitlementStore::refresh(Config &config,
-                                         HTTPContextRef httpCtx) {
+                                         const HTTPContextRef &httpCtx) {
   std::unique_ptr<HTTPClient> client = httpCtx->client();
 
   // Parse the client certificate. It is an error to 'refresh' if we don't
@@ -1018,7 +1053,7 @@ ErrorOrSuccess EntitlementStore::refresh(Config &config,
 
   // This is the buffer we'll use for the CSR.
   WriteableBufferRef buf = WriteableBuffer::get();
-  if (auto err = generateCSR(clientKeys, *subjectOr, buf.copy()))
+  if (auto err = generateCSR(clientKeys, subjectOr.takeValue(), buf.copy()))
     return err.takeError();
 
   // Sign the CSR with the old keys and add that signature to the JSON blob.
@@ -1028,8 +1063,8 @@ ErrorOrSuccess EntitlementStore::refresh(Config &config,
   // Base-64 encode the signature.
   std::string b64Sig = encodeURLSafeBase64(*sigOr);
 
-  // Request the new certificate. This will populate the certificate in memory,
-  // but won't verify the certificate.
+  // Request the new certificate. This will populate the certificate in
+  // memory, but won't verify the certificate.
   auto certOr =
       requestCertificate(*client, buf->Buffer::getBuffer(),
                          /*chain=*/clientCertChain.get(), b64Sig,
@@ -1068,7 +1103,7 @@ ErrorOrSuccess EntitlementStore::refresh(Config &config,
 //===----------------------------------------------------------------------===//
 
 ErrorOrSuccess EntitlementStore::refreshIfNecessary(
-    Config &config, HTTPContextRef httpCtx,
+    Config &config, const HTTPContextRef &httpCtx,
     llvm::function_ref<bool(std::chrono::system_clock::time_point from,
                             std::chrono::system_clock::time_point to)>
         shouldRefresh) {
@@ -1087,7 +1122,7 @@ ErrorOrSuccess EntitlementStore::refreshIfNecessary(
     return shouldRefreshOr.takeError();
 
   if (*shouldRefreshOr)
-    return refresh(config, std::move(httpCtx));
+    return refresh(config, httpCtx);
 
   return success();
 }
@@ -1131,11 +1166,11 @@ ErrorOrSuccess EntitlementStore::parseCertificateChain() {
 /// EntitlementStore::refresh.
 ErrorOr<BufferRef>
 EntitlementStore::fetchCertificate(HTTPClient &client, Keypair &clientKeys,
-                                   std::optional<llvm::StringRef> subjectOr,
-                                   std::optional<std::string> accessToken) {
+                                   const Detail::CertSubject &subject,
+                                   std::optional<llvm::StringRef> accessToken) {
   // Generate the CSR. This will be in PEM format.
   WriteableBufferRef csrBuf = WriteableBuffer::get();
-  if (auto err = generateCSR(clientKeys, *subjectOr, csrBuf.copy()))
+  if (auto err = generateCSR(clientKeys, subject, csrBuf.copy()))
     return err.takeError();
 
   // Great, now we can refresh the cert given the CSR we just generated. Since
@@ -1153,14 +1188,14 @@ EntitlementStore::fetchCertificate(HTTPClient &client, Keypair &clientKeys,
 ErrorOr<BufferRef> EntitlementStore::requestCertificate(
     HTTPClient &client, StringRef csr,
     M::Detail::CertificateChain *clientCertChain, StringRef prevKeySig,
-    bool isRefresh, std::optional<std::string> accessToken) {
+    bool isRefresh, std::optional<llvm::StringRef> accessToken) {
   auto certURL = isRefresh ? modularAuthURL + "/v1/certificate/renew"
                            : modularAuthURL + "/v1/certificate/issue";
   HTTPRequest certificateRequest{certURL};
   certificateRequest.method = HTTPRequest::Method::POST;
   certificateRequest.headers.try_emplace("content-type", "application/json");
   if (accessToken)
-    certificateRequest.accessToken.emplace(std::move(*accessToken));
+    certificateRequest.accessToken.emplace(*accessToken);
 
   // Provide the CSR and certificate as PEM-encoded blobs.
   StringRef clientCertChainPEMRef =

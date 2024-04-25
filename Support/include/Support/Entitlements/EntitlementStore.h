@@ -16,6 +16,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/HTTP/HTTPClient.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Process.h"
 #include <filesystem>
 #include <thread>
@@ -24,11 +25,25 @@ namespace M {
 /// Forward-declaration for a single entitlement.
 class Entitlement;
 
+namespace Detail {
 /// Forward-declaration for a CertificateChain class that we will make extensive
 /// use of in the EntitlementStore.
-namespace Detail {
 class CertificateChain;
-}
+
+class CertSubject {
+public:
+  CertSubject(const std::string &userId, const std::string &accessTokenId)
+      : UserId(userId), AccessTokenId(accessTokenId){};
+  std::string format() const {
+    // Until 04/2024, we set O=Modular Inc
+    // Do not repurose this field until O is flushed from our system.
+    return llvm::formatv("C=US,CN={0},OU={1}", UserId, AccessTokenId);
+  }
+
+  std::string UserId;
+  std::string AccessTokenId;
+};
+} // namespace Detail
 
 /// This function specifies the default entitlement refresh policy. This is used
 /// as the default argument for
@@ -70,7 +85,7 @@ public:
   /// because the only case where we cannot fetch a certificate is the one where
   /// an actual error occurred.
   static ErrorOr<EntitlementStore>
-  generate(Config &config, HTTPContextRef httpCtx,
+  generate(Config &config, const HTTPContextRef &httpCtx,
            std::optional<std::string> accessTokenOr);
 
   /// Always open an EntitlementStore, and simply default to an empty
@@ -82,14 +97,14 @@ public:
   /// Refresh the entitlement store by refreshing the client certificate. This
   /// will also invalidate any entitlements that currently exist, even if the
   /// user's entitlements have not changed.
-  ErrorOrSuccess refresh(Config &config, HTTPContextRef httpCtx);
+  ErrorOrSuccess refresh(Config &config, const HTTPContextRef &httpCtx);
 
   /// Refresh the entitlement store if it's necessary to do so. The user can
   /// configure a policy on when a refresh is 'necessary', using the validFrom
   /// and validTo values of the certificate, converted to system clock time
   /// points.
   ErrorOrSuccess refreshIfNecessary(
-      Config &config, HTTPContextRef httpCtx,
+      Config &config, const HTTPContextRef &httpCtx,
       llvm::function_ref<bool(std::chrono::system_clock::time_point from,
                               std::chrono::system_clock::time_point to)>
           shouldRefresh = defaultEntitlementRefreshPolicy);
@@ -157,8 +172,8 @@ private:
   /// in clientCertDER on successful completion.
   static ErrorOr<BufferRef>
   fetchCertificate(HTTPClient &client, Keypair &clientKeys,
-                   std::optional<llvm::StringRef> subjectOr,
-                   std::optional<std::string> accessToken);
+                   const M::Detail::CertSubject &subject,
+                   std::optional<llvm::StringRef> accessToken);
 
   /// Takes a CSR and requests a certificate. The certificate is returned in PEM
   /// form and decoded. Once the certificate is received, it is stored to
@@ -168,7 +183,7 @@ private:
   static ErrorOr<BufferRef>
   requestCertificate(HTTPClient &client, StringRef csr,
                      M::Detail::CertificateChain *chain, StringRef prevKeySig,
-                     bool isRefresh, std::optional<std::string> accessToken);
+                     bool isRefresh, std::optional<StringRef> accessToken);
 
   /// This is a map of all the entitlements we have, indexed by their OID. This
   /// means that we can only have a single instance of a given entitlement at a
