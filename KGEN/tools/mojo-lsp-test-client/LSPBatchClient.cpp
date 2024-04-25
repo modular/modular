@@ -76,6 +76,17 @@ LSPBatchClient::hover(const Document &doc, const lsp::Position &position,
   return *this;
 }
 
+LSPBatchClient &LSPBatchClient::completion(
+    const Document &doc, const lsp::Position &position,
+    std::function<void(const lsp::CompletionList &)> callback) {
+  lsp::CompletionParams params{
+      {lsp::TextDocumentIdentifier{doc.getURI()}, position},
+      lsp::CompletionContext{lsp::CompletionTriggerKind::Invoked,
+                             /*triggerCharacter*/ ""}};
+  request("textDocument/completion", toJSON(params), std::move(callback));
+  return *this;
+}
+
 void LSPBatchClient::appendJSONRequest(RequestId id, StringRef method,
                                        const llvm::json::Value &params) {
   llvm::json::Value jsonRequest = llvm::json::Object{
@@ -93,11 +104,27 @@ void LSPBatchClient::appendShutdownAndExit() {
 ErrorOrSuccess LSPBatchClient::dispatchResponse(StringRef json) {
   if (llvm::Expected<llvm::json::Value> valueOr = llvm::json::parse(json)) {
     if (llvm::json::Object *obj = valueOr->getAsObject()) {
+      // If we get an "id", then this is the response to a request.
       if (std::optional<int64_t> id = obj->getInteger("id")) {
-        auto it = responseHandlers.find(*id);
+        auto it = requestHandlers.find(*id);
         if (auto errOr = it->second->onResponse(*obj->get("result")))
           return errOr;
-        responseHandlers.erase(it);
+        requestHandlers.erase(it);
+
+        // Now we try to identify diagnostics.
+      } else if (std::optional<StringRef> method = obj->getString("method")) {
+        if (*method == "textDocument/publishDiagnostics") {
+          llvm::json::Object &params = *obj->getObject("params");
+          StringRef uri = *params.getString("uri");
+          auto it = diagnosticsHandlers.find(uri);
+          if (it != diagnosticsHandlers.end()) {
+            auto diags =
+                llvm::cantFail(llvm::json::parse<std::vector<lsp::Diagnostic>>(
+                    *params.get("diagnostics")));
+            it->second(diags);
+            diagnosticsHandlers.erase(it);
+          }
+        }
       }
       return success();
     }
@@ -137,15 +164,33 @@ ErrorOrSuccess LSPBatchClient::dispatchResponses(StringRef serverStdout) {
   if (!output.empty())
     return Error("Malformed server output. Not all data could be parsed");
 
-  if (!responseHandlers.empty()) {
+  if (!requestHandlers.empty()) {
     std::string errorMsg;
     llvm::raw_string_ostream os(errorMsg);
     os << "Not all requests received a response: ";
-    llvm::interleave(llvm::make_first_range(responseHandlers), os, " ");
+    llvm::interleave(llvm::make_first_range(requestHandlers), os, " ");
+    return Error(errorMsg);
+  }
+
+  if (!diagnosticsHandlers.empty()) {
+    std::string errorMsg;
+    llvm::raw_string_ostream os(errorMsg);
+    os << "Not all diagnostic handlers received a corresponding diagnostic "
+          "notification:";
+    // StringMap doesn't work with make_first_range, so we have to do a classic
+    // iteration.
+    for (const auto &[key, _] : diagnosticsHandlers)
+      os << " " << key;
     return Error(errorMsg);
   }
 
   return success();
+}
+
+LSPBatchClient &LSPBatchClient::onDiagnostics(const Document &doc,
+                                              DiagnosticHandler handler) {
+  diagnosticsHandlers.try_emplace(doc.getURI().uri(), std::move(handler));
+  return *this;
 }
 
 ErrorOrSuccess LSPBatchClient::doExecute(const LSPServerStdioFiles &ioFiles,

@@ -21,3 +21,20 @@ Document::Document(StringRef uri, StringRef text) : contents(text) {
 lsp::Range Document::getFullRange() const {
   return {lsp::Position{0, 0}, lsp::Position{(int)lines.size(), 0}};
 }
+
+std::optional<lsp::Position> Document::findFirstPos(StringRef substr) const {
+  if (std::optional<lsp::Range> range = findFirstRange(substr))
+    return range->start;
+
+  return {};
+}
+
+std::optional<mlir::lsp::Range>
+Document::findFirstRange(StringRef substr) const {
+  for (size_t line = 0, e = lines.size(); line < e; ++line)
+    if (size_t pos = lines[line].find(substr); pos != StringRef::npos)
+      return lsp::Range{lsp::Position(line, pos),
+                        lsp::Position(line, pos + substr.size())};
+
+  return {};
+}

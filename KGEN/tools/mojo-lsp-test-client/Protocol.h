@@ -46,6 +46,12 @@ bool fromJSON(const llvm::json::Value &value, MarkupContent &mc,
 
 bool fromJSON(const llvm::json::Value &value, CodeAction &codeAction,
               llvm::json::Path path);
+
+bool fromJSON(const llvm::json::Value &value, CompletionList &completionList,
+              llvm::json::Path path);
+
+bool fromJSON(const llvm::json::Value &value, CompletionItem &completionItem,
+              llvm::json::Path path);
 } // namespace mlir::lsp
 
 #endif // KGEN_TOOLS_MOJO_LSP_TEST_CLIENT_PROTOCOL_H
