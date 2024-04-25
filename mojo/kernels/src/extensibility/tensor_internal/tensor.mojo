@@ -9,9 +9,8 @@ Implements the `Tensor` type.
 Example:
 
 ```mojo
-from tensor import Tensor, TensorSpec, TensorShape
+from tensor import Tensor, TensorSpec, TensorShape, rand
 from utils.index import Index
-from tensor import rand
 
 var height = 256
 var width = 256
@@ -33,7 +32,7 @@ for y in range(height):
     var b = image[y,x,2]
     gray_scale_image[Index(y,x)] = 0.299 * r + 0.587 * g + 0.114 * b
 
-print(gray_scale_image.shape().__str__())
+print(gray_scale_image.shape())
 ```
 """
 
