@@ -87,12 +87,14 @@ struct FunctionHandle(Boolable):
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
+        shared_mem_bytes: Int = 0,
         stream: Optional[Stream] = None,
     ) raises:
         self._call_impl_pack[num_captures, populate](
             args,
             grid_dim=grid_dim,
             block_dim=block_dim,
+            shared_mem_bytes=shared_mem_bytes,
             stream=stream,
         )
 
@@ -109,6 +111,7 @@ struct FunctionHandle(Boolable):
         args: VariadicPack[elt_is_mutable, lifetime, AnyType, Ts],
         grid_dim: Dim,
         block_dim: Dim,
+        shared_mem_bytes: Int = 0,
         stream: Optional[Stream] = None,
     ) raises:
         var args_stack = stack_allocation[
@@ -126,7 +129,11 @@ struct FunctionHandle(Boolable):
         unroll[unrolled, args.__len__()]()
 
         self.__call_impl(
-            args_stack, grid_dim=grid_dim, block_dim=block_dim, stream=stream
+            args_stack,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            stream=stream,
         )
 
     @always_inline
@@ -136,6 +143,7 @@ struct FunctionHandle(Boolable):
         *,
         grid_dim: Dim,
         block_dim: Dim,
+        shared_mem_bytes: Int = 0,
         stream: Optional[Stream] = None,
     ) raises:
         var stream_value = stream.value()[].stream if stream else Stream()
@@ -163,7 +171,7 @@ struct FunctionHandle(Boolable):
                 UInt32(block_dim.x()),
                 UInt32(block_dim.y()),
                 UInt32(block_dim.z()),
-                UInt32(0),
+                UInt32(shared_mem_bytes),
                 stream_value.stream,
                 args,
                 DTypePointer[DType.invalid](),
@@ -384,11 +392,16 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
+        shared_mem_bytes: Int = 0,
         stream: Optional[Stream] = None,
     ) raises:
         alias num_captures = Self._impl.num_captures
         alias populate = Self._impl.populate
 
         self.info.func_handle._call_impl_pack[num_captures, populate](
-            args, grid_dim=grid_dim, block_dim=block_dim, stream=stream
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            stream=stream,
         )
