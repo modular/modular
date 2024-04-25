@@ -1,8 +1,23 @@
+load("@pip_deps//:requirements.bzl", "requirement")
 load("@rules_python//python:defs.bzl", "py_library")
+load("//utils/bazel/build/rules:pytest_test.bzl", "pytest_test")
 
 py_library(
     name = "support",
-    srcs = glob(["**/*.py"]),
+    srcs = glob(["modular/**/*.py"]),
     imports = ["."],
     visibility = ["//visibility:public"],
+    deps = [
+        requirement("numpy"),
+        requirement("ruamel.yaml"),
+    ],
+)
+
+pytest_test(
+    name = "unittests",
+    srcs = glob(["tests/**/*.py"]),
+    tags = ["requires-network"],
+    deps = [
+        ":support",
+    ],
 )
