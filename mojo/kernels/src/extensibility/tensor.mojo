@@ -14,6 +14,7 @@ from buffer.list import DimList
 from memory.unsafe import Pointer, bitcast
 from register import *
 from .tensor_helpers import InnerStride
+from utils._serialize import _serialize
 
 from collections import OptionalReg as Optional
 
@@ -27,7 +28,7 @@ fn empty_tensor[
     return Tensor[type, rank](ptr, shape)
 
 
-struct Tensor[type: DType, static_rank: Int]:
+struct Tensor[type: DType, static_rank: Int](Stringable):
     var data: DTypePointer[type]
     var shape: StaticIntTuple[static_rank]
     var strides: StaticIntTuple[static_rank]
@@ -208,3 +209,26 @@ struct Tensor[type: DType, static_rank: Int]:
             self.store(coords, val)
 
         elementwise[elementwise_fn_wrapper, simd_width, static_rank](self.shape)
+
+    @no_inline
+    fn __str__(self) -> String:
+        """Gets the tensor as a string.
+
+        Returns:
+          A compact string of the tensor.
+        """
+        var res = String("Tensor(")
+
+        @parameter
+        fn serialize[T: Stringable](val: T):
+            res += str(val)
+
+        var shape = List[Int]()
+        for i in range(self.rank()):
+            shape.append(self.shape[i])
+
+        _serialize[serialize_fn=serialize, serialize_end_line=False](
+            self.data, shape
+        )
+
+        return res + ")"
