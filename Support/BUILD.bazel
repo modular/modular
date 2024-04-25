@@ -26,8 +26,6 @@ cc_library(
         "lib/IPRational.cpp",
         "lib/PlatformLibNames.cpp",
         "lib/Process.cpp",
-        "lib/Progress.cpp",
-        "lib/ProgressBar.cpp",
         "lib/Random.cpp",
         "lib/ReferenceCounted.cpp",
         "lib/Version.cpp",
@@ -56,8 +54,6 @@ cc_library(
         "include/Support/PlatformUtils.h",
         "include/Support/Preprocessor.h",
         "include/Support/Process.h",
-        "include/Support/Progress.h",
-        "include/Support/ProgressBar.h",
         "include/Support/RCRef.h",
         "include/Support/Random.h",
         "include/Support/ReferenceCounted.h",
@@ -351,6 +347,16 @@ cc_library(
 )
 
 cc_library(
+    name = "UI",
+    srcs = glob(["lib/UI/*.cpp"]),
+    hdrs = glob(["include/Support/UI/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":Base",
+    ],
+)
+
+cc_library(
     name = "HTTPHeaders",
     hdrs = glob(["include/Support/HTTP/*.h"]),
     strip_include_prefix = "include",
@@ -376,6 +382,7 @@ cc_library(
         ":Buffer",
         ":Configuration",
         ":Threading",
+        ":UI",
         ":URI",
         "@curl",
         "@llvm-project//llvm:Support",
