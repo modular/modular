@@ -1557,6 +1557,7 @@ kgen_kernel(
 
 cc_binary(
     name = "mojo-build-server",
+    srcs = ["tools/mojo-build-server/empty.c"],
     deps = [
         ":CompilerRT",
         ":MojoBuild",
