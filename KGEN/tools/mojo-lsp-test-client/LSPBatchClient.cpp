@@ -198,15 +198,21 @@ LSPBatchClient::ExecutionResult LSPBatchClient::execute() {
     return {tempDirOr.takeError()};
   LSPServerStdioFiles ioFiles(tempDirOr->getPath());
 
-  if (auto err = doExecute(ioFiles, lspServerPath)) {
+  if (std::getenv("PRESERVE_LSP_IO_FILES")) {
     tempDirOr->keep();
-
-    LSPBatchClient::ExecutionResult result{std::move(err), std::move(ioFiles)};
-    if (onExecuteCallback)
-      (*onExecuteCallback)(result);
-    return result;
+    llvm::errs() << "Language server stdin: " << ioFiles.serverStdin << "\n";
+    llvm::errs() << "Language server stdout: " << ioFiles.serverStdout << "\n";
+    llvm::errs() << "Language server stderr: " << ioFiles.serverStderr << "\n";
   }
-  return {};
+
+  LSPBatchClient::ExecutionResult result;
+  if (auto err = doExecute(ioFiles, lspServerPath)) {
+    result.err = std::move(err);
+    result.serverIOFiles = std::move(ioFiles);
+  }
+  if (onExecuteCallback)
+    (*onExecuteCallback)(result);
+  return result;
 }
 
 LSPBatchClient::~LSPBatchClient() {

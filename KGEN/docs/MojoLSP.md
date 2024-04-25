@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The Mojo Language server is a productivity tool that enhances the authoring
+The Mojo Language Server is a productivity tool that enhances the authoring
 experience of Mojo programs in editors that support the [Language Server
 Protocol](https://en.wikipedia.org/wiki/Language_Server_Protocol). It provides
 [editing features](https://code.visualstudio.com/api/language-extensions/programmatic-language-features),
@@ -11,82 +11,42 @@ definition, refactoring utilities, etc.
 
 ## Getting Started with VSCode
 
-Just run the `vscode-init` command on your terminal and the **Mojo LSP VSCode**
-extension will be built and installed on VSCode. It will be automatically
-launched whenever a `.mojo` or `.🔥` file is opened.
+Just run the `vscode-init` command on your terminal, which will install and
+configure the **Mojo** extension on VSCode. The Language Server is part of this
+extension and will be automatically launched whenever a `.mojo` or `.🔥` file is
+opened.
 
 ## Development
 
 ### Testing mojo-lsp-server
 
-For testing, we are using the `pytest_lsp` python package, which has a set of
-utilities that make interacting with LSP server and testing easier. However, its
-official [documentation](https://swyddfa.github.io/lsp-devtools/docs/latest/en/pytest-lsp/guide/getting-started.html)
-lacks enough documentation, which the rest of this document tries to make up
-for.
+Our tests live in `KGEN/unittests/mojo-lsp-server/` and are specified using the
+C++ GTest framework.
 
-#### Set Up
+You can read more about GTests in this
+[primer](https://github.com/google/googletest/blob/main/docs/primer.md).
 
-All test files require first setting up the connection with the
-`mojo-lsp-server`, like in the following snippet:
+#### How to write a test
 
-```python
-import pytest_lsp
-from pytest_lsp import ClientServerConfig, LanguageClient
+You can read `KGEN/unittests/mojo-lsp-server/SampleTest.cpp` for a sample
+test with some useful explanatory comments.
 
-@pytest_lsp.fixture(
-    config=ClientServerConfig(
-        server_command=[os.environ["MOJO_LSP_SERVER"]],
-    ),
-)
-async def client(lsp_client: LanguageClient):
-    # Setup
-    await initialize(lsp_client)
-    yield
-    # Teardown
-    await lsp_client.shutdown_session()
-```
+#### Running the tests
 
-The `yield` action is used to return temporarily to the test runner, which then
-executes all the test methods in the test file using the initialized
-`LanguageClient`, and eventually returns to shutdown the server.
+In order to run these tests, you just need to execute
+`build check-mojo-lsp-server`, which will run all LSP-related tests.
 
-#### LSP API in Tests Methods
+#### Inspecting the LSP traffic
 
-All tests are asynchronous and receive the initialized `LanguageClient` as
-argument. This client is able to communicate with the server and can be used to
-dispatch requests and notifications. The list of requests and notifications can
-be found in `site-packages/pytest_lsp/gen.py`.
+You can invoke the tests with
+`PRESERVE_LSP_IO_FILES=1 build check-mojo-lsp-server`, which will indicate the
+test suite to print to stderr the IO files used to communicate with the Language
+Server upon failures. In this case, these files are not cleaned up upon
+termination, and you can inspect them to debug your issues or even invoke the
+Language Server manually with
+`cat /path/to/lsp_stdout | mojo-lsp-server -mojo-test`.
 
-As a general rule of thumb, if a request has a name of `"textDocument/request"`,
-then there should be a method `LanguageClient.text_document_request_async()`
-available. Likewise, a notification `"textDocument"/notification"` should have a
-corresponding `LanguageClient.text_document_notification()` method.
+### Debugging
 
-It's worth mentioning that `LanguageClient` doesn't issue any LSP messages
-behind the scenes, in fact, you need to mimic the exact communication traffic
-with `mojo-lsp-server` that the LSP spec dictates.
-
-Regarding LSP structures, the input and result types of these LSP methods have
-the same naming and shapes as in the official
-[LSP spec](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/).
-They are defined in python in the `lspprotocol` library, in this path
-`site-packages/lsprotocol/types.py`.
-
-Finally, A test method would look like this:
-
-```python
-from lsprotocol.types import DidOpenTextDocumentParams, HoverParams
-
-async def test_lsp_request(client: LanguageClient)
-  # Notify that a file was opened
-  client.text_document_did_open(DidOpenTextDocumentParams(...))
-  # Request hover on a certain position
-  results = client.text_document_hover_async(HoverParams(...))
-  assert results.contents.value == "foo
-```
-
-#### Utils
-
-The package `lib/utils` contains a set of helpers that make asserting and
-issuing LSP messages less verbose. Please keep improving them.
+You can add the `--attach-debugger-on-startup` argument to a `mojo-lsp-server`
+invocation to start a debug session on VSCode attaching to the Language Server.
