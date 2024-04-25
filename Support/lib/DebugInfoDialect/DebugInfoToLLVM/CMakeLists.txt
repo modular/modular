@@ -6,6 +6,7 @@
 
 add_modular_conversion_library(DebugInfoToLLVM
   DebugInfoToLLVM.cpp
+  Target/NVPTXAdapter.cpp
   Target/TargetAdapter.cpp
 
   DEPENDS
