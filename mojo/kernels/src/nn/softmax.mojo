@@ -36,6 +36,7 @@ from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
 from utils.static_tuple import StaticTuple
+from utils._numerics import get_accum_type
 
 # ===----------------------------------------------------------------------===#
 # Utilities
@@ -669,9 +670,8 @@ fn softmax_kernel[
     ) capturing -> SIMD[_type, _simd_width],
     type: DType,
     rank: Int,
+    accum_type: DType = get_accum_type[type](),
 ](shape: StaticIntTuple[rank], output: NDBuffer[type, rank], axis: Int,):
-    alias accum_type = DType.float32 if type.is_bfloat16() or type.is_float16() else type
-
     var row_size = shape[axis]
     var num_rows = shape.flattened_length() // row_size
 
@@ -712,10 +712,10 @@ fn softmax_kernel[
             BLOCK_SIZE,
             input_fn,
             _max,
-            accum_type,
             type,
             1,
             rank,
+            accum_type=accum_type,
         ](row_coords, axis, Scalar[type].MIN, row_size)
 
         if ThreadIdx.x() == 0:
