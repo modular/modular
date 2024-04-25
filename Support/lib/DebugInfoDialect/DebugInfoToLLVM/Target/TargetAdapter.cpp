@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TargetAdapter.h"
+#include "NVPTXAdapter.h"
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -20,6 +21,8 @@ namespace LLVM = mlir::LLVM;
 // TargetAdapter
 //===----------------------------------------------------------------------===//
 TargetAdapter DebugInfo::getTargetAdapter(M::TargetInfoAttr target) {
+  if (target && target.getTriple().isNVPTX())
+    return getNVPTXAdapter();
   return getFallbackAdapter();
 }
 
