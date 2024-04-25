@@ -27,9 +27,17 @@ public:
   /// document within a single line.
   std::optional<mlir::lsp::Position> findFirstPos(StringRef substr) const;
 
+  /// Get the position of the last occurrence of the given substring in the
+  /// document within a single line.
+  std::optional<mlir::lsp::Position> findLastPos(StringRef substr) const;
+
   /// Get the range of the first occurrence of the given substring in the
   /// document within a single line.
   std::optional<mlir::lsp::Range> findFirstRange(StringRef substr) const;
+
+  /// Get the range of the last occurrence of the given substring in the
+  /// document within a single line.
+  std::optional<mlir::lsp::Range> findLastRange(StringRef substr) const;
 
 private:
   mlir::lsp::URIForFile uri;
