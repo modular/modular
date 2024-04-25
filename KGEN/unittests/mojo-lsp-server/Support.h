@@ -17,6 +17,9 @@ namespace M {
 /// the contents of server IO files upon errors.
 LSPBatchClient createTestClient();
 
+/// Create a document from a file located in the `/inputs` folder.
+Document createDocumentFromInputFile(StringRef fileName);
+
 } // namespace M
 
 #endif // KGEN_UNITTESTS_MOJO_LSP_SERVER_SUPPORT_H

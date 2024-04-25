@@ -11,6 +11,7 @@
 #include "JSONUtils.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
+#include "llvm/ADT/StringMap.h"
 
 namespace M {
 
@@ -34,6 +35,9 @@ struct LSPServerStdioFiles {
 /// invoked, or if such method is executed twice.
 class LSPBatchClient {
 private:
+  using DiagnosticHandler =
+      std::function<void(const std::vector<mlir::lsp::Diagnostic> &)>;
+
   /// Type-erasure class used to dispatch a response of an LSP request.
   class ResponseHandler {
   public:
@@ -96,6 +100,14 @@ public:
   hover(const Document &doc, const mlir::lsp::Position &position,
         std::function<void(const mlir::lsp::Hover2 &)> callback);
 
+  /// textDocument/completion
+  LSPBatchClient &
+  completion(const Document &doc, const mlir::lsp::Position &position,
+             std::function<void(const mlir::lsp::CompletionList &)> callback);
+
+  /// textDocument/diagnostic
+  LSPBatchClient &onDiagnostics(const Document &doc, DiagnosticHandler handler);
+
   /// Actual `execute` logic.
   ErrorOrSuccess doExecute(const LSPServerStdioFiles &ioFiles,
                            StringRef lspServerPath);
@@ -117,7 +129,7 @@ private:
   void request(StringRef method, const llvm::json::Value &params,
                std::function<void(const Result &)> callback) {
     RequestId id = requestId++;
-    responseHandlers.try_emplace(
+    requestHandlers.try_emplace(
         id, std::unique_ptr<ResponseHandler>(
                 new ResponseHandlerImpl<Result>(std::move(callback))));
 
@@ -149,7 +161,9 @@ private:
   /// A monotonically increasing request id used when collecting requests.
   RequestId requestId = 0;
   /// A map from request id to response handler.
-  llvm::DenseMap<RequestId, std::unique_ptr<ResponseHandler>> responseHandlers;
+  DenseMap<RequestId, std::unique_ptr<ResponseHandler>> requestHandlers;
+  // A map from doc URL to response handler.
+  llvm::StringMap<DiagnosticHandler> diagnosticsHandlers;
 };
 
 } // namespace M

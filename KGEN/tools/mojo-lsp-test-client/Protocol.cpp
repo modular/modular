@@ -78,3 +78,19 @@ bool lsp::fromJSON(const llvm::json::Value &value, CodeAction &codeAction,
          o.map("isPreferred", codeAction.isPreferred) &&
          o.map("edit", codeAction.edit);
 }
+
+bool lsp::fromJSON(const llvm::json::Value &value,
+                   CompletionList &completionList, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("isIncomplete", completionList.isIncomplete) &&
+         o.map("items", completionList.items);
+}
+
+bool lsp::fromJSON(const llvm::json::Value &value,
+                   CompletionItem &completionItem, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.mapOptional("label", completionItem.label) &&
+         o.mapOptional("documentation", completionItem.documentation) &&
+         o.mapOptional("kind", completionItem.kind) &&
+         o.mapOptional("sortText", completionItem.sortText);
+}

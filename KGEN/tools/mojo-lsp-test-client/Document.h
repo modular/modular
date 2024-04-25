@@ -23,6 +23,14 @@ public:
   /// Get the full range of the entire text.
   mlir::lsp::Range getFullRange() const;
 
+  /// Get the position of the first occurrence of the given substring in the
+  /// document within a single line.
+  std::optional<mlir::lsp::Position> findFirstPos(StringRef substr) const;
+
+  /// Get the range of the first occurrence of the given substring in the
+  /// document within a single line.
+  std::optional<mlir::lsp::Range> findFirstRange(StringRef substr) const;
+
 private:
   mlir::lsp::URIForFile uri;
   std::string contents;

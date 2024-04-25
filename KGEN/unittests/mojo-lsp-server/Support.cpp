@@ -36,3 +36,15 @@ LSPBatchClient M::createTestClient() {
   };
   return LSPBatchClient(dumpStreamsOnError);
 }
+
+Document M::createDocumentFromInputFile(StringRef fileName) {
+  std::string fullPath = std::filesystem::path(std::getenv("MODULAR_PATH")) /
+                         "KGEN" / "unittests" / "mojo-lsp-server" / "inputs" /
+                         fileName.str();
+  auto bufferOr = toModularErrorOr(llvm::MemoryBuffer::getFile(fullPath));
+  if (failed(bufferOr))
+    llvm::report_fatal_error(Twine("Error reading the file ") + fullPath +
+                             ": " + bufferOr.getError());
+  llvm::MemoryBuffer &buffer = *bufferOr->get();
+  return Document("file://" + fullPath, buffer.getBuffer());
+}
