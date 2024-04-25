@@ -1219,6 +1219,36 @@ def POP_ExternalCallOp : POPOp<"external_call", [
 }
 
 //===----------------------------------------------------------------------===//
+// ExternPointerSymbolOp
+//===----------------------------------------------------------------------===//
+
+def POP_ExternPointerSymbolOp : POPOp<"extern_ptr_symbol"> {
+  let summary = "Gets a pointer to an external symbol with particular aligment";
+
+  let description = [{
+    The `pop.external_ptr_symbol` returns a pointer to an opaque external symbol
+
+    This operation is useful to model runtime allocation for bacends that models
+    this allocation as externalized symbols e.g NVPTX.
+
+    Example:
+
+    ```mlir
+    %0 = pop.extern_ptr_symbol aligment 4 : !kgen.pointer<scalar<f32>, 3>
+    ```
+  }];
+
+  let arguments = (ins AttrOfType<Index>:$alignment);
+  let results = (outs Res<PointerType, "", [MemAlloc]>:$res_symbol);
+
+  let assemblyFormat = [{
+    `alignment` custom<IndexParamValue>($alignment)
+    attr-dict `:` type($res_symbol)
+  }];
+
+}
+
+//===----------------------------------------------------------------------===//
 // GlobalAllocOp
 //===----------------------------------------------------------------------===//
 

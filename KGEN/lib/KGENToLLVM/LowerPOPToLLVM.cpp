@@ -1382,6 +1382,7 @@ void LowerPOPToLLVMPass::runOnOperation() {
   target.addLegalOp<GlobalConstantOp>();
   target.addLegalOp<GlobalAddressOp>();
   target.addLegalOp<ExternalCallOp>();
+  target.addLegalOp<ExternPointerSymbolOp>();
   target.addLegalOp<AlignedAllocOp>();
   target.addLegalOp<AlignedFreeOp>();
   target.addLegalOp<CoroutineHandleOp>();
@@ -1772,6 +1773,62 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
+// ConvertExternPointerSymbol
+//===----------------------------------------------------------------------===//
+
+/// Lower external pointer symbol, this replaces the pointer with an external
+/// global value.
+class ConvertExternPointerSymbol
+    : public ConvertPOPToLLVMPattern<ExternPointerSymbolOp> {
+public:
+  ConvertExternPointerSymbol(SymbolTable &symtab,
+                             DenseMap<Value, LLVM::GlobalOp> &externPtrs,
+                             mlir::LLVMTypeConverter &typeConverter)
+      : ConvertPOPToLLVMPattern(typeConverter), symtab(symtab),
+        externPtrs(externPtrs) {}
+
+  LogicalResult
+  matchAndRewrite(ExternPointerSymbolOp op,
+                  ExternPointerSymbolOpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    int64_t addressSpace =
+        cast<IntegerAttr>(op.getResSymbol().getType().getAddressSpace())
+            .getInt();
+    // Unique the external symbols.
+    auto [it, inserted] = externPtrs.try_emplace(op.getResSymbol(), nullptr);
+
+    if (inserted) {
+      // If the constant doesn't exist, create it and insert it in the module.
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.clearInsertionPoint();
+
+      Type resType = convertType(op.getResSymbol().getType().getElementType());
+      auto global = rewriter.create<LLVM::GlobalOp>(
+          op.getLoc(), resType, /*constant=*/false, LLVM::Linkage::External,
+          "extern_ptr_syml", /*value=*/nullptr,
+          /*alignment=*/
+          getAlignment(getTypeConverter(), op.getResSymbol().getType(),
+                       op.getAlignmentAttr()),
+          addressSpace,
+          /*dso_local=*/true);
+
+      symtab.insert(it->second = global);
+    }
+
+    rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(
+        op, LLVM::LLVMPointerType::get(getContext(), addressSpace),
+        FlatSymbolRefAttr::get(it->second.getSymNameAttr()));
+    return success();
+  }
+
+private:
+  /// The symbol table.
+  SymbolTable &symtab;
+  /// Uniqued symbols.
+  DenseMap<Value, LLVM::GlobalOp> &externPtrs;
+};
+
+//===----------------------------------------------------------------------===//
 // LowerGlobalPOPToLLVMPass
 //===----------------------------------------------------------------------===//
 
@@ -1819,6 +1876,12 @@ void LowerGlobalPOPToLLVMPass::runOnOperation() {
 
   // pop.compiler.* are all illegal.
   target.addIllegalOp<CompilerGlobalLoadOp, CompilerGlobalStoreOp>();
+
+  // Convert external ptr symbol
+  target.addIllegalOp<ExternPointerSymbolOp>();
+  DenseMap<Value, LLVM::GlobalOp> externalPtrs;
+  patterns.insert<ConvertExternPointerSymbol>(symtab, externalPtrs,
+                                              typeConverter);
 
   DebugInfoTypeConverter debugTypeConverter(typeConverter);
   DebugInfo::populateTypeConversionPatterns(patterns, debugTypeConverter,
