@@ -30,6 +30,7 @@ from memory.unsafe import DTypePointer, bitcast
 from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple
 from utils.static_tuple import StaticTuple
+from utils._numerics import get_accum_type
 
 
 @always_inline
@@ -327,8 +328,8 @@ fn gemv_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
 ](
     c: DTypePointer[c_type],
     a: DTypePointer[a_type],
@@ -381,8 +382,8 @@ fn gemv_tc_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
 ](
     c: DTypePointer[c_type],
     a: DTypePointer[a_type],
@@ -427,8 +428,8 @@ fn gevm_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
 ](
     c: DTypePointer[c_type],
     a: DTypePointer[a_type],
@@ -490,8 +491,8 @@ fn matmul_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
 ](
     c_ptr: DTypePointer[c_type],
     a_ptr: DTypePointer[a_type],
@@ -605,8 +606,8 @@ fn matmul_kernel_naive[
     a_type: DType,
     b_type: DType,
     BLOCK_DIM: Int,
-    s_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    s_type: DType = get_accum_type[c_type](),
 ](
     c_ptr: DTypePointer[c_type],
     a_ptr: DTypePointer[a_type],
@@ -743,10 +744,6 @@ fn _matmul_gpu_dispatch[
     try:
         var stream = Stream.get_current_stream()
 
-        alias s_type = DType.float32 if (
-            a_type == DType.bfloat16 or a_type == DType.float16
-        ) else c_type
-
         # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
         # no elementwise_epilogue, fallback to generic matmul_kernel.
         var warp_tiled_matmul_suppoered_shape = (
@@ -820,7 +817,6 @@ fn _matmul_gpu_dispatch[
                     c_type,
                     a_type,
                     b_type,
-                    s_type,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ]()
@@ -851,7 +847,6 @@ fn _matmul_gpu_dispatch[
                     a_type,
                     b_type,
                     WARP_SIZE * WARPS_PER_BLOCK,
-                    s_type,
                     elementwise_lambda_fn=elementwise_lambda_fn,
                 ]
             ]()
@@ -885,7 +880,6 @@ fn _matmul_gpu_dispatch[
                         a_type,
                         b_type,
                         tile_size,
-                        s_type,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()
@@ -915,7 +909,6 @@ fn _matmul_gpu_dispatch[
                         b_type,
                         c_type,
                         BLOCK_DIM,
-                        s_type,
                         elementwise_lambda_fn=elementwise_lambda_fn,
                     ]
                 ]()

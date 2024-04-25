@@ -34,6 +34,7 @@ from runtime.llcl import Runtime
 
 from collections import OptionalReg as Optional
 from utils.index import StaticIntTuple
+from utils._numerics import get_accum_type
 
 alias elementwise_epilogue_type = fn[c_type: DType, width: Int, rank: Int] (
     StaticIntTuple[rank], SIMD[c_type, width]
@@ -460,8 +461,8 @@ fn batched_matmul_kernel[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
-    accum_type: DType = c_type,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    accum_type: DType = get_accum_type[c_type](),
 ](
     c_buff: NDBuffer[c_type, 3, c_shape],
     a_buff: NDBuffer[a_type, 3, a_shape],
@@ -526,8 +527,6 @@ fn _batched_matmul_gpu[
     var k = a_buf_reshaped.dim(2)
     var n = b_buf_reshaped.dim(2)
 
-    alias accum_type = DType.float32 if a_type.is_bfloat16() or b_type.is_bfloat16() else c_type
-
     try:
         var stream = Stream.get_current_stream()
         alias bmm = batched_matmul_kernel[
@@ -538,7 +537,6 @@ fn _batched_matmul_gpu[
             unkown_shape,
             b_type,
             unkown_shape,
-            accum_type,
             elementwise_epilogue_fn,
         ]
         var gpu_func = Function[__type_of(bmm), bmm]()
