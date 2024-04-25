@@ -86,7 +86,6 @@ fn run_matmul_naive(M: Int, N: Int, K: Int) raises:
             DType.bfloat16,
             DType.bfloat16,
             BLOCK_DIM,
-            DType.float32,
         ]
     ]()
 
@@ -253,13 +252,7 @@ fn run_matmul[
             Int,
             Int,
             Int,
-        ) capturing -> None, matmul_kernel_naive[
-            type,
-            type,
-            type,
-            BLOCK_DIM,
-            DType.float32,
-        ]
+        ) capturing -> None, matmul_kernel_naive[type, type, type, BLOCK_DIM,]
     ]()
 
     @always_inline

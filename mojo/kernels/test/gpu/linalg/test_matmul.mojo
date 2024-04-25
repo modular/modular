@@ -354,7 +354,6 @@ fn run_matmul_from_mogg_interface_with_epilogue[
             type,
             type,
             BLOCK_DIM,
-            DType.float32,
             elementwise_lambda_fn=naive_epilogue_fn,
         ]
     ]()
