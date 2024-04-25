@@ -1,7 +1,5 @@
 load("//Config:version.bzl", "status_template")
 
-package(default_visibility = ["//visibility:private"])
-
 cc_library(
     name = "Config",
     srcs = glob(["lib/**/*.cpp"]) + [
