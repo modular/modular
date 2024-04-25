@@ -235,6 +235,27 @@ void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
   });
 }
 
+void KGEN::maybeUpdateDebugInfo(Operation *scope,
+                                std::optional<StringAttr> updateAttrName,
+                                bool singleExit, bool noDebug) {
+  if (updateAttrName) {
+    // We don't know where the op will end up, so tag it with an
+    // attribute. Encode information {singleExit, noDebug} as bits.
+    IntegerAttr tag = OpBuilder(scope->getContext())
+                          .getI8IntegerAttr(singleExit | (noDebug << 1));
+    if (*updateAttrName) {
+      // Deferred debuginfo update.
+      scope->setAttr(*updateAttrName, tag);
+    } else {
+      // Immediate debuginfo update.
+      // This will also foldTrivialLoops if applicable.
+      updateScopeDebugInfoFrom(scope, tag, nullptr);
+    }
+  } else if (singleExit) {
+    foldTrivialLoop(scope);
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // PerThreadPassManager
 //===----------------------------------------------------------------------===//
