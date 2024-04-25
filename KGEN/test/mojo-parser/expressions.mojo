@@ -415,8 +415,10 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT:  = hlcf.if [[I1]] -> !Bool {
   # CHECK-NEXT:   hlcf.yield %c
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[ABOOL:%.*]] = lit.call {{.*}}__init__{{.*}}([[I1]])
-  # CHECK-NEXT:   hlcf.yield [[ABOOL]]
+  # CHECK:        pop.store %a, %[[PTR:.*]] : !kgen.pointer<!Boolish>
+  # CHECK-NEXT:   %[[REF:.*]] = lit.ref.from_pointer %[[PTR]]
+  # CHECK-NEXT:   %[[TMP:.*]] = lit.call {{.*}}__init__{{.*}}(%[[REF]])
+  # CHECK:        hlcf.yield %[[TMP]]
   # CHECK-NEXT: }
   _ = a and c
 
@@ -425,11 +427,13 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT: [[BBOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%b)
   # CHECK-NEXT: [[BI1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BBOOL]])
   # CHECK-NEXT: = hlcf.if [[BI1]] -> !Bool {
-  # CHECK-NEXT:    [[TMP:%.*]] = lit.call {{.*}}@Bool::@"__init__{{.*}}([[BI1]])
-  # CHECK-NEXT:    hlcf.yield [[TMP]]
-  # CHECK-NEXT:  } else {
-  # CHECK-NEXT:    hlcf.yield %c
-  # CHECK-NEXT:  }
+  # CHECK:        pop.store %b, %[[PTR:.*]] : !kgen.pointer<!Boolish>
+  # CHECK-NEXT:   %[[REF:.*]] = lit.ref.from_pointer %[[PTR]]
+  # CHECK-NEXT:   %[[TMP:.*]] = lit.call {{.*}}@Bool::@"__init__{{.*}}(%[[REF]])
+  # CHECK:        hlcf.yield %[[TMP]]
+  # CHECK-NEXT: } else {
+  # CHECK-NEXT:   hlcf.yield %c
+  # CHECK-NEXT: }
   _ = b or c
 
   # Check memory-only boolish types.

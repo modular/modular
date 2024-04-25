@@ -278,15 +278,6 @@ fn bad_func return fn() -> __mlir_type.index
 # Other Specific expression forms
 ##===----------------------------------------------------------------------===##
 
-@register_passable
-struct WeirdBoolish:
-  fn __bool__(self) -> Bool: return False
-  fn __copyinit__(self) -> Self: pass;
-
-fn badParamAnd[a: Bool, b: WeirdBoolish]():
-  #expected-error @+1 {{value of type 'Bool' is not compatible with value of type 'WeirdBoolish'}}
-  alias c = a and b
-
 # expected-error @+1 {{'Self' type may only be used inside a struct or trait}}
 fn badSelf(a: Self):
   var x: Self.field
@@ -560,4 +551,3 @@ fn test_bad_ref_errors[T: AnyType](a: Reference[T, _, _, _]):
   # expected-error @below {{invalid call to '__init__': argument #1 cannot be converted from 'T' to 'Reference['T', ...]}}
   # expected-note @below {{operand mutability 'is_mutable' doesn't match expected mutability '1'}}
   var y : Reference[T, __mlir_attr.`1: i1`, __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
-
