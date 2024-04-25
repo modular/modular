@@ -17,6 +17,7 @@ from buffer.buffer import (
 )
 from tensor import TensorSpec, TensorShape
 from MOGGIntList import IntList
+from extensibility import Tensor as ExtensibilityTensor
 
 
 # ===----------------------------------------------------------------------===#
@@ -312,6 +313,18 @@ fn mgp_buffer_alloc_dynamic[
             DTypePointer[DType.int8].alloc(byte_size, alignment=int(bRawAlign)),
             shape,
         )
+
+
+@always_inline
+@export
+fn get_mgp_buffer[
+    rank: Int, type: DType
+](tensor: ExtensibilityTensor[type, rank]) -> NDBuffer[DType.uint8, 1]:
+    var bufferRef = NDBuffer[DType.uint8, 1](
+        tensor.data.bitcast[DType.uint8](),
+        tensor.nelems() * type.sizeof(),
+    )
+    return bufferRef
 
 
 @mogg_register("mgp.tensor_spec.create")

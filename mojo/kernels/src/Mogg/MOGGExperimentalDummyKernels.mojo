@@ -203,4 +203,5 @@ fn mo_add(x: Tensor, y: Tensor) -> Tensor[x.type, x.static_shape]:
         return x.simd_load[width](i) + i2
 
     out.for_each[func]()
+
     return out

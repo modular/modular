@@ -148,6 +148,8 @@ from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple, product
 from utils.loop import unroll
 
+from extensibility import Tensor as ExtensibilityTensor
+
 
 # Prevent these functions from being DCE'd by explicitly exporting them.
 @export
@@ -616,6 +618,52 @@ fn to_tensor[
         strides,
         Pointer[Scalar[DType.index]](),
     )
+
+
+@mogg_register("to_extensibility_tensor")
+@export
+@always_inline
+fn to_extensibility_tensor[
+    type: DType, rank: Int
+](
+    data: __mlir_type[`!kgen.pointer<scalar<`, type.value, `>>`],
+    shape: __mlir_type.`!kgen.pointer<index>`,
+) -> ExtensibilityTensor[type, rank]:
+    var shape_ptr = Pointer(shape)
+    var shape_tuple = StaticIntTuple[rank]()
+    var stride_tuple = StaticIntTuple[rank]()
+    var stride: Int = 1
+
+    @always_inline
+    @__copy_capture(shape_ptr)
+    @parameter
+    fn body[idx: Int]():
+        # Start from the back so we can accumulate the strides.
+        var i = rank - 1 - idx
+        shape_tuple[i] = shape_ptr.load(i)
+        stride_tuple[i] = stride
+        stride *= shape_tuple[i]
+
+    unroll[body, rank]()
+
+    return ExtensibilityTensor[type, rank](
+        DTypePointer[type](data),
+        shape_tuple,
+        stride_tuple,
+    )
+
+
+@mogg_register("get_shape_of_tensor")
+@always_inline
+@export
+fn get_shape_of_tensor[
+    rank: Int, type: DType
+](tensor: ExtensibilityTensor[type, rank]) -> StaticIntTuple[rank]:
+    var shape_tuple = StaticIntTuple[rank]()
+    var tensor_shape = tensor.shape
+    for i in range(rank):
+        shape_tuple[i] = tensor_shape[i]
+    return shape_tuple
 
 
 @mogg_register("mogg.shape_from_kgen")

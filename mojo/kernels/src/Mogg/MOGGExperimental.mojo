@@ -1119,3 +1119,23 @@ fn reshape_impl[
     return Tensor[x.type, shape.same_rank_param(), out_static_strides](
         x.data, shape.shape, stride, x.refcount()
     )
+
+
+@mogg_register("test_my_abs")
+@export
+fn test_my_abs(
+    x: Tensor,
+) -> Tensor[x.type]:
+    var new_shape = IntList(3, 2)
+    var ptr = DTypePointer[x.type].alloc(new_shape.nelems())
+    var ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
+    ref_cnt[0] = 0
+    var out = Tensor[x.type](ptr, new_shape, ref_cnt)
+
+    @parameter
+    @always_inline
+    fn func[width: Int](i: IntList) -> SIMD[out.type, width]:
+        return abs(x.simd_load[width](i)) + SIMD[out.type, width](1)
+
+    out.for_each[func]()
+    return out
