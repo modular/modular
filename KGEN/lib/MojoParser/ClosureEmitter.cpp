@@ -170,6 +170,7 @@ void ClosureEmitter::synthesizeWrapperFnPtrCtor(ASTDecl &decl, ASTType selfType,
       {selfType.getRefForArgument("self", /*isMut=*/true), fnPtrType},
       {ArgConvention::InitSelf, ArgConvention::OwnedInReg}, argListAttrs,
       noneType, SpecialFunctionKind::kInit, decl.getLoc(), b);
+  func.setInlineLevel(InlineLevel::Always);
   shared.declResolver->addFullyResolvedDecl(&*func, "__init__", decl.getLoc(),
                                             &decl);
   Value self = func.getArgument(0);
@@ -509,6 +510,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
       PogListAttr::get(ctx, callPogs), closureResultType, structDecl,
       SpecialFunctionKind::kNormal,
       wrapperSig.getFnEffects().setEscaping(false));
+  callFunc.setInlineLevel(InlineLevel::Always);
 
   // Add and register its fields as fully resolved decls.
   addFieldsToStruct(declOp, fieldTypes);
@@ -829,6 +831,7 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
            .getDecl(shared),
       "__init__", argTypes, argConventions, argListAttrsOfInit,
       SpecialFunctionKind::kInit, initParams, paramListAttrsOfInit);
+  init.setInlineLevel(InlineLevel::Always);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = init.getLocScope())
