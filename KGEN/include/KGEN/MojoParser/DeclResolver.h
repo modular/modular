@@ -160,8 +160,9 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Resolve all of the declarations that are defined within or referenced by
-  /// the given container `decl`.
-  void resolveAllReferencedFrom(ASTDecl &decl);
+  /// the given container `decl`. If `eraseUnparsedDecls` is true, decls that
+  /// were not referenced at all during parsing are erased.
+  void resolveAllReferencedFrom(ASTDecl &decl, bool eraseUnparsedDecls = true);
 
   /// Resolve the pending wildcard imports in the decl if it represents a
   /// module.

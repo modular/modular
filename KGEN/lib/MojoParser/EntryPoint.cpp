@@ -202,7 +202,8 @@ static void eraseUnreachableDecls(Operation *declOp, ModuleOp module) {
     if (op == declOp && isa<PackageOp>(declOp))
       return WalkResult::skip();
 
-    if (isa<mlir::SymbolOpInterface>(op) && !liveSymbols.contains(op)) {
+    if (isa<mlir::SymbolOpInterface, LIT::FuncOp>(op) &&
+        !liveSymbols.contains(op)) {
       op->erase();
       return WalkResult::skip();
     }

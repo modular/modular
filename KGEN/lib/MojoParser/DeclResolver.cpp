@@ -557,7 +557,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 //===----------------------------------------------------------------------===//
 // Top-Level Decl Resolution
 
-void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
+void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
+                                            bool eraseUnparsedDecls) {
   CompilerTimeTraceScope traceScope("resolveAllReferencedFrom", [&] {
     return decl.getNameIfOperation().value_or("").str();
   });
@@ -637,15 +638,17 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl) {
   } while (parsedDeclIt != parsedDeclList.size());
 
   // Erase unresolved operations from source.
-  for (ASTDecl *decl : parsedDeclList) {
-    if (decl->resolvedness == DeclResolvedness::unparsed &&
-        !decl->loadedFromBytecode)
-      if (Operation *op = decl->getIfOperation()) {
-        if (!isa<UnresolvedImportOp>(op)) {
-          op->erase();
-          decl->setIRValue(nullptr);
+  if (eraseUnparsedDecls) {
+    for (ASTDecl *decl : parsedDeclList) {
+      if (decl->resolvedness == DeclResolvedness::unparsed &&
+          !decl->loadedFromBytecode)
+        if (Operation *op = decl->getIfOperation()) {
+          if (!isa<UnresolvedImportOp>(op)) {
+            op->erase();
+            decl->setIRValue(nullptr);
+          }
         }
-      }
+    }
   }
 }
 
