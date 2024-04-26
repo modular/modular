@@ -18,4 +18,5 @@ import os
 if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
     os.chdir(directory)
 
-patched_main()
+if __name__ == "__main__":
+    patched_main()
