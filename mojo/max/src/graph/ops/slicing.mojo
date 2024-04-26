@@ -8,7 +8,8 @@
 from collections.optional import Optional
 from tensor import TensorShape
 
-from max.graph.symbol import SymbolicSlice
+from ..error import error
+from ..symbol import SymbolicSlice
 
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
@@ -40,7 +41,7 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
     if axis < 0:
         axis += input_type.rank()
     if axis < 0 or axis >= input_type.rank():
-        raise (
+        raise error(
             "gather axis out of bounds: axis="
             + String(axis)
             + ", rank="
@@ -276,7 +277,7 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
         have size equal to the sum of all tensor's size for that dimension.
     """
     if not len(values):
-        raise "must concat at least 1 value"
+        raise error("must concat at least 1 value")
     var v0 = values[0]
     var g = values[0].graph()
 
@@ -284,7 +285,7 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
     var rank = v0_type.rank()
     var norm_axis = axis + v0_type.rank() if axis < 0 else axis
     if norm_axis < 0 or norm_axis >= v0_type.rank():
-        raise (
+        raise error(
             "concat axis out of bounds: axis="
             + String(norm_axis)
             + ", rank="
@@ -295,7 +296,7 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
     for i in range(len(values)):
         var v_type = values[i].tensor_type()
         if v_type.rank() != rank:
-            raise (
+            raise error(
                 "all concat values must have same rank: rank[0]="
                 + String(rank)
                 + ", rank["
@@ -307,7 +308,7 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
         if concat_dim.is_dynamic() or dim.is_dynamic():
             concat_dim = Dim.dynamic()
         elif dim.is_symbolic():
-            raise "Concat doesn't yet support symbolic dimensions"
+            raise error("Concat doesn't yet support symbolic dimensions")
         else:
             concat_dim = Dim.static(
                 concat_dim.num_elements() + dim.num_elements()

@@ -14,6 +14,7 @@ from _mlir.builtin_attributes import TypeAttr
 from _mlir.builtin_types import FunctionType
 
 from ._attributes import _tensor_attr, _vector_attr
+from .error import error
 from .symbol import Symbol
 from .type import ListType, TensorType, Type
 
@@ -207,7 +208,7 @@ struct Graph(CollectionElement, Stringable):
             print a diagnostic message indicating the error.
         """
         if not self._graph[].op.verify():
-            raise "graph did not verify"
+            raise error("graph did not verify")
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -251,9 +252,13 @@ struct Graph(CollectionElement, Stringable):
         # TODO: Add an exmple.
         var num_args = self._body().num_arguments()
         if (n >= num_args) or (n < 0):
-            raise "index out of bounds: " + str(
-                n
-            ) + ", graph has " + num_args + " arguments"
+            raise error(
+                "index out of bounds: "
+                + str(n)
+                + ", graph has "
+                + num_args
+                + " arguments"
+            )
         return Symbol(self._graph, self._body().argument(n))
 
     # ===------------------------------------------------------------------=== #
@@ -490,7 +495,7 @@ struct Graph(CollectionElement, Stringable):
         if dtype == DType.float64:
             return self.scalar(Float64(value))
 
-        raise "unimplemented Int conversion dtype: " + str(dtype)
+        raise error("unimplemented Int conversion dtype: " + str(dtype))
 
     fn scalar(self, value: Float64, dtype: DType) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
@@ -524,7 +529,9 @@ struct Graph(CollectionElement, Stringable):
         if dtype == DType.float64:
             return self.scalar(Float64(value))
 
-        raise "unimplemented FloatLiteral conversion dtype: " + str(dtype)
+        raise error(
+            "unimplemented FloatLiteral conversion dtype: " + str(dtype)
+        )
 
     fn range[
         dtype: DType
@@ -574,7 +581,7 @@ struct Graph(CollectionElement, Stringable):
         var shape = List[Symbol]()
         for i in range(len(dims)):
             if dims[i].tensor_type().rank() != 0:
-                raise "zeros inputs must be scalars"
+                raise error("zeros inputs must be scalars")
             shape.append(dims[i])
             out_dims.append(Dim.dynamic())
         return self.op(

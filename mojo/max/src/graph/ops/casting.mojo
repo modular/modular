@@ -8,7 +8,8 @@
 from tensor import Tensor, TensorShape
 from utils.variant import Variant
 
-from max.graph.type import Dim
+from ..error import error
+from ..type import Dim
 
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
@@ -79,7 +80,9 @@ fn rebind(v: Symbol, out_dims: List[Dim]) raises -> Symbol:
     """
     var g = v.graph()
     if v.tensor_type().rank() != len(out_dims):
-        raise "rebind out_dims length must match the rank of the input shape"
+        raise error(
+            "rebind out_dims length must match the rank of the input shape"
+        )
 
     return g.op(
         "rmo.rebind_tensor_shape",
@@ -150,7 +153,7 @@ def unsqueeze(v: Symbol, axis: Int) -> Symbol:
     if axis < 0:
         axis += rank + 1
     if axis < 0 or axis > rank:
-        raise (
+        raise error(
             "unsqueeze axis out of bounds: axis="
             + str(axis)
             + ", rank="
@@ -202,9 +205,9 @@ fn reshape(v: Symbol, shape: Symbol, out_dims: List[Dim]) raises -> Symbol:
     var g = v.graph()
     var dtype = shape.tensor_type().dtype
     if not (dtype == DType.int64 or dtype == DType.int32):
-        raise "reshape shape must be int32 or int64"
+        raise error("reshape shape must be int32 or int64")
     if shape.tensor_type().rank() != 1:
-        raise "reshape shape must be rank 1"
+        raise error("reshape shape must be rank 1")
     return g.op(
         "mo.reshape",
         List[Symbol](v, shape),
@@ -245,7 +248,7 @@ fn reshape(v: Symbol, shape: List[Symbol]) raises -> Symbol:
     for i in range(len(shape)):
         if shape[i].tensor_type().rank() != 0:
             print(shape[i])
-            raise "reshape requires 0-rank dims"
+            raise error("reshape requires 0-rank dims")
 
     return reshape(v, stack(shape))
 
@@ -278,7 +281,7 @@ fn reshape(v: Symbol, shape: Symbol) raises -> Symbol:
 
     var shape_t = shape.tensor_type()
     if (shape_t.rank() != 1) or (not shape_t.dims[0].is_static()):
-        raise "reshape shape requires static shape shape"
+        raise error("reshape shape requires static shape shape")
     var out_dims = List[Dim]()
     for _ in range(shape_t.dims[0].num_elements()):
         out_dims.append(Dim.dynamic())

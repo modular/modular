@@ -7,6 +7,8 @@
 
 from collections import Optional
 
+from ..error import error
+
 
 fn _reduce[
     op: StringLiteral
@@ -17,7 +19,7 @@ fn _reduce[
     if axis < 0:
         axis += v_type.rank()
     if not 0 <= axis < v_type.rank():
-        raise "axis out of range"
+        raise error("axis out of range")
 
     v_type.dims[axis] = 1
     if dtype:

@@ -7,8 +7,9 @@
 
 from math import max
 
-from max.graph.type import Dim, TensorType
-from max.graph.ops.casting import reshape
+from .casting import reshape
+from ..error import error
+from ..type import Dim, TensorType
 
 
 def outer(lhs: Symbol, rhs: Symbol) -> Symbol:
@@ -118,9 +119,11 @@ def matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     var lk = lhs_type.dims[-1]
     var rk = rhs_type.dims[-2]
     if rhs_type.rank() < 2:
-        raise "right hand side of matrix multiply must have rank at least 2"
+        raise error(
+            "right hand side of matrix multiply must have rank at least 2"
+        )
     if lk != rk and not (lk.is_dynamic() or rk.is_dynamic()):
-        raise (
+        raise error(
             str("matrix multiply K dimensions don't match: ")
             + str(lk)
             + " != "
@@ -187,7 +190,7 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
     var lhs_type = lhs.tensor_type()
     var rhs_type = rhs.tensor_type()
     if rhs_type.rank() != 2:
-        raise "rhs must be a matrix"
+        raise error("rhs must be a matrix")
 
     var lhs_shape = shape_of(lhs)
     var rhs_shape = shape_of(rhs)

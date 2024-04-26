@@ -7,6 +7,8 @@
 
 from collections import List, Optional
 
+from ..error import error
+
 
 fn list(elements: List[Symbol]) raises -> Symbol:
     """Creates a new list and fills it with elements.
@@ -21,7 +23,7 @@ fn list(elements: List[Symbol]) raises -> Symbol:
         The list filled with `elements`. It's type will be `ListType`.
     """
     if len(elements) == 0:
-        raise "`elements` cannot be empty"
+        raise error("`elements` cannot be empty")
 
     var g = elements[0].graph()
     var ctx = g._context()
@@ -30,7 +32,7 @@ fn list(elements: List[Symbol]) raises -> Symbol:
     for i in range(1, len(elements)):
         var elt_type = elements[i].tensor_type()
         if not elt_type == type:
-            raise (
+            raise error(
                 "elements must all have the same type "
                 + str(type.to_mlir(ctx))
                 + ", got "
