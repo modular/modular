@@ -8,6 +8,7 @@
 #include "../Logging/MojoExpressionLogger.h"
 #include "../TypeSystem/MojoTypeSystem.h"
 #include "JITExecutionUnit.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "Logging.h"
 #include "MojoDiagnostic.h"
 #include "MojoExpressionVariable.h"
@@ -452,7 +453,12 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
   }
 
   // Run the elaboration pipeline.
-  if (failed(impl->compilationPM->run(*module)))
+  LLCL::AnyAsyncValueRef ready = Cache::cachedTransform(
+      *module, impl->compiler->getTransformCache().copy(),
+      AsyncValueRef<Chain>::createReady(impl->typeSystem->getRuntime()),
+      *impl->compilationPM);
+  LLCL::await(ready);
+  if (ready.isError())
     return returnErrorCleanup();
 
   if (isVerboseLoggingEnabled) {
