@@ -26,9 +26,6 @@ config.test_exec_root = os.path.join(
     config.modular_obj_root, "SDK", "integration-test", "EngineAPI"
 )
 
-config.substitutions.append(
-    ("%modelsdir", str(Path(config.modular_src_root) / "Models"))
-)
 config.substitutions.append(("%pyexe", sys.executable))
 
 tool_dirs = [
@@ -130,8 +127,6 @@ if output.returncode == 0:
 pytorch_generated_tests_dir = os.path.join(
     config.modular_derived_dir, "pytorch-generated-tests"
 )
-config.substitutions.append(("%deriveddir", config.modular_derived_dir))
-
 torch_vision_path = (
     Path(config.modular_derived_dir)
     / "third-party"
