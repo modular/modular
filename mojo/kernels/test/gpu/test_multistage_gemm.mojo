@@ -276,11 +276,19 @@ fn multistage_gemm[
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
         @unroll
-        for k_mma in range(num_k_mmas - 1):
+        for k_mma in range(num_k_mmas):
             var current = k_mma % 2
             var next = (k_mma + 1) % 2
+            var next_stage = (k_tile_id + 1) % num_pipeline_stages
 
-            # TODO: possbile fix compiler to avoid rebind?
+            if k_mma == num_k_mmas - 1:
+                a_warp_tile = a_smem_tiles[next_stage].tile[WM, BK](
+                    int(warp_y), 0
+                )
+                b_warp_tile = b_smem_tiles[next_stage].tile[WN, BK](
+                    int(warp_x), 0
+                )
+
             @unroll
             for m_mma in range(num_m_mmas):
                 var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
@@ -289,7 +297,7 @@ fn multistage_gemm[
                         4,
                         Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
                         swizzle=xor_2bits_per8T,
-                    ](a_mma_tile, (k_mma + 1) * MMA_K // simd_size)
+                    ](a_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
                 )
 
             @unroll
@@ -300,7 +308,7 @@ fn multistage_gemm[
                         2,
                         Layout(IntTuple(8, 2), IntTuple(BK // simd_size, 1)),
                         swizzle=xor_2bits_per8T,
-                    ](b_mma_tile, (k_mma + 1) * MMA_K // simd_size)
+                    ](b_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
                 )
 
             @unroll
@@ -315,83 +323,40 @@ fn multistage_gemm[
                         c_reg_tile[m_mma * num_n_mmas + n_mma, 0],
                     )
 
-        # Prefetch next k tile from global memory to current shared memory buffer.
-        var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
-        var prefetch_stage = prefetch_tile_id % num_pipeline_stages
+            if k_mma + 2 == num_k_mmas:
+                # Prefetch next k tile from global memory to current shared memory buffer.
+                var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
+                var prefetch_stage = prefetch_tile_id % num_pipeline_stages
 
-        # TODO: Extend the async copy instrinsic to creat dummy copies. The
-        # prefetch for the three two iterations should be dummy.
-        copy_dram_to_sram_async[
-            src_thread_layout=thread_async_copy_layout,
-            dst_thread_layout=thread_async_copy_layout,
-            swizzle=xor_2bits_per8T,
-        ](
-            a_smem_tiles[prefetch_stage].vectorize[1, simd_size](),
-            a.tile[BM, BK](
-                BlockIdx.y(), prefetch_tile_id % num_k_tiles
-            ).vectorize[1, simd_size](),
-        )
-
-        copy_dram_to_sram_async[
-            src_thread_layout=thread_async_copy_layout,
-            dst_thread_layout=thread_async_copy_layout,
-            swizzle=xor_2bits_per8T,
-        ](
-            b_smem_tiles[prefetch_stage].vectorize[1, simd_size](),
-            b.tile[BN, BK](
-                BlockIdx.x(), prefetch_tile_id % num_k_tiles
-            ).vectorize[1, simd_size](),
-        )
-
-        async_copy_commit_group()
-
-        # Guard the next k tile's shared memory buffer.
-        async_copy_wait_group(num_pipeline_stages - 2)
-        barrier()
-
-        # Prefetch register for the first k_mma(s) in next k tile.
-        if k_tile_id < num_k_tiles - 1:
-            var next_stage = (k_tile_id + 1) % num_pipeline_stages
-            var a_warp_tile = a_smem_tiles[next_stage].tile[WM, BK](
-                int(warp_y), 0
-            )
-            var b_warp_tile = b_smem_tiles[next_stage].tile[WN, BK](
-                int(warp_x), 0
-            )
-
-            @unroll
-            for m_mma in range(num_m_mmas):
-                var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
-                a_reg_tiles[0][m_mma, 0] = rebind[a_frag_type](
-                    ld_mma[
-                        4,
-                        Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                        swizzle=xor_2bits_per8T,
-                    ](a_mma_tile, 0)
+                # TODO: Extend the async copy instrinsic to creat dummy copies. The
+                # prefetch for the three two iterations should be dummy.
+                copy_dram_to_sram_async[
+                    src_thread_layout=thread_async_copy_layout,
+                    dst_thread_layout=thread_async_copy_layout,
+                    swizzle=xor_2bits_per8T,
+                ](
+                    a_smem_tiles[prefetch_stage].vectorize[1, simd_size](),
+                    a.tile[BM, BK](
+                        BlockIdx.y(), prefetch_tile_id % num_k_tiles
+                    ).vectorize[1, simd_size](),
                 )
 
-            @unroll
-            for n_mma in range(num_n_mmas):
-                var b_mma_tile = b_warp_tile.tile[MMA_N, BK](n_mma, 0)
-                b_reg_tiles[0][n_mma, 0] = rebind[b_frag_type](
-                    ld_mma[
-                        2,
-                        Layout(IntTuple(8, 2), IntTuple(BK // simd_size, 1)),
-                        swizzle=xor_2bits_per8T,
-                    ](b_mma_tile, 0)
+                copy_dram_to_sram_async[
+                    src_thread_layout=thread_async_copy_layout,
+                    dst_thread_layout=thread_async_copy_layout,
+                    swizzle=xor_2bits_per8T,
+                ](
+                    b_smem_tiles[prefetch_stage].vectorize[1, simd_size](),
+                    b.tile[BN, BK](
+                        BlockIdx.x(), prefetch_tile_id % num_k_tiles
+                    ).vectorize[1, simd_size](),
                 )
 
-        @unroll
-        for m_mma in range(num_m_mmas):
+                async_copy_commit_group()
 
-            @unroll
-            for n_mma in range(num_n_mmas):
-                mma(
-                    c_reg_tile[m_mma * num_n_mmas + n_mma, 0],
-                    a_reg_tiles[1][m_mma, 0],
-                    b_reg_tiles[1][n_mma, 0],
-                    c_reg_tile[m_mma * num_n_mmas + n_mma, 0],
-                )
+                # Guard the next k tile's shared memory buffer.
+                async_copy_wait_group(num_pipeline_stages - 2)
+                barrier()
 
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
@@ -481,6 +446,7 @@ fn test() raises:
     var func = Function[__type_of(gemm), gemm](
         threads_per_block=num_threads,
         cache_config=CacheConfig.PREFER_SHARED,
+        # dump_ptx=Path("./pipelined-gemm.ptx"),
     )
 
     if is_benchmark():
@@ -506,8 +472,8 @@ fn test() raises:
 
         var nstime = time_function[run_func](stream) / nrun
         var sectime = nstime * 1e-9
-        var TFlog = 2.0 * M * N * K * 1e-12
-        print(nrun, "runs avg(s)", sectime, "TFlogs/s", TFlog / sectime)
+        var TFlop = 2.0 * M * N * K * 1e-12
+        print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
 
     func(
         c_tensor,
