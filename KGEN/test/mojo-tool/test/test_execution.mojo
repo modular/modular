@@ -23,15 +23,15 @@ from testing import assert_true
 
 # CHECK: Failure: '{{.*}}test_execution.mojo@doc_test_failure_second_cell().__doc__::1'
 # CHECK: Unhandled exception caught during execution
-# CHECK: Error: AssertionError: condition was unexpectedly False
+# CHECK: Error: {{.*}} AssertionError: condition was unexpectedly False
 
 # CHECK: Failure: '{{.*}}test_execution.mojo@doc_test_failure_first_cell().__doc__::0'
 # CHECK: Unhandled exception caught during execution
-# CHECK: Error: AssertionError: condition was unexpectedly False
+# CHECK: Error: {{.*}} AssertionError: condition was unexpectedly False
 
 # CHECK: Failure: '{{.*}}test_execution.mojo::test_unit_failure()'
 # CHECK: Unhandled exception caught during execution
-# CHECK: Error: AssertionError: condition was unexpectedly False
+# CHECK: Error: {{.*}}test_execution.mojo:59:16: AssertionError: condition was unexpectedly False
 
 # CHECK-DOC: Total Discovered Tests: 2
 # CHECK-DOC: Passed : 0
@@ -46,7 +46,7 @@ from testing import assert_true
 # CHECK-DOC-JSON:   "children": [
 # CHECK-DOC-JSON:       "error": "Unhandled exception caught during execution",
 # CHECK-DOC-JSON:       "kind": "executionError",
-# CHECK-DOC-JSON:       "stdOut": "Error: AssertionError: condition was unexpectedly False\r\n",
+# CHECK-DOC-JSON:       "stdOut": "Error: {{.*}} AssertionError: condition was unexpectedly False\r\n",
 # CHECK-DOC-JSON:       "testID": "{{.*}}test_execution.mojo@doc_test_failure_first_cell().__doc__::0"
 
 # CHECK-DOC-JSON:       "kind": "skipped",
