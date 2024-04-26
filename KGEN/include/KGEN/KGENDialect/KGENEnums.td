@@ -303,4 +303,20 @@ def KGEN_FloatLiteralBinopKindAttr : EnumAttr<KGENDialect,
                                               KGEN_FloatLiteralBinopKind,
                                               "float_literal.binop_kind">;
 
+//===----------------------------------------------------------------------===//
+// ComputeKindAttr
+//===----------------------------------------------------------------------===//
+
+def ComputeKind : I32EnumAttr<"ComputeKind", "compute kind", [
+  I32EnumAttrCase<"Addition",       0, "addition">,
+  I32EnumAttrCase<"Comparison",     1, "comparison">,
+  I32EnumAttrCase<"Division",       2, "division">,
+  I32EnumAttrCase<"Multiplication", 3, "multiplication">,
+  I32EnumAttrCase<"MultiplyAdd",    4, "multiply_add">,
+  I32EnumAttrCase<"Other",          5, "other">,
+]> {
+  let cppNamespace = "M::KGEN";
+  let genSpecializedAttr = 0;
+}
+
 #endif // KGEN_KGENDIALECT_KGENENUMS_TD

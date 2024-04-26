@@ -12,6 +12,7 @@
 #define KGEN_POPDIALECT_POPOPS_TD
 
 include "KGEN/KGENDialect/KGENAttrs.td"
+include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
 include "KGEN/POPDialect/POPAttrs.td"
 include "KGEN/POPDialect/POPDialect.td"
@@ -82,7 +83,8 @@ class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
 // AddOp
 //===----------------------------------------------------------------------===//
 
-def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative, Pure]> {
+def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative, Pure,
+                DeclareOpInterfaceMethods<ComputeOpInterface>]>, Addition {
   let summary = "addition";
   let description = [{
     The `pop.add` operation takes two `!pop.simd` values and returns their sum.
@@ -102,7 +104,8 @@ def POP_AddOp : POP_ArithmeticBinaryOp<"add", [Commutative, Pure]> {
 // SubOp
 //===----------------------------------------------------------------------===//
 
-def POP_SubOp : POP_ArithmeticBinaryOp<"sub", [Pure]> {
+def POP_SubOp : POP_ArithmeticBinaryOp<"sub", [Pure,
+                DeclareOpInterfaceMethods<ComputeOpInterface>]>, Addition {
   let summary = "subtraction";
   let description = [{
     The `pop.sub` operation takes two `!pop.simd` values and returns their
@@ -122,7 +125,9 @@ def POP_SubOp : POP_ArithmeticBinaryOp<"sub", [Pure]> {
 // MulOp
 //===----------------------------------------------------------------------===//
 
-def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure]> {
+def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
+                DeclareOpInterfaceMethods<ComputeOpInterface>]>,
+                Multiplication {
   let summary = "multiplication";
   let description = [{
     The `pop.mul` operation takes two `!pop.simd` values and returns their
@@ -142,7 +147,8 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure]> {
 // DivOp
 //===----------------------------------------------------------------------===//
 
-def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect]> {
+def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect,
+                DeclareOpInterfaceMethods<ComputeOpInterface>]>, Division {
   let summary = "divide";
   let description = [{
     The `pop.div` operation takes two `!pop.simd` values and divides them. The
@@ -164,7 +170,8 @@ def POP_DivOp : POP_ArithmeticBinaryOp<"div", [NoMemoryEffect]> {
 // RemOp
 //===----------------------------------------------------------------------===//
 
-def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect]> {
+def POP_RemOp : POP_ArithmeticBinaryOp<"rem", [NoMemoryEffect,
+                DeclareOpInterfaceMethods<ComputeOpInterface>]>, Division {
   let summary = "remainder";
   let description = [{
     The `pop.rem` operation takes two `!pop.simd` values and returns their
@@ -306,7 +313,8 @@ class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
 // FMAOp
 //===----------------------------------------------------------------------===//
 
-def POP_FMAOp : POP_ArithmeticTernaryOp<"fma"> {
+def POP_FMAOp : POP_ArithmeticTernaryOp<"fma",
+                [DeclareOpInterfaceMethods<ComputeOpInterface>]>, MultiplyAdd {
   let summary = "fused-multiply add";
   let description = [{
     The `pop.fma` operation takes three `!pop.simd` values (`a`, `b`, and `c`)
@@ -327,7 +335,8 @@ def POP_FMAOp : POP_ArithmeticTernaryOp<"fma"> {
 //===----------------------------------------------------------------------===//
 
 def POP_CmpOp : POPOp<"cmp", [Pure, SameTypeOperands,
-    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+    DeclareOpInterfaceMethods<InferTypeOpInterface>,
+    DeclareOpInterfaceMethods<ComputeOpInterface>]>, Comparison {
   let summary = "comparison";
   let description = [{
     The `pop.cmp` operation takes a comparison predicate and two `!pop.scalar`

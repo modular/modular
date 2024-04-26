@@ -1238,8 +1238,9 @@ kgen.generator @count_ops(%arg0: i1) -> index {
 }
 
 kgen.generator @cost_of<fn: (i1) -> index>() -> index {
-  %0, %1, %2 = kgen.cost_of[(i1) -> index: fn]
-  kgen.return %2  : index
+  %0:8 = kgen.cost_of[(i1) -> index: fn]
+  // CHECK: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(i1) -> index: @count_ops]
+  kgen.return %0#7  : index
 }
 
 // CHECK-LABEL: kgen.func export @main
@@ -1247,6 +1248,39 @@ kgen.generator export @main() {
   // CHECK-NEXT: <1>
   %0 = kgen.param.constant = <apply(:() -> index @cost_of<:(i1) -> index @count_ops>)>
   kgen.return
+}
+
+// -----
+
+kgen.generator @pop_add(%arg1: !pop.scalar<si32>) -> !pop.scalar<si32> {
+  %0 = pop.add %arg1, %arg1 : !pop.scalar<si32>
+  kgen.return %0 : !pop.scalar<si32>
+}
+
+kgen.generator @cost_of_pop_add<fn: (!pop.scalar<si32>) -> !pop.scalar<si32>>() -> index {
+  // CHECK: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!pop.scalar<si32>) -> !pop.scalar<si32>: @pop_add]
+  %0:8 = kgen.cost_of[(!pop.scalar<si32>) -> !pop.scalar<si32>: fn]
+  kgen.return %0#2  : index
+}
+
+kgen.generator @index_add(%arg1: index) -> index {
+  // CHECK: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(index) -> index: @index_add]
+  %0 = index.add %arg1, %arg1
+  kgen.return %0 : index
+}
+
+kgen.generator @cost_of_index_add<fn: (index) -> index>() -> index {
+  %0:8 = kgen.cost_of[(index) -> index: fn]
+  kgen.return %0#2  : index
+}
+
+// CHECK-LABEL: kgen.func export @main
+kgen.generator export @main() {
+  // CHECK-NEXT: <1>
+  %0 = kgen.param.constant = <apply(:() -> index @cost_of_pop_add<:(!pop.scalar<si32>) -> !pop.scalar<si32> @pop_add>)>
+  // CHECK-NEXT: <1>
+  %1 = kgen.param.constant = <apply(:() -> index @cost_of_index_add<:(index) -> index @index_add>)>
+ kgen.return
 }
 
 // -----
