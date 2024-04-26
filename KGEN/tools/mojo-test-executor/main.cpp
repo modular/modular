@@ -126,39 +126,39 @@ static void executeTests(StringRef workingDirectory,
 //===----------------------------------------------------------------------===//
 // Test Initialization
 
-/// Return a set of executable tests defined by the doc string of the given
-/// operation, or nullopt if the operation does not define a test suite.
-static ErrorOr<std::vector<ExecutableTest>>
-getDocTestFromDecl(const TestID &testID, Operation *declOp) {
-  auto astDeclOp = dyn_cast_if_present<ASTDeclInterface>(declOp);
-  if (!astDeclOp)
-    return Error("id does not reference a valid test suite");
-  DocStringAttr docStringAttr = astDeclOp.getDocStringAttr();
-  if (!docStringAttr)
-    return Error("id does not reference a valid test suite");
-  DocString docString(docStringAttr);
-  auto codeBlocks = docString.getCodeBlocks();
-  if (codeBlocks.empty())
+/// Return an executable test for a doc test defined by the given test.
+static ErrorOr<ExecutableTest> getDocTest(llvm::SourceMgr &sourceMgr,
+                                          const std::filesystem::path &path,
+                                          const Test &test) {
+  // Use the location of the test to pull out the code block for the doc test.
+  std::optional<Test::SourceRange> sourceRange = test.getSourceRange();
+  if (!sourceRange)
     return Error("id does not reference a valid test suite");
 
-  // Grab the index of the code block to execute.
-  size_t index;
-  if (testID.getTest()->getAsInteger(10, index) || index >= codeBlocks.size())
-    return Error("id does not reference a valid test within the suite");
+  // Read in the source file to find the code block.
+  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileContents =
+      toModularErrorOr(llvm::MemoryBuffer::getFile(path.string()));
+  if (fileContents.isError())
+    return fileContents.takeError();
 
-  // Create an executable test for the code block, which also tests all of the
-  // previous blocks.
-  std::vector<ExecutableTest> tests;
-  for (size_t i : llvm::seq<size_t>(0, index + 1)) {
-    tests.emplace_back(testID.withTest(std::to_string(i)),
-                       codeBlocks[i].getRawCode().str());
-  }
-  return tests;
+  // Extract out the code block based on the source location of the test.
+  unsigned bufferId =
+      sourceMgr.AddNewSourceBuffer(std::move(*fileContents), SMLoc());
+  SMLoc startLoc = sourceMgr.FindLocForLineAndColumn(
+      bufferId, sourceRange->startLine + 1, 0);
+  SMLoc endLoc =
+      sourceMgr.FindLocForLineAndColumn(bufferId, sourceRange->endLine, 0);
+  if (!startLoc.isValid() || !endLoc.isValid())
+    return Error("unable to resolve source location of test");
+
+  StringRef codeBlock(startLoc.getPointer(),
+                      endLoc.getPointer() - startLoc.getPointer());
+  return ExecutableTest{test.getTestID(), codeBlock};
 }
 
 /// Return an executable test for a unit test defined by the given test id.
-static ErrorOr<std::vector<ExecutableTest>>
-getUnitTest(const std::filesystem::path &path, const TestID &testID) {
+static ErrorOr<ExecutableTest> getUnitTest(const std::filesystem::path &path,
+                                           const TestID &testID) {
   // We currently only expect to find unit tests at the top-level of a file, and
   // have no parameters/results.
   if (testID.getTestSuite())
@@ -172,41 +172,16 @@ getUnitTest(const std::filesystem::path &path, const TestID &testID) {
   // the test function.
   std::string contents =
       llvm::formatv("import `{0}`\n`{0}`.`{1}`()", path.stem(), testName);
-  return std::vector<ExecutableTest>{ExecutableTest{testID, contents}};
+  return ExecutableTest{testID, contents};
 }
 
 /// Return an executable test for the given Test ID, or Error if the test ID
 /// does not correspond to a valid test.
-static ErrorOr<std::vector<ExecutableTest>>
-getTestFromID(const std::filesystem::path &path, const TestID &id,
-              ContextRef ctx, ArrayRef<std::string> includeDirs) {
-  // Setup a source manager to handle diagnostics.
-  llvm::SourceMgr sourceManager;
-  sourceManager.setIncludeDirs(includeDirs);
-  std::string diagnosticBuffer;
-  sourceManager.setDiagHandler(
-      [](const llvm::SMDiagnostic &diag, void *rawBuffer) {
-        std::string &diagnosticBuffer = *static_cast<std::string *>(rawBuffer);
-        diagnosticBuffer += diag.getMessage().str();
-      },
-      &diagnosticBuffer);
-
-  // Parse the file.
-  MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
-  registerContext(mlirCtx, ctx);
-  KGEN::CompilationOptions compilationOptions;
-  ParserConfig parserConfig(&mlirCtx, compilationOptions);
-  MojoParserContext parserContext(sourceManager, parserConfig);
-  MojoASTDeclRef moduleDecl = parserContext.parseFileOrPackage(path);
-  if (!moduleDecl || !moduleDecl.getIfOperation())
-    return Error(diagnosticBuffer);
-  std::optional<StringRef> suiteName = id.getTestSuite();
-
-  mlir::SymbolTableCollection symbolTable;
-  Operation *op = moduleDecl->getIfOperation();
-
+static ErrorOr<ExecutableTest>
+getExecutableTest(llvm::SourceMgr &sourceMgr, const std::filesystem::path &path,
+                  const Test &test, ArrayRef<std::string> includeDirs) {
   // Process the case where we're looking for a test in a specific test suite.
-  if (suiteName) {
+  if (std::optional<StringRef> suiteName = test.getTestID().getTestSuite()) {
     ErrorOr<SmallVector<std::string>> scopes =
         TestID::parseScopedName(*suiteName);
     if (scopes.isError())
@@ -217,22 +192,15 @@ getTestFromID(const std::filesystem::path &path, const TestID &id,
     if (scopes->pop_back_val() != "__doc__")
       return Error("id does not reference a valid test suite");
 
-    // Resolve the operation defining the test suite.
-    for (StringRef it : *scopes)
-      if (!(op = symbolTable.lookupSymbolIn(op, StringAttr::get(&mlirCtx, it))))
-        return Error("id does not reference a valid test suite");
-
-    return getDocTestFromDecl(id, op);
+    return getDocTest(sourceMgr, path, test);
   }
 
   // If we're not looking for a specific test suite, we're looking for a unit
-  // test defined in the module itself.
-  if (!symbolTable.lookupSymbolIn(op, StringAttr::get(&mlirCtx, *id.getTest())))
-    return Error("id does not reference a valid test");
-  return getUnitTest(path, id);
+  // test.
+  return getUnitTest(path, test.getTestID());
 }
 
-static mlir::LogicalResult runTestExecutor(const TestID &id, ContextRef ctx,
+static mlir::LogicalResult runTestExecutor(ArrayRef<Test> tests,
                                            bool prettyOutput,
                                            ArrayRef<std::string> includeDirs) {
   JSONTransport transport(stdin, llvm::outs(), JSONStreamStyle::Standard,
@@ -244,31 +212,48 @@ static mlir::LogicalResult runTestExecutor(const TestID &id, ContextRef ctx,
       messageHandler.outgoingNotification<TestExecutionResult>(
           "execution/result");
   auto emitError = [&](StringRef message) {
-    onTestResultFn(TestExecutionResult::buildInitError(id, message));
+    onTestResultFn(TestExecutionResult::buildInitError(
+        tests.front().getTestID(), message));
+    for (const Test &test : tests.drop_front())
+      onTestResultFn(TestExecutionResult::buildSkip(test.getTestID()));
     return failure();
   };
 
-  // Check that the id corresponds to a specific test.
-  std::optional<StringRef> testName = id.getTest();
-  if (!testName)
-    return emitError("id does not correspond to a specific test");
-
-  // Process the test ID.
-  std::filesystem::path path = id.getFilePath();
+  // Check that the file path is a mojo source file.
+  std::filesystem::path path = tests.front().getTestID().getFilePath();
   if (!Filesystem::isMojoSourceFile(path))
     return emitError("id does not correspond to a valid mojo source file");
 
-  // Get the tests to execute.
-  ErrorOr<std::vector<ExecutableTest>> tests =
-      getTestFromID(path, id, ctx, includeDirs);
-  if (tests.isError())
-    return emitError(tests.getError());
+  llvm::SourceMgr sourceMgr;
+  std::vector<ExecutableTest> executableTests;
+  for (const Test &test : tests) {
+    // Check that each test corresponds to the same file, we aren't expecting
+    // tests to span multiple files. This should never happen, but we should
+    // verify it here just in case (`mojo` should only spawn the executor with
+    // known valid sets of tests).
+    std::filesystem::path path = test.getTestID().getFilePath();
+    if (path != tests.front().getTestID().getFilePath())
+      return emitError("unexpected tests spanning multiple files");
+
+    // Check that the id corresponds to a specific test.
+    std::optional<StringRef> testName = test.getTestID().getTest();
+    if (!testName)
+      return emitError("id does not correspond to a specific test");
+
+    // Get the test to execute.
+    ErrorOr<ExecutableTest> executableTest =
+        getExecutableTest(sourceMgr, path, test, includeDirs);
+    if (executableTest.isError())
+      return emitError(executableTest.getError());
+    executableTests.push_back(std::move(*executableTest));
+  }
 
   // Execute the tests, using the top-level directory as the working directory.
   std::filesystem::path workingDirectory = path.parent_path();
   while (Filesystem::isMojoSourcePackagePath(workingDirectory))
     workingDirectory = workingDirectory.parent_path();
-  executeTests(workingDirectory.string(), includeDirs, *tests, onTestResultFn);
+  executeTests(workingDirectory.string(), includeDirs, executableTests,
+               onTestResultFn);
   return success();
 }
 
@@ -295,10 +280,9 @@ int main(int argc, char **argv) {
       llvm::cl::desc("Pretty-print JSON output"),
       llvm::cl::init(false),
   };
-  llvm::cl::opt<std::string> testID{
-      llvm::cl::Positional,
-      llvm::cl::desc("<Test ID>"),
-  };
+  llvm::cl::opt<std::string> testFile{
+      llvm::cl::Positional, llvm::cl::desc("<File with json tests to run>"),
+      llvm::cl::init("-")};
   llvm::cl::list<std::string> includeDirs{
       "I", llvm::cl::desc("Append directory to the search path list used to "
                           "resolve imported modules in a test")};
@@ -315,7 +299,23 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  // Read in the set of tests to execute.
+  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> inputTestsFile =
+      toModularErrorOr(llvm::MemoryBuffer::getFileOrSTDIN(testFile));
+  if (inputTestsFile.isError()) {
+    llvm::errs() << "failed to open test file: " << inputTestsFile.getError()
+                 << "\n";
+    return 1;
+  }
+  ErrorOr<std::vector<Test>> tests = toModularErrorOr(
+      llvm::json::parse<std::vector<Test>>((*inputTestsFile)->getBuffer()));
+  if (tests.isError()) {
+    llvm::errs() << "failed to parse test file: " << tests.getError() << "\n";
+    return 1;
+  }
+  if (tests->empty())
+    return 0;
+
   // Run the executor.
-  return failed(
-      runTestExecutor(TestID(testID), ctxOr->copy(), prettyPrint, includeDirs));
+  return failed(runTestExecutor(*tests, prettyPrint, includeDirs));
 }
