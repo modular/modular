@@ -7,6 +7,7 @@
 
 from collections.optional import Optional
 from tensor import TensorShape
+from math.limit import max_finite
 
 from ..error import error
 from ..symbol import SymbolicSlice
@@ -100,7 +101,6 @@ def slice(
                 dims.append(input_type.dims[axis])
         out_shape = dims
 
-    var input_shape = shape_of(input)
     var starts = List[Symbol]()
     var stops = List[Symbol]()
     var steps = List[Symbol]()
@@ -122,7 +122,9 @@ def slice(
         if stop:
             stops.append(stop._value_copy())
         else:
-            stops.append(input_shape[axis])
+            # If we pass in the max int64 here, MO will automatically scale it to the input axis size.
+            # This greatly reduces generated MO ir.
+            stops.append(g.scalar(max_finite[DType.int64]()))
         if step:
             steps.append(step._value_copy())
         else:
