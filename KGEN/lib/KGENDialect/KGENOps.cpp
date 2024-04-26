@@ -18,6 +18,7 @@
 #include "Support/Compiler/VerifyUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/STLExtras.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/PatternMatch.h"
@@ -319,34 +320,89 @@ void ParamApplyOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 // CostOfOp
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
-                                       InterpreterState &state) {
-  ErrorOr<Region *> body = state.lookupFunctionBody(
-      cast<SymbolConstantAttr>(getCallee()).getSymbol());
+/// Compute cost of the given function.
+static ErrorTreeOrSuccess computeCost(SymbolConstantAttr func, Location loc,
+                                      InterpreterState &state, int64_t &loads,
+                                      int64_t &stores,
+                                      MutableArrayRef<int64_t> compute,
+                                      size_t depth) {
+  ErrorOr<Region *> body = state.lookupFunctionBody(func.getSymbol());
   if (body.isError())
-    return ErrorTree(getLoc(), body.takeError());
+    return ErrorTree(loc, body.takeError());
+
   // Count the number of ops in the body, including parents of regions.
-  int64_t numLoads = 0, numStores = 0, numOther = 0;
-  body.get()->walk([&numLoads, &numStores, &numOther](Operation *op) {
+  ErrorTreeOrSuccess walkOutcome;
+
+  body.get()->walk([&](Operation *op) -> WalkResult {
     // Don't count constants and terminators.
     if (op->hasTrait<OpTrait::ConstantLike>() ||
         op->hasTrait<OpTrait::IsTerminator>())
-      return;
-    if (auto memOp = dyn_cast<mlir::MemoryEffectOpInterface>(op)) {
-      if (memOp.hasEffect<mlir::MemoryEffects::Read>())
-        ++numLoads;
-      else if (memOp.hasEffect<mlir::MemoryEffects::Write>())
-        ++numStores;
-      else
-        ++numOther;
-    } else {
-      ++numOther;
+      return WalkResult::advance();
+
+    // Compute the cost of the function call descending into the function
+    // upto 'maxDepth'. Currently, 'maxDepth' is set to 2, which is sufficient
+    // to count pop-level operations for exponentiation.
+    constexpr size_t maxDepth = 2;
+    if (auto call = dyn_cast<CallOp>(op)) {
+      if (depth < maxDepth) {
+        auto result = computeCost(call.getCallee(), call.getLoc(), state, loads,
+                                  stores, compute, depth + 1);
+        if (result.isError()) {
+          walkOutcome = result.takeError();
+          return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
+      }
     }
+
+    // Count memory operations.
+    if (auto memOp = dyn_cast<mlir::MemoryEffectOpInterface>(op)) {
+      if (memOp.hasEffect<mlir::MemoryEffects::Read>()) {
+        ++loads;
+        return WalkResult::advance();
+      }
+      if (memOp.hasEffect<mlir::MemoryEffects::Write>()) {
+        ++stores;
+        return WalkResult::advance();
+      }
+    }
+
+    // Count compute operations.
+    ComputeKind kind = ComputeKind::Other;
+    if (auto computeOp = dyn_cast<ComputeOpInterface>(op))
+      kind = computeOp.getComputeKind();
+
+    ++(compute[static_cast<int>(kind)]);
+
+    return WalkResult::advance();
   });
+
+  return walkOutcome;
+}
+
+ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
+                                       InterpreterState &state) {
+  int64_t loads = 0, stores = 0;
+  std::array<int64_t, getMaxEnumValForComputeKind() + 1> compute{};
+
+  ErrorTreeOrSuccess result =
+      computeCost(cast<SymbolConstantAttr>(getCallee()), getLoc(), state, loads,
+                  stores, compute, /*depth=*/0);
+  if (result.isError())
+    return result;
+
   Builder builder(getContext());
-  state.mapResults({builder.getIndexAttr(numLoads),
-                    builder.getIndexAttr(numStores),
-                    builder.getIndexAttr(numOther)});
+  auto getComputeOpsAttr = [&builder, &compute](ComputeKind kind) {
+    return builder.getIndexAttr(compute[static_cast<int>(kind)]);
+  };
+
+  state.mapResults({builder.getIndexAttr(loads), builder.getIndexAttr(stores),
+                    getComputeOpsAttr(ComputeKind::Addition),
+                    getComputeOpsAttr(ComputeKind::Comparison),
+                    getComputeOpsAttr(ComputeKind::Division),
+                    getComputeOpsAttr(ComputeKind::Multiplication),
+                    getComputeOpsAttr(ComputeKind::MultiplyAdd),
+                    getComputeOpsAttr(ComputeKind::Other)});
   return success();
 }
 

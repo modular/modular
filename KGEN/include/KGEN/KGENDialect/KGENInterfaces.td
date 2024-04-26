@@ -441,4 +441,67 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// ComputeOpInterface
+//===----------------------------------------------------------------------===//
+
+def ComputeOpInterface : OpInterface<"ComputeOpInterface"> {
+  let description = [{
+    This interface defines an API to query the properties of compute operations.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Returns the kind of the compute operations.
+    }], "ComputeKind", "getComputeKind">
+  ];
+}
+
+class Addition {
+  code extraDefinition = [{}];
+  code extraClassDefinition = extraDefinition # [{
+    ComputeKind $cppClass::getComputeKind() {
+      return ComputeKind::Addition;
+    }
+  }];
+}
+
+class Comparison {
+  code extraDefinition = [{}];
+  code extraClassDefinition = extraDefinition # [{
+    ComputeKind $cppClass::getComputeKind() {
+      return ComputeKind::Comparison;
+    }
+  }];
+}
+
+class Division {
+  code extraDefinition = [{}];
+  code extraClassDefinition = extraDefinition # [{
+    ComputeKind $cppClass::getComputeKind() {
+      return ComputeKind::Division;
+    }
+  }];
+}
+
+class Multiplication {
+  code extraDefinition = [{}];
+  code extraClassDefinition = extraDefinition # [{
+    ComputeKind $cppClass::getComputeKind() {
+      return ComputeKind::Multiplication;
+    }
+  }];
+}
+
+class MultiplyAdd {
+  code extraDefinition = [{}];
+  code extraClassDefinition = extraDefinition # [{
+    ComputeKind $cppClass::getComputeKind() {
+      return ComputeKind::MultiplyAdd;
+    }
+  }];
+}
+
 #endif // KGEN_KGENDIALECT_KGENINTERFACES_TD

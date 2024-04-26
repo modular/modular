@@ -12,6 +12,7 @@
 #define KGEN_POPDIALECT_POPOPS_H
 
 #include "KGEN/Interpreter/InterpreterInterface.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPEnums.h"
 #include "Support/LLVMCompilerForwardDecls.h"
