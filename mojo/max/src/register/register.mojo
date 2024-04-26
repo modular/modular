@@ -6,12 +6,15 @@
 """Implements decorators to register MAX custom ops."""
 
 
-fn op(name: StringLiteral, priority: Int = -1):
-    """Registers a function as an op implementation.
+fn op(name: StringLiteral, priority: Int = 0):
+    """Registers a function as a graph op.
 
-    The decorator takes the name of the op as its argument.
+    You can use this to override ops implemented in MAX Engine (regardless of
+    whether the model is from PyTorch, ONNX, or MAX Graph), or to define
+    completely custom ops for use with MAX Graph.
 
-    For example, this registers `my_op` as an implementation of `mo.add`:
+    For example, this registers `my_op` as an override implementation of
+    the `mo.add` op:
 
     ```mojo
     from max import register
@@ -22,7 +25,11 @@ fn op(name: StringLiteral, priority: Int = -1):
 
     Args:
       name: The name of the op to register.
-      priority: The priority of the op.
+      priority: The priority of the op. If there are multiple registered ops
+          for the same op, this is used to determine which one to use in the
+          graph (the highest value wins). You normally don't need to use this.
+          It's only necessary if you're overriding another op override or
+          custom op.
     """
     return
 
