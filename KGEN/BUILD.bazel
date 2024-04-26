@@ -5,7 +5,7 @@ load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distri
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
 load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
 load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
-load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen", "gentbl_mlir_dialect")
+load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen", "gentbl_mlir_dialect", "gentbl_modular_passes")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -105,17 +105,8 @@ td_library(
     ],
 )
 
-gentbl_cc_library(
+gentbl_modular_passes(
     name = "KGENPassesIncGen",
-    includes = ["include"],
-    strip_include_prefix = "include",
-    tbl_outs = [
-        (
-            ["-gen-pass-decls"],
-            "include/KGEN/KGENPasses.h.inc",
-        ),
-    ],
-    tblgen = "@llvm-project//mlir:mlir-tblgen",
     td_file = "include/KGEN/KGENPasses.td",
     deps = [
         ":KGENPassTdFile",
@@ -417,17 +408,8 @@ td_library(
     ],
 )
 
-gentbl_cc_library(
+gentbl_modular_passes(
     name = "MOGGreElabIncGen",
-    includes = ["include"],
-    strip_include_prefix = "include",
-    tbl_outs = [
-        (
-            ["-gen-pass-decls"],
-            "include/KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc",
-        ),
-    ],
-    tblgen = "@llvm-project//mlir:mlir-tblgen",
     td_file = "include/KGEN/MOGGPreElab/MOGGPreElabPasses.td",
     deps = [
         ":KGENPassTdFile",

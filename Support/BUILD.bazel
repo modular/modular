@@ -1,7 +1,7 @@
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 load("//utils/bazel/build/rules:expand_root_cert_inc.bzl", "expand_root_cert_inc")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
-load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect")
+load("//utils/bazel/build/rules:tablegen.bzl", "gentbl_mlir_dialect", "gentbl_modular_passes")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -659,21 +659,9 @@ filegroup(
     ]),
 )
 
-gentbl_cc_library(
-    name = "DebugInfoToLLVMDialect",
-    includes = ["include"],
-    strip_include_prefix = "include",
-    tbl_outs = [
-        (
-            [
-                "-gen-pass-decls",
-                "-name",
-                "DebugInfoToLLVM",
-            ],
-            "include/Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h.inc",
-        ),
-    ],
-    tblgen = "@llvm-project//mlir:mlir-tblgen",
+gentbl_modular_passes(
+    name = "DebugInfoToLLVMIncGen",
+    output_name = "DebugInfoToLLVM",
     td_file = "include/Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.td",
     deps = [
         ":DebugInfoTdFiles",
@@ -841,21 +829,9 @@ gentbl_cc_library(
     ],
 )
 
-gentbl_cc_library(
+gentbl_modular_passes(
     name = "DebugInfoTransformPasses",
-    includes = ["include"],
-    strip_include_prefix = "include",
-    tbl_outs = [
-        (
-            [
-                "-gen-pass-decls",
-                "-name",
-                "Transforms",
-            ],
-            "include/Support/DebugInfoDialect/Transforms/Transforms.h.inc",
-        ),
-    ],
-    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    output_name = "Transforms",
     td_file = "include/Support/DebugInfoDialect/Transforms/Passes.td",
     deps = [
         ":DebugInfoTdFiles",
@@ -888,7 +864,7 @@ cc_library(
     strip_include_prefix = "include",
     deps = [
         ":DebugInfoDialect",
-        ":DebugInfoToLLVMDialect",
+        ":DebugInfoToLLVMIncGen",
         ":DebugInfoTransforms",
         "@llvm-project//mlir:LLVMCommonConversion",
         "@llvm-project//mlir:LLVMDialect",
