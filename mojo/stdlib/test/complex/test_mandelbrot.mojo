@@ -8,10 +8,12 @@
 # together.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s
 
 
 from complex import ComplexFloat32, ComplexSIMD
+
+from testing import assert_equal
 
 
 fn mandelbrot_iter(row: Int, col: Int) -> Int:
@@ -40,28 +42,17 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     return iter
 
 
-# CHECK-LABEL: test_mandelbrot_iter
-fn test_mandelbrot_iter():
-    print("== test_mandelbrot_iter")
+def test_mandelbrot_iter():
+    assert_equal(mandelbrot_iter(0, 0), 1)
+    assert_equal(mandelbrot_iter(0, 1), 1)
+    assert_equal(mandelbrot_iter(50, 50), 2)
+    assert_equal(mandelbrot_iter(100, 100), 3)
 
-    # CHECK: 1
-    print(mandelbrot_iter(0, 0))
-
-    # CHECK: 1
-    print(mandelbrot_iter(0, 1))
-
-    # CHECK: 2
-    print(mandelbrot_iter(50, 50))
-
-    # CHECK: 3
-    print(mandelbrot_iter(100, 100))
-
-    var re = Int32(3)
-    var im = Int32(4)
-    var z = ComplexSIMD[DType.int32, 1](re, im)
-    # CHECK: 25
-    print(z.squared_norm())
+    var z = ComplexSIMD[DType.int32, 1](re=Int32(3), im=Int32(4))
+    assert_equal(z.squared_norm(), 25)
 
 
-fn main():
+def main():
     test_mandelbrot_iter()
+    # NOTE: We need to print this for the SDK self test.
+    print("Mandelbrot passed")
