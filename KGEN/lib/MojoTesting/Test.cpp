@@ -736,36 +736,44 @@ static ErrorOr<TempFile> createTempOutputFile() {
   return std::move(*outOrErr);
 }
 
+/// Emit an initialization error for the given set of tests.
+static std::vector<TestExecutionResult> emitTestInitError(ArrayRef<Test> tests,
+                                                          const Twine &error) {
+  std::vector<TestExecutionResult> results;
+  results.emplace_back(
+      TestExecutionResult::buildInitError(tests[0].getTestID(), error.str()));
+  for (const Test &child : tests.drop_back())
+    results.emplace_back(TestExecutionResult::buildSkip(child.getTestID()));
+  return results;
+}
+
 /// Process the result of a test executor execution.
 static TestExecutionResult
-processTestExecutorResults(const TestID &test,
+processTestExecutorResults(ArrayRef<Test> tests,
                            std::vector<TestExecutionResult> results) {
-  // Handle the result of executing a unit test.
-  if (!test.getTestSuite() || !test.getTestSuite()->ends_with("__doc__")) {
-    if (results.size() != 1 || results.front().getTestID() != test)
-      return TestExecutionResult::buildInitError(
-          test, "fatal error: test execution generated unexpected results");
-    return std::move(results.front());
-  }
+  auto emitError = [&](StringRef message) {
+    if (tests.size() == 1)
+      return TestExecutionResult::buildInitError(tests[0].getTestID(), message);
+    return TestExecutionResult(
+        TestExecutionResult::kExecutionError, tests[0].getTestID().withTest(""),
+        std::chrono::milliseconds(0), emitTestInitError(tests, message));
+  };
 
-  // Otherwise, this is a doc test. Executing a doc test should produce a number
-  // of results up to the index of the test.
-  size_t index;
-  if (test.getTest()->getAsInteger(10, index)) {
-    return TestExecutionResult::buildInitError(
-        test, "id does not correspond to a valid doc test");
-  }
-  if (index >= results.size()) {
-    return TestExecutionResult::buildInitError(
-        test, "fatal error: test execution generated unexpected results");
-  }
+  // Check that we got the right number of results.
+  if (results.size() != tests.size())
+    return emitError("fatal error: test execution generated an unexpected "
+                     "number of results");
+
+  // Handle the case where we're executing a single test.
+  if (results.size() == 1)
+    return results.front();
 
   // Check that the results are in the expected order.
   std::chrono::milliseconds duration = std::chrono::milliseconds(0);
-  for (size_t i = 0; i < index; ++i) {
-    if (results[i].getTestID() != test.withTest(std::to_string(i)))
-      return TestExecutionResult::buildInitError(
-          test, "fatal error: test execution generated unexpected results");
+  for (size_t i = 0, e = tests.size(); i < e; ++i) {
+    if (results[i].getTestID() != tests[i].getTestID())
+      return emitError(
+          "fatal error: test execution generated unexpected results");
     duration += results[i].getDuration();
   }
 
@@ -773,7 +781,8 @@ processTestExecutorResults(const TestID &test,
   bool hasError = results.back().getKind() != TestExecutionResult::kSuccess;
   return TestExecutionResult(hasError ? TestExecutionResult::kExecutionError
                                       : TestExecutionResult::kSuccess,
-                             test.withTest(""), duration, std::move(results));
+                             tests[0].getTestID().withTest(""), duration,
+                             std::move(results));
 }
 
 namespace {
@@ -794,10 +803,10 @@ struct TestServer {
 /// This class represents a single execution instance, containing all of the
 /// state related to invoking the test executor.
 struct TestExecutionInstance {
-  TestExecutionInstance(const TestID &test, TempFile outputTempFile,
+  TestExecutionInstance(ArrayRef<Test> tests, TempFile outputTempFile,
                         std::FILE *outFile, llvm::sys::ProcessInfo processInfo)
-      : test(test), outputTempFile(std::move(outputTempFile)), outFile(outFile),
-        transport(outFile, nullOS), messageHandler(transport),
+      : tests(tests), outputTempFile(std::move(outputTempFile)),
+        outFile(outFile), transport(outFile, nullOS), messageHandler(transport),
         testServer(messageHandler), processInfo(processInfo) {}
   ~TestExecutionInstance() { fclose(outFile); }
 
@@ -806,8 +815,8 @@ struct TestExecutionInstance {
   /// returns nullopt.
   std::optional<TestExecutionResult> checkExecution();
 
-  /// The ID of the test being executed.
-  TestID test;
+  /// The tests being executed.
+  SmallVector<Test> tests;
 
   /// The temporary file used to capture the output of the test executor.
   std::optional<TempFile> outputTempFile;
@@ -876,20 +885,19 @@ std::optional<TestExecutionResult> TestExecutionInstance::checkExecution() {
   // If the process completed, flush out the transport one more time before
   // processing results.
   runTransport();
-  return processTestExecutorResults(test, std::move(testServer.results));
+  return processTestExecutorResults(tests, std::move(testServer.results));
 }
 
 //===----------------------------------------------------------------------===//
 // Test
 //===----------------------------------------------------------------------===//
 
-/// Execute the given individual test, returning the result.
+/// Execute the given set of tests, returning the result.
 static MaybeResolvedResult
-executeUnitOrDocTest(const TestID &test,
-                     ArrayRef<std::string> additionalImportPaths) {
+executeTests(ArrayRef<Test> tests,
+             ArrayRef<std::string> additionalImportPaths) {
   auto emitInitError = [&](const Twine &error) {
-    return processTestExecutorResults(
-        test, {TestExecutionResult::buildInitError(test, error.str())});
+    return processTestExecutorResults(tests, emitTestInitError(tests, error));
   };
 
   // Grab the path to the test executor.
@@ -899,11 +907,20 @@ executeUnitOrDocTest(const TestID &test,
                          Twine(config.getError()));
   StringRef testExecutorPath = config->getTestExecutorPath();
 
-  // Create a temporary input and output file for the test executor.
+  // Create a input file for the test executor and write the set of tests to
+  // execute to the input file.
+  auto inFileOr = createTempOutputFile();
+  if (failed(inFileOr))
+    return emitInitError(inFileOr.getError());
+  {
+    llvm::raw_fd_ostream inOS(inFileOr->getFD(), /*shouldClose=*/false);
+    llvm::json::OStream(inOS).value(llvm::json::Array(tests));
+  }
+
+  // Create a temporary output file for the test executor.
   auto outFileOr = createTempOutputFile();
   if (failed(outFileOr))
     return emitInitError(outFileOr.getError());
-
 #ifndef _WIN32_
   std::FILE *outFile = fdopen(dup(outFileOr->getFD()), "r");
 #else
@@ -912,13 +929,14 @@ executeUnitOrDocTest(const TestID &test,
 
   // Invoke the test executor with the test ID, directing its output to the
   // file.
+  std::string in = inFileOr->getPath().string();
   std::string out = outFileOr->getPath().string();
   const std::optional<StringRef> redirects[] = {
-      /*stdin=*/std::nullopt,
+      /*stdin=*/in,
       /*stdout=*/out,
       /*stderr=*/std::nullopt,
   };
-  SmallVector<StringRef> args = {testExecutorPath, test.strref()};
+  SmallVector<StringRef> args = {testExecutorPath};
   for (StringRef path : additionalImportPaths)
     llvm::append_range(args, ArrayRef<StringRef>{"-I", path});
   auto processInfo =
@@ -926,10 +944,37 @@ executeUnitOrDocTest(const TestID &test,
 
   // Build an unresolved result that waits for the process to complete.
   auto instance = std::make_unique<TestExecutionInstance>(
-      test, std::move(*outFileOr), outFile, processInfo);
+      tests, std::move(*outFileOr), outFile, processInfo);
   return MaybeResolvedResult([instance = std::move(instance)]() {
     return instance->checkExecution();
   });
+}
+
+/// Execute the given doc test, returning the result.
+static MaybeResolvedResult
+executeDocTest(const Test &test, ArrayRef<std::string> additionalImportPaths) {
+  // Doc tests are unique compare to unit tests in that they are execution
+  // dependent on the previous tests in the same suite. As a result, we need to
+  // execute all of the previous tests in the suite together with `test`.
+  size_t index;
+  if (test.getTestID().getTest()->getAsInteger(10, index)) {
+    return TestExecutionResult::buildInitError(
+        test.getTestID(), "id does not correspond to a valid doc test");
+  }
+  // If this is the first test, execute it directly.
+  if (index == 0)
+    return executeTests(test, additionalImportPaths);
+
+  // Pull in the parent doc test suite.
+  ErrorOr<std::optional<Test>> parentTestOr = Test::discoverFromID(
+      test.getTestID().withTest(""), additionalImportPaths);
+  if (parentTestOr || !*parentTestOr ||
+      (**parentTestOr).getChildren().size() <= index)
+    return TestExecutionResult::buildInitError(
+        test.getTestID(), "id does not correspond to a valid doc test");
+  const Test &parentTest = **parentTestOr;
+  return executeTests(parentTest.getChildren().take_front(index + 1),
+                      additionalImportPaths);
 }
 
 /// Execute the given test or suite, returning the result.
@@ -938,14 +983,16 @@ executeTestOrSuite(const Test &test,
                    ArrayRef<std::string> additionalImportPaths) {
   // If this is a test, execute it directly.
   const TestID &testID = test.getTestID();
-  if (testID.getTest())
-    return executeUnitOrDocTest(testID, additionalImportPaths);
-  // If this is a doc test suite, we only need to execute the last test, each
-  // of the other tests will be implicitly executed.
-  if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__")) {
-    return executeUnitOrDocTest(test.getChildren().back().getTestID(),
-                                additionalImportPaths);
+  if (testID.getTest()) {
+    if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__"))
+      return executeDocTest(test, additionalImportPaths);
+    return executeTests(test, additionalImportPaths);
   }
+  // If this is a doc test suite, we can execute all of the tests together
+  // (given that doc tests have execution dependent on the previous tests in the
+  // same suite).
+  if (testID.getTestSuite() && testID.getTestSuite()->ends_with("__doc__"))
+    return executeTests(test.getChildren(), additionalImportPaths);
 
   // Otherwise, this is a suite. Execute each of the children, and collect the
   // results.
