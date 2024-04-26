@@ -485,6 +485,8 @@ function(add_mojo_package_doc target visibility package_dir output_directory)
   )
 
   add_custom_target(${target} DEPENDS ${GEN_DOC_FILE})
+  set_target_properties(${target} PROPERTIES OUTPUT_DIR ${GEN_DOC_DIR})
+
   set(is_public FALSE)
   if("${visibility}" STREQUAL "PUBLIC")
     set(is_public TRUE)
