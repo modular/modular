@@ -3,14 +3,50 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s
+
 from math import round
 
 from testing import *
 
 
+def test_division():
+    # TODO: https://github.com/modularml/mojo/issues/1787
+    # allow this at compile time
+    assert_equal(FloatLiteral(4.4) / 0.5, 8.8)
+    assert_equal(FloatLiteral(4.4) // 0.5, 8.0)
+    assert_equal(FloatLiteral(-4.4) // 0.5, -9.0)
+    assert_equal(FloatLiteral(4.4) // -0.5, -9.0)
+    assert_equal(FloatLiteral(-4.4) // -0.5, 8.0)
+
+
 fn round10(x: Float64) -> Float64:
     return (round(Float64(x * 10)) / 10).value
+
+
+def test_round10():
+    assert_equal(round10(FloatLiteral(4.4) % 0.5), 0.4)
+    assert_equal(round10(FloatLiteral(-4.4) % 0.5), 0.1)
+    assert_equal(round10(FloatLiteral(4.4) % -0.5), -0.1)
+    assert_equal(round10(FloatLiteral(-4.4) % -0.5), -0.4)
+    assert_equal(round10(3.1 % 1.0), 0.1)
+
+
+def test_power():
+    assert_almost_equal(FloatLiteral(4.5) ** 2.5, 42.95673695)
+    assert_almost_equal(FloatLiteral(4.5) ** -2.5, 0.023279235)
+    # TODO (https://github.com/modularml/modular/issues/33045): Float64/SIMD has
+    # issues with negative numbers raised to fractional powers.
+    # assert_almost_equal(FloatLiteral(-4.5) ** 2.5, -42.95673695)
+    # assert_almost_equal(FloatLiteral(-4.5) ** -2.5, -0.023279235)
+
+
+def test_int_conversion():
+    assert_equal(int(FloatLiteral(-4.0)), -4)
+    assert_equal(int(FloatLiteral(-4.5)), -4)
+    assert_equal(int(FloatLiteral(-4.3)), -4)
+    assert_equal(int(FloatLiteral(4.5)), 4)
+    assert_equal(int(FloatLiteral(4.0)), 4)
 
 
 def test_boolean_comparable():
@@ -33,56 +69,9 @@ def test_equality():
 
 
 def main():
-    # CHECK: == test_double
-    print("== test_double")
-
-    # CHECK-NEXT: 8.8
-    print(FloatLiteral(4.4) / 0.5)
-    # CHECK-NEXT: 8.0
-    print(FloatLiteral(4.4) // 0.5)
-    # CHECK-NEXT: -9.0
-    print(FloatLiteral(-4.4) // 0.5)
-    # CHECK-NEXT: -9.0
-    print(FloatLiteral(4.4) // -0.5)
-    # CHECK-NEXT: 8.0
-    print(FloatLiteral(-4.4) // -0.5)
-
-    # CHECK-NEXT: 0.4
-    print(round10(FloatLiteral(4.4) % 0.5))
-    # CHECK-NEXT: 0.1
-    print(round10(FloatLiteral(-4.4) % 0.5))
-    # CHECK-NEXT: -0.1
-    print(round10(FloatLiteral(4.4) % -0.5))
-    # CHECK-NEXT: -0.4
-    print(round10(FloatLiteral(-4.4) % -0.5))
-    # CHECK-NEXT: 0.1
-    print(round10(3.1 % 1.0))
-
-    # CHECK-NEXT: 42.95
-    print(FloatLiteral(4.5) ** 2.5)
-    # CHECK-NEXT: 0.023
-    print(FloatLiteral(4.5) ** -2.5)
-    # TODO (https://github.com/modularml/modular/issues/33045): Float64/SIMD has
-    # issues with negative numbers raised to fractional powers.
-    # CHECK-NEXT_DISABLED: -42.95
-    # print(FloatLiteral(-4.5) ** 2.5)
-    # CHECK-NEXT_DISABLED: -0.023
-    # print(FloatLiteral(-4.5) ** -2.5)
-
-    # CHECK-NEXT: -4
-    print(int(FloatLiteral(-4.0)))
-
-    # CHECK-NEXT: -4
-    print(int(FloatLiteral(-4.5)))
-
-    # CHECK-NEXT: -4
-    print(int(FloatLiteral(-4.3)))
-
-    # CHECK-NEXT: 4
-    print(int(FloatLiteral(4.5)))
-
-    # CHECK-NEXT: 4
-    print(int(FloatLiteral(4.0)))
-
+    test_division()
+    test_round10()
+    test_power()
+    test_int_conversion()
     test_boolean_comparable()
     test_equality()
