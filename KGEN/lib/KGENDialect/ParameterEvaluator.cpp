@@ -110,9 +110,11 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
       result = upbindValue(result);
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
              indexRef && indexRef.getDepth() == rootDepth) {
-    result = upbindValue((indexRef.getIsResult()
-                              ? resultParamValues
-                              : inputParamValues)[indexRef.getIndex()]);
+    auto values = indexRef.getIsResult() ? ArrayRef(resultParamValues)
+                                         : ArrayRef(inputParamValues);
+    assert(indexRef.getIndex() < values.size() &&
+           "parameter index out of range");
+    result = upbindValue(values[indexRef.getIndex()]);
   } else if (isa<MLIROpAttr>(attr)) {
     // Expression functions and MLIR operation expressions are isolated from
     // above, so don't collect from them.
