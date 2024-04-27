@@ -384,7 +384,7 @@ TEST(TestEntitlementStore, Bootstrap) {
 
   HTTPContextRef httpCtx = getHTTPContextRef();
   Config config; // Use empty config.
-  auto storeOr = EntitlementStore::generate(config, httpCtx.copy(), "");
+  auto storeOr = EntitlementStore::generate(config, httpCtx.copy(), "", false);
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();
@@ -398,7 +398,8 @@ TEST(TestEntitlementStore, BootstrapAndOpen) {
   HTTPContextRef httpCtx = getHTTPContextRef();
   { // Scope to call the entitlement store's destructor so we can `open` it.
     Config config; // Use empty config.
-    auto storeOr = EntitlementStore::generate(config, httpCtx.copy(), "");
+    auto storeOr =
+        EntitlementStore::generate(config, httpCtx.copy(), "", false);
     ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
   }
 
@@ -493,7 +494,7 @@ TEST(TestEntitlementStore, Refresh) {
 
   HTTPContextRef httpCtx = getHTTPContextRef();
   Config config; // Use empty config.
-  auto storeOr = EntitlementStore::generate(config, httpCtx.copy(), "");
+  auto storeOr = EntitlementStore::generate(config, httpCtx.copy(), "", false);
   ASSERT_FALSE(storeOr.isError()) << storeOr.getError();
 
   auto e = storeOr->getEntitlement<TestEntitlement>();

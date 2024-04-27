@@ -124,8 +124,12 @@ public:
     /// Fail if no entitlement store is available (returning an error).
     kRequiredNoPrompt = 1,
 
-    /// Prompt for authentication, prompting if this fails.
+    /// Prompt for authentication, prompting if this fails. Will open web
+    /// browser with auth link.
     kRequiredWithPrompt = 2,
+
+    /// Prompt for authentication without opening a browser window.
+    kRequiredWithPromptNoBrowser = 3,
   };
 
   /// Open the current configuration and entitlement store, refreshing if

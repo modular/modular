@@ -70,12 +70,15 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
     return std::move(s);
   }
 
+  // We open a browser window unless explicitly asked not to.
+  bool openBrowser = entitlements != kRequiredWithPromptNoBrowser;
+
   // If MODULAR_ACCESS_TOKEN is set, we request user info using that access
   // token and extract the subject, then we request and save a certificate using
   // that subject. We fail open and don't propagate errors in this case.
   if (auto accessTokenOr = EntitlementStore::getAccessTokenFromEnv()) {
-    auto genOr =
-        EntitlementStore::generate(*cfgOr, httpCtx.copy(), accessTokenOr);
+    auto genOr = EntitlementStore::generate(*cfgOr, httpCtx.copy(),
+                                            accessTokenOr, openBrowser);
     if (!genOr.isError()) {
       return Settings(cfgOr.takeValue(), std::move(*genOr));
     }
@@ -93,8 +96,8 @@ ErrorOr<Settings> Settings::open(HTTPContextRef httpCtx,
 
   // Finally, we don't have one, and we've decided we must have one - generate
   // it.
-  auto genOr =
-      EntitlementStore::generate(*cfgOr, std::move(httpCtx), std::nullopt);
+  auto genOr = EntitlementStore::generate(*cfgOr, std::move(httpCtx),
+                                          std::nullopt, openBrowser);
   if (genOr.isError())
     return genOr.takeError();
 
