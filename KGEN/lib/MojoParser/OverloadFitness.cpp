@@ -180,7 +180,7 @@ namespace {
 class ParameterInferenceState {
 public:
   ParameterInferenceState(ASTDecl &declScope, SharedState &shared, size_t index,
-                          ParserParamEvaluator &evaluator,
+                          const ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
                           bool allowImplicitConversions)
       : declScope(declScope), shared(shared), evaluator(evaluator),
@@ -213,7 +213,7 @@ private:
 
   ASTDecl &declScope;
   SharedState &shared;
-  ParserParamEvaluator &evaluator;
+  ParserParamEvaluator evaluator;
 
   /// This is the index of the parameter we're trying to infer.
   size_t parameterIndex;
@@ -1701,13 +1701,12 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
       },
   };
 
-  auto parameterInferenceHook = [&](size_t index,
-                                    ArrayRef<TypedAttr> bindingsSoFar,
-                                    ParserParamEvaluator &evaluator) {
+  auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
+                                    const ParserParamEvaluator &evaluator) {
     if (PValue inferred =
             ParameterInferenceState(callable.paramBindings.declScope, shared,
-                                    index, evaluator, inferenceDiags,
-                                    allowImplicitConversions)
+                                    bindingsSoFar.size(), evaluator,
+                                    inferenceDiags, allowImplicitConversions)
                 .infer(signature, bindingsSoFar, callOperands,
                        variadicKwOperands))
       return inferred;
