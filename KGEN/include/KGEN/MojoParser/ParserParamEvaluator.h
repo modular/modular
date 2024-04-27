@@ -14,14 +14,12 @@
 #ifndef KGEN_MOJOPARSER_PARSERPARAMEVALUATOR_H
 #define KGEN_MOJOPARSER_PARSERPARAMEVALUATOR_H
 
-#include "KGEN/Interpreter/InterpreterInterface.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 
 namespace M::KGEN::LIT {
 class DeclResolver;
 
-class ParserParamEvaluator : public ParameterEvaluator,
-                             public InterpreterState {
+class ParserParamEvaluator : public ParameterEvaluator {
 public:
   ParserParamEvaluator(DeclResolver &resolver,
                        ArrayRef<ParamDeclAttr> paramDecls = {},
@@ -33,9 +31,6 @@ public:
   /// Attempt to evaluate a function call in a parameter context.
   FailureOr<TypedAttr> evaluateFunctionCall(SymbolRefAttr symbol,
                                             ArrayRef<Attribute> arguments);
-
-  /// Lookup the body of the referenced function using the DeclResolver.
-  ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
 
   /// Evaluate all constant 'apply' expressions within a type.
   Type refineType(Type type);
