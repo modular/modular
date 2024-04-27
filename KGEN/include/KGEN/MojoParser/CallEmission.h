@@ -155,7 +155,7 @@ public:
   /// with a list of existing bindings, and a parameter evaluator to be used to
   /// infer types.
   using ParameterInferenceHookTy =
-      function_ref<PValue(size_t, ArrayRef<TypedAttr>, ParserParamEvaluator &)>;
+      function_ref<PValue(ArrayRef<TypedAttr>, const ParserParamEvaluator &)>;
 
   /// Describe how closely the given parameter bindings match the specified
   /// parameters and call operands.

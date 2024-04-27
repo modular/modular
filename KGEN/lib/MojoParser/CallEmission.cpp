@@ -233,12 +233,12 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     if (diagEmitter.emitRedundantKeywords)
       diagEmitter.emitRedundantKeywords(posDiagNames);
     return {{}, fitness};
-  } else {
-    // Parameter inference and call emission rely on this function not failing
-    // early due to missing or too many positional parameters.
-    assert(posDiagRes == PosDiagResult::kValid &&
-           "positional parameter operand check failed unexpectedly");
   }
+
+  // Parameter inference and call emission rely on this function not failing
+  // early due to missing or too many positional parameters.
+  assert(posDiagRes == PosDiagResult::kValid &&
+         "positional parameter operand check failed unexpectedly");
 
   /// We will attempt to find a binding for every expected parameter.
   SmallVector<TypedAttr> newBindings;
@@ -267,11 +267,11 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   size_t numPosBindings = operands.posOperands.size();
 
   DefaultValueHandler defaultHandler(paramListAttr);
-  auto fulfillValue = [&](size_t idx, Type requestedType) -> PValue {
+  auto fulfillValue = [&](Type requestedType) -> PValue {
     // If we have a method to infer parameter values, invoke it to see if we
     // can get an inferred value for the parameter.
     if (parameterInferenceHook) {
-      if (PValue value = parameterInferenceHook(idx, newBindings, evaluator)) {
+      if (PValue value = parameterInferenceHook(newBindings, evaluator)) {
         assert(value.getType().mlirType == requestedType &&
                "inferred a parameter value of wrong type");
         return value;
@@ -283,6 +283,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     // fulfill it with an empty list.  We know it must be the last parameter
     // decl. If this isn't actually a variadic type, then we simply reached
     // the end of the parameter list.
+    size_t idx = newBindings.size();
     if (paramListAttr.isVariadic(idx))
       if (auto varType = dyn_cast<VariadicType>(requestedType))
         return VariadicAttr::get({}, varType);
@@ -343,7 +344,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         continue;
       }
 
-      if (PValue value = fulfillValue(idx, requestedType)) {
+      if (PValue value = fulfillValue(requestedType)) {
         setParamValue(value);
         continue;
       }
@@ -382,7 +383,7 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     const Binding &binding = operands.posOperands[posBindingIdx];
     if (isa<UnboundAttr>(binding.value)) {
       if (boundness == Boundness::Full) {
-        if (PValue value = fulfillValue(idx, requestedType)) {
+        if (PValue value = fulfillValue(requestedType)) {
           setParamValue(value);
           ++posBindingIdx;
           continue;
