@@ -86,7 +86,7 @@ public:
   /// an actual error occurred.
   static ErrorOr<EntitlementStore>
   generate(Config &config, const HTTPContextRef &httpCtx,
-           std::optional<std::string> accessTokenOr);
+           std::optional<std::string> accessTokenOr, bool openBrowser);
 
   /// Always open an EntitlementStore, and simply default to an empty
   /// EntitlementStore if we don't have the required infrastructure, we don't

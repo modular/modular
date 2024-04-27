@@ -21,6 +21,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/JSON.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include "RootCert.inc"
@@ -33,6 +34,8 @@
 #include <windows.h>
 
 #include <wincrypt.h>
+#else
+#include <unistd.h>
 #endif // _WIN32
 
 #include <chrono>
@@ -578,7 +581,8 @@ static ErrorOr<std::string> pollForOAuthTokens(HTTPClient &client,
 
 /// This function uses the OAuth Device Authorization Flow to do initial
 /// authentication and bootstrap the client certificate.
-static ErrorOr<std::string> authAndFetchToken(HTTPClient &client) {
+static ErrorOr<std::string> authAndFetchToken(HTTPClient &client,
+                                              bool openBrowser) {
   auto jsonOr = requestDeviceCode(client);
   if (jsonOr.isError())
     return jsonOr.takeError();
@@ -616,6 +620,39 @@ static ErrorOr<std::string> authAndFetchToken(HTTPClient &client) {
                << *verifURIOr << "\n\n"
                << "Verify using this code:\n"
                << *userCodeOr << "\n\n";
+#if defined(_MSC_VER)
+  const std::string program = "start";
+  const bool startAllowed = true;
+#elif defined(__APPLE__)
+  const std::string program = "open";
+  const bool startAllowed = geteuid() != 0;
+#else
+  const std::string program = "xdg-open";
+  // Let's make sure the Linux host has a display set and available.
+  bool displayAvailable = false;
+  const StringRef displayVars[3] = {"XDG_SESSION_DESKTOP", "DISPLAY",
+                                    "WAYLAND_DISPLAY"};
+  for (auto displayVar : displayVars)
+    displayAvailable =
+        displayAvailable || llvm::sys::Process::GetEnv(displayVar);
+  const bool startAllowed = geteuid() != 0 && displayAvailable;
+#endif
+  if (startAllowed && openBrowser) {
+    if (auto fullProgramOr = llvm::sys::findProgramByName(program)) {
+      SmallVector<StringRef> argVec = {program, *verifURIOr};
+      std::string errMsg;
+      int result = llvm::sys::ExecuteAndWait(
+          *fullProgramOr, argVec, std::nullopt, /*Redirects=*/{"", "", ""},
+          /*SecondsToWait=*/0, /*MemoryLimit=*/0, /*ErrMsg=*/&errMsg);
+      if (result == 0)
+        llvm::outs() << "A browser should be opened automatically.\n";
+      else {
+        llvm::errs() << "Failed to automatically open browser: " + errMsg +
+                            "\n";
+        llvm::outs() << "Please open the above link in a web browser.\n";
+      }
+    }
+  }
   llvm::outs() << "Waiting for confirmation...\n";
 
   return pollForOAuthTokens(client, std::chrono::seconds(*intervalOr),
@@ -909,7 +946,8 @@ private:
 
 ErrorOr<EntitlementStore>
 EntitlementStore::generate(Config &config, const HTTPContextRef &httpCtx,
-                           std::optional<std::string> accessTokenOr) {
+                           std::optional<std::string> accessTokenOr,
+                           bool openBrowser) {
   std::unique_ptr<HTTPClient> client = httpCtx->client();
 
   // Key files and certificate paths.
@@ -933,7 +971,7 @@ EntitlementStore::generate(Config &config, const HTTPContextRef &httpCtx,
     accessToken = *accessTokenOr;
   } else {
     // Fetch the token.
-    auto toksOr = authAndFetchToken(*client);
+    auto toksOr = authAndFetchToken(*client, openBrowser);
     if (toksOr.isError())
       return toksOr.takeError();
     accessToken = std::move(*toksOr);
