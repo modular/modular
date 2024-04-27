@@ -18,16 +18,65 @@ using namespace LIT;
 // ParserParamEvaluator
 //===----------------------------------------------------------------------===//
 
+namespace {
+/// This class is an implementation of InterpreterState that knows about parser
+/// state for function lookup.
+class ParserInterpreter : public InterpreterState {
+public:
+  ParserInterpreter(DeclResolver &resolver)
+      : InterpreterState(resolver.getContext()), resolver(resolver) {}
+
+  /// Lookup the body of the referenced function using the DeclResolver.
+  ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
+
+  DeclResolver &resolver;
+};
+} // namespace
+
+ErrorOr<Region *> ParserInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
+  ASTDecl *decl = resolver.getDeclForFuncSymbol(symbol);
+  if (!decl)
+    return Error("function not found: " + mlir::debugString(symbol));
+
+  // Fail if the function is parameterized.
+  if (failed(resolver.resolveSignature(*decl, decl->getLoc())))
+    return Error("failed to resolve function signature");
+
+  auto func = cast<LIT::FuncOp>(*decl);
+  if (func.getInlineLevel() == InlineLevel::Automatic ||
+      func.getInlineLevel() == InlineLevel::Never)
+    return Error("function is not always_inline");
+  LITSignatureType fullSig = func.getFullSignature();
+  if (!fullSig.getParamTypes().empty() ||
+      !fullSig.getResultParamTypes().empty())
+    return Error("function is parametric");
+
+  // Use of the interpreter's memory model requires a target specification,
+  // which the parser does not have.
+  if (fullSig.hasMemoryOnlyResult() || fullSig.hasInitSelfArg())
+    return Error("function has memory-only result");
+
+  // Make sure to fully resolve the body and everything within it.
+  if (failed(resolver.resolveFully(*decl, decl->getLoc())))
+    return Error("failed to fully resolve function");
+  return &func.getBodyRegion();
+}
+
+//===----------------------------------------------------------------------===//
+// ParserParamEvaluator
+//===----------------------------------------------------------------------===//
+
 ParserParamEvaluator::ParserParamEvaluator(DeclResolver &resolver,
                                            ArrayRef<ParamDeclAttr> paramDecls,
                                            ArrayRef<TypedAttr> paramValues)
-    : ParameterEvaluator(paramDecls, paramValues),
-      InterpreterState(resolver.getContext()), resolver(resolver) {}
+    : ParameterEvaluator(paramDecls, paramValues), resolver(resolver) {}
 
 FailureOr<TypedAttr>
 ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
                                            ArrayRef<Attribute> arguments) {
-  ErrorOr<Region *> body = lookupFunctionBody(symbol);
+  // Use the interpreter to execute the function call.
+  ParserInterpreter interpreter(resolver);
+  ErrorOr<Region *> body = interpreter.lookupFunctionBody(symbol);
   if (body.isError()) {
     // Swallow the error.
     DEBUG_WITH_TYPE("lit-parameter-evaluator", llvm::errs()
@@ -37,7 +86,7 @@ ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
   }
 
   ErrorTreeOr<SmallVector<Attribute>> result =
-      executeRegion(*body.takeValue(), arguments);
+      interpreter.executeRegion(*body.takeValue(), arguments);
   if (result.isError()) {
     // Swallow the error.
     DEBUG_WITH_TYPE("lit-parameter-evaluator",
@@ -69,36 +118,6 @@ ParserParamEvaluator::evaluateExpression(ParamOperatorAttr op) {
     arguments.push_back(input);
 
   return evaluateFunctionCall(ref.getSymbol(), arguments);
-}
-
-ErrorOr<Region *>
-ParserParamEvaluator::lookupFunctionBody(SymbolRefAttr symbol) {
-  ASTDecl *decl = resolver.getDeclForFuncSymbol(symbol);
-  if (!decl)
-    return Error("function not found: " + mlir::debugString(symbol));
-
-  // Fail if the function is parameterized.
-  if (failed(resolver.resolveSignature(*decl, decl->getLoc())))
-    return Error("failed to resolve function signature");
-
-  auto func = cast<LIT::FuncOp>(*decl);
-  if (func.getInlineLevel() == InlineLevel::Automatic ||
-      func.getInlineLevel() == InlineLevel::Never)
-    return Error("function is not always_inline");
-  LITSignatureType fullSig = func.getFullSignature();
-  if (!fullSig.getParamTypes().empty() ||
-      !fullSig.getResultParamTypes().empty())
-    return Error("function is parametric");
-
-  // Use of the interpreter's memory model requires a target specification,
-  // which the parser does not have.
-  if (fullSig.hasMemoryOnlyResult() || fullSig.hasInitSelfArg())
-    return Error("function has memory-only result");
-
-  // Make sure to fully resolve the body and everything within it.
-  if (failed(resolver.resolveFully(*decl, decl->getLoc())))
-    return Error("failed to fully resolve function");
-  return &func.getBodyRegion();
 }
 
 Type ParserParamEvaluator::refineType(Type type) {
