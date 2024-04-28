@@ -1272,6 +1272,35 @@ def KGEN_IntLiteralToFloatLiteralOp : KGENOp<"int_literal.to_float_literal",
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralIsa
+//===----------------------------------------------------------------------===//
+
+def KGEN_FloatLiteralIsa : KGENOp<"float_literal.isa", [Pure]> {
+  let summary = "Check if the float_literal is of the given special value.";
+  let description = [{
+    The `kgen.float_literal.isa` operator checks if the input value is of the
+    given special value, including 'normal'.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.float_literal.isa normal %arg0
+    %1 = kgen.float_literal.isa nan %arg1
+    %2 = kgen.float_literal.isa nan %arg2
+    ```
+  }];
+
+  let arguments = (ins
+    KGEN_FloatLiteralSpecialValuesAttr:$special,
+    KGEN_FloatLiteralType:$input
+  );
+  let results = (outs I1:$result);
+
+  let assemblyFormat = "$special $input attr-dict";
+  let hasFolder = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // FloatLiteralCmp
 //===----------------------------------------------------------------------===//
 

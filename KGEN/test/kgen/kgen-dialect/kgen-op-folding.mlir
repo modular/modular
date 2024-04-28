@@ -25,6 +25,51 @@ kgen.func @int_literal_to_float_literal() -> !kgen.float_literal {
 
 // -----
 
+// CHECK-LABEL: @float_literal_isa
+kgen.func @float_literal_isa() -> (
+  i1, i1, i1, i1, i1, i1, i1, i1, i1, i1
+) {
+  %f0 = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<0|1>>
+  %nz = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_zero>>
+  %inf = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<inf>>
+  %ninf = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_inf>>
+  %nan = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<nan>>
+  // CHECK-DAG: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+  // CHECK-DAG: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+  // CHECK: kgen.return
+
+  // CHECK-SAME: [[TRUE]]
+  %b1 = kgen.float_literal.isa normal %f0
+  // CHECK-SAME: [[FALSE]]
+  %b2 = kgen.float_literal.isa neg_zero %f0
+
+  // CHECK-SAME: [[TRUE]]
+  %b3 = kgen.float_literal.isa neg_zero %nz
+  // CHECK-SAME: [[FALSE]]
+  %b4 = kgen.float_literal.isa normal %nz
+
+  // CHECK-SAME: [[TRUE]]
+  %b5 = kgen.float_literal.isa inf %inf
+  // CHECK-SAME: [[FALSE]]
+  %b6 = kgen.float_literal.isa normal %inf
+
+  // CHECK-SAME: [[TRUE]]
+  %b7 = kgen.float_literal.isa neg_inf %ninf
+  // CHECK-SAME: [[FALSE]]
+  %b8 = kgen.float_literal.isa normal %ninf
+
+  // CHECK-SAME: [[TRUE]]
+  %b9 = kgen.float_literal.isa nan %nan
+  // CHECK-SAME: [[FALSE]]
+  %b10 = kgen.float_literal.isa normal %nan
+
+
+  kgen.return %b1, %b2, %b3, %b4, %b5, %b6, %b7, %b8, %b9, %b10
+    : i1, i1, i1, i1, i1, i1, i1, i1, i1, i1
+}
+
+// -----
+
 // CHECK-LABEL: @float_literal_cmp_normal_diff
 kgen.func @float_literal_cmp_normal_diff() -> (i1, i1, i1, i1, i1, i1) {
   %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<5|3>>
