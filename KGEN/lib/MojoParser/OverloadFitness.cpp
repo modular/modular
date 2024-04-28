@@ -308,16 +308,26 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       if (failed(
               matchTypes(actual.getElementType(), expected.getElementType())))
         return failure();
-      if (failed(matchParams(actual.getLifetime(), expected.getLifetime())))
-        return failure();
+      if (failed(matchParams(actual.getLifetime(), expected.getLifetime()))) {
+        // The lifetimes are allowed to mismatch due to mut->immut casts.
+        if (!canConvertWithRebind(actual.getLifetimeType(),
+                                  expected.getLifetimeType(), shared))
+          return failure();
+      }
       return matchAddressSpace(actual.getAddressSpace(),
                                expected.getAddressSpace());
     }
 
   // Handle LifetimeType.
   if (auto actual = dyn_cast<LifetimeType>(actualType))
-    if (auto expected = dyn_cast<LifetimeType>(expectedType))
-      return matchParams(actual.isMutable(), expected.isMutable());
+    if (auto expected = dyn_cast<LifetimeType>(expectedType)) {
+      // Try to match up the types so we infer parameters properly.
+      if (succeeded(matchParams(actual.isMutable(), expected.isMutable())))
+        return success();
+      // If that fails, check compatibility, actualType might be mutable=true,
+      // and expected might be mutable=false, and this is fine.
+      return success(canConvertWithRebind(actualType, expectedType, shared));
+    }
 
   // Handle PointerType.
   if (auto actual = dyn_cast<PointerType>(actualType))
