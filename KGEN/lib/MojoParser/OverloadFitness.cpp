@@ -179,21 +179,23 @@ namespace {
 /// information about the specified parameter.
 class ParameterInferenceState {
 public:
-  ParameterInferenceState(ASTDecl &declScope, SharedState &shared, size_t index,
+  ParameterInferenceState(ASTDecl &declScope, SharedState &shared,
+                          ArrayRef<TypedAttr> bindingsSoFar,
                           const ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
                           bool allowImplicitConversions)
       : declScope(declScope), shared(shared), evaluator(evaluator),
-        parameterIndex(index), paramIndexRefDepth(0), diags(diags),
-        allowImplicitConversions(allowImplicitConversions) {}
+        inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()),
+        diags(diags), allowImplicitConversions(allowImplicitConversions) {}
 
-  /// Given an incomplete parameter binding set for a call to the specified
-  /// signature, try to infer the value of the next 'decl' parameter.  This
-  /// should always return null /without/ an error if it cannot be inferred, and
-  /// return a specific value if unambiguously determined.
-  PValue infer(LITSignatureType signature, ArrayRef<TypedAttr> bindingsSoFar,
-               const CallOperands &callOperands,
-               const KeywordOperands &variadicKwOperands);
+  LogicalResult infer(LITSignatureType signature,
+                      const CallOperands &callOperands,
+                      const KeywordOperands &variadicKwOperands);
+
+  /// After inferring parameter values, this allows access to the results.
+  TypedAttr getInferredValue(size_t idx) const {
+    return idx < inferredParams.size() ? inferredParams[idx] : TypedAttr();
+  }
 
 private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
@@ -207,7 +209,7 @@ private:
   LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand,
                                 ASTType expectedType,
                                 ArgConvention expectedConvention);
-  void addFailure(InferenceFailure &&info) {
+  void addFailure(size_t parameterIndex, InferenceFailure &&info) {
     diags.addFailure(parameterIndex, curArgExpr, std::move(info));
   }
 
@@ -215,11 +217,11 @@ private:
   SharedState &shared;
   ParserParamEvaluator evaluator;
 
-  /// This is the index of the parameter we're trying to infer.
-  size_t parameterIndex;
-  /// If non-null, we've already inferred a value for this parameter.
-  TypedAttr inferredValue;
-  size_t paramIndexRefDepth;
+  /// One entry for each parameter from the original binding list.  If
+  /// non-null, we've already inferred a value for that parameter.
+  SmallVector<TypedAttr> inferredParams;
+
+  size_t paramIndexRefDepth = 0;
   ParameterInferenceDiagnostics &diags;
 
   // True if implicit conversions in argument lists are permitted.
@@ -383,7 +385,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   // conversions that cause us to see i1->Bool and similar things here, etc.
   // as such, we can't treat conversion errors for unknown things as failures.
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN TYPES:\n"; actualType.dump();
-             expectedType.dump(); llvm::errs() << parameterIndex);
+             expectedType.dump(); llvm::errs() << "\n");
   return failure();
 }
 
@@ -424,13 +426,16 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
     return success();
   }
 
-  // If the expected value is the parameter declaration in question, remember
-  // this value!
+  // If the expected value is the parameter declaration remember the binding!
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
     if (ire.getDepth() == paramIndexRefDepth && !ire.getIsResult() &&
-        ire.getIndex() == parameterIndex) {
+        // We need to infer in lexical order because we may have dependent types
+        // between parameters.  The evaluator implicitly keeps track of how many
+        // we have inferred.
+        ire.getIndex() <= evaluator.getNumInputParams()) {
       // Compare the rebound types to handle dependent types.
       Type expectedType = evaluator.getReboundType(expectedAttr.getType());
+      size_t parameterIndex = ire.getIndex();
 
       // If the types don't agree, attempt an implicit conversion between the
       // actual value and the expected type.
@@ -447,18 +452,31 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
       // If that didn't work, then we fail due to the type mismatch.
       if (actualAttr.getType() != expectedType) {
         // Otherwise, we failed to infer the parameter. Record this failure.
-        addFailure(TypeConflictFailure{expectedType, actualAttr.getType()});
+        addFailure(parameterIndex,
+                   TypeConflictFailure{expectedType, actualAttr.getType()});
         return failure();
       }
 
-      // Otherwise we succeeded in finding a value, see if it is compatible with
-      // other values we've inferred.
+      // If we didn't already have a slot for this, make space.
+      if (inferredParams.size() <= parameterIndex)
+        inferredParams.resize(parameterIndex + 1);
+      TypedAttr &inferredValue = inferredParams[parameterIndex];
+
+      // Otherwise we succeeded in finding a value, see if it is compatible
+      // with other values we've inferred.
       if (inferredValue && inferredValue != actualAttr) {
-        addFailure(ValueConflictFailure{inferredValue, actualAttr});
+        addFailure(parameterIndex,
+                   ValueConflictFailure{inferredValue, actualAttr});
         return failure();
       }
 
       inferredValue = actualAttr;
+
+      // If we found the next missing parameter value for the evaluator, install
+      // it so we can remap dependent types more effectively.
+      if (parameterIndex == evaluator.getNumInputParams())
+        evaluator.addInputValue(inferredValue);
+
       return success();
     }
     // If this is some parameter other than the one we're inferring, assume it
@@ -511,7 +529,7 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
   }
 
   LLVM_DEBUG(llvm::errs() << "CANNOT INFER UNKNOWN ATTRS:\n"; actualAttr.dump();
-             expectedAttr.dump(); llvm::errs() << parameterIndex << "\n");
+             expectedAttr.dump(); llvm::errs() << "\n");
   return failure();
 }
 
@@ -838,9 +856,8 @@ getPartiallySpecializedSignature(LITSignatureType signature,
 /// signature, try to infer the value of the next 'decl' parameter.  This
 /// should always return null /without/ an error if it cannot be inferred, and
 /// return a specific value if unambiguously determined.
-PValue
+LogicalResult
 ParameterInferenceState::infer(LITSignatureType signature,
-                               ArrayRef<TypedAttr> bindingsSoFar,
                                const CallOperands &callOperands,
                                const KeywordOperands &variadicKwOperands) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
@@ -852,11 +869,8 @@ ParameterInferenceState::infer(LITSignatureType signature,
   // being applied to the input types.  This can make them more concrete and
   // help with inferring dependent types based on already-bound parameters.
   signature =
-      getPartiallySpecializedSignature(signature, bindingsSoFar, evaluator);
-
-  // This keeps track of whether we already substituted in the parameter value
-  // we found into the signature.  We do this once per analysis.
-  bool refinedBasedOnValue = false;
+      getPartiallySpecializedSignature(signature, inferredParams, evaluator);
+  size_t numAlreadySpecialized = inferredParams.size();
 
   // Match up the operands provided by the call to the input arguments.  Keep in
   // mind that the callee signature might not match at all, so we have to be
@@ -875,15 +889,26 @@ ParameterInferenceState::infer(LITSignatureType signature,
     // allows us to handle dependent argument types like:
     //    fn foo[dt: DType](p: DTypePointer[dt], v: Scalar[p.type]):
     // where the type of 'v' depends on 'dt' being inferred.
-    if (inferredValue && !refinedBasedOnValue) {
-      SmallVector<TypedAttr> effectiveBindings(bindingsSoFar.begin(),
-                                               bindingsSoFar.end());
-      effectiveBindings.push_back(inferredValue);
+    //
+    // FIXME: Don't do this, it makes it more difficult to diagnose conflicting
+    // values.  We should switch over to using the evaluator instead.
+    if (numAlreadySpecialized < inferredParams.size() &&
+        inferredParams[numAlreadySpecialized]) {
+      // Take all the bindings that are now known.  Be careful about gaps.
+      SmallVector<TypedAttr> effectiveBindings(inferredParams);
+      for (auto it = effectiveBindings.begin(), e = effectiveBindings.end();
+           it != e; ++it) {
+        // Drop any unknown parameter values and everything after it.
+        if (!*it) {
+          effectiveBindings.erase(it, effectiveBindings.end());
+          break;
+        }
+      }
+
       signature = getPartiallySpecializedSignature(signature, effectiveBindings,
                                                    evaluator);
       defaultHandler = DefaultValueHandler(signature.getArgListAttrs());
-      // Only do this once.
-      refinedBasedOnValue = true;
+      numAlreadySpecialized = effectiveBindings.size();
     }
 
     // Note that 'signature' changes the type as we go, so don't use
@@ -900,7 +925,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
         // value type cannot be a reference type is because `Reference` does not
         // (and in fact cannot) conform to `CollectionElement`.
         if (failed(inferOneOperand(operand, valTy, ArgConvention::OwnedInReg)))
-          return {};
+          return failure();
       }
       continue;
     }
@@ -913,7 +938,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
       while (posOperandIdx != numPosOperands)
         if (failed(inferOneOperand(posOperands[posOperandIdx++], varArgsEltType,
                                    expectedVariadic.getConvention())))
-          return {};
+          return failure();
       continue;
     }
 
@@ -938,7 +963,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
           shared.emitWarning(operand.expr->getLoc(),
                              "could not infer parameter type for this value, "
                              "because it is not concrete");
-          return {};
+          return failure();
         }
 
         // Infer nonmaterializable types as their materialization target.
@@ -949,12 +974,12 @@ ParameterInferenceState::infer(LITSignatureType signature,
             toPush, metatype ? metatype : TypeType::get(shared.getContext()));
         if (!emitter.canImplicitlyConvertToType({actualAttr, node},
                                                 elementType))
-          return {};
+          return failure();
         // Perform a conversion (e.g. from a concrete to trait type) as needed.
         PValue result = emitter.emitPValue({actualAttr, node},
                                            EC_TypeParamValue, elementType);
         if (!result)
-          return {};
+          return failure();
         types.push_back(result);
       }
 
@@ -962,7 +987,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
       auto variadicType = cast<VariadicType>(packType.getVariadic().getType());
       if (failed(matchParams(VariadicAttr::get(types, variadicType),
                              packType.getVariadic())))
-        return {};
+        return failure();
       continue;
     }
 
@@ -973,7 +998,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
               callOperands.findKwArg(signature.getArgName(expectedArgIdx))) {
         if (failed(inferOneOperand(*kwOperandOr, expectedType,
                                    expectedConvention)))
-          return {};
+          return failure();
         continue;
       }
 
@@ -985,12 +1010,12 @@ ParameterInferenceState::infer(LITSignatureType signature,
       if (TypedAttr defaultOr = defaultHandler.getDefault(expectedArgIdx)) {
         if (failed(inferOneOperand({defaultOr, curArgExpr}, expectedType,
                                    expectedConvention)))
-          return {};
+          return failure();
         continue;
       }
 
       // Otherwise we have an argument count mismatch, just fail.
-      return {};
+      return failure();
     }
 
     // In the typical case, this argument isn't varargs or a pack, so just check
@@ -998,20 +1023,15 @@ ParameterInferenceState::infer(LITSignatureType signature,
     // expected argument to check.
     if (failed(inferOneOperand(posOperands[posOperandIdx++], expectedType,
                                expectedConvention)))
-      return {};
+      return failure();
   }
 
   // If we have left over operands, then this signature cannot match.
   if (posOperandIdx != numPosOperands && !signature.hasParamVarArgs())
-    return {};
+    return failure();
 
   // We succeed iff we inferred a value for this parameter.
-  if (inferredValue)
-    return inferredValue;
-
-  // Otherwise complain about not seeing it.
-  addFailure(NotFoundFailure());
-  return {};
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1703,13 +1723,21 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
 
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
-    if (PValue inferred =
-            ParameterInferenceState(callable.paramBindings.declScope, shared,
-                                    bindingsSoFar.size(), evaluator,
-                                    inferenceDiags, allowImplicitConversions)
-                .infer(signature, bindingsSoFar, callOperands,
-                       variadicKwOperands))
-      return inferred;
+    // Infer information from this signature holistically.
+    ParameterInferenceState inferrence(callable.paramBindings.declScope, shared,
+                                       bindingsSoFar, evaluator, inferenceDiags,
+                                       allowImplicitConversions);
+    if (failed(inferrence.infer(signature, callOperands, variadicKwOperands)))
+      return PValue();
+
+    // See if we inferred information about the next value.
+    if (auto result = inferrence.getInferredValue(bindingsSoFar.size()))
+      return PValue(result);
+
+    // If we succeeded inference but didn't get a value for this parameter, then
+    // the parameter must not be present: complain.
+    inferenceDiags.addFailure(bindingsSoFar.size(), callable.expr,
+                              NotFoundFailure());
     return PValue();
   };
   auto [newBindings, bindingFitness] = callable.paramBindings.verifyBindings(

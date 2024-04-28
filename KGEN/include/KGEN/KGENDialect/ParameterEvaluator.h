@@ -108,6 +108,9 @@ public:
   /// Set the relative input depth.
   void setInputDepth(size_t depth) { inputDepth = depth; }
 
+  /// Return the number of input parameter values that have been added.
+  size_t getNumInputParams() const { return inputParamValues.size(); }
+
 private:
   // CRTP methods.
   Type doReplace(Type type, size_t rootDepth);
