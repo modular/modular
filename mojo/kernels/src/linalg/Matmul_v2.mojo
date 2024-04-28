@@ -33,6 +33,7 @@ from .MatmulUtils import (
     get_partitioned_matmul,
     packA_i8mm,
     get_mm_config,
+    use_vnni_fn,
     use_i8mm_fn,
 )
 from memory import memset_zero, stack_allocation
@@ -74,17 +75,14 @@ trait InnerMatmulKernel(Copyable):
         skip_boundary_check: Bool,
     ](
         self,
-        c0: NDBuffer,
-        a0: NDBuffer,
-        b0_packed: NDBuffer,
-        global_offset: GemmShape,  # TODO: This was inverted with below. Now OK.
+        c: NDBuffer,
+        a: NDBuffer,
+        b_packed: NDBuffer[_, 3, _],
+        global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: StaticIntTuple[2],
     ):
         ...
-
-    # fn __init__(inout self):
-    #     ...
 
 
 fn elementwise_epilogue_c_tile[
@@ -109,36 +107,36 @@ fn elementwise_epilogue_c_tile[
 
 
 fn matmul_inner_loop[
-    config: MatmulConfig,
     a_row_size: Int,
     pack_inner_size: Int,
     skip_col_bound: Bool,
+    saturated_vnni: Bool,
 ](
-    c: NDBuffer[config.c_type, 2, config.c_shape],
-    a: NDBuffer[config.a_type, 2, config.a_shape],
-    b_packed: NDBuffer[config.b_type, 3, config.packed_shape],
+    c: NDBuffer,
+    a: NDBuffer,
+    b_packed: NDBuffer[_, 3, _],
     global_offset: GemmShape,
     global_bound: GemmShape,
     tile_n_k: StaticIntTuple[2],
 ):
-    alias use_vnni = config.use_vnni
-    alias use_i8mm = config.use_i8mm
+    alias use_vnni = use_vnni_fn[a.type, b_packed.type, c.type]()
+    alias use_i8mm = use_i8mm_fn[a.type, b_packed.type, c.type]()
 
     @parameter
     if use_i8mm:
-        Inner_matmul_i8mm[config,]().__inner_matmul__[
+        Inner_matmul_i8mm().__inner_matmul__[
             a_row_size, pack_inner_size, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif has_neon() and not use_vnni and not use_i8mm:
-        Inner_matmul_neon[config,]().__inner_matmul__[
+        Inner_matmul_neon().__inner_matmul__[
             a_row_size, pack_inner_size, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif not use_vnni and not has_neon():
-        Inner_matmul_default[config,]().__inner_matmul__[
+        Inner_matmul_default().__inner_matmul__[
             a_row_size, pack_inner_size, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif use_vnni:
-        Inner_matmul_vnni[config,]().__inner_matmul__[
+        Inner_matmul_vnni[saturated_vnni]().__inner_matmul__[
             a_row_size, pack_inner_size, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     else:
@@ -826,7 +824,7 @@ fn _submatmul_sequential_sync[
     @parameter
     if use_i8mm:
         _submatmul_sequential_sync[config, elementwise_lambda_fn](
-            Inner_matmul_i8mm[config](),
+            Inner_matmul_i8mm(),
             c,
             a,
             b,
@@ -836,7 +834,7 @@ fn _submatmul_sequential_sync[
         )
     elif has_neon() and not use_vnni and not use_i8mm:
         _submatmul_sequential_sync[config, elementwise_lambda_fn](
-            Inner_matmul_neon[config](),
+            Inner_matmul_neon(),
             c,
             a,
             b,
@@ -846,7 +844,7 @@ fn _submatmul_sequential_sync[
         )
     elif not use_vnni and not has_neon():
         _submatmul_sequential_sync[config, elementwise_lambda_fn](
-            Inner_matmul_default[config](),
+            Inner_matmul_default(),
             c,
             a,
             b,
@@ -856,7 +854,7 @@ fn _submatmul_sequential_sync[
         )
     elif use_vnni:
         _submatmul_sequential_sync[config, elementwise_lambda_fn](
-            Inner_matmul_vnni[config](),
+            Inner_matmul_vnni[config.saturated_vnni](),
             c,
             a,
             b,

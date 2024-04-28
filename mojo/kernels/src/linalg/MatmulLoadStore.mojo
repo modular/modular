@@ -11,389 +11,308 @@ from utils.index import Index
 
 @always_inline
 fn _initialize_c_tile_default[
+    simd_size: Int,
     a_row_size: Int,
     pack_inner_size: Int,
-](c0_local: NDBuffer):
+](c_local: NDBuffer[_, 2, DimList(a_row_size, pack_inner_size)]):
     """Utility function on the inner loop. Initializes a local c buffer with
     all zeros.
 
     """
-    alias simd_size = simdwidthof[c0_local.type]()
-    alias c_type = c0_local.type
-    var c_local = rebind[
-        NDBuffer[
-            c_type,
-            2,
-            DimList(a_row_size, pack_inner_size),
-        ]
-    ](c0_local)
 
     @always_inline
     @parameter
     fn outer_body[idx0: Int, idx1: Int]():
         c_local.store[
             width=simd_size,
-            alignment = alignof[SIMD[c_type, simd_size]](),
+            alignment = alignof[SIMD[c_local.type, simd_size]](),
         ](
             Index(idx0, idx1 * simd_size),
-            SIMD[c_type, simd_size](0),
+            SIMD[c_local.type, simd_size](0),
         )
 
     unroll[outer_body, a_row_size, pack_inner_size // simd_size]()
 
 
-@always_inline
-fn _load_c_tile_default[
-    a_row_size: Int, pack_inner_size: Int, skip_boundary_check: Bool
-](
-    c_ptr: DTypePointer,
-    c_stride: Int,
-    c0_local: NDBuffer,
-    tile_n_idx: Int,
-    c_bound: StaticIntTuple[2],
-):
-    """Utility function on the inner loop. Loads a local c_buffer with the
-    value stored in the output buffer space, given the indices within the
-    tile being processed.
-
-    Args:
-        c_ptr: pointer to the C matrix buffer.
-        c_stride: strice of the C matrix.
-        c0_local: pre-allocated local buffer for c partial sums.
-        tile_n_idx: n coordinate within the current processing tile.
-        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
-    """
-    alias simd_size = simdwidthof[c0_local.type]()
-    alias c_type = c0_local.type
-    var c_local = rebind[
-        NDBuffer[
-            c_type,
-            2,
-            DimList(a_row_size, pack_inner_size),
-        ]
-    ](c0_local)
-    var c_ptr_loc = rebind[DTypePointer[c_type]](c_ptr.offset(tile_n_idx))
-
-    @always_inline
-    @parameter
-    fn body[idx0: Int, idx1: Int]():
-        var c_data: SIMD[c_type, simd_size] = 0
-        if skip_boundary_check or (
-            idx1 * simd_size + simd_size <= c_bound[1] - tile_n_idx
-        ):
-            # Use simd load if all within bound
-            c_data = c_ptr_loc.load[width=simd_size](idx1 * simd_size)
-        elif idx1 * simd_size <= c_bound[1]:
-            # Use partial load if row inbound but col not
-            #  in simd bound.
-            c_data = partial_simd_load[simd_size](
-                c_ptr_loc.offset(idx1 * simd_size),
-                0,
-                c_bound[1] - tile_n_idx - idx1 * simd_size,
-                0,
-            )
-        else:
-            # Fill zero if row out of bound
-            c_data = 0
-
-        # Store data to local buffer.
-        c_local.store(Index(idx0, idx1 * simd_size), c_data)
-
-        @parameter
-        if idx1 == pack_inner_size // simd_size - 1:
-            c_ptr_loc = c_ptr_loc.offset(c_stride)
-
-    unroll[body, a_row_size, pack_inner_size // simd_size]()
-
-
-@always_inline
-fn _store_c_tile_default[
-    a_row_size: Int, pack_inner_size: Int, skip_boundary_check: Bool
-](
-    c_ptr: DTypePointer,
-    c_stride: Int,
-    c0_local: NDBuffer,
-    tile_n_idx: Int,
-    c_bound: StaticIntTuple[2],
-):
-    """Utility function on the inner loop. Stores the value of a local c
-    buffer to the corresponding position in the output buffer space.
-
-    Args:
-        c_ptr: pointer to the C matrix buffer.
-        c_stride: strice of the C matrix.
-        c0_local: pre-allocated local buffer for c partial sums.
-        tile_n_idx: n coordinate within the current processing tile.
-        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
-    """
-    alias simd_size = simdwidthof[c0_local.type]()
-    alias c_type = c0_local.type
-    var c_local = rebind[
-        NDBuffer[
-            c_type,
-            2,
-            DimList(a_row_size, pack_inner_size),
-        ]
-    ](c0_local)
-    var c_ptr_loc = rebind[DTypePointer[c_type]](c_ptr.offset(tile_n_idx))
-
-    @always_inline
-    @parameter
-    fn body[idx0: Int, idx1: Int]():
-        var c_data = c_local.load[width=simd_size](
-            Index(idx0, idx1 * simd_size)
-        )
-        if skip_boundary_check or (
-            idx1 * simd_size + simd_size <= c_bound[1] - tile_n_idx
-        ):
-            # Use simd store if all within bound
-            c_ptr_loc.offset(idx1 * simd_size).store[width=simd_size](c_data)
-        elif idx1 * simd_size <= c_bound[1]:
-            # Use partial store if col not in simd bound.
-            partial_simd_store(
-                c_ptr_loc.offset(idx1 * simd_size),
-                0,
-                c_bound[1] - tile_n_idx - idx1 * simd_size,
-                c_data,
-            )
-
-        @parameter
-        if idx1 == pack_inner_size // simd_size - 1:
-            c_ptr_loc = c_ptr_loc.offset(c_stride)
-
-    unroll[body, a_row_size, pack_inner_size // simd_size]()
-
-
-@always_inline
-fn _load_c_tile_i8mm[
-    a_row_size: Int,
-    pack_inner_size: Int,
+struct LoadStore_default[
+    type: DType,
+    simd_size: Int,
     skip_boundary_check: Bool,
-    single_row_i8mm: Bool = False,
-](
-    c_ptr: DTypePointer,
-    c_stride: Int,
-    c0_local: NDBuffer,
-    tile_n_idx: Int,
-    c_bound: StaticIntTuple[2],
-):
-    """Utility function on the inner loop. Loads a local c_buffer with the
-    value stored in the output buffer space, given the indices within the
-    tile being processed.
-
-    Args:
-        c_ptr: pointer to the C matrix buffer.
-        c_stride: strice of the C matrix.
-        c0_local: pre-allocated local buffer for c partial sums.
-        tile_n_idx: n coordinate within the current processing tile.
-        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
-    """
-    alias simd_size = simdwidthof[c0_local.type]()
-    alias c_type = c0_local.type
-
-    var c_local = rebind[
-        NDBuffer[
-            c_type,
-            2,
-            DimList(a_row_size, pack_inner_size),
-        ]
-    ](c0_local)
-    var c_ptr_loc = rebind[DTypePointer[c_type]](c_ptr.offset(tile_n_idx))
+    tile_rows: Int,
+    tile_columns: Int,
+]:
+    var output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)]
 
     @always_inline
-    @parameter
-    fn body[idx0: Int, idx1: Int]():
-        var c_data: SIMD[c_type, simd_size] = 0
-        if skip_boundary_check or (idx1 * 2 + 2 <= c_bound[1] - tile_n_idx):
-            var t0 = c_ptr_loc.load[width=2](
-                c_stride * (2 * idx0 + 0) + 2 * idx1
-            )
-            var t1 = c_ptr_loc.load[width=2](
-                c_stride * (2 * idx0 + 1) + 2 * idx1
-            ) if not single_row_i8mm else SIMD[c_type, 2](0)
-            c_data = rebind[SIMD[c_type, simd_size]](t0.join(t1))
-        elif idx1 * 2 <= c_bound[1]:
-            var t0 = partial_simd_load[2](
-                c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
-                0,
-                c_bound[1] - tile_n_idx - idx1 * 2,
-                0,
-            )
-            var t1 = partial_simd_load[2](
-                c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
-                0,
-                c_bound[1] - tile_n_idx - idx1 * 2,
-                0,
-            ) if not single_row_i8mm else SIMD[c_type, 2](0)
-            c_data = rebind[SIMD[c_type, simd_size]](t0.join(t1))
-
-        c_local.store[width=simd_size](
-            Index(idx0, idx1 * simd_size),
-            rebind[SIMD[c_type, simd_size]](c_data),
-        )
-
-    unroll[body, a_row_size, pack_inner_size // simd_size]()
-
-
-@always_inline
-fn _store_c_tile_i8mm[
-    a_row_size: Int,
-    pack_inner_size: Int,
-    skip_boundary_check: Bool,
-    single_row_i8mm: Bool = False,
-](
-    c_ptr: DTypePointer,
-    c_stride: Int,
-    c0_local: NDBuffer,
-    tile_n_idx: Int,
-    c_bound: StaticIntTuple[2],
-):
-    """Utility function on the inner loop. Stores the value of a local c
-    buffer to the corresponding position in the output buffer space.
-
-    Args:
-        c_ptr: pointer to the C matrix buffer.
-        c_stride: strice of the C matrix.
-        c0_local: pre-allocated local buffer for c partial sums.
-        tile_n_idx: n coordinate within the current processing tile.
-        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
-    """
-
-    alias simd_size = simdwidthof[c0_local.type]()
-    alias c_type = c0_local.type
-    var c_local = rebind[
-        NDBuffer[
-            c_type,
+    fn __init__(inout self):
+        var output_tile = NDBuffer[
+            type,
             2,
-            DimList(a_row_size, pack_inner_size),
-        ]
-    ](c0_local)
-    var c_ptr_loc = rebind[DTypePointer[c_type]](c_ptr.offset(tile_n_idx))
+            DimList(tile_rows, tile_columns),
+        ].aligned_stack_allocation[alignof[SIMD[type, simd_size]]()]()
+        self.output_tile = output_tile
 
     @always_inline
-    @parameter
-    fn body[idx0: Int, idx1: Int]():
-        var c_data = c_local.load[width=simd_size](
-            Index(idx0, idx1 * simd_size)
-        )
-        if skip_boundary_check or (idx1 * 2 + 2 <= c_bound[1] - tile_n_idx):
-            c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1).store[
-                width=2
-            ](c_data.slice[2]())
+    fn _initialize_c_tile(self):
+        _initialize_c_tile_default[simd_size](self.output_tile)
+
+    @always_inline
+    fn _load_c_tile(
+        self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        var c_ptr_loc = c_ptr.offset(tile_n_idx)
+
+        @always_inline
+        @parameter
+        fn body[idx0: Int, idx1: Int]():
+            var c_data: SIMD[c_ptr.type, simd_size] = 0
+            if skip_boundary_check or (
+                idx1 * simd_size + simd_size <= c_bound[1] - tile_n_idx
+            ):
+                # Use simd load if all within bound
+                c_data = c_ptr_loc.load[width=simd_size](idx1 * simd_size)
+            elif idx1 * simd_size <= c_bound[1]:
+                # Use partial load if row inbound but col not
+                #  in simd bound.
+                c_data = partial_simd_load[simd_size](
+                    c_ptr_loc.offset(idx1 * simd_size),
+                    0,
+                    c_bound[1] - tile_n_idx - idx1 * simd_size,
+                    0,
+                )
+            else:
+                # Fill zero if row out of bound
+                c_data = 0
+
+            # Store data to local buffer.
+            self.output_tile.store(Index(idx0, idx1 * simd_size), c_data)
 
             @parameter
-            if not single_row_i8mm:
-                c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1).store[
-                    width=2
-                ](c_data.slice[2, offset=2]())
-        elif idx1 * 2 <= c_bound[1]:
-            partial_simd_store(
-                c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
-                0,
-                c_bound[1] - tile_n_idx - idx1 * 2,
-                c_data.slice[2](),
-            )
+            if idx1 == tile_columns // simd_size - 1:
+                c_ptr_loc = c_ptr_loc.offset(c_stride)
 
-            @parameter
-            if not single_row_i8mm:
+        unroll[body, tile_rows, tile_columns // simd_size]()
+
+    @always_inline
+    fn _store_c_tile(
+        self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        var c_ptr_loc = c_ptr.offset(tile_n_idx)
+
+        @always_inline
+        @parameter
+        fn body[idx0: Int, idx1: Int]():
+            var c_data = self.output_tile.load[width=simd_size](
+                Index(idx0, idx1 * simd_size)
+            )
+            if skip_boundary_check or (
+                idx1 * simd_size + simd_size <= c_bound[1] - tile_n_idx
+            ):
+                # Use simd store if all within bound
+                c_ptr_loc.offset(idx1 * simd_size).store[width=simd_size](
+                    c_data
+                )
+            elif idx1 * simd_size <= c_bound[1]:
+                # Use partial store if col not in simd bound.
                 partial_simd_store(
+                    c_ptr_loc.offset(idx1 * simd_size),
+                    0,
+                    c_bound[1] - tile_n_idx - idx1 * simd_size,
+                    c_data,
+                )
+
+            @parameter
+            if idx1 == tile_columns // simd_size - 1:
+                c_ptr_loc = c_ptr_loc.offset(c_stride)
+
+        unroll[body, tile_rows, tile_columns // simd_size]()
+
+
+struct LoadStore_i8mm[
+    type: DType,
+    simd_size: Int,
+    skip_boundary_check: Bool,
+    single_row: Bool,
+    tile_rows: Int,
+    tile_columns: Int,
+]:
+    var output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)]
+
+    @always_inline
+    fn __init__(inout self):
+        var output_tile = NDBuffer[
+            type,
+            2,
+            DimList(tile_rows, tile_columns),
+        ].aligned_stack_allocation[alignof[SIMD[type, simd_size]]()]()
+        self.output_tile = output_tile
+
+    @always_inline
+    fn _initialize_c_tile(self):
+        _initialize_c_tile_default[simd_size](self.output_tile)
+
+    @always_inline
+    fn _load_c_tile(
+        self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        var c_ptr_loc = rebind[DTypePointer[type]](c_ptr.offset(tile_n_idx))
+
+        @always_inline
+        @parameter
+        fn body[idx0: Int, idx1: Int]():
+            var c_data: SIMD[type, simd_size] = 0
+            if skip_boundary_check or (idx1 * 2 + 2 <= c_bound[1] - tile_n_idx):
+                var t0 = c_ptr_loc.load[width=2](
+                    c_stride * (2 * idx0 + 0) + 2 * idx1
+                )
+                var t1 = c_ptr_loc.load[width=2](
+                    c_stride * (2 * idx0 + 1) + 2 * idx1
+                ) if not single_row else SIMD[type, 2](0)
+                c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
+            elif idx1 * 2 <= c_bound[1]:
+                var t0 = partial_simd_load[2](
+                    c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
+                    0,
+                    c_bound[1] - tile_n_idx - idx1 * 2,
+                    0,
+                )
+                var t1 = partial_simd_load[2](
                     c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
                     0,
                     c_bound[1] - tile_n_idx - idx1 * 2,
-                    c_data.slice[2, offset=2](),
+                    0,
+                ) if not single_row else SIMD[type, 2](0)
+                c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
+
+            self.output_tile.store[width=simd_size](
+                Index(idx0, idx1 * simd_size),
+                rebind[SIMD[type, simd_size]](c_data),
+            )
+
+        unroll[body, tile_rows, tile_columns // simd_size]()
+
+    @always_inline
+    fn _store_c_tile(
+        self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        var c_ptr_loc = rebind[DTypePointer[type]](c_ptr.offset(tile_n_idx))
+
+        @always_inline
+        @parameter
+        fn body[idx0: Int, idx1: Int]():
+            var c_data = self.output_tile.load[width=simd_size](
+                Index(idx0, idx1 * simd_size)
+            )
+            if skip_boundary_check or (idx1 * 2 + 2 <= c_bound[1] - tile_n_idx):
+                c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1).store[
+                    width=2
+                ](c_data.slice[2]())
+
+                @parameter
+                if not single_row:
+                    c_ptr_loc.offset(
+                        c_stride * (2 * idx0 + 1) + 2 * idx1
+                    ).store[width=2](c_data.slice[2, offset=2]())
+            elif idx1 * 2 <= c_bound[1]:
+                partial_simd_store(
+                    c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
+                    0,
+                    c_bound[1] - tile_n_idx - idx1 * 2,
+                    c_data.slice[2](),
                 )
 
-    unroll[body, a_row_size, pack_inner_size // simd_size]()
+                @parameter
+                if not single_row:
+                    partial_simd_store(
+                        c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
+                        0,
+                        c_bound[1] - tile_n_idx - idx1 * 2,
+                        c_data.slice[2, offset=2](),
+                    )
+
+        unroll[body, tile_rows, tile_columns // simd_size]()
 
 
-@always_inline
-fn _load_c_tile_neon[
-    a_row_size: Int,
-    pack_inner_size: Int,
-](
-    c_ptr: DTypePointer,
-    c_stride: Int,
-    c0_local: NDBuffer,
-    tile_n_idx: Int,
-    c_bound: StaticIntTuple[2],
-):
-    """Utility function on the inner loop. Loads a local c_buffer with the
-    value stored in the output buffer space, given the indices within the
-    tile being processed.
+struct LoadStore_neon[
+    type: DType,
+    simd_size: Int,
+    skip_boundary_check: Bool,
+    tile_rows: Int,
+    tile_columns: Int,
+]:
+    var output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)]
 
-    Args:
-        c_ptr: pointer to the C matrix buffer.
-        c_stride: strice of the C matrix.
-        c0_local: pre-allocated local buffer for c partial sums.
-        tile_n_idx: n coordinate within the current processing tile.
-        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
-    """
-    alias simd_size = simdwidthof[c0_local.type]()
-    alias c_type = c0_local.type
-
-    var c_local = rebind[
-        NDBuffer[
-            c_type,
+    @always_inline
+    fn __init__(inout self):
+        var output_tile = NDBuffer[
+            type,
             2,
-            DimList(a_row_size, pack_inner_size),
-        ]
-    ](c0_local)
-    var c_ptr_loc = rebind[DTypePointer[c_type]](c_ptr.offset(tile_n_idx))
+            DimList(tile_rows, tile_columns),
+        ].aligned_stack_allocation[alignof[SIMD[type, simd_size]]()]()
+        self.output_tile = output_tile
 
-    _initialize_c_tile_default[
-        a_row_size,
-        pack_inner_size,
-    ](c_local)
-    return LoadStoreOutputTile[
-        c_type, simd_size, a_row_size, pack_inner_size, True
-    ].run(
-        c_local,
-        c_ptr_loc,
-        c_stride,
-        min(c_bound[1] - tile_n_idx, pack_inner_size),
-    )
+    @always_inline
+    fn _initialize_c_tile(self):
+        _initialize_c_tile_default[simd_size](self.output_tile)
 
+    @always_inline
+    fn _load_c_tile(
+        self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        var c_ptr_loc = rebind[DTypePointer[type]](c_ptr.offset(tile_n_idx))
 
-@always_inline
-fn _store_c_tile_neon[
-    a_row_size: Int,
-    pack_inner_size: Int,
-](
-    c_ptr: DTypePointer,
-    c_stride: Int,
-    c0_local: NDBuffer,
-    tile_n_idx: Int,
-    c_bound: StaticIntTuple[2],
-):
-    """Utility function on the inner loop. Stores the value of a local c
-    buffer to the corresponding position in the output buffer space.
+        _initialize_c_tile_default[
+            simd_size,
+            tile_rows,
+            tile_columns,
+        ](self.output_tile)
+        return LoadStoreOutputTile[
+            type, simd_size, tile_rows, tile_columns, True
+        ].run(
+            self.output_tile,
+            c_ptr_loc,
+            c_stride,
+            min(c_bound[1] - tile_n_idx, tile_columns),
+        )
 
-    Args:
-        c_ptr: pointer to the C matrix buffer.
-        c_stride: strice of the C matrix.
-        c0_local: pre-allocated local buffer for c partial sums.
-        tile_n_idx: n coordinate within the current processing tile.
-        c_bound: Boundary of valid output space within the local tile, in (a_row_size, TileN).
-    """
-    alias simd_size = simdwidthof[c0_local.type]()
-    alias c_type = c0_local.type
-    var c_local = rebind[
-        NDBuffer[
-            c_type,
-            2,
-            DimList(a_row_size, pack_inner_size),
-        ]
-    ](c0_local)
-    var c_ptr_loc = rebind[DTypePointer[c_type]](c_ptr.offset(tile_n_idx))
+    @always_inline
+    fn _store_c_tile(
+        self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        var c_ptr_loc = rebind[DTypePointer[type]](c_ptr.offset(tile_n_idx))
 
-    return LoadStoreOutputTile[
-        c_type, simd_size, a_row_size, pack_inner_size, False
-    ].run(
-        c_local,
-        c_ptr_loc,
-        c_stride,
-        min(c_bound[1] - tile_n_idx, pack_inner_size),
-    )
+        return LoadStoreOutputTile[
+            type, simd_size, tile_rows, tile_columns, False
+        ].run(
+            self.output_tile,
+            c_ptr_loc,
+            c_stride,
+            min(c_bound[1] - tile_n_idx, tile_columns),
+        )
 
 
 struct LoadStoreOutputTile[

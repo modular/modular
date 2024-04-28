@@ -16,12 +16,9 @@ from buffer.list import DimList
 from .MatmulUtils import (
     GemmShape,
     MatmulConfig,
+    get_matmul_prefetch_b_distance_k,
 )
-from .MatmulLoadStore import (
-    _initialize_c_tile_default,
-    _load_c_tile_i8mm,
-    _store_c_tile_i8mm,
-)
+from .MatmulLoadStore import LoadStore_i8mm
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from math import align_up
@@ -35,66 +32,17 @@ from utils.loop import unroll
 # Define a struct that conforms to the InnerMatmulKernel trait that
 # implements the I8MM microkernel.
 @value
-struct Inner_matmul_i8mm[
-    config: MatmulConfig,
-](InnerMatmulKernel):
+struct Inner_matmul_i8mm(InnerMatmulKernel):
     # Parameters for global reference.
 
-    fn _initialize_c_tile[
-        a_row_size: Int,
-        pack_inner_size: Int,
-    ](self, c0_local: NDBuffer,):
-        _initialize_c_tile_default[a_row_size, pack_inner_size](c0_local)
-
     @always_inline
-    fn _load_c_tile[
-        a_row_size: Int,
-        pack_inner_size: Int,
-        skip_boundary_check: Bool,
-        single_row_i8mm: Bool = False,
+    fn _accumulate[
+        simd_size: Int, a_row_size: Int, pack_inner_size: Int
     ](
         self,
-        c_ptr: DTypePointer[config.c_type],
-        c_stride: Int,
-        c0_local: NDBuffer,
-        tile_n_idx: Int,
-        c_bound: StaticIntTuple[2],
-    ):
-        _load_c_tile_i8mm[
-            a_row_size, pack_inner_size, skip_boundary_check, single_row_i8mm
-        ](c_ptr, c_stride, c0_local, tile_n_idx, c_bound)
-
-    @always_inline
-    fn _store_c_tile[
-        a_row_size: Int,
-        pack_inner_size: Int,
-        skip_boundary_check: Bool,
-        single_row_i8mm: Bool = False,
-    ](
-        self,
-        c_ptr: DTypePointer[config.c_type],
-        c_stride: Int,
-        c0_local: NDBuffer,
-        tile_n_idx: Int,
-        c_bound: StaticIntTuple[2],
-    ):
-        _store_c_tile_i8mm[
-            a_row_size, pack_inner_size, skip_boundary_check, single_row_i8mm
-        ](
-            c_ptr,
-            c_stride,
-            c0_local,
-            tile_n_idx,
-            c_bound,
-        )
-
-    fn _accumulate_[
-        a_row_size: Int, pack_inner_size: Int
-    ](
-        self,
-        a: NDBuffer[config.a_type, 2, config.a_shape],
-        b_packed: NDBuffer[config.b_type, 3, config.packed_shape],
-        c0_local: NDBuffer,
+        a: NDBuffer,
+        b_packed: NDBuffer[_, 3, _],
+        c_local: NDBuffer[_, 2, DimList(a_row_size, pack_inner_size)],
         global_offset: GemmShape,
         tile_n_k_idx: StaticIntTuple[2],
     ):
@@ -104,20 +52,11 @@ struct Inner_matmul_i8mm[
         Args:
             a: TODO.
             b_packed: TODO.
-            c0_local: Pre-allocated local buffer for c partial sums.
+            c_local: Pre-allocated local buffer for c partial sums.
             global_offset: TODO.
             tile_n_k_idx: Index tuple with (n, k) coordinates within the current
                 processing tile to index the packed B matrix.
         """
-
-        alias simd_size = config.simd_size
-        var c_local = rebind[
-            NDBuffer[
-                config.c_type,
-                2,
-                DimList(a_row_size, pack_inner_size),
-            ]
-        ](c0_local)
 
         var n_outer_idx = tile_n_k_idx[0] // (pack_inner_size // 2)
         var kl = tile_n_k_idx[1]
@@ -130,9 +69,11 @@ struct Inner_matmul_i8mm[
         )
 
         # Prefetch B matrix.
+        alias prefetch_distance = get_matmul_prefetch_b_distance_k()
+
         @parameter
-        if config.prefetch_b_distance_k > 0:
-            alias prefetch_offset = config.prefetch_b_distance_k * pack_inner_size
+        if prefetch_distance > 0:
+            alias prefetch_offset = prefetch_distance * pack_inner_size
 
             @unroll
             for idx in range(pack_inner_size // simd_size):
@@ -146,7 +87,7 @@ struct Inner_matmul_i8mm[
 
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
-                alias alignment = alignof[SIMD[config.c_type, simd_size]]()
+                alias alignment = alignof[SIMD[c_local.type, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
                 var b_val = b_ptr.offset(16 * idx1).load[
                     width = simd_size * 4, alignment=alignment
@@ -160,6 +101,7 @@ struct Inner_matmul_i8mm[
                     c_idx, c_val
                 )
 
+    @always_inline
     fn __inner_matmul__[
         a_row_size: Int,
         pack_inner_size: Int,
@@ -167,9 +109,9 @@ struct Inner_matmul_i8mm[
         skip_boundary_check: Bool,
     ](
         self,
-        c0: NDBuffer,
-        a0: NDBuffer,
-        b0_packed: NDBuffer,
+        c: NDBuffer,
+        a: NDBuffer,
+        b_packed: NDBuffer[_, 3, _],
         global_offset: GemmShape,
         global_bound: GemmShape,
         tile_n_k: StaticIntTuple[2],
@@ -177,19 +119,12 @@ struct Inner_matmul_i8mm[
         """Utility function on the inner loop. Run the inner kernel on the whole
         (a_row_size2, TileN, TileK) tile.
         """
+        alias simd_size = simdwidthof[c.type]()
 
         alias a_row_size2 = a_row_size // 2 if a_row_size != 1 else a_row_size
-        alias single_row_i8mm = (a_row_size == 1)
-
-        var a = rebind[NDBuffer[config.a_type, 2, config.a_shape]](a0)
-
-        var c = rebind[NDBuffer[config.c_type, 2, config.c_shape]](c0)
+        alias single_row = (a_row_size == 1)
 
         var c_stride = c.dim[1]()
-
-        var b_packed = rebind[NDBuffer[config.b_type, 3, config.packed_shape]](
-            b0_packed
-        )
 
         var c_ptr = c.data.offset(global_offset.M * c_stride + global_offset.N)
 
@@ -197,33 +132,34 @@ struct Inner_matmul_i8mm[
             global_offset.M, global_offset.N
         )
 
-        # Allocate accumulation buffer.
-        var c_local = NDBuffer[
-            config.c_type,
-            2,
-            DimList(a_row_size, pack_inner_size),
-        ].aligned_stack_allocation[
-            alignof[SIMD[config.c_type, config.simd_size]]()
+        var acc = LoadStore_i8mm[
+            c.type,
+            simd_size,
+            skip_boundary_check,
+            single_row,
+            a_row_size2,
+            pack_inner_size,
         ]()
 
         for idx_n in range(0, tile_n_k[0], pack_inner_size // 2):
             if global_offset.K == 0:
-                self._initialize_c_tile[a_row_size2, pack_inner_size](c_local)
+                acc._initialize_c_tile()
             else:
-                self._load_c_tile[
-                    a_row_size2,
-                    pack_inner_size,
-                    skip_boundary_check,
-                    single_row_i8mm,
-                ](c_ptr, c_stride, c_local, idx_n, c_bound)
+                acc._load_c_tile(
+                    rebind[DTypePointer[c.type]](c_ptr),
+                    c_stride,
+                    idx_n,
+                    c_bound,
+                )
             var kl = align_up(tile_n_k[1], 8)
             for idx_k in range(0, kl, 8):
-                self._accumulate_[a_row_size2, pack_inner_size](
-                    a, b_packed, c_local, global_offset, Index(idx_n, idx_k)
+                self._accumulate[simd_size](
+                    a,
+                    b_packed,
+                    acc.output_tile,
+                    global_offset,
+                    Index(idx_n, idx_k),
                 )
-            self._store_c_tile[
-                a_row_size2,
-                pack_inner_size,
-                skip_boundary_check,
-                single_row_i8mm,
-            ](c_ptr, c_stride, c_local, idx_n, c_bound)
+            acc._store_c_tile(
+                rebind[DTypePointer[c.type]](c_ptr), c_stride, idx_n, c_bound
+            )
