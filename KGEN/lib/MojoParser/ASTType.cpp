@@ -778,12 +778,12 @@ namespace {
 // value.
 class ParamIndexRefAttrFinder {
 public:
-  bool hasReferences(TypedAttr value) { return hasReferencesImpl(value); }
-  bool hasReferences(Type type) { return hasReferencesImpl(type); }
+  bool hasReferences(TypedAttr value) { return hasReferencesImpl(value, 0); }
+  bool hasReferences(Type type) { return hasReferencesImpl(type, 0); }
 
 private:
   template <typename T>
-  bool hasReferencesImpl(T value) {
+  bool hasReferencesImpl(T value, size_t depth) {
     if (!value)
       return false;
 
@@ -792,13 +792,21 @@ private:
     if (it != cached.end())
       return it->second;
 
+    // Signatures push a parameter scope.
+    if constexpr (std::is_base_of_v<Type, T>)
+      if (isa<ParameterScopeTypeInterface>(value))
+        ++depth;
+
     bool hasReference = false;
+    // Check to see if this is locally an index with the right depth.
     if constexpr (std::is_base_of_v<Attribute, T>)
-      hasReference |= isa<ParamIndexRefAttr>(value);
+      if (auto indexRef = dyn_cast<ParamIndexRefAttr>(value))
+        if (indexRef.getDepth() == depth)
+          hasReference = true;
 
     value.walkImmediateSubElements(
-        [&](Attribute attr) { hasReference |= hasReferencesImpl(attr); },
-        [&](Type type) { hasReference |= hasReferencesImpl(type); });
+        [&](Attribute attr) { hasReference |= hasReferencesImpl(attr, depth); },
+        [&](Type type) { hasReference |= hasReferencesImpl(type, depth); });
 
     cached[value.getAsOpaquePointer()] = hasReference;
     return hasReference;
