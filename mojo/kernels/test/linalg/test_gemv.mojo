@@ -5,17 +5,17 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs, isclose
+from math import isclose
 from random import rand
 from sys.info import simdwidthof
 
 import benchmark
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.list import Dim
 from LinAlg.Gemv import gemv, naive_gemv
 from LinAlg.Matmul import matmul
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index
 
 alias alignment = 64
 
