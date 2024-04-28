@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import abs
-
 from buffer import Buffer
 from memory.unsafe import DTypePointer
 
