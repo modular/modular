@@ -6,7 +6,6 @@
 # RUN: %mojo %s
 
 from math import (
-    abs,
     cos,
     factorial,
     isfinite,
@@ -18,6 +17,7 @@ from math import (
     rotate_bits_right,
     rotate_left,
     rotate_right,
+    round,
     sin,
 )
 from math.limit import inf, neginf
@@ -100,17 +100,6 @@ fn test_sin() raises:
 
 fn test_cos() raises:
     assert_almost_equal(cos(Float32(1.0)), 0.540302276611)
-
-
-fn test_abs() raises:
-    assert_equal(abs(Float32(1.0)), 1)
-    assert_equal(abs(Float32(-1.0)), 1)
-    assert_equal(abs(Float32(0.0)), 0)
-    assert_equal(abs(ComplexFloat32 {re: 0, im: 0}), 0)
-    assert_equal(abs(ComplexFloat32 {re: 1, im: 0}), 1)
-    assert_equal(abs(ComplexFloat32 {re: 0, im: 1}), 1)
-    assert_almost_equal(abs(ComplexFloat32 {re: -1, im: -1}), 1.41421)
-    assert_almost_equal(abs(ComplexFloat32 {re: -93, im: -23}), 95.801)
 
 
 fn test_factorial() raises:
@@ -313,15 +302,29 @@ def test_isclose():
     )
 
 
+fn round10(x: Float64) -> Float64:
+    return (round(Float64(x * 10)) / 10).value
+
+
+def test_float_literal_round10():
+    assert_equal(round10(FloatLiteral(4.4) % 0.5), 0.4)
+    assert_equal(round10(FloatLiteral(-4.4) % 0.5), 0.1)
+    assert_equal(round10(FloatLiteral(4.4) % -0.5), -0.1)
+    assert_equal(round10(FloatLiteral(-4.4) % -0.5), -0.4)
+    assert_equal(round10(3.1 % 1.0), 0.1)
+
+
 def main():
     test_inf()
     test_nan()
     test_sin()
     test_cos()
-    test_abs()
     test_factorial()
     test_rotate()
     test_rotate_bits()
     test_boole()
     test_copysign()
     test_isclose()
+
+    # TODO: move this to test_float_literal.mojo when round is moved to builtin.
+    test_float_literal_round10()
