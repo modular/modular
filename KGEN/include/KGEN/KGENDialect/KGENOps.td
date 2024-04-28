@@ -1304,7 +1304,7 @@ def KGEN_FloatLiteralCmp : KGENOp<"float_literal.cmp", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_FloatLiteralBinop : KGENOp<"float_literal.binop", [Pure]> {
-  let summary = "Binary operations for float_literals";
+  let summary = "Binary operations for float_literals.";
   let description = [{
     The `kgen.float_literal.binop` operator does standard arithmetic binary
     operations on `!kgen.float_literal` values that return a

@@ -374,21 +374,20 @@ bool IntLiteralAttr::isConstant() const { return true; }
 //===----------------------------------------------------------------------===//
 
 Attribute FloatLiteralAttr::parse(AsmParser &p, Type type) {
-  if (p.parseLess()) {
+  if (p.parseLess())
     p.emitError(p.getCurrentLocation(), "expected '<' character");
-  }
   std::optional<IPRational> rational;
   FloatLiteralSpecialValuesAttr specialAttr;
 
   // Try to parse rational number first, then fall back to parsing special
   // value.
   APInt numerator;
-  APInt denominator;
   OptionalParseResult isRational = p.parseOptionalInteger(numerator);
   if (isRational.has_value() && !isRational.value()) {
     // MLIR's AsmParser doesn't have `parseSlash` or a more generic way to parse
     // literal strings/characters, so we will use the pipe "|" character
     // instead. https://github.com/modularml/modular/issues/23387
+    APInt denominator;
     if (p.parseVerticalBar() || p.parseInteger(denominator)) {
       p.emitError(p.getCurrentLocation(),
                   "expected rational number with pipe in parens");
@@ -401,12 +400,10 @@ Attribute FloatLiteralAttr::parse(AsmParser &p, Type type) {
     rational = IPRational(numerator, denominator);
     specialAttr = FloatLiteralSpecialValuesAttr::get(
         p.getContext(), FloatLiteralSpecialValues::Normal);
-  } else {
-    if (p.parseCustomAttributeWithFallback(specialAttr, ::mlir::Type{})) {
-      p.emitError(p.getCurrentLocation(),
-                  "expected FloatLiteralSpecialValueAttr");
-      return {};
-    }
+  } else if (p.parseCustomAttributeWithFallback(specialAttr)) {
+    p.emitError(p.getCurrentLocation(),
+                "expected FloatLiteralSpecialValueAttr");
+    return {};
   }
 
   if (p.parseGreater()) {
