@@ -6,7 +6,6 @@
 
 from collections import Optional
 from math import (
-    abs,
     add,
     ceil,
     erf,
@@ -25,14 +24,11 @@ from math import (
     tanh,
 )
 
-from algorithm.reduction import _reduce_generator, reduce_shape
+from algorithm.reduction import _reduce_generator
 from buffer.list import DimList
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn.activations import relu
-from nn.gather_scatter import Axis
-from nn.gather_scatter import gather as _gather
-from nn.gather_scatter import gather_shape
 from register import *
 from runtime.tracing import Trace, TraceLevel
 

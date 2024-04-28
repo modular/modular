@@ -10,7 +10,6 @@ from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from register import *
 from nn.activations import relu
-from math import abs
 
 # Dummy kernels to test fundamental mechanisms without overwriting the normal
 # kernels. We duplicate some of the kernels here, allowing FileCheck tests to

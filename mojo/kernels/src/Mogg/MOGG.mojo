@@ -6,7 +6,6 @@
 
 from collections.vector import InlinedFixedVector
 from math import (
-    abs,
     add,
     ceil,
     cos,
