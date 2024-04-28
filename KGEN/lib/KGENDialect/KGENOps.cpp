@@ -1262,6 +1262,18 @@ OpFoldResult IntLiteralToFloatLiteralOp::fold(FoldAdaptor adaptor) {
 }
 
 //===----------------------------------------------------------------------===//
+// FloatLiteralIsa
+//===----------------------------------------------------------------------===//
+
+OpFoldResult FloatLiteralIsa::fold(FoldAdaptor adaptor) {
+  if (auto input = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getInput())) {
+    return BoolAttr::get(input.getContext(),
+                         input.getSpecial().getValue() == adaptor.getSpecial());
+  }
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
 // FloatLiteralCmp
 //===----------------------------------------------------------------------===//
 
