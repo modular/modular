@@ -29,8 +29,8 @@ kgen.func @int_literal_to_float_literal() -> !kgen.float_literal {
 kgen.func @float_literal_cmp_normal_diff() -> (i1, i1, i1, i1, i1, i1) {
   %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<5|3>>
   %fb = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<8|3>>
-  // CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
-  // CHECK: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+  // CHECK-DAG: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+  // CHECK-DAG: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
   // CHECK: kgen.return
 
   // Test normal cases with different normal numbers
@@ -55,8 +55,8 @@ kgen.func @float_literal_cmp_normal_diff() -> (i1, i1, i1, i1, i1, i1) {
 // CHECK-LABEL: @float_literal_cmp_normal_same
 kgen.func @float_literal_cmp_normal_same() -> (i1, i1, i1, i1, i1, i1) {
   %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<5|3>>
-  // CHECK: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
-  // CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+  // CHECK-DAG: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+  // CHECK-DAG: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
   // CHECK: kgen.return
 
   // Test normal cases with the same normal number
@@ -85,8 +85,8 @@ kgen.func @float_literal_cmp_neg_zero() -> (i1, i1, i1, i1, i1, i1, i1, i1, i1) 
   %f0 = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<0|1>>
   %nz = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_zero>>
 
-  // CHECK: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
-  // CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+  // CHECK-DAG: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+  // CHECK-DAG: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
   // CHECK: kgen.return
 
   // Test negative zero cases
@@ -125,8 +125,8 @@ kgen.func @float_literal_cmp_inf() -> (i1, i1, i1, i1, i1, i1, i1, i1) {
   %ninf = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<neg_inf>>
   %nan = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<nan>>
 
-  // CHECK: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
-  // CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+  // CHECK-DAG: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+  // CHECK-DAG: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
 
   // CHECK: kgen.return
   // Some infinity cases
@@ -156,8 +156,8 @@ kgen.func @float_literal_cmp_inf() -> (i1, i1, i1, i1, i1, i1, i1, i1) {
 // CHECK-LABEL: @float_literal_cmp_nan
 kgen.func @float_literal_cmp_nan() -> (i1, i1, i1, i1, i1, i1) {
   %nan = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<nan>>
-  // CHECK: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
-  // CHECK: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
+  // CHECK-DAG: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
+  // CHECK-DAG: [[TRUE:%.*]] = kgen.param.constant: i1 = <1>
   // CHECK: kgen.return
 
   // Some NAN cases

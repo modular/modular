@@ -1355,8 +1355,8 @@ static bool floatLiteralCmpHelper(const FloatLiteralCmpPred &pred,
 }
 
 OpFoldResult FloatLiteralCmp::fold(FoldAdaptor adaptor) {
-  FloatLiteralAttr lAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getLhs());
-  FloatLiteralAttr rAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getRhs());
+  auto lAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getLhs());
+  auto rAttr = dyn_cast_or_null<FloatLiteralAttr>(adaptor.getRhs());
   if (!lAttr || !rAttr)
     return {};
   FloatLiteralSpecialValues lSpecial = lAttr.getSpecial().getValue();
@@ -1411,8 +1411,8 @@ floatLiteralAdd(FloatLiteralSpecialValues lSpecial,
 
 static std::tuple<FloatLiteralSpecialValues, IPRational>
 floatLiteralSub(FloatLiteralSpecialValues lSpecial,
-                FloatLiteralSpecialValues rSpecial, IPRational lhs,
-                IPRational rhs) {
+                FloatLiteralSpecialValues rSpecial, const IPRational &lhs,
+                const IPRational &rhs) {
   switch (lSpecial) {
   case FloatLiteralSpecialValues::NegZero:
     // When adding zeroes, the signs are basically XORed, like with
