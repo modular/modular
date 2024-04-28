@@ -6,7 +6,7 @@
 # REQUIRES: linux
 # RUN: %mojo  -I%S/../.. %s | FileCheck %s
 
-from math import abs, tanh
+from math import tanh
 from random import seed
 
 from tensor import Tensor, TensorShape, randn
