@@ -115,6 +115,10 @@ public:
   ParamBindings(ExprEmitter &emitter);
   ParamBindings(ASTDecl &declScope, SharedState &shared)
       : declScope(declScope), shared(shared) {}
+  ParamBindings(const ParamBindings &) = default;
+
+  /// Replace our bindings with another set.
+  void operator=(ParamBindings &&other);
 
   /// Create a (possibly partially unbound) set of bindings for the given type.
   /// This can be used to initialize the binding set for methods. If the given
@@ -145,10 +149,6 @@ public:
   /// Add a bound value for a keyword parameter binding. The caller is
   /// responsible for ensuring the keyword is not already present.
   void add(const ExprNode *expr, TypedAttr value, StringAttr name);
-
-  /// Replace a positional binding at the given index. The callee must ensure
-  /// that a binding already exists at the index before replacing it.
-  void replace(size_t idx, const ExprNode *expr, TypedAttr value);
 
   /// The type of the function called when performing parameter inference. The
   /// hook will be provided the index of the parameter to be inferred, along
