@@ -4,17 +4,15 @@
 #
 # ===----------------------------------------------------------------------=== #
 from math import (
-    abs,
     align_down,
     ceil,
     div_ceil,
-    floor,
     is_power_of_2,
     max,
     min,
     roundeven,
 )
-from sys.info import alignof, has_avx2, has_neon_int8_dotprod, sizeof
+from sys.info import has_avx2, has_neon_int8_dotprod, sizeof
 
 from algorithm import sync_parallelize
 from buffer import NDBuffer
