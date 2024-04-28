@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import List
-from math import abs, iota, max, min
+from math import iota, max, min
 
 from algorithm.sort import _quicksort
 from buffer import NDBuffer

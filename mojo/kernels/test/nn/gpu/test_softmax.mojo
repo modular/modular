@@ -6,21 +6,19 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import iota, isclose, abs
+from math import isclose
 from random import rand, random_float64, seed
-from sys.info import simdwidthof
 
-from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer import NDBuffer
+from buffer.list import DimList
 from gpu.host import Context, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
-    _memset,
 )
-from nn.softmax import softmax, softmax_2_pass
+from nn.softmax import softmax
 from testing import assert_true
 
 

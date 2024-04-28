@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import abs, div_ceil, isclose, min
+from math import div_ceil, isclose
 from random import rand
 from sys.info import simdwidthof
 
@@ -14,7 +14,6 @@ from buffer.list import Dim, DimList
 from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
 from nn.conv_utils import (
     ConvShape,
-    get_conv_tile_shape,
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )

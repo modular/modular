@@ -5,9 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import abs, div_ceil, isclose, min
-from random import rand, seed
-from sys import external_call
+from math import div_ceil, isclose
+from random import rand
 from sys.info import num_physical_cores, simdwidthof
 
 from buffer import NDBuffer
@@ -24,11 +23,9 @@ from nn.conv_utils import (
     ConvShape,
     get_conv_num_partitions,
     get_conv_num_tasks,
-    get_conv_tile_shape,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
-from nn.image import Image2DLayout, ImageData, ImageShape
 
 from utils.index import Index, StaticIntTuple
 

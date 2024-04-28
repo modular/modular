@@ -6,7 +6,7 @@
 # REQUIRES: linux
 # RUN: %mojo  -I%S/.. %s | FileCheck %s
 
-from math import abs, iota
+from math import iota
 from random import seed
 
 from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1

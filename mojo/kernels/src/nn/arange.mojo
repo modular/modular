@@ -4,11 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import abs, ceil, div_ceil, iota
-from sys.info import simdwidthof
+from math import ceil, iota
 
 from buffer import NDBuffer
-from buffer.list import DimList
 from register import *
 
 from utils.index import StaticIntTuple
