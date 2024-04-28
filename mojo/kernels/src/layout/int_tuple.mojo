@@ -246,7 +246,7 @@ fn inner_product(a: IntTuple, b: IntTuple) -> Int:
 fn abs(t: IntTuple) -> IntTuple:
     @parameter
     fn int_abs(x: Int) -> Int:
-        return math.abs(x)
+        return x.__abs__()
 
     return apply[int_abs](t)
 

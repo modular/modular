@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import max, min, abs
+from math import max, min
 
 
 fn shiftr(a: Int, s: Int) -> Int:
