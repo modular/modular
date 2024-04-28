@@ -59,6 +59,18 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
 ParamBindings::ParamBindings(ExprEmitter &emitter)
     : ParamBindings(emitter.declScope, emitter.shared) {}
 
+/// Replace our bindings with another set.  This can't be done with operator=
+/// because we have
+void ParamBindings::operator=(ParamBindings &&other) {
+  posBindings = std::move(other.posBindings);
+  kwBindings = std::move(other.kwBindings);
+  defaultTypeParams = other.defaultTypeParams;
+  numCtadParams = other.numCtadParams;
+}
+
+/// Create a (possibly partially unbound) set of bindings for the given type.
+/// This can be used to initialize the binding set for methods. If the given
+/// type is not a parametric user defined type, this returns empty bindings.
 ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
                                                 SharedState &shared,
                                                 ASTType type) {
@@ -97,10 +109,6 @@ void ParamBindings::add(const ExprNode *expr, TypedAttr value,
   auto [_, addedNew] =
       kwBindings.try_emplace(name, Binding{expr, value, /*typeChecked=*/false});
   assert(addedNew && "duplicate keyword parameter");
-}
-
-void ParamBindings::replace(size_t idx, const ExprNode *expr, TypedAttr value) {
-  posBindings[idx] = {expr, value, /*typeChecked=*/false};
 }
 
 //===----------------------------------------------------------------------===//
@@ -1094,8 +1102,8 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
     return OverloadSet(declScope, shared, expr, syntax,
                        lookupResult.isErroneous());
 
-  return OverloadSet(methodName, resultDecls,
-                     ParamBindings::getForDeclaredType(declScope, shared, type),
+  // Otherwise we succeed! Form and return the overload set.
+  return OverloadSet(methodName, resultDecls, ParamBindings(declScope, shared),
                      expr, syntax, lookupResult.isErroneous());
 }
 
@@ -1409,9 +1417,9 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
   return emitIndirectCall(callee, operands, dest, callNode);
 }
 
-/// Emit a call to __new__ or __init__, returning an instance of the specified
-/// type.  If `allowImplicitConversion` is true, the provided args are allowed
-/// to implicitly convert to the expectations of the constructor signatures.
+/// Emit a call to __init__, returning an instance of the specified type.  If
+/// `allowImplicitConversion` is true, the provided args are allowed to
+/// implicitly convert to the expectations of the constructor signatures.
 CValue ExprEmitter::emitConstructorCall(ASTType type,
                                         const CallOperands &callOperands,
                                         const ExprNode *expr, CallSyntax syntax,
@@ -1426,6 +1434,11 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
       OverloadSet::lookup(declScope, shared, type, "__init__", expr, syntax);
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(),
                               callOperands);
+
+  // Set the parameter bindings for the type we're creating - they can't be
+  // inferred since from the result type.
+  callee.paramBindings =
+      ParamBindings::getForDeclaredType(declScope, shared, type);
 
   // Init gets a self argument passed in as the first argument by-ref.
   ArrayRef<ASTExprAnd<AnyValue>> origPosOperands = callOperands.posOperands;

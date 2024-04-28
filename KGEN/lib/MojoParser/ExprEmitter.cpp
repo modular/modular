@@ -877,6 +877,12 @@ std::pair<PValue, bool> ExprEmitter::canConstructType(
     auto inferType = requiredType.getWithUnknownParametersReplaced(shared);
     auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
     posOperands.insert(posOperands.begin(), {PValue(attr), expr});
+  } else {
+    // For a deprecated '-> Self' initializer, we need to put the parameters
+    // from the Self target into the parameter bindings set because they cannot
+    // be inferred.
+    callee.paramBindings =
+        ParamBindings::getForDeclaredType(declScope, shared, requiredType);
   }
 
   CallOperands adjOperands(posOperands, operands.kwOperands);
@@ -1044,9 +1050,14 @@ PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
       }
       // We know the stub will provide exactly one overload for each allowed
       // trait requirement.
-      PValue callee = OverloadSet::lookup(declScope, shared, boundWrapper, name,
-                                          value.expr, CallSyntax::kMethodCall)
-                          .getIfPValue();
+      auto ovSet = OverloadSet::lookup(declScope, shared, boundWrapper, name,
+                                       value.expr, CallSyntax::kMethodCall);
+      // Manually bind the type into the parameter list so the vtable entries
+      // are specialized on the MLIR type.
+      ovSet.paramBindings =
+          ParamBindings::getForDeclaredType(declScope, shared, boundWrapper);
+
+      PValue callee = ovSet.getIfPValue();
       if (!callee) {
         emitError(loc, "internal error: MLIR type stub didn't resolve ")
             << name;

@@ -952,8 +952,20 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
     // If we're binding these indices to parameters, do so and leave the
     // arguments lists empty.
-    if (shouldBindParameters)
+    if (shouldBindParameters) {
+      // Start the parameter set with the parameters from the base type of the
+      // method we're invoking, so we set additional parameters.
+      //
+      // FIXME: This is incorrect!  The overload set can contain members of
+      // types that baseType implicitly converts to, and they will take
+      // different parameters that should be inferred from the actual arguments
+      // passed to the call.  We should bind to the functions parameters
+      // somehow, e.g. keyword parameters or something?
+      set.paramBindings = ParamBindings::getForDeclaredType(
+          emitter.declScope, emitter.shared, baseType);
+
       return bindParamValuesToDirectCall(set, exprOperands, emitter);
+    }
 
     // Otherwise we're passing these exprOperands as normal arguments.
     for (const Operand &operand : exprOperands) {
@@ -1118,6 +1130,10 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // parameter types.  We should use something like
     // `filterOverloadSetForValueType` or use a dummy value to filter the
     // overload set.
+    // Hard code the parameter bindings for 'self' since we aren't using type
+    // inference properly.
+    setterSet.paramBindings = ParamBindings::getForDeclaredType(
+        emitter.declScope, emitter.shared, baseType);
     auto directSymbolAttr = setterSet.getBoundConstantAttr();
     if (!directSymbolAttr) {
       lookupError();
