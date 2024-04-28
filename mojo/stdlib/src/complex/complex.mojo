@@ -22,6 +22,8 @@ alias ComplexFloat64 = ComplexSIMD[DType.float64, 1]
 # ===----------------------------------------------------------------------===#
 # ComplexSIMD
 # ===----------------------------------------------------------------------===#
+
+
 @value
 @register_passable("trivial")
 struct ComplexSIMD[type: DType, size: Int](Stringable):
@@ -147,6 +149,15 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
         )
 
     @always_inline
+    fn __abs__(self) -> SIMD[type, size]:
+        """Returns the magnitude of the complex value.
+
+        Returns:
+            Value of `sqrt(re*re + im*im)`.
+        """
+        return self.norm()
+
+    @always_inline
     fn squared_norm(self) -> SIMD[type, size]:
         """Returns the squared magnitude of the complex value.
 
@@ -192,3 +203,18 @@ struct ComplexSIMD[type: DType, size: Int](Stringable):
             self.re.fma(self.re, self.im.fma(-self.im, c.re)),
             self.re.fma(self.im + self.im, c.im),
         )
+
+
+# TODO: we need this overload, because the Absable trait requires returning Self
+# type. We could maybe get rid of this if we had associated types?
+@always_inline
+fn abs(x: ComplexSIMD[*_]) -> SIMD[x.type, x.size]:
+    """Performs elementwise abs (norm) on each element of the complex value.
+
+    Args:
+        x: The complex vector to perform absolute value on.
+
+    Returns:
+        The elementwise abs of x.
+    """
+    return x.__abs__()
