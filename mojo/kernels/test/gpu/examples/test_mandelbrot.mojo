@@ -7,21 +7,16 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import abs, div_ceil, iota
+from math import div_ceil, iota
 from sys.info import simdwidthof
 
 from algorithm import vectorize
 from buffer import NDBuffer
 from complex import ComplexSIMD
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream
 from gpu.host.event import time_function
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host.memory import _copy_device_to_host, _free, _malloc
 from tensor import Tensor
 
 from utils.index import Index

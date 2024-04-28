@@ -6,15 +6,13 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import abs, div_ceil, min, rsqrt
+from math import div_ceil, rsqrt
 from random import rand
 from sys import argv
 
-from LinAlg.BatchedMatmul import batched_matmul
 from buffer import NDBuffer
-from buffer.list import DimList
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -28,7 +26,6 @@ from nn.mha import (
     flash_attention_kernel,
     flash_attention_kernel_flexible_seqlen,
 )
-from nn.softmax import softmax
 
 from utils.index import Index
 
