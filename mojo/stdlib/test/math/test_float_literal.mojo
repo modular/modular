@@ -9,6 +9,9 @@ from math import round
 
 from testing import *
 
+alias nan = FloatLiteral.nan
+alias neg_zero = FloatLiteral.negative_zero
+
 
 def test_division():
     # TODO: https://github.com/modularml/mojo/issues/1787
@@ -68,6 +71,13 @@ def test_equality():
     assert_not_equal(f1, f3)
 
 
+def test_is_special_value():
+    assert_true(nan.is_nan())
+    assert_false(neg_zero.is_nan())
+    assert_true(neg_zero.is_neg_zero())
+    assert_false(nan.is_neg_zero())
+
+
 def main():
     test_division()
     test_round10()
@@ -75,3 +85,4 @@ def main():
     test_int_conversion()
     test_boolean_comparable()
     test_equality()
+    test_is_special_value()
