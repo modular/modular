@@ -191,6 +191,7 @@ fn test_pos_only():
     has_pos_only[b=1, a=3, c=2]()
 
     # expected-error @below {{expects at least 2 positional parameters, but 1 was specified}}
+    # expected-note @below {{failed to infer parameter 'b', parameter isn't used in any argument}}
     has_pos_only[1, c=9]()
 
 fn indirect_callable_pos_only[

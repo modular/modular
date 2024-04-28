@@ -180,9 +180,9 @@ fn badCalls(arg: Int):
   # expected-error @+1 {{argument #2 must be mutable in order to pass as a by-ref argument}}
   exampleByRefVariadic(1.0, x, 1)
 
-  # FIXME(#11803): These diagnostics could be improved.
   # The user hasn't provided any arguments that could be used to infer `T`.
-  # expected-error @+1 {{callee expects 1 parameter, but 0 were specified}}
+  # expected-error @below {{callee expects 1 parameter, but 0 were specified}}
+  # expected-note @below {{failed to infer parameter 'T', parameter isn't used in any argument}}
   parameterizedVariadic()
   # expected-error @+1 {{could not deduce parameter 'T' of parent struct 'ParameterizedStruct'}}
   var z = ParameterizedStruct()
@@ -270,6 +270,7 @@ fn badPackCalls(value: Int):
   # expected-error @below {{invalid call to 'examplePack': callee with non-empty variadic pack argument expects 0 positional operands, but 1 was specified}}
   examplePack(packArgOverload)
   # expected-error @below {{invalid call to 'first_and_rest': callee expects 2 parameters, but 0 were specified}}
+  # expected-note @below {{failed to infer parameter 'T', parameter isn't used in any argument}}
   first_and_rest(value)
 
 struct TestPackErrorMessage[*Ts: AnyType]:
