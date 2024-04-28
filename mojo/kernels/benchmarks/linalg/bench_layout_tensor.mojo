@@ -335,7 +335,7 @@ fn test_matrix_equal[
     for i in range(C.rows):
         for j in range(C.cols):
             # if C[i, j] != result[i, j]:
-            if math.abs(C[i, j] - result[i, j]) > 1e-3:
+            if abs(C[i, j] - result[i, j]) > 1e-3:
                 return False
     return True
 

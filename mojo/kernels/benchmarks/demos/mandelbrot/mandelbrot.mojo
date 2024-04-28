@@ -11,7 +11,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 
-from math import abs, iota
+from math import iota
 from sys.info import num_physical_cores, simdwidthof
 
 from algorithm import parallelize, vectorize
