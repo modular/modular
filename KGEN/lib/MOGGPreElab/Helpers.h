@@ -143,7 +143,7 @@ getTensorRepFromFunctionInput(GeneratorOp generator, size_t index) {
 
 /// Remove the decorators from the function. Return true if any function had the
 /// kernel decorators.
-bool stripDecorators(GeneratorOp func);
+bool stripDecorators(LIT::FuncOp func);
 
 } // namespace M::KGEN::MOGGPreElab
 

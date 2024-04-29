@@ -14,56 +14,67 @@ namespace M::KGEN::MOGGPreElab {
 
 // Attribute on generator ops to look for which marks the function as being a
 // kernel.
-constexpr llvm::StringLiteral kernelRegistrationAttr = "_mogg_kernel";
+constexpr StringLiteral kernelRegistrationAttr = "mogg.kernel";
 
 inline bool isKernel(GeneratorOp gen) {
   return gen != nullptr && gen->hasAttr(kernelRegistrationAttr);
 }
 
-constexpr llvm::StringLiteral shapeFuncRegistrationAttr = "_mogg_v1_shape_func";
+constexpr StringLiteral shapeFuncRegistrationAttr = "mogg.v1_shape_func";
 
 inline bool isV1ShapeFunc(GeneratorOp gen) {
   return gen != nullptr && gen->hasAttr(shapeFuncRegistrationAttr);
 }
 
+constexpr StringLiteral SLICED_ATTR = "mogg.sliced";
+constexpr StringLiteral ALLOCS_ATTR = "mogg.allocs";
+constexpr StringLiteral IS_VIEW_ATTR = "mogg.view";
+
+/// Track the pair of the decorator as it is seen in the LIT IR in its raw from
+/// and the clean processed attribute which is added after it is processed.
+struct MOGGDecorator {
+  // The decorator to look for.
+  StringLiteral decorator;
+
+  // The attribute to replace it with.
+  StringLiteral attr;
+};
+
+namespace Decorators {
+
 // The decorators we will look for on the generator to identify it as a MO
 // kernel.
-constexpr llvm::StringLiteral DECORATOR_REGISTER_KERNEL =
-    "register::register::mogg_register";
-constexpr llvm::StringLiteral DECORATOR_REGISTER_OVERRIDE =
-    "register::register::mogg_register_override";
-constexpr llvm::StringLiteral DECORATOR_REGISTER_PUBLIC_OVERRIDE =
-    "max::register::register::op";
+constexpr StringLiteral REGISTER_KERNEL = "mogg_register";
+constexpr StringLiteral REGISTER_OVERRIDE = "mogg_register_override";
+constexpr StringLiteral REGISTER_PUBLIC_OVERRIDE = "op";
 
-// MOGG V1 shape function reg.
-constexpr llvm::StringLiteral DECORATOR_REGISTER_SHAPE_FUNC =
-    "register::register::mogg_register_shape_func";
+constexpr StringLiteral REGISTER_SHAPE_FUNC = "mogg_register_shape_func";
 
 // MOGG API V1 hooks.
-constexpr llvm::StringLiteral DECORATOR_ELEMENTWISE =
-    "register::register::mogg_elementwise";
-constexpr llvm::StringLiteral DECORATOR_ELEMENTWISE_PUBLIC =
-    "max::register::register::elementwise";
-constexpr llvm::StringLiteral DECORATOR_VIEW =
-    "register::register::mogg_view_op";
-constexpr llvm::StringLiteral DECORATOR_TAKES_INDICES =
-    "register::register::mogg_takes_indices";
+constexpr MOGGDecorator ELEMENTWISE{"mogg_elementwise", "mogg.elementwise"};
+constexpr MOGGDecorator ELEMENTWISE_PUBLIC{"elementwise", "mogg.elementwise"};
+constexpr MOGGDecorator VIEW{"mogg_view_op", IS_VIEW_ATTR};
+constexpr MOGGDecorator TAKES_INDICES{"mogg_takes_indices",
+                                      "mogg.takes_indices"};
 
 // Tensor API hooks.
-constexpr llvm::StringLiteral DECORATOR_TENSOR_ALLOC =
-    "register::register::mogg_tensor_allocator";
-constexpr llvm::StringLiteral DECORATOR_TENSOR_COPY_CONSTRUCT =
-    "register::register::mogg_tensor_copy_constructor";
-constexpr llvm::StringLiteral DECORATOR_TENSOR_DECONSTRUCT =
-    "register::register::mogg_tensor_deconstructor";
-constexpr llvm::StringLiteral DECORATOR_ELEM_HOOK =
-    "register::register::mogg_elementwise_hook";
-constexpr llvm::StringLiteral DECORATOR_ENABLE_FUSION_HOOK =
-    "register::register::mogg_enable_fusion";
-constexpr llvm::StringLiteral DECORATOR_INPUT_FUSION_HOOK =
-    "register::register::mogg_input_fusion_hook";
-constexpr llvm::StringLiteral DECORATOR_OUTPUT_FUSION_HOOK =
-    "register::register::mogg_output_fusion_hook";
+
+constexpr MOGGDecorator TENSOR_ALLOC{"mogg_tensor_allocator",
+                                     "mogg.tensor_alloc"};
+constexpr MOGGDecorator TENSOR_COPY{"mogg_tensor_copy_constructor",
+                                    "mogg.tensor_copy_construct"};
+constexpr MOGGDecorator TENSOR_DECONSTRUCT{"mogg_tensor_deconstructor",
+                                           "mogg.tensor_destruct"};
+constexpr MOGGDecorator ELEM_HOOK{"mogg_elementwise_hook", "mogg.elem_hook"};
+
+constexpr MOGGDecorator ENABLE_FUSION{"mogg_enable_fusion",
+                                      "mogg.enable_fusion"};
+constexpr MOGGDecorator INPUT_FUSION{"mogg_input_fusion_hook",
+                                     "mogg.input_fusion_hook"};
+constexpr MOGGDecorator OUTPUT_FUSION{"mogg_output_fusion_hook",
+                                      "mogg.output_fusion_hook"};
+
+} // namespace Decorators
 
 } // namespace M::KGEN::MOGGPreElab
 

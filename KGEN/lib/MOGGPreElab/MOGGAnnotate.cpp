@@ -21,19 +21,18 @@ using namespace KGEN;
 using namespace MOGGPreElab;
 
 namespace M::KGEN::MOGGPreElab {
-#define GEN_PASS_DEF_REMOVEDECORATORS
+#define GEN_PASS_DEF_MOGGANNOTATE
 #include "KGEN/MOGGPreElab/MOGGPreElabPasses.h.inc"
 } // namespace M::KGEN::MOGGPreElab
 
 namespace {
 
-class RemoveDecoratorsPass
-    : public M::KGEN::MOGGPreElab::impl::RemoveDecoratorsBase<
-          RemoveDecoratorsPass> {
+class MOGGAnnotatePass
+    : public M::KGEN::MOGGPreElab::impl::MOGGAnnotateBase<MOGGAnnotatePass> {
 public:
   void runOnOperation() override {
-    GeneratorOp func = getOperation();
-    stripDecorators(func);
+    ModuleOp op = getOperation();
+    op.walk([](LIT::FuncOp func) { stripDecorators(func); });
   }
 };
 

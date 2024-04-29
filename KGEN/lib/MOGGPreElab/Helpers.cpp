@@ -11,15 +11,18 @@
 
 namespace M::KGEN::MOGGPreElab {
 
+// The prefix that internal and max scoped decorators will start with.
+constexpr StringLiteral MAX_PREFIX = "max";
+constexpr StringLiteral INTERNAL_PREFIX = "register";
+
 // Returns true if all inputs are extensibility tensors.
-static bool isExtensibilityKernel(GeneratorOp generator) {
-  std::optional<LIT::LITSignatureType> litSig = getSourceSig(generator);
-  if (!litSig.has_value())
+static bool isExtensibilityKernel(LIT::FuncOp func) {
+  if (func.getNumArguments() == 0)
     return false;
 
-  for (Type metadata : litSig->getValues().getInputs()) {
+  for (Type arg : func.getArgumentTypes()) {
     // Tensors are expected to be passed as references.
-    auto asLitRef = dyn_cast<LIT::RefType>(metadata);
+    auto asLitRef = dyn_cast<LIT::RefType>(arg);
     if (!asLitRef)
       return false;
 
@@ -27,15 +30,13 @@ static bool isExtensibilityKernel(GeneratorOp generator) {
         dyn_cast<KGEN::LIT::DeclRefType>(asLitRef.getElementType());
     if (!asDeclRef)
       return false;
-
     if (!isExtensibilityTensor(asDeclRef))
       return false;
   }
-
   return true;
 }
 
-static void annotateExtensibilityKernels(GeneratorOp func,
+static void annotateExtensibilityKernels(LIT::FuncOp func,
                                          SmallVector<NamedAttribute> &newAttrs,
                                          OpBuilder &b) {
   // If we are a kernel and we are using the extensibility tensors we should
@@ -50,12 +51,12 @@ static void annotateExtensibilityKernels(GeneratorOp func,
         allocs.push_back(idx);
     }
 
-    newAttrs.push_back(
-        NamedAttribute{b.getStringAttr("_alloc"), b.getIndexArrayAttr(allocs)});
+    newAttrs.push_back(NamedAttribute{b.getStringAttr(ALLOCS_ATTR),
+                                      b.getIndexArrayAttr(allocs)});
   }
 }
 
-bool stripDecorators(GeneratorOp func) {
+bool stripDecorators(LIT::FuncOp func) {
   SmallVector<TypedAttr> decoratorsToCopy;
   OpBuilder builder{func.getContext()};
 
@@ -65,18 +66,18 @@ bool stripDecorators(GeneratorOp func) {
   SmallVector<NamedAttribute> newAttrs;
 
   // Decorators we should replace with a trivial unit attribute.
-  constexpr std::array<StringLiteral, 11> identityDecorators{
-      DECORATOR_ELEM_HOOK,
-      DECORATOR_ELEMENTWISE,
-      DECORATOR_ELEMENTWISE_PUBLIC,
-      DECORATOR_VIEW,
-      DECORATOR_TAKES_INDICES,
-      DECORATOR_TENSOR_ALLOC,
-      DECORATOR_TENSOR_COPY_CONSTRUCT,
-      DECORATOR_TENSOR_DECONSTRUCT,
-      DECORATOR_ENABLE_FUSION_HOOK,
-      DECORATOR_INPUT_FUSION_HOOK,
-      DECORATOR_OUTPUT_FUSION_HOOK};
+  constexpr std::array<MOGGDecorator, 11> identityDecorators{
+      Decorators::ELEM_HOOK,
+      Decorators::ELEMENTWISE,
+      Decorators::VIEW,
+      Decorators::TAKES_INDICES,
+      Decorators::TENSOR_ALLOC,
+      Decorators::TENSOR_COPY,
+      Decorators::TENSOR_DECONSTRUCT,
+      Decorators::ENABLE_FUSION,
+      Decorators::INPUT_FUSION,
+      Decorators::OUTPUT_FUSION,
+      Decorators::ELEMENTWISE_PUBLIC};
 
   // Each kernel can implement multiple operations. We will canonicalize these
   // into one attribute.
@@ -91,13 +92,19 @@ bool stripDecorators(GeneratorOp func) {
     decoratorsToCopy.push_back(decorator);
 
     // Identify the decorator being used.
-    StringRef decoratorName;
+    llvm::StringRef decoratorName;
 
     // The decorator might just be a direct symbol, for instance `@decorator`
     // vs `@decorator()`.
     auto directSym = dyn_cast<SymbolConstantAttr>(decorator);
-    if (directSym)
+    if (directSym) {
+      // Only accept decorators in max / register domain.
+      if (!(directSym.getSymbol().getRootReference().strref() == MAX_PREFIX ||
+            directSym.getSymbol().getRootReference().strref() ==
+                INTERNAL_PREFIX))
+        continue;
       decoratorName = directSym.getSymbol().getLeafReference().strref();
+    }
 
     // We track the apply so we can pull extra arguments from it.
     // `@decorator("Arg1", 100)`
@@ -109,17 +116,23 @@ bool stripDecorators(GeneratorOp func) {
       apply = dyn_cast<ParamOperatorAttr>(decorator);
       if (apply) {
         // The first operand is expected to be the symbol we are applying.
-        if (auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0)))
-          decoratorName = sym.getSymbol().getLeafReference().strref();
+        if (auto sym = dyn_cast<SymbolConstantAttr>(apply.getOperand(0))) {
+          SymbolRefAttr symRef = sym.getSymbol();
+          // Only accept decorators in max / register domain.
+          if (!(symRef.getRootReference().strref() == "max" ||
+                symRef.getRootReference().strref() == "register"))
+            continue;
+          decoratorName = symRef.getLeafReference().strref();
+        }
       }
     }
 
     if (decoratorName.empty())
       continue;
 
-    for (StringLiteral target : identityDecorators) {
-      if (decoratorName.starts_with(target)) {
-        newAttrs.push_back(NamedAttribute{builder.getStringAttr(target),
+    for (MOGGDecorator target : identityDecorators) {
+      if (decoratorName.starts_with(target.decorator)) {
+        newAttrs.push_back(NamedAttribute{builder.getStringAttr(target.attr),
                                           builder.getUnitAttr()});
         decoratorsToCopy.pop_back();
         break;
@@ -133,21 +146,21 @@ bool stripDecorators(GeneratorOp func) {
 
     // Kernel identifiers are slightly different as the include the name and
     // priority of the kernel.
-    if (decoratorName.starts_with(DECORATOR_REGISTER_OVERRIDE) ||
-        decoratorName.starts_with(DECORATOR_REGISTER_PUBLIC_OVERRIDE)) {
+    if (decoratorName.starts_with(Decorators::REGISTER_OVERRIDE) ||
+        decoratorName.starts_with(Decorators::REGISTER_PUBLIC_OVERRIDE)) {
       // Register kernels with explicit override.
-      kernelRegistrations.push_back(cast<StringAttr>(apply.getOperand(1)));
-      kernelRegistrations.push_back(cast<IntegerAttr>(apply.getOperand(2)));
+      kernelRegistrations.push_back(apply.getOperand(1));
+      kernelRegistrations.push_back(apply.getOperand(2));
       decoratorsToCopy.pop_back();
       areAnyKernels = true;
-    } else if (decoratorName.starts_with(DECORATOR_REGISTER_SHAPE_FUNC)) {
+    } else if (decoratorName.starts_with(Decorators::REGISTER_SHAPE_FUNC)) {
       // Register V1 shape functions.
-      shapeFunctionReg.push_back(cast<StringAttr>(apply.getOperand(1)));
+      shapeFunctionReg.push_back(apply.getOperand(1));
       decoratorsToCopy.pop_back();
       areAnyKernels = true;
-    } else if (decoratorName.starts_with(DECORATOR_REGISTER_KERNEL)) {
+    } else if (decoratorName.starts_with(Decorators::REGISTER_KERNEL)) {
       // Register kernels without explict override parameter.
-      kernelRegistrations.push_back(cast<StringAttr>(apply.getOperand(1)));
+      kernelRegistrations.push_back(apply.getOperand(1));
       kernelRegistrations.push_back(builder.getI64IntegerAttr(-1));
       decoratorsToCopy.pop_back();
       areAnyKernels = true;

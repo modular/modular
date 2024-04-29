@@ -57,8 +57,8 @@ void KGEN::registerDefaultKGENPasses() {
   DebugInfo::registerDebugInfoToLLVM();
   DebugInfo::registerDebugInfoStrip();
 
+  KGEN::MOGGPreElab::registerMOGGAnnotate();
   KGEN::MOGGPreElab::registerMOGGPreElabPipeline();
-  KGEN::MOGGPreElab::registerRemoveDecorators();
   KGEN::MOGGPreElab::registerOutlineMOGGFuncs();
   KGEN::MOGGPreElab::registerSliceMOGGFuncs();
 

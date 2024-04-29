@@ -39,7 +39,7 @@ public:
 
     bool hasKernels = false;
     for (auto func : mod.getOps<GeneratorOp>())
-      hasKernels |= stripDecorators(func);
+      hasKernels |= MOGGPreElab::isKernel(func);
 
     if (hasKernels && !debugBuild) {
       mlir::OpPassManager pm("builtin.module");

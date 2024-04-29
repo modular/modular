@@ -5,7 +5,7 @@ kgen.generator @call_target<_INPUT_FN_0: variant<() capturing -> !kgen.none, i1>
   kgen.return %none : !kgen.none
 }
 
-kgen.generator export @BASE_KERNEL() capturing -> !kgen.none attributes {_in_lambdas = ["_INPUT_FN_0", "_INPUT_FN_1"], _sliced} {
+kgen.generator export @BASE_KERNEL() capturing -> !kgen.none attributes {_in_lambdas = ["_INPUT_FN_0", "_INPUT_FN_1"], mogg.sliced} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.param.declare.region _INPUT_FN_1 = () capturing -> !kgen.none always_inline {
     %none1 = kgen.param.constant: none = <#kgen.none>
@@ -54,13 +54,13 @@ kgen.generator export @BASE_KERNEL() capturing -> !kgen.none attributes {_in_lam
 
 
 // Dummy for elementwise for each function.
-kgen.generator @elementwise_gen<ty: dtype, ELEMWISE_BODY: () capturing -> !kgen.none>() capturing -> !kgen.none no_inline attributes {"register::register::mogg_elementwise_hook"} {
+kgen.generator @elementwise_gen<ty: dtype, ELEMWISE_BODY: () capturing -> !kgen.none>() capturing -> !kgen.none no_inline attributes {"mogg.elem_hook"} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
 
 
-kgen.generator export @KERNEL_WITH_ELEMENTWISE() capturing -> !kgen.none attributes {_in_lambdas = ["_INPUT_FN_0", "_INPUT_FN_1"], _sliced} {
+kgen.generator export @KERNEL_WITH_ELEMENTWISE() capturing -> !kgen.none attributes {_in_lambdas = ["_INPUT_FN_0", "_INPUT_FN_1"], mogg.sliced} {
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.param.declare.region _INPUT_FN_1 = () capturing -> !kgen.none always_inline {
     %none1 = kgen.param.constant: none = <#kgen.none>
