@@ -38,6 +38,7 @@ RuntimeOptions::createRuntime(StringRef profileName) const {
   switch (getWorkQueueType()) {
   case RuntimeOptions::WorkQueueType::kDefault:
     assert(0 && "should be resolved");
+    LLVM_FALLTHROUGH;
   case RuntimeOptions::WorkQueueType::kSingleThread:
     runtimeOptions.singleThreaded = true;
     break;

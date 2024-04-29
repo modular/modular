@@ -81,6 +81,7 @@ void AsyncValue::removeAnyInlineWaiter(std::optional<Waiter> &inlineWaiter) {
     case State::kAvailable:
     case State::kError:
       assert(0 && "cannot construct a ready AsyncValue");
+      LLVM_FALLTHROUGH;
     case State::kUnconstructed: {
       assert(oldValue.getPointer() == nullptr &&
              "how'd we get out of line waiters without an inline waiter?");
