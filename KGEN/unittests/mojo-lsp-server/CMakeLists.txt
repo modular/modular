@@ -22,6 +22,7 @@ add_modular_unittest(
   DiagnosticsTest.cpp
   DocumentSymbolTest.cpp
   FoldingRangeTest.cpp
+  HoverTest.cpp
   ReferencesTest.cpp
   SampleTest.cpp
   Support.cpp
