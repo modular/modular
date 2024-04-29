@@ -776,6 +776,6 @@ kgen.generator @kernel() {
 
 kgen.generator export @top() {
   // expected-error @below {{custom op 'kgen.param.constant' the emission kind must be either llvm or asm}}
-  kgen.param.constant: string = <compile_assembly(current_target(), something, :() -> () @kernel)>
+  kgen.param.constant: string = <compile_assembly(current_target(), something, 0, :() -> () @kernel)>
   kgen.return
 }

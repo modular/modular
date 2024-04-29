@@ -232,7 +232,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
   auto emissionKind =
       (EmissionKind)cast<IntegerAttr>(op.getOperand(1)).getInt();
-  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(2));
+  auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(3));
   if (!symbol || !symbol.getType().isConcrete()) {
     emitError({*errorLoc, "'compile_assembly' function is not concrete"});
     return failure();

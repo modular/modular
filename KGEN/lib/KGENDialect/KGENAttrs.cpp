@@ -1163,7 +1163,7 @@ LogicalResult ParamOperatorAttr::verify(
     }
     break;
   case POC::CompileAssembly: {
-    if (operands.size() != 3)
+    if (operands.size() != 4)
       return emitError() << "'compile_assembly' requires 3 operands";
     if (!::isa<TargetType>(operands.front().getType()))
       return emitError()
@@ -1171,6 +1171,8 @@ LogicalResult ParamOperatorAttr::verify(
     if (!::isa<IndexType>(operands[1].getType()))
       return emitError() << "'compile_assembly' second operand should be "
                             "either asm or llvm keyword";
+    if (!operands[2].getType().isInteger(1))
+      return emitError() << "'compile_assembly' third operand should be an i1";
     break;
   }
   case POC::GetLinkageName:
