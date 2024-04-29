@@ -178,7 +178,7 @@ struct Batch(CollectionElement):
         Returns:
             The average duration of the batch.
         """
-        return self.duration / self.iterations / _divisor(unit)
+        return self.duration / self.iterations / Unit._divisor(unit)
 
 
 # ===----------------------------------------------------------------------===#
@@ -194,14 +194,14 @@ struct Unit:
     alias s = "s"
     """Seconds"""
 
-
-fn _divisor(unit: String) -> Int:
-    if unit == Unit.ns:
-        return 1
-    elif unit == Unit.ms:
-        return 1_000_000
-    else:
-        return 1_000_000_000
+    @staticmethod
+    fn _divisor(unit: String) -> Int:
+        if unit == Unit.ns:
+            return 1
+        elif unit == Unit.ms:
+            return 1_000_000
+        else:
+            return 1_000_000_000
 
 
 # ===----------------------------------------------------------------------===#
@@ -268,7 +268,7 @@ struct Report(CollectionElement):
         for i in range(len(self.runs)):
             if self.runs[i]._is_significant:
                 duration += self.runs[i].duration
-        return duration / _divisor(unit)
+        return duration / Unit._divisor(unit)
 
     fn mean(self, unit: String = Unit.s) -> Float64:
         """
@@ -328,7 +328,7 @@ struct Report(CollectionElement):
         Args:
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
-        var divisor = _divisor(unit)
+        var divisor = Unit._divisor(unit)
         print("---------------------")
         print("Benchmark Report (", end="")
         print(unit, end="")
@@ -356,7 +356,7 @@ struct Report(CollectionElement):
             unit: The time unit to display for example: ns, ms, s (default `s`).
         """
 
-        var divisor = _divisor(unit)
+        var divisor = Unit._divisor(unit)
         self.print(unit)
 
         for i in range(len(self.runs)):
