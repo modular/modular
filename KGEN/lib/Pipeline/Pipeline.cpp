@@ -37,6 +37,8 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   }
   buildCheckLITPipeline(pm, options);
 
+  pm.addPass(MOGGPreElab::createMOGGAnnotate());
+
   pm.addPass(createLowerLIT(
       {static_cast<llvm::dwarf::SourceLanguage>(options.debugInfoLanguage)}));
   pm.addPass(createVerifyParameters());

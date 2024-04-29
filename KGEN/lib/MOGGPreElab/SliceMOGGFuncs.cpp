@@ -229,7 +229,7 @@ private:
 
     // Mark this as a sliced function so MOGG lowering can identify it.
     newAttrs.push_back(
-        NamedAttribute{b.getStringAttr("_sliced"), b.getUnitAttr()});
+        NamedAttribute{b.getStringAttr(SLICED_ATTR), b.getUnitAttr()});
 
     if (isView) {
       newAttrs.push_back(
@@ -804,9 +804,9 @@ public:
     // Scan the generators to find the global helper functions we will need to
     // call or inspect.
     for (GeneratorOp func : mod.getOps<GeneratorOp>()) {
-      if (func->hasAttr(DECORATOR_INPUT_FUSION_HOOK))
+      if (func->hasAttr(Decorators::INPUT_FUSION.attr))
         inLambdaTemplate = LambdaTemplate{func};
-      else if (func->hasAttr(DECORATOR_OUTPUT_FUSION_HOOK))
+      else if (func->hasAttr(Decorators::OUTPUT_FUSION.attr))
         outLambdaTemplate = LambdaTemplate{func};
     }
 
@@ -863,13 +863,13 @@ public:
         if (!func)
           continue;
 
-        if (func->hasAttr(DECORATOR_TENSOR_ALLOC))
+        if (func->hasAttr(Decorators::TENSOR_ALLOC.attr))
           allocationFunc = call;
-        else if (func->hasAttr(DECORATOR_TENSOR_COPY_CONSTRUCT))
+        else if (func->hasAttr(Decorators::TENSOR_COPY.attr))
           constructor = call;
-        else if (func->hasAttr(DECORATOR_ENABLE_FUSION_HOOK))
+        else if (func->hasAttr(Decorators::ENABLE_FUSION.attr))
           enableFusionFuncs.push_back(call);
-        else if (func->hasAttr(DECORATOR_TENSOR_DECONSTRUCT))
+        else if (func->hasAttr(Decorators::TENSOR_DECONSTRUCT.attr))
           deconstructors.push_back(call);
       }
 

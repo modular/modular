@@ -290,7 +290,7 @@ public:
 
     for (GeneratorOp kernel : mod.getOps<GeneratorOp>()) {
       // Skip non-kernels.
-      if (!(kernel->hasAttr("_sliced") || kernel->hasAttr("_alloc")))
+      if (!(kernel->hasAttr(SLICED_ATTR) || kernel->hasAttr(ALLOCS_ATTR)))
         continue;
 
       // Pull the lambda names off the kernel so we can find their decl in the
@@ -328,7 +328,7 @@ public:
           if (!func)
             continue;
 
-          if (func->hasAttr(DECORATOR_ELEM_HOOK))
+          if (func->hasAttr(Decorators::ELEM_HOOK.attr))
             elementwiseOp = call;
         }
 

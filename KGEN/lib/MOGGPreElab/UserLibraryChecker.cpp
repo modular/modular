@@ -58,12 +58,12 @@ LogicalResult checkCallsiteErrorInternal(CallOp call, GeneratorOp root,
     return success();
   };
 
-  if (failed(checkFunc(DECORATOR_TENSOR_ALLOC,
+  if (failed(checkFunc(Decorators::TENSOR_ALLOC.attr,
                        "Tensor allocations are currently only supported inside "
                        "the top level kernel",
                        root)))
     return failure();
-  if (failed(checkFunc(DECORATOR_ENABLE_FUSION_HOOK,
+  if (failed(checkFunc(Decorators::ENABLE_FUSION.attr,
                        "Calling enable_fusion outside of kernel entry point is "
                        "not supported",
                        root)))

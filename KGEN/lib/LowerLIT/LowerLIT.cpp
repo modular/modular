@@ -358,11 +358,18 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
         func.getExportKindAttr(), func.getPreCompiledModuleRefAttr());
   } else {
     // Directly lower since these operations are exactly identical right now.
-    auto newFunc = b.create<GeneratorOp>(
-        func.getLoc(), func.getSymNameAttr(), sigAttr, newFunctionTypeAttr,
-        inputParamsArr, resParamsArr, func.getDecoratorsAttr(),
-        func.getInlineLevelAttr(), func.getExportKindAttr(),
-        func.getLLVMMetadata(), PreservedAttr::get(sigAttr));
+
+    OperationState state(func.getLoc(), GeneratorOp::getOperationName());
+    GeneratorOp::build(b, state, func.getSymNameAttr(), sigAttr,
+                       newFunctionTypeAttr, inputParamsArr, resParamsArr,
+                       func.getDecoratorsAttr(), func.getInlineLevelAttr(),
+                       func.getExportKindAttr(), func.getLLVMMetadata(),
+                       PreservedAttr::get(sigAttr));
+
+    for (const NamedAttribute &attr : func->getDialectAttrs())
+      state.attributes.push_back(attr);
+
+    auto newFunc = cast<GeneratorOp>(b.create(state));
     result = newFunc;
 
     // Move over the body.

@@ -59,12 +59,12 @@ def OutlineMOGGFuncs : Pass<"mogg-outline", "mlir::ModuleOp"> {
   }];
 }
 
-def RemoveDecorators : Pass<"remove-mogg-decorators", "KGEN::GeneratorOp"> {
+def MOGGAnnotate : Pass<"mogg-annotate", "mlir::ModuleOp"> {
   let summary = "Strips MOGG decorators and replaces them with attributes";
   let description = [{
-    A mogg domain specific pass which replaces each intrinsic mogg decorator
-    with an attribute. This allows us to concentrate all the decorator access
-    into one place and allow all the other passes to access just the decorator. 
+    A mogg domain specific pass which will annotate each kernel at the lit
+    level allowing subsequent passes to use the information parsed in a
+    sanitized way. 
   }];
 }
 
