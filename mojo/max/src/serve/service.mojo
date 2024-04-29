@@ -8,15 +8,6 @@
 from max.engine import TensorMap
 
 
-@value
-struct FileModel:
-    """File-backed model artifact details."""
-
-    var name: String
-    var path: String
-    var version: Int
-
-
 trait InferenceRequest(Movable):
     """A trait for singular inference requests."""
 
@@ -99,3 +90,12 @@ trait InferenceService:
             response: Response object.
         """
         ...
+
+
+@value
+struct FileModel:
+    """File-backed model artifact details."""
+
+    var name: String
+    var path: String
+    var version: Int

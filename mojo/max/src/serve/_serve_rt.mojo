@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-"""Provides C bindings to MUTT."""
+"""Provides C bindings to ServeRT."""
 
 from sys.ffi import DLHandle
 from memory.unsafe import DTypePointer, Pointer
@@ -12,7 +12,7 @@ from builtin.coroutine import _coro_resume_fn
 from max.engine import InferenceSession
 from max.engine._utils import call_dylib_func, exchange
 
-from .kserve import (
+from ._kserve_impl import (
     ModelInferRequest,
     ModelInferResponse,
     CModelInferRequest,
