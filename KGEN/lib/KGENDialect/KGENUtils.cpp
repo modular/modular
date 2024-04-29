@@ -697,7 +697,10 @@ static ParseResult parseOperatorOperands(AsmParser &p, uint32_t opcode,
     operands.emplace_back(
         p.getBuilder().getIndexAttr(to_underlying(emissionKindEnum)));
 
-    if (p.parseComma() || parseColonTypeParamValue(p, operands.emplace_back()))
+    if (p.parseComma() ||
+        parseParamValue(p, operands.emplace_back(),
+                        p.getBuilder().getI1Type()) ||
+        p.parseComma() || parseColonTypeParamValue(p, operands.emplace_back()))
       return failure();
 
     return success();
@@ -1001,7 +1004,9 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     else if (emissionKind == EmissionKind::LLVM)
       p << "llvm";
     p << ", ";
-    printColonTypeParamValue(p, operands[2]);
+    printParamValue(p, operands[2]);
+    p << ", ";
+    printColonTypeParamValue(p, operands[3]);
     break;
   }
   case POC::GetLinkageName:
