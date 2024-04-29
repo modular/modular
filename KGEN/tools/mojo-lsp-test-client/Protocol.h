@@ -35,6 +35,8 @@ llvm::json::Value toJSON(const CodeActionParams &params);
 
 llvm::json::Value toJSON(const Hover2 &hover);
 
+llvm::json::Value toJSON(const DocumentSymbolParams &params);
+
 bool fromJSON(const llvm::json::Value &value, Hover2 &range,
               llvm::json::Path path);
 
@@ -51,6 +53,12 @@ bool fromJSON(const llvm::json::Value &value, CompletionList &completionList,
               llvm::json::Path path);
 
 bool fromJSON(const llvm::json::Value &value, CompletionItem &completionItem,
+              llvm::json::Path path);
+
+bool fromJSON(const llvm::json::Value &value, DocumentSymbol &documentSymbol,
+              llvm::json::Path path);
+
+bool fromJSON(const llvm::json::Value &value, SymbolKind &kind,
               llvm::json::Path path);
 } // namespace mlir::lsp
 

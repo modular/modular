@@ -40,6 +40,10 @@ llvm::json::Value lsp::toJSON(const Hover2 &hover) {
   return toJSON(static_cast<Hover>(hover));
 }
 
+llvm::json::Value lsp::toJSON(const DocumentSymbolParams &params) {
+  return llvm::json::Object{{"textDocument", params.textDocument}};
+}
+
 bool lsp::fromJSON(const llvm::json::Value &value, Hover2 &range,
                    llvm::json::Path path) {
   llvm::json::ObjectMapper o(value, path);
@@ -93,4 +97,24 @@ bool lsp::fromJSON(const llvm::json::Value &value,
          o.mapOptional("documentation", completionItem.documentation) &&
          o.mapOptional("kind", completionItem.kind) &&
          o.mapOptional("sortText", completionItem.sortText);
+}
+
+bool lsp::fromJSON(const llvm::json::Value &value,
+                   DocumentSymbol &documentSymbol, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("name", documentSymbol.name) &&
+         o.mapOptional("detail", documentSymbol.detail) &&
+         o.map("kind", documentSymbol.kind) &&
+         o.map("range", documentSymbol.range) &&
+         o.map("selectionRange", documentSymbol.selectionRange) &&
+         o.mapOptional("children", documentSymbol.children);
+}
+
+bool lsp::fromJSON(const llvm::json::Value &value, SymbolKind &kind,
+                   llvm::json::Path path) {
+  std::optional<int64_t> intVal = value.getAsInteger();
+  if (!intVal)
+    return false;
+  kind = static_cast<SymbolKind>(*intVal);
+  return true;
 }

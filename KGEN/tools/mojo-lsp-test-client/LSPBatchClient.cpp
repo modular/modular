@@ -76,6 +76,14 @@ LSPBatchClient::hover(const Document &doc, const lsp::Position &position,
   return *this;
 }
 
+LSPBatchClient &LSPBatchClient::documentSymbol(
+    const Document &doc,
+    std::function<void(const std::vector<lsp::DocumentSymbol> &)> callback) {
+  lsp::DocumentSymbolParams params{lsp::TextDocumentIdentifier{doc.getURI()}};
+  request("textDocument/documentSymbol", toJSON(params), std::move(callback));
+  return *this;
+}
+
 LSPBatchClient &LSPBatchClient::completion(
     const Document &doc, const lsp::Position &position,
     std::function<void(const lsp::CompletionList &)> callback) {

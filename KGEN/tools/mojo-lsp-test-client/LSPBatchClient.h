@@ -100,6 +100,12 @@ public:
   hover(const Document &doc, const mlir::lsp::Position &position,
         std::function<void(const mlir::lsp::Hover2 &)> callback);
 
+  /// textDocument/documentSymbol
+  LSPBatchClient &documentSymbol(
+      const Document &doc,
+      std::function<void(const std::vector<mlir::lsp::DocumentSymbol> &)>
+          callback);
+
   /// textDocument/completion
   LSPBatchClient &
   completion(const Document &doc, const mlir::lsp::Position &position,
