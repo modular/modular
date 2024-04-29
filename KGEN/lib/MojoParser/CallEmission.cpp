@@ -256,8 +256,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
   // the types of other parameters defined later in the list, e.g. in:
   //    [rank: Int, indices: StaticTuple[rank]]
   // the value provided to 'indices' should actually depend on the specified
-  // value of 'rank'.  We use a ParameterEvaluator to keep track of the mapping
-  // so far and remap types on demand.
+  // value of 'rank'.  We use a ParserParameterEvaluator to keep track of the
+  // mapping so far and remap types on demand.
   ParserParamEvaluator evaluator(*shared.declResolver);
 
   // This lambda installs the decl's value in the parameter evaluator and new
