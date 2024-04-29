@@ -1197,7 +1197,7 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
           // NOTE: This is an UnknownAttr not an UnboundAttr.
           UnknownAttr::get(requirementSig.getParamTypes()[0]));
 
-      ParameterEvaluator evaluator(requirementParams);
+      ParserParamEvaluator evaluator(getDeclResolver(), requirementParams);
       for (Type type : requirementSig.getParamTypes().drop_front()) {
         auto unbound = UnboundAttr::get(evaluator.getReboundType(type));
         requirementParams.push_back(unbound);
