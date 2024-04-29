@@ -71,6 +71,11 @@ ParserParamEvaluator::ParserParamEvaluator(DeclResolver &resolver,
                                            ArrayRef<TypedAttr> paramValues)
     : ParameterEvaluator(paramDecls, paramValues), resolver(resolver) {}
 
+ParserParamEvaluator::ParserParamEvaluator(DeclResolver &resolver,
+                                           ArrayRef<TypedAttr> paramValues)
+    : ParameterEvaluator(paramValues), InterpreterState(resolver.getContext()),
+      resolver(resolver) {}
+
 FailureOr<TypedAttr>
 ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
                                            ArrayRef<Attribute> arguments) {
