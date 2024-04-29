@@ -12,14 +12,59 @@ from sys.info import has_neon, has_vnni
 from buffer import NDBuffer
 from buffer.list import DimList
 from LinAlg.Matmul_v2 import GemmShape, MatmulConfig
-from LinAlg.Matmul_v2 import matmul_inner_loop as _matmul_inner_loop
-from LinAlg.MatmulUtils import get_matmul_arch_factor, get_mm_config
+
+from LinAlg.matmul_v2_vnni import Inner_matmul_vnni
+from LinAlg.matmul_v2_i8mm import Inner_matmul_i8mm
+from LinAlg.matmul_v2_neon import Inner_matmul_neon
+from LinAlg.matmul_v2_default import Inner_matmul_default
+from LinAlg.MatmulUtils import (
+    get_matmul_arch_factor,
+    get_mm_config,
+    InnerKernelID,
+    select_inner_kernel,
+)
 
 from utils.index import Index
 
 alias M: Int = 64
 alias N: Int = 64
 alias K: Int = 256
+
+
+fn _matmul_inner_loop[
+    a_row_size: Int,
+    pack_inner_size: Int,
+    skip_col_bound: Bool,
+    saturated_vnni: Bool,
+](
+    c: NDBuffer,
+    a: NDBuffer,
+    b_packed: NDBuffer[_, 3, _],
+    global_offset: GemmShape,
+    global_bound: GemmShape,
+    tile_n_k: StaticIntTuple[2],
+):
+    alias kernel_id = select_inner_kernel[a.type, b_packed.type, c.type]()
+
+    @parameter
+    if kernel_id == InnerKernelID.DEFAULT:
+        Inner_matmul_default().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
+    elif kernel_id == InnerKernelID.VNNI:
+        Inner_matmul_vnni[saturated_vnni]().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
+    elif kernel_id == InnerKernelID.NEON:
+        Inner_matmul_neon().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
+    elif kernel_id == InnerKernelID.I8MM:
+        Inner_matmul_i8mm().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
+    else:
+        constrained[False, "no _run_inner_loop implementation"]()
 
 
 fn matmul_inner_loop[

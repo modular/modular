@@ -959,3 +959,36 @@ fn packA_i8mm[
             )
 
     vectorize[packA_helper, 2](t1 - t0)
+
+
+@value
+@register_passable("trivial")
+struct InnerKernelID:
+    alias DEFAULT = InnerKernelID(0)
+    alias VNNI = InnerKernelID(1)
+    alias NEON = InnerKernelID(2)
+    alias I8MM = InnerKernelID(3)
+
+    var value: Int
+
+    @always_inline
+    fn __eq__(self, rhs: InnerKernelID) -> Bool:
+        return self.value == rhs.value
+
+
+@always_inline
+fn select_inner_kernel[
+    a_type: DType, b_type: DType, c_type: DType
+]() -> InnerKernelID:
+    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+
+    @parameter
+    if use_i8mm:
+        return InnerKernelID.I8MM
+    elif has_neon() and not use_vnni and not use_i8mm:
+        return InnerKernelID.NEON
+    elif not use_vnni and not has_neon():
+        return InnerKernelID.DEFAULT
+    else:
+        return InnerKernelID.VNNI
