@@ -714,12 +714,6 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
     if (expectedConvention == ArgConvention::BorrowedInReg &&
         !isa<RefType>(argType) && value.isMValue()) {
       auto valueRefType = cast<RefType>(value.getMValueReference().getType());
-      // If the MValue is an MBValue specifically, make sure to strip off
-      // any mutability from the reference.  The parser allows the IR
-      // representation of an MBValue to be mutable, but we don't want to
-      // infer mutability of a reference from that.
-      if (value.getIfMBValue() && !valueRefType.isMutableKnown(false))
-        valueRefType = valueRefType.getWithMutability(false);
 
       if (succeeded(matchTypes(valueRefType, expectedRef)))
         return success();

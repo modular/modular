@@ -372,3 +372,17 @@ fn test_heterogenous_list():
 fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmLifetime](a: Reference[T, False.__mlir_i1__(), value_lifetime]): pass
 fn test_passing_mutable_ref(inout i: String):
     thing_taking_immutable_ref(i)
+
+# Verify that we can propagate parametric mutability through field accesses.
+struct ThingWithFields:
+  var field: Int
+
+# CHECK-LABEL: lit.func @"parametric_mut_mbvalue
+fn parametric_mut_mbvalue[
+    is_mutable: __mlir_type.i1,
+    lifetime: AnyLifetime[is_mutable].type,
+ ](a: Reference[ThingWithFields, is_mutable, lifetime])
+   -> Reference[Int, is_mutable, lifetime]:
+  # CHECK: lit.ref.struct.ger
+  return a[].field
+
