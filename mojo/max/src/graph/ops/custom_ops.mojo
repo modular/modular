@@ -28,11 +28,10 @@ def custom[name: StringLiteral](values: List[Symbol], out_type: Type) -> Symbol:
     Returns:
         A symbolic value representing the output of the op in the graph.
     """
-    return custom_nv[name](values, List[Type](out_type))[0]
+    return custom[name](values, List[Type](out_type))[0]
 
 
-# We'll be able to make this an overload once we can get rid of `TypeTuple`.
-def custom_nv[
+def custom[
     name: StringLiteral
 ](values: List[Symbol], out_types: List[Type]) -> List[Symbol]:
     """Creates a node to execute a custom graph operation in the graph.
@@ -46,7 +45,7 @@ def custom_nv[
 
     Args:
         values: The op function's arguments.
-        out_types: The op function's return type.
+        out_types: The list of op function's return type.
 
     Returns:
         Symbolic values representing the outputs of the op in the graph.
