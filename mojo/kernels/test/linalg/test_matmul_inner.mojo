@@ -25,18 +25,18 @@ alias K: Int = 256
 fn matmul_inner_loop[
     config: MatmulConfig,
 ](
-    c: NDBuffer[config.c_type, 2, config.c_shape],
-    a: NDBuffer[config.a_type, 2, config.a_shape],
-    b_packed: NDBuffer[config.b_type, 3, config.packed_shape],
+    c: NDBuffer,
+    a: NDBuffer,
+    b_packed: NDBuffer[_, 3, _],
     m: Int,
     n: Int,
     k: Int,
 ):
     _matmul_inner_loop[
-        config,
         config.a_row_size,
         config.pack_inner_size,
         True,  # skip_col_bound
+        False,  # saturated_vnni
     ](
         c,
         a,

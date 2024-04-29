@@ -33,6 +33,7 @@ from .MatmulUtils import (
     get_partitioned_matmul,
     packA_i8mm,
     get_mm_config,
+    use_vnni_fn,
     use_i8mm_fn,
 )
 from memory import memset_zero, stack_allocation
@@ -66,28 +67,21 @@ from .MatmulPack import (
 # - _run_inner_loop_neon()
 # - _run_inner_loop_default()
 # - _run_inner_loop_vnni()
-trait InnerMatmulKernel:
-    fn _initialize_c_tile(
+trait InnerMatmulKernel(Copyable):
+    fn __inner_matmul__[
+        a_row_size: Int,
+        pack_inner_size: Int,
+        # Skip the output c space boundary check if True.
+        skip_boundary_check: Bool,
+    ](
         self,
-        c0_local: NDBuffer,
+        c: NDBuffer,
+        a: NDBuffer,
+        b_packed: NDBuffer[_, 3, _],
+        global_offset: GemmShape,
+        global_bound: GemmShape,
+        tile_n_k: StaticIntTuple[2],
     ):
-        ...
-
-    fn _load_c_tile(
-        self,
-        c0_local: NDBuffer,
-        tile_n_idx: Int,
-    ):
-        ...
-
-    fn _store_c_tile(
-        self,
-        c0_local: NDBuffer,
-        tile_n_idx: Int,
-    ):
-        ...
-
-    fn __inner_matmul__(self):
         ...
 
 
@@ -112,197 +106,88 @@ fn elementwise_epilogue_c_tile[
     vectorize[activation_on_col_chunk, simd_width](tile_len.N)
 
 
-struct LoadStoreOutputTile[
-    type: DType,
-    simd_size: Int,
-    tile_rows: Int,
-    tile_columns: Int,
-    is_load: Bool,
-]:
-    var output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)]
-    var row_ptrs: Pointer[DTypePointer[type]]
-    var load_store_count: Int
-
-    @always_inline
-    fn __init__(
-        inout self,
-        output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)],
-        row_ptrs: Pointer[DTypePointer[type]],
-        load_store_count: Int,
-    ):
-        self.output_tile = output_tile
-        self.row_ptrs = row_ptrs
-        self.load_store_count = load_store_count
-
-    @always_inline
-    fn _load_store_columns[
-        base_column: Int,
-        column_count: Int,
-    ](self):
-        """Loads or stores one or more columns from the base column for each
-        row of the tile."""
-
-        @unroll
-        for row in range(tile_rows):
-            # Iterate twice for a pairwise load/store or once for any other access.
-            alias column_step = min(column_count, simd_size)
-
-            @unroll
-            for col in range(
-                base_column, base_column + column_count, column_step
-            ):
-
-                @parameter
-                if is_load:
-                    var data = self.row_ptrs[row].offset(col).load[
-                        width=column_step
-                    ]()
-                    self.output_tile.store(Index(row, col), data)
-                else:
-                    var data = self.output_tile.load[width=column_step](
-                        Index(row, col)
-                    )
-                    self.row_ptrs[row].offset(col).store(data)
-
-    @always_inline
-    fn _load_store_tail[
-        base_column: Int,
-        tail_size: Int,
-    ](self):
-        """Loads/stores the last elements of the tile that cannot be accessed
-        pairwise."""
-
-        if self.load_store_count & tail_size:
-            self._load_store_columns[base_column, tail_size]()
-
-            alias tile_columns_remaining = tile_columns - base_column - tail_size
-
-            @parameter
-            if tile_columns_remaining >= tail_size // 2 and tail_size > 1:
-                self._load_store_tail[base_column + tail_size, tail_size // 2]()
-            return
-
-        @parameter
-        if tail_size > 1:
-            self._load_store_tail[base_column, tail_size // 2]()
-
-    @always_inline
-    fn _load_store_pairwise[
-        base_column: Int,
-    ](self):
-        """Loads/stores all pairwise vectors of the tile and dispatches the
-        remaining non-pairwise elements."""
-
-        alias tile_columns_remaining = tile_columns - base_column
-
-        # Support fusion of LDP/STP instructions by emitting pairs of load/store
-        # vector instructions.
-        @parameter
-        if tile_columns_remaining >= 2 * simd_size:
-            if self.load_store_count >= base_column + 2 * simd_size:
-                self._load_store_columns[base_column, 2 * simd_size]()
-                self._load_store_pairwise[base_column + 2 * simd_size]()
-                return
-
-        @parameter
-        if tile_columns_remaining >= simd_size:
-            self._load_store_tail[base_column, simd_size]()
-
-    @staticmethod
-    @always_inline
-    fn run(
-        output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)],
-        ptr: DTypePointer[type],
-        stride: Int,
-        load_store_count: Int,
-    ):
-        """Interface function to run the load/store output tile.
-        Args:
-            output_tile(NDBuffer): output register tile buffer.
-            ptr(DTypePointer): data buffer to use for transferring the tile
-                buffer.
-            stride(Int): stride to use when stepping through rows of the data
-                buffer.
-            load_store_count(Int): number of elements to load/store.
-        """
-        # Compute the pointers to each row of the memory buffer.
-        # Note that the compiler produces better code if each pointer is calculated
-        # relative to the previous pointer. Using (N * row) causes the compiler to
-        # allocate locals to cache the intermediate results.
-        var row_ptrs = stack_allocation[tile_rows, DTypePointer[type]]()
-
-        @unroll
-        for row in range(tile_rows):
-            row_ptrs[row] = ptr if row == 0 else (row_ptrs[row - 1] + stride)
-
-        var instance = Self(
-            output_tile,
-            row_ptrs,
-            load_store_count,
-        )
-        instance._load_store_pairwise[0]()
-
-
 fn matmul_inner_loop[
-    config: MatmulConfig,
     a_row_size: Int,
     pack_inner_size: Int,
     skip_col_bound: Bool,
+    saturated_vnni: Bool,
 ](
-    c: NDBuffer[config.c_type, 2, config.c_shape],
-    a: NDBuffer[config.a_type, 2, config.a_shape],
-    b_packed: NDBuffer[config.b_type, 3, config.packed_shape],
+    c: NDBuffer,
+    a: NDBuffer,
+    b_packed: NDBuffer[_, 3, _],
     global_offset: GemmShape,
     global_bound: GemmShape,
     tile_n_k: StaticIntTuple[2],
 ):
-    alias use_vnni = config.use_vnni
-    alias use_i8mm = config.use_i8mm
+    alias use_vnni = use_vnni_fn[a.type, b_packed.type, c.type]()
+    alias use_i8mm = use_i8mm_fn[a.type, b_packed.type, c.type]()
 
     @parameter
     if use_i8mm:
-        Inner_matmul_i8mm[config, a_row_size, pack_inner_size, skip_col_bound,](
-            c,
-            a,
-            b_packed,
-            global_offset,
-            global_bound,
-            tile_n_k,
-        ).__inner_matmul__()
+        Inner_matmul_i8mm().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif has_neon() and not use_vnni and not use_i8mm:
-        Inner_matmul_neon[config, a_row_size, pack_inner_size, skip_col_bound,](
-            c,
-            a,
-            b_packed,
-            global_offset,
-            global_bound,
-            tile_n_k,
-        ).__inner_matmul__()
+        Inner_matmul_neon().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif not use_vnni and not has_neon():
-        Inner_matmul_default[
-            config,
-            a_row_size,
-            pack_inner_size,
-            skip_col_bound,
-        ](
-            c,
-            a,
-            b_packed,
-            global_offset,
-            global_bound,
-            tile_n_k,
-        ).__inner_matmul__()
+        Inner_matmul_default().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif use_vnni:
-        Inner_matmul_vnni[config, a_row_size, pack_inner_size, skip_col_bound,](
-            c,
-            a,
-            b_packed,
-            global_offset,
-            global_bound,
-            tile_n_k,
-        ).__inner_matmul__()
+        Inner_matmul_vnni[saturated_vnni]().__inner_matmul__[
+            a_row_size, pack_inner_size, skip_col_bound
+        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     else:
         constrained[False, "no _run_inner_loop implementation"]()
+
+
+# Interface method
+fn tiledMatmulRun[
+    config: MatmulConfig,
+    elementwise_epilogue_enabled: Bool,
+    algorithm: InnerMatmulKernel,
+](
+    alg: algorithm,
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b: NDBuffer[config.b_type, 2, config.b_shape],
+    elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
+    global_tile_shape: GemmShape,
+    global_tile_offset: GemmShape,
+):
+    """Interface function to run tiled matmul on a given sub-tile.
+
+    Args:
+        alg: InnerMatmulKernel algorithm for microkernel.
+        c: Pre-allocated buffer space for result.
+        a: Operand A of the matmul.
+        b: Operand B of the mamtul.
+        elementwise_epilogue_fn: The elementwise epilogue function.
+        global_tile_shape: Tile shape this call will process.
+        global_tile_offset: Tile offset on the original buffer.
+    """
+
+    var tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
+        global_tile_shape
+    )
+
+    var matmul = TiledMatmul[config, elementwise_epilogue_enabled,](
+        alg,  # TODO: KK: Here want to pass alg.
+        # Inner_matmul_default[config](),  # KK: switch to above when bubbling up
+        c,
+        a,
+        b,
+        tile_n_k,
+        global_tile_offset,
+        global_tile_shape,
+        BTileGenerator[
+            config, config.b_type, config.transpose_b, config.b_packed
+        ].get(b, tile_n_k),
+        elementwise_epilogue_fn,
+    )
+    matmul._outer_k_loop()
 
 
 # Tiled Matmul Implementation.
@@ -311,6 +196,7 @@ fn matmul_inner_loop[
 struct TiledMatmul[
     config: MatmulConfig,
     elementwise_epilogue_enabled: Bool,
+    algorithm: InnerMatmulKernel,
 ]:
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
@@ -320,6 +206,7 @@ struct TiledMatmul[
     TODO: add fusion hooks.
     """
 
+    var alg: algorithm
     var c: NDBuffer[config.c_type, 2, config.c_shape]
     var a: NDBuffer[config.a_type, 2, config.a_shape]
     var b: NDBuffer[config.b_type, 2, config.b_shape]
@@ -337,46 +224,6 @@ struct TiledMatmul[
     ]
 
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None
-
-    # Interface method
-    @staticmethod
-    fn run(
-        c: NDBuffer[config.c_type, 2, config.c_shape],
-        a: NDBuffer[config.a_type, 2, config.a_shape],
-        b: NDBuffer[config.b_type, 2, config.b_shape],
-        elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
-        global_tile_shape: GemmShape,
-        global_tile_offset: GemmShape,
-    ):
-        """Interface function to run tiled matmul on a given sub-tile.
-
-        Args:
-            c: Pre-allocated buffer space for result.
-            a: Operand A of the matmul.
-            b: Operand B of the mamtul.
-            elementwise_epilogue_fn: The elementwise epilogue function.
-            global_tile_shape: Tile shape this call will process.
-            global_tile_offset: Tile offset on the original buffer.
-        """
-
-        var tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
-            global_tile_shape
-        )
-
-        var matmul = TiledMatmul[config, elementwise_epilogue_enabled,](
-            c,
-            a,
-            b,
-            tile_n_k,
-            global_tile_offset,
-            global_tile_shape,
-            BTileGenerator[
-                config, config.b_type, config.transpose_b, config.b_packed
-            ].get(b, tile_n_k),
-            elementwise_epilogue_fn,
-        )
-
-        matmul._outer_k_loop()
 
     fn _outer_m_loop[
         last_n_tile: Bool,
@@ -426,8 +273,7 @@ struct TiledMatmul[
             @parameter
             @always_inline
             fn row_iteration[tile_size: Int](row_offset: Int):
-                matmul_inner_loop[
-                    config,
+                self.alg.__inner_matmul__[
                     tile_size,
                     m_loop_pack_inner_size,
                     skip_col_bound,
@@ -796,6 +642,9 @@ fn _matmul_cpu[
             ):
                 return
 
+            alias use_vnni = config.use_vnni
+            alias use_i8mm = config.use_i8mm
+
             _submatmul_sequential_sync[config, elementwise_lambda_fn](
                 c,
                 a_packed if use_i8mm else a,
@@ -919,7 +768,9 @@ fn matmul[
 fn _submatmul_sequential_sync[
     config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    algorithm: InnerMatmulKernel,
 ](
+    alg: algorithm,
     c: NDBuffer[config.c_type, 2, config.c_shape],
     a: NDBuffer[config.a_type, 2, config.a_shape],
     b: NDBuffer[config.b_type, 2, config.b_shape],
@@ -945,10 +796,8 @@ fn _submatmul_sequential_sync[
         else:
             pass
 
-    TiledMatmul[
-        config,
-        elementwise_lambda_fn.__bool__(),
-    ].run(
+    tiledMatmulRun[config, elementwise_lambda_fn.__bool__(),](
+        alg,
         c,
         a,
         b,
@@ -956,3 +805,62 @@ fn _submatmul_sequential_sync[
         sub_matrix_shape,
         sub_matrix_offset,
     )
+
+
+fn _submatmul_sequential_sync[
+    config: MatmulConfig,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+](
+    c: NDBuffer[config.c_type, 2, config.c_shape],
+    a: NDBuffer[config.a_type, 2, config.a_shape],
+    b: NDBuffer[config.b_type, 2, config.b_shape],
+    sub_matrix_shape: GemmShape,
+    sub_matrix_offset: GemmShape,
+    kernel_type_m: Int = 0,
+):
+    alias use_vnni = config.use_vnni
+    alias use_i8mm = config.use_i8mm
+
+    @parameter
+    if use_i8mm:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            Inner_matmul_i8mm(),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    elif has_neon() and not use_vnni and not use_i8mm:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            Inner_matmul_neon(),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    elif not use_vnni and not has_neon():
+        _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            Inner_matmul_default(),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    elif use_vnni:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            Inner_matmul_vnni[config.saturated_vnni](),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    else:
+        constrained[False, "no _run_inner_loop implementation"]()
