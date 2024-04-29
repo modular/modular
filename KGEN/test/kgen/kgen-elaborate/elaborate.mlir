@@ -1724,6 +1724,26 @@ kgen.generator export @main() {
 
 // -----
 
+kgen.generator @might_fail<succeed: i1>() {
+  kgen.param.assert <succeed>, "did not succeed"
+  kgen.return
+}
+
+!result_type = !kgen.variant<struct<(string, index, (!kgen.pointer<none>) -> ())>, string>
+
+// CHECK-LABEL: @compile_assembly_conditional
+kgen.generator export @compile_assembly_conditional() {
+  // CHECK-NEXT: <#kgen.variant<:string "failed {{.*}}", 1>>
+  kgen.param.constant: !result_type = <compile_assembly(current_target(), llvm, 1, :() -> () @might_fail<:i1 0>)>
+  // CHECK-NEXT: <#kgen.variant<:struct<{{.*}}> { "{{.*}}", 0, [[CAP_FN:@.*]] }, 0>>
+  kgen.param.constant: !result_type = <compile_assembly(current_target(), llvm, 1, :() -> () @might_fail<:i1 1>)>
+  kgen.return
+}
+
+// CHECK: kgen.func [[CAP_FN]]
+
+// -----
+
 // CHECK-NOT: @no_impl
 kgen.generator @no_impl() -> index {
   kgen.param.assert <0>, "bad"

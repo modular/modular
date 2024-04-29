@@ -1173,6 +1173,9 @@ LogicalResult ParamOperatorAttr::verify(
                             "either asm or llvm keyword";
     if (!operands[2].getType().isInteger(1))
       return emitError() << "'compile_assembly' third operand should be an i1";
+    if (!::isa<IntegerAttr>(operands[2]))
+      return emitError()
+             << "'compile_assembly' third operand must be a constant";
     break;
   }
   case POC::GetLinkageName:
