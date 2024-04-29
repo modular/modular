@@ -21,6 +21,8 @@ add_modular_unittest(
   CompletionTest.cpp
   DiagnosticsTest.cpp
   DocumentSymbolTest.cpp
+  FoldingRangeTest.cpp
+  ReferencesTest.cpp
   SampleTest.cpp
   Support.cpp
 

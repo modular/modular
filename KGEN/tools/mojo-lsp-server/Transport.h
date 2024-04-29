@@ -7,8 +7,8 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_SERVER_TRANSPORT_H
 #define KGEN_TOOLS_MOJO_LSP_SERVER_TRANSPORT_H
 
+#include "../common/lsp-protocol/Protocol.h"
 #include "LSPTelemetryContext.h"
-#include "Protocol.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Tools/lsp-server-support/Transport.h"

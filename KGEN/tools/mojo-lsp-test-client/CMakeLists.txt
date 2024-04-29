@@ -7,9 +7,9 @@
 add_modular_library(mojo-lsp-test-client
   Document.cpp
   LSPBatchClient.cpp
-  Protocol.cpp
 
   LINK_LIBS PRIVATE
+  LSPProtocol
   MLIRLspServerSupportLib
   MSupport
   KGENSupport
