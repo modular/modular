@@ -21,7 +21,7 @@ from gpu import (
     barrier,
     lane_id,
 )
-from gpu.host import Context, Function, synchronize, Stream, CacheConfig
+from gpu.host import Context, Function, synchronize, Stream, FuncAttribute
 from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -35,6 +35,7 @@ from gpu.memory import (
     async_copy_wait_all,
     async_copy_commit_group,
     async_copy_wait_group,
+    dynamic_shared_memory,
 )
 from testing import assert_almost_equal
 from sys import argv
@@ -172,17 +173,21 @@ fn multistage_gemm[
     var warp_x = warp_id % num_warps_n
     var warp_y = warp_id // num_warps_n
 
+    var a_smem = dynamic_shared_memory[Scalar[a_type], alignment=4]()
     var a_smem_tiles = LayoutTensor[
         a_type,
         Layout.row_major(num_pipeline_stages * BM, BK),
         address_space = AddressSpace.SHARED,
-    ].stack_allocation().split[num_pipeline_stages]()
+    ](a_smem).split[num_pipeline_stages]()
 
+    var b_smem = (a_smem + num_pipeline_stages * BM * BK).bitcast[
+        Scalar[b_type]
+    ]()
     var b_smem_tiles = LayoutTensor[
         b_type,
         Layout.row_major(num_pipeline_stages * BN, BK),
         address_space = AddressSpace.SHARED,
-    ].stack_allocation().split[num_pipeline_stages]()
+    ](b_smem).split[num_pipeline_stages]()
 
     alias thread_async_copy_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
@@ -389,6 +394,7 @@ fn test() raises:
     alias BK = 16
     alias WM = 32
     alias WN = 64
+    alias shared_mem_bytes = 80 * 1024
 
     var stream = Stream()
 
@@ -445,8 +451,9 @@ fn test() raises:
     # TODO: The cache config doesn't really help here, see #38391.
     var func = Function[__type_of(gemm), gemm](
         threads_per_block=num_threads,
-        cache_config=CacheConfig.PREFER_SHARED,
-        # dump_ptx=Path("./pipelined-gemm.ptx"),
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            shared_mem_bytes
+        ),
     )
 
     if is_benchmark():
@@ -463,6 +470,7 @@ fn test() raises:
                     b_tensor,
                     grid_dim=(div_ceil(N, BN), div_ceil(M, BM), 1),
                     block_dim=(num_threads, 1, 1),
+                    shared_mem_bytes=shared_mem_bytes,
                     stream=stream,
                 )
 
@@ -481,6 +489,7 @@ fn test() raises:
         b_tensor,
         grid_dim=(div_ceil(N, BN), div_ceil(M, BM), 1),
         block_dim=(num_threads, 1, 1),
+        shared_mem_bytes=shared_mem_bytes,
         stream=stream,
     )
 
