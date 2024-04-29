@@ -38,10 +38,35 @@ struct Info:
     var function_name: StringLiteral
     var num_captures: Int
     var populate: fn (Pointer[NoneType]) capturing -> None
+    var error_msg: StringLiteral
+    var is_error: Bool
 
 
 alias _EMISSION_KIND_ASM: __mlir_type.index = (0).__as_mlir_index()
 alias _EMISSION_KIND_LLVM: __mlir_type.index = (1).__as_mlir_index()
+
+
+alias VariantType = __mlir_type[`!kgen.variant<`, _Info, `, string>`]
+
+
+fn _noop_populate(ptr: Pointer[NoneType]) capturing:
+    return
+
+
+fn _variant_is_error(variant: VariantType) -> Bool:
+    return __mlir_op.`kgen.variant.is`[index = __mlir_attr.`1 : index`](variant)
+
+
+fn _variant_get_result(variant: VariantType) -> _Info:
+    return __mlir_op.`kgen.variant.take`[index = __mlir_attr.`0 : index`](
+        variant
+    )
+
+
+fn _variant_get_error(variant: VariantType) -> StringLiteral:
+    return __mlir_op.`kgen.variant.take`[index = __mlir_attr.`1 : index`](
+        variant
+    )
 
 
 @always_inline
@@ -57,17 +82,28 @@ fn _compile_info_asm_impl[
         `,`,
         _EMISSION_KIND_ASM,
         `,`,
-        `0 : i1`,
+        `1 : i1`,
         `,`,
         func,
         `> : `,
-        _Info,
+        VariantType,
     ]
+    alias is_error = _variant_is_error(impl)
+
+    @parameter
+    if is_error:
+        alias result = Info(
+            "", "", 0, _noop_populate, _variant_get_error(impl), True
+        )
+        return result
+    alias cls = _variant_get_result(impl)
     alias result = Info(
-        impl.asm,
+        cls.asm,
         get_linkage_name[target, func_type, func](),
-        impl.num_captures,
-        rebind[fn (Pointer[NoneType]) capturing -> None](impl.populate),
+        cls.num_captures,
+        rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
+        "",
+        False,
     )
     return result
 
@@ -85,19 +121,31 @@ fn _compile_info_llvm_impl[
         `,`,
         _EMISSION_KIND_LLVM,
         `,`,
-        `0 : i1`,
+        `1 : i1`,
         `,`,
         func,
         `> : `,
-        _Info,
+        VariantType,
     ]
-    alias result = Info(
-        impl.asm,
-        get_linkage_name[target, func_type, func](),
-        impl.num_captures,
-        rebind[fn (Pointer[NoneType]) capturing -> None](impl.populate),
-    )
-    return result
+    alias is_error = _variant_is_error(impl)
+
+    @parameter
+    if is_error:
+        alias result = Info(
+            "", "", 0, _noop_populate, _variant_get_error(impl), True
+        )
+        return result
+    else:
+        alias cls = _variant_get_result(impl)
+        alias result = Info(
+            cls.asm,
+            get_linkage_name[target, func_type, func](),
+            cls.num_captures,
+            rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
+            "",
+            False,
+        )
+        return result
 
 
 @always_inline
@@ -135,4 +183,5 @@ fn compile_code[
     alias info = compile_info[
         func_type, func, target=target, emission_kind=emission_kind
     ]()
+    constrained[not info.is_error, "compile_assembly failed"]()
     return info.asm
