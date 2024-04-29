@@ -7,7 +7,7 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_TEST_CLIENT_DOCUMENT_H
 #define KGEN_TOOLS_MOJO_LSP_TEST_CLIENT_DOCUMENT_H
 
-#include "Protocol.h"
+#include "../common/lsp-protocol/Protocol.h"
 #include "Support/LLVMForwardDecls.h"
 
 namespace M {

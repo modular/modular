@@ -7,6 +7,7 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_TEST_CLIENT_LSPBATCHCLIENT_H
 #define KGEN_TOOLS_MOJO_LSP_TEST_CLIENT_LSPBATCHCLIENT_H
 
+#include "../common/lsp-protocol/Protocol.h"
 #include "Document.h"
 #include "JSONUtils.h"
 #include "Support/ErrorOr.h"
@@ -105,6 +106,18 @@ public:
       const Document &doc,
       std::function<void(const std::vector<mlir::lsp::DocumentSymbol> &)>
           callback);
+
+  /// textDocument/references
+  LSPBatchClient &references(
+      const Document &doc, const mlir::lsp::Position &pos,
+      bool includeDeclaration,
+      std::function<void(const std::vector<mlir::lsp::Location> &)> callback);
+
+  /// textDocument/foldingRange
+  LSPBatchClient &
+  foldingRange(const Document &doc,
+               std::function<void(const std::vector<mlir::lsp::FoldingRange> &)>
+                   callback);
 
   /// textDocument/completion
   LSPBatchClient &

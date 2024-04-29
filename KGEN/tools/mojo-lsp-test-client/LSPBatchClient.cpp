@@ -5,9 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "LSPBatchClient.h"
+#include "../common/lsp-protocol/Protocol.h"
 #include "Document.h"
 #include "KGEN/Support/Configuration.h"
-#include "Protocol.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/LLVMForwardDecls.h"
@@ -81,6 +81,23 @@ LSPBatchClient &LSPBatchClient::documentSymbol(
     std::function<void(const std::vector<lsp::DocumentSymbol> &)> callback) {
   lsp::DocumentSymbolParams params{lsp::TextDocumentIdentifier{doc.getURI()}};
   request("textDocument/documentSymbol", toJSON(params), std::move(callback));
+  return *this;
+}
+
+LSPBatchClient &LSPBatchClient::references(
+    const Document &doc, const lsp::Position &pos, bool includeDeclaration,
+    std::function<void(const std::vector<lsp::Location> &)> callback) {
+  lsp::ReferenceParams params{{lsp::TextDocumentIdentifier{doc.getURI()}, pos},
+                              lsp::ReferenceContext{includeDeclaration}};
+  request("textDocument/references", toJSON(params), std::move(callback));
+  return *this;
+}
+
+LSPBatchClient &LSPBatchClient::foldingRange(
+    const Document &doc,
+    std::function<void(const std::vector<lsp::FoldingRange> &)> callback) {
+  lsp::FoldingRangeParams params{{lsp::TextDocumentIdentifier{doc.getURI()}}};
+  request("textDocument/foldingRange", toJSON(params), std::move(callback));
   return *this;
 }
 

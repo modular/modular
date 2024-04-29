@@ -4,13 +4,9 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_library(MojoToolsCommon
-  Telemetry.cpp
+add_modular_library(LSPProtocol
+  Protocol.cpp
 
   LINK_LIBS PRIVATE
-  MSupportInit
-  MSupport
-  LLVMOption
+  MLIRLspServerSupportLib
 )
-
-add_subdirectory(lsp-protocol)

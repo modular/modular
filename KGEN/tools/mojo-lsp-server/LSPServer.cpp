@@ -5,8 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "LSPServer.h"
+#include "../common/lsp-protocol/Protocol.h"
 #include "MojoServer.h"
-#include "Protocol.h"
 #include "SemanticTokens.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Transport.h"

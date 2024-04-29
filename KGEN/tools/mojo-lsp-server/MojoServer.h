@@ -7,7 +7,6 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H
 #define KGEN_TOOLS_MOJO_LSP_SERVER_MOJO_SERVER_H
 
-#include "Protocol.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Transport.h"

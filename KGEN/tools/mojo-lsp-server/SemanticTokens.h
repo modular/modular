@@ -7,7 +7,7 @@
 #ifndef KGEN_TOOLS_MOJO_LSP_SERVER_SEMANTICTOKENS_H
 #define KGEN_TOOLS_MOJO_LSP_SERVER_SEMANTICTOKENS_H
 
-#include "Protocol.h"
+#include "../common/lsp-protocol/Protocol.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
