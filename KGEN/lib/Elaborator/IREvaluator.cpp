@@ -13,6 +13,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/NameMangling.h"
+#include "Support/Compiler/ThreadDiagnosticHandler.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -222,6 +223,12 @@ static StringAttr getExpectedMangledName(GeneratorOp func,
   return baseName;
 }
 
+static void emitDiagnosticToStream(raw_ostream &os, Diagnostic &diag) {
+  os << "\n" << diag.getLocation() << ": " << diag;
+  for (Diagnostic &note : diag.getNotes())
+    emitDiagnosticToStream(os, note);
+}
+
 FailureOr<TypedAttr>
 IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // Cheeky copy. The state of the symbol table right at this moment is
@@ -232,6 +239,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   TargetInfoAttr target = cast<TargetParamAttr>(op.getOperand(0)).getTarget();
   auto emissionKind =
       (EmissionKind)cast<IntegerAttr>(op.getOperand(1)).getInt();
+  bool propagateError = cast<IntegerAttr>(op.getOperand(2)).getInt();
   auto symbol = dyn_cast<SymbolConstantAttr>(op.getOperand(3));
   if (!symbol || !symbol.getType().isConcrete()) {
     emitError({*errorLoc, "'compile_assembly' function is not concrete"});
@@ -242,6 +250,18 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
       cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr());
   assert(func && "expected a valid generator reference");
 
+  // Construct the expected result type.
+  MLIRContext *ctx = op.getContext();
+  Builder b(op.getContext());
+  auto noneType = KGEN::NoneType::get(ctx);
+  auto populateFnType = SignatureType::get(
+      b.getFunctionType(PointerType::get(noneType), noneType), {}, {},
+      {ArgConvention::BorrowedInReg}, FnEffects().setCapturing());
+  auto strType = StringType::get(ctx);
+  auto structType = StructType::get(
+      b.getContext(), {strType, b.getIndexType(), populateFnType});
+  auto variant = VariantType::get({structType, strType});
+
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it
   // turns out that the specialization has more than one implementation, then
@@ -249,24 +269,42 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   // primary generator, and the functor will return an error.
   StringAttr name =
       getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
+
+  // Capture the diagnostics that may be emitted.
+  ThreadDiagnosticHandler handler(ctx);
   ErrorOr<CrossDeviceFunction> closure = elaborator->getCompileAsmFn()(
       func, symbol, name, symtabCopy, target, emissionKind);
+  handler.release();
+
   if (closure.isError()) {
-    emitError({*errorLoc, closure.takeError()});
-    return failure();
+    // Emit all the errors now.
+    if (!propagateError) {
+      handler.emitDiagnostics([&](Diagnostic &diag) {
+        ctx->getDiagEngine().emit(std::move(diag));
+      });
+      emitError({*errorLoc, closure.takeError()});
+      return failure();
+    }
+    // Concat all the errors together and return it as a variant.
+    std::string error;
+    llvm::raw_string_ostream os(error);
+    os << closure.getError();
+    handler.emitDiagnostics(
+        [&](Diagnostic &diag) { emitDiagnosticToStream(os, diag); });
+    return {VariantAttr::get(StringAttr::get(os.str(), strType), 1, variant)};
   }
+
   auto populate = cast<FuncOp>(closure->populateCapturesFn.release());
   elaborator->addDeferredFunction(populate);
 
-  Builder b(op.getContext());
   SmallVector<TypedAttr> fieldValues{
       closure->contents, b.getIndexAttr(closure->numCaptures),
       SymbolConstantAttr::get(FlatSymbolRefAttr::get(populate.getSymNameAttr()),
                               populate.getSignature())};
-  SmallVector<Type> fieldTypes =
-      llvm::map_to_vector(fieldValues, [](TypedAttr v) { return v.getType(); });
-  auto structType = StructType::get(b.getContext(), fieldTypes);
-  return {StructAttr::get(fieldValues, structType)};
+  TypedAttr result = StructAttr::get(fieldValues, structType);
+  if (propagateError)
+    result = VariantAttr::get(result, 0, variant);
+  return result;
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
