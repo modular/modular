@@ -22,9 +22,7 @@ class DeclResolver;
 class ParserParamEvaluator : public ParameterEvaluator {
 public:
   ParserParamEvaluator(DeclResolver &resolver,
-                       ArrayRef<ParamDeclAttr> paramDecls,
-                       ArrayRef<TypedAttr> paramValues);
-  ParserParamEvaluator(DeclResolver &resolver,
+                       ArrayRef<ParamDeclAttr> paramDecls = {},
                        ArrayRef<TypedAttr> paramValues = {});
 
   /// Attempt to evaluate 'apply' expressions.

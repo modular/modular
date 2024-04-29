@@ -8,13 +8,13 @@
 #include "MojoUtils.h"
 
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/CallEmission.h"
 #include "KGEN/MojoParser/DeclResolver.h"
 #include "KGEN/MojoParser/ExprEmitter.h"
 #include "KGEN/MojoParser/ExprNodes.h"
-#include "KGEN/MojoParser/ParserParamEvaluator.h"
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoParser/StructEmitter.h"
 #include "mlir/IR/ImplicitLocOpBuilder.h"
@@ -35,7 +35,7 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
 
   // Add trait's T replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, trait));
-  ParserParamEvaluator evaluator(emitter.getDeclResolver(), params);
+  ParameterEvaluator evaluator(params);
   auto bindings = ParamBindings::getForDeclaredType(
       emitter.declScope, emitter.shared, structSelfType);
   // Leave the rest alone.
