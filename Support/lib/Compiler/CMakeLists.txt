@@ -12,6 +12,7 @@ add_modular_mlir_library(MCompilerSupport
   MLIRDType.cpp
   OperationUtils.cpp
   ParserUtils.cpp
+  ThreadDiagnosticHandler.cpp
   TimeProfilerTimingManager.cpp
   VerifyUtils.cpp
 
