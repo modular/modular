@@ -19,7 +19,7 @@ from max.engine import InferenceSession, Model
 from max.engine._utils import handle_from_config
 
 from .callbacks import (
-    _SC2,
+    CallbacksPair,
     ServerCallbacks,
     NoopServerCallbacks,
     make_callbacks_pair,
@@ -30,7 +30,7 @@ from .service import (
     InferenceService,
     FileModel,
 )
-from .stats import ServerStats, ServerStatsOptions, STATS_ENABLED
+from .stats import ServerStats, ServerStatsOptions
 from ._kserve_impl import ModelInferRequest, ModelInferResponse
 from ._serve_rt import Batch, MuttServerAsync, TensorView
 
@@ -80,7 +80,7 @@ struct GRPCInferenceServer:
     var _num_listeners: Int
     var _impl: MuttServerAsync
 
-    var _all_callbacks: _SC2[ServerStats, NoopServerCallbacks]
+    var _callbacks: CallbacksPair[ServerStats, NoopServerCallbacks]
 
     fn __init__(
         inout self,
@@ -100,9 +100,13 @@ struct GRPCInferenceServer:
         self._num_listeners = num_listeners
         self._impl = MuttServerAsync(address, self._lib, self._session)
 
-        self._all_callbacks = make_callbacks_pair(
+        self._callbacks = make_callbacks_pair(
             ServerStats(), NoopServerCallbacks()
         )
+        self._callbacks.on_server_start()
+
+    fn __del__(owned self):
+        self._callbacks.on_server_stop()
 
     fn serve[
         service_type: InferenceService
@@ -131,10 +135,10 @@ struct GRPCInferenceServer:
                 var req = requests[i]
                 var resp = responses[i]
                 var start = now()
-                self._all_callbacks.on_request_receive()
+                self._callbacks.on_request_receive(req)
                 await handle_fn(req, resp)
                 self._impl.push_complete(batch, i)
-                self._all_callbacks.on_request_ok(start)
+                self._callbacks.on_request_ok(start, req)
                 _ = resp^
 
         @always_inline
@@ -144,9 +148,9 @@ struct GRPCInferenceServer:
                 var batch = Batch(self._lib, self._session)
                 await self._impl.pop_ready(batch)
                 var start = now()
-                self._all_callbacks.on_batch_receive()
+                self._callbacks.on_batch_receive(batch)
                 await process(batch)
-                self._all_callbacks.on_batch_complete(start)
+                self._callbacks.on_batch_complete(start, batch)
                 _ = batch^
 
         self._impl.run()
