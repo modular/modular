@@ -767,3 +767,15 @@ kgen.generator @two_params<a, b>() {
   kgen.param.declare f: <index, index>() -> () = <@two_params<?>>
   kgen.return
 }
+
+// -----
+
+kgen.generator @kernel() {
+  kgen.return
+}
+
+kgen.generator export @top() {
+  // expected-error @below {{custom op 'kgen.param.constant' the emission kind must be either llvm or asm}}
+  kgen.param.constant: string = <compile_assembly(current_target(), something, :() -> () @kernel)>
+  kgen.return
+}
