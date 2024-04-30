@@ -287,6 +287,24 @@ bool SemanticToken::operator==(const SemanticToken &rhs) const {
                   rhs.tokenModifiers);
 }
 
+bool mlir::lsp::fromJSON(const llvm::json::Value &params,
+                         SemanticTokens &result, llvm::json::Path path) {
+  std::vector<int64_t> encodedTokens;
+
+  llvm::json::ObjectMapper o(params, path);
+  if (!o || !o.mapOptional("resultId", result.resultId) ||
+      !o.map("data", encodedTokens))
+    return false;
+
+  for (size_t i = 0, e = encodedTokens.size(); i < e; i += 5) {
+    result.tokens.push_back(lsp::SemanticToken{
+        (unsigned)encodedTokens[i], (unsigned)encodedTokens[i + 1],
+        (unsigned)encodedTokens[i + 2], (unsigned)encodedTokens[i + 3],
+        (unsigned)encodedTokens[i + 4]});
+  }
+  return true;
+}
+
 llvm::json::Value mlir::lsp::toJSON(const SemanticTokens &value) {
   return llvm::json::Object{{"resultId", value.resultId},
                             {"data", encodeTokens(value.tokens)}};
@@ -300,6 +318,10 @@ bool mlir::lsp::fromJSON(const llvm::json::Value &params,
                          SemanticTokensParams &result, llvm::json::Path path) {
   llvm::json::ObjectMapper o(params, path);
   return o && o.map("textDocument", result.textDocument);
+}
+
+llvm::json::Value mlir::lsp::toJSON(const SemanticTokensParams &value) {
+  return llvm::json::Object{{"textDocument", value.textDocument}};
 }
 
 bool mlir::lsp::fromJSON(const llvm::json::Value &params,

@@ -97,6 +97,15 @@ LSPBatchClient &LSPBatchClient::definition(
   return *this;
 }
 
+LSPBatchClient &LSPBatchClient::semanticTokensFull(
+    const Document &doc,
+    std::function<void(const lsp::SemanticTokens &)> callback) {
+  lsp::SemanticTokensParams params{lsp::TextDocumentIdentifier{doc.getURI()}};
+  request("textDocument/semanticTokens/full", toJSON(params),
+          std::move(callback));
+  return *this;
+}
+
 LSPBatchClient &LSPBatchClient::signatureHelp(
     const Document &doc, const lsp::Position &position,
     std::function<void(const lsp::SignatureHelp2 &)> callback) {

@@ -692,3 +692,79 @@ fn fn2[f: fn [dt: DType, dt2: Int](arg1: Scalar[dt], arg2: Int) -> None]():
              })
       .execute();
 }
+
+TEST(HoverTest, testStructFieldsHoverAndDef) {
+  Document doc("test:///foo.mojo",
+               R"(
+struct SomeStruct:
+    var a_field: Int
+    """Summary of a_field."""
+
+    fn __init__(inout self):
+        pass
+
+
+fn main():
+    var someStruct = SomeStruct()
+    _ = someStruct.a_field
+  )");
+
+  lsp::Range rangeAField = *doc.findFirstRange("a_field");
+
+  createTestClient()
+      .open(doc)
+      .hover(
+          doc, rangeAField.start,
+          [&](const lsp::Hover &hover) { EXPECT_EQ(hover.range, rangeAField); })
+      .definition(doc, rangeAField.start,
+                  [&](const std::vector<lsp::Location> &locations) {
+                    ASSERT_EQ((int)locations.size(), 1);
+                    EXPECT_EQ(locations[0].range, rangeAField);
+                  })
+      .execute();
+}
+
+TEST(HoverTest, testStructAliasHoverAndDef) {
+  Document doc = createDocumentFromInputFile("aliases.mojo");
+
+  lsp::Range rangeAlias = *doc.findFirstRange("AliasInStruct");
+
+  createTestClient()
+      .open(doc)
+      .hover(
+          doc, rangeAlias.start,
+          [&](const lsp::Hover &hover) { EXPECT_EQ(hover.range, rangeAlias); })
+      .definition(doc, rangeAlias.start,
+                  [&](const std::vector<lsp::Location> &locations) {
+                    ASSERT_EQ((int)locations.size(), 1);
+                    EXPECT_EQ(locations[0].range, rangeAlias);
+                  })
+      .execute();
+}
+
+TEST(HoverTest, testGlobalVariableHoverAndDef) {
+  Document doc("test:///foo.mojo",
+               R"(
+var var_global_variable: Int = 345
+
+
+fn main():
+    var sum = let_global_variable + var_global_variable
+
+  )");
+
+  lsp::Range rangeGlobalVar = *doc.findFirstRange("var_global_variable");
+
+  createTestClient()
+      .open(doc)
+      .hover(doc, rangeGlobalVar.start,
+             [&](const lsp::Hover &hover) {
+               EXPECT_EQ(hover.range, rangeGlobalVar);
+             })
+      .definition(doc, rangeGlobalVar.start,
+                  [&](const std::vector<lsp::Location> &locations) {
+                    ASSERT_EQ((int)locations.size(), 1);
+                    EXPECT_EQ(locations[0].range, rangeGlobalVar);
+                  })
+      .execute();
+}

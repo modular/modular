@@ -19,6 +19,7 @@ add_modular_unittest(
   CodeActionTest.cpp
   CodeBlockTest.cpp
   CompletionTest.cpp
+  DefinitionTest.cpp
   DiagnosticsTest.cpp
   DocumentSymbolTest.cpp
   FoldingRangeTest.cpp
@@ -26,6 +27,8 @@ add_modular_unittest(
   NotebookTest.cpp
   ReferencesTest.cpp
   SampleTest.cpp
+  SemanticTokensTest.cpp
+  SignatureHelpTest.cpp
   Support.cpp
 
   DEPENDS

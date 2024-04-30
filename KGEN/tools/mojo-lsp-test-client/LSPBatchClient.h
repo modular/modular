@@ -98,6 +98,11 @@ public:
       const Document &doc, const mlir::lsp::Position &position,
       std::function<void(const std::vector<mlir::lsp::Location> &)> callback);
 
+  /// textDocument/semanticTokens/full
+  LSPBatchClient &semanticTokensFull(
+      const Document &doc,
+      std::function<void(const mlir::lsp::SemanticTokens &)> callback);
+
   /// textDocument/signatureHelp
   LSPBatchClient &signatureHelp(
       const Document &doc, const mlir::lsp::Position &position,

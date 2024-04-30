@@ -38,22 +38,41 @@ std::optional<lsp::Position> Document::findLastPos(StringRef substr) const {
 
 std::optional<mlir::lsp::Range>
 Document::findFirstRange(StringRef substr) const {
-  for (size_t line = 0, e = lines.size(); line < e; ++line)
+  for (size_t line = 0, e = lines.size(); line < e; ++line) {
+    if (lines[line].ends_with("# skip"))
+      continue;
     if (size_t pos = lines[line].find(substr); pos != StringRef::npos)
       return lsp::Range{lsp::Position(line, pos),
                         lsp::Position(line, pos + substr.size())};
+  }
 
   return {};
+}
+
+std::vector<mlir::lsp::Range> Document::findAllRanges(StringRef substr) const {
+  std::vector<mlir::lsp::Range> ranges;
+  for (size_t line = 0, e = lines.size(); line < e; ++line) {
+    if (lines[line].ends_with("# skip"))
+      continue;
+    if (size_t pos = lines[line].find(substr); pos != StringRef::npos)
+      ranges.emplace_back(lsp::Position(line, pos),
+                          lsp::Position(line, pos + substr.size()));
+  }
+
+  return ranges;
 }
 
 std::optional<mlir::lsp::Range>
 Document::findLastRange(StringRef substr) const {
   if (lines.empty())
     return {};
-  for (size_t line = lines.size() - 1; line; --line)
+  for (size_t line = lines.size() - 1; line; --line) {
+    if (lines[line].ends_with("# skip"))
+      continue;
     if (size_t pos = lines[line].rfind(substr); pos != StringRef::npos)
       return lsp::Range{lsp::Position(line, pos),
                         lsp::Position(line, pos + substr.size())};
+  }
 
   return {};
 }
