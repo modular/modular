@@ -6,8 +6,7 @@
 
 """The module contains implementations of activation functions."""
 
-from math import clamp, erf, exp, expm1, fma, identity, max, min, tanh
-from math.bit import _is_neg
+import math
 
 
 @value
@@ -46,7 +45,7 @@ fn dispatch_activation_fn[
 ](val: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     @parameter
     if activation == ActivationType.IDENTITY:
-        return identity(val)
+        return math.identity(val)
     elif activation == ActivationType.RELU:
         return relu(val)
     elif activation == ActivationType.GELU:
@@ -57,20 +56,108 @@ fn dispatch_activation_fn[
     return val
 
 
-# ===----------------------------------------------------------------------===#
-# _tanh
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
+# ceil
+# ===----------------------------------------------------------------------=== #
 
 
-fn _tanh[
+@always_inline("nodebug")
+fn ceil[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return tanh(x)
+    """Compute the Ceil Op.
+
+    Parameters:
+        type: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+
+    Args:
+        x : The value to compute the Ceil operation on.
+
+    Returns:
+        The result of the Ceil operation.
+    """
+    return math.ceil(x)
 
 
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
+# floor
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline("nodebug")
+fn floor[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Compute the Floor Op.
+
+    Parameters:
+        type: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+
+    Args:
+        x : The value to compute the Floor operation on.
+
+    Returns:
+        The result of the Floor operation.
+    """
+    return math.floor(x)
+
+
+# ===----------------------------------------------------------------------=== #
+# tanh
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+fn tanh[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    """Compute the Tanh Op.
+
+    Parameters:
+        type: DType used for the computation.
+        simd_width: SIMD width used for the computation.
+
+    Args:
+        x : The value to compute the Tanh operation on.
+
+    Returns:
+        The result of the Tanh operation.
+    """
+    return math.tanh(x)
+
+
+# ===----------------------------------------------------------------------=== #
 # sign
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline("nodebug")
+fn _is_neg[
+    type: DType, simd_width: Int
+](val: SIMD[type, simd_width]) -> SIMD[DType.bool, simd_width]:
+    """Returns True if the input value is negative.
+
+    The value is computed separately for each element in the SIMD vector. For
+    unsigned types the result is always a SIMD vector filled with False.
+
+    Parameters:
+        type: dtype used for the computation.
+        simd_width: SIMD width used for the computation.
+
+    Args:
+        val: The value to check.
+
+    Returns:
+        A SIMD value where the element at position `i` is True if the value is
+        negative at position `i` and False otherwise.
+    """
+
+    @parameter
+    if type.is_unsigned():
+        return False
+    return val < 0
 
 
 @always_inline
@@ -87,16 +174,16 @@ fn sign[
         x : The value to compute the sign operation on.
 
     Returns:
-        SIMD[type, simd_width]: The result of the sign operation.
+        The result of the sign operation.
     """
     var is_neg_mask = _is_neg(x)
     var is_zero_mask = x == 0
     return is_neg_mask.select[type](-1, is_zero_mask.select[type](0, 1))
 
 
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # elu
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 @always_inline
@@ -113,14 +200,14 @@ fn elu[
         x: The value to compute the ELU operation on.
 
     Returns:
-        SIMD[type, simd_width]: The result of the ELU operation.
+        The result of the ELU operation.
     """
-    return (x >= 0).select(x, expm1(x))
+    return (x >= 0).select(x, math.expm1(x))
 
 
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # relu
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 @always_inline
@@ -137,14 +224,14 @@ fn relu[
         x : The value to compute the RELU operation on.
 
     Returns:
-        SIMD[type, simd_width]: The result of the RELU operation.
+        The result of the RELU operation.
     """
-    return max(x, 0)
+    return math.max(x, 0)
 
 
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # relu-n1
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 @always_inline
@@ -161,14 +248,14 @@ fn relu_n1[
         x : The value to compute the RELU N1 operation on.
 
     Returns:
-        SIMD[type, simd_width]: The result of the RELU N1 operation.
+        The result of the RELU N1 operation.
     """
-    return clamp(x, -1, 1)
+    return math.clamp(x, -1, 1)
 
 
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # gelu
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 @always_inline
@@ -186,7 +273,7 @@ fn gelu[
         x: The value to compute the GELU operation on.
 
     Returns:
-        SIMD[type, size]: The result of the GELU operation.
+        The result of the GELU operation.
 
     Constraints:
         Type must be a floating point type.
@@ -199,13 +286,13 @@ fn gelu[
     # 0.5 * x * (1 + erf(x / SQRT_2))
     # x_half + x_half * erf_res
     var x_half = 0.5 * x
-    var erf_res = erf(x * inv_SQRT_2)
+    var erf_res = math.erf(x * inv_SQRT_2)
     return x_half.fma(erf_res, x_half)
 
 
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # gelu_approximate
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 @always_inline
@@ -226,7 +313,7 @@ fn gelu_approximate[
         Type must be a floating point type.
 
     Returns:
-        SIMD[type, size]: The result of the approximate GELU operation.
+        The result of the approximate GELU operation.
     """
     alias SQRT_TWO_OVER_PI = 0.797884560802865
     constrained[
@@ -237,9 +324,9 @@ fn gelu_approximate[
     return 0.5 * x * (1 + tanh(SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
 
 
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # sigmoid
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 @always_inline
@@ -256,14 +343,14 @@ fn sigmoid[
         x: The value to compute the sigmoid operation on.
 
     Returns:
-        SIMD[type, size]: The result of the sigmoid operation.
+        The result of the sigmoid operation.
     """
-    return 1 / (1 + exp(-x))
+    return 1 / (1 + math.exp(-x))
 
 
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 # sigmoid_grad
-# ===----------------------------------------------------------------------===#
+# ===----------------------------------------------------------------------=== #
 
 
 @always_inline
