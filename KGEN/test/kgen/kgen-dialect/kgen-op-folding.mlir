@@ -1,4 +1,4 @@
-// RUN: kgen-opt -canonicalize -mlir-print-debuginfo -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -canonicalize -mlir-print-debuginfo %s | FileCheck %s
 
 // CHECK-LABEL: @int_literal_bit_width
 kgen.func @int_literal_bit_width() -> (!kgen.int_literal, !kgen.int_literal) {
@@ -13,8 +13,6 @@ kgen.func @int_literal_bit_width() -> (!kgen.int_literal, !kgen.int_literal) {
   kgen.return %width1, %width2 : !kgen.int_literal, !kgen.int_literal
 }
 
-// -----
-
 // CHECK-LABEL: @int_literal_to_float_literal
 kgen.func @int_literal_to_float_literal() -> !kgen.float_literal {
   %il = kgen.param.constant: !kgen.int_literal = <5>
@@ -22,8 +20,6 @@ kgen.func @int_literal_to_float_literal() -> !kgen.float_literal {
   %fl = kgen.int_literal.to_float_literal %il
   kgen.return %fl : !kgen.float_literal
 }
-
-// -----
 
 // CHECK-LABEL: @float_literal_isa
 kgen.func @float_literal_isa() -> (
@@ -68,8 +64,6 @@ kgen.func @float_literal_isa() -> (
     : i1, i1, i1, i1, i1, i1, i1, i1, i1, i1
 }
 
-// -----
-
 // CHECK-LABEL: @float_literal_cmp_normal_diff
 kgen.func @float_literal_cmp_normal_diff() -> (i1, i1, i1, i1, i1, i1) {
   %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<5|3>>
@@ -95,8 +89,6 @@ kgen.func @float_literal_cmp_normal_diff() -> (i1, i1, i1, i1, i1, i1) {
   kgen.return %b1, %b2, %b3, %b4, %b5, %b6 : i1, i1, i1, i1, i1, i1
 }
 
-// -----
-
 // CHECK-LABEL: @float_literal_cmp_normal_same
 kgen.func @float_literal_cmp_normal_same() -> (i1, i1, i1, i1, i1, i1) {
   %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<5|3>>
@@ -120,8 +112,6 @@ kgen.func @float_literal_cmp_normal_same() -> (i1, i1, i1, i1, i1, i1) {
 
   kgen.return %b1, %b2, %b3, %b4, %b5, %b6: i1, i1, i1, i1, i1, i1
 }
-
-// -----
 
 // CHECK-LABEL: @float_literal_cmp_neg_zero
 kgen.func @float_literal_cmp_neg_zero() -> (i1, i1, i1, i1, i1, i1, i1, i1, i1) {
@@ -159,8 +149,6 @@ kgen.func @float_literal_cmp_neg_zero() -> (i1, i1, i1, i1, i1, i1, i1, i1, i1) 
     i1, i1, i1, i1, i1, i1, i1, i1, i1
 }
 
-// -----
-
 // CHECK-LABEL: @float_literal_cmp_inf
 kgen.func @float_literal_cmp_inf() -> (i1, i1, i1, i1, i1, i1, i1, i1) {
   %fa = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<5|3>>
@@ -196,8 +184,6 @@ kgen.func @float_literal_cmp_inf() -> (i1, i1, i1, i1, i1, i1, i1, i1) {
     i1, i1, i1, i1, i1, i1, i1, i1
 }
 
-// -----
-
 // CHECK-LABEL: @float_literal_cmp_nan
 kgen.func @float_literal_cmp_nan() -> (i1, i1, i1, i1, i1, i1) {
   %nan = kgen.param.constant: !kgen.float_literal = <#kgen.float_literal<nan>>
@@ -221,8 +207,6 @@ kgen.func @float_literal_cmp_nan() -> (i1, i1, i1, i1, i1, i1) {
 
   kgen.return %b1, %b2, %b3, %b4, %b5, %b6: i1, i1, i1, i1, i1, i1
 }
-
-// -----
 
 // CHECK-LABEL: @float_literal_binop_nan
 kgen.func @float_literal_binop_nan() -> (
@@ -266,8 +250,6 @@ kgen.func @float_literal_binop_nan() -> (
   !kgen.float_literal
 }
 
-// -----
-
 // CHECK-LABEL: @float_literal_binop_uniques
 kgen.func @float_literal_binop_uniques() ->
   (!kgen.float_literal, !kgen.float_literal,
@@ -288,8 +270,6 @@ kgen.func @float_literal_binop_uniques() ->
     !kgen.float_literal, !kgen.float_literal, !kgen.float_literal,
     !kgen.float_literal
 }
-
-// -----
 
 // CHECK-LABEL: @float_literal_convert
 kgen.func @float_literal_convert()
@@ -322,8 +302,6 @@ kgen.func @float_literal_convert()
   kgen.return %r1, %r2, %r3, %r4, %r5, %r6, %r7
     : f64, f64, f64, f64, f64, f64, f64
 }
-
-// -----
 
 // CHECK-LABEL: @float_literal_to_int_literal
 kgen.func @float_literal_to_int_literal() ->

@@ -1,4 +1,4 @@
-// RUN: kgen-opt -verify-parameters -canonicalize -mlir-print-debuginfo -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -verify-parameters -canonicalize -mlir-print-debuginfo %s | FileCheck %s
 
 // CHECK-LABEL: @rebind_folds
 kgen.generator @rebind_folds<dtype: dtype, type: type>(
@@ -113,7 +113,6 @@ kgen.generator @param_declare<simd_width, unroll_factor>() -> index {
   kgen.return %result : index
 }
 
-// -----
 
 // Hoisting constants that reference parameters.
 // https://github.com/modularml/modular/issues/4518
@@ -148,7 +147,6 @@ kgen.generator @call_param_bound_symbol() {
   kgen.return
 }
 
-// -----
 
 lit.struct.decl @Struct {
   lit.func @Nested() {
@@ -163,11 +161,9 @@ kgen.generator @callNested() {
   kgen.return
 }
 
-// -----
 
-// COM: Check that constant are only hoisted from subprogram regions if there is
-// COM: no debuginfo scope given.
-
+// Check that constant are only hoisted from subprogram regions if there is no
+// debuginfo scope given.
 #subprogram = #debuginfo.subprogram<name = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #subprogram1 = #debuginfo.subprogram<name = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
@@ -431,4 +427,11 @@ kgen.func @variant_take_then_create_mismatch_types(
 
   // CHECK-NEXT: return %1
   kgen.return %res : !kgen.variant<i32, f32>
+}
+
+// CHECK-LABEL: @source_loc_pure
+kgen.func @source_loc_pure() {
+  %line, %col, %fileName = kgen.source_loc[1]
+  // CHECK-NEXT: return
+  kgen.return
 }
