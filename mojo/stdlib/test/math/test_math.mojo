@@ -6,6 +6,7 @@
 # RUN: %mojo %s
 
 from math import (
+    ceil,
     cos,
     factorial,
     floor,
@@ -303,6 +304,16 @@ def test_isclose():
     )
 
 
+def test_ceil():
+    # We just test that the `ceil` function resolves correctly for a few common
+    # types. Types should test their own `__ceil__` implementation explicitly.
+    assert_equal(ceil(0), 0)
+    assert_equal(ceil(Int(5)), 5)
+    assert_equal(ceil(1.5), 2.0)
+    assert_equal(ceil(Float32(1.4)), 2.0)
+    assert_equal(ceil(Float64(-3.6)), -3.0)
+
+
 def test_floor():
     # We just test that the `floor` function resolves correctly for a few common
     # types. Types should test their own `__floor__` implementation explicitly.
@@ -336,6 +347,7 @@ def main():
     test_boole()
     test_copysign()
     test_isclose()
+    test_ceil()
     test_floor()
 
     # TODO: move this to test_float_literal.mojo when round is moved to builtin.
