@@ -4,14 +4,34 @@
 #
 # ===----------------------------------------------------------------------=== #
 from math import min
-from buffer.buffer import partial_simd_load, partial_simd_store
+from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
 from buffer.list import DimList
 from utils.index import Index
-from nn.accumulate import (
-    _Accumulator,
-    _simd_load_maybe_partial,
-    _simd_store_maybe_partial,
-)
+
+
+@always_inline
+fn _initialize_c_tile_default[
+    simd_size: Int,
+    a_row_size: Int,
+    pack_inner_size: Int,
+](c_local: NDBuffer[_, 2, DimList(a_row_size, pack_inner_size)]):
+    """Utility function on the inner loop. Initializes a local c buffer with
+    all zeros.
+
+    """
+
+    @always_inline
+    @parameter
+    fn outer_body[idx0: Int, idx1: Int]():
+        c_local.store[
+            width=simd_size,
+            alignment = alignof[SIMD[c_local.type, simd_size]](),
+        ](
+            Index(idx0, idx1 * simd_size),
+            SIMD[c_local.type, simd_size](0),
+        )
+
+    unroll[outer_body, a_row_size, pack_inner_size // simd_size]()
 
 
 struct LoadStore_default[
@@ -21,24 +41,24 @@ struct LoadStore_default[
     tile_rows: Int,
     tile_columns: Int,
 ]:
-    alias num_simd_cols = tile_columns // simd_size
-    var output_tile: _Accumulator[
-        type, tile_rows, Self.num_simd_cols, simd_size
-    ]
+    var output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)]
 
     @always_inline
     fn __init__(inout self):
-        self.output_tile = _Accumulator[
-            type, tile_rows, Self.num_simd_cols, simd_size
-        ]()
+        var output_tile = NDBuffer[
+            type,
+            2,
+            DimList(tile_rows, tile_columns),
+        ].aligned_stack_allocation[alignof[SIMD[type, simd_size]]()]()
+        self.output_tile = output_tile
 
     @always_inline
-    fn _initialize_c_tile(inout self):
-        self.output_tile.init(0)
+    fn _initialize_c_tile(self):
+        _initialize_c_tile_default[simd_size](self.output_tile)
 
     @always_inline
     fn _load_c_tile(
-        inout self,
+        self,
         c_ptr: DTypePointer[type],
         c_stride: Int,
         tile_n_idx: Int,
@@ -69,7 +89,7 @@ struct LoadStore_default[
                 c_data = 0
 
             # Store data to local buffer.
-            self.output_tile[idx0, idx1] = c_data
+            self.output_tile.store(Index(idx0, idx1 * simd_size), c_data)
 
             @parameter
             if idx1 == tile_columns // simd_size - 1:
@@ -90,7 +110,9 @@ struct LoadStore_default[
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
-            var c_data = self.output_tile[idx0, idx1]
+            var c_data = self.output_tile.load[width=simd_size](
+                Index(idx0, idx1 * simd_size)
+            )
             if skip_boundary_check or (
                 idx1 * simd_size + simd_size <= c_bound[1] - tile_n_idx
             ):
@@ -122,24 +144,24 @@ struct LoadStore_i8mm[
     tile_rows: Int,
     tile_columns: Int,
 ]:
-    alias num_simd_cols = tile_columns // simd_size
-    var output_tile: _Accumulator[
-        type, tile_rows, Self.num_simd_cols, simd_size
-    ]
+    var output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)]
 
     @always_inline
     fn __init__(inout self):
-        self.output_tile = _Accumulator[
-            type, tile_rows, Self.num_simd_cols, simd_size
-        ]()
+        var output_tile = NDBuffer[
+            type,
+            2,
+            DimList(tile_rows, tile_columns),
+        ].aligned_stack_allocation[alignof[SIMD[type, simd_size]]()]()
+        self.output_tile = output_tile
 
     @always_inline
-    fn _initialize_c_tile(inout self):
-        self.output_tile.init(0)
+    fn _initialize_c_tile(self):
+        _initialize_c_tile_default[simd_size](self.output_tile)
 
     @always_inline
     fn _load_c_tile(
-        inout self,
+        self,
         c_ptr: DTypePointer[type],
         c_stride: Int,
         tile_n_idx: Int,
@@ -174,7 +196,10 @@ struct LoadStore_i8mm[
                 ) if not single_row else SIMD[type, 2](0)
                 c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
 
-            self.output_tile[idx0, idx1] = c_data
+            self.output_tile.store[width=simd_size](
+                Index(idx0, idx1 * simd_size),
+                rebind[SIMD[type, simd_size]](c_data),
+            )
 
         unroll[body, tile_rows, tile_columns // simd_size]()
 
@@ -191,7 +216,9 @@ struct LoadStore_i8mm[
         @always_inline
         @parameter
         fn body[idx0: Int, idx1: Int]():
-            var c_data = self.output_tile[idx0, idx1]
+            var c_data = self.output_tile.load[width=simd_size](
+                Index(idx0, idx1 * simd_size)
+            )
             if skip_boundary_check or (idx1 * 2 + 2 <= c_bound[1] - tile_n_idx):
                 c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1).store[
                     width=2
@@ -229,24 +256,24 @@ struct LoadStore_neon[
     tile_rows: Int,
     tile_columns: Int,
 ]:
-    alias num_simd_cols = tile_columns // simd_size
-    var output_tile: _Accumulator[
-        type, tile_rows, Self.num_simd_cols, simd_size
-    ]
+    var output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)]
 
     @always_inline
     fn __init__(inout self):
-        self.output_tile = _Accumulator[
-            type, tile_rows, Self.num_simd_cols, simd_size
-        ]()
+        var output_tile = NDBuffer[
+            type,
+            2,
+            DimList(tile_rows, tile_columns),
+        ].aligned_stack_allocation[alignof[SIMD[type, simd_size]]()]()
+        self.output_tile = output_tile
 
     @always_inline
-    fn _initialize_c_tile(inout self):
-        self.output_tile.init(0)
+    fn _initialize_c_tile(self):
+        _initialize_c_tile_default[simd_size](self.output_tile)
 
     @always_inline
     fn _load_c_tile(
-        inout self,
+        self,
         c_ptr: DTypePointer[type],
         c_stride: Int,
         tile_n_idx: Int,
@@ -254,7 +281,11 @@ struct LoadStore_neon[
     ):
         var c_ptr_loc = rebind[DTypePointer[type]](c_ptr.offset(tile_n_idx))
 
-        self.output_tile.init(0)
+        _initialize_c_tile_default[
+            simd_size,
+            tile_rows,
+            tile_columns,
+        ](self.output_tile)
         return LoadStoreOutputTile[
             type, simd_size, tile_rows, tile_columns, True
         ].run(
@@ -266,7 +297,7 @@ struct LoadStore_neon[
 
     @always_inline
     fn _store_c_tile(
-        inout self,
+        self,
         c_ptr: DTypePointer[type],
         c_stride: Int,
         tile_n_idx: Int,
@@ -291,23 +322,17 @@ struct LoadStoreOutputTile[
     tile_columns: Int,
     is_load: Bool,
 ]:
-    alias num_simd_cols = tile_columns // simd_size
-    var output_tile: _Accumulator[
-        type, tile_rows, Self.num_simd_cols, simd_size
-    ]
+    var output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)]
     var row_ptrs: Pointer[DTypePointer[type]]
     var load_store_count: Int
 
     @always_inline
     fn __init__(
         inout self,
-        inout output_tile: _Accumulator[
-            type, tile_rows, Self.num_simd_cols, simd_size
-        ],
+        output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)],
         row_ptrs: Pointer[DTypePointer[type]],
         load_store_count: Int,
     ):
-        # NOTE: This is NOT a deepcopy; self.output_tile uses the same storage as output_tile.
         self.output_tile = output_tile
         self.row_ptrs = row_ptrs
         self.load_store_count = load_store_count
@@ -316,15 +341,14 @@ struct LoadStoreOutputTile[
     fn _load_store_columns[
         base_column: Int,
         column_count: Int,
-    ](inout self):
+    ](self):
         """Loads or stores one or more columns from the base column for each
         row of the tile."""
-
-        alias column_step = min(column_count, simd_size)
 
         @unroll
         for row in range(tile_rows):
             # Iterate twice for a pairwise load/store or once for any other access.
+            alias column_step = min(column_count, simd_size)
 
             @unroll
             for col in range(
@@ -333,26 +357,27 @@ struct LoadStoreOutputTile[
 
                 @parameter
                 if is_load:
-                    var data = self.row_ptrs[row].load[width=column_step](col)
-                    self.output_tile._partial_set(
-                        row * tile_columns + col, data
-                    )
+                    var data = self.row_ptrs[row].offset(col).load[
+                        width=column_step
+                    ]()
+                    self.output_tile.store(Index(row, col), data)
                 else:
-                    var data = self.output_tile._partial_get[column_step](
-                        row * tile_columns + col
+                    var data = self.output_tile.load[width=column_step](
+                        Index(row, col)
                     )
-                    self.row_ptrs[row].store[width=column_step](col, data)
+                    self.row_ptrs[row].offset(col).store(data)
 
     @always_inline
     fn _load_store_tail[
         base_column: Int,
         tail_size: Int,
-    ](inout self):
+    ](self):
         """Loads/stores the last elements of the tile that cannot be accessed
         pairwise."""
 
         if self.load_store_count & tail_size:
             self._load_store_columns[base_column, tail_size]()
+
             alias tile_columns_remaining = tile_columns - base_column - tail_size
 
             @parameter
@@ -367,7 +392,7 @@ struct LoadStoreOutputTile[
     @always_inline
     fn _load_store_pairwise[
         base_column: Int,
-    ](inout self):
+    ](self):
         """Loads/stores all pairwise vectors of the tile and dispatches the
         remaining non-pairwise elements."""
 
@@ -389,16 +414,14 @@ struct LoadStoreOutputTile[
     @staticmethod
     @always_inline
     fn run(
-        inout output_tile: _Accumulator[
-            type, tile_rows, Self.num_simd_cols, simd_size
-        ],
+        output_tile: NDBuffer[type, 2, DimList(tile_rows, tile_columns)],
         ptr: DTypePointer[type],
         stride: Int,
         load_store_count: Int,
     ):
         """Interface function to run the load/store output tile.
         Args:
-            output_tile(_Accumulator): output register tile buffer.
+            output_tile(NDBuffer): output register tile buffer.
             ptr(DTypePointer): data buffer to use for transferring the tile
                 buffer.
             stride(Int): stride to use when stepping through rows of the data

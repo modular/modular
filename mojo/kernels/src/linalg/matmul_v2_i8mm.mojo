@@ -27,7 +27,6 @@ from .Matmul_v2 import InnerMatmulKernel
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
-from nn.accumulate import _Accumulator
 
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
@@ -43,9 +42,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
         self,
         a: NDBuffer,
         b_packed: NDBuffer[_, 3, _],
-        inout c_local: _Accumulator[
-            _, a_row_size, pack_inner_size // simd_size, simd_size
-        ],
+        c_local: NDBuffer[_, 2, DimList(a_row_size, pack_inner_size)],
         global_offset: GemmShape,
         tile_n_k_idx: StaticIntTuple[2],
     ):
@@ -90,16 +87,19 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
 
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
-                alias alignment = alignof[SIMD[c_local.c_type, simd_size]]()
+                alias alignment = alignof[SIMD[c_local.type, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
                 var b_val = b_ptr.offset(16 * idx1).load[
                     width = simd_size * 4, alignment=alignment
                 ]()
-                # var c_idx = Index(idx0, 4 * idx1)
-                constrained[simd_size == 4]()
-                var c_val = c_local[idx0, idx1]
+                var c_idx = Index(idx0, 4 * idx1)
+                var c_val = c_local.load[width=simd_size, alignment=alignment](
+                    c_idx
+                )
                 c_val = _neon_matmul(c_val, a_val, b_val)
-                c_local[idx0, idx1] = c_val
+                c_local.store[width=simd_size, alignment=alignment](
+                    c_idx, c_val
+                )
 
     @always_inline
     fn __inner_matmul__[
