@@ -13,7 +13,7 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/Support/NameMangling.h"
-#include "Support/Compiler/ThreadDiagnosticHandler.h"
+#include "Support/Compiler/DiagnosticHandler.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -271,7 +271,7 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
       getExpectedMangledName(func, symbol.getParamValues(), /*sanitize=*/false);
 
   // Capture the diagnostics that may be emitted.
-  ThreadDiagnosticHandler handler(ctx);
+  DiagnosticHandler handler(ctx);
   ErrorOr<CrossDeviceFunction> closure = elaborator->getCompileAsmFn()(
       func, symbol, name, symtabCopy, target, emissionKind);
   handler.release();

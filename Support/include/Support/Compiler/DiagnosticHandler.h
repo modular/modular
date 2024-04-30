@@ -4,19 +4,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SUPPORT_COMPILER_THREADDIAGNOSTICHANDLER_H
-#define SUPPORT_COMPILER_THREADDIAGNOSTICHANDLER_H
+#ifndef SUPPORT_COMPILER_DIAGNOSTICHANDLER_H
+#define SUPPORT_COMPILER_DIAGNOSTICHANDLER_H
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "mlir/IR/Diagnostics.h"
 
 namespace M {
-/// This diagnostic handler captures MLIR diagnostics emitted only by the thread
-/// in which the diagnostic handler was created.
-class ThreadDiagnosticHandler {
+/// This diagnostic handler captures MLIR diagnostics emitted into a vector.
+class DiagnosticHandler {
 public:
-  ThreadDiagnosticHandler(MLIRContext *ctx);
-  ~ThreadDiagnosticHandler();
+  DiagnosticHandler(MLIRContext *ctx);
+  ~DiagnosticHandler();
 
   /// Emit the diagnostics.
   void emitDiagnostics(function_ref<void(Diagnostic &)> emitFn);
@@ -34,4 +33,4 @@ private:
 };
 } // namespace M
 
-#endif // SUPPORT_COMPILER_THREADDIAGNOSTICHANDLER_H
+#endif // SUPPORT_COMPILER_DIAGNOSTICHANDLER_H
