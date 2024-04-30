@@ -55,16 +55,10 @@ struct ParserConfig {
   /// If true, this will warn on missing pieces of documentation strings.
   bool warnMissingDocStrings = false;
 
-  /// If true, the inputs are parsed as if they belong to the Mojo standard
-  /// library.
-  ///
-  /// In practice, this means that when the parser encounters an `import foo`
-  /// statement, it ignores any already-compiled `foo.mojopkg` that appear in
+  /// If true, ignore any already-compiled `foo.mojopkg` that appear in
   /// its import search paths. Doing so results in Mojo source packages named
   /// `foo/` being found instead, and those source packages being parsed anew.
-  /// This option is used when parsing the standard library because it contains
-  /// interdependent packages, and so these must be imported as source packages.
-  bool parsingStandardLibrary = false;
+  bool disablePrebuiltPackages = false;
 
   /// If true, auto-import the builtin package.
   bool useBuiltinModule = true;

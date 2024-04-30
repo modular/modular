@@ -501,8 +501,9 @@ private:
   /// This is used for memory that lives as long as the global parser does.
   llvm::BumpPtrAllocator persistentAllocator;
 
-  /// A flag indicating if we're currently parsing the standard library.
-  bool parsingStandardLibrary = false;
+  /// A flag indicating if prebuilt packages should not be considered during
+  /// parsing.
+  bool disablePrebuiltPackages = false;
 
   /// If true, auto-import the builtin package.
   bool useBuiltinModule = true;

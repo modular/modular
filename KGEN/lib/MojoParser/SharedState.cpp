@@ -319,7 +319,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
       options(config.options),
       declResolver(std::make_unique<DeclResolver>(*this)),
       parserListener(config.parserListener),
-      parsingStandardLibrary(config.parsingStandardLibrary),
+      disablePrebuiltPackages(config.disablePrebuiltPackages),
       useBuiltinModule(config.useBuiltinModule),
       impl(std::make_unique<Impl>(*this)) {
   if (!options.searchPaths.empty()) {
@@ -814,7 +814,7 @@ std::optional<std::string> SharedState::resolveModulePath(StringRef moduleName,
       return WalkResult::advance();
     }
     if ((result = ::resolveModulePath(*this, includeLoc, moduleName, dir,
-                                      parsingStandardLibrary)))
+                                      disablePrebuiltPackages)))
       return WalkResult::interrupt();
     return WalkResult::advance();
   });
@@ -873,7 +873,7 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
                                     "unable to locate module '" + name + "'");
     }
     modulePath = ::resolveModulePath(*this, loc, name, *parentState->sourcePath,
-                                     parsingStandardLibrary);
+                                     disablePrebuiltPackages);
   } else {
     // If this is a top-level import, try to resolve a standard library module.
     // We current bundle all of the standard library packages into one mega
@@ -892,7 +892,7 @@ SharedState::importSubModuleState(StringRef name, ASTDecl *parentDecl,
       if (impl->stdlibPackageState->sourcePath) {
         modulePath = ::resolveModulePath(*this, loc, name,
                                          *impl->stdlibPackageState->sourcePath,
-                                         parsingStandardLibrary);
+                                         disablePrebuiltPackages);
         if (modulePath) {
           ModuleState &moduleState = importModuleState(("stdlib." + name).str(),
                                                        impl->topLevelDecl, loc);

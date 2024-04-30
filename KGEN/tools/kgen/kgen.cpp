@@ -241,7 +241,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
     TimingScope litScope = timing.nest("Import Mojo source");
     LIT::ParserConfig config(ctx, options);
     config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
-    config.parsingStandardLibrary = clOptions.disablePrebuiltPackages;
+    config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
     theModule = importMojoFile(runtime, mgr, config, litScope, &includedFiles);
   } else if (options.getDebugInfoLevelForInput() >
              CompilationOptions::kSynthetic) {
