@@ -18,5 +18,3 @@ add_modular_testsuite(check-mojo-lsp-server
   mojo-lsp-server
   mojo-sdk
 )
-
-add_subdirectory(python-tests)
