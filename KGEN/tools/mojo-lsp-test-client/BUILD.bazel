@@ -5,6 +5,7 @@ cc_library(
     srcs = glob(["*.cpp"]),
     hdrs = glob(["*.h"]),
     deps = [
+        "//KGEN:LSPProtocol",
         "//KGEN:Support",
         "//Support:Base",
         "//Support:Filesystem",
