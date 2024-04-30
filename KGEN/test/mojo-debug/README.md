@@ -1,11 +1,8 @@
 # Mojo Debug Tests
 
 There are two main ways to test LLDB's ability to parse DWARF and other debug
-info sections and provide a nice debugging experience: llvm-lit tests and python
-SB tests.
-
-See `Support/python/modular/utils/debuglib/debugger.py` for some useful
-information regarding the underlying LLDB support.
+info sections and provide a nice debugging experience: llvm-lit tests and SB API
+tests.
 
 ## llvm-lit tests
 
@@ -23,7 +20,7 @@ Sadly, the output of `frame variable` can be very limiting and doesn't show
 type names by default, nor lets you easily query specific information about
 a type or a variable (e.g. is this int type signed or unsigned?).
 
-## Python SB tests
+## SB API tests
 
 These tests are based on the public LLDB SB API and can be extremely precise.
 I recommend looking for the following files as reference for how to query
@@ -33,34 +30,8 @@ variable and type information:
 - third-party/llvm-project/lldb/include/lldb/API/SBValue.h
 - third-party/llvm-project/lldb/include/lldb/API/SBType.h
 
-You can use the following example as a starter test:
-
-```python
-from lib.TestBase import TestBase
-
-
-class TestSample(LLDBTestBase):
-    # The base class sets up the debugger
-
-    def test_sample(self):
-        # build_and_launch builds the given file located in the Inputs/
-        # directory, then creates a target with the resultant binary, places
-        # breakpoints on all the locations with the `# breakpoint` comment, and
-        # yields at the first stop.
-        with self.build_and_launch("input_file.mojo") as ctx:
-            # The ctx variable contains the process, thread, and frame at the
-            # stop point, which can be used to query information.
-            var = ctx.frame.FindVariable("a_variable")
-            assert var.GetValue() == "420"
-            # We can also resume the process to the next breakpoint
-            next_cxt = ctx.resume()
-            assert next_ctx
-            assert next_ctx.frame.FindVariable("another_variable").GetValue() == "300"
-
-```
-
-For a more detailed example, you can take a look at `test_sample.py`, which
-shows some additional variable and type queries.
+You can use `KGEN/unittests/mojo-debug/BoolTest.cpp` as an example of how to
+write this kind of tests.
 
 For further details, the list of local variables can be accessed through
 `StopContext.frame.FindVariable()` or
@@ -74,3 +45,9 @@ type can be gotten via `GetType()`.
 As a final tip, don't hardcode line numbers in your tests. They break often, so
 it's better to add markers in the source code and do string search for them
 to use them in asserts. The class `SourceFile` should help with that.
+
+### Helpers
+
+You can invoke the tests with environment variable
+`DUMP_STOP_CONTEXT_AT_LAUNCH`, which will print in the screen the stop location
+where the first breakpoint is hit after launch.
