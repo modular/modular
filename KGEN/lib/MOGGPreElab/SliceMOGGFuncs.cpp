@@ -216,7 +216,7 @@ private:
 
   void attachMetadataToGenerator(
       GeneratorOp gen, ArrayRef<std::string> inputLambdaNames,
-      ArrayRef<std::string> outputLambdaNames, GeneratorOp shapeFunc,
+      ArrayRef<std::string> outputLambdaNames,
       SmallVector<KGENParamsOfTensor> &kgenTensorParams, bool isView = false) {
     // The new attributes on the generator.
     SmallVector<NamedAttribute> newAttrs;
@@ -267,14 +267,6 @@ private:
       newAttrs.push_back(NamedAttribute{b.getStringAttr("_tensor_params"),
                                         b.getArrayAttr(kgenParams)});
     }
-
-    // Tell the graph compiler that this function has an accompanying shape
-    // function.
-    if (shapeFunc) {
-      newAttrs.push_back(NamedAttribute{b.getStringAttr("_has_shape_func"),
-                                        shapeFunc.getSymNameAttr()});
-    }
-
     gen->setAttrs(newAttrs);
   }
 
@@ -667,133 +659,6 @@ private:
     markAllTensorsAsOwned(gen, symTab);
   }
 
-  GeneratorOp
-  sliceShapeFunction(Value shape, GeneratorOp funcToSlice,
-                     SmallVector<KGENParamsOfTensor> &kgenTensorParams) {
-    Operation *op = shape.getDefiningOp();
-
-    // Identify all ops used to create the shape.
-    DenseSet<Operation *> opsToClone;
-    DenseSet<Value> usedInputs;
-
-    // TODO: Readd the input culling to only add directly used arguments. They
-    // are needed for their shapes at the mo level so we have to keep them
-    // around until we figure that part out.
-    assert(funcToSlice.getSignature().getArgConventions().back() ==
-           ArgConvention::ByRefResult);
-    for (auto [idx, operand] :
-         // Skip the result argument slot.
-         llvm::enumerate(funcToSlice.getArguments().drop_back())) {
-      usedInputs.insert(operand);
-    }
-
-    SmallVector<Operation *> worklist;
-    worklist.push_back(op);
-    while (!worklist.empty()) {
-      Operation *opToProcess = worklist.back();
-      worklist.pop_back();
-      if (opsToClone.contains(opToProcess))
-        continue;
-      opsToClone.insert(opToProcess);
-
-      for (Value operand : opToProcess->getOperands()) {
-        if (operand.getDefiningOp())
-          worklist.push_back(operand.getDefiningOp());
-      }
-    }
-    FunctionType funcTy = funcToSlice.getFunctionType();
-
-    // We need to build KGEN function types for the new signature.
-    SmallVector<Type> funcInputs;
-
-    // The shape function uses a subset of the original kernel params.
-    SmallVector<KGENParamsOfTensor> shapeTensorParams;
-    shapeTensorParams.reserve(kgenTensorParams.size());
-
-    // Identify which of the inputs we are using. This needs to be preserved
-    // so MO can know which are used and in which order to map back onto the
-    // original kernel.
-    DenseSet<size_t> inputIndices;
-    SmallVector<int32_t> usedInputsInOrder;
-    for (auto [idx, operand] :
-         llvm::enumerate(funcToSlice.getBody()->getArguments())) {
-      if (usedInputs.contains(operand)) {
-        inputIndices.insert(idx);
-        funcInputs.push_back(funcTy.getInputs()[idx]);
-
-        shapeTensorParams.push_back(kgenTensorParams[idx]);
-        usedInputsInOrder.push_back(static_cast<int32_t>(idx));
-      }
-    }
-
-    mlir::IRMapping mapper;
-
-    GeneratorOp slicedShapeFunction = funcToSlice.cloneWithoutRegions();
-
-    // Create the new function type.
-    FunctionType newFuncType =
-        FunctionType::get(ctx, funcInputs, {shape.getType()});
-
-    // Drop the input conventions.
-    SignatureType newSig = SignatureType::remapToSignature(
-        slicedShapeFunction.getInputParams(),
-        slicedShapeFunction.getResultParams(), newFuncType,
-        /*argConventions=*/{}, /*fnEffects=*/{},
-        /*metadata*/ {});
-
-    // Replace the parameter refs with their actual values.
-    newSig = newSig.getWithValuesReplaced(newFuncType);
-    slicedShapeFunction.removeSourceSignatureAttr();
-
-    slicedShapeFunction.setSignature(newSig);
-    slicedShapeFunction.setFunctionType(newSig.getValues());
-
-    Block &shapeFuncBlock =
-        slicedShapeFunction.getCallableRegion()->emplaceBlock();
-
-    // Add the operands onto the sliced shape func.
-    for (auto [idx, operand] :
-         llvm::enumerate(funcToSlice.getBody()->getArguments())) {
-      if (inputIndices.contains(idx)) {
-        Value newV =
-            shapeFuncBlock.addArgument(operand.getType(), operand.getLoc());
-        mapper.map(operand, newV);
-      }
-    }
-
-    OpBuilder b{&shapeFuncBlock, shapeFuncBlock.begin()};
-
-    // Clone all the ops used in the construction of the slice.
-    for (Operation *op : opsToClone)
-      b.clone(*op, mapper);
-    b.create<KGEN::ReturnOp>(shape.getLoc(), mapper.lookup(shape));
-
-    // Remove the kernel attr from the shape func.
-    slicedShapeFunction->removeAttr(kernelRegistrationAttr);
-
-    // Attached the used inputs as attribute. This allows the graph compiler to
-    // discard unused inputs on the op.
-    SmallVector<NamedAttribute> newAttrs;
-    for (NamedAttribute attr : slicedShapeFunction->getAttrs())
-      newAttrs.push_back(attr);
-    newAttrs.push_back(NamedAttribute{b.getStringAttr("_used_inputs"),
-                                      b.getI32ArrayAttr(usedInputsInOrder)});
-    slicedShapeFunction->setAttrs(newAttrs);
-
-    // Even though fusion is not presently supported on shape functions we
-    // still need to add the empty annotations for consistency with the
-    // compute functions.
-    SmallVector<std::string> emptyInputLambdas;
-    emptyInputLambdas.resize(usedInputsInOrder.size(), "");
-
-    // Shape function still needs some metadata to inform the graph compiler
-    // about its properties.
-    attachMetadataToGenerator(slicedShapeFunction, emptyInputLambdas, {},
-                              nullptr, shapeTensorParams, false);
-
-    return slicedShapeFunction;
-  }
-
 public:
   void runOnOperation() override {
     ModuleOp mod = getOperation();
@@ -898,7 +763,6 @@ public:
       assert(slicedComputeFunction.getSignature().hasMemoryOnlyResult());
       Value outputTensor =
           slicedComputeFunction.getBody()->getArguments().back();
-      Value shape;
 
       SmallVector<KGENParamsOfTensor> kgenTensorParams;
       kgenTensorParams.reserve(
@@ -924,9 +788,6 @@ public:
         slicedComputeFunction.erase();
         continue;
       } else {
-        // Otherwise we are dealing with a normal allocating op.
-        shape = allocationFunc.getOperand(0);
-
         // clang-format-off
         // Functions with tensor allocation will follow the rough pattern.
         // fn (*tensor):
@@ -967,28 +828,9 @@ public:
       // attribute.
       reparameterizeImpl(slicedComputeFunction, kgenTensorParams, symTab);
 
-      GeneratorOp slicedShapeFunction;
-      if (shape) {
-        slicedShapeFunction =
-            sliceShapeFunction(shape, slicedComputeFunction, kgenTensorParams);
-      } else {
-        // TODO: Shape functions for views.
-      }
-
-      if (slicedShapeFunction) {
-        // Has to be added to the module symbol table otherwise the function
-        // name will not match in the metadata.
-        symTab.insert(slicedShapeFunction);
-
-        // Drop the decorators on the shape function.
-        slicedShapeFunction.setDecorators({});
-        seenFuncs.insert(slicedShapeFunction);
-      }
-
       // Add info for mogg to read off the kernel.
       attachMetadataToGenerator(slicedComputeFunction, inputLambdaNames,
-                                outputLambdaNames, slicedShapeFunction,
-                                kgenTensorParams, isView);
+                                outputLambdaNames, kgenTensorParams, isView);
 
       // Remove the kernel attr from the user kernel.
       userKernel->removeAttr(kernelRegistrationAttr);
