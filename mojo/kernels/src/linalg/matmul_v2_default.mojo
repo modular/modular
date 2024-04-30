@@ -26,6 +26,7 @@ from .MatmulLoadStore import LoadStore_default
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
+from nn.accumulate import _Accumulator
 
 
 # Define a struct that conforms to the InnerMatmulKernel trait that
@@ -39,7 +40,9 @@ struct Inner_matmul_default(InnerMatmulKernel):
         self,
         a: NDBuffer,
         b_packed: NDBuffer[_, 3, _],
-        c_local: NDBuffer[_, 2, DimList(a_row_size, pack_inner_size)],
+        inout c_local: _Accumulator[
+            _, a_row_size, pack_inner_size // simd_size, simd_size
+        ],
         global_offset: GemmShape,
         tile_n_k_idx: StaticIntTuple[2],
     ):
@@ -79,6 +82,7 @@ struct Inner_matmul_default(InnerMatmulKernel):
         # This inner kernels works with non-transposed A.
         var K = a.dim[1]()
         var a_ptr = a.data.offset(global_offset.M * K + global_k)
+        alias c_type = c_local.c_type
 
         # Loop over local accumulator tiles.
         @unroll
@@ -86,20 +90,13 @@ struct Inner_matmul_default(InnerMatmulKernel):
 
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
-                alias alignment = alignof[SIMD[c_local.type, simd_size]]()
-                var c_idx = Index(idx0, idx1 * simd_size)
-                var c_val = c_local.load[width=simd_size, alignment=alignment](
-                    c_idx
-                )
+                alias alignment = alignof[SIMD[c_type, simd_size]]()
 
-                var a_val = a_ptr[idx0 * K].cast[c_local.type]()
+                var a_val = a_ptr[idx0 * K]
                 var b_val = b_ptr.load[width=simd_size, alignment=alignment](
                     idx1 * simd_size
-                ).cast[c_local.type]()
-                c_val = fma[c_local.type, simd_size](a_val, b_val, c_val)
-                c_local.store[width=simd_size, alignment=alignment](
-                    c_idx, c_val
                 )
+                c_local.fma(idx0, idx1, a_val, b_val)
 
     @always_inline
     fn __inner_matmul__[
@@ -123,13 +120,10 @@ struct Inner_matmul_default(InnerMatmulKernel):
         alias simd_size = simdwidthof[c.type]()
 
         var c_stride = c.dim[1]()
-
         var c_ptr = c.data.offset(global_offset.M * c_stride + global_offset.N)
-
         var c_bound = Index(global_bound.M, global_bound.N) - Index(
             global_offset.M, global_offset.N
         )
-
         var acc = LoadStore_default[
             c.type, simd_size, skip_boundary_check, a_row_size, pack_inner_size
         ]()
