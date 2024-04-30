@@ -44,6 +44,7 @@ LLCLWrapper<T> wrap(T *ptr) {
 using LLCLRuntimeRef = LLCLWrapper<Runtime>;
 using LLCLMojoCallContextRef = LLCLWrapper<MojoCallContext>;
 using LLCLAsyncChainRef = LLCLWrapper<AsyncValueRef<Chain>>;
+using LLCLSpinWaiterRef = LLCLWrapper<SpinWaiter<true>>;
 
 /// Dummy entry point to force loading.
 /// (All the other entry points use LLCLWrapper which we don't want to
@@ -285,6 +286,28 @@ KGEN_CompilerRT_GetDataFromBuffer(LLCLWrapper<AnyAsyncValueRef> async) {
   return buffer.getBuffer();
 }
 
+//===----------------------------------------------------------------------===//
+// SpinWaiter function
+//===----------------------------------------------------------------------===//
+
+/// Creates a new SpinWaiter instance.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_LLCL_InitializeSpinWaiter() {
+  return new SpinWaiter<true>();
+}
+
+/// Waits on the SpinWaiter
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_SpinWaiter_Wait(LLCLSpinWaiterRef waiter) {
+  unwrap(waiter).wait();
+}
+
+/// Destroys the given SpinWaiter.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_LLCL_DestroySpinWaiter(LLCLSpinWaiterRef waiter) {
+  delete (SpinWaiter<true> *)(waiter.ptr);
+}
+
 void M::KGEN::registerLLCL(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeChain",
@@ -332,4 +355,11 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_Complete});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_SetToError",
                    (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_SetToError});
+
+  funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeSpinWaiter",
+                   (void *)&KGEN_CompilerRT_LLCL_InitializeSpinWaiter});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_SpinWaiter_Wait",
+                   (void *)&KGEN_CompilerRT_LLCL_SpinWaiter_Wait});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_DestroySpinWaiter",
+                   (void *)&KGEN_CompilerRT_LLCL_DestroySpinWaiter});
 }
