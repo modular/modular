@@ -1406,21 +1406,6 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
               refWalker.walk(field.getType());
               return mlir::success();
             })
-            .Case([&](PackageOp packageOp) {
-              // Fully resolve any dependencies of the package.
-              if (LinkDependencyArrayAttr deps =
-                      packageOp.getDependenciesAttr()) {
-                for (FlatSymbolRefAttr dep : deps) {
-                  ASTDecl &depDecl =
-                      importModule(dep.getValue(), /*currentPackage=*/nullptr,
-                                   decl.getLoc());
-                  if (failed(declResolver->resolve(
-                          depDecl, DeclResolvedness::signature, decl.getLoc())))
-                    return failure();
-                }
-              }
-              return mlir::success();
-            })
             .Default([](auto) { return mlir::success(); });
     if (failed(result))
       return failure();
@@ -1480,8 +1465,19 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
   // If this decl is a package, this is its corresponding module state.
   ModuleState *packageState = nullptr;
-  if (auto declPackage = dyn_cast<PackageOp>(declOp))
+  if (auto declPackage = dyn_cast<PackageOp>(declOp)) {
     packageState = impl->moduleStates[&decl];
+
+    // Fully resolve any dependencies of the package.
+    if (LinkDependencyArrayAttr deps = declPackage.getDependenciesAttr()) {
+      for (FlatSymbolRefAttr dep : deps) {
+        ASTDecl *depDecl = &importModule(
+            dep.getValue(), /*currentPackage=*/nullptr, decl.getLoc());
+        if (failed(declResolver->resolveFully(*depDecl, decl.getLoc())))
+          return failure();
+      }
+    }
+  }
 
   // Materialize the body of the decl.
   if (bytecodeReader->isMaterializable(declOp)) {
