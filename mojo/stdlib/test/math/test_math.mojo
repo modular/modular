@@ -8,6 +8,7 @@
 from math import (
     cos,
     factorial,
+    floor,
     isfinite,
     isinf,
     isnan,
@@ -302,6 +303,16 @@ def test_isclose():
     )
 
 
+def test_floor():
+    # We just test that the `floor` function resolves correctly for a few common
+    # types. Types should test their own `__floor__` implementation explicitly.
+    assert_equal(floor(0), 0)
+    assert_equal(floor(Int(5)), 5)
+    assert_equal(floor(1.5), 1.0)
+    assert_equal(floor(Float32(1.6)), 1.0)
+    assert_equal(floor(Float64(-3.4)), -4.0)
+
+
 fn round10(x: Float64) -> Float64:
     return (round(Float64(x * 10)) / 10).value
 
@@ -311,7 +322,7 @@ def test_float_literal_round10():
     assert_equal(round10(FloatLiteral(-4.4) % 0.5), 0.1)
     assert_equal(round10(FloatLiteral(4.4) % -0.5), -0.1)
     assert_equal(round10(FloatLiteral(-4.4) % -0.5), -0.4)
-    assert_equal(round10(3.1 % 1.0), 0.1)
+    assert_equal(round10(FloatLiteral(3.1) % 1.0), 0.1)
 
 
 def main():
@@ -325,6 +336,7 @@ def main():
     test_boole()
     test_copysign()
     test_isclose()
+    test_floor()
 
     # TODO: move this to test_float_literal.mojo when round is moved to builtin.
     test_float_literal_round10()
