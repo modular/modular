@@ -299,6 +299,8 @@ struct SemanticTokens {
 };
 
 /// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &params, SemanticTokens &result,
+              llvm::json::Path path);
 llvm::json::Value toJSON(const SemanticTokens &value);
 
 //===----------------------------------------------------------------------===//
@@ -314,6 +316,7 @@ struct SemanticTokensParams {
 /// Add support for JSON serialization.
 bool fromJSON(const llvm::json::Value &params, SemanticTokensParams &result,
               llvm::json::Path path);
+llvm::json::Value toJSON(const SemanticTokensParams &value);
 
 /// Body of textDocument/semanticTokens/full/delta request. Requests the changes
 /// in semantic tokens since a previous response.

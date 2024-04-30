@@ -25,19 +25,27 @@ public:
 
   /// Get the position of the first occurrence of the given substring in the
   /// document within a single line.
+  /// Skip lines with `# skip` at the end.
   std::optional<mlir::lsp::Position> findFirstPos(StringRef substr) const;
 
   /// Get the position of the last occurrence of the given substring in the
   /// document within a single line.
+  /// Skip lines with `# skip` at the end.
   std::optional<mlir::lsp::Position> findLastPos(StringRef substr) const;
 
   /// Get the range of the first occurrence of the given substring in the
   /// document within a single line.
+  /// Skip lines with `# skip` at the end.
   std::optional<mlir::lsp::Range> findFirstRange(StringRef substr) const;
 
   /// Get the range of the last occurrence of the given substring in the
   /// document within a single line.
+  /// Skip lines with `# skip` at the end.
   std::optional<mlir::lsp::Range> findLastRange(StringRef substr) const;
+
+  /// Get the ranges of all the occurrences of a given substring in the
+  /// document. One occurrence per line. Skip lines with `# skip` at the end.
+  std::vector<mlir::lsp::Range> findAllRanges(StringRef substr) const;
 
 private:
   mlir::lsp::URIForFile uri;
