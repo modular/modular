@@ -7,10 +7,8 @@
 from collections import Optional
 from math import (
     add,
-    ceil,
     erf,
     exp,
-    floor,
     iota,
     isinf,
     isnan,
@@ -21,14 +19,13 @@ from math import (
     mul,
     rsqrt,
     sqrt,
-    tanh,
 )
 
 from algorithm.reduction import _reduce_generator
 from buffer.list import DimList
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
-from nn.activations import relu
+from nn.activations import ceil, floor, relu, tanh
 from register import *
 from runtime.tracing import Trace, TraceLevel
 

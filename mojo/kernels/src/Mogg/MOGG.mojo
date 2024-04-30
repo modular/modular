@@ -7,14 +7,12 @@
 from collections.vector import InlinedFixedVector
 from math import (
     add,
-    ceil,
     cos,
     div,
     div_ceil,
     equal,
     erf,
     exp,
-    floor,
     fma,
     greater,
     greater_equal,
@@ -38,7 +36,6 @@ from math import (
     sin,
     sqrt,
     sub,
-    tanh,
     trunc,
 )
 from builtin.simd import UInt8, UInt64, Int64, _pow
@@ -80,7 +77,7 @@ from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn._optional_param import OptionalParamInt
-from nn.activations import gelu, relu, sigmoid
+from nn.activations import ceil, floor, gelu, relu, sigmoid, tanh
 from nn.arange import arange, arange_shape
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from nn.concat import concat as _concat
