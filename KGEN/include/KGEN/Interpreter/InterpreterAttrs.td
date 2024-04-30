@@ -43,6 +43,38 @@ def PointerAttr : InterpreterAttr<"Pointer", "pointer",
 }
 
 //===----------------------------------------------------------------------===//
+// SymbolicPointerAttr
+//===----------------------------------------------------------------------===//
+
+def SymbolicPointerAttr : InterpreterAttr<"SymbolicPointer", "symbolic_pointer",
+    [TypedAttrInterface]> {
+  let summary = "a pointer to symbolic interpreter memory";
+  let description = [{
+    The `#interp.symbolic_pointer` attribute represents a reference to a piece
+    of symbolic interpreter memory. Symbolic memory has no runtime
+    representation and consequently does not require a target model to use.
+    However, bit-level manipulations are not supported because of the missing
+    runtime representation. Symbolic memory can be also be used for
+    non-materializable values inside the interpreter.
+
+    Example:
+
+    ```mlir
+    #interp.symbolic_pointer<3>
+    ```
+  }];
+
+  let parameters = (ins "int64_t":$slot, AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "`<` $slot `>`";
+
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "int64_t":$slot, "Type":$type), [{
+      return get(type.getContext(), slot, type);
+    }]>
+  ];
+}
+
+//===----------------------------------------------------------------------===//
 // StoreToMemAttr
 //===----------------------------------------------------------------------===//
 

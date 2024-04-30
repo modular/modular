@@ -7,6 +7,9 @@
 // CHECK: #interp.memref<[(variadic, persistent, [])], 0, 0> : memref<1xi32>
 "some.op"() {a = #interp.memref<[(variadic, persistent, [])], 0, 0> : memref<1xi32>} : () -> ()
 
+// CHECK: #interp.symbolic_pointer<3> : memref<1xi32>
+"some.op"() {a = #interp.symbolic_pointer<3> : memref<1xi32>} : () -> ()
+
 {-#
   dialect_resources: {
     interp: {
