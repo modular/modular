@@ -33,8 +33,9 @@ from .MatmulUtils import (
     get_partitioned_matmul,
     packA_i8mm,
     get_mm_config,
-    use_vnni_fn,
     use_i8mm_fn,
+    InnerKernelID,
+    select_inner_kernel,
 )
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
@@ -60,13 +61,14 @@ from .MatmulPack import (
     pack_transposed_b_ndbuffer,
 )
 
-
 # Define a trait that defines the common functions across all existing
 # microkernels:
-# - _run_inner_loop_i8mm()
-# - _run_inner_loop_neon()
 # - _run_inner_loop_default()
 # - _run_inner_loop_vnni()
+# - _run_inner_loop_neon()
+# - _run_inner_loop_i8mm()
+
+
 trait InnerMatmulKernel(Copyable):
     fn __inner_matmul__[
         a_row_size: Int,
@@ -106,47 +108,11 @@ fn elementwise_epilogue_c_tile[
     vectorize[activation_on_col_chunk, simd_width](tile_len.N)
 
 
-fn matmul_inner_loop[
-    a_row_size: Int,
-    pack_inner_size: Int,
-    skip_col_bound: Bool,
-    saturated_vnni: Bool,
-](
-    c: NDBuffer,
-    a: NDBuffer,
-    b_packed: NDBuffer[_, 3, _],
-    global_offset: GemmShape,
-    global_bound: GemmShape,
-    tile_n_k: StaticIntTuple[2],
-):
-    alias use_vnni = use_vnni_fn[a.type, b_packed.type, c.type]()
-    alias use_i8mm = use_i8mm_fn[a.type, b_packed.type, c.type]()
-
-    @parameter
-    if use_i8mm:
-        Inner_matmul_i8mm().__inner_matmul__[
-            a_row_size, pack_inner_size, skip_col_bound
-        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
-    elif has_neon() and not use_vnni and not use_i8mm:
-        Inner_matmul_neon().__inner_matmul__[
-            a_row_size, pack_inner_size, skip_col_bound
-        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
-    elif not use_vnni and not has_neon():
-        Inner_matmul_default().__inner_matmul__[
-            a_row_size, pack_inner_size, skip_col_bound
-        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
-    elif use_vnni:
-        Inner_matmul_vnni[saturated_vnni]().__inner_matmul__[
-            a_row_size, pack_inner_size, skip_col_bound
-        ](c, a, b_packed, global_offset, global_bound, tile_n_k)
-    else:
-        constrained[False, "no _run_inner_loop implementation"]()
-
-
 # Interface method
 fn tiledMatmulRun[
     config: MatmulConfig,
     elementwise_epilogue_enabled: Bool,
+    kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
 ](
     alg: algorithm,
@@ -173,9 +139,8 @@ fn tiledMatmulRun[
         global_tile_shape
     )
 
-    var matmul = TiledMatmul[config, elementwise_epilogue_enabled,](
-        alg,  # TODO: KK: Here want to pass alg.
-        # Inner_matmul_default[config](),  # KK: switch to above when bubbling up
+    var matmul = TiledMatmul[config, elementwise_epilogue_enabled, kernel_id](
+        alg,
         c,
         a,
         b,
@@ -196,6 +161,7 @@ fn tiledMatmulRun[
 struct TiledMatmul[
     config: MatmulConfig,
     elementwise_epilogue_enabled: Bool,
+    kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
 ]:
     """Tiled matmul implementation integrating packing, inner loop and tile
@@ -296,7 +262,7 @@ struct TiledMatmul[
                     )
 
             @parameter
-            if config.use_i8mm:
+            if kernel_id == InnerKernelID.I8MM:
                 tile[
                     row_iteration,
                     VariadicList[Int](2 * config.a_row_size, 8, 6, 4, 2, 1),
@@ -538,8 +504,11 @@ fn _small_matmul[
 fn _matmul_cpu[
     config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
-    single_thread_blocking_override: Bool = False,
+    single_thread_blocking_override: Bool,
+    kernel_id: InnerKernelID,
+    algorithm: InnerMatmulKernel,
 ](
+    alg: algorithm,
     c: NDBuffer[config.c_type, 2, config.c_shape],
     a: NDBuffer[config.a_type, 2, config.a_shape],
     b: NDBuffer[config.b_type, 2, config.b_shape],
@@ -642,10 +611,12 @@ fn _matmul_cpu[
             ):
                 return
 
-            alias use_vnni = config.use_vnni
             alias use_i8mm = config.use_i8mm
 
-            _submatmul_sequential_sync[config, elementwise_lambda_fn](
+            _submatmul_sequential_sync[
+                config, elementwise_lambda_fn, kernel_id
+            ](
+                alg,
                 c,
                 a_packed if use_i8mm else a,
                 b,
@@ -680,7 +651,6 @@ fn matmul_M[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
-    target: StringLiteral = "cpu",
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
@@ -688,9 +658,6 @@ fn matmul_M[
     kernel_type_m: Int,
     num_threads: Int = -1,
 ):
-    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
-    alias func = _matmul_cpu if target == "cpu" else _matmul_gpu
-
     @parameter
     @always_inline
     fn dispatch_on_kernel_type[kernel_type: Bool]():
@@ -707,13 +674,68 @@ fn matmul_M[
             kernel_type=kernel_type,
             saturated_vnni=saturated_vnni,
         ]()
-        func[config, elementwise_lambda_fn, single_thread_blocking_override,](
-            rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
-            rebind[NDBuffer[config.a_type, 2, config.a_shape]](a),
-            rebind[NDBuffer[config.b_type, 2, config.b_shape]](b),
-            kernel_type_m,
-            num_threads,
-        )
+
+        alias kernel_id = select_inner_kernel[a.type, b.type, c.type]()
+
+        @parameter
+        if kernel_id == InnerKernelID.DEFAULT:
+            _matmul_cpu[
+                config,
+                elementwise_lambda_fn,
+                single_thread_blocking_override,
+                kernel_id,
+            ](
+                Inner_matmul_default(),
+                rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
+                rebind[NDBuffer[config.a_type, 2, config.a_shape]](a),
+                rebind[NDBuffer[config.b_type, 2, config.b_shape]](b),
+                kernel_type_m,
+                num_threads,
+            )
+        elif kernel_id == InnerKernelID.VNNI:
+            _matmul_cpu[
+                config,
+                elementwise_lambda_fn,
+                single_thread_blocking_override,
+                kernel_id,
+            ](
+                Inner_matmul_vnni[saturated_vnni](),
+                rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
+                rebind[NDBuffer[config.a_type, 2, config.a_shape]](a),
+                rebind[NDBuffer[config.b_type, 2, config.b_shape]](b),
+                kernel_type_m,
+                num_threads,
+            )
+        elif kernel_id == InnerKernelID.NEON:
+            _matmul_cpu[
+                config,
+                elementwise_lambda_fn,
+                single_thread_blocking_override,
+                kernel_id,
+            ](
+                Inner_matmul_neon(),
+                rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
+                rebind[NDBuffer[config.a_type, 2, config.a_shape]](a),
+                rebind[NDBuffer[config.b_type, 2, config.b_shape]](b),
+                kernel_type_m,
+                num_threads,
+            )
+        elif kernel_id == InnerKernelID.I8MM:
+            _matmul_cpu[
+                config,
+                elementwise_lambda_fn,
+                single_thread_blocking_override,
+                kernel_id,
+            ](
+                Inner_matmul_i8mm(),
+                rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
+                rebind[NDBuffer[config.a_type, 2, config.a_shape]](a),
+                rebind[NDBuffer[config.b_type, 2, config.b_shape]](b),
+                kernel_type_m,
+                num_threads,
+            )
+        else:
+            constrained[False, "no _run_inner_loop implementation"]()
 
     var shape = GemmShape.get[False, transpose_b](c, a, b)
     var n = shape.N
@@ -742,32 +764,63 @@ fn matmul[
     b: NDBuffer[b_type, 2, b_shape],
     num_threads: Int = -1,
 ):
-    var kernel_type_m = 0
+    constrained[target == "cpu" or target == "cuda", "unsupported target"]()
 
     @parameter
-    if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
+    if target == "cpu":
+        var kernel_type_m = 0
 
-    matmul_M[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_a,
-        transpose_b,
-        b_packed,
-        elementwise_lambda_fn,
-        saturated_vnni,
-        single_thread_blocking_override,
-        target,
-    ](c, a, b, kernel_type_m, num_threads)
+        @parameter
+        if a_shape.at[0]().has_value():
+            kernel_type_m = a_shape.at[0]().get()
+
+        matmul_M[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transpose_a,
+            transpose_b,
+            b_packed,
+            elementwise_lambda_fn,
+            saturated_vnni,
+            single_thread_blocking_override,
+        ](c, a, b, kernel_type_m, num_threads)
+
+    else:
+        alias config = get_mm_config[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            b_packed=b_packed,
+            kernel_type=False,
+            saturated_vnni=False,
+        ]()
+
+        _matmul_gpu[
+            config,
+            elementwise_lambda_fn,
+            single_thread_blocking_override,
+        ](
+            rebind[NDBuffer[config.c_type, 2, config.c_shape]](c),
+            rebind[NDBuffer[config.a_type, 2, config.a_shape]](a),
+            rebind[NDBuffer[config.b_type, 2, config.b_shape]](b),
+            0,
+            num_threads,
+        )
 
 
 fn _submatmul_sequential_sync[
     config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
 ](
     alg: algorithm,
@@ -796,7 +849,7 @@ fn _submatmul_sequential_sync[
         else:
             pass
 
-    tiledMatmulRun[config, elementwise_lambda_fn.__bool__(),](
+    tiledMatmulRun[config, elementwise_lambda_fn.__bool__(), kernel_id](
         alg,
         c,
         a,
@@ -810,6 +863,7 @@ fn _submatmul_sequential_sync[
 fn _submatmul_sequential_sync[
     config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    saturated_vnni: Bool,
 ](
     c: NDBuffer[config.c_type, 2, config.c_shape],
     a: NDBuffer[config.a_type, 2, config.a_shape],
@@ -818,32 +872,11 @@ fn _submatmul_sequential_sync[
     sub_matrix_offset: GemmShape,
     kernel_type_m: Int = 0,
 ):
-    alias use_vnni = config.use_vnni
-    alias use_i8mm = config.use_i8mm
+    alias kernel_id = select_inner_kernel[a.type, b.type, c.type]()
 
     @parameter
-    if use_i8mm:
-        _submatmul_sequential_sync[config, elementwise_lambda_fn](
-            Inner_matmul_i8mm(),
-            c,
-            a,
-            b,
-            sub_matrix_shape,
-            sub_matrix_offset,
-            kernel_type_m,
-        )
-    elif has_neon() and not use_vnni and not use_i8mm:
-        _submatmul_sequential_sync[config, elementwise_lambda_fn](
-            Inner_matmul_neon(),
-            c,
-            a,
-            b,
-            sub_matrix_shape,
-            sub_matrix_offset,
-            kernel_type_m,
-        )
-    elif not use_vnni and not has_neon():
-        _submatmul_sequential_sync[config, elementwise_lambda_fn](
+    if kernel_id == InnerKernelID.DEFAULT:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn, kernel_id,](
             Inner_matmul_default(),
             c,
             a,
@@ -852,9 +885,29 @@ fn _submatmul_sequential_sync[
             sub_matrix_offset,
             kernel_type_m,
         )
-    elif use_vnni:
-        _submatmul_sequential_sync[config, elementwise_lambda_fn](
-            Inner_matmul_vnni[config.saturated_vnni](),
+    elif kernel_id == InnerKernelID.VNNI:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn, kernel_id,](
+            Inner_matmul_vnni[saturated_vnni](),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    elif kernel_id == InnerKernelID.NEON:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn, kernel_id,](
+            Inner_matmul_neon(),
+            c,
+            a,
+            b,
+            sub_matrix_shape,
+            sub_matrix_offset,
+            kernel_type_m,
+        )
+    elif kernel_id == InnerKernelID.I8MM:
+        _submatmul_sequential_sync[config, elementwise_lambda_fn, kernel_id,](
+            Inner_matmul_i8mm(),
             c,
             a,
             b,

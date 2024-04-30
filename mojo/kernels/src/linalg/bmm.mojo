@@ -439,6 +439,7 @@ fn _batched_matmul_cpu[
                 elementwise_lambda_fn = Optional[
                     matmul_elementwise_epilogue_type
                 ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
+                saturated_vnni=saturated_vnni,
             ](
                 rebind[NDBuffer[config.c_type, 2, config.c_shape]](c_view),
                 rebind[NDBuffer[config.a_type, 2, config.a_shape]](
