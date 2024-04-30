@@ -4101,7 +4101,7 @@ fn with_mask_flash_attention_cpu[
 # # ===----------------------------------------------------------------------===#
 # # INT4/5/6 packing format
 # # ===----------------------------------------------------------------------===#
-from quantization import Q4sym, matmul_int4
+from quantization import Q4sym, ggml_q4_0_matmul_impl as matmul_int4
 
 
 # TODO: closures to make this simpler
