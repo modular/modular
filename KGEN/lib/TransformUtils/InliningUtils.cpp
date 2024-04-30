@@ -133,8 +133,6 @@ void KGEN::processSourceLocOp(SourceLocOp sourceLocOp, Location callLoc,
       b.create<ParamConstantOp>(
           opLoc, StringAttr::get(fileLoc.getFilename().getValue(),
                                  b.getType<StringType>())));
-
-  b.eraseOp(sourceLocOp);
 }
 
 //===----------------------------------------------------------------------===//
