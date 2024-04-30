@@ -50,10 +50,17 @@ struct _Accumulator[
     # TODO: revise
     @always_inline
     fn __init__(
-        inout self, other: Buffer[c_type, num_rows * num_cols * simd_width]
+        inout self,
+        other_storage: Buffer[c_type, num_rows * num_cols * simd_width],
     ):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
-        self._storage = other
+        self._storage = other_storage
+
+    # NOTE: This is NOT a deepcopy; self uses the same _storage as other.
+    @always_inline
+    fn __copyinit__(inout self, other: Self):
+        constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
+        self._storage = other._storage
 
     @staticmethod
     @always_inline
@@ -67,6 +74,18 @@ struct _Accumulator[
     @always_inline
     fn __setitem__(inout self, m: Int, n: Int, value: SIMD[c_type, simd_width]):
         self._storage.store(self._storage_index(m, n), value)
+
+    @always_inline
+    fn _partial_set[
+        partial_width: Int
+    ](inout self, offset: Int, value: SIMD[c_type, partial_width]):
+        self._storage.store[width=partial_width](offset, value)
+
+    @always_inline
+    fn _partial_get[
+        partial_width: Int
+    ](inout self, idx: Int) -> SIMD[c_type, partial_width]:
+        return self._storage.load[width=partial_width](idx)
 
     # In c+=(a*b), each of a, b, and c can have different types.
     @always_inline

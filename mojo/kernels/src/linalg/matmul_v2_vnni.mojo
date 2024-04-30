@@ -31,6 +31,7 @@ from .neon_intrinsics import _neon_dotprod
 from .vnni_intrinsics import dot_i8_to_i32_saturated_x86, dot_i8_to_i32_x86
 from .Matmul_v2 import InnerMatmulKernel
 from .MatmulLoadStore import LoadStore_default
+from .accumulate import _Accumulator
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -52,7 +53,9 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         self,
         a: NDBuffer,
         b_packed: NDBuffer[_, 3, _],
-        c_local: NDBuffer[_, 2, DimList(a_row_size, pack_inner_size)],
+        inout c_local: _Accumulator[
+            _, a_row_size, pack_inner_size // simd_size, simd_size
+        ],
         global_offset: GemmShape,
         tile_n_k_idx: StaticIntTuple[2],
         tile_n_k: StaticIntTuple[2],
@@ -69,7 +72,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                 processing tile to index the packed B matrix.
             tile_n_k: TODO
         """
-        alias c_type = c_local.type
+        alias c_type = c_local.c_type
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // pack_inner_size
         var kl = tile_n_k_idx[1]
@@ -137,11 +140,8 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                 ]().load()
 
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
-                var c_idx = Index(idx0, idx1 * simd_size)
-                var c_val = c_local.load[width=simd_size, alignment=alignment](
-                    c_idx
-                )
 
+                var c_val = c_local[idx0, idx1]
                 var b_val = b_ptr.offset(idx1 * simd_size).load[
                     width=simd_size, alignment=alignment
                 ]()
@@ -160,9 +160,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                     )
                 else:
                     c_val = dot_i8_to_i32_x86[simd_size](c_val, a_val, b_val)
-                c_local.store[width=simd_size, alignment=alignment](
-                    c_idx, c_val
-                )
+                c_local[idx0, idx1] = c_val
 
     @always_inline
     fn __inner_matmul__[

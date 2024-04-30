@@ -19,6 +19,7 @@ from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from .Matmul import InnerMatmulKernel
 from .MatmulLoadStore import LoadStoreOutputTile
+from .accumulate import _Accumulator
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -38,7 +39,9 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         self,
         a: NDBuffer,
         b_packed: NDBuffer[_, 3, _],
-        c_local: NDBuffer[_, 2, DimList(a_row_size, pack_inner_size)],
+        inout c_local: _Accumulator[
+            _, a_row_size, pack_inner_size // simd_size, simd_size
+        ],
         global_offset: GemmShape,
         tile_n_k_idx: StaticIntTuple[2],
     ):
@@ -63,14 +66,14 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         var b_ptr = b_packed._offset(Index(n_outer_idx, tile_n_k_idx[1], 0))
 
         var a_vals = stack_allocation[
-            a_row_size, SIMD[c_local.type, a_col_size]
+            a_row_size, SIMD[c_local.c_type, a_col_size]
         ]()
 
         @unroll
         for row in range(a_row_size):
             var global_m = global_offset.M + row
             var a_val = a.load[width=a_col_size](global_m, global_k).cast[
-                c_local.type
+                c_local.c_type
             ]()
             a_vals[row] = a_val
 
@@ -81,17 +84,17 @@ struct Inner_matmul_neon(InnerMatmulKernel):
             for col in range(pack_inner_size // simd_size):
                 var b_val = b_ptr.offset(col * simd_size).load[
                     width=simd_size
-                ]().cast[c_local.type]()
+                ]().cast[c_local.c_type]()
 
                 @unroll
                 for row in range(a_row_size):
                     var a_val = a_vals[row]
                     var c_idx = Index(row, col * simd_size)
-                    var c_val = c_local.load[width=simd_size](c_idx)
-                    c_val = fma[c_local.type, simd_size](
+                    var c_val = c_local[row, col]
+                    c_val = fma[c_local.c_type, simd_size](
                         a_val[lane], b_val, c_val
                     )
-                    c_local.store[width=simd_size](c_idx, c_val)
+                    c_local[row, col] = c_val
 
             b_ptr = b_ptr.offset(pack_inner_size)
 
