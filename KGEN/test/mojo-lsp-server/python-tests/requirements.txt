@@ -1,4 +1,0 @@
-pytest-lsp==0.3.1
-pytest-asyncio
-pytest-timeout
-pytest-rerunfailures
