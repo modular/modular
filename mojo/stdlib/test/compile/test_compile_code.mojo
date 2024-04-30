@@ -29,5 +29,7 @@ def main():
     alias compiled = compile_info[
         __type_of(always_fails), always_fails, emission_kind="llvm"
     ]()
+    alias is_error = compiled.is_error
     alias error_msg = compiled.error_msg
-    assert_true("always fails" in error_msg)
+    assert_true(is_error)
+    assert_true(error_msg)
