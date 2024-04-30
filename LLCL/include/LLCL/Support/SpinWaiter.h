@@ -132,7 +132,7 @@ private:
 
   /// This is how long to spin on the waiter.
   /// TODO: This should eventually go away or turn into a constant.
-  std::chrono::nanoseconds busyWaitTime;
+  const std::chrono::nanoseconds busyWaitTime;
 
   /// This is the time we should stop busy waiting.
   std::optional<std::chrono::high_resolution_clock::time_point> busyWaitEndTime;
