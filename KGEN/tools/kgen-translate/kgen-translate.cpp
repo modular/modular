@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
         config.useMLIRDiagnostics = useMLIRDiagnostics;
         config.warnMissingDocStrings = warnMissingDocStrings;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
-        config.parsingStandardLibrary = !enablePrebuiltPackages;
+        config.disablePrebuiltPackages = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;
         OwningOpRef<ModuleOp> output = LIT::importMojoFile(
             *(*ctxOr)->get<LLCL::Runtime>(), sourceMgr, config, ts);
