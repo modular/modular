@@ -651,3 +651,137 @@ fn flash_attention[
         input_mask_fn,
         output_static_shape,
     ].run(q, k_shape, v_shape, output, scale)
+
+
+fn flash_attention_split_kv[
+    type: DType,
+    rank: Int,
+    input_k_cache_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_v_cache_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_mask_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    output_static_shape: DimList = DimList.create_unknown[rank](),
+](
+    q: NDBuffer[type, rank],
+    k: NDBuffer[type, rank],
+    v: NDBuffer[type, rank],
+    # {k,v}_shape have rank + 1 dims because reshape in MO IR prevents fusion.
+    k_cache_shape: StaticIntTuple[rank + 1],
+    v_cache_shape: StaticIntTuple[rank + 1],
+    output: NDBuffer[type, rank, output_static_shape],
+    scale: Float32,
+):
+    """Variant of flash attention that takes the previous KV cache
+    `input_{k,v}_cache_fn` and the current KV tensors `k` and `v` as separate
+    arguments.
+
+    This works around the fact that fusion can't currently look through concat.
+    So this kernel does an in-place concat fusion by changing the input lambdas
+    `input_{k,v}_cache_fn_wrapper` to take previous sequence KV elements from
+    the KV cache, and current KV elements from tensors `k` and `v`.
+    """
+    # This expects the following layouts:
+    # q: BHSD
+    # v: BHSD
+    # k^T: BHDS
+    # k: BHSD
+    # k_cache (input_k_cache_fn): 1BHDS'
+    # v_cache (input_v_cache_fn): 1BHS'D
+    constrained[rank == 4]()
+
+    alias kv_rank = rank + 1
+    alias simd_width = simdwidthof[type]()
+
+    var num_batches = k_cache_shape[1]
+    var num_heads = k_cache_shape[2]
+    var depth_dim = k_cache_shape[3]
+    var prev_seq_len = k_cache_shape[4]
+    var seq_len = k.dim[rank - 1]()
+
+    # Wrap `input_{k,v}_cache_fn` with lambdas that operate on indices of
+    # rank 4, as expected by `_FlashAttention.run()`.
+    var k_shape_new = StaticIntTuple[rank](
+        num_batches, num_heads, depth_dim, prev_seq_len + seq_len
+    )
+    var v_shape_new = StaticIntTuple[rank](
+        num_batches, num_heads, prev_seq_len + seq_len, depth_dim
+    )
+
+    # Index into the previous kv_cache.
+    @always_inline
+    @parameter
+    fn kv_index[
+        rank: Int
+    ](idx: StaticIntTuple[rank]) -> StaticIntTuple[kv_rank]:
+        constrained[rank == 4]()
+
+        # 1BHDS'
+        return rebind[StaticIntTuple[kv_rank]](
+            Index(0, idx[0], idx[1], idx[2], idx[3])
+        )
+
+    @always_inline
+    @parameter
+    fn input_k_cache_fn_wrapper[
+        simd_width: Int,
+        rank: Int,
+    ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        var seq_idx = idx[3]
+
+        # Load from current k if reading past the prev/curr KV cache boundary.
+        if seq_idx >= prev_seq_len:
+            return k.load[width=simd_width](
+                idx[0], idx[1], idx[2], idx[3] - prev_seq_len
+            )
+
+        # Otherwise if there is at least a simd_width, SIMD load from KV cache.
+        var k_cache_slice = prev_seq_len - seq_idx
+        if k_cache_slice >= simd_width:
+            return input_k_cache_fn[simd_width, kv_rank](kv_index(idx))
+
+        # Finally, deal with the boundary case where a SIMD load can span the
+        # prev/curr KV cache because _FlashAttention assumes contiguity.
+        # In this case, fill the SIMD vector with scalar loads and stores.
+        var result = SIMD[type, simd_width]()
+
+        # Start filling SIMD vector from remaining elems of previous KV cache.
+        for i in range(k_cache_slice):
+            result[i] = input_k_cache_fn[1, kv_rank](
+                kv_index(
+                    StaticIntTuple[rank](idx[0], idx[1], idx[2], idx[3] + i)
+                )
+            )
+
+        # Finish filling SIMD vector from current K tensor `k`.
+        for i in range(simd_width - k_cache_slice):
+            result[k_cache_slice + i] = k[idx[0], idx[1], idx[2], i]
+
+        return result
+
+    @always_inline
+    @parameter
+    fn input_v_cache_fn_wrapper[
+        simd_width: Int,
+        rank: Int,
+    ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        if idx[2] >= prev_seq_len:
+            return v.load[width=simd_width](
+                idx[0], idx[1], idx[2] - prev_seq_len, idx[3]
+            )
+
+        return input_v_cache_fn[simd_width, kv_rank](kv_index(idx))
+
+    _FlashAttention[
+        type,
+        rank,
+        simdwidthof[type](),
+        input_k_cache_fn_wrapper,
+        input_v_cache_fn_wrapper,
+        input_mask_fn,
+        output_static_shape,
+    ].run(q, k_shape_new, v_shape_new, output, scale)
