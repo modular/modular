@@ -17,6 +17,7 @@ add_modular_unittest(
   MojoDebugTests
 
   BoolTest.cpp
+  BreakpointTest.cpp
   Support.cpp
 
   DEPENDS
