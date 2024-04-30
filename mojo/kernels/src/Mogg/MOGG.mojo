@@ -96,7 +96,10 @@ from nn.conv_transpose import (
     pack_filter_shape as _pack_conv_transpose_filter_shape,
 )
 from nn.cumsum import cumsum as _cumsum
-from nn.flash_attention import flash_attention as cpu_flash_attention
+from nn.flash_attention import (
+    flash_attention as cpu_flash_attention,
+    flash_attention_split_kv as cpu_flash_attention_split_kv,
+)
 from nn.gather_scatter import Axis
 from nn.gather_scatter import gather as _gather
 from nn.gather_scatter import gather_nd as _gather_nd
@@ -3961,6 +3964,91 @@ fn no_mask_flash_attention_cpu[
             output,
             scale[0].cast[DType.float32](),
         )
+
+
+@mogg_register("with_mask_flash_attention_split_kv_cpu")
+@always_inline
+@export
+fn with_mask_flash_attention_split_kv_cache_cpu[
+    type: DType,
+    rank: Int,
+    input_3_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_4_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_5_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_7_static_shape: DimList,
+    single_thread_blocking_override: Bool,
+    target: StringLiteral = "cpu",
+](
+    q: NDBuffer[type, rank],
+    k: NDBuffer[type, rank],
+    v: NDBuffer[type, rank],
+    input_3_shape: StaticIntTuple[rank + 1],
+    input_4_shape: StaticIntTuple[rank + 1],
+    input_5_shape: StaticIntTuple[rank],
+    # TODO(28121): This should be rank 0, but only works with rank 1
+    scale: NDBuffer[type, 1],
+    output: NDBuffer[type, rank, input_7_static_shape],
+    ctx: MojoCallContextPtr,
+) raises:
+    """A version of flash attention that takes current k and v arguments
+    separately from the past KV cache arguments.
+    This acts as a workaround to avoid materializing copies of the entire KV
+    cache, for example in `mo.concat`.
+    Instead, the KV cache is passed as input lambdas (`input_3_fn` and
+    `input_4_fn`).
+    The attention mask is passed in `input_5_fn`, and `input_7_static_shape` is
+    the output shape.
+
+    Arguments have the following shapes:
+        q: BHSD
+        k: BHDS
+        v: BHSD
+        input_3_fn (k_cache): 1BHDS
+        input_4_fn (v_cache: 1BHSD
+    """
+    if _guard_against_gpu_target[target](ctx):
+        return
+
+    constrained[target == "cpu"]()
+
+    with Trace[TraceLevel.OP]("mojo.flash_attention_split_kv") as t:
+        cpu_flash_attention_split_kv[
+            type,
+            rank,
+            input_3_fn,
+            input_4_fn,
+            input_5_fn,
+            input_7_static_shape,
+        ](
+            q,
+            k,
+            v,
+            input_3_shape,
+            input_4_shape,
+            output,
+            scale[0].cast[DType.float32](),
+        )
+
+
+@mogg_register_shape_func("with_mask_flash_attention_split_kv_cpu")
+@always_inline
+@export
+fn with_mask_flash_attention_split_kv_cpu_shape_func[
+    type: DType, rank: Int, single_thread_blocking_override: Bool
+](q: NDBuffer[type, rank]) -> StaticIntTuple[rank]:
+    return q.get_shape()
+    # TODO(#37702): The following shape function incurs a KV cache copy:
+    # Take the `softmax(Q @ K^T) @ V` product's channel dimension from `V`.
+    # var new_shape = q.get_shape()
+    # new_shape[rank - 1] = v.get_shape()[rank]
+
+    # return new_shape
 
 
 @mogg_register("with_mask_flash_attention_cpu")
