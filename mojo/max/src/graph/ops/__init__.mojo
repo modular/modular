@@ -31,6 +31,7 @@ from .casting import (
     transpose,
 )
 from .complex import as_complex, as_interleaved_complex, as_real, mul_complex
+from .convolution import conv2d, conv3d
 
 # TODO(33370): rename this to `ops.custom`
 from .custom_ops import custom
