@@ -1319,6 +1319,7 @@ cc_binary(
     ]),
     deps = [
         ":LITDialect",
+        ":LSPProtocol",
         ":MojoParser",
         ":MojoTooling",
         ":ObjectCompiler",
@@ -1373,6 +1374,21 @@ cc_library(
     deps = [
         "//Support:Driver",
         "//Support:Telemetry",
+    ],
+)
+
+cc_library(
+    name = "LSPProtocol",
+    srcs = glob([
+        "tools/common/lsp-protocol/*.cpp",
+    ]),
+    hdrs = glob([
+        "tools/common/lsp-protocol/*.h",
+    ]),
+    strip_include_prefix = "tools/common",
+    deps = [
+        "//Support:Base",
+        "@llvm-project//mlir:MlirLspServerSupportLib",
     ],
 )
 
