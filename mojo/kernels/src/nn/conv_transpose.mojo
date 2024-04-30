@@ -32,6 +32,7 @@ from buffer.buffer import (
 )
 from buffer.list import Dim, DimList
 from LinAlg.MatmulUtils import partition_work
+from LinAlg.accumulate import _Accumulator
 from memory.memory import memset_zero
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
@@ -40,9 +41,6 @@ from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 
-from .accumulate import (
-    _Accumulator,
-)
 from .conv_utils import (
     ConvInfoStatic,
     ConvPartition,

@@ -40,6 +40,9 @@ from LinAlg.MatmulUtils import (
     get_partitioned_matmul_im2col,
     partition_work,
 )
+from LinAlg.accumulate import (
+    _Accumulator,
+)
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
@@ -48,9 +51,6 @@ from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 
-from .accumulate import (
-    _Accumulator,
-)
 from .conv_utils import (
     ConvInfoStatic,
     ConvPartition,

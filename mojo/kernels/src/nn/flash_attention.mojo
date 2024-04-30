@@ -18,12 +18,12 @@ from algorithm.reduction import (
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from LinAlg.MatmulUtils import partition_work
+from LinAlg.accumulate import _Accumulator
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 
 from utils.index import Index
-from nn.accumulate import _Accumulator
 
 
 struct _MatmulConfig:
