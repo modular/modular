@@ -644,10 +644,9 @@ fn _matmul_gpu[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     single_thread_blocking_override: Bool = False,
 ](
-    c: NDBuffer[config.c_type, 2, config.c_shape],
-    a: NDBuffer[config.a_type, 2, config.a_shape],
-    b: NDBuffer[config.b_type, 2, config.b_shape],
-    kernel_type_m: Int,
+    c: NDBuffer[_, 2, _],
+    a: NDBuffer[_, 2, _],
+    b: NDBuffer[_, 2, _],
     num_threads: Int = -1,
 ):
     # HACK HACK HACK https://github.com/modularml/modular/issues/22959
@@ -661,9 +660,6 @@ fn _matmul_gpu[
     constrained[config.transpose_a == False, "only NN matmul is supported"]()
     constrained[config.transpose_b == False, "only NN matmul is supported"]()
     constrained[not config.b_packed, "pre-packing not yet supported"]()
-    constrained[
-        not config.saturated_vnni, "saturated_vnni_flag not applicable"
-    ]()
 
     var shape = GemmShape.get[False, False](c, a, b)
     var m = shape.M
@@ -678,23 +674,23 @@ fn _matmul_gpu[
     if elementwise_lambda_fn:
         if use_32bit_indexing:
             _matmul_gpu_dispatch[
-                config.a_type,
-                config.a_shape,
-                config.b_type,
-                config.b_shape,
-                config.c_type,
-                config.c_shape,
+                a.type,
+                a.shape,
+                b.type,
+                b.shape,
+                c.type,
+                c.shape,
                 indexing_integral_dtype = DType.uint32,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b)
         else:
             _matmul_gpu_dispatch[
-                config.a_type,
-                config.a_shape,
-                config.b_type,
-                config.b_shape,
-                config.c_type,
-                config.c_shape,
+                a.type,
+                a.shape,
+                b.type,
+                b.shape,
+                c.type,
+                c.shape,
                 indexing_integral_dtype = DType.uint64,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b)
@@ -702,22 +698,22 @@ fn _matmul_gpu[
     else:
         if use_32bit_indexing:
             _matmul_gpu_dispatch[
-                config.a_type,
-                config.a_shape,
-                config.b_type,
-                config.b_shape,
-                config.c_type,
-                config.c_shape,
+                a.type,
+                a.shape,
+                b.type,
+                b.shape,
+                c.type,
+                c.shape,
                 indexing_integral_dtype = DType.uint32,
             ](c, a, b)
         else:
             _matmul_gpu_dispatch[
-                config.a_type,
-                config.a_shape,
-                config.b_type,
-                config.b_shape,
-                config.c_type,
-                config.c_shape,
+                a.type,
+                a.shape,
+                b.type,
+                b.shape,
+                c.type,
+                c.shape,
                 indexing_integral_dtype = DType.uint64,
             ](c, a, b)
 

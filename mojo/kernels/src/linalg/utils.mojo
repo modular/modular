@@ -361,7 +361,7 @@ fn calculate_tile_n_k[
 @always_inline
 fn _get_tile_n_k[
     config: MatmulConfig
-](b: NDBuffer[config.b_type, 2, config.b_shape]) -> StaticIntTuple[2]:
+](b: NDBuffer[_, 2, _]) -> StaticIntTuple[2]:
     var tile_n_k: StaticIntTuple[2]
 
     @parameter

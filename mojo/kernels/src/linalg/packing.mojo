@@ -554,9 +554,7 @@ fn pack_matmul_b_shape_func_M[
             b_packed=True,
             kernel_type=kernel_type,
         ]()
-        tile_n_k = _get_tile_n_k[config](
-            rebind[NDBuffer[config.b_type, 2, config.b_shape]](b_input)
-        )
+        tile_n_k = _get_tile_n_k[config](b_input)
 
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
@@ -773,9 +771,7 @@ fn _pack_b_ndbuffer_impl[
                 b_packed=True,
                 kernel_type=kernel_type,
             ]()
-            var tile_n_k = _get_tile_n_k[config](
-                rebind[NDBuffer[config.b_type, 2, config.b_shape]](b_input)
-            )
+            var tile_n_k = _get_tile_n_k[config](b_input)
             pack_b[
                 transposed,
                 config.simd_size,
@@ -951,7 +947,10 @@ fn pack_transposed_b_ndbuffer[
 @value
 struct BTileGenerator[
     config: MatmulConfig,
-    type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
 ]:
@@ -961,19 +960,19 @@ struct BTileGenerator[
     Otherwise, calls to get_tile will copy a tile from B into a stack allocated
     scratch buffer and return a view of that."""
 
-    var b: NDBuffer[
-        type, 2, config.b_shape
-    ]  # packed layout if b_packed is True
-    var b_tile_stack_ptr: DTypePointer[type]
+    var b: NDBuffer[b_type, 2, shape]  # packed layout if b_packed is True
+    var b_tile_stack_ptr: DTypePointer[b_type]
     var tile_n_k: StaticIntTuple[2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
     @always_inline
     @staticmethod
     fn get(
-        b: NDBuffer[type, 2, config.b_shape], tile_n_k: StaticIntTuple[2]
-    ) -> BTileGenerator[config, type, transpose_b, b_packed]:
-        var b_tile_stack_ptr = DTypePointer[type].get_null()
+        b: NDBuffer[b_type, 2, shape], tile_n_k: StaticIntTuple[2]
+    ) -> BTileGenerator[
+        config, a_type, b_type, c_type, shape, transpose_b, b_packed
+    ]:
+        var b_tile_stack_ptr = DTypePointer[b_type].get_null()
 
         debug_assert(
             not (transpose_b and b_packed),
@@ -984,13 +983,13 @@ struct BTileGenerator[
         if not b_packed:
             b_tile_stack_ptr = stack_allocation[
                 config.pack_data_size,
-                type,
-                alignof[SIMD[type, simdwidthof[type]()]](),
+                b_type,
+                alignof[SIMD[b_type, simdwidthof[b_type]()]](),
             ]()
 
-        return BTileGenerator[config, type, transpose_b, b_packed](
-            b, b_tile_stack_ptr, tile_n_k
-        )
+        return BTileGenerator[
+            config, a_type, b_type, c_type, shape, transpose_b, b_packed
+        ](b, b_tile_stack_ptr, tile_n_k)
 
     fn get_tile[
         inner_size: Int
@@ -999,7 +998,7 @@ struct BTileGenerator[
         global_offset: GemmShape,
         tile_dim_nk: StaticIntTuple[2],
         valid_data_dim_nk: StaticIntTuple[2],
-    ) -> NDBuffer[type, 3, config.packed_shape]:
+    ) -> NDBuffer[b_type, 3, config.packed_shape]:
         """Get a packed matrix (B) tile.
 
         Args:
@@ -1014,11 +1013,11 @@ struct BTileGenerator[
             A view of the packed tile.
 
         """
+        alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
-        alias factor = get_matmul_arch_factor[
-            config.use_vnni, config.use_i8mm
-        ]()
-        alias inner_size2 = inner_size // 2 if config.use_i8mm else inner_size
+        alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+        alias inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
         var k = align_up(tile_dim_nk[1], factor)
         var tile_shape_nopack = DimList(
@@ -1027,16 +1026,16 @@ struct BTileGenerator[
             factor * inner_size2,
         )
 
-        var packed_b = NDBuffer[type, 3, config.packed_shape](
+        var packed_b = NDBuffer[b_type, 3, config.packed_shape](
             self.b_tile_stack_ptr, tile_shape_nopack
         )
 
         @parameter
         if transpose_b and not b_packed:
             PackMatrixRows[
-                config.b_shape,
+                shape,
                 config.packed_shape,
-                type,
+                b_type,
                 config.simd_size,
                 inner_size,
             ].run(
@@ -1052,13 +1051,13 @@ struct BTileGenerator[
             return packed_b
         elif (not transpose_b) and (not b_packed):
             PackMatrixCols[
-                config.b_shape,
+                shape,
                 config.packed_shape,
-                type,
+                b_type,
                 config.simd_size,
                 inner_size,
-                config.use_vnni,
-                config.use_i8mm,
+                use_vnni,
+                use_i8mm,
             ].run(
                 packed_b,
                 self.b,
@@ -1075,10 +1074,8 @@ struct BTileGenerator[
             # get_tile (if handling a residual K tile), but packing assumes that
             # tile_k is constant.
 
-            var factor = get_matmul_arch_factor[
-                config.use_vnni, config.use_i8mm
-            ]()
-            alias inner_size2 = inner_size // 2 if config.use_i8mm else inner_size
+            var factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+            alias inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
             var tile_k = align_up(self.tile_n_k[1], factor)
 
@@ -1090,7 +1087,7 @@ struct BTileGenerator[
             var tile_k_idx = global_offset.K // tile_k
             var b_flat = self.b.flatten()
             var n_padded = self.b.dim[1]()
-            var b_tile_view = NDBuffer[type, 3, config.packed_shape](
+            var b_tile_view = NDBuffer[b_type, 3, config.packed_shape](
                 # tiles are ordered in row-major order
                 # a bit of trickieness going on here, this works because:
                 #   1. tile_k is the same for every thread (tile_n is not) since threads
