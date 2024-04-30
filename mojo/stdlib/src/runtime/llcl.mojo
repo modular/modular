@@ -38,6 +38,38 @@ struct Chain(Boolable):
         return self.storage != Pointer[Int].get_null()
 
 
+# ===----------------------------------------------------------------------===#
+# SpinWaiter
+# ===----------------------------------------------------------------------===#
+
+
+struct SpinWaiter:
+    """A proxy for the C++ runtime's SpinWaiter type."""
+
+    # Pointer to the underlying SpinWaiter instance
+    var storage: Pointer[NoneType]
+
+    fn __init__(inout self: Self):
+        """Initializes a SpinWaiter instance."""
+        self.storage = external_call[
+            "KGEN_CompilerRT_LLCL_InitializeSpinWaiter",
+            Pointer[NoneType],
+        ]()
+
+    fn __del__(owned self: Self):
+        """Destroys the SpinWaiter instance."""
+        external_call["KGEN_CompilerRT_LLCL_DestroySpinWaiter", NoneType](
+            self.storage
+        )
+
+    fn wait(self: Self):
+        """Blocks the current task for a duration determined by the underlying
+        policy."""
+        external_call["KGEN_CompilerRT_LLCL_SpinWaiter_Wait", NoneType](
+            self.storage
+        )
+
+
 @register_passable("trivial")
 struct AsyncContext:
     """This struct models the coroutine context contained in every coroutine
