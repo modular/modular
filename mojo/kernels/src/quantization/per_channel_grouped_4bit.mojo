@@ -656,20 +656,35 @@ fn _process_rows[
     a_scale: NDBuffer[DType.float32, 2],
     b: NDBuffer[DType.uint8, 2],
     c: NDBuffer[type, 2],
-    m: Int,
+    n: Int,
 ):
     alias block_size = sizeof[Q4sym[group_size, type]]()
     alias simd_width = min(simdwidthof[DType.int32](), group_size // 4)
 
-    var N = b.dim[0]()
+    var M = a_quant.dim[0]()
     var K = a_quant.dim[1]()
+    var N_packed_bytes = b.dim[1]()
     var k_groups = K // group_size
 
     var accum_fp_tile = NDBuffer[
         type, 2, DimList(row_count, simd_width)
     ].stack_allocation()
 
-    for n in range(N):
+    @parameter
+    @always_inline
+    fn dequantize_simd_int4(
+        b_ptr: DTypePointer[DType.uint8], b_scale: SIMD[type, 1]
+    ) -> SIMD[DType.int8, group_size]:
+        var b_data_i4 = b_ptr.offset(2).load[width = group_size // 2]()
+        var b_data_i8_lo = ((b_data_i4 >> 4)).cast[DType.int8]()
+        var b_data_i8_hi = ((b_data_i4 & 15)).cast[DType.int8]()
+
+        return rebind[SIMD[DType.int8, group_size]](
+            b_data_i8_hi.join(b_data_i8_lo)
+        )
+
+    # 3. Outer matmul loop over `M`.
+    for m in range(M):
         var a_quant_ptr = a_quant._offset(Index(m, 0))
         var a_scale_ptr = a_scale._offset(Index(m, 0))
         var b_ptr = b._offset(Index(n, 0))
@@ -678,24 +693,23 @@ fn _process_rows[
         for row in range(row_count):
             accum_fp_tile.store(Index(row, 0), SIMD[type, simd_width](0))
 
-        for k in range(0, k_groups):
-            var b_data_i4 = b_ptr.offset(2).load[width = group_size // 2]()
-            var b_scale = bitcast[DType.float16, 1](
-                b_ptr.offset(0).load[width=2]()
-            ).cast[type]()
-            var b_data_i8_lo = ((b_data_i4 & 15)).cast[DType.int8]()
-            var b_data_i8_hi = ((b_data_i4 >> 4)).cast[DType.int8]()
-            var b_data_i8 = b_data_i8_lo.join(b_data_i8_hi)
+        # 4. Inner loop over `K // block_size_bytes`.
+        for k in range(k_groups):
+            var a_data_i8 = a_quant_ptr.load[width=group_size]()
+            var a_scale = a_scale_ptr[0].cast[type]()
 
+            # 5. Process `row_batch_count` rows of `b` at a time.
             @unroll
             for row in range(row_count):
-                var a_data_i8 = a_quant_ptr.offset(row * K).load[
-                    width=group_size
-                ]()
-                var a_scale = a_scale_ptr.offset(row * k_groups)[0].cast[type]()
+                # Dequantize a group of Q4_0 nibbles to int8.
+                var b_row_ptr = b_ptr.offset(row * N_packed_bytes)
+                var b_scale = bitcast[DType.float16, 1](
+                    b_row_ptr.load[width=2]()
+                ).cast[type]()
+                var b_data_i8 = dequantize_simd_int4(b_row_ptr, b_scale)
 
                 var c_data_i32 = _matmul_int4_dotprod[simd_width, group_size](
-                    a_data_i8, rebind[SIMD[DType.int8, group_size]](b_data_i8)
+                    a_data_i8, b_data_i8
                 )
                 var accum_fp = accum_fp_tile.load[width=simd_width](
                     Index(row, 0)
@@ -710,10 +724,10 @@ fn _process_rows[
         @unroll
         for row in range(row_count):
             var accum_fp = accum_fp_tile.load[width=simd_width](Index(row, 0))
-            c.store(Index(row + m, n), accum_fp.reduce_add())
+            c.store(Index(m, row + n), accum_fp.reduce_add())
 
 
-fn matmul_int4[
+fn ggml_q4_0_matmul_impl[
     group_size: Int,
     type: DType,
 ](
@@ -721,6 +735,18 @@ fn matmul_int4[
     b: NDBuffer[DType.uint8, 2],
     c: NDBuffer[type, 2],
 ) raises:
+    # Matmul parallelized for the token generation case where matmuls have the
+    # following shape:
+    # 1xK . KxN
+
+    # Overview:
+    # 1. Quantize activations from float to int8.
+    # 2. Parallelize on `N`.
+    # 3. The outer matmul loop is over `M`, which is usually 1.
+    # 4. The inner loop is over `K // block_size_bytes`.
+    # 5. Additionally, the inner loop processes `row_batch_count=4` rows of `b`
+    #    at a time, unrolled in the inner loop.
+
     alias block_size = sizeof[Q4sym[group_size, type]]()
 
     var M = a.dim[0]()
@@ -731,6 +757,7 @@ fn matmul_int4[
     if b.dim[1]() % block_size != 0:
         raise Error("unexpected b shape")
 
+    # 1. Quantize incoming activations `a` from float to int8.
     var a_quant_base_ptr = DTypePointer[DType.int8].alloc(M * K)
     var a_scale_base_ptr = DTypePointer[DType.float32].alloc(M * k_groups)
 
@@ -741,26 +768,30 @@ fn matmul_int4[
 
     _block_quantize_a[group_size](a, a_quant, a_scale)
 
-    alias grain_size = 8
-    var num_workers = div_ceil(M, grain_size)
+    # Set the minimum number of rows processed by each additional thread.
+    alias grain_size = 32
 
-    @__copy_capture(M, a_quant, a_scale)
+    # 2. Parallelize on `N`.
+    var num_workers = div_ceil(N, grain_size)
+
+    @__copy_capture(N, a_quant, a_scale)
     @parameter
     @always_inline
     fn task_func(task_id: Int):
         alias row_batch_count = 4
 
         var start_item = task_id * grain_size
-        var end_item = min(M, start_item + grain_size)
+        var end_item = min(N, start_item + grain_size)
         var end_batch_item = align_down(end_item, row_batch_count)
 
-        for m in range(start_item, end_batch_item, row_batch_count):
+        for n in range(start_item, end_batch_item, row_batch_count):
+            # Process rows of `b`.
             _process_rows[group_size, row_batch_count](
-                a_quant, a_scale, b, c, m
+                a_quant, a_scale, b, c, n
             )
 
-        for m in range(end_batch_item, end_item):
-            _process_rows[group_size, 1](a_quant, a_scale, b, c, m)
+        for n in range(end_batch_item, end_item):
+            _process_rows[group_size, 1](a_quant, a_scale, b, c, n)
 
     sync_parallelize[task_func](num_workers)
 
