@@ -172,6 +172,26 @@ fn _elementwise[
     return result
 
 
+@always_inline("nodebug")
+fn _add(x: SIMD[*_], y: __type_of(x)) -> __type_of(x):
+    return x + y
+
+
+@always_inline("nodebug")
+fn _div(x: SIMD[*_], y: __type_of(x)) -> __type_of(x):
+    return x / y
+
+
+@always_inline("nodebug")
+fn _mul(x: SIMD[*_], y: __type_of(x)) -> __type_of(x):
+    return x * y
+
+
+@always_inline("nodebug")
+fn _sub(x: SIMD[*_], y: __type_of(x)) -> __type_of(x):
+    return x - y
+
+
 struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
     """A tensor type which owns its underlying data and is parameterized on
     DType.
@@ -437,7 +457,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         if self._spec != other._spec:
             raise "shape mismatch during tensor addition"
 
-        return _elementwise[math.add](self, other)
+        return _elementwise[_add](self, other)
 
     @always_inline
     fn __add__(self, other: Scalar[type]) -> Self:
@@ -449,7 +469,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
             The addition result.
         """
-        return _elementwise[math.add](self, other)
+        return _elementwise[_add](self, other)
 
     @always_inline
     fn __radd__(self, other: Scalar[type]) -> Self:
@@ -461,7 +481,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
             The addition result.
         """
-        return _elementwise[math.add](other, self)
+        return _elementwise[_add](other, self)
 
     @always_inline
     fn __sub__(self, other: Self) raises -> Self:
@@ -479,7 +499,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         if self._spec != other._spec:
             raise "shape mismatch during tensor subtraction"
 
-        return _elementwise[math.sub](self, other)
+        return _elementwise[_sub](self, other)
 
     @always_inline
     fn __sub__(self, other: Scalar[type]) -> Self:
@@ -491,7 +511,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
             The subtraction result.
         """
-        return _elementwise[math.sub](self, other)
+        return _elementwise[_sub](self, other)
 
     @always_inline
     fn __rsub__(self, other: Scalar[type]) -> Self:
@@ -503,7 +523,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
             The addition result.
         """
-        return _elementwise[math.sub](other, self)
+        return _elementwise[_sub](other, self)
 
     @always_inline
     fn __mul__(self, other: Self) raises -> Self:
@@ -521,7 +541,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         if self._spec != other._spec:
             raise "shape mismatch during tensor multiplication"
 
-        return _elementwise[math.mul](self, other)
+        return _elementwise[_mul](self, other)
 
     @always_inline
     fn __mul__(self, other: Scalar[type]) -> Self:
@@ -533,7 +553,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
             The multiplication result.
         """
-        return _elementwise[math.mul](self, other)
+        return _elementwise[_mul](self, other)
 
     @always_inline
     fn __rmul__(self, other: Scalar[type]) -> Self:
@@ -545,7 +565,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
             The multiplication result.
         """
-        return _elementwise[math.mul](other, self)
+        return _elementwise[_mul](other, self)
 
     @always_inline
     fn __truediv__(self, other: Self) raises -> Self:
@@ -565,7 +585,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         if self._spec != other._spec:
             raise "shape mismatch during tensor multiplication"
 
-        return _elementwise[math.div](self, other)
+        return _elementwise[_div](self, other)
 
     @always_inline
     fn __truediv__(self, other: Scalar[type]) -> Self:
@@ -577,7 +597,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
             The division result.
         """
-        return _elementwise[math.div](self, other)
+        return _elementwise[_div](self, other)
 
     @always_inline
     fn __rtruediv__(self, other: Scalar[type]) -> Self:
@@ -589,7 +609,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
             The division result.
         """
-        return _elementwise[math.div](other, self)
+        return _elementwise[_div](other, self)
 
     @always_inline
     fn __ipow__(inout self, exponent: Int) -> None:
