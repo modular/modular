@@ -1022,8 +1022,8 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
 // SourceLocOp
 //===----------------------------------------------------------------------===//
 
-def KGEN_SourceLocOp : KGENOp<"source_loc",
-    [DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
+def KGEN_SourceLocOp : KGENOp<"source_loc", [Pure,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Track source location and update conditionally during inlining";
   let description = [{
     The `kgen.source_loc` operation enables implementing location capture of
