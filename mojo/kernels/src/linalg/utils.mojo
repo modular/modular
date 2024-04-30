@@ -29,6 +29,9 @@ from buffer.list import DimList
 
 from utils.index import Index, StaticIntTuple
 
+from .apple_accelerate import use_apple_accelerate_lib
+
+
 alias elementwise_epilogue_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]
 ) capturing -> None
@@ -822,7 +825,9 @@ fn get_mm_config[
         transpose_a=transpose_a,
         transpose_b=transpose_b,
         a_packed=a_packed,
-        b_packed=b_packed,
+        b_packed=False if use_apple_accelerate_lib(
+            c_type, a_type, b_type
+        ) else b_packed,
         kernel_type=kernel_type,
         use_vnni=use_vnni_fn[a_type, b_type, c_type](),
         use_i8mm=use_i8mm_fn[a_type, b_type, c_type](),

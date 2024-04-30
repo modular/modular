@@ -59,6 +59,15 @@ fn _get_dylib_function[
 # ===----------------------------------------------------------------------===#
 
 
+@always_inline
+fn use_apple_accelerate_lib(
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+) -> Bool:
+    return os_is_macos() and a_type == b_type == c_type == DType.float32
+
+
 @value
 @register_passable("trivial")
 struct _CBLASOrder:
@@ -504,7 +513,7 @@ fn _bnns_matmul[
 
 
 @always_inline
-fn matmul[
+fn apple_matmul[
     *,
     transpose_b: Bool = False,
 ](c: NDBuffer, a: NDBuffer, b: NDBuffer):
@@ -549,4 +558,4 @@ fn batched_matmul[
             b3.data + (b_shape[0] * b_shape[1]) * batch, b_shape
         )
 
-        matmul[transpose_b=transpose_b](c2, a2, b2)
+        apple_matmul[transpose_b=transpose_b](c2, a2, b2)

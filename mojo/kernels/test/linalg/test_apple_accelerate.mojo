@@ -9,7 +9,7 @@ from sys.info import os_is_macos
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.apple_accelerate import matmul, batched_matmul
+from LinAlg.apple_accelerate import apple_matmul, batched_matmul
 from utils.index import Index, StaticIntTuple
 from testing import *
 
@@ -58,7 +58,7 @@ def test_matmul(c: NDBuffer, a: NDBuffer, b: NDBuffer, m: Int, n: Int, k: Int):
             c[(i, j)] = 0
             golden[(i, j)] = 0
 
-    matmul(c, a, b)
+    apple_matmul(c, a, b)
     gemm_naive(golden, a, b, m, n, k)
 
     var errors: Int = 0

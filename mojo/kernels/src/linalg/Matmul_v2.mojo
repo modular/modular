@@ -11,6 +11,7 @@ from sys.info import (
     has_neon,
     has_neon_int8_dotprod,
     simdwidthof,
+    os_is_macos,
 )
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
@@ -60,6 +61,8 @@ from .MatmulPack import (
     pack_matmul_b_shape_func,
     pack_transposed_b_ndbuffer,
 )
+
+from .apple_accelerate import apple_matmul, use_apple_accelerate_lib
 
 # Define a trait that defines the common functions across all existing
 # microkernels:
@@ -558,6 +561,17 @@ fn _matmul_cpu[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](out, lhs, rhs)
     else:
+        # SGEMM calls for MacOS >= 13.0.0 are directed to the CBLAS implementation.
+        # TODO: Add output fusion.
+        @parameter
+        if use_apple_accelerate_lib(c.type, a.type, b.type):
+            constrained[
+                not elementwise_lambda_fn,
+                "output fusion not yet supported for Apple target",
+            ]()
+            apple_matmul(c, a, b)
+            return
+
         var complexity = m * n * k
         var num_tasks = min(
             div_ceil(complexity, get_min_task_size()),

@@ -4,7 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 from math import align_down, align_up, div_ceil, min
-from sys.info import has_neon
+from sys.info import (
+    has_neon,
+    os_is_macos,
+)
 
 from sys.intrinsics import PrefetchOptions
 
@@ -34,6 +37,8 @@ from .MatmulUtils import (
 from .transpose import transpose_inplace
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
+
+from .apple_accelerate import use_apple_accelerate_lib
 
 
 @value
@@ -563,8 +568,11 @@ fn pack_matmul_b_shape_func_M[
         output[0] = b_input.dim(0)
         output[1] = b_input.dim(1)
 
-    output[0] = div_ceil(output[0], tile_n_k[1]) * tile_n_k[1]
-    output[1] = div_ceil(output[1], tile_n_k[0]) * tile_n_k[0]
+    # If we are on MacOS with below data types, we use cblas_sgemm, so override
+    # packing
+    if not use_apple_accelerate_lib(c_type, a_type, b_type):
+        output[0] = div_ceil(output[0], tile_n_k[1]) * tile_n_k[1]
+        output[1] = div_ceil(output[1], tile_n_k[0]) * tile_n_k[0]
 
     return output
 
@@ -815,6 +823,12 @@ fn pack_b_ndbuffer_M[
         output_buffer: Output buffer to store the packed weight.
         kernel_type_m: The M value of the a_shape (MxN).
     """
+
+    # If we are on MacOS with below data types, we use cblas_sgemm, so override
+    # packing.
+    if use_apple_accelerate_lib(c_type, a_type, b_type):
+        return
+
     _pack_b_ndbuffer_impl[
         a_type,
         a_shape,
@@ -834,6 +848,11 @@ fn pack_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+    # If we are on MacOS with below data types, we use cblas_sgemm, so override
+    # packing.
+    if use_apple_accelerate_lib(c_type, a_type, b_type):
+        return
+
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
@@ -883,6 +902,12 @@ fn pack_transposed_b_ndbuffer_M[
         output_buffer: Output buffer to store the packed weight.
         kernel_type_m: The M value of the a_shape (MxN).
     """
+
+    # If we are on MacOS with below data types, we use cblas_sgemm, so override
+    # packing.
+    if use_apple_accelerate_lib(c_type, a_type, b_type):
+        return
+
     _pack_b_ndbuffer_impl[
         a_type,
         a_shape,
@@ -902,6 +927,11 @@ fn pack_transposed_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
+    # If we are on MacOS with below data types, we use cblas_sgemm, so override
+    # packing.
+    if use_apple_accelerate_lib(c_type, a_type, b_type):
+        return
+
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
