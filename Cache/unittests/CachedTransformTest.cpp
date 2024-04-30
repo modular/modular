@@ -38,7 +38,7 @@ public:
   TestPass(bool *actuallyRun) : actuallyRun(actuallyRun) {}
   using PassWrapper::PassWrapper;
 
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestPass);
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestPass)
 
   /// A diagnostic message emitted when the pass is run.
   static constexpr StringLiteral kDiagnosticMessage =

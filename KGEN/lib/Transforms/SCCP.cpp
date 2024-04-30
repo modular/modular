@@ -146,8 +146,8 @@ private:
 } // namespace
 
 /// Print lattice content for debugging.
-static void printState(SCCPAnalysis::AnalysisStateType &state,
-                       llvm::raw_ostream &os) {
+[[maybe_unused]] static void printState(SCCPAnalysis::AnalysisStateType &state,
+                                        llvm::raw_ostream &os) {
   for (auto &[value, lattice] : state.valueLattices) {
     os << "============================\n";
     os << "value: " << value << "\n";

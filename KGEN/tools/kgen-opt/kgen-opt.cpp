@@ -47,7 +47,7 @@ namespace {
 /// This is a pass for testing data-flow analysis on HLCF operations.
 struct TestDataFlowPass
     : public mlir::PassWrapper<TestDataFlowPass, OperationPass<>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestDataFlowPass);
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestDataFlowPass)
 
   StringRef getArgument() const override { return "test-dataflow"; };
 
@@ -122,7 +122,7 @@ static OwningOpRef<ModuleOp> cloneIntoFakeModule(KGEN::LIT::FuncOp func) {
 struct TestGeneratePreElaboratedBody
     : public mlir::PassWrapper<TestGeneratePreElaboratedBody,
                                OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestGeneratePreElaboratedBody);
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestGeneratePreElaboratedBody)
 
   StringRef getArgument() const override {
     return "test-generate-elaborated-body";
@@ -182,7 +182,7 @@ struct TestGeneratePreElaboratedBody
 struct TestMaterializePackages
     : public mlir::PassWrapper<TestMaterializePackages,
                                OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestMaterializePackages);
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestMaterializePackages)
 
   StringRef getArgument() const override {
     return "test-materialize-packages";
@@ -252,7 +252,7 @@ struct TestMaterializePackages
 /// This is a pass that always fails for the purpose of debugging reproducers.
 struct TestAlwaysFailPass
     : public mlir::PassWrapper<TestAlwaysFailPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestAlwaysFailPass);
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TestAlwaysFailPass)
 
   StringRef getArgument() const override { return "test-always-fail"; };
 
