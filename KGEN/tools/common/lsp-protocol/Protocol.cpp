@@ -38,6 +38,14 @@ static bool mapOptOrNull(const llvm::json::Value &params,
 // SignatureInformation
 //===----------------------------------------------------------------------===//
 
+bool mlir::lsp::fromJSON(const llvm::json::Value &value,
+                         SignatureInformation2 &result, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("label", result.label) &&
+         o.map("parameters", result.parameters) &&
+         o.mapOptional("documentation", result.documentation);
+}
+
 llvm::json::Value mlir::lsp::toJSON(const SignatureInformation2 &value) {
   assert(!value.label.empty() && "signature information label is required");
   llvm::json::Object result{
@@ -52,6 +60,14 @@ llvm::json::Value mlir::lsp::toJSON(const SignatureInformation2 &value) {
 //===----------------------------------------------------------------------===//
 // SignatureHelp
 //===----------------------------------------------------------------------===//
+
+bool mlir::lsp::fromJSON(const llvm::json::Value &value, SignatureHelp2 &result,
+                         llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("signatures", result.signatures) &&
+         o.map("activeSignature", result.activeSignature) &&
+         o.map("activeParameter", result.activeParameter);
+}
 
 llvm::json::Value mlir::lsp::toJSON(const SignatureHelp2 &value) {
   assert(value.activeSignature >= 0 &&
@@ -83,6 +99,11 @@ bool mlir::lsp::fromJSON(const llvm::json::Value &value, NotebookCell &result,
   return o.map("document", result.document);
 }
 
+llvm::json::Value mlir::lsp::toJSON(const NotebookCell &value) {
+  return llvm::json::Object{{"kind", static_cast<int64_t>(value.kind)},
+                            {"document", value.document}};
+}
+
 //===----------------------------------------------------------------------===//
 // NotebookDocument
 //===----------------------------------------------------------------------===//
@@ -95,6 +116,13 @@ bool mlir::lsp::fromJSON(const llvm::json::Value &value,
          o.map("version", result.version) && o.map("cells", result.cells);
 }
 
+llvm::json::Value mlir::lsp::toJSON(const NotebookDocument &value) {
+  return llvm::json::Object{{"uri", value.uri},
+                            {"notebookType", value.notebookType},
+                            {"version", value.version},
+                            {"cells", value.cells}};
+}
+
 //===----------------------------------------------------------------------===//
 // DidOpenNotebookDocumentParams
 //===----------------------------------------------------------------------===//
@@ -105,6 +133,12 @@ bool mlir::lsp::fromJSON(const llvm::json::Value &value,
   llvm::json::ObjectMapper o(value, path);
   return o && o.map("notebookDocument", result.notebookDocument) &&
          o.map("cellTextDocuments", result.cellTextDocuments);
+}
+
+llvm::json::Value
+mlir::lsp::toJSON(const DidOpenNotebookDocumentParams &value) {
+  return llvm::json::Object{{"notebookDocument", value.notebookDocument},
+                            {"cellTextDocuments", value.cellTextDocuments}};
 }
 
 //===----------------------------------------------------------------------===//
@@ -158,6 +192,43 @@ bool mlir::lsp::fromJSON(const llvm::json::Value &value,
   return o && o.map("cells", result.cells);
 }
 
+llvm::json::Value mlir::lsp::toJSON(const NotebookCellArrayChange &value) {
+  return llvm::json::Object{{"start", value.start},
+                            {"deleteCount", value.deleteCount},
+                            {"cells", value.cells}};
+}
+
+llvm::json::Value
+mlir::lsp::toJSON(const NotebookDocumentChangeEvent::CellsStructure &value) {
+  return llvm::json::Object{{"array", value.array},
+                            {"didOpen", value.didOpen},
+                            {"didClose", value.didClose}};
+}
+
+llvm::json::Value
+mlir::lsp::toJSON(const NotebookDocumentChangeEvent::CellsTextContent &value) {
+  return llvm::json::Object{{"document", value.document},
+                            {"changes", value.changes}};
+}
+
+llvm::json::Value
+mlir::lsp::toJSON(const NotebookDocumentChangeEvent::Cells &value) {
+  return llvm::json::Object{{"structure", value.structure},
+                            {"data", value.data},
+                            {"textContent", value.textContent}};
+}
+
+llvm::json::Value mlir::lsp::toJSON(const NotebookDocumentChangeEvent &value) {
+  return llvm::json::Object{{"cells", value.cells}};
+}
+
+llvm::json::Value
+mlir::lsp::toJSON(const TextDocumentContentChangeEvent &value) {
+  return llvm::json::Object{{"range", value.range},
+                            {"rangeLength", value.rangeLength},
+                            {"text", value.text}};
+}
+
 //===----------------------------------------------------------------------===//
 // DidChangeNotebookDocumentParams
 //===----------------------------------------------------------------------===//
@@ -168,6 +239,12 @@ bool mlir::lsp::fromJSON(const llvm::json::Value &value,
   llvm::json::ObjectMapper o(value, path);
   return o && o.map("notebookDocument", result.notebookDocument) &&
          o.map("change", result.change);
+}
+
+llvm::json::Value
+mlir::lsp::toJSON(const DidChangeNotebookDocumentParams &value) {
+  return llvm::json::Object{{"notebookDocument", value.notebookDocument},
+                            {"change", value.change}};
 }
 
 //===----------------------------------------------------------------------===//
@@ -421,4 +498,22 @@ bool lsp::fromJSON(const llvm::json::Value &value, FoldingRange &foldingRange,
          o.mapOptional("startCharacter", foldingRange.startCharacter) &&
          o.mapOptional("endCharacter", foldingRange.endCharacter) &&
          o.mapOptional("kind", foldingRange.kind);
+}
+
+bool lsp::fromJSON(const llvm::json::Value &value, ParameterInformation &info,
+                   llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  const llvm::json::Object &obj = *value.getAsObject();
+  if (!o)
+    return false;
+  if (obj.getString("label")) {
+    if (!o.map("label", info.labelString))
+      return false;
+  } else {
+    std::vector<int64_t> pair;
+    if (!o.map("label", pair) || pair.size() != 2)
+      return false;
+    info.labelOffsets = {pair[0], pair[1]};
+  }
+  return o.mapOptional("documentation", info.documentation);
 }

@@ -14,6 +14,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 #include <fstream>
+#include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/Support/Program.h>
 #include <type_traits>
 
@@ -48,12 +49,60 @@ LSPBatchClient &LSPBatchClient::open(const Document &doc) {
   return *this;
 }
 
+template <typename Result, typename Callback>
+static std::vector<Result> mapDocuments(ArrayRef<Document> documents,
+                                        Callback callback) {
+  std::vector<Result> result;
+  for (const Document &doc : documents)
+    result.push_back(callback(doc));
+  return result;
+}
+
+LSPBatchClient &LSPBatchClient::openNotebook(const NotebookDocument &doc) {
+  lsp::DidOpenNotebookDocumentParams params{
+      lsp::NotebookDocument{
+          doc.getURI(), "jupyter",
+          /*version=*/0,
+          mapDocuments<lsp::NotebookCell>(doc.getCells(),
+                                          [](const Document &cell) {
+                                            return lsp::NotebookCell{
+                                                lsp::NotebookCellKind::Code,
+                                                cell.getURI()};
+                                          })},
+      mapDocuments<lsp::TextDocumentItem>(doc.getCells(),
+                                          [](const Document &cell) {
+                                            return lsp::TextDocumentItem{
+                                                cell.getURI(),
+                                                "mojo",
+                                                cell.getContents().str(),
+                                                /*version=*/0,
+                                            };
+                                          })};
+  notify("notebookDocument/didOpen", toJSON(params));
+  return *this;
+}
+
+LSPBatchClient &LSPBatchClient::notebookDidChange(
+    const mlir::lsp::DidChangeNotebookDocumentParams &params) {
+  notify("notebookDocument/didChange", toJSON(params));
+  return *this;
+}
+
 LSPBatchClient &LSPBatchClient::definition(
     const Document &doc, const lsp::Position &position,
     std::function<void(const std::vector<lsp::Location> &)> callback) {
   lsp::TextDocumentPositionParams params{
       lsp::TextDocumentIdentifier{doc.getURI()}, position};
   request("textDocument/definition", toJSON(params), std::move(callback));
+  return *this;
+}
+
+LSPBatchClient &LSPBatchClient::signatureHelp(
+    const Document &doc, const lsp::Position &position,
+    std::function<void(const lsp::SignatureHelp2 &)> callback) {
+  lsp::TextDocumentPositionParams params{
+      lsp::TextDocumentIdentifier{doc.getURI()}, position};
+  request("textDocument/signatureHelp", toJSON(params), std::move(callback));
   return *this;
 }
 
@@ -146,8 +195,10 @@ ErrorOrSuccess LSPBatchClient::dispatchResponse(StringRef json) {
             auto diags =
                 llvm::cantFail(llvm::json::parse<std::vector<lsp::Diagnostic>>(
                     *params.get("diagnostics")));
-            it->second(diags);
-            diagnosticsHandlers.erase(it);
+            it->second.front()(diags);
+            it->second.pop_front();
+            if (it->second.empty())
+              diagnosticsHandlers.erase(it);
           }
         }
       }
@@ -214,7 +265,9 @@ ErrorOrSuccess LSPBatchClient::dispatchResponses(StringRef serverStdout) {
 
 LSPBatchClient &LSPBatchClient::onDiagnostics(const Document &doc,
                                               DiagnosticHandler handler) {
-  diagnosticsHandlers.try_emplace(doc.getURI().uri(), std::move(handler));
+  auto &list =
+      diagnosticsHandlers.try_emplace(doc.getURI().uri()).first->second;
+  list.emplace_back(std::move(handler));
   return *this;
 }
 
