@@ -6,13 +6,13 @@
 
 add_modular_mlir_library(MCompilerSupport
   BytecodeReaderWriter.cpp
+  DiagnosticHandler.cpp
   Diags.cpp
   ErrorTree.cpp
   MLIRDenseAttr.cpp
   MLIRDType.cpp
   OperationUtils.cpp
   ParserUtils.cpp
-  ThreadDiagnosticHandler.cpp
   TimeProfilerTimingManager.cpp
   VerifyUtils.cpp
 
