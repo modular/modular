@@ -83,7 +83,7 @@ struct Inner_matmul_default(InnerMatmulKernel):
         var K = a.dim[1]()
         var a_ptr = a.data.offset(global_offset.M * K + global_k)
 
-        alias c_type = c_local.c_type
+        alias c_type = c_local.type
 
         # Loop over local accumulator tiles.
         @unroll

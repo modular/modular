@@ -73,6 +73,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
 
         # Prefetch B matrix.
         alias prefetch_distance = get_matmul_prefetch_b_distance_k()
+        constrained[simd_size == 4]()
 
         @parameter
         if prefetch_distance > 0:
@@ -90,13 +91,11 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
 
             @unroll
             for idx1 in range(pack_inner_size // simd_size):
-                alias alignment = alignof[SIMD[c_local.c_type, simd_size]]()
+                alias alignment = alignof[SIMD[c_local.type, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)
                 var b_val = b_ptr.offset(16 * idx1).load[
                     width = simd_size * 4, alignment=alignment
                 ]()
-                # var c_idx = Index(idx0, 4 * idx1)
-                constrained[simd_size == 4]()
                 var c_val = c_local[idx0, idx1]
                 c_val = _neon_matmul(c_val, a_val, b_val)
                 c_local[idx0, idx1] = c_val

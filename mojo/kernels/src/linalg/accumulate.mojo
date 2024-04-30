@@ -20,7 +20,7 @@ from memory.unsafe import DTypePointer
 # ===----------------------------------------------------------------------===#
 # TODO: rename to _MatmulAccumulators?
 struct _Accumulator[
-    c_type: DType,
+    type: DType,
     num_rows: Int,
     num_cols: Int,
     simd_width: Int,
@@ -29,29 +29,27 @@ struct _Accumulator[
 ]:
     """
     Parameters:
-        c_type: DType of accumulator.
+        type: DType of accumulator.
         num_rows: Number of rows in register tiling.
         num_cols: Number of columns in register tiling.
         simd_width: Number of lanes of a SIMD vector.
     """
 
     # The output buffer, should have num_rows x num_cols x simd_width.
-    var _storage: Buffer[c_type, num_rows * num_cols * simd_width]
+    var _storage: Buffer[type, num_rows * num_cols * simd_width]
 
-    # TODO: do we need to vectorize init?
     @always_inline
     fn __init__(inout self):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
-
+        alias alignment = alignof[SIMD[type, simd_width]]()
         self._storage = Buffer[
-            c_type, num_rows * num_cols * simd_width
-        ].stack_allocation()
+            type, num_rows * num_cols * simd_width
+        ].aligned_stack_allocation[alignment=alignment]()
 
-    # TODO: revise
     @always_inline
     fn __init__(
         inout self,
-        other_storage: Buffer[c_type, num_rows * num_cols * simd_width],
+        other_storage: Buffer[type, num_rows * num_cols * simd_width],
     ):
         constrained[(num_cols > 0) and (num_rows > 0) and (simd_width > 0)]()
         self._storage = other_storage
@@ -68,23 +66,23 @@ struct _Accumulator[
         return (m * num_cols + n) * simd_width
 
     @always_inline
-    fn __getitem__(self, m: Int, n: Int) -> SIMD[c_type, simd_width]:
+    fn __getitem__(self, m: Int, n: Int) -> SIMD[type, simd_width]:
         return self._storage.load[width=simd_width](self._storage_index(m, n))
 
     @always_inline
-    fn __setitem__(inout self, m: Int, n: Int, value: SIMD[c_type, simd_width]):
+    fn __setitem__(inout self, m: Int, n: Int, value: SIMD[type, simd_width]):
         self._storage.store(self._storage_index(m, n), value)
 
     @always_inline
     fn _partial_set[
         partial_width: Int
-    ](inout self, offset: Int, value: SIMD[c_type, partial_width]):
+    ](inout self, offset: Int, value: SIMD[type, partial_width]):
         self._storage.store[width=partial_width](offset, value)
 
     @always_inline
     fn _partial_get[
         partial_width: Int
-    ](inout self, idx: Int) -> SIMD[c_type, partial_width]:
+    ](inout self, idx: Int) -> SIMD[type, partial_width]:
         return self._storage.load[width=partial_width](idx)
 
     # In c+=(a*b), each of a, b, and c can have different types.
@@ -99,12 +97,12 @@ struct _Accumulator[
         b: SIMD[b_type, simd_width],
     ):
         # TODO: the order of 'a' and 'b' in the following FMA and its impact on accuracy.
-        self[m, n] = (b.cast[c_type]()).fma((a.cast[c_type]()), self[m, n])
+        self[m, n] = (b.cast[type]()).fma((a.cast[type]()), self[m, n])
 
     @always_inline
     fn _transfer[
-        func: fn (m: Int, n: Int, ptr: DTypePointer[c_type]) capturing -> None
-    ](inout self, base_ptr: DTypePointer[c_type], stride: Int):
+        func: fn (m: Int, n: Int, ptr: DTypePointer[type]) capturing -> None
+    ](inout self, base_ptr: DTypePointer[type], stride: Int):
         var row_ptr = base_ptr
 
         @unroll
@@ -117,20 +115,20 @@ struct _Accumulator[
 
     # TODO: merge with load
     @always_inline
-    fn load(inout self, base_ptr: DTypePointer[c_type], stride: Int):
+    fn load(inout self, base_ptr: DTypePointer[type], stride: Int):
         @parameter
         @always_inline
-        fn do_transfer(m: Int, n: Int, ptr: DTypePointer[c_type]):
+        fn do_transfer(m: Int, n: Int, ptr: DTypePointer[type]):
             self[m, n] = ptr.load[width=simd_width]()
 
         self._transfer[do_transfer](base_ptr, stride)
 
     # TODO: merge with store
     @always_inline
-    fn store(inout self, base_ptr: DTypePointer[c_type], stride: Int):
+    fn store(inout self, base_ptr: DTypePointer[type], stride: Int):
         @parameter
         @always_inline
-        fn do_transfer(m: Int, n: Int, ptr: DTypePointer[c_type]):
+        fn do_transfer(m: Int, n: Int, ptr: DTypePointer[type]):
             ptr.store(self[m, n])
 
         self._transfer[do_transfer](base_ptr, stride)
@@ -140,7 +138,7 @@ struct _Accumulator[
     # ===----------------------------------------------------------------------===#
 
     @always_inline
-    fn init(inout self, val: Scalar[c_type] = 0.0):
+    fn init(inout self, val: Scalar[type] = 0.0):
         # TODO: refactor with _transfer
         @unroll
         for m in range(num_rows):
@@ -179,7 +177,7 @@ struct _Accumulator[
             # TODO: check if partial_load_size has value.
             self[i, j] = _simd_load_maybe_partial[
                 simd_width, partial_load_last_vec
-            ](input_ptr, 0, partial_load_size).cast[c_type]()
+            ](input_ptr, 0, partial_load_size).cast[type]()
 
         unroll[body, num_rows, num_cols]()
 
@@ -249,7 +247,7 @@ struct _Accumulator[
 
         @parameter
         if has_neon():
-            self._accumulate_neon_struct[
+            self._accumulate_neon[
                 prefetch_offset=None,
                 partial_load_b=partial_load_b,
             ](
@@ -261,7 +259,7 @@ struct _Accumulator[
                 partial_load_b_size,
             )
         else:
-            self._accumulate_x86_simd_struct[
+            self._accumulate_x86_simd[
                 prefetch_offset=prefetch_offset,
                 partial_load_b=partial_load_b,
             ](
@@ -322,7 +320,7 @@ struct _Accumulator[
 
         @parameter
         if has_neon():
-            self._accumulate_neon_struct[
+            self._accumulate_neon[
                 prefetch_offset=None,
                 partial_load_b=partial_load_b,
             ](
@@ -335,7 +333,7 @@ struct _Accumulator[
                 partial_load_b_size,
             )
         else:
-            self._accumulate_x86_simd_struct[
+            self._accumulate_x86_simd[
                 prefetch_offset=prefetch_offset,
                 partial_load_b=partial_load_b,
             ](
@@ -384,7 +382,7 @@ struct _Accumulator[
     # register renaming.
 
     @always_inline
-    fn _accumulate_x86_simd_struct[
+    fn _accumulate_x86_simd[
         prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -436,15 +434,15 @@ struct _Accumulator[
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
                     self[i, j] = fma(
-                        a_splat_vec.cast[c_type](),
-                        b_vec.cast[c_type](),
+                        a_splat_vec.cast[type](),
+                        b_vec.cast[type](),
                         self[i, j],
                     )
 
             b_ptr = b_ptr + b_stride
 
     @always_inline
-    fn _accumulate_x86_simd_struct[
+    fn _accumulate_x86_simd[
         prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -498,8 +496,8 @@ struct _Accumulator[
                     # The following should be lifted to registers and show up as
                     # FMA instructions.
                     self[i, j] = fma(
-                        a_splat_vec.cast[c_type](),
-                        b_vec.cast[c_type](),
+                        a_splat_vec.cast[type](),
+                        b_vec.cast[type](),
                         self[i, j],
                     )
 
@@ -545,7 +543,7 @@ struct _Accumulator[
     # registers on Graviton2.
 
     @always_inline
-    fn _accumulate_neon_struct[
+    fn _accumulate_neon[
         prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -588,9 +586,9 @@ struct _Accumulator[
                     for i in range(row_start, row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
-                        self[i, j] = fma[c_type, simd_width](
-                            a_vecs[i][lane].cast[c_type](),
-                            b_vec.cast[c_type](),
+                        self[i, j] = fma[type, simd_width](
+                            a_vecs[i][lane].cast[type](),
+                            b_vec.cast[type](),
                             self[i, j],
                         )
 
@@ -600,7 +598,7 @@ struct _Accumulator[
         tile[micro_kernel, VariadicList[Int](simd_width, 1)](0, length)
 
     @always_inline
-    fn _accumulate_neon_struct[
+    fn _accumulate_neon[
         prefetch_offset: Optional[Int] = None,
         partial_load_b: Bool = False,
     ](
@@ -645,9 +643,9 @@ struct _Accumulator[
                     for i in range(row_start, row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
-                        self[i, j] = fma[c_type, simd_width](
-                            a_vecs[i][lane].cast[c_type](),
-                            b_vec.cast[c_type](),
+                        self[i, j] = fma[type, simd_width](
+                            a_vecs[i][lane].cast[type](),
+                            b_vec.cast[type](),
                             self[i, j],
                         )
 

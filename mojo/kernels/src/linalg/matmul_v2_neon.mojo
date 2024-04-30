@@ -65,7 +65,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
 
         var b_ptr = b_packed._offset(Index(n_outer_idx, tile_n_k_idx[1], 0))
 
-        alias c_type = c_local.c_type
+        alias c_type = c_local.type
         var a_vals = stack_allocation[a_row_size, SIMD[c_type, a_col_size]]()
 
         @unroll

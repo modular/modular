@@ -250,6 +250,7 @@ struct LoadStore_neon[
     ):
         var c_ptr_loc = rebind[DTypePointer[type]](c_ptr.offset(tile_n_idx))
 
+        # TODO: is this init extra?
         self.output_tile.init(0)
         return LoadStoreOutputTile[
             type, simd_size, tile_rows, tile_columns, True

@@ -72,7 +72,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                 processing tile to index the packed B matrix.
             tile_n_k: TODO
         """
-        alias c_type = c_local.c_type
+        alias c_type = c_local.type
         # Seek outer indices in packed layout.
         var n_outer_idx = tile_n_k_idx[0] // pack_inner_size
         var kl = tile_n_k_idx[1]
