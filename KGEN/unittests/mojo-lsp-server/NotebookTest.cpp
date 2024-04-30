@@ -1,0 +1,184 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "Support.h"
+#include "gtest/gtest.h"
+
+using namespace M;
+
+TEST(NotebookTest, testUpdates) {
+  NotebookDocument doc("test:///test_updates", {
+                                                   R"(
+fn function() -> Int:
+  return 10
+)",
+                                                   R"(
+function()
+)"});
+
+  auto buildChangeParams =
+      [&doc](
+          const lsp::NotebookCellArrayChange &arrayChange,
+          const std::vector<lsp::NotebookDocumentChangeEvent::CellsTextContent>
+              &textContent = {}) {
+        return lsp::DidChangeNotebookDocumentParams{
+            lsp::VersionedNotebookDocumentIdentifier{doc.getURI(),
+                                                     /*version=*/0},
+            lsp::NotebookDocumentChangeEvent{
+                lsp::NotebookDocumentChangeEvent::Cells{
+                    lsp::NotebookDocumentChangeEvent::CellsStructure{
+                        arrayChange,
+                        /*didOpen=*/{},
+                        /*didClose=*/{},
+                    },
+                    /*data=*/{},
+                    /*textContent=*/textContent}}};
+      };
+
+  createTestClient()
+      .openNotebook(doc)
+      .onDiagnostics(doc.getCells()[0],
+                     [](const std::vector<lsp::Diagnostic> &diags) {
+                       EXPECT_EQ((int)diags.size(), 0);
+                     })
+      .onDiagnostics(doc.getCells()[1],
+                     [](const std::vector<lsp::Diagnostic> &diags) {
+                       // FIXME(MOTO-382): We are getting an incorrect
+                       // diagnostic about `Int` not being used.
+                       // We should in fact get 0 diagnostics.
+                       EXPECT_EQ((int)diags.size(), 1);
+                     })
+      .notebookDidChange(buildChangeParams(lsp::NotebookCellArrayChange{
+          /*start=*/0,
+          /*deleteCount=*/1,
+          {lsp::NotebookCell{lsp::NotebookCellKind::Code,
+                             doc.getCells()[0].getURI()}}}))
+      // TODO(MOTO-382): Revive these asserts.
+      //.onDiagnostics(doc.getCells()[1],
+      //               [](const std::vector<lsp::Diagnostic> &diags) {
+      //                 ASSERT_EQ((int)diags.size(), 1);
+      //                 EXPECT_EQ(diags[0].message,
+      //                           "use of unknown declaration 'function'");
+      //               })
+      .notebookDidChange(buildChangeParams(
+          lsp::NotebookCellArrayChange{/*start=*/0,
+                                       /*deleteCount=*/0,
+                                       /*cells=*/{}},
+          {lsp::NotebookDocumentChangeEvent::CellsTextContent{
+               lsp::VersionedTextDocumentIdentifier{doc.getCells()[0].getURI(),
+                                                    /*version=*/0},
+               {lsp::TextDocumentContentChangeEvent{
+                    /*range=*/std::nullopt, /*rangeLength=*/std::nullopt,
+                    /*text=*/doc.getCells()[0].getContents().str()},
+                lsp::TextDocumentContentChangeEvent{
+                    /*range=*/doc.getCells()[0].findFirstRange("function"),
+                    /*rangeLength=*/std::nullopt,
+                    /*text=*/"renamed_function"}}},
+           lsp::NotebookDocumentChangeEvent::CellsTextContent{
+               lsp::VersionedTextDocumentIdentifier{doc.getCells()[1].getURI(),
+                                                    /*version=*/0},
+               {lsp::TextDocumentContentChangeEvent{
+                   /*range=*/doc.getCells()[1].findFirstRange("function"),
+                   /*rangeLength=*/std::nullopt,
+                   /*text=*/"renamed_function"}}}}))
+      // TODO(MOTO-382): Revive these asserts.
+      //.onDiagnostics(doc.getCells()[0],
+      //               [](const std::vector<lsp::Diagnostic> &diags) {
+      //                 EXPECT_EQ((int)diags.size(), 0);
+      //               })
+      //.onDiagnostics(doc.getCells()[1],
+      //               [](const std::vector<lsp::Diagnostic> &diags) {
+      //                 EXPECT_EQ((int)diags.size(), 0);
+      //               })
+      .hover(doc.getCells()[1], lsp::Position(1, 1),
+             [](const lsp::Hover &hover) {
+               EXPECT_EQ(hover.contents.value, R"(```mojo
+(function) fn renamed_function() -> Int
+```)");
+               EXPECT_EQ(hover.range, lsp::Range({1, 0}, {1, 16}));
+             })
+      .execute();
+}
+
+TEST(NotebookTest, testSignatureHelp) {
+  NotebookDocument doc("test:///test_signature_help", {
+                                                          R"(
+struct SomeStruct:
+    var a_field: Int
+
+    fn __init__(inout self):
+        pass
+
+    fn __init__(inout self, a_field: Int):
+        pass
+)",
+                                                          R"(
+SomeStruct()
+)"});
+
+  createTestClient()
+      .openNotebook(doc)
+      .signatureHelp(doc.getCells()[1],
+                     doc.getCells()[1].findLastRange("SomeStruct(")->end,
+                     [](const lsp::SignatureHelp2 &signatureHelp) {
+                       ASSERT_EQ((int)signatureHelp.signatures.size(), 2);
+                       EXPECT_EQ(signatureHelp.activeSignature, 0);
+                       EXPECT_EQ(signatureHelp.activeParameter, 1);
+                       // FIXME(38725): There's an unexpected `/` argument.
+                       EXPECT_EQ(signatureHelp.signatures[0].label,
+                                 "fn __init__(inout self: Self, /)");
+                       // FIXME(38725): There's an unexpected `/` argument.
+                       EXPECT_EQ(
+                           signatureHelp.signatures[1].label,
+                           "fn __init__(inout self: Self, /, a_field: Int)");
+                     })
+      .execute();
+}
+
+TEST(NotebookTest, testPython) {
+  NotebookDocument doc("test:///test_python", {
+                                                  R"(%%python
+def function():
+  return
+)",
+                                                  R"(
+function
+)"});
+
+  createTestClient()
+      .openNotebook(doc)
+      .hover(doc.getCells()[1], lsp::Position(1, 2),
+             [](const lsp::Hover &hover) {
+               EXPECT_EQ(hover.contents.value, R"(```mojo
+(argument) inout function: PythonObject
+```)");
+             })
+      .execute();
+}
+
+TEST(NotebookTest, testCompletion) {
+  NotebookDocument doc("test:///test_completion", {
+                                                      R"(
+fn function() -> Int:
+  return 10
+)",
+                                                      R"(
+fu
+)"});
+
+  createTestClient()
+      .openNotebook(doc)
+      .completion(
+          doc.getCells()[1], lsp::Position(1, 2),
+          [](const lsp::CompletionList &completionList) {
+            EXPECT_TRUE(llvm::any_of(
+                completionList.items, [](const lsp::CompletionItem &item) {
+                  return item.label == "function" &&
+                         item.kind == lsp::CompletionItemKind::Function;
+                }));
+          })
+      .execute();
+}

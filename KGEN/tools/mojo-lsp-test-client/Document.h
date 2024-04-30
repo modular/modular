@@ -45,6 +45,19 @@ private:
   SmallVector<StringRef> lines;
 };
 
+class NotebookDocument {
+public:
+  NotebookDocument(StringRef uri, ArrayRef<StringRef> cellContents);
+
+  mlir::lsp::URIForFile getURI() const { return uri; }
+
+  ArrayRef<Document> getCells() const { return cells; }
+
+private:
+  mlir::lsp::URIForFile uri;
+  SmallVector<Document> cells;
+};
+
 } // namespace M
 
 #endif // KGEN_TOOLS_MOJO_LSP_TEST_CLIENT_DOCUMENT_H

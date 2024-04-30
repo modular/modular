@@ -13,6 +13,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 #include "llvm/ADT/StringMap.h"
+#include <deque>
 
 namespace M {
 
@@ -85,10 +86,22 @@ public:
   /// textDocument/didOpen
   LSPBatchClient &open(const Document &doc);
 
+  /// notebookDocument/didOpen
+  LSPBatchClient &openNotebook(const NotebookDocument &doc);
+
+  /// notebookDocument/didChange
+  LSPBatchClient &
+  notebookDidChange(const mlir::lsp::DidChangeNotebookDocumentParams &params);
+
   /// textDocument/definition
   LSPBatchClient &definition(
       const Document &doc, const mlir::lsp::Position &position,
       std::function<void(const std::vector<mlir::lsp::Location> &)> callback);
+
+  /// textDocument/signatureHelp
+  LSPBatchClient &signatureHelp(
+      const Document &doc, const mlir::lsp::Position &position,
+      std::function<void(const mlir::lsp::SignatureHelp2 &)> callback);
 
   /// testDocument/codeAction
   LSPBatchClient &codeAction(
@@ -182,7 +195,7 @@ private:
   /// A map from request id to response handler.
   DenseMap<RequestId, std::unique_ptr<ResponseHandler>> requestHandlers;
   // A map from doc URL to response handler.
-  llvm::StringMap<DiagnosticHandler> diagnosticsHandlers;
+  llvm::StringMap<std::deque<DiagnosticHandler>> diagnosticsHandlers;
 };
 
 } // namespace M

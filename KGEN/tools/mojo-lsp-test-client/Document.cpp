@@ -57,3 +57,14 @@ Document::findLastRange(StringRef substr) const {
 
   return {};
 }
+
+NotebookDocument::NotebookDocument(StringRef uri,
+                                   ArrayRef<StringRef> cellContents) {
+  if (llvm::Expected<lsp::URIForFile> uriOr = lsp::URIForFile::fromURI(uri))
+    this->uri = std::move(*uriOr);
+  else
+    llvm::report_fatal_error(uriOr.takeError());
+
+  for (auto [idx, cellContent] : llvm::enumerate(cellContents))
+    cells.emplace_back((uri + std::to_string(idx)).str(), cellContent);
+}

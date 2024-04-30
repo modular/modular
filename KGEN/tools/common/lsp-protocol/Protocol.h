@@ -37,6 +37,8 @@ struct SignatureInformation2 {
 };
 
 /// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &value, SignatureInformation2 &result,
+              llvm::json::Path path);
 llvm::json::Value toJSON(const SignatureInformation2 &value);
 
 //===----------------------------------------------------------------------===//
@@ -56,6 +58,8 @@ struct SignatureHelp2 {
 };
 
 /// Add support for JSON serialization.
+bool fromJSON(const llvm::json::Value &value, SignatureHelp2 &result,
+              llvm::json::Path path);
 llvm::json::Value toJSON(const SignatureHelp2 &value);
 
 //===----------------------------------------------------------------------===//
@@ -86,6 +90,7 @@ struct NotebookCell {
 /// Add support for JSON serialization.
 bool fromJSON(const llvm::json::Value &value, NotebookCell &result,
               llvm::json::Path path);
+llvm::json::Value toJSON(const NotebookCell &value);
 
 //===----------------------------------------------------------------------===//
 // NotebookDocument
@@ -109,6 +114,7 @@ struct NotebookDocument {
 /// Add support for JSON serialization.
 bool fromJSON(const llvm::json::Value &value, NotebookDocument &result,
               llvm::json::Path path);
+llvm::json::Value toJSON(const NotebookDocument &value);
 
 //===----------------------------------------------------------------------===//
 // DidOpenNotebookDocumentParams
@@ -125,6 +131,7 @@ struct DidOpenNotebookDocumentParams {
 /// Add support for JSON serialization.
 bool fromJSON(const llvm::json::Value &value,
               DidOpenNotebookDocumentParams &result, llvm::json::Path path);
+llvm::json::Value toJSON(const DidOpenNotebookDocumentParams &value);
 
 //===----------------------------------------------------------------------===//
 // NotebookDocumentChangeEvent
@@ -145,6 +152,7 @@ struct NotebookCellArrayChange {
 /// Add support for JSON serialization.
 bool fromJSON(const llvm::json::Value &value, NotebookCellArrayChange &result,
               llvm::json::Path path);
+llvm::json::Value toJSON(const NotebookCellArrayChange &value);
 
 /// A change event for a notebook document.
 struct NotebookDocumentChangeEvent {
@@ -196,6 +204,14 @@ bool fromJSON(const llvm::json::Value &value,
 bool fromJSON(const llvm::json::Value &value,
               NotebookDocumentChangeEvent &result, llvm::json::Path path);
 
+llvm::json::Value
+toJSON(const NotebookDocumentChangeEvent::CellsStructure &value);
+llvm::json::Value
+toJSON(const NotebookDocumentChangeEvent::CellsTextContent &value);
+llvm::json::Value toJSON(const NotebookDocumentChangeEvent::Cells &value);
+llvm::json::Value toJSON(const NotebookDocumentChangeEvent &value);
+llvm::json::Value toJSON(const TextDocumentContentChangeEvent &value);
+
 //===----------------------------------------------------------------------===//
 // DidChangeNotebookDocumentParams
 //===----------------------------------------------------------------------===//
@@ -221,6 +237,7 @@ struct DidChangeNotebookDocumentParams {
 /// Add support for JSON serialization.
 bool fromJSON(const llvm::json::Value &value,
               DidChangeNotebookDocumentParams &result, llvm::json::Path path);
+llvm::json::Value toJSON(const DidChangeNotebookDocumentParams &value);
 
 //===----------------------------------------------------------------------===//
 // DidCloseNotebookDocumentParams
@@ -440,6 +457,9 @@ bool fromJSON(const llvm::json::Value &value, DocumentSymbol &documentSymbol,
               llvm::json::Path path);
 
 bool fromJSON(const llvm::json::Value &value, SymbolKind &kind,
+              llvm::json::Path path);
+
+bool fromJSON(const llvm::json::Value &value, ParameterInformation &info,
               llvm::json::Path path);
 } // namespace mlir::lsp
 
