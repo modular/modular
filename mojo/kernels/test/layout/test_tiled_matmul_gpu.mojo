@@ -8,6 +8,7 @@
 
 from gpu import AddressSpace
 from gpu.host import Context, Function, synchronize
+from gpu.host.memory import _malloc_managed
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from gpu.mma import mma
 from gpu.sync import barrier
@@ -15,6 +16,12 @@ from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import outer_product_acc
 from gpu.device_print import _printf
+from buffer import NDBuffer
+from buffer.list import DimList
+
+from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
+
+from utils.index import Index
 
 
 fn naive_matmul[
@@ -335,6 +342,153 @@ fn test_single_warp_tf32_m16n8k8_matmul() raises:
     _ = mat_c^
 
 
+fn sram_blocked_matmul_dynamic_nd_buffer[
+    thread_layout: Layout,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+](
+    dst: NDBuffer[DType.float32, 2, DimList.create_unknown[2]()],
+    lhs: NDBuffer[DType.float32, 2, DimList.create_unknown[2]()],
+    rhs: NDBuffer[DType.float32, 2, DimList.create_unknown[2]()],
+):
+    # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
+    var lhs_sram_tile = LayoutTensor[
+        DType.float32,
+        Layout(IntTuple(BM, BK)),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    # Allocate an SRAM tile of (BK, BN) size with row-major layout for
+    # the r.h.s.
+    var rhs_sram_tile = LayoutTensor[
+        DType.float32,
+        Layout(IntTuple(BK, BN)),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation()
+
+    # Block the dst matrix with [BM, BN] tile size.
+    var dst_tile = dst.tile[BM, BN]((BlockIdx.y(), BlockIdx.x()))
+
+    # Distribute thread layout into a block of size [BM, BN], It repeats the
+    # layout accross the BMxBN block, e.g row major layout will repeate as the
+    # the following:
+    # +---------------------------------BN-+----------------------------------+-------------
+    # |  TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N
+    # |  TH_3 TH_4     ... TH_5    | TH_3 TH_4     ... TH_5    | TH_3 TH_4     ... TH_5
+    # |    .            .          |   .           .           |   .            .
+    # |    .             .         |   .           .           |   .             .
+    # BN TH_M TH_(M+1) ... TH_(MN) | TH_M TH_(M+1) ... TH_(MN) | TH_M TH_(M+1) ... TH_(MN)
+    # +------------------------------------+----------------------------------+------------
+    # |  TH_0 TH_1     ... TH_N    | TH_0 TH_1     ... TH_N    |  TH_0 TH_1     ... TH_N
+    # |      .        .      ...   |     .         ...   .     |    .
+    # |      .        .      ...   |     .         ...   .     |    .
+
+    # Allocate a register tile for the dst matrix with the same layout.
+    # TODO: Is it useful to have stack_allocation_like[thread_layout](nd_buffer) ? We can do this if needed.
+    var dst_register_tile = LayoutTensor[
+        DType.float32, Layout.row_major(2, 2)
+    ].stack_allocation()
+    dst_register_tile.fill(0)
+
+    # Loop over tiles in K dim.
+    for k in range(lhs.dim(1) // BK):
+        # Block both l.h.s and r.h.s DRAM tensors.
+        var lhs_tile = lhs.tile[BM, BK]((BlockIdx.y(), k))
+        var rhs_tile = rhs.tile[BK, BN]((k, BlockIdx.x()))
+
+        # Distribute layout of threads into DRAM and SRAM to perform the copy.
+        var lhs_sram_tile_local = lhs_sram_tile.distribute[thread_layout](
+            ThreadIdx.x()
+        )
+        copy_from_nd_buffer[thread_layout=thread_layout](
+            lhs_sram_tile_local, lhs_tile, ThreadIdx.x()
+        )
+
+        var rhs_sram_tile_local = rhs_sram_tile.distribute[thread_layout](
+            ThreadIdx.x()
+        )
+        copy_from_nd_buffer[thread_layout=thread_layout](
+            rhs_sram_tile_local, rhs_tile, ThreadIdx.x()
+        )
+
+        barrier()
+
+        @always_inline
+        @parameter
+        fn accumulate[kk: Int]():
+            var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
+            var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
+            var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
+                ThreadIdx.x()
+            )
+            var rhs_frags = rhs_row.distribute[thread_layout, axis=1](
+                ThreadIdx.x()
+            )
+            outer_product_acc(dst_register_tile, lhs_frags, rhs_frags)
+
+        unroll[accumulate, BK]()
+
+    # Move data from register tile to DRAM
+    copy_to_nd_buffer[thread_layout=thread_layout](
+        dst_tile, dst_register_tile, ThreadIdx.x()
+    )
+
+
+fn test_sram_blocked_matmul_dynamic_nd_buffer() raises:
+    print("=== test_sram_blocked_matmul_dynamic_nd_buffer")
+    alias M = 8
+    alias N = 8
+    alias K = 8
+    alias BM = 4
+    alias BN = 4
+    alias BK = 4
+
+    alias TH_M = 2
+    alias TH_N = 2
+
+    alias thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
+
+    var mat_c = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
+        _malloc_managed[Float32](M * N), dynamic_shape=Index(M, N)
+    )
+    var mat_a = NDBuffer[DType.float32, 2, DimList(M, K)](
+        _malloc_managed[Float32](M * K), dynamic_shape=Index(M, K)
+    )
+    var mat_b = NDBuffer[DType.float32, 2, DimList(K, N)](
+        _malloc_managed[Float32](K * N), dynamic_shape=Index(K, N)
+    )
+
+    for i in range(mat_a.size()):
+        mat_a.data[i] = i
+    for i in range(mat_a.size()):
+        mat_b.data[i] = i
+    for i in range(mat_c.size()):
+        mat_c.data[i] = 0
+
+    alias sram_blocked_matmul_dynamic_nd_buffer_kernel = sram_blocked_matmul_dynamic_nd_buffer[
+        thread_layout, BM, BN, BK
+    ]
+
+    var kernel = Function[
+        __type_of(sram_blocked_matmul_dynamic_nd_buffer_kernel),
+        sram_blocked_matmul_dynamic_nd_buffer_kernel,
+    ]()
+    kernel(
+        mat_c,
+        mat_a,
+        mat_b,
+        grid_dim=(N // BN, M // BM),
+        block_dim=(thread_layout.size()),
+    )
+
+    synchronize()
+    for m in range(M):
+        for n in range(N):
+            print(mat_c[m, n], end=" ")
+        print("")
+
+
 fn main() raises:
     with Context() as ctx:
         # CHECK: === test_naive_matmul_kernel
@@ -377,3 +531,14 @@ fn main() raises:
         # CHECK: 26208.0   27132.0   28056.0   28980.0   29904.0   30828.0   31752.0   32676.0
         # CHECK: 28000.0   28988.0   29976.0   30964.0   31952.0   32940.0   33928.0   34916.0
         test_single_warp_tf32_m16n8k8_matmul()
+
+        # CHECK: === test_sram_blocked_matmul_dynamic_nd_buffer
+        # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
+        # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0
+        # CHECK: 4704.0   4860.0   5016.0   5172.0   5328.0   5484.0   5640.0   5796.0
+        # CHECK: 6496.0   6716.0   6936.0   7156.0   7376.0   7596.0   7816.0   8036.0
+        # CHECK: 8288.0   8572.0   8856.0   9140.0   9424.0   9708.0   9992.0   10276.0
+        # CHECK: 10080.0   10428.0   10776.0   11124.0   11472.0   11820.0   12168.0   12516.0
+        # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
+        # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
+        test_sram_blocked_matmul_dynamic_nd_buffer()
