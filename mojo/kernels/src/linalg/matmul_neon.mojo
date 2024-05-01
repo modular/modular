@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import fma, min
+from math import fma
 from sys.info import alignof
 
 from buffer.buffer import NDBuffer

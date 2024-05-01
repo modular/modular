@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up, div_ceil, fma, min
+from math import align_down, align_up, div_ceil, fma
 from sys.info import (
     alignof,
     has_avx2,

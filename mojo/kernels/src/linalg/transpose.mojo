@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Transpose functions."""
 
-from math import div_ceil, min
+from math import div_ceil
 from sys.info import simdwidthof, sizeof
 from sys.intrinsics import strided_load, strided_store
 

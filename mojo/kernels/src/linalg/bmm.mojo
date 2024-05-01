@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, div_ceil, gcd, max, min
+from math import align_up, div_ceil, gcd
 from sys.info import simdwidthof
 
 from algorithm import sync_parallelize, vectorize

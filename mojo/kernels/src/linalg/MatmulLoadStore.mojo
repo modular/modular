@@ -3,7 +3,6 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import min
 from buffer.buffer import partial_simd_load, partial_simd_store
 from buffer.list import DimList
 from utils.index import Index

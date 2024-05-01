@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up, div_ceil, min
+from math import align_down, align_up, div_ceil
 from sys.info import (
     has_neon,
     os_is_macos,
