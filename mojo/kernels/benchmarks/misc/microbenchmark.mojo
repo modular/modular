@@ -6,7 +6,6 @@
 
 import time
 from collections.vector import InlinedFixedVector
-from math import max, min
 from math.limit import max_finite, min_finite
 
 

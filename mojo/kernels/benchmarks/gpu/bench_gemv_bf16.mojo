@@ -8,7 +8,7 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from math import div_ceil, max, min
+from math import div_ceil
 
 from benchmark import *
 from buffer import NDBuffer
