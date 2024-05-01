@@ -64,11 +64,11 @@ def SymbolicPointerAttr : InterpreterAttr<"SymbolicPointer", "symbolic_pointer",
     ```
   }];
 
-  let parameters = (ins "int64_t":$slot, AttributeSelfTypeParameter<"">:$type);
+  let parameters = (ins "uint64_t":$slot, AttributeSelfTypeParameter<"">:$type);
   let assemblyFormat = "`<` $slot `>`";
 
   let builders = [
-    AttrBuilderWithInferredContext<(ins "int64_t":$slot, "Type":$type), [{
+    AttrBuilderWithInferredContext<(ins "uint64_t":$slot, "Type":$type), [{
       return get(type.getContext(), slot, type);
     }]>
   ];
