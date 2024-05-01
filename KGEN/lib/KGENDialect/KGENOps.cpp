@@ -753,6 +753,8 @@ void ParamYieldOp::getBranchTargets(
 OpFoldResult RebindOp::fold(FoldAdaptor adaptor) {
   if (getInput().getType() == getType())
     return getInput();
+  if (auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(adaptor.getInput()))
+    return SymbolicPointerAttr::get(ptr.getSlot(), getType());
   return {};
 }
 

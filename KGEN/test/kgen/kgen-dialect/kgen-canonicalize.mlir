@@ -24,6 +24,15 @@ kgen.generator @rebind_canonicalize<dt1: dtype, dt2: dtype, dt3: dtype>(%arg0: !
   kgen.return %2 : !pop.scalar<si32>
 }
 
+// CHECK-LABEL: @rebind_symbolic_ptr
+kgen.generator @rebind_symbolic_ptr<t: type>() -> !kgen.pointer<t> {
+  // CHECK-NEXT: %pointer = kgen.param.constant: pointer<t> = <#interp.symbolic_pointer<0>>
+  %0 = kgen.param.constant: pointer<none> = <#interp.symbolic_pointer<0>>
+  %1 = kgen.rebind %0 : !kgen.pointer<none> to !kgen.pointer<t>
+  // CHECK-NEXT: return %pointer
+  kgen.return %1 : !kgen.pointer<t>
+}
+
 // CHECK-LABEL: @rebind_across_scopes
 kgen.generator @rebind_across_scopes<dt: dtype>(%arg0: !pop.scalar<dt>) {
   kgen.param.declare dt1: dtype = <dt>
