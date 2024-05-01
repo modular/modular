@@ -265,6 +265,9 @@ ErrorOr<const void *> InterpreterState::getReadableMemory(int64_t addr,
 
 ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
                                                         TypedAttr value) {
+  if (!target)
+    return Error("attribute write requires a target model");
+
   if (isa<IntegerAttr, FloatAttr>(value)) {
     int64_t size =
         *DataLayoutInterface::getTypeStoreSize(target, value.getType());
@@ -292,6 +295,9 @@ ErrorOrSuccess InterpreterState::writeAttributeToMemory(int64_t addr,
 
 ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                                                              Type type) {
+  if (!target)
+    return Error("attribute read requires a target model");
+
   if (isa<IndexType, IntegerType, FloatType>(type)) {
     int64_t size = *DataLayoutInterface::getTypeStoreSize(target, type);
     ErrorOr<const void *> mem = getReadableMemory(addr, size);
