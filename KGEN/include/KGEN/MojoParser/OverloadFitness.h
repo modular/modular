@@ -86,12 +86,12 @@ private:
 
   /// Describes the metrics that can be used to compare candidates.
   struct Payload {
-    /// The number of implicit conversions required.
+    /// The number of implicit conversions required.  Normal implicit
+    /// conversions count as 2 each, non-materializable value conversions count
+    /// as 1.
     size_t numImplicitConversions;
     /// The number of input conventions conversions required.
     size_t numMismatchedConventions;
-    /// Whether the candidate needs a non-materializable conversion.
-    bool hasNonmaterializableConversion;
     /// Whether the candidate has a (non-empty) variadic argument.
     bool passesVarArgArgument;
     /// Whether the bindings include variadic parameters.
@@ -111,9 +111,8 @@ private:
   static std::pair<ArgTypeMismatchKind, ASTType> checkOneOperand(
       ASTExprAnd<AnyValue> operand, ArgConvention expectedConvention,
       ASTType expectedType, size_t &numImplicitConversions,
-      size_t &numMismatchedConventions, bool &hasNonmaterializableConversion,
-      bool allowImplicitConversions, SMLoc loc, ASTDecl &declScope,
-      SharedState &shared);
+      size_t &numMismatchedConventions, bool allowImplicitConversions,
+      SMLoc loc, ASTDecl &declScope, SharedState &shared);
 };
 
 } // namespace M::KGEN::LIT
