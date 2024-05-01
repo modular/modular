@@ -6,35 +6,20 @@
 
 from collections.vector import InlinedFixedVector
 from math import (
-    add,
     cos,
-    div,
     div_ceil,
-    equal,
     erf,
     exp,
     fma,
-    greater,
-    greater_equal,
     isinf,
     isnan,
     log,
     log1p,
-    logical_and,
-    logical_not,
-    logical_xor,
-    mod,
-    mul,
-    not_equal,
     pow,
     round,
-    roundeven,
     rsqrt,
-    select,
     sin,
     sqrt,
-    sub,
-    trunc,
 )
 from builtin.simd import UInt8, UInt64, Int64, _pow
 from random import randn, seed
@@ -45,7 +30,7 @@ from sys.param_env import is_defined
 
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
-from algorithm import reduce_shape, sync_parallelize, vectorize
+from algorithm import sync_parallelize, vectorize
 from algorithm.functional import _elementwise_impl
 from algorithm.reduction import (
     _get_nd_indices_from_flat_index,
@@ -151,35 +136,19 @@ from extensibility import Tensor as ExtensibilityTensor
 # Prevent these functions from being DCE'd by explicitly exporting them.
 @export
 fn MOGGExport():
-    alias _add = add
     alias _avg_pool_shape = pool_shape
     alias _avg_pool_shape_ceil = pool_shape_ceil
     alias _cast = cast
-    alias _ceil = ceil
     alias _concat_from_list_shape = concat_from_list_shape
     alias _conv_shape = conv_shape
     alias _conv_transpose_shape = conv_transpose_shape
-    alias _cos = cos
-    alias _div = div
-    alias _erf = erf
-    alias _exp = exp
-    alias _equal = equal
     alias _floor = floor
     alias _gather_shape = gather_shape
     alias _gather_nd_shape = gather_nd_shape
     alias _gelu = gelu
     alias _pack_matmul_b_shape_func = pack_matmul_b_shape_func
     alias _pad_shape = pad_shape
-    alias _greater = greater
-    alias _greater_equal = greater_equal
-    alias _isinf = isinf
-    alias _isnan = isnan
     alias _layer_norm_shape = layer_norm_shape
-    alias _logical_and = logical_and
-    alias _logical_not = logical_not
-    alias _logical_xor = logical_xor
-    alias _log = log
-    alias _log1p = log1p
     alias _pack_b_ndbuffer = pack_b_ndbuffer
     alias _pack_transposed_b_ndbuffer = pack_transposed_b_ndbuffer
     alias _max_pool_shape = pool_shape
@@ -187,14 +156,7 @@ fn MOGGExport():
     alias _matrix_solve_shape = matrix_solve_shape
     alias _matrix_band_part = matrix_band_part
     alias _batched_matmul_shape = batched_matmul_shape
-    alias _mod = mod
-    alias _mul = mul
-    alias _not_equal = not_equal
-    alias _rsqrt = rsqrt
-    alias _select = select
     alias _sigmoid = sigmoid
-    alias _sin = sin
-    alias _sub = sub
     alias _tanh = tanh
     alias _arange = arange
     alias _arange_shape = arange_shape
@@ -205,13 +167,9 @@ fn MOGGExport():
     alias _scatter_shape = scatter_shape
     alias _scatter_nd_shape = scatter_nd_shape
     alias _slice = slice
-    alias _reduce_shape = reduce_shape
     alias _random_shape = random_shape
-    alias _round = round
-    alias _roundeven = roundeven
     alias _roi_align_shape = roi_align_shape
     alias _slice_shape = slice_shape
-    alias _trunc = trunc
     alias _arg_nonzero = arg_nonzero
     alias _arg_nonzero_shape = arg_nonzero_shape
     alias _top_k_shape = top_k_shape
@@ -829,6 +787,7 @@ fn broadcast_shape_impl[
             out_buf[rhs_idx] = rhs_buf[rhs_idx].cast[out_type]()
 
 
+@mogg_register("broadcast_shape_shape")
 @always_inline
 @export
 fn broadcast_shape_shape[
@@ -1074,6 +1033,23 @@ fn cast[
     type: DType, new_type: DType, simd_width: Int
 ](value: SIMD[type, simd_width]) -> SIMD[new_type, simd_width]:
     return value.cast[new_type]()
+
+
+# ===----------------------------------------------------------------------===#
+# Ceil op
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("mo.ceil")
+@always_inline
+fn ceil_wrapper[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    @parameter
+    if has_neon() and type == DType.bfloat16:
+        return ceil(x.cast[DType.float32]()).cast[type]()
+
+    return llvm_intrinsic["llvm.ceil", __type_of(x), has_side_effect=False](x)
 
 
 # ===----------------------------------------------------------------------===#
@@ -1546,6 +1522,52 @@ fn pad_repeat[
 # ===----------------------------------------------------------------------===#
 # Reduction ops
 # ===----------------------------------------------------------------------===#
+
+
+@mogg_register("reduce_shape")
+@always_inline("nodebug")
+fn reduce_shape[
+    input_rank: Int,
+    input_type: DType,
+    axis_type: DType,
+    single_thread_blocking_override: Bool,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    axis_buf: NDBuffer[axis_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    """
+    Compute the output shape of a `pad` operation, and assert the inputs are
+    compatible.
+
+    Parameters:
+        input_rank: Input_rank of the input tensor.
+        input_type: Type of the input tensor.
+        axis_type: Type of the axis tensor.
+        single_thread_blocking_override: If True, then the operation is run
+          synchronously using a single thread.
+
+    Args:
+        input_buf: The input tensor.
+        axis_buf: The axis tensor.
+
+    Returns:
+        The output shape.
+    """
+
+    # extract hyper parameter
+    var axis = int(axis_buf[0])
+    if axis < 0:
+        axis += input_rank
+
+    if axis < 0 or input_rank <= axis:
+        raise Error(
+            "[reduction] normalized axis must be within range [0, input_rank)"
+        )
+
+    # compute and return the output shape
+    var output_shape = input_buf.get_shape()
+    output_shape[axis] = 1
+    return output_shape
 
 
 @mogg_register("mo.reduce.add")
@@ -2852,7 +2874,8 @@ fn static_random_normal[
     )
 
 
-@export
+@mogg_register("random_shape")
+@always_inline
 fn random_shape[
     shapeType: DType,
     rank: Int,
@@ -3602,6 +3625,245 @@ fn pack_conv_transpose_filter_shape[
     single_thread_blocking_override: Bool,
 ](filter_buf: NDBuffer[filter_type, rank]) -> StaticIntTuple[rank + 1]:
     return _pack_conv_transpose_filter_shape(filter_buf, 1)
+
+
+# ===----------------------------------------------------------------------===#
+# Elementwise Ops
+# ===----------------------------------------------------------------------===#
+
+
+@mogg_register("mo.add")
+@always_inline("nodebug")
+fn add[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
+]:
+    return x + y
+
+
+@mogg_register("mo.cos")
+fn wrapped_cos[
+    type: DType, simd_width: Int
+](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return cos(arg)
+
+
+@mogg_register("mo.div")
+@always_inline("nodebug")
+fn wrapped_div[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
+]:
+    return x / y
+
+
+@mogg_register("mo.erf")
+@always_inline("nodebug")
+fn wrapped_erf[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return erf(x)
+
+
+@mogg_register("mo.exp")
+@always_inline("nodebug")
+fn wrapped_exp[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return exp(x)
+
+
+@mogg_register("mo.equal")
+@always_inline
+fn wrapepd_equal[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    DType.bool, simd_width
+]:
+    return x == y
+
+
+@mogg_register("mo.greater")
+@always_inline("nodebug")
+fn wrapped_greater[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    DType.bool, simd_width
+]:
+    return x > y
+
+
+@mogg_register("mo.greater_equal")
+@always_inline
+fn wrapped_greater_eq[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    DType.bool, simd_width
+]:
+    return x >= y
+
+
+@mogg_register("mo.not_equal")
+@always_inline("nodebug")
+fn wrapped_not_equal[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    DType.bool, simd_width
+]:
+    return x != y
+
+
+@mogg_register("mo.round")
+@always_inline("nodebug")
+fn wrapped_round[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return llvm_intrinsic["llvm.round", __type_of(x), has_side_effect=False](x)
+
+
+@mogg_register("mo.roundeven")
+@always_inline("nodebug")
+fn wrapped_roundeven[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return llvm_intrinsic[
+        "llvm.roundeven", __type_of(x), has_side_effect=False
+    ](x)
+
+
+@mogg_register("mo.rsqrt")
+@always_inline("nodebug")
+fn wrapped_rsqrt[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return 1 / sqrt(x)
+
+
+@mogg_register("mo.select")
+@always_inline("nodebug")
+fn select[
+    type: DType, simd_width: Int
+](
+    cond: SIMD[DType.bool, simd_width],
+    true_case: SIMD[type, simd_width],
+    false_case: SIMD[type, simd_width],
+) -> SIMD[type, simd_width]:
+    return cond.select(true_case, false_case)
+
+
+@mogg_register("mo.sin")
+fn wrapped_sin[
+    type: DType, simd_width: Int
+](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return sin(arg)
+
+
+@mogg_register("mo.tanh")
+@always_inline("nodebug")
+fn wrapped_tanh[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return tanh(x)
+
+
+@mogg_register("mo.trunc")
+@always_inline("nodebug")
+fn wrapped_trunc[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return llvm_intrinsic["llvm.trunc", __type_of(x), has_side_effect=False](x)
+
+
+@mogg_register("mo.log")
+@always_inline("nodebug")
+fn wrapped_log[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return log(x)
+
+
+@mogg_register("mo.log1p")
+@always_inline("nodebug")
+fn wrapped_log1p[
+    type: DType, simd_width: Int
+](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
+    return log1p(arg)
+
+
+@mogg_register("mo.is_nan")
+@always_inline("nodebug")
+fn wrapped_isnan[
+    type: DType, simd_width: Int
+](val: SIMD[type, simd_width]) -> SIMD[DType.bool, simd_width]:
+    return isnan(val)
+
+
+@mogg_register("mo.is_inf")
+@always_inline("nodebug")
+fn wrapped_isinf[
+    type: DType, simd_width: Int
+](val: SIMD[type, simd_width]) -> SIMD[DType.bool, simd_width]:
+    return isinf(val)
+
+
+@mogg_register("mo.mod")
+@always_inline
+fn mod[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
+]:
+    return x % y
+
+
+@mogg_register("mo.mul")
+@always_inline
+fn mul[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
+]:
+    return x * y
+
+
+@mogg_register("mo.sub")
+@always_inline
+fn sub[
+    type: DType, simd_width: Int
+](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
+    type, simd_width
+]:
+    return x - y
+
+
+@mogg_register("mo.and")
+@always_inline
+fn logical_and[
+    simd_width: Int
+](x: SIMD[DType.bool, simd_width], y: SIMD[DType.bool, simd_width]) -> SIMD[
+    DType.bool, simd_width
+]:
+    return x & y
+
+
+@mogg_register("mo.not")
+@always_inline
+fn logical_not[
+    simd_width: Int
+](x: SIMD[DType.bool, simd_width]) -> SIMD[DType.bool, simd_width]:
+    return ~x
+
+
+@mogg_register("mo.xor")
+@always_inline
+fn logical_xor[
+    simd_width: Int
+](x: SIMD[DType.bool, simd_width], y: SIMD[DType.bool, simd_width]) -> SIMD[
+    DType.bool, simd_width
+]:
+    return x ^ y
 
 
 # ===----------------------------------------------------------------------===#
