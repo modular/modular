@@ -174,17 +174,6 @@ static void propagateTrivialParameters(Region *region,
                                                ParamDeclRefAttr::get(decl));
         processOp(op, evaluator);
       }
-    } else if (auto cst = dyn_cast<ParamConstantOp>(op)) {
-      TypedAttr value = declare.getValue();
-      if (!isParameterizedType(value.getType()))
-        value = cast<TypedAttr>(evaluator.refineAttr(value));
-      else
-        value = cast<TypedAttr>(evaluator.getReboundAttribute(value));
-      cst.setValueAttr(value);
-      cst.getResult().setType(value.getType());
-    } else if (auto paramIf = dyn_cast<ParamIfOp>(op)) {
-      paramIf.setCondAttr(
-          cast<IntegerAttr>(evaluator.refineAttr(paramIf.getCondAttr())));
     } else {
       // If this is any other operation, just walk its definitions in the
       // current scope.
@@ -202,7 +191,21 @@ static void propagateTrivialParameters(Region *region,
   }
 
   for (Operation *op : graph.paramOps) {
-    processOp(op, evaluator);
+    if (auto cst = dyn_cast<ParamConstantOp>(op)) {
+      TypedAttr value = cst.getValue();
+      if (!isParameterizedType(value.getType()))
+        value = cast<TypedAttr>(evaluator.refineAttr(value));
+      else
+        value = cast<TypedAttr>(evaluator.getReboundAttribute(value));
+      cst.setValueAttr(value);
+      cst.getResult().setType(value.getType());
+    } else if (auto paramIf = dyn_cast<ParamIfOp>(op)) {
+      paramIf.setCondAttr(
+          cast<TypedAttr>(evaluator.refineAttr(paramIf.getCondAttr())));
+    } else {
+      processOp(op, evaluator);
+    }
+
     // Peephole rebinds that have been resolved to the same types.
     if (auto rebind = dyn_cast<RebindOp>(op);
         rebind && rebind.getInput().getType() == rebind.getType()) {
