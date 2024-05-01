@@ -7,16 +7,13 @@
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 
-from math import add
 from random import random_si64
 
-from buffer import NDBuffer
 from benchmark import Bencher, BenchId, Bench
 from tensor import Tensor
-from nn.gather_scatter import gather, gather_reduce
+from nn.gather_scatter import gather_reduce
+from nn.math import add
 from runtime.llcl import Runtime
-
-from utils.index import Index
 
 
 @parameter
@@ -42,7 +39,7 @@ fn bench_gather_reduce(inout b: Bencher):
     @parameter
     fn to_bench():
         with Runtime(threads=1) as rt:
-            gather_reduce[type, 0, 1, simdwidthof[type](), add,](
+            gather_reduce[type, 0, 1, simdwidthof[type](), add](
                 output._to_ndbuffer[2](),
                 input._to_ndbuffer[2](),
                 indices._to_ndbuffer[2](),
