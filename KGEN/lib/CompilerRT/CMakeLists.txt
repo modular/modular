@@ -37,7 +37,7 @@ add_modular_library(KGENCompilerRT
   MThreading
 )
 
-target_compile_definitions(KGENCompilerRT PRIVATE MODULAR_BUILDING_COMPILERRT)
+target_compile_definitions(KGENCompilerRT PRIVATE MODULAR_BUILDING_COMPILERRT -DMAX_CONFIG_SECTION=${MAX_CONFIG_SECTION})
 
 # A dynamically built CompilerRT library used when jitting.
 add_modular_library(KGENCompilerRTShared SHARED
@@ -56,7 +56,7 @@ add_modular_library(KGENCompilerRTShared SHARED
   MThreading
 )
 
-target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILERRT)
+target_compile_definitions(KGENCompilerRTShared PRIVATE MODULAR_BUILDING_COMPILERRT -DMAX_CONFIG_SECTION=${MAX_CONFIG_SECTION})
 
 # The LLVM libraries generally aren't OBJECT libraries, but we need
 # KGENCompilerRT-static to be fully self contained, so we need to extract the
@@ -128,7 +128,7 @@ add_modular_library(KGENCompilerRT-static
 
   ${StaticDepObjects}
   )
-target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT MODULAR_NO_EXPORT)
+target_compile_definitions(KGENCompilerRT-static PRIVATE MODULAR_BUILDING_COMPILERRT MODULAR_NO_EXPORT -DMAX_CONFIG_SECTION=${MAX_CONFIG_SECTION})
 set_property(TARGET KGENCompilerRT-static PROPERTY KGEN_SYSTEM_LIBS "${kgen_system_libs}")
 
 # Copy to the binary directory so that `mojo` can find this easily at runtime.
