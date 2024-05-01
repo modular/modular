@@ -509,6 +509,13 @@ InterpreterState::internalizeMemory(MutableArrayRef<Attribute> args) {
   liftStore.addReplacement(
       [&](StoreToMemAttr store) -> std::pair<Attribute, WalkResult> {
         Type valueType = store.getValue().getType();
+        if (!getTarget()) {
+          auto ptr =
+              SymbolicPointerAttr::get(symbolicMemory.size(), store.getType());
+          symbolicMemory.push_back(store.getValue());
+          return {ptr, WalkResult::advance()};
+        }
+
         ErrorOr<PointerAttr> ptr =
             allocateInternalStackFor(valueType, store.getType());
         if (ptr.isError()) {

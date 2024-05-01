@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/Interpreter/InterpreterInterface.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -24,9 +25,88 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
+namespace {
+class SimpleInterpreter : public ParameterEvaluator, public InterpreterState {
+public:
+  SimpleInterpreter(ModuleOp module, SymbolTableCollection &symtabs)
+      : InterpreterState(module.getContext()), module(module),
+        symtabs(symtabs) {}
+  SimpleInterpreter(const SimpleInterpreter &other)
+      : ParameterEvaluator(other.getParameterValues()),
+        InterpreterState(other.getContext()), module(other.module),
+        symtabs(other.symtabs) {}
+
+  FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
+  ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
+
+private:
+  ModuleOp module;
+  SymbolTableCollection &symtabs;
+};
+
+class ParameterSimplifier : public ParameterEvaluator {
+public:
+  ParameterSimplifier(ModuleOp module, SymbolTableCollection &symtabs)
+      : interpreter(module, symtabs) {}
+  ParameterSimplifier(const ParameterSimplifier &other)
+      : ParameterEvaluator(other.getParameterValues()),
+        interpreter(other.interpreter) {}
+
+  Attribute refineAttr(Attribute attr) {
+    interpreter.setParameterValues(getParameterValues());
+    return interpreter.getReboundAttribute(attr);
+  }
+
+private:
+  /// Save an interpreter instance, because it has internal caching.
+  SimpleInterpreter interpreter;
+};
+} // namespace
+
+FailureOr<TypedAttr>
+SimpleInterpreter::evaluateExpression(ParamOperatorAttr op) {
+  if (op.getOpcode() != POC::Apply)
+    return failure();
+
+  // We can only fold direct calls.
+  auto ref = dyn_cast<SymbolConstantAttr>(op.getOperands().front());
+  if (!ref)
+    return failure();
+
+  // All inputs must be simple constants.
+  ArrayRef<TypedAttr> inputs = op.getOperands().drop_front();
+  if (!llvm::all_of(inputs, ParameterAttr::isSimpleConstant))
+    return failure();
+
+  SmallVector<Attribute> arguments;
+  for (TypedAttr input : inputs)
+    arguments.push_back(input);
+
+  ErrorOr<Region *> body = lookupFunctionBody(ref.getSymbol());
+  if (body.isError())
+    return failure();
+
+  ErrorTreeOr<SmallVector<Attribute>> result =
+      executeRegion(*body.takeValue(), arguments);
+  // Swallow the error.
+  if (result.isError())
+    return failure();
+  if (!ParameterAttr::isSimpleConstant(result->front()))
+    return failure();
+  return cast<TypedAttr>(result->front());
+}
+
+ErrorOr<Region *> SimpleInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
+  auto func = symtabs.lookupSymbolIn<mlir::FunctionOpInterface>(module, symbol);
+  assert(func && "invalid function reference");
+  if (func.isExternal())
+    return Error("external function reference");
+  return &func.getFunctionBody();
+}
+
 /// Function to walk all op users of parameters and substitute parameters based
 /// on the values currently in the evaluator.
-static void processOp(Operation *op, ParameterEvaluator &evaluator) {
+static void processOp(Operation *op, ParameterSimplifier &evaluator) {
   SmallVector<NamedAttribute> attrs;
   bool changed = false;
   for (const NamedAttribute &attr : op->getAttrs()) {
@@ -49,7 +129,7 @@ static void processOp(Operation *op, ParameterEvaluator &evaluator) {
 static void propagateTrivialParameters(Region *region,
                                        const ParameterUseDefGraph &graph,
                                        const ParameterUseDefGraph &topLevel,
-                                       ParameterEvaluator evaluator) {
+                                       ParameterSimplifier evaluator) {
   // Collect the defining operations in topological order. The same operation
   // can define multiple parameters, so punt them according to their most
   // dominated definition. Do this by collecting them in reverse.
@@ -72,8 +152,16 @@ static void propagateTrivialParameters(Region *region,
         processOp(op, evaluator);
     } else if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
       // If the value of the declared parameter is "trivial", i.e. a simple
-      // constant, then propagate it.
-      Attribute value = evaluator.getReboundAttribute(declare.getValue());
+      // constant, then propagate it. We can only safely refine the attribute
+      // (interpret calls) if its type is not parametric. If the type is
+      // parametric, we risk creating unequal types across function calls if
+      // there are dependent parameters.
+      TypedAttr value = declare.getValue();
+      if (!isParameterizedType(value.getType()))
+        value = cast<TypedAttr>(evaluator.refineAttr(value));
+      else
+        value = cast<TypedAttr>(evaluator.getReboundAttribute(value));
+
       // The type of the parameter may change. Try to rebind it.
       auto decl = cast<ParamDeclAttr>(
           evaluator.getReboundAttribute(declare.getParamDecl()));
@@ -86,6 +174,17 @@ static void propagateTrivialParameters(Region *region,
                                                ParamDeclRefAttr::get(decl));
         processOp(op, evaluator);
       }
+    } else if (auto cst = dyn_cast<ParamConstantOp>(op)) {
+      TypedAttr value = declare.getValue();
+      if (!isParameterizedType(value.getType()))
+        value = cast<TypedAttr>(evaluator.refineAttr(value));
+      else
+        value = cast<TypedAttr>(evaluator.getReboundAttribute(value));
+      cst.setValueAttr(value);
+      cst.getResult().setType(value.getType());
+    } else if (auto paramIf = dyn_cast<ParamIfOp>(op)) {
+      paramIf.setCondAttr(
+          cast<IntegerAttr>(evaluator.refineAttr(paramIf.getCondAttr())));
     } else {
       // If this is any other operation, just walk its definitions in the
       // current scope.
@@ -137,7 +236,7 @@ static void propagateTrivialParameters(Region *region,
   // Recurse into nested parameter scopes.
   for (Region *region : graph.nestedDecls)
     propagateTrivialParameters(region, topLevel.nestedScopes.at(region),
-                               topLevel, evaluator.getParameterValues());
+                               topLevel, evaluator);
 }
 
 namespace {
@@ -152,23 +251,33 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     auto &paramCache = getAnalysis<ParamCache>();
     bool emptyCache = paramCache.parameterLess.empty();
 
-    std::vector<Region *> declRegions;
-    for (auto decl : getOperation().getOps<DeclInterface>())
+    std::vector<std::pair<Region *, size_t>> declRegions;
+    ModuleOp module = getOperation();
+    for (auto decl : module.getOps<DeclInterface>())
       for (Region &region : decl->getRegions())
-        declRegions.push_back(&region);
+        declRegions.emplace_back(&region, declRegions.size());
 
-    auto workFunc = [&sharedSymtabs, simplify = bool(simplifyParameters)](
-                        ParamCache &paramCache, Region *declRegion) {
-      ParameterUseDefGraph graph(*declRegion);
-      if (failed(graph.verify(sharedSymtabs, paramCache)))
-        return failure();
-      if (simplify) {
-        CompilerTimeTraceScope traceScope("propagateTrivialParameters");
-        propagateTrivialParameters(declRegion, graph, graph,
-                                   ParameterEvaluator());
-      }
-      return mlir::success();
-    };
+    // Because parameter simplification invokes the interpreter, we cannot
+    // simplify in parallel: functions may be modified as they are being
+    // interpreted. Save the use-def graphs from the verification pass here.
+    std::vector<ParameterUseDefGraph> graphs;
+    if (simplifyParameters) {
+      graphs.reserve(declRegions.size());
+      for (size_t i = 0, e = declRegions.size(); i != e; ++i)
+        graphs.emplace_back(nullptr);
+    }
+
+    auto workFunc =
+        [&sharedSymtabs, &graphs, simplify = bool(simplifyParameters)](
+            ParamCache &paramCache, std::pair<Region *, size_t> item) {
+          auto [declRegion, i] = item;
+          ParameterUseDefGraph graph(*declRegion);
+          if (failed(graph.verify(sharedSymtabs, paramCache)))
+            return failure();
+          if (simplify)
+            graphs[i] = std::move(graph);
+          return mlir::success();
+        };
 
     auto consolidateFn = [emptyCache](ParamCache &original,
                                       ArrayRef<ParamCache> threadCaches) {
@@ -192,8 +301,18 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     // This pass does not modify any IR, so mark all analyses as preserved. In
     // addition, this signals the pass manager that the MLIR verifier need not
     // run after this pass.
-    if (!simplifyParameters)
+    if (!simplifyParameters) {
       markAllAnalysesPreserved();
+      return;
+    }
+
+    CompilerTimeTraceScope traceScope("propagateTrivialParameters");
+    for (auto [declRegion, i] : declRegions) {
+      ParameterUseDefGraph &graph = graphs[i];
+      propagateTrivialParameters(
+          declRegion, graph, graph,
+          ParameterSimplifier(module, analysis.getSymbolTables()));
+    }
   }
 };
 } // namespace

@@ -86,6 +86,11 @@ public:
     return paramValues;
   }
 
+  /// Overwrite the current set of parameter values.
+  void setParameterValues(const DenseMap<StringAttr, Attribute> &values) {
+    paramValues = values;
+  }
+
   /// Get the specified type with any nested parameter expressions rewritten.
   Type getReboundType(Type type) { return replace(type); }
 
