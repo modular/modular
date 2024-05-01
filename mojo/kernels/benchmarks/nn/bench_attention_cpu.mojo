@@ -36,9 +36,15 @@ struct AttentionSpec(Stringable):
         )
 
 
-def bench_attention[type: DType](inout m: Bench, spec: AttentionSpec):
+def bench_attention[
+    type: DType, transpose_k: Bool
+](inout m: Bench, spec: AttentionSpec):
     var q_shape = Index(spec.batch_size, spec.seq_len, spec.depth_dim)
-    var k_shape = Index(spec.batch_size, spec.depth_dim, spec.kv_seq_len)
+    var k_shape = Index(
+        spec.batch_size, spec.kv_seq_len, spec.depth_dim
+    ) if transpose_k else Index(
+        spec.batch_size, spec.depth_dim, spec.kv_seq_len
+    )
     var v_shape = Index(spec.batch_size, spec.kv_seq_len, spec.depth_dim)
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
     var output_shape = Index(spec.batch_size, spec.seq_len, spec.depth_dim)
@@ -91,7 +97,13 @@ def bench_attention[type: DType](inout m: Bench, spec: AttentionSpec):
         fn iter_fn[depth_static_dim: Dim]():
             alias output_static_shape = DimList(Dim(), Dim(), depth_static_dim)
             flash_attention[
-                type, 3, input_k_fn, input_v_fn, mask_fn, output_static_shape
+                type,
+                3,
+                input_k_fn,
+                input_v_fn,
+                mask_fn,
+                output_static_shape,
+                transpose_k=transpose_k,
             ](
                 q.make_dims_unknown(),
                 k.get_shape(),
@@ -117,7 +129,9 @@ def bench_attention[type: DType](inout m: Bench, spec: AttentionSpec):
         if not dispatched:
             b.iter[iter_fn[Dim()]]()
 
-    m.bench_function[flash_bench_fn](BenchId(">flash", str(spec)))
+    var input_id = "transpose_k=" + str(transpose_k) + "," + str(spec)
+
+    m.bench_function[flash_bench_fn](BenchId(">flash", input_id))
 
     @always_inline
     @parameter
@@ -139,13 +153,14 @@ def bench_attention[type: DType](inout m: Bench, spec: AttentionSpec):
                     type,
                     type,
                     add_attn_mask=True,
+                    transpose_k=transpose_k,
                 ](output, q, k, v, mask, scale, Float32())
             except e:
                 abort(e)
 
         b.iter[iter_fn]()
 
-    m.bench_function[fused_bench_fn](BenchId(" fused", str(spec)))
+    m.bench_function[fused_bench_fn](BenchId(" fused", input_id))
 
 
 def main():
@@ -325,5 +340,6 @@ def main():
 
     var m = Bench()
     for i in range(len(specs)):
-        bench_attention[DType.float32](m, specs[i])
+        bench_attention[DType.float32, transpose_k=False](m, specs[i])
+        bench_attention[DType.float32, transpose_k=True](m, specs[i])
     m.dump_report()
