@@ -720,6 +720,29 @@ def LIT_StructExtractAttr : LITAttr<"StructExtract", "struct.extract", [
 }
 
 //===----------------------------------------------------------------------===//
+// StructGERAttr
+//===----------------------------------------------------------------------===//
+
+def LIT_StructGERAttr : LITAttr<"StructGER", "struct.ger",
+    [TypedAttrInterface]> {
+  let summary = "an element reference to a struct in symbolic memory";
+  let description = [{
+    The `#lit.struct.ger` attribute is leveraged to implement the interpreter on
+    `lit.ref.struct.ger` when using symbolic memory. Since raw offsets cannot be
+    computed on symbolic memory, this attribute keeps a stack of references to
+    the base pointer, which are processed by any load or store operations.
+
+    The base value must be a `SymbolicPointerAttr` or another `StructGERAttr`.
+  }];
+
+  let parameters = (ins "TypedAttr":$value, "StringAttr":$field,
+                        AttributeSelfTypeParameter<"">:$type);
+  let assemblyFormat = "`<` $value `,` $field `>`";
+
+  let genVerifyDecl = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // TypeLineageAttr
 //===----------------------------------------------------------------------===//
 
