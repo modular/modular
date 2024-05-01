@@ -64,7 +64,7 @@ public:
 
   /// Get the current user ID. This is effectively a view over the Subject
   /// string in the certificate.
-  ErrorOr<StringRef> getUserID() const;
+  ErrorOr<std::string> getUserID() const;
 
   /// Gets a copy of the current private key.
   BufferRef getPrivateKey() { return clientKeyPriv.copy(); }
