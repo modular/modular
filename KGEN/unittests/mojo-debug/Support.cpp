@@ -185,6 +185,18 @@ static StopContext runTarget(SBTarget target, MojoBinary binary) {
                      thread.GetFrameAtIndex(0)};
 }
 
+StopContext StopContext::stepOver() {
+  thread.StepOver();
+
+  if (process.GetState() != lldb::eStateStopped)
+    llvm::report_fatal_error("Process is not stopped after step over");
+
+  SBThread newThread = process.GetSelectedThread();
+
+  return StopContext{std::move(binary), target, process, newThread,
+                     newThread.GetFrameAtIndex(0)};
+}
+
 StopContext M::buildAndLaunch(StringRef fileName) {
   MojoSource source(fileName);
 

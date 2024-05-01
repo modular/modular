@@ -18,6 +18,7 @@ add_modular_unittest(
 
   BoolTest.cpp
   BreakpointTest.cpp
+  SourceNamesTest.cpp
   Support.cpp
 
   DEPENDS
