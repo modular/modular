@@ -360,6 +360,14 @@ OpFoldResult FMAOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess LoadOp::interpret(ArrayRef<Attribute> operands,
                                      InterpreterState &state) {
+  if (auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(operands[0])) {
+    ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(ptr.getSlot());
+    if (mem.isError())
+      return ErrorTree(getLoc(), mem.takeError());
+    state.mapResults(*mem);
+    return success();
+  }
+
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
   if (!ptr)
     return ErrorTree(getLoc(), Error("non-constant inputs"));
@@ -814,7 +822,16 @@ OpFoldResult SIMDSplatOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
-  auto value = llvm::cast_if_present<TypedAttr>(operands[0]);
+  auto value = cast_or_null<TypedAttr>(operands[0]);
+
+  if (auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(operands[1])) {
+    ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(ptr.getSlot());
+    if (mem.isError())
+      return ErrorTree(getLoc(), mem.takeError());
+    *mem = value;
+    return success();
+  }
+
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[1]);
   if (!value || !ptr)
     return ErrorTree(getLoc(), "non-constant inputs");
@@ -997,11 +1014,20 @@ void SelectOp::getCanonicalizationPatterns(RewritePatternSet &results,
 
 ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
                                                 InterpreterState &state) {
-  if (!state.getTarget())
-    return ErrorTree(getLoc(), "operation requires a target model");
+  auto countAttr = dyn_cast<IntegerAttr>(getCount());
+  if (!countAttr)
+    return ErrorTree(getLoc(), "array size is not a constant");
+  int64_t count = countAttr.getInt();
+
+  if (!state.getTarget()) {
+    if (count != 1)
+      return ErrorTree(getLoc(), "array allocation requires a target model");
+    uint64_t slot = state.allocateSymbolicMemory();
+    state.mapResults(SymbolicPointerAttr::get(slot, getType()));
+    return success();
+  }
 
   // Determine the allocation size.
-  int64_t count = cast<IntegerAttr>(getCount()).getInt();
   Type type = cast<PointerType>(getType()).getElementType();
   std::optional<int64_t> size =
       DataLayoutInterface::getTypeAllocSize(state.getTarget(), type);
