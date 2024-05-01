@@ -20,6 +20,30 @@ using namespace KGEN;
 using namespace LIT;
 using DebugInfo::SourceNameAttr;
 
+void SourceNames::processDecorators(Operation *op,
+                                    SmallVectorImpl<SourceNameAttr> &out) {
+  auto kgenDecoratorToFunctionName =
+      [&](TypedAttr opDecorator) -> SourceNameAttr {
+    if (auto sym = dyn_cast_or_null<SymbolConstantAttr>(opDecorator)) {
+      ASTDecl *decoratorDecl =
+          shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
+      if (auto decoratorFunc = dyn_cast_or_null<LIT::FuncOp>(decoratorDecl))
+        return getSourceName(decoratorFunc);
+    }
+    return {};
+  };
+  auto gatherDecorators = [&](ArrayRef<TypedAttr> opDecorators) {
+    for (TypedAttr opDecorator : opDecorators) {
+      if (SourceNameAttr name = kgenDecoratorToFunctionName(opDecorator))
+        out.push_back(name);
+    }
+  };
+  if (auto hasDecls = dyn_cast<StructDeclOp>(op))
+    gatherDecorators(hasDecls.getDecorators());
+  else if (auto hasDecls = dyn_cast<LIT::FuncOp>(op))
+    gatherDecorators(hasDecls.getDecorators());
+}
+
 SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
   // Try to find an already computed name.
   if (auto it = names.find(op); it != names.end())
@@ -77,8 +101,12 @@ SourceNameAttr SourceNames::getSourceName(mlir::SymbolOpInterface op) {
   if (auto parentOp = op->getParentOfType<mlir::SymbolOpInterface>())
     parent = getSourceName(parentOp);
 
-  auto sourceName = SourceNameAttr::get(name, paramTypes, argTypes,
-                                        /*paramValues=*/{}, parent, kind);
+  SmallVector<SourceNameAttr> decorators;
+  processDecorators(op.getOperation(), decorators);
+
+  auto sourceName =
+      SourceNameAttr::get(name, paramTypes, argTypes,
+                          /*paramValues=*/{}, parent, kind, decorators);
   names.try_emplace(op, sourceName);
   return sourceName;
 }
@@ -89,14 +117,17 @@ SourceNameAttr SourceNames::getSourceName(Type type) {
   if (auto declRef = dyn_cast<DeclRefType>(type)) {
     ASTDecl &decl =
         shared.declResolver->getDeclForTypeSymbol(declRef.getSymbol());
-    SourceNameAttr name = getSourceName(cast<StructDeclOp>(decl));
+    StructDeclOp op = cast<StructDeclOp>(decl);
+    SourceNameAttr name = getSourceName(op);
     // Add the parameter values.
     SmallVector<StringAttr> paramValues;
     for (TypedAttr value : declRef.getParamValues())
       paramValues.push_back(getParamTypeAsString(value));
+    SmallVector<SourceNameAttr> decorators;
+    processDecorators(op.getOperation(), decorators);
     return SourceNameAttr::get(
         name.getName(), name.getParamTypes(), name.getArgTypes(), paramValues,
-        name.getParent(), DebugInfo::SourceNameKind::Struct);
+        name.getParent(), DebugInfo::SourceNameKind::Struct, decorators);
   }
   // For anything else, use the full MLIR type.
   return SourceNameAttr::get(getTypeAsString(type));

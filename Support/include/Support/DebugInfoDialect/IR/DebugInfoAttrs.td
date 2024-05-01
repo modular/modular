@@ -55,7 +55,8 @@ def SourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
     information about a symbol and its lineage, e.g. including parent symbols.
     It contains all information that can be used to discriminate a function: its
     base name, its argument type strings, its parameter type strings, the
-    elaborated values of the parameters, and a pointer to its parent.
+    elaborated values of the parameters, and a pointer to its parent.  It also
+    has the names of compiler decorators that evaluate to function references.
   }];
 
   let parameters = (ins
@@ -64,7 +65,8 @@ def SourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
     OptionalArrayRefParameter<"SourceNameAttr">:$argTypes,
     OptionalArrayRefParameter<"StringAttr">:$paramValues,
     OptionalParameter<"SourceNameAttr">:$parent,
-    OptionalParameter<"SourceNameKind">:$kind
+    OptionalParameter<"SourceNameKind">:$kind,
+    OptionalArrayRefParameter<"SourceNameAttr">:$decorators
   );
 
   let assemblyFormat = [{
@@ -72,7 +74,9 @@ def SourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
     (`[` $paramTypes^ `]`)? ``
     (`(` $argTypes^ `)`)? ``
     (`<` $paramValues^ `>`)?
-    (` ` `from` $parent^)? `>`
+    (` ` `decorators` `<` $decorators^ `>`)?
+    (` ` `from` $parent^)?
+    `>`
   }];
 
   let builders = [
@@ -82,19 +86,20 @@ def SourceNameAttr : DebugInfoAttr<"SourceName", "source_name"> {
         "ArrayRef<SourceNameAttr>":$argTypes,
         "ArrayRef<StringAttr>":$paramValues,
         "SourceNameAttr":$parent,
-        "SourceNameKind":$kind), [{
+        "SourceNameKind":$kind,
+        "ArrayRef<SourceNameAttr>":$decorators), [{
       return $_get(name.getContext(), name, paramTypes, argTypes, paramValues,
-                   parent, kind);
+                   parent, kind, decorators);
     }]>,
     AttrBuilderWithInferredContext<(ins "StringAttr":$name,
                                         CArg<"SourceNameKind", "{}">:$kind,
                                         CArg<"SourceNameAttr", "{}">:$parent), [{
-      return get(name, {}, {}, {}, parent, kind);
+      return get(name, {}, {}, {}, parent, kind, {});
     }]>,
     AttrBuilderWithInferredContext<(ins "const Twine &":$name,
                                         "SourceNameAttr":$parent), [{
       return get(StringAttr::get(parent.getContext(), name), {}, {}, {},
-                                 parent, {});
+                                 parent, {}, {});
     }]>
   ];
 

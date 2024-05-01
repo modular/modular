@@ -84,7 +84,8 @@ def SourceNameAttr : DialectAttribute<(attr
   ConcreteAttrArray<"SourceNameAttr">:$argTypes,
   StringAttrArray:$paramValues,
   ConcreteOptionalAttribute<"SourceNameAttr">:$parent,
-  EnumAttr<"SourceNameKind">:$kind
+  EnumAttr<"SourceNameKind">:$kind,
+  ConcreteAttrArray<"SourceNameAttr">:$decorators
 )>;
 
 def DICompileUnitAttr : DialectAttribute<(attr
