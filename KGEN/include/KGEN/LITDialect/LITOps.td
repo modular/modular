@@ -773,7 +773,8 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 def LIT_VarDeclOp : LITOp<"var.decl", [
     ASTDeclInterface,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>,
-    DeclareOpInterfaceMethods<ParamOpInterface>]>, OneParamDecl {
+    DeclareOpInterfaceMethods<ParamOpInterface>,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]>, OneParamDecl {
   let summary = "Addressible local var declaration";
   let description = [{
     This declaration is used for var declarations with an exposed
@@ -1340,8 +1341,9 @@ def LIT_UnboundRegionOp : LITOp<"unbound_region"> {
 // LoadConsumeOp
 //===----------------------------------------------------------------------===//
 
-def LIT_LoadConsumeOp : LITOp<"load.consume",
-                              [ReferenceElementType<"ref", "result">]> {
+def LIT_LoadConsumeOp : LITOp<"load.consume", [
+    ReferenceElementType<"ref", "result">,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "consuming pointer load operation";
   let description = [{
     Loads the data at the given pointer like `pop.load`, but consumes the
@@ -1646,7 +1648,9 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
 // RefLoadOp
 //===----------------------------------------------------------------------===//
 
-def LIT_RefLoadOp : LITOp<"ref.load", [ReferenceElementType<"ref", "result">]> {
+def LIT_RefLoadOp : LITOp<"ref.load", [
+    ReferenceElementType<"ref", "result">,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "reference load operation";
   let description = [{
     Loads the data at the given reference. Returns a scalar of the element type.
@@ -1670,7 +1674,9 @@ def LIT_RefLoadOp : LITOp<"ref.load", [ReferenceElementType<"ref", "result">]> {
 // RefStoreOp
 //===----------------------------------------------------------------------===//
 
-def LIT_RefStoreOp : LITOp<"ref.store", [ReferenceElementType<"ref", "arg">]> {
+def LIT_RefStoreOp : LITOp<"ref.store", [
+    ReferenceElementType<"ref", "arg">,
+    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "Reference store operation";
   let description = [{
     Store the given value to the given reference of the same element type.  The

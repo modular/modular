@@ -1484,6 +1484,34 @@ static void printStructGERTypes(AsmPrinter &p, Operation *, RefType fieldType,
 }
 
 //===----------------------------------------------------------------------===//
+// RefLoadOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess RefLoadOp::interpret(ArrayRef<Attribute> operands,
+                                        InterpreterState &state) {
+  uint64_t slot = cast<SymbolicPointerAttr>(operands.front()).getSlot();
+  ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(slot);
+  if (mem.isError())
+    return ErrorTree(getLoc(), mem.takeError());
+  state.mapResults(*mem);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// RefStoreOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess RefStoreOp::interpret(ArrayRef<Attribute> operands,
+                                         InterpreterState &state) {
+  uint64_t slot = cast<SymbolicPointerAttr>(operands.back()).getSlot();
+  ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(slot);
+  if (mem.isError())
+    return ErrorTree(getLoc(), mem.takeError());
+  *mem = cast<TypedAttr>(operands.front());
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // RefImmutOp
 //===----------------------------------------------------------------------===//
 
@@ -1708,6 +1736,13 @@ LogicalResult VarDeclOp::verify() {
   return success();
 }
 
+ErrorTreeOrSuccess VarDeclOp::interpret(ArrayRef<Attribute> operands,
+                                        InterpreterState &state) {
+  uint64_t result = state.allocateSymbolicMemory();
+  state.mapResults(SymbolicPointerAttr::get(result, getType()));
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // GlobalVarDeclOp
 //===----------------------------------------------------------------------===//
@@ -1865,6 +1900,20 @@ LogicalResult RaiseOp::verify() {
 
 LogicalResult UnboundRegionOp::verify() {
   return emitOpError("is never valid. Was it not erased by the parser?");
+}
+
+//===----------------------------------------------------------------------===//
+// LoadConsumeOp
+//===----------------------------------------------------------------------===//
+
+ErrorTreeOrSuccess LoadConsumeOp::interpret(ArrayRef<Attribute> operands,
+                                            InterpreterState &state) {
+  uint64_t slot = cast<SymbolicPointerAttr>(operands.front()).getSlot();
+  ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(slot);
+  if (mem.isError())
+    return ErrorTree(getLoc(), mem.takeError());
+  state.mapResults(*mem);
+  return success();
 }
 
 //===----------------------------------------------------------------------===//
