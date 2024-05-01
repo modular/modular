@@ -1,6 +1,7 @@
 load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
 
 lit_tests(
+    name = "mojo-test-executor",
     srcs = glob(
         ["**/*.mojo"],
     ),
