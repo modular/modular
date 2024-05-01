@@ -910,6 +910,9 @@ globals_library(
     hdrs = glob([
         "include/KGEN/CompilerRT/*.h",
     ]),
+    local_defines = [
+        "MODULAR_BUILDING_COMPILERRT",
+    ],
     strip_include_prefix = "include",
     deps = [
         "//ArraySupport",
