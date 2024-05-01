@@ -158,6 +158,17 @@ def verify_output[
                 break
 
 
+def build_ndbuffer[
+    type: DType,
+    rank: Int,
+    *,
+    static_shape: DimList = DimList.create_unknown[rank](),
+](shape: StaticIntTuple[rank]) -> NDBuffer[type, rank, static_shape]:
+    var ptr = DTypePointer[type].alloc(shape.flattened_length())
+    rand(ptr, shape.flattened_length())
+    return NDBuffer[type, rank, static_shape](ptr, shape)
+
+
 def test_case[
     type: DType,
     batch_rank: Int,
@@ -179,58 +190,39 @@ def test_case[
 
         return shape
 
-    var q_shape = build_shape(cfg.seq_len, cfg.depth_dim)
-    var k_cache_shape = build_shape(cfg.depth_dim, cfg.kv_seq_len)
-    var v_cache_shape = build_shape(cfg.kv_seq_len, cfg.depth_dim)
-    var mask_shape = build_shape(cfg.seq_len, cfg.kv_seq_len)
-    var output_shape = build_shape(cfg.seq_len, cfg.depth_dim)
+    seed(42)
 
-    var q_ptr = DTypePointer[type].alloc(q_shape.flattened_length())
-    var k_cache_ptr = DTypePointer[type].alloc(k_cache_shape.flattened_length())
-    var v_cache_ptr = DTypePointer[type].alloc(v_cache_shape.flattened_length())
-    var mask_ptr = DTypePointer[type].alloc(mask_shape.flattened_length())
-    var output_ptr = DTypePointer[type].alloc(output_shape.flattened_length())
-    var ref_output_ptr = DTypePointer[type].alloc(
-        output_shape.flattened_length()
+    # Allocate the QKV tensors from the current sequence.
+    var q = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
+    var k = build_ndbuffer[type](build_shape(cfg.depth_dim, cfg.kv_seq_len))
+    var v = build_ndbuffer[type](build_shape(cfg.kv_seq_len, cfg.depth_dim))
+
+    # Allocate the attention mask.
+    var mask = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.kv_seq_len))
+
+    # Allocate output and reference output buffers.
+    var output = build_ndbuffer[type, static_shape=output_static_shape](
+        build_shape(cfg.seq_len, cfg.depth_dim)
+    )
+    var ref_output = build_ndbuffer[type](
+        build_shape(cfg.seq_len, cfg.depth_dim)
     )
 
-    seed(0)
-    rand(q_ptr, q_shape.flattened_length())
-    rand(k_cache_ptr, k_cache_shape.flattened_length())
-    rand(v_cache_ptr, v_cache_shape.flattened_length())
-    rand(mask_ptr, mask_shape.flattened_length())
-
-    var q = NDBuffer[type, rank](q_ptr, q_shape)
-    var k_cache = NDBuffer[type, rank](k_cache_ptr, k_cache_shape)
-    var v_cache = NDBuffer[type, rank](v_cache_ptr, v_cache_shape)
-    var mask = NDBuffer[type, rank](mask_ptr, mask_shape)
-    var output = NDBuffer[type, rank, output_static_shape](
-        output_ptr, output_shape
-    )
-    var ref_output = NDBuffer[type, rank](ref_output_ptr, output_shape)
-
-    reference_attention[type, rank](
-        q.make_dims_unknown(),
-        k_cache.make_dims_unknown(),
-        v_cache.make_dims_unknown(),
-        mask.make_dims_unknown(),
-        ref_output.make_dims_unknown(),
-        cfg.scale,
-    )
+    reference_attention(q, k, v, mask, ref_output, cfg.scale)
 
     @parameter
     @always_inline
     fn input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return k_cache.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+        return k.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
 
     @parameter
     @always_inline
     fn input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
-        return v_cache.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+        return v.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
 
     @parameter
     @always_inline
@@ -241,22 +233,16 @@ def test_case[
 
     flash_attention[
         type, rank, input_k_fn, input_v_fn, mask_fn, output_static_shape
-    ](
-        q.make_dims_unknown(),
-        k_cache.get_shape(),
-        v_cache.get_shape(),
-        output,
-        cfg.scale,
-    )
+    ](q, k.get_shape(), v.get_shape(), output, cfg.scale)
 
     verify_output(output, ref_output, cfg)
 
-    q_ptr.free()
-    k_cache_ptr.free()
-    v_cache_ptr.free()
-    mask_ptr.free()
-    output_ptr.free()
-    ref_output_ptr.free()
+    q.data.free()
+    k.data.free()
+    v.data.free()
+    mask.data.free()
+    output.data.free()
+    ref_output.data.free()
 
 
 def test_flash_attention[type: DType]():
@@ -323,11 +309,13 @@ def test_case_split_kv[
     # Reshaped k_cache, v_cache to simulate split KV setup.
     @always_inline
     @parameter
-    fn build_shape[out_rank: Int](x: Int, y: Int) -> StaticIntTuple[out_rank]:
-        var shape = StaticIntTuple[out_rank]()
+    fn build_shape[
+        shape_rank: Int = rank
+    ](x: Int, y: Int) -> StaticIntTuple[shape_rank]:
+        var shape = StaticIntTuple[shape_rank]()
 
         @parameter
-        if out_rank == kv_rank:
+        if shape_rank == kv_rank:
             # Unsqueeze the output shape with a 1-dim.
             shape[0] = 1
 
@@ -341,70 +329,40 @@ def test_case_split_kv[
                 shape[i] = cfg.batch_dims[i]
 
         # In either case set the last two dimensions to [x, y].
-        shape[out_rank - 2] = x
-        shape[out_rank - 1] = y
+        shape[shape_rank - 2] = x
+        shape[shape_rank - 1] = y
 
         return shape
 
-    # Allocate the KV cache for the previous sequence.
-    var k_cache_shape = build_shape[kv_rank](cfg.depth_dim, cfg.prev_seq_len())
-    var k_cache_ptr = DTypePointer[type].alloc(k_cache_shape.flattened_length())
-    var k_cache = NDBuffer[type, kv_rank](k_cache_ptr, k_cache_shape)
+    seed(42)
 
-    var v_cache_shape = build_shape[kv_rank](cfg.prev_seq_len(), cfg.depth_dim)
-    var v_cache_ptr = DTypePointer[type].alloc(v_cache_shape.flattened_length())
-    var v_cache = NDBuffer[type, kv_rank](v_cache_ptr, v_cache_shape)
+    # Allocate the KV cache for the previous sequence.
+    var k_cache = build_ndbuffer[type](
+        build_shape[kv_rank](cfg.depth_dim, cfg.prev_seq_len())
+    )
+    var v_cache = build_ndbuffer[type](
+        build_shape[kv_rank](cfg.prev_seq_len(), cfg.depth_dim)
+    )
 
     # Allocate the QKV tensors from the current sequence.
-    var q_shape = build_shape[rank](cfg.seq_len, cfg.depth_dim)
-    var q_ptr = DTypePointer[type].alloc(q_shape.flattened_length())
-    var q = NDBuffer[type, rank](q_ptr, q_shape)
-
-    var k_shape = build_shape[rank](cfg.depth_dim, cfg.seq_len)
-    var k_ptr = DTypePointer[type].alloc(k_shape.flattened_length())
-    var k = NDBuffer[type, rank](k_ptr, k_shape)
-
-    var v_shape = build_shape[rank](cfg.seq_len, cfg.depth_dim)
-    var v_ptr = DTypePointer[type].alloc(v_shape.flattened_length())
-    var v = NDBuffer[type, rank](v_ptr, v_shape)
+    var q = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
+    var k = build_ndbuffer[type](build_shape(cfg.depth_dim, cfg.seq_len))
+    var v = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
 
     # Allocate the attention mask.
-    var mask_shape = build_shape[rank](cfg.seq_len, cfg.kv_seq_len)
-    var mask_ptr = DTypePointer[type].alloc(mask_shape.flattened_length())
-    var mask = NDBuffer[type, rank](mask_ptr, mask_shape)
+    var mask = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.kv_seq_len))
 
     # Allocate output and reference output buffers.
-    var output_shape = build_shape[rank](cfg.seq_len, cfg.depth_dim)
-    var output_ptr = DTypePointer[type].alloc(output_shape.flattened_length())
-    var output = NDBuffer[type, rank, output_static_shape](
-        output_ptr, output_shape
+    var output = build_ndbuffer[type, static_shape=output_static_shape](
+        build_shape(cfg.seq_len, cfg.depth_dim)
     )
-    var ref_output_ptr = DTypePointer[type].alloc(
-        output_shape.flattened_length()
+    var ref_output = build_ndbuffer[type](
+        build_shape(cfg.seq_len, cfg.depth_dim)
     )
-    var ref_output = NDBuffer[type, rank](ref_output_ptr, output_shape)
-
-    # Uniform-randomly initialize inputs.
-    seed(42)
-    rand(q_ptr, q_shape.flattened_length())
-    rand(k_ptr, k_shape.flattened_length())
-    rand(v_ptr, v_shape.flattened_length())
-    rand(k_cache_ptr, k_cache_shape.flattened_length())
-    rand(v_cache_ptr, v_cache_shape.flattened_length())
-    rand(mask_ptr, mask_shape.flattened_length())
 
     # Allocate reference KV cache.
-    var k_cache_ref_shape = build_shape[rank](cfg.depth_dim, cfg.kv_seq_len)
-    var k_cache_ref_ptr = DTypePointer[type].alloc(
-        k_cache_ref_shape.flattened_length()
-    )
-    var k_cache_ref = NDBuffer[type, rank](k_cache_ref_ptr, k_cache_ref_shape)
-
-    var v_cache_ref_shape = build_shape[rank](cfg.kv_seq_len, cfg.depth_dim)
-    var v_cache_ref_ptr = DTypePointer[type].alloc(
-        v_cache_ref_shape.flattened_length()
-    )
-    var v_cache_ref = NDBuffer[type, rank](v_cache_ref_ptr, v_cache_ref_shape)
+    var ref_k = build_ndbuffer[type](build_shape(cfg.depth_dim, cfg.kv_seq_len))
+    var ref_v = build_ndbuffer[type](build_shape(cfg.kv_seq_len, cfg.depth_dim))
 
     # Copy previous KV cache and current KV tensors into a single buffer for
     # computing reference attention.
@@ -412,31 +370,24 @@ def test_case_split_kv[
         for h in range(cfg.batch_dims[1]):
             for s in range(cfg.prev_seq_len()):
                 for d in range(cfg.depth_dim):
-                    v_cache_ref[StaticIntTuple[rank](b, h, s, d)] = v_cache[
-                        StaticIntTuple[kv_rank](0, b, h, s, d)
-                    ]
-                    k_cache_ref[StaticIntTuple[rank](b, h, d, s)] = k_cache[
+                    ref_k[StaticIntTuple[rank](b, h, d, s)] = k_cache[
                         StaticIntTuple[kv_rank](0, b, h, d, s)
+                    ]
+                    ref_v[StaticIntTuple[rank](b, h, s, d)] = v_cache[
+                        StaticIntTuple[kv_rank](0, b, h, s, d)
                     ]
 
             for s in range(cfg.prev_seq_len(), cfg.kv_seq_len):
                 for d in range(cfg.depth_dim):
-                    v_cache_ref[StaticIntTuple[rank](b, h, s, d)] = v[
-                        StaticIntTuple[rank](b, h, s - cfg.prev_seq_len(), d)
-                    ]
-                    k_cache_ref[StaticIntTuple[rank](b, h, d, s)] = k[
+                    ref_k[StaticIntTuple[rank](b, h, d, s)] = k[
                         StaticIntTuple[rank](b, h, d, s - cfg.prev_seq_len())
+                    ]
+                    ref_v[StaticIntTuple[rank](b, h, s, d)] = v[
+                        StaticIntTuple[rank](b, h, s - cfg.prev_seq_len(), d)
                     ]
 
     # Compute reference outputs for comparison.
-    reference_attention[type, rank](
-        q.make_dims_unknown(),
-        k_cache_ref.make_dims_unknown(),
-        v_cache_ref.make_dims_unknown(),
-        mask.make_dims_unknown(),
-        ref_output.make_dims_unknown(),
-        cfg.scale,
-    )
+    reference_attention(q, ref_k, ref_v, mask, ref_output, cfg.scale)
 
     # Define lambda to unsqueeze indices with a leading 1-dim.
     # In other words [B, H, S, D] becomes [1, B, H, S, D].
@@ -487,9 +438,9 @@ def test_case_split_kv[
         mask_fn,
         output_static_shape,
     ](
-        q.make_dims_unknown(),
-        k.make_dims_unknown(),
-        v.make_dims_unknown(),
+        q,
+        k,
+        v,
         rebind[StaticIntTuple[rank + 1]](k_cache.get_shape()),
         rebind[StaticIntTuple[rank + 1]](v_cache.get_shape()),
         output,
@@ -498,16 +449,16 @@ def test_case_split_kv[
 
     verify_output(output, ref_output, cfg)
 
-    k_cache_ref_ptr.free()
-    v_cache_ref_ptr.free()
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    k_cache_ptr.free()
-    v_cache_ptr.free()
-    mask_ptr.free()
-    output_ptr.free()
-    ref_output_ptr.free()
+    k_cache.data.free()
+    v_cache.data.free()
+    q.data.free()
+    k.data.free()
+    v.data.free()
+    mask.data.free()
+    output.data.free()
+    ref_output.data.free()
+    ref_k.data.free()
+    ref_v.data.free()
 
 
 def test_flash_attention_split_kv[type: DType]():
