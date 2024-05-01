@@ -30,6 +30,7 @@ from .MatmulUtils import (
     get_mm_config,
 )
 from memory import memset_zero
+from register import mogg_register
 from runtime.llcl import Runtime
 
 from collections import OptionalReg as Optional
@@ -579,6 +580,7 @@ fn batched_matmul[
     ](c_buf, a_buf, b_buf)
 
 
+@mogg_register("batch_matmul_shape")
 @always_inline
 fn batched_matmul_shape[
     rank: Int,

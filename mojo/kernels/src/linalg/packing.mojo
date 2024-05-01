@@ -37,6 +37,7 @@ from .MatmulUtils import (
 from .transpose import transpose_inplace
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
+from register import mogg_register
 
 from .apple_accelerate import use_apple_accelerate_lib
 
@@ -574,6 +575,7 @@ fn pack_matmul_b_shape_func_M[
     return output
 
 
+@mogg_register("pack_matmul_b_shape_func")
 @always_inline
 fn pack_matmul_b_shape_func[
     a_type: DType,
@@ -838,6 +840,7 @@ fn pack_b_ndbuffer_M[
     ](b_input, output_buffer, kernel_type_m)
 
 
+@mogg_register("layout_transform_KN_to_KNkni")
 fn pack_b_ndbuffer[
     a_type: DType,
     a_shape: DimList,
@@ -917,6 +920,7 @@ fn pack_transposed_b_ndbuffer_M[
     ](b_input, output_buffer, kernel_type_m)
 
 
+@mogg_register("layout_transform_NK_to_KNkni")
 fn pack_transposed_b_ndbuffer[
     a_type: DType,
     a_shape: DimList,

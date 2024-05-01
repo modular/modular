@@ -7,6 +7,7 @@
 
 from buffer import NDBuffer
 from buffer.list import DimList
+from register import mogg_register
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
@@ -127,6 +128,7 @@ fn matrix_solve[
             matrix_solve_tiny[type, 3, 2, 3](x_view, a_view, b_view)
 
 
+@mogg_register("matrix_solve_shape")
 @always_inline
 fn matrix_solve_shape[
     rank: Int,

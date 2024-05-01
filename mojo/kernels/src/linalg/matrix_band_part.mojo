@@ -8,11 +8,13 @@
 from algorithm.functional import _elementwise_impl, unswitch
 from buffer import NDBuffer
 from buffer.list import DimList
+from register import mogg_register
 from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
 
 
+@mogg_register("mo.linalg.band_part")
 @always_inline
 fn matrix_band_part[
     type: DType,
