@@ -69,6 +69,29 @@ kgen.generator @param_prop<p0, p1 -> p2>() {
 
 // -----
 
+kgen.generator @interpret_me(%arg0: index) -> index {
+  %0 = index.add %arg0, %arg0
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @simplify
+kgen.generator @simplify() {
+  kgen.param.declare x = <2>
+  kgen.param.declare y = <apply(:(index) -> index @interpret_me, x)>
+  // CHECK-NEXT: constant = <4>
+  kgen.param.constant = <y>
+  kgen.return
+}
+
+kgen.extern.generator @extern() -> index
+
+kgen.generator @extern_apply() {
+  kgen.param.constant = <apply(:() -> index @extern)>
+  kgen.return
+}
+
+// -----
+
 // CHECK-LABEL: kgen.generator @foo
 kgen.generator @foo() {
   kgen.param.declare N = <2> loc(#locFoo)
