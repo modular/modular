@@ -18,13 +18,13 @@ from .int_tuple import (
     to_int,
     is_int,
     is_tuple,
-    min,
     mul,
     prefix_product,
     product,
     reverse,
     shape_div,
     sorted,
+    tuple_min,
     zip,
 )
 
@@ -279,7 +279,7 @@ fn composition(layoutA: Layout, layoutB: Layout) -> Layout:
             var d = to_int(z[1])
 
             var s1 = shape_div(s, rest_stride)
-            result_shape.append(min(s1, rest_shape))
+            result_shape.append(tuple_min(s1, rest_shape))
             result_stride.append(mul(rest_stride, d))
             rest_shape = shape_div(rest_shape, abs(s1))
             rest_stride = shape_div(rest_stride, s)

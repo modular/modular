@@ -4,8 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import max, min
-
 
 fn shiftr(a: Int, s: Int) -> Int:
     return a >> s if s > 0 else shiftl(a, -s)

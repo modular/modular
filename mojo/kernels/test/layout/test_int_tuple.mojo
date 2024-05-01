@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s | FileCheck %s
 
 from layout.int_tuple import *
-from layout.int_tuple import abs  # override builtin abs
+from layout.int_tuple import abs  # override builtin abs and min
 from testing import assert_equal, assert_false, assert_not_equal, assert_true
 
 
@@ -137,13 +137,17 @@ fn test_tuple_basic_ops() raises:
     assert_equal(ip2, 7)
     assert_equal(ip3, 15)
 
-    alias m0 = max(IntTuple(1, 2, 3, IntTuple(4, 5), IntTuple(7, 8, 9, 10)))
+    alias m0 = tuple_max(
+        IntTuple(1, 2, 3, IntTuple(4, 5), IntTuple(7, 8, 9, 10))
+    )
     assert_equal(m0, 10)
 
-    assert_equal(min(IntTuple(1, 5, 6), IntTuple(4, 2, 3)), IntTuple(1, 2, 3))
+    assert_equal(
+        tuple_min(IntTuple(1, 5, 6), IntTuple(4, 2, 3)), IntTuple(1, 2, 3)
+    )
 
     assert_equal(
-        min(
+        tuple_min(
             IntTuple(1, IntTuple(14, 6)),
             IntTuple(4, IntTuple(2, 32)),
         ),

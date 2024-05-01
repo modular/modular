@@ -355,7 +355,7 @@ struct _ZipIter2[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
 
     @always_inline
     fn __len__(self) -> Int:
-        return math.min(len(self.a), len(self.b)) - self.index
+        return min(len(self.a), len(self.b)) - self.index
 
 
 @value
@@ -371,7 +371,7 @@ struct _zip2[T: CollectionElement, D: ElementDelegate = DefaultDelegate](Sized):
 
     @always_inline
     fn __len__(self) -> Int:
-        return math.min(len(self.a), len(self.b))
+        return min(len(self.a), len(self.b))
 
 
 @value
@@ -392,10 +392,7 @@ struct _ZipIter3[T: CollectionElement, D: ElementDelegate = DefaultDelegate]:
 
     @always_inline
     fn __len__(self) -> Int:
-        return (
-            math.min(len(self.a), math.min(len(self.b), len(self.c)))
-            - self.index
-        )
+        return min(len(self.a), min(len(self.b), len(self.c))) - self.index
 
 
 @value
@@ -412,7 +409,7 @@ struct _zip3[T: CollectionElement, D: ElementDelegate = DefaultDelegate](Sized):
 
     @always_inline
     fn __len__(self) -> Int:
-        return math.min(len(self.a), math.min(len(self.b), len(self.c)))
+        return min(len(self.a), min(len(self.b), len(self.c)))
 
 
 fn zip[

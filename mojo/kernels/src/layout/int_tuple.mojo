@@ -147,11 +147,13 @@ fn product(t: IntTuple) -> Int:
     return reduce[Int, reducer](t, 1)
 
 
-fn max(t: IntTuple) -> Int:
+# TODO: Can't call this `max` otherwise the compiler incorrectly
+# fails to recurse when calling this local function.
+fn tuple_max(t: IntTuple) -> Int:
     @always_inline
     @parameter
     fn reducer(owned a: Int, b: IntTuple) -> Int:
-        return math.max(a, to_int(b) if is_int(b) else max(b))
+        return max(a, to_int(b) if is_int(b) else tuple_max(b))
 
     # FIXME: limit.min_finite[DType.index]() doesn't seem to work
     alias int_min_val = -2147483648
@@ -224,12 +226,12 @@ fn apply_zip[
 #     return r
 
 
-fn min(a: IntTuple, b: IntTuple) -> IntTuple:
+fn tuple_min(a: IntTuple, b: IntTuple) -> IntTuple:
     if len(a) != len(b):
         abort("Tuple sizes don't match: " + str(len(a)) + " != " + str(len(b)))
     if is_int(a):
-        return math.min(to_int(a), to_int(b))
-    return apply_zip[min](a, b)
+        return min(to_int(a), to_int(b))
+    return apply_zip[tuple_min](a, b)
 
 
 fn inner_product(a: IntTuple, b: IntTuple) -> Int:
