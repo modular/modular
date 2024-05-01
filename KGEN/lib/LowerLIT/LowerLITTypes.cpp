@@ -444,7 +444,7 @@ DebugInfo::DIType LITTypeLowerer::buildDebugInfoForStructRef(
   sourceName = DebugInfo::SourceNameAttr::get(
       sourceName.getName(), sourceName.getParamTypes(),
       sourceName.getArgTypes(), paramValues, sourceName.getParent(),
-      sourceName.getKind());
+      sourceName.getKind(), sourceName.getDecorators());
 
   return DebugInfo::DIStructType::get(sourceName.encode(), elementTypes);
 }

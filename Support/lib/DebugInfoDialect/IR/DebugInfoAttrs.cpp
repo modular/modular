@@ -87,6 +87,14 @@ void SourceNameAttr::encode(llvm::raw_ostream &os) const {
         ",");
     os << '>';
   }
+
+  // Decorator values.
+  if (!getDecorators().empty()) {
+    os << " @[";
+    llvm::interleave(
+        getDecorators(), os, [&](SourceNameAttr dec) { dec.encode(os); }, ",");
+    os << "]";
+  }
 }
 
 namespace {
@@ -125,13 +133,37 @@ public:
     } while (parseOptional(','));
     return parse(close);
   }
+  ErrorOrSuccess parseList(StringRef open, StringRef close,
+                           function_ref<ErrorOrSuccess()> parseFn) {
+    bool commit = false;
+    for (char c : open) {
+      if (!commit) {
+        if (!parseOptional(c))
+          return success();
+        commit = true;
+      } else {
+        if (auto err = parse(c))
+          return err.takeError();
+      }
+    }
+    do {
+      if (auto err = parseFn())
+        return err.takeError();
+    } while (parseOptional(','));
+    for (char c : close) {
+      if (auto err = parse(c))
+        return err.takeError();
+    }
+    return success();
+  }
 
 private:
   ErrorOrSuccess
   parseSourceNameImpl(StringAttr &baseName, SourceNameKind &kind,
                       SmallVectorImpl<SourceNameAttr> &paramTypes,
                       SmallVectorImpl<SourceNameAttr> &argTypes,
-                      SmallVectorImpl<StringAttr> &paramValues);
+                      SmallVectorImpl<StringAttr> &paramValues,
+                      SmallVectorImpl<SourceNameAttr> &decoratorValues);
 
   MLIRContext *ctx;
   /// The current offset into the buffer.
@@ -163,7 +195,8 @@ ErrorOrSuccess SourceNameParser::parseSourceNameImpl(
     StringAttr &baseName, SourceNameKind &kind,
     SmallVectorImpl<SourceNameAttr> &paramTypes,
     SmallVectorImpl<SourceNameAttr> &argTypes,
-    SmallVectorImpl<StringAttr> &paramValues) {
+    SmallVectorImpl<StringAttr> &paramValues,
+    SmallVectorImpl<SourceNameAttr> &decoratorValues) {
   // Base name.
   ErrorOr<StringRef> name = parseString();
   if (name.isError())
@@ -215,6 +248,17 @@ ErrorOrSuccess SourceNameParser::parseSourceNameImpl(
   };
   if (auto err = parseList('<', '>', parseParam))
     return err.takeError();
+
+  // Decorator values.
+  auto parseDecorator = [&]() -> ErrorOrSuccess {
+    ErrorOr<SourceNameAttr> decorator = parseSourceName();
+    if (decorator.isError())
+      return decorator.takeError();
+    decoratorValues.push_back(decorator.takeValue());
+    return success();
+  };
+  if (auto err = parseList(" @[", "]", parseDecorator))
+    return err.takeError();
   return success();
 }
 
@@ -222,20 +266,22 @@ ErrorOr<SourceNameAttr> SourceNameParser::parseSourceName() {
   SourceNameAttr next;
   SmallVector<SourceNameAttr> paramTypes, argTypes;
   SmallVector<StringAttr> paramValues;
+  SmallVector<SourceNameAttr> decoratorValues;
   do {
     // Re-use state to save memory allocations.
     paramTypes.clear();
     argTypes.clear();
     paramValues.clear();
+    decoratorValues.clear();
     StringAttr baseName;
     SourceNameKind kind = {};
     if (auto err = parseSourceNameImpl(baseName, kind, paramTypes, argTypes,
-                                       paramValues))
+                                       paramValues, decoratorValues))
       return err.takeError();
 
     // Generate the source name with the current name as the parent.
     next = SourceNameAttr::get(baseName, paramTypes, argTypes, paramValues,
-                               next, kind);
+                               next, kind, decoratorValues);
   } while (parseOptional(':') && parseOptional(':'));
   return next;
 }
