@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import mul
-
 from algorithm.functional import (
     _elementwise_impl,
     _get_start_indices_of_nth_subvolume,
@@ -44,7 +42,7 @@ fn test_elementwise[
         var index = rebind[StaticIntTuple[outer_rank]](idx)
         var in1 = buffer1.load[width=simd_width](index)
         var in2 = buffer2.load[width=simd_width](index)
-        out_buffer.store[width=simd_width](index, mul(in1, in2))
+        out_buffer.store[width=simd_width](index, in1 * in2)
 
     _elementwise_impl[func, 1, outer_rank, use_blocking_impl=is_blocking](
         rebind[StaticIntTuple[outer_rank]](out_buffer.dynamic_shape),
