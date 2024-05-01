@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import mul
-
 from algorithm import elementwise
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList

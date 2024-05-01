@@ -58,79 +58,6 @@ fn dispatch_activation_fn[
 
 
 # ===----------------------------------------------------------------------=== #
-# ceil
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline("nodebug")
-fn ceil[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    """Compute the Ceil Op.
-
-    Parameters:
-        type: DType used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x : The value to compute the Ceil operation on.
-
-    Returns:
-        The result of the Ceil operation.
-    """
-    return math.ceil(x)
-
-
-# ===----------------------------------------------------------------------=== #
-# floor
-# ===----------------------------------------------------------------------=== #
-
-
-@mogg_register("mo.floor")
-@always_inline("nodebug")
-fn floor[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    """Compute the Floor Op.
-
-    Parameters:
-        type: DType used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x : The value to compute the Floor operation on.
-
-    Returns:
-        The result of the Floor operation.
-    """
-    return math.floor(x)
-
-
-# ===----------------------------------------------------------------------=== #
-# tanh
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn tanh[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    """Compute the Tanh Op.
-
-    Parameters:
-        type: DType used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x : The value to compute the Tanh operation on.
-
-    Returns:
-        The result of the Tanh operation.
-    """
-    return math.tanh(x)
-
-
-# ===----------------------------------------------------------------------=== #
 # sign
 # ===----------------------------------------------------------------------=== #
 
@@ -325,7 +252,7 @@ fn gelu_approximate[
         "dtype must be a floating point type",
     ]()
     var x3 = x * x * x
-    return 0.5 * x * (1 + tanh(SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
+    return 0.5 * x * (1 + math.tanh(SQRT_TWO_OVER_PI * (x + 0.044715 * x3)))
 
 
 # ===----------------------------------------------------------------------=== #

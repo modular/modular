@@ -11,9 +11,7 @@ from math import (
     exp,
     identity,
     log,
-    mul,
     reciprocal,
-    sub,
 )
 from math.limit import neginf
 from os import abort
@@ -26,7 +24,7 @@ from algorithm.reduction import (
 )
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
-from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
+from gpu import BlockIdx, GridDim, ThreadIdx, barrier
 from gpu.host import Device, DeviceAttribute, Function, Stream
 from gpu.memory import AddressSpace
 from runtime.llcl import Runtime
@@ -35,6 +33,8 @@ from runtime.tracing import Trace, TraceLevel
 from utils.index import product
 from utils.static_tuple import StaticTuple
 from utils._numerics import get_accum_type
+
+from .math import mul, sub
 
 # ===----------------------------------------------------------------------===#
 # Utilities
