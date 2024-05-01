@@ -60,7 +60,7 @@ from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn._optional_param import OptionalParamInt
-from nn.activations import ceil, floor, gelu, relu, sigmoid, tanh
+from nn.activations import gelu, relu, sigmoid
 from nn.arange import arange, arange_shape
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from nn.concat import concat as _concat
@@ -94,6 +94,7 @@ from nn.gather_scatter import scatter_elements_shape as scatter_shape
 from nn.gather_scatter import scatter_nd as _scatter_nd
 from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
 from nn.index_tensor import index_tensor_1d as _index_tensor
+from nn.math import add, ceil, div, floor, mod, mul, sub, tanh
 from nn.mha import flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
@@ -136,12 +137,15 @@ from extensibility import Tensor as ExtensibilityTensor
 # Prevent these functions from being DCE'd by explicitly exporting them.
 @export
 fn MOGGExport():
+    alias _add = add
     alias _avg_pool_shape = pool_shape
     alias _avg_pool_shape_ceil = pool_shape_ceil
     alias _cast = cast
+    alias _ceil = ceil
     alias _concat_from_list_shape = concat_from_list_shape
     alias _conv_shape = conv_shape
     alias _conv_transpose_shape = conv_transpose_shape
+    alias _div = div
     alias _floor = floor
     alias _gather_shape = gather_shape
     alias _gather_nd_shape = gather_nd_shape
@@ -156,6 +160,8 @@ fn MOGGExport():
     alias _matrix_solve_shape = matrix_solve_shape
     alias _matrix_band_part = matrix_band_part
     alias _batched_matmul_shape = batched_matmul_shape
+    alias _mul = mul
+    alias _mod = mod
     alias _sigmoid = sigmoid
     alias _tanh = tanh
     alias _arange = arange
@@ -167,6 +173,7 @@ fn MOGGExport():
     alias _scatter_shape = scatter_shape
     alias _scatter_nd_shape = scatter_nd_shape
     alias _slice = slice
+    alias _sub = sub
     alias _random_shape = random_shape
     alias _roi_align_shape = roi_align_shape
     alias _slice_shape = slice_shape
@@ -1033,23 +1040,6 @@ fn cast[
     type: DType, new_type: DType, simd_width: Int
 ](value: SIMD[type, simd_width]) -> SIMD[new_type, simd_width]:
     return value.cast[new_type]()
-
-
-# ===----------------------------------------------------------------------===#
-# Ceil op
-# ===----------------------------------------------------------------------===#
-
-
-@mogg_register("mo.ceil")
-@always_inline
-fn ceil_wrapper[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    @parameter
-    if has_neon() and type == DType.bfloat16:
-        return ceil(x.cast[DType.float32]()).cast[type]()
-
-    return llvm_intrinsic["llvm.ceil", __type_of(x), has_side_effect=False](x)
 
 
 # ===----------------------------------------------------------------------===#
@@ -2096,13 +2086,9 @@ fn mogg_gather_sum[
         "mojo.gather_sum",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ) as t:
-        gather_reduce[
-            type,
-            0,
-            1,
-            simdwidthof[type](),
-            add,
-        ](output, input, indices, 0)
+        gather_reduce[type, 0, 1, simdwidthof[type](), add](
+            output, input, indices, 0
+        )
 
 
 @mogg_register("mo.gather")
@@ -3632,31 +3618,11 @@ fn pack_conv_transpose_filter_shape[
 # ===----------------------------------------------------------------------===#
 
 
-@mogg_register("mo.add")
-@always_inline("nodebug")
-fn add[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
-]:
-    return x + y
-
-
 @mogg_register("mo.cos")
 fn wrapped_cos[
     type: DType, simd_width: Int
 ](arg: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return cos(arg)
-
-
-@mogg_register("mo.div")
-@always_inline("nodebug")
-fn wrapped_div[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
-]:
-    return x / y
 
 
 @mogg_register("mo.erf")
@@ -3760,14 +3726,6 @@ fn wrapped_sin[
     return sin(arg)
 
 
-@mogg_register("mo.tanh")
-@always_inline("nodebug")
-fn wrapped_tanh[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return tanh(x)
-
-
 @mogg_register("mo.trunc")
 @always_inline("nodebug")
 fn wrapped_trunc[
@@ -3806,36 +3764,6 @@ fn wrapped_isinf[
     type: DType, simd_width: Int
 ](val: SIMD[type, simd_width]) -> SIMD[DType.bool, simd_width]:
     return isinf(val)
-
-
-@mogg_register("mo.mod")
-@always_inline
-fn mod[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
-]:
-    return x % y
-
-
-@mogg_register("mo.mul")
-@always_inline
-fn mul[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
-]:
-    return x * y
-
-
-@mogg_register("mo.sub")
-@always_inline
-fn sub[
-    type: DType, simd_width: Int
-](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
-    type, simd_width
-]:
-    return x - y
 
 
 @mogg_register("mo.and")
