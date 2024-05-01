@@ -77,6 +77,9 @@ public:
     return ScopeGuard(*this, scope);
   }
 
+  /// Push a no-debug scope guard to the stack.
+  ScopeGuard pushNoDebugScopeGuard() { return pushScopeGuard(nullptr); }
+
   /// Pop the current debuginfo scope off the stack.
   void popScope();
 
@@ -87,13 +90,16 @@ public:
   // Creation
   //===--------------------------------------------------------------------===//
 
-  /// Create a new lexical block scope. The parent scope is the current scope
-  /// on the stack within the builder.
-  DILexicalBlockAttr createLexicalBlock(DIFileAttr file, unsigned line,
-                                        unsigned column);
-  /// Create and push a new lexical block scope onto the stack.
-  ScopeGuard pushLexicalBlock(DIFileAttr file, unsigned line, unsigned column) {
-    return pushScopeGuard(createLexicalBlock(file, line, column));
+  /// Create a new lexical block scope whose parent scope is the current scope
+  /// on the stack within the builder. If the parent scope is null, returns
+  /// null.
+  DILexicalBlockAttr createNestedLexicalBlock(DIFileAttr file, unsigned line,
+                                              unsigned column);
+  /// Create a nested lexical block scope using `createNestedLexicalBlock` and
+  /// push it onto the stack with a scope guard.
+  ScopeGuard pushNestedLexicalBlock(DIFileAttr file, unsigned line,
+                                    unsigned column) {
+    return pushScopeGuard(createNestedLexicalBlock(file, line, column));
   }
 
   /// Create a new subprogram. The parent scope is the current scope on the
@@ -129,6 +135,9 @@ public:
 private:
   MLIRContext *context;
   DICompileUnitAttr compileUnit;
+  /// A null scope in the stack signifies a local scope that does not want any
+  /// debug info for ops inside. As long as a null scope is at the top, any
+  /// additional lexical blocks pushed are also null.
   SmallVector<DIScopeAttr> scopes;
 };
 } // namespace M::DebugInfo

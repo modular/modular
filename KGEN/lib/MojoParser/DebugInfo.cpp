@@ -115,8 +115,10 @@ void SharedState::setLocationDebugScope(LIT::FuncOp funcOp) {
       funcOp.getLoc()->findInstanceOf<FileLineColLoc>();
 
   // Synthesized functions do not correspond to any source code, so we do not
-  // want to generate debug info and step into them.
-  if (funcOp.isSynthetic()) {
+  // want to generate debug info and step into them. The same applies to
+  // no-debug functions.
+  if (funcOp.isSynthetic() ||
+      funcOp.getInlineLevel() == InlineLevel::AlwaysNoDebug) {
     funcOp->setLoc(fileLineCol);
     return;
   }

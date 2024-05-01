@@ -179,7 +179,7 @@ void DebugInfoBuilder::buildDebugInfo(Region *region) {
 
   // Push a new lexical scope for this region.
   auto [line, column] = extractLineColumn(&region->front());
-  auto scopeGuard = dibuilder.pushLexicalBlock(fileAttr, line, column);
+  auto scopeGuard = dibuilder.pushNestedLexicalBlock(fileAttr, line, column);
 
   // Recursively build debug information for all blocks within the region.
   for (Block &block : *region)
