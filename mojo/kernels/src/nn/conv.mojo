@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_down_residual, div_ceil, fma, max, min
+from math import align_down, align_down_residual, div_ceil, fma
 from sys.info import (
     alignof,
     has_avx2,

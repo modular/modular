@@ -11,8 +11,6 @@ from math import (
     exp,
     identity,
     log,
-    max,
-    min,
     mul,
     reciprocal,
     sub,

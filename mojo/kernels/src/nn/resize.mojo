@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.vector import InlinedFixedVector
-from math import ceil, floor, max, min, round_half_down, round_half_up
+from math import ceil, floor, round_half_down, round_half_up
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index

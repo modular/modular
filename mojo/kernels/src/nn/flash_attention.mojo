@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_up, div_ceil, exp, max, min
+from math import align_down, align_up, div_ceil, exp
 from sys.info import has_avx512f, has_neon
 
 from algorithm import sync_parallelize, tile, vectorize

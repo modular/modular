@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.vector import InlinedFixedVector
-from math import align_down, align_up, div_ceil, max, min
+from math import align_down, align_up, div_ceil
 from sys import external_call
 from sys._build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof

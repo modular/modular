@@ -226,7 +226,7 @@ fn relu[
     Returns:
         The result of the RELU operation.
     """
-    return math.max(x, 0)
+    return max(x, 0)
 
 
 # ===----------------------------------------------------------------------=== #

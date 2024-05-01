@@ -51,13 +51,13 @@ fn _bilinear_interpolate[
 ):
     # Compute centeral point (y, x) by mapping (py, ph) into a  grid of size
     # [roi_bin_grid_h, roi_bin_grid_w] shifted by (roi_start_h, roi_start_w)
-    var y = math.max(
+    var y = max(
         roi_start_h
         + ph * bin_size_h
         + (iy + 0.5) * bin_size_h / roi_bin_grid_h,
         0,
     )
-    var x = math.max(
+    var x = max(
         roi_start_w
         + pw * bin_size_w
         + (ix + 0.5) * bin_size_w / roi_bin_grid_w,
@@ -75,10 +75,10 @@ fn _bilinear_interpolate[
     #
     #   (y_high, x_low)      (y_high, x_high)
     # and bilinar weights (w1, w2, w3, w4)
-    var y_low = math.min(int(y), height - 1)
-    var x_low = math.min(int(x), width - 1)
-    var y_high = math.min(y_low + 1, height - 1)
-    var x_high = math.min(x_low + 1, width - 1)
+    var y_low = min(int(y), height - 1)
+    var x_low = min(int(x), width - 1)
+    var y_high = min(y_low + 1, height - 1)
+    var x_high = min(x_low + 1, width - 1)
 
     var ly = y - y_low
     var lx = x - x_low
@@ -170,10 +170,10 @@ fn roi_align_nhwc[
         ]() * spatial_scale - offset
 
         # Region size (roi_h, roi_w) with 1x1 lower bound
-        var roi_height = roi_end_h - roi_start_h if aligned else math.max(
+        var roi_height = roi_end_h - roi_start_h if aligned else max(
             roi_end_h - roi_start_h, 1.0
         )
-        var roi_width = roi_end_w - roi_start_w if aligned else math.max(
+        var roi_width = roi_end_w - roi_start_w if aligned else max(
             roi_end_w - roi_start_w, 1.0
         )
 
@@ -191,7 +191,7 @@ fn roi_align_nhwc[
         )
 
         # Number of points in the pooling window.
-        var pool_elemn_num = math.max(roi_bin_grid_h * roi_bin_grid_w, 1)
+        var pool_elemn_num = max(roi_bin_grid_h * roi_bin_grid_w, 1)
 
         # Associatve pooling init/update/finalize functions parameterized by
         # mode
@@ -211,7 +211,7 @@ fn roi_align_nhwc[
             if mode == "AVG":
                 return a + b
             else:
-                return math.max(a, b)
+                return max(a, b)
 
         @parameter
         @always_inline

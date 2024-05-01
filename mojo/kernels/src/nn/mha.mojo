@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import align_down, div_ceil, exp, iota, max, min, sqrt
+from math import align_down, div_ceil, exp, iota, sqrt
 from math.limit import neginf
 
 from algorithm import elementwise

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, min, sqrt
+from math import div_ceil, sqrt
 
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import sync_parallelize

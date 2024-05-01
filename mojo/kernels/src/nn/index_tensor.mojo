@@ -9,7 +9,7 @@ from buffer.list import DimList
 from utils.index import Index
 from random import random_ui64
 from nn.gather_scatter import normalize_neg_index
-from math import div_ceil, min
+from math import div_ceil
 from algorithm import sync_parallelize
 from runtime.llcl import Runtime
 

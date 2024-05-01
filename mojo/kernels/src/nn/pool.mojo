@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import add, div_ceil, max, min
+from math import add, div_ceil
 from math.limit import neginf
 from sys.info import simdwidthof
 
@@ -267,7 +267,7 @@ fn max_pool[
         val: SIMD[type, simd_width],
         result: SIMD[type, simd_width],
     ) -> SIMD[type, simd_width]:
-        return math.max(val, result)
+        return max(val, result)
 
     @always_inline
     @parameter

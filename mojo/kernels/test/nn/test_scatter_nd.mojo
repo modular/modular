@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo  -I %S/.. %s | FileCheck %s
 
-from math import max, min
-
 from buffer import NDBuffer
 from nn.gather_scatter import scatter_nd_generator
 from tensor import Tensor, TensorShape

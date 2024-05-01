@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, div_ceil, max, min
+from math import align_down, div_ceil
 from sys.info import has_neon, sizeof
 from sys.intrinsics import PrefetchOptions
 

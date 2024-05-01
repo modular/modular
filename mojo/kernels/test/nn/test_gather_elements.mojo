@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import max
-
 from nn.gather_scatter import gather_elements
 from tensor import Tensor, TensorShape
 
