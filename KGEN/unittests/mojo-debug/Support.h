@@ -54,6 +54,9 @@ struct StopContext {
   lldb::SBProcess process;
   lldb::SBThread thread;
   lldb::SBFrame frame;
+
+  /// Step over the current thread and return the StopContext once it stops.
+  StopContext stepOver();
 };
 
 /// Builds the given source file, then creates a target with the resultant
