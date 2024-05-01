@@ -98,7 +98,7 @@ fn main():
 
     var none = None
 
-    print("breakpoint")
+    print("breakpoint")  # breakpoint
 
     keep_alive(
         a_var_index,

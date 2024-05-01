@@ -19,5 +19,4 @@ add_modular_testsuite(check-mojo-debug
   mojo
 )
 
-add_subdirectory(python-tests)
 add_subdirectory(NVPTX)

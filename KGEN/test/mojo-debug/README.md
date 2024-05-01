@@ -30,8 +30,8 @@ variable and type information:
 - third-party/llvm-project/lldb/include/lldb/API/SBValue.h
 - third-party/llvm-project/lldb/include/lldb/API/SBType.h
 
-You can use `KGEN/unittests/mojo-debug/BoolTest.cpp` as an example of how to
-write this kind of tests.
+You can use `KGEN/unittests/mojo-debug/PrimitiveTypesTest.cpp` as an example of
+how to write this kind of tests.
 
 For further details, the list of local variables can be accessed through
 `StopContext.frame.FindVariable()` or
