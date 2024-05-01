@@ -23,8 +23,6 @@ from math import (
     logical_and,
     logical_not,
     logical_xor,
-    max,
-    min,
     mod,
     mul,
     not_equal,

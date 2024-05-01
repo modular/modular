@@ -14,8 +14,6 @@ from math import (
     isnan,
     log,
     log1p,
-    max,
-    min,
     mul,
     rsqrt,
     sqrt,

@@ -6,8 +6,6 @@
 # A temporary home for the experimental int list type.
 
 
-from math import max
-
 from buffer.list import DimList, _make_tuple
 
 from utils.index import StaticIntTuple
