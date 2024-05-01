@@ -323,6 +323,19 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
+uint64_t InterpreterState::allocateSymbolicMemory() {
+  uint64_t result = symbolicMemory.size();
+  symbolicMemory.emplace_back();
+  ++getCurrentFrame().numSymbolicAllocs;
+  return result;
+}
+
+ErrorOr<TypedAttr &> InterpreterState::getSymbolicMemory(uint64_t slot) {
+  if (slot >= symbolicMemory.size())
+    return Error("symbolic memory slot is out-of-bounds: " + Twine(slot));
+  return symbolicMemory[slot];
+}
+
 ErrorOrSuccess
 InterpreterState::externalizeMemory(Region &entry,
                                     MutableArrayRef<Attribute> results) {
@@ -760,10 +773,13 @@ ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {
 Operation *InterpreterState::popFrame() {
   // Drop all stack memory on the current frame.
   MemoryTable &table = getTable(MemoryKind::Stack);
-  for (size_t i = 0, e = getCurrentFrame().numStackAllocs; i != e; ++i)
+  StackFrame &frame = getCurrentFrame();
+  for (size_t i = 0, e = frame.numStackAllocs; i != e; ++i)
     table.blobs.pop_back();
+  for (size_t i = 0, e = frame.numSymbolicAllocs; i != e; ++i)
+    symbolicMemory.pop_back();
 
-  Operation *origin = getCurrentFrame().origin;
+  Operation *origin = frame.origin;
   stack.pop_back();
   return origin;
 }
