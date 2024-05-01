@@ -307,8 +307,8 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   ExprEmitter emitter(shared, *funcDecl, builder);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
   // For a memory-only initializer, we emit a bunch of stores to fields indexing
   // self.
@@ -389,8 +389,8 @@ LogicalResult StructEmitter::populateMoveCopy(ASTDecl &functionDecl,
   // We want to populate a move but the move/copy should be a method!
   SMLoc location = functionDecl.getLoc();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = func.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(func.getLocScope());
   ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
       shared.translateLocation(location), func.getBody());
   bool isMemoryOnly = !declOp.isRegisterPassable();
@@ -464,8 +464,8 @@ LIT::FuncOp StructEmitter::addVoidMethod(ASTDecl &structDecl, StringRef prefix,
       shared.getNoneType(), structDecl, kind);
   Block *body = func.getBody();
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = func.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(func.getLocScope());
 
   ImplicitLocOpBuilder b =
       ImplicitLocOpBuilder::atBlockEnd(func.getLoc(), body);
@@ -514,8 +514,8 @@ LIT::FuncOp StructEmitter::synthesizeEmptyDtor(ASTDecl &structDecl) {
   BlockArgument arg = body->getArgument(0);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
   // We need to make a var box + store for register_passable values since that
   // is what lifetime tracking expects.  It does not track the individual

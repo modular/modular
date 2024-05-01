@@ -339,8 +339,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   // Populate the copy constructor.
   {
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-    if (DebugInfo::DIScopeAttr spAttr = copyCtr.getLocScope())
-      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    if (shared.diBuilder)
+      diScopeGuard = shared.diBuilder->pushScopeGuard(copyCtr.getLocScope());
     Location translatedLocation =
         shared.translateLocation(copyCtrDecl->getLoc());
     // we want to insert before return at end of function. LIT::ReturnOp is not
@@ -367,8 +367,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   {
     // Take the impl from the existing.
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-    if (DebugInfo::DIScopeAttr spAttr = moveCtr.getLocScope())
-      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    if (shared.diBuilder)
+      diScopeGuard = shared.diBuilder->pushScopeGuard(moveCtr.getLocScope());
     Location translatedLocation =
         shared.translateLocation(moveCtrDecl->getLoc());
     ImplicitLocOpBuilder b = ImplicitLocOpBuilder::atBlockBegin(
@@ -400,8 +400,8 @@ StructDeclOp ClosureEmitter::createClosureWrapperStructDecl(
   // Populate the body of ClosureWrapper::__call__.
   {
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-    if (DebugInfo::DIScopeAttr spAttr = callMethod.getLocScope())
-      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    if (shared.diBuilder)
+      diScopeGuard = shared.diBuilder->pushScopeGuard(callMethod.getLocScope());
     ImplicitLocOpBuilder builder = ImplicitLocOpBuilder::atBlockBegin(
         callMethod.getLoc(), callMethod.getBody());
     Value callSelf = callMethod.getBody()->getArgument(0);
@@ -589,8 +589,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     Value target = builder.create<RefStructGEROp>(selfArg, paramField);
     ValueDest dest(MLValue(target), EC_Assignment);
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-    if (DebugInfo::DIScopeAttr spAttr = initFunc.getLocScope())
-      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    if (shared.diBuilder)
+      diScopeGuard = shared.diBuilder->pushScopeGuard(initFunc.getLocScope());
     emitter.emitConstructorCall(clType, {}, loc, CallSyntax::kDirectCall, dest);
   }
 
@@ -621,8 +621,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Populate the body of the call op.
   declOp->setAttr(callMethodAttr, callFunc.getBoundReference());
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = callFunc.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(callFunc.getLocScope());
 
   // Take the body of the nested function.
   callFunc.getBody()->erase();
@@ -834,8 +834,8 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
   init.setInlineLevel(InlineLevel::Always);
 
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = init.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(init.getLocScope());
 
   ImplicitLocOpBuilder builder =
       ImplicitLocOpBuilder::atBlockBegin(init.getLoc(), init.getBody());
@@ -914,8 +914,9 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                PassingKind::PosOnly);
     Block *body = topLevelCopyInit.getBody();
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-    if (DebugInfo::DIScopeAttr spAttr = topLevelCopyInit.getLocScope())
-      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    if (shared.diBuilder)
+      diScopeGuard =
+          shared.diBuilder->pushScopeGuard(topLevelCopyInit.getLocScope());
 
     // Allocate memory on heap and call copy constructor
     Value target = allocateHeapMemory(closureImplTopLevelPtrType, builder);
@@ -960,8 +961,9 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                topLevelDtor.getBody());
     Block *body = topLevelDtor.getBody();
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-    if (DebugInfo::DIScopeAttr spAttr = topLevelDtor.getLocScope())
-      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    if (shared.diBuilder)
+      diScopeGuard =
+          shared.diBuilder->pushScopeGuard(topLevelDtor.getLocScope());
 
     // Cast the opaque pointer back to the closure impl type.
     Value implPtr = builder.create<POP::PointerBitcastOp>(
@@ -1015,8 +1017,9 @@ ClosureEmitter::createWrapperInitWithImpl(StructDeclOp closureWrapper,
                                                topLevelCall.getBody());
     Block *body = topLevelCall.getBody();
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-    if (DebugInfo::DIScopeAttr spAttr = topLevelCall.getLocScope())
-      diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+    if (shared.diBuilder)
+      diScopeGuard =
+          shared.diBuilder->pushScopeGuard(topLevelCall.getLocScope());
 
     // Cast the opaque pointer back to the closure impl type.
     Value closureArg = body->getArgument(0);
