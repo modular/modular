@@ -215,6 +215,17 @@ kgen.generator @fixed_width_integers<p1: i32, p2: i32>() {
   // CHECK-NEXT: constant: i32 = <1>
   %5 = kgen.param.constant: i32 = <div(mul_nuw(p1, p2), mul_nuw(p1, p2))>
 
+  // Division by 0 is undefined behavior.
+  // CHECK-NEXT: constant: i32 = <0>
+  %6 = kgen.param.constant: i32 = <div(12, 0)>
+
+  // Folder only kicks in for constants.
+  // CHECK-NEXT: constant: i32 = <div(p1, 0)>
+  %7 = kgen.param.constant: i32 = <div(p1, 0)>
+
+  // CHECK-NEXT: constant: i32 = <0>
+  %8 = kgen.param.constant: i32 = <div(0, 0)>
+
   kgen.return
 }
 

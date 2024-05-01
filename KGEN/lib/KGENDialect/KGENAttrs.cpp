@@ -1782,9 +1782,10 @@ static Attribute simplifyDiv(SmallVectorImpl<TypedAttr> &operands) {
     if (rhs.getValue().isOne())
       return operands[0];
 
+  // Note that division by 0 is undefined behavior.
   return foldBinaryOp(
-      operands, [](auto a, auto b) { return a.udiv(b); },
-      [](auto a, auto b) { return a.sdiv(b); });
+      operands, [](auto a, auto b) { return b.isZero() ? b : a.udiv(b); },
+      [](auto a, auto b) { return b.isZero() ? b : a.sdiv(b); });
 }
 
 static Attribute simplifyMod(SmallVectorImpl<TypedAttr> &operands) {

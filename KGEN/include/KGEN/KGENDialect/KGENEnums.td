@@ -31,7 +31,7 @@ def KGEN_POCAttr : I32EnumAttr<"POC", "Parameter Operator Code", [
   // Binary expressions.
   I32EnumAttrCase<"Shl", 8, "shl">,
   I32EnumAttrCase<"Shr", 9, "shr">,
-  I32EnumAttrCase<"Div", 10, "div">,
+  I32EnumAttrCase<"Div", 10, "div">, // NOTE division by 0 is undefined behavior
   I32EnumAttrCase<"Mod", 11, "mod">,
 
   // Compares.
