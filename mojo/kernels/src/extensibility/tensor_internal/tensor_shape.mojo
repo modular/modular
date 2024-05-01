@@ -15,7 +15,6 @@ from tensor import TensorShape
 
 
 from collections import List
-from math import min
 from sys.info import is_little_endian, sizeof
 
 from memory import memcpy
