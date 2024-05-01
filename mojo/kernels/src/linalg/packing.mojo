@@ -755,6 +755,16 @@ fn _pack_b_ndbuffer_impl[
         var n = b_input.dim(0) if transposed else b_input.dim(1)
         var k = b_input.dim(1) if transposed else b_input.dim(0)
 
+        # If we are on MacOS with below data types, we use cblas_sgemm, so override
+        # packing.
+        if use_apple_accelerate_lib(c_type, a_type, b_type):
+            memcpy(
+                output_buffer.data,
+                b_input.data,
+                n * k,
+            )
+            return
+
         # The config (in particular inner size and tile_k) needs to EXACTLY match the
         # values used in the matmul algorithm consuming this packed b matrix
 
@@ -824,11 +834,6 @@ fn pack_b_ndbuffer_M[
         kernel_type_m: The M value of the a_shape (MxN).
     """
 
-    # If we are on MacOS with below data types, we use cblas_sgemm, so override
-    # packing.
-    if use_apple_accelerate_lib(c_type, a_type, b_type):
-        return
-
     _pack_b_ndbuffer_impl[
         a_type,
         a_shape,
@@ -849,11 +854,6 @@ fn pack_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
-    # If we are on MacOS with below data types, we use cblas_sgemm, so override
-    # packing.
-    if use_apple_accelerate_lib(c_type, a_type, b_type):
-        return
-
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 
@@ -903,11 +903,6 @@ fn pack_transposed_b_ndbuffer_M[
         output_buffer: Output buffer to store the packed weight.
         kernel_type_m: The M value of the a_shape (MxN).
     """
-
-    # If we are on MacOS with below data types, we use cblas_sgemm, so override
-    # packing.
-    if use_apple_accelerate_lib(c_type, a_type, b_type):
-        return
 
     _pack_b_ndbuffer_impl[
         a_type,
