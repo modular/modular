@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, min
+from math import align_up
 
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from builtin.io import _printf

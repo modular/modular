@@ -13,7 +13,7 @@ from algorithm import parallel_memcpy
 ```
 """
 
-from math import div_ceil, min
+from math import div_ceil
 
 from memory import memcpy
 from runtime.llcl import Runtime

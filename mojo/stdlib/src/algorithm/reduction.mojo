@@ -12,11 +12,11 @@ from algorithm import map_reduce
 ```
 """
 
+from builtin.math import min as _min
 from math import align_down
 from math import all_true as _all_true
 from math import any_true as _any_true
 from math import div_ceil, iota
-from math import min as _min
 from math import none_true as _none_true
 from math.bit import cttz
 from sys.info import (

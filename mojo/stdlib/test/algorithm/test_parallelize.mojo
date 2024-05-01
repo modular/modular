@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil, min
+from math import div_ceil
 
 from algorithm import map, parallelize, sync_parallelize
 from buffer import Buffer

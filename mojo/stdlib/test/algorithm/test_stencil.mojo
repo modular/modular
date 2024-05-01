@@ -441,7 +441,7 @@ fn test_stencil_max_pool_dilation_2():
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
-        return math.max(val, result)
+        return max(val, result)
 
     @always_inline
     @__copy_capture(output)

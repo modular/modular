@@ -12,7 +12,7 @@ from algorithm import map
 ```
 """
 
-from math import align_down, div_ceil, is_power_of_2, max, min
+from math import align_down, div_ceil, is_power_of_2
 from os import abort
 from sys.info import num_physical_cores, sizeof, triple_is_nvidia_cuda
 

@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import max as _max
-from math import min as _min
+from builtin.math import max as _max
+from builtin.math import min as _min
 
 from algorithm import (
     all_true,

@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import min, mul
+from math import mul
 
 from algorithm.functional import (
     _elementwise_impl,

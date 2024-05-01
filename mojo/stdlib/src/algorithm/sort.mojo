@@ -13,7 +13,6 @@ from algorithm.sort import sort
 """
 
 from collections import List
-from math import max
 from math.bit import ctlz
 from sys.info import bitwidthof
 
