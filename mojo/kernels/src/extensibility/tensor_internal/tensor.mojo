@@ -713,9 +713,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
             var idx = indices[0]
             result_buffer.store(
                 idx,
-                math.clamp[type, width](
-                    buffer.load[width=width](idx), lower_bound, upper_bound
-                ),
+                buffer.load[width=width](idx).clamp(lower_bound, upper_bound),
             )
 
         elementwise[func=func, simd_width = simdwidthof[type](), rank=1](
