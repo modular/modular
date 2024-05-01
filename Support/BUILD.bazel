@@ -473,6 +473,7 @@ MODULAR_TELEMETRY_COPTS = [
     "-DENABLE_HTTP_SSL_PREVIEW=ON",
     "-DENABLE_OTLP_HTTP_SSL_PREVIEW=ON",
     "-Wno-global-constructors",  # Avoid errors coming from opentelemetry
+    "-Wno-covered-switch-default",  # Avoid errors coming from opentelemetry
 ]
 
 cc_library(
