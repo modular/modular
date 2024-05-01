@@ -1078,33 +1078,68 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
                                 const ExprNode *expr, CallSyntax syntax,
                                 function_ref<void()> errorHandler) {
 
+  OverloadSet result(declScope, shared, expr, syntax, /*isErroneous=*/false);
+  result.baseName = methodName;
+
   // If this is a previously-reported error, ignore and don't report an
   // additional error.
-  if (type.isTypeCheckErrorType())
-    return OverloadSet(declScope, shared, expr, syntax, /*erroneous=*/true);
+  if (type.isTypeCheckErrorType()) {
+    result.erroneous = true;
+    return result;
+  }
 
   SMLoc callLoc = expr->getLoc();
 
   // First perform a lookup to see if there are any candidates.
   auto lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, type,
                                                   /*searchParentScopes=*/false);
-  ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
-  if (resultDecls.empty()) {
-    if (!lookupResult.isErroneous() && errorHandler) // Already diagnosed?
-      errorHandler();
-    return OverloadSet(declScope, shared, expr, syntax,
-                       lookupResult.isErroneous());
+  // If an error was already reported, propagate it.
+  if (lookupResult.isErroneous()) {
+    result.erroneous = true;
+    return result;
   }
 
-  // If we find a vardecl or any other thing, then fail because it cannot be
-  // called.
-  if (!isa<LIT::FuncOp>(*resultDecls[0]))
-    return OverloadSet(declScope, shared, expr, syntax,
-                       lookupResult.isErroneous());
+  // If we have candidates directly on the receiver, add them.
+  if (lookupResult.isSuccess()) {
+    ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
+    assert(!resultDecls.empty() && "We know this succeeded");
 
-  // Otherwise we succeed! Form and return the overload set.
-  return OverloadSet(methodName, resultDecls, ParamBindings(declScope, shared),
-                     expr, syntax, lookupResult.isErroneous());
+    // If we find a vardecl or any other thing, then fail to find anything
+    // because it cannot be called.
+    if (!isa<LIT::FuncOp>(*resultDecls[0]))
+      // FIXME: This seems wrong. why aren't we emitting an error??
+      return result;
+
+    assert(result.fnDecls.empty() && "Already have entries");
+    result.fnDecls.assign(resultDecls.begin(), resultDecls.end());
+  }
+
+  // If the struct has a nonmaterializable target (e.g. "IntLiteral" will have
+  // "Int" as a nonmaterializable target), then it is implicitly convertible to
+  // that type.  Check to see if that type has the method: if so we can add them
+  // into the overload set.
+  if (ASTType nmTarget = type.getNonmaterializableTarget(shared)) {
+    lookupResult = shared.lookupAndResolveDecl(methodName, callLoc, nmTarget,
+                                               /*searchParentScopes=*/false);
+    if (lookupResult.isSuccess()) {
+      ArrayRef<ASTDecl *> resultDecls = lookupResult.getIfSuccess();
+      assert(!resultDecls.empty() && "We know this succeeded");
+
+      // If we find a vardecl or any other thing, then fail to find anything
+      // because it cannot be called.
+      if (!isa<LIT::FuncOp>(*resultDecls[0]))
+        // FIXME: This seems wrong. why aren't we emitting an error??
+        return result;
+      result.fnDecls.append(resultDecls.begin(), resultDecls.end());
+    }
+  }
+
+  // If we get this far and there are no candidates in the set, then we can't
+  // find anything.  Emit the error.
+  if (result.fnDecls.empty() && errorHandler)
+    errorHandler();
+
+  return result;
 }
 
 /// Lookup of a named named method on the specified type, filtered to match a
@@ -1116,33 +1151,20 @@ PValue OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
                            const ExprNode *callExpr, CallSyntax syntax,
                            function_ref<void()> lookupFailureErrorHandler,
                            bool shouldPrintOverloadErrors) {
-  ASTType nmTarget = type.getNonmaterializableTarget(shared);
-  auto doLookup = [&](ASTType type, bool shouldPrintError) -> PValue {
-    auto ovSet =
-        OverloadSet::lookup(declScope, shared, type, methodName, callExpr,
-                            syntax, lookupFailureErrorHandler);
+  auto ovSet = OverloadSet::lookup(declScope, shared, type, methodName,
+                                   callExpr, syntax, lookupFailureErrorHandler);
 
-    // If the core lookup failed, don't filter.
-    if (ovSet.isNull())
-      return {};
+  // If the core lookup failed, don't filter.
+  if (ovSet.isNull())
+    return {};
 
-    // Filter the overload set with the actual operands list.  If this
-    // fails, report an error (if we have an error handler) and reset to a
-    // null state so the client can check this.
-    return ovSet.filterOverloadSet(
-        callOperands, /*allowImplicitConversions=*/true,
-        /*emitDiagnosticOnFailure=*/shouldPrintError);
-  };
-
-  // If there is a nonmaterializableTarget, try using the original type first,
-  // then falling back on the target.
-  if (nmTarget) {
-    PValue ret = doLookup(type, false);
-    if (ret)
-      return ret;
-    type = nmTarget;
-  }
-  return doLookup(type, shouldPrintOverloadErrors);
+  // Filter the overload set with the actual operands list.  If this
+  // fails, report an error (if we have an error handler) and reset to a
+  // null state so the client can check this.
+  return ovSet.filterOverloadSet(
+      callOperands,
+      /*allowImplicitConversions=*/true,
+      /*emitDiagnosticOnFailure=*/shouldPrintOverloadErrors);
 }
 
 /// Try to resolve the overload set to a single function candidate, using the
@@ -1453,8 +1475,25 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   if (type.isRegisterPassable(expr->getLoc(), shared)) {
     for (auto fnDecl : callee.fnDecls) {
       if (cast<LIT::FuncOp>(*fnDecl).getSpecialFunctionKind() ==
-          SpecialFunctionKind::kInitReg)
+          SpecialFunctionKind::kInitReg) {
         hasInitSelfArg = false;
+        break;
+      }
+    }
+
+    // In the "-> Self" form of initializer, we may get ambiguity between
+    // non-materializable "() -> IntLiteral" and "() -> Int" overloads which
+    // cannot be resolved.  We're inferring based on result type, so manually
+    // remove these.
+    // TODO: Eliminate this special register form.
+    if (!hasInitSelfArg) {
+      auto *typeDecl = type.getDecl(shared);
+      for (size_t i = 0; i != callee.fnDecls.size();) {
+        if (callee.fnDecls[i]->getParentDecl() == typeDecl)
+          ++i;
+        else
+          callee.fnDecls.erase(callee.fnDecls.begin() + i);
+      }
     }
   }
 

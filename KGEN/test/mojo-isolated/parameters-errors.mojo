@@ -70,7 +70,7 @@ fn testSIMD(a: MySIMD[1, __mlir_attr.`#kgen.dtype.constant<f64> : !kgen.dtype`],
             b: MySIMD[2, __mlir_attr.`#kgen.dtype.constant<si32> : !kgen.dtype`]):
   var x = a+a
   var y = b+b
-  # xpected-note @below {{failed to infer parameter #0, parameter inferred to two different values: '2' and '1'}}
+  # TODO: {{failed to infer parameter #0, parameter inferred to two different values: '2' and '1'}}
   # expected-error @below {{invalid call to '__add__': callee expects at least 2 positional parameters, but 0 were specified}}
   var z = b+a
 
