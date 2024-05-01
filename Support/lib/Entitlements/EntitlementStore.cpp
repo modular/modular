@@ -784,7 +784,7 @@ ErrorOr<EntitlementStore> EntitlementStore::create(BufferRef &&clientKeyPriv,
 // EntitlementStore::getUserID
 //===----------------------------------------------------------------------===//
 
-ErrorOr<StringRef> EntitlementStore::getUserID() const {
+ErrorOr<std::string> EntitlementStore::getUserID() const {
   if (!clientCertChain || !clientCertChain->isAvailable())
     return Error("no client certificate");
 
@@ -792,7 +792,7 @@ ErrorOr<StringRef> EntitlementStore::getUserID() const {
   if (subjOr.isError())
     return subjOr.takeError();
 
-  return subjOr.takeValue().UserId;
+  return subjOr->UserId;
 }
 
 //===----------------------------------------------------------------------===//
