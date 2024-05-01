@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Ops that perform linear algebra."""
 
-from math import max
-
 from .casting import reshape
 from ..error import error
 from ..type import Dim, TensorType

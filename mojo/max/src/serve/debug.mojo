@@ -5,8 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Provides debugging tools and visualizations."""
 
-from math import min, max
-
 from .callbacks import ServerCallbacks
 from ._kserve_impl import ModelInferRequest, ModelInferResponse
 from ._serve_rt import Batch

@@ -67,8 +67,6 @@ Given two input tensor shapes, broadcasting works as following:
 3. All other dimensions will be asserted to be equivalent. If they are not, an exception will be raised.
 """
 
-from math import max as math_max
-
 from ..error import error
 
 
