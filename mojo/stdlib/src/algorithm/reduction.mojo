@@ -1834,7 +1834,7 @@ fn argmin(
     output: NDBuffer,
 ) raises:
     """
-    Finds the indices of the maximum element along the specified axis.
+    Finds the indices of the minimum element along the specified axis.
 
     Args:
         input: The input tensor.
