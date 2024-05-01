@@ -141,7 +141,7 @@ static PValue emitSingleParameterValue(ParamBindings::Binding binding,
   // If the parameter can be implicitly converted, do so.
   if (emitter.canImplicitlyConvertToType({bindingPVal, binding.expr},
                                          expectedType)) {
-    ++numImplicitConversions;
+    numImplicitConversions += 2;
     return emitter.emitPValue({bindingPVal, binding.expr}, EC_CallParamValue,
                               expectedType);
   }
@@ -900,7 +900,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   // Otherwise, we have multiple viable candidates that are ambiguous because
   // they all require the same number of implicit conversions.
   if (emitDiagnosticOnFailure && !isErroneous()) {
-    size_t minConversions = bestFitness->getNumImplicitConversions();
+    size_t minConversions = bestFitness->getNumImplicitConversions() / 2;
     auto diag = getShared().emitError(expr->getLoc(), "ambiguous call to '")
                 << baseName << "', each candidate requires " << minConversions
                 << " implicit conversion" << plural(minConversions)

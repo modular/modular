@@ -1393,7 +1393,6 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
                                  ASTType expectedType,
                                  size_t &numImplicitConversions,
                                  size_t &numMismatchedConventions,
-                                 bool &hasNonmaterializableConversion,
                                  bool allowImplicitConversions, SMLoc loc,
                                  ASTDecl &declScope, SharedState &shared) {
   switch (expectedConvention) {
@@ -1475,14 +1474,11 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
             argType.getNonmaterializableTarget(shared)) {
       if (nonmaterializableTarget.isEqualCanon(expectedType)) {
         // Implicit conversion for nonmaterializable types to their target
-        // type is allowed even if !allowImplicitConversions.  Even though
-        // this may be an implicit conversion, don't increment the
-        // numImplicitConversions count so that it will win against other
-        // implicit conversions.  However, we keep track of whether
-        // nonmaterializable autoconversion has happened so that functions
-        // that literally take the nonmaterializable type can still win
-        // instead of autoconverting if their signature matches exactly.
-        hasNonmaterializableConversion = true;
+        // type is allowed even if !allowImplicitConversions and count as half
+        // as much of a mismatch as a normal implicit conversion.  This enables
+        // exact matches to be more specific, and literals to be more compatible
+        // than an actual conversion.
+        ++numImplicitConversions;
         return {kValidType, expectedType};
       }
     }
@@ -1497,7 +1493,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         ExprEmitter(shared, declScope, ExprContext::EC_CallArgValue)
             .canImplicitlyConvertToType({argVal, operand.expr}, expectedType)) {
       // If we had one, this bumps our # implicit conversions.
-      ++numImplicitConversions;
+      numImplicitConversions += 2;
       return {kValidType, expectedType};
     }
 
@@ -1558,8 +1554,7 @@ int8_t OverloadFitness::Payload::getBoolMask() const {
   // specific than varargs matches (for example, when overloading a
   // `foo(Int)` and `foo(Int*)` we should pick the former if both work), and
   // all of these more specific than matches with variadic parameters.
-  return 4 * hasNonmaterializableConversion + 2 * passesVarArgArgument +
-         1 * hasVariadicParams;
+  return 2 * passesVarArgArgument + 1 * hasVariadicParams;
 }
 
 OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
@@ -1777,7 +1772,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // We will accumulate the implicit conversion in arguments to those counted
   // for the parameter bindings.
   size_t numImplicitConversions = bindingFitness.numImplicitConversions;
-  bool hasNonmaterializableConversion = false;
 
   // As we walk through the values provided as part of the argument list, we
   // match them up against arguments expected by the signature of the callee,
@@ -1796,7 +1790,6 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                             ASTType expectedType) {
     return checkOneOperand(operand, expectedConvention, expectedType,
                            numImplicitConversions, numMismatchedConventions,
-                           hasNonmaterializableConversion,
                            allowImplicitConversions, loc,
                            callable.paramBindings.declScope, shared);
   };
@@ -1940,6 +1933,5 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // Otherwise we succeeded!
   return {newBindings,
           Payload{numImplicitConversions, numMismatchedConventions,
-                  hasNonmaterializableConversion, passesVarArgArgument,
-                  bindingFitness.hasVariadicParams}};
+                  passesVarArgArgument, bindingFitness.hasVariadicParams}};
 }
