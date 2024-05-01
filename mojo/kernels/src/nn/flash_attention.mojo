@@ -15,6 +15,7 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
     map_reduce,
 )
+from algorithm.swap import swap
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from LinAlg.MatmulUtils import partition_work
@@ -22,7 +23,6 @@ from LinAlg.accumulate import _Accumulator
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
-
 from utils.index import Index
 
 
@@ -81,8 +81,8 @@ struct _Matmul[
         x: Int, y: Int
     ) capturing -> SIMD[type, simd_width]
 
-    @always_inline
     @staticmethod
+    @always_inline
     fn _inner_loop_a_lane[
         tile_m: Int, tile_n: Int
     ](
@@ -122,8 +122,8 @@ struct _Matmul[
 
         tile[loop_body, VariadicList[Int](simd_width, 1)](0, K)
 
-    @always_inline
     @staticmethod
+    @always_inline
     fn _inner_loop_a_broadcast[
         tile_m: Int, tile_n: Int
     ](
@@ -218,16 +218,34 @@ struct _Matmul[
 
     @no_inline
     @staticmethod
+    fn _pack_buffer_transposed[
+        input_b_fn: Self._input_fn_type, static_k: Dim
+    ](packed_ptr: DTypePointer[type], N: Int, dynamic_k: Int):
+        var K = int(static_k) if static_k else dynamic_k
+
+        var aligned_n = align_up(N, simd_width)
+
+        for n in range(N):
+            for k in range(K):
+                var val = input_b_fn[simd_width=1](n, k)
+                packed_ptr.store(k * aligned_n + n, val)
+
+        if aligned_n != N:
+            for k in range(K):
+                memset_zero(packed_ptr + k * aligned_n + N, aligned_n - N)
+
+    @no_inline
+    @staticmethod
     fn _pack_buffer[
-        input_b_fn: Self._input_fn_type,
+        input_b_fn: Self._input_fn_type
     ](packed_ptr: DTypePointer[type], N: Int, K: Int):
         var output_ptr = packed_ptr
         var aligned_n = align_up(N, simd_width)
 
         for k in range(K):
 
-            @always_inline
             @parameter
+            @always_inline
             fn packed_copy[_simd_width: Int](idx: Int):
                 var val = input_b_fn[_simd_width](idx, k)
                 output_ptr.store(idx, val)
@@ -241,8 +259,82 @@ struct _Matmul[
 
     @no_inline
     @staticmethod
+    fn _gemv_transposed[
+        input_b_fn: Self._input_fn_type, static_k: Dim
+    ](
+        N: Int,
+        dynamic_k: Int,
+        a_ptr: DTypePointer[type],
+        c_ptr: DTypePointer[type],
+    ):
+        var K = int(static_k) if static_k else dynamic_k
+
+        var cn_ptr = c_ptr
+
+        @parameter
+        @always_inline
+        fn process_cols[tile_n: Int](n: Int):
+            @parameter
+            @always_inline
+            fn do_reduce[
+                _simd_width: Int
+            ](
+                start: Int,
+                end: Int,
+                inout accum: StaticTuple[SIMD[type, _simd_width], tile_n],
+            ):
+                for k in range(start, end, _simd_width):
+                    var a_data = a_ptr.load[width=_simd_width](k)
+
+                    @unroll
+                    for nn in range(tile_n):
+                        var b_data = input_b_fn[_simd_width](n + nn, k)
+                        accum[nn] = b_data.fma(a_data, accum[nn])
+
+            @parameter
+            @always_inline
+            fn do_reduce_accum[
+                target_width: Int, _simd_width: Int
+            ](
+                accum: StaticTuple[SIMD[type, _simd_width], tile_n]
+            ) -> StaticTuple[SIMD[type, target_width], tile_n]:
+                var accum_reduce = StaticTuple[
+                    SIMD[type, target_width], tile_n
+                ]()
+
+                @unroll
+                for nn in range(tile_n):
+                    accum_reduce[nn] = accum[nn].reduce_add[target_width]()
+                return accum_reduce
+
+            alias unroll_factor = 2
+            alias unroll_simd_width = simd_width * unroll_factor
+
+            var unroll_loop_end = align_down(K, unroll_simd_width)
+            var unroll_accum = StaticTuple[
+                SIMD[type, unroll_simd_width], tile_n
+            ](0)
+            do_reduce(0, unroll_loop_end, unroll_accum)
+
+            var simd_loop_end = align_down(K, simd_width)
+            var simd_accum = do_reduce_accum[simd_width](unroll_accum)
+            do_reduce(unroll_loop_end, simd_loop_end, simd_accum)
+
+            var scalar_accum = do_reduce_accum[1](simd_accum)
+            do_reduce(simd_loop_end, K, scalar_accum)
+
+            @unroll
+            for nn in range(tile_n):
+                cn_ptr.store(nn, scalar_accum[nn])
+
+            cn_ptr += tile_n
+
+        tile[process_cols, VariadicList[Int](4, 1)](0, N)
+
+    @no_inline
+    @staticmethod
     fn _gemv[
-        input_b_fn: Self._input_fn_type,
+        input_b_fn: Self._input_fn_type
     ](
         N: Int,
         K: Int,
@@ -253,6 +345,7 @@ struct _Matmul[
         var cn_ptr = c_ptr
 
         @parameter
+        @always_inline
         fn process_cols[_simd_width: Int](n: Int):
             var accum = SIMD[type, _simd_width]()
 
@@ -272,6 +365,9 @@ struct _Matmul[
     @staticmethod
     fn _matmul[
         input_b_fn: Self._input_fn_type,
+        *,
+        transpose_b: Bool = False,
+        static_k: Dim = Dim(),
     ](
         M: Int,
         N: Int,
@@ -284,28 +380,38 @@ struct _Matmul[
         accumulate: Bool = False,
     ):
         if M == 1:
-            Self._gemv[input_b_fn](
-                N,
-                K,
-                a_ptr,
-                c_ptr,
-                accumulate=accumulate,
-            )
 
+            @parameter
+            if transpose_b:
+                # Transpose is implemented for the K tensor and accumulation
+                # is used with the V tensor, so simplify the implementation by
+                # falling back to the general path.
+                if not accumulate:
+                    return Self._gemv_transposed[input_b_fn, static_k](
+                        N, K, a_ptr, c_ptr
+                    )
+            else:
+                return Self._gemv[input_b_fn](
+                    N, K, a_ptr, c_ptr, accumulate=accumulate
+                )
+
+        @parameter
+        if transpose_b:
+            Self._pack_buffer_transposed[input_b_fn, static_k](packed_ptr, N, K)
         else:
             Self._pack_buffer[input_b_fn](packed_ptr, N, K)
 
-            Self._matmul_packed(
-                M,
-                align_up(N, simd_width),
-                K,
-                a_ptr,
-                a_stride,
-                packed_ptr,
-                c_ptr,
-                c_stride,
-                accumulate=accumulate,
-            )
+        Self._matmul_packed(
+            M,
+            align_up(N, simd_width),
+            K,
+            a_ptr,
+            a_stride,
+            packed_ptr,
+            c_ptr,
+            c_stride,
+            accumulate=accumulate,
+        )
 
 
 struct _FlashAttentionConfig[
@@ -358,11 +464,14 @@ struct _FlashAttention[
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
     output_static_shape: DimList,
+    *,
+    transpose_k: Bool = False,
 ]:
     alias _matmul = _Matmul[type, simd_width]
     alias _config = _FlashAttentionConfig[
         type, rank, simd_width, output_static_shape
     ]()
+    alias _depth_static_dim = output_static_shape.at[rank - 1]()
 
     @staticmethod
     fn _online_softmax[
@@ -385,8 +494,8 @@ struct _FlashAttention[
         for m in range(count_m):
             var qk_row = Buffer[type](qk_row_ptr, kv_seq_cnt)
 
-            @always_inline
             @parameter
+            @always_inline
             fn pass1_input_gen_fn[
                 _type: DType, _simd_width: Int
             ](idx: Int) -> SIMD[_type, _simd_width]:
@@ -409,8 +518,8 @@ struct _FlashAttention[
                 _simd_max,
             ](qk_row, max_vals[m])
 
-            @always_inline
             @parameter
+            @always_inline
             fn pass2_input_gen_fn[
                 _type: DType, _simd_width: Int
             ](idx: Int) -> SIMD[_type, _simd_width]:
@@ -435,8 +544,8 @@ struct _FlashAttention[
             max_vals[m] = max_val
             sum_vals[m] = sum_vals[m] * fixup_val + accum_val
 
-            @always_inline
             @parameter
+            @always_inline
             fn do_correction[_simd_width: Int](idx: Int):
                 var val = o_row_ptr.load[width=_simd_width](idx)
                 o_row_ptr.store(idx, val * fixup_val)
@@ -509,8 +618,8 @@ struct _FlashAttention[
                 var head = batch_head % num_heads
                 var batch = batch_head // num_heads
 
-                @always_inline
                 @parameter
+                @always_inline
                 fn get_nd_index(x: Int, y: Int) -> StaticIntTuple[rank]:
                     var idx: StaticIntTuple[rank]
 
@@ -544,11 +653,19 @@ struct _FlashAttention[
                     fn input_k_2d_fn[
                         _simd_width: Int
                     ](_n: Int, _k: Int) -> SIMD[type, _simd_width]:
-                        return input_k_fn[_simd_width, rank](
-                            get_nd_index(_k, _n + kv_seq_idx)
-                        )
+                        var x = _k
+                        var y = _n + kv_seq_idx
 
-                    Self._matmul._matmul[input_k_2d_fn](
+                        @parameter
+                        if transpose_k:
+                            swap(x, y)
+                        return input_k_fn[_simd_width, rank](get_nd_index(x, y))
+
+                    Self._matmul._matmul[
+                        input_k_2d_fn,
+                        transpose_b=transpose_k,
+                        static_k = Self._depth_static_dim,
+                    ](
                         count_m,
                         kv_seq_cnt,
                         depth_dim,
@@ -605,8 +722,8 @@ struct _FlashAttention[
                 for m in range(count_m):
                     var reciprocal = 1 / sum_vals[m]
 
-                    @always_inline
                     @parameter
+                    @always_inline
                     fn do_final[_simd_width: Int](idx: Int):
                         var v = oz_ptr.load[width=_simd_width](idx)
                         o_ptr.store(idx, v * reciprocal)
@@ -635,6 +752,8 @@ fn flash_attention[
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
     output_static_shape: DimList = DimList.create_unknown[rank](),
+    *,
+    transpose_k: Bool = False,
 ](
     q: NDBuffer[type, rank],
     k_shape: StaticIntTuple[rank],
@@ -650,6 +769,7 @@ fn flash_attention[
         input_v_fn,
         input_mask_fn,
         output_static_shape,
+        transpose_k=transpose_k,
     ].run(q, k_shape, v_shape, output, scale)
 
 

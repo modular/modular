@@ -15,7 +15,7 @@ from utils.index import Index, product
 
 
 def reference_attention[
-    type: DType, rank: Int
+    type: DType, rank: Int, *, transpose_k: Bool = False
 ](
     q_nd: NDBuffer[type, rank],
     k_nd: NDBuffer[type, rank],
@@ -40,13 +40,19 @@ def reference_attention[
     var batch_count = q_3d.dim(0)
     var seq_len = q_3d.dim(1)
     var depth_dim = q_3d.dim(2)
-    var kv_seq_len = k_3d.dim(2)
+    var kv_seq_len = v_3d.dim(1)
 
     assert_equal(batch_count, k_3d.dim(0))
-    assert_equal(depth_dim, k_3d.dim(1))
+
+    @parameter
+    if transpose_k:
+        assert_equal(kv_seq_len, k_3d.dim(1))
+        assert_equal(depth_dim, k_3d.dim(2))
+    else:
+        assert_equal(depth_dim, k_3d.dim(1))
+        assert_equal(kv_seq_len, k_3d.dim(2))
 
     assert_equal(batch_count, v_3d.dim(0))
-    assert_equal(kv_seq_len, v_3d.dim(1))
     assert_equal(depth_dim, v_3d.dim(2))
 
     assert_equal(batch_count, mask_3d.dim(0))
@@ -64,9 +70,10 @@ def reference_attention[
             for n in range(kv_seq_len):
                 var accum = Scalar[type](0)
                 for k in range(depth_dim):
-                    accum = q_3d[Index(b, m, k)].fma(
-                        k_3d[Index(b, k, n)], accum
+                    var k_3d_index = Index(b, n, k) if transpose_k else Index(
+                        b, k, n
                     )
+                    accum = q_3d[Index(b, m, k)].fma(k_3d[k_3d_index], accum)
                 score_2d[Index(m, n)] = accum
 
         # Apply scaling and masking to the score buffer
@@ -124,9 +131,9 @@ struct TestCaseConfig[batch_rank: Int]:
 
 
 def verify_output[
-    type: DType, batch_rank: Int, rank: Int, output_static_shape: DimList
+    type: DType, batch_rank: Int, rank: Int
 ](
-    output: NDBuffer[type, rank, output_static_shape],
+    output: NDBuffer[type, rank],
     ref_output: NDBuffer[type, rank],
     cfg: TestCaseConfig[batch_rank],
 ) -> None:
@@ -172,12 +179,14 @@ def build_ndbuffer[
 def test_case[
     type: DType,
     batch_rank: Int,
+    *,
     output_static_shape: DimList = DimList.create_unknown[batch_rank + 2](),
+    transpose_k: Bool = False,
 ](cfg: TestCaseConfig[batch_rank]):
     alias rank = batch_rank + 2
 
-    @always_inline
     @parameter
+    @always_inline
     fn build_shape(x: Int, y: Int) -> StaticIntTuple[rank]:
         var shape = StaticIntTuple[rank]()
 
@@ -192,9 +201,13 @@ def test_case[
 
     seed(42)
 
+    var k_shape = build_shape(
+        cfg.kv_seq_len, cfg.depth_dim
+    ) if transpose_k else build_shape(cfg.depth_dim, cfg.kv_seq_len)
+
     # Allocate the QKV tensors from the current sequence.
     var q = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
-    var k = build_ndbuffer[type](build_shape(cfg.depth_dim, cfg.kv_seq_len))
+    var k = build_ndbuffer[type](k_shape)
     var v = build_ndbuffer[type](build_shape(cfg.kv_seq_len, cfg.depth_dim))
 
     # Allocate the attention mask.
@@ -208,7 +221,9 @@ def test_case[
         build_shape(cfg.seq_len, cfg.depth_dim)
     )
 
-    reference_attention(q, k, v, mask, ref_output, cfg.scale)
+    reference_attention[transpose_k=transpose_k](
+        q, k, v, mask, ref_output, cfg.scale
+    )
 
     @parameter
     @always_inline
@@ -232,10 +247,16 @@ def test_case[
         return mask.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
 
     flash_attention[
-        type, rank, input_k_fn, input_v_fn, mask_fn, output_static_shape
+        type,
+        rank,
+        input_k_fn,
+        input_v_fn,
+        mask_fn,
+        output_static_shape,
+        transpose_k=transpose_k,
     ](q, k.get_shape(), v.get_shape(), output, cfg.scale)
 
-    verify_output(output, ref_output, cfg)
+    verify_output(output.make_dims_unknown(), ref_output, cfg)
 
     q.data.free()
     k.data.free()
@@ -245,8 +266,8 @@ def test_case[
     ref_output.data.free()
 
 
-def test_flash_attention[type: DType]():
-    test_case[type](
+def test_flash_attention[type: DType, *, transpose_k: Bool]():
+    test_case[type, transpose_k=transpose_k](
         TestCaseConfig(
             batch_dims=Index(1, 8),
             seq_len=1,
@@ -255,7 +276,7 @@ def test_flash_attention[type: DType]():
             scale=0.125,
         )
     )
-    test_case[type](
+    test_case[type, transpose_k=transpose_k](
         TestCaseConfig(
             batch_dims=Index(2, 3),
             seq_len=128,
@@ -264,7 +285,7 @@ def test_flash_attention[type: DType]():
             scale=0.25,
         )
     )
-    test_case[type](
+    test_case[type, transpose_k=transpose_k](
         TestCaseConfig(
             batch_dims=Index(8),
             seq_len=64,
@@ -273,7 +294,24 @@ def test_flash_attention[type: DType]():
             scale=0.25,
         )
     )
-    test_case[type, 1, DimList(Dim(), Dim(), 160)](
+    test_case[
+        type,
+        transpose_k=transpose_k,
+        output_static_shape = DimList(Dim(), Dim(), 128),
+    ](
+        TestCaseConfig(
+            batch_dims=Index(1),
+            seq_len=55,
+            kv_seq_len=127,
+            depth_dim=128,
+            scale=0.2,
+        )
+    )
+    test_case[
+        type,
+        transpose_k=transpose_k,
+        output_static_shape = DimList(Dim(), Dim(), 160),
+    ](
         TestCaseConfig(
             batch_dims=Index(1),
             seq_len=100,
@@ -282,7 +320,11 @@ def test_flash_attention[type: DType]():
             scale=0.1,
         )
     )
-    test_case[type, 1, DimList(Dim(), Dim(), 300)](
+    test_case[
+        type,
+        transpose_k=transpose_k,
+        output_static_shape = DimList(Dim(), Dim(), 300),
+    ](
         TestCaseConfig(
             batch_dims=Index(1),
             seq_len=100,
@@ -447,7 +489,7 @@ def test_case_split_kv[
         cfg.scale,
     )
 
-    verify_output(output, ref_output, cfg)
+    verify_output(output.make_dims_unknown(), ref_output, cfg)
 
     k_cache.data.free()
     v_cache.data.free()
@@ -493,5 +535,6 @@ def test_flash_attention_split_kv[type: DType]():
 
 
 def main():
-    test_flash_attention[DType.float32]()
+    test_flash_attention[DType.float32, transpose_k=False]()
+    test_flash_attention[DType.float32, transpose_k=True]()
     test_flash_attention_split_kv[DType.float32]()
