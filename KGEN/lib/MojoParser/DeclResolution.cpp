@@ -1080,10 +1080,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   // Push the debug scope for this function if necessary so that nested
   // operations have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
-  else if (shared.diBuilder)
-    diScopeGuard = shared.diBuilder->pushNoDebugScopeGuard();
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(funcOp.getLocScope());
 
   // Set up information about value arguments.
   Block *bodyBlock = funcOp.getBody();
@@ -1964,8 +1962,8 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
   // Push the debug scope for this struct if necessary so that nested operations
   // have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = structOp.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(structOp.getLocScope());
 
   if (ParserBase(shared, lexer).parseSuite(structDecl))
     return failure();
@@ -2221,8 +2219,8 @@ ParseResult DeclResolver::resolveBody(TraitDeclOp traitOp, Lexer &lexer,
   // Push the debug scope for this trait if necessary so that nested operations
   // have proper debug info.
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = traitOp.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(traitOp.getLocScope());
 
   if (ParserBase(shared, lexer).parseSuite(traitDecl))
     return failure();

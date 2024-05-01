@@ -77,9 +77,6 @@ public:
     return ScopeGuard(*this, scope);
   }
 
-  /// Push a no-debug scope guard to the stack.
-  ScopeGuard pushNoDebugScopeGuard() { return pushScopeGuard(nullptr); }
-
   /// Pop the current debuginfo scope off the stack.
   void popScope();
 

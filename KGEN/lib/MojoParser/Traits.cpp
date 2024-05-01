@@ -166,8 +166,8 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   if (!thunk)
     return;
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
-  if (DebugInfo::DIScopeAttr spAttr = thunk.getLocScope())
-    diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushScopeGuard(thunk.getLocScope());
 
   // Always inline the thunk. The calling convention conversion overhead is
   // guaranteed to be optimized away.
