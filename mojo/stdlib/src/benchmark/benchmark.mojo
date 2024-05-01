@@ -138,7 +138,6 @@ Note that the min total time will take precedence over max iterations
 """
 
 from collections import List
-from math import max, min
 from math.limit import max_finite, min_finite
 from sys._assembly import inlined_assembly
 from time import time_function
