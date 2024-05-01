@@ -24,6 +24,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include <llvm/ADT/STLExtras.h>
 #include <numeric>
 
 using namespace M;
@@ -1339,12 +1340,17 @@ static Attribute simplifyAssocOp(
 /// (e.g. `a*b` and `42`).  Otherwise return the operand as the first value and
 /// null as the second (standin for "multiplication by 1").
 static std::pair<TypedAttr, TypedAttr> decomposeAddend(TypedAttr operand) {
-  if (auto mul = dyn_castPE(POC::Mul, operand))
+  auto mul = dyn_cast<ParamOperatorAttr>(operand);
+  // NOTE we are bascially converting the "looser" MulNuw with undef behavior
+  // back to the tighter Mul with defined behavior on overflow. This allows us
+  // to fold things like `add(mul(X, 2), mul_nuw(X, -1))`
+  if (mul && llvm::is_contained({POC::MulNuw, POC::Mul}, mul.getOpcode())) {
     if (auto cst = dyn_cast<IntegerAttr>(mul.getOperands().back())) {
       auto nonCst =
           ParamOperatorAttr::get(POC::Mul, mul.getOperands().drop_back());
       return {nonCst, cst};
     }
+  }
   return {operand, TypedAttr()};
 }
 
