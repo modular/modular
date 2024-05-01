@@ -24,11 +24,72 @@ from collections import OptionalReg as Optional
 fn empty_tensor[
     type: DType, rank: Int
 ](shape: StaticIntTuple[rank]) -> Tensor[type, rank]:
+    """Creates an empty [`Tensor`](/engine/reference/mojo/extensibility/Tensor)
+    with the given shape.
+
+    For example, here's how to create a new tensor that matches an input shape:
+
+    ```mojo
+    fn gelu[type: DType, rank: Int](x: Tensor[type, rank]) -> Tensor[type, rank]:
+        var output = empty_tensor[type](x.shape)
+        # modify the output tensor here...
+        return output^
+    ```
+
+    Parameters:
+        type: The tensor data type.
+        rank: The tensor rank.
+
+    Args:
+        shape: The tensor shape.
+
+    Returns:
+        An empty [`Tensor`](/engine/reference/mojo/extensibility/Tensor) with
+        the specified type and shape.
+    """
     var ptr = DTypePointer[type].alloc(shape.flattened_length())
     return Tensor[type, rank](ptr, shape)
 
 
 struct Tensor[type: DType, static_rank: Int](Stringable):
+    """A tensor type designed to extend MAX Engine with custom ops.
+
+    Beware that this `Tensor` is completely different from the `Tensor` type
+    in the Mojo standard library. Currently, this `max.extensibility.Tensor`
+    is designed only for use when building custom ops for MAX Engine.
+
+    For example, here's how you can define a custom op with this `Tensor`:
+
+    ```mojo
+    from max.extensibility import Tensor, empty_tensor
+    from max import register
+    from math import erf, sqrt
+
+
+    @register.op("my_gelu")
+    fn gelu[type: DType, rank: Int](x: Tensor[type, rank]) -> Tensor[type, rank]:
+        var output = empty_tensor[type](x.shape)
+
+        @always_inline
+        @parameter
+        fn func[width: Int](i: StaticIntTuple[rank]) -> SIMD[type, width]:
+            var tmp = x.simd_load[width](i)
+            return tmp / 2 * (1 + erf(tmp / sqrt(2)))
+
+        output.for_each[func]()
+        return output^
+    ```
+
+    Then, you must create a Mojo package with this op and load it with your
+    model into MAX Engine. For more information, read about [MAX
+    extensibility](/engine/extensibility/).
+
+    Parameters:
+        type: DType of the underlying data.
+        static_rank: The tensor rank.
+
+    """
+
     var data: DTypePointer[type]
     var shape: StaticIntTuple[static_rank]
     var strides: StaticIntTuple[static_rank]
@@ -40,6 +101,15 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
         ptr: DTypePointer[type],
         shape: StaticIntTuple[static_rank],
     ):
+        """Constructs a new `Tensor`.
+
+        You usually should not instantiate a `Tensor` directly. Instead use
+        [`empty_tensor()`](/engine/reference/mojo/extensibility/empty_tensor).
+
+        Args:
+            ptr: A pointer to the tensor data.
+            shape: The shape of the tensor.
+        """
         self.data = ptr
         self.shape = shape
         self.strides = StaticIntTuple[static_rank]()
@@ -59,6 +129,16 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
         shape: StaticIntTuple[static_rank],
         strides: StaticIntTuple[static_rank],
     ):
+        """Constructs a new `Tensor`.
+
+        You usually should not instantiate a `Tensor` directly. Instead use
+        [`empty_tensor()`](/engine/reference/mojo/extensibility/empty_tensor).
+
+        Args:
+            ptr: A pointer to the tensor data.
+            shape: The shape of the tensor.
+            strides: The stride size for each dimension.
+        """
         self.data = ptr
         self.shape = shape
         self.strides = strides
@@ -76,10 +156,12 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
 
     @always_inline
     fn nelems(self) -> Int:
+        """Gets the number of elements in the tensor."""
         return self.shape.flattened_length()
 
     @always_inline
     fn rank(self) -> Int:
+        """Gets the tensor rank."""
         return static_rank
 
     @always_inline
@@ -101,10 +183,31 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
     fn store[
         width: Int
     ](inout self, index: StaticIntTuple[static_rank], value: SIMD[type, width]):
+        """Stores multiple values at the specified indices in the tensor.
+
+        Parameters:
+            width: The SIMD width.
+
+        Args:
+            index: The indices where to store the values.
+            value: The values to store.
+        """
         self._simd_store_internal(index, value)
 
     @always_inline
     fn store[width: Int](inout self, index: Int, value: SIMD[type, width]):
+        """Stores a single value at the specified index in the tensor.
+
+        Constraints:
+            The tensor's `static_rank` must be `1`.
+
+        Parameters:
+            width: The SIMD width.
+
+        Args:
+            index: The index where to store the values.
+            value: The values to store.
+        """
         constrained[
             self.static_rank == 1,
             (
@@ -125,10 +228,25 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
 
     @always_inline
     fn get_nd_indices(self) -> StaticIntTuple[static_rank]:
+        """Creates empty indices with the same rank as this tensor."""
         return StaticIntTuple[static_rank](0)
 
     @always_inline
     fn simd_load[simd_width: Int](self, index: Int) -> SIMD[type, simd_width]:
+        """Gets the values stored in the tensor at the given index.
+
+        Constraints:
+            The tensor's `static_rank` must be `1`.
+
+        Parameters:
+            simd_width: The SIMD width.
+
+        Args:
+            index: The index where the values are stored.
+
+        Returns:
+            The values as a [`SIMD`](/mojo/stdlib/builtin/simd/SIMD).
+        """
         constrained[
             static_rank == 1,
             (
@@ -144,6 +262,17 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
     fn simd_load[
         simd_width: Int,
     ](self, index: StaticIntTuple[static_rank]) -> SIMD[type, simd_width]:
+        """Gets the values stored in the tensor at the given indices.
+
+        Parameters:
+            simd_width: The SIMD width.
+
+        Args:
+            index: The indices where the values are stored.
+
+        Returns:
+            The values as a [`SIMD`](/mojo/stdlib/builtin/simd/SIMD).
+        """
         return self._simd_load_internal[simd_width](index)
 
     @always_inline
@@ -197,6 +326,15 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
             type, _width
         ],
     ](inout self):
+        """Executes a lambda for every element in the tensor.
+
+        The lambda function must take an `Int` parameter for the SIMD width,
+        and a `StaticIntTuple` argument for tensor indices, and then return a
+        `SIMD` with the mutated value at the given indeces.
+
+        Parameters:
+            func: The lambda function to execute for each tensor indeces.
+        """
         alias simd_width = simdwidthof[Self.type]()
 
         @always_inline
@@ -215,7 +353,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
         """Gets the tensor as a string.
 
         Returns:
-          A compact string of the tensor.
+            A compact string of the tensor.
         """
         var res = String("Tensor(")
 
