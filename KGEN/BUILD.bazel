@@ -930,6 +930,11 @@ globals_library(
     ],
 )
 
+opt_wrapper(
+    name = "CompilerRT.shared.file.opt",
+    dep = ":CompilerRT.shared.file",
+)
+
 # TODO: Move to configure.bzl?
 # Share this across variables:
 # https://bazel.build/build/share-variables#sharing_variables_across_multiple_build_files
