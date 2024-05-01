@@ -227,7 +227,7 @@ fn exp_mojo_opt[
     alias max_val = SIMD[type, simd_width](88.3762626647950)
 
     alias im_type = DType.float64
-    var xc = clamp(x, min_val, max_val).cast[im_type]()
+    var xc = x.clamp(min_val, max_val).cast[im_type]()
     var k = floor(xc.fma(inv_lg2, 0.5)).cast[im_type]()
 
     var r = k.fma(neg_ln2, xc)
@@ -253,7 +253,7 @@ fn exp_mojo_opt2[
     alias min_val = SIMD[type, simd_width](-87.3)
     alias max_val = SIMD[type, simd_width](87.3)
 
-    var xc = clamp(x, min_val, max_val)
+    var xc = x.clamp(min_val, max_val)
     var k = floor(xc * inv_lg2)
 
     var r = k.fma(L2Lf, k.fma(L2Uf, xc))
@@ -295,7 +295,7 @@ fn exp_mojo_opt3[
     alias min_val = SIMD[type, simd_width](-87.3)
     alias max_val = SIMD[type, simd_width](87.3)
 
-    var xc = clamp(x, min_val, max_val)
+    var xc = x.clamp(min_val, max_val)
     var k = floor(xc * inv_lg2)
 
     var r = k.fma(L2Lf, k.fma(L2Uf, xc))
@@ -338,7 +338,7 @@ fn exp_mlas[
     alias min_val = -88.3762626647949
     alias max_val = 88.3762626647950
 
-    var xc = clamp(x, min_val, max_val)
+    var xc = x.clamp(min_val, max_val)
     var k = floor(xc.fma(inv_lg2, 0.5))
     var r = k.fma(neg_ln2_hi, xc)
     var rr = k.fma(neg_ln2_lo, r)
@@ -368,7 +368,7 @@ fn mlas_llvm_ldexp[
     alias min_val = -88.3762626647949
     alias max_val = 88.3762626647950
 
-    var xc = clamp(x, min_val, max_val)
+    var xc = x.clamp(min_val, max_val)
     var k = floor(xc.fma(inv_lg2, 0.5))
     var r = k.fma(neg_ln2_hi, xc)
     var rr = k.fma(neg_ln2_lo, r)
@@ -392,11 +392,12 @@ def accuracy_test():
         var i1 = bitcast[DType.int32, 1](r1)
         var i2 = bitcast[DType.int32, 1](r2)
 
-        var id = int(clamp(i1 - i2, delta_min, delta_max))
+        var diff = i1 - i2
+        var id = int(diff.clamp(delta_min, delta_max))
         deltas[id - delta_min] = deltas[id - delta_min] + 1
 
         if id == delta_max:
-            print(f, r1, r2, i1 - i2)
+            print(f, r1, r2, diff)
 
     for i in range(delta_range):
         print("deltas", i + delta_min, deltas[i])
