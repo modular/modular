@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil, isclose, min, max
+from math import div_ceil, isclose
 from LinAlg.BatchedMatmul import batched_matmul
 from buffer import NDBuffer
 from buffer.list import DimList

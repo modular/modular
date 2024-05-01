@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import align_up, div_ceil, exp, max, min
+from math import align_up, div_ceil, exp
 from pathlib import Path
 
 from algorithm._gpu.reduction import reduce_launch

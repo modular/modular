@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil, max, min, isclose
+from math import div_ceil, isclose
 from random import random_si64, seed
 
 from buffer import NDBuffer

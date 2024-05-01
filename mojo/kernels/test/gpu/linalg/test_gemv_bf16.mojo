@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil, max, min
+from math import div_ceil
 
 from buffer import NDBuffer
 from buffer.list import DimList
