@@ -253,7 +253,7 @@ fn relu_n1[
     Returns:
         The result of the RELU N1 operation.
     """
-    return math.clamp(x, -1, 1)
+    return x.clamp(-1, 1)
 
 
 # ===----------------------------------------------------------------------=== #
