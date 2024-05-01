@@ -208,7 +208,8 @@ static ASTDecl *buildModuleOrPackageDecl(const std::filesystem::path &path,
   return buildPackageDecl(path, sharedState);
 }
 
-MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
+MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId,
+                                            bool eraseUnparsedDecls) {
   llvm::SourceMgr &sourceMgr = getSourceMgr();
 
   const llvm::MemoryBuffer *sourceBuf = sourceMgr.getMemoryBuffer(fileId);
@@ -216,7 +217,8 @@ MojoASTDeclRef MojoParserContext::parseFile(unsigned fileId) {
   std::filesystem::path filepath(filepathStr.str());
 
   ASTDecl *moduleDecl = buildModuleDecl(filepath, sourceBuf, impl->sharedState);
-  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl);
+  impl->sharedState.declResolver->resolveAllReferencedFrom(*moduleDecl,
+                                                           eraseUnparsedDecls);
 
   return MojoASTDeclRef(moduleDecl);
 }

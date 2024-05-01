@@ -1146,6 +1146,9 @@ void MojoDocument::getDocumentSymbols(
             addSymbol(field->getName(), lsp::SymbolKind::Field, range,
                       field->getType().str());
           })
+          .Case([&](TraitDeclView *traitDecl) {
+            addSymbol(traitDecl->getName(), lsp::SymbolKind::Interface, range);
+          })
           .Case([&](VariableDeclView *var) {
             // We only consider global variables here, we don't want to show
             // every conceivable decl.
@@ -1646,7 +1649,10 @@ MojoTextDocument::MojoTextDocument(const lsp::URIForFile &uri,
 }
 
 void MojoTextDocument::parseDocumentImpl() {
-  parsedDecl = getParserContext().parseFile(getSourceMgr().getMainFileID());
+  // Parse the file and make sure not to kill off things that weren't parsed,
+  // these may get referenced later.
+  parsedDecl = getParserContext().parseFile(getSourceMgr().getMainFileID(),
+                                            /*eraseUnparsedDecls=*/false);
   checkModuleSemantics(parsedDecl);
   processDocStrings(docStrings, parsedDecl);
 }

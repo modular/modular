@@ -1204,6 +1204,18 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
         iter->second.clear();
     });
 
+    // Clear out any decls in the scope that reference IR in the body.
+    for (auto &[name, decls] : decl.getDeclsInScope()) {
+      for (ASTDecl *decl : decls) {
+        TypeSwitch<DeclIRValue>(decl->getIRValue())
+            .Case<SRValue, SBValue, MBValue, MRValue, MLValue>(
+                [&](Value value) {
+                  if (!isa<mlir::BlockArgument>(value))
+                    decl->setIRValue(nullptr);
+                });
+      }
+    }
+
     body->clear();
     // Don't append anything to an empty function if this is a trait function.
   } else {
