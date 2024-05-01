@@ -1863,56 +1863,6 @@ fn argmin(
 
 
 # ===----------------------------------------------------------------------===#
-# shape function
-# ===----------------------------------------------------------------------===#
-
-
-@always_inline
-fn reduce_shape[
-    input_rank: Int,
-    input_type: DType,
-    axis_type: DType,
-    single_thread_blocking_override: Bool,
-](
-    input_buf: NDBuffer[input_type, input_rank],
-    axis_buf: NDBuffer[axis_type, 1],
-) raises -> StaticIntTuple[input_rank]:
-    """
-    Compute the output shape of a `pad` operation, and assert the inputs are
-    compatible.
-
-    Parameters:
-        input_rank: Input_rank of the input tensor.
-        input_type: Type of the input tensor.
-        axis_type: Type of the axis tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
-
-    Args:
-        input_buf: The input tensor.
-        axis_buf: The axis tensor.
-
-    Returns:
-        The output shape.
-    """
-
-    # extract hyper parameter
-    var axis = int(axis_buf[0])
-    if axis < 0:
-        axis += input_rank
-
-    if axis < 0 or input_rank <= axis:
-        raise Error(
-            "[reduction] normalized axis must be within range [0, input_rank)"
-        )
-
-    # compute and return the output shape
-    var output_shape = input_buf.get_shape()
-    output_shape[axis] = 1
-    return output_shape
-
-
-# ===----------------------------------------------------------------------===#
 # cumsum function
 # ===----------------------------------------------------------------------===#
 

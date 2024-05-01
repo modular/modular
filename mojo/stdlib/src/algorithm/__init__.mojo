@@ -44,7 +44,6 @@ from .reduction import (
     none_true,
     argmax,
     argmin,
-    reduce_shape,
     cumsum,
 )
 from .sort import partition, sort
