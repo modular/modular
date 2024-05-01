@@ -35,13 +35,13 @@ from utils.loop import unroll
 struct Inner_matmul_default(InnerMatmulKernel):
     @always_inline
     fn _accumulate[
-        simd_size: Int, a_row_size: Int, pack_inner_size: Int
+        simd_size: Int, kernel_rows: Int, kernel_cols: Int
     ](
         self,
         a: NDBuffer,
         b_packed: NDBuffer[_, 3, _],
         inout c_local: _Accumulator[
-            _, a_row_size, pack_inner_size // simd_size, simd_size
+            _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
         global_offset: GemmShape,
         tile_n_k_idx: StaticIntTuple[2],
@@ -59,7 +59,7 @@ struct Inner_matmul_default(InnerMatmulKernel):
         """
 
         # Seek outer indices in packed layout.
-        var n_outer_idx = tile_n_k_idx[0] // pack_inner_size
+        var n_outer_idx = tile_n_k_idx[0] // kernel_cols
 
         # Global K index.
         var global_k = global_offset.K + tile_n_k_idx[1]
@@ -71,10 +71,10 @@ struct Inner_matmul_default(InnerMatmulKernel):
 
         @parameter
         if prefetch_distance > 0:
-            alias prefetch_offset = prefetch_distance * pack_inner_size
+            alias prefetch_offset = prefetch_distance * kernel_cols
 
             @unroll
-            for idx in range(pack_inner_size // simd_size):
+            for idx in range(kernel_cols // simd_size):
                 b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
@@ -87,10 +87,10 @@ struct Inner_matmul_default(InnerMatmulKernel):
 
         # Loop over local accumulator tiles.
         @unroll
-        for idx0 in range(a_row_size):
+        for idx0 in range(kernel_rows):
 
             @unroll
-            for idx1 in range(pack_inner_size // simd_size):
+            for idx1 in range(kernel_cols // simd_size):
                 alias alignment = alignof[SIMD[c_type, simd_size]]()
 
                 var a_val = a_ptr[idx0 * K]
@@ -101,8 +101,8 @@ struct Inner_matmul_default(InnerMatmulKernel):
 
     @always_inline
     fn __inner_matmul__[
-        a_row_size: Int,
-        pack_inner_size: Int,
+        kernel_rows: Int,
+        kernel_cols: Int,
         # Skip the output c space boundary check if True.
         skip_boundary_check: Bool,
     ](
@@ -115,7 +115,7 @@ struct Inner_matmul_default(InnerMatmulKernel):
         tile_n_k: StaticIntTuple[2],
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
-        (a_row_size, TileN, TileK) tile.
+        (kernel_rows, TileN, TileK) tile.
         """
 
         alias simd_size = simdwidthof[c.type]()
@@ -129,10 +129,10 @@ struct Inner_matmul_default(InnerMatmulKernel):
         )
 
         var acc = LoadStore_default[
-            c.type, simd_size, skip_boundary_check, a_row_size, pack_inner_size
+            c.type, simd_size, skip_boundary_check, kernel_rows, kernel_cols
         ]()
 
-        for idx_n in range(0, tile_n_k[0], pack_inner_size):
+        for idx_n in range(0, tile_n_k[0], kernel_cols):
             # Initialize accumulation buffer
             #  either zero filling or load existing value.
             if global_offset.K == 0:

@@ -58,11 +58,11 @@ struct MatmulConfig:
     # Static info on simd vector size.
     var simd_size: Int
 
-    # Static loop unrolling size on M dimension.
-    var a_row_size: Int
+    # Static number of rows of the micro kernel.
+    var kernel_rows: Int
 
-    # Static inner dimension of packed data layout.
-    var pack_inner_size: Int
+    # Static number of columns of the micro kernel.
+    var kernel_cols: Int
 
     # Enum of the kernel shape, only two shapes currently
     var kernel_type: Bool
@@ -76,8 +76,8 @@ struct MatmulConfig:
         b_packed: Bool,
         packed_shape: DimList,
         simd_size: Int,
-        a_row_size: Int,
-        pack_inner_size: Int,
+        kernel_rows: Int,
+        kernel_cols: Int,
         kernel_type: Bool,
     ):
         self.transpose_a = transpose_a
@@ -86,8 +86,8 @@ struct MatmulConfig:
         self.b_packed = b_packed
         self.packed_shape = packed_shape
         self.simd_size = simd_size
-        self.a_row_size = a_row_size
-        self.pack_inner_size = pack_inner_size
+        self.kernel_rows = kernel_rows
+        self.kernel_cols = kernel_cols
         self.kernel_type = kernel_type
 
 
@@ -96,12 +96,12 @@ struct MatmulConfig:
 struct MicroKernelShape:
     """Record describing the inner kernel shape."""
 
-    var a_row_size: Int
+    var simd_rows: Int
 
-    var pack_inner_size: Int
+    var simd_cols: Int
 
-    fn __init__(height: Int, width: Int) -> MicroKernelShape:
-        return MicroKernelShape {a_row_size: height, pack_inner_size: width}
+    fn __init__(rows: Int, cols: Int) -> MicroKernelShape:
+        return MicroKernelShape {simd_rows: rows, simd_cols: cols}
 
 
 @value
@@ -241,7 +241,7 @@ fn calculate_tile_n_k[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    pack_inner_size: Int,
+    kernel_cols: Int,
 ](n: Int, k: Int) -> StaticIntTuple[2]:
     """Helper heuristic function to decide on tile size to partition the matmul
     given the cache size and desired data layout.
@@ -250,8 +250,7 @@ fn calculate_tile_n_k[
         a_type: The type of the A tensor.
         b_type: The type of the B tensor.
         c_type: The type of the C tensor.
-        pack_inner_size: The desired inner dimension of the packed data
-            layout.
+        kernel_cols: The umber of columns of the micro kernel.
 
     Returns:
         The calculated tile size to partition the matmul as (TileN, TileK).
@@ -262,7 +261,7 @@ fn calculate_tile_n_k[
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
     alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
-    var least_tile_n: Int = pack_inner_size
+    var least_tile_n: Int = kernel_cols
 
     # Max tile K size based on smallest Tile N.
     var largest_tile_k = align_down(pack_cache_size // least_tile_n, factor)
@@ -273,14 +272,14 @@ fn calculate_tile_n_k[
     var tile_k = min(largest_tile_k, align_up(k, factor))
 
     # Calculate number of InnerSize to fit in tile_n dimension,
-    var max_tile_n_in_inner_size = pack_cache_size // tile_k // pack_inner_size
-    var full_data_tile_n_in_inner_size = div_ceil(n, pack_inner_size)
+    var max_tile_n_in_inner_size = pack_cache_size // tile_k // kernel_cols
+    var full_data_tile_n_in_inner_size = div_ceil(n, kernel_cols)
     var tile_n_in_inner_size = min(
         max_tile_n_in_inner_size, full_data_tile_n_in_inner_size
     )
 
     # Calculate tile_n size.
-    var tile_n = tile_n_in_inner_size * pack_inner_size
+    var tile_n = tile_n_in_inner_size * kernel_cols
 
     return Index(tile_n, tile_k)
 
@@ -289,9 +288,9 @@ fn calculate_tile_n_k[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    pack_inner_size: Int,
+    kernel_cols: Int,
 ](global_tile_shape: GemmShape) -> StaticIntTuple[2]:
-    return calculate_tile_n_k[a_type, b_type, c_type, pack_inner_size](
+    return calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
         global_tile_shape.N, global_tile_shape.K
     )
 
@@ -301,25 +300,25 @@ fn _get_tile_n_k[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    pack_inner_size: Int,
+    kernel_cols: Int,
     transpose_b: Bool,
 ](b: NDBuffer[_, 2, _]) -> StaticIntTuple[2]:
     var tile_n_k: StaticIntTuple[2]
 
     @parameter
     if not transpose_b:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, pack_inner_size](
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
             b.dim(1), b.dim(0)
         )
     else:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, pack_inner_size](
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
             b.dim(0), b.dim(1)
         )
     return tile_n_k
 
 
 # The number of registers used for the inner kernel is:
-#   a_row_size*pack_inner_size + 1*pack_inner_size + 1
+#   kernel_rows*kernel_cols + 1*kernel_cols + 1
 fn get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
     @parameter
     if has_avx512f():
@@ -431,8 +430,8 @@ fn get_matmul_num_tasks[
     alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
     ]()
-    var max_row_tasks = div_ceil(m, 2 * kernel_shape.a_row_size)
-    var max_col_tasks = div_ceil(n, kernel_shape.pack_inner_size * simd_size)
+    var max_row_tasks = div_ceil(m, 2 * kernel_shape.simd_rows)
+    var max_col_tasks = div_ceil(n, kernel_shape.simd_cols * simd_size)
     num_tasks = min(num_tasks, max_row_tasks * max_col_tasks)
 
     return num_tasks
@@ -520,10 +519,8 @@ fn get_partitioned_matmul[
 
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
-    alias a_row_size = kernel_shape.a_row_size
-    alias pack_inner_size = kernel_shape.pack_inner_size * simdwidthof[
-        DType.float32
-    ]()
+    alias kernel_rows = kernel_shape.simd_rows
+    alias kernel_cols = kernel_shape.simd_cols * simdwidthof[c_type]()
 
     @parameter
     if heuristic == PartitionHeuristic.MOJO:
@@ -533,7 +530,7 @@ fn get_partitioned_matmul[
             # i8mm needs to have even partitions in m.
             # Only the last range is allowed to be odd.
             var partition = get_partitioned_matmul_mojo[
-                a_type, b_type, c_type, a_row_size, pack_inner_size, use_i8mm
+                a_type, b_type, c_type, kernel_rows, kernel_cols, use_i8mm
             ](m // 2, n, k, task_id, num_tasks)
 
             var t0 = 2 * partition.offset[0]
@@ -545,10 +542,10 @@ fn get_partitioned_matmul[
             return partition
         else:
             return get_partitioned_matmul_mojo[
-                a_type, b_type, c_type, a_row_size, pack_inner_size
+                a_type, b_type, c_type, kernel_rows, kernel_cols
             ](m, n, k, task_id, num_tasks)
     else:
-        return get_partitioned_matmul_im2col[a_row_size, pack_inner_size](
+        return get_partitioned_matmul_im2col[kernel_rows, kernel_cols](
             m, n, k, task_id, num_tasks
         )
 
@@ -557,24 +554,20 @@ fn get_partitioned_matmul_mojo[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    micro_kernel_m: Int,
-    micro_kernel_n: Int,
+    kernel_m: Int,
+    kernel_n: Int,
     use_i8mm: Bool = False,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     var shape = get_partitioned_matmul_mojo_shape[
-        a_type, b_type, c_type, micro_kernel_m, micro_kernel_n, use_i8mm
+        a_type, b_type, c_type, kernel_m, kernel_n, use_i8mm
     ](m, n, k, num_tasks)
     var num_row_tasks = shape[0]
     var num_col_tasks = shape[1]
     var row_task_id = task_id // num_col_tasks
     var col_task_id = task_id % num_col_tasks
 
-    var row_range = partition_work(
-        row_task_id, num_row_tasks, m, micro_kernel_m
-    )
-    var col_range = partition_work(
-        col_task_id, num_col_tasks, n, micro_kernel_n
-    )
+    var row_range = partition_work(row_task_id, num_row_tasks, m, kernel_m)
+    var col_range = partition_work(col_task_id, num_col_tasks, n, kernel_n)
     return SubMatmulConfig(
         Index(row_range[0], col_range[0], 0),
         Index(row_range[1], col_range[1], k),
@@ -585,8 +578,8 @@ fn get_partitioned_matmul_mojo_shape[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    micro_kernel_m: Int,
-    micro_kernel_n: Int,
+    kernel_m: Int,
+    kernel_n: Int,
     use_i8mm: Bool,
 ](m: Int, n: Int, k: Int, num_tasks: Int) -> StaticIntTuple[2]:
     var num_row_tasks = 1
@@ -594,8 +587,8 @@ fn get_partitioned_matmul_mojo_shape[
 
     var min_work = m * n
 
-    var num_packs_m = div_ceil(m, micro_kernel_m)
-    var num_packs_n = div_ceil(n, micro_kernel_n)
+    var num_packs_m = div_ceil(m, kernel_m)
+    var num_packs_n = div_ceil(n, kernel_n)
     var max_num_packs_m = num_packs_m
     var max_num_packs_n = num_packs_n
     if (use_i8mm and 2 * m > n) or m > n:
@@ -606,9 +599,9 @@ fn get_partitioned_matmul_mojo_shape[
             max_num_packs_n = min(num_packs_n, num_packs_n2)
     else:
         # get the minimum work in n
-        var worki = micro_kernel_n * max((num_packs_n // num_tasks), 1)
+        var worki = kernel_n * max((num_packs_n // num_tasks), 1)
         # ensure the work in m is not much smaller than in n
-        var num_packs_m2 = div_ceil(m, align_down(worki, micro_kernel_m))
+        var num_packs_m2 = div_ceil(m, align_down(worki, kernel_m))
         if num_packs_n * num_packs_m2 >= num_tasks:
             max_num_packs_m = min(max_num_packs_m, num_packs_m2)
 
@@ -616,11 +609,9 @@ fn get_partitioned_matmul_mojo_shape[
     max_num_packs_n = min(max_num_packs_n, num_tasks)
     # Loop over all possible partitions and find the the partition that balances the work best.
     for j in range(max_num_packs_m, 0, -1):
-        var workj = micro_kernel_m * div_ceil(num_packs_m, j) if j != 1 else m
+        var workj = kernel_m * div_ceil(num_packs_m, j) if j != 1 else m
         for i in range(min(num_tasks // j, max_num_packs_n), 0, -1):
-            var worki = micro_kernel_n * div_ceil(
-                num_packs_n, i
-            ) if i != 1 else n
+            var worki = kernel_n * div_ceil(num_packs_n, i) if i != 1 else n
             var work = workj * worki
             if work <= min_work:
                 min_work = work
@@ -636,8 +627,8 @@ fn get_partitioned_matmul_mojo_shape[
 
 
 fn get_partitioned_matmul_im2col[
-    micro_kernel_m: Int,
-    micro_kernel_n: Int,
+    kernel_m: Int,
+    kernel_n: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     # Accessing A is more expensive in im2col than accessing B.
     # Time a factor to M to var the heuristic bias on partitioning M.
@@ -652,7 +643,7 @@ fn get_partitioned_matmul_im2col[
     var num_col_tasks = ideal_num_col_tasks
 
     # Prioritize having at least two packs in N so that A is reused.
-    var max_num_col_tasks = min(div_ceil(n, 2 * micro_kernel_n), num_tasks)
+    var max_num_col_tasks = min(div_ceil(n, 2 * kernel_n), num_tasks)
     if ideal_num_col_tasks > max_num_col_tasks:
         num_col_tasks = max_num_col_tasks
         num_row_tasks = num_tasks // num_col_tasks
@@ -677,12 +668,8 @@ fn get_partitioned_matmul_im2col[
 
     var row_task_id = task_id // num_col_tasks
     var col_task_id = task_id % num_col_tasks
-    var row_range = partition_work(
-        row_task_id, num_row_tasks, m, micro_kernel_m
-    )
-    var col_range = partition_work(
-        col_task_id, num_col_tasks, n, micro_kernel_n
-    )
+    var row_range = partition_work(row_task_id, num_row_tasks, m, kernel_m)
+    var col_range = partition_work(col_task_id, num_col_tasks, n, kernel_n)
     return SubMatmulConfig(
         Index(row_range[0], col_range[0], 0),
         Index(row_range[1], col_range[1], k),
@@ -737,11 +724,6 @@ fn get_mm_config[
     """
     alias simd_size = simdwidthof[c_type]()
 
-    # number of k iterations to prefetch ahead on the
-    #   inner micro kernel loop.
-    alias prefetch_b_distance_k = get_matmul_prefetch_b_distance_k()
-    alias factor = 4 if use_i8mm_fn[a_type, b_type, c_type]() else simd_size
-
     alias kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
     ]()
@@ -755,8 +737,8 @@ fn get_mm_config[
         ) else b_packed,
         packed_shape=DimList.create_unknown[3](),
         simd_size=simd_size,
-        a_row_size=kernel_shape.a_row_size,
-        pack_inner_size=kernel_shape.pack_inner_size * factor,
+        kernel_rows=kernel_shape.simd_rows,
+        kernel_cols=kernel_shape.simd_cols * simd_size,
         kernel_type=kernel_type,
     )
 

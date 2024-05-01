@@ -15,9 +15,9 @@ from utils.index import Index
 
 alias type = DType.float32
 alias simd_size: Int = simdwidthof[DType.float32]()
-alias pack_inner_size: Int = 4
-alias tile_inner_size: Int = pack_inner_size * simd_size
-alias width = 2 * tile_inner_size
+alias simd_cols: Int = 4
+alias kernel_cols: Int = simd_cols * simd_size
+alias width = 2 * kernel_cols
 
 alias N: Int = 128
 alias K: Int = 128
@@ -26,17 +26,15 @@ alias kc = 128
 
 @export(ABI="C")
 fn pack_b(
-    packed_b: NDBuffer[
-        type, 3, DimList(width // tile_inner_size, K, tile_inner_size)
-    ],
+    packed_b: NDBuffer[type, 3, DimList(width // kernel_cols, K, kernel_cols)],
     b: NDBuffer[type, 2, DimList(K, N)],
 ):
     PackMatrixCols[
         DimList(K, N),
-        DimList(width // tile_inner_size, K, tile_inner_size),
+        DimList(width // kernel_cols, K, kernel_cols),
         type,
         simd_size,
-        tile_inner_size,
+        kernel_cols,
         False,  # use_vnni
         False,  # use_i8mm
     ].run(
@@ -50,7 +48,7 @@ fn pack_b(
 
 fn test_pack_b():
     var packed_b = NDBuffer[
-        type, 3, DimList(width // tile_inner_size, K, tile_inner_size)
+        type, 3, DimList(width // kernel_cols, K, kernel_cols)
     ].aligned_stack_allocation[64]()
     packed_b.fill(1)
     var b = NDBuffer[type, 2, DimList(K, N)].aligned_stack_allocation[64]()

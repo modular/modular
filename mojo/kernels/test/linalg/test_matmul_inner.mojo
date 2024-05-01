@@ -34,8 +34,8 @@ alias K: Int = 256
 
 
 fn _matmul_inner_loop[
-    a_row_size: Int,
-    pack_inner_size: Int,
+    kernel_rows: Int,
+    kernel_cols: Int,
     skip_col_bound: Bool,
     saturated_vnni: Bool,
 ](
@@ -51,19 +51,19 @@ fn _matmul_inner_loop[
     @parameter
     if kernel_id == InnerKernelID.DEFAULT:
         Inner_matmul_default().__inner_matmul__[
-            a_row_size, pack_inner_size, skip_col_bound
+            kernel_rows, kernel_cols, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif kernel_id == InnerKernelID.VNNI:
         Inner_matmul_vnni[saturated_vnni]().__inner_matmul__[
-            a_row_size, pack_inner_size, skip_col_bound
+            kernel_rows, kernel_cols, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif kernel_id == InnerKernelID.NEON:
         Inner_matmul_neon().__inner_matmul__[
-            a_row_size, pack_inner_size, skip_col_bound
+            kernel_rows, kernel_cols, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif kernel_id == InnerKernelID.I8MM:
         Inner_matmul_i8mm().__inner_matmul__[
-            a_row_size, pack_inner_size, skip_col_bound
+            kernel_rows, kernel_cols, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     else:
         constrained[False, "no _run_inner_loop implementation"]()
@@ -80,8 +80,8 @@ fn matmul_inner_loop[
     k: Int,
 ):
     _matmul_inner_loop[
-        config.a_row_size,
-        config.pack_inner_size,
+        config.kernel_rows,
+        config.kernel_cols,
         True,  # skip_col_bound
         False,  # saturated_vnni
     ](
@@ -115,16 +115,16 @@ fn test_micro_kernel[
     alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
     alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
-    var np = align_up(n, config.pack_inner_size)
+    var np = align_up(n, config.kernel_cols)
     var kh = align_up(k, factor)
 
     alias alignment = alignof[SIMD[c_type, config.simd_size]]()
 
     var a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
     var b_packed_ptr = DTypePointer[b_type].alloc(
-        (np // config.pack_inner_size)
+        (np // config.kernel_cols)
         * (kh // factor)
-        * (factor * config.pack_inner_size),
+        * (factor * config.kernel_cols),
         alignment=alignment,
     )
     var c_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
@@ -133,9 +133,9 @@ fn test_micro_kernel[
     var b_packed = NDBuffer[b_type, 3, config.packed_shape](
         b_packed_ptr,
         Index(
-            np // config.pack_inner_size,
+            np // config.kernel_cols,
             kh // factor,
-            factor * config.pack_inner_size,
+            factor * config.kernel_cols,
         ),
     )
 

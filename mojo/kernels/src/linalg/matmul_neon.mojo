@@ -33,14 +33,14 @@ struct Inner_matmul_neon(InnerMatmulKernel):
     fn _accumulate_lane[
         simd_size: Int,
         a_col_size: Int,
-        a_row_size: Int,
-        pack_inner_size: Int,
+        kernel_rows: Int,
+        kernel_cols: Int,
     ](
         self,
         a: NDBuffer,
         b_packed: NDBuffer[_, 3, _],
         inout c_local: _Accumulator[
-            _, a_row_size, pack_inner_size // simd_size, simd_size
+            _, kernel_rows, kernel_cols // simd_size, simd_size
         ],
         global_offset: GemmShape,
         tile_n_k_idx: StaticIntTuple[2],
@@ -58,7 +58,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         """
 
         # Seek outer indices in packed layout.
-        var n_outer_idx = tile_n_k_idx[0] // pack_inner_size
+        var n_outer_idx = tile_n_k_idx[0] // kernel_cols
 
         # Global K index.
         var global_k = global_offset.K + tile_n_k_idx[1]
@@ -66,11 +66,11 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         var b_ptr = b_packed._offset(Index(n_outer_idx, tile_n_k_idx[1], 0))
 
         var a_vals = stack_allocation[
-            a_row_size, SIMD[c_local.type, a_col_size]
+            kernel_rows, SIMD[c_local.type, a_col_size]
         ]()
 
         @unroll
-        for row in range(a_row_size):
+        for row in range(kernel_rows):
             var global_m = global_offset.M + row
             var a_val = a.load[width=a_col_size](global_m, global_k).cast[
                 c_local.type
@@ -81,13 +81,13 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         for lane in range(a_col_size):
 
             @unroll
-            for col in range(pack_inner_size // simd_size):
+            for col in range(kernel_cols // simd_size):
                 var b_val = b_ptr.offset(col * simd_size).load[
                     width=simd_size
                 ]().cast[c_local.type]()
 
                 @unroll
-                for row in range(a_row_size):
+                for row in range(kernel_rows):
                     var a_val = a_vals[row]
                     var c_idx = Index(row, col * simd_size)
                     var c_val = c_local[row, col]
@@ -96,12 +96,12 @@ struct Inner_matmul_neon(InnerMatmulKernel):
                     )
                     c_local[row, col] = c_val
 
-            b_ptr = b_ptr.offset(pack_inner_size)
+            b_ptr = b_ptr.offset(kernel_cols)
 
     @always_inline
     fn __inner_matmul__[
-        a_row_size: Int,
-        pack_inner_size: Int,
+        kernel_rows: Int,
+        kernel_cols: Int,
         # Skip the output c space boundary check if True.
         skip_boundary_check: Bool,
     ](
@@ -114,7 +114,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         tile_n_k: StaticIntTuple[2],
     ):
         """Utility function on the inner loop. Run the inner kernel on the whole
-        (a_row_size, TileN, TileK) tile.
+        (kernel_rows, TileN, TileK) tile.
         """
         alias simd_size = simdwidthof[c.type]()
 
@@ -126,10 +126,10 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         )
 
         var acc = LoadStore_neon[
-            c.type, simd_size, skip_boundary_check, a_row_size, pack_inner_size
+            c.type, simd_size, skip_boundary_check, kernel_rows, kernel_cols
         ]()
 
-        for idx_n in range(0, tile_n_k[0], pack_inner_size):
+        for idx_n in range(0, tile_n_k[0], kernel_cols):
             # Initialize accumulation buffer
             #  either zero filling or load existing value.
             if global_offset.K == 0:

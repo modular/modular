@@ -70,8 +70,8 @@ from .MatmulPack import (
 
 trait InnerMatmulKernel(Copyable):
     fn __inner_matmul__[
-        a_row_size: Int,
-        pack_inner_size: Int,
+        kernel_rows: Int,
+        kernel_cols: Int,
         # Skip the output c space boundary check if True.
         skip_boundary_check: Bool,
     ](
@@ -135,7 +135,7 @@ fn tiledMatmulRun[
     """
 
     var tile_n_k = calculate_tile_n_k[
-        a.type, b.type, c.type, config.pack_inner_size
+        a.type, b.type, c.type, config.kernel_cols
     ](global_tile_shape)
 
     var matmul = TiledMatmul[config, elementwise_epilogue_enabled, kernel_id](
@@ -211,7 +211,7 @@ struct TiledMatmul[
     fn _outer_m_loop[
         last_n_tile: Bool,
         last_k_tile: Bool,
-        m_loop_pack_inner_size: Int,
+        m_loop_kernel_cols: Int,
     ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int):
         """
         Helper function: Pack a subtile of B and iterate through all the rows
@@ -220,7 +220,7 @@ struct TiledMatmul[
         Parameters:
             last_n_tile: The last n tile.
             last_k_tile: The last k tile.
-            m_loop_pack_inner_size: Inner dimension of the packed data layout.
+            m_loop_kernel_cols: Inner dimension of the packed data layout.
 
         Args:
             global_offset: 3D global offset within the whole
@@ -238,7 +238,7 @@ struct TiledMatmul[
         @always_inline
         fn unswitch_residual_n[skip_col_bound: Bool]():
             var b_packed_tile = self.b_tile_generator.get_tile[
-                m_loop_pack_inner_size
+                m_loop_kernel_cols
             ](
                 global_offset,
                 Index(sub_tile_n, sub_tile_k),
@@ -258,7 +258,7 @@ struct TiledMatmul[
             fn row_iteration[tile_size: Int](row_offset: Int):
                 self.alg.__inner_matmul__[
                     tile_size,
-                    m_loop_pack_inner_size,
+                    m_loop_kernel_cols,
                     skip_col_bound,
                 ](
                     self.c,
@@ -282,7 +282,7 @@ struct TiledMatmul[
             if kernel_id == InnerKernelID.I8MM:
                 tile[
                     row_iteration,
-                    VariadicList[Int](2 * config.a_row_size, 8, 6, 4, 2, 1),
+                    VariadicList[Int](2 * config.kernel_rows, 8, 6, 4, 2, 1),
                 ](
                     0,  # starting row offset
                     knm_bounds.M,  # row bound
@@ -290,7 +290,7 @@ struct TiledMatmul[
             else:
                 tile[
                     row_iteration,
-                    VariadicList[Int](config.a_row_size, 4, 3, 2, 1),
+                    VariadicList[Int](config.kernel_rows, 4, 3, 2, 1),
                 ](
                     0,  # starting row offset
                     knm_bounds.M,  # row bound
@@ -347,7 +347,7 @@ struct TiledMatmul[
         @parameter
         if not config.b_packed:
             alias secondary_tiles = VariadicList[Int](
-                config.pack_inner_size, 2 * config.simd_size, config.simd_size
+                config.kernel_cols, 2 * config.simd_size, config.simd_size
             )
             var primary_tiles = VariadicList[Int](
                 tile_n, 2 * config.simd_size, config.simd_size
@@ -357,10 +357,10 @@ struct TiledMatmul[
             )
         else:
             alias secondary_tiles_packed_b = VariadicList[Int](
-                config.pack_inner_size
+                config.kernel_cols
             )
             var primary_tiles_packed_b = VariadicList[Int](tile_n)
-            tile[secondary_tiles_packed_b, config.pack_inner_size, m_loop](
+            tile[secondary_tiles_packed_b, config.kernel_cols, m_loop](
                 0, valid_col_count, primary_tiles_packed_b, tile_n
             )
 
@@ -394,7 +394,7 @@ struct TiledMatmul[
         )
 
     # Utility to reshape the dynamic buffer:
-    #  need to remap every time K and pack_inner_size changes.
+    #  need to remap every time K and kernel_cols changes.
     fn _view_buffer_as(
         self,
         b_packed_ptr: DTypePointer[b_type],

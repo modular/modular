@@ -554,7 +554,7 @@ fn pack_matmul_b_shape_func_M[
             kernel_type=kernel_type,
         ]()
         tile_n_k = _get_tile_n_k[
-            a_type, b_type, c_type, config.pack_inner_size, config.transpose_b
+            a_type, b_type, c_type, config.kernel_cols, config.transpose_b
         ](b_input)
 
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
@@ -784,13 +784,13 @@ fn _pack_b_ndbuffer_impl[
                 a_type,
                 b_type,
                 c_type,
-                config.pack_inner_size,
+                config.kernel_cols,
                 config.transpose_b,
             ](b_input)
             pack_b[
                 transposed,
                 config.simd_size,
-                config.pack_inner_size,
+                config.kernel_cols,
                 a_type,
                 b_type,
                 c_type,
