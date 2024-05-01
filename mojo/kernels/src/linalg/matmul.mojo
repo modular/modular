@@ -33,7 +33,6 @@ from .MatmulUtils import (
     get_partitioned_matmul,
     packA_i8mm,
     get_mm_config,
-    use_i8mm_fn,
     InnerKernelID,
     select_inner_kernel,
 )
@@ -569,7 +568,7 @@ fn _matmul_cpu[
             num_threads if num_threads > 0 else Runtime().parallelism_level(),
         )
 
-        alias use_i8mm = use_i8mm_fn[a.type, b.type, c.type]()
+        alias use_i8mm = kernel_id == InnerKernelID.I8MM
         alias simd_size = simdwidthof[c.type]()
         alias alignment = alignof[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)

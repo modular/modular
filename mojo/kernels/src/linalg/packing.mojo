@@ -32,6 +32,7 @@ from .MatmulUtils import (
     get_mm_config,
     use_i8mm_fn,
     use_vnni_fn,
+    get_pack_data_size,
 )
 
 from .transpose import transpose_inplace
@@ -983,7 +984,7 @@ struct BTileGenerator[
         @parameter
         if not b_packed:
             b_tile_stack_ptr = stack_allocation[
-                config.pack_data_size,
+                get_pack_data_size[b_type](),
                 b_type,
                 alignof[SIMD[b_type, simdwidthof[b_type]()]](),
             ]()

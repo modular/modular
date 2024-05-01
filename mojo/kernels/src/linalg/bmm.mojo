@@ -421,11 +421,7 @@ fn _batched_matmul_cpu[
                 return
 
             alias config = get_mm_config[
-                a_type,
-                b_type,
-                c_type,
-                transpose_b=transpose_b,
-                saturated_vnni=saturated_vnni,
+                a_type, b_type, c_type, transpose_b=transpose_b
             ]()
 
             _submatmul_sequential_sync[

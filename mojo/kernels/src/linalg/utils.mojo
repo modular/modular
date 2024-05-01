@@ -64,9 +64,6 @@ struct MatmulConfig:
     # Static inner dimension of packed data layout.
     var pack_inner_size: Int
 
-    # Static info on number of elements to pack in the packing routine.
-    var pack_data_size: Int
-
     # Enum of the kernel shape, only two shapes currently
     var kernel_type: Bool
 
@@ -81,7 +78,6 @@ struct MatmulConfig:
         simd_size: Int,
         a_row_size: Int,
         pack_inner_size: Int,
-        pack_data_size: Int,
         kernel_type: Bool,
     ):
         self.transpose_a = transpose_a
@@ -92,7 +88,6 @@ struct MatmulConfig:
         self.simd_size = simd_size
         self.a_row_size = a_row_size
         self.pack_inner_size = pack_inner_size
-        self.pack_data_size = pack_data_size
         self.kernel_type = kernel_type
 
 
@@ -123,16 +118,10 @@ struct GemmShape:
     fn get[
         transpose_a: Bool,
         transpose_b: Bool,
-        c_shape: DimList,
-        a_shape: DimList,
-        b_shape: DimList,
-        a_type: DType,
-        b_type: DType,
-        c_type: DType,
     ](
-        c: NDBuffer[c_type, 2, c_shape],
-        a: NDBuffer[a_type, 2, a_shape],
-        b: NDBuffer[b_type, 2, b_shape],
+        c: NDBuffer[_, 2, _],
+        a: NDBuffer[_, 2, _],
+        b: NDBuffer[_, 2, _],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -741,7 +730,6 @@ fn get_mm_config[
     a_packed: Bool = False,
     b_packed: Bool = False,
     kernel_type: Bool = False,
-    saturated_vnni: Bool = False,
 ]() -> MatmulConfig:
     """Utility function to extract matmul configuration parameters for exported
     Functions.
@@ -769,7 +757,6 @@ fn get_mm_config[
         simd_size=simd_size,
         a_row_size=kernel_shape.a_row_size,
         pack_inner_size=kernel_shape.pack_inner_size * factor,
-        pack_data_size=get_pack_data_size[b_type](),
         kernel_type=kernel_type,
     )
 

@@ -111,7 +111,6 @@ fn test_micro_kernel[
         b_type,
         c_type,
         b_packed=True,
-        saturated_vnni=saturated_vnni,
     ]()
     alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
