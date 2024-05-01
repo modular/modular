@@ -12,7 +12,7 @@ from buffer import Buffer
 ```
 """
 
-from math import fma, iota, max, min, align_down
+from math import fma, iota, align_down
 from pathlib import Path
 from sys.info import alignof, simdwidthof, sizeof, triple_is_nvidia_cuda
 from sys.intrinsics import PrefetchOptions, masked_load, masked_store
