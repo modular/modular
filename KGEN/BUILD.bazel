@@ -1551,6 +1551,9 @@ cc_library(
 kgen_kernel(
     name = "mojo_build_server",
     src = "tools/mojo-build-server/mojo_build_server.mojo",
+    deps = [
+        "//Kernels/mojo/stdlib",
+    ],
 )
 
 cc_binary(
