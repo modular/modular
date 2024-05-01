@@ -33,7 +33,7 @@ void DIBuilder::popScope() {
 }
 
 Location DIBuilder::createScopedLoc(Location loc) {
-  if (scopes.empty())
+  if (scopes.empty() || !scopes.back())
     return loc;
 
   // Check if this is already a scoped location with the expected scope.
@@ -46,8 +46,11 @@ Location DIBuilder::createScopedLoc(Location loc) {
 //===----------------------------------------------------------------------===//
 // Creation
 
-DILexicalBlockAttr DIBuilder::createLexicalBlock(DIFileAttr file, unsigned line,
-                                                 unsigned column) {
+DILexicalBlockAttr DIBuilder::createNestedLexicalBlock(DIFileAttr file,
+                                                       unsigned line,
+                                                       unsigned column) {
+  if (!scopes.back())
+    return nullptr;
   auto scope = cast<DILocalScopeAttr>(scopes.back());
   return DILexicalBlockAttr::get(scope, file, line, column);
 }
@@ -60,8 +63,9 @@ DISubprogramAttr DIBuilder::createSubprogram(SourceNameAttr name,
                                              DISubroutineType type) {
   // Get the last non-local scope to use as the parent for the subprogram.
   auto range = llvm::reverse(scopes);
-  auto it = llvm::find_if(
-      range, [](DIScopeAttr scope) { return !isa<DILocalScopeAttr>(scope); });
+  auto it = llvm::find_if(range, [](DIScopeAttr scope) {
+    return !isa_and_nonnull<DILocalScopeAttr>(scope);
+  });
   assert(it != range.end() &&
          "didn't find a non-local scope -- forgot to push one?");
   return DISubprogramAttr::get(compileUnit, *it, name, linkageName, file, line,

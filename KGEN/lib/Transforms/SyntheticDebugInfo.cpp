@@ -35,7 +35,7 @@ static LogicalResult visitLexicalRegion(Region &region,
       auto fileLoc = op.getLoc()->findInstanceOf<FileLineColLoc>();
       if (!fileLoc)
         return mlir::emitError(op.getLoc()) << "did not find a FileLineColLoc";
-      DebugInfo::DIBuilder::ScopeGuard guard = dib.pushLexicalBlock(
+      DebugInfo::DIBuilder::ScopeGuard guard = dib.pushNestedLexicalBlock(
           dib.createFile(fileLoc), fileLoc.getLine(), fileLoc.getColumn());
       if (failed(visitLexicalRegion(region, dib)))
         return failure();

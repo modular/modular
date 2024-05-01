@@ -1082,6 +1082,8 @@ ParseResult DeclResolver::resolveBody(LIT::FuncOp funcOp, Lexer &lexer,
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (DebugInfo::DIScopeAttr spAttr = funcOp.getLocScope())
     diScopeGuard = shared.diBuilder->pushScopeGuard(spAttr);
+  else if (shared.diBuilder)
+    diScopeGuard = shared.diBuilder->pushNoDebugScopeGuard();
 
   // Set up information about value arguments.
   Block *bodyBlock = funcOp.getBody();

@@ -270,7 +270,7 @@ void StmtParser::pushLocalScope(DebugInfo::DIBuilder::ScopeGuard &scopeGuard) {
   unsigned bufferID = sourceMgr.FindBufferContainingLoc(curLoc);
   auto [line, column] = sourceMgr.getLineAndColumn(curLoc, bufferID);
 
-  scopeGuard = shared.diBuilder->pushLexicalBlock(
+  scopeGuard = shared.diBuilder->pushNestedLexicalBlock(
       shared.diBuilder->createFile(
           sourceMgr.getMemoryBuffer(bufferID)->getBufferIdentifier(), "/"),
       line, column);
