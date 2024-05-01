@@ -28,6 +28,8 @@ public:
 
   virtual ~InterpreterState() = default;
 
+  MLIRContext *getContext() const { return ctx; }
+
   //===--------------------------------------------------------------------===//
   // Interpreter Global State
 
@@ -84,6 +86,12 @@ public:
   /// memory.
   ErrorOr<TypedAttr> readAttributeFromMemory(int64_t addr, Type type);
 
+  /// Allocate a slot of symbolic memory.
+  uint64_t allocateSymbolicMemory();
+
+  /// Lookup a symbolic memory slot.
+  ErrorOr<TypedAttr &> getSymbolicMemory(uint64_t slot);
+
   /// Exchange memory references for interpreter memory references upon entering
   /// the interpreter.
   ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
@@ -122,7 +130,7 @@ public:
   /// stacktrace.
   struct StackFrame {
     StackFrame(Operation *origin, Operation *func)
-        : origin(origin), func(func), numStackAllocs(0) {}
+        : origin(origin), func(func), numStackAllocs(0), numSymbolicAllocs(0) {}
 
     /// The operation that created the frame and invoked the function.
     Operation *origin;
@@ -131,6 +139,9 @@ public:
     /// The number of memory blobs allocated on the stack. This many blobs
     /// are popped off stack memory when the function returns.
     size_t numStackAllocs;
+    /// The number of symbolic slots allocated on the stack. This many slots are
+    /// popped off when the function returns.
+    size_t numSymbolicAllocs;
     /// The map of SSA values to constant values in the current frame.
     DenseMap<Value, Attribute> values;
   };
@@ -309,6 +320,9 @@ private:
   /// constant global memory.
   MemoryTable memory[4];
 
+  /// Symbolic memory allocated on the stack frame.
+  SmallVector<TypedAttr, 0> symbolicMemory;
+
   //===--------------------------------------------------------------------===//
   // Interpreter Execution
 
@@ -342,7 +356,7 @@ private:
 
   /// This map implements named global values. Named global values represent a
   /// mechanism for storing SSA value captures at compile time.
-  /// FIXME(19175): This should live in `StackFrame`.
+  /// FIXME(#19175): This should live in `StackFrame`.
   DenseMap<StringAttr, Attribute> namedGlobals;
 };
 } // namespace M
