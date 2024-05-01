@@ -8,8 +8,6 @@ from math import (
     ceil,
     div_ceil,
     is_power_of_2,
-    max,
-    min,
     roundeven,
 )
 from sys.info import has_avx2, has_neon_int8_dotprod, sizeof

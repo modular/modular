@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil, max
+from math import div_ceil
 from sys.info import alignof, sizeof
 
 from buffer import NDBuffer
