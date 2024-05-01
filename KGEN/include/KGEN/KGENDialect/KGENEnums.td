@@ -244,7 +244,9 @@ def KGEN_IntLiteralBinopKind : I32EnumAttr<"IntLiteralBinopKind",
   let genSpecializedAttr = 0;
 }
 
-def KGEN_IntLiteralBinopKindAttr : EnumAttr<KGENDialect, KGEN_IntLiteralBinopKind, "int_literal.binop_kind">;
+def KGEN_IntLiteralBinopKindAttr : EnumAttr<KGENDialect,
+                                            KGEN_IntLiteralBinopKind,
+                                            "int_literal.binop_kind">;
 
 //===----------------------------------------------------------------------===//
 // FloatLiteral support
