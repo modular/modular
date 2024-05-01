@@ -4,11 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import (
-    div_ceil,
-    max,
-    min,
-)
+from math import div_ceil
+
 from register import *
 from buffer import NDBuffer
 from buffer.list import DimList
