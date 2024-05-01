@@ -50,3 +50,8 @@ Language Server manually with
 
 You can add the `--attach-debugger-on-startup` argument to a `mojo-lsp-server`
 invocation to start a debug session on VSCode attaching to the Language Server.
+
+### Building
+
+If you need to build the VS Code extension from source, you can use `vscode-build`
+to compile the extension and install it locally.
