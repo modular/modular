@@ -22,6 +22,8 @@ from LinAlg.MatmulUtils import (
     get_mm_config,
     InnerKernelID,
     select_inner_kernel,
+    use_vnni_fn,
+    use_i8mm_fn,
 )
 
 from utils.index import Index
@@ -106,33 +108,30 @@ fn test_micro_kernel[
 
     alias config = get_mm_config[
         a_type,
-        a_shape,
         b_type,
-        b_shape,
         c_type,
-        c_shape,
-        transpose_b=False,
         b_packed=True,
-        kernel_type=False,
         saturated_vnni=saturated_vnni,
     ]()
-    alias factor = get_matmul_arch_factor[config.use_vnni, config.use_i8mm]()
+    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
     var np = align_up(n, config.pack_inner_size)
     var kh = align_up(k, factor)
 
     alias alignment = alignof[SIMD[c_type, config.simd_size]]()
 
-    var a_ptr = DTypePointer[config.a_type].alloc(m * k, alignment=alignment)
-    var b_packed_ptr = DTypePointer[config.b_type].alloc(
+    var a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
+    var b_packed_ptr = DTypePointer[b_type].alloc(
         (np // config.pack_inner_size)
         * (kh // factor)
         * (factor * config.pack_inner_size),
         alignment=alignment,
     )
-    var c_ptr = DTypePointer[config.c_type].alloc(m * n, alignment=alignment)
-    var a = NDBuffer[config.a_type, 2, config.a_shape](a_ptr, Index(m, k))
+    var c_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
+    var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
 
-    var b_packed = NDBuffer[config.b_type, 3, config.packed_shape](
+    var b_packed = NDBuffer[b_type, 3, config.packed_shape](
         b_packed_ptr,
         Index(
             np // config.pack_inner_size,
@@ -141,7 +140,7 @@ fn test_micro_kernel[
         ),
     )
 
-    var c = NDBuffer[config.c_type, 2, config.c_shape](c_ptr, Index(m, n))
+    var c = NDBuffer[c_type, 2, c_shape](c_ptr, Index(m, n))
 
     a.fill(1)
     b_packed.fill(1)

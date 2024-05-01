@@ -421,16 +421,9 @@ fn _batched_matmul_cpu[
 
             alias config = get_mm_config[
                 a_type,
-                DimList.create_unknown[2](),
                 b_type,
-                DimList.create_unknown[2](),
                 c_type,
-                DimList.create_unknown[2](),
-                transpose_a=False,
                 transpose_b=transpose_b,
-                b_packed=False,
-                # kernel_type not supported yet with BatchedMatmul
-                kernel_type=False,
                 saturated_vnni=saturated_vnni,
             ]()
 
@@ -441,11 +434,9 @@ fn _batched_matmul_cpu[
                 ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
                 saturated_vnni=saturated_vnni,
             ](
-                rebind[NDBuffer[config.c_type, 2, config.c_shape]](c_view),
-                rebind[NDBuffer[config.a_type, 2, config.a_shape]](
-                    a_packed if use_i8mm else a_view
-                ),
-                rebind[NDBuffer[config.b_type, 2, config.b_shape]](b_view),
+                c_view,
+                a_packed if use_i8mm else a_view,
+                b_view,
                 sub_matmul_config.shape,
                 sub_matmul_config.offset,
             )

@@ -135,9 +135,9 @@ fn tiledMatmulRun[
         global_tile_offset: Tile offset on the original buffer.
     """
 
-    var tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
-        global_tile_shape
-    )
+    var tile_n_k = calculate_tile_n_k[
+        a.type, b.type, c.type, config.pack_inner_size
+    ](global_tile_shape)
 
     var matmul = TiledMatmul[config, elementwise_epilogue_enabled, kernel_id](
         alg,
@@ -666,11 +666,8 @@ fn matmul_M[
     fn dispatch_on_kernel_type[kernel_type: Bool]():
         alias config = get_mm_config[
             a_type,
-            a_shape,
             b_type,
-            b_shape,
             c_type,
-            c_shape,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
             b_packed=b_packed,
@@ -794,15 +791,11 @@ fn matmul[
     else:
         alias config = get_mm_config[
             a_type,
-            a_shape,
             b_type,
-            b_shape,
             c_type,
-            c_shape,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
             b_packed=b_packed,
-            kernel_type=False,
         ]()
 
         _matmul_gpu[

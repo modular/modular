@@ -40,29 +40,20 @@ alias elementwise_epilogue_type = fn[type: DType, width: Int] (
 struct MatmulConfig:
     """Static configuration of tiled matmul algorithms."""
 
-    # Static type info of Operand A.
-    var a_type: DType
+    # Indicates if the input matrix A is transposed.
+    var transpose_a: Bool
 
-    # Static shape info of Operand A.
-    var a_shape: DimList
+    # Indicates if the input matrix B is transposed.
+    var transpose_b: Bool
 
-    # Static type info of Operand B.
-    var b_type: DType
+    # Indicates if the input matrix A is pre-packed.
+    var a_packed: Bool
 
-    # Static shape info of Operand B.
-    var b_shape: DimList
-
-    # Static type info of Operand C.
-    var c_type: DType
-
-    # Static shape info of Operand C.
-    var c_shape: DimList
+    # Indicates if the input matrix B is pre-packed.
+    var b_packed: Bool
 
     # Static packed shape info of the packed buffer.
     var packed_shape: DimList
-
-    # Static packed shape info of the bias vector.
-    var shape_bias: DimList
 
     # Static info on simd vector size.
     var simd_size: Int
@@ -76,79 +67,33 @@ struct MatmulConfig:
     # Static info on number of elements to pack in the packing routine.
     var pack_data_size: Int
 
-    # Prefetch distance for packed b vectors in micro kernels.
-    var prefetch_b_distance_k: Int
-
-    # Indicates if the input matrix A is transposed.
-    var transpose_a: Bool
-
-    # Indicates if the input matrix B is transposed.
-    var transpose_b: Bool
-
-    # Indicates if the input matrix A is pre-packed.
-    var a_packed: Bool
-
-    # Indicates if the input matrix B is pre-packed.
-    var b_packed: Bool
-
     # Enum of the kernel shape, only two shapes currently
     var kernel_type: Bool
-
-    # use AVX_VNNI or AVX512_VNNI
-    var use_vnni: Bool
-
-    # use neon_int8_matmul (I8MM)
-    var use_i8mm: Bool
-
-    # If true, then perform saturated matmul
-    var saturated_vnni: Bool
 
     fn __init__(
         inout self,
         *,
-        a_type: DType,
-        a_shape: DimList,
-        b_type: DType,
-        b_shape: DimList,
-        c_type: DType,
-        c_shape: DimList,
-        packed_shape: DimList,
-        shape_bias: DimList,
-        simd_size: Int,
-        a_row_size: Int,
-        pack_inner_size: Int,
-        pack_data_size: Int,
-        prefetch_b_distance_k: Int,
         transpose_a: Bool,
         transpose_b: Bool,
         a_packed: Bool,
         b_packed: Bool,
+        packed_shape: DimList,
+        simd_size: Int,
+        a_row_size: Int,
+        pack_inner_size: Int,
+        pack_data_size: Int,
         kernel_type: Bool,
-        use_vnni: Bool,
-        use_i8mm: Bool,
-        saturated_vnni: Bool,
     ):
-        self.a_type = a_type
-        self.a_shape = a_shape
-        self.b_type = b_type
-        self.b_shape = b_shape
-        self.c_type = c_type
-        self.c_shape = c_shape
-        self.packed_shape = packed_shape
-        self.shape_bias = shape_bias
-        self.simd_size = simd_size
-        self.a_row_size = a_row_size
-        self.pack_inner_size = pack_inner_size
-        self.pack_data_size = pack_data_size
-        self.prefetch_b_distance_k = prefetch_b_distance_k
         self.transpose_a = transpose_a
         self.transpose_b = transpose_b
         self.a_packed = a_packed
         self.b_packed = b_packed
+        self.packed_shape = packed_shape
+        self.simd_size = simd_size
+        self.a_row_size = a_row_size
+        self.pack_inner_size = pack_inner_size
+        self.pack_data_size = pack_data_size
         self.kernel_type = kernel_type
-        self.use_vnni = use_vnni
-        self.use_i8mm = use_i8mm
-        self.saturated_vnni = saturated_vnni
 
 
 @value
@@ -208,9 +153,9 @@ struct GemmShape:
     fn get[
         config: MatmulConfig
     ](
-        c: NDBuffer[config.c_type, 2, config.c_shape],
-        a: NDBuffer[config.a_type, 2, config.a_shape],
-        b: NDBuffer[config.b_type, 2, config.b_shape],
+        c: NDBuffer[_, 2, _],
+        a: NDBuffer[_, 2, _],
+        b: NDBuffer[_, 2, _],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -304,15 +249,18 @@ struct GemmShape:
 #  Returns (TileN, TileK)
 @always_inline
 fn calculate_tile_n_k[
-    config: MatmulConfig,
-    # Inner size of data layout.
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
     pack_inner_size: Int,
 ](n: Int, k: Int) -> StaticIntTuple[2]:
     """Helper heuristic function to decide on tile size to partition the matmul
     given the cache size and desired data layout.
 
     Parameters:
-        config: Matmul config struct of types and shapes.
+        a_type: The type of the A tensor.
+        b_type: The type of the B tensor.
+        c_type: The type of the C tensor.
         pack_inner_size: The desired inner dimension of the packed data
             layout.
 
@@ -320,9 +268,9 @@ fn calculate_tile_n_k[
         The calculated tile size to partition the matmul as (TileN, TileK).
     """
 
-    alias pack_cache_size = get_pack_data_size[config.b_type]()
-    alias use_vnni = use_vnni_fn[config.a_type, config.b_type, config.c_type]()
-    alias use_i8mm = use_i8mm_fn[config.a_type, config.b_type, config.c_type]()
+    alias pack_cache_size = get_pack_data_size[b_type]()
+    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
     alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
     var least_tile_n: Int = pack_inner_size
@@ -349,28 +297,33 @@ fn calculate_tile_n_k[
 
 
 fn calculate_tile_n_k[
-    config: MatmulConfig,
-    # Inner size of data layout.
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
     pack_inner_size: Int,
 ](global_tile_shape: GemmShape) -> StaticIntTuple[2]:
-    return calculate_tile_n_k[config, pack_inner_size](
+    return calculate_tile_n_k[a_type, b_type, c_type, pack_inner_size](
         global_tile_shape.N, global_tile_shape.K
     )
 
 
 @always_inline
 fn _get_tile_n_k[
-    config: MatmulConfig
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    pack_inner_size: Int,
+    transpose_b: Bool,
 ](b: NDBuffer[_, 2, _]) -> StaticIntTuple[2]:
     var tile_n_k: StaticIntTuple[2]
 
     @parameter
-    if not config.transpose_b:
-        tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
+    if not transpose_b:
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, pack_inner_size](
             b.dim(1), b.dim(0)
         )
     else:
-        tile_n_k = calculate_tile_n_k[config, config.pack_inner_size](
+        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, pack_inner_size](
             b.dim(0), b.dim(1)
         )
     return tile_n_k
@@ -780,11 +733,8 @@ fn get_pack_data_size[type: DType]() -> Int:
 @always_inline
 fn get_mm_config[
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
     *,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -809,29 +759,18 @@ fn get_mm_config[
     ]()
 
     return MatmulConfig(
-        a_type=a_type,
-        a_shape=a_shape,
-        b_type=b_type,
-        b_shape=b_shape,
-        c_type=c_type,
-        c_shape=c_shape,
-        packed_shape=DimList.create_unknown[3](),
-        shape_bias=DimList.create_unknown[1](),
-        simd_size=simd_size,
-        a_row_size=kernel_shape.a_row_size,
-        pack_inner_size=kernel_shape.pack_inner_size * factor,
-        pack_data_size=get_pack_data_size[b_type](),
-        prefetch_b_distance_k=prefetch_b_distance_k,
         transpose_a=transpose_a,
         transpose_b=transpose_b,
         a_packed=a_packed,
         b_packed=False if use_apple_accelerate_lib(
             c_type, a_type, b_type
         ) else b_packed,
+        packed_shape=DimList.create_unknown[3](),
+        simd_size=simd_size,
+        a_row_size=kernel_shape.a_row_size,
+        pack_inner_size=kernel_shape.pack_inner_size * factor,
+        pack_data_size=get_pack_data_size[b_type](),
         kernel_type=kernel_type,
-        use_vnni=use_vnni_fn[a_type, b_type, c_type](),
-        use_i8mm=use_i8mm_fn[a_type, b_type, c_type](),
-        saturated_vnni=saturated_vnni,
     )
 
 
