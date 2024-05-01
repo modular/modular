@@ -12,8 +12,10 @@ from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
 from algorithm.sort import _quicksort, partition, sort
 from buffer import NDBuffer
+from register import mogg_register
 
 
+@mogg_register("top_k_shape")
 @always_inline
 fn top_k_shape[
     type: DType,

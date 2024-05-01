@@ -33,6 +33,7 @@ from gpu.host.memory import (
 )
 from memory import memcpy
 from memory.unsafe import DTypePointer
+from register import mogg_register
 
 from utils.index import StaticIntTuple, product
 
@@ -443,6 +444,7 @@ fn _concat_cpu[
         _concat_parallel(output, axis, inputs)
 
 
+@mogg_register("concat_from_list_shape")
 @always_inline
 fn concat_shape[
     input_rank: Int,

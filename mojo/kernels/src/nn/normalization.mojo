@@ -15,6 +15,7 @@ from algorithm.reduction import (
 )
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
+from register import mogg_register
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
@@ -185,6 +186,7 @@ fn layer_norm[
         sync_parallelize[task_func](num_workers)
 
 
+@mogg_register("layer_norm_shape")
 @always_inline
 fn layer_norm_shape[
     type: DType,

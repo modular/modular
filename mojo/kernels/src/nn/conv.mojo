@@ -45,6 +45,7 @@ from LinAlg.accumulate import (
 )
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
+from register import mogg_register
 from runtime.llcl import Runtime
 
 from collections import OptionalReg as Optional
@@ -2737,6 +2738,7 @@ fn pack_filter[
                 packed_filter_ptr = packed_filter_ptr + simd_size
 
 
+@mogg_register("conv_shape")
 @always_inline
 fn conv_shape[
     input_rank: Int,

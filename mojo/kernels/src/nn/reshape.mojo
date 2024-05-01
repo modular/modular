@@ -61,6 +61,7 @@ fn ndbuffer_reshape[
     )
 
 
+@mogg_register("reshape_shape")
 @always_inline
 fn reshape_shape[
     input_rank: Int,

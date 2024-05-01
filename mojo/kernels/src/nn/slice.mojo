@@ -11,6 +11,7 @@ from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 
 from utils.index import StaticIntTuple
+from register import mogg_register
 
 # ===----------------------------------------------------------------------===#
 # slice_as_view
@@ -118,6 +119,7 @@ fn slice_as_copy[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("slice_shape")
 @always_inline
 fn slice_shape[
     input_rank: Int,

@@ -19,6 +19,7 @@ from buffer.list import Dim, DimList
 from gpu.host.memory import _copy_device_to_device_async
 from gpu.host.stream import Stream
 from memory import memset_zero, stack_allocation
+from register import mogg_register
 from runtime.llcl import Runtime, _OptionalError
 from runtime.tracing import Trace, TraceLevel
 
@@ -768,6 +769,7 @@ fn scatter_nd[
     ](data, indices, updates, output)
 
 
+@mogg_register("scatter_nd_shape")
 @always_inline
 fn scatter_nd_shape[
     input_rank: Int,
@@ -842,6 +844,7 @@ fn scatter_nd_shape[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("gather_shape")
 @always_inline
 fn gather_shape[
     output_rank: Int,
@@ -983,6 +986,7 @@ fn scatter_elements[
     elementwise[update_func, 1, rank](indices.get_shape())
 
 
+@mogg_register("scatter_shape")
 @always_inline
 fn scatter_elements_shape[
     rank: Int,
@@ -1104,6 +1108,7 @@ fn gather_elements[
 # ===----------------------------------------------------------------------===#
 
 
+@mogg_register("gather_nd_shape")
 @always_inline
 fn gather_nd_shape[
     input_rank: Int,

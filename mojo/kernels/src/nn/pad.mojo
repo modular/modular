@@ -15,6 +15,7 @@ from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from memory import memcpy
 from memory.unsafe import DTypePointer
+from register import mogg_register
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from LinAlg.transpose import _fill_strides
@@ -223,6 +224,7 @@ fn pad_reflect[
     ](output, input, paddings)
 
 
+@mogg_register("pad_shape")
 @always_inline
 fn pad_shape[
     input_rank: Int,

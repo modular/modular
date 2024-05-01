@@ -5,6 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from buffer import NDBuffer
+from register import mogg_register
 
 # TODO: This implementation supports up to 4 dimensions.
 
@@ -14,6 +15,7 @@ from buffer import NDBuffer
 #       or less elements than the input's rank).
 
 
+@mogg_register("mo.tile")
 @always_inline
 fn tile[
     rank: Int, type: DType, rank_repeats: Int, type_repeats: DType
@@ -195,6 +197,7 @@ fn tile[
             memcpy(dst_ptr, src_ptr, count)
 
 
+@mogg_register("tile_shape")
 @always_inline
 fn tile_shape[
     input_rank: Int,

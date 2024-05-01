@@ -35,6 +35,7 @@ from LinAlg.MatmulUtils import partition_work
 from LinAlg.accumulate import _Accumulator
 from memory.memory import memset_zero
 from memory.unsafe import DTypePointer
+from register import mogg_register
 from runtime.llcl import Runtime
 
 from collections import OptionalReg as Optional
@@ -164,6 +165,7 @@ fn conv_transpose_naive[
                             accumulate_output_point(n, d, h, w, c, f)
 
 
+@mogg_register("conv_transpose_shape")
 @always_inline
 fn conv_transpose_shape[
     input_rank: Int,

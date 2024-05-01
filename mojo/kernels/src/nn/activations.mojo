@@ -7,6 +7,7 @@
 """The module contains implementations of activation functions."""
 
 import math
+from register import mogg_register
 
 
 @value
@@ -85,6 +86,7 @@ fn ceil[
 # ===----------------------------------------------------------------------=== #
 
 
+@mogg_register("mo.floor")
 @always_inline("nodebug")
 fn floor[
     type: DType, simd_width: Int
@@ -210,6 +212,7 @@ fn elu[
 # ===----------------------------------------------------------------------=== #
 
 
+@mogg_register("mo.relu")
 @always_inline
 fn relu[
     type: DType, simd_width: Int
@@ -258,6 +261,7 @@ fn relu_n1[
 # ===----------------------------------------------------------------------=== #
 
 
+@mogg_register("mo.gelu")
 @always_inline
 fn gelu[
     type: DType, simd_width: Int
@@ -329,6 +333,7 @@ fn gelu_approximate[
 # ===----------------------------------------------------------------------=== #
 
 
+@mogg_register("mo.sigmoid")
 @always_inline
 fn sigmoid[
     type: DType, simd_width: Int
