@@ -112,8 +112,9 @@ public:
   /// Parse a SourceMgr file given its id as a module.
   ///
   /// In the case of success, the decl corresponding to the module is returned.
-  /// In the case of an error, a null decl is returned.
-  MojoASTDeclRef parseFile(unsigned int fileId);
+  /// In the case of an error, a null decl is returned. If `eraseUnparsedDecls`
+  /// is true, any unparsed decls are removed from the module.
+  MojoASTDeclRef parseFile(unsigned fileId, bool eraseUnparsedDecls = true);
 
   /// Parse a package with the given path.
   ///

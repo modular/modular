@@ -27,6 +27,10 @@ struct struct_name:
     return
 
   var field: Int
+
+trait trait_name:
+    fn trait_fn(self):
+        ...
 )");
 
   createTestClient()
@@ -34,7 +38,7 @@ struct struct_name:
       .documentSymbol(
           doc,
           [](const std::vector<lsp::DocumentSymbol> &symbols) {
-            ASSERT_EQ((int)symbols.size(), 3);
+            ASSERT_EQ((int)symbols.size(), 4);
 
             EXPECT_EQ(symbols[0].name, "Value");
             EXPECT_EQ(symbols[0].kind, lsp::SymbolKind::Property);
@@ -53,6 +57,11 @@ struct struct_name:
             EXPECT_EQ(symbols[2].children[1].name, "field");
             EXPECT_EQ(symbols[2].children[1].kind, lsp::SymbolKind::Field);
             EXPECT_EQ(symbols[2].children[1].detail, "Int");
+
+            EXPECT_EQ(symbols[3].name, "trait_name");
+            EXPECT_EQ(symbols[3].kind, lsp::SymbolKind::Interface);
+            ASSERT_EQ((int)symbols[3].children.size(), 1);
+            EXPECT_EQ(symbols[3].children[0].name, "trait_fn");
           })
       .execute();
 }
