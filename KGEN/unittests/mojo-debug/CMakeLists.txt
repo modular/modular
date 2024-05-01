@@ -16,9 +16,14 @@ add_modular_unittest(
   TEST_NAME
   MojoDebugTests
 
-  BoolTest.cpp
   BreakpointTest.cpp
+  ControlFlowTest.cpp
+  LifetimesTest.cpp
+  PrimitiveTypesTest.cpp
   SourceNamesTest.cpp
+  StackTraceTest.cpp
+  StdlibTypesTest.cpp
+  StringsTest.cpp
   Support.cpp
 
   DEPENDS

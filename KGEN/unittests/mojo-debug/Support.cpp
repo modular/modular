@@ -13,6 +13,10 @@
 using namespace M;
 using namespace lldb;
 
+/// The leak sanitizer shows errors, probably because we load libpython via
+/// LLDB.
+extern "C" const char *__asan_default_options() { return "detect_leaks=0"; }
+
 static TempDir createTempDir() {
   ErrorOr<TempDir> tempDirOr = TempDir::create("mojo-debug.%%%%%%");
   if (failed(tempDirOr))
@@ -43,10 +47,11 @@ std::vector<int> MojoSource::findLinesWithText(StringRef text) const {
   return result;
 }
 
-MojoBinary::MojoBinary(const MojoSource &source, bool suppressBuildOutput)
+MojoBinary::MojoBinary(const std::shared_ptr<MojoSource> &source,
+                       bool suppressBuildOutput)
     : source(source), outDir(createTempDir()),
       binPath(outDir.getPath() /
-              (source.getFilesystemPath().filename().string() + ".exe")) {
+              (source->getFilesystemPath().filename().string() + ".exe")) {
   ErrorOr<std::string> mojoOr =
       toModularErrorOr(llvm::sys::findProgramByName("mojo"));
   if (failed(mojoOr))
@@ -58,7 +63,8 @@ MojoBinary::MojoBinary(const MojoSource &source, bool suppressBuildOutput)
       redirects.emplace_back("");
   }
   int ec = llvm::sys::ExecuteAndWait(
-      *mojoOr, {*mojoOr, "build", "-g", "-O0", source.getPath(), "-o", binPath},
+      *mojoOr,
+      {*mojoOr, "build", "-g", "-O0", source->getPath(), "-o", binPath},
       /*Env=*/std::nullopt, redirects);
   if (ec)
     llvm::report_fatal_error(llvm::Twine("mojo build exit code = ") +
@@ -107,14 +113,6 @@ static SBDebugger getOrCreateSBDebugger() {
   });
   return debugger;
 }
-
-namespace {
-struct CommandResult {
-  bool success;
-  std::string output;
-  std::string error;
-};
-} // namespace
 
 /// Execute the provided command using the provided context (thread, process or
 /// frame).
@@ -197,8 +195,36 @@ StopContext StopContext::stepOver() {
                      newThread.GetFrameAtIndex(0)};
 }
 
+StopContext StopContext::stepInto() {
+  thread.StepInto();
+
+  if (process.GetState() != lldb::eStateStopped)
+    llvm::report_fatal_error("Process is not stopped after step over");
+
+  SBThread newThread = process.GetSelectedThread();
+
+  return StopContext{std::move(binary), target, process, newThread,
+                     newThread.GetFrameAtIndex(0)};
+}
+
+StopContext StopContext::resume() {
+  process.Continue();
+
+  if (process.GetState() != lldb::eStateStopped)
+    llvm::report_fatal_error("Process is not stopped after step over");
+
+  SBThread newThread = process.GetSelectedThread();
+
+  return StopContext{std::move(binary), target, process, newThread,
+                     newThread.GetFrameAtIndex(0)};
+}
+
+CommandResult StopContext::runCommand(StringRef command) {
+  return runCommandForContext(command, frame);
+}
+
 StopContext M::buildAndLaunch(StringRef fileName) {
-  MojoSource source(fileName);
+  auto source = std::make_shared<MojoSource>(fileName);
 
   // TODO(28608): support a test mode for JIT debugging besides AOT.
   MojoBinary binary(source, /*suppressBuildOutput=*/true);
@@ -207,7 +233,7 @@ StopContext M::buildAndLaunch(StringRef fileName) {
   if (!target.IsValid())
     llvm::report_fatal_error("Invalid target");
 
-  setBreakpointsForComments(source, target);
+  setBreakpointsForComments(*source, target);
 
   return runTarget(target, std::move(binary));
 }

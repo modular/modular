@@ -19,6 +19,9 @@ class MojoSource {
 public:
   MojoSource(StringRef fileName);
 
+  MojoSource(const MojoSource &) = delete;
+  MojoSource &operator=(const MojoSource &) = delete;
+
   const std::filesystem::path &getFilesystemPath() const { return path; }
 
   StringRef getPath() const { return pathStr; }
@@ -38,25 +41,43 @@ private:
 /// source.
 class MojoBinary {
 public:
-  MojoBinary(const MojoSource &source, bool suppressBuildOutput = false);
+  MojoBinary(const std::shared_ptr<MojoSource> &source,
+             bool suppressBuildOutput = false);
 
   StringRef getPath() const { return binPath; }
 
+  const MojoSource &getSource() const { return *source; }
+
 private:
-  MojoSource source;
+  std::shared_ptr<MojoSource> source;
   TempDir outDir;
   std::string binPath;
 };
 
+struct CommandResult {
+  bool success;
+  std::string output;
+  std::string error;
+};
+
 struct StopContext {
+  /// Step over the current thread and return the StopContext once it stops.
+  StopContext stepOver();
+
+  /// Step int the current thread and return the StopContext once it stops.
+  StopContext stepInto();
+
+  /// Resume the current process and return the StopContext once it stops.
+  StopContext resume();
+
+  /// Run the given command using the current frame as context.
+  CommandResult runCommand(StringRef command);
+
   MojoBinary binary;
   lldb::SBTarget target;
   lldb::SBProcess process;
   lldb::SBThread thread;
   lldb::SBFrame frame;
-
-  /// Step over the current thread and return the StopContext once it stops.
-  StopContext stepOver();
 };
 
 /// Builds the given source file, then creates a target with the resultant
