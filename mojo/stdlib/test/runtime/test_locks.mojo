@@ -20,8 +20,7 @@ from os import Atomic
 
 
 fn test_basic_lock() raises:
-    alias LockType = BlockingSpinLock[0.000001]
-    var lock = LockType()
+    var lock = BlockingSpinLock()
     var rawCounter = 0
     var counter = Atomic[DType.int64](False)
     alias maxI = 100
@@ -29,7 +28,7 @@ fn test_basic_lock() raises:
 
     @parameter
     async fn inc() capturing -> Int:
-        var addr = Pointer[BlockingSpinLock[0.000001]].address_of(lock)
+        var addr = UnsafePointer[BlockingSpinLock].address_of(lock)
         with BlockingScopedLock(addr) as l:
             rawCounter += 1
             _ = counter.fetch_add(1)

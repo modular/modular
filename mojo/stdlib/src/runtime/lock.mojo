@@ -7,9 +7,10 @@
 from time import sleep
 
 from os import Atomic
+from runtime.llcl import SpinWaiter
 
 
-struct BlockingSpinLock[SleepDuration: Float64 = 0.00001]:
+struct BlockingSpinLock:
     """A basic locking implementation that uses an integer to represent the
     owner of the lock."""
 
@@ -22,9 +23,10 @@ struct BlockingSpinLock[SleepDuration: Float64 = 0.00001]:
 
     fn lock(inout self: Self, owner: Int):
         var expected = Int64(Self.UNLOCKED)
+        var waiter = SpinWaiter()
         while not self.counter.compare_exchange_weak(expected, owner):
             # this should be yield
-            sleep(self.SleepDuration)
+            waiter.wait()
             expected = Self.UNLOCKED
 
     fn unlock(inout self: Self, owner: Int) -> Bool:
@@ -37,13 +39,13 @@ struct BlockingSpinLock[SleepDuration: Float64 = 0.00001]:
         return True
 
 
-struct BlockingScopedLock[SleepDuration: Float64 = 0.000001]:
-    alias LockType = BlockingSpinLock[SleepDuration]
-    var lock: Pointer[Self.LockType]
+struct BlockingScopedLock:
+    alias LockType = BlockingSpinLock
+    var lock: UnsafePointer[Self.LockType]
 
     fn __init__(
         inout self,
-        lock: Pointer[Self.LockType],
+        lock: UnsafePointer[Self.LockType],
     ):
         self.lock = lock
 
@@ -51,12 +53,12 @@ struct BlockingScopedLock[SleepDuration: Float64 = 0.000001]:
     fn __enter__(inout self):
         """Acquire the lock on entry.
         This is done by setting the owner of the lock to own address."""
-        var address = Pointer[Self].address_of(self)
+        var address = UnsafePointer[Self].address_of(self)
         self.lock[].lock(int(address))
 
     @no_inline
     fn __exit__(inout self):
         """Release the lock on exit.
         Reset the address on the underlying lock."""
-        var address = Pointer[Self].address_of(self)
+        var address = UnsafePointer[Self].address_of(self)
         _ = self.lock[].unlock(int(address))
