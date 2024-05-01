@@ -104,13 +104,7 @@ fn test_matmul[
     )
     var c = NDBuffer[c_type, 2, c_shape](c0_ptr, Index(m, n))
 
-    var am = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
-    var bm = NDBuffer[b_type, 2, b_shape](b_ptr, Index(k, n))
-    var bpm = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
-        bp_ptr, Index(k, n)
-    )
-    var cm0 = NDBuffer[c_type, 2, c_shape](c0_ptr, Index(m, n))
-    var cm1 = NDBuffer[c_type, 2, c_shape](c1_ptr, Index(m, n))
+    var golden = NDBuffer[c_type, 2, c_shape](c1_ptr, Index(m, n))
 
     # saturated VNNI only has a range [0,127] for the input a
     var vnni_range: Int = 128 if saturated else 256
@@ -118,21 +112,21 @@ fn test_matmul[
     for i in range(m):
         for p in range(k):
             # uint8 but limited to [0,127]
-            am[StaticIntTuple[2]((i, p))] = cnt % vnni_range
+            a[StaticIntTuple[2]((i, p))] = cnt % vnni_range
             cnt += 1
 
     cnt = 0
     for p in range(k):
         for j in range(n):
             # int8 [-128, 127]
-            bm[StaticIntTuple[2]((p, j))] = cnt % 256 - 128
-            bpm[StaticIntTuple[2]((p, j))] = bm[StaticIntTuple[2]((p, j))]
+            b[StaticIntTuple[2]((p, j))] = cnt % 256 - 128
+            bp[StaticIntTuple[2]((p, j))] = b[StaticIntTuple[2]((p, j))]
             cnt += 1
 
     for i in range(m):
         for j in range(n):
-            cm0[StaticIntTuple[2]((i, j))] = 0
-            cm1[StaticIntTuple[2]((i, j))] = cm0[StaticIntTuple[2]((i, j))]
+            c[StaticIntTuple[2]((i, j))] = 0
+            golden[StaticIntTuple[2]((i, j))] = c[StaticIntTuple[2]((i, j))]
 
     if b_packed:
         if kernel_type_m != 0:
@@ -179,12 +173,12 @@ fn test_matmul[
             saturated_vnni=saturated,
         ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp))
 
-    gemm_naive(am, bm, cm1, m, n, k)
+    gemm_naive(a, b, golden, m, n, k)
 
     var errors: Int = 0
     for i in range(m):
         for j in range(n):
-            if cm0[i, j] != cm1[i, j]:
+            if c[i, j] != golden[i, j]:
                 errors += 1
 
     if errors != 0:
@@ -229,40 +223,6 @@ fn test_matmul[
     print("Success")
 
 
-fn test_matmul_static_shape[
-    *,
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    b_packed: Bool,
-    saturated: Bool,
-    mixed_kernels: Bool,
-    m: Int,
-    n: Int,
-    k: Int,
-]():
-    print("== test_matmul_static_shape")
-    var errors = 0
-    alias a_shape = DimList(m, k)
-    alias b_shape = DimList(k, n)
-    alias c_shape = DimList(m, n)
-    errors = test_matmul[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        False,  # transpose_b
-        b_packed,  # b_packed
-        saturated=saturated,
-    ](m, n, k, m if mixed_kernels else 0)
-    if errors > 0:
-        return
-    # CHECK: Success
-    print("Success")
-
-
 fn test_shapes[
     a_type: DType,
     b_type: DType,
@@ -272,7 +232,7 @@ fn test_shapes[
     mixed_kernels: Bool,
 ]():
     @parameter
-    fn test_shapes_helper[m: Int, n: Int, k: Int]():
+    fn test_shapes_helper(m: Int, n: Int, k: Int):
         test_matmul[
             a_type=a_type,
             b_type=b_type,
@@ -282,14 +242,14 @@ fn test_shapes[
             mixed_kernels=mixed_kernels,
         ](m, n, k)
 
-    test_shapes_helper[256, 1024, 4096]()
-    test_shapes_helper[4, 5, 6]()
-    test_shapes_helper[15, 16, 17]()
-    test_shapes_helper[24, 32, 64]()
-    test_shapes_helper[61, 73, 79]()
-    test_shapes_helper[123, 456, 321]()
-    test_shapes_helper[256, 256, 256]()
-    test_shapes_helper[2, 65, 1200]()
+    test_shapes_helper(256, 1024, 4096)
+    test_shapes_helper(4, 5, 6)
+    test_shapes_helper(15, 16, 17)
+    test_shapes_helper(24, 32, 64)
+    test_shapes_helper(61, 73, 79)
+    test_shapes_helper(123, 456, 321)
+    test_shapes_helper(256, 256, 256)
+    test_shapes_helper(2, 65, 1200)
 
 
 fn test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
