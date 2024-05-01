@@ -16,14 +16,14 @@ from pathlib import Path
 
 fn _get_engine_path() raises -> String:
     var engine_lib_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
-    ]("max.engine_lib")
+        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.int8]
+    ](".engine_lib")
 
     if not engine_lib_path_str_ptr:
         raise "cannot get the location of AI engine library from modular.cfg"
 
     # this transfers ownership of the underlying data buffer allocated in
-    # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
+    # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
     var engine_lib_path = String._from_bytes(engine_lib_path_str_ptr)
 
     if not Path(engine_lib_path).exists():

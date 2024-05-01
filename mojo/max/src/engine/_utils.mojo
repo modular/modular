@@ -53,7 +53,7 @@ fn exchange[T: AnyRegType](inout old_var: T, owned new_value: T) -> T:
 
 fn handle_from_config(name: String, param: String) -> DLHandle:
     var lib_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
+        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.int8]
     ](param._strref_dangerous())
     param._strref_keepalive()
 
@@ -61,7 +61,7 @@ fn handle_from_config(name: String, param: String) -> DLHandle:
         abort("cannot get " + name + " library location from modular.cfg")
 
     # this transfers ownership of the underlying data buffer allocated in
-    # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
+    # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
     var lib_path = String._from_bytes(lib_path_str_ptr)
 
     if not Path(lib_path).exists():

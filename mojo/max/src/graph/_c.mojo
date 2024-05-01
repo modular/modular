@@ -23,14 +23,14 @@ import _mlir
 
 fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
     var mof_lib_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getConfigValue", DTypePointer[DType.int8]
-    ]("max.graph_lib")
+        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.int8]
+    ](".graph_lib")
 
     if not mof_lib_path_str_ptr:
         abort("cannot get graph library location from modular.cfg")
 
     # this transfers ownership of the underlying data buffer allocated in
-    # `KGEN_CompilerRT_getConfigValue` so that it can be destroyed by Mojo.
+    # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
     var mof_lib_path = String._from_bytes(mof_lib_path_str_ptr)
 
     if not Path(mof_lib_path).exists():

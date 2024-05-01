@@ -95,7 +95,7 @@ struct GRPCInferenceServer:
             session: Current inference context.
             num_listeners: Number of listener tasks.
         """
-        self._lib = handle_from_config("serving", "max.serve_lib")
+        self._lib = handle_from_config("serving", ".serve_lib")
         self._session = session^
         self._num_listeners = num_listeners
         self._impl = MuttServerAsync(address, self._lib, self._session)
