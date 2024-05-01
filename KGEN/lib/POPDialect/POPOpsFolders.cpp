@@ -835,6 +835,9 @@ ErrorTreeOrSuccess StoreOp::interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess OffsetOp::interpret(ArrayRef<Attribute> operands,
                                        InterpreterState &state) {
+  if (!state.getTarget())
+    return ErrorTree(getLoc(), "operation requires a target model");
+
   auto ptr = dyn_cast_or_null<PointerAttr>(operands[0]);
   auto offset = dyn_cast_or_null<IntegerAttr>(operands[1]);
   if (!ptr || !offset)
@@ -994,6 +997,9 @@ void SelectOp::getCanonicalizationPatterns(RewritePatternSet &results,
 
 ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
                                                 InterpreterState &state) {
+  if (!state.getTarget())
+    return ErrorTree(getLoc(), "operation requires a target model");
+
   // Determine the allocation size.
   int64_t count = cast<IntegerAttr>(getCount()).getInt();
   Type type = cast<PointerType>(getType()).getElementType();
@@ -1162,6 +1168,9 @@ OpFoldResult ArrayReplaceOp::fold(FoldAdaptor adaptor) {
 
 ErrorTreeOrSuccess ArrayGEPOp::interpret(ArrayRef<Attribute> operands,
                                          InterpreterState &state) {
+  if (!state.getTarget())
+    return ErrorTree(getLoc(), "operation requires a target model");
+
   auto ptr = dyn_cast_if_present<PointerAttr>(operands[0]);
   auto index = dyn_cast_if_present<IntegerAttr>(operands[1]);
   if (!ptr || !index)
@@ -1584,14 +1593,18 @@ ErrorTreeOrSuccess DTypeSizeOf::interpret(ArrayRef<Attribute> operands,
     return ErrorTree(getLoc(), Error("non-constant inputs"));
 
   Builder b(getContext());
-  TargetInfoAttr target = state.getTarget();
   KGENDType dtype = dtypeAttr.getDType();
 
-  ssize_t sizeInBytes =
-      llvm::is_contained({KGENDType::index, KGENDType::address},
-                         dtype.getValue())
-          ? target.getDataLayout().getPointerSize()
-          : dtype.getSizeInBytes();
+  size_t sizeInBytes;
+  if (llvm::is_contained({KGENDType::index, KGENDType::address},
+                         dtype.getValue())) {
+    TargetInfoAttr target = state.getTarget();
+    if (!target)
+      return ErrorTree(getLoc(), "operation requires a target model");
+    sizeInBytes = target.getDataLayout().getPointerSize();
+  } else {
+    sizeInBytes = dtype.getSizeInBytes();
+  }
 
   state.mapResults(b.getIndexAttr(sizeInBytes));
   return success();
