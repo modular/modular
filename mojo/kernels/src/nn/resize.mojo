@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.vector import InlinedFixedVector
-from math import ceil, floor, round_half_down, round_half_up
+from math import ceil, floor
 
 from algorithm.functional import elementwise
 from algorithm.reduction import _get_nd_indices_from_flat_index
@@ -127,9 +127,9 @@ fn resize_nearest_neighbor[
     fn round[type: DType](val: Scalar[type]) -> Scalar[type]:
         @parameter
         if round_mode == RoundMode.HalfDown:
-            return round_half_down(val)
+            return ceil(val - 0.5)
         elif round_mode == RoundMode.HalfUp:
-            return round_half_up(val)
+            return floor(val + 0.5)
         elif round_mode == RoundMode.Floor:
             return floor(val)
         elif round_mode == RoundMode.Ceil:
