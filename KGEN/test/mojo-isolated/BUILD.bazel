@@ -12,6 +12,7 @@ _DATA = [
 ]
 
 lit_tests(
+    name = "mojo-isolated",
     srcs = glob(
         ["**/*.mojo"],
         exclude = _DATA,
