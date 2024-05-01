@@ -334,9 +334,10 @@ static ErrorTreeOrSuccess computeCost(SymbolConstantAttr func, Location loc,
   ErrorTreeOrSuccess walkOutcome;
 
   body.get()->walk([&](Operation *op) -> WalkResult {
-    // Don't count constants and terminators.
+    // Don't count constants, terminators, and debug ops.
     if (op->hasTrait<OpTrait::ConstantLike>() ||
-        op->hasTrait<OpTrait::IsTerminator>())
+        op->hasTrait<OpTrait::IsTerminator>() ||
+        llvm::isa_and_present<DebugInfo::DebugInfoDialect>(op->getDialect()))
       return WalkResult::advance();
 
     // Compute the cost of the function call descending into the function
