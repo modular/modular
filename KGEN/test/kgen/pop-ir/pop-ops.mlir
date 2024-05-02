@@ -923,30 +923,30 @@ kgen.generator @inline_asm<ty: type, dt: dtype>(
     %arg1: !pop.scalar<index>,
     %arg2: !kgen.paramref<ty>,
     %arg3: !pop.scalar<dt>) {
-  // CHECK: pop.inline_asm "bswap $0", "=r,r"(%arg0) : (!pop.scalar<si32>) -> i8
-  %0 = pop.inline_asm "bswap $0", "=r,r"(%arg0) : (!pop.scalar<si32>) -> i8
-  // CHECK: pop.inline_asm "something", "anotherthing"(%arg0, %arg1) :
+  // CHECK: pop.inline_asm "bswap $0", "=r,r", (%arg0) : (!pop.scalar<si32>) -> i8
+  %0 = pop.inline_asm "bswap $0", "=r,r", (%arg0) : (!pop.scalar<si32>) -> i8
+  // CHECK: pop.inline_asm "something", "anotherthing", (%arg0, %arg1) :
   // CHECK: (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  %1 = pop.inline_asm "something", "anotherthing"(%arg0, %arg1) :
+  %1 = pop.inline_asm "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  // CHECK: pop.inline_asm side_effecting "something", "anotherthing"(%arg0, %arg1) :
+  // CHECK: pop.inline_asm side_effecting "something", "anotherthing", (%arg0, %arg1) :
   // CHECK: (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  %2 = pop.inline_asm side_effecting "something", "anotherthing"(%arg0, %arg1) :
+  %2 = pop.inline_asm side_effecting "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  // CHECK: pop.inline_asm stack_aligned "something", "anotherthing"(%arg0, %arg1) :
+  // CHECK: pop.inline_asm stack_aligned "something", "anotherthing", (%arg0, %arg1) :
   // CHECK: (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  %3 = pop.inline_asm stack_aligned "something", "anotherthing"(%arg0, %arg1) :
+  %3 = pop.inline_asm stack_aligned "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<index>) -> i8
-  // CHECK: pop.inline_asm "foo", "=r,=r,r"(%arg0) : (!pop.scalar<si32>) ->
+  // CHECK: pop.inline_asm "foo", "=r,=r,r", (%arg0) : (!pop.scalar<si32>) ->
   // CHECK: !kgen.struct<(ty, scalar<dt>)>
-  %4 = pop.inline_asm "foo", "=r,=r,r"(%arg0) : (!pop.scalar<si32>) ->
+  %4 = pop.inline_asm "foo", "=r,=r,r", (%arg0) : (!pop.scalar<si32>) ->
     !kgen.struct<(ty, scalar<dt>)>
-  // CHECK: pop.inline_asm "bar $0", "=r,r"(%arg2) : (!kgen.paramref<ty>) -> i8
-  %5 = pop.inline_asm "bar $0", "=r,r"(%arg2) : (!kgen.paramref<ty>) -> i8
-  // CHECK: pop.inline_asm "bar $0", "=r,r"(%arg3) : (!pop.scalar<dt>) -> i8
-  %6 = pop.inline_asm "bar $0", "=r,r"(%arg3) : (!pop.scalar<dt>) -> i8
-  // CHECK: [[RET:%.*]]:2 = pop.inline_asm "bar $0", "=r,=r,r"(%arg0) : (!pop.scalar<si32>) -> (i8, i8)
-  %7:2 = pop.inline_asm "bar $0", "=r,=r,r"(%arg0) : (!pop.scalar<si32>) -> (i8, i8)
+  // CHECK: pop.inline_asm "bar $0", "=r,r", (%arg2) : (!kgen.paramref<ty>) -> i8
+  %5 = pop.inline_asm "bar $0", "=r,r", (%arg2) : (!kgen.paramref<ty>) -> i8
+  // CHECK: pop.inline_asm "bar $0", "=r,r", (%arg3) : (!pop.scalar<dt>) -> i8
+  %6 = pop.inline_asm "bar $0", "=r,r", (%arg3) : (!pop.scalar<dt>) -> i8
+  // CHECK: [[RET:%.*]]:2 = pop.inline_asm "bar $0", "=r,=r,r", (%arg0) : (!pop.scalar<si32>) -> (i8, i8)
+  %7:2 = pop.inline_asm "bar $0", "=r,=r,r", (%arg0) : (!pop.scalar<si32>) -> (i8, i8)
   kgen.return
 }
 

@@ -690,27 +690,34 @@ kgen.func @call_void_intrinsic(%arg0: !pop.scalar<si64>,
   kgen.return
 }
 
+// CHECK-LABEL: @parametric_inline_asm
+kgen.generator @parametric_inline_asm<asm: string, constraints: string>() {
+  // CHECK-NEXT: inline_asm asm, constraints, ()
+  pop.inline_asm asm, constraints, () : () -> ()
+  kgen.return
+}
+
 // CHECK-LABEL: @inline_asm
 kgen.func @inline_asm(
     %arg0: !pop.scalar<si32>,
     %arg1: !pop.scalar<si64>) {
   // CHECK: llvm.inline_asm asm_dialect = att "bswap $0", "=r,r" %0 : (i32) -> i8
-  %0 = pop.inline_asm "bswap $0", "=r,r" (%arg0) : (!pop.scalar<si32>) -> i8
+  %0 = pop.inline_asm "bswap $0", "=r,r", (%arg0) : (!pop.scalar<si32>) -> i8
   // CHECK: llvm.inline_asm asm_dialect = att "something", "anotherthing" %0, %1 : (i32, i64) -> i8
-  %1 = pop.inline_asm "something", "anotherthing" (%arg0, %arg1) :
+  %1 = pop.inline_asm "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
   // CHECK: llvm.inline_asm has_side_effects asm_dialect = att "something", "anotherthing" %0, %1 : (i32, i64) -> i8
-  %2 = pop.inline_asm side_effecting "something", "anotherthing" (%arg0, %arg1) :
+  %2 = pop.inline_asm side_effecting "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
   // CHECK: llvm.inline_asm is_align_stack asm_dialect = att "something", "anotherthing" %0, %1 : (i32, i64) -> i8
-  %3 = pop.inline_asm stack_aligned "something", "anotherthing" (%arg0, %arg1) :
+  %3 = pop.inline_asm stack_aligned "something", "anotherthing", (%arg0, %arg1) :
     (!pop.scalar<si32>, !pop.scalar<si64>) -> i8
   // CHECK: [[R:%.*]] = llvm.inline_asm asm_dialect = att "two_results", "two_results" %0 : (i32) -> !llvm.struct<(i32, i32)>
   // CHECK: llvm.extractvalue [[R]][0] : !llvm.struct<(i32, i32)>
   // CHECK: llvm.extractvalue [[R]][1] : !llvm.struct<(i32, i32)>
-  %4:2 = pop.inline_asm "two_results", "two_results" (%arg0) : (!pop.scalar<si32>) -> (!pop.scalar<si32>, !pop.scalar<si32>)
+  %4:2 = pop.inline_asm "two_results", "two_results", (%arg0) : (!pop.scalar<si32>) -> (!pop.scalar<si32>, !pop.scalar<si32>)
   // CHECK: llvm.inline_asm asm_dialect = att "no_results", "no_results" %0 : (i32) -> ()
-  pop.inline_asm "no_results", "no_results" (%arg0) : (!pop.scalar<si32>) -> ()
+  pop.inline_asm "no_results", "no_results", (%arg0) : (!pop.scalar<si32>) -> ()
   kgen.return
 }
 
