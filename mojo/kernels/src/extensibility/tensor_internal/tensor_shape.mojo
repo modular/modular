@@ -506,55 +506,46 @@ struct _TensorShapeStorage:
     var idx: Int64
 
     @always_inline
-    fn __init__() -> Self:
+    fn __init__(inout self):
         """Default initializes the _TensorShapeStorage type."""
         var rep = _Rep32()
         var rep_ptr = Pointer.address_of(rep)
-        return rep_ptr.bitcast[_TensorShapeStorage]().load()
+        self = rep_ptr.bitcast[_TensorShapeStorage]().load()
 
     @always_inline
-    fn __init__(rep: _Rep16) -> Self:
+    fn __init__(inout self, rep: _Rep16):
         """Initializes the _TensorShapeStorage from a _Rep16.
 
         Args:
           rep: A shape representation.
-
-        Returns:
-          The _TensorShapeStorage.
         """
         var rep_copy = rep
         var rep_ptr = Pointer.address_of(rep_copy)
-        return rep_ptr.bitcast[_TensorShapeStorage]().load()
+        self = rep_ptr.bitcast[_TensorShapeStorage]().load()
 
     @always_inline
-    fn __init__(rep: _Rep32) -> Self:
+    fn __init__(inout self, rep: _Rep32):
         """Initializes the _TensorShapeStorage from a _Rep32.
 
         Args:
           rep: A shape representation.
-
-        Returns:
-          The _TensorShapeStorage.
         """
         var rep_copy = rep
         var rep_ptr = Pointer.address_of(rep_copy)
-        return rep_ptr.bitcast[_TensorShapeStorage]().load()
+        self = rep_ptr.bitcast[_TensorShapeStorage]().load()
 
     @always_inline
-    fn __init__(rep: _RepOutOfLine) -> Self:
+    fn __init__(inout self, rep: _RepOutOfLine):
         """Initializes the _TensorShapeStorage from a _Rep32.
 
         Note that this will not copy the underlying data.
 
         Args:
           rep: A shape representation.
-
-        Returns:
-          The _TensorShapeStorage.
         """
         var rep_copy = rep
         var rep_ptr = Pointer.address_of(rep_copy)
-        return rep_ptr.bitcast[_TensorShapeStorage]().load()
+        self = rep_ptr.bitcast[_TensorShapeStorage]().load()
 
 
 @always_inline
