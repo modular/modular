@@ -4,19 +4,15 @@
 #
 ##===----------------------------------------------------------------------===##
 
-add_modular_dialect_library(POPDialect
-  POPAttrs.cpp
-  POPDialect.cpp
-  POPOps.cpp
-  POPOpsFolders.cpp
-  POPTypes.cpp
+add_modular_dialect_library(CODialect
+  CODialect.cpp
+  COOps.cpp
+  COTypes.cpp
 
   DEPENDS
-  MLIRPOPIncGen
+  MLIRCOIncGen
+  MLIRCODialectBytecodeIncGen
 
   LINK_LIBS PUBLIC
-  InterpreterInterface
   KGENDialect
-  MCompilerSupport
-  MDialect
 )

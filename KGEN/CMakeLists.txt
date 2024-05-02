@@ -29,6 +29,7 @@ add_subdirectory(lib/Interpreter)
 add_subdirectory(lib/HLCFDialect)
 add_subdirectory(lib/KGENDialect)
 add_subdirectory(lib/POPDialect)
+add_subdirectory(lib/CODialect)
 add_subdirectory(lib/LITDialect)
 
 # KGEN MLIR passes.
