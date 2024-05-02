@@ -28,6 +28,8 @@ public:
 
   /// Lookup the body of the referenced function using the DeclResolver.
   ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
+  /// Lookup the body of a reference type using the DeclResolver.
+  Operation *lookupTypeDefinition(SymbolRefAttr symbol) override;
 
   DeclResolver &resolver;
 };
@@ -51,15 +53,17 @@ ErrorOr<Region *> ParserInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
       !fullSig.getResultParamTypes().empty())
     return Error("function is parametric");
 
-  // Use of the interpreter's memory model requires a target specification,
-  // which the parser does not have.
-  if (fullSig.hasMemoryOnlyResult() || fullSig.hasInitSelfArg())
-    return Error("function has memory-only result");
-
   // Make sure to fully resolve the body and everything within it.
   if (failed(resolver.resolveFully(*decl, decl->getLoc())))
     return Error("failed to fully resolve function");
   return &func.getBodyRegion();
+}
+
+Operation *ParserInterpreter::lookupTypeDefinition(SymbolRefAttr symbol) {
+  ASTDecl &decl = resolver.getDeclForTypeSymbol(symbol);
+  if (failed(resolver.resolveFully(decl, decl.getLoc())))
+    return {};
+  return decl.getIfOperation();
 }
 
 //===----------------------------------------------------------------------===//
@@ -75,40 +79,87 @@ ParserParamEvaluator::ParserParamEvaluator(DeclResolver &resolver,
                                            ArrayRef<TypedAttr> paramValues)
     : ParameterEvaluator(paramValues), resolver(resolver) {}
 
+SymbolConstantAttr ParserParamEvaluator::findDirectCallee(TypedAttr callee) {
+  ParamOperatorAttr op;
+  while ((op = dyn_cast<ParamOperatorAttr>(callee)) &&
+         op.getOpcode() == POC::Rebind)
+    callee = op.getOperands().front();
+  return dyn_cast<SymbolConstantAttr>(callee);
+}
+
 FailureOr<TypedAttr>
 ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
                                            ArrayRef<Attribute> arguments) {
   // Use the interpreter to execute the function call.
   ParserInterpreter interpreter(resolver);
-  ErrorOr<Region *> body = interpreter.lookupFunctionBody(symbol);
-  if (body.isError()) {
-    // Swallow the error.
-    DEBUG_WITH_TYPE("lit-parameter-evaluator", llvm::errs()
-                                                   << "[ParserParamEvaluator] "
-                                                   << body.getError() << "\n");
-    return failure();
-  }
-
-  ErrorTreeOr<SmallVector<Attribute>> result =
-      interpreter.executeRegion(*body.takeValue(), arguments);
-  if (result.isError()) {
+  ErrorOr<Region *> bodyOr = interpreter.lookupFunctionBody(symbol);
+  if (bodyOr.isError()) {
     // Swallow the error.
     DEBUG_WITH_TYPE("lit-parameter-evaluator",
-                    result.takeError().emit(
-                        (InFlightDiagnostic(*)(Location))mlir::emitError));
+                    llvm::errs() << "[ParserParamEvaluator] "
+                                 << bodyOr.getError() << "\n");
     return failure();
   }
+  Region &body = **bodyOr;
+  LITSignatureType sig = cast<FuncInterface>(body.getParentOp()).getSignature();
 
-  return cast<TypedAttr>(result->front());
+  TypedAttr value;
+  if (sig.hasMemoryOnlyResult() || sig.hasInitSelfArg()) {
+    bool isInitSelf = sig.hasInitSelfArg();
+    Value resultArg =
+        isInitSelf ? body.getArgument(0) : body.getArguments().back();
+    Type resultType = cast<RefType>(resultArg.getType()).getElementType();
+    TypedAttr resultValue;
+    if (!isInitSelf || !isa<DeclRefType>(resultType)) {
+      resultValue = UnknownAttr::get(resultType);
+    } else {
+      // In `init_self` functions, we need to initialize the whole-object bit.
+      // We know this must be a struct; MLIR types are handled above.
+      auto declRef = cast<DeclRefType>(resultType);
+      auto decl = cast<StructDeclOp>(
+          interpreter.lookupTypeDefinition(declRef.getSymbol()));
+      SmallVector<std::tuple<StringAttr, TypedAttr>> values;
+      ParserParamEvaluator evaluator(resolver, decl.getParams(),
+                                     declRef.getParamValues());
+      for (StructFieldOp field : decl.getFieldDecls()) {
+        values.emplace_back(
+            field.getNameAttr(),
+            UnknownAttr::get(evaluator.getReboundType(field.getType())));
+      }
+      resultValue = LITStructAttr::get(values, declRef);
+    }
+    ErrorTreeOr<TypedAttr> result = interpreter.executeRegionWithResultSlot(
+        body, arguments, isInitSelf, resultValue);
+    if (result.isError()) {
+      // Swallow the error.
+      DEBUG_WITH_TYPE("lit-parameter-evaluator",
+                      llvm::errs() << "[ParserParamEvaluator] "
+                                   << bodyOr.getError() << "\n");
+      return failure();
+    }
+    value = result.takeValue();
+  } else {
+    ErrorTreeOr<SmallVector<Attribute>> result =
+        interpreter.executeRegion(body, arguments);
+    if (result.isError()) {
+      // Swallow the error.
+      DEBUG_WITH_TYPE("lit-parameter-evaluator",
+                      result.takeError().emit(
+                          (InFlightDiagnostic(*)(Location))mlir::emitError));
+      return failure();
+    }
+    value = cast<TypedAttr>(result->front());
+  }
+  return value;
 }
 
 FailureOr<TypedAttr>
 ParserParamEvaluator::evaluateExpression(ParamOperatorAttr op) {
-  if (op.getOpcode() != POC::Apply)
+  if (op.getOpcode() != POC::Apply && op.getOpcode() != POC::ApplyResultSlot)
     return failure();
 
   // We can only fold direct calls.
-  auto ref = dyn_cast<SymbolConstantAttr>(op.getOperands().front());
+  SymbolConstantAttr ref = findDirectCallee(op.getOperands().front());
   if (!ref)
     return failure();
 

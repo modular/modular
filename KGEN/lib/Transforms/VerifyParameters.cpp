@@ -103,9 +103,9 @@ SimpleInterpreter::evaluateExpression(ParamOperatorAttr op) {
     bool isInitSelf = func.getSignature().hasInitSelfArg();
     Value resultArg =
         isInitSelf ? body.getArgument(0) : body.getArguments().back();
+    Type resultType = cast<PointerType>(resultArg.getType()).getElementType();
     ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
-        cast<PointerType>(resultArg.getType()).getElementType(), body,
-        arguments, isInitSelf);
+        body, arguments, isInitSelf, UnknownAttr::get(resultType));
     if (result.isError()) {
       DEBUG_WITH_TYPE("simple-interpreter",
                       result.takeError().emit(
