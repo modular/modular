@@ -393,3 +393,29 @@ func.func @sink_kill_debug_values_block_end() -> i32 {
   %v1 = "test.op1"() : () -> i32 loc(#loc1)
   return %v0 : i32  loc(#loc1)
 } loc(#loc0)
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#sp = #debuginfo.subprogram<
+  file = #file,
+  scope = #file,
+  name = <"foo">
+> : !debuginfo.subroutine<() -> (): DW_CC_normal>
+#loc0 = loc(fused<#sp>["foo.mlir":0:0])
+#loc1 = loc(fused<#sp>["foo.mlir":1:0])
+#loc100at1 = loc(callsite("foo.mlir":100:0 at #loc1))
+
+// CHECK-LABEL: func @line_table_loc_lowering
+func.func @line_table_loc_lowering() {
+  // CHECK-NEXT: "test.op0"
+  // CHECK-NEXT: llvm.inline_asm has_side_effects asm_dialect = att "nop", ""  : () -> () loc(#[[LOC1:.+]])
+  // CHECK-NEXT: "test.op1"
+
+  "test.op0"() : () -> i32 loc(#loc0)
+  debuginfo.line_table_loc loc(#loc1)
+  "test.op1"() : () -> i32 loc(#loc100at1)
+} loc(#loc0)
+
+// CHECK: #[[LOC1_RAW:.+]] = loc("foo.mlir":1:0)
+// CHECK: #[[LOC1]] = loc(fused<{{.*}}>[#[[LOC1_RAW]]])
