@@ -237,7 +237,7 @@ struct InputSpec(CollectionElement):
     fn __init__(inout self, spec: TensorSpec):
         """
         Create input specifications for one input tensor, as a
-        [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
+        [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
         Only applicable for TorchScript models.
 
         For example:
@@ -259,7 +259,7 @@ struct InputSpec(CollectionElement):
 
         Args:
             spec: Spec for the input. This is the standard library
-                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
+                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
         """
         self._static = spec
         self._dynamic = None
@@ -278,7 +278,7 @@ struct InputSpec(CollectionElement):
         Args:
             spec: Shape of the input, as a list of integers.
             dtype: Datatype of the input, from the standard library
-                   [`DType`](/mojo/stdlib/builtin/dtype#dtype).
+                   [`DType`](/mojo/stdlib/builtin/dtype/DType).
         """
         self._static = None
         if spec:
@@ -318,7 +318,7 @@ struct InputSpec(CollectionElement):
         Args:
             spec: Always `None`.
             dtype: Datatype of the input, from the standard library
-                   [`DType`](/mojo/stdlib/builtin/dtype#dtype).
+                   [`DType`](/mojo/stdlib/builtin/dtype/DType).
         """
         self._static = None
         self._dynamic = None
@@ -332,7 +332,7 @@ struct _TorchLoadOptions(CollectionElement):
 
     This is used only internally.  To provide load options, pass them as
     keyword arguments to
-    [`Session.load()`](/engine/reference/mojo/engine/session#load).
+    [`InferenceSession.load()`](/engine/reference/mojo/engine/session/InferenceSession#load).
     """
 
     var _source: Optional[ModelSource]
@@ -438,19 +438,18 @@ struct InferenceSession:
         """Compile and initialize a model in MAX Engine, with the given
            model path and config.
 
-        Note: PyTorch models must be in TorchScript format, and TensorFlow
-        models must be in SavedModel format. Or pass any ONNX model.
+        Note: PyTorch models must be in TorchScript format.
 
         If you're loading a TorchScript model, you must specify the `input_specs`
         argument with a list of
-        [`InputSpec`](/engine/reference/mojo/engine/session#inputspec) objects
+        [`InputSpec`](/engine/reference/mojo/engine/session/InputSpec) objects
         that specify the model's input specs (which may have dynamic shapes).
         For details, see how to [specify input
         specs](/engine/model-formats#specify-torchscript-input-specs).
 
         Args:
             path: Location of model in filesystem. You may pass a string here
-                  because the [`Path`](/mojo/stdlib/pathlib/path#path) object
+                  because the [`Path`](/mojo/stdlib/pathlib/path/Path) object
                   supports implicit casting from a string.
             custom_ops_paths:
                 List of paths to Mojo custom op packages, to replace Modular kernels in
@@ -478,7 +477,7 @@ struct InferenceSession:
         input_specs: Optional[List[InputSpec]] = None,
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
-           [`Graph`](/engine/reference/mojo/graph/graph#graph) and config.
+           [`Graph`](/engine/reference/mojo/graph/graph/Graph) and config.
 
         Args:
             graph: MAX Graph.

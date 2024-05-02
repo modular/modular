@@ -20,17 +20,17 @@ from ._tensor_spec_impl import CTensorSpec
 struct EngineTensorSpec(Stringable, CollectionElement):
     """
     Describes the input and output tensor specifications of a
-    [`Model`](/engine/reference/mojo/engine/model#model).
+    [`Model`](/engine/reference/mojo/engine/model/Model).
 
     Holds a description of the input/output tensor, given to or produced by
     MAX Engine. This is similar to
-    [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec) in the Mojo
+    [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec) in the Mojo
     standard library, but is specific to MAX Engine.
 
     This is the data type returned from
-    [`Model.get_model_input_metadata()`](/engine/reference/mojo/engine/model#get_model_input_metadata)
+    [`Model.get_model_input_metadata()`](/engine/reference/mojo/engine/model/Model#get_model_input_metadata)
     and
-    [`Model.get_model_output_metadata()`](/engine/reference/mojo/engine/model#get_model_output_metadata).
+    [`Model.get_model_output_metadata()`](/engine/reference/mojo/engine/model/Model#get_model_output_metadata).
     """
 
     var _ptr: CTensorSpec

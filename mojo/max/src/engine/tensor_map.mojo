@@ -24,8 +24,8 @@ struct TensorMap(SizedRaising):
     be used to supply and receive data to MAX Engine model.
 
     This is the data type returned by
-    [`Model.execute()`](/engine/reference/mojo/engine/model#execute), and you
-    can also use this type for the inputs you pass in (although `execute()`
+    [`Model.execute()`](/engine/reference/mojo/engine/model/Model#execute), and
+    you can also use this type for the inputs you pass in (although `execute()`
     also supports other formats for the input).
     """
 
@@ -127,7 +127,7 @@ struct TensorMap(SizedRaising):
         Args:
             key: Name of tensor in map.
             spec: The tensor spec. This is the standard library
-                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
+                  [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
             ptr: The tensor pointer.
         """
         var tensor_spec = EngineTensorSpec(
@@ -239,7 +239,7 @@ struct TensorMap(SizedRaising):
 
         Returns:
             Buffer of the tensor pointed by the key, as a
-            [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec#tensorspec).
+            [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
         """
         var tensor_ptr = self._ptr.get_tensor_by_name(key._as_ptr(), self._lib)
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
@@ -252,7 +252,7 @@ struct TensorMap(SizedRaising):
             key: Name in TensorMap.
 
         Returns:
-            [`Value`](/engine/reference/mojo/engine/value#value) pointed by
+            [`Value`](/engine/reference/mojo/engine/value/Value) pointed by
             the key.
         """
         var value_ptr = self._ptr.get_value_by_name(
