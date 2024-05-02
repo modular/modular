@@ -1718,7 +1718,7 @@ AnyValue CallNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // If this is an overloaded operand, resolve it and call the result.
   if (auto overloads = calleeVal.getIfOverloadSet()) {
     emitter.shared.notifyListenerOnCall(overloads->fnDecls, rparenLoc,
-                                        operands);
+                                        overloads->syntax, operands);
     overloads->expr = this;
     return overloads->emitCall(operands, dest, emitter);
   }

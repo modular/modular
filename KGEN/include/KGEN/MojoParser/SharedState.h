@@ -353,6 +353,7 @@ public:
   /// Notify the parser listener, if present, that a call is being resolved with
   /// the given operands.
   void notifyListenerOnCall(ArrayRef<ASTDecl *> decls, SMLoc rparenLoc,
+                            CallSyntax syntax,
                             const CallOperands &callOperands);
 
   /// Notify the listener, if present, that parameter operands are being bound

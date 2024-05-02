@@ -1454,7 +1454,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // Check to see if we can invoke an __init__ method to convert it.
   auto callee =
       OverloadSet::lookup(declScope, shared, type, "__init__", expr, syntax);
-  shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(),
+  shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
                               callOperands);
 
   // Set the parameter bindings for the type we're creating - they can't be
