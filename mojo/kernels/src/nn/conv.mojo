@@ -32,14 +32,7 @@ from buffer.buffer import (
 )
 from buffer.list import Dim, DimList
 
-from LinAlg.MatmulUtils import (
-    PartitionHeuristic,
-    get_matmul_prefetch_b_distance_k,
-    get_min_task_size,
-    get_partitioned_matmul,
-    get_partitioned_matmul_im2col,
-    partition_work,
-)
+from LinAlg.MatmulUtils import partition_work
 from LinAlg.accumulate import (
     _Accumulator,
 )
