@@ -7,7 +7,6 @@
 add_modular_library(HLCFAnalysis
   CFG.cpp
   ControlFlowTree.cpp
-  DataFlow.cpp
 
   LINK_LIBS PUBLIC
   HLCFDialect
