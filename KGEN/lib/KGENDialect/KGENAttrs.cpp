@@ -1165,7 +1165,7 @@ LogicalResult ParamOperatorAttr::verify(
     break;
   case POC::CompileAssembly: {
     if (operands.size() != 4)
-      return emitError() << "'compile_assembly' requires 3 operands";
+      return emitError() << "'compile_assembly' requires 4 operands";
     if (!::isa<TargetType>(operands.front().getType()))
       return emitError()
              << "'compile_assembly' first operand should be a target type";
@@ -1176,7 +1176,7 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "'compile_assembly' third operand should be an i1";
     if (!::isa<IntegerAttr>(operands[2]))
       return emitError()
-             << "'compile_assembly' third operand must be a constant";
+             << "'compile_assembly' fourth operand must be a constant";
     break;
   }
   case POC::GetLinkageName:
