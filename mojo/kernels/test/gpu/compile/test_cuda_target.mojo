@@ -444,7 +444,7 @@ fn test_shuffle_up(val: Float32) -> Float32:
     alias limit = _static_log2[WARP_SIZE]()
 
     @unroll
-    for mask in range(limit - 1, -1, -1):
+    for mask in reversed(range(limit)):
         res += shuffle_up[DType.float32](res, 1 << mask)
     return res
 
@@ -483,7 +483,7 @@ fn test_shuffle_down(val: Int32) -> Int32:
     alias limit = _static_log2[WARP_SIZE]()
 
     @unroll
-    for mask in range(limit - 1, -1, -1):
+    for mask in reversed(range(limit)):
         res += shuffle_down[DType.int32](res, 1 << mask)
     return res
 
@@ -527,7 +527,7 @@ fn warp_sum_reduce(val: Float32) -> Float32:
     alias limit = _static_log2[WARP_SIZE]()
 
     @unroll
-    for mask in range(limit - 1, -1, -1):
+    for mask in reversed(range(limit)):
         res += shuffle_xor[DType.float32](res, 1 << mask)
     return res
 
