@@ -1038,7 +1038,8 @@ EntitlementStore EntitlementStore::alwaysOpen(llvm::raw_ostream &warnStream) {
   // plumbing.
   auto cfgOr = Config::open();
   assert(!cfgOr.isError());
-  auto esOr = EntitlementStore::open(*cfgOr, EntitlementStore::getEnv());
+  auto esOr =
+      EntitlementStore::open(*cfgOr, EntitlementStore::getAuthTokenFromEnv());
   if (!esOr.isError() && esOr->has_value())
     return std::move(esOr->value());
 

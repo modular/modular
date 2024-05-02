@@ -40,7 +40,8 @@ Settings::Settings(Config &&cfg, EntitlementStore &&store)
 
 static ErrorOr<EntitlementStore> openEntitlementStore(Config &config) {
   // First, we attempt to open the certificate.
-  auto storeOr = EntitlementStore::open(config, EntitlementStore::getEnv());
+  auto storeOr =
+      EntitlementStore::open(config, EntitlementStore::getAuthTokenFromEnv());
   if (storeOr.isError())
     return storeOr.takeError();
   if (storeOr->has_value())
