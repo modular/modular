@@ -400,7 +400,7 @@ class InferenceSession:
             Path to a model. May be a TorchScript model or an ONNX model.
 
         custom_ops_path: str
-            The path to your custom ops. (This feature is coming soon.)
+            The path to your custom ops Mojo package.
 
         input_specs:
             The tensor specifications (shape and data type) for each of the
