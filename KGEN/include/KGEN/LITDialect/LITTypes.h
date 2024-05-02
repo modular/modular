@@ -24,6 +24,11 @@ class RefPackType;
 class SymbolAttr;
 enum class PassingKind : uint32_t;
 
+/// Create an uninitialized TypedAttr instance of the type for symbolic
+/// interpretation.
+ErrorOr<TypedAttr> createUninitializedValueOf(Type type,
+                                              InterpreterState &state);
+
 class LITSignatureType : public SignatureType {
 public:
   using SignatureType::SignatureType;
