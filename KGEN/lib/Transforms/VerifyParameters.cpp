@@ -66,7 +66,7 @@ private:
 
 FailureOr<TypedAttr>
 SimpleInterpreter::evaluateExpression(ParamOperatorAttr op) {
-  if (op.getOpcode() != POC::Apply)
+  if (op.getOpcode() != POC::Apply && op.getOpcode() != POC::ApplyResultSlot)
     return failure();
 
   // We can only fold direct calls.
@@ -83,22 +83,41 @@ SimpleInterpreter::evaluateExpression(ParamOperatorAttr op) {
   for (TypedAttr input : inputs)
     arguments.push_back(input);
 
-  ErrorOr<Region *> body = lookupFunctionBody(ref.getSymbol());
-  if (body.isError())
+  ErrorOr<Region *> bodyOr = lookupFunctionBody(ref.getSymbol());
+  if (bodyOr.isError())
     return failure();
+  Region &body = **bodyOr;
 
-  ErrorTreeOr<SmallVector<Attribute>> result =
-      executeRegion(*body.takeValue(), arguments);
-  // Swallow the error.
-  if (result.isError()) {
-    DEBUG_WITH_TYPE("simple-interpreter",
-                    result.takeError().emit(
-                        (InFlightDiagnostic(*)(Location))mlir::emitError));
-    return failure();
+  TypedAttr value;
+  if (op.getOpcode() == POC::Apply) {
+    ErrorTreeOr<SmallVector<Attribute>> result = executeRegion(body, arguments);
+    if (result.isError()) {
+      DEBUG_WITH_TYPE("simple-interpreter",
+                      result.takeError().emit(
+                          (InFlightDiagnostic(*)(Location))mlir::emitError));
+      return failure();
+    }
+    value = cast<TypedAttr>(result->front());
+  } else {
+    auto func = cast<FuncInterface>(body.getParentOp());
+    bool isInitSelf = func.getSignature().hasInitSelfArg();
+    Value resultArg =
+        isInitSelf ? body.getArgument(0) : body.getArguments().back();
+    ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
+        cast<PointerType>(resultArg.getType()).getElementType(), body,
+        arguments, isInitSelf);
+    if (result.isError()) {
+      DEBUG_WITH_TYPE("simple-interpreter",
+                      result.takeError().emit(
+                          (InFlightDiagnostic(*)(Location))mlir::emitError));
+      return failure();
+    }
+    value = result.takeValue();
   }
-  if (!ParameterAttr::isSimpleConstant(result->front()))
+
+  if (!ParameterAttr::isSimpleConstant(value))
     return failure();
-  return cast<TypedAttr>(result->front());
+  return value;
 }
 
 ErrorOr<Region *> SimpleInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
