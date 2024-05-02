@@ -102,12 +102,12 @@ struct FunctionHandle(Boolable):
     var handle: DTypePointer[DType.invalid]
 
     @always_inline
-    fn __init__() -> Self:
-        return Self {handle: DTypePointer[DType.invalid]()}
+    fn __init__(inout self):
+        self.handle = DTypePointer[DType.invalid]()
 
     @always_inline
-    fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
-        return Self {handle: handle}
+    fn __init__(inout self, handle: DTypePointer[DType.invalid]):
+        self.handle = handle
 
     @always_inline
     fn __bool__(self) -> Bool:
