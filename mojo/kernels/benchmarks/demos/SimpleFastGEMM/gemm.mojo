@@ -18,7 +18,7 @@ from buffer.list import Dim, DimList
 
 from math import align_up
 
-from MatmulUtils import (
+from LinAlg.MatmulUtils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
 )
@@ -28,8 +28,8 @@ alias simd_size = simdwidthof[dtype]()
 alias alignment = alignof[SIMD[dtype, simd_size]]()
 
 alias kernel_shape = get_matmul_kernel_shape[dtype, dtype, dtype, False]()
-alias MR = kernel_shape.a_row_size
-alias NR = kernel_shape.pack_inner_size * simd_size
+alias MR = kernel_shape.simd_rows
+alias NR = kernel_shape.simd_cols * simd_size
 
 # AVX512 values
 # alias MR = 6
@@ -81,7 +81,7 @@ fn kernel(
     @parameter
     @always_inline
     fn loadc[idx0: Int, idx1: Int]():
-        var cv = c.load[simd_size](n * idx0 + simd_size * idx1)
+        var cv = c.load[width=simd_size](n * idx0 + simd_size * idx1)
         c_local.store[width=simd_size](NR * idx0 + simd_size * idx1, cv)
 
     unroll[loadc, MR, NR2]()
@@ -100,9 +100,9 @@ fn kernel(
         @parameter
         @always_inline
         fn calc[idx0: Int, idx1: Int]():
-            var av = a.load[1](idx0 * k + pr).cast[dtype]()
-            var bv = b.load[simd_size](NR * pr + simd_size * idx1)
-            var cv = c_local.load[simd_size](NR * idx0 + simd_size * idx1)
+            var av = a.load[width=1](idx0 * k + pr).cast[dtype]()
+            var bv = b.load[width=simd_size](NR * pr + simd_size * idx1)
+            var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
             cv += av * bv
             c_local.store[width=simd_size](NR * idx0 + simd_size * idx1, cv)
 
@@ -111,7 +111,7 @@ fn kernel(
     @parameter
     @always_inline
     fn storec[idx0: Int, idx1: Int]():
-        var cv = c_local.load[simd_size](NR * idx0 + simd_size * idx1)
+        var cv = c_local.load[width=simd_size](NR * idx0 + simd_size * idx1)
         c.store[width=simd_size](n * idx0 + simd_size * idx1, cv)
 
     unroll[storec, MR, NR2]()
@@ -225,7 +225,7 @@ fn main():
         if c[i] != c2[i]:
             errors += 1
     print(errors, end="")
-    print("/")
+    print("/", end="")
     print(m * n, end="")
     print(" errors")
 

@@ -13,7 +13,7 @@ from layout import *
 
 from math import align_up
 
-from MatmulUtils import (
+from LinAlg.MatmulUtils import (
     get_matmul_kernel_shape,
     get_matmul_prefetch_b_distance_k,
 )
