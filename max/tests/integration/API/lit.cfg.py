@@ -111,9 +111,6 @@ config.substitutions.append(("%test_utils_pkg_dir", test_utils_dir))
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
 
-config.available_features.add(config.llvm_use_sanitizer.lower())
-
-
 if "numpy" in sys.modules:
     config.available_features.add("numpy")
 

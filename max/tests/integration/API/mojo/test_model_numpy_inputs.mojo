@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 # UNSUPPORTED: windows
-# UNSUPPORTED: address
+# UNSUPPORTED: asan
 # REQUIRES: numpy
 # RUN: %mojo -debug-level full %s %S/mo.mlir
 
