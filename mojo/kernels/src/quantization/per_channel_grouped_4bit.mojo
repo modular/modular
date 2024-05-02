@@ -8,7 +8,6 @@ from math import (
     ceil,
     div_ceil,
     is_power_of_2,
-    roundeven,
 )
 from sys.info import has_avx2, has_neon_int8_dotprod, sizeof
 
@@ -233,7 +232,7 @@ fn calculate_symmetric_vector[
     ) else result_range / positive_steps
 
     # TODO: consider clipping values
-    var data_rounded = roundeven(data / f32_scale).cast[DType.int8]()
+    var data_rounded = (data / f32_scale).roundeven().cast[DType.int8]()
 
     # each bit pattern in `data_quantized`
     var data_quantized = (data_rounded + negative_steps).cast[DType.uint8]()
@@ -553,7 +552,9 @@ fn _block_quantize_a[
                 127.0
             ) / max_value if max_value != 0.0 else 0.0
 
-            var quant_data = roundeven(fp_data * multiplier).cast[DType.int8]()
+            var quant_data = (fp_data * multiplier).roundeven().cast[
+                DType.int8
+            ]()
             a_quant_ptr.store(quant_data)
             a_scale_ptr.store(scale.cast[scale_type]())
 
