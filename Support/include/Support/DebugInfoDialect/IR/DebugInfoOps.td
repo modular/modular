@@ -20,6 +20,25 @@ class DebugInfoOp<string mnemonic, list<Trait> traits = []>
     : Op<DebugInfoDialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
+// LineTableLocOp
+//===----------------------------------------------------------------------===//
+
+def DebugInfo_LineTableLocOp : DebugInfoOp<"line_table_loc"> {
+  let summary = "explicitly mark a source location in IR";
+  let description = [{
+    The `debuginfo.line_table_loc` operation ensures a line-table entry for a
+    source location is generated at a specific program point. This allows places
+    that are not normally break-able to become break-able by giving a line-table
+    entry.
+
+    This may come with a performance cost as it is lowered into a nop or
+    equivalent instruction.
+  }];
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // KillOp
 //===----------------------------------------------------------------------===//
 
