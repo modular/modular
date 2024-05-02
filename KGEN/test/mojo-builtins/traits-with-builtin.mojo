@@ -22,7 +22,7 @@ trait TraitForReg:
 
 @register_passable("trivial")
 struct RegTypeTrivial(TraitForReg):
-    fn __init__(x: Int) -> Self:
+    fn __init__(inout self, x: Int):
         pass
 
     @staticmethod

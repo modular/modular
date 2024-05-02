@@ -13,8 +13,8 @@
 # CHECK-LABEL: lit.func @"tuples_rv
 fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl
-    # CHECK: [[PACK0:%.*]] = kgen.param.constant:
-    # CHECK-SAME: !lit.ref.pack<:variadic<!AnyType> [], imm #lit.lifetime> = <<>>
+    # CHECK: [[PACK0:%.*]] = kgen.param.constant: !lit.ref.pack
+    # CHECK-SAME: <:variadic<!AnyType> [], imm #lit.lifetime> = <<>>
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
     _ = ()
 

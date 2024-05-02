@@ -19,8 +19,10 @@ struct ThreeInts:
     var y: Int
     var z: Int
 
-    fn __init__() -> Self:
-        return Self {x: 0, y: 0, z: 0}
+    fn __init__(inout self):
+        self.x = 0
+        self.y = 0
+        self.z = 0
 
 
 struct OwnedInt:

@@ -13,8 +13,8 @@
 @value
 @register_passable("trivial")
 struct Thing:
-    fn __init__(x: NMType) -> Self:
-        return Self {}
+    fn __init__(inout self, x: NMType):
+        return
 
     fn foo(self):
         pass
@@ -49,7 +49,9 @@ fn metatypes():
     # COM: Test that a local alias can retain type properties.
     # CHECK: lit.alias.decl [[T:\*"T.*]]: !mt_Thing = <!Thing>
     alias T = Thing
-    # CHECK: [[VAL:%.*]] = kgen.param.constant: !Thing =
+    # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
+    # CHECK: lit.call {{.*}}__init__{{.*}}([[TMP]])
+    # CHECK: [[VAL:%.*]] = lit.ref.load [[TMP]]
     # CHECK: call {{.*}}@Thing::@"foo({{.*}})"([[VAL]])
     T().foo()
     # CHECK: call {{.*}}@Thing::@"bar()"
@@ -69,6 +71,6 @@ fn metatypes():
 
     # COM: Test inferring from a non-materializable type.
     alias nm_alias = NMType()
-    # CHECK: [[MVAL:%.*]] = kgen.param.constant: !Thing = <apply({{.*}}@Thing::@"__init__
+    # CHECK: [[MVAL:%.*]] = kgen.param.constant: !Thing = <apply_result_slot({{.*}}@Thing::@"__init__
     # CHECK: call {{.*}}@"anytype_arg[AnyRegType]($0)"<:type !Thing>([[MVAL]])
     anytype_arg(nm_alias)

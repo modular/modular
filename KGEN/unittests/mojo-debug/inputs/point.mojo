@@ -11,7 +11,7 @@ struct Point(CollectionElement):
     var y: Int
 
     fn __init__(x: Int, y: Int) -> Self:
-        return Point {x: x, y: y}  # breakpoint
+        return Self {x: x, y: y}  # breakpoint
 
 
 fn main():

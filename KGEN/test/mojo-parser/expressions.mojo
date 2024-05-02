@@ -184,7 +184,7 @@ struct RegPassable:
   var value: Int
   # CHECK-LABEL: lit.func @"__init__
   fn __init__(value: Int) -> Self:
-  # CHECK-NEXT:  = lit.struct.create(value=%value) : (!Int) -> !RegPassable
+  # CHECK:  = lit.struct.create(value=%value) : (!Int) -> !RegPassable
     return Self{value: value}
 
   fn __copyinit__(self) -> Self: pass
@@ -834,7 +834,7 @@ world"
     # Issue #201: https://github.com/modularml/mojo/issues/201
     # CHECK: lit.func *"hello{{.*}} {
     fn hello() -> StringLiteral:
-        # CHECK: :string "123"
+        # CHECK: kgen.param.constant: string = <"123">
         return "123"
         # lit.end_func
     """other comment"""
@@ -893,8 +893,8 @@ struct MyInlineIntInit:
 
 @register_passable
 struct ConstDynamicObject:
-    fn __init__() -> Self:
-        return Self{}
+    fn __init__(inout self):
+        return
 
     fn __getattr__(self, name: StringLiteral) -> Int:
         return 0
@@ -912,20 +912,22 @@ struct DynamicObject:
 
 # CHECK-LABEL: lit.func @"dynamic_attribute()"
 fn dynamic_attribute():
+    # CHECK: %const_obj = lit.var.decl "const_obj"
     var const_obj = ConstDynamicObject()
-    # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "dynamic_attribute"
-    # CHECK: call {{.*}}@ConstDynamicObject::@"__getattr__{{.*}}"({{.*}}, %[[KEY]])
+    # CHECK: %anonymous2A = lit.var.decl {{.*}}!StringLiteral
+    # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} <"dynamic_attribute">
+    # CHECK: call {{.*}}@ConstDynamicObject::@"__getattr__{{.*}}"(
     _ = const_obj.dynamic_attribute
 
     var obj = DynamicObject()
+    # CHECK: %[[KEY:.*]] = kgen.param.constant: string = <"some_attr">
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
-    # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "some_attr"
-    # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}([[IMMREF]], %[[KEY]])
+    # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}([[IMMREF]],
     _ = obj.some_attr
-    # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %obj
-    # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} "some_attr"
+    # CHECK: %[[KEY:.*]] = kgen.param.constant: string = <"some_attr">
+    # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
     # CHECK: %[[VALUE:.*]] = kgen.param.constant: !Int = <{42}>
-    # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}([[IMMREF]], %[[KEY]], %[[VALUE]])
+    # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}([[IMMREF]], {{.*}}, %[[VALUE]])
     obj.some_attr = 42
 
 
