@@ -1051,20 +1051,20 @@ fn cast[
 @always_inline
 @export
 fn concat_from_list[
-    type: DType,
-    rank: Int,
+    input_type: DType,
+    input_rank: Int,
     simd_width: Int,
     single_thread_blocking_override: Bool,
     axis_type: DType,
 ](
-    inputs: InlinedFixedVector[NDBuffer[type, rank]],
+    inputs: InlinedFixedVector[NDBuffer[input_type, input_rank]],
     axis: NDBuffer[axis_type, 1],
-    output: NDBuffer[type, rank],
+    output: NDBuffer[input_type, input_rank],
     ctx: MojoCallContextPtr,
 ) raises:
     with Trace[TraceLevel.OP]("mojo.concat_from_list") as t:
-        _concat[rank, type, single_thread_blocking_override](
-            output, int(normalize_neg_index(axis[0], rank)), inputs
+        _concat[input_rank, input_type, single_thread_blocking_override](
+            output, int(normalize_neg_index(axis[0], input_rank)), inputs
         )
 
 
