@@ -794,6 +794,27 @@ bool LITStructAttr::isConstant() const {
   });
 }
 
+ErrorOr<TypedAttr> LIT::createUninitializedValueOf(Type type,
+                                                   InterpreterState &state) {
+  auto declRef = dyn_cast<DeclRefType>(type);
+  if (!declRef)
+    return {UnknownAttr::get(type)};
+  SmallVector<std::tuple<StringAttr, TypedAttr>> values;
+  auto decl = cast_or_null<StructDeclOp>(
+      state.lookupTypeDefinition(declRef.getSymbol()));
+  if (!decl)
+    return Error("didn't find struct decl");
+  ParameterEvaluator evaluator(decl.getParams(), declRef.getParamValues());
+  for (StructFieldOp field : decl.getFieldDecls()) {
+    Type type = evaluator.getReboundType(field.getType());
+    ErrorOr<TypedAttr> value = createUninitializedValueOf(type, state);
+    if (value.isError())
+      return value.takeError();
+    values.emplace_back(field.getNameAttr(), value.takeValue());
+  }
+  return LITStructAttr::get(values, declRef);
+}
+
 //===----------------------------------------------------------------------===//
 // StructExtractAttr
 //===----------------------------------------------------------------------===//

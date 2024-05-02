@@ -109,27 +109,13 @@ ParserParamEvaluator::evaluateFunctionCall(SymbolRefAttr symbol,
     Value resultArg =
         isInitSelf ? body.getArgument(0) : body.getArguments().back();
     Type resultType = cast<RefType>(resultArg.getType()).getElementType();
-    TypedAttr resultValue;
-    if (!isInitSelf || !isa<DeclRefType>(resultType)) {
-      resultValue = UnknownAttr::get(resultType);
-    } else {
-      // In `init_self` functions, we need to initialize the whole-object bit.
-      // We know this must be a struct; MLIR types are handled above.
-      auto declRef = cast<DeclRefType>(resultType);
-      auto decl = cast<StructDeclOp>(
-          interpreter.lookupTypeDefinition(declRef.getSymbol()));
-      SmallVector<std::tuple<StringAttr, TypedAttr>> values;
-      ParserParamEvaluator evaluator(resolver, decl.getParams(),
-                                     declRef.getParamValues());
-      for (StructFieldOp field : decl.getFieldDecls()) {
-        values.emplace_back(
-            field.getNameAttr(),
-            UnknownAttr::get(evaluator.getReboundType(field.getType())));
-      }
-      resultValue = LITStructAttr::get(values, declRef);
-    }
+    ErrorOr<TypedAttr> init =
+        createUninitializedValueOf(resultType, interpreter);
+    if (init.isError())
+      return failure();
+
     ErrorTreeOr<TypedAttr> result = interpreter.executeRegionWithResultSlot(
-        body, arguments, isInitSelf, resultValue);
+        body, arguments, isInitSelf, *init);
     if (result.isError()) {
       // Swallow the error.
       DEBUG_WITH_TYPE("lit-parameter-evaluator",

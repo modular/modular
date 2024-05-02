@@ -98,3 +98,22 @@ lit.func @interpret_ger_store() {
   kgen.param.constant: @Pair = <apply(:!lit.signature<("a": index, "b": index) -> !lit.declref<@Pair>> @initialize_pair, 11, 22)>
   kgen.return
 }
+
+lit.func @partial_ger_store(%i: index) -> !lit.declref<@Pair> {
+  %x = lit.var.decl "x" arg : !lit.ref<@Pair, mut lt>
+  %0 = lit.ref.struct.ger %x[first] : <@Int, mut lt> from @Pair
+  %1 = lit.ref.struct.ger %0[value] : <index, mut lt> from @Int
+  %2 = lit.ref.struct.ger %x[second] : <@Int, mut lt> from @Pair
+  %3 = lit.ref.struct.ger %2[value] : <index, mut lt> from @Int
+  lit.ref.store %i, %1 : <index, mut lt>
+  lit.ref.store %i, %3 : <index, mut lt>
+  %4 = lit.load.consume %x : !lit.ref<@Pair, mut lt>
+  kgen.return %4 : !lit.declref<@Pair>
+}
+
+// CHECK-LABEL: lit.func @interpret_partial_ger_store
+lit.func @interpret_partial_ger_store() {
+  // CHECK-NEXT: @Pair = <{first: @Int = {22}, second: @Int = {22}}>
+  kgen.param.constant: @Pair = <apply(:!lit.signature<("i": index) -> !lit.declref<@Pair>> @partial_ger_store, 22)>
+  kgen.return
+}

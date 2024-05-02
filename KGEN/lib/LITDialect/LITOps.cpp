@@ -1512,9 +1512,6 @@ interpretSymbolicLoadOp(Location loc, TypedAttr arg, InterpreterState &state) {
   if (value.isError())
     return value.takeError();
 
-  if (isa<UnknownAttr>(*value))
-    return UnknownAttr::get(cast<RefType>(arg.getType()).getElementType());
-
   auto structAttr = cast<LITStructAttr>(*value);
   for (auto [name, value] : structAttr.getValues()) {
     if (name == ger.getField())
@@ -1558,24 +1555,7 @@ static ErrorTreeOrSuccess interpretSymbolicStoreOp(Location loc,
   SmallVector<std::pair<TypedAttr, int>> values;
   values.emplace_back(*mem, -1);
   for (StringAttr field : llvm::reverse(fields)) {
-    TypedAttr &element = values.back().first;
-    if (isa<UnknownAttr>(element)) {
-      auto type = cast<DeclRefType>(element.getType());
-      auto decl = cast_or_null<StructDeclOp>(
-          state.lookupTypeDefinition(type.getSymbol()));
-      if (!decl)
-        return ErrorTree(loc, "failed to find type definition");
-      ParameterEvaluator evaluator(decl.getParams(), type.getParamValues());
-      SmallVector<std::tuple<StringAttr, TypedAttr>> undef;
-      for (StructFieldOp field : decl.getFieldDecls()) {
-        undef.emplace_back(
-            field.getNameAttr(),
-            UnknownAttr::get(evaluator.getReboundType(field.getType())));
-      }
-      element = LITStructAttr::get(undef, type);
-    }
-
-    auto attr = cast<LITStructAttr>(element);
+    auto attr = cast<LITStructAttr>(values.back().first);
     int i = 0;
     for (auto [name, value] : attr.getValues()) {
       if (name == field) {
@@ -1838,8 +1818,12 @@ LogicalResult VarDeclOp::verify() {
 
 ErrorTreeOrSuccess VarDeclOp::interpret(ArrayRef<Attribute> operands,
                                         InterpreterState &state) {
-  uint64_t result = state.allocateSymbolicMemory(
-      UnknownAttr::get(getType().getElementType()));
+  ErrorOr<TypedAttr> value =
+      createUninitializedValueOf(getType().getElementType(), state);
+  if (value.isError())
+    return ErrorTree(getLoc(), value.takeError());
+
+  uint64_t result = state.allocateSymbolicMemory(*value);
   state.mapResults(SymbolicPointerAttr::get(result, getType()));
   return success();
 }
