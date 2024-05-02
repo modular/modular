@@ -24,7 +24,6 @@ from .Gemv import gemv
 from .MatmulUtils import (
     GemmShape,
     MatmulConfig,
-    PartitionHeuristic,
     SubMatmulConfig,
     calculate_tile_n_k,
     dispatch_get_kernel_type,
@@ -602,7 +601,6 @@ fn _matmul_cpu[
                 a.type,
                 b.type,
                 c.type,
-                PartitionHeuristic.MOJO,
             ](m, 1, k, task_id, num_tasks, kernel_type_m)
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
@@ -616,7 +614,6 @@ fn _matmul_cpu[
                 a.type,
                 b.type,
                 c.type,
-                PartitionHeuristic.MOJO,
             ](m, n, k, task_id, num_tasks, kernel_type_m)
 
             if (

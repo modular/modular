@@ -15,7 +15,6 @@ from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Function, Stream
 from .Matmul import _submatmul_sequential_sync
-from .MatmulUtils import PartitionHeuristic
 from .MatmulUtils import (
     elementwise_epilogue_type as matmul_elementwise_epilogue_type,
 )
@@ -412,7 +411,7 @@ fn _batched_matmul_cpu[
                     func[c_type, width, rank](batch_coords, out_val)
 
             var sub_matmul_config = get_partitioned_matmul[
-                a_type, b_type, c_type, PartitionHeuristic.MOJO
+                a_type, b_type, c_type
             ](m, n, k, matmul_task_id, num_tasks_matmul)
             if (
                 sub_matmul_config.shape[0] <= 0

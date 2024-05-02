@@ -452,22 +452,6 @@ struct SubMatmulConfig:
         return self.shape > Index(0, 0, 0)
 
 
-@register_passable("trivial")
-struct PartitionHeuristic:
-    var value: Int
-    alias MOJO = PartitionHeuristic(0)
-    alias Im2col = PartitionHeuristic(1)
-    alias ONEDNN = PartitionHeuristic(2)
-
-    @always_inline("nodebug")
-    fn __init__(value: Int) -> PartitionHeuristic:
-        return PartitionHeuristic {value: value}
-
-    @always_inline("nodebug")
-    fn __eq__(self, heuristic: PartitionHeuristic) -> Bool:
-        return self.value == heuristic.value
-
-
 # The work is first grouped into blocks for alignment and load/store efficiency.
 # This will partition the work blocks between tasks as even as possible.
 @always_inline
@@ -492,16 +476,16 @@ fn partition_work(
 
 
 fn get_partitioned_matmul[
-    a_type: DType, b_type: DType, c_type: DType, heuristic: PartitionHeuristic
+    a_type: DType, b_type: DType, c_type: DType
 ](
     m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int, kernel_type_m: Int = 0
 ) -> SubMatmulConfig:
     if get_kernel_type(kernel_type_m, n, k):
-        return get_partitioned_matmul[a_type, b_type, c_type, heuristic, True](
+        return get_partitioned_matmul[a_type, b_type, c_type, True](
             m, n, k, task_id, num_tasks
         )
     else:
-        return get_partitioned_matmul[a_type, b_type, c_type, heuristic, False](
+        return get_partitioned_matmul[a_type, b_type, c_type, False](
             m, n, k, task_id, num_tasks
         )
 
@@ -510,7 +494,6 @@ fn get_partitioned_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    heuristic: PartitionHeuristic,
     kernel_type: Bool,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     alias kernel_shape = get_matmul_kernel_shape[
@@ -523,31 +506,23 @@ fn get_partitioned_matmul[
     alias kernel_cols = kernel_shape.simd_cols * simdwidthof[c_type]()
 
     @parameter
-    if heuristic == PartitionHeuristic.MOJO:
-
-        @parameter
-        if use_i8mm:
-            # i8mm needs to have even partitions in m.
-            # Only the last range is allowed to be odd.
-            var partition = get_partitioned_matmul_mojo[
-                a_type, b_type, c_type, kernel_rows, kernel_cols, use_i8mm
-            ](m // 2, n, k, task_id, num_tasks)
-
-            var t0 = 2 * partition.offset[0]
-            var t1 = 2 * partition.shape[0]
-            if t0 + t1 == m - 1:
-                t1 = m - t0
-            partition.offset[0] = t0
-            partition.shape[0] = t1
-            return partition
-        else:
-            return get_partitioned_matmul_mojo[
-                a_type, b_type, c_type, kernel_rows, kernel_cols
-            ](m, n, k, task_id, num_tasks)
+    if use_i8mm:
+        # i8mm needs to have even partitions in m.
+        # Only the last range is allowed to be odd.
+        var partition = get_partitioned_matmul_mojo[
+            a_type, b_type, c_type, kernel_rows, kernel_cols, use_i8mm
+        ](m // 2, n, k, task_id, num_tasks)
+        var t0 = 2 * partition.offset[0]
+        var t1 = 2 * partition.shape[0]
+        if t0 + t1 == m - 1:
+            t1 = m - t0
+        partition.offset[0] = t0
+        partition.shape[0] = t1
+        return partition
     else:
-        return get_partitioned_matmul_im2col[kernel_rows, kernel_cols](
-            m, n, k, task_id, num_tasks
-        )
+        return get_partitioned_matmul_mojo[
+            a_type, b_type, c_type, kernel_rows, kernel_cols
+        ](m, n, k, task_id, num_tasks)
 
 
 fn get_partitioned_matmul_mojo[
@@ -624,56 +599,6 @@ fn get_partitioned_matmul_mojo_shape[
         num_col_tasks = num_tasks
 
     return Index(num_row_tasks, num_col_tasks)
-
-
-fn get_partitioned_matmul_im2col[
-    kernel_m: Int,
-    kernel_n: Int,
-](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    # Accessing A is more expensive in im2col than accessing B.
-    # Time a factor to M to var the heuristic bias on partitioning M.
-    # TODO: make this bias factor part of function parameter/argument and
-    # unifies interface with matmul partition, e.x. bias=1 for matmul.
-    alias bias = 2
-    var m_biased = m * bias
-    # The ideal partition in theory is to balance the cost of memory access in
-    # M and N dimensions using square sub-matrix (after applying the bias).
-    var ideal_num_col_tasks = sqrt(div_ceil(n * num_tasks, m_biased))
-    var num_row_tasks = num_tasks // ideal_num_col_tasks
-    var num_col_tasks = ideal_num_col_tasks
-
-    # Prioritize having at least two packs in N so that A is reused.
-    var max_num_col_tasks = min(div_ceil(n, 2 * kernel_n), num_tasks)
-    if ideal_num_col_tasks > max_num_col_tasks:
-        num_col_tasks = max_num_col_tasks
-        num_row_tasks = num_tasks // num_col_tasks
-    # In this branch, not all threads get used for ideal_num_col_tasks
-    # Check for alternative factorizations use the most threads.
-    elif num_tasks % ideal_num_col_tasks != 0:
-        # Set 20% deviation.
-        # TODO: Make this tuning parameter a function parameter/argument.
-        var eps = div_ceil(2 * ideal_num_col_tasks, 10)
-        max_num_col_tasks = min(max_num_col_tasks, ideal_num_col_tasks + eps)
-        var num_col_tasks_tmp = max(ideal_num_col_tasks - eps, 1)
-        var num_threads_used = (
-            num_tasks // ideal_num_col_tasks
-        ) * ideal_num_col_tasks
-        while num_col_tasks_tmp <= max_num_col_tasks:
-            var num_row_tasks_tmp = num_tasks // num_col_tasks_tmp
-            if num_row_tasks_tmp * num_col_tasks_tmp > num_threads_used:
-                num_col_tasks = num_col_tasks_tmp
-                num_row_tasks = num_row_tasks_tmp
-                num_threads_used = num_row_tasks_tmp * num_col_tasks_tmp
-            num_col_tasks_tmp += 1
-
-    var row_task_id = task_id // num_col_tasks
-    var col_task_id = task_id % num_col_tasks
-    var row_range = partition_work(row_task_id, num_row_tasks, m, kernel_m)
-    var col_range = partition_work(col_task_id, num_col_tasks, n, kernel_n)
-    return SubMatmulConfig(
-        Index(row_range[0], col_range[0], 0),
-        Index(row_range[1], col_range[1], k),
-    )
 
 
 fn get_pack_data_size[type: DType]() -> Int:
