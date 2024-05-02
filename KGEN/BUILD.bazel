@@ -10,6 +10,60 @@ load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen", "gentbl
 package(default_visibility = ["//visibility:public"])
 
 td_library(
+    name = "CODialectTdFiles",
+    srcs = glob(["include/KGEN/CODialect/*.td"]),
+    includes = ["include"],
+    deps = [
+        "//Support:MTdFiles",
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+    ],
+)
+
+gentbl_mlir_dialect(
+    name = "CODialectIncGen",
+    dialect = "co",
+    td_file = "include/KGEN/CODialect/CO.td",
+    deps = [
+        ":CODialectTdFiles",
+        "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
+    ],
+)
+
+gentbl_cc_library(
+    name = "CODialectBytecodeIncGen",
+    includes = ["include"],
+    strip_include_prefix = "include",
+    tbl_outs = [
+        (
+            [
+                "-gen-bytecode",
+                "-bytecode-dialect=co",
+            ],
+            "include/KGEN/CODialect/CODialectBytecode.cpp.inc",
+        ),
+    ],
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "include/KGEN/CODialect/CODialectBytecode.td",
+    deps = [
+        ":CODialectIncGen",
+        ":CODialectTdFiles",
+    ],
+)
+
+cc_library(
+    name = "CODialect",
+    srcs = glob(["lib/CODialect/*.cpp"]),
+    hdrs = glob(["include/KGEN/CODialect/*.h"]),
+    strip_include_prefix = "include",
+    deps = [
+        ":CODialectBytecodeIncGen",
+        ":CODialectIncGen",
+        "//Support:Compiler",
+        "@llvm-project//mlir:IR",
+    ],
+)
+
+td_library(
     name = "HLCFDialectTdFiles",
     srcs = glob(["include/KGEN/HLCFDialect/*.td"]),
     includes = ["include"],
@@ -1172,6 +1226,7 @@ cc_library(
     ),
     strip_include_prefix = "include",
     deps = [
+        ":CODialect",
         ":HLCFDialect",
         ":KGENPassesIncGen",
         ":LITDialect",
