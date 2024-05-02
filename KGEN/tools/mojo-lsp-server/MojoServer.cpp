@@ -8,6 +8,7 @@
 #include "KGEN/ToolCommon/InitAllDialects.h"
 #include "MojoDocument.h"
 
+#include "../common/lsp-protocol/SemanticTokens.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/MojoParser/ASTDecl.h"
 #include "KGEN/MojoParser/EntryPoint.h"
@@ -21,7 +22,6 @@
 #include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/AnyAsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
-#include "SemanticTokens.h"
 #include "Support/Config.h"
 #include "Support/Context.h"
 #include "Support/Init/Init.h"

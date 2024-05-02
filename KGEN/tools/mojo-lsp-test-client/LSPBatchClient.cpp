@@ -99,10 +99,14 @@ LSPBatchClient &LSPBatchClient::definition(
 
 LSPBatchClient &LSPBatchClient::semanticTokensFull(
     const Document &doc,
-    std::function<void(const lsp::SemanticTokens &)> callback) {
+    std::function<void(ArrayRef<Mojo::LSP::SemanticToken>)> callback) {
   lsp::SemanticTokensParams params{lsp::TextDocumentIdentifier{doc.getURI()}};
   request("textDocument/semanticTokens/full", toJSON(params),
-          std::move(callback));
+          std::function<void(const mlir::lsp::SemanticTokens &)>(
+              [callback = std::move(callback)](
+                  const mlir::lsp::SemanticTokens &tokens) {
+                callback(Mojo::LSP::fromLspSemanticTokens(tokens.tokens));
+              }));
   return *this;
 }
 

@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "SemanticTokens.h"
-#include "MojoDocument.h"
 #include "llvm/ADT/StringMap.h"
 
 #define DEBUG_TYPE "mojo-lsp-server"
@@ -98,6 +97,33 @@ Mojo::LSP::toLspSemanticTokens(ArrayRef<SemanticToken> tokens) {
     newTok.tokenType = static_cast<unsigned>(tok.kind);
     newTok.tokenModifiers = tok.modifiers;
     newTok.length = tok.range.end.character - tok.range.start.character;
+  }
+  return result;
+}
+
+std::vector<SemanticToken>
+Mojo::LSP::fromLspSemanticTokens(ArrayRef<mlir::lsp::SemanticToken> tokens) {
+  std::vector<SemanticToken> result;
+
+  SemanticToken *lastToken = nullptr;
+  for (const mlir::lsp::SemanticToken &token : tokens) {
+    auto kind = static_cast<SemanticTokenKind>(token.tokenType);
+
+    // Compute the range for the token (relative to the last token if possible).
+    int line = token.deltaLine;
+    int col = token.deltaStart;
+    if (lastToken) {
+      line += lastToken->range.end.line;
+
+      // If the line number is 0, we are in the same line as the last token. In
+      // that case, we need to add the column offset of the last token.
+      if (token.deltaLine == 0)
+        col += lastToken->range.start.character;
+    }
+    mlir::lsp::Range range({line, col},
+                           {line, col + static_cast<int>(token.length)});
+
+    lastToken = &result.emplace_back(kind, range, token.tokenModifiers);
   }
   return result;
 }

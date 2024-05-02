@@ -8,6 +8,7 @@
 #define KGEN_TOOLS_MOJO_LSP_TEST_CLIENT_LSPBATCHCLIENT_H
 
 #include "../common/lsp-protocol/Protocol.h"
+#include "../common/lsp-protocol/SemanticTokens.h"
 #include "Document.h"
 #include "JSONUtils.h"
 #include "Support/ErrorOr.h"
@@ -101,7 +102,7 @@ public:
   /// textDocument/semanticTokens/full
   LSPBatchClient &semanticTokensFull(
       const Document &doc,
-      std::function<void(const mlir::lsp::SemanticTokens &)> callback);
+      std::function<void(ArrayRef<Mojo::LSP::SemanticToken>)> callback);
 
   /// textDocument/signatureHelp
   LSPBatchClient &signatureHelp(

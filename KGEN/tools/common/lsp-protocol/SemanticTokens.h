@@ -4,13 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TOOLS_MOJO_LSP_SERVER_SEMANTICTOKENS_H
-#define KGEN_TOOLS_MOJO_LSP_SERVER_SEMANTICTOKENS_H
+#ifndef KGEN_TOOLS_COMMON_LSPPROTOCOL_SEMANTICTOKENS_H
+#define KGEN_TOOLS_COMMON_LSPPROTOCOL_SEMANTICTOKENS_H
 
-#include "../common/lsp-protocol/Protocol.h"
+#include "Protocol.h"
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/raw_ostream.h"
 
 namespace M::Mojo::LSP {
 //===----------------------------------------------------------------------===//
@@ -58,8 +57,9 @@ StringRef toLspSemanticTokenModifier(SemanticTokenModifier modifier);
 /// This class represents a highlighted token.
 struct SemanticToken {
   SemanticToken() : kind(SemanticTokenKind::kCount) {}
-  SemanticToken(SemanticTokenKind kind, mlir::lsp::Range range)
-      : kind(kind), range(range) {}
+  SemanticToken(SemanticTokenKind kind, mlir::lsp::Range range,
+                uint32_t modifiers = 0)
+      : kind(kind), modifiers(modifiers), range(range) {}
 
   bool operator==(const SemanticToken &rhs) const;
   bool operator<(const SemanticToken &rhs) const;
@@ -85,6 +85,12 @@ struct SemanticToken {
 /// token are relative to the previous token.
 std::vector<mlir::lsp::SemanticToken>
 toLspSemanticTokens(ArrayRef<SemanticToken> tokens);
+
+/// Convert the given LSP semantic tokens into the Mojo equivalent. We process
+/// all at once because the position fields of an LSP token are relative to the
+/// previous token.
+std::vector<SemanticToken>
+fromLspSemanticTokens(ArrayRef<mlir::lsp::SemanticToken> tokens);
 
 /// Compute the difference between the two sets of tokens.
 std::vector<mlir::lsp::SemanticTokensEdit>

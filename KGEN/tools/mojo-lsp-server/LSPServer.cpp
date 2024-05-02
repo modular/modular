@@ -6,8 +6,8 @@
 
 #include "LSPServer.h"
 #include "../common/lsp-protocol/Protocol.h"
+#include "../common/lsp-protocol/SemanticTokens.h"
 #include "MojoServer.h"
-#include "SemanticTokens.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Transport.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
