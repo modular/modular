@@ -267,7 +267,7 @@ fn sgemm_double_buffer[
     )
 
 
-fn test() raises:
+def test():
     alias NUM_THREADS = 256
     alias M = 8192
     alias N = 8192
