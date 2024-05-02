@@ -139,27 +139,6 @@ struct GemmShape:
         )
 
     @staticmethod
-    fn get[
-        config: MatmulConfig
-    ](
-        c: NDBuffer[_, 2, _],
-        a: NDBuffer[_, 2, _],
-        b: NDBuffer[_, 2, _],
-    ) -> GemmShape:
-        """Constructor of a gemm shape record from input buffers.
-
-        Args:
-            c: Buffer with allocated output space.
-            a: Buffer containing matrix operand A.
-            b: Buffer containing matrix operand B.
-        """
-        return GemmShape(
-            c.dim[0](),
-            c.dim[1](),
-            a.dim[0]() if config.transpose_a else a.dim[1](),
-        )
-
-    @staticmethod
     fn get(
         c: DynamicRankBuffer,
         a: DynamicRankBuffer,
