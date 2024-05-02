@@ -8,6 +8,7 @@
 #include "gtest/gtest.h"
 
 using namespace M;
+using namespace M::Mojo::LSP;
 
 TEST(SemanticTokensTest, testSemanticTokens) {
   Document doc("test:///foo.mojo", R"(
@@ -33,90 +34,55 @@ struct StructWithTrait(ATrait):
         pass
 )");
 
-  /* Commented out just to prevent compilation warnings.
-  const auto kVariable = 0;
-  const auto kSpecialVariable = 1;
-  const auto kParameter = 2;
-  const auto kFunction = 3;
-  const auto kMethod = 4;
-  const auto kProperty = 5;
-  const auto kClass = 6;
-  const auto kInterface = 7;
-  const auto kType = 8;
-  const auto kNamespace = 9;
-  */
-
   createTestClient()
       .open(doc)
-      // FIXME(MOTO-391): This call crashes the parser.
-      /*
       .semanticTokensFull(
           doc,
-          [&](const lsp::SemanticTokens &tokens) {
-            EXPECT_NE((int)tokens.tokens.size(), 0);
-            EXPECT_TRUE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return lsp::Range(token.deltaLine, token.deltaStart) ==
-                             *doc.findFirstRange("builtin") &&
-                         token.tokenType == kNamespace;
-                }));
-            EXPECT_TRUE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return lsp::Range(token.deltaLine, token.deltaStart) ==
-                             *doc.findFirstRange("builtin_alias") &&
-                         token.tokenType == kNamespace;
-                }));
-            EXPECT_TRUE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return lsp::Range(token.deltaLine, token.deltaStart) ==
-                             *doc.findFirstRange("Struct") &&
-                         token.tokenType == kClass;
-                }));
-            EXPECT_TRUE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return lsp::Range(token.deltaLine, token.deltaStart) ==
-                             *doc.findFirstRange("struct_alias") &&
-                         token.tokenType == kType;
-                }));
-            EXPECT_TRUE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return lsp::Range(token.deltaLine, token.deltaStart) ==
-                             *doc.findFirstRange("field") &&
-                         token.tokenType == kProperty;
-                }));
-            EXPECT_TRUE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return lsp::Range(token.deltaLine, token.deltaStart) ==
-                             *doc.findFirstRange("foo") &&
-                         token.tokenType == kFunction;
-                }));
-            EXPECT_TRUE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return lsp::Range(token.deltaLine, token.deltaStart) ==
-                             *doc.findFirstRange("int_alias") &&
-                         token.tokenType == kVariable;
-                }));
-            EXPECT_TRUE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return lsp::Range(token.deltaLine, token.deltaStart) ==
-                             *doc.findFirstRange("ATrait") &&
-                         token.tokenType == kInterface;
-                }));
-            EXPECT_TRUE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return lsp::Range(token.deltaLine, token.deltaStart) ==
-                             *doc.findFirstRange("Self") &&
-                         token.tokenType == kInterface;
-                }));
+          [&](ArrayRef<SemanticToken> tokens) {
+            EXPECT_NE((int)tokens.size(), 0);
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range == *doc.findFirstRange("builtin") &&
+                     token.kind == SemanticTokenKind::kModule;
+            }));
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range == *doc.findFirstRange("builtin_alias") &&
+                     token.kind == SemanticTokenKind::kModule;
+            }));
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range == *doc.findFirstRange("Struct") &&
+                     token.kind == SemanticTokenKind::kClass;
+            }));
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range == *doc.findFirstRange("struct_alias") &&
+                     token.kind == SemanticTokenKind::kType;
+            }));
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range == *doc.findFirstRange("field") &&
+                     token.kind == SemanticTokenKind::kField;
+            }));
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range == *doc.findFirstRange("foo") &&
+                     token.kind == SemanticTokenKind::kFunction;
+            }));
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range == *doc.findFirstRange("int_alias") &&
+                     token.kind == SemanticTokenKind::kVariable;
+            }));
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range == *doc.findFirstRange("ATrait") &&
+                     token.kind == SemanticTokenKind::kTrait;
+            }));
+            EXPECT_TRUE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range == *doc.findFirstRange("Self") &&
+                     token.kind == SemanticTokenKind::kTrait;
+            }));
             // Check that we didn't add a token for the synthetic methods of the
             // StructWithTrait struct.
-            EXPECT_FALSE(llvm::any_of(
-                tokens.tokens, [&](const lsp::SemanticToken &token) {
-                  return token.deltaLine ==
-                             *doc.findLastPos("struct StructWithTrait") &&
-                         token.tokenType == kFunction;
-                }));
+            EXPECT_FALSE(llvm::any_of(tokens, [&](const SemanticToken &token) {
+              return token.range ==
+                         *doc.findLastPos("struct StructWithTrait") &&
+                     token.kind == SemanticTokenKind::kFunction;
+            }));
           })
-          */
       .execute();
 }
