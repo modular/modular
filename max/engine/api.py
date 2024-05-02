@@ -392,14 +392,12 @@ class InferenceSession:
     ) -> Model:
         """Loads a trained model and compiles it for inference.
 
-        Note: PyTorch models must be in TorchScript format, and TensorFlow
-        models must be in SavedModel format. Or pass any ONNX model.
+        Note: PyTorch models must be in TorchScript format.
 
         Parameters
         ----------
         model_path: Union[str, pathlib.Path]
-            Path to a model. May be a TensorFlow model in the SavedModel
-            format, a serialized TorchScript model, or an ONNX model.
+            Path to a model. May be a TorchScript model or an ONNX model.
 
         custom_ops_path: str
             The path to your custom ops. (This feature is coming soon.)
