@@ -1485,10 +1485,10 @@ static void printStructGERTypes(AsmPrinter &p, Operation *, RefType fieldType,
 }
 
 OpFoldResult RefStructGEROp::fold(FoldAdaptor adaptor) {
-  auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(adaptor.getContainer());
-  if (!ptr)
+  auto value = cast_or_null<TypedAttr>(adaptor.getContainer());
+  if (!isa_and_nonnull<SymbolicPointerAttr, StructGERAttr>(value))
     return {};
-  return StructGERAttr::get(ptr, getFieldAttr(), getType());
+  return StructGERAttr::get(value, getFieldAttr(), getType());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1511,6 +1511,10 @@ interpretSymbolicLoadOp(Location loc, TypedAttr arg, InterpreterState &state) {
       interpretSymbolicLoadOp(loc, ger.getValue(), state);
   if (value.isError())
     return value.takeError();
+
+  if (isa<UnknownAttr>(*value))
+    return UnknownAttr::get(cast<RefType>(arg.getType()).getElementType());
+
   auto structAttr = cast<LITStructAttr>(*value);
   for (auto [name, value] : structAttr.getValues()) {
     if (name == ger.getField())
@@ -1533,14 +1537,78 @@ ErrorTreeOrSuccess RefLoadOp::interpret(ArrayRef<Attribute> operands,
 // RefStoreOp
 //===----------------------------------------------------------------------===//
 
+static ErrorTreeOrSuccess interpretSymbolicStoreOp(Location loc,
+                                                   TypedAttr value,
+                                                   TypedAttr target,
+                                                   InterpreterState &state) {
+  // Build the set of field accesses up to the base value. If `target` is
+  // already a full object reference, then `fields` will be empty.
+  SmallVector<StringAttr, 1> fields;
+  for (StructGERAttr ger; (ger = dyn_cast<StructGERAttr>(target));
+       target = ger.getValue())
+    fields.push_back(ger.getField());
+
+  // `target` must be a full object reference. Read the whole struct.
+  auto ptr = cast<SymbolicPointerAttr>(target);
+  ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(ptr.getSlot());
+  if (mem.isError())
+    return ErrorTree(loc, mem.takeError());
+
+  // Build the chain of accessed element values, starting with the full object.
+  SmallVector<std::pair<TypedAttr, int>> values;
+  values.emplace_back(*mem, -1);
+  for (StringAttr field : llvm::reverse(fields)) {
+    TypedAttr &element = values.back().first;
+    if (isa<UnknownAttr>(element)) {
+      auto type = cast<DeclRefType>(element.getType());
+      auto decl = cast_or_null<StructDeclOp>(
+          state.lookupTypeDefinition(type.getSymbol()));
+      if (!decl)
+        return ErrorTree(loc, "failed to find type definition");
+      ParameterEvaluator evaluator(decl.getParams(), type.getParamValues());
+      SmallVector<std::tuple<StringAttr, TypedAttr>> undef;
+      for (StructFieldOp field : decl.getFieldDecls()) {
+        undef.emplace_back(
+            field.getNameAttr(),
+            UnknownAttr::get(evaluator.getReboundType(field.getType())));
+      }
+      element = LITStructAttr::get(undef, type);
+    }
+
+    auto attr = cast<LITStructAttr>(element);
+    int i = 0;
+    for (auto [name, value] : attr.getValues()) {
+      if (name == field) {
+        values.emplace_back(value, i);
+        break;
+      }
+      ++i;
+    }
+  }
+  assert(values.size() == fields.size() + 1 && "invalid field attribute name");
+
+  // Now overwrite the leaf element and reconstruct the full object.
+  values.back().first = value;
+  while (values.size() != 1) {
+    auto [value, i] = values.back();
+    values.pop_back();
+    auto attr = cast<LITStructAttr>(values.back().first);
+    SmallVector<std::tuple<StringAttr, TypedAttr>> elements =
+        llvm::to_vector(attr.getValues());
+    std::get<1>(elements[i]) = value;
+    values.back().first = LITStructAttr::get(elements, attr.getType());
+  }
+
+  // There should be a single value in the vector now. Overwrite the
+  // whole-object value in symbolic memory.
+  *mem = values.back().first;
+  return success();
+}
+
 ErrorTreeOrSuccess RefStoreOp::interpret(ArrayRef<Attribute> operands,
                                          InterpreterState &state) {
-  uint64_t slot = cast<SymbolicPointerAttr>(operands.back()).getSlot();
-  ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(slot);
-  if (mem.isError())
-    return ErrorTree(getLoc(), mem.takeError());
-  *mem = cast<TypedAttr>(operands.front());
-  return success();
+  return interpretSymbolicStoreOp(getLoc(), cast<TypedAttr>(operands.front()),
+                                  cast<TypedAttr>(operands.back()), state);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1770,7 +1838,8 @@ LogicalResult VarDeclOp::verify() {
 
 ErrorTreeOrSuccess VarDeclOp::interpret(ArrayRef<Attribute> operands,
                                         InterpreterState &state) {
-  uint64_t result = state.allocateSymbolicMemory();
+  uint64_t result = state.allocateSymbolicMemory(
+      UnknownAttr::get(getType().getElementType()));
   state.mapResults(SymbolicPointerAttr::get(result, getType()));
   return success();
 }

@@ -25,3 +25,16 @@ kgen.generator @load_from_store() {
   kgen.param.constant = <apply(:(!kgen.pointer<index>) -> index @load_it, store_to_mem(42))>
   kgen.return
 }
+
+kgen.generator @load_undef() -> index {
+  %0 = pop.stack_allocation 1 x index
+  %1 = pop.load %0 : !kgen.pointer<index>
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: @interpret_undef
+kgen.generator @interpret_undef() {
+  // CHECK-NEXT: constant = <*?>
+  kgen.param.constant = <apply(:() -> index @load_undef)>
+  kgen.return
+}

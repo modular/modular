@@ -38,6 +38,7 @@ public:
 
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
   ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
+  Operation *lookupTypeDefinition(SymbolRefAttr symbol) override;
 
 private:
   ModuleOp module;
@@ -89,8 +90,12 @@ SimpleInterpreter::evaluateExpression(ParamOperatorAttr op) {
   ErrorTreeOr<SmallVector<Attribute>> result =
       executeRegion(*body.takeValue(), arguments);
   // Swallow the error.
-  if (result.isError())
+  if (result.isError()) {
+    DEBUG_WITH_TYPE("simple-interpreter",
+                    result.takeError().emit(
+                        (InFlightDiagnostic(*)(Location))mlir::emitError));
     return failure();
+  }
   if (!ParameterAttr::isSimpleConstant(result->front()))
     return failure();
   return cast<TypedAttr>(result->front());
@@ -102,6 +107,10 @@ ErrorOr<Region *> SimpleInterpreter::lookupFunctionBody(SymbolRefAttr symbol) {
   if (func.isExternal())
     return Error("external function reference");
   return &func.getFunctionBody();
+}
+
+Operation *SimpleInterpreter::lookupTypeDefinition(SymbolRefAttr symbol) {
+  return symtabs.lookupSymbolIn(module, symbol);
 }
 
 /// Function to walk all op users of parameters and substitute parameters based
@@ -129,7 +138,8 @@ static void processOp(Operation *op, ParameterSimplifier &evaluator) {
 static void propagateTrivialParameters(Region *region,
                                        const ParameterUseDefGraph &graph,
                                        const ParameterUseDefGraph &topLevel,
-                                       ParameterSimplifier evaluator) {
+                                       ParameterSimplifier evaluator,
+                                       mlir::AttrTypeWalker &typeChecker) {
   // Collect the defining operations in topological order. The same operation
   // can define multiple parameters, so punt them according to their most
   // dominated definition. Do this by collecting them in reverse.
@@ -157,10 +167,10 @@ static void propagateTrivialParameters(Region *region,
       // parametric, we risk creating unequal types across function calls if
       // there are dependent parameters.
       TypedAttr value = declare.getValue();
-      if (!isParameterizedType(value.getType()))
-        value = cast<TypedAttr>(evaluator.refineAttr(value));
-      else
+      if (typeChecker.walk(value.getType()).wasInterrupted())
         value = cast<TypedAttr>(evaluator.getReboundAttribute(value));
+      else
+        value = cast<TypedAttr>(evaluator.refineAttr(value));
 
       // The type of the parameter may change. Try to rebind it.
       auto decl = cast<ParamDeclAttr>(
@@ -193,10 +203,10 @@ static void propagateTrivialParameters(Region *region,
   for (Operation *op : graph.paramOps) {
     if (auto cst = dyn_cast<ParamConstantOp>(op)) {
       TypedAttr value = cst.getValue();
-      if (!isParameterizedType(value.getType()))
-        value = cast<TypedAttr>(evaluator.refineAttr(value));
-      else
+      if (typeChecker.walk(value.getType()).wasInterrupted())
         value = cast<TypedAttr>(evaluator.getReboundAttribute(value));
+      else
+        value = cast<TypedAttr>(evaluator.refineAttr(value));
       cst.setValueAttr(value);
       cst.getResult().setType(value.getType());
     } else if (auto paramIf = dyn_cast<ParamIfOp>(op)) {
@@ -239,7 +249,7 @@ static void propagateTrivialParameters(Region *region,
   // Recurse into nested parameter scopes.
   for (Region *region : graph.nestedDecls)
     propagateTrivialParameters(region, topLevel.nestedScopes.at(region),
-                               topLevel, evaluator);
+                               topLevel, evaluator, typeChecker);
 }
 
 namespace {
@@ -310,11 +320,18 @@ struct VerifyParametersPass : impl::VerifyParametersBase<VerifyParametersPass> {
     }
 
     CompilerTimeTraceScope traceScope("propagateTrivialParameters");
+    mlir::AttrTypeWalker typeChecker;
+    typeChecker.addWalk([](ParamOperatorAttr op) {
+      if (op.getOpcode() == POC::Apply ||
+          op.getOpcode() == POC::ApplyResultSlot)
+        return WalkResult::interrupt();
+      return WalkResult::advance();
+    });
     for (auto [declRegion, i] : declRegions) {
       ParameterUseDefGraph &graph = graphs[i];
       propagateTrivialParameters(
           declRegion, graph, graph,
-          ParameterSimplifier(module, analysis.getSymbolTables()));
+          ParameterSimplifier(module, analysis.getSymbolTables()), typeChecker);
     }
   }
 };

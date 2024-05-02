@@ -329,9 +329,9 @@ ErrorOr<TypedAttr> InterpreterState::readAttributeFromMemory(int64_t addr,
                " does not implement MemoryableTypeInterface");
 }
 
-uint64_t InterpreterState::allocateSymbolicMemory() {
+uint64_t InterpreterState::allocateSymbolicMemory(TypedAttr init) {
   uint64_t result = symbolicMemory.size();
-  symbolicMemory.emplace_back();
+  symbolicMemory.push_back(init);
   ++getCurrentFrame().numSymbolicAllocs;
   return result;
 }

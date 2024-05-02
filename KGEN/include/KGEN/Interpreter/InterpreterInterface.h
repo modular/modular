@@ -41,6 +41,10 @@ public:
   /// implement it differently than a symbol table lookup.
   virtual ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) = 0;
 
+  /// Lookup a type definition. This is used by operations that require an
+  /// out-of-line definition of a type to interpret.
+  virtual Operation *lookupTypeDefinition(SymbolRefAttr symbol) { return {}; }
+
   //===--------------------------------------------------------------------===//
   // Interpreter Memory Management
 
@@ -87,7 +91,7 @@ public:
   ErrorOr<TypedAttr> readAttributeFromMemory(int64_t addr, Type type);
 
   /// Allocate a slot of symbolic memory.
-  uint64_t allocateSymbolicMemory();
+  uint64_t allocateSymbolicMemory(TypedAttr init);
 
   /// Lookup a symbolic memory slot.
   ErrorOr<TypedAttr &> getSymbolicMemory(uint64_t slot);
