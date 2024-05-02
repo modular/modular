@@ -51,7 +51,7 @@ fn linear_offset_to_coords[
 ](idx: Int, shape: TensorShape) -> StaticIntTuple[rank]:
     var output = StaticIntTuple[rank](0)
     var curr_idx = idx
-    for i in range(rank - 1, -1, -1):
+    for i in reversed(range(rank)):
         output[i] = curr_idx % shape[i]
         curr_idx //= shape[i]
 

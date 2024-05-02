@@ -35,7 +35,7 @@ fn _get_rightmost_broadcast_axis[
         input: the input buffer
     """
     # TODO: consider manually unrolling this loop
-    for axis in range(rank - 1, -1, -1):
+    for axis in reversed(range(rank)):
         var in_dim = input.dim(axis)
         var out_dim = output.dim(axis)
         if in_dim != out_dim:

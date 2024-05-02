@@ -786,7 +786,7 @@ fn pad_repeat[
         var output_idx = input_idx + pre_pads
         output[output_idx] = input[input_idx]
 
-    for axis in range(rank - 1, -1, -1):
+    for axis in reversed(range(rank)):
         var pre_pad = pre_pads[axis]
         var post_pad = post_pads[axis]
 
