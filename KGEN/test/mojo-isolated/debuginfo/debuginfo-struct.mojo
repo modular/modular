@@ -21,8 +21,9 @@ struct MyRP[A: Int]:
     var a: Int
     var b: Int
 
-    fn __init__(b: Int) -> Self:
-        return Self {a: A, b: b}
+    fn __init__(inout self, b: Int):
+        self.a = A
+        self.b = b
 
 
 # CHECK: lit.struct.decl @MyData

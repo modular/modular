@@ -95,8 +95,8 @@ struct FloatDyn:
     var value: __mlir_type.f64
 
     @always_inline("nodebug")
-    fn __init__(value: FloatLiteral) -> Self:
-        return Self(
+    fn __init__(inout self, value: FloatLiteral):
+        self = Self(
             __mlir_op.`kgen.float_literal.convert`[_type = __mlir_type.f64](
                 value.value
             )
@@ -109,12 +109,10 @@ struct Int(Copyable):
     var value: int
 
     @always_inline("nodebug")
-    fn __init__(value: IntLiteral) -> Self:
-        return Self {
-            value: __mlir_op.`kgen.int_literal.convert`[
-                _type = __mlir_type.index
-            ](value.value)
-        }
+    fn __init__(inout self, value: IntLiteral):
+        self.value = __mlir_op.`kgen.int_literal.convert`[
+            _type = __mlir_type.index
+        ](value.value)
 
     @always_inline("nodebug")
     fn __add__(lhs, rhs: Int) -> Int:
@@ -156,12 +154,12 @@ struct Bool(AnyType):
     var value: __mlir_type.i1
 
     @always_inline("nodebug")
-    fn __init__() -> Self:
-        return Self {value: __mlir_attr.`0 : i1`}
+    fn __init__(inout self):
+        self.value = __mlir_attr.`0 : i1`
 
     @always_inline("nodebug")
-    fn __init__(value: __mlir_type.i1) -> Self:
-        return Self {value: value}
+    fn __init__(inout self, value: __mlir_type.i1):
+        self.value = value
 
     fn __mlir_i1__(self) -> __mlir_type.i1:
         return self.value
@@ -180,8 +178,8 @@ struct Slice:
     fn __init__(inout self, end: int):
         pass
 
-    fn __init__(start: int, end: int) -> Self:
-        return Self {}
+    fn __init__(inout self, start: int, end: int):
+        return
 
     fn __init__[
         T0: AnyRegType, T1: AnyRegType, T2: AnyRegType
@@ -245,8 +243,8 @@ struct RaisingCoroutine[T: AnyRegType]:
 struct VariadicList[type: AnyRegType]:
     alias _mlir_type = __mlir_type[`!kgen.variadic<`, type, `>`]
 
-    fn __init__(value: Self._mlir_type) -> Self:
-        return Self {}
+    fn __init__(inout self, value: Self._mlir_type):
+        return
 
 
 struct VariadicListMem[
@@ -312,18 +310,14 @@ struct __ParameterClosureCaptureList[fn_type: AnyRegType, fn_ref: fn_type]:
     # Parameter closure invariant requires this function be marked 'capturing'.
     @parameter
     @always_inline
-    fn __init__() -> Self:
-        return Self {
-            value: __mlir_op.`kgen.capture_list.create`[callee=fn_ref]()
-        }
+    fn __init__(inout self):
+        self.value = __mlir_op.`kgen.capture_list.create`[callee=fn_ref]()
 
     @always_inline
-    fn __copyinit__(existing: Self) -> Self:
-        return Self {
-            value: __mlir_op.`kgen.capture_list.copy`[callee=fn_ref](
-                existing.value
-            )
-        }
+    fn __copyinit__(inout self, existing: Self):
+        self.value = __mlir_op.`kgen.capture_list.copy`[callee=fn_ref](
+            existing.value
+        )
 
     @always_inline
     fn __del__(owned self):

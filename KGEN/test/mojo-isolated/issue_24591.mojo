@@ -11,7 +11,7 @@ alias NoneType = __mlir_type.`!kgen.none`
 
 @register_passable
 struct Optional[T: AnyRegType]:
-    fn __init__(none: NoneType) -> Self:
+    fn __init__(inout self, none: NoneType):
         pass
 
 
@@ -25,7 +25,7 @@ struct Param[x: int]:
 
 @register_passable("trivial")
 struct IntLiteral:
-    fn __init__(y: __mlir_type.`!kgen.int_literal`) -> Self:
+    fn __init__(inout self, y: __mlir_type.`!kgen.int_literal`):
         pass
 
 

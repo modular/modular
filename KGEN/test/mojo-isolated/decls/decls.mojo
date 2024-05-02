@@ -124,8 +124,8 @@ struct MyInt:
     var value: Int
 
     @always_inline("nodebug")
-    fn __init__(_a: Int) -> Self:
-        return Self {value: _a}
+    fn __init__(inout self, _a: Int):
+        self.value = _a
 
 
 fn paramOverload[x: Int]():
@@ -265,7 +265,8 @@ fn useIt(a: __mlir_type.index) -> __mlir_type.index:
     # CHECK: %index3 = kgen.param.constant = <3>
     # CHECK: %0 = lit.call @decls::@"math(
     # CHECK: lit.return %0 : index
-    return math(a, math(Int(1).value, Int(2).value))
+    return math(a, math(__mlir_op.`index.constant`[value = __mlir_attr.`1:index`](),
+                        __mlir_op.`index.constant`[value = __mlir_attr.`2:index`]()))
 
 
 @always_inline("nodebug")
@@ -716,8 +717,8 @@ struct StructExample:
     fn __copyinit__(self) -> Self:
         return Self()
 
-    fn __init__() -> Self:
-        return Self {}
+    fn __init__(inout self):
+        pass
 
     # CHECK: lit.func @"static({{.*}}Int)"(%x: !Int borrow) -> !kgen.none attributes {{.*}}isStatic
     @staticmethod
@@ -737,7 +738,8 @@ fn callStatic(a: Int):
     # CHECK: lit.call @decls::@StructExample::@"static{{.*}}(%a)
     StructExample.static(a)
 
-    # CHECK: lit.call @decls::@StructExample::@"__init__{{.*}}()
+    # CHECK: %anonymous2A = lit.var.decl
+    # CHECK: lit.call @decls::@StructExample::@"__init__{{.*}}(%anonymous2A)
     # CHECK: lit.call @decls::@StructExample::@"static{{.*}}(%a)
     StructExample().static(a)
 

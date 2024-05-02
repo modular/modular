@@ -52,11 +52,11 @@ fn use_inout(inout x: MemExample):
 struct RegExample:
     var regstate: Int
 
-    fn __init__() -> Self:
-        return RegExample {regstate: 1}
+    fn __init__(inout self):
+        self.regstate = 1
 
-    fn __copyinit__(self) -> Self:
-        return RegExample {regstate: 12}
+    fn __copyinit__(inout self, existing: Self):
+        self.regstate = 12
 
     fn __del__(owned self):
         pass
@@ -238,11 +238,13 @@ struct TwoRegsRP:
     var reg1: RegExample
     var reg2: RegExample
 
-    fn __init__() -> Self:
-        return Self {reg1: RegExample(), reg2: RegExample()}
+    fn __init__(inout self):
+        self.reg1 = RegExample()
+        self.reg2 = RegExample()
 
-    fn __copyinit__(existing: Self) -> Self:
-        return Self {reg1: existing.reg1, reg2: existing.reg2}
+    fn __copyinit__(inout self, existing: Self):
+        self.reg1 = existing.reg1
+        self.reg2 = existing.reg2
 
 
 struct MoreComplexExample:

@@ -12,8 +12,8 @@ struct MyInt:
     var value: int
 
     @always_inline("nodebug")
-    fn __init__(v: int) -> Self:
-        return Self {value: v}
+    fn __init__(inout self, v: int):
+        self.value = v
 
 
 fn overloaded_param[a: int, b: MyInt]():
@@ -29,7 +29,7 @@ fn test_kw_params_overload[x: int, y: int]():
     # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, y>()
     overloaded_param[b=y, a=x]()
 
-    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, :!MyInt apply(
+    # CHECK: call {{.*}}@"overloaded_param{{.*}}"<x, :!MyInt apply_result_slot(
     # CHECK-SAME :!lit.signature<("v": index borrow) -> !MyInt> {{.*}}@MyInt::@"__init__{{.*}}", y)>()
     overloaded_param[b = MyInt(y), a=x]()
 
@@ -47,8 +47,10 @@ fn test_kw_args_overload(x: int, y: int):
     # CHECK: call {{.*}}@"overloaded_arg{{.*}}"(%x, %y)
     overloaded_arg(b=y, a=x)
 
-    # CHECK: %[[Y:.*]] = lit.call {{.*}}@MyInt::@"__init__{{.*}}"(%y)
-    # CHECK-NEXT: call {{.*}}@"overloaded_arg{{.*}}"(%x, %[[Y]])
+    # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
+    # CHECK: lit.call {{.*}}@MyInt::@"__init__{{.*}}([[TMP]], %y)
+    # CHECK: [[Y:%.*]] = lit.ref.load [[TMP]]
+    # CHECK-NEXT: call {{.*}}@"overloaded_arg{{.*}}"(%x, [[Y]])
     overloaded_arg(b=MyInt(y), a=x)
 
 

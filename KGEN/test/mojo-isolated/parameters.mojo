@@ -677,8 +677,8 @@ fn takeAbstraction2(value: Abstraction[2]):
 struct AnotherAbstraction[a: Int]:
     var value : Abstraction[a + 1]
 
-    fn __init__() -> Self:
-        return Self{value: Abstraction[a + 1]()}
+    fn __init__(inout self):
+        self.value = Abstraction[a + 1]()
 
     fn __copyinit__(self) -> Self:
         return Self{value: self.value}

@@ -49,8 +49,8 @@ struct MemType:
 struct NoCopyType:
     var a: int
 
-    fn __init__(aa: int) -> Self:
-        return NoCopyType {a: aa}
+    fn __init__(inout self, aa: int):
+        self.a = aa
 
     fn foo(self) -> NoCopyType:
         return NoCopyType(__mlir_op.`index.add`(self.a, self.a))

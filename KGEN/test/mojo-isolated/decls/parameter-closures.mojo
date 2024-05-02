@@ -11,8 +11,8 @@
 struct BoxedInt:
     var value: int
 
-    fn __init__(value: int) -> Self:
-        return Self {value: value}
+    fn __init__(inout self, value: int):
+        self.value = value
 
     fn __copyinit__(existing: Self) -> Self:
         return Self {value: existing.value}

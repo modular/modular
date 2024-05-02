@@ -15,11 +15,11 @@
 # CHECK: destructor {{.*}}RegExample::@"__del__
 @register_passable
 struct RegExample:
-    fn __init__() -> Self:
-        return RegExample {}
+    fn __init__(inout self):
+        return
 
-    fn __copyinit__(self) -> Self:  # CHECK: lit.func @"__copyinit__
-        return RegExample {}
+    fn __copyinit__(inout self, existing: Self):  # CHECK: lit.func @"__copyinit__
+        return
 
     # Test a raising constructor.
     # CHECK-LABEL: lit.func @"__init__{{.*}}(%self: !lit.ref<!RegExample, {{.*}}> init_self, |, %a: {{.*}}, %b: {{.*}}, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error) throws -> i1
@@ -156,13 +156,11 @@ struct BigRegExample:
     # CHECK-LABEL: lit.func @"__init__{{.*}}MemExample{{.*}}MemExample
     fn __init__(inout self, a: MemExample, b: MemExample) raises:
         # CHECK-NEXT: [[SELF:%.*]] = kgen.rebind %self
-        # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: [[A_REF:%.*]] = lit.ref.struct.ger [[SELF]][a]
-        # CHECK-NEXT: lit.ref.store [[A]], [[A_REF]]
+        # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__{{.*}}([[A_REF]])
         self.a = RegExample()
-        # CHECK-NEXT: [[B:%.*]] = lit.call {{.*}}__init__{{.*}}()
         # CHECK-NEXT: [[B_REF:%.*]] = lit.ref.struct.ger [[SELF]][b]
-        # CHECK-NEXT: lit.ref.store [[B]], [[B_REF]]
+        # CHECK-NEXT: [[B:%.*]] = lit.call {{.*}}__init__{{.*}}([[B_REF]])
         self.b = RegExample()
         # CHECK-NEXT: [[FALSE:%.*]] = kgen.param.constant: i1 = <0>
         # CHECK-NEXT: kgen.return [[FALSE]]

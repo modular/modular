@@ -17,11 +17,11 @@ struct NmTarget:
     var x: Bool
 
     fn __init__(x: Bool) -> Self:
-        return Self {x: x}
+        return Self{x: x}
 
     @always_inline("nodebug")
     fn __init__(nms: NmStruct) -> Self:
-        return Self {x: True if (nms.x == 77) else False}
+        return Self{x: True if (nms.x == 77) else False}
 
     fn __bool__(self: Self) -> Bool:
         return self.x
@@ -51,30 +51,30 @@ fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
 fn nmTargetNoop(x: NmTarget):
     pass
 
-
+# CHECK-LABEL: lit.func @"useNonmaterializable
 fn useNonmaterializable(p: Bool):
-    # CHECK: [[NMDECL:%.*]] lit.var.decl "gotConverted1" var : !lit.ref<!NmTarget
-    # CHECK-NEXT: kgen.param.constant: !NmTarget {{.*}}true
+    # CHECK: lit.var.decl "gotConverted1" var : !lit.ref<!NmTarget
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}true
     var gotConverted1 = NmStruct(76) + NmStruct(1)
-    # CHECK: [[NMDECL:%.*]] lit.var.decl "gotConverted2" var : !lit.ref<!NmTarget
-    # CHECK-NEXT: kgen.param.constant: !NmTarget {{.*}}false
+    # CHECK: lit.var.decl "gotConverted2" var : !lit.ref<!NmTarget
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}false
     var gotConverted2 = notMaterializedAlias + NmStruct(1)
     # CHECK: lit.alias.decl{{.*}}useIfAlias{{.*}}NmStruct{{.*}}2
     alias useIfAlias = NmStruct(2) if True else NmStruct(3)
-    # CHECK: [[NMDECL:%.*]] lit.var.decl "useIfVar" var : !lit.ref<!NmTarget
+    # CHECK: lit.var.decl "useIfVar" var : !lit.ref<!NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}false
     var useIfVar = NmStruct(2) if p else NmStruct(77)
-    # CHECK: [[NMDECL:%.*]] lit.var.decl "useIfVarLopsided" var : !lit.ref<!NmTarget
+    # CHECK: lit.var.decl "useIfVarLopsided" var : !lit.ref<!NmTarget
     # CHECK: kgen.param.constant: !NmTarget {{.*}}true
     var useIfVarLopsided = NmTarget(False) if not p else NmStruct(77)
 
-    # CHECK: [[NMDECL:%.*]] lit.var.decl "useOrVar1" var : !lit.ref<!NmTarget
+    # CHECK: lit.var.decl "useOrVar1" var : !lit.ref<!NmTarget
     var useOrVar1 = NmStruct(2) or NmStruct(77)
-    # CHECK: [[NMDECL:%.*]] lit.var.decl "useOrVar2" var : !lit.ref<!NmTarget
+    # CHECK: lit.var.decl "useOrVar2" var : !lit.ref<!NmTarget
     var useOrVar2 = NmStruct(2) or NmStruct(3)
-    # CHECK: [[NMDECL:%.*]] lit.var.decl "useAndVar1" var : !lit.ref<!NmTarget
+    # CHECK: lit.var.decl "useAndVar1" var : !lit.ref<!NmTarget
     var useAndVar1 = NmStruct(2) and NmStruct(77)
-    # CHECK: [[NMDECL:%.*]] lit.var.decl "useAndVar2" var : !lit.ref<!NmTarget
+    # CHECK: lit.var.decl "useAndVar2" var : !lit.ref<!NmTarget
     var useAndVar2 = NmStruct(77) and NmStruct(77)
 
     # Test that parameter inference using nonmaterializable gives the target,
