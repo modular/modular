@@ -16,19 +16,24 @@ namespace M::KGEN::MOGGPreElab {
 // kernel.
 constexpr StringLiteral kernelRegistrationAttr = "mogg.kernel";
 
-inline bool isKernel(GeneratorOp gen) {
+inline bool isKernel(Operation *gen) {
   return gen != nullptr && gen->hasAttr(kernelRegistrationAttr);
 }
 
 constexpr StringLiteral shapeFuncRegistrationAttr = "mogg.v1_shape_func";
 
-inline bool isV1ShapeFunc(GeneratorOp gen) {
+inline bool isV1ShapeFunc(Operation *gen) {
   return gen != nullptr && gen->hasAttr(shapeFuncRegistrationAttr);
 }
 
 constexpr StringLiteral SLICED_ATTR = "mogg.sliced";
 constexpr StringLiteral ALLOCS_ATTR = "mogg.allocs";
 constexpr StringLiteral IS_VIEW_ATTR = "mogg.view";
+
+/// Tracks the mojo parameter value for each of the input parameters.
+constexpr StringLiteral MOGG_ARG_PARAMS = "mogg.arg_params";
+constexpr StringLiteral MOGG_ARG_RESULT_PARAMS = "mogg.result_params";
+constexpr StringLiteral MOGG_ARG_TYPE_NAMES = "mogg.arg_type_names";
 
 /// Track the pair of the decorator as it is seen in the LIT IR in its raw from
 /// and the clean processed attribute which is added after it is processed.
