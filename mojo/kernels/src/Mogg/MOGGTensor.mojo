@@ -47,7 +47,7 @@ fn _get_start_indices_of_nth_subvolume[
         unroll[compute_shape, rank - subvolume_rank]()
     else:
         var rank = len(out)
-        for i in range(rank - subvolume_rank - 1, -1, -1):
+        for i in reversed(range(rank - subvolume_rank)):
             out[i] = curr_index % shape[i]
             curr_index //= shape[i]
 
@@ -104,7 +104,7 @@ struct Tensor[
         if not IntList[static_strides].is_fully_static():
             var stride = 1
             # Walk backwards to compute the fully contiguous strides.
-            for i in range(len(self.shape) - 1, -1, -1):
+            for i in reversed(range(len(self.shape))):
                 self.strides[i] = stride
                 stride *= self.shape[i]
 

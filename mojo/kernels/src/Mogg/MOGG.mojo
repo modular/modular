@@ -569,7 +569,7 @@ fn to_tensor[
         unroll[body, rank]()
     else:
         # Start from the back so we can accumulate the strides.
-        for i in range(length - 1, -1, -1):
+        for i in reversed(range(length)):
             shape[i] = shape_ptr.load(i)
             strides[i] = stride
             stride *= shape[i]
