@@ -11,7 +11,7 @@
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.Matmul_v2 import (
+from LinAlg.Matmul import (
     matmul,
     matmul_M,
 )

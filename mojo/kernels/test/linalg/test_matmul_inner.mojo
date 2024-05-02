@@ -11,7 +11,7 @@ from sys.info import has_neon, has_vnni
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.Matmul_v2 import GemmShape, MatmulConfig
+from LinAlg.Matmul import GemmShape, MatmulConfig
 
 from LinAlg.matmul_vnni import Inner_matmul_vnni
 from LinAlg.matmul_i8mm import Inner_matmul_i8mm
