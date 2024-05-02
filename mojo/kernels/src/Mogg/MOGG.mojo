@@ -2213,10 +2213,7 @@ fn matmul[
     fn description_fn() -> String:
         var info = get_trace_information(
             "dynamic_tile",
-            GemmShape.get[
-                transpose_a,
-                transpose_b,
-            ](c, a, b),
+            GemmShape.get[transpose_b](c, a, b),
             transpose_a,
             transpose_b,
             b_packed,
