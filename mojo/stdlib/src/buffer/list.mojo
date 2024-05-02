@@ -209,64 +209,49 @@ struct DimList(Sized, Stringable):
     """The underlying storage for the list of dimensions."""
 
     @always_inline("nodebug")
-    fn __init__(values: (Int,)) -> Self:
+    fn __init__(inout self, values: (Int,)):
         """Creates a dimension list from the given list of values.
 
         Args:
             values: The initial dim values list.
-
-        Returns:
-            A dimension list.
         """
-        return Self {value: VariadicList[Dim](values[0])}
+        self.value = VariadicList[Dim](values[0])
 
     @always_inline("nodebug")
-    fn __init__(values: (Int, Int)) -> Self:
+    fn __init__(inout self, values: (Int, Int)):
         """Creates a dimension list from the given list of values.
 
         Args:
             values: The initial dim values list.
-
-        Returns:
-            A dimension list.
         """
-        return Self {value: VariadicList[Dim](values[0], values[1])}
+        self.value = VariadicList[Dim](values[0], values[1])
 
     @always_inline("nodebug")
-    fn __init__(values: (Int, Int, Int)) -> Self:
+    fn __init__(inout self, values: (Int, Int, Int)):
         """Creates a dimension list from the given list of values.
 
         Args:
             values: The initial dim values list.
-
-        Returns:
-            A dimension list.
         """
-        return Self {value: VariadicList[Dim](values[0], values[1], values[2])}
+        self.value = VariadicList[Dim](values[0], values[1], values[2])
 
     @always_inline("nodebug")
-    fn __init__(values: VariadicList[Dim]) -> Self:
+    fn __init__(inout self, values: VariadicList[Dim]):
         """Creates a dimension list from the given list of values.
 
         Args:
             values: The initial dim values list.
-
-        Returns:
-            A dimension list.
         """
-        return Self {value: values}
+        self.value = values
 
     @always_inline("nodebug")
-    fn __init__(*values: Dim) -> Self:
+    fn __init__(inout self, *values: Dim):
         """Creates a dimension list from the given Dim values.
 
         Args:
             values: The initial dim values.
-
-        Returns:
-            A dimension list.
         """
-        return values
+        self.value = values
 
     @always_inline("nodebug")
     fn __len__(self) -> Int:
