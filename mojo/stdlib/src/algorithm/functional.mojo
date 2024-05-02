@@ -1129,7 +1129,7 @@ fn _get_start_indices_of_nth_subvolume[
     var curr_index = n
 
     @unroll
-    for i in range(rank - subvolume_rank - 1, -1, -1):
+    for i in reversed(range(rank - subvolume_rank)):
         out[i] = curr_index._positive_rem(shape[i])
         curr_index = curr_index._positive_div(shape[i])
 

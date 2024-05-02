@@ -123,7 +123,7 @@ fn _get_nd_indices_from_flat_index[
 
     @parameter
     if triple_is_nvidia_cuda():
-        for i in range(rank - 1, -1, -1):
+        for i in reversed(range(rank)):
             # There is one dimension we skip, this represents the inner loop that
             # is being traversed.
             if i == skip_dim:
@@ -134,7 +134,7 @@ fn _get_nd_indices_from_flat_index[
     else:
 
         @unroll
-        for i in range(rank - 1, -1, -1):
+        for i in reversed(range(rank)):
             # There is one dimension we skip, this represents the inner loop that
             # is being traversed.
             if i == skip_dim:
