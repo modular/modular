@@ -6,6 +6,7 @@
 
 #include "KGEN/ToolCommon/InitAllDialects.h"
 
+#include "KGEN/CODialect/CODialect.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/Interpreter/InterpreterDialect.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
@@ -238,6 +239,7 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
       KGENDialect,
       LIT::LITDialect,
       POP::POPDialect,
+      CO::CODialect,
       MDialect,
       DebugInfo::DebugInfoDialect,
       mlir::index::IndexDialect,
