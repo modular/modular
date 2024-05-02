@@ -934,12 +934,12 @@ struct NotSynthetic:
 struct VarArgInit:
     var a: Int
 
-    # CHECK: lit.func @"__init__(decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> borrow|var) -> !VarArgInit
+    # CHECK: lit.func @"__init__(decls::VarArgInit=&,decls::ValueMem*)"{{.*}}({{.*}}: !kgen.variadic<!lit.ref<!ValueMem, imm {{.*}}>, borrow_in_mem> borrow|var)
     # The argument is intentionally memory-only.
-    fn __init__(*values: ValueMem) -> Self:
-        return Self {a: 42}
+    fn __init__(inout self, *values: ValueMem):
+        self.a = 42
 
-    # CHECK: lit.func @"__init__({{.*}}Int)"(%a: !Int borrow) -> !VarArgInit
+    # CHECK: lit.func @"__init__({{.*}}Int)"{{.*}}({{.*}}, %a: !Int borrow)
 
 
 # COM: Body resolution of `Node` will recurse on itself. Make sure that the
