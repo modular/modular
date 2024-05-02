@@ -3694,9 +3694,7 @@ fn wrapped_round[
 fn wrapped_roundeven[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return llvm_intrinsic[
-        "llvm.roundeven", __type_of(x), has_side_effect=False
-    ](x)
+    return x.roundeven()
 
 
 @mogg_register("mo.rsqrt")
