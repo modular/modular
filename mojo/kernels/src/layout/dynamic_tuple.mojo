@@ -546,7 +546,7 @@ fn _lift(n: Int, shape: List[Int]) -> List[Int]:
     var out = List[Int](capacity=len(shape))
     var curr_index = n
 
-    for i in range(len(shape) - 1, -1, -1):
+    for i in reversed(range(len(shape))):
         out.append(curr_index._positive_rem(shape[i]))
         curr_index = curr_index._positive_div(shape[i])
     out.reverse()
