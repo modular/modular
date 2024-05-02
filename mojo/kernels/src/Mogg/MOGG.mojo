@@ -16,7 +16,6 @@ from math import (
     log,
     log1p,
     pow,
-    round,
     rsqrt,
     sin,
     sqrt,
@@ -3643,7 +3642,7 @@ fn wrapped_exp[
 
 @mogg_register("mo.equal")
 @always_inline
-fn wrapepd_equal[
+fn equal[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     DType.bool, simd_width
@@ -3653,7 +3652,7 @@ fn wrapepd_equal[
 
 @mogg_register("mo.greater")
 @always_inline("nodebug")
-fn wrapped_greater[
+fn greater[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     DType.bool, simd_width
@@ -3663,7 +3662,7 @@ fn wrapped_greater[
 
 @mogg_register("mo.greater_equal")
 @always_inline
-fn wrapped_greater_eq[
+fn greater_equal[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     DType.bool, simd_width
@@ -3673,7 +3672,7 @@ fn wrapped_greater_eq[
 
 @mogg_register("mo.not_equal")
 @always_inline("nodebug")
-fn wrapped_not_equal[
+fn not_equal[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width], y: SIMD[type, simd_width]) -> SIMD[
     DType.bool, simd_width
@@ -3686,12 +3685,12 @@ fn wrapped_not_equal[
 fn wrapped_round[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
-    return llvm_intrinsic["llvm.round", __type_of(x), has_side_effect=False](x)
+    return round(x)
 
 
 @mogg_register("mo.roundeven")
 @always_inline("nodebug")
-fn wrapped_roundeven[
+fn roundeven[
     type: DType, simd_width: Int
 ](x: SIMD[type, simd_width]) -> SIMD[type, simd_width]:
     return x.roundeven()
