@@ -105,7 +105,7 @@ SimpleInterpreter::evaluateExpression(ParamOperatorAttr op) {
         isInitSelf ? body.getArgument(0) : body.getArguments().back();
     Type resultType = cast<PointerType>(resultArg.getType()).getElementType();
     ErrorTreeOr<TypedAttr> result = executeRegionWithResultSlot(
-        body, arguments, isInitSelf, UnknownAttr::get(resultType));
+        body, arguments, isInitSelf, createUninitializedValueOf(resultType));
     if (result.isError()) {
       DEBUG_WITH_TYPE("simple-interpreter",
                       result.takeError().emit(

@@ -26,6 +26,9 @@ class ParamDeclArrayAttr;
 class SignatureType;
 class VariadicType;
 class VariadicAttr;
+
+/// Create an uninitialized TypedAttr instance of the type.
+TypedAttr createUninitializedValueOf(Type type);
 } // namespace M::KGEN
 
 #define GET_TYPEDEF_CLASSES

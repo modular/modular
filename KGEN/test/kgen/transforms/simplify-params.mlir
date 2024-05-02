@@ -80,6 +80,19 @@ kgen.generator @interpret_result_slot() {
   kgen.return
 }
 
+kgen.generator @uninitialized_empty_struct() -> !kgen.struct<(struct<()>)> {
+  %0 = pop.stack_allocation 1 x struct<(struct<()>)>
+  %1 = pop.load %0 : !kgen.pointer<struct<(struct<()>)>>
+  kgen.return %1 : !kgen.struct<(struct<()>)>
+}
+
+// CHECK-LABEL: @load_uninitialized_struct
+kgen.generator @load_uninitialized_struct() {
+  // CHECK-NEXT: struct<(struct<()>)> = <{ { } }>
+  kgen.param.constant: struct<(struct<()>)> = <apply(:() -> !kgen.struct<(struct<()>)> @uninitialized_empty_struct)>
+  kgen.return
+}
+
 // -----
 
 kgen.generator @interpret_me(%arg0: index) -> index {

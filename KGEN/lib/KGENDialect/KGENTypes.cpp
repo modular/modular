@@ -1030,6 +1030,19 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
   return StructAttr::get(values, *this);
 }
 
+TypedAttr KGEN::createUninitializedValueOf(Type type) {
+  // If the value being allocated is an aggregate, initialize the aggregate
+  // with undef subelements.
+  auto structType = dyn_cast<StructType>(type);
+  if (!structType)
+    return UnknownAttr::get(type);
+  SmallVector<TypedAttr> values;
+  values.reserve(structType.getElementTypes().size());
+  for (Type type : structType.getElementTypes())
+    values.push_back(createUninitializedValueOf(type));
+  return StructAttr::get(values, structType);
+}
+
 //===----------------------------------------------------------------------===//
 // PackType
 //===----------------------------------------------------------------------===//
