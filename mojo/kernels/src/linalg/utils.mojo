@@ -40,14 +40,8 @@ alias elementwise_epilogue_type = fn[type: DType, width: Int] (
 struct MatmulConfig:
     """Static configuration of tiled matmul algorithms."""
 
-    # Indicates if the input matrix A is transposed.
-    var transpose_a: Bool
-
     # Indicates if the input matrix B is transposed.
     var transpose_b: Bool
-
-    # Indicates if the input matrix A is pre-packed.
-    var a_packed: Bool
 
     # Indicates if the input matrix B is pre-packed.
     var b_packed: Bool
@@ -70,9 +64,7 @@ struct MatmulConfig:
     fn __init__(
         inout self,
         *,
-        transpose_a: Bool,
         transpose_b: Bool,
-        a_packed: Bool,
         b_packed: Bool,
         packed_shape: DimList,
         simd_size: Int,
@@ -80,9 +72,7 @@ struct MatmulConfig:
         kernel_cols: Int,
         kernel_type: Bool,
     ):
-        self.transpose_a = transpose_a
         self.transpose_b = transpose_b
-        self.a_packed = a_packed
         self.b_packed = b_packed
         self.packed_shape = packed_shape
         self.simd_size = simd_size
@@ -116,7 +106,6 @@ struct GemmShape:
     # Construct from dynamic shaped input.
     @staticmethod
     fn get[
-        transpose_a: Bool,
         transpose_b: Bool,
     ](
         c: NDBuffer[_, 2, _],
@@ -134,22 +123,19 @@ struct GemmShape:
             a: Buffer containing matrix operand A.
             b: Buffer containing matrix operand B.
         """
-        return GemmShape(
-            c.dim[0](), c.dim[1](), a.dim[0]() if transpose_a else a.dim[1]()
-        )
+        return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
     @staticmethod
     fn get(
         c: DynamicRankBuffer,
         a: DynamicRankBuffer,
         b: DynamicRankBuffer,
-        transpose_a: Bool,
         transpose_b: Bool,
     ) -> GemmShape:
         return GemmShape(
             c.dim(0),
             c.dim(1),
-            a.dim(0) if transpose_a else a.dim(1),
+            a.dim(1),
         )
 
     # TODO: re-enable using StaticIntTuple.
@@ -616,9 +602,7 @@ fn get_mm_config[
     b_type: DType,
     c_type: DType,
     *,
-    transpose_a: Bool = False,
     transpose_b: Bool = False,
-    a_packed: Bool = False,
     b_packed: Bool = False,
     kernel_type: Bool = False,
 ]() -> MatmulConfig:
@@ -633,9 +617,7 @@ fn get_mm_config[
     ]()
 
     return MatmulConfig(
-        transpose_a=transpose_a,
         transpose_b=transpose_b,
-        a_packed=a_packed,
         b_packed=False if use_apple_accelerate_lib(
             c_type, a_type, b_type
         ) else b_packed,

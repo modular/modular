@@ -237,14 +237,11 @@ fn batched_matmul[
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
 ):
+    constrained[not transpose_a, "transpose_a not yet supported"]()
+
     # TODO: generalize to > rank 3
     @parameter
-    if (
-        single_thread_blocking_override
-        and not transpose_a
-        and not transpose_b
-        and target == "cpu"
-    ):
+    if single_thread_blocking_override and not transpose_b and target == "cpu":
         return _small_batched_matmul[
             rank,
             a_type,
@@ -258,7 +255,6 @@ fn batched_matmul[
         a_type,
         b_type,
         c_type,
-        transpose_a,
         transpose_b,
         elementwise_epilogue_fn,
         saturated_vnni=saturated_vnni,
@@ -272,7 +268,6 @@ fn _batched_matmul_cpu[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    transpose_a: Bool,
     transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
@@ -281,9 +276,6 @@ fn _batched_matmul_cpu[
     a_buf: NDBuffer[a_type, rank],
     b_buf: NDBuffer[b_type, rank],
 ):
-    constrained[
-        not transpose_a, "batched matmul does not support transpose_a yet"
-    ]()
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
 
     # Flatten to 3D Tensor.
@@ -294,7 +286,7 @@ fn _batched_matmul_cpu[
 
     var m = c.dim[1]()
     var n = c.dim[2]()
-    var k = a.dim[1]() if transpose_a else a.dim[2]()
+    var k = a.dim[2]()
     var num_threads = Runtime().parallelism_level()
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
@@ -494,7 +486,6 @@ fn _batched_matmul_gpu[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    transpose_a: Bool,
     transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
@@ -551,7 +542,6 @@ fn batched_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    transpose_a: Bool,
     transpose_b: Bool,
     elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
@@ -568,7 +558,6 @@ fn batched_matmul[
         a_type,
         b_type,
         c_type,
-        transpose_a,
         transpose_b,
         elementwise_epilogue_fn,
         saturated_vnni,

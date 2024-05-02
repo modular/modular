@@ -657,11 +657,10 @@ fn _matmul_gpu[
     #     not single_thread_blocking_override,
     #     "single_thread_blocking_override not applicable",
     # ]()
-    constrained[config.transpose_a == False, "only NN matmul is supported"]()
     constrained[config.transpose_b == False, "only NN matmul is supported"]()
     constrained[not config.b_packed, "pre-packing not yet supported"]()
 
-    var shape = GemmShape.get[False, False](c, a, b)
+    var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
@@ -733,7 +732,7 @@ fn _matmul_gpu_dispatch[
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
 ):
-    var shape = GemmShape.get[False, False](c, a, b)
+    var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K

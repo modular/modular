@@ -163,7 +163,6 @@ fn tiledMatmulRun[
 
 
 # Tiled Matmul Implementation.
-# TODO: not yet supporting transpose_a
 @value
 struct TiledMatmul[
     config: MatmulConfig,
@@ -180,7 +179,6 @@ struct TiledMatmul[
     """Tiled matmul implementation integrating packing, inner loop and tile
     partitions.
 
-    TODO: not yet supporting transpose_a.
     TODO: add tag based implementation dispatch.
     TODO: add fusion hooks.
     """
@@ -532,7 +530,6 @@ fn _matmul_cpu[
     @parameter
     if (
         single_thread_blocking_override
-        and not config.transpose_a
         and not config.b_packed
         and a.type == b.type
         and b.type == c.type
@@ -541,9 +538,8 @@ fn _matmul_cpu[
             config.transpose_b,
             elementwise_lambda_fn,
         ](a, b, c)
-    constrained[not config.transpose_a, "transpose_a not yet supported"]()
 
-    var shape = GemmShape.get[False, config.transpose_b](c, a, b)
+    var shape = GemmShape.get[config.transpose_b](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
@@ -656,7 +652,6 @@ fn matmul_M[
     b_shape: DimList,
     c_type: DType,
     c_shape: DimList,
-    transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -676,7 +671,6 @@ fn matmul_M[
             a_type,
             b_type,
             c_type,
-            transpose_a=transpose_a,
             transpose_b=transpose_b,
             b_packed=b_packed,
             kernel_type=kernel_type,
@@ -744,7 +738,7 @@ fn matmul_M[
         else:
             constrained[False, "no _run_inner_loop implementation"]()
 
-    var shape = GemmShape.get[False, transpose_b](c, a, b)
+    var shape = GemmShape.get[transpose_b](c, a, b)
     var n = shape.N
     var k = shape.K
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
@@ -772,6 +766,7 @@ fn matmul[
     num_threads: Int = -1,
 ):
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
+    constrained[not transpose_a, "transpose_a not yet supported"]()
 
     @parameter
     if target == "cpu":
@@ -788,7 +783,6 @@ fn matmul[
             b_shape,
             c_type,
             c_shape,
-            transpose_a,
             transpose_b,
             b_packed,
             elementwise_lambda_fn,
@@ -801,7 +795,6 @@ fn matmul[
             a_type,
             b_type,
             c_type,
-            transpose_a=transpose_a,
             transpose_b=transpose_b,
             b_packed=b_packed,
         ]()
@@ -832,8 +825,6 @@ fn _submatmul_sequential_sync[
     sub_matrix_offset: GemmShape,
     kernel_type_m: Int = 0,
 ):
-    constrained[not config.transpose_a, "transpose_a not yet supported"]()
-
     fn elementwise_closure(offset: GemmShape, shape: GemmShape):
         @parameter
         if elementwise_lambda_fn:
