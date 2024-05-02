@@ -37,8 +37,8 @@ struct Flag:
     set."""
 
     @always_inline("nodebug")
-    fn __init__(value: UInt32) -> Self:
-        return Self {_value: value}
+    fn __init__(inout self, value: UInt32):
+        self._value = value
 
     @always_inline("nodebug")
     fn __or__(self, rhs: Flag) -> Flag:
@@ -64,12 +64,12 @@ struct _EventImpl(Boolable):
     var handle: DTypePointer[DType.invalid]
 
     @always_inline
-    fn __init__() -> Self:
-        return Self {handle: DTypePointer[DType.invalid]()}
+    fn __init__(inout self):
+        self.handle = DTypePointer[DType.invalid]()
 
     @always_inline
-    fn __init__(handle: DTypePointer[DType.invalid]) -> Self:
-        return Self {handle: handle}
+    fn __init__(inout self, handle: DTypePointer[DType.invalid]):
+        self.handle = handle
 
     @always_inline
     fn __bool__(self) -> Bool:

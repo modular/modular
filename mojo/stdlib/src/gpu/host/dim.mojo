@@ -13,17 +13,17 @@ from utils.index import Index, StaticIntTuple
 struct Dim(Stringable):
     var _value: StaticIntTuple[3]
 
-    fn __init__(dims: (Int,)) -> Self:
-        return Self(dims[0])
+    fn __init__(inout self, dims: (Int,)):
+        self = Self(dims[0])
 
-    fn __init__(dims: (Int, Int)) -> Self:
-        return Self(dims[0], dims[1])
+    fn __init__(inout self, dims: (Int, Int)):
+        self = Self(dims[0], dims[1])
 
-    fn __init__(dims: (Int, Int, Int)) -> Self:
-        return Self(dims[0], dims[1], dims[2])
+    fn __init__(inout self, dims: (Int, Int, Int)):
+        self = Self(dims[0], dims[1], dims[2])
 
-    fn __init__(x: Int, y: Int = 1, z: Int = 1) -> Self:
-        return Self {_value: Index(x, y, z)}
+    fn __init__(inout self, x: Int, y: Int = 1, z: Int = 1):
+        self._value = Index(x, y, z)
 
     fn __getitem__(self, idx: Int) -> Int:
         return self._value[idx]

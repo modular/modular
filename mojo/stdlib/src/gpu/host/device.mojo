@@ -592,8 +592,8 @@ struct DeviceAttribute:
     """Device supports switch multicast and reduction operations.
     """
 
-    fn __init__(value: Int32) -> Self:
-        return Self {_value: value}
+    fn __init__(inout self, value: Int32):
+        self._value = value
 
 
 fn device_count() raises -> Int:
@@ -616,8 +616,8 @@ fn device_count() raises -> Int:
 struct Device(StringableRaising):
     var id: Int32
 
-    fn __init__(id: Int = 0) -> Self:
-        return Self {id: id}
+    fn __init__(inout self, id: Int = 0):
+        self.id = id
 
     fn __str__(self) raises -> String:
         var res = "name: " + self._name() + "\n"
