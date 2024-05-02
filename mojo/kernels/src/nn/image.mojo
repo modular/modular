@@ -59,22 +59,23 @@ struct ImageData[
     var data: NDBuffer[type, 4, shape]
     var dynamic_layout: Image2DLayout
 
-    fn __init__(data: NDBuffer[type, 4, shape], layout: Image2DLayout) -> Self:
+    fn __init__(
+        inout self, data: NDBuffer[type, 4, shape], layout: Image2DLayout
+    ):
         """Construct of an image data instance with dynamic layout param.
 
         Args:
             data: A 4d buffer containing the actual data.
             layout: Data layout tag.
-
-        Returns:
-            An ImageData instance.
         """
         constrained[static_layout == Image2DLayout.UNKNOWN]()
-        return Self {data: data, dynamic_layout: layout}
+        self.data = data
+        self.dynamic_layout = layout
 
-    fn __init__(data: NDBuffer[type, 4, shape]) -> Self:
+    fn __init__(inout self, data: NDBuffer[type, 4, shape]):
         constrained[static_layout != Image2DLayout.UNKNOWN]()
-        return Self {data: data, dynamic_layout: static_layout}
+        self.data = data
+        self.dynamic_layout = static_layout
 
     fn to_static_layout[
         new_static_layout: Image2DLayout
