@@ -385,10 +385,12 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
                                        InterpreterState &state) {
   int64_t loads = 0, stores = 0;
   std::array<int64_t, getMaxEnumValForComputeKind() + 1> compute{};
+  auto callee = dyn_cast<SymbolConstantAttr>(getCallee());
+  if (!callee)
+    return ErrorTree(getLoc(), "callee is not concrete");
 
   ErrorTreeOrSuccess result =
-      computeCost(cast<SymbolConstantAttr>(getCallee()), getLoc(), state, loads,
-                  stores, compute, /*depth=*/0);
+      computeCost(callee, getLoc(), state, loads, stores, compute, /*depth=*/0);
   if (result.isError())
     return result;
 

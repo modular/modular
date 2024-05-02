@@ -695,15 +695,24 @@ InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
     return ErrorTree(loc, "internal error: region has no arguments");
 
   // Allocate the result slot.
-  auto resultPtrType =
+  Type resultPtrType =
       (isInitSelf ? region.getArgument(0) : region.getArguments().back())
           .getType();
-  ErrorOr<PointerAttr> resultSlotAttrOr =
-      allocateInternalStackFor(resultType, resultPtrType);
-  if (resultSlotAttrOr.isError())
-    return ErrorTree(loc, resultSlotAttrOr.takeError());
+  TypedAttr resultSlotAttr;
+
+  if (!getTarget()) {
+    uint64_t slot = symbolicMemory.size();
+    symbolicMemory.emplace_back();
+    resultSlotAttr = SymbolicPointerAttr::get(slot, resultPtrType);
+  } else {
+    ErrorOr<PointerAttr> resultSlotAttrOr =
+        allocateInternalStackFor(resultType, resultPtrType);
+    if (resultSlotAttrOr.isError())
+      return ErrorTree(loc, resultSlotAttrOr.takeError());
+    resultSlotAttr = resultSlotAttrOr.takeValue();
+  }
+
   SmallVector<Attribute> allArgs;
-  PointerAttr resultSlotAttr = resultSlotAttrOr.takeValue();
   if (isInitSelf)
     allArgs.push_back(resultSlotAttr);
   llvm::append_range(allArgs, arguments);
@@ -719,19 +728,25 @@ InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
 
   // Run the interpreter.
   ErrorTreeOr<SmallVector<Attribute>> result = runInterpreter();
-  if (result) {
-    ErrorOr<TypedAttr> result =
-        readAttributeFromMemory(resultSlotAttr.getAddr(), resultType);
-    if (result.isError())
-      return ErrorTree(loc, result.takeError());
-    Attribute value = result.takeValue();
-    if (ErrorOrSuccess err = externalizeMemory(region, value); err.isError())
-      return ErrorTree(region.getLoc(), err.takeError());
-    return cast<TypedAttr>(value);
-  }
 
   // The interpreter ran into an error. Report an error using a stacktrace.
-  return addStackTrace(result.takeError());
+  if (!result)
+    return addStackTrace(result.takeError());
+
+  TypedAttr value;
+  if (!getTarget()) {
+    value = symbolicMemory[cast<SymbolicPointerAttr>(resultSlotAttr).getSlot()];
+  } else {
+    ErrorOr<TypedAttr> resultOr = readAttributeFromMemory(
+        cast<PointerAttr>(resultSlotAttr).getAddr(), resultType);
+    if (resultOr.isError())
+      return ErrorTree(loc, resultOr.takeError());
+    value = resultOr.takeValue();
+  }
+
+  if (ErrorOrSuccess err = externalizeMemory(region, value); err.isError())
+    return ErrorTree(region.getLoc(), err.takeError());
+  return value;
 }
 
 ErrorTreeOr<SmallVector<Attribute>> InterpreterState::runInterpreter() {

@@ -67,6 +67,19 @@ kgen.generator @param_prop<p0, p1 -> p2>() {
   kgen.return
 }
 
+kgen.generator @result_slot(%arg0: index, %arg1: !kgen.pointer<index> byref_result) -> !kgen.none {
+  pop.store %arg0, %arg1 : !kgen.pointer<index>
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+
+// CHECK-LABEL: @interpret_result_slot
+kgen.generator @interpret_result_slot() {
+  // CHECK-NEXT: constant = <42>
+  kgen.param.constant = <apply_result_slot(:(index, !kgen.pointer<index> byref_result) -> !kgen.none @result_slot, 42)>
+  kgen.return
+}
+
 // -----
 
 kgen.generator @interpret_me(%arg0: index) -> index {
