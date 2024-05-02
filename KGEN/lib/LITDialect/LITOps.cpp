@@ -14,6 +14,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
 #include "KGEN/KGENDialect/ParameterReplacer.h"
+#include "KGEN/LITDialect/LITAttrs.h"
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
@@ -1483,17 +1484,48 @@ static void printStructGERTypes(AsmPrinter &p, Operation *, RefType fieldType,
   }
 }
 
+OpFoldResult RefStructGEROp::fold(FoldAdaptor adaptor) {
+  auto ptr = dyn_cast_or_null<SymbolicPointerAttr>(adaptor.getContainer());
+  if (!ptr)
+    return {};
+  return StructGERAttr::get(ptr, getFieldAttr(), getType());
+}
+
 //===----------------------------------------------------------------------===//
 // RefLoadOp
 //===----------------------------------------------------------------------===//
 
+static ErrorTreeOr<TypedAttr>
+interpretSymbolicLoadOp(Location loc, TypedAttr arg, InterpreterState &state) {
+  if (auto ptr = dyn_cast<SymbolicPointerAttr>(arg)) {
+    // Base case: load the value.
+    ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(ptr.getSlot());
+    if (mem.isError())
+      return ErrorTree(loc, mem.takeError());
+    return *mem;
+  }
+  // If this is a GER, recurse by loading the base value and then extracting the
+  // requested element.
+  auto ger = cast<StructGERAttr>(arg);
+  ErrorTreeOr<TypedAttr> value =
+      interpretSymbolicLoadOp(loc, ger.getValue(), state);
+  if (value.isError())
+    return value.takeError();
+  auto structAttr = cast<LITStructAttr>(*value);
+  for (auto [name, value] : structAttr.getValues()) {
+    if (name == ger.getField())
+      return value;
+  }
+  llvm_unreachable("should have found a matching field name");
+}
+
 ErrorTreeOrSuccess RefLoadOp::interpret(ArrayRef<Attribute> operands,
                                         InterpreterState &state) {
-  uint64_t slot = cast<SymbolicPointerAttr>(operands.front()).getSlot();
-  ErrorOr<TypedAttr &> mem = state.getSymbolicMemory(slot);
-  if (mem.isError())
-    return ErrorTree(getLoc(), mem.takeError());
-  state.mapResults(*mem);
+  ErrorTreeOr<TypedAttr> result = interpretSymbolicLoadOp(
+      getLoc(), cast<TypedAttr>(operands.front()), state);
+  if (result.isError())
+    return result.takeError();
+  state.mapResults(*result);
   return success();
 }
 

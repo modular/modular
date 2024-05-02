@@ -1642,6 +1642,8 @@ def LIT_RefStructGEROp : LITOp<"ref.struct.ger", [Pure,
     // Infer the result type based on the result of lookup.
     OpBuilder<(ins "Value":$structBasePtr, "StructFieldOp":$field)>
   ];
+
+  let hasFolder = 1;
 }
 
 //===----------------------------------------------------------------------===//

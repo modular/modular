@@ -739,6 +739,13 @@ def LIT_StructGERAttr : LITAttr<"StructGER", "struct.ger",
                         AttributeSelfTypeParameter<"">:$type);
   let assemblyFormat = "`<` $value `,` $field `>`";
 
+  let builders = [
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$value, "StringAttr":$field,
+                                        "Type":$type), [{
+      return $_get(value.getContext(), value, field, type);
+    }]>
+  ];
+
   let genVerifyDecl = 1;
 }
 
