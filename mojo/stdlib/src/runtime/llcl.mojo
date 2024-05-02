@@ -31,8 +31,8 @@ struct Chain(Boolable):
     # Actually an AsyncValueRef<Chain>, which is just an AsyncValue*
     var storage: Pointer[Int]
 
-    fn __init__() -> Self:
-        return Self {storage: Pointer[Int].get_null()}
+    fn __init__(inout self):
+        self.storage = Pointer[Int].get_null()
 
     fn __bool__(self) -> Bool:
         return self.storage != Pointer[Int].get_null()
@@ -327,8 +327,8 @@ struct TaskGroupTask[type: AnyRegType]:
 
     var handle: Coroutine[type]
 
-    fn __init__(owned handle: Coroutine[type]) -> Self:
-        return Self {handle: handle^}
+    fn __init__(inout self, owned handle: Coroutine[type]):
+        self.handle = handle^
 
     fn get(self) -> type:
         """Get the task's result value. This should only be called once the
