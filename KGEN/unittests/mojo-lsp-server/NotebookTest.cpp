@@ -9,61 +9,69 @@
 
 using namespace M;
 
-TEST(NotebookTest, testUpdates) {
+static lsp::DidChangeNotebookDocumentParams buildChangeParams(
+    NotebookDocument &doc, const lsp::NotebookCellArrayChange &arrayChange,
+    const std::vector<lsp::NotebookDocumentChangeEvent::CellsTextContent>
+        &textContent = {}) {
+  return lsp::DidChangeNotebookDocumentParams{
+      lsp::VersionedNotebookDocumentIdentifier{doc.getURI(), /*version=*/0},
+      lsp::NotebookDocumentChangeEvent{lsp::NotebookDocumentChangeEvent::Cells{
+          lsp::NotebookDocumentChangeEvent::CellsStructure{
+              arrayChange,
+              /*didOpen=*/{},
+              /*didClose=*/{},
+          },
+          /*data=*/{},
+          /*textContent=*/textContent}}};
+}
+
+TEST(NotebookTest, TestRemoval) {
   NotebookDocument doc("test:///test_updates", {
                                                    R"(
 fn function() -> Int:
   return 10
 )",
                                                    R"(
-function()
+_ = function()
 )"});
-
-  auto buildChangeParams =
-      [&doc](
-          const lsp::NotebookCellArrayChange &arrayChange,
-          const std::vector<lsp::NotebookDocumentChangeEvent::CellsTextContent>
-              &textContent = {}) {
-        return lsp::DidChangeNotebookDocumentParams{
-            lsp::VersionedNotebookDocumentIdentifier{doc.getURI(),
-                                                     /*version=*/0},
-            lsp::NotebookDocumentChangeEvent{
-                lsp::NotebookDocumentChangeEvent::Cells{
-                    lsp::NotebookDocumentChangeEvent::CellsStructure{
-                        arrayChange,
-                        /*didOpen=*/{},
-                        /*didClose=*/{},
-                    },
-                    /*data=*/{},
-                    /*textContent=*/textContent}}};
-      };
 
   createTestClient()
       .openNotebook(doc)
-      .onDiagnostics(doc.getCells()[0],
-                     [](const std::vector<lsp::Diagnostic> &diags) {
-                       EXPECT_EQ((int)diags.size(), 0);
-                     })
+      .notebookDidChange(buildChangeParams(
+          doc, lsp::NotebookCellArrayChange{
+                   /*start=*/0,
+                   /*deleteCount=*/1,
+                   {lsp::NotebookCell{lsp::NotebookCellKind::Code,
+                                      doc.getCells()[0].getURI()}}}))
       .onDiagnostics(doc.getCells()[1],
                      [](const std::vector<lsp::Diagnostic> &diags) {
-                       // FIXME(MOTO-382): We are getting an incorrect
-                       // diagnostic about `Int` not being used.
-                       // We should in fact get 0 diagnostics.
-                       EXPECT_EQ((int)diags.size(), 1);
+                       ASSERT_EQ((int)diags.size(), 1);
+                       EXPECT_EQ(diags[0].message,
+                                 "use of unknown declaration 'function'");
                      })
-      .notebookDidChange(buildChangeParams(lsp::NotebookCellArrayChange{
-          /*start=*/0,
-          /*deleteCount=*/1,
-          {lsp::NotebookCell{lsp::NotebookCellKind::Code,
-                             doc.getCells()[0].getURI()}}}))
-      // TODO(MOTO-382): Revive these asserts.
-      //.onDiagnostics(doc.getCells()[1],
-      //               [](const std::vector<lsp::Diagnostic> &diags) {
-      //                 ASSERT_EQ((int)diags.size(), 1);
-      //                 EXPECT_EQ(diags[0].message,
-      //                           "use of unknown declaration 'function'");
-      //               })
+      .execute();
+}
+
+TEST(NotebookTest, testRemovalReadd) {
+  NotebookDocument doc("test:///test_updates", {
+                                                   R"(
+fn function() -> Int:
+  return 10
+)",
+                                                   R"(
+_ = function()
+)"});
+
+  createTestClient()
+      .openNotebook(doc)
       .notebookDidChange(buildChangeParams(
+          doc, lsp::NotebookCellArrayChange{
+                   /*start=*/0,
+                   /*deleteCount=*/1,
+                   {lsp::NotebookCell{lsp::NotebookCellKind::Code,
+                                      doc.getCells()[0].getURI()}}}))
+      .notebookDidChange(buildChangeParams(
+          doc,
           lsp::NotebookCellArrayChange{/*start=*/0,
                                        /*deleteCount=*/0,
                                        /*cells=*/{}},
@@ -84,21 +92,12 @@ function()
                    /*range=*/doc.getCells()[1].findFirstRange("function"),
                    /*rangeLength=*/std::nullopt,
                    /*text=*/"renamed_function"}}}}))
-      // TODO(MOTO-382): Revive these asserts.
-      //.onDiagnostics(doc.getCells()[0],
-      //               [](const std::vector<lsp::Diagnostic> &diags) {
-      //                 EXPECT_EQ((int)diags.size(), 0);
-      //               })
-      //.onDiagnostics(doc.getCells()[1],
-      //               [](const std::vector<lsp::Diagnostic> &diags) {
-      //                 EXPECT_EQ((int)diags.size(), 0);
-      //               })
-      .hover(doc.getCells()[1], lsp::Position(1, 1),
+      .hover(doc.getCells()[1], lsp::Position(1, 4),
              [](const lsp::Hover &hover) {
                EXPECT_EQ(hover.contents.value, R"(```mojo
 (function) fn renamed_function() -> Int
 ```)");
-               EXPECT_EQ(hover.range, lsp::Range({1, 0}, {1, 16}));
+               EXPECT_EQ(hover.range, lsp::Range({1, 4}, {1, 20}));
              })
       .execute();
 }
