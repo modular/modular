@@ -566,14 +566,12 @@ fn _matmul_cpu[
         ](out, lhs, rhs)
     else:
         # SGEMM calls for MacOS >= 13.0.0 are directed to the CBLAS implementation.
-        # TODO: Add output fusion.
         @parameter
         if use_apple_accelerate_lib(c.type, a.type, b.type):
-            constrained[
-                not elementwise_lambda_fn,
-                "output fusion not yet supported for Apple target",
-            ]()
-            apple_matmul(c, a, b)
+            apple_matmul[
+                transpose_b = config.transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](c, a, b)
             return
 
         var complexity = m * n * k

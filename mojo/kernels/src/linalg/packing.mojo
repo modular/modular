@@ -925,11 +925,6 @@ fn pack_transposed_b_ndbuffer[
     c_type: DType,
     c_shape: DimList,
 ](b_input: NDBuffer[b_type, 2, b_shape], output_buffer: NDBuffer[b_type, 2],):
-    # If we are on MacOS with below data types, we use cblas_sgemm, so override
-    # packing.
-    if use_apple_accelerate_lib(c_type, a_type, b_type):
-        return
-
     # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
     var kernel_type_m = 0
 

@@ -12,6 +12,8 @@ from collections import OptionalReg as Optional
 from buffer.buffer import NDBuffer
 from .BatchedMatmul import _reshape_nd_buffer_with_batch_to_3d
 from utils.index import Index
+from .MatmulUtils import elementwise_epilogue_type
+from algorithm import elementwise
 
 # ===----------------------------------------------------------------------===#
 # Constants
@@ -516,10 +518,32 @@ fn _bnns_matmul[
 fn apple_matmul[
     *,
     transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](c: NDBuffer, a: NDBuffer, b: NDBuffer):
     @parameter
     if a.type == b.type == c.type == DType.float32:
-        return _cblas_f32[transpose_b=transpose_b](c, a, b)
+        _cblas_f32[transpose_b=transpose_b](c, a, b)
+
+        @parameter
+        if elementwise_lambda_fn:
+            var m = c.dim[0]()
+            var n = c.dim[1]()
+            alias epilogue = elementwise_lambda_fn.value()
+            alias simd_size = simdwidthof[c.type]()
+
+            @always_inline
+            @parameter
+            fn epilogue_on_col_chunk[
+                simd_width: Int, rank: Int
+            ](idx: StaticIntTuple[rank]):
+                var c_coord = (idx[0], idx[1])
+                var c_val = c.load[width=simd_width](c_coord)
+                epilogue[c.type, simd_width](c_coord, c_val)
+
+            elementwise[epilogue_on_col_chunk, simd_size, 2](
+                StaticIntTuple[2](m, n)
+            )
+        return
 
     constrained[False, "unsupported type in apple accelerate"]()
 
