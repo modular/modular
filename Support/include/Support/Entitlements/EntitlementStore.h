@@ -137,7 +137,7 @@ public:
     return found->second.get();
   }
 
-  static std::optional<std::string> getEnv() {
+  static std::optional<std::string> getAuthTokenFromEnv() {
     return llvm::sys::Process::GetEnv("MODULAR_AUTH_TOKEN");
   };
 
