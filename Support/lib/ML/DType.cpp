@@ -8,6 +8,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#include <limits>
 using namespace M;
 
 /// Return the in-memory size for an array of the specified type with the
@@ -192,3 +193,30 @@ std::string DType::getAsString() const {
 
 void DType::print(raw_ostream &os) const { os << getAsString(); }
 void DType::dump() const { print(llvm::errs()); }
+
+ErrorOr<std::pair<int32_t, int32_t>> DType::getMaxAndMinValue() const {
+  return dispatch<ErrorOr<std::pair<int32_t, int32_t>>>()
+      .when<DType::si32>([&]() {
+        return std::pair(std::numeric_limits<int32_t>::max(),
+                         std::numeric_limits<int32_t>::min());
+      })
+      .when<DType::si16>([&]() {
+        return std::pair(std::numeric_limits<int16_t>::max(),
+                         std::numeric_limits<int16_t>::min());
+      })
+      .when<DType::ui16>([&]() {
+        return std::pair(std::numeric_limits<uint16_t>::max(),
+                         std::numeric_limits<uint16_t>::min());
+      })
+      .when<DType::si8>([&]() {
+        return std::pair(std::numeric_limits<int8_t>::max(),
+                         std::numeric_limits<int8_t>::min());
+      })
+      .when<DType::ui8>([&]() {
+        return std::pair(std::numeric_limits<uint8_t>::max(),
+                         std::numeric_limits<uint8_t>::min());
+      })
+      .otherwise([&]() {
+        return Error("Unsupported quantization dtype " + getAsString());
+      });
+}
