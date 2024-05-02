@@ -30,10 +30,15 @@ fn _compile_code[
     /,
     *,
     emission_kind: StringLiteral = "asm",
+    is_failable: Bool = False,
     target: __mlir_type.`!kgen.target` = _get_nvptx_target(),
 ]() -> Info:
     return compile_info[
-        func_type, func, emission_kind=emission_kind, target=target
+        func_type,
+        func,
+        emission_kind=emission_kind,
+        is_failable=is_failable,
+        target=target,
     ]()
 
 

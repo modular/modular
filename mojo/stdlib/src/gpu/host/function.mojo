@@ -376,10 +376,14 @@ fn _get_global_cache_info[
 
 @value
 @register_passable
-struct Function[func_type: AnyRegType, func: func_type](Boolable):
+struct Function[
+    func_type: AnyRegType, func: func_type, _is_failable: Bool = False
+](Boolable):
     var info: _CachedFunctionInfo
 
-    alias _impl = _compile_code[func_type, func, emission_kind="asm"]()
+    alias _impl = _compile_code[
+        func_type, func, is_failable=_is_failable, emission_kind="asm"
+    ]()
 
     @always_inline
     fn __init__(
@@ -393,6 +397,10 @@ struct Function[func_type: AnyRegType, func: func_type](Boolable):
         cache_config: Optional[CacheConfig] = None,
         func_attribute: Optional[FuncAttribute] = None,
     ) raises:
+        @parameter
+        if _is_failable and self._impl.is_error:
+            raise self._impl.error_msg
+
         fn dump_q(val: Variant[Path, Bool]) -> Bool:
             if val.isa[Bool]():
                 return val.get[Bool]()[]
