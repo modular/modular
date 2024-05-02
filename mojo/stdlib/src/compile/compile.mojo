@@ -46,31 +46,31 @@ alias _EMISSION_KIND_ASM: __mlir_type.index = (0).__as_mlir_index()
 alias _EMISSION_KIND_LLVM: __mlir_type.index = (1).__as_mlir_index()
 
 
-alias VariantType = __mlir_type[`!kgen.variant<`, _Info, `, string>`]
+alias _ErrorOrInfo = __mlir_type[`!kgen.variant<`, _Info, `, string>`]
 
 
 fn _noop_populate(ptr: Pointer[NoneType]) capturing:
     return
 
 
-fn _variant_is_error(variant: VariantType) -> Bool:
+fn _is_error(variant: _ErrorOrInfo) -> Bool:
     return __mlir_op.`kgen.variant.is`[index = __mlir_attr.`1 : index`](variant)
 
 
-fn _variant_get_result(variant: VariantType) -> _Info:
+fn _get_info(variant: _ErrorOrInfo) -> _Info:
     return __mlir_op.`kgen.variant.take`[index = __mlir_attr.`0 : index`](
         variant
     )
 
 
-fn _variant_get_error(variant: VariantType) -> StringLiteral:
+fn _get_error(variant: _ErrorOrInfo) -> StringLiteral:
     return __mlir_op.`kgen.variant.take`[index = __mlir_attr.`1 : index`](
         variant
     )
 
 
 @always_inline
-fn _compile_info_asm_impl[
+fn _compile_info_asm_failable_impl[
     func_type: AnyRegType,
     func: func_type,
     /,
@@ -82,21 +82,19 @@ fn _compile_info_asm_impl[
         `,`,
         _EMISSION_KIND_ASM,
         `,`,
-        `1 : i1`,
+        True.__mlir_i1__(),
         `,`,
         func,
         `> : `,
-        VariantType,
+        _ErrorOrInfo,
     ]
-    alias is_error = _variant_is_error(impl)
+    alias is_error = _is_error(impl)
 
     @parameter
     if is_error:
-        alias result = Info(
-            "", "", 0, _noop_populate, _variant_get_error(impl), True
-        )
+        alias result = Info("", "", 0, _noop_populate, _get_error(impl), True)
         return result
-    alias cls = _variant_get_result(impl)
+    alias cls = _get_info(impl)
     alias result = Info(
         cls.asm,
         get_linkage_name[target, func_type, func](),
@@ -109,7 +107,38 @@ fn _compile_info_asm_impl[
 
 
 @always_inline
-fn _compile_info_llvm_impl[
+fn _compile_info_asm_non_failable_impl[
+    func_type: AnyRegType,
+    func: func_type,
+    /,
+    target: __mlir_type.`!kgen.target` = _current_target(),
+]() -> Info:
+    alias cls = __mlir_attr[
+        `#kgen.param.expr<compile_assembly,`,
+        target,
+        `,`,
+        _EMISSION_KIND_ASM,
+        `,`,
+        False.__mlir_i1__(),
+        `,`,
+        func,
+        `> : `,
+        _Info,
+    ]
+
+    alias result = Info(
+        cls.asm,
+        get_linkage_name[target, func_type, func](),
+        cls.num_captures,
+        rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
+        "",
+        False,
+    )
+    return result
+
+
+@always_inline
+fn _compile_info_llvm_failable_impl[
     func_type: AnyRegType,
     func: func_type,
     /,
@@ -121,22 +150,20 @@ fn _compile_info_llvm_impl[
         `,`,
         _EMISSION_KIND_LLVM,
         `,`,
-        `1 : i1`,
+        True.__mlir_i1__(),
         `,`,
         func,
         `> : `,
-        VariantType,
+        _ErrorOrInfo,
     ]
-    alias is_error = _variant_is_error(impl)
+    alias is_error = _is_error(impl)
 
     @parameter
     if is_error:
-        alias result = Info(
-            "", "", 0, _noop_populate, _variant_get_error(impl), True
-        )
+        alias result = Info("", "", 0, _noop_populate, _get_error(impl), True)
         return result
     else:
-        alias cls = _variant_get_result(impl)
+        alias cls = _get_info(impl)
         alias result = Info(
             cls.asm,
             get_linkage_name[target, func_type, func](),
@@ -149,19 +176,70 @@ fn _compile_info_llvm_impl[
 
 
 @always_inline
+fn _compile_info_llvm_non_failable_impl[
+    func_type: AnyRegType,
+    func: func_type,
+    /,
+    target: __mlir_type.`!kgen.target` = _current_target(),
+]() -> Info:
+    alias cls = __mlir_attr[
+        `#kgen.param.expr<compile_assembly,`,
+        target,
+        `,`,
+        _EMISSION_KIND_LLVM,
+        `,`,
+        False.__mlir_i1__(),
+        `,`,
+        func,
+        `> : `,
+        _Info,
+    ]
+
+    alias result = Info(
+        cls.asm,
+        get_linkage_name[target, func_type, func](),
+        cls.num_captures,
+        rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
+        "",
+        False,
+    )
+    return result
+
+
+@always_inline
 fn compile_info[
     func_type: AnyRegType,
     func: func_type,
     /,
     *,
+    is_failable: Bool = False,
     emission_kind: StringLiteral = "asm",
     target: __mlir_type.`!kgen.target` = _current_target(),
 ]() -> Info:
     @parameter
     if emission_kind == "llvm":
-        return _compile_info_llvm_impl[func_type, func, target=target]()
+
+        @parameter
+        if is_failable:
+            return _compile_info_llvm_failable_impl[
+                func_type, func, target=target
+            ]()
+        else:
+            return _compile_info_llvm_non_failable_impl[
+                func_type, func, target=target
+            ]()
+
     else:
-        return _compile_info_asm_impl[func_type, func, target=target]()
+
+        @parameter
+        if is_failable:
+            return _compile_info_asm_failable_impl[
+                func_type, func, target=target
+            ]()
+        else:
+            return _compile_info_asm_non_failable_impl[
+                func_type, func, target=target
+            ]()
 
 
 # ===----------------------------------------------------------------------===#
@@ -183,5 +261,4 @@ fn compile_code[
     alias info = compile_info[
         func_type, func, target=target, emission_kind=emission_kind
     ]()
-    constrained[not info.is_error, "compile_assembly failed"]()
     return info.asm
