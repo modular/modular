@@ -19,7 +19,6 @@ from math import (
     rotate_bits_right,
     rotate_left,
     rotate_right,
-    round,
     sin,
 )
 from math.limit import inf, neginf
@@ -324,18 +323,6 @@ def test_floor():
     assert_equal(floor(Float64(-3.4)), -4.0)
 
 
-fn round10(x: Float64) -> Float64:
-    return (round(Float64(x * 10)) / 10).value
-
-
-def test_float_literal_round10():
-    assert_equal(round10(FloatLiteral(4.4) % 0.5), 0.4)
-    assert_equal(round10(FloatLiteral(-4.4) % 0.5), 0.1)
-    assert_equal(round10(FloatLiteral(4.4) % -0.5), -0.1)
-    assert_equal(round10(FloatLiteral(-4.4) % -0.5), -0.4)
-    assert_equal(round10(FloatLiteral(3.1) % 1.0), 0.1)
-
-
 def main():
     test_inf()
     test_nan()
@@ -349,6 +336,3 @@ def main():
     test_isclose()
     test_ceil()
     test_floor()
-
-    # TODO: move this to test_float_literal.mojo when round is moved to builtin.
-    test_float_literal_round10()
