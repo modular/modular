@@ -172,7 +172,6 @@ fn fused_attention[
         q_type,
         k_type,
         score_type,
-        False,
         transpose_k,
         fuse_elementwise_fn,
     ](
@@ -184,7 +183,7 @@ fn fused_attention[
     softmax[score_type, simd_size, rank](score, score, rank - 1)
 
     # NOTE: synchronous, so the stack allocated score_mem is safe.
-    batched_matmul[rank, score_type, v_type, output_type, False, False](
+    batched_matmul[rank, score_type, v_type, output_type, transpose_b=False](
         output.make_dims_unknown(),
         score.make_dims_unknown(),
         v.make_dims_unknown(),
@@ -1323,7 +1322,7 @@ fn _naive_attention[
         score_ptr, Index(batch_size, num_heads, seq_len, num_keys)
     )
 
-    batched_matmul[4, type, type, type, False, transpose_k](score, q, k)
+    batched_matmul[4, type, type, type, transpose_k](score, q, k)
 
     @__copy_capture(score)
     @parameter
@@ -1347,6 +1346,6 @@ fn _naive_attention[
     except e:
         abort(e)
 
-    batched_matmul[4, type, type, type, False, False](output, score, v)
+    batched_matmul[4, type, type, type, transpose_b=False](output, score, v)
 
     score_ptr.free()
