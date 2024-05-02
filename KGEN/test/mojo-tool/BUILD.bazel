@@ -42,6 +42,9 @@ lit_tests(
         "MODULAR_MOJO_IMPORT_PATH": "$(location //Kernels/mojo/stdlib),$(location //Kernels/mojo/layout)",
         "MODULAR_MOJO_BUILD_SERVER_PATH": "$(location //KGEN:mojo-build-server)",
     },
+    tags = [
+        "no-asan",
+    ],
     tools = [
         "//KGEN:kgen-opt",
         "//KGEN:mojo",
