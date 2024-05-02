@@ -113,8 +113,9 @@ public:
   /// memory for the result slot. The caller is required to provide the type of
   /// the result slot.
   ErrorTreeOr<TypedAttr>
-  executeRegionWithResultSlot(Type resultType, Region &region,
-                              ArrayRef<Attribute> arguments, bool isInitSelf);
+  executeRegionWithResultSlot(Region &region, ArrayRef<Attribute> arguments,
+                              bool isInitSelf,
+                              SmartVariant<Type, TypedAttr> result);
 
   /// Transfer control flow to the given operation. If the operation is null,
   /// this is indicating that the interpreter should exit. Otherwise, the

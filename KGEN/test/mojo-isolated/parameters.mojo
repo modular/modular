@@ -360,12 +360,41 @@ fn callMemoryValueParam():
     # CHECK: call {{.*}}passMemoryValue{{.*}}([[IMMREF]], %{{.*}})
     _ = passMemoryValue(copy)
 
-    # CHECK: call {{.*}}memoryParam{{.*}}<:!MemoryType apply_result_slot({{.*}}__init__{{.*}}{22}
+    # CHECK: call {{.*}}memoryParam{{.*}}<:!MemoryType {:!Int {22}}>
     memoryParam[MemoryType(22)]()
 
 # CHECK-LABEL: lit.func @"memoryParam{{.*}}"<value: !MemoryType>()
 fn memoryParam[value: MemoryType]():
     pass
+
+@register_passable("trivial")
+struct InitSelfCtor:
+    var x: Int
+
+    @always_inline
+    fn __init__(inout self, x: Int):
+        self.x = x
+
+    @always_inline
+    fn __add__(self, rhs: Self) -> Self:
+        return self.x + rhs.x
+
+@register_passable("trivial")
+struct InitSelfParam[x: InitSelfCtor]:
+    pass
+
+
+# CHECK-LABEL: lit.func @"interpret_initself_ctor
+# CHECK-SAME: %arg: !lit.declref<#InitSelfParam <:!InitSelfCtor {x: !Int = {42}}>>
+fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
+    # CHECK-NEXT: !lit.signature<() -> !lit.declref<#InitSelfParam <:!InitSelfCtor {x: !Int = {3}}>>>
+    alias refined_fn = refine_memory_only_results[1, 2]
+    pass
+
+
+fn refine_memory_only_results[a: InitSelfCtor, b: InitSelfCtor]() -> InitSelfParam[a + b]:
+    pass
+
 
 ##===----------------------------------------------------------------------===##
 # First-class functions as parameters.
@@ -848,16 +877,12 @@ struct MemoryOnlyType:
     pass
 
 
-# CHECK: lit.func @"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<x: !MemoryOnlyType =
-# CHECK-SAME: apply_result_slot(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut #lit.lifetime> init_self, |) -> !kgen.none
-# CHECK-SAME: rebind(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut *[0,0]> init_self, |) -> !kgen.none> @parameters::@MemoryOnlyType::@"__init__(parameters::MemoryOnlyType=&)"))>(
+# CHECK: lit.func @"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<x: !MemoryOnlyType = {}>
 fn mem_only_default_param[x: MemoryOnlyType = MemoryOnlyType()]():
     pass
 
 # CHECK-LABEL: lit.func @"test_mem_only_default_param()"
-# CHECK: lit.call @{{.*}}@"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<
-# CHECK-SAME: :!MemoryOnlyType apply_result_slot(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut #lit.lifetime> init_self, |) -> !kgen.none
-# CHECK-SAME: rebind(:!lit.signature<[1](!lit.ref<!MemoryOnlyType, mut *[0,0]> init_self, |) -> !kgen.none> @parameters::@MemoryOnlyType::@"__init__(parameters::MemoryOnlyType=&)"))>
+# CHECK: lit.call @{{.*}}@"mem_only_default_param[{{.*}}::MemoryOnlyType]()"<:!MemoryOnlyType {}>
 fn test_mem_only_default_param():
     mem_only_default_param()
 
@@ -910,7 +935,7 @@ fn test_default_param_struct():
     _ = DefaultParams[4, 5, "meow"]()
 
 
-# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = {0}, {{.*}}: !MemoryOnlyType = apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
+# CHECK: lit.struct.decl @AllDefaultParams<{{.*}}: !Int = {0}, {{.*}}: !MemoryOnlyType = {}>
 @value
 struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 
@@ -918,11 +943,11 @@ struct AllDefaultParams[x: Int = 0, v: MemoryOnlyType = MemoryOnlyType()]: pass
 fn test_default_param_struct_all_default():
     # CHECK: lit.alias.decl *"T{{.*}}": anystruct<{{.*}}#AllDefaultParams{{.*}}> = <@{{.*}}::@AllDefaultParams<
     # CHECK-SAME: :!Int {0},
-    # CHECK-SAME: :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
+    # CHECK-SAME: :!MemoryOnlyType {}
     alias T = AllDefaultParams[]
 
     # CHECK: %[[INIT:.*]] = lit.var.decl {{.*}} : !lit.ref<@{{.*}}::@AllDefaultParams<
-    # CHECK-SAME:   :!Int {0}, :!MemoryOnlyType apply_result_slot({{.*}}@MemoryOnlyType::@"__init__
+    # CHECK-SAME:   :!Int {0}, :!MemoryOnlyType {}
     # CHECK-NEXT: = lit.call @{{.*}}::@AllDefaultParams::@"__init__({{.*}}<:!Int {0}, :!MemoryOnlyType
     _ = AllDefaultParams[]()
 

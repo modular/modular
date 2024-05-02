@@ -686,10 +686,9 @@ InterpreterState::executeRegion(Region &region, ArrayRef<Attribute> arguments) {
 }
 
 /// Execute a region that has a ByRefResult or InitSelf argument.
-ErrorTreeOr<TypedAttr>
-InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
-                                              ArrayRef<Attribute> arguments,
-                                              bool isInitSelf) {
+ErrorTreeOr<TypedAttr> InterpreterState::executeRegionWithResultSlot(
+    Region &region, ArrayRef<Attribute> arguments, bool isInitSelf,
+    SmartVariant<Type, TypedAttr> resultValue) {
   Location loc = region.getLoc();
   if (region.getArguments().empty())
     return ErrorTree(loc, "internal error: region has no arguments");
@@ -702,11 +701,11 @@ InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
 
   if (!getTarget()) {
     uint64_t slot = symbolicMemory.size();
-    symbolicMemory.emplace_back();
+    symbolicMemory.push_back(cast<TypedAttr>(resultValue));
     resultSlotAttr = SymbolicPointerAttr::get(slot, resultPtrType);
   } else {
     ErrorOr<PointerAttr> resultSlotAttrOr =
-        allocateInternalStackFor(resultType, resultPtrType);
+        allocateInternalStackFor(cast<Type>(resultValue), resultPtrType);
     if (resultSlotAttrOr.isError())
       return ErrorTree(loc, resultSlotAttrOr.takeError());
     resultSlotAttr = resultSlotAttrOr.takeValue();
@@ -738,7 +737,7 @@ InterpreterState::executeRegionWithResultSlot(Type resultType, Region &region,
     value = symbolicMemory[cast<SymbolicPointerAttr>(resultSlotAttr).getSlot()];
   } else {
     ErrorOr<TypedAttr> resultOr = readAttributeFromMemory(
-        cast<PointerAttr>(resultSlotAttr).getAddr(), resultType);
+        cast<PointerAttr>(resultSlotAttr).getAddr(), cast<Type>(resultValue));
     if (resultOr.isError())
       return ErrorTree(loc, resultOr.takeError());
     value = resultOr.takeValue();

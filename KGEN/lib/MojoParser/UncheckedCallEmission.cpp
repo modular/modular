@@ -834,7 +834,7 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
   auto calleePR = callee.getIfPValue();
   if (!calleePR)
     return failure();
-  auto calleeSymbolCst = dyn_cast<SymbolConstantAttr>(calleePR.get());
+  auto calleeSymbolCst = evaluator.findDirectCallee(calleePR.get());
   if (!calleeSymbolCst)
     return failure();
 

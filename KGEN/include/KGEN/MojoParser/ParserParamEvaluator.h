@@ -27,6 +27,10 @@ public:
   ParserParamEvaluator(DeclResolver &resolver,
                        ArrayRef<TypedAttr> paramValues = {});
 
+  /// Try to dig out a direct callee, seeing through rebinds that are emitted
+  /// due to lifetimes.
+  static SymbolConstantAttr findDirectCallee(TypedAttr callee);
+
   /// Attempt to evaluate 'apply' expressions.
   FailureOr<TypedAttr> evaluateExpression(ParamOperatorAttr op) override;
 
