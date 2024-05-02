@@ -319,7 +319,7 @@ fn warp_reduce[
     alias limit = _static_log2[WARP_SIZE]()
 
     @unroll
-    for mask in range(limit - 1, -1, -1):
+    for mask in reversed(range(limit)):
         res = func(res, shuffle(res, 1 << mask))
 
     return res
