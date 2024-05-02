@@ -227,6 +227,30 @@ struct _InferenceSessionImpl(Movable):
 
 @value
 struct InputSpec(CollectionElement):
+    """
+    Specifies a model's input shape and data type (required for TorchScript).
+
+    When loading a TorchScript model, you must specify the shape and data type
+    for each input with an `InputSpec`, which you then pass to
+    [`InferenceSession.load()`](/engine/reference/mojo/engine/session/InferenceSession#load).
+    For example:
+
+    ```mojo
+    var batch = 1
+    var seqlen = 128
+    var input_ids_spec = TensorSpec(DType.int64, batch, seqlen)
+    var attention_mask_spec = TensorSpec(DType.int64, batch, seqlen)
+
+    var session = engine.InferenceSession()
+    var model = session.load(
+        "roberta.torchscript",
+        input_specs=List[InputSpec](
+            InputSpec(input_ids_spec), InputSpec(attention_mask_spec)
+        ),
+    )
+    ```
+    """
+
     var _static: Optional[TensorSpec]
 
     alias _legacy_dynamic_type = Optional[List[Optional[Int64]]]
@@ -239,23 +263,6 @@ struct InputSpec(CollectionElement):
         Create input specifications for one input tensor, as a
         [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
         Only applicable for TorchScript models.
-
-        For example:
-
-        ```mojo
-        var batch = 1
-        var seqlen = 128
-        var input_ids_spec = TensorSpec(DType.int64, batch, seqlen)
-        var attention_mask_spec = TensorSpec(DType.int64, batch, seqlen)
-
-        var session = engine.InferenceSession()
-        var model = session.load(
-            "roberta.torchscript",
-            input_specs=List[InputSpec](
-                InputSpec(input_ids_spec), InputSpec(attention_mask_spec)
-            ),
-        )
-        ```
 
         Args:
             spec: Spec for the input. This is the standard library
@@ -302,9 +309,11 @@ struct InputSpec(CollectionElement):
         name for that dimension size.
 
         Args:
-            spec: Shape of the input, as a list of `ShapeElement`s.
+            spec: Shape of the input, as a list of
+                  [`ShapeElement`](/engine/reference/mojo/engine/shape_element/ShapeElement)
+                  values.
             dtype: Datatype of the input, from the standard library
-                   [`DType`](/mojo/stdlib/builtin/dtype#dtype).
+                   [`DType`](/mojo/stdlib/builtin/dtype/DType).
         """
         self._static = None
         self._dynamic = spec
