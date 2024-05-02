@@ -36,3 +36,65 @@ lit.func @interpret_ger() {
   kgen.param.constant = <apply(:!lit.signature<("a": !lit.declref<@Int>) -> index> @ger_load, { 42 })>
   kgen.return
 }
+
+lit.func @load_undef_var() -> index {
+  %x = lit.var.decl "x" var : !lit.ref<index, mut lt>
+  %0 = lit.ref.load %x : <index, mut lt>
+  kgen.return %0 : index
+}
+
+// CHECK-LABEL: lit.func @interpret_undef_var
+lit.func @interpret_undef_var() {
+  // CHECK-NEXT: constant = <*?>
+  kgen.param.constant = <apply(:!lit.signature<() -> index> @load_undef_var)>
+  kgen.return
+}
+
+lit.struct.decl @Pair register_passable_trivial {
+  lit.struct.field first : !lit.declref<@Int>
+  lit.struct.field second : !lit.declref<@Int>
+}
+
+lit.func @load_undef_ger() -> index {
+  %x = lit.var.decl "x" var : !lit.ref<@Int, mut lt>
+  %0 = lit.ref.struct.ger %x[value] : <index, mut lt> from @Int
+  %1 = lit.ref.load %0 : <index, mut lt>
+  kgen.return %1 : index
+}
+
+// CHECK-LABEL: lit.func @interpret_undef_ger_load
+lit.func @interpret_undef_ger_load() {
+  // CHECK-NEXT: constant = <*?>
+  kgen.param.constant = <apply(:!lit.signature<() -> index> @load_undef_ger)>
+  kgen.return
+}
+
+lit.func @double_ger_store_load(%a: index) -> !lit.declref<@Int> {
+  %x = lit.var.decl "x" var : !lit.ref<@Pair, mut lt>
+  %0 = lit.ref.struct.ger %x[first] : <@Int, mut lt> from @Pair
+  %1 = lit.ref.struct.ger %0[value] : <index, mut lt> from @Int
+  lit.ref.store %a, %1 : <index, mut lt>
+  %2 = lit.ref.load %0 : <@Int, mut lt>
+  kgen.return %2 : !lit.declref<@Int>
+}
+
+lit.func @initialize_pair(%a: index, %b: index) -> !lit.declref<@Pair> {
+  %x = lit.var.decl "x" var : !lit.ref<@Pair, mut lt>
+  %0 = lit.ref.struct.ger %x[first] : <@Int, mut lt> from @Pair
+  %1 = lit.ref.struct.ger %0[value] : <index, mut lt> from @Int
+  lit.ref.store %a, %1 : <index, mut lt>
+  %2 = lit.ref.struct.ger %x[second] : <@Int, mut lt> from @Pair
+  %3 = lit.ref.struct.ger %2[value] : <index, mut lt> from @Int
+  lit.ref.store %b, %3 : <index, mut lt>
+  %4 = lit.ref.load %x : <@Pair, mut lt>
+  kgen.return %4 : !lit.declref<@Pair>
+}
+
+// CHECK-LABEL: lit.func @interpret_ger_store
+lit.func @interpret_ger_store() {
+  // CHECK-NEXT: constant: @Int = <{42}>
+  kgen.param.constant: @Int = <apply(:!lit.signature<("a": index) -> !lit.declref<@Int>> @double_ger_store_load, 42)>
+  // CHECK-NEXT: constant: @Pair = <{first: @Int = {11}, second: @Int = {22}}>
+  kgen.param.constant: @Pair = <apply(:!lit.signature<("a": index, "b": index) -> !lit.declref<@Pair>> @initialize_pair, 11, 22)>
+  kgen.return
+}

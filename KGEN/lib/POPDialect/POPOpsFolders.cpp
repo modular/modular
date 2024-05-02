@@ -1022,7 +1022,8 @@ ErrorTreeOrSuccess StackAllocationOp::interpret(ArrayRef<Attribute> operands,
   if (!state.getTarget()) {
     if (count != 1)
       return ErrorTree(getLoc(), "array allocation requires a target model");
-    uint64_t slot = state.allocateSymbolicMemory();
+    uint64_t slot = state.allocateSymbolicMemory(
+        UnknownAttr::get(getType().getElementType()));
     state.mapResults(SymbolicPointerAttr::get(slot, getType()));
     return success();
   }

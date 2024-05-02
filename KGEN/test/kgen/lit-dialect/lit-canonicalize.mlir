@@ -66,6 +66,25 @@ lit.func @struct_ops_fold() -> (!lit.declref<@FooStruct>, !lit.declref<@FooStruc
   kgen.return %0, %2, %3 : !lit.declref<@FooStruct>, !lit.declref<@FooStruct>, index
 }
 
+lit.struct.decl @Pair register_passable_trivial {
+  lit.struct.field first : !lit.declref<@Int>
+  lit.struct.field second : !lit.declref<@Int>
+}
+
+lit.struct.decl @Int register_passable_trivial {
+  lit.struct.field value : index
+}
+
+
+// CHECK-LABEL: lit.func @fold_ger
+lit.func @fold_ger[mut lt]() -> !lit.ref<index, mut lt> {
+  // CHECK-NEXT: kgen.param.constant: !lit.ref<index, mut lt> = <#lit.struct.ger<#lit.struct.ger<#interp.symbolic_pointer<0> : !lit.ref<@Pair, mut lt>, "first"> : !lit.ref<@Int, mut lt>, "value">>
+  %x = kgen.param.constant: !lit.ref<@Pair, mut lt> = <#interp.symbolic_pointer<0>>
+  %0 = lit.ref.struct.ger %x[first] : <@Int, mut lt> from @Pair
+  %1 = lit.ref.struct.ger %0[value] : <index, mut lt> from @Int
+  kgen.return %1 : !lit.ref<index, mut lt>
+}
+
 // -----
 
 // COM: Check that constant are only hoisted from subprogram regions if there is
