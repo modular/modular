@@ -10,8 +10,6 @@
 using namespace M;
 
 TEST(SignatureHelpTest, testSignatureHelpOverload) {
-  // FIXME(MOTO-413): This test crashes in the CI at destruction time.
-  GTEST_SKIP();
   Document doc("test:///foo.mojo", R"(
 fn function(): # skip
     return
@@ -45,9 +43,6 @@ fn test():
                      })
       .signatureHelp(doc, ranges[1].end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
-                       // FIXME(MOTO-394): unexpected entries in the signature
-                       // help.
-                       /*
                        ASSERT_EQ((int)signatureHelp.signatures.size(), 2);
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
@@ -55,38 +50,27 @@ fn test():
                                  "fn function(arg: Int) -> Int");
                        EXPECT_EQ(signatureHelp.signatures[1].label,
                                  "fn function(arg: Bool, arg2: Int) -> Int");
-                       */
                      })
       .signatureHelp(doc, ranges[2].end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
-                       // FIXME(MOTO-394): unexpected entries in the signature
-                       // help.
-                       /*
                        ASSERT_EQ((int)signatureHelp.signatures.size(), 1);
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 0);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
                                  "fn function(arg: Bool, arg2: Int) -> Int");
-                       */
                      })
       .signatureHelp(doc, doc.findLastRange("True,")->end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
-                       // FIXME(MOTO-394): unexpected entries in the signature
-                       // help.
-                       /*
                        ASSERT_EQ((int)signatureHelp.signatures.size(), 1);
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
-                       EXPECT_EQ(signatureHelp.activeParameter, 0);
+                       EXPECT_EQ(signatureHelp.activeParameter, 1);
                        EXPECT_EQ(signatureHelp.signatures[0].label,
                                  "fn function(arg: Bool, arg2: Int) -> Int");
-                       */
                      })
       .execute();
 }
 
 TEST(SignatureHelpTest, testSignatureHelpTypeCall) {
-  // FIXME(MOTO-413): This test crashes in the CI at destruction time.
-  GTEST_SKIP();
   Document doc("test:///foo.mojo", R"(
 struct SomeStruct:
     var a_field: Int
@@ -118,8 +102,6 @@ fn test():
 }
 
 TEST(SignatureHelpTest, testSignatureOverloadParams) {
-  // FIXME(MOTO-413): This test crashes in the CI at destruction time.
-  GTEST_SKIP();
   Document doc("test:///foo.mojo", R"(
 fn function[type: DType](): # skip
     return
@@ -143,23 +125,18 @@ fn test():
                        EXPECT_EQ(signatureHelp.signatures[1].label,
                                  "fn function[type: DType, type2: DType]()");
                      })
-      .signatureHelp(doc, doc.findLastRange("Dtype.bool,")->end,
+      .signatureHelp(doc, doc.findLastRange("DType.bool,")->end,
                      [](const lsp::SignatureHelp2 &signatureHelp) {
-                       // FIXME(MOTO-397): missing signature help.
-                       /*
-                        ASSERT_EQ((int)signatureHelp.signatures.size(), 1);
-                        EXPECT_EQ(signatureHelp.activeSignature, 0);
-                        EXPECT_EQ(signatureHelp.activeParameter, 0);
-                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                  "fn function[type: DType, type2: DType]()");
-                        */
+                       ASSERT_EQ((int)signatureHelp.signatures.size(), 1);
+                       EXPECT_EQ(signatureHelp.activeSignature, 0);
+                       EXPECT_EQ(signatureHelp.activeParameter, 1);
+                       EXPECT_EQ(signatureHelp.signatures[0].label,
+                                 "fn function[type: DType, type2: DType]()");
                      })
       .execute();
 }
 
 TEST(SignatureHelpTest, testSignatureHelpParams) {
-  // FIXME(MOTO-413): This test crashes in the CI at destruction time.
-  GTEST_SKIP();
   Document doc("test:///foo.mojo", R"(
 struct SomeStruct[dtype: DType]: # skip
     fn __init__(inout self):

@@ -1927,8 +1927,13 @@ void SharedState::notifyListenerOnRef(ArrayRef<ASTDecl *> decls,
 }
 
 void SharedState::notifyListenerOnCall(ArrayRef<ASTDecl *> decls,
-                                       SMLoc rParenLoc,
+                                       SMLoc rParenLoc, CallSyntax syntax,
                                        const CallOperands &callOperands) {
+  // Ignore synthetic calls to functions.
+  if (syntax == CallSyntax::kMethodCallSynthetic ||
+      syntax == CallSyntax::kImplicitConvert)
+    return;
+
   if (isListenerInterestedInLoc(parserListener, rParenLoc))
     parserListener->onCall(decls, rParenLoc, callOperands);
 }
