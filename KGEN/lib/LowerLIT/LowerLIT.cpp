@@ -363,8 +363,7 @@ LITLowerer::lowerLITFunc(LIT::FuncOp func, Block::iterator symTableIt,
     GeneratorOp::build(b, state, func.getSymNameAttr(), sigAttr,
                        newFunctionTypeAttr, inputParamsArr, resParamsArr,
                        func.getDecoratorsAttr(), func.getInlineLevelAttr(),
-                       func.getExportKindAttr(), func.getLLVMMetadata(),
-                       PreservedAttr::get(sigAttr));
+                       func.getExportKindAttr(), func.getLLVMMetadata());
 
     for (const NamedAttribute &attr : func->getDialectAttrs())
       state.attributes.push_back(attr);

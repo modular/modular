@@ -9,6 +9,7 @@
 
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/MOGGPreElab/MOGGDecorators.h"
 #include "KGEN/MOGGPreElab/MOGGTensorAccessor.h"
 
 namespace M::KGEN::MOGGPreElab {
@@ -38,74 +39,38 @@ struct LambdaTemplate {
   KGEN::CallOp callUsingLambda;
 };
 
-bool isTensor(KGEN::LIT::DeclRefType maybeTensor) {
-  // Look at the top level symbol name, it is structured like
-  // Folder::File::ClassName.
-  ArrayRef<FlatSymbolRefAttr> attr =
-      maybeTensor.getSymbol().getNestedReferences();
-  if (attr.size() == 0)
-    return false;
-
-  if (maybeTensor.getSymbol().getRootReference() != "MOGGTensor")
-    return false;
-
-  StringRef className = attr[attr.size() - 1].getValue();
-  if (className == "Tensor")
-    return true;
+bool isTensor(Attribute maybeTensor) {
+  if (auto symbol = dyn_cast<StringAttr>(maybeTensor))
+    return "MOGGTensor::Tensor" == symbol;
   return false;
+}
+
+bool isXType(KGEN::LIT::DeclRefType maybeTensor, StringLiteral root,
+             StringLiteral className) {
+  if (maybeTensor.getSymbol().getRootReference() != root)
+    return false;
+  return maybeTensor.getSymbol().getLeafReference() == className;
+}
+
+[[maybe_unused]] bool isMOGGTensor(KGEN::LIT::DeclRefType maybeTensor) {
+  return isXType(maybeTensor, "MOGGTensor", "Tensor");
 }
 
 [[maybe_unused]] bool
 isExtensibilityTensor(KGEN::LIT::DeclRefType maybeTensor) {
-  // Look at the top level symbol name, it is structured like
-  // Folder::File::ClassName.
-  ArrayRef<FlatSymbolRefAttr> attr =
-      maybeTensor.getSymbol().getNestedReferences();
-  if (attr.size() < 2)
-    return false;
-
-  if (maybeTensor.getSymbol().getRootReference() != "extensibility")
-    return false;
-
-  StringRef className = attr[attr.size() - 1].getValue();
-  if (className == "Tensor")
-    return true;
-  return false;
-}
-
-std::optional<LIT::LITSignatureType> getSourceSig(GeneratorOp gen) {
-  std::optional<PreservedAttr> sig = gen.getSourceSignature();
-  if (!sig.has_value())
-    return std::nullopt;
-  auto typeAttr = dyn_cast<TypeAttr>(sig.value().getValue());
-  if (!typeAttr)
-    return std::nullopt;
-  auto litSig = dyn_cast<LIT::LITSignatureType>(typeAttr.getValue());
-  if (!litSig)
-    return std::nullopt;
-  return litSig;
+  return isXType(maybeTensor, "extensibility", "Tensor");
 }
 
 // Returns true if there is at least one recognizable tensor on the signature.
 [[maybe_unused]] bool hasAtLeastOneTensor(GeneratorOp generator) {
-  std::optional<LIT::LITSignatureType> litSig = getSourceSig(generator);
-  if (!litSig.has_value())
+  ArrayAttr names =
+      dyn_cast_or_null<ArrayAttr>(generator->getAttr(MOGG_ARG_TYPE_NAMES));
+  if (!names)
     return false;
-
-  for (Type metadata : litSig->getValues().getInputs()) {
-    // Tensors are expected to be passed as references.
-    auto asLitRef = dyn_cast<LIT::RefType>(metadata);
-    if (!asLitRef)
-      continue;
-
-    auto asDeclRef =
-        dyn_cast<KGEN::LIT::DeclRefType>(asLitRef.getElementType());
-    if (!asDeclRef)
-      continue;
-    if (isTensor(asDeclRef))
+  for (Attribute attr : names.getValue()) {
+    if (isTensor(attr))
       return true;
   }
-
   return false;
 }
 
@@ -113,29 +78,26 @@ std::optional<LIT::LITSignatureType> getSourceSig(GeneratorOp gen) {
 // which parameter corresponds to which parameter in a given input.
 [[maybe_unused]] std::optional<MOGG::MOGGTensorParamAccessor>
 getTensorRepFromFunctionInput(GeneratorOp generator, size_t index) {
-  std::optional<PreservedAttr> sig = generator.getSourceSignature();
-  if (!sig.has_value())
-    return std::nullopt;
-  auto typeAttr = cast<TypeAttr>(sig.value().getValue());
-  auto litSig = cast<LIT::LITSignatureType>(typeAttr.getValue());
+  ArrayAttr names =
+      dyn_cast_or_null<ArrayAttr>(generator->getAttr(MOGG_ARG_TYPE_NAMES));
+  ArrayAttr types =
+      dyn_cast_or_null<ArrayAttr>(generator->getAttr(MOGG_ARG_PARAMS));
 
-  Type metadata = litSig.getValues().getInputs()[index];
-
-  // Tensors are expected to be passed as references.
-  auto asLitRef = dyn_cast<LIT::RefType>(metadata);
-  if (!asLitRef)
+  if (!names || !types || names.size() <= index || types.size() <= index)
     return std::nullopt;
 
-  auto asDeclRef = dyn_cast<KGEN::LIT::DeclRefType>(asLitRef.getElementType());
-  if (!asDeclRef)
+  if (!isTensor(names.getValue()[index]))
     return std::nullopt;
-  if (!isTensor(asDeclRef))
+
+  ArrayAttr params = dyn_cast<ArrayAttr>(types.getValue()[index]);
+  if (!params)
     return std::nullopt;
 
   MOGG::MOGGTensorParamAccessor tensor;
-  for (auto [paramIdx, param] : llvm::enumerate(asDeclRef.getParamValues()))
-    tensor.assignParam(param, paramIdx);
-
+  for (auto [paramIdx, param] : llvm::enumerate(params.getValue())) {
+    if (auto typedAttr = dyn_cast<TypedAttr>(param))
+      tensor.assignParam(typedAttr, paramIdx);
+  }
   return tensor;
 }
 

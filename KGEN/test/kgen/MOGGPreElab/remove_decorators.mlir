@@ -30,4 +30,11 @@ decorators <:none apply(:!lit.signature<("name": !lit.declref<@stdlib::@builtin:
   %none = kgen.param.constant: none = <#kgen.none>
   kgen.return %none : !kgen.none
 }
-// CHECK: lit.func export @extensibility_kernel{{.*}} attributes {mogg.allocs = [1 : index], mogg.kernel = [#lit.struct<{value: string = "my_kernel"}> : !StringLiteral, -1]
+// CHECK: lit.func export @extensibility_kernel{{.*}} attributes {mogg.allocs = [1 : index],{{.*}} mogg.kernel = [#lit.struct<{value: string = "my_kernel"}> : !StringLiteral, -1]
+
+
+lit.func @argument_names_and_params[imm *"x`", mut *"__result__`1"]<type: @stdlib::@builtin::@dtype::@DType, rank: @stdlib::@builtin::@int::@Int>(%x: !lit.ref<@MOGGTensor::@Tensor<:@stdlib::@builtin::@dtype::@DType type, :@stdlib::@builtin::@int::@Int rank>, imm *"x`"> borrow_in_mem, ?, %__result__: !lit.ref<@MOGGTensor::@Tensor<:@stdlib::@builtin::@dtype::@DType type, :@stdlib::@builtin::@int::@Int rank>, mut *"__result__`1"> byref_result) -> !kgen.none {
+  %none = kgen.param.constant: none = <#kgen.none>
+  kgen.return %none : !kgen.none
+}
+// CHECK: lit.func @argument_names_and_params{{.*}} attributes {mogg.arg_params = {{\[\[}}#kgen.param.decl.ref<"type"> : !DType, #kgen.param.decl.ref<"rank"> : !Int], [#kgen.param.decl.ref<"type"> : !DType, #kgen.param.decl.ref<"rank"> : !Int{{\]\]}}, mogg.arg_type_names = ["MOGGTensor::Tensor", "MOGGTensor::Tensor"]}
