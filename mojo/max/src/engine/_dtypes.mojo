@@ -31,38 +31,38 @@ struct EngineDType:
 
     alias bool: Int32 = 30
 
-    fn __init__(dtype: DType) -> Self:
+    fn __init__(inout self, dtype: DType):
         if dtype == DType.int8:
-            return Self {dtype: EngineDType.int8}
-        if dtype == DType.int16:
-            return Self {dtype: EngineDType.int16}
-        if dtype == DType.int32:
-            return Self {dtype: EngineDType.int32}
-        if dtype == DType.int64:
-            return Self {dtype: EngineDType.int64}
+            self.dtype = EngineDType.int8
+        elif dtype == DType.int16:
+            self.dtype = EngineDType.int16
+        elif dtype == DType.int32:
+            self.dtype = EngineDType.int32
+        elif dtype == DType.int64:
+            self.dtype = EngineDType.int64
 
-        if dtype == DType.uint8:
-            return Self {dtype: EngineDType.uint8}
-        if dtype == DType.uint16:
-            return Self {dtype: EngineDType.uint16}
-        if dtype == DType.uint32:
-            return Self {dtype: EngineDType.uint32}
-        if dtype == DType.uint64:
-            return Self {dtype: EngineDType.uint64}
+        elif dtype == DType.uint8:
+            self.dtype = EngineDType.uint8
+        elif dtype == DType.uint16:
+            self.dtype = EngineDType.uint16
+        elif dtype == DType.uint32:
+            self.dtype = EngineDType.uint32
+        elif dtype == DType.uint64:
+            self.dtype = EngineDType.uint64
 
-        if dtype == DType.float16:
-            return Self {dtype: EngineDType.float16}
-        if dtype == DType.float32:
-            return Self {dtype: EngineDType.float32}
-        if dtype == DType.float64:
-            return Self {dtype: EngineDType.float64}
-        if dtype == DType.bfloat16:
-            return Self {dtype: EngineDType.bfloat16}
+        elif dtype == DType.float16:
+            self.dtype = EngineDType.float16
+        elif dtype == DType.float32:
+            self.dtype = EngineDType.float32
+        elif dtype == DType.float64:
+            self.dtype = EngineDType.float64
+        elif dtype == DType.bfloat16:
+            self.dtype = EngineDType.bfloat16
 
-        if dtype == DType.bool:
-            return Self {dtype: EngineDType.bool}
-
-        return EngineDType.unknown
+        elif dtype == DType.bool:
+            self.dtype = EngineDType.bool
+        else:
+            self.dtype = EngineDType.unknown
 
     fn to_dtype(self) -> DType:
         if self == EngineDType.int8:
