@@ -74,7 +74,7 @@ struct EngineTensorView:
     var _data_ptr: DTypePointer[DType.invalid]
     var _dtype: DType
 
-    fn __init__[type: DType](inout tensor: Tensor[type]) -> Self:
+    fn __init__[type: DType](inout self, inout tensor: Tensor[type]):
         """Creates a non-owning view of given Tensor.
 
         Parameters:
@@ -86,11 +86,9 @@ struct EngineTensorView:
         Returns:
             An instance of EngineTensorView of given tensor.
         """
-        return Self {
-            _ptr: Pointer.address_of(tensor).bitcast[Tensor[DType.invalid]](),
-            _data_ptr: tensor.data().bitcast[DType.invalid](),
-            _dtype: type,
-        }
+        self._ptr = Pointer.address_of(tensor).bitcast[Tensor[DType.invalid]]()
+        self._data_ptr = tensor.data().bitcast[DType.invalid]()
+        self._dtype = type
 
     fn data[type: DType](self) raises -> DTypePointer[type]:
         """Returns pointer to the start of tensor.
