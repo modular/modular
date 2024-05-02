@@ -24,18 +24,16 @@ struct ARegisterPassableStruct:
     var uint16: UInt16
     var int32: Int32
 
-    fn __init__() -> Self:
-        return Self {
-            int: -101,
-            f32: 24.125,
-            another_int: 101,
-            float16: 25.125,
-            uint8: 123,
-            simd: SIMD[DType.float16, 4](-0.125, -1.5, -1, 5.725),
-            none: None,
-            uint16: 123,
-            int32: 485,
-        }
+    fn __init__(inout self):
+        self.int = -101
+        self.f32 = 24.125
+        self.another_int = 101
+        self.float16 = 25.125
+        self.uint8 = 123
+        self.simd = SIMD[DType.float16, 4](-0.125, -1.5, -1, 5.725)
+        self.none = None
+        self.uint16 = 123
+        self.int32 = 485
 
 
 struct AStruct:
