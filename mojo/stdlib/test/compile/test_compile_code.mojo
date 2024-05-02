@@ -9,7 +9,7 @@ from compile import *
 from testing import *
 
 
-def main():
+def test_compile_llvm():
     @parameter
     fn my_add_function[
         type: DType, size: Int
@@ -23,13 +23,23 @@ def main():
 
     assert_true("fadd" in asm)
 
+
+def test_compile_failure():
     fn always_fails():
         constrained[False, "always fails"]()
 
     alias compiled = compile_info[
-        __type_of(always_fails), always_fails, emission_kind="llvm"
+        __type_of(always_fails),
+        always_fails,
+        is_failable=True,
+        emission_kind="llvm",
     ]()
     alias is_error = compiled.is_error
     alias error_msg = compiled.error_msg
     assert_true(is_error)
     assert_true(error_msg)
+
+
+def main():
+    test_compile_llvm()
+    test_compile_failure()
