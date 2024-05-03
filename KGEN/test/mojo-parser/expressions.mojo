@@ -131,8 +131,8 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
 
   # Memory-only default argument with memory-only result.
-  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: %[[C42:.*]] = {{.*}}constant: !Int = <{42}>
+  # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[TMP]], %[[C42]])
   _ = MemoryOnlyInt()
 
@@ -311,11 +311,11 @@ fn reverse_operators(a: Int):
 
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: RegPassable) -> RegPassable:
-  # CHECK: [[THREETMP:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
+  # CHECK:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
+  # CHECK-NEXT: [[THREETMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREETMP]], [[THREE]])
-  # CHECK-NEXT:  [[TWOTMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT:  [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
+  # CHECK-NEXT:  [[TWOTMP:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[TWOTMP]], [[TWO]])
   # CHECK-NEXT:  [[INT_TWO:%.*]] = lit.ref.load [[TWOTMP]]
   # CHECK-NEXT:  [[NEG:%.*]] = lit.call {{.*}}@RegPassable::@"__neg__{{.*}}([[INT_TWO]])
@@ -390,7 +390,7 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK: [[I1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BOOL]])
   # CHECK: hlcf.if [[I1]] -> !Boolish {
   # CHECK:   = lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %b)
-  # CHECK:   hlcf.yield 
+  # CHECK:   hlcf.yield
   # CHECK: } else {
   # CHECK:   [[ANON:%.*]] = lit.var.decl
   # CHECK:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[ANON]], %a)
@@ -406,10 +406,10 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT: [[I1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__{{.*}}([[ABOOL]])
   # CHECK-NEXT:  = hlcf.if [[I1]] -> !Boolish {
   # CHECK:        = lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %a)
-  # CHECK:        hlcf.yield 
+  # CHECK:        hlcf.yield
   # CHECK-NEXT: } else {
   # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %b)
-  # CHECK:        hlcf.yield 
+  # CHECK:        hlcf.yield
   # CHECK-NEXT: }
   _ = a or b
 
@@ -924,12 +924,12 @@ fn dynamic_attribute():
     _ = const_obj.dynamic_attribute
 
     var obj = DynamicObject()
-    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "some_attr"}>
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
+    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "some_attr"}>
     # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}([[IMMREF]],
     _ = obj.some_attr
-    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "some_attr"}>
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
+    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "some_attr"}>
     # CHECK: %[[VALUE:.*]] = kgen.param.constant: !Int = <{42}>
     # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}([[IMMREF]], {{.*}}, %[[VALUE]])
     obj.some_attr = 42
@@ -1196,7 +1196,7 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: RegPassable,
 
   # CHECK-NEXT: hlcf.if %cond -> !RegPassable {
   # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %m)
-  # CHECK:        hlcf.yield 
+  # CHECK:        hlcf.yield
   # CHECK-NEXT: } else {
   # CHECK-NEXT:   lit.var.decl "anonymous
   # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}({{.*}}, %i)

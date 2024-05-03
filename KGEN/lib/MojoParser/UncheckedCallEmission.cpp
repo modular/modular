@@ -514,6 +514,14 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       continue;
     }
 
+    // If this is an `init_self` slot that has not been explicitly provided by
+    // the user, we will have to find a slot later.
+    if (convention == ArgConvention::InitSelf && !posOperands.front().ir) {
+      ++posOperandIdx;
+      argumentValues.push_back({AnyValue(), callExpr});
+      continue;
+    }
+
     // If we ran out of operands, fulfill this with a keyword argument, default
     // value, empty variadic list, or empty pack.
     if (posOperandIdx == posOperands.size()) {
@@ -658,13 +666,6 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 /// things may still be in parameter space.
 bool CallEmitter::isSafeToUseValueDestForDirectResult(
     ASTType destRValueType, ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
-  // Drop the last argument which is the return slot.
-  ArrayRef<ArgConvention> argConventions = calleeSig.getArgConventions();
-  assert(argConventions.back() == ArgConvention::ByRefResult);
-  unsigned numToDrop = 1 + calleeSig.isThrows();
-  argConventions = argConventions.drop_back(numToDrop);
-  argumentValues = argumentValues.drop_back(numToDrop);
-
   // Check to see if the destination provides a buffer.  If not, it is safe to
   // emit into it, but it doesn't actually matter.
   MLValue destBuffer = dest.getDefinedMLValueIfExists(destRValueType, emitter);
@@ -691,41 +692,45 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
 
   // If any of the arguments might alias, then we need to use a temporary
   // buffer.
-  for (auto [value, convention] : llvm::zip(argumentValues, argConventions)) {
-    if (SignatureType::hasAddress(convention)) {
-      // Parameter values will never alias.
-      if (value.ir.getIfPValue())
-        continue;
-      if (value.ir.isMValue()) {
-        if (ptrGuaranteedNoAlias(value.ir.getMValueReference()))
-          continue;
-        return false;
-      }
-      // Dynamic variadic memory values are passed with a pop.variadic.create,
-      // check each field.
-      if (auto sr = value.ir.getIfSRValue()) {
-        if (auto variadic = sr.getDefiningOp<POP::VariadicCreateOp>()) {
-          for (auto operand : variadic.getOperands()) {
-            if (!ptrGuaranteedNoAlias(operand))
-              return false;
-          }
-          continue;
-        }
-        if (auto variadic = sr.getDefiningOp<POP::VariadicSplatOp>()) {
-          if (!ptrGuaranteedNoAlias(variadic.getOperand()))
-            return false;
-          continue;
-        }
-      }
+  for (auto [value, convention] :
+       llvm::zip(argumentValues, calleeSig.getArgConventions())) {
+    if (SignatureType::isResultSlot(convention) ||
+        convention == ArgConvention::InitSelf ||
+        !SignatureType::hasAddress(convention))
+      continue;
 
-      // Otherwise, this may be a scalar value being passed through a borrowed
-      // convention (e.g. for trait-bound value).  These will get anonymous
-      // memory locations so they'll never alias.
-      if (value.ir.isSValue() || value.ir.getIfPValue())
+    // Parameter values will never alias.
+    if (value.ir.getIfPValue())
+      continue;
+    if (value.ir.isMValue()) {
+      if (ptrGuaranteedNoAlias(value.ir.getMValueReference()))
         continue;
-
-      llvm_unreachable("Unknown value kind for memory convention");
+      return false;
     }
+    // Dynamic variadic memory values are passed with a pop.variadic.create,
+    // check each field.
+    if (auto sr = value.ir.getIfSRValue()) {
+      if (auto variadic = sr.getDefiningOp<POP::VariadicCreateOp>()) {
+        for (auto operand : variadic.getOperands()) {
+          if (!ptrGuaranteedNoAlias(operand))
+            return false;
+        }
+        continue;
+      }
+      if (auto variadic = sr.getDefiningOp<POP::VariadicSplatOp>()) {
+        if (!ptrGuaranteedNoAlias(variadic.getOperand()))
+          return false;
+        continue;
+      }
+    }
+
+    // Otherwise, this may be a scalar value being passed through a borrowed
+    // convention (e.g. for trait-bound value).  These will get anonymous
+    // memory locations so they'll never alias.
+    if (value.ir.isSValue() || value.ir.getIfPValue())
+      continue;
+
+    llvm_unreachable("Unknown value kind for memory convention");
   }
 
   // If no problems are found, it is safe!
@@ -1064,6 +1069,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   SmallVector<Value> callArgs;
   SmallVector<TypedAttr> implicitLifetimes;
   ArrayRef<ArgConvention> conventions = calleeSig.getArgConventions();
+  bool needInitSelfSlot = false;
   for (auto [argIdx, argValAndExpr, conventionX] :
        llvm::enumerate(argumentValues, conventions)) {
     ArgConvention convention = conventionX;
@@ -1071,7 +1077,10 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // If this is a byref_result slot, we will have emitted a null value for
     // this.  We can't know the type of it until we emit all the operands and
     // collect their lifetimes.
-    if (SignatureType::isResultSlot(convention)) {
+    bool isInitSelf = convention == ArgConvention::InitSelf;
+    if (SignatureType::isResultSlot(convention) ||
+        (isInitSelf && !argValAndExpr.ir)) {
+      needInitSelfSlot |= isInitSelf;
       // Don't know the right thing yet, use a placeholder.
       callArgs.push_back(Value());
       implicitLifetimes.push_back(
@@ -1115,17 +1124,17 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   FunctionType expectedCalleeType =
       calleeSig.substituteImplicitLifetimesIntoValues(
           implicitLifetimes, [&]() -> InFlightDiagnostic {
-            return mlir::emitError(loc) << "INTERNAL ERROR: ";
+            llvm_unreachable("substitution should always succeed");
           });
-  assert(expectedCalleeType && "Substitution should always succeed");
 
   // With that done, we can know what type the byref result slot should have.
   // We see if we can emit directly into the ValueDest slot, and if not, we
   // create a VarDecl temporary and allow emitResult to copy it over to the
   // destination.
-  if (calleeSig.hasMemoryOnlyResult()) {
-    auto resultRValueType =
-        cast<RefType>(expectedCalleeType.getInputs().back()).getElementType();
+  if (calleeSig.hasMemoryOnlyResult() || needInitSelfSlot) {
+    Type refType = needInitSelfSlot ? expectedCalleeType.getInputs().front()
+                                    : expectedCalleeType.getInputs().back();
+    auto resultRValueType = cast<RefType>(refType).getElementType();
 
     // Often the result of the call will be directly assigned into a
     // user-defined var or other location with existing storage.  In these
@@ -1137,8 +1146,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // At this point we've got enough information about the arguments to make
     // that assessment in a correct way.
     Value resultSlotVal;
-    if (callEmitter.isSafeToUseValueDestForDirectResult(resultRValueType,
-                                                        argumentValues)) {
+    if (needInitSelfSlot || callEmitter.isSafeToUseValueDestForDirectResult(
+                                resultRValueType, argumentValues)) {
       // Use the preferred location of the destination slot.
       resultSlotVal = dest.getMLValueForResult(
           callExpr->getLoc(), resultRValueType, callEmitter.emitter);
@@ -1149,10 +1158,17 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
                                                       VarDeclKind::Synthesized);
     }
     // Now that we know the result slot, we can set it and its lifetime.
-    assert(!callArgs.back() && "byref_result slot is always last");
-    callArgs.back() = resultSlotVal;
-    implicitLifetimes.back() =
-        cast<RefType>(callArgs.back().getType()).getLifetime();
+    if (calleeSig.hasMemoryOnlyResult()) {
+      assert(!callArgs.back() && "byref_result slot is always last");
+      callArgs.back() = resultSlotVal;
+      implicitLifetimes.back() =
+          cast<RefType>(resultSlotVal.getType()).getLifetime();
+    } else {
+      assert(!callArgs.front() && "init_self slot is always first");
+      callArgs.front() = resultSlotVal;
+      implicitLifetimes.front() =
+          cast<RefType>(resultSlotVal.getType()).getLifetime();
+    }
   }
 
   // If the callee throws, we can now also resolve the lifetime and value of the
@@ -1180,17 +1196,19 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
         cast<RefType>(errSlot.getType()).getLifetime();
   }
 
+  // Now that the implicit lifetimes of result slots are set, recompute the
+  // expected types.
+  expectedCalleeType = calleeSig.substituteImplicitLifetimesIntoValues(
+      implicitLifetimes, [&]() -> InFlightDiagnostic {
+        llvm_unreachable("substitution should always succeed");
+      });
+
   // Now that all of the arguments have been emitted, coerce them to the
   // expected type if needed.  We do this after the first pass above, because
   // there can be forward refefences from the result slot to the later
   // arguments' lifetimes.
   for (auto [arg, conv, expectedType] :
        llvm::zip(callArgs, conventions, expectedCalleeType.getInputs())) {
-    // Ignore the byref result slot - we know its lifetime differs but we're ok
-    // with that.
-    if (SignatureType::isResultSlot(conv))
-      continue;
-
     // Make sure the parameters of an argument line up by emitting a rebind
     // operation.
     if (arg.getType() == expectedType)
@@ -1255,9 +1273,15 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     return emitCResult(MRValue(callArgs.back()), callExpr, dest);
   }
 
-  // Raising initializers have an ABI result of 'i1' but actually return None.
-  if (calleeSig.isThrows() && calleeSig.hasInitSelfArg())
-    callResult = PValue(shared.getNoneAttr());
+  if (calleeSig.hasInitSelfArg()) {
+    // If this is a constructor call with an implicit `init_self` argument, we
+    // need to pass it on to the destination.
+    if (needInitSelfSlot)
+      return emitCResult(MRValue(callArgs.front()), callExpr, dest);
+    // Otherwise, always return `None` when directly invoking a constructor.
+    // Raising constructors have an ABI result of `i1`.
+    return emitCResult(PValue(shared.getNoneAttr()), callExpr, dest);
+  }
 
   // Otherwise, register-passable results are the call result which may need to
   // be emitted into a ValueDest.

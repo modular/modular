@@ -19,8 +19,8 @@ fn makes_escaping_closure(m: MemType, w: Int):
     fn myclosure_with_mem_types(n: MemType) escaping -> MemType:
         return n + m
 
-    # CHECK: [[IMPL:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!escaping
-    # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
+    # CHECK: [[A:%.*]] = lit.ref.load %a
+    # CHECK-NEXT: [[IMPL:%.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!escaping
     # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}([[IMPL]], [[A]], %w)
     # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "myclosure_with_reg_types" var
     # CHECK-NEXT: lit.call @{{.*}}::@"__init__{{.*}}([[WRAPPER]], [[IMPL]])
