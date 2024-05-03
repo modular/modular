@@ -167,7 +167,7 @@ struct AwaitableCBatch:
 
     @always_inline
     fn __await__(self) -> CBatch:
-        var cur_hdl = __mlir_op.`pop.coroutine.opaque_handle`()
+        var cur_hdl = __mlir_op.`co.opaque_handle`()
 
         __mlir_region await_body():
             call_dylib_func(
@@ -177,9 +177,9 @@ struct AwaitableCBatch:
                 self._ptr,
                 cur_hdl,
             )
-            __mlir_op.`pop.coroutine.await.end`()
+            __mlir_op.`co.await.end`()
 
-        __mlir_op.`pop.coroutine.await`[_region = "await_body".value]()
+        __mlir_op.`co.await`[_region = "await_body".value]()
         return self._ptr.get(self._lib)
 
 
