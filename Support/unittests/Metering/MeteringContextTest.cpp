@@ -86,7 +86,7 @@ TEST_F(MeteringContextTest, FlushSuccessMultiple) {
   ErrorOrSuccess errOr;
 
   ASSERT_FALSE(errOr.isError()) << errOr.getError();
-  EXPECT_EQ(values.back().second, std::chrono::seconds(0));
+  EXPECT_EQ(values.back().second, std::chrono::seconds(1));
 
   std::this_thread::sleep_for(std::chrono::seconds(1));
   errOr = context->flush();

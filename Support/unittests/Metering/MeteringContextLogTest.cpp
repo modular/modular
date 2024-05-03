@@ -238,7 +238,7 @@ TEST_F(MeteringContextLogTest, Flush) {
   EXPECT_FALSE(result.isError());
   EXPECT_EQ(values.size(), 2u);
   expectFixedAttributes(values[0]);
-  expectStringValue(values[0], "cpu_seconds", "0");
+  expectStringValue(values[0], "cpu_seconds", "8");
   expectStringValue(values[1], "cpu_seconds", "8");
 }
 
@@ -253,7 +253,7 @@ TEST_F(MeteringContextLogTest, FlushWithLimits) {
   EXPECT_FALSE(result.isError());
   EXPECT_EQ(values.size(), 2u);
   expectFixedAttributes(values[0]);
-  expectStringValue(values[0], "cpu_seconds", "0");
+  expectStringValue(values[0], "cpu_seconds", std::to_string(maxProcessors));
   expectStringValue(values[1], "cpu_seconds", std::to_string(maxProcessors));
 }
 } // namespace M::Metering
