@@ -14,7 +14,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu.id import BlockDim, BlockIdx, ThreadIdx
+from gpu.id import BlockIdx, ThreadIdx
 from gpu.memory import (
     async_copy_wait_all,
     async_copy_commit_group,
@@ -24,7 +24,7 @@ from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import LayoutTensor, copy_dram_to_sram_async
 from layout.swizzle import Swizzle
-from math import div_ceil, isclose
+from math import ceildiv
 from memory.unsafe import DTypePointer
 from pathlib import Path
 from testing import assert_almost_equal
@@ -129,7 +129,7 @@ fn multistage_copy[
     async_copy_wait_group(num_pipeline_stages - 2)
     barrier()
 
-    var num_k_tiles = div_ceil(K, BK)
+    var num_k_tiles = ceildiv(K, BK)
 
     for k_tile_id in range(num_k_tiles):
         var stage = k_tile_id % (num_pipeline_stages - 1)
@@ -217,7 +217,7 @@ fn test_multistage_copy() raises:
     func(
         a_tensor,
         b_tensor,
-        grid_dim=(div_ceil(M, BM), 1, 1),
+        grid_dim=(ceildiv(M, BM), 1, 1),
         block_dim=(num_threads, 1, 1),
         stream=stream,
     )
@@ -333,7 +333,7 @@ fn test_swizzle_copy() raises:
     func(
         a_tensor,
         b_tensor,
-        grid_dim=(div_ceil(M, BM), 1, 1),
+        grid_dim=(ceildiv(M, BM), 1, 1),
         block_dim=(num_threads, 1, 1),
         stream=stream,
     )
