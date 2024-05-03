@@ -183,11 +183,10 @@ fn implicit_func_conversion():
 struct RegPassable:
   var value: Int
   # CHECK-LABEL: lit.func @"__init__
-  fn __init__(value: Int) -> Self:
-  # CHECK:  = lit.struct.create(value=%value) : (!Int) -> !RegPassable
-    return Self{value: value}
+  fn __init__(inout self, value: Int):
+    self.value = value
 
-  fn __copyinit__(self) -> Self: pass
+  fn __copyinit__(inout self, existing: Self): pass
   fn __del__(owned self): pass
   fn __neg__(self) -> Self: pass
   fn __add__(self, rhs: Self) -> Self: pass
@@ -312,14 +311,18 @@ fn reverse_operators(a: Int):
 
 # CHECK-LABEL: lit.func @"precedence_matmul
 fn precedence_matmul(z: RegPassable) -> RegPassable:
-  # CHECK-NEXT:  %[[THREE:.*]] = kgen.param.constant: !Int = <{3}>
-  # CHECK-NEXT:  %[[INT_THREE:.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}(%[[THREE]])
-  # CHECK-NEXT:  %[[TWO:.*]] = kgen.param.constant: !Int = <{2}>
-  # CHECK-NEXT:  %[[INT_TWO:.*]] = lit.call {{.*}}@RegPassable::@"__init__{{.*}}(%[[TWO]])
-  # CHECK-NEXT:  %[[NEG:.*]] = lit.call {{.*}}@RegPassable::@"__neg__{{.*}}(%[[INT_TWO]])
-  # CHECK-NEXT:  %[[MATMUL:.*]] = lit.call {{.*}}@RegPassable::@"__matmul__{{.*}}(%[[INT_THREE]], %[[NEG]])
-  # CHECK-NEXT:  %[[ADD:.*]] = lit.call {{.*}}@RegPassable::@"__add__{{.*}}(%z, %[[MATMUL]])
-  # CHECK-NEXT:  lit.return %[[ADD]] : !RegPassable
+  # CHECK: [[THREETMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT:  [[THREE:%.*]] = kgen.param.constant: !Int = <{3}>
+  # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[THREETMP]], [[THREE]])
+  # CHECK-NEXT:  [[TWOTMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT:  [[TWO:%.*]] = kgen.param.constant: !Int = <{2}>
+  # CHECK-NEXT:  lit.call {{.*}}@RegPassable::@"__init__{{.*}}([[TWOTMP]], [[TWO]])
+  # CHECK-NEXT:  [[INT_TWO:%.*]] = lit.ref.load [[TWOTMP]]
+  # CHECK-NEXT:  [[NEG:%.*]] = lit.call {{.*}}@RegPassable::@"__neg__{{.*}}([[INT_TWO]])
+  # CHECK-NEXT:  [[INT_THREE:%.*]] = lit.ref.load [[THREETMP]]
+  # CHECK-NEXT:  [[MATMUL:%.*]] = lit.call {{.*}}@RegPassable::@"__matmul__{{.*}}([[INT_THREE]], [[NEG]])
+  # CHECK-NEXT:  [[ADD:%.*]] = lit.call {{.*}}@RegPassable::@"__add__{{.*}}(%z, [[MATMUL]])
+  # CHECK-NEXT:  lit.return [[ADD]] : !RegPassable
   return z + RegPassable(3) @ -RegPassable(2)
 
 # CHECK-LABEL: lit.func @"precedence_bitwise
@@ -351,7 +354,7 @@ fn comparisons(a: Int, b: Int):
 
 @register_passable
 struct Boolish:
-  fn __copyinit__(self) -> Self: pass
+  fn __copyinit__(inout self, existing: Self): pass
   fn __bool__(self) -> Bool: return True
 
 struct MemBoolish:
@@ -386,11 +389,13 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK: [[BOOL:%.*]] = lit.call {{.*}}__bool__{{.*}}(%a)
   # CHECK: [[I1:%.*]] = lit.call {{.*}}__mlir_i1__{{.*}}([[BOOL]])
   # CHECK: hlcf.if [[I1]] -> !Boolish {
-  # CHECK:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%b)
-  # CHECK:   hlcf.yield [[TMP]]
+  # CHECK:   = lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %b)
+  # CHECK:   hlcf.yield 
   # CHECK: } else {
-  # CHECK:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
-  # CHECK:   hlcf.yield [[TMP]]
+  # CHECK:   [[ANON:%.*]] = lit.var.decl
+  # CHECK:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[ANON]], %a)
+  # CHECK:   [[A:%.*]] = lit.load.consume [[ANON]]
+  # CHECK:   hlcf.yield [[A]]
   # CHECK: }
   _ = a and b
 
@@ -400,11 +405,11 @@ fn andOr(a: Boolish, b: Boolish, c: Bool, d: MemBoolish):
   # CHECK-NEXT: [[ABOOL:%.*]] = lit.call {{.*}}Boolish::@"__bool__{{.*}}"(
   # CHECK-NEXT: [[I1:%.*]] = lit.call {{.*}}@Bool::@"__mlir_i1__{{.*}}([[ABOOL]])
   # CHECK-NEXT:  = hlcf.if [[I1]] -> !Boolish {
-  # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%a)
-  # CHECK-NEXT:   hlcf.yield [[TMP]]
+  # CHECK:        = lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %a)
+  # CHECK:        hlcf.yield 
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[TMP:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%b)
-  # CHECK-NEXT:   hlcf.yield [[TMP]]
+  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %b)
+  # CHECK:        hlcf.yield 
   # CHECK-NEXT: }
   _ = a or b
 
@@ -1191,20 +1196,22 @@ fn testConds(cond: __mlir_type.i1, a: MemoryType, b: MemoryType, m: RegPassable,
   # Mojo Issue #49: https://github.com/modularml/mojo/issues/49
 
   # CHECK-NEXT: hlcf.if %cond -> !RegPassable {
-  # CHECK-NEXT:   [[V:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%m)
-  # CHECK-NEXT:   hlcf.yield [[V]]
+  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %m)
+  # CHECK:        hlcf.yield 
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[V:%.*]] = lit.call {{.*}}__init__{{.*}}(%i)
+  # CHECK-NEXT:   lit.var.decl "anonymous
+  # CHECK-NEXT:   lit.call {{.*}}__init__{{.*}}({{.*}}, %i)
+  # CHECK-NEXT:   [[V:%.*]] = lit.load.consume
   # CHECK-NEXT:   hlcf.yield [[V]]
   # CHECK-NEXT: }
   _ = m if cond else i
 
   # CHECK-NEXT: hlcf.if %cond -> !RegPassable {
-  # CHECK-NEXT:   [[V:%.*]] = lit.call {{.*}}__init__{{.*}}(%i)
-  # CHECK-NEXT:   hlcf.yield [[V]]
+  # CHECK:        lit.call {{.*}}__init__{{.*}}({{.*}}, %i)
+  # CHECK:        hlcf.yield
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[V:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%m)
-  # CHECK-NEXT:   hlcf.yield [[V]]
+  # CHECK:        lit.call {{.*}}__copyinit__{{.*}}({{.*}}, %m)
+  # CHECK:        hlcf.yield
   # CHECK-NEXT: }
   _ = i if cond else m
 
