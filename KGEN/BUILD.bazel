@@ -27,6 +27,7 @@ gentbl_mlir_dialect(
     deps = [
         ":CODialectTdFiles",
         "@llvm-project//mlir:ControlFlowInterfacesTdFiles",
+        "@llvm-project//mlir:InferTypeOpInterfaceTdFiles",
     ],
 )
 
