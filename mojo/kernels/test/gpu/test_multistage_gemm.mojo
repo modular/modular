@@ -174,20 +174,9 @@ fn multistage_gemm[
     var warp_y = warp_id // num_warps_n
 
     var a_smem = dynamic_shared_memory[Scalar[a_type], alignment=4]()
-    var a_smem_tiles = LayoutTensor[
-        a_type,
-        Layout.row_major(num_pipeline_stages * BM, BK),
-        address_space = AddressSpace.SHARED,
-    ](a_smem).split[num_pipeline_stages]()
-
     var b_smem = (a_smem + num_pipeline_stages * BM * BK).bitcast[
         Scalar[b_type]
     ]()
-    var b_smem_tiles = LayoutTensor[
-        b_type,
-        Layout.row_major(num_pipeline_stages * BN, BK),
-        address_space = AddressSpace.SHARED,
-    ](b_smem).split[num_pipeline_stages]()
 
     alias thread_async_copy_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
@@ -196,12 +185,24 @@ fn multistage_gemm[
     # Prefetch (num_pipeline_stages - 1) stages.
     @unroll
     for stage in range(num_pipeline_stages - 1):
+        var a_smem_tile = LayoutTensor[
+            a_type,
+            Layout.row_major(BM, BK),
+            address_space = AddressSpace.SHARED,
+        ](a_smem + stage * BM * BK)
+
+        var b_smem_tile = LayoutTensor[
+            b_type,
+            Layout.row_major(BN, BK),
+            address_space = AddressSpace.SHARED,
+        ](b_smem + stage * BN * BK)
+
         copy_dram_to_sram_async[
             src_thread_layout=thread_async_copy_layout,
             dst_thread_layout=thread_async_copy_layout,
             swizzle=xor_2bits_per8T,
         ](
-            a_smem_tiles[stage].vectorize[1, simd_size](),
+            a_smem_tile.vectorize[1, simd_size](),
             a.tile[BM, BK](BlockIdx.y(), stage).vectorize[1, simd_size](),
         )
 
@@ -210,7 +211,7 @@ fn multistage_gemm[
             dst_thread_layout=thread_async_copy_layout,
             swizzle=xor_2bits_per8T,
         ](
-            b_smem_tiles[stage].vectorize[1, simd_size](),
+            b_smem_tile.vectorize[1, simd_size](),
             b.tile[BN, BK](BlockIdx.x(), stage).vectorize[1, simd_size](),
         )
 
@@ -243,8 +244,19 @@ fn multistage_gemm[
 
     # Load shared -> registers for stage 0's mma.
     # TODO: remove the cast.
-    var a_warp_tile = a_smem_tiles[0].tile[WM, BK](int(warp_y), 0)
-    var b_warp_tile = b_smem_tiles[0].tile[WN, BK](int(warp_x), 0)
+    var a_smem_tile0 = LayoutTensor[
+        a_type,
+        Layout.row_major(BM, BK),
+        address_space = AddressSpace.SHARED,
+    ](a_smem)
+
+    var b_smem_tile0 = LayoutTensor[
+        b_type,
+        Layout.row_major(BN, BK),
+        address_space = AddressSpace.SHARED,
+    ](b_smem)
+    var a_warp_tile = a_smem_tile0.tile[WM, BK](int(warp_y), 0)
+    var b_warp_tile = b_smem_tile0.tile[WN, BK](int(warp_x), 0)
 
     # TODO: possbile to not rebind?
     @unroll
@@ -274,9 +286,21 @@ fn multistage_gemm[
     for k_tile_id in range(num_k_tiles):
         var stage = k_tile_id % num_pipeline_stages
 
+        var a_smem_tile = LayoutTensor[
+            a_type,
+            Layout.row_major(BM, BK),
+            address_space = AddressSpace.SHARED,
+        ](a_smem + stage * BM * BK)
+
+        var b_smem_tile = LayoutTensor[
+            b_type,
+            Layout.row_major(BN, BK),
+            address_space = AddressSpace.SHARED,
+        ](b_smem + stage * BN * BK)
+
         # TODO: remove the cast.
-        var a_warp_tile = a_smem_tiles[stage].tile[WM, BK](int(warp_y), 0)
-        var b_warp_tile = b_smem_tiles[stage].tile[WN, BK](int(warp_x), 0)
+        var a_warp_tile = a_smem_tile.tile[WM, BK](int(warp_y), 0)
+        var b_warp_tile = b_smem_tile.tile[WN, BK](int(warp_x), 0)
 
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
@@ -287,12 +311,20 @@ fn multistage_gemm[
             var next_stage = (k_tile_id + 1) % num_pipeline_stages
 
             if k_mma == num_k_mmas - 1:
-                a_warp_tile = a_smem_tiles[next_stage].tile[WM, BK](
-                    int(warp_y), 0
-                )
-                b_warp_tile = b_smem_tiles[next_stage].tile[WN, BK](
-                    int(warp_x), 0
-                )
+                var a_smem_next_tile = LayoutTensor[
+                    a_type,
+                    Layout.row_major(BM, BK),
+                    address_space = AddressSpace.SHARED,
+                ](a_smem + next_stage * BM * BK)
+
+                var b_smem_next_tile = LayoutTensor[
+                    b_type,
+                    Layout.row_major(BN, BK),
+                    address_space = AddressSpace.SHARED,
+                ](b_smem + next_stage * BN * BK)
+
+                a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
+                b_warp_tile = b_smem_next_tile.tile[WN, BK](int(warp_x), 0)
 
             @unroll
             for m_mma in range(num_m_mmas):
@@ -333,6 +365,18 @@ fn multistage_gemm[
                 var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
                 var prefetch_stage = prefetch_tile_id % num_pipeline_stages
 
+                var a_smem_prefetch_tile = LayoutTensor[
+                    a_type,
+                    Layout.row_major(BM, BK),
+                    address_space = AddressSpace.SHARED,
+                ](a_smem + prefetch_stage * BM * BK)
+
+                var b_smem_prefetch_tile = LayoutTensor[
+                    b_type,
+                    Layout.row_major(BN, BK),
+                    address_space = AddressSpace.SHARED,
+                ](b_smem + prefetch_stage * BN * BK)
+
                 # TODO: Extend the async copy instrinsic to creat dummy copies. The
                 # prefetch for the three two iterations should be dummy.
                 copy_dram_to_sram_async[
@@ -340,7 +384,7 @@ fn multistage_gemm[
                     dst_thread_layout=thread_async_copy_layout,
                     swizzle=xor_2bits_per8T,
                 ](
-                    a_smem_tiles[prefetch_stage].vectorize[1, simd_size](),
+                    a_smem_prefetch_tile.vectorize[1, simd_size](),
                     a.tile[BM, BK](
                         BlockIdx.y(), prefetch_tile_id % num_k_tiles
                     ).vectorize[1, simd_size](),
@@ -351,7 +395,7 @@ fn multistage_gemm[
                     dst_thread_layout=thread_async_copy_layout,
                     swizzle=xor_2bits_per8T,
                 ](
-                    b_smem_tiles[prefetch_stage].vectorize[1, simd_size](),
+                    b_smem_prefetch_tile.vectorize[1, simd_size](),
                     b.tile[BN, BK](
                         BlockIdx.x(), prefetch_tile_id % num_k_tiles
                     ).vectorize[1, simd_size](),
@@ -386,13 +430,13 @@ fn multistage_gemm[
 fn test() raises:
     alias num_threads = 128
     alias num_pipeline_stages = 4
-    alias M = 1024
-    alias N = 1024
+    alias M = 8192
+    alias N = 8192
     alias K = 128
     alias BM = 64
-    alias BN = 128
+    alias BN = 256
     alias BK = 16
-    alias WM = 32
+    alias WM = 64
     alias WN = 64
     alias shared_mem_bytes = 80 * 1024
 
@@ -454,6 +498,8 @@ fn test() raises:
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             shared_mem_bytes
         ),
+        dump_llvm=Path("./pipelined-gemm-spill.ir"),
+        dump_ptx=Path("./pipelined-gemm-spill.ptx"),
     )
 
     if is_benchmark():
