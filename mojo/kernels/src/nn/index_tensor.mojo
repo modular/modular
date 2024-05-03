@@ -6,10 +6,8 @@
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from utils.index import Index
-from random import random_ui64
 from nn.gather_scatter import normalize_neg_index
-from math import div_ceil
+from math import ceildiv
 from algorithm import sync_parallelize
 from runtime.llcl import Runtime
 
@@ -187,13 +185,13 @@ fn index_tensor_1d[
     alias MIN_LINES = 32
     var num_threads = Runtime().parallelism_level()
     var num_tasks = min(
-        div_ceil(
+        ceildiv(
             batch_volume,
             MIN_LINES,
         ),
         num_threads,
     )
-    var work_per_thread = div_ceil(batch_volume, num_tasks)
+    var work_per_thread = ceildiv(batch_volume, num_tasks)
 
     @parameter
     fn calc_batch_dim(task_id: Int):

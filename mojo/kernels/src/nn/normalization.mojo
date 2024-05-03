@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil, sqrt
+from math import ceildiv, sqrt
 
 from algorithm import map_reduce, mean, variance, vectorize
 from algorithm.functional import sync_parallelize
@@ -14,13 +14,12 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
 )
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.list import DimList
 from register import mogg_register
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from utils.index import StaticIntTuple
-from utils.static_tuple import StaticTuple
 
 from .reshape import reshape
 
@@ -148,7 +147,7 @@ fn layer_norm[
         var num_workers = min(
             Runtime().parallelism_level(), prod_all_but_last_dim
         )
-        var chunk_size = div_ceil(prod_all_but_last_dim, num_workers)
+        var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
 
         @__copy_capture(
             chunk_size, prod_all_but_last_dim, last_dim, output_buf, eps

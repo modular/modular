@@ -4,36 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_down_residual, div_ceil, fma
-from sys.info import (
-    alignof,
-    has_avx2,
-    has_avx512f,
-    has_neon,
-    simdbytewidth,
-    simdwidthof,
-)
-from sys.intrinsics import PrefetchOptions
+from math import align_down, align_down_residual, ceildiv
+from sys.info import simdwidthof
 
 from algorithm import (
     sync_parallelize,
     tile,
     tile_middle_unswitch_boundaries,
-    unswitch,
     vectorize,
 )
-from buffer.buffer import (
-    Buffer,
-    NDBuffer,
-    _compute_ndbuffer_offset,
-    partial_simd_load,
-    partial_simd_store,
-    prod_dims,
-)
+from buffer.buffer import NDBuffer
 from buffer.list import Dim, DimList
 from LinAlg.MatmulUtils import partition_work
 from LinAlg.accumulate import _Accumulator
-from memory.memory import memset_zero
 from memory.unsafe import DTypePointer
 from register import mogg_register
 from runtime.llcl import Runtime
@@ -47,7 +30,6 @@ from .conv_utils import (
     ConvPartition,
     ConvShape,
     elementwise_epilogue_type,
-    get_conv2d_shape,
     get_conv_num_tasks,
     get_conv_shape,
     get_conv_tile_shape,
@@ -331,7 +313,7 @@ fn get_num_partitions[
 
     var num_batches_and_groups = conv_shape.n * conv_shape.num_groups
 
-    var max_f_tasks = div_ceil(conv_shape.f, micro_kernel_f_size)
+    var max_f_tasks = ceildiv(conv_shape.f, micro_kernel_f_size)
 
     var num_partitions = StaticIntTuple[4](1)
 
@@ -676,7 +658,7 @@ struct ConvTransposedPacked[
         # [0, left_pad_impact_end)
         # [left_pad_impact_end, right_pad_impact_start)
         # [right_pad_impact_start, WO)
-        var left_pad_impact_end = div_ceil(
+        var left_pad_impact_end = ceildiv(
             self.conv_shape.pad_w[0], self.conv_shape.stride[input_rank - 3]
         )
         var right_pad_impact_start = (
@@ -1184,7 +1166,7 @@ fn pack_filter_shape(
 
     # FRSCf layout.
     var packed_shape = StaticIntTuple[filter.rank + 1]()
-    packed_shape[0] = num_groups * div_ceil(F_per_group, micro_kernel_f_size)
+    packed_shape[0] = num_groups * ceildiv(F_per_group, micro_kernel_f_size)
     packed_shape[filter.rank] = micro_kernel_f_size
     # Input channel
     packed_shape[filter.rank - 1] = filter.dim[filter.rank - 1]()
@@ -1225,7 +1207,7 @@ fn pack_filter(filter: NDBuffer, packed_filter: NDBuffer, num_groups: Int):
 
     # Each group is zero padded to
     #
-    #                   div_ceil(F_per_group, micro_kernel_f_size)
+    #                   ceildiv(F_per_group, micro_kernel_f_size)
     #                 * outer_dims_prod
     #                 * micro_kernel_f_size.
     #

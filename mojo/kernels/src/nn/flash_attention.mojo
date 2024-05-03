@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_up, div_ceil, exp
+from math import align_down, align_up, ceildiv, exp
 from sys.info import has_avx512f, has_neon
 
 from algorithm import sync_parallelize, tile, vectorize
@@ -209,7 +209,7 @@ struct _Matmul[
                 cn_ptr += tile_n * simd_width
 
             tile[process_cols, Self._matmul_config.col_sizes](
-                0, div_ceil(N, simd_width)
+                0, ceildiv(N, simd_width)
             )
 
             am_ptr += tile_m * a_stride
@@ -619,8 +619,8 @@ struct _FlashAttention[
         var packed_o_size = Self._config.o_block_n * Self._config.qk_block_n
         var packed_size = max(packed_qk_size, packed_o_size)
 
-        var num_blocks_m = div_ceil(seq_len, Self._config.block_m)
-        var num_blocks_n = div_ceil(depth_dim, Self._config.o_block_n)
+        var num_blocks_m = ceildiv(seq_len, Self._config.block_m)
+        var num_blocks_n = ceildiv(depth_dim, Self._config.o_block_n)
         var work_count = num_batches * num_heads * num_blocks_m * num_blocks_n
 
         var num_threads = min(work_count, Runtime().parallelism_level())

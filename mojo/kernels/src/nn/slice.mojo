@@ -4,11 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil
-
 from algorithm import elementwise
-from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer import NDBuffer
 
 from utils.index import StaticIntTuple
 from register import mogg_register

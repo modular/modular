@@ -7,7 +7,7 @@
 from math import (
     align_down,
     align_up,
-    div_ceil,
+    ceildiv,
     exp,
     identity,
     log,
@@ -510,7 +510,7 @@ fn logsoftmax[
     var inner_dim = output.dim[rank - 1]()
     var outer_dim = product[rank](shape, rank - 1)
     var num_workers = min(Runtime().parallelism_level(), outer_dim)
-    var chunk_size = div_ceil(outer_dim, num_workers)
+    var chunk_size = ceildiv(outer_dim, num_workers)
 
     @parameter
     @__copy_capture(chunk_size, outer_dim, inner_dim)
@@ -603,7 +603,7 @@ fn _softmax_cpu[
         var inner_dim = output.dim[rank - 1]()
         var outer_dim = product[rank](shape, rank - 1)
         var num_workers = min(Runtime().parallelism_level(), outer_dim)
-        var chunk_size = div_ceil(outer_dim, num_workers)
+        var chunk_size = ceildiv(outer_dim, num_workers)
 
         @__copy_capture(chunk_size, inner_dim, outer_dim)
         @parameter

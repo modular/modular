@@ -4,30 +4,25 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, div_ceil
+from math import align_down, ceildiv
 from sys.info import has_neon, sizeof
 from sys.intrinsics import PrefetchOptions
 
-from algorithm import elementwise, sync_parallelize, vectorize, parallel_memcpy
-from algorithm.functional import (
-    _elementwise_impl,
-    tile,
-)
-from buffer import Buffer, NDBuffer
-from buffer.buffer import prod_dims
-from buffer.list import Dim, DimList
+from algorithm import elementwise, sync_parallelize, parallel_memcpy
+from algorithm.functional import _elementwise_impl, tile
+from buffer import NDBuffer
+from buffer.list import DimList
 from gpu.host.memory import _copy_device_to_device_async
 from gpu.host.stream import Stream
 from memory import memset_zero, stack_allocation
 from register import mogg_register
-from runtime.llcl import Runtime, _OptionalError
+from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from collections import OptionalReg as Optional
 from utils.index import StaticIntTuple
 from utils.loop import unroll
 
-from ._optional_param import OptionalParamInt
 from .reshape import reshape
 
 
@@ -119,7 +114,7 @@ fn gather_reduce[
     alias MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
     var num_threads = Runtime().parallelism_level()
     var num_tasks = min(
-        div_ceil(
+        ceildiv(
             indices.dim[0]()
             * indices.dim[1]()
             * input.dim[1]()
@@ -129,7 +124,7 @@ fn gather_reduce[
         num_threads,
     )
 
-    var out_vecs_per_thread = div_ceil(indices.dim[0](), num_tasks)
+    var out_vecs_per_thread = ceildiv(indices.dim[0](), num_tasks)
 
     var output_2d_dims = StaticIntTuple[2](output.dim[0](), output.dim[1]())
 

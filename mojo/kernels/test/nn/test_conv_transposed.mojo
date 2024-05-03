@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil, isclose
+from math import ceildiv, isclose
 from random import rand
 from sys.info import simdwidthof
 
@@ -168,7 +168,7 @@ fn test_conv_transposed[
 
     # Rounded C and F size for pre-packed filter.
     alias micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
-    var rounded_F = div_ceil(F, micro_kernel_f_size) * micro_kernel_f_size
+    var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
     var input_shape = extend_shape(input_dims, N, C)

@@ -5,21 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from math import align_down, div_ceil, exp, iota, sqrt
+from math import align_down, ceildiv, exp, iota
 from math.limit import neginf
 
 from algorithm import elementwise
 from LinAlg.BatchedMatmul import batched_matmul
 from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer.list import DimList
 from gpu import (
     WARP_SIZE,
-    BlockDim,
     BlockIdx,
     ThreadIdx,
     barrier,
     lane_id,
-    shuffle_down,
     shuffle_xor,
     warp_reduce,
 )
@@ -312,7 +310,7 @@ fn flash_attention[
                 batch_size,
                 seq_len,
                 grid_dim=(
-                    div_ceil(seq_len, 32),
+                    ceildiv(seq_len, 32),
                     num_heads,
                     batch_size,
                 ),
@@ -356,7 +354,7 @@ fn flash_attention[
                 seq_len,
                 num_keys,
                 grid_dim=(
-                    div_ceil(seq_len, 32),
+                    ceildiv(seq_len, 32),
                     num_heads,
                     batch_size,
                 ),
@@ -919,7 +917,7 @@ fn flash_attention_kernel_flexible_seqlen[
     )
     alias loadq_num_rows_per_iter = (num_threads * simd_size) // depth
     var loadq_num_rows = min(BM, seq_len - global_q_start_row)
-    var loadq_num_iters = div_ceil(loadq_num_rows, loadq_num_rows_per_iter)
+    var loadq_num_iters = ceildiv(loadq_num_rows, loadq_num_rows_per_iter)
     # alias loadq_num_iters = BM // loadq_num_rows_per_iter
     # We transpose Q BSHD -> BHSD. 2 subsequenet rows in q tile have stride
     # != depth in global Q array because the stride is based on BSHD.
@@ -975,7 +973,7 @@ fn flash_attention_kernel_flexible_seqlen[
         # multiply with the corresponding Q slice of shape [BM, BK].
         alias loadk_num_rows_per_iter = (num_threads * simd_size) // BK
         var loadk_num_rows = min(BN, num_keys - kv_tile_start_row)
-        var loadk_num_iters = div_ceil(loadk_num_rows, loadk_num_rows_per_iter)
+        var loadk_num_iters = ceildiv(loadk_num_rows, loadk_num_rows_per_iter)
         alias BN_padded = BN + smem_pad
         for subtile_start_col in range(0, depth, BK):
             ##

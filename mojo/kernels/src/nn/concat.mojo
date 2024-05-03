@@ -5,8 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections.vector import InlinedFixedVector
-from math import align_down, align_up, div_ceil
-from sys import external_call
+from math import align_down, align_up, ceildiv
 from sys._build import is_kernels_debug_build
 from sys.info import simdwidthof, sizeof
 
@@ -16,21 +15,10 @@ from algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     sync_parallelize,
 )
-from buffer import Buffer, NDBuffer
-from buffer.list import Dim, DimList
+from buffer import NDBuffer
 from gpu import BlockIdx, ThreadIdx
-from gpu.host import Context, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_device_async,
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _copy_host_to_device_async,
-    _free,
-    _free_async,
-    _malloc,
-    _malloc_async,
-    _memset_async,
-)
+from gpu.host import Function, Stream
+from gpu.host.memory import _copy_device_to_device_async
 from memory import memcpy
 from memory.unsafe import DTypePointer
 from register import mogg_register
@@ -129,7 +117,7 @@ fn _concat_parallel[
 
     alias KB = 1024
     alias parallel_chunk_size = 64 * KB  # TODO autotune
-    var num_chunks = div_ceil(total_output_bytes, parallel_chunk_size)
+    var num_chunks = ceildiv(total_output_bytes, parallel_chunk_size)
 
     @__copy_capture(
         total_output_bytes, output_h, output_c, output_data, output_wc
