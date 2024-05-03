@@ -104,7 +104,7 @@ lit.func @fold_ger[mut lt]() -> !lit.ref<index, mut lt> {
 #loc8 = loc(fused<#subprogram1>[#loc7])
 
 // CHECK-LABEL: kgen.func @no_hoist
-kgen.func @no_hoist() -> !pop.coroutine<() -> ()> {
+kgen.func @no_hoist() -> !co.routine<() -> ()> {
   // CHECK-NEXT: lit.async.execute <() -> ()> {
   %0 = lit.async.execute <() -> ()> {
     // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
@@ -113,11 +113,11 @@ kgen.func @no_hoist() -> !pop.coroutine<() -> ()> {
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
     kgen.return  loc(#loc5)
   } loc(#loc8)
-  kgen.return %0 : !pop.coroutine<() -> ()> loc(#loc4)
+  kgen.return %0 : !co.routine<() -> ()> loc(#loc4)
 } loc(#loc4)
 
 // CHECK-LABEL: kgen.func @hoist
-kgen.func @hoist() -> !pop.coroutine<() -> ()> {
+kgen.func @hoist() -> !co.routine<() -> ()> {
   // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
   // CHECK-NEXT: lit.async.execute <() -> ()> {
   %0 = lit.async.execute <() -> ()> {
@@ -127,11 +127,11 @@ kgen.func @hoist() -> !pop.coroutine<() -> ()> {
     pop.store %array, %1 : !kgen.pointer<array<1, index>>
     kgen.return
   }
-  kgen.return %0 : !pop.coroutine<() -> ()>
+  kgen.return %0 : !co.routine<() -> ()>
 }
 
 // CHECK-LABEL: @no_cse_async_execute
-kgen.func @no_cse_async_execute() -> (!pop.coroutine<() -> ()>, !pop.coroutine<() -> ()>) {
+kgen.func @no_cse_async_execute() -> (!co.routine<() -> ()>, !co.routine<() -> ()>) {
   // CHECK-COUNT-2: lit.async.execute
   %0 = lit.async.execute <() -> ()> {
     kgen.return
@@ -139,5 +139,5 @@ kgen.func @no_cse_async_execute() -> (!pop.coroutine<() -> ()>, !pop.coroutine<(
   %1 = lit.async.execute <() -> ()> {
     kgen.return
   }
-  kgen.return %0, %1 : !pop.coroutine<() -> ()>, !pop.coroutine<() -> ()>
+  kgen.return %0, %1 : !co.routine<() -> ()>, !co.routine<() -> ()>
 }

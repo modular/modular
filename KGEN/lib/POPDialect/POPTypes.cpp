@@ -285,26 +285,6 @@ ErrorOr<TypedAttr> SIMDType::readFrom(int64_t addr,
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineType
-//===----------------------------------------------------------------------===//
-
-std::optional<int64_t> CoroutineType::getTypeSize(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerSize();
-}
-
-std::optional<int64_t>
-CoroutineType::getTypeAlign(TargetInfoAttr target) const {
-  return target.getDataLayout().getPointerABIAlign();
-}
-
-CoroutineType CoroutineType::get(MLIRContext *ctx, TypeRange resultTypes,
-                                 bool raises) {
-  auto coroSig = SignatureType::get(FunctionType::get(ctx, {}, resultTypes), {},
-                                    {}, {}, FnEffects().setThrows(raises));
-  return POP::CoroutineType::get(ctx, coroSig);
-}
-
-//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

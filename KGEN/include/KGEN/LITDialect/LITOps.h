@@ -11,6 +11,7 @@
 #ifndef KGEN_KGENDIALECT_LITOPS_H
 #define KGEN_KGENDIALECT_LITOPS_H
 
+#include "KGEN/CODialect/COTypes.h"
 #include "KGEN/HLCFDialect/HLCFAttrs.h"
 #include "KGEN/HLCFDialect/HLCFInterfaces.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"

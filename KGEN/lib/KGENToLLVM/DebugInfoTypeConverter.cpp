@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CODialect/COTypes.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -198,7 +199,7 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::ArrayType type) {
   return DIArrayType::get(elementType, size);
 }
 
-DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::CoroutineType type) {
+DIType KGEN::DebugInfoTypeConverter::buildDebugType(CO::CoroutineType type) {
   // We map coroutine types to pointers to subroutine types.
   return buildPointerType(
       buildDebugSubroutineType(type.getSignature().getValues()));
@@ -249,7 +250,7 @@ KGEN::DebugInfoTypeConverter::DebugInfoTypeConverter(POPToLLVMTypeConverter &tc)
   addConversion([&](KGEN::VariantType type) { return buildDebugType(type); });
   addConversion([&](KGEN::NoneType type) { return buildDebugType(type); });
   addConversion([&](POP::ArrayType type) { return buildDebugType(type); });
-  addConversion([&](POP::CoroutineType type) { return buildDebugType(type); });
+  addConversion([&](CO::CoroutineType type) { return buildDebugType(type); });
   addConversion([&](PackType type) { return buildDebugType(type); });
   addConversion([&](PointerType type) { return buildDebugType(type); });
   addConversion([&](POP::SIMDType type) { return buildDebugType(type); });

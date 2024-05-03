@@ -240,44 +240,4 @@ class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value, "POP::SIMDType::get($_self.cast<SIMDType>().getSize(), "
     "DTypeConstantAttr::get($_self.getContext(), KGENDType::kBool))">;
 
-//===----------------------------------------------------------------------===//
-// CoroutineType
-//===----------------------------------------------------------------------===//
-
-def POP_CoroutineType : POPType<"Coroutine", "coroutine"> {
-  let summary = "A coroutine handle.";
-  let description = [{
-    The `!pop.coroutine` type represents the handle to a coroutine. The
-    underlying type is an opaque pointer. This type contains the return types
-    of the coroutine.
-
-    Example:
-
-    ```mlir
-    // A coroutine that returns two results: an index and a 32-bit integer.
-    !pop.coroutine<() -> (index, i32)>
-    // A coroutine that throws.
-    !pop.coroutine<<>() throws -> i32>
-    ```
-  }];
-
-  let parameters = (ins KGEN_SignatureType:$signature);
-  let assemblyFormat = "`<` custom<KGENType>($signature) `>`";
-
-  let builders = [
-    TypeBuilder<(ins "TypeRange":$resultTypes, CArg<"bool", "false">:$raises)>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Get the result types of the coroutine.
-    ArrayRef<Type> getResultTypes() { return getSignature().getResults(); }
-  }];
-}
-
-class CoroutineResultTypes<string name, string ref> : TypesMatchWith<
-    name # " types match coroutine result types", "coroutine", ref,
-    "$_self.cast<CoroutineType>().getResultTypes()">;
-
-def OpaqueCoroutineHandle : PointerOf<I8>;
-
 #endif // KGEN_POPDIALECT_POPTYPES_TD

@@ -13,6 +13,7 @@ include "KGEN/LITDialect/LITEnums.td"
 include "KGEN/LITDialect/LITDialect.td"
 include "KGEN/LITDialect/LITInterfaces.td"
 include "KGEN/LITDialect/LITTypes.td"
+include "KGEN/CODialect/COTypes.td"
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENEnums.td"
 include "KGEN/KGENDialect/KGENInterfaces.td"
@@ -915,12 +916,12 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
   let summary = "Call to an async function.";
   let description = [{
     The `lit.async.call` operation calls an `async` parametric callable. It
-    returns a `!pop.coroutine` of the callable's result types.
+    returns a `!co.routine` of the callable's result types.
 
     Example:
 
     ```mlir
-    // `%coro` has type `!pop.coroutine<index>`.
+    // `%coro` has type `!co.routine<index>`.
     %coro = lit.async.call<() -> bar>[:<() -> index>() -> index: @foo]()
     ```
   }];
@@ -930,7 +931,7 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
     KGEN_ParameterExprArrayAttr:$implicitLifetimes,
     Variadic<AnyType>:$operands
   );
-  let results = (outs POP_CoroutineType:$coroutine);
+  let results = (outs CoroutineType:$coroutine);
 
   let assemblyFormat = [{
     `` custom<Callee>($callee) ``
@@ -970,7 +971,7 @@ def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock,
     ```
   }];
 
-  let results = (outs Res<POP_CoroutineType, "", [MemAlloc]>:$coroutine);
+  let results = (outs Res<CoroutineType, "", [MemAlloc]>:$coroutine);
   let regions = (region SizedRegion<1>:$bodyRegion);
   let assemblyFormat = [{
     type($coroutine) $bodyRegion attr-dict

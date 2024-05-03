@@ -302,7 +302,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   // Coroutine handles are always lowered to opaque pointers.
-  addConversion([](POP::CoroutineType coro) {
+  addConversion([](CO::CoroutineType coro) {
     return LLVM::LLVMPointerType::get(coro.getContext());
   });
 }

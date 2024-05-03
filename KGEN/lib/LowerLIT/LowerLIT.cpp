@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CODialect/COTypes.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"

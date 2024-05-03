@@ -994,28 +994,28 @@ kgen.func @variadic_argument(%arg0: !kgen.variadic<f32>) {
 }
 
 // CHECK-LABEL: kgen.func @slow_function
-kgen.func @slow_function(%arg0: i32) -> !pop.coroutine<() -> i32> {
+kgen.func @slow_function(%arg0: i32) -> !co.routine<() -> i32> {
   // CHECK-NEXT: %[[HDL:.*]] = pop.coroutine.handle : <() -> i32>
   %hdl = pop.coroutine.handle : <() -> i32>
   // CHECK-NEXT: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]] : <() -> i32>
   %promise = pop.coroutine.promise %hdl : <() -> i32>
   // CHECK-NEXT: kgen.struct.gep %[[PROMISE]][0] : <struct<(i32)>>
   %res0 = kgen.struct.gep %promise[0] : <struct<(i32)>>
-  kgen.return %hdl : !pop.coroutine<() -> i32>
+  kgen.return %hdl : !co.routine<() -> i32>
 }
 
 // CHECK-LABEL: kgen.func @async_coroutine
-kgen.func @async_coroutine(%arg0: i32) -> !pop.coroutine<() -> i32> {
+kgen.func @async_coroutine(%arg0: i32) -> !co.routine<() -> i32> {
   // CHECK: %[[HDL:.*]] = pop.coroutine.handle : <() -> i32>
   %hdl = pop.coroutine.handle : <() -> i32>
   // CHECK: %[[OPAQUE:.*]] = pop.coroutine.opaque_handle
   %opaque = pop.coroutine.opaque_handle
   // CHECK: %[[CALLEE_HDL:.*]] = kgen.call @slow_function
-  %calleeHdl = kgen.call @slow_function(%arg0) : (i32) -> !pop.coroutine<() -> i32>
+  %calleeHdl = kgen.call @slow_function(%arg0) : (i32) -> !co.routine<() -> i32>
   // CHECK-NEXT: pop.coroutine.await {
   pop.coroutine.await {
-    // CHECK-NEXT: pop.coroutine.resume %[[CALLEE_HDL]] : !pop.coroutine<() -> i32>
-    pop.coroutine.resume %calleeHdl : !pop.coroutine<() -> i32>
+    // CHECK-NEXT: pop.coroutine.resume %[[CALLEE_HDL]] : !co.routine<() -> i32>
+    pop.coroutine.resume %calleeHdl : !co.routine<() -> i32>
     // CHECK-NEXT: pop.coroutine.resume %[[OPAQUE]] : !kgen.pointer<i8>
     pop.coroutine.resume %opaque : !kgen.pointer<i8>
     // CHECK-NEXT: pop.coroutine.await.end
@@ -1024,7 +1024,7 @@ kgen.func @async_coroutine(%arg0: i32) -> !pop.coroutine<() -> i32> {
   }
   // CHECK-NEXT: pop.coroutine.destroy %[[CALLEE_HDL]] : <() -> i32>
   pop.coroutine.destroy %calleeHdl : <() -> i32>
-  kgen.return %hdl : !pop.coroutine<() -> i32>
+  kgen.return %hdl : !co.routine<() -> i32>
 }
 
 // CHECK-LABEL: @usesAGlobal

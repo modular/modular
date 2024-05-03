@@ -31,8 +31,8 @@ kgen.func @none_stage_closure() -> !kgen.signature<() -> !kgen.none> {
 }
 
 // CHECK-LABEL: kgen.func @async_fn() async
-// CHECK-SAME: -> !pop.coroutine<() -> ()>
-kgen.func @async_fn() async -> !pop.coroutine<() -> !kgen.none> {
+// CHECK-SAME: -> !co.routine<() -> ()>
+kgen.func @async_fn() async -> !co.routine<() -> !kgen.none> {
   // CHECK: [[HDL:%.*]] = pop.coroutine.handle : <() -> ()>
   %0 = pop.coroutine.handle : <() -> !kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
@@ -41,8 +41,8 @@ kgen.func @async_fn() async -> !pop.coroutine<() -> !kgen.none> {
   %1 = pop.coroutine.promise %0 : <() -> !kgen.none>
   %2 = kgen.struct.gep %1[0] : <struct<(none)>>
   pop.store %none, %2 : !kgen.pointer<none>
-  // CHECK: return %0 : !pop.coroutine<() -> ()>
-  kgen.return %0 : !pop.coroutine<() -> !kgen.none>
+  // CHECK: return %0 : !co.routine<() -> ()>
+  kgen.return %0 : !co.routine<() -> !kgen.none>
 }
 
 // CHECK-LABEL: kgen.func @async_execute
@@ -105,9 +105,9 @@ kgen.func @async_signature(%arg0: !kgen.signature<() async -> !kgen.none>) {
 }
 
 // CHECK-LABEL: kgen.func @coroutine_promise
-// CHECK-SAME: %arg0: !pop.coroutine<() -> ()>
-// CHECK-SAME: %arg1: !pop.coroutine<() -> i32>
-kgen.func @coroutine_promise(%arg0: !pop.coroutine<() -> !kgen.none>, %arg1: !pop.coroutine<() -> i32>) {
+// CHECK-SAME: %arg0: !co.routine<() -> ()>
+// CHECK-SAME: %arg1: !co.routine<() -> i32>
+kgen.func @coroutine_promise(%arg0: !co.routine<() -> !kgen.none>, %arg1: !co.routine<() -> i32>) {
   // CHECK: pop.coroutine.promise %arg0 : <() -> ()>
   // CHECK: pop.pointer.bitcast
   %0 = pop.coroutine.promise %arg0 : <() -> !kgen.none>

@@ -78,9 +78,9 @@ kgen.generator @pop_sizeof_alignof<N, T:type, DT:dtype>() {
   kgen.param.constant = <get_alignof(variadic<i32>, #target)>
 
   // CHECK-NEXT: <8>
-  kgen.param.constant = <get_sizeof(!pop.coroutine<() -> ()>, #target)>
+  kgen.param.constant = <get_sizeof(!co.routine<() -> ()>, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant = <get_alignof(!pop.coroutine<() -> ()>, #target)>
+  kgen.param.constant = <get_alignof(!co.routine<() -> ()>, #target)>
 
   kgen.return
 }

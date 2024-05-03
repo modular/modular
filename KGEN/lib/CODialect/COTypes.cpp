@@ -6,10 +6,32 @@
 
 #include "KGEN/CODialect/COTypes.h"
 #include "KGEN/CODialect/CODialect.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace CO;
+
+//===----------------------------------------------------------------------===//
+// CoroutineType
+//===----------------------------------------------------------------------===//
+
+std::optional<int64_t> CoroutineType::getTypeSize(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerSize();
+}
+
+std::optional<int64_t>
+CoroutineType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
+}
+
+CoroutineType CoroutineType::get(MLIRContext *ctx, TypeRange resultTypes,
+                                 bool raises) {
+  auto coroSig = SignatureType::get(FunctionType::get(ctx, {}, resultTypes), {},
+                                    {}, {}, FnEffects().setThrows(raises));
+  return CoroutineType::get(ctx, coroSig);
+}
 
 //===----------------------------------------------------------------------===//
 // CODialect

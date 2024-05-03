@@ -11,6 +11,7 @@
 #ifndef KGEN_POPDIALECT_POPOPS_H
 #define KGEN_POPDIALECT_POPOPS_H
 
+#include "KGEN/CODialect/COTypes.h"
 #include "KGEN/Interpreter/InterpreterInterface.h"
 #include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/POPDialect/POPAttrs.h"
@@ -47,7 +48,6 @@ class PrefetchTagAttr;
 class PrefetchLocalityAttr;
 
 class ArrayType;
-class CoroutineType;
 class SIMDType;
 } // namespace M::KGEN::POP
 

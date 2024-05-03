@@ -1185,10 +1185,9 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     if (auto sig = dyn_cast<SignatureType>(target.getType());
         sig && sig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
-      // `!pop.coroutine<() -> T>` result in a `Coroutine[T]` object.
+      // `!co.routine<() -> T>` result in a `Coroutine[T]` object.
       auto call = builder->create<AsyncCallOp>(
-          loc,
-          POP::CoroutineType::get(getContext(), resultType, sig.isThrows()),
+          loc, CO::CoroutineType::get(getContext(), resultType, sig.isThrows()),
           target.get(), implicitLifetimes, callArgs);
       ASTType coroType =
           getBoundCoroutineType(shared, declScope, callExpr->getLoc(), sig);
