@@ -104,40 +104,40 @@ lit.func @fold_ger[mut lt]() -> !lit.ref<index, mut lt> {
 #loc8 = loc(fused<#subprogram1>[#loc7])
 
 // CHECK-LABEL: kgen.func @no_hoist
-kgen.func @no_hoist() -> !co.routine<() -> ()> {
-  // CHECK-NEXT: lit.async.execute <() -> ()> {
-  %0 = lit.async.execute <() -> ()> {
+kgen.func @no_hoist() -> !co.routine<> {
+  // CHECK-NEXT: lit.async.execute <> {
+  %0 = lit.async.execute <> {
     // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
     %array = kgen.param.constant: array<1, index> = <[0]> loc(#loc6)
     %1 = pop.stack_allocation 1 x !pop.array<1, index>  loc(#loc6)
     pop.store %array, %1 : !kgen.pointer<array<1, index>> loc(#loc6)
     kgen.return  loc(#loc5)
   } loc(#loc8)
-  kgen.return %0 : !co.routine<() -> ()> loc(#loc4)
+  kgen.return %0 : !co.routine<> loc(#loc4)
 } loc(#loc4)
 
 // CHECK-LABEL: kgen.func @hoist
-kgen.func @hoist() -> !co.routine<() -> ()> {
+kgen.func @hoist() -> !co.routine<> {
   // CHECK-NEXT: kgen.param.constant: array<1, index> = <[0]>
-  // CHECK-NEXT: lit.async.execute <() -> ()> {
-  %0 = lit.async.execute <() -> ()> {
+  // CHECK-NEXT: lit.async.execute <> {
+  %0 = lit.async.execute <> {
     // CHECK-NOT: kgen.param.constant: array<1, index> = <[0]>
     %array = kgen.param.constant: array<1, index> = <[0]>
     %1 = pop.stack_allocation 1 x !pop.array<1, index>
     pop.store %array, %1 : !kgen.pointer<array<1, index>>
     kgen.return
   }
-  kgen.return %0 : !co.routine<() -> ()>
+  kgen.return %0 : !co.routine<>
 }
 
 // CHECK-LABEL: @no_cse_async_execute
-kgen.func @no_cse_async_execute() -> (!co.routine<() -> ()>, !co.routine<() -> ()>) {
+kgen.func @no_cse_async_execute() -> (!co.routine<>, !co.routine<>) {
   // CHECK-COUNT-2: lit.async.execute
-  %0 = lit.async.execute <() -> ()> {
+  %0 = lit.async.execute <> {
     kgen.return
   }
-  %1 = lit.async.execute <() -> ()> {
+  %1 = lit.async.execute <> {
     kgen.return
   }
-  kgen.return %0, %1 : !co.routine<() -> ()>, !co.routine<() -> ()>
+  kgen.return %0, %1 : !co.routine<>, !co.routine<>
 }

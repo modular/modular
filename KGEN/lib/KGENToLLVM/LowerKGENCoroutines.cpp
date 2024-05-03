@@ -333,7 +333,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   SmallVector<Type, 16> contextTypes{
       cache.opaquePtr,
       LLVMStructType::getLiteral(ctx, {cache.opaquePtr, cache.opaquePtr})};
-  for (Type resultType : coroType.getResultTypes()) {
+  for (Type resultType : coroType.getTypes()) {
     resultType = b.convertType(resultType);
     if (!resultType)
       return mlir::emitError(func.getLoc(),
@@ -448,7 +448,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // Replace argument uses with values from the async context. Arguments are
   // located at the end.
   constexpr int64_t resOffset = 2;
-  int64_t argOffset = resOffset + coroType.getResultTypes().size();
+  int64_t argOffset = resOffset + coroType.getTypes().size();
   for (auto [idx, arg] :
        llvm::enumerate(asyncFnBody.getArguments().drop_back())) {
     if (auto argLoc = arg.getLoc()->findInstanceOf<FileLineColLoc>();

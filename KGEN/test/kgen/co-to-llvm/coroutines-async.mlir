@@ -4,9 +4,9 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // CHECK-LABEL: llvm.func @coro_promise
 llvm.func @coro_promise() {
-  %0 = "make_handle"() : () -> !co.routine<() -> (i32, i64)>
+  %0 = "make_handle"() : () -> !co.routine<i32, i64>
   // CHECK: %2 = llvm.getelementptr inbounds %1[24] : (!llvm.ptr) -> !llvm.ptr, i8
-  %1 = co.promise %0 : <() -> (i32, i64)>
+  %1 = co.promise %0 : <i32, i64>
   // CHECK: "use"(%2)
   "use"(%1) : (!kgen.pointer<struct<(i32, i64)>>) -> ()
   llvm.return
@@ -14,20 +14,20 @@ llvm.func @coro_promise() {
 
 // CHECK-LABEL: llvm.func @coro_resume
 llvm.func @coro_resume() {
-  %0 = "make_handle"() : () -> !co.routine<() -> (i32, i64)>
+  %0 = "make_handle"() : () -> !co.routine<i32, i64>
   // CECK: [[FUNC:%.*]] = llvm.load [[HND:%.*]] : !llvm.ptr -> !llvm.ptr
   // CECK-NEXT: llvm.call [[FUNC]]([[HND]])
   // CHECK: llvm.load
   // CHECK-NEXT: llvm.call
-  co.resume %0 : !co.routine<() -> (i32, i64)>
+  co.resume %0 : !co.routine<i32, i64>
   llvm.return
 }
 
 // CHECK-LABEL: llvm.func @coro_destroy
 llvm.func @coro_destroy() {
-  %0 = "make_handle"() : () -> !co.routine<() -> (i32, i64)>
+  %0 = "make_handle"() : () -> !co.routine<i32, i64>
   // CHECK: pop.aligned_free {{.*}} : <i8>
-  co.destroy %0 : !co.routine<() -> (i32, i64)>
+  co.destroy %0 : !co.routine<i32, i64>
   llvm.return
 }
 
@@ -66,10 +66,10 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
   // CHECK: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK: %[[TOK:.*]] = llvm.call_intrinsic "llvm.coro.id.async"(%[[C32]], %[[C1]], %[[C0]], %[[AFP_CAST]])
   // CHECK: %[[HDL:.*]] = llvm.intr.coro.begin %[[TOK]]
-  %hdl = co.handle : <() -> (i64)>
+  %hdl = co.handle : <i64>
   // CHECK: %[[BASE_CTXT_HDL:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
   // CHECK-NEXT: unrealized_conversion_cast %[[BASE_CTXT_HDL]]
-  %0 = builtin.unrealized_conversion_cast %hdl : !co.routine<() -> (i64)> to !llvm.ptr
+  %0 = builtin.unrealized_conversion_cast %hdl : !co.routine<i64> to !llvm.ptr
   // CHECK: %[[BASE_CTXT_ARG:.*]] = llvm.getelementptr inbounds %[[HDL]][-40] {{.*}} loc(#[[LOC_ARG:.*]])
   // CHECK: %[[ARG_PTR:.*]] = llvm.getelementptr inbounds %[[BASE_CTXT_ARG]][0, 3] {{.*}} loc(#[[LOC_ARG]])
   // CHECK: %[[ARG:.*]] = llvm.load %[[ARG_PTR]] {{.*}} loc(#[[LOC_ARG]])
@@ -160,8 +160,8 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   llvm.func internal @foo() -> !llvm.ptr {
-    %0 = co.handle : <() -> index> loc(#loc8)
-    %1 = builtin.unrealized_conversion_cast %0 : !co.routine<() -> index> to !llvm.ptr loc(#loc8)
+    %0 = co.handle : <index> loc(#loc8)
+    %1 = builtin.unrealized_conversion_cast %0 : !co.routine<index> to !llvm.ptr loc(#loc8)
 
     // CHECK-LABEL: llvm.func internal @foo_af_suspend_0()
     // CHECK-NEXT:    %0 = llvm.mlir.constant(1 : i64) : i64 loc(#[[LOC1_INL:.*]])

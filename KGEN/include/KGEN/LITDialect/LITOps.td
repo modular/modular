@@ -964,7 +964,7 @@ def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock,
 
     ```mlir
     %0 = kgen.param.constant: i32 = <3>
-    %coroHdl = lit.async.execute <() -> (i32, i64)> {
+    %coroHdl = lit.async.execute <i32, i64> {
       %1 = kgen.param.constant: i64 = <5>
       kgen.return %0, %1 : i32, i64
     }

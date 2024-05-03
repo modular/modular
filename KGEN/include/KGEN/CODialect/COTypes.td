@@ -33,28 +33,20 @@ def CoroutineType : COType<"Coroutine", "routine",
 
     ```mlir
     // A coroutine that returns two results: an index and a 32-bit integer.
-    !co.routine<() -> (index, i32)>
+    !co.routine<index, i32>
     // A coroutine that throws.
-    !co.routine<<>() throws -> i32>
+    !co.routine<i32>
     ```
   }];
 
-  let parameters = (ins KGEN_SignatureType:$signature);
-  let assemblyFormat = "`<` custom<KGENType>($signature) `>`";
-
-  let builders = [
-    TypeBuilder<(ins "TypeRange":$resultTypes, CArg<"bool", "false">:$raises)>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Get the result types of the coroutine.
-    ArrayRef<Type> getResultTypes() { return getSignature().getResults(); }
-  }];
+  let parameters = (ins OptionalArrayRefParameter<"Type">:$types);
+  let assemblyFormat = "`<` $types `>`";
+  let assemblyFormat = "`<` (`>`) : ($types^ `>`)?";
 }
 
 class CoroutineResultTypes<string name, string ref> : TypesMatchWith<
     name # " types match coroutine result types", "coroutine", ref,
-    "$_self.cast<CoroutineType>().getResultTypes()">;
+    "$_self.cast<CoroutineType>().getTypes()">;
 
 def OpaqueCoroutineHandle : PointerOf<I8>;
 

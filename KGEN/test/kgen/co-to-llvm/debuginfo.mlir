@@ -7,7 +7,7 @@
 // CHECK-DAG: !debuginfo.subroutine<(![[PTR]]) -> (): DW_CC_normal>
 
 !test = !debuginfo.subroutine<(
-  !debuginfo.unresolved<!co.routine<() -> index>>
+  !debuginfo.unresolved<!co.routine<index>>
 ) -> (): DW_CC_normal>
 
 #subprogram = #debuginfo.subprogram<name = <"foo">> : !test

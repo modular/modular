@@ -1889,9 +1889,7 @@ parseAsyncCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
   if (failed(parseCallOpTypes(p, operandTypes, resultTypes, callee,
                               implicitLifetimes)))
     return failure();
-  coroutineType =
-      CO::CoroutineType::get(p.getContext(), resultTypes,
-                             cast<SignatureType>(callee.getType()).isThrows());
+  coroutineType = CO::CoroutineType::get(p.getContext(), resultTypes);
   return success();
 }
 
@@ -1903,14 +1901,10 @@ LogicalResult AsyncCallOp::verify() {
   auto sig = cast<SignatureType>(getCallee().getType());
   if (!sig.isAsync())
     return emitOpError("callable must be 'async'");
-  SignatureType resultSig = getResult().getType().getSignature();
-  if (sig.isThrows() != resultSig.isThrows())
-    return emitOpError() << "'throws' of resultant coroutine must match callee";
-
+  CO::CoroutineType coro = getResult().getType();
   if (auto litSig = dyn_cast<LITSignatureType>(sig)) {
     if (failed(verifyLifetimeParams(*this, litSig)) ||
-        failed(
-            verifyCallOp(*this, litSig, getOperands(), resultSig.getResults())))
+        failed(verifyCallOp(*this, litSig, getOperands(), coro.getTypes())))
       return failure();
   }
   return success();
@@ -1927,9 +1921,7 @@ void AsyncCallOp::walkDefinitions(
 
 /// The results of a `lit.async.execute` when treated like a function, although
 /// an async one, are the results of the coroutine.
-ArrayRef<Type> AsyncExecuteOp::getResultTypes() {
-  return getType().getResultTypes();
-}
+ArrayRef<Type> AsyncExecuteOp::getResultTypes() { return getType().getTypes(); }
 
 //===----------------------------------------------------------------------===//
 // ReturnOp

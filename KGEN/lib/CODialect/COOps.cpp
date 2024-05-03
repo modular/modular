@@ -39,8 +39,8 @@ LogicalResult CoroutineHandleOp::verify() {
 //===----------------------------------------------------------------------===//
 
 static PointerType getCoroutinePromiseType(Type type) {
-  return PointerType::get(StructType::get(
-      type.getContext(), cast<CoroutineType>(type).getResultTypes()));
+  return PointerType::get(
+      StructType::get(type.getContext(), cast<CoroutineType>(type).getTypes()));
 }
 
 //===----------------------------------------------------------------------===//
