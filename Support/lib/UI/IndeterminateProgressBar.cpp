@@ -63,7 +63,8 @@ void IndeterminateProgressBar::emit(
 
     lastUpdate = now;
 
-    llvm::raw_string_ostream ss(label);
+    std::string barBuf = label;
+    llvm::raw_string_ostream ss(barBuf);
 
     // print dots up to maxBarLength, then goes back to zero dots and repeat.
     ss << std::string(currWidth, '.');
