@@ -84,8 +84,6 @@ public:
   void shutdown() {
     if (meterThread.has_value())
       stopMeterThread();
-
-    (void)flush();
   }
 
   // Mutually exclusive callback setters.
