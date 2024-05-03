@@ -97,8 +97,8 @@ fn testUseConditional(cond: __mlir_type.i1):
 
   # This uses both A and B, so it needs to extend both of their lifetimes.
   Reference(cref)[].noop()
-  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
+  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
@@ -124,8 +124,8 @@ fn testDefConditional(cond: __mlir_type.i1):
   # Mutating either of these is fine - it doesn't matter which one is mutated,
   # we know that both are live.
   Reference(cref)[].mutate()
-  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
+  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
@@ -134,8 +134,8 @@ fn testDefConditional(cond: __mlir_type.i1):
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
   Reference(cref)[] = MemExample()
-  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
+  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
@@ -146,8 +146,8 @@ fn testDefConditional(cond: __mlir_type.i1):
   var shouldBeMovedFrom = MemExample()
   Reference(cref)[] = shouldBeMovedFrom
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%shouldBeMovedFrom)
-  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK: [[CR:%.*]] = lit.ref.load %cref
+  # CHECK: [[REFREF:%.*]] = lit.var.decl
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
@@ -284,10 +284,10 @@ struct SomeStruct:
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
       -> Reference[Int, __mlir_attr.`1: i1`, __lifetime_of(self)]:
     # CHECK: [[REFVAL:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%ptr)
-    # CHECK: %anonymous2A = lit.var.decl "anonymous*"
     # CHECK: [[REBIND:%.*]] = kgen.rebind [[REFVAL]]
     # CHECK-SAME : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut *"self`2x">
-    # CHECK: lit.call {{.*}}__init__{{.*}}(%anonymous2A, [[REBIND]]
+    # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
+    # CHECK: lit.call {{.*}}__init__{{.*}}([[TMP]], [[REBIND]]
     return ptr[]
 
 
@@ -326,8 +326,8 @@ fn test_immortal_to_mortal[mutability: __mlir_type.`i1`, life: AnyLifetime[mutab
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[REFVAL]])
   # CHECK-NEXT: [[LITREFVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__refitem__{{.*}}([[PTRVAL]])
 
-  # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[LITREFVAL]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=mutability, life>
+  # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON2]], [[ADJREFVAL]])
   # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[ANON2:%.*]]
   # CHECK-NEXT: kgen.return [[RES]]
@@ -368,7 +368,7 @@ fn test_heterogenous_list():
     # CHECK: lit.var.decl "list3" var : !lit.ref<{{.*}}@HeterogenousList<:lifetime<0> {(mutcast mut *"i`"), (mutcast mut *"j`1"), (mutcast mut *"k`2")}>
     var list3 = make_het_list(i, j, k)
 
-# Issue #37659: Parameter inference doesn't work with force-immut lifetimes 
+# Issue #37659: Parameter inference doesn't work with force-immut lifetimes
 fn thing_taking_immutable_ref[T: AnyType, value_lifetime: ImmLifetime](a: Reference[T, False.__mlir_i1__(), value_lifetime]): pass
 fn test_passing_mutable_ref(inout i: String):
     thing_taking_immutable_ref(i)
@@ -385,4 +385,3 @@ fn parametric_mut_mbvalue[
    -> Reference[Int, is_mutable, lifetime]:
   # CHECK: lit.ref.struct.ger
   return a[].field
-

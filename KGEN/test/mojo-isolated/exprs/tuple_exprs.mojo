@@ -10,15 +10,15 @@
 # RValue tests
 ##===----------------------------------------------------------------------===##
 
+
 # CHECK-LABEL: lit.func @"tuples_rv
 fn tuples_rv(a: Int, b: FloatDyn):
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: [[PACK0:%.*]] = kgen.param.constant: !lit.ref.pack
     # CHECK-SAME: <:variadic<!AnyType> [], imm #lit.lifetime> = <<>>
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
     _ = ()
 
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK-NEXT: [[APTR:%.*]] = pop.stack_allocation 1 x !Int
     # CHECK-NEXT: pop.store %a, [[APTR]] : !kgen.pointer<!Int>
     # CHECK-NEXT: [[AREF:%.*]] = lit.ref.from_pointer [[APTR]] : <!Int, imm #lit.lifetime>
@@ -26,23 +26,24 @@ fn tuples_rv(a: Int, b: FloatDyn):
     # CHECK-NEXT: pop.store %b, [[BPTR]] : !kgen.pointer<!FloatDyn>
     # CHECK-NEXT: [[BREF:%.*]] = lit.ref.from_pointer [[BPTR]]
     # CHECK-NEXT: = lit.ref.pack.create([[AREF]], [[BREF]])
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
     _ = (a, b)
 
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: = lit.ref.pack.create({{%[0-9]+}}, {{%[0-9]+}})
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
     _ = a, b
 
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
     _ = (a,)
 
-    # CHECK: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: lit.call @{{.*}}@Tuple::@"__init__({{.*}}([[TMPVAR]]
-    _ = a,
+    _ = (a,)
 
     # CHECK: %c = lit.var.decl "c"
     # CHECK:  = lit.ref.pack.create({{%[0-9]+}})
@@ -54,71 +55,74 @@ fn tuples_rv(a: Int, b: FloatDyn):
 # LValue tests
 ##===----------------------------------------------------------------------===##
 
+
 # CHECK-LABEL: lit.func @"tuples_lv
 fn tuples_lv(i0: Int, f0: FloatDyn):
-   var i1 = 1
-   var i2 = 2
+    var i1 = 1
+    var i2 = 2
 
-   # CHECK: %iTup = lit.var.decl "iTup"
-   var iTup : (Int, Int)
+    # CHECK: %iTup = lit.var.decl "iTup"
+    var iTup: (Int, Int)
 
-   # Tuple Rvalue
-   # CHECK: [[TUP:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}(%iTup,
-   iTup = (i1, i2)
+    # Tuple Rvalue
+    # CHECK: [[TUP:%.*]] = lit.call {{.*}}@Tuple::@"__init__{{.*}}(%iTup,
+    iTup = (i1, i2)
 
-   # Tuple LValue
-   # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
-   # CHECK: [[TUP:%.*]] = lit.ref.immut %iTup
-   # CHECK: lit.call {{.*}}@"__copyinit__{{.*}}([[TMPVAR]], [[TUP]])
-   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[TMPVAR]])
-   # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
-   # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
-   # CHECK: lit.ref.store [[ELTV]], %i1
+    # Tuple LValue
+    # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
+    # CHECK: [[TUP:%.*]] = lit.ref.immut %iTup
+    # CHECK: lit.call {{.*}}@"__copyinit__{{.*}}([[TMPVAR]], [[TUP]])
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[TMPVAR]])
+    # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+    # CHECK: lit.ref.store [[ELTV]], %i1
 
-   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[TMPVAR]])
-   # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
-   # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
-   # CHECK: lit.ref.store [[ELTV]], %i2
-   (i1, i2) = iTup
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[TMPVAR]])
+    # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+    # CHECK: lit.ref.store [[ELTV]], %i2
+    (i1, i2) = iTup
 
-   # Check that the swap idiom is correct, this requires producing a copy of the
-   # whole RValue on the right before extracting from it.
+    # Check that the swap idiom is correct, this requires producing a copy of the
+    # whole RValue on the right before extracting from it.
 
-   # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
-   # CHECK:  = lit.ref.pack.create
-   # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[TMPVAR]],
+    # CHECK:  = lit.ref.pack.create
+    # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
+    # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[TMPVAR]],
 
-   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>([[TMPVAR]])
-   # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
-   # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
-   # CHECK: lit.ref.store [[ELTV]], %i1
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>([[TMPVAR]])
+    # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+    # CHECK: lit.ref.store [[ELTV]], %i1
 
-   # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>([[TMPVAR]])
-   # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
-   # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
-   # CHECK: lit.ref.store [[ELTV]], %i2
-   (i1, i2) = (i2, i1)
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>([[TMPVAR]])
+    # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+    # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
+    # CHECK: lit.ref.store [[ELTV]], %i2
+    (i1, i2) = (i2, i1)
 
-   # CHECK: [[ELT:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%iTup) 
-   # CHECK-NEXT: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
-   # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
-   # CHECK-NEXT: lit.ref.store [[TMP]], [[ELTR]]
-   iTup[1] = i1
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%iTup)
+    # CHECK-NEXT: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
+    # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
+    # CHECK-NEXT: lit.ref.store [[TMP]], [[ELTR]]
+    iTup[1] = i1
 
-   var f1 : FloatDyn
-   # Mixed element types should work.  Don't need check lines though.
-   (i1, f1) = (i0, f0)
+    var f1: FloatDyn
+    # Mixed element types should work.  Don't need check lines though.
+    (i1, f1) = (i0, f0)
 
 
 ##===----------------------------------------------------------------------===##
 # Memory-only element tests
 ##===----------------------------------------------------------------------===##
 
+
 trait CollectionType(Copyable, Movable):
-  pass
+    pass
+
 
 struct Container[T: CollectionType]:
-    var x : T
+    var x: T
 
     fn __setitem__(inout self, i: Int, owned value: T):
         self.x = value
@@ -126,9 +130,10 @@ struct Container[T: CollectionType]:
     fn __getitem__(self, i: Int) -> T:
         return self.x
 
+
 # CHECK-LABEL: lit.func @"swap_container_fields
 fn swap_container_fields(inout v: Container[_]):
-  v[0], v[1] = v[1], v[0]
+    v[0], v[1] = v[1], v[0]
 
 
 ##===----------------------------------------------------------------------===##

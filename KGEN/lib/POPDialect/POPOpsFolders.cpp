@@ -1080,9 +1080,12 @@ static ErrorTreeOrSuccess interpretAllocation(int64_t size, int64_t align,
 
 ErrorTreeOrSuccess AlignedAllocOp::interpret(ArrayRef<Attribute> operands,
                                              InterpreterState &state) {
-  int64_t align = cast<IntegerAttr>(operands.front()).getInt();
-  int64_t size = cast<IntegerAttr>(operands.back()).getInt();
-  return interpretAllocation(size, align, getLoc(), getType(), state);
+  auto alignAttr = dyn_cast_or_null<IntegerAttr>(operands.front());
+  auto sizeAttr = dyn_cast_or_null<IntegerAttr>(operands.back());
+  if (!alignAttr || !sizeAttr)
+    return ErrorTree(getLoc(), "non-concrete inputs");
+  return interpretAllocation(sizeAttr.getInt(), alignAttr.getInt(), getLoc(),
+                             getType(), state);
 }
 
 //===----------------------------------------------------------------------===//

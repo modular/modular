@@ -1646,32 +1646,8 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     return emitCallUnchecked(calleeFn, operands, dest, expr);
   }
 
-  // We need to invoke memory-only constructors specially since the buffer is
-  // exposed.
-  auto calleeSig = cast<SignatureType>(calleeFn.getType().mlirType);
-  auto firstArgRVType =
-      ASTType(calleeSig.getArguments()[0]).getReferenceElementType();
-
-  // For an initialization of a memory-only type, we need to replace the
-  // destination buffer with the actual destination lvalue to use.
-  MLValue destMLValue =
-      dest.getMLValueForResult(expr->getLoc(), firstArgRVType, *this);
-  posOperandsWithSelf[0].ir = destMLValue;
-  if (!destMLValue) {
-    dest.resetForError();
-    return {};
-  }
-
-  // Emit the call, but not into 'dest', typically init will return None.
-  ValueDest indirectDest(dest.getContext());
-  CValue result = emitIndirectCall(calleeFn, operands, indirectDest, expr);
-  if (!result) {
-    dest.resetForError();
-    return {};
-  }
-
-  // Now that we've emitted the result into the result buffer, emit a conversion
-  // if the expected type and the actual type differ.  This can happen when the
-  // ValueDest isn't the same as the result, e.g. "var x: MemFloat = MemInt()".
-  return emitCResult(MRValue(destMLValue), expr, dest);
+  // Emit the call directly into the ValueDest. Set the `self` value to null to
+  // indicate that we need to try to create an MLValue slot.
+  posOperandsWithSelf[0].ir = AnyValue();
+  return emitCallUnchecked(calleeFn, operands, dest, expr);
 }

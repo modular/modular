@@ -49,9 +49,7 @@ fn metatypes():
     # COM: Test that a local alias can retain type properties.
     # CHECK: lit.alias.decl [[T:\*"T.*]]: !mt_Thing = <!Thing>
     alias T = Thing
-    # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
-    # CHECK: store {{.*}}, [[TMP]]
-    # CHECK: [[VAL:%.*]] = lit.ref.load [[TMP]]
+    # CHECK: [[VAL:%.*]] = kgen.param.constant: !Thing = <{}>
     # CHECK: call {{.*}}@Thing::@"foo({{.*}})"([[VAL]])
     T().foo()
     # CHECK: call {{.*}}@Thing::@"bar()"
