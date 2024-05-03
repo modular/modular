@@ -1182,7 +1182,44 @@ fn outer_product_acc[
             res[i, j] += lhs[i].cast[dtype]() * rhs[j].cast[dtype]()
 
 
-# Copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
+# Synchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
+#
+@always_inline
+fn copy_dram_to_sram[
+    src_layout: Layout,
+    dst_layout: Layout,
+    dtype: DType,
+    src_thread_layout: Layout,
+    dst_thread_layout: Layout,
+    src_element_layout: Layout,
+    dst_element_layout: Layout,
+    src_mask: Bool,
+    dst_mask: Bool,
+    swizzle: OptionalReg[_swizzle_signature] = None,
+](
+    dst: LayoutTensor[
+        dtype,
+        dst_layout,
+        address_space = _GPUAddressSpace.SHARED,
+        element_layout=dst_element_layout,
+        masked=dst_mask,
+    ],
+    src: LayoutTensor[
+        dtype,
+        src_layout,
+        address_space = _GPUAddressSpace.GENERIC,
+        element_layout=src_element_layout,
+        masked=src_mask,
+    ],
+):
+    var src_framgents = src.distribute[src_thread_layout](ThreadIdx.x())
+    var dst_framgents = dst.distribute[dst_thread_layout, swizzle=swizzle](
+        ThreadIdx.x()
+    )
+    dst_framgents.copy_from_numa(src_framgents)
+
+
+# Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
 #
 @always_inline
 fn copy_dram_to_sram_async[
