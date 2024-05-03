@@ -7,6 +7,7 @@
 
 from math import erf
 from sys.info import simdwidthof, triple_is_nvidia_cuda
+from builtin.io import _printf
 
 from algorithm import elementwise
 from gpu import (
@@ -20,7 +21,6 @@ from gpu import (
     shuffle_up,
     shuffle_xor,
 )
-from gpu.device_print import _printf
 from gpu.host._compile import _compile_code, _get_nvptx_target
 from gpu.memory import AddressSpace
 from memory import memset_zero, stack_allocation

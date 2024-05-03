@@ -6,12 +6,11 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.device_print import _printf
 from gpu.host import Context, Function
 
 from layout import Layout
 
-from builtin.io import _print_fmt
+from builtin.io import _print_fmt, _printf
 from utils.inlined_string import _FixedString
 
 
