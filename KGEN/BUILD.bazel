@@ -1354,7 +1354,7 @@ cc_binary(
         "//Support:Globals",
         "//Support:Init",
         "//Support:MDialect",
-        "@llvm-project//mlir:MlirTranslateMain",
+        "@llvm-project//mlir:TranslateLib",
     ],
 )
 
