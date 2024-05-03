@@ -6,12 +6,12 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu import WARP_SIZE, BlockIdx, ThreadIdx, barrier
+from gpu.host import Context, Function, Stream
 from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -25,7 +25,6 @@ from LinAlg.MatmulGPU import matmul_kernel_naive
 from LinAlg.MatmulUtils import elementwise_epilogue_type
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
-from tensor import Tensor
 
 from collections import OptionalReg as Optional
 from utils.index import Index
@@ -523,7 +522,7 @@ fn run_matmul_mma_warptiling() raises:
             c_buffer,
             a_buffer,
             b_buffer,
-            grid_dim=(div_ceil(N, K10_BN), div_ceil(M, K10_BM)),
+            grid_dim=(ceildiv(N, K10_BN), ceildiv(M, K10_BM)),
             block_dim=(K10_NUM_THREADS,),
             stream=stream,
         )
@@ -570,7 +569,7 @@ fn run_matmul_mma_warptiling() raises:
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )

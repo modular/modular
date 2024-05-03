@@ -6,12 +6,10 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 
-from buffer import NDBuffer
-from buffer.list import DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu import WARP_SIZE
+from gpu.host import Context, Function, Stream
 from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -19,18 +17,9 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu.sync import syncwarp
-from LinAlg.MatmulGPU import (
-    gemv_kernel,
-    gevm_kernel,
-    gemv_tc_kernel,
-    matmul_kernel,
-    matmul_kernel_naive,
-)
+from LinAlg.MatmulGPU import gemv_tc_kernel, matmul_kernel_naive
 
-from memory.unsafe import DTypePointer, bitcast
-
-from utils.index import Index
+from memory.unsafe import DTypePointer
 
 
 fn run_matvec(M: Int, N: Int, K: Int) raises:
@@ -96,7 +85,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
             M,
             N,
             K,
-            grid_dim=div_ceil(M, WARPS_PER_BLOCK),
+            grid_dim=ceildiv(M, WARPS_PER_BLOCK),
             block_dim=WARP_SIZE * WARPS_PER_BLOCK,
             stream=stream,
         )
@@ -146,7 +135,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )

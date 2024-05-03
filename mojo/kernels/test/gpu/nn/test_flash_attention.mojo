@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil, rsqrt
+from math import ceildiv, rsqrt
 from random import rand
 from sys import argv
 
@@ -151,7 +151,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                         seq_len,
                         stream=stream,
                         grid_dim=(
-                            div_ceil(seq_len, q_tile_num_rows),
+                            ceildiv(seq_len, q_tile_num_rows),
                             num_heads,
                             batch_size,
                         ),
@@ -177,7 +177,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
                 seq_len,
                 stream=stream,
                 grid_dim=(
-                    div_ceil(seq_len, q_tile_num_rows),
+                    ceildiv(seq_len, q_tile_num_rows),
                     num_heads,
                     batch_size,
                 ),
@@ -219,7 +219,7 @@ fn test(seq_len: Int, num_keys: Int, is_benchmark: Bool = False) raises:
             seq_len,
             num_keys,
             grid_dim=(
-                div_ceil(seq_len, q_tile_num_rows),
+                ceildiv(seq_len, q_tile_num_rows),
                 num_heads,
                 batch_size,
             ),

@@ -6,7 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import div_ceil, isclose, isnan
+from math import ceildiv, isclose
 from buffer import NDBuffer
 from buffer.list import DimList
 from memory.unsafe import DTypePointer
@@ -14,7 +14,6 @@ from memory.reference import _GPUAddressSpace as AddressSpace
 from LinAlg.MatmulGPU import matmul_kernel_naive
 from gpu import (
     WARP_SIZE,
-    BlockDim,
     BlockIdx,
     ThreadIdx,
     barrier,
@@ -28,10 +27,9 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu.memory import async_copy, async_copy_wait_all
+from gpu.memory import async_copy_wait_all
 from testing import assert_almost_equal
 from sys import argv
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
@@ -41,8 +39,6 @@ from layout.layout_tensor import (
     copy_sram_to_local,
     copy_local_to_dram,
 )
-from gpu.device_print import _printf
-from pathlib import Path
 
 
 fn is_benchmark() -> Bool:
@@ -192,7 +188,7 @@ fn sgemm_double_buffer[
         b_reg[0].vectorize[simd_size](), b_smem_warp_row.vectorize[simd_size]()
     )
 
-    var num_k_tiles = div_ceil(K, BK)
+    var num_k_tiles = ceildiv(K, BK)
 
     # Update (num_k_tile - 1) tiles while switching buffers.
     # for k_tile_id in range(num_k_tiles - 1):
@@ -344,7 +340,7 @@ def test():
                     c_tensor,
                     a_tensor,
                     b_tensor,
-                    grid_dim=(div_ceil(N, BN), div_ceil(M, BM), 1),
+                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
                     block_dim=(NUM_THREADS, 1, 1),
                     stream=stream,
                 )
@@ -362,7 +358,7 @@ def test():
         c_tensor,
         a_tensor,
         b_tensor,
-        grid_dim=(div_ceil(N, BN), div_ceil(M, BM), 1),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
         block_dim=(NUM_THREADS, 1, 1),
         stream=stream,
     )
@@ -387,7 +383,7 @@ def test():
         M,
         N,
         K,
-        grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM), 1),
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 

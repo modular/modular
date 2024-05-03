@@ -6,13 +6,12 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil
-from pathlib import Path
+from math import ceildiv
 from random import random_float64
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -20,7 +19,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from LinAlg.Matmul import matmul as _matmul
-from LinAlg.MatmulGPU import matmul_kernel_naive, matmul_kernel
+from LinAlg.MatmulGPU import matmul_kernel_naive
 from memory import memset_zero, stack_allocation
 from tensor import Tensor
 from math import isclose
@@ -149,7 +148,7 @@ fn run_matmul() raises:
         m,
         n,
         k,
-        grid_dim=(div_ceil(m, TILE_SZ_A), div_ceil(n, TILE_SZ_B)),
+        grid_dim=(ceildiv(m, TILE_SZ_A), ceildiv(n, TILE_SZ_B)),
         block_dim=(TILE_SZ_A, 1),
         stream=stream,
     )
@@ -241,7 +240,7 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
         M,
         N,
         K,
-        grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
         stream=stream,
     )
@@ -365,7 +364,7 @@ fn run_matmul_from_mogg_interface_with_epilogue[
         M,
         N,
         K,
-        grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
         stream=stream,
     )

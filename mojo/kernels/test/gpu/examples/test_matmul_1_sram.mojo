@@ -6,21 +6,19 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import align_down, div_ceil
-from pathlib import Path
+from math import align_down, ceildiv
 
 from algorithm.functional import tile_and_unswitch
 from buffer import NDBuffer
-from buffer.list import DimList
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from memory import memset_zero, stack_allocation
+from memory import stack_allocation
 from tensor import Tensor
 
 from utils.index import Index
@@ -181,7 +179,7 @@ fn run_matmul() raises:
         M,
         N,
         K,
-        grid_dim=(div_ceil(N, tile_size), div_ceil(M, tile_size)),
+        grid_dim=(ceildiv(N, tile_size), ceildiv(M, tile_size)),
         block_dim=(tile_size, tile_size),
         stream=stream,
     )

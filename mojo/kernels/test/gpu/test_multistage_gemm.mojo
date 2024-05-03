@@ -6,16 +6,17 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s
 
-from math import div_ceil, isclose, isnan
+from math import ceildiv, isclose
 from buffer import NDBuffer
 from buffer.list import DimList
 from collections.optional import OptionalReg
 from memory.unsafe import DTypePointer
 from memory.reference import _GPUAddressSpace as AddressSpace
+from pathlib import Path
+
 from LinAlg.MatmulGPU import matmul_kernel_naive
 from gpu import (
     WARP_SIZE,
-    BlockDim,
     BlockIdx,
     ThreadIdx,
     barrier,
@@ -31,27 +32,20 @@ from gpu.host.memory import (
 )
 from gpu.mma import mma, ld_matrix
 from gpu.memory import (
-    async_copy,
-    async_copy_wait_all,
     async_copy_commit_group,
     async_copy_wait_group,
     dynamic_shared_memory,
 )
 from testing import assert_almost_equal
 from sys import argv
-from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
-from layout.int_tuple import IntTuple, fill_like
+from layout.int_tuple import IntTuple
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensor,
     copy_dram_to_sram_async,
-    copy_sram_to_local,
-    copy_local_to_dram,
     _swizzle_signature,
 )
 from layout.swizzle import Swizzle
-from gpu.device_print import _printf
-from pathlib import Path
 
 
 fn is_benchmark() -> Bool:
@@ -281,7 +275,7 @@ fn multistage_gemm[
             ](b_mma_tile, 0)
         )
 
-    var num_k_tiles = div_ceil(K, BK)
+    var num_k_tiles = ceildiv(K, BK)
 
     for k_tile_id in range(num_k_tiles):
         var stage = k_tile_id % num_pipeline_stages
@@ -514,7 +508,7 @@ fn test() raises:
                     c_tensor,
                     a_tensor,
                     b_tensor,
-                    grid_dim=(div_ceil(N, BN), div_ceil(M, BM), 1),
+                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
                     stream=stream,
@@ -533,7 +527,7 @@ fn test() raises:
         c_tensor,
         a_tensor,
         b_tensor,
-        grid_dim=(div_ceil(N, BN), div_ceil(M, BM), 1),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=shared_mem_bytes,
         stream=stream,
@@ -560,7 +554,7 @@ fn test() raises:
         M,
         N,
         K,
-        grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM), 1),
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 

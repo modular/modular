@@ -6,24 +6,17 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from math import align_up, div_ceil, exp
-from pathlib import Path
-
 from algorithm._gpu.reduction import reduce_launch
 from buffer import NDBuffer
-from builtin.io import _printf
 from gpu.host import Context, Stream
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
-    _memset,
 )
 from tensor import Tensor
 from testing import assert_equal
-
-from utils.index import Index
 
 alias num_reductions = 2
 

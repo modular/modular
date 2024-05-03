@@ -6,13 +6,11 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil
-from pathlib import Path
+from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import DimList
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -141,7 +139,7 @@ fn run_matmul() raises:
         m,
         n,
         k,
-        grid_dim=(div_ceil(m, TILE_SZ_A), div_ceil(n, TILE_SZ_B)),
+        grid_dim=(ceildiv(m, TILE_SZ_A), ceildiv(n, TILE_SZ_B)),
         block_dim=(TILE_SZ_A, 1),
         stream=stream,
     )

@@ -6,13 +6,12 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
-from gpu.host import Context, Dim, Function, Stream, synchronize
-from gpu.host.event import time_function
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -243,7 +242,7 @@ fn scatter_nd[
         num_indices,
         last_shape_of_indices,
         num_updates_elements,
-        grid_dim=(div_ceil(num_indices, MAX_THREADS_PER_BLOCK)),
+        grid_dim=(ceildiv(num_indices, MAX_THREADS_PER_BLOCK)),
         block_dim=(MAX_THREADS_PER_BLOCK),
         stream=stream,
     )

@@ -6,21 +6,11 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil
-from random import random_si64, seed
+from math import ceildiv
+from random import random_si64
 
-from buffer import NDBuffer
-from buffer.list import DimList
-from gpu import (
-    WARP_SIZE,
-    BlockDim,
-    BlockIdx,
-    GridDim,
-    ThreadIdx,
-    barrier,
-    lane_id,
-)
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu import WARP_SIZE, BlockIdx
+from gpu.host import Context, Function, Stream
 from gpu.host.event import time_function
 from gpu.host.memory import (
     _copy_device_to_host,
@@ -28,15 +18,10 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from gpu.memory import AddressSpace
 from gpu.mma import mma
 from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
-from gpu.sync import syncwarp
-from LinAlg.MatmulGPU import matmul_kernel, matmul_kernel_naive
-from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer, bitcast
-
-from utils.index import Index
+from LinAlg.MatmulGPU import matmul_kernel_naive
+from memory.unsafe import DTypePointer
 
 
 # TF32 Tensor core Matmul with shape m16n8k8
@@ -297,7 +282,7 @@ fn run_mma_fp32_tf32(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, MMA_M), div_ceil(N, MMA_N)),
+            grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
             stream=stream,
         )
@@ -343,7 +328,7 @@ fn run_mma_fp32_tf32(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )
@@ -466,7 +451,7 @@ fn run_mma_fp32_bf16(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, MMA_M), div_ceil(N, MMA_N)),
+            grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
             stream=stream,
         )
@@ -512,7 +497,7 @@ fn run_mma_fp32_bf16(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )
@@ -635,7 +620,7 @@ fn run_mma_fp32_bf16_2(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, MMA_M), div_ceil(N, MMA_N)),
+            grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
             stream=stream,
         )
@@ -681,7 +666,7 @@ fn run_mma_fp32_bf16_2(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )
@@ -804,7 +789,7 @@ fn run_mma_fp32_fp16(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, MMA_M), div_ceil(N, MMA_N)),
+            grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
             stream=stream,
         )
@@ -850,7 +835,7 @@ fn run_mma_fp32_fp16(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )
@@ -973,7 +958,7 @@ fn run_mma_fp16_fp16(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, MMA_M), div_ceil(N, MMA_N)),
+            grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
             block_dim=WARP_PER_BLOCK * WARP_SIZE,
             stream=stream,
         )
@@ -1019,7 +1004,7 @@ fn run_mma_fp16_fp16(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )

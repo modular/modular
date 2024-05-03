@@ -7,21 +7,17 @@
 # TODO(#31429): Restore `--debug-level full` here
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil
-from pathlib import Path
+from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import DimList
-from builtin.io import _printf
-from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu import BlockDim, BlockIdx, ThreadIdx
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from memory import memset_zero
 from memory.unsafe import DTypePointer
 from tensor import Tensor
 
@@ -96,7 +92,7 @@ fn run_matmul() raises:
         m,
         n,
         k,
-        grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+        grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
         block_dim=(BLOCK_DIM, BLOCK_DIM),
         stream=stream,
     )

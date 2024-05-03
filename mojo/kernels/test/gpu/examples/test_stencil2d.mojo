@@ -6,12 +6,12 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -19,7 +19,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.memory import AddressSpace
-from memory import memset_zero, stack_allocation
+from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from tensor import Tensor
 
@@ -158,8 +158,8 @@ fn run_stencil2d[smem: Bool]() raises:
             coeff3,
             coeff4,
             grid_dim=(
-                div_ceil(num_rows, BLOCK_DIM),
-                div_ceil(num_cols, BLOCK_DIM),
+                ceildiv(num_rows, BLOCK_DIM),
+                ceildiv(num_cols, BLOCK_DIM),
             ),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,

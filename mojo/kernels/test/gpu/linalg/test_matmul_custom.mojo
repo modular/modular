@@ -6,32 +6,24 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil, isclose
+from math import ceildiv, isclose
 from LinAlg.BatchedMatmul import batched_matmul
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, GridDim, ThreadIdx, barrier
-from gpu.host import Context, Dim, Function, Stream, synchronize
-from gpu.host.event import time_function
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from gpu.sync import syncwarp
 from LinAlg.Matmul import matmul as _matmul
-from LinAlg.MatmulGPU import (
-    matmul_kernel,
-    matmul_kernel_naive,
-    gemv_kernel,
-    gevm_kernel,
-)
-from memory.unsafe import DTypePointer, bitcast
+from LinAlg.MatmulGPU import matmul_kernel_naive
+from memory.unsafe import DTypePointer
 
 from utils.index import Index
-from random import random_float64, random_si64
-from testing import *
+from random import random_float64
+from testing import assert_true
 
 
 fn run_matmul_naive(M: Int, N: Int, K: Int) raises:
@@ -100,7 +92,7 @@ fn run_matmul_naive(M: Int, N: Int, K: Int) raises:
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )
@@ -141,7 +133,7 @@ fn run_matmul_naive(M: Int, N: Int, K: Int) raises:
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )
@@ -154,7 +146,7 @@ fn run_matmul_naive(M: Int, N: Int, K: Int) raises:
     for i in range(M * N):
         var out_val = c_host.load(i)
         var out_ref = c_host_n.load(i).cast[DType.bfloat16]()
-        testing.assert_true(math.isclose(out_val, out_ref))
+        assert_true(math.isclose(out_val, out_ref))
 
     _free(a_device)
     _free(b_device)
@@ -266,7 +258,7 @@ fn run_matmul[
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )
@@ -282,7 +274,7 @@ fn run_matmul[
         if debug:
             if not math.isclose[type, 1](out_val, out_ref, rtol=rtol):
                 print(i, out_val, out_ref)
-        testing.assert_true(math.isclose[type, 1](out_val, out_ref, rtol=rtol))
+        assert_true(math.isclose[type, 1](out_val, out_ref, rtol=rtol))
 
     _free(a_device)
     _free(b_device)
@@ -404,7 +396,7 @@ fn run_batched_matmul(B: Int, M: Int, N: Int, K: Int) raises:
     for i in range(B * M * N):
         var out_val = c_host.load(i)
         var out_ref = c_host_n.load(i).cast[DType.bfloat16]()
-        testing.assert_true(math.isclose(out_val, out_ref, rtol=1e-02))
+        assert_true(math.isclose(out_val, out_ref, rtol=1e-02))
 
     _free(a_device)
     _free(b_device)

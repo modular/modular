@@ -13,16 +13,13 @@ from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 
 from buffer import NDBuffer, DimList
 
-from gpu.id import lane_id, BlockDim, BlockIdx, ThreadIdx
+from gpu.id import BlockIdx, ThreadIdx
 from gpu.memory import AddressSpace
 from gpu.sync import barrier
 from gpu import WARP_SIZE
 from gpu.host.event import time_function
 
-from gpu.device_print import _printf
-
-from utils.inlined_string import _FixedString
-from math import div_ceil, isclose
+from math import ceildiv, isclose
 from testing import assert_almost_equal
 
 
@@ -37,7 +34,6 @@ from gpu.host.memory import (
 )
 
 from utils import Index
-from builtin.io import _print_fmt
 
 from sys import argv
 
@@ -99,7 +95,7 @@ fn gemm_kernel[
 
     alias warp_layout = Layout.row_major(8, 4)
 
-    for k_i in range(div_ceil(K, BK)):
+    for k_i in range(ceildiv(K, BK)):
         var a_tile_dram = mat_a.tile[BM, BK]((BlockIdx.y(), k_i))
         var a_tile_sram_local = a_tile_sram.distribute[
             Layout.row_major(NUM_THREADS // BK, BK)
@@ -218,7 +214,7 @@ fn test_gemm_kernel_dynamic() raises:
         mat_c,
         mat_a,
         mat_b,
-        grid_dim=(div_ceil(N, BN), div_ceil(M, BM)),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
     synchronize()
@@ -241,7 +237,7 @@ fn test_gemm_kernel_dynamic() raises:
         M,
         N,
         K,
-        grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM), 1),
+        grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM), 1),
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
     synchronize()
@@ -263,7 +259,7 @@ fn test_gemm_kernel_dynamic() raises:
                     mat_c,
                     mat_a,
                     mat_b,
-                    grid_dim=(div_ceil(N, BN), div_ceil(M, BM)),
+                    grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                     block_dim=(NUM_THREADS),
                     stream=stream,
                 )

@@ -7,19 +7,18 @@
 # TODO(#31429): Restore `--debug-level full` here
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 
 from buffer import NDBuffer
-from buffer.list import DimList
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from memory import memset_zero, stack_allocation
+from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from tensor import Tensor
 
@@ -114,7 +113,7 @@ fn run_stencil1d[smem: Bool]() raises:
             coeff0,
             coeff1,
             coeff2,
-            grid_dim=(div_ceil(m, BLOCK_DIM)),
+            grid_dim=(ceildiv(m, BLOCK_DIM)),
             block_dim=(BLOCK_DIM),
             stream=stream,
         )

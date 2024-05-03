@@ -6,22 +6,11 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from math import div_ceil, isclose
-from random import random_si64, seed
+from math import ceildiv, isclose
+from random import random_si64
 
-from buffer import NDBuffer
-from buffer.list import DimList
-from gpu import (
-    WARP_SIZE,
-    BlockDim,
-    BlockIdx,
-    GridDim,
-    ThreadIdx,
-    barrier,
-    lane_id,
-)
-from gpu.host import Context, Dim, Function, Stream, synchronize
-from gpu.host.event import time_function
+from gpu import WARP_SIZE, ThreadIdx, barrier, lane_id
+from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
@@ -29,15 +18,13 @@ from gpu.host.memory import (
     _malloc,
 )
 from gpu.mma import mma, ld_matrix
-from gpu.mma_util import load_matrix_a, load_matrix_b, store_matrix_d
-from gpu.sync import syncwarp
-from LinAlg.MatmulGPU import matmul_kernel, matmul_kernel_naive
-from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer, bitcast
+from gpu.mma_util import store_matrix_d
+from LinAlg.MatmulGPU import matmul_kernel_naive
+from memory import stack_allocation
+from memory.unsafe import DTypePointer
 from gpu.memory import AddressSpace
 
-from utils.index import Index
-from testing import *
+from testing import assert_true
 
 
 fn test_ldmatrix(
@@ -189,7 +176,7 @@ fn check_ldmatrix(
             M,
             N,
             K,
-            grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
             stream=stream,
         )
@@ -201,7 +188,7 @@ fn check_ldmatrix(
     for i in range(M * N):
         var out_val = c_host.load(i)
         var out_ref = c_host_ref.load(i)
-        testing.assert_true(math.isclose(out_val, out_ref))
+        assert_true(isclose(out_val, out_ref))
 
     _free(a_device)
     _free(b_device)

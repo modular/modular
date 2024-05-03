@@ -7,26 +7,22 @@
 # TODO (#33518): -t flag is required right now because the kernel assumes C is zeroed
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 
 from benchmark import Bench, Bencher, BenchId
 from benchmark._cuda import time_async_cuda_kernel
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Dim, Function, Stream, synchronize
-from gpu.host.event import time_function
+from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx
+from gpu.host import Context, Function, Stream
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from gpu.memory import AddressSpace
 from LinAlg.MatmulGPU import sgemm_warp_tiling_kernel
-from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer, bitcast
-from tensor import Tensor
+from memory.unsafe import DTypePointer
 
 from utils.index import Index
 
@@ -212,7 +208,7 @@ fn bench_matmuls(inout m: Bench) raises:
                 b_buffer,
                 Scalar[DType.float32](1),
                 Scalar[DType.float32](0),
-                grid_dim=(div_ceil(N, K10_BN), div_ceil(M, K10_BM)),
+                grid_dim=(ceildiv(N, K10_BN), ceildiv(M, K10_BM)),
                 block_dim=(K10_NUM_THREADS,),
                 stream=stream,
             )
@@ -245,7 +241,7 @@ fn bench_matmuls(inout m: Bench) raises:
                 M,
                 N,
                 K,
-                grid_dim=(div_ceil(M, BLOCK_DIM), div_ceil(N, BLOCK_DIM)),
+                grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM, BLOCK_DIM),
                 stream=stream,
             )
