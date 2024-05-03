@@ -33,8 +33,8 @@ Foo[Int]().foo()
 @register_passable
 struct \
   Bar:
-  fn __init__() -> Self:
-    return Self{}
+  fn __init__(inout self):
+    return
   fn bar(self):
     print("called bar")
 
