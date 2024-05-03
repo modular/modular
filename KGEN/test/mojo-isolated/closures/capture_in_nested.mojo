@@ -12,7 +12,7 @@ fn use(x: int):
 
 # CHECK-LABEL: lit.func @"function
 fn function():
-    # CHECK: call {{.*}}_CI_{{.*}}__init__{{.*}}(%anonymous2A)
+    # CHECK: materialize: !escaping{{.*}} = <{}>
     fn closure_with_loop(x: int) escaping:
         if __mlir_attr.true:
             var t = x

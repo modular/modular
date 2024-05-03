@@ -165,17 +165,12 @@ fn if_try(p: Bool):
     # CHECK-NEXT:   %e = lit.var.decl {{.*}} !lit.ref<!Error,
     # CHECK-NEXT:   lit.try %e : {{.*}} {
     # CHECK-NEXT:     %b = lit.var.decl "b"  var
-# FIXME: The int ctor should be inlined.
-# HECK-NEXT:     kgen.param.constant: !Int = <{1}>
-# CHECK: lit.call {{.*}}@Int::@"__init__
-# CHECK: lit.load.consume
+    # CHECK-NEXT:     kgen.param.constant: !Int = <{1}>
     # CHECK-NEXT:     lit.ref.store
     # CHECK-NEXT:     lit.try.yield
     # CHECK-NEXT:   } except {
     # CHECK-NEXT:     %c = lit.var.decl "c"
-# FIXME: The int ctor should be inlined.
-# HECK-NEXT:     kgen.param.constant: !Int = <{2}>
-# CHECK: lit.load.consume
+    # CHECK-NEXT:     kgen.param.constant: !Int = <{2}>
     # CHECK-NEXT:     lit.ref.store
     # CHECK-NEXT:     lit.try.yield
     # CHECK-NEXT:   } else {
@@ -186,9 +181,7 @@ fn if_try(p: Bool):
     # CHECK:        hlcf.yield
     # CHECK-NEXT: } else {
     # CHECK-NEXT:   %d = lit.var.decl "d"
-# FIXME: The int ctor should be inlined.
-# HECK-NEXT:   kgen.param.constant: !Int = <{3}>
-# CHECK: lit.load.consume
+    # CHECK-NEXT:   kgen.param.constant: !Int = <{3}>
     # CHECK-NEXT:   lit.ref.store
     # CHECK-NEXT:   hlcf.yield
     if p:

@@ -50,7 +50,7 @@ fn metatypes():
     # CHECK: lit.alias.decl [[T:\*"T.*]]: !mt_Thing = <!Thing>
     alias T = Thing
     # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
-    # CHECK: lit.call {{.*}}__init__{{.*}}([[TMP]])
+    # CHECK: store {{.*}}, [[TMP]]
     # CHECK: [[VAL:%.*]] = lit.ref.load [[TMP]]
     # CHECK: call {{.*}}@Thing::@"foo({{.*}})"([[VAL]])
     T().foo()

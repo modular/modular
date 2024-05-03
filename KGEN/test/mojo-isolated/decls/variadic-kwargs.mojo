@@ -68,7 +68,8 @@ fn test_variadic_kwargs_param_inference():
     var s = MemOnly()
 
     # CHECK: %[[M:.*]] = lit.var.decl "anonymous*" synth : !lit.ref<!MemOnly,
-    # CHECK-NEXT: lit.call {{.*}}@MemOnly::@"__init__{{.*}}(%[[M]])
+    # CHECK: %[[VALUE:.*]] = kgen.param.materialize: !MemOnly = <{}>
+    # CHECK; store %[[VALUE]], %[[M]]
 
     # CHECK: %[[DICT_VAR:.*]] = lit.var.decl
     # CHECK-SAME: @OwnedKwargsDict<:!CollectionElement #[[MEM_ONLY]]>

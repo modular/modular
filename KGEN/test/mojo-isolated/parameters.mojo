@@ -384,12 +384,29 @@ struct InitSelfParam[x: InitSelfCtor]:
     pass
 
 
+@value
+struct IntBox:
+    var x: Int
+
+
+@always_inline
+fn intbox_memory_result(x: Int) -> IntBox:
+    return x
+
+
 # CHECK-LABEL: lit.func @"interpret_initself_ctor
 # CHECK-SAME: %arg: !lit.declref<#InitSelfParam <:!InitSelfCtor {x: !Int = {42}}>>
 fn interpret_initself_ctor(arg: InitSelfParam[InitSelfCtor(42)]):
     # CHECK-NEXT: !lit.signature<() -> !lit.declref<#InitSelfParam <:!InitSelfCtor {x: !Int = {3}}>>>
     alias refined_fn = refine_memory_only_results[1, 2]
-    pass
+
+    # CHECK: [[CST:%.*]] = kgen.param.constant: !InitSelfCtor = <{x: !Int = {42}}>
+    # CHECK-NEXT: store [[CST]], %inlined_initself_call
+    var inlined_initself_call = InitSelfCtor(42)
+
+    # CHECK: [[CST:%.*]] = kgen.param.materialize: !IntBox = <{x: !Int = {24}}>
+    # CHECK-NEXT: store [[CST]], %inlined_byrefresult_call
+    var inlined_byrefresult_call = intbox_memory_result(24)
 
 
 fn refine_memory_only_results[a: InitSelfCtor, b: InitSelfCtor]() -> InitSelfParam[a + b]:
