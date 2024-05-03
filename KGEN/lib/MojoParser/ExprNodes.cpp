@@ -494,8 +494,10 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       assert(scopeToInsert && "not in a def?");
     }
 
-    emitter.getDeclResolver().addFullyResolvedDecl(
+    ASTDecl &varASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), scopeToInsert);
+    emitter.shared.notifyListenerOnVariableDecl(varASTDecl, getLoc());
+
     return emitter.emitResult(MLValue(varDecl), this, dest);
   }
 

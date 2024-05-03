@@ -187,11 +187,11 @@ struct StmtParser : public ParserBase {
     DeclIRValue value;
     SMLoc loc;
     StringRef name;
-    void (*astDeclCallback)(ASTDecl &decl);
+    function_ref<void(ASTDecl &)> astDeclCallback;
     ScopeDecl(DeclIRValue value, SMLoc loc, StringRef name)
         : value(value), loc(loc), name(name), astDeclCallback(nullptr) {}
     ScopeDecl(DeclIRValue value, SMLoc loc, StringRef name,
-              void (*astDeclCallback)(ASTDecl &decl))
+              function_ref<void(ASTDecl &)> astDeclCallback)
         : value(value), loc(loc), name(name), astDeclCallback(astDeclCallback) {
     }
   };
@@ -1002,6 +1002,9 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 
   VarDeclOp varDeclOp = getEmitter().emitVarDecl(target, getUnresolvedType(),
                                                  forLoc, VarDeclKind::Implicit);
+  auto notifyVarDecl = [&](ASTDecl &decl) {
+    getEmitter().shared.notifyListenerOnVariableDecl(decl, targetLoc);
+  };
 
   // If there is a failure before we parse the for loop body, we still
   // want to call the parser on it so that it builds an ASTDecl node
@@ -1011,8 +1014,10 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   // header.
   auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
     std::ignore = parseLocalScopeSuite(
-        curIndent, ScopeDecl{&*varDeclOp, targetLoc, target,
-                             [](ASTDecl &d) { d.setErroneous(); }});
+        curIndent, ScopeDecl{&*varDeclOp, targetLoc, target, [&](ASTDecl &d) {
+                               notifyVarDecl(d);
+                               d.setErroneous();
+                             }});
   });
 
   // retrieve the iterator object from the sequence expression
@@ -1075,8 +1080,8 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return {};
 
   avoidDroppingDeclOnFail.release();
-  if (failed(parseLocalScopeSuite(curIndent,
-                                  ScopeDecl{&*varDeclOp, targetLoc, target})))
+  if (failed(parseLocalScopeSuite(
+          curIndent, ScopeDecl{&*varDeclOp, targetLoc, target, notifyVarDecl})))
     return failure();
   builder.create<LIT::LoopContinueOp>(forLoc);
 
@@ -1358,6 +1363,8 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
         targetNode->getLoc(), curDeclScope);
     if (!enterResult)
       targetDeclResolved.setErroneous();
+    shared.notifyListenerOnVariableDecl(targetDeclResolved,
+                                        targetNode->getIdentifierLoc());
   }
 
   // Lookup the error type and emit a vardecl for the error.
