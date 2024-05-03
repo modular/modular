@@ -4,15 +4,12 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math import div_ceil
+from math import ceildiv
 
 from register import *
 from buffer import NDBuffer
 from buffer.list import DimList
-from buffer.buffer import (
-    _MAX_RANK,
-)
-from tensor import TensorSpec, TensorShape
+from tensor import TensorSpec
 from MOGGIntList import IntList
 from extensibility import Tensor as ExtensibilityTensor
 
@@ -160,7 +157,7 @@ fn mip_div(numerator: Int, denominator: Int) -> Int:
 @export
 fn mip_div_ceil(numerator: Int, denominator: Int) -> Int:
     debug_assert(denominator != 0, "mip.div.ceil divide by zero")
-    return div_ceil(numerator, denominator)
+    return ceildiv(numerator, denominator)
 
 
 @mogg_register("mip.cmp.eq")

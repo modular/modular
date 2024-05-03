@@ -7,7 +7,7 @@
 from collections.vector import InlinedFixedVector
 from math import (
     cos,
-    div_ceil,
+    ceildiv,
     erf,
     exp,
     fma,
@@ -4313,7 +4313,7 @@ fn quantize_Q4sym_g8_shape_func[
 ](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     new_shape[rank - 1] = (
-        div_ceil(new_shape[rank - 1], 8) * sizeof[Q4sym[8, type]]()
+        ceildiv(new_shape[rank - 1], 8) * sizeof[Q4sym[8, type]]()
     )
     return new_shape
 
@@ -4359,7 +4359,7 @@ fn quantize_Q4sym_g16_shape_func[
 ](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     new_shape[rank - 1] = (
-        div_ceil(new_shape[rank - 1], 16) * sizeof[Q4sym[16, type]]()
+        ceildiv(new_shape[rank - 1], 16) * sizeof[Q4sym[16, type]]()
     )
     return new_shape
 
@@ -4405,7 +4405,7 @@ fn quantize_Q4sym_g32_shape_func[
 ](data: NDBuffer[type, rank],) -> StaticIntTuple[rank]:
     var new_shape = data.get_shape()
     new_shape[rank - 1] = (
-        div_ceil(new_shape[rank - 1], 32) * sizeof[Q4sym[32, type]]()
+        ceildiv(new_shape[rank - 1], 32) * sizeof[Q4sym[32, type]]()
     )
     return new_shape
 
