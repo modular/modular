@@ -38,7 +38,7 @@ struct UnsafeRefCounter[type: DType]:
     under the hood.
     """
 
-    var _underlying_value: Pointer[Scalar[type]]
+    var _underlying_value: UnsafePointer[Scalar[type]]
 
     fn deallocate(owned self):
         self._underlying_value.free()
@@ -50,4 +50,4 @@ struct UnsafeRefCounter[type: DType]:
         return Atomic[type]._fetch_add(self._underlying_value, -1)
 
     fn _value(inout self) -> Scalar[type]:
-        return self._underlying_value.load()
+        return Atomic[type]._fetch_add(self._underlying_value, 0)
