@@ -737,6 +737,50 @@ LogicalResult IntLiteralType::printValue(AsmPrinter &p, TypedAttr value) const {
   return success();
 }
 
+std::optional<int64_t>
+IntLiteralType::getTypeSize(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerSize();
+}
+
+std::optional<int64_t>
+IntLiteralType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
+}
+
+ErrorOrSuccess IntLiteralType::writeTo(TypedAttr value, int64_t addr,
+                                       InterpreterState &state) const {
+  return writeSymbolicAttribute(*this, value, addr, state);
+}
+
+ErrorOr<TypedAttr> IntLiteralType::readFrom(int64_t addr,
+                                            InterpreterState &state) const {
+  return readSymbolicAttribute(*this, addr, state);
+}
+
+//===----------------------------------------------------------------------===//
+// FloatLiteralType
+//===----------------------------------------------------------------------===//
+
+std::optional<int64_t>
+FloatLiteralType::getTypeSize(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerSize();
+}
+
+std::optional<int64_t>
+FloatLiteralType::getTypeAlign(TargetInfoAttr target) const {
+  return target.getDataLayout().getPointerABIAlign();
+}
+
+ErrorOrSuccess FloatLiteralType::writeTo(TypedAttr value, int64_t addr,
+                                         InterpreterState &state) const {
+  return writeSymbolicAttribute(*this, value, addr, state);
+}
+
+ErrorOr<TypedAttr> FloatLiteralType::readFrom(int64_t addr,
+                                              InterpreterState &state) const {
+  return readSymbolicAttribute(*this, addr, state);
+}
+
 //===----------------------------------------------------------------------===//
 // StringType
 //===----------------------------------------------------------------------===//
