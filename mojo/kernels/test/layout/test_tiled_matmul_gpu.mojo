@@ -15,7 +15,6 @@ from gpu.sync import barrier
 from layout import *
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.layout_tensor import outer_product_acc
-from gpu.device_print import _printf
 from buffer import NDBuffer
 from buffer.list import DimList
 
