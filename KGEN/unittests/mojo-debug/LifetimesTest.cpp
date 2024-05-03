@@ -15,7 +15,7 @@ TEST(LifetimesTest, testInlinedUser) {
   /// correct.
   StopContext ctx = buildAndLaunch("eager_destruction_inlined_user.mojo");
   SBValue foo = ctx.frame.FindVariable("foo");
-  EXPECT_EQ(foo.GetSummary(), std::string("\"42\""));
+  EXPECT_STREQ(foo.GetSummary(), R"("42")");
 }
 
 static void assertVarNotAvailable(StopContext &ctx, StringRef varName) {
@@ -30,7 +30,7 @@ TEST(LifetimesTest, testFullEagerDestruction) {
   std::optional<StopContext> ctx =
       buildAndLaunch("full_eager_destruction.mojo");
   SBValue text = ctx->frame.FindVariable("text");
-  EXPECT_EQ(text.GetSummary(), std::string("\"hello\""));
+  EXPECT_STREQ(text.GetSummary(), R"("hello")");
   assertVarNotAvailable(*ctx, "number");
   assertVarNotAvailable(*ctx, "simd");
 
@@ -58,33 +58,33 @@ TEST(LifetimesTest, testFullEagerDestruction) {
   // `text_moved` should be alive when breaking on the call.
   ctx.emplace(ctx->resume());
   SBValue text_moved = ctx->frame.FindVariable("text_moved");
-  EXPECT_EQ(text_moved.GetSummary(), std::string("\"hello\""));
+  EXPECT_STREQ(text_moved.GetSummary(), R"("hello")");
 
   // This breakpoint is inside `take_string`.  `s` should be alive when breaking
   // on the print call.
   ctx.emplace(ctx->resume());
   SBValue s = ctx->frame.FindVariable("s");
-  EXPECT_EQ(s.GetSummary(), std::string("\"hello\""));
+  EXPECT_STREQ(s.GetSummary(), R"("hello")");
 
   // `text_moved` should be dead now.
   // `text_copied` should be alive when breaking on the call.
   ctx.emplace(ctx->resume());
   assertVarNotAvailable(*ctx, "text_moved");
   SBValue text_copied = ctx->frame.FindVariable("text_copied");
-  EXPECT_EQ(text_copied.GetSummary(), std::string("\"hello\""));
+  EXPECT_STREQ(text_copied.GetSummary(), R"("hello")");
 
   // This breakpoint is inside `take_string`. `s` should be alive when breaking
   // on the print call.
   ctx.emplace(ctx->resume());
   s = ctx->frame.FindVariable("s");
-  EXPECT_EQ(s.GetSummary(), std::string("\"hello\""));
+  EXPECT_STREQ(s.GetSummary(), R"("hello")");
 
   // `text_before` should be dead after the move.
   ctx.emplace(ctx->resume());
   assertVarNotAvailable(*ctx, "text_copied");
   assertVarNotAvailable(*ctx, "text_before");
   SBValue text_after = ctx->frame.FindVariable("text_after");
-  EXPECT_EQ(text_after.GetSummary(), std::string("\"hello\""));
+  EXPECT_STREQ(text_after.GetSummary(), R"("hello")");
 
   // `text_after` should be dead now.
   // `number2` should be alive when breaking on the call.

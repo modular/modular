@@ -22,5 +22,5 @@ TEST(SourceNamesTest, testFunctionBeforeStructParsing) {
 
   StopContext ctx2 = ctx.stepOver();
   SBValue p1 = ctx2.frame.FindVariable("p1");
-  EXPECT_EQ(p1.GetTypeName(), std::string("!lit.declref<@point::@Point>"));
+  EXPECT_STREQ(p1.GetTypeName(), "!lit.declref<@point::@Point>");
 }

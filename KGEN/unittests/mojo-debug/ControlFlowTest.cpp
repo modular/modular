@@ -40,9 +40,9 @@ TEST(ControlFlowTest, testStepStraightLine) {
 
 static void assertSI64(StopContext &ctx, StringRef name, int64_t expected) {
   SBValue var = ctx.frame.FindVariable(name.data());
-  EXPECT_EQ(var.GetValue(), std::to_string(expected));
-  EXPECT_EQ(var.GetTypeName(), std::string("si64"));
-  EXPECT_EQ(var.GetDisplayTypeName(), std::string("si64"));
+  EXPECT_STREQ(var.GetValue(), std::to_string(expected).c_str());
+  EXPECT_STREQ(var.GetTypeName(), "si64");
+  EXPECT_STREQ(var.GetDisplayTypeName(), "si64");
   EXPECT_TRUE(var.GetType().GetTypeFlags() | lldb::eTypeIsInteger);
   EXPECT_EQ(var.GetValueAsSigned(expected - 1), expected);
 }

@@ -29,9 +29,9 @@ TEST(StringsTest, testStrings) {
   // the other hand, String, being parsed by a data formatter, provides the
   // underlying string as a Summary, following C++'s convention in LLDB.
 
-  EXPECT_EQ(literal.GetValue(), std::string("\"string_literal\""));
-  EXPECT_EQ(s1.GetSummary(), std::string("\"let_string\""));
+  EXPECT_STREQ(literal.GetValue(), "\"string_literal\"");
+  EXPECT_STREQ(s1.GetSummary(), "\"let_string\"");
   EXPECT_TRUE(StringRef(s2.GetSummary()).contains("\"012345678910111213141"));
-  EXPECT_EQ(s3.GetSummary(), std::string("\"\""));
+  EXPECT_STREQ(s3.GetSummary(), "\"\"");
   EXPECT_TRUE(StringRef(s4.GetSummary()).contains("\"012345678910111213141"));
 }
