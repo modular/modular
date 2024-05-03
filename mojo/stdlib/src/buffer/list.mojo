@@ -139,12 +139,12 @@ struct Dim(Intable, Stringable, Boolable):
 
     @always_inline
     fn __floordiv__(self, rhs: Dim) -> Dim:
-        """Divide two dimensions and round towards negative infinite.
+        """Divide by the given dimension and round towards negative infinity.
 
         If either are unknown, the result is unknown as well.
 
         Args:
-            rhs: The other dimension.
+            rhs: The divisor dimension.
 
         Returns:
             The floor division of the two dimensions.
@@ -152,6 +152,21 @@ struct Dim(Intable, Stringable, Boolable):
         if not self or not rhs:
             return Dim()
         return Dim(self.get() // rhs.get())
+
+    @always_inline
+    fn __rfloordiv__(self, rhs: Dim) -> Dim:
+        """Divide the given argument by self and round towards negative
+        infinity.
+
+        If either are unknown, the result is unknown as well.
+
+        Args:
+            rhs: The dimension to divide by this Dim.
+
+        Returns:
+            The floor of the argument divided by self.
+        """
+        return rhs // self
 
     @always_inline("nodebug")
     fn __int__(self) -> Int:
