@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CODialect/COOps.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
@@ -21,6 +22,7 @@
 
 using namespace M;
 using namespace KGEN;
+using namespace CO;
 using namespace mlir::LLVM;
 
 //===----------------------------------------------------------------------===//
@@ -102,7 +104,7 @@ static LogicalResult tweakSpilledAllocas(Operation *func,
       // Deactivate the alloca.
       allocas.erase(it);
 
-    } else if (auto await = dyn_cast<POP::CoroutineAwaitOp>(op)) {
+    } else if (auto await = dyn_cast<CoroutineAwaitOp>(op)) {
       // All active allocas are spilled.
       for (auto &[alloca, info] : allocas) {
         // If the lifetime start marker of the alloca has been encountered, the
@@ -164,7 +166,7 @@ struct LowerKGENCoroutinesAsyncPass
 
 static LogicalResult lowerCoroutinePromiseAsync(LLVMBuilder &b,
                                                 TypeAttrCache &cache,
-                                                POP::CoroutinePromiseOp op) {
+                                                CoroutinePromiseOp op) {
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
@@ -186,7 +188,7 @@ static LogicalResult lowerCoroutinePromiseAsync(LLVMBuilder &b,
 }
 
 static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
-                                      POP::CoroutineResumeOp op) {
+                                      CoroutineResumeOp op) {
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
@@ -198,7 +200,7 @@ static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
 }
 
 static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
-                                       POP::CoroutineDestroyOp op) {
+                                       CoroutineDestroyOp op) {
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
@@ -538,7 +540,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
 static LogicalResult
 lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
                          CoroutineInfo &coro, TypeAttrCache &cache,
-                         LLVMFuncOp coroProjFn, POP::CoroutineAwaitOp op,
+                         LLVMFuncOp coroProjFn, CoroutineAwaitOp op,
                          unsigned index) {
   b.setLoc(op.getLoc());
 
@@ -576,7 +578,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       LLVMFunctionType::get(LLVMVoidType::get(ctx), captureTypes),
       Linkage::Internal);
   symtab.insert(suspendFn, coro.asyncFn->getIterator());
-  cast<POP::CoroutineAwaitEndOp>(awaitBody.front().getTerminator()).erase();
+  cast<CoroutineAwaitEndOp>(awaitBody.front().getTerminator()).erase();
   suspendFn.getBody().takeBody(awaitBody);
 
   // If possible, we need to add a subprogram scope to the new function.
@@ -662,22 +664,22 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
                        function_ref<LLVMFuncOp()> getCoroEndFn,
                        function_ref<LLVMFuncOp()> getCoroProjFn) {
   // Collect all the relevant ops.
-  SmallVector<POP::CoroutineHandleOp> handles;
-  SmallVector<POP::CoroutineOpaqueHandleOp> opaques;
-  SmallVector<POP::CoroutineAwaitOp> awaits;
+  SmallVector<CoroutineHandleOp> handles;
+  SmallVector<CoroutineOpaqueHandleOp> opaques;
+  SmallVector<CoroutineAwaitOp> awaits;
   WalkResult result = func.walk([&](Operation *op) {
-    if (auto handle = dyn_cast<POP::CoroutineHandleOp>(op)) {
+    if (auto handle = dyn_cast<CoroutineHandleOp>(op)) {
       handles.push_back(handle);
-    } else if (auto opaque = dyn_cast<POP::CoroutineOpaqueHandleOp>(op)) {
+    } else if (auto opaque = dyn_cast<CoroutineOpaqueHandleOp>(op)) {
       opaques.push_back(opaque);
-    } else if (auto await = dyn_cast<POP::CoroutineAwaitOp>(op)) {
+    } else if (auto await = dyn_cast<CoroutineAwaitOp>(op)) {
       awaits.push_back(await);
-    } else if (auto promise = dyn_cast<POP::CoroutinePromiseOp>(op)) {
+    } else if (auto promise = dyn_cast<CoroutinePromiseOp>(op)) {
       if (failed(lowerCoroutinePromiseAsync(b, cache, promise)))
         return WalkResult::interrupt();
-    } else if (auto resume = dyn_cast<POP::CoroutineResumeOp>(op)) {
+    } else if (auto resume = dyn_cast<CoroutineResumeOp>(op)) {
       lowerCoroutineResumeAsync(b, cache, resume);
-    } else if (auto destroy = dyn_cast<POP::CoroutineDestroyOp>(op)) {
+    } else if (auto destroy = dyn_cast<CoroutineDestroyOp>(op)) {
       lowerCoroutineDestroyAsync(b, cache, destroy);
     }
     return WalkResult::advance();
@@ -685,11 +687,11 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
   if (result.wasInterrupted())
     return failure();
 
-  // The presence of `pop.coroutine.handle` inside a function indicates
+  // The presence of `co.handle` inside a function indicates
   // that it is a coroutine.
   if (handles.empty()) {
     // Replace opaque handles with a null pointer.
-    for (POP::CoroutineOpaqueHandleOp opaque : opaques) {
+    for (CoroutineOpaqueHandleOp opaque : opaques) {
       b.setLoc(opaque.getLoc());
       b.setInsertionPoint(opaque);
       Value cstNullPtr = b.create<IntToPtrOp>(
@@ -698,7 +700,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
       opaque.erase();
     }
 
-    // If we saw any `pop.coroutine.await` operations not inside a coroutine,
+    // If we saw any `co.await` operations not inside a coroutine,
     // that likely means an `__await__` function was not marked as
     // `always_inline`.
     if (!awaits.empty()) {
@@ -718,7 +720,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     return failure();
 
   // The coroutine handle is now the first argument of the coroutine function.
-  for (POP::CoroutineHandleOp op : handles) {
+  for (CoroutineHandleOp op : handles) {
     b.setLoc(op.getLoc());
     b.setInsertionPoint(op);
     Value contextPtr = b.create<GEPOp>(
@@ -727,7 +729,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     op.replaceAllUsesWith(contextPtr);
     op.erase();
   }
-  for (POP::CoroutineOpaqueHandleOp op : opaques) {
+  for (CoroutineOpaqueHandleOp op : opaques) {
     b.setLoc(op.getLoc());
     b.setInsertionPoint(op);
     Value contextPtr = b.create<GEPOp>(

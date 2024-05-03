@@ -7,6 +7,10 @@
 #ifndef KGEN_CODIALECT_COOPS_H
 #define KGEN_CODIALECT_COOPS_H
 
+#include "KGEN/CODialect/COTypes.h"
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/Interfaces/InferTypeOpInterface.h"
+
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//

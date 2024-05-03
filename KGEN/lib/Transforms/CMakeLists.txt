@@ -34,6 +34,7 @@ add_modular_library(KGENTransforms
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
+  CODialect
   KGENTransformUtils
   HLCFAnalysis
   KGENDialect

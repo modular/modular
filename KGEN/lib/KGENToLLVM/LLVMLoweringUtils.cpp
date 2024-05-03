@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LLVMLoweringUtils.h"
+#include "KGEN/CODialect/COOps.h"
 #include "KGEN/KGENDialect/KGENAttrs.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/POPDialect/POPAttrs.h"

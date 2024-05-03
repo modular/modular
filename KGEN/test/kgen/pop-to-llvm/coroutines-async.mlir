@@ -6,7 +6,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 llvm.func @coro_promise() {
   %0 = "make_handle"() : () -> !co.routine<() -> (i32, i64)>
   // CHECK: %2 = llvm.getelementptr inbounds %1[24] : (!llvm.ptr) -> !llvm.ptr, i8
-  %1 = pop.coroutine.promise %0 : <() -> (i32, i64)>
+  %1 = co.promise %0 : <() -> (i32, i64)>
   // CHECK: "use"(%2)
   "use"(%1) : (!kgen.pointer<struct<(i32, i64)>>) -> ()
   llvm.return
@@ -19,7 +19,7 @@ llvm.func @coro_resume() {
   // CECK-NEXT: llvm.call [[FUNC]]([[HND]])
   // CHECK: llvm.load
   // CHECK-NEXT: llvm.call
-  pop.coroutine.resume %0 : !co.routine<() -> (i32, i64)>
+  co.resume %0 : !co.routine<() -> (i32, i64)>
   llvm.return
 }
 
@@ -27,7 +27,7 @@ llvm.func @coro_resume() {
 llvm.func @coro_destroy() {
   %0 = "make_handle"() : () -> !co.routine<() -> (i32, i64)>
   // CHECK: pop.aligned_free {{.*}} : <i8>
-  pop.coroutine.destroy %0 : !co.routine<() -> (i32, i64)>
+  co.destroy %0 : !co.routine<() -> (i32, i64)>
   llvm.return
 }
 
@@ -66,7 +66,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
   // CHECK: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK: %[[TOK:.*]] = llvm.call_intrinsic "llvm.coro.id.async"(%[[C32]], %[[C1]], %[[C0]], %[[AFP_CAST]])
   // CHECK: %[[HDL:.*]] = llvm.intr.coro.begin %[[TOK]]
-  %hdl = pop.coroutine.handle : <() -> (i64)>
+  %hdl = co.handle : <() -> (i64)>
   // CHECK: %[[BASE_CTXT_HDL:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
   // CHECK-NEXT: unrealized_conversion_cast %[[BASE_CTXT_HDL]]
   %0 = builtin.unrealized_conversion_cast %hdl : !co.routine<() -> (i64)> to !llvm.ptr
@@ -87,9 +87,9 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
   // CHECK: %[[SUSPEND_FN:.*]] = llvm.mlir.addressof @async_fn_af_suspend
   // CHECK-NEXT: external_call @llvm.coro.suspend.async.sl_p0p0p0s
   // CHECK-SAME: (%[[C0]], %[[RESUME_FN]], %[[PROJ_FN_OPAQUE]], %[[SUSPEND_FN]], %[[CAPTURED]])
-  pop.coroutine.await {
+  co.await {
     "do_something"(%idx1) : (index) -> ()
-    pop.coroutine.await.end
+    co.await.end
   } loc(callsite("foo.mlir":10:5 at "bar.mlir":12:7))
   // CHECK: %[[BASE_CTXT:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
   // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false)
@@ -160,25 +160,25 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   llvm.func internal @foo() -> !llvm.ptr {
-    %0 = pop.coroutine.handle : <() -> index> loc(#loc8)
+    %0 = co.handle : <() -> index> loc(#loc8)
     %1 = builtin.unrealized_conversion_cast %0 : !co.routine<() -> index> to !llvm.ptr loc(#loc8)
 
     // CHECK-LABEL: llvm.func internal @foo_af_suspend_0()
     // CHECK-NEXT:    %0 = llvm.mlir.constant(1 : i64) : i64 loc(#[[LOC1_INL:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP1:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP1]])
-    pop.coroutine.await {
+    co.await {
       %2 = llvm.mlir.constant(1 : i64) : i64 loc(#loc11)
-      pop.coroutine.await.end
+      co.await.end
     } loc(#loc11)
 
     // CHECK-LABEL: llvm.func internal @foo_af_suspend_1()
     // CHECK-NEXT:    %0 = llvm.mlir.constant(2 : i64) : i64 loc(#[[LOC2_INL:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP2:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP2]])
-    pop.coroutine.await {
+    co.await {
       %2 = llvm.mlir.constant(2 : i64) : i64 loc(#loc13)
-      pop.coroutine.await.end
+      co.await.end
     } loc(#loc13)
 
     llvm.return %1 : !llvm.ptr loc(#loc8)

@@ -13,6 +13,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -458,7 +459,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
       continue;
 
     // Coroutine await regions are fallthrough only.
-    if (auto await = dyn_cast<POP::CoroutineAwaitOp>(op)) {
+    if (auto await = dyn_cast<CO::CoroutineAwaitOp>(op)) {
       bool awaitRaises = false, awaitBreaks = false, awaitFallsThrough = false;
       lowerBlock(await.getBody().front(), awaitRaises, awaitBreaks,
                  awaitFallsThrough);
@@ -639,7 +640,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
 
   // If we fell off the bottom, then we have a fall-through terminator.
   assert((isa<HLCF::YieldOp, HLCF::ElifYieldOp, LIT::TryYieldOp, ParamYieldOp,
-              LIT::EndFuncOp, POP::CoroutineAwaitEndOp, LIT::LoopConditionOp,
+              LIT::EndFuncOp, CO::CoroutineAwaitEndOp, LIT::LoopConditionOp,
               LIT::LoopYieldOp>(block.back())));
   doesFallThrough = true;
 }

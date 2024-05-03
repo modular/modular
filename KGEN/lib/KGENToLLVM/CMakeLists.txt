@@ -18,6 +18,7 @@ add_modular_library(KGENToLLVM
   MLIRKGENPasses
 
   LINK_LIBS PUBLIC
+  CODialect
   DebugInfoToLLVM
   DebugInfoTransforms
   HLCFAnalysis

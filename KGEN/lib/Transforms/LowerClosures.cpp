@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CODialect/COOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
@@ -108,7 +109,7 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
                                     Operation *ret) {
   b.setLoc(ret->getLoc());
   b.setInsertionPoint(ret);
-  Value promise = b.create<CoroutinePromiseOp>(hdl);
+  Value promise = b.create<CO::CoroutinePromiseOp>(hdl);
   for (auto [idx, result] : llvm::enumerate(ret->getOperands()))
     b.create<StoreOp>(result, b.create<KGEN::StructGEPOp>(promise, idx));
 }
@@ -134,7 +135,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   // Insert the coroutine handle.
   ImplicitLocOpBuilder b(op.getLocNoInlined(),
                          OpBuilder::atBlockBegin(&body.front()));
-  Value coroHdl = b.create<CoroutineHandleOp>(op.getType());
+  Value coroHdl = b.create<CO::CoroutineHandleOp>(op.getType());
 
   // Replace all returns.
   op.walk([&](ReturnOp ret) {
@@ -265,8 +266,8 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 // lowerAsyncFunction
 //===----------------------------------------------------------------------===//
 
-/// To lower an async function, we stick a `pop.coroutine.handle` operation in
-/// it, marshall results through a `pop.coroutine.promise`, and return the
+/// To lower an async function, we stick a `co.handle` operation in
+/// it, marshall results through a `co.promise`, and return the
 /// handle directly.
 static LogicalResult lowerAsyncFunction(FuncOp func,
                                         Shared<SymbolTable &> &sharedTable,
@@ -281,7 +282,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     // function result types.
     auto coroType =
         CO::CoroutineType::get(func.getContext(), func.getResultTypes());
-    coroHdl = b.create<CoroutineHandleOp>(coroType);
+    coroHdl = b.create<CO::CoroutineHandleOp>(coroType);
 
     // Update the function result type.
     SignatureType origSig = func.getSignature();
