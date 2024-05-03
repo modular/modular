@@ -4186,9 +4186,9 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
 
     Arguments have the following shapes:
         q: BHSD
-        k: BHDS
+        k: BHSD
         v: BHSD
-        input_3_fn (k_cache): 1BHDS
+        input_3_fn (k_cache): 1BHSD
         input_4_fn (v_cache: 1BHSD
     """
     if _guard_against_gpu_target[target](ctx):
