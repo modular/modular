@@ -18,8 +18,9 @@ from algorithm.reduction import (
 from algorithm.swap import swap
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
-from LinAlg.MatmulUtils import partition_work
 from LinAlg.accumulate import _Accumulator
+from LinAlg.MatmulUtils import partition_work
+from LinAlg.transpose import transpose_inplace
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
@@ -225,10 +226,54 @@ struct _Matmul[
 
         var aligned_n = align_up(N, simd_width)
 
-        for n in range(N):
-            for k in range(K):
-                var val = input_b_fn[simd_width=1](n, k)
-                packed_ptr.store(k * aligned_n + n, val)
+        # Use a conservative SIMD width for transposing. Using a wider native
+        # SIMD width has not been observed to improve performance and causes
+        # code size to unnecessarily increase.
+        alias transpose_width = 4
+        alias tile_sizes = VariadicList[Int](transpose_width, 1)
+
+        var transpose_buffer = NDBuffer[
+            type, 2, DimList(transpose_width, transpose_width)
+        ].stack_allocation()
+
+        @parameter
+        @always_inline
+        fn process_tile[tile_n: Int, tile_k: Int](n: Int, k: Int):
+            @parameter
+            if transpose_width == tile_n == tile_k:
+                # Use an optimized path to transpose a square tile of the
+                # input tensor.
+                @unroll
+                for i in range(transpose_width):
+                    var val = input_b_fn[simd_width=transpose_width](n + i, k)
+                    transpose_buffer.store(Index(i, 0), val)
+
+                transpose_inplace(transpose_buffer)
+
+                @unroll
+                for i in range(transpose_width):
+                    var val = transpose_buffer.load[width=transpose_width](
+                        Index(i, 0)
+                    )
+                    packed_ptr.store((k + i) * aligned_n + n, val)
+
+            else:
+                # Fallback to strided loads and stores of the tensors.
+                #
+                # Note that in the common case, `K` is statically known and is
+                # a multiple of `transpose_width`, so the case to optimize for
+                # `tile_n=1` and `tile_k=transpose_width`.
+                @unroll
+                for nn in range(tile_n):
+                    var val = input_b_fn[simd_width=tile_k](n + nn, k)
+
+                    @unroll
+                    for kk in range(tile_k):
+                        packed_ptr.store(
+                            (k + kk) * aligned_n + (n + nn), val[kk]
+                        )
+
+        tile[process_tile, tile_sizes, tile_sizes](0, 0, N, K)
 
         if aligned_n != N:
             for k in range(K):
