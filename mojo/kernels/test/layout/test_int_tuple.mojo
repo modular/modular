@@ -383,6 +383,13 @@ fn test_reverse() raises:
     assert_equal(reverse(t2), IntTuple(IntTuple(7, 6, 5), 4, 3, IntTuple(2, 1)))
 
 
+fn test_depth() raises:
+    print("test_depth")
+    assert_equal(depth(IntTuple(1)), 0)
+    assert_equal(depth(IntTuple(1, 2)), 1)
+    assert_equal(depth(IntTuple(1, IntTuple(2, 3))), 2)
+
+
 def main():
     test_tuple_basic()
     test_tuple_slicing()
@@ -401,3 +408,4 @@ def main():
     test_weakly_compatible()
     test_fill_like()
     test_reverse()
+    test_depth()

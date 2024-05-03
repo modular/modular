@@ -505,3 +505,15 @@ fn reverse(src: IntTuple) -> IntTuple:
     for i in range(len(src)):
         res.append(reverse(src[len(src) - i - 1]))
     return res
+
+
+# Return the depth of an IntTuple, e.g depth((1, 2)) = 1, depth(1) = 0,
+# depth((1, (1, 2))) = 2...etc
+#
+fn depth(src: IntTuple) -> Int:
+    if is_int(src):
+        return 0
+    var res = 1
+    for elem in src:
+        res += depth(elem)
+    return res
