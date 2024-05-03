@@ -23,15 +23,10 @@ def SIMDType : DialectType<(type
   TypedAttr:$dType
 )>;
 
-def CoroutineType : DialectType<(type
-  ConcreteType<"SignatureType">:$signature
-)>;
-
 def POPDialectTypes : DialectTypes<"pop"> {
   let elems = [
     ArrayType,
-    SIMDType,
-    CoroutineType
+    SIMDType
   ];
 }
 

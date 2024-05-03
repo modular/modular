@@ -30,11 +30,15 @@ class NoneType;
 class SignatureType;
 class StringType;
 class StructType;
+
 namespace POP {
 class ArrayType;
-class CoroutineType;
 class SIMDType;
 } // namespace POP
+
+namespace CO {
+class CoroutineType;
+} // namespace CO
 
 //===----------------------------------------------------------------------===//
 // LLVMDataLayout
@@ -307,7 +311,7 @@ private:
   DebugInfo::DIType buildDebugType(KGEN::VariantType type);
   DebugInfo::DIType buildDebugType(KGEN::NoneType type);
   DebugInfo::DIType buildDebugType(POP::ArrayType type);
-  DebugInfo::DIType buildDebugType(POP::CoroutineType type);
+  DebugInfo::DIType buildDebugType(CO::CoroutineType type);
   DebugInfo::DIType buildDebugType(PackType type);
   DebugInfo::DIType buildDebugType(PointerType type);
   DebugInfo::DIType buildDebugType(POP::SIMDType type);

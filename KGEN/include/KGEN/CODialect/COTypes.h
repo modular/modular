@@ -7,7 +7,12 @@
 #ifndef KGEN_CODIALECT_COTYPES_H
 #define KGEN_CODIALECT_COTYPES_H
 
-#include "mlir/IR/Types.h"
+#include "KGEN/KGENDialect/KGENTypes.h"
+#include "Support/LLVMForwardDecls.h"
+
+namespace M::KGEN {
+class SignatureType;
+} // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

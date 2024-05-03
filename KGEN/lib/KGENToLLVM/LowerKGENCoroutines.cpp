@@ -315,7 +315,7 @@ private:
 /// and in that case we don't generate any coroutine machinery.
 static FailureOr<CoroutineInfo>
 createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
-                     POP::CoroutineType coroType, LLVMBuilder &b,
+                     CO::CoroutineType coroType, LLVMBuilder &b,
                      TypeAttrCache &cache, LLVMFuncOp coroEndFn,
                      bool noSuspend) {
   b.setLoc(func.getLoc());
@@ -711,7 +711,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     return success();
   }
 
-  POP::CoroutineType coroType = handles.front().getType();
+  CO::CoroutineType coroType = handles.front().getType();
   FailureOr<CoroutineInfo> coro = createAsyncCoroutine(
       symtab, func, coroType, b, cache, getCoroEndFn(), awaits.empty());
   if (failed(coro))

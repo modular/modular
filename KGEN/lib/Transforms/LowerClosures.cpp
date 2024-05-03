@@ -280,7 +280,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     // Create the coroutine handle. The coroutine result types are the
     // function result types.
     auto coroType =
-        CoroutineType::get(func.getContext(), func.getResultTypes());
+        CO::CoroutineType::get(func.getContext(), func.getResultTypes());
     coroHdl = b.create<CoroutineHandleOp>(coroType);
 
     // Update the function result type.
@@ -304,7 +304,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
 
       SignatureType origSig = callee.getType();
       auto coroType =
-          CoroutineType::get(op->getContext(), origSig.getResults());
+          CO::CoroutineType::get(op->getContext(), origSig.getResults());
 
       auto asyncSig = SignatureType::get(
           b.getFunctionType(origSig.getArguments(), coroType),

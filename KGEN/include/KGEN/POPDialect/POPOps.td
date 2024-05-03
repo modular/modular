@@ -11,6 +11,7 @@
 #ifndef KGEN_POPDIALECT_POPOPS_TD
 #define KGEN_POPDIALECT_POPOPS_TD
 
+include "KGEN/CODialect/COTypes.td"
 include "KGEN/KGENDialect/KGENAttrs.td"
 include "KGEN/KGENDialect/KGENInterfaces.td"
 include "KGEN/KGENDialect/KGENTypes.td"
@@ -1763,7 +1764,7 @@ def POP_CoroutineHandleOp : POPOp<"coroutine.handle"> {
     ```
   }];
 
-  let results = (outs POP_CoroutineType:$coroutine);
+  let results = (outs CoroutineType:$coroutine);
   let assemblyFormat = "attr-dict `:` type($coroutine)";
   let hasVerifier = 1;
 }
@@ -1855,7 +1856,7 @@ def POP_CoroutinePromiseOp : POPOp<"coroutine.promise",
     ```
   }];
 
-  let arguments = (ins POP_CoroutineType:$coroutine);
+  let arguments = (ins CoroutineType:$coroutine);
   let results = (outs PointerOf<KGEN_StructType>:$promise);
   let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
 }
@@ -1878,7 +1879,7 @@ def POP_CoroutineResumeOp : POPOp<"coroutine.resume"> {
     ```
   }];
 
-  let arguments = (ins AnyTypeOf<[POP_CoroutineType,
+  let arguments = (ins AnyTypeOf<[CoroutineType,
                                   OpaqueCoroutineHandle]>:$coroutine);
   let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
 }
@@ -1904,7 +1905,7 @@ def POP_CoroutineDestroyOp : POPOp<"coroutine.destroy"> {
     ```
   }];
 
-  let arguments = (ins POP_CoroutineType:$coroutine);
+  let arguments = (ins CoroutineType:$coroutine);
   let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
 }
 

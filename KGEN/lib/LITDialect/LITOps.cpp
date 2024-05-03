@@ -9,6 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITOps.h"
+#include "KGEN/CODialect/COTypes.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
@@ -1889,8 +1890,8 @@ parseAsyncCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
                               implicitLifetimes)))
     return failure();
   coroutineType =
-      POP::CoroutineType::get(p.getContext(), resultTypes,
-                              cast<SignatureType>(callee.getType()).isThrows());
+      CO::CoroutineType::get(p.getContext(), resultTypes,
+                             cast<SignatureType>(callee.getType()).isThrows());
   return success();
 }
 

@@ -13,8 +13,14 @@ include "Support/Compiler/Bytecode.td"
 // CODialect Types
 //===----------------------------------------------------------------------===//
 
+def CoroutineType : DialectType<(type
+  ConcreteType<"SignatureType">:$signature
+)>;
+
 def CODialectTypes : DialectTypes<"co"> {
-  let elems = [];
+  let elems = [
+    CoroutineType
+  ];
 }
 
 //===----------------------------------------------------------------------===//

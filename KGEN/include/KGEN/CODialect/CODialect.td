@@ -19,6 +19,9 @@ def CODialect : Dialect {
   }];
 
   let cppNamespace = "::M::KGEN::CO";
+  let useDefaultTypePrinterParser = 1;
+
+  let dependentDialects = ["KGENDialect"];
 
   let extraClassDeclaration = [{
     void registerTypes();

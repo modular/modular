@@ -2,7 +2,7 @@
 
 // Test proper handling of debug types.
 !arrayTest = !pop.array<2, array<3, array<4, simd<8, bool>>>>
-!coroutineTest = !pop.coroutine<() -> (index, index)>
+!coroutineTest = !co.routine<() -> (index, index)>
 !packTest = !kgen.pack<[index, !pop.array<5, f32>]>
 !pointerTest = !kgen.pointer<scalar<bool>>
 !voidPointerTest = !kgen.pointer<scalar<invalid>>

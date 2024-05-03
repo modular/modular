@@ -26,6 +26,7 @@ def LITDialect : Dialect {
   let dependentDialects = [
     "KGENDialect",
     "POP::POPDialect",
+    "CO::CODialect",
     "HLCF::HLCFDialect",
     "DebugInfo::DebugInfoDialect"
   ];

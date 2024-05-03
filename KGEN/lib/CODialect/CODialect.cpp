@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/CODialect/CODialect.h"
+#include "KGEN/CODialect/COTypes.h"
 #include "Support/Compiler/Bytecode.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -19,6 +20,7 @@ using namespace CO;
 namespace {
 using mlir::DialectBytecodeReader;
 using mlir::DialectBytecodeWriter;
+using mlir::get;
 
 #include "KGEN/CODialect/CODialectBytecode.cpp.inc"
 

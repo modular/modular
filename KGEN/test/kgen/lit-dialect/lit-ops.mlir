@@ -381,7 +381,7 @@ lit.func @call_async_fn() {
 }
 
 // CHECK-LABEL: lit.func @async_execute
-lit.func @async_execute() -> !pop.coroutine<() -> (i32, i64)> {
+lit.func @async_execute() -> !co.routine<() -> (i32, i64)> {
   // CHECK: [[R0:%.*]] = kgen.param.constant: i32
   %0 = kgen.param.constant: i32 = <3>
   // CHECK: %[[HDL:.*]] = lit.async.execute <() -> (i32, i64)> {
@@ -397,7 +397,7 @@ lit.func @async_execute() -> !pop.coroutine<() -> (i32, i64)> {
     kgen.unreachable
   }
   // CHECK: kgen.return %[[HDL]]
-  kgen.return %coroHdl : !pop.coroutine<() -> (i32, i64)>
+  kgen.return %coroHdl : !co.routine<() -> (i32, i64)>
 }
 
 lit.struct.decl @GiveMeDefault {
