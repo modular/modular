@@ -413,6 +413,25 @@ fn refine_memory_only_results[a: InitSelfCtor, b: InitSelfCtor]() -> InitSelfPar
     pass
 
 
+struct ConvertFromIntLiteral:
+    fn __init__(inout self, x: IntLiteral):
+        pass
+
+
+fn nonmaterializable_arg(x: IntLiteral) -> ConvertFromIntLiteral:
+    return x
+
+
+# CHECK-LABEL: lit.func @"parameter_memoryonly_call
+fn parameter_memoryonly_call():
+    # CHECK: [[CST:%.*]] = kgen.param.materialize: !ConvertFromIntLiteral = <apply_result_slot({{.*}}@ConvertFromIntLiteral::@"__init__
+    # CHECK-NEXT: store [[CST]], %x
+    var x: ConvertFromIntLiteral = 2
+    # CHECK: [[CST:%.*]] = kgen.param.materialize: !ConvertFromIntLiteral = <apply_result_slot({{.*}}@"nonmaterializable_arg
+    # CHECK-NEXT: store [[CST]], %y
+    var y = nonmaterializable_arg(4)
+
+
 ##===----------------------------------------------------------------------===##
 # First-class functions as parameters.
 ##===----------------------------------------------------------------------===##

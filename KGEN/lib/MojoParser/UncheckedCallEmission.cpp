@@ -832,6 +832,20 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   return arg;
 }
 
+/// This function drops `init_self` or `byref_result` result slots from an
+/// argument list, leaving only the formal arguments. This logic is valid for
+/// parameter calls only.
+static ArrayRef<ASTExprAnd<AnyValue>>
+dropResultSlots(ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+                SignatureType sig) {
+  if (sig.hasInitSelfArg() && sig.getNumArguments() == argumentValues.size())
+    return argumentValues.drop_front();
+  if (sig.hasMemoryOnlyResult() &&
+      sig.getNumArguments() == argumentValues.size())
+    return argumentValues.drop_back();
+  return argumentValues;
+}
+
 FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
     ArrayRef<ASTExprAnd<AnyValue>> argumentValues) {
   if (calleeSig.isThrows() || calleeSig.isAsync())
@@ -847,15 +861,7 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
   // or `byref_result` argument, the caller sets up an MLValue destination or
   // may pass in a placeholder value. Make sure to drop them before calling into
   // the interpreter.
-  SignatureType sig = calleeSymbolCst.getType();
-  ASTExprAnd<AnyValue> initSelfSlot;
-  if (sig.hasInitSelfArg() && sig.getNumArguments() == argumentValues.size()) {
-    initSelfSlot = argumentValues.front();
-    argumentValues = argumentValues.drop_front();
-  } else if (sig.hasMemoryOnlyResult() &&
-             sig.getNumArguments() == argumentValues.size()) {
-    argumentValues = argumentValues.drop_back();
-  }
+  argumentValues = dropResultSlots(argumentValues, calleeSig);
 
   SmallVector<Attribute> arguments;
   for (ASTExprAnd<AnyValue> argValue : argumentValues) {
@@ -869,15 +875,6 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
       evaluator.evaluateFunctionCall(calleeSymbolCst.getSymbol(), arguments);
   if (failed(res))
     return failure();
-
-  // If there is an `init_self` slot, then clients of `emitCallUnchecked` expect
-  // the result value to be written into it and for the call to return `none`.
-  if (initSelfSlot.ir) {
-    ValueDest wbDest(initSelfSlot.ir.getIfMLValue(), EC_Unknown);
-    emitter.emitResult(PValue(*res), initSelfSlot.expr, wbDest);
-    return emitter.emitCResult(PValue(emitter.shared.getNoneAttr()), callExpr,
-                               dest);
-  }
   return emitter.emitCResult(*res, callExpr, dest);
 }
 
@@ -1013,6 +1010,23 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
   }
 }
 
+/// When emitting a call where any of the arguments are nonmaterializable, we
+/// know the type lacks a runtime representation and that it must be
+/// interpretable. If all other arguments are PValues, we can safely emit the
+/// call in a parameter context.
+static bool
+shouldEmitParameterCall(LITSignatureType calleeSig,
+                        ArrayRef<ASTExprAnd<AnyValue>> argumentValues,
+                        SharedState &shared) {
+  argumentValues = dropResultSlots(argumentValues, calleeSig);
+  auto isPValue = [](ASTExprAnd<AnyValue> arg) { return arg.ir.getIfPValue(); };
+  auto isNonMaterializable = [&](ASTExprAnd<AnyValue> arg) {
+    return arg.ir.getIfPValue().getType().getNonmaterializableTarget(shared);
+  };
+  return llvm::all_of(argumentValues, isPValue) &&
+         llvm::any_of(argumentValues, isNonMaterializable);
+}
+
 CValue ExprEmitter::emitCallUnchecked(RValue callee,
                                       const CallOperands &callOperands,
                                       ValueDest &dest,
@@ -1036,21 +1050,14 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       succeeded(resCValue))
     return *resCValue;
 
-  // HACK: If any of the arguments are nonmaterializable and all arguments are
-  // PValues, then emit the call in the parameter context.
-  auto isPValue = [](ASTExprAnd<AnyValue> arg) { return arg.ir.getIfPValue(); };
-  auto isNonMaterializable = [&](ASTExprAnd<AnyValue> arg) {
-    return arg.ir.getIfPValue().getType().getNonmaterializableTarget(shared);
-  };
-  bool forceParameterCall = llvm::all_of(argumentValues, isPValue) &&
-                            llvm::any_of(argumentValues, isNonMaterializable);
-  if (!builder || forceParameterCall) {
+  if (!builder || shouldEmitParameterCall(calleeSig, argumentValues, shared)) {
     TypedAttr paramCallResult;
     {
       llvm::SaveAndRestore savedBuilder(builder, {});
       assert(dest.getContext() != EC_Unknown &&
              "parametric emitCallUnchecked must include an ExprContext");
       llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
+      argumentValues = dropResultSlots(argumentValues, calleeSig);
       paramCallResult = callEmitter.emitCallInParamContext(argumentValues);
     }
     // The dest might force further calls.  We delay calling it until after
