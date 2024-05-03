@@ -1577,11 +1577,18 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   if (auto nmTarget =
           value.ir.getRValueType().getNonmaterializableTarget(shared)) {
     if (nmTarget.isEqualCanon(destLV.getRValueType())) {
-      ValueDest nmConversionDest(context);
+      // If the destination is an MLValue with a matching type, then just
+      // materialize directly into it and return instead of allocating a
+      // temporary if the conversion constructor requires one.
+      MLValue destML = destLV.getIfMLValue();
+      ValueDest nmConversionDest =
+          destML ? ValueDest(destML, context) : ValueDest(context);
       CValue nmConversionVal =
           emitConstructorCall(nmTarget, CallOperands({value}), value.expr,
                               CallSyntax::kIndirectCall, nmConversionDest,
                               /*allowImplicitConversion=*/true);
+      if (destML)
+        return MBValue(destML);
       value = {nmConversionVal, value.expr};
     }
   }

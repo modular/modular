@@ -14,9 +14,7 @@
 # Issue #12358
 # CHECK-LABEL: lit.func @"raise_string
 fn raise_string() raises:
-    # FIXME: This should get inlined into StringLiteral
-    # CHECK: kgen.param.constant: string = <"thing">
-    # HECK: %0 = kgen.param.constant: !StringLiteral = <{:string "thing"}>
+    # CHECK: %0 = kgen.param.constant: !StringLiteral = <{:string "thing"}>
     # CHECK: [[ERR:%.*]] = lit.call {{.*}}@error::@Error::@"__init__{{.*}}"(%1) : !lit.signature<("value": !StringLiteral borrow) ownedresult -> !Error>
     # CHECK: lit.ref.store [[ERR]], %__error__
     # CHECK-NEXT: lit.raise

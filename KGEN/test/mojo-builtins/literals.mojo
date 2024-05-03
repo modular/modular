@@ -41,6 +41,6 @@ fn var_let_decls():
     alias flDivNegZero = 5.0 / -0.0
 
     # CHECK: %str = lit.var.decl {{.*}} : !lit.ref<!StringLiteral,
-    # CHECK: %string = kgen.param.constant: string = <"hello">
-    # CHECK: lit.call {{.*}}@StringLiteral::@"__init__{{.*}}(%str, %string)
+    # CHECK: [[CONST:%.*]] = kgen.param.constant: !StringLiteral = <{:string "hello"}>
+    # CHECK: lit.ref.store [[CONST]], %str
     var str = "hello"

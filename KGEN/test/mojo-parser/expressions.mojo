@@ -839,7 +839,7 @@ world"
     # Issue #201: https://github.com/modularml/mojo/issues/201
     # CHECK: lit.func *"hello{{.*}} {
     fn hello() -> StringLiteral:
-        # CHECK: kgen.param.constant: string = <"123">
+        # CHECK: kgen.param.constant: !StringLiteral = <{:string "123"}>
         return "123"
         # lit.end_func
     """other comment"""
@@ -919,17 +919,16 @@ struct DynamicObject:
 fn dynamic_attribute():
     # CHECK: %const_obj = lit.var.decl "const_obj"
     var const_obj = ConstDynamicObject()
-    # CHECK: %anonymous2A = lit.var.decl {{.*}}!StringLiteral
-    # CHECK: %[[KEY:.*]] = kgen.param.constant{{.*}} <"dynamic_attribute">
+    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "dynamic_attribute"}>
     # CHECK: call {{.*}}@ConstDynamicObject::@"__getattr__{{.*}}"(
     _ = const_obj.dynamic_attribute
 
     var obj = DynamicObject()
-    # CHECK: %[[KEY:.*]] = kgen.param.constant: string = <"some_attr">
+    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "some_attr"}>
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
     # CHECK: call {{.*}}@DynamicObject::@"__getattr__{{.*}}([[IMMREF]],
     _ = obj.some_attr
-    # CHECK: %[[KEY:.*]] = kgen.param.constant: string = <"some_attr">
+    # CHECK: %[[KEY:.*]] = kgen.param.constant: !StringLiteral = <{:string "some_attr"}>
     # CHECK: [[IMMREF:%.*]] = lit.ref.immut %obj
     # CHECK: %[[VALUE:.*]] = kgen.param.constant: !Int = <{42}>
     # CHECK: call {{.*}}@DynamicObject::@"__setattr__{{.*}}([[IMMREF]], {{.*}}, %[[VALUE]])

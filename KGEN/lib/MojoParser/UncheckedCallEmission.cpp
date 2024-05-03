@@ -838,6 +838,20 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
   if (!calleeSymbolCst)
     return failure();
 
+  // When emitting a call in a dynamic context to function with an `init_self`
+  // or `byref_result` argument, the caller sets up an MLValue destination or
+  // may pass in a placeholder value. Make sure to drop them before calling into
+  // the interpreter.
+  SignatureType sig = calleeSymbolCst.getType();
+  ASTExprAnd<AnyValue> initSelfSlot;
+  if (sig.hasInitSelfArg() && sig.getNumArguments() == argumentValues.size()) {
+    initSelfSlot = argumentValues.front();
+    argumentValues = argumentValues.drop_front();
+  } else if (sig.hasMemoryOnlyResult() &&
+             sig.getNumArguments() == argumentValues.size()) {
+    argumentValues = argumentValues.drop_back();
+  }
+
   SmallVector<Attribute> arguments;
   for (ASTExprAnd<AnyValue> argValue : argumentValues) {
     auto mValue = argValue.ir.getIfPValue();
@@ -846,10 +860,19 @@ FailureOr<CValue> CallEmitter::inlineFunctionCallIntoPValueIfPossible(
     arguments.push_back(mValue.get());
   }
 
-  auto res =
+  FailureOr<TypedAttr> res =
       evaluator.evaluateFunctionCall(calleeSymbolCst.getSymbol(), arguments);
   if (failed(res))
     return failure();
+
+  // If there is an `init_self` slot, then clients of `emitCallUnchecked` expect
+  // the result value to be written into it and for the call to return `none`.
+  if (initSelfSlot.ir) {
+    ValueDest wbDest(initSelfSlot.ir.getIfMLValue(), EC_Unknown);
+    emitter.emitResult(PValue(*res), initSelfSlot.expr, wbDest);
+    return emitter.emitCResult(PValue(emitter.shared.getNoneAttr()), callExpr,
+                               dest);
+  }
   return emitter.emitCResult(*res, callExpr, dest);
 }
 

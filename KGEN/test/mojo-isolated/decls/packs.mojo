@@ -77,15 +77,14 @@ fn test_owned_trait():
 
     # Create the VariadicPack
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
-# FIXME: Should inline the Bool ctor call.
-# HECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
-# CHECK: Bool::@"__init__
-# CHECK: [[ISOWNED:%.*]] = lit.ref.load
+    # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
+    # CHECK-NEXT: store [[ISOWNED]], [[FLAG:%.*]]
+    # CHECK-NEXT: [[ISOWNED:%.*]] = lit.ref.load [[FLAG]]
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
 
     # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[VARIADICPACK]])
-    takeOwnedAnyTypePack(value1 ^, value2)
+    takeOwnedAnyTypePack(value1^, value2)
 
     # Test register types.
     # CHECK-NEXT: %value3 = lit.var.decl
@@ -102,15 +101,14 @@ fn test_owned_trait():
 
     # Create the VariadicPack
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
-# FIXME: Should inline the Bool ctor call.
-# HECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
-# CHECK: Bool::@"__init__
-# CHECK: [[ISOWNED:%.*]] = lit.ref.load
+    # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
+    # CHECK-NEXT: store [[ISOWNED]], [[FLAG:%.*]]
+    # CHECK-NEXT: [[ISOWNED:%.*]] = lit.ref.load [[FLAG]]
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
 
     # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[VARIADICPACK]])
-    takeOwnedAnyTypePack(value3 ^, SomeReg())
+    takeOwnedAnyTypePack(value3^, SomeReg())
 
 
 # Check the argument pack.
@@ -137,10 +135,9 @@ fn test_inout():
 
     # Create the VariadicPack
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
-# FIXME: Should inline the Bool ctor call.
-# HECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
-# CHECK: Bool::@"__init__
-# CHECK: [[ISOWNED:%.*]] = lit.ref.load
+    # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
+    # CHECK-NEXT: store [[ISOWNED]], [[FLAG:%.*]]
+    # CHECK-NEXT: [[ISOWNED:%.*]] = lit.ref.load [[FLAG]]
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
 
@@ -156,10 +153,9 @@ fn test_inout():
 
     # Create the VariadicPack
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
-# FIXME: Should inline the Bool ctor call.
-# HECK-NEXT: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
-# CHECK: Bool::@"__init__
-# CHECK: [[ISOWNED:%.*]] = lit.ref.load
+    # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 0}>
+    # CHECK-NEXT: store [[ISOWNED]], [[FLAG:%.*]]
+    # CHECK-NEXT: [[ISOWNED:%.*]] = lit.ref.load [[FLAG]]
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
     # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
 
