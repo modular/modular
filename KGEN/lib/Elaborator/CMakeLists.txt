@@ -19,7 +19,6 @@ add_modular_library(KGENElaborator
   KGENSupport
   LITDialect
   MArchTarget
-  MCache
 
   MLIRIndexDialect
   MLIRSupport

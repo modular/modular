@@ -29,6 +29,7 @@ add_modular_dialect_library(LITDialect
   HLCFDialect
   KGENDialect
   POPDialect
+  CODialect
   MSupport
   MSupportML
   MLIRIR

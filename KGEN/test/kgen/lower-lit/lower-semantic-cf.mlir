@@ -584,8 +584,8 @@ lit.func @recurse(%x: !pop.scalar<index>) -> !pop.scalar<index> {
 
 // CHECK-LABEL: lit.func @coroutine_await
 lit.func @coroutine_await(%arg0: i1) {
-  // CHECK-NEXT: pop.coroutine.await
-  pop.coroutine.await {
+  // CHECK-NEXT: co.await
+  co.await {
     hlcf.if %arg0 {
       // CHECK: kgen.return
       lit.return
@@ -593,8 +593,8 @@ lit.func @coroutine_await(%arg0: i1) {
     } else {
       hlcf.yield
     }
-    // CHECK: pop.coroutine.await.end
-    pop.coroutine.await.end
+    // CHECK: co.await.end
+    co.await.end
   }
   lit.return
   lit.end_func

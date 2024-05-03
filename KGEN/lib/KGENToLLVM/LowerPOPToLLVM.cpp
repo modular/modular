@@ -1385,13 +1385,6 @@ void LowerPOPToLLVMPass::runOnOperation() {
   target.addLegalOp<ExternPointerSymbolOp>();
   target.addLegalOp<AlignedAllocOp>();
   target.addLegalOp<AlignedFreeOp>();
-  target.addLegalOp<CoroutineHandleOp>();
-  target.addLegalOp<CoroutineOpaqueHandleOp>();
-  target.addLegalOp<CoroutineAwaitOp>();
-  target.addLegalOp<CoroutineAwaitEndOp>();
-  target.addLegalOp<CoroutinePromiseOp>();
-  target.addLegalOp<CoroutineResumeOp>();
-  target.addLegalOp<CoroutineDestroyOp>();
 
   // Set LLVM lowering options.
   TargetInfoAttr targetInfo = lookupTargetInfo(*func);

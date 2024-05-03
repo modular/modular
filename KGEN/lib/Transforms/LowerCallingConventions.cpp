@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -132,9 +133,9 @@ void LowerCallingConventionsPass::runOnOperation() {
       return;
     }
 
-    // Handle `pop.coroutine.promise`. None types take up no space, so it is
+    // Handle `co.promise`. None types take up no space, so it is
     // safe to bitcast the promise pointer.
-    if (auto promise = dyn_cast<POP::CoroutinePromiseOp>(op)) {
+    if (auto promise = dyn_cast<CO::CoroutinePromiseOp>(op)) {
       auto [anyNone, newResults] =
           removeNoneTypes(cast<StructType>(promise.getType().getElementType())
                               .getElementTypes());
@@ -142,7 +143,7 @@ void LowerCallingConventionsPass::runOnOperation() {
         return;
 
       OpBuilder b(promise);
-      Value newPromise = b.create<POP::CoroutinePromiseOp>(
+      Value newPromise = b.create<CO::CoroutinePromiseOp>(
           promise.getLoc(),
           PointerType::get(StructType::get(b.getContext(), newResults)),
           promise.getCoroutine());

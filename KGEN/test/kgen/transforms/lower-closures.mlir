@@ -3,11 +3,11 @@
 // CHECK-LABEL: kgen.func @coroutine
 // CHECK-SAME: (%arg0: i1) -> !co.routine<() -> index>
 kgen.func @coroutine(%arg0: i1) async -> index {
-  // CHECK: %[[HDL:.*]] = pop.coroutine.handle : <() -> index>
+  // CHECK: %[[HDL:.*]] = co.handle : <() -> index>
   // CHECK: hlcf.if
   hlcf.if %arg0 {
     %idx1 = index.constant 1
-    // CHECK: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]]
+    // CHECK: %[[PROMISE:.*]] = co.promise %[[HDL]]
     // CHECK-NEXT: %[[RES:.*]] = kgen.struct.gep %[[PROMISE]][0]
     // CHECK-NEXT: pop.store %idx1, %[[RES]]
     // CHECK-NEXT: kgen.return %[[HDL]]
@@ -16,7 +16,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
     hlcf.yield
   }
   %idx0 = index.constant 0
-  // CHECK: %[[PROMISE:.*]] = pop.coroutine.promise %[[HDL]]
+  // CHECK: %[[PROMISE:.*]] = co.promise %[[HDL]]
   // CHECK-NEXT: %[[RES:.*]] = kgen.struct.gep %[[PROMISE]][0]
   // CHECK-NEXT: pop.store %idx0, %[[RES]]
   // CHECK-NEXT: kgen.return %[[HDL]]
@@ -33,12 +33,12 @@ kgen.func @call_coroutine() {
 
 // CHECK-LABEL: kgen.func @async_execute_async_closure
 // CHECK-SAME: (%arg0: index) -> !co.routine<() -> index>
-// CHECK-NEXT: %0 = pop.coroutine.handle : <() -> index>
+// CHECK-NEXT: %0 = co.handle : <() -> index>
 // CHECK: kgen.return %0
 
 // CHECK-LABEL: kgen.func @async_execute_async_closure_{{[0-9]}}
 // CHECK-SAME: (%arg0: index, %arg1: index) -> !co.routine<() -> index>
-// CHECK-NEXT: %0 = pop.coroutine.handle : <() -> index>
+// CHECK-NEXT: %0 = co.handle : <() -> index>
 // CHECK-NEXT: %idx1 = index.constant 1
 // CHECK-NEXT: %1 = index.add %idx1, %arg0
 // CHECK-NEXT: %2 = index.add %1, %arg1
@@ -46,7 +46,7 @@ kgen.func @call_coroutine() {
 
 // CHECK-LABEL: kgen.func @async_execute_async_closure_{{[0-9]}}
 // CHECK-SAME: (%arg0: index, %arg1: index) -> !co.routine<() -> ()>
-// CHECK-NEXT: %0 = pop.coroutine.handle : <() -> ()>
+// CHECK-NEXT: %0 = co.handle : <() -> ()>
 // CHECK: kgen.call @async_execute_async_closure_{{[0-9]}}(%arg0, %arg1)
 // CHECK: kgen.return %0
 
@@ -134,7 +134,7 @@ kgen.func @create_closure() {
 }
 
 // CHECK-LABEL: kgen.func @async_closure_in_async_async_closure_0()
-// CHECK: [[PROMISE:%.*]] = pop.coroutine.promise {{.*}} : <() -> index>
+// CHECK: [[PROMISE:%.*]] = co.promise {{.*}} : <() -> index>
 // CHECK: [[GEP:%.*]] = kgen.struct.gep [[PROMISE]][0]
 // CHECK: store %idx5, [[GEP]]
 
@@ -144,7 +144,7 @@ kgen.func @async_closure_in_async(%arg1: index) async {
     %idx = index.constant 5
     kgen.return %idx : index
   }
-  // CHECK: pop.coroutine.promise {{.*}} : <() -> ()>
+  // CHECK: co.promise {{.*}} : <() -> ()>
   kgen.return
 }
 
