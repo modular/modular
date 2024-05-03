@@ -101,6 +101,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
     fn __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
+        simd_size: Int,
         # Skip the output c space boundary check if True.
         skip_boundary_check: Bool,
     ](
@@ -115,7 +116,6 @@ struct Inner_matmul_neon(InnerMatmulKernel):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows, TileN, TileK) tile.
         """
-        alias simd_size = simdwidthof[c.type]()
 
         var c_stride = c.dim[1]()
 

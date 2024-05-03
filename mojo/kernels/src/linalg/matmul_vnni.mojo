@@ -165,6 +165,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
     fn __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
+        simd_size: Int,
         # Skip the output c space boundary check if True.
         skip_boundary_check: Bool,
     ](
@@ -182,8 +183,6 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
         debug_assert(
             tile_n_k[1] % 0 == 0, "K dimension must be a multiple of 4"
         )
-
-        alias simd_size = simdwidthof[c.type]()
 
         var c_stride = c.dim[1]()
 

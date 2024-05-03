@@ -103,6 +103,7 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
     fn __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
+        simd_size: Int,
         # Skip the output c space boundary check if True.
         skip_boundary_check: Bool,
     ](
@@ -117,7 +118,6 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
         """Utility function on the inner loop. Run the inner kernel on the whole
         (kernel_rows2, TileN, TileK) tile.
         """
-        alias simd_size = simdwidthof[c.type]()
 
         alias kernel_rows2 = kernel_rows // 2 if kernel_rows != 1 else kernel_rows
         alias single_row = (kernel_rows == 1)

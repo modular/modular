@@ -518,7 +518,7 @@ struct PackMatrixCols[
 
 
 @always_inline
-fn pack_matmul_b_shape_func_M[
+fn _pack_matmul_b_shape_func_impl[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -593,7 +593,7 @@ fn pack_matmul_b_shape_func[
     if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
 
-    return pack_matmul_b_shape_func_M[
+    return _pack_matmul_b_shape_func_impl[
         a_type,
         a_shape,
         b_type,
@@ -793,51 +793,6 @@ fn _pack_b_ndbuffer_impl[
         dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
-@always_inline
-fn pack_b_ndbuffer_M[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-](
-    b_input: NDBuffer[b_type, 2, b_shape],
-    output_buffer: NDBuffer[b_type, 2],
-    kernel_type_m: Int,
-):
-    """
-    Perform matmul weight packing on the given input.
-
-    Performs the layout transformation on `b_input` expected by
-    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
-    `output_buffer`.
-
-    Parameters:
-        a_type: The data type of elements inside a.
-        a_shape: The shape of the A matrix.
-        b_type: The data type of elements inside b.
-        b_shape: The shape of the B matrix.
-        c_type: The data type of elements inside c.
-        c_shape: The shape of the C matrix.
-
-    Args:
-        b_input: Input buffer that contains the weight to be packed.
-        output_buffer: Output buffer to store the packed weight.
-        kernel_type_m: The M value of the a_shape (MxN).
-    """
-
-    _pack_b_ndbuffer_impl[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transposed=False,
-    ](b_input, output_buffer, kernel_type_m)
-
-
 @mogg_register("layout_transform_KN_to_KNkni")
 fn pack_b_ndbuffer[
     a_type: DType,
@@ -853,50 +808,6 @@ fn pack_b_ndbuffer[
     @parameter
     if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
-    return pack_b_ndbuffer_M[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-    ](b_input, output_buffer, kernel_type_m)
-
-
-@always_inline
-fn pack_transposed_b_ndbuffer_M[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-](
-    b_input: NDBuffer[b_type, 2, b_shape],
-    output_buffer: NDBuffer[b_type, 2],
-    kernel_type_m: Int,
-):
-    """
-    Perform matmul weight packing on a transposed input.
-
-    Performs the layout transformation on `b_input` expected by
-    `matmul_dynamic_tile` when `b_packed` is True and stores the result in
-    `output_buffer`. This also un-transposes `b_input`.
-
-    Parameters:
-        a_type: The data type of elements inside a.
-        a_shape: The shape of the A matrix.
-        b_type: The data type of elements inside b.
-        b_shape: The shape of the B matrix.
-        c_type: The data type of elements inside c.
-        c_shape: The shape of the C matrix.
-
-    Args:
-        b_input: Input buffer that contains the transposed weight to be packed.
-        output_buffer: Output buffer to store the packed weight.
-        kernel_type_m: The M value of the a_shape (MxN).
-    """
-
     _pack_b_ndbuffer_impl[
         a_type,
         a_shape,
@@ -904,7 +815,7 @@ fn pack_transposed_b_ndbuffer_M[
         b_shape,
         c_type,
         c_shape,
-        transposed=True,
+        transposed=False,
     ](b_input, output_buffer, kernel_type_m)
 
 
@@ -923,13 +834,14 @@ fn pack_transposed_b_ndbuffer[
     @parameter
     if a_shape.at[0]().has_value():
         kernel_type_m = a_shape.at[0]().get()
-    return pack_transposed_b_ndbuffer_M[
+    _pack_b_ndbuffer_impl[
         a_type,
         a_shape,
         b_type,
         b_shape,
         c_type,
         c_shape,
+        transposed=True,
     ](b_input, output_buffer, kernel_type_m)
 
 

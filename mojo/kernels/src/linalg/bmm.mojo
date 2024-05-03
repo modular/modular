@@ -363,8 +363,9 @@ fn _batched_matmul_cpu[
                 StaticIntTuple[2](a.dim[1](), a.dim[2]()),
             )
 
+            alias config = get_kernel_config[a_type, b_type, c_type]()
             alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-            alias simd_size = simdwidthof[c_type]()
+            alias simd_size = config.simd_size
             alias alignment = alignof[SIMD[c_type, simd_size]]()
             var kh = align_up(k, 8)
             var mh = align_up(m, 2)
@@ -410,7 +411,6 @@ fn _batched_matmul_cpu[
                 or sub_matmul_config.shape[1] <= 0
             ):
                 return
-            alias config = get_kernel_config[a_type, b_type, c_type]()
 
             _submatmul_sequential_sync[
                 config,

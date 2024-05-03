@@ -13,13 +13,13 @@ from buffer import NDBuffer
 from buffer.list import DimList
 from LinAlg.Matmul import (
     matmul,
-    matmul_M,
+    _matmul_cpu,
 )
 from LinAlg.MatmulPack import (
     pack_b_ndbuffer,
-    pack_b_ndbuffer_M,
+    _pack_b_ndbuffer_impl,
     pack_matmul_b_shape_func,
-    pack_matmul_b_shape_func_M,
+    _pack_matmul_b_shape_func_impl,
 )
 from LinAlg.MatmulUtils import elementwise_epilogue_type
 from collections import OptionalReg as Optional
@@ -92,13 +92,8 @@ fn test_matmul[
 
     if b_packed:
         if kernel_type_m != 0:
-            pack_b_ndbuffer_M[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
+            _pack_b_ndbuffer_impl[
+                a_type, a_shape, b_type, b_shape, c_type, c_shape, transpose_b
             ](b, bp, kernel_type_m)
         else:
             pack_b_ndbuffer[
@@ -111,7 +106,7 @@ fn test_matmul[
             ](b, bp)
 
     if kernel_type_m != 0:
-        matmul_M[
+        _matmul_cpu[
             a_type,
             a_shape,
             b_type,
@@ -180,7 +175,7 @@ fn test_matmul[
 
     var padded_n_k = StaticIntTuple[2]()
     if kernel_type_m != 0:
-        padded_n_k = pack_matmul_b_shape_func_M[
+        padded_n_k = _pack_matmul_b_shape_func_impl[
             a_type,
             a_shape,
             b_type,

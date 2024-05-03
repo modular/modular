@@ -65,6 +65,7 @@ trait InnerMatmulKernel(Copyable):
     fn __inner_matmul__[
         kernel_rows: Int,
         kernel_cols: Int,
+        simd_size: Int,
         # Skip the output c space boundary check if True.
         skip_boundary_check: Bool,
     ](
@@ -220,7 +221,7 @@ struct TiledMatmul[
     fn _outer_m_loop[
         last_n_tile: Bool,
         last_k_tile: Bool,
-        m_loop_kernel_cols: Int,
+        tile_kernel_cols: Int,
     ](self, global_offset: GemmShape, sub_tile_n: Int, sub_tile_k: Int):
         """
         Helper function: Pack a subtile of B and iterate through all the rows
@@ -229,7 +230,7 @@ struct TiledMatmul[
         Parameters:
             last_n_tile: The last n tile.
             last_k_tile: The last k tile.
-            m_loop_kernel_cols: Inner dimension of the packed data layout.
+            tile_kernel_cols: Inner dimension of the packed data layout.
 
         Args:
             global_offset: 3D global offset within the whole
@@ -247,7 +248,7 @@ struct TiledMatmul[
         @always_inline
         fn unswitch_residual_n[skip_col_bound: Bool]():
             var b_packed_tile = self.b_tile_generator.get_tile[
-                m_loop_kernel_cols
+                tile_kernel_cols
             ](
                 global_offset,
                 Index(sub_tile_n, sub_tile_k),
@@ -264,10 +265,11 @@ struct TiledMatmul[
             @__copy_capture(sub_tile_n_k, b_packed_tile)
             @parameter
             @always_inline
-            fn row_iteration[tile_size: Int](row_offset: Int):
+            fn row_iteration[tile_kernel_rows: Int](row_offset: Int):
                 self.alg.__inner_matmul__[
-                    tile_size,
-                    m_loop_kernel_cols,
+                    tile_kernel_rows,
+                    tile_kernel_cols,
+                    config.simd_size,
                     skip_col_bound,
                 ](
                     self.c,
@@ -283,7 +285,9 @@ struct TiledMatmul[
                     self.elementwise_epilogue_fn(
                         global_offset + GemmShape(row_offset, 0, 0),
                         GemmShape {
-                            M: tile_size, N: sub_tile_n_k[0], K: sub_tile_n_k[1]
+                            M: tile_kernel_rows,
+                            N: sub_tile_n_k[0],
+                            K: sub_tile_n_k[1],
                         },
                     )
 
@@ -522,7 +526,7 @@ fn _small_matmul[
 
 
 @always_inline
-fn _matmul_cpu[
+fn _matmul_cpu_impl[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
@@ -587,7 +591,7 @@ fn _matmul_cpu[
         )
 
         alias use_i8mm = kernel_id == InnerKernelID.I8MM
-        alias simd_size = simdwidthof[c.type]()
+        alias simd_size = config.simd_size
         alias alignment = alignof[SIMD[c.type, simd_size]]()
         var kh = align_up(k, 8)
         var mh = align_up(m, 2)
@@ -656,7 +660,7 @@ fn _matmul_cpu[
 
 
 @always_inline
-fn matmul_M[
+fn _matmul_cpu[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -689,7 +693,7 @@ fn matmul_M[
 
         @parameter
         if kernel_id == InnerKernelID.DEFAULT:
-            _matmul_cpu[
+            _matmul_cpu_impl[
                 config,
                 transpose_b,
                 b_packed,
@@ -705,7 +709,7 @@ fn matmul_M[
                 num_threads,
             )
         elif kernel_id == InnerKernelID.VNNI:
-            _matmul_cpu[
+            _matmul_cpu_impl[
                 config,
                 transpose_b,
                 b_packed,
@@ -721,7 +725,7 @@ fn matmul_M[
                 num_threads,
             )
         elif kernel_id == InnerKernelID.NEON:
-            _matmul_cpu[
+            _matmul_cpu_impl[
                 config,
                 transpose_b,
                 b_packed,
@@ -737,7 +741,7 @@ fn matmul_M[
                 num_threads,
             )
         elif kernel_id == InnerKernelID.I8MM:
-            _matmul_cpu[
+            _matmul_cpu_impl[
                 config,
                 transpose_b,
                 b_packed,
@@ -793,7 +797,7 @@ fn matmul[
         if a_shape.at[0]().has_value():
             kernel_type_m = a_shape.at[0]().get()
 
-        matmul_M[
+        _matmul_cpu[
             a_type,
             a_shape,
             b_type,
@@ -832,7 +836,7 @@ fn _submatmul_sequential_sync[
     sub_matrix_offset: GemmShape,
     kernel_type_m: Int = 0,
 ):
-    alias simd_size = simdwidthof[c.type]()
+    alias simd_size = config.simd_size
 
     fn elementwise_closure(offset: GemmShape, shape: GemmShape):
         @parameter

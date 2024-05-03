@@ -36,6 +36,7 @@ alias K: Int = 256
 fn _matmul_inner_loop[
     kernel_rows: Int,
     kernel_cols: Int,
+    simd_size: Int,
     skip_col_bound: Bool,
     saturated_vnni: Bool,
 ](
@@ -51,19 +52,19 @@ fn _matmul_inner_loop[
     @parameter
     if kernel_id == InnerKernelID.DEFAULT:
         Inner_matmul_default().__inner_matmul__[
-            kernel_rows, kernel_cols, skip_col_bound
+            kernel_rows, kernel_cols, simd_size, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif kernel_id == InnerKernelID.VNNI:
         Inner_matmul_vnni[saturated_vnni]().__inner_matmul__[
-            kernel_rows, kernel_cols, skip_col_bound
+            kernel_rows, kernel_cols, simd_size, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif kernel_id == InnerKernelID.NEON:
         Inner_matmul_neon().__inner_matmul__[
-            kernel_rows, kernel_cols, skip_col_bound
+            kernel_rows, kernel_cols, simd_size, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     elif kernel_id == InnerKernelID.I8MM:
         Inner_matmul_i8mm().__inner_matmul__[
-            kernel_rows, kernel_cols, skip_col_bound
+            kernel_rows, kernel_cols, simd_size, skip_col_bound
         ](c, a, b_packed, global_offset, global_bound, tile_n_k)
     else:
         constrained[False, "no _run_inner_loop implementation"]()
@@ -82,6 +83,7 @@ fn matmul_inner_loop[
     _matmul_inner_loop[
         config.kernel_rows,
         config.kernel_cols,
+        config.simd_size,
         True,  # skip_col_bound
         False,  # saturated_vnni
     ](

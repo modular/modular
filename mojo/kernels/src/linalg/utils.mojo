@@ -37,30 +37,30 @@ alias elementwise_epilogue_type = fn[type: DType, width: Int] (
 struct KernelConfig:
     """Static configuration of the matmul inner kernel."""
 
-    # Static packed shape info of the packed buffer.
-    var packed_shape: DimList
-
-    # Static info on simd vector size.
-    var simd_size: Int
-
     # Static number of rows of the micro kernel.
     var kernel_rows: Int
 
     # Static number of columns of the micro kernel.
     var kernel_cols: Int
 
+    # Static info on simd vector size.
+    var simd_size: Int
+
+    # Static packed shape info of the packed buffer.
+    var packed_shape: DimList
+
     fn __init__(
         inout self,
         *,
-        packed_shape: DimList,
-        simd_size: Int,
         kernel_rows: Int,
         kernel_cols: Int,
+        simd_size: Int,
+        packed_shape: DimList,
     ):
-        self.packed_shape = packed_shape
-        self.simd_size = simd_size
         self.kernel_rows = kernel_rows
         self.kernel_cols = kernel_cols
+        self.simd_size = simd_size
+        self.packed_shape = packed_shape
 
 
 @value
@@ -597,10 +597,10 @@ fn get_kernel_config[
     ]()
 
     return KernelConfig(
-        packed_shape=DimList.create_unknown[3](),
-        simd_size=simd_size,
         kernel_rows=kernel_shape.simd_rows,
         kernel_cols=kernel_shape.simd_cols * simd_size,
+        simd_size=simd_size,
+        packed_shape=DimList.create_unknown[3](),
     )
 
 
