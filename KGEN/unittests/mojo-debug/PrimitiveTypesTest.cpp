@@ -17,22 +17,22 @@ TEST(PrimitiveTypesTest, testBool) {
 
   StopContext ctx = buildAndLaunch("bool.mojo");
   SBValue trueVar = ctx.frame.FindVariable("true");
-  EXPECT_EQ(trueVar.GetTypeName(), std::string("!pop.scalar<bool>"));
+  EXPECT_STREQ(trueVar.GetTypeName(), "!pop.scalar<bool>");
   EXPECT_EQ((int)trueVar.GetByteSize(), 1);
   EXPECT_EQ((int)trueVar.GetChildAtIndex(0).GetValueAsUnsigned(2), 1);
-  EXPECT_EQ(trueVar.GetSummary(), std::string("True"));
+  EXPECT_STREQ(trueVar.GetSummary(), "True");
 
   SBValue falseVar = ctx.frame.FindVariable("false");
-  EXPECT_EQ(falseVar.GetTypeName(), std::string("!pop.scalar<bool>"));
+  EXPECT_STREQ(falseVar.GetTypeName(), "!pop.scalar<bool>");
   EXPECT_EQ((int)falseVar.GetByteSize(), 1);
   EXPECT_EQ((int)falseVar.GetChildAtIndex(0).GetValueAsUnsigned(2), 0);
-  EXPECT_EQ(falseVar.GetSummary(), std::string("False"));
+  EXPECT_STREQ(falseVar.GetSummary(), "False");
 
   SBValue otherVar = ctx.frame.FindVariable("other");
-  EXPECT_EQ(otherVar.GetTypeName(), std::string("!pop.scalar<bool>"));
+  EXPECT_STREQ(otherVar.GetTypeName(), "!pop.scalar<bool>");
   EXPECT_EQ((int)otherVar.GetByteSize(), 1);
   EXPECT_EQ((int)otherVar.GetChildAtIndex(0).GetValueAsUnsigned(2), 1);
-  EXPECT_EQ(otherVar.GetSummary(), std::string("True"));
+  EXPECT_STREQ(otherVar.GetSummary(), "True");
 }
 
 TEST(PrimitiveTypesTest, testInvalidScalar) {
@@ -45,9 +45,9 @@ TEST(PrimitiveTypesTest, testInvalidScalar) {
   SBValue dict = ctx.frame.FindVariable("dict");
   SBValue _index = dict.GetChildMemberWithName("_index");
   SBValue data = _index.GetChildMemberWithName("data");
-  EXPECT_EQ(data.GetTypeName(), std::string("!kgen.pointer<scalar<invalid>>"));
+  EXPECT_STREQ(data.GetTypeName(), "!kgen.pointer<scalar<invalid>>");
   SBValue invalid = data.GetChildAtIndex(0);
-  EXPECT_EQ(invalid.GetTypeName(), std::string("!kgen.none"));
+  EXPECT_STREQ(invalid.GetTypeName(), "!kgen.none");
   EXPECT_EQ((int)invalid.GetByteSize(), 0);
 }
 
@@ -60,9 +60,9 @@ TEST(PrimitiveTypesTest, testPointerChild) {
   StopContext ctx = buildAndLaunch("pointer.mojo");
   SBValue var = ctx.frame.FindVariable("int_pointer");
   SBValue child = var.GetChildAtIndex(0);
-  EXPECT_EQ(child.GetName(), std::string("*int_pointer"));
-  EXPECT_EQ(child.GetValue(), std::string("101"));
-  EXPECT_EQ(var.Dereference().GetValue(), std::string("101"));
+  EXPECT_STREQ(child.GetName(), "*int_pointer");
+  EXPECT_STREQ(child.GetValue(), "101");
+  EXPECT_STREQ(var.Dereference().GetValue(), "101");
 }
 
 TEST(PrimitiveTypesTest, testInvalidPointer) {
@@ -70,12 +70,12 @@ TEST(PrimitiveTypesTest, testInvalidPointer) {
 
   StopContext ctx = buildAndLaunch("invalid_pointer.mojo");
   SBValue var = ctx.frame.FindVariable("ptr");
-  EXPECT_EQ(var.GetValue(), std::string("0x0000000000000064"));
-  EXPECT_EQ(var.GetTypeName(), std::string("!kgen.pointer<scalar<invalid>>"));
+  EXPECT_STREQ(var.GetValue(), "0x0000000000000064");
+  EXPECT_STREQ(var.GetTypeName(), "!kgen.pointer<scalar<invalid>>");
 }
 
 static void checkIntPair(SBValue &strct, int fst, int snd) {
-  EXPECT_EQ(strct.GetDisplayTypeName(), std::string("MyPair"));
+  EXPECT_STREQ(strct.GetDisplayTypeName(), "MyPair");
   ASSERT_EQ((int)strct.GetNumChildren(), 2);
   SBValue firstField = strct.GetChildAtIndex(0);
   EXPECT_EQ((int)firstField.GetValueAsSigned(fst - 1), fst);
@@ -96,7 +96,7 @@ TEST(PrimitiveTypesTest, testStructAccess) {
 
   ctx.emplace(ctx->resume());
   SBValue pp = ctx->frame.FindVariable("pp");
-  EXPECT_EQ(pp.GetDisplayTypeName(), std::string("MyPairPair"));
+  EXPECT_STREQ(pp.GetDisplayTypeName(), "MyPairPair");
   ASSERT_EQ((int)pp.GetNumChildren(), 2);
   SBValue ppFirst = pp.GetChildAtIndex(0);
   checkIntPair(ppFirst, 5, 6);
@@ -177,8 +177,7 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
             "(scalar<f32>) a_float = ([0] = 3.125)\n");
   EXPECT_EQ(ctx.runCommand("v another_float").output,
             "(scalar<f32>) another_float = ([0] = 4.125)\n");
-  EXPECT_EQ(ctx.frame.FindVariable("^ uncommon name").GetValue(),
-            std::string("1123123"));
+  EXPECT_STREQ(ctx.frame.FindVariable("^ uncommon name").GetValue(), "1123123");
   EXPECT_EQ(ctx.runCommand("v a_string_literal").output,
             "(string) a_string_literal = \"fofofo\"\n");
   // FIXME(37682): Reenable list printing
