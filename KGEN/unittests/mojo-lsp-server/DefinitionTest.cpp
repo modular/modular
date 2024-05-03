@@ -133,3 +133,35 @@ fn function[type: AnyRegType](arg: type):
                   })
       .execute();
 }
+
+TEST(HoverTest, testImplicitVariables) {
+  Document doc("test:///foo.mojo", R"(
+fn test() raises:
+    with open("test", "r") as with_var:
+        pass
+
+    for for_var in range(5):
+        pass
+
+def def_test():
+  def_value = 10
+  )");
+
+  lsp::Location strLocation, boolLocation;
+
+  createTestClient()
+      .open(doc)
+      .definition(doc, *doc.findFirstPos("with_var"),
+                  [&](const std::vector<lsp::Location> &locations) {
+                    EXPECT_EQ((int)locations.size(), 1);
+                  })
+      .definition(doc, *doc.findFirstPos("for_var"),
+                  [&](const std::vector<lsp::Location> &locations) {
+                    EXPECT_EQ((int)locations.size(), 1);
+                  })
+      .definition(doc, *doc.findFirstPos("def_value"),
+                  [&](const std::vector<lsp::Location> &locations) {
+                    EXPECT_EQ((int)locations.size(), 1);
+                  })
+      .execute();
+}
