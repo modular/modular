@@ -79,7 +79,7 @@ ErrorOrSuccess MeteringContext::setDefaultCallback(
 }
 
 ErrorOrSuccess MeteringContext::start() {
-  return invokeMeterCallback(std::chrono::seconds(0), stopped);
+  return invokeMeterCallback(std::chrono::seconds(1), stopped);
 }
 
 ErrorOrSuccess MeteringContext::flush() {
