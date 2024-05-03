@@ -26,7 +26,7 @@ from utils.index import Index
 
 
 fn reduce(
-    res: Pointer[Float32],
+    res: UnsafePointer[Float32],
     vec: DTypePointer[DType.float32],
     len: Int,
 ):
