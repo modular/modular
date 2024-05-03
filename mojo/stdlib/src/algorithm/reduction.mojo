@@ -13,10 +13,9 @@ from algorithm import map_reduce
 """
 
 from builtin.math import min as _min
-from math import align_down
+from math import align_down, ceildiv, iota
 from math import all_true as _all_true
 from math import any_true as _any_true
-from math import div_ceil, iota
 from math import none_true as _none_true
 from math.bit import cttz
 from sys.info import (
@@ -34,7 +33,6 @@ from buffer.list import Dim, DimList
 from builtin.dtype import _uint_type_of_width
 from gpu.host import Stream
 from memory.unsafe import bitcast
-from runtime.tracing import TraceLevel
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
@@ -754,7 +752,7 @@ fn _reduce_along_inner_dimension[
     else:
         num_workers = _get_num_workers(total_size)
 
-    var chunk_size = div_ceil(parallelism_size, num_workers)
+    var chunk_size = ceildiv(parallelism_size, num_workers)
 
     alias unroll_factor = 8
     alias simd_width = simdwidthof[init_type]()
@@ -977,7 +975,7 @@ fn _reduce_along_outer_dimension[
     else:
         num_workers = _get_num_workers(total_size)
 
-    var chunk_size = div_ceil(parallelism_size, num_workers)
+    var chunk_size = ceildiv(parallelism_size, num_workers)
 
     @__copy_capture(chunk_size, parallelism_size, inner_dim)
     @parameter
@@ -1689,7 +1687,7 @@ fn _argn[
             _get_num_workers(input.dynamic_shape.flattened_length()),
             parallel_size,
         )
-        chunk_size = div_ceil(parallel_size, num_workers)
+        chunk_size = ceildiv(parallel_size, num_workers)
 
     @__copy_capture(axis_size, chunk_size, output_stride, input_stride)
     @parameter

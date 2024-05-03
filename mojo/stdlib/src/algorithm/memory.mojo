@@ -13,7 +13,7 @@ from algorithm import parallel_memcpy
 ```
 """
 
-from math import div_ceil
+from math import ceildiv
 
 from memory import memcpy
 from runtime.llcl import Runtime
@@ -84,9 +84,9 @@ fn parallel_memcpy[
     if count < min_work_for_parallel:
         memcpy(dest, src, count)
     else:
-        var work_units = div_ceil(count, min_work_per_task)
+        var work_units = ceildiv(count, min_work_per_task)
         var num_tasks = min(work_units, Runtime().parallelism_level())
-        var work_block_size = div_ceil(work_units, num_tasks)
+        var work_block_size = ceildiv(work_units, num_tasks)
 
         parallel_memcpy(
             dest,

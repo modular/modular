@@ -5,11 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math import div_ceil
+from math import ceildiv
 
 from algorithm import map, parallelize, sync_parallelize
 from buffer import Buffer
-from runtime.llcl import Runtime, num_physical_cores
+from runtime.llcl import num_physical_cores
 
 
 # CHECK-LABEL: test_sync_parallelize
@@ -23,7 +23,7 @@ fn test_sync_parallelize():
     for i in range(len(vector)):
         vector[i] = i
 
-    var chunk_size = div_ceil(len(vector), num_work_items)
+    var chunk_size = ceildiv(len(vector), num_work_items)
 
     @always_inline
     @__copy_capture(vector, chunk_size)
@@ -60,7 +60,7 @@ fn test_parallelize():
     for i in range(len(vector)):
         vector[i] = i
 
-    var chunk_size = div_ceil(len(vector), num_work_items)
+    var chunk_size = ceildiv(len(vector), num_work_items)
 
     @parameter
     @__copy_capture(vector, chunk_size)

@@ -5,13 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from collections import List
-from math import div_ceil, erf, exp, tanh
+from math import ceildiv, erf, exp, tanh
 from sys.info import num_physical_cores, simdwidthof
 
 from algorithm import elementwise
 from buffer import Buffer
-from buffer.list import Dim, DimList
 
 from utils.index import StaticIntTuple
 
@@ -30,7 +28,7 @@ fn test_elementwise_1d():
     for i in range(len(vector)):
         vector[i] = i
 
-    var chunk_size = div_ceil(len(vector), num_work_items)
+    var chunk_size = ceildiv(len(vector), num_work_items)
 
     @always_inline
     @__copy_capture(vector)

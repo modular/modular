@@ -12,19 +12,18 @@ from algorithm import map
 ```
 """
 
-from math import align_down, div_ceil, is_power_of_2
+from math import align_down, ceildiv, is_power_of_2
 from os import abort
-from sys.info import num_physical_cores, sizeof, triple_is_nvidia_cuda
+from sys.info import num_physical_cores, triple_is_nvidia_cuda
 
-from gpu import BlockDim, BlockIdx, GridDim, ThreadIdx
+from gpu import BlockIdx, GridDim, ThreadIdx
 from gpu.host import Device, Function, Stream
 from runtime import tracing
-from runtime.llcl import Runtime, TaskGroup, TaskGroupTask, TaskGroupTaskList
+from runtime.llcl import Runtime, TaskGroup, TaskGroupTaskList
 from runtime.tracing import Trace, TraceLevel
 
 from utils._numerics import FlushDenormals
 from utils.index import Index, StaticIntTuple
-from utils.static_tuple import StaticTuple
 
 # ===----------------------------------------------------------------------===#
 # Map
@@ -459,7 +458,7 @@ fn _parallelize_impl[
         num_workers: The number of works to use for execution.
     """
 
-    var chunk_size = max(div_ceil(num_work_items, num_workers), 1)
+    var chunk_size = max(ceildiv(num_work_items, num_workers), 1)
 
     @always_inline
     @__copy_capture(chunk_size)
@@ -1060,7 +1059,7 @@ fn _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
     # Ensure at least one worker is always returned to avoid division by zero.
     var rt = Runtime()
     return max(
-        1, min(rt.parallelism_level(), div_ceil(problem_size, grain_size))
+        1, min(rt.parallelism_level(), ceildiv(problem_size, grain_size))
     )
 
 
@@ -1257,7 +1256,7 @@ fn _elementwise_impl_cpu_1d[
         return
 
     var num_workers = _get_num_workers(problem_size)
-    var chunk_size = div_ceil(problem_size, num_workers)
+    var chunk_size = ceildiv(problem_size, num_workers)
 
     @always_inline
     @__copy_capture(chunk_size, problem_size)
@@ -1338,7 +1337,7 @@ fn _elementwise_impl_cpu_nd[
 
     var num_workers = _get_num_workers(total_size)
     var parallelism_size = total_size // shape[rank - 1]
-    var chunk_size = div_ceil(parallelism_size, num_workers)
+    var chunk_size = ceildiv(parallelism_size, num_workers)
 
     @always_inline
     @__copy_capture(chunk_size, parallelism_size)
@@ -1419,7 +1418,7 @@ fn _elementwise_impl_gpu[
     var num_blocks = max(
         1,
         min(
-            div_ceil(num_packed_elems, block_size),
+            ceildiv(num_packed_elems, block_size),
             sm_count * threads_per_sm // block_size * num_waves,
         ),
     )
@@ -1517,7 +1516,7 @@ fn parallelize_over_rows[
         num_rows,
         _get_num_workers(total_size, grain_size),
     )
-    var chunk_size = div_ceil(num_rows, num_workers)
+    var chunk_size = ceildiv(num_rows, num_workers)
 
     @always_inline
     @__copy_capture(chunk_size, num_rows)
@@ -1593,7 +1592,7 @@ fn stencil[
 
     var num_workers = _get_num_workers(total_size)
     var parallelism_size = total_size // shape[rank - 1]
-    var chunk_size = div_ceil(parallelism_size, num_workers)
+    var chunk_size = ceildiv(parallelism_size, num_workers)
 
     alias unroll_factor = 8  # TODO: Comeup with a cost heuristic.
 
@@ -1661,10 +1660,10 @@ fn stencil[
                 # Will be the zero if dilation is 1, or the closest point >0 if
                 # dilation > 1
                 if lower_bound[0] < 0:
-                    var mul_i = div_ceil(-lower_bound[0], step_i)
+                    var mul_i = ceildiv(-lower_bound[0], step_i)
                     lower_bound[0] = lower_bound[0] + mul_i * step_i
                 if lower_bound[1] < 0:
-                    var mul_j = div_ceil(-lower_bound[1], step_j)
+                    var mul_j = ceildiv(-lower_bound[1], step_j)
                     lower_bound[1] = lower_bound[1] + mul_j * step_j
 
                 # Part X (inner part)
