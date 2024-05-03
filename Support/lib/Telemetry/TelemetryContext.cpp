@@ -178,6 +178,10 @@ void TelemetryContext::flush(std::chrono::microseconds timeout) {
 
 TelemetryContext::TelemetryContext(
     Settings &settings, const llvm::StringMap<AttributeValue> &resources) {
+  bool isProdBuild = false;
+#ifdef MODULAR_PRODUCTION
+  isProdBuild = true;
+#endif
 #ifdef MODULAR_ENABLE_TELEMETRY
   using namespace opentelemetry::sdk::resource;
 
@@ -298,7 +302,7 @@ TelemetryContext::TelemetryContext(
       settings.get<StringRef>("telemetry.exporters.metrics.uds_name").str();
 
   // Only allow modular developers to overwrite this endpoint.
-  if (!settings.getBool<ModularDeveloperEntitlement>())
+  if (isProdBuild && !settings.getBool<ModularDeveloperEntitlement>())
     httpEndpoint = kTelemetryUrl;
 
   // Create metric readers, one for each exporter.
@@ -349,7 +353,7 @@ TelemetryContext::TelemetryContext(
       settings.get<StringRef>("telemetry.exporters.logs.file_path").str();
 
   // See above; only developers can overwrite the httpEndpoint.
-  if (!settings.getBool<ModularDeveloperEntitlement>())
+  if (isProdBuild && !settings.getBool<ModularDeveloperEntitlement>())
     httpEndpoint = kTelemetryUrl;
 
   // Create log processors for each exporter.
