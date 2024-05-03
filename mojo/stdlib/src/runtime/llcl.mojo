@@ -285,16 +285,16 @@ struct Task[type: AnyRegType]:
         result becomes available. This function must be force inlined into the
         calling async function.
         """
-        var cur_hdl = __mlir_op.`pop.coroutine.opaque_handle`()
+        var cur_hdl = __mlir_op.`co.opaque_handle`()
 
         __mlir_region await_body():
             _async_and_then(
                 cur_hdl,
                 AsyncContext.get_chain(self.handle._get_ctx[AsyncContext]()),
             )
-            __mlir_op.`pop.coroutine.await.end`()
+            __mlir_op.`co.await.end`()
 
-        __mlir_op.`pop.coroutine.await`[_region = "await_body".value]()
+        __mlir_op.`co.await`[_region = "await_body".value]()
         return self.get()
 
     fn wait(self) -> type:
@@ -394,13 +394,13 @@ struct TaskGroup:
 
     @always_inline
     fn __await__(inout self):
-        var cur_hdl = __mlir_op.`pop.coroutine.opaque_handle`()
+        var cur_hdl = __mlir_op.`co.opaque_handle`()
 
         __mlir_region await_body():
             Self.await_body_impl(cur_hdl, self)
-            __mlir_op.`pop.coroutine.await.end`()
+            __mlir_op.`co.await.end`()
 
-        __mlir_op.`pop.coroutine.await`[_region = "await_body".value]()
+        __mlir_op.`co.await`[_region = "await_body".value]()
 
     fn wait(inout self):
         self._task_complete()
@@ -566,7 +566,7 @@ struct MojoCallTask:
         var hdl = coro._handle
         __mlir_op.`lit.ownership.mark_destroyed`(Reference(coro).value)
         __mlir_op.`lit.ownership.mark_destroyed`(self_lit_ref)
-        __mlir_op.`pop.coroutine.resume`(hdl)
+        __mlir_op.`co.resume`(hdl)
 
 
 # ===----------------------------------------------------------------------===#
@@ -658,4 +658,4 @@ struct MojoCallRaisingTask:
         var hdl = coro._handle
         __mlir_op.`lit.ownership.mark_destroyed`(Reference(coro).value)
         __mlir_op.`lit.ownership.mark_destroyed`(self_lit_ref)
-        __mlir_op.`pop.coroutine.resume`(hdl)
+        __mlir_op.`co.resume`(hdl)
