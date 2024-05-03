@@ -3,14 +3,11 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up, div_ceil, fma
+from math import align_up, ceildiv
 from sys.info import alignof, has_neon, simdwidthof
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
-from buffer.buffer import (
-    Buffer,
-    NDBuffer,
-)
+from buffer.buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from .Gemv import gemv
 from .MatmulUtils import (
@@ -19,7 +16,6 @@ from .MatmulUtils import (
     calculate_tile_n_k,
     dispatch_get_kernel_type,
     elementwise_epilogue_type,
-    get_kernel_type,
     get_min_task_size,
     get_partitioned_matmul,
     packA_i8mm,
@@ -27,8 +23,8 @@ from .MatmulUtils import (
     InnerKernelID,
     select_inner_kernel,
 )
-from memory import memset_zero, stack_allocation
-from memory.unsafe import DTypePointer, bitcast
+from memory import memset_zero
+from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
 
 from .matmul_vnni import Inner_matmul_vnni
@@ -38,18 +34,9 @@ from .matmul_default import Inner_matmul_default
 
 from collections import OptionalReg as Optional
 from utils.index import Index, StaticIntTuple
-from utils.loop import unroll
-from utils.static_tuple import StaticTuple
 
 from .MatmulGPU import _matmul_gpu
-from .MatmulPack import (
-    BTileGenerator,
-    PackMatrixCols,
-    PackMatrixRows,
-    pack_b_ndbuffer,
-    pack_matmul_b_shape_func,
-    pack_transposed_b_ndbuffer,
-)
+from .MatmulPack import BTileGenerator
 
 from .apple_accelerate import apple_matmul, use_apple_accelerate_lib
 
@@ -586,7 +573,7 @@ fn _matmul_cpu_impl[
 
         var complexity = m * n * k
         var num_tasks = min(
-            div_ceil(complexity, get_min_task_size()),
+            ceildiv(complexity, get_min_task_size()),
             num_threads if num_threads > 0 else Runtime().parallelism_level(),
         )
 

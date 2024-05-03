@@ -5,14 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 """The module implements Transpose functions."""
 
-from math import div_ceil
-from sys.info import simdwidthof, sizeof
+from math import ceildiv
+from sys.info import simdwidthof
 from sys.intrinsics import strided_load, strided_store
 
 from algorithm import (
     sync_parallelize,
     tile,
-    unswitch,
     vectorize,
     parallel_memcpy,
 )
@@ -657,7 +656,7 @@ fn _should_run_parallel(
         # We will have to process several rows in each thread
         if (min_work_per_task % work_per_row) != 0:
             return False
-        var rows_per_worker = div_ceil(min_work_per_task, work_per_row)
+        var rows_per_worker = ceildiv(min_work_per_task, work_per_row)
         if N // rows_per_worker < 4:
             return False
 
@@ -698,13 +697,13 @@ fn _transpose_2d_parallel_tiled[
     if min_work_per_task > M * simd_width:
         rows_per_worker = min_work_per_task // (M * simd_width)
 
-    var work = div_ceil(n_tiles, rows_per_worker)
+    var work = ceildiv(n_tiles, rows_per_worker)
 
     var num_threads = Runtime().parallelism_level()
 
     var num_tasks = min(work, num_threads)
 
-    var work_block_size = div_ceil(work, num_tasks)
+    var work_block_size = ceildiv(work, num_tasks)
 
     @parameter
     @__copy_capture(work_block_size, m_tiles, N, M)
@@ -812,7 +811,7 @@ fn _transpose_4d_swap_middle_helper[
 
         var num_tasks = min(work, num_threads)
 
-        var work_block_size = div_ceil(work, num_tasks)
+        var work_block_size = ceildiv(work, num_tasks)
 
         @parameter
         @__copy_capture(work, work_block_size)
@@ -943,9 +942,9 @@ fn transpose_trivial_memcpy[
         memcpy(dst_ptr, src_ptr, total_size)
 
     else:
-        var work_units = div_ceil(total_size, min_work_per_task)
+        var work_units = ceildiv(total_size, min_work_per_task)
         var num_tasks = min(work_units, Runtime().parallelism_level())
-        var work_block_size = div_ceil(work_units, num_tasks)
+        var work_block_size = ceildiv(work_units, num_tasks)
 
         parallel_memcpy(
             dst_ptr,
@@ -1042,11 +1041,11 @@ fn _copy_with_strides[
     else:
         var num_threads = Runtime().parallelism_level()
         var num_tasks = min(
-            div_ceil(output.bytecount(), min_work_per_task), num_threads
+            ceildiv(output.bytecount(), min_work_per_task), num_threads
         )
 
         var work = axis_dim
-        var work_block_size = div_ceil(work, num_tasks)
+        var work_block_size = ceildiv(work, num_tasks)
 
         @always_inline
         @__copy_capture(

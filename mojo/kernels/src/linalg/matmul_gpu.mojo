@@ -3,19 +3,14 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import align_down, div_ceil
+from math import align_down, ceildiv
 from sys.info import alignof
 
 from algorithm.functional import tile_and_unswitch
-from buffer.buffer import (
-    Buffer,
-    NDBuffer,
-)
-from buffer.list import Dim, DimList
-from .Gemv import gemv
+from buffer.buffer import NDBuffer
+from buffer.list import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Function, Stream
-from gpu.host.memory import _memset_async
 from gpu.memory import AddressSpace
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from gpu.tensor_ops import tc_reduce
@@ -27,7 +22,7 @@ from memory import stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 
 from collections import OptionalReg as Optional
-from utils.index import Index, StaticIntTuple
+from utils.index import Index
 from utils.static_tuple import StaticTuple
 from utils._numerics import get_accum_type
 
@@ -343,7 +338,7 @@ fn gemv_kernel[
 
     if warpId < m:
         # Every warp processes a single row of the resultant vector
-        for i in range(div_ceil(k, WARP_SIZE)):
+        for i in range(ceildiv(k, WARP_SIZE)):
             var idx = i * WARP_SIZE + int(lane_id())
             var val = SIMD[s_type, 1]()
             if idx < k:
@@ -397,7 +392,7 @@ fn gemv_tc_kernel[
 
     if warpId < m:
         # Every warp processes a single row of the resultant vector
-        for i in range(div_ceil(k, WARP_SIZE)):
+        for i in range(ceildiv(k, WARP_SIZE)):
             var idx = i * WARP_SIZE + int(lane_id())
             var val = Scalar[a_type]()
             if idx < k:
@@ -451,7 +446,7 @@ fn gevm_kernel[
     ]()
 
     # Every block computes warp size length of output values
-    for i in range(div_ceil(k, warpsPerBlock)):
+    for i in range(ceildiv(k, warpsPerBlock)):
         var val = SIMD[c_type, 1]()
         var row = i * warpsPerBlock + warpId
         if lane_id() == 0:
@@ -790,7 +785,7 @@ fn _matmul_gpu_dispatch[
                 b,
                 Scalar[c_type](1),
                 Scalar[c_type](0),
-                grid_dim=(div_ceil(n, BN), div_ceil(m, BM)),
+                grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
                 block_dim=(NUM_THREADS),
                 stream=stream,
             )
@@ -818,7 +813,7 @@ fn _matmul_gpu_dispatch[
                 m,
                 n,
                 k,
-                grid_dim=div_ceil(m, WARPS_PER_BLOCK),
+                grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 stream=stream,
             )
@@ -848,7 +843,7 @@ fn _matmul_gpu_dispatch[
                 m,
                 n,
                 k,
-                grid_dim=div_ceil(n, WARPS_PER_BLOCK),
+                grid_dim=ceildiv(n, WARPS_PER_BLOCK),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 stream=stream,
             )
@@ -881,7 +876,7 @@ fn _matmul_gpu_dispatch[
                     m,
                     n,
                     k,
-                    grid_dim=(div_ceil(n, tile_size), div_ceil(m, tile_size)),
+                    grid_dim=(ceildiv(n, tile_size), ceildiv(m, tile_size)),
                     block_dim=(tile_size, tile_size),
                     stream=stream,
                 )
@@ -910,7 +905,7 @@ fn _matmul_gpu_dispatch[
                     m,
                     n,
                     k,
-                    grid_dim=(div_ceil(m, BLOCK_DIM), div_ceil(n, BLOCK_DIM)),
+                    grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
                     stream=stream,
                 )

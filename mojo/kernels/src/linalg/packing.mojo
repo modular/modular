@@ -3,23 +3,15 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up, div_ceil
-from sys.info import (
-    has_neon,
-    os_is_macos,
-)
+from math import align_down, align_up, ceildiv
+from sys.info import has_neon
 
 from sys.intrinsics import PrefetchOptions
 
 from algorithm import unswitch
 
-from buffer.buffer import (
-    Buffer,
-    NDBuffer,
-    partial_simd_load,
-    partial_simd_store,
-)
-from buffer.list import Dim, DimList
+from buffer.buffer import NDBuffer, partial_simd_load
+from buffer.list import DimList
 
 from .Gemv import gemv
 from .MatmulUtils import (
@@ -458,7 +450,7 @@ struct PackMatrixCols[
         var nc = self.valid_data_dim[1]
         alias column_inner_size2 = column_inner_size // 2
         for i in range(0, align_up(kc, i8mm_cols), i8mm_cols):
-            for j in range(div_ceil(nc, column_inner_size2)):
+            for j in range(ceildiv(nc, column_inner_size2)):
                 for p in range(0, column_inner_size2, i8mm_rows):
                     for i2 in range(i8mm_cols):
                         for p2 in range(i8mm_rows):
@@ -568,8 +560,8 @@ fn _pack_matmul_b_shape_func_impl[
     # If we are on MacOS with below data types, we use cblas_sgemm, so override
     # packing
     if not use_apple_accelerate_lib(c_type, a_type, b_type):
-        output[0] = div_ceil(output[0], tile_n_k[1]) * tile_n_k[1]
-        output[1] = div_ceil(output[1], tile_n_k[0]) * tile_n_k[0]
+        output[0] = ceildiv(output[0], tile_n_k[1]) * tile_n_k[1]
+        output[1] = ceildiv(output[1], tile_n_k[0]) * tile_n_k[0]
 
     return output
 
