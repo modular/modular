@@ -1,18 +1,18 @@
 // RUN: kgen-opt %s -verify-parameters -lower-lit-types -verify-parameters | FileCheck %s
 
 lit.struct.decl @Coro<T: type> register_passable {
-  lit.struct.field coro : !co.routine<() -> !kgen.paramref<T>>
+  lit.struct.field coro : !co.routine<!kgen.paramref<T>>
 }
 
 // CHECK-LABEL: kgen.generator @get_promise
-// CHECK-SAME: %arg0: !co.routine<() -> !kgen.paramref<T>>
+// CHECK-SAME: %arg0: !co.routine<!kgen.paramref<T>>
 kgen.generator @get_promise<T: type>(%arg0: !lit.declref<@Coro<:type T>>) {
   kgen.unreachable
 }
 
 // CHECK-LABEL: kgen.generator @get_coro
 kgen.generator @get_coro<T: type>(%arg0: !lit.declref<@Coro<:type T>>) {
-  // CHECK-NEXT: call @get_promise<:type T>(%arg0) : (!co.routine<() -> !kgen.paramref<T>>)
+  // CHECK-NEXT: call @get_promise<:type T>(%arg0) : (!co.routine<!kgen.paramref<T>>)
   kgen.call @get_promise<:type T>(%arg0) : (!lit.declref<@Coro<:type T>>) -> ()
   kgen.unreachable
 }

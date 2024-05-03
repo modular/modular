@@ -14,7 +14,7 @@ include "Support/Compiler/Bytecode.td"
 //===----------------------------------------------------------------------===//
 
 def CoroutineType : DialectType<(type
-  ConcreteType<"SignatureType">:$signature
+  TypeArray:$types
 )>;
 
 def CODialectTypes : DialectTypes<"co"> {

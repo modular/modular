@@ -6,6 +6,7 @@
 
 #include "KGEN/CODialect/CODialect.h"
 #include "KGEN/CODialect/COTypes.h"
+#include "KGEN/KGENDialect/KGENDialect.h"
 #include "Support/Compiler/Bytecode.h"
 #include "llvm/ADT/TypeSwitch.h"
 

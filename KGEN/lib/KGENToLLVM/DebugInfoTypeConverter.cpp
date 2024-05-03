@@ -201,8 +201,8 @@ DIType KGEN::DebugInfoTypeConverter::buildDebugType(POP::ArrayType type) {
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(CO::CoroutineType type) {
   // We map coroutine types to pointers to subroutine types.
-  return buildPointerType(
-      buildDebugSubroutineType(type.getSignature().getValues()));
+  return buildPointerType(buildDebugSubroutineType(
+      FunctionType::get(type.getContext(), {}, type.getTypes())));
 }
 
 DIType KGEN::DebugInfoTypeConverter::buildDebugType(PackType type) {

@@ -31,24 +31,24 @@ kgen.func @none_stage_closure() -> !kgen.signature<() -> !kgen.none> {
 }
 
 // CHECK-LABEL: kgen.func @async_fn() async
-// CHECK-SAME: -> !co.routine<() -> ()>
-kgen.func @async_fn() async -> !co.routine<() -> !kgen.none> {
-  // CHECK: [[HDL:%.*]] = co.handle : <() -> ()>
-  %0 = co.handle : <() -> !kgen.none>
+// CHECK-SAME: -> !co.routine<>
+kgen.func @async_fn() async -> !co.routine<!kgen.none> {
+  // CHECK: [[HDL:%.*]] = co.handle : <>
+  %0 = co.handle : <!kgen.none>
   %none = kgen.param.constant: none = <#kgen.none>
-  // CHECK: [[PROMISE:%.*]] = co.promise [[HDL]] : <() -> ()>
+  // CHECK: [[PROMISE:%.*]] = co.promise [[HDL]] : <>
   // CHECK: [[CASTED:%.*]] = pop.pointer.bitcast [[PROMISE]] : !kgen.pointer<struct<()>> to !kgen.pointer<struct<(none)>>
-  %1 = co.promise %0 : <() -> !kgen.none>
+  %1 = co.promise %0 : <!kgen.none>
   %2 = kgen.struct.gep %1[0] : <struct<(none)>>
   pop.store %none, %2 : !kgen.pointer<none>
-  // CHECK: return %0 : !co.routine<() -> ()>
-  kgen.return %0 : !co.routine<() -> !kgen.none>
+  // CHECK: return %0 : !co.routine<>
+  kgen.return %0 : !co.routine<!kgen.none>
 }
 
 // CHECK-LABEL: kgen.func @async_execute
 kgen.func @async_execute() {
-  // CHECK: lit.async.execute <() -> ()>
-  lit.async.execute <() -> !kgen.none> {
+  // CHECK: lit.async.execute <>
+  lit.async.execute <!kgen.none> {
     kgen.unreachable
   }
   kgen.return
@@ -105,14 +105,14 @@ kgen.func @async_signature(%arg0: !kgen.signature<() async -> !kgen.none>) {
 }
 
 // CHECK-LABEL: kgen.func @coroutine_promise
-// CHECK-SAME: %arg0: !co.routine<() -> ()>
-// CHECK-SAME: %arg1: !co.routine<() -> i32>
-kgen.func @coroutine_promise(%arg0: !co.routine<() -> !kgen.none>, %arg1: !co.routine<() -> i32>) {
-  // CHECK: co.promise %arg0 : <() -> ()>
+// CHECK-SAME: %arg0: !co.routine<>
+// CHECK-SAME: %arg1: !co.routine<i32>
+kgen.func @coroutine_promise(%arg0: !co.routine<!kgen.none>, %arg1: !co.routine<i32>) {
+  // CHECK: co.promise %arg0 : <>
   // CHECK: pop.pointer.bitcast
-  %0 = co.promise %arg0 : <() -> !kgen.none>
-  // CHECK: co.promise %arg1 : <() -> i32>
+  %0 = co.promise %arg0 : <!kgen.none>
+  // CHECK: co.promise %arg1 : <i32>
   // CHECK-NOT: pop.pointer.bitcast
-  %1 = co.promise %arg1 : <() -> i32>
+  %1 = co.promise %arg1 : <i32>
   kgen.return
 }

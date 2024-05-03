@@ -26,13 +26,6 @@ CoroutineType::getTypeAlign(TargetInfoAttr target) const {
   return target.getDataLayout().getPointerABIAlign();
 }
 
-CoroutineType CoroutineType::get(MLIRContext *ctx, TypeRange resultTypes,
-                                 bool raises) {
-  auto coroSig = SignatureType::get(FunctionType::get(ctx, {}, resultTypes), {},
-                                    {}, {}, FnEffects().setThrows(raises));
-  return CoroutineType::get(ctx, coroSig);
-}
-
 //===----------------------------------------------------------------------===//
 // CODialect
 //===----------------------------------------------------------------------===//

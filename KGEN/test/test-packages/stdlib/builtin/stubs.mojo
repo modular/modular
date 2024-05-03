@@ -215,7 +215,7 @@ trait AnyType:
 @value
 @register_passable
 struct Coroutine[T: AnyRegType]:
-    var value: __mlir_type[`!co.routine<() -> `, T, `>`]
+    var value: __mlir_type[`!co.routine<`, T, `>`]
 
     fn __await__(self) -> T:
         while __mlir_attr.true:
@@ -225,9 +225,7 @@ struct Coroutine[T: AnyRegType]:
 @value
 @register_passable
 struct RaisingCoroutine[T: AnyRegType]:
-    var value: __mlir_type[
-        `!co.routine<() throws -> !kgen.variant<`, Error, `, `, T, `>>`
-    ]
+    var value: __mlir_type[`!co.routine<!kgen.variant<`, Error, `, `, T, `>>`]
 
     fn __await__(self) raises -> T:
         while __mlir_attr.true:

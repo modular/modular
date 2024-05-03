@@ -59,6 +59,14 @@ static SignatureType lowerResult(SignatureType signature) {
       conventions, signature.getFnEffects().setThrows(false));
 }
 
+/// Remove `none` results from coroutine types.
+static CO::CoroutineType removeNoneCoroutine(CO::CoroutineType coro) {
+  auto [anyNone, newTypes] = removeNoneTypes(coro.getTypes());
+  if (!anyNone)
+    return coro;
+  return CO::CoroutineType::get(coro.getContext(), newTypes);
+}
+
 /// Remove none types from the results of debuginfo subroutine types as well.
 static DebugInfo::DISubroutineType
 removeDINoneResults(DebugInfo::DISubroutineType type) {
@@ -78,6 +86,7 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
 void LowerCallingConventionsPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement(lowerResult);
+  replacer.addReplacement(removeNoneCoroutine);
   replacer.addReplacement(removeDINoneResults);
 
   auto walkFn = [&](Operation *op) {
