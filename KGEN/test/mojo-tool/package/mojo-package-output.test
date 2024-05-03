@@ -1,0 +1,22 @@
+// Test that, without a `-o` output argument, a package is created in the
+// current working directory:
+// RUN: mojo package %S/test_package
+// RUN: kgen-opt -mlir-print-debuginfo test_package.mojopkg | FileCheck %s
+// CHECK: lit.package @test_package
+// RUN: rm test_package.mojopkg
+
+// Test that, given a `-o` output argument, a package is created with the given
+// name:
+// RUN: mojo package %S/test_package -o %T/foo.mojopkg
+// RUN: kgen-opt -mlir-print-debuginfo %T/foo.mojopkg \
+// RUN:   | FileCheck %s --check-prefix=CHECK-O
+// CHECK-O: lit.package @foo
+// RUN: rm %T/foo.mojopkg
+
+// Test that, given an `-o` argument for an existing directory, a package is
+// created within that directory:
+// RUN: mojo package %S/test_package -o %T
+// RUN: kgen-opt -mlir-print-debuginfo %T/test_package.mojopkg \
+// RUN:   | FileCheck %s --check-prefix=CHECK-O-DIR
+// CHECK-O-DIR: lit.package @test_package
+// RUN: rm %T/test_package.mojopkg

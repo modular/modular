@@ -222,6 +222,26 @@ struct PackageArgs {
 };
 } // namespace
 
+/// Returns whether the given path is an existing directory, or an error if one
+/// prevents us from determining anything about the given path.
+static ErrorOr<bool> isExistingDirectory(const std::filesystem::path &path) {
+  std::error_code ec;
+  bool exists = std::filesystem::exists(path, ec);
+  if (ec)
+    return Error(
+        llvm::formatv("could not determine if output path '{0}' exists: {1}",
+                      path, ec.message()));
+  if (!exists)
+    return false;
+
+  bool isDirectory = std::filesystem::is_directory(path, ec);
+  if (ec)
+    return Error(llvm::formatv(
+        "could not determine if output path '{0}' is a directory: {1}", path,
+        ec.message()));
+  return isDirectory;
+}
+
 /// Parse the `package` subcommand arguments into a struct.
 static ErrorOrSuccess parsePackageArgs(const State &state,
                                        const llvm::opt::InputArgList &args,
@@ -241,7 +261,7 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
   }
 
   // Use the output path the user specified, or if none was specified, output
-  // "directory-name.mojopkg".
+  // "input-directory-name.mojopkg".
   std::string inputDirName =
       std::filesystem::path(pkgArgs.inputPath).filename().string();
   if (args.hasArg(options::OPT_o)) {
@@ -253,6 +273,17 @@ static ErrorOrSuccess parsePackageArgs(const State &state,
     } else {
       // Otherwise, validate the output path and infer the package name from it.
       std::filesystem::path outputPath(pkgArgs.outputPath);
+
+      // If the user has specified a directory, output an
+      // "input-directory-name.mojopkg" within that directory.
+      ErrorOr<bool> isDirectoryOr = isExistingDirectory(outputPath);
+      if (isDirectoryOr.isError())
+        return isDirectoryOr.takeError();
+      if (*isDirectoryOr) {
+        outputPath = outputPath / (inputDirName + ".mojopkg");
+        pkgArgs.outputPath = outputPath;
+      }
+
       if (outputPath.extension() != ".mojopkg" &&
           outputPath.extension() != ".📦")
         return Error("output path must have a '.mojopkg' or '.📦' extension");
