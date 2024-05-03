@@ -1,0 +1,22 @@
+load("//utils/bazel/build/rules:kgen.bzl", "kgen_kernel")
+
+package(default_visibility = ["//visibility:public"])
+
+kgen_kernel(
+    name = "mojo_build_server",
+    src = "mojo_build_server.mojo",
+    deps = [
+        "//Kernels/mojo/stdlib",
+    ],
+)
+
+cc_binary(
+    name = "mojo-build-server",
+    deps = [
+        ":mojo_build_server",
+        "//KGEN:CompilerRT",
+        "//KGEN:MojoBuild",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Globals",
+    ],
+)

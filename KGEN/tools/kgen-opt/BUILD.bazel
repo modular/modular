@@ -1,0 +1,27 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "kgen-opt",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//KGEN:Compiler",
+        "//KGEN:CompilerRT",
+        "//KGEN:ExecutionEngine",
+        "//KGEN:KGENDialect",
+        "//KGEN:LITDialect",
+        "//KGEN:MOGGPreElab",
+        "//KGEN:MojoParser",
+        "//KGEN:ObjectCompiler",
+        "//KGEN:Pipeline",
+        "//KGEN:Support",
+        "//KGEN:ToolCommon",
+        "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Base",
+        "//Support:Compiler",
+        "//Support:Globals",
+        "//Support:Init",
+        "//Support:MDialect",
+        "@llvm-project//mlir:MlirOptLib",
+    ],
+)

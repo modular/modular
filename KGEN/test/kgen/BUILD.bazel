@@ -12,11 +12,11 @@ lit_tests(
         "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
     },
     tools = [
-        "//KGEN:hash-mlir",
-        "//KGEN:kgen",
-        "//KGEN:kgen-opt",
-        "//KGEN:kgen-translate",
-        "//KGEN:llvm-module-split",
+        "//KGEN/tools/hash-mlir",
+        "//KGEN/tools/kgen",
+        "//KGEN/tools/kgen-opt",
+        "//KGEN/tools/kgen-translate",
+        "//KGEN/tools/llvm-module-split",
         "@llvm-project//llvm:llvm-objdump",
     ],
 )

@@ -4,6 +4,6 @@ lit_tests(
     name = "mojo-build-server",
     srcs = glob(["**/*.test"]),
     tools = [
-        "//KGEN:mojo-build-server",
+        "//KGEN/tools/mojo-build-server",
     ],
 )

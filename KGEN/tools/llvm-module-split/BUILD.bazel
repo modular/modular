@@ -1,0 +1,15 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "llvm-module-split",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//Config",
+        "//KGEN:Compiler",
+        "//KGEN:ObjectCompiler",
+        "//KGEN:ToolCommon",
+        "//LLCL:Runtime",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
