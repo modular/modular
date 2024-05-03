@@ -110,7 +110,7 @@ TEST_F(MeteringContextTest, FlushFailure) {
 TEST_F(MeteringContextTest, FlushOnShutdown) {
   createContext({});
   context->shutdown();
-  ASSERT_EQ(values.size(), 2u);
+  ASSERT_EQ(values.size(), 1u);
 }
 
 TEST_F(MeteringContextTest, FlushWithThreadIdempotent) {

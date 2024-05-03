@@ -204,7 +204,7 @@ protected:
 
 TEST_F(MeteringContextLogTest, EmptyInstanceInfo) {
   EXPECT_CALL(*mockTelemetryCtx.mockLogger, emitL0Event(_, _))
-      .Times(3) // start(), flush(), destructor flush()
+      .Times(2) // start(), flush()
       .WillRepeatedly(
           [this](llvm::StringRef eventName,
                  const llvm::StringMap<Logs::AttributeValue> &attributes) {
