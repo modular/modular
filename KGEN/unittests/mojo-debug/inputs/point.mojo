@@ -10,8 +10,10 @@ struct Point(CollectionElement):
     var x: Int
     var y: Int
 
-    fn __init__(x: Int, y: Int) -> Self:
-        return Self {x: x, y: y}  # breakpoint
+    fn __init__(inout self, x: Int, y: Int):
+        self.x = x  # breakpoint
+        self.y = y
+        return
 
 
 fn main():
