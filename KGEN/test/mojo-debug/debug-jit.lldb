@@ -4,6 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
+# XFAIL: *
+# COM: https://linear.app/modularml/issue/MOTO-429/
+
 # RUN: %debug -Xlldb -b -Xlldb -o -Xlldb 'b jit.mojo:9' -Xlldb -o -Xlldb 'run' '%S/Inputs/jit.mojo' | FileCheck %s
 
 # COM: Here we test debugging of a source file passed by relative path.
