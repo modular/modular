@@ -38,7 +38,7 @@ from .softmax import softmax
 
 from layout.int_tuple import IntTuple
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor
+from layout.layout_tensor import LayoutTensor, copy_dram_to_sram
 
 from layout.int_tuple import IntTuple
 from layout.layout import *
@@ -594,13 +594,13 @@ fn flash_attention_kernel[
     alias thread_xmem_layout = Layout.row_major(
         (num_threads // depth) * simd_size, depth // simd_size
     )
-    var thread_loadq_gmem_frags = q_gmem_base.vectorize[
-        1, simd_size
-    ]().distribute[thread_xmem_layout](ThreadIdx.x())
-    var thread_storeq_smem_frags = q_smem_base.vectorize[
-        1, simd_size
-    ]().distribute[thread_xmem_layout](ThreadIdx.x())
-    thread_storeq_smem_frags.copy_from_numa(thread_loadq_gmem_frags)
+    copy_dram_to_sram[
+        src_thread_layout=thread_xmem_layout,
+        dst_thread_layout=thread_xmem_layout,
+    ](
+        q_smem_base.vectorize[1, simd_size](),
+        q_gmem_base.vectorize[1, simd_size](),
+    )
 
     # Clear thread's register tile for output.
     _fill[TM * TN](o_thread_tile, 0)
@@ -629,7 +629,6 @@ fn flash_attention_kernel[
             DType.float32, Layout(IntTuple(BN, depth), IntTuple(row_stride, 1))
         ](k_ptr.offset(global_kv_offset))
 
-        alias k_smem_layout = Layout.row_major(BK, BN_padded)
         var k_smem_base = LayoutTensor[
             DType.float32,
             Layout.row_major(BK, BN_padded),
@@ -640,16 +639,10 @@ fn flash_attention_kernel[
         for subtile_start_col in range(0, depth, BK):
             var k_gmem_tile = k_gmem_base.tile[BN, BK](subtile_start_col // BK)
 
-            # alias thread_loadk_gmem_layout = Layout.row_major((num_threads // BK) * simd_size, BK // simd_size)
-            var thread_loadk_gmem_frags = k_gmem_tile.distribute[
-                Layout.row_major(num_threads // BK, BK)
-            ](ThreadIdx.x())
-
-            # alias thread_storek_smem_layout = Layout.col_major(BK // simd_size, (num_threads // BK) * simd_size)
-            var thread_loadk_smem_frags = k_smem_tile.distribute[
-                Layout.col_major(BK, num_threads // BK)
-            ](ThreadIdx.x())
-            thread_loadk_smem_frags.copy_from_numa(thread_loadk_gmem_frags)
+            copy_dram_to_sram[
+                src_thread_layout = Layout.row_major(num_threads // BK, BK),
+                dst_thread_layout = Layout.col_major(BK, num_threads // BK),
+            ](k_smem_tile, k_gmem_tile)
 
             # Gaurd write of q_tile and kv_tile.
             barrier()
@@ -760,14 +753,13 @@ fn flash_attention_kernel[
             alias thread_v_xmem_layout = Layout.row_major(
                 (num_threads // BN) * simd_size, BN // simd_size
             )
-            var thread_loadv_gmem_frags = v_gmem_tile.vectorize[
-                1, simd_size
-            ]().distribute[thread_v_xmem_layout](ThreadIdx.x())
-
-            var thread_storev_smem_frags = v_smem_base.vectorize[
-                1, simd_size
-            ]().distribute[thread_v_xmem_layout](ThreadIdx.x())
-            thread_storev_smem_frags.copy_from_numa(thread_loadv_gmem_frags)
+            copy_dram_to_sram[
+                src_thread_layout=thread_v_xmem_layout,
+                dst_thread_layout=thread_v_xmem_layout,
+            ](
+                v_smem_base.vectorize[1, simd_size](),
+                v_gmem_tile.vectorize[1, simd_size](),
+            )
 
             # Guard writing to p_tile and kv_tile.
             barrier()
