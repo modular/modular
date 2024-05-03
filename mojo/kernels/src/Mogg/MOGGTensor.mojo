@@ -12,7 +12,8 @@ from sys.intrinsics import strided_load
 from algorithm.functional import elementwise, vectorize
 from buffer import NDBuffer
 from buffer.list import DimList
-from memory.unsafe import Pointer, bitcast
+from memory.unsafe import bitcast
+from memory import UnsafePointer
 from MOGGIntList import IntList
 from register import *
 from extensibility.tensor_helpers import UnsafeRefCounter, InnerStride
@@ -92,7 +93,7 @@ struct Tensor[
         inout self,
         ptr: DTypePointer[type],
         shape: IntList,
-        ref_count_ptr: Pointer[Scalar[DType.index]],
+        ref_count_ptr: UnsafePointer[Scalar[DType.index]],
     ):
         self.data = ptr
         self.shape = IntList[static_shape](shape)
@@ -118,7 +119,7 @@ struct Tensor[
             _ = self.storage_ref_count.increment()
         else:
             self.storage_ref_count = UnsafeRefCounter[DType.index](
-                Pointer[Scalar[DType.index]]()
+                UnsafePointer[Scalar[DType.index]]()
             )
 
     @always_inline
@@ -127,7 +128,7 @@ struct Tensor[
         ptr: DTypePointer[type],
         shape: IntList,
         strides: IntList,
-        ref_count_ptr: Pointer[Scalar[DType.index]],
+        ref_count_ptr: UnsafePointer[Scalar[DType.index]],
     ):
         self.data = ptr
         self.shape = IntList[static_shape](shape)
@@ -144,7 +145,7 @@ struct Tensor[
             _ = self.storage_ref_count.increment()
         else:
             self.storage_ref_count = UnsafeRefCounter[DType.index](
-                Pointer[Scalar[DType.index]]()
+                UnsafePointer[Scalar[DType.index]]()
             )
 
     @mogg_tensor_copy_constructor()
@@ -157,7 +158,7 @@ struct Tensor[
         else:
             # Create an empty refcount if the memory isn't owned.
             self.storage_ref_count = UnsafeRefCounter[DType.index](
-                Pointer[Scalar[DType.index]]()
+                UnsafePointer[Scalar[DType.index]]()
             )
 
         self.data = existing.data
@@ -170,7 +171,7 @@ struct Tensor[
         return DimList.create_unknown[len(Self.static_shape)]()
 
     @always_inline
-    fn refcount(self) -> Pointer[SIMD[DType.index, 1]]:
+    fn refcount(self) -> UnsafePointer[SIMD[DType.index, 1]]:
         return self.storage_ref_count._underlying_value
 
     @mogg_tensor_deconstructor()

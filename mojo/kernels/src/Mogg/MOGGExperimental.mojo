@@ -36,7 +36,7 @@ fn empty_tensor[
     type: DType,
 ](shape: IntList) -> Tensor[type, shape.static_values]:
     var ptr = DTypePointer[type].alloc(shape.nelems())
-    var ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
+    var ref_cnt = UnsafePointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     return Tensor[type, shape.static_values](ptr, shape, ref_cnt)
 
@@ -50,7 +50,7 @@ fn empty_strided_tensor[
     type, shape.static_values, strides.static_values
 ]:
     var ptr = DTypePointer[type].alloc(shape.nelems())
-    var ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
+    var ref_cnt = UnsafePointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     return Tensor[type, shape.static_values, strides.static_values](
         ptr, shape, ref_cnt
@@ -1118,7 +1118,7 @@ fn test_my_abs(
 ) -> Tensor[x.type]:
     var new_shape = IntList(3, 2)
     var ptr = DTypePointer[x.type].alloc(new_shape.nelems())
-    var ref_cnt = Pointer[Scalar[DType.index]].alloc(1)
+    var ref_cnt = UnsafePointer[Scalar[DType.index]].alloc(1)
     ref_cnt[0] = 0
     var out = Tensor[x.type](ptr, new_shape, ref_cnt)
 

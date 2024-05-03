@@ -577,7 +577,7 @@ fn to_tensor[
         DTypePointer[type](data),
         shape,
         strides,
-        Pointer[Scalar[DType.index]](),
+        UnsafePointer[Scalar[DType.index]](),
     )
 
 
