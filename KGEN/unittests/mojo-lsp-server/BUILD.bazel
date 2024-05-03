@@ -12,12 +12,12 @@ cc_test(
     name = "CodeActionTest",
     srcs = ["CodeActionTest.cpp"],
     data = [
-        "//KGEN:mojo-lsp-server",
+        "//KGEN/tools/mojo-lsp-server",
         "//Kernels/mojo/stdlib",
     ],
     env = {
         "MODULAR_MOJO_IMPORT_PATH": "Kernels/mojo/stdlib",
-        "MODULAR_MOJO_LSP_SERVER_PATH": "$(location //KGEN:mojo-lsp-server)",
+        "MODULAR_MOJO_LSP_SERVER_PATH": "$(location //KGEN/tools/mojo-lsp-server)",
     },
     deps = [
         ":Support",
@@ -30,12 +30,12 @@ cc_test(
     name = "SampleTest",
     srcs = ["SampleTest.cpp"],
     data = [
-        "//KGEN:mojo-lsp-server",
+        "//KGEN/tools/mojo-lsp-server",
         "//Kernels/mojo/stdlib",
     ],
     env = {
         "MODULAR_MOJO_IMPORT_PATH": "Kernels/mojo/stdlib",
-        "MODULAR_MOJO_LSP_SERVER_PATH": "$(location //KGEN:mojo-lsp-server)",
+        "MODULAR_MOJO_LSP_SERVER_PATH": "$(location //KGEN/tools/mojo-lsp-server)",
     },
     deps = [
         ":Support",

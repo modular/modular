@@ -1,0 +1,13 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "hash-mlir",
+    srcs = glob(["*.cpp"]),
+    deps = [
+        "//KGEN:ToolCommon",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Base",
+        "//Support:Globals",
+        "@llvm-project//mlir:BytecodeWriter",
+    ],
+)

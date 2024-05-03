@@ -22,7 +22,7 @@ lit_tests(
     data = [
         "//KGEN:CompilerRT.distributable",
         "//KGEN:CompilerRT.shared.file",
-        "//KGEN:mojo-build-server",
+        "//KGEN/tools/mojo-build-server",
         "//Kernels/mojo/layout",
         "//Kernels/mojo/stdlib",
         "@llvm-project//compiler-rt:orc_rt",
@@ -40,14 +40,14 @@ lit_tests(
         "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
         "MODULAR_CRASH_REPORTING_ENABLED": "false",
         "MODULAR_MOJO_IMPORT_PATH": "$(location //Kernels/mojo/stdlib),$(location //Kernels/mojo/layout)",
-        "MODULAR_MOJO_BUILD_SERVER_PATH": "$(location //KGEN:mojo-build-server)",
+        "MODULAR_MOJO_BUILD_SERVER_PATH": "$(location //KGEN/tools/mojo-build-server)",
     },
     tags = [
         "no-asan",
     ],
     tools = [
-        "//KGEN:kgen-opt",
-        "//KGEN:mojo",
+        "//KGEN/tools/kgen-opt",
+        "//KGEN/tools/mojo",
         "@llvm-project//llvm:llvm-objdump",
     ],
 )

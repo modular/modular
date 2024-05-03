@@ -1,0 +1,146 @@
+load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
+load("@llvm-project//mlir:tblgen.bzl", "td_library")
+load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
+load("//utils/bazel/build/rules:tablegen.bzl", "driver_option_tablegen")
+
+package(default_visibility = ["//visibility:public"])
+
+expand_template(
+    name = "MojoDebugHeaderGen",
+    out = "MojoDebug.h",
+    substitutions = select({
+        "@platforms//os:macos": {
+            "@CMAKE_SHARED_LIBRARY_PREFIX@": "lib",
+            "@CMAKE_SHARED_LIBRARY_SUFFIX@": ".dylib",
+        },
+        "@platforms//os:linux": {
+            "@CMAKE_SHARED_LIBRARY_PREFIX@": "lib",
+            "@CMAKE_SHARED_LIBRARY_SUFFIX@": ".so",
+        },
+    }),
+    template = "Debug/MojoDebug.h.in",
+)
+
+cc_library(
+    name = "MojoDebugHeader",
+    hdrs = [":MojoDebugHeaderGen"],
+    include_prefix = "Debug",
+)
+
+[
+    driver_option_tablegen(
+        name = command,
+        srcs = glob(["{}/*.td".format(command)]),
+        manual_name = "mojo-{}".format(command.lower()),
+        markdown_name = command.lower(),
+        td_file = "{command}/{command}Options.td".format(command = command),
+        deps = [
+            ":MojoDescriptionTdFiles",
+        ],
+    )
+    for command in [
+        "Build",
+        "BuildProject",
+        "Debug",
+        "Demangle",
+        "Doc",
+        "Format",
+        "Package",
+        "REPL",
+        "Run",
+        "Test",
+    ]
+]
+
+td_library(
+    name = "MojoDescriptionTdFiles",
+    srcs = glob([
+        "*.td",
+        "BuildProject/*.td",
+        "Common/*.td",
+    ]),
+    includes = ["."],
+    deps = [
+        "//Support:DriverCommandTdFiles",
+        "//Support:OptTableTdFiles",
+    ],
+)
+
+driver_option_tablegen(
+    name = "Index",
+    srcs = ["DriverOptions.td"],
+    includes = ["."],
+    manual_name = "mojo",
+    markdown_name = "index",
+    opts = ["-DMODULAR_MOJO_BUILD_SERVER_PREVIEW"],
+    td_file = "DriverOptions.td",
+    deps = [
+        ":Build.td_library",
+        ":BuildProject.td_library",
+        ":Debug.td_library",
+        ":Demangle.td_library",
+        ":Doc.td_library",
+        ":Format.td_library",
+        ":MojoDescriptionTdFiles",
+        ":Package.td_library",
+        ":REPL.td_library",
+        ":Run.td_library",
+        ":Test.td_library",
+    ],
+)
+
+cc_binary(
+    name = "mojo",
+    srcs = glob([
+        "**/*.h",
+        "**/*.cpp",
+    ]),
+    includes = ["."],
+    local_defines = ["MODULAR_MOJO_BUILD_SERVER_PREVIEW"],
+    deps = [
+        ":Build.inc_files",
+        ":BuildProject.inc_files",
+        ":Debug.inc_files",
+        ":Demangle.inc_files",
+        ":Doc.inc_files",
+        ":Format.inc_files",
+        ":Index.inc_files",
+        ":MojoDebugHeader",
+        ":Package.inc_files",
+        ":REPL.inc_files",
+        ":Run.inc_files",
+        ":Test.inc_files",
+        "//Config",
+        "//KGEN:Compiler",
+        "//KGEN:CompilerRT",
+        "//KGEN:ExecutionEngine",
+        "//KGEN:KGENDialect",
+        "//KGEN:LITDialect",
+        "//KGEN:MojoBuild",
+        "//KGEN:MojoParser",
+        "//KGEN:MojoTesting",
+        "//KGEN:MojoTooling",
+        "//KGEN:ObjectCompiler",
+        "//KGEN:POPDialect",
+        "//KGEN:Support",
+        "//KGEN:ToolCommon",
+        "//KGEN/tools/common",
+        "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Base",
+        "//Support:Compiler",
+        "//Support:CrashReporting",
+        "//Support:Driver",
+        "//Support:Filesystem",
+        "//Support:Globals",
+        "//Support:Init",
+        "//Support:MArchTarget",
+        "//Support:MDialect",
+        "//Support:Telemetry",
+    ],
+)
+
+opt_wrapper(
+    name = "mojo.opt",
+    dep = ":mojo",
+)

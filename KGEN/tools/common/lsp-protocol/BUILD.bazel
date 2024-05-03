@@ -1,14 +1,12 @@
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
-    name = "mojo-lsp-test-client",
+    name = "lsp-protocol",
     srcs = glob(["*.cpp"]),
     hdrs = glob(["*.h"]),
+    include_prefix = ".",
     deps = [
-        "//KGEN:Support",
-        "//KGEN/tools/common/lsp-protocol",
         "//Support:Base",
-        "//Support:Filesystem",
         "@llvm-project//mlir:MlirLspServerSupportLib",
     ],
 )

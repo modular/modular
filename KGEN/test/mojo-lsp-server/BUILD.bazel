@@ -15,6 +15,6 @@ lit_tests(
         "MODULAR_MOJO_IMPORT_PATH": "$(location //Kernels/mojo/stdlib)",
     },
     tools = [
-        "//KGEN:mojo-lsp-server",
+        "//KGEN/tools/mojo-lsp-server",
     ],
 )

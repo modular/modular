@@ -17,9 +17,9 @@ lit_tests(
         "MODULAR_MOJO_IMPORT_SRCS": "$(locations //Kernels/mojo/stdlib:stdlib_srcs)",
     },
     tools = [
-        "//KGEN:hash-mlir",
-        "//KGEN:kgen-opt",
-        "//KGEN:kgen-translate",
-        "//KGEN:mojo",
+        "//KGEN/tools/hash-mlir",
+        "//KGEN/tools/kgen-opt",
+        "//KGEN/tools/kgen-translate",
+        "//KGEN/tools/mojo",
     ],
 )

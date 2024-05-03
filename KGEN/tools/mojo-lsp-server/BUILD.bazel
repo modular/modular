@@ -1,0 +1,27 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "mojo-lsp-server",
+    srcs = glob([
+        "*.cpp",
+        "*.h",
+    ]),
+    deps = [
+        "//KGEN:LITDialect",
+        "//KGEN:MojoParser",
+        "//KGEN:MojoTooling",
+        "//KGEN:ObjectCompiler",
+        "//KGEN:Pipeline",
+        "//KGEN:Support",
+        "//KGEN:ToolCommon",
+        "//KGEN/tools/common/lsp-protocol",
+        "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Base",
+        "//Support:Globals",
+        "//Support:Init",
+        "//Support:Telemetry",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:MlirLspServerLib",
+    ],
+)

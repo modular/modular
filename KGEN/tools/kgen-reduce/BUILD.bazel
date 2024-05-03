@@ -1,0 +1,26 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "kgen-reduce",
+    srcs = glob([
+        "*.cpp",
+        "*.h",
+    ]),
+    deps = [
+        "//KGEN:Compiler",
+        "//KGEN:CompilerRT",
+        "//KGEN:ExecutionEngine",
+        "//KGEN:HLCFDialect",
+        "//KGEN:KGENDialect",
+        "//KGEN:MojoParser",
+        "//KGEN:ObjectCompiler",
+        "//KGEN:Pipeline",
+        "//KGEN:ToolCommon",
+        "//KGEN:TransformUtils",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Base",
+        "//Support:Globals",
+        "//Support:Init",
+        "@llvm-project//mlir:MlirOptLib",
+    ],
+)

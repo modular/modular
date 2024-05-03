@@ -1,0 +1,26 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "mojo-repl-entry-point",
+    srcs = glob(["*.cpp"]),
+    # We need to prevent inline function expansion to guarentee our entry
+    # point function is correctly invoked.
+    copts = [
+        "-O0",
+        "-g0",
+    ],
+    deps = [
+        "//KGEN:CompilerRT.static",
+        "//KGEN:MojoParser",
+        "//KGEN:MojoTooling",
+        "//KGEN:ObjectCompiler",
+        "//KGEN:Pipeline",
+        "//KGEN:ToolCommon",
+        "//LLCL:RuntimeGlobals",
+        "//Support:Base",
+        "//Support:Globals",
+        "//Support:Init",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:MlirLspServerLib",
+    ],
+)
