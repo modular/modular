@@ -1,7 +1,5 @@
 // RUN: kgen-opt %s -verify-diagnostics -split-input-file
 
-// -----
-
 kgen.func @pop_select_simd(
     // expected-note @below {{prior use here}}
     %arg0: !pop.scalar<bool>,
@@ -222,25 +220,6 @@ kgen.func @func() {
   // expected-error @below {{'kgen.global.address' op result type does not match global type 'i32'}}
   kgen.global.address @global_var : <i64>
   kgen.return
-}
-
-// -----
-
-// expected-note @below {{see function here}}
-kgen.func @coroutine_handle() {
-  // expected-error @below {{'co.handle' op surrounding function must have 1 result}}
-  %hdl = co.handle : <() -> index>
-  kgen.return
-}
-
-// -----
-
-// expected-note @below {{surrounding function returns 'index'}}
-kgen.func @coroutine_handle() -> index {
-  // expected-error @below {{'co.handle' op surrounding function result type does not match coroutine handle type}}
-  %hdl = co.handle : <() -> index>
-  %idx0 = index.constant 0
-  kgen.return %idx0 : index
 }
 
 // -----
