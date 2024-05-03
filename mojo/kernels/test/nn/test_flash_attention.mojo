@@ -380,15 +380,16 @@ def test_case_split_kv[
 
     # Allocate the KV cache for the previous sequence.
     var k_cache = build_ndbuffer[type](
-        build_shape[kv_rank](cfg.depth_dim, cfg.prev_seq_len())
+        build_shape[kv_rank](cfg.prev_seq_len(), cfg.depth_dim)
     )
+
     var v_cache = build_ndbuffer[type](
         build_shape[kv_rank](cfg.prev_seq_len(), cfg.depth_dim)
     )
 
     # Allocate the QKV tensors from the current sequence.
     var q = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
-    var k = build_ndbuffer[type](build_shape(cfg.depth_dim, cfg.seq_len))
+    var k = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
     var v = build_ndbuffer[type](build_shape(cfg.seq_len, cfg.depth_dim))
 
     # Allocate the attention mask.
@@ -413,7 +414,7 @@ def test_case_split_kv[
             for s in range(cfg.prev_seq_len()):
                 for d in range(cfg.depth_dim):
                     ref_k[StaticIntTuple[rank](b, h, d, s)] = k_cache[
-                        StaticIntTuple[kv_rank](0, b, h, d, s)
+                        StaticIntTuple[kv_rank](0, b, h, s, d)
                     ]
                     ref_v[StaticIntTuple[rank](b, h, s, d)] = v_cache[
                         StaticIntTuple[kv_rank](0, b, h, s, d)
@@ -422,7 +423,7 @@ def test_case_split_kv[
             for s in range(cfg.prev_seq_len(), cfg.kv_seq_len):
                 for d in range(cfg.depth_dim):
                     ref_k[StaticIntTuple[rank](b, h, d, s)] = k[
-                        StaticIntTuple[rank](b, h, d, s - cfg.prev_seq_len())
+                        StaticIntTuple[rank](b, h, s - cfg.prev_seq_len(), d)
                     ]
                     ref_v[StaticIntTuple[rank](b, h, s, d)] = v[
                         StaticIntTuple[rank](b, h, s - cfg.prev_seq_len(), d)
@@ -430,21 +431,6 @@ def test_case_split_kv[
 
     # Compute reference outputs for comparison.
     reference_attention(q, ref_k, ref_v, mask, ref_output, cfg.scale)
-
-    # Define lambda to unsqueeze indices with a leading 1-dim.
-    # In other words [B, H, S, D] becomes [1, B, H, S, D].
-    @always_inline
-    fn idx_to_kv_idx(
-        idx: StaticIntTuple[rank],
-    ) raises -> StaticIntTuple[kv_rank]:
-        var kv_idx = StaticIntTuple[kv_rank]()
-        kv_idx[0] = 0
-
-        @unroll
-        for i in range(rank):
-            kv_idx[i + 1] = idx[i]
-
-        return kv_idx
 
     # Define input lambdas for split KV cache attn `flash_attention_split_kv`.
     @parameter
