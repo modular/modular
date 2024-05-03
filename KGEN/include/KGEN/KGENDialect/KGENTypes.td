@@ -113,7 +113,9 @@ def KGEN_StringType : KGENType<"String", "string", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_IntLiteralType : KGENType<"IntLiteral", "int_literal",[
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "Arbitrary-precision integer type for literals.";
   let description = [{
     The `!kgen.int_literal` type represents an infinite precision
@@ -128,7 +130,9 @@ def KGEN_IntLiteralType : KGENType<"IntLiteral", "int_literal",[
 // FloatLiteralType
 //===----------------------------------------------------------------------===//
 
-def KGEN_FloatLiteralType : KGENType<"FloatLiteral", "float_literal",[]> {
+def KGEN_FloatLiteralType : KGENType<"FloatLiteral", "float_literal", [
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "Arbitrary-precision float type for literals.";
   let description = [{
     The `!kgen.float_literal` type is for use in arbitrary precision
