@@ -26,7 +26,7 @@ from .MatmulUtils import (
     packA_i8mm,
     partition_work,
     use_i8mm_fn,
-    get_mm_config,
+    get_kernel_config,
 )
 from memory import memset_zero
 from register import mogg_register
@@ -410,13 +410,12 @@ fn _batched_matmul_cpu[
                 or sub_matmul_config.shape[1] <= 0
             ):
                 return
-
-            alias config = get_mm_config[
-                a_type, b_type, c_type, transpose_b=transpose_b
-            ]()
+            alias config = get_kernel_config[a_type, b_type, c_type]()
 
             _submatmul_sequential_sync[
                 config,
+                transpose_b,
+                b_packed=False,
                 elementwise_lambda_fn = Optional[
                     matmul_elementwise_epilogue_type
                 ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,

@@ -357,7 +357,7 @@ fn main():
     test_types[b_packed=False, mixed_kernels=False]()
     test_types[b_packed=False, mixed_kernels=True]()
     # Note: b_packed = True doesn't apply for Apple cblas_sgemm. This is handled
-    #       in the packing functions, and in get_mm_config, if we are on
+    #       in the packing functions, and in get_kernel_config, if we are on
     #       MacOs and for DType.float32 a, b, c used in cblas_sgemm.
     test_types[b_packed=True, mixed_kernels=False]()
     test_types[b_packed=True, mixed_kernels=True]()

@@ -4,15 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 from math import align_down, align_up, div_ceil, fma
-from sys.info import (
-    alignof,
-    has_avx2,
-    has_avx512f,
-    has_neon,
-    has_neon_int8_dotprod,
-    simdwidthof,
-    os_is_macos,
-)
+from sys.info import alignof, has_neon, simdwidthof
 
 from algorithm import sync_parallelize, tile, unswitch, vectorize
 from buffer.buffer import (
@@ -23,8 +15,7 @@ from buffer.list import Dim, DimList
 from .Gemv import gemv
 from .MatmulUtils import (
     GemmShape,
-    MatmulConfig,
-    SubMatmulConfig,
+    KernelConfig,
     calculate_tile_n_k,
     dispatch_get_kernel_type,
     elementwise_epilogue_type,
@@ -32,7 +23,7 @@ from .MatmulUtils import (
     get_min_task_size,
     get_partitioned_matmul,
     packA_i8mm,
-    get_mm_config,
+    get_kernel_config,
     InnerKernelID,
     select_inner_kernel,
 )
@@ -111,7 +102,10 @@ fn elementwise_epilogue_c_tile[
 
 # Interface method
 fn tiledMatmulRun[
-    config: MatmulConfig,
+    config: KernelConfig,
+    transpose_b: Bool,
+    b_packed: Bool,
+    simd_size: Int,
     elementwise_epilogue_enabled: Bool,
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
@@ -123,6 +117,7 @@ fn tiledMatmulRun[
     elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
     global_tile_shape: GemmShape,
     global_tile_offset: GemmShape,
+    kernel_type_m: Int = 0,
 ):
     """Interface function to run tiled matmul on a given sub-tile.
 
@@ -134,13 +129,25 @@ fn tiledMatmulRun[
         elementwise_epilogue_fn: The elementwise epilogue function.
         global_tile_shape: Tile shape this call will process.
         global_tile_offset: Tile offset on the original buffer.
+        kernel_type_m: M value of the matmul for the kernel type.
     """
 
     var tile_n_k = calculate_tile_n_k[
         a.type, b.type, c.type, config.kernel_cols
     ](global_tile_shape)
 
-    var matmul = TiledMatmul[config, elementwise_epilogue_enabled, kernel_id](
+    alias b_packed2 = False if use_apple_accelerate_lib(
+        c.type, a.type, b.type
+    ) else b_packed
+
+    alias packed_shape = DimList.create_unknown[3]()
+    var matmul = TiledMatmul[
+        config,
+        transpose_b,
+        b_packed2,
+        elementwise_epilogue_enabled,
+        kernel_id,
+    ](
         alg,
         c,
         a,
@@ -154,8 +161,8 @@ fn tiledMatmulRun[
             b.type,
             c.type,
             b.shape,
-            config.transpose_b,
-            config.b_packed,
+            transpose_b,
+            b_packed2,
         ].get(b, tile_n_k),
         elementwise_epilogue_fn,
     )
@@ -165,7 +172,9 @@ fn tiledMatmulRun[
 # Tiled Matmul Implementation.
 @value
 struct TiledMatmul[
-    config: MatmulConfig,
+    config: KernelConfig,
+    transpose_b: Bool,
+    b_packed: Bool,
     elementwise_epilogue_enabled: Bool,
     kernel_id: InnerKernelID,
     a_type: DType,
@@ -202,8 +211,8 @@ struct TiledMatmul[
         b_type,
         c_type,
         b_shape,
-        config.transpose_b,
-        config.b_packed,
+        transpose_b,
+        b_packed,
     ]
 
     var elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None
@@ -345,7 +354,7 @@ struct TiledMatmul[
         # if b is packed, the packing was performed offline using a single inner
         # size and tile_n.
         @parameter
-        if not config.b_packed:
+        if not b_packed:
             alias secondary_tiles = VariadicList[Int](
                 config.kernel_cols, 2 * config.simd_size, config.simd_size
             )
@@ -514,7 +523,9 @@ fn _small_matmul[
 
 @always_inline
 fn _matmul_cpu[
-    config: MatmulConfig,
+    config: KernelConfig,
+    transpose_b: Bool,
+    b_packed: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
     kernel_id: InnerKernelID,
@@ -530,16 +541,16 @@ fn _matmul_cpu[
     @parameter
     if (
         single_thread_blocking_override
-        and not config.b_packed
+        and not b_packed
         and a.type == b.type
         and b.type == c.type
     ):
         return _small_matmul[
-            config.transpose_b,
+            transpose_b,
             elementwise_lambda_fn,
         ](a, b, c)
 
-    var shape = GemmShape.get[config.transpose_b](c, a, b)
+    var shape = GemmShape.get[transpose_b](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
@@ -564,7 +575,7 @@ fn _matmul_cpu[
         @parameter
         if use_apple_accelerate_lib(c.type, a.type, b.type):
             apple_matmul[
-                transpose_b = config.transpose_b,
+                transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
             ](c, a, b)
             return
@@ -621,7 +632,7 @@ fn _matmul_cpu[
             alias use_i8mm = kernel_id == InnerKernelID.I8MM
 
             _submatmul_sequential_sync[
-                config, elementwise_lambda_fn, kernel_id
+                config, transpose_b, b_packed, elementwise_lambda_fn, kernel_id
             ](
                 alg,
                 c,
@@ -664,24 +675,24 @@ fn matmul_M[
     kernel_type_m: Int,
     num_threads: Int = -1,
 ):
+    alias kernel_id = select_inner_kernel[a.type, b.type, c.type]()
+
     @parameter
     @always_inline
     fn dispatch_on_kernel_type[kernel_type: Bool]():
-        alias config = get_mm_config[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b=transpose_b,
-            b_packed=b_packed,
+        alias config = get_kernel_config[
+            a.type,
+            b.type,
+            c.type,
             kernel_type=kernel_type,
         ]()
-
-        alias kernel_id = select_inner_kernel[a.type, b.type, c.type]()
 
         @parameter
         if kernel_id == InnerKernelID.DEFAULT:
             _matmul_cpu[
                 config,
+                transpose_b,
+                b_packed,
                 elementwise_lambda_fn,
                 single_thread_blocking_override,
                 kernel_id,
@@ -696,6 +707,8 @@ fn matmul_M[
         elif kernel_id == InnerKernelID.VNNI:
             _matmul_cpu[
                 config,
+                transpose_b,
+                b_packed,
                 elementwise_lambda_fn,
                 single_thread_blocking_override,
                 kernel_id,
@@ -710,6 +723,8 @@ fn matmul_M[
         elif kernel_id == InnerKernelID.NEON:
             _matmul_cpu[
                 config,
+                transpose_b,
+                b_packed,
                 elementwise_lambda_fn,
                 single_thread_blocking_override,
                 kernel_id,
@@ -724,6 +739,8 @@ fn matmul_M[
         elif kernel_id == InnerKernelID.I8MM:
             _matmul_cpu[
                 config,
+                transpose_b,
+                b_packed,
                 elementwise_lambda_fn,
                 single_thread_blocking_override,
                 kernel_id,
@@ -791,19 +808,7 @@ fn matmul[
         ](c, a, b, kernel_type_m, num_threads)
 
     else:
-        alias config = get_mm_config[
-            a_type,
-            b_type,
-            c_type,
-            transpose_b=transpose_b,
-            b_packed=b_packed,
-        ]()
-
-        _matmul_gpu[
-            config,
-            elementwise_lambda_fn,
-            single_thread_blocking_override,
-        ](
+        _matmul_gpu[elementwise_lambda_fn, single_thread_blocking_override,](
             c,
             a,
             b,
@@ -812,7 +817,9 @@ fn matmul[
 
 
 fn _submatmul_sequential_sync[
-    config: MatmulConfig,
+    config: KernelConfig,
+    transpose_b: Bool,
+    b_packed: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
@@ -825,11 +832,13 @@ fn _submatmul_sequential_sync[
     sub_matrix_offset: GemmShape,
     kernel_type_m: Int = 0,
 ):
+    alias simd_size = simdwidthof[c.type]()
+
     fn elementwise_closure(offset: GemmShape, shape: GemmShape):
         @parameter
         if elementwise_lambda_fn:
             elementwise_epilogue_c_tile[
-                config.simd_size,
+                simd_size,
                 c.type,
                 c.shape,
                 elementwise_lambda_fn.value(),
@@ -841,7 +850,14 @@ fn _submatmul_sequential_sync[
         else:
             pass
 
-    tiledMatmulRun[config, elementwise_lambda_fn.__bool__(), kernel_id](
+    tiledMatmulRun[
+        config,
+        transpose_b,
+        b_packed,
+        simd_size,
+        elementwise_lambda_fn.__bool__(),
+        kernel_id,
+    ](
         alg,
         c,
         a,
@@ -849,11 +865,14 @@ fn _submatmul_sequential_sync[
         elementwise_closure,
         sub_matrix_shape,
         sub_matrix_offset,
+        kernel_type_m,
     )
 
 
 fn _submatmul_sequential_sync[
-    config: MatmulConfig,
+    config: KernelConfig,
+    transpose_b: Bool,
+    b_packed: Bool,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     saturated_vnni: Bool,
 ](
@@ -868,7 +887,13 @@ fn _submatmul_sequential_sync[
 
     @parameter
     if kernel_id == InnerKernelID.DEFAULT:
-        _submatmul_sequential_sync[config, elementwise_lambda_fn, kernel_id,](
+        _submatmul_sequential_sync[
+            config,
+            transpose_b,
+            b_packed,
+            elementwise_lambda_fn,
+            kernel_id,
+        ](
             Inner_matmul_default(),
             c,
             a,
@@ -878,7 +903,13 @@ fn _submatmul_sequential_sync[
             kernel_type_m,
         )
     elif kernel_id == InnerKernelID.VNNI:
-        _submatmul_sequential_sync[config, elementwise_lambda_fn, kernel_id,](
+        _submatmul_sequential_sync[
+            config,
+            transpose_b,
+            b_packed,
+            elementwise_lambda_fn,
+            kernel_id,
+        ](
             Inner_matmul_vnni[saturated_vnni](),
             c,
             a,
@@ -888,7 +919,13 @@ fn _submatmul_sequential_sync[
             kernel_type_m,
         )
     elif kernel_id == InnerKernelID.NEON:
-        _submatmul_sequential_sync[config, elementwise_lambda_fn, kernel_id,](
+        _submatmul_sequential_sync[
+            config,
+            transpose_b,
+            b_packed,
+            elementwise_lambda_fn,
+            kernel_id,
+        ](
             Inner_matmul_neon(),
             c,
             a,
@@ -898,7 +935,13 @@ fn _submatmul_sequential_sync[
             kernel_type_m,
         )
     elif kernel_id == InnerKernelID.I8MM:
-        _submatmul_sequential_sync[config, elementwise_lambda_fn, kernel_id,](
+        _submatmul_sequential_sync[
+            config,
+            transpose_b,
+            b_packed,
+            elementwise_lambda_fn,
+            kernel_id,
+        ](
             Inner_matmul_i8mm(),
             c,
             a,

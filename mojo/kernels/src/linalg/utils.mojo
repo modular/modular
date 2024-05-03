@@ -29,22 +29,13 @@ from buffer.list import DimList
 
 from utils.index import Index, StaticIntTuple
 
-from .apple_accelerate import use_apple_accelerate_lib
-
-
 alias elementwise_epilogue_type = fn[type: DType, width: Int] (
     StaticIntTuple[2], SIMD[type, width]
 ) capturing -> None
 
 
-struct MatmulConfig:
-    """Static configuration of tiled matmul algorithms."""
-
-    # Indicates if the input matrix B is transposed.
-    var transpose_b: Bool
-
-    # Indicates if the input matrix B is pre-packed.
-    var b_packed: Bool
+struct KernelConfig:
+    """Static configuration of the matmul inner kernel."""
 
     # Static packed shape info of the packed buffer.
     var packed_shape: DimList
@@ -58,27 +49,18 @@ struct MatmulConfig:
     # Static number of columns of the micro kernel.
     var kernel_cols: Int
 
-    # Enum of the kernel shape, only two shapes currently
-    var kernel_type: Bool
-
     fn __init__(
         inout self,
         *,
-        transpose_b: Bool,
-        b_packed: Bool,
         packed_shape: DimList,
         simd_size: Int,
         kernel_rows: Int,
         kernel_cols: Int,
-        kernel_type: Bool,
     ):
-        self.transpose_b = transpose_b
-        self.b_packed = b_packed
         self.packed_shape = packed_shape
         self.simd_size = simd_size
         self.kernel_rows = kernel_rows
         self.kernel_cols = kernel_cols
-        self.kernel_type = kernel_type
 
 
 @value
@@ -597,15 +579,13 @@ fn get_pack_data_size[type: DType]() -> Int:
 
 
 @always_inline
-fn get_mm_config[
+fn get_kernel_config[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     *,
-    transpose_b: Bool = False,
-    b_packed: Bool = False,
     kernel_type: Bool = False,
-]() -> MatmulConfig:
+]() -> KernelConfig:
     """Utility function to extract matmul configuration parameters for exported
     Functions.
         TODO: Add target dependent configuration parameters.
@@ -616,16 +596,11 @@ fn get_mm_config[
         a_type, b_type, c_type, kernel_type
     ]()
 
-    return MatmulConfig(
-        transpose_b=transpose_b,
-        b_packed=False if use_apple_accelerate_lib(
-            c_type, a_type, b_type
-        ) else b_packed,
+    return KernelConfig(
         packed_shape=DimList.create_unknown[3](),
         simd_size=simd_size,
         kernel_rows=kernel_shape.simd_rows,
         kernel_cols=kernel_shape.simd_cols * simd_size,
-        kernel_type=kernel_type,
     )
 
 

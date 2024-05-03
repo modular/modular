@@ -20,7 +20,6 @@ from gpu.memory import AddressSpace
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from gpu.tensor_ops import tc_reduce
 from .MatmulUtils import (
-    MatmulConfig,
     GemmShape,
     elementwise_epilogue_type,
 )
@@ -640,7 +639,6 @@ fn matmul_kernel_naive[
 
 @always_inline
 fn _matmul_gpu[
-    config: MatmulConfig,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
     single_thread_blocking_override: Bool = False,
 ](
@@ -657,8 +655,6 @@ fn _matmul_gpu[
     #     not single_thread_blocking_override,
     #     "single_thread_blocking_override not applicable",
     # ]()
-    constrained[config.transpose_b == False, "only NN matmul is supported"]()
-    constrained[not config.b_packed, "pre-packing not yet supported"]()
 
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M

@@ -21,7 +21,6 @@ from buffer.buffer import (
 from buffer.list import DimList
 from .MatmulUtils import (
     GemmShape,
-    MatmulConfig,
     get_matmul_prefetch_b_distance_k,
 )
 from memory import stack_allocation

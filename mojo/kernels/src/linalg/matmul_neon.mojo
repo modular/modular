@@ -11,7 +11,6 @@ from buffer.buffer import NDBuffer
 from buffer.list import DimList
 from .MatmulUtils import (
     GemmShape,
-    MatmulConfig,
 )
 from .MatmulLoadStore import LoadStore_neon
 

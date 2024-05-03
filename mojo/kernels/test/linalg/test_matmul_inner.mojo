@@ -11,7 +11,7 @@ from sys.info import has_neon, has_vnni
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.Matmul import GemmShape, MatmulConfig
+from LinAlg.Matmul import GemmShape, KernelConfig
 
 from LinAlg.matmul_vnni import Inner_matmul_vnni
 from LinAlg.matmul_i8mm import Inner_matmul_i8mm
@@ -19,7 +19,7 @@ from LinAlg.matmul_neon import Inner_matmul_neon
 from LinAlg.matmul_default import Inner_matmul_default
 from LinAlg.MatmulUtils import (
     get_matmul_arch_factor,
-    get_mm_config,
+    get_kernel_config,
     InnerKernelID,
     select_inner_kernel,
     use_vnni_fn,
@@ -70,7 +70,7 @@ fn _matmul_inner_loop[
 
 
 fn matmul_inner_loop[
-    config: MatmulConfig,
+    config: KernelConfig,
 ](
     c: NDBuffer,
     a: NDBuffer,
@@ -106,12 +106,7 @@ fn test_micro_kernel[
     alias c_shape = DimList.create_unknown[2]()
     alias b_packed_shape = DimList.create_unknown[3]()
 
-    alias config = get_mm_config[
-        a_type,
-        b_type,
-        c_type,
-        b_packed=True,
-    ]()
+    alias config = get_kernel_config[a_type, b_type, c_type]()
     alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
     alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()

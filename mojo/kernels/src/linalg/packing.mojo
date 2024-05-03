@@ -24,12 +24,12 @@ from buffer.list import Dim, DimList
 from .Gemv import gemv
 from .MatmulUtils import (
     GemmShape,
-    MatmulConfig,
+    KernelConfig,
     _get_tile_n_k,
     dispatch_get_kernel_type,
     get_matmul_arch_factor,
     get_packB_unroll_factor,
-    get_mm_config,
+    get_kernel_config,
     use_i8mm_fn,
     use_vnni_fn,
     get_pack_data_size,
@@ -545,16 +545,14 @@ fn pack_matmul_b_shape_func_M[
     @parameter
     @always_inline
     fn dispatch_on_kernel_type[kernel_type: Bool]():
-        alias config = get_mm_config[
+        alias config = get_kernel_config[
             a_type,
             b_type,
             c_type,
-            transpose_b=transpose_in_0,
-            b_packed=True,
             kernel_type=kernel_type,
         ]()
         tile_n_k = _get_tile_n_k[
-            a_type, b_type, c_type, config.kernel_cols, config.transpose_b
+            a_type, b_type, c_type, config.kernel_cols, transpose_in_0
         ](b_input)
 
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
@@ -772,20 +770,14 @@ fn _pack_b_ndbuffer_impl[
         @parameter
         @always_inline
         fn dispatch_on_kernel_type[kernel_type: Bool]():
-            alias config = get_mm_config[
+            alias config = get_kernel_config[
                 a_type,
                 b_type,
                 c_type,
-                transpose_b=transposed,
-                b_packed=True,
                 kernel_type=kernel_type,
             ]()
             var tile_n_k = _get_tile_n_k[
-                a_type,
-                b_type,
-                c_type,
-                config.kernel_cols,
-                config.transpose_b,
+                a_type, b_type, c_type, config.kernel_cols, transposed
             ](b_input)
             pack_b[
                 transposed,
@@ -943,7 +935,7 @@ fn pack_transposed_b_ndbuffer[
 
 @value
 struct BTileGenerator[
-    config: MatmulConfig,
+    config: KernelConfig,
     a_type: DType,
     b_type: DType,
     c_type: DType,
