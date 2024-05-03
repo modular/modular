@@ -4,5 +4,6 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not mojo package %S/test_package -o test.mojonot 2>&1 | FileCheck %s -check-prefix OUTPUT_FILE
-# OUTPUT_FILE: output path must have a '.mojopkg' or '.📦' extension
+# RUN: not mojo package %S/test_package -o test.mojonot 2>&1 | FileCheck %s
+# RUN: not mojo package %S/test_package -o not-a-directory/ 2>&1 | FileCheck %s
+# CHECK: output path must have a '.mojopkg' or '.📦' extension
