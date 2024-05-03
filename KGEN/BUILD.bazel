@@ -14,6 +14,7 @@ td_library(
     srcs = glob(["include/KGEN/CODialect/*.td"]),
     includes = ["include"],
     deps = [
+        ":KGENDialectTdFiles",
         "//Support:MTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
     ],
@@ -47,6 +48,7 @@ gentbl_cc_library(
     deps = [
         ":CODialectIncGen",
         ":CODialectTdFiles",
+        ":KGENDialectIncGen",
     ],
 )
 
@@ -58,6 +60,7 @@ cc_library(
     deps = [
         ":CODialectBytecodeIncGen",
         ":CODialectIncGen",
+        ":KGENDialect",
         "//Support:Compiler",
         "@llvm-project//mlir:IR",
     ],
@@ -672,6 +675,8 @@ cc_library(
     ]),
     strip_include_prefix = "include",
     deps = [
+        ":CODialect",
+        ":CODialectIncGen",
         ":Interpreter",
         ":KGENDialect",
         ":LITAttrsIncGen",
@@ -695,6 +700,7 @@ td_library(
     srcs = glob(["include/KGEN/POPDialect/*.td"]),
     includes = ["include"],
     deps = [
+        ":CODialectTdFiles",
         ":InterpreterTdFiles",
         ":KGENDialectTdFiles",
         "@llvm-project//mlir:BuiltinDialectTdFiles",
@@ -790,6 +796,8 @@ cc_library(
     hdrs = glob(["include/KGEN/POPDialect/*.h"]),
     strip_include_prefix = "include",
     deps = [
+        ":CODialect",
+        ":CODialectIncGen",
         ":Interpreter",
         ":KGENDialect",
         ":MemoryableTypeInterfaceIncGen",
