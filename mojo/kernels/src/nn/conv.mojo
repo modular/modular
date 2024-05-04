@@ -30,7 +30,7 @@ from memory.unsafe import DTypePointer
 from register import mogg_register
 from runtime.llcl import Runtime
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 
@@ -258,7 +258,7 @@ fn _m_to_n_ho_wo_nhwc(m: Int, HO: Int, WO: Int) -> StaticIntTuple[3]:
 @always_inline
 fn _reduce_output[
     simd_size: Int,
-    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
     scratch: DTypePointer,
     output: DTypePointer[scratch.type],
@@ -325,7 +325,7 @@ struct ConvDirectNHWC[
     output_type: DType,
     filter_packed: Bool,
     conv_attr: ConvInfoStatic[input_rank - 2],
-    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ]:
     """Implement the outer loops for direct convolution.
     Collapse N, HO, WO into one dimension n_ho_wo. Tile n_ho_wo, C, and F.
@@ -1932,7 +1932,7 @@ fn conv1d_update_wo_tile[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
-    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
     output: DTypePointer,
     input: DTypePointer,
@@ -2096,7 +2096,7 @@ fn conv2d_update_wo_tile[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
-    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
     output: DTypePointer,
     input: DTypePointer,
@@ -2273,7 +2273,7 @@ fn conv3d_update_wo_tile[
     effected_by_padding: Bool,
     has_residual: Bool,
     last_c_tile: Bool,
-    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ](
     output: DTypePointer,
     input: DTypePointer,
@@ -2906,7 +2906,7 @@ fn conv_nhwc_direct[
         output_type,
         filter_packed,
         conv_info_static,
-        Optional[elementwise_epilogue_type](
+        OptionalReg[elementwise_epilogue_type](
             elementwise_epilogue
         ) if lambdas_have_fusion else None,
     ].run(

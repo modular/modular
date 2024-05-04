@@ -19,7 +19,7 @@ from register import mogg_register
 from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 from utils.index import StaticIntTuple
 from utils.loop import unroll
 
@@ -385,7 +385,7 @@ fn gather_elementwise_fn_wrapper[
     ) capturing -> None,
     coords_rank: Int,
     simd_width: Int,
-    prefetch_fn: Optional[
+    prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
         ] (
@@ -475,7 +475,7 @@ fn gather[
     input_rank: Int,
     indices_rank: Int,
     output_rank: Int,
-    prefetch_fn: Optional[
+    prefetch_fn: OptionalReg[
         fn[
             input_rank: Int, indices_rank: Int
         ] (
@@ -559,7 +559,7 @@ fn scatter_nd_generator[
     single_thread_blocking_override: Bool,
     target: StringLiteral = "cpu",
     /,
-    reduce_fn: Optional[
+    reduce_fn: OptionalReg[
         fn[
             type: DType, width: Int
         ] (SIMD[type, width], SIMD[type, width]) capturing -> SIMD[type, width]

@@ -21,7 +21,7 @@ from memory.unsafe import DTypePointer
 from register import mogg_register
 from runtime.llcl import Runtime
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 
@@ -382,7 +382,7 @@ struct ConvTransposedPacked[
     filter_type: DType,
     output_type: DType,
     conv_attr: ConvInfoStatic[input_rank - 2],
-    elementwise_epilogue: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue: OptionalReg[elementwise_epilogue_type] = None,
 ]:
     var output: NDBuffer[output_type, output_rank, output_shape]
     var input: NDBuffer[input_type, input_rank, input_shape]
@@ -1383,7 +1383,7 @@ fn conv_transposed[
         filter_type,
         output_type,
         conv_attr,
-        Optional[elementwise_epilogue_type](
+        OptionalReg[elementwise_epilogue_type](
             elementwise_epilogue
         ) if lambdas_have_fusion else None,
     ].run(output, input, packed_filter, conv_shape)
