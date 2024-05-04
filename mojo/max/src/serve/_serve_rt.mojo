@@ -177,9 +177,9 @@ struct AwaitableCBatch:
                 self._ptr,
                 cur_hdl,
             )
-            __mlir_op.`co.await.end`()
+            __mlir_op.`co.suspend.end`()
 
-        __mlir_op.`co.await`[_region = "await_body".value]()
+        __mlir_op.`co.suspend`[_region = "await_body".value]()
         return self._ptr.get(self._lib)
 
 
