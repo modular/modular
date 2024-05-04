@@ -126,13 +126,10 @@ SomeStruct()
                        ASSERT_EQ((int)signatureHelp.signatures.size(), 2);
                        EXPECT_EQ(signatureHelp.activeSignature, 0);
                        EXPECT_EQ(signatureHelp.activeParameter, 1);
-                       // FIXME(38725): There's an unexpected `/` argument.
                        EXPECT_EQ(signatureHelp.signatures[0].label,
-                                 "fn __init__(inout self: Self, /)");
-                       // FIXME(38725): There's an unexpected `/` argument.
-                       EXPECT_EQ(
-                           signatureHelp.signatures[1].label,
-                           "fn __init__(inout self: Self, /, a_field: Int)");
+                                 "fn __init__(inout self: Self)");
+                       EXPECT_EQ(signatureHelp.signatures[1].label,
+                                 "fn __init__(inout self: Self, a_field: Int)");
                      })
       .execute();
 }

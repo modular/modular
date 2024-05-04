@@ -65,10 +65,9 @@ TEST(HoverTest, testHoverFunctionDecls) {
       .hover(doc, rangeInit.start,
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.range, rangeInit);
-               // FIXME(38725): There's an unexpected `/` argument.
                EXPECT_EQ(hover.contents.value,
                          R"(```mojo
-(function) fn __init__(inout self: Self, /, borrowed_input: Int, init_arg: Int, owned owned_input: Int, *init_kargs: Int)
+(function) fn __init__(inout self: Self, borrowed_input: Int, init_arg: Int, owned owned_input: Int, *init_kargs: Int)
 ```
 ---
 

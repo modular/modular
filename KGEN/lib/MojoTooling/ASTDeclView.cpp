@@ -643,9 +643,10 @@ std::string FunctionDeclView::getMarkdownDocString() const {
 template <typename T>
 static void printArgOrParameterSignature(
     ArrayRef<T> args, SmallVectorImpl<std::pair<unsigned, unsigned>> *offsets,
-    llvm::raw_string_ostream &os) {
+    llvm::raw_string_ostream &os, bool suppressSlashAfterSelf = false) {
   PassingKindPrinter passingKindPrinter(
-      os, args.size(), [&](size_t idx) { return args[idx].getPassingKind(); });
+      os, args.size(), [&](size_t idx) { return args[idx].getPassingKind(); },
+      suppressSlashAfterSelf);
   size_t idx = 0;
   auto printArg = [&](const T &arg) {
     passingKindPrinter.printOptionalStarSlash(idx);
@@ -679,7 +680,8 @@ std::string FunctionDeclView::getSignature(
                                  signatureOS);
 
   // Emit the arguments of the function.
-  printArgOrParameterSignature(ArrayRef(args), argumentOffsets, signatureOS);
+  printArgOrParameterSignature(ArrayRef(args), argumentOffsets, signatureOS,
+                               /*suppressSlashAfterSelf=*/isMethodFlag);
 
   // Emit the result type.
   if (returnOffset)
