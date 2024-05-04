@@ -40,28 +40,6 @@ def CO_CoroutineHandleOp : COOp<"handle"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineOpaqueHandleOp
-//===----------------------------------------------------------------------===//
-
-def CO_CoroutineOpaqueHandleOp : COOp<"opaque_handle"> {
-  let summary = "Get an opaque handle to the current coroutine, if it is one.";
-  let description = [{
-    The `co.opaque_handle` returns an opaque handle to the current
-    coroutine, if it is one. If the function in which this operation resides is
-    not a coroutine, the result is a null pointer.
-
-    Example:
-
-    ```mlir
-    %hdl = co.opaque_handle
-    ```
-  }];
-
-  let results = (outs CoroutineType:$hdl);
-  let assemblyFormat = "attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
 // CoroutineSuspendOp
 //===----------------------------------------------------------------------===//
 
