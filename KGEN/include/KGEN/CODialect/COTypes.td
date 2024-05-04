@@ -26,28 +26,16 @@ def CoroutineType : COType<"Coroutine", "routine",
   let summary = "A coroutine handle.";
   let description = [{
     The `!co.routine` type represents the handle to a coroutine. The
-    underlying type is an opaque pointer. This type contains the return types
-    of the coroutine.
+    underlying type is an opaque pointer.
 
     Example:
 
     ```mlir
-    // A coroutine that returns two results: an index and a 32-bit integer.
-    !co.routine<index, i32>
-    // A coroutine that throws.
-    !co.routine<i32>
+    !co.routine
     ```
   }];
 
-  let parameters = (ins OptionalArrayRefParameter<"Type">:$types);
-  let assemblyFormat = "`<` $types `>`";
-  let assemblyFormat = "`<` (`>`) : ($types^ `>`)?";
+  let assemblyFormat = "";
 }
-
-class CoroutineResultTypes<string name, string ref> : TypesMatchWith<
-    name # " types match coroutine result types", "coroutine", ref,
-    "$_self.cast<CoroutineType>().getTypes()">;
-
-def OpaqueCoroutineHandle : PointerOf<I8>;
 
 #endif // COTYPES_TD

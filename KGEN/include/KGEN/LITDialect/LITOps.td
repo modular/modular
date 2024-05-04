@@ -916,13 +916,12 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
   let summary = "Call to an async function.";
   let description = [{
     The `lit.async.call` operation calls an `async` parametric callable. It
-    returns a `!co.routine` of the callable's result types.
+    returns a `!co.routine`.
 
     Example:
 
     ```mlir
-    // `%coro` has type `!co.routine<index>`.
-    %coro = lit.async.call<() -> bar>[:<() -> index>() -> index: @foo]()
+    %coro = lit.async.call[:() -> index: @foo]()
     ```
   }];
 
@@ -936,9 +935,9 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
   let assemblyFormat = [{
     `` custom<Callee>($callee) ``
     custom<LifetimeParams>($implicitLifetimes) ``
-    custom<AsyncCallOpTypes>(type($operands), type($coroutine), ref($callee),
+    custom<AsyncCallOpTypes>(type($operands), ref($callee),
                              ref($implicitLifetimes))
-     `(` $operands `)` attr-dict
+    `(` $operands `)` attr-dict
   }];
 
   let hasVerifier = 1;
@@ -964,17 +963,19 @@ def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock,
 
     ```mlir
     %0 = kgen.param.constant: i32 = <3>
-    %coroHdl = lit.async.execute <i32, i64> {
+    %coroHdl = lit.async.execute : i32, i64 {
       %1 = kgen.param.constant: i64 = <5>
       kgen.return %0, %1 : i32, i64
     }
     ```
   }];
 
+  let arguments = (ins M_TypeArrayAttr:$types);
   let results = (outs Res<CoroutineType, "", [MemAlloc]>:$coroutine);
   let regions = (region SizedRegion<1>:$bodyRegion);
+
   let assemblyFormat = [{
-    type($coroutine) $bodyRegion attr-dict
+    custom<CoroutineTypes>($types) $bodyRegion attr-dict
   }];
 }
 

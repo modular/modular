@@ -10,7 +10,7 @@
 // CHECK-DAG: #[[SP:.*]] = #debuginfo.subprogram<name = <"inline_me">
 #calleeSp = #debuginfo.subprogram<name = <"inline_me">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 #callerSp = #debuginfo.subprogram<name = <"caller">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
-#asyncCallerSp = #debuginfo.subprogram<name = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!co.routine<index>>): DW_CC_normal>
+#asyncCallerSp = #debuginfo.subprogram<name = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!co.routine>): DW_CC_normal>
 #local_variable = #debuginfo.local_variable<scope = #calleeSp, name = "foo"> : !debuginfo.unresolved<index>
 
 #locAsyncCaller = loc(fused<#asyncCallerSp>["bar.mlir":18:7])
@@ -61,48 +61,48 @@ kgen.func @call_inline_me() -> index {
 // COM: Test location handling of async closure staging.
 
 // CHECK-LABEL: kgen.func @call_async
-kgen.func @call_async() -> !co.routine<index> {
+kgen.func @call_async() -> !co.routine {
   // CHECK-NEXT: %idx2 = index.constant 2 loc(#[[LOC_SCOPED_CALLER:.*]])
   %idx2 = index.constant 2 loc(#locAsyncCaller)
-  // CHECK-NEXT: lit.async.execute <index>
+  // CHECK-NEXT: lit.async.execute : index
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx2 : index loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return %idx2 : index loc(#[[LOC_ASYNC_EXECUTE_RET:.*]])
   // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} loc(#[[LOC_ASYNC_EXECUTE1:.*]])
   // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE1:.*]])
   %coroHdl = lit.async.call[(index) async -> index: @inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
-  kgen.return %coroHdl : !co.routine<index> loc(#locAsyncCaller)
+  kgen.return %coroHdl : !co.routine loc(#locAsyncCaller)
 // CHECK-NEXT: } loc(#[[LOC_SCOPED_CALLER]])
 } loc(#locAsyncCaller)
 
 // COM: Test location handling of inlined closure staging.
 
-kgen.func @async_wrapper() -> !co.routine<index> always_inline {
+kgen.func @async_wrapper() -> !co.routine always_inline {
   %idx3 = index.constant 3 loc(#locAsyncCaller)
   %0 = lit.async.call[(index) async -> index: @inline_me](%idx3) loc(#locAsyncCaller)
-  kgen.return %0 : !co.routine<index> loc(#locAsyncCaller)
+  kgen.return %0 : !co.routine loc(#locAsyncCaller)
 } loc(#locAsyncCaller)
 
 // CHECK-LABEL: kgen.func @call_async_indirect
-kgen.func @call_async_indirect() -> !co.routine<index> {
+kgen.func @call_async_indirect() -> !co.routine {
   // CHECK-NEXT: %idx3 = index.constant 3 loc(#[[INLINED_LOC:.*]])
-  // CHECK-NEXT: lit.async.execute <index>
+  // CHECK-NEXT: lit.async.execute : index
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE]])
   // CHECK-NEXT:   kgen.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE_RET2:.*]])
   // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} loc(#[[LOC_ASYNC_EXECUTE2:.*]])
   // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE2:.*]])
-  %1 = kgen.call @async_wrapper() : () -> !co.routine<index> loc(#locCaller)
-  kgen.return %1 : !co.routine<index> loc(#locCaller)
+  %1 = kgen.call @async_wrapper() : () -> !co.routine loc(#locCaller)
+  kgen.return %1 : !co.routine loc(#locCaller)
 } loc(#locCaller)
 
 // CHECK-LABEL: @call_async_no_debuginfo
-kgen.func @call_async_no_debuginfo() -> !co.routine<index> {
+kgen.func @call_async_no_debuginfo() -> !co.routine {
   // CHECK-NEXT: index.constant 2
   // CHECK-NEXT: lit.async.execute
   // CHECK-NOT: debuginfo.value
   %idx2 = index.constant 2 loc(#locAsyncCaller)
   %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
-  kgen.return %0 : !co.routine<index>
+  kgen.return %0 : !co.routine
 }
 
 // Test nodebug behavior for func with multiple exists.

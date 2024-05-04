@@ -9,7 +9,7 @@
 
 #callerSp = #debuginfo.subprogram<name = <"caller">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
-#asyncCallerSp = #debuginfo.subprogram<name = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!co.routine<index>>): DW_CC_normal>
+#asyncCallerSp = #debuginfo.subprogram<name = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!co.routine>): DW_CC_normal>
 #local_variable0 = #debuginfo.local_variable<scope = #callee0Sp, name = "foo"> : !debuginfo.unresolved<index>
 #local_variable1 = #debuginfo.local_variable<scope = #callee1Sp, name = "bar"> : !debuginfo.unresolved<index>
 
@@ -56,21 +56,21 @@ kgen.func @call_inline_me() -> index {
 kgen.func @nodebug_inline_me(%arg0: index) -> index {
   %0 = index.add %arg0, %arg0
   %1 = kgen.call @inline_me0(%0) : (index) -> index
-  kgen.return %1: index
+  kgen.return %1 : index
 }
 
 // CHECK-LABEL: kgen.func @call_async
-kgen.func @call_async() -> !co.routine<index> {
+kgen.func @call_async() -> !co.routine {
   // CHECK-NEXT: [[IDX2:%.*]] = index.constant 2 loc(#[[LOC_SCOPED_CALLER:.*]])
   %idx2 = index.constant 2 loc(#locAsyncCaller)
-  // CHECK-NEXT: [[V0:%.*]]lit.async.execute <index> {
+  // CHECK-NEXT: [[V0:%.*]]lit.async.execute : index {
   // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
   // DEFERRED-NEXT: } {inliner_debuginfo_update = 3 : i8} loc(#[[LOC_ASYNC_EXECUTE]])
   // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE]])
   %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
-  kgen.return %0: !co.routine<index> loc(#locAsyncCaller)
+  kgen.return %0: !co.routine loc(#locAsyncCaller)
 // CHECK-NEXT: } loc(#[[LOC_SCOPED_CALLER]])
 } loc(#locAsyncCaller)
 

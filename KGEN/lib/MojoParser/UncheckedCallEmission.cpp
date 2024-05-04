@@ -1234,9 +1234,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
         sig && sig.isAsync()) {
       // If the callee is an async function, emit an async call. Then wrap the
       // `!co.routine<T>` result in a `Coroutine[T]` object.
-      auto call = builder->create<AsyncCallOp>(
-          loc, CO::CoroutineType::get(getContext(), resultType), target.get(),
-          implicitLifetimes, callArgs);
+      auto call = builder->create<AsyncCallOp>(loc, target.get(),
+                                               implicitLifetimes, callArgs);
       ASTType coroType =
           getBoundCoroutineType(shared, declScope, callExpr->getLoc(), sig);
       if (!coroType) {

@@ -9,6 +9,7 @@
 
 include "KGEN/CODialect/CODialect.td"
 include "KGEN/CODialect/COTypes.td"
+include "Support/MDialect/MAttrs.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 
@@ -27,12 +28,13 @@ def CO_CoroutineHandleOp : COOp<"handle"> {
     Example:
 
     ```mlir
-    %hdl = co.handle : <i32, index>
+    %hdl = co.handle : i32, index
     ```
   }];
 
+  let arguments = (ins M_TypeArrayAttr:$types);
   let results = (outs CoroutineType:$coroutine);
-  let assemblyFormat = "attr-dict `:` type($coroutine)";
+  let assemblyFormat = "attr-dict custom<CoroutineTypes>($types)";
   let hasVerifier = 1;
 }
 
@@ -54,7 +56,7 @@ def CO_CoroutineOpaqueHandleOp : COOp<"opaque_handle"> {
     ```
   }];
 
-  let results = (outs OpaqueCoroutineHandle:$hdl);
+  let results = (outs CoroutineType:$hdl);
   let assemblyFormat = "attr-dict";
 }
 
@@ -73,9 +75,9 @@ def CO_CoroutineSuspendOp : COOp<"suspend", [SingleBlock]> {
     Example:
 
     ```mlir
-    %hdl = co.handle : <i32, index>
+    %hdl = co.handle
     co.suspend {
-      co.resume %hdl : <i32>
+      co.resume %hdl
       co.suspend.end
     }
     ```
@@ -107,9 +109,7 @@ def CO_CoroutineSuspendEndOp : COOp<"suspend.end", [Terminator,
 // CoroutinePromiseOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutinePromiseOp : COOp<"promise",
-    [TypesMatchWith<"result is pointer to coroutine promise", "coroutine",
-                    "promise", "getCoroutinePromiseType($_self)">]> {
+def CO_CoroutinePromiseOp : COOp<"promise"> {
   let summary = "Get the coroutine promise.";
   let description = [{
     The `co.promise` operation returns the pointer to the coroutine
@@ -119,13 +119,13 @@ def CO_CoroutinePromiseOp : COOp<"promise",
     Example:
 
     ```mlir
-    %promise = co.promise %hdl : <i32, i64>
+    %promise = co.promise %hdl : struct<i32, i64>
     ```
   }];
 
   let arguments = (ins CoroutineType:$coroutine);
-  let results = (outs PointerOf<KGEN_StructType>:$promise);
-  let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
+  let results = (outs PointerType:$promise);
+  let assemblyFormat = "$coroutine attr-dict `:` type($promise)";
 }
 
 //===----------------------------------------------------------------------===//
@@ -146,9 +146,8 @@ def CO_CoroutineResumeOp : COOp<"resume"> {
     ```
   }];
 
-  let arguments = (ins AnyTypeOf<[CoroutineType,
-                                  OpaqueCoroutineHandle]>:$coroutine);
-  let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
+  let arguments = (ins CoroutineType:$coroutine);
+  let assemblyFormat = "$coroutine attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
@@ -168,12 +167,12 @@ def CO_CoroutineDestroyOp : COOp<"destroy"> {
     Example:
 
     ```mlir
-    co.destroy %hdl : <i32>
+    co.destroy %hdl
     ```
   }];
 
   let arguments = (ins CoroutineType:$coroutine);
-  let assemblyFormat = "$coroutine attr-dict `:` type($coroutine)";
+  let assemblyFormat = "$coroutine attr-dict";
 }
 
 

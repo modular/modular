@@ -40,4 +40,4 @@ async fn but_async(b: Int) -> Int:
 @export
 fn foo():
     var coro = but_async(1)
-    _ = coro()
+    _ = coro._deprecated_direct_resume()

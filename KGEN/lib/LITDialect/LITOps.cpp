@@ -9,8 +9,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/LITDialect/LITOps.h"
-#include "KGEN/CODialect/COTypes.h"
-#include "KGEN/HLCFDialect/HLCFOps.h"
+#include "KGEN/CODialect/COUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
@@ -19,15 +18,8 @@
 #include "KGEN/LITDialect/LITTypes.h"
 #include "KGEN/LITDialect/LITUtils.h"
 #include "KGEN/LITDialect/SpecialFunctions.h"
-#include "KGEN/POPDialect/POPOps.h"
-#include "KGEN/POPDialect/POPTypes.h"
 #include "Support/Compiler/Properties.h"
 #include "Support/Compiler/VerifyUtils.h"
-#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
-#include "mlir/AsmParser/AsmParser.h"
-#include "mlir/IR/PatternMatch.h"
-#include "mlir/Interfaces/FunctionImplementation.h"
-#include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
@@ -376,7 +368,8 @@ static LogicalResult verifyLifetimeParams(OpT op, LITSignatureType sig) {
 
 template <typename OpT>
 static LogicalResult verifyCallOp(OpT op, LITSignatureType sig,
-                                  ValueRange operands, TypeRange results) {
+                                  ValueRange operands,
+                                  std::optional<TypeRange> results) {
   FunctionType values = sig.substituteImplicitLifetimesIntoValues(
       op.getImplicitLifetimes(), [&] { return op.emitOpError(); });
   if (!values)
@@ -398,7 +391,7 @@ static LogicalResult verifyCallOp(OpT op, LITSignatureType sig,
   };
 
   if (failed(verifyTypes("argument", operands, values.getInputs())) ||
-      failed(verifyTypes("result", results, values.getResults())))
+      (results && failed(verifyTypes("result", *results, values.getResults()))))
     return failure();
   return success();
 }
@@ -1883,28 +1876,23 @@ LogicalResult GlobalVarRefOp::verifySymbolUses(SymbolTableCollection &symtab) {
 /// Use the result types to form the coroutine type, inheriting the throws bit.
 static ParseResult
 parseAsyncCallOpTypes(AsmParser &p, SmallVectorImpl<Type> &operandTypes,
-                      Type &coroutineType, TypedAttr callee,
-                      ArrayRef<TypedAttr> implicitLifetimes) {
+                      TypedAttr callee, ArrayRef<TypedAttr> implicitLifetimes) {
   SmallVector<Type> resultTypes;
-  if (failed(parseCallOpTypes(p, operandTypes, resultTypes, callee,
-                              implicitLifetimes)))
-    return failure();
-  coroutineType = CO::CoroutineType::get(p.getContext(), resultTypes);
-  return success();
+  return parseCallOpTypes(p, operandTypes, resultTypes, callee,
+                          implicitLifetimes);
 }
 
 /// Nothing to do on print.
-static void printAsyncCallOpTypes(AsmPrinter &, Operation *, TypeRange, Type,
+static void printAsyncCallOpTypes(AsmPrinter &, Operation *, TypeRange,
                                   TypedAttr, ArrayRef<TypedAttr>) {}
 
 LogicalResult AsyncCallOp::verify() {
   auto sig = cast<SignatureType>(getCallee().getType());
   if (!sig.isAsync())
     return emitOpError("callable must be 'async'");
-  CO::CoroutineType coro = getResult().getType();
   if (auto litSig = dyn_cast<LITSignatureType>(sig)) {
     if (failed(verifyLifetimeParams(*this, litSig)) ||
-        failed(verifyCallOp(*this, litSig, getOperands(), coro.getTypes())))
+        failed(verifyCallOp(*this, litSig, getOperands(), /*results=*/{})))
       return failure();
   }
   return success();
@@ -1919,9 +1907,7 @@ void AsyncCallOp::walkDefinitions(
 // AsyncExecuteOp
 //===----------------------------------------------------------------------===//
 
-/// The results of a `lit.async.execute` when treated like a function, although
-/// an async one, are the results of the coroutine.
-ArrayRef<Type> AsyncExecuteOp::getResultTypes() { return getType().getTypes(); }
+ArrayRef<Type> AsyncExecuteOp::getResultTypes() { return getTypes(); }
 
 //===----------------------------------------------------------------------===//
 // ReturnOp

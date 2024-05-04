@@ -317,7 +317,7 @@ private:
 /// and in that case we don't generate any coroutine machinery.
 static FailureOr<CoroutineInfo>
 createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
-                     CO::CoroutineType coroType, LLVMBuilder &b,
+                     ArrayRef<Type> resultTypes, LLVMBuilder &b,
                      TypeAttrCache &cache, LLVMFuncOp coroEndFn,
                      bool noSuspend) {
   b.setLoc(func.getLoc());
@@ -333,7 +333,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   SmallVector<Type, 16> contextTypes{
       cache.opaquePtr,
       LLVMStructType::getLiteral(ctx, {cache.opaquePtr, cache.opaquePtr})};
-  for (Type resultType : coroType.getTypes()) {
+  for (Type resultType : resultTypes) {
     resultType = b.convertType(resultType);
     if (!resultType)
       return mlir::emitError(func.getLoc(),
@@ -448,7 +448,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   // Replace argument uses with values from the async context. Arguments are
   // located at the end.
   constexpr int64_t resOffset = 2;
-  int64_t argOffset = resOffset + coroType.getTypes().size();
+  int64_t argOffset = resOffset + resultTypes.size();
   for (auto [idx, arg] :
        llvm::enumerate(asyncFnBody.getArguments().drop_back())) {
     if (auto argLoc = arg.getLoc()->findInstanceOf<FileLineColLoc>();
@@ -713,9 +713,9 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     return success();
   }
 
-  CO::CoroutineType coroType = handles.front().getType();
-  FailureOr<CoroutineInfo> coro = createAsyncCoroutine(
-      symtab, func, coroType, b, cache, getCoroEndFn(), awaits.empty());
+  FailureOr<CoroutineInfo> coro =
+      createAsyncCoroutine(symtab, func, handles.front().getTypes(), b, cache,
+                           getCoroEndFn(), awaits.empty());
   if (failed(coro))
     return failure();
 

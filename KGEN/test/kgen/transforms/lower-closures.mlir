@@ -1,9 +1,9 @@
 // RUN: kgen-opt -lower-closures -allow-unregistered-dialect %s | FileCheck %s
 
 // CHECK-LABEL: kgen.func @coroutine
-// CHECK-SAME: (%arg0: i1) -> !co.routine<index>
+// CHECK-SAME: (%arg0: i1) -> !co.routine
 kgen.func @coroutine(%arg0: i1) async -> index {
-  // CHECK: %[[HDL:.*]] = co.handle : <index>
+  // CHECK: %[[HDL:.*]] = co.handle : index
   // CHECK: hlcf.if
   hlcf.if %arg0 {
     %idx1 = index.constant 1
@@ -26,27 +26,27 @@ kgen.func @coroutine(%arg0: i1) async -> index {
 // CHECK-LABEL: kgen.func @call_coroutine
 kgen.func @call_coroutine() {
   %true = index.bool.constant true
-  // CHECK: kgen.call @coroutine(%true) : (i1) -> !co.routine<index>
+  // CHECK: kgen.call @coroutine(%true) : (i1) -> !co.routine
   %result = lit.async.call[(i1) async -> index: @coroutine](%true)
   kgen.return
 }
 
 // CHECK-LABEL: kgen.func @async_execute_async_closure
-// CHECK-SAME: (%arg0: index) -> !co.routine<index>
-// CHECK-NEXT: %0 = co.handle : <index>
+// CHECK-SAME: (%arg0: index) -> !co.routine
+// CHECK-NEXT: %0 = co.handle : index
 // CHECK: kgen.return %0
 
 // CHECK-LABEL: kgen.func @async_execute_async_closure_{{[0-9]}}
-// CHECK-SAME: (%arg0: index, %arg1: index) -> !co.routine<index>
-// CHECK-NEXT: %0 = co.handle : <index>
+// CHECK-SAME: (%arg0: index, %arg1: index) -> !co.routine
+// CHECK-NEXT: %0 = co.handle : index
 // CHECK-NEXT: %idx1 = index.constant 1
 // CHECK-NEXT: %1 = index.add %idx1, %arg0
 // CHECK-NEXT: %2 = index.add %1, %arg1
 // CHECK: kgen.return %0
 
 // CHECK-LABEL: kgen.func @async_execute_async_closure_{{[0-9]}}
-// CHECK-SAME: (%arg0: index, %arg1: index) -> !co.routine<>
-// CHECK-NEXT: %0 = co.handle : <>
+// CHECK-SAME: (%arg0: index, %arg1: index) -> !co.routine
+// CHECK-NEXT: %0 = co.handle
 // CHECK: kgen.call @async_execute_async_closure_{{[0-9]}}(%arg0, %arg1)
 // CHECK: kgen.return %0
 
@@ -56,12 +56,12 @@ kgen.func @async_execute(%arg0: index) {
   // CHECK-NEXT: kgen.call @async_execute_async_closure_0(%arg0)
   // CHECK-NEXT: kgen.call @async_execute_async_closure_2(%arg0, %0)
   %arg1 = index.add %arg0, %arg0
-  %0 = lit.async.execute <index> {
+  %0 = lit.async.execute : index {
     kgen.return %arg0 : index
   }
-  %1 = lit.async.execute <> {
+  %1 = lit.async.execute  {
     %idx1 = index.constant 1
-    %2 = lit.async.execute <index> {
+    %2 = lit.async.execute : index {
       %3 = index.add %idx1, %arg0
       %4 = index.add %3, %arg1
       kgen.return %4 : index
@@ -134,17 +134,17 @@ kgen.func @create_closure() {
 }
 
 // CHECK-LABEL: kgen.func @async_closure_in_async_async_closure_0()
-// CHECK: [[PROMISE:%.*]] = co.promise {{.*}} : <index>
+// CHECK: [[PROMISE:%.*]] = co.promise {{.*}} : <struct<(index)>>
 // CHECK: [[GEP:%.*]] = kgen.struct.gep [[PROMISE]][0]
 // CHECK: store %idx5, [[GEP]]
 
 // CHECK-LABEL: kgen.func @async_closure_in_async
 kgen.func @async_closure_in_async(%arg1: index) async {
-  %0 = lit.async.execute <index> {
+  %0 = lit.async.execute : index {
     %idx = index.constant 5
     kgen.return %idx : index
   }
-  // CHECK: co.promise {{.*}} : <>
+  // CHECK: co.promise {{.*}} : <struct<()>>
   kgen.return
 }
 
