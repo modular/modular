@@ -49,8 +49,8 @@ llvm.func @coro_destroy() {
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
 // CHECK-LABEL: llvm.func internal @async_fn_af_suspend
-// CHECK-SAME: (%arg0: i64 loc({{.*}}))
-// CHECK-NEXT:   %0 = builtin.unrealized_conversion_cast %arg0 : i64 to index
+// CHECK-SAME: (%arg0: !llvm.ptr loc({{.*}}), %arg1: i64 loc({{.*}}))
+// CHECK-NEXT:   %0 = builtin.unrealized_conversion_cast %arg1 : i64 to index
 // CHECK-NEXT:   "do_something"(%0)
 // CHECK-NEXT:   llvm.return loc(#[[SUSPEND_LOC]])
 // CHECK-NEXT: } loc(#[[SUSPEND_LOC]])
@@ -86,7 +86,7 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
   // CHECK: %[[C0:.*]] = llvm.mlir.constant(0 : i32)
   // CHECK: %[[SUSPEND_FN:.*]] = llvm.mlir.addressof @async_fn_af_suspend
   // CHECK-NEXT: external_call @llvm.coro.suspend.async.sl_p0p0p0s
-  // CHECK-SAME: (%[[C0]], %[[RESUME_FN]], %[[PROJ_FN_OPAQUE]], %[[SUSPEND_FN]], %[[CAPTURED]])
+  // CHECK-SAME: (%[[C0]], %[[RESUME_FN]], %[[PROJ_FN_OPAQUE]], %[[SUSPEND_FN]], %[[BASE_CTXT_RESUME]], %[[CAPTURED]])
   co.suspend {
     "do_something"(%idx1) : (index) -> ()
     co.suspend.end
@@ -155,6 +155,10 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
 // CHECK-DAG: #[[SP_AF:.*]] = #debuginfo.subprogram<name = #[[FOO_NAME]], linkageName = "foo_af"
 // CHECK-DAG: #[[LOC0:.*]] = loc("foo.mlir":41:11)
 // CHECK-DAG: #[[LOC_AF:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC0]]])
+// CHECK-DAG: #[[LOC1:.*]] = loc("foo.mlir":44:38)
+// CHECK-DAG: #[[LOC2:.*]] = loc("foo.mlir":42:41)
+// CHECK-DAG: #[[LOC_CALLEE1:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC1]]])
+// CHECK-DAG: #[[LOC_CALLEE2:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC2]]])
 #subprogram = #debuginfo.subprogram<name = <"foo">, linkageName = "foo"> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
 #loc8 = loc(fused<#subprogram>["foo.mlir":41:11])
 
@@ -163,7 +167,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %0 = co.handle : index loc(#loc8)
     %1 = builtin.unrealized_conversion_cast %0 : !co.routine to !llvm.ptr loc(#loc8)
 
-    // CHECK-LABEL: llvm.func internal @foo_af_suspend_0()
+    // CHECK-LABEL: llvm.func internal @foo_af_suspend_0(%arg0: !llvm.ptr loc({{.*}}))
     // CHECK-NEXT:    %0 = llvm.mlir.constant(1 : i64) : i64 loc(#[[LOC1_INL:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP1:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP1]])
@@ -172,7 +176,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       co.suspend.end
     } loc(#loc11)
 
-    // CHECK-LABEL: llvm.func internal @foo_af_suspend_1()
+    // CHECK-LABEL: llvm.func internal @foo_af_suspend_1(%arg0: !llvm.ptr loc({{.*}}))
     // CHECK-NEXT:    %0 = llvm.mlir.constant(2 : i64) : i64 loc(#[[LOC2_INL:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP2:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP2]])
@@ -185,16 +189,12 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   } loc(#loc8)
 }
 
-// CHECK-DAG: ![[SUSP_TYPE:.*]] = !debuginfo.subroutine<() -> (): DW_CC_normal>
+// CHECK-DAG: ![[SUSP_TYPE:.*]] = !debuginfo.subroutine<(!llvm.ptr) -> (): DW_CC_normal>
 // CHECK-DAG: #[[SP1:.*]] = #debuginfo.subprogram<name = <"suspend.0" from #[[FOO_NAME]]>, linkageName = "foo_af_suspend_0"> : ![[SUSP_TYPE]]
 // CHECK-DAG: #[[SP2:.*]] = #debuginfo.subprogram<name = <"suspend.1" from #[[FOO_NAME]]>, linkageName = "foo_af_suspend_1"> : ![[SUSP_TYPE]]
 
-// CHECK-DAG: #[[LOC1:.*]] = loc("foo.mlir":44:38)
-// CHECK-DAG: #[[LOC2:.*]] = loc("foo.mlir":42:41)
 // CHECK-DAG: #[[LOC_SUSP1]] = loc(fused<#[[SP1]]>[#[[LOC1]]])
 // CHECK-DAG: #[[LOC_SUSP2]] = loc(fused<#[[SP2]]>[#[[LOC2]]])
-// CHECK-DAG: #[[LOC_CALLEE1:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC1]]])
-// CHECK-DAG: #[[LOC_CALLEE2:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC2]]])
 // CHECK-DAG: #[[LOC1_INL]] = loc(callsite(#[[LOC_CALLEE1]] at #[[LOC_SUSP1]]))
 // CHECK-DAG: #[[LOC2_INL]] = loc(callsite(#[[LOC_CALLEE2]] at #[[LOC_SUSP2]]))
 
