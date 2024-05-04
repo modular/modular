@@ -19,14 +19,14 @@ kgen.func @async_coroutine(%arg0: i32) -> !co.routine<i32> {
   %opaque = co.opaque_handle
   // CHECK: %[[CALLEE_HDL:.*]] = kgen.call @slow_function
   %calleeHdl = kgen.call @slow_function(%arg0) : (i32) -> !co.routine<i32>
-  // CHECK-NEXT: co.await {
-  co.await {
+  // CHECK-NEXT: co.suspend {
+  co.suspend {
     // CHECK-NEXT: co.resume %[[CALLEE_HDL]] : !co.routine<i32>
     co.resume %calleeHdl : !co.routine<i32>
     // CHECK-NEXT: co.resume %[[OPAQUE]] : !kgen.pointer<i8>
     co.resume %opaque : !kgen.pointer<i8>
-    // CHECK-NEXT: co.await.end
-    co.await.end
+    // CHECK-NEXT: co.suspend.end
+    co.suspend.end
   // CHECK-NEXT: }
   }
   // CHECK-NEXT: co.destroy %[[CALLEE_HDL]] : <i32>

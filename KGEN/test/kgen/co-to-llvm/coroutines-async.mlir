@@ -87,9 +87,9 @@ llvm.func @async_fn(%arg0: i32) -> !llvm.ptr {
   // CHECK: %[[SUSPEND_FN:.*]] = llvm.mlir.addressof @async_fn_af_suspend
   // CHECK-NEXT: external_call @llvm.coro.suspend.async.sl_p0p0p0s
   // CHECK-SAME: (%[[C0]], %[[RESUME_FN]], %[[PROJ_FN_OPAQUE]], %[[SUSPEND_FN]], %[[CAPTURED]])
-  co.await {
+  co.suspend {
     "do_something"(%idx1) : (index) -> ()
-    co.await.end
+    co.suspend.end
   } loc(callsite("foo.mlir":10:5 at "bar.mlir":12:7))
   // CHECK: %[[BASE_CTXT:.*]] = llvm.getelementptr inbounds %[[HDL]][-40]
   // CHECK: %[[FALSE:.*]] = llvm.mlir.constant(false)
@@ -167,18 +167,18 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK-NEXT:    %0 = llvm.mlir.constant(1 : i64) : i64 loc(#[[LOC1_INL:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP1:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP1]])
-    co.await {
+    co.suspend {
       %2 = llvm.mlir.constant(1 : i64) : i64 loc(#loc11)
-      co.await.end
+      co.suspend.end
     } loc(#loc11)
 
     // CHECK-LABEL: llvm.func internal @foo_af_suspend_1()
     // CHECK-NEXT:    %0 = llvm.mlir.constant(2 : i64) : i64 loc(#[[LOC2_INL:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP2:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP2]])
-    co.await {
+    co.suspend {
       %2 = llvm.mlir.constant(2 : i64) : i64 loc(#loc13)
-      co.await.end
+      co.suspend.end
     } loc(#loc13)
 
     llvm.return %1 : !llvm.ptr loc(#loc8)
