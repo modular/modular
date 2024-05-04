@@ -13,7 +13,7 @@ from buffer.list import Dim
 ```
 """
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 
 from . import StaticIntTuple, unroll
 
@@ -32,7 +32,7 @@ struct Dim(Intable, Stringable, Boolable):
     present, the dimension is dynamic.
     """
 
-    var value: Optional[Int]
+    var value: OptionalReg[Int]
     """An optional value for the dimension."""
 
     @always_inline("nodebug")
