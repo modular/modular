@@ -292,9 +292,9 @@ struct Task[type: AnyRegType]:
                 cur_hdl,
                 AsyncContext.get_chain(self.handle._get_ctx[AsyncContext]()),
             )
-            __mlir_op.`co.await.end`()
+            __mlir_op.`co.suspend.end`()
 
-        __mlir_op.`co.await`[_region = "await_body".value]()
+        __mlir_op.`co.suspend`[_region = "await_body".value]()
         return self.get()
 
     fn wait(self) -> type:
@@ -398,9 +398,9 @@ struct TaskGroup:
 
         __mlir_region await_body():
             Self.await_body_impl(cur_hdl, self)
-            __mlir_op.`co.await.end`()
+            __mlir_op.`co.suspend.end`()
 
-        __mlir_op.`co.await`[_region = "await_body".value]()
+        __mlir_op.`co.suspend`[_region = "await_body".value]()
 
     fn wait(inout self):
         self._task_complete()
