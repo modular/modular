@@ -26,7 +26,7 @@ from LinAlg.MatmulUtils import elementwise_epilogue_type
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 from utils.index import Index
 
 
@@ -84,7 +84,7 @@ fn sgemm_warp_tiling_kernel[
     WMITER: Scalar[indexing_integral_dtype],
     WNITER: Scalar[indexing_integral_dtype],
     NUM_THREADS: Scalar[indexing_integral_dtype],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     mat_c: NDBuffer[c_type, 2, c_shape],
     mat_a: NDBuffer[a_type, 2, a_shape],
