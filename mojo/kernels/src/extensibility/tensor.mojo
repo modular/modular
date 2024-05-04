@@ -16,8 +16,6 @@ from register import *
 from .tensor_helpers import InnerStride
 from utils._serialize import _serialize
 
-from collections import OptionalReg as Optional
-
 
 @always_inline
 @export
