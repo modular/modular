@@ -21,7 +21,7 @@ from .MatmulUtils import (
 from memory import stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 from utils.index import Index
 from utils.static_tuple import StaticTuple
 from utils._numerics import get_accum_type
@@ -89,7 +89,7 @@ fn sgemm_warp_tiling_kernel[
     TM: Scalar[indexing_integral_dtype],
     TN: Scalar[indexing_integral_dtype],
     NUM_THREADS: Scalar[indexing_integral_dtype],
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     mat_c: NDBuffer[c_type, 2, c_shape],
     mat_a: NDBuffer[a_type, 2, a_shape],
@@ -322,7 +322,7 @@ fn gemv_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c: DTypePointer[c_type],
@@ -376,7 +376,7 @@ fn gemv_tc_kernel[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c: DTypePointer[c_type],
@@ -422,7 +422,7 @@ fn gevm_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c: DTypePointer[c_type],
@@ -485,7 +485,7 @@ fn matmul_kernel[
     a_type: DType,
     b_type: DType,
     tile_size: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c_ptr: DTypePointer[c_type],
@@ -600,7 +600,7 @@ fn matmul_kernel_naive[
     a_type: DType,
     b_type: DType,
     BLOCK_DIM: Int,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
     c_ptr: DTypePointer[c_type],
@@ -634,7 +634,7 @@ fn matmul_kernel_naive[
 
 @always_inline
 fn _matmul_gpu[
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
     single_thread_blocking_override: Bool = False,
 ](
     c: NDBuffer[_, 2, _],
@@ -717,7 +717,7 @@ fn _matmul_gpu_dispatch[
     c_type: DType,
     c_shape: DimList,
     indexing_integral_dtype: DType,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],

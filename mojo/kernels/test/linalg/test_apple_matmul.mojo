@@ -22,7 +22,7 @@ from LinAlg.MatmulPack import (
     _pack_matmul_b_shape_func_impl,
 )
 from LinAlg.MatmulUtils import elementwise_epilogue_type
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 
 from utils.index import Index, StaticIntTuple
 
@@ -73,7 +73,7 @@ fn test_matmul[
     c_shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
-    epilogue_fn: Optional[elementwise_epilogue_type],
+    epilogue_fn: OptionalReg[elementwise_epilogue_type],
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],

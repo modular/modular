@@ -32,7 +32,7 @@ from memory import memset_zero
 from register import mogg_register
 from runtime.llcl import Runtime
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 from utils.index import StaticIntTuple
 from utils._numerics import get_accum_type
 
@@ -95,7 +95,7 @@ fn _small_batched_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](
     c_buf: NDBuffer[c_type, rank],
     a_buf: NDBuffer[a_type, rank],
@@ -228,7 +228,7 @@ fn batched_matmul[
     c_type: DType,
     transpose_a: Bool,
     transpose_b: Bool,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
@@ -269,7 +269,7 @@ fn _batched_matmul_cpu[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
     c_buf: NDBuffer[c_type, rank],
@@ -416,7 +416,7 @@ fn _batched_matmul_cpu[
                 config,
                 transpose_b,
                 b_packed=False,
-                elementwise_lambda_fn = Optional[
+                elementwise_lambda_fn = OptionalReg[
                     matmul_elementwise_epilogue_type
                 ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
                 saturated_vnni=saturated_vnni,
@@ -440,7 +440,7 @@ fn batched_matmul_kernel[
     a_shape: DimList,
     b_type: DType,
     b_shape: DimList,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
     c_buff: NDBuffer[c_type, 3, c_shape],
@@ -486,7 +486,7 @@ fn _batched_matmul_gpu[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
 ](
     c_buf: NDBuffer[c_type, rank],
@@ -542,7 +542,7 @@ fn batched_matmul[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool,
-    elementwise_epilogue_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_epilogue_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     target: StringLiteral = "cpu",
 ](

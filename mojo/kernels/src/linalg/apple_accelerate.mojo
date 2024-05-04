@@ -8,7 +8,7 @@ from os import abort
 from sys.info import os_is_macos, bitwidthof
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 from buffer.buffer import NDBuffer
 from .BatchedMatmul import _reshape_nd_buffer_with_batch_to_3d
 from utils.index import Index
@@ -518,7 +518,7 @@ fn _bnns_matmul[
 fn apple_matmul[
     *,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
 ](c: NDBuffer, a: NDBuffer, b: NDBuffer):
     @parameter
     if a.type == b.type == c.type == DType.float32:

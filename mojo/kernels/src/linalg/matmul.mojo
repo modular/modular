@@ -32,7 +32,7 @@ from .matmul_i8mm import Inner_matmul_i8mm
 from .matmul_neon import Inner_matmul_neon
 from .matmul_default import Inner_matmul_default
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 from utils.index import Index, StaticIntTuple
 
 from .MatmulGPU import _matmul_gpu
@@ -421,7 +421,7 @@ struct TiledMatmul[
 @always_inline
 fn _small_matmul[
     transpose_b: Bool,
-    epilogue_wrapper: Optional[elementwise_epilogue_type],
+    epilogue_wrapper: OptionalReg[elementwise_epilogue_type],
 ](a: NDBuffer[_, 2, _], b: NDBuffer[_, 2, _], c: NDBuffer[_, 2, _],):
     alias simd_width = simdwidthof[c.type]()
 
@@ -517,7 +517,7 @@ fn _matmul_cpu_impl[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
     single_thread_blocking_override: Bool,
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
@@ -656,7 +656,7 @@ fn _matmul_cpu[
     c_shape: DimList,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
 ](
@@ -763,7 +763,7 @@ fn matmul[
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     b_packed: Bool = False,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     saturated_vnni: Bool = False,
     single_thread_blocking_override: Bool = False,
     target: StringLiteral = "cpu",
@@ -811,7 +811,7 @@ fn _submatmul_sequential_sync[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
     kernel_id: InnerKernelID,
     algorithm: InnerMatmulKernel,
 ](
@@ -864,7 +864,7 @@ fn _submatmul_sequential_sync[
     config: KernelConfig,
     transpose_b: Bool,
     b_packed: Bool,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
     saturated_vnni: Bool,
 ](
     c: NDBuffer[_, 2, _],
