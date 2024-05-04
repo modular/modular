@@ -1397,11 +1397,25 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
                                  ASTDecl &declScope, SharedState &shared) {
   switch (expectedConvention) {
   case ArgConvention::InitSelf:
-    // If this is an UnknownAttr, then it is a placeholder for type
-    // checking, just let it pass.
+    // If this is an UnknownAttr, then it is a placeholder for 'self' which will
+    // ultimately be an lvalue of the indicated type.
     if (auto pValue = operand.ir.getIfPValue())
-      if (isa<UnknownAttr>(pValue.get()))
+      if (isa<UnknownAttr>(pValue.get())) {
+        // FIXME: This should be modeled as an LValue to merge into the normal
+        // logic.
+        ASTType elementType = expectedType.getReferenceElementType();
+        ASTType argElementType =
+            pValue.getRValueType().getReferenceElementType();
+        // If the types are non-equal, treat this as an extra implicit
+        // conversion.  This is needed to distinguish between nonmaterializable
+        // types and their materialized type.  We should really be *rejecting*
+        // this as incompatible, but that breaks VariadicPack parameter
+        // inference somehow.
+        // FIXME: clean this up.
+        if (!argElementType.isEqualCanon(elementType))
+          ++numImplicitConversions;
         return {kValidType, expectedType};
+      }
     [[fallthrough]];
   case ArgConvention::ByRef:
   case ArgConvention::ByRefResult:
