@@ -285,32 +285,36 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
                                      bool allowIncompatibleTypes,
                                      bool requireMLValue,
                                      ExprEmitter &emitter) {
-  // If we are inferring the type for a var or let declaration, then we can
-  // always succeed and consume this ValueDest.
+  // Handle inference of a 'var' declaration's type.
   if (auto *opDest = dyn_cast<Operation *>(representation)) {
-    representation = LValueBufferTaken(); // Buffer used!
+    // If the result type has a non-materializable type, then we infer the var
+    // to its materialized type.
     ASTType nmTarget = resultType.getNonmaterializableTarget(emitter.shared);
     ASTType materializedType = nmTarget ? nmTarget : resultType;
 
+    // Update the VarDecl or GlobalVarDeclOp.
+    Value typedRef;
     if (auto varOp = dyn_cast<VarDeclOp>(opDest)) {
       assert(isa<UnresolvedType>(varOp.getType().getElementType()) &&
              "Cannot resolve an already-resolved vardecl");
       varOp.getResult().setType(
           RefType::get(materializedType, varOp.getType().getLifetime()));
-      return MLValue(varOp);
+      typedRef = varOp.getResult();
+    } else {
+      auto globalOp = cast<GlobalVarDeclOp>(opDest);
+      if (isa<UnresolvedType>(globalOp.getType()))
+        globalOp.setType(materializedType);
+      typedRef = emitter.builder->create<GlobalVarRefOp>(
+          emitter.translateLocation(loc), globalOp);
     }
-    auto globalOp = cast<GlobalVarDeclOp>(opDest);
-    if (isa<UnresolvedType>(globalOp.getType()))
-      globalOp.setType(materializedType);
-
-    return MLValue(emitter.builder->create<GlobalVarRefOp>(
-        emitter.translateLocation(loc), globalOp));
+    // Now that we inferred the 'var' type, we can treat this like a normal
+    // MLValue.
+    representation = LValue(MLValue(typedRef));
   }
 
-  // Otherwise, we have one of a few cases where we can produce an LValue but
-  // it may have the wrong type.  The client may be cool with this (when
-  // allowIncompatibleTypes is true), but if not we generate a new temporary
-  // buffer.
+  // We have several cases where we can produce an LValue but it may have the
+  // wrong type.  The client may be cool with this (when allowIncompatibleTypes
+  // is true), but if not we generate a new temporary buffer.
 
   // If we have an expression node destination, then we need to bind this
   // value to a pattern (aka "target" in Python internals nomenclature).
