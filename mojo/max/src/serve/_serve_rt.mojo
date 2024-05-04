@@ -169,13 +169,13 @@ struct AwaitableCBatch:
     fn __await__(self) -> CBatch:
         @always_inline
         @parameter
-        fn await_body(cur_hdl: Pointer[__mlir_type.i8]):
+        fn await_body(cur_hdl: AnyCoroutine):
             call_dylib_func(
                 self._lib,
                 AsyncCBatch._AsyncAndThenFnName,
                 _coro_resume_fn,
                 self._ptr,
-                cur_hdl.address,
+                cur_hdl,
             )
 
         _suspend_async[await_body]()

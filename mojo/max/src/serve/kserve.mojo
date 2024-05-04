@@ -53,7 +53,7 @@ struct SingleModelInferenceService(InferenceService):
     fn infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
     ](self, request: req_type, inout response: resp_type) -> None:
-        _ = self.async_infer(request, response)()
+        _ = self.async_infer(request, response)._deprecated_direct_resume()
 
     async fn async_infer[
         req_type: InferenceRequest, resp_type: InferenceResponse

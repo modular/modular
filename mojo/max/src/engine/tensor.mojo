@@ -82,9 +82,6 @@ struct EngineTensorView:
 
         Args:
             tensor: Tensor backing the view.
-
-        Returns:
-            An instance of EngineTensorView of given tensor.
         """
         self._ptr = Pointer.address_of(tensor).bitcast[Tensor[DType.invalid]]()
         self._data_ptr = tensor.data().bitcast[DType.invalid]()
