@@ -126,7 +126,7 @@ from runtime.llcl import (
 )
 from runtime.tracing import Trace, TraceLevel
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 from utils.index import Index, StaticIntTuple, product
 from utils.loop import unroll
 
@@ -2238,7 +2238,7 @@ fn matmul[
             transpose_a,
             transpose_b,
             b_packed,
-            Optional[matmul_elementwise_epilogue_type](
+            OptionalReg[matmul_elementwise_epilogue_type](
                 epilogue_wrapper
             ) if lambdas_have_fusion else None,
             saturated_vnni=False,
@@ -2317,7 +2317,7 @@ fn batched_matmul[
             c_type,
             transpose_a,
             transpose_b,
-            Optional[batched_matmul_elementwise_epilogue_type](
+            OptionalReg[batched_matmul_elementwise_epilogue_type](
                 epilogue_wrapper
             ) if lambdas_have_fusion else None,
             saturated_vnni=False,

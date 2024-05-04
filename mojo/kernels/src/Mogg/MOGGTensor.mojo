@@ -18,7 +18,7 @@ from MOGGIntList import IntList
 from register import *
 from extensibility.tensor_helpers import UnsafeRefCounter, InnerStride
 
-from collections import OptionalReg as Optional
+from collections import OptionalReg
 
 
 @always_inline
@@ -69,17 +69,17 @@ struct Tensor[
     type: DType,
     static_shape: DimList = DimList(),
     static_strides: DimList = _static_strides_from_shape[static_shape](),
-    _internal_in_lambda: Optional[
+    _internal_in_lambda: OptionalReg[
         fn[_w: Int, _v: DimList] (IntList[_v]) capturing -> SIMD[type, _w]
     ] = None,
-    _internal_out_lambda: Optional[
+    _internal_out_lambda: OptionalReg[
         fn[_w: Int, _v: DimList] (IntList[_v], SIMD[type, _w]) capturing -> None
     ] = None,
     _OWNED_MEMORY: Bool = True,
 ]:
-    alias static_rank = Optional[Int](None) if len(static_shape) == 0 else len(
+    alias static_rank = OptionalReg[Int](None) if len(
         static_shape
-    )
+    ) == 0 else len(static_shape)
 
     var data: DTypePointer[type]
     var shape: IntList[static_shape]
