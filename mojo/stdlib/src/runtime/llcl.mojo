@@ -12,7 +12,7 @@ from sys.ffi import _get_global, _get_global_or_null
 from sys.info import num_physical_cores
 from sys.param_env import is_defined
 
-from builtin.coroutine import _coro_resume_fn
+from builtin.coroutine import _coro_resume_fn, _suspend_async
 from memory.unsafe import DTypePointer, Pointer
 
 from utils import StringRef
@@ -285,16 +285,16 @@ struct Task[type: AnyRegType]:
         result becomes available. This function must be force inlined into the
         calling async function.
         """
-        var cur_hdl = __mlir_op.`co.opaque_handle`()
 
-        __mlir_region await_body():
+        @always_inline
+        @parameter
+        fn await_body(cur_hdl: Pointer[__mlir_type.i8]):
             _async_and_then(
-                cur_hdl,
+                cur_hdl.address,
                 AsyncContext.get_chain(self.handle._get_ctx[AsyncContext]()),
             )
-            __mlir_op.`co.suspend.end`()
 
-        __mlir_op.`co.suspend`[_region = "await_body".value]()
+        _suspend_async[await_body]()
         return self.get()
 
     fn wait(self) -> type:
@@ -394,13 +394,12 @@ struct TaskGroup:
 
     @always_inline
     fn __await__(inout self):
-        var cur_hdl = __mlir_op.`co.opaque_handle`()
+        @always_inline
+        @parameter
+        fn await_body(cur_hdl: Pointer[__mlir_type.i8]):
+            Self.await_body_impl(cur_hdl.address, self)
 
-        __mlir_region await_body():
-            Self.await_body_impl(cur_hdl, self)
-            __mlir_op.`co.suspend.end`()
-
-        __mlir_op.`co.suspend`[_region = "await_body".value]()
+        _suspend_async[await_body]()
 
     fn wait(inout self):
         self._task_complete()
