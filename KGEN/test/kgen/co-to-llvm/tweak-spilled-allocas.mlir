@@ -28,8 +28,8 @@ llvm.func @spilled_alloca() {
     // CHECK-NOT: llvm.intr.lifetime.start 4, %1
     llvm.intr.lifetime.start 4, %1 : !llvm.ptr
     hlcf.loop {
-      co.await {
-        co.await.end
+      co.suspend {
+        co.suspend.end
       }
       hlcf.break
     }
@@ -46,8 +46,8 @@ llvm.func @not_spilled_alloca() {
   %0 = llvm.mlir.constant(1 : i32) : i32
   // CHECK: hlcf.loop
   hlcf.loop {
-    co.await {
-      co.await.end
+    co.suspend {
+      co.suspend.end
     }
     // CHECK: %1 = llvm.alloca
     %1 = llvm.alloca %0 x i32 : (i32) -> !llvm.ptr
@@ -56,9 +56,9 @@ llvm.func @not_spilled_alloca() {
     %2 = llvm.load %1 : !llvm.ptr -> i32
     // CHECK: llvm.intr.lifetime.end 4, %1
     llvm.intr.lifetime.end 4, %1 : !llvm.ptr
-    // CHECK-NEXT: co.await
-    co.await {
-      co.await.end
+    // CHECK-NEXT: co.suspend
+    co.suspend {
+      co.suspend.end
     }
     hlcf.break
   }
@@ -71,9 +71,9 @@ llvm.func @remove_alloca_from_frame(%cond: i1) {
   %1 = llvm.alloca %0 x i32 : (i32) -> !llvm.ptr
   // CHECK: hlcf.if
   hlcf.if %cond {
-    // CHECK-NEXT: co.await
-    co.await {
-      co.await.end
+    // CHECK-NEXT: co.suspend
+    co.suspend {
+      co.suspend.end
     }
     // CHECK: %1 = llvm.alloca
     // CHECK-NEXT: llvm.intr.lifetime.start 4, %1

@@ -104,7 +104,7 @@ static LogicalResult tweakSpilledAllocas(Operation *func,
       // Deactivate the alloca.
       allocas.erase(it);
 
-    } else if (auto await = dyn_cast<CoroutineAwaitOp>(op)) {
+    } else if (auto await = dyn_cast<CoroutineSuspendOp>(op)) {
       // All active allocas are spilled.
       for (auto &[alloca, info] : allocas) {
         // If the lifetime start marker of the alloca has been encountered, the
@@ -540,7 +540,7 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
 static LogicalResult
 lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
                          CoroutineInfo &coro, TypeAttrCache &cache,
-                         LLVMFuncOp coroProjFn, CoroutineAwaitOp op,
+                         LLVMFuncOp coroProjFn, CoroutineSuspendOp op,
                          unsigned index) {
   b.setLoc(op.getLoc());
 
@@ -578,7 +578,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       LLVMFunctionType::get(LLVMVoidType::get(ctx), captureTypes),
       Linkage::Internal);
   symtab.insert(suspendFn, coro.asyncFn->getIterator());
-  cast<CoroutineAwaitEndOp>(awaitBody.front().getTerminator()).erase();
+  cast<CoroutineSuspendEndOp>(awaitBody.front().getTerminator()).erase();
   suspendFn.getBody().takeBody(awaitBody);
 
   // If possible, we need to add a subprogram scope to the new function.
@@ -666,13 +666,13 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
   // Collect all the relevant ops.
   SmallVector<CoroutineHandleOp> handles;
   SmallVector<CoroutineOpaqueHandleOp> opaques;
-  SmallVector<CoroutineAwaitOp> awaits;
+  SmallVector<CoroutineSuspendOp> awaits;
   WalkResult result = func.walk([&](Operation *op) {
     if (auto handle = dyn_cast<CoroutineHandleOp>(op)) {
       handles.push_back(handle);
     } else if (auto opaque = dyn_cast<CoroutineOpaqueHandleOp>(op)) {
       opaques.push_back(opaque);
-    } else if (auto await = dyn_cast<CoroutineAwaitOp>(op)) {
+    } else if (auto await = dyn_cast<CoroutineSuspendOp>(op)) {
       awaits.push_back(await);
     } else if (auto promise = dyn_cast<CoroutinePromiseOp>(op)) {
       if (failed(lowerCoroutinePromiseAsync(b, cache, promise)))
@@ -700,7 +700,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
       opaque.erase();
     }
 
-    // If we saw any `co.await` operations not inside a coroutine,
+    // If we saw any `co.suspend` operations not inside a coroutine,
     // that likely means an `__await__` function was not marked as
     // `always_inline`.
     if (!awaits.empty()) {

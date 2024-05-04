@@ -59,13 +59,13 @@ def CO_CoroutineOpaqueHandleOp : COOp<"opaque_handle"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineAwaitOp
+// CoroutineSuspendOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutineAwaitOp : COOp<"await", [SingleBlock]> {
+def CO_CoroutineSuspendOp : COOp<"suspend", [SingleBlock]> {
   let summary = "Suspend the current coroutine and await resumption.";
   let description = [{
-    The `co.await` operation suspends the current coroutine function
+    The `co.suspend` operation suspends the current coroutine function
     at the site of the operation and executes a region. The code in the region
     must resume the coroutine at some point. This operation can only be used
     inside an async function.
@@ -74,9 +74,9 @@ def CO_CoroutineAwaitOp : COOp<"await", [SingleBlock]> {
 
     ```mlir
     %hdl = co.handle : <i32, index>
-    co.await {
+    co.suspend {
       co.resume %hdl : <i32>
-      co.await.end
+      co.suspend.end
     }
     ```
   }];
@@ -86,17 +86,17 @@ def CO_CoroutineAwaitOp : COOp<"await", [SingleBlock]> {
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineAwaitEndOp
+// CoroutineSuspendEndOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutineAwaitEndOp : COOp<"await.end", [Terminator,
-    HasParent<"CoroutineAwaitOp">]> {
-  let summary = "terminator for `co.await`";
+def CO_CoroutineSuspendEndOp : COOp<"suspend.end", [Terminator,
+    HasParent<"CoroutineSuspendOp">]> {
+  let summary = "terminator for `co.suspend`";
   let description = [{
-    The `co.await.end` operation is the terminator for the
-    `co.await` operation. The operation signifies the end of the
+    The `co.suspend.end` operation is the terminator for the
+    `co.suspend` operation. The operation signifies the end of the
     coroutine suspension function denoted by the surrounding
-    `co.await` operation. In an async function, it is semantically
+    `co.suspend` operation. In an async function, it is semantically
     a fallthrough.
   }];
 
