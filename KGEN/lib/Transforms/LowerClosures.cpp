@@ -109,9 +109,12 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
                                     Operation *ret) {
   b.setLoc(ret->getLoc());
   b.setInsertionPoint(ret);
-  Value promise = b.create<CO::CoroutinePromiseOp>(hdl);
+  Value promise = b.create<CO::CoroutinePromiseOp>(
+      PointerType::get(StructType::get(
+          b.getContext(), llvm::to_vector(ret->getOperandTypes()))),
+      hdl);
   for (auto [idx, result] : llvm::enumerate(ret->getOperands()))
-    b.create<StoreOp>(result, b.create<KGEN::StructGEPOp>(promise, idx));
+    b.create<StoreOp>(result, b.create<StructGEPOp>(promise, idx));
 }
 
 /// Lower an async execute by making it isolated from above and hoisting it into
@@ -135,7 +138,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   // Insert the coroutine handle.
   ImplicitLocOpBuilder b(op.getLocNoInlined(),
                          OpBuilder::atBlockBegin(&body.front()));
-  Value coroHdl = b.create<CO::CoroutineHandleOp>(op.getType());
+  Value coroHdl = b.create<CO::CoroutineHandleOp>(op.getTypes());
 
   // Replace all returns.
   op.walk([&](ReturnOp ret) {
@@ -272,6 +275,7 @@ static void lowerStageClosure(FuncOp parent, StageClosureOp op,
 static LogicalResult lowerAsyncFunction(FuncOp func,
                                         Shared<SymbolTable &> &sharedTable,
                                         mlir::DominanceInfo &domInfo) {
+  auto coroType = CO::CoroutineType::get(func.getContext());
   size_t closureNameCounter = 0;
   Value coroHdl;
   ImplicitLocOpBuilder b(func.getLoc(),
@@ -280,9 +284,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
   if (isAsyncFn) {
     // Create the coroutine handle. The coroutine result types are the
     // function result types.
-    auto coroType =
-        CO::CoroutineType::get(func.getContext(), func.getResultTypes());
-    coroHdl = b.create<CO::CoroutineHandleOp>(coroType);
+    coroHdl = b.create<CO::CoroutineHandleOp>(func.getResultTypes());
 
     // Update the function result type.
     SignatureType origSig = func.getSignature();
@@ -304,9 +306,6 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
       }
 
       SignatureType origSig = callee.getType();
-      auto coroType =
-          CO::CoroutineType::get(op->getContext(), origSig.getResults());
-
       auto asyncSig = SignatureType::get(
           b.getFunctionType(origSig.getArguments(), coroType),
           origSig.getArgConventions());

@@ -4,7 +4,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/LITDialect/LITOps.h"
@@ -59,14 +58,6 @@ static SignatureType lowerResult(SignatureType signature) {
       conventions, signature.getFnEffects().setThrows(false));
 }
 
-/// Remove `none` results from coroutine types.
-static CO::CoroutineType removeNoneCoroutine(CO::CoroutineType coro) {
-  auto [anyNone, newTypes] = removeNoneTypes(coro.getTypes());
-  if (!anyNone)
-    return coro;
-  return CO::CoroutineType::get(coro.getContext(), newTypes);
-}
-
 /// Remove none types from the results of debuginfo subroutine types as well.
 static DebugInfo::DISubroutineType
 removeDINoneResults(DebugInfo::DISubroutineType type) {
@@ -86,7 +77,6 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
 void LowerCallingConventionsPass::runOnOperation() {
   mlir::AttrTypeReplacer replacer;
   replacer.addReplacement(lowerResult);
-  replacer.addReplacement(removeNoneCoroutine);
   replacer.addReplacement(removeDINoneResults);
 
   auto walkFn = [&](Operation *op) {
@@ -139,27 +129,6 @@ void LowerCallingConventionsPass::runOnOperation() {
       }
       assert(newResultIdx == newOp->getNumResults());
       op->erase();
-      return;
-    }
-
-    // Handle `co.promise`. None types take up no space, so it is
-    // safe to bitcast the promise pointer.
-    if (auto promise = dyn_cast<CO::CoroutinePromiseOp>(op)) {
-      auto [anyNone, newResults] =
-          removeNoneTypes(cast<StructType>(promise.getType().getElementType())
-                              .getElementTypes());
-      if (!anyNone)
-        return;
-
-      OpBuilder b(promise);
-      Value newPromise = b.create<CO::CoroutinePromiseOp>(
-          promise.getLoc(),
-          PointerType::get(StructType::get(b.getContext(), newResults)),
-          promise.getCoroutine());
-      Value casted = b.create<POP::PointerBitcastOp>(
-          promise.getLoc(), promise.getType(), newPromise);
-      promise.replaceAllUsesWith(casted);
-      promise.erase();
       return;
     }
   };

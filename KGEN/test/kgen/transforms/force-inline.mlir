@@ -79,18 +79,18 @@ kgen.func @async_fn(%arg0: index) async -> index always_inline {
 }
 
 // CHECK-LABEL: kgen.func @call_it
-kgen.func @call_it() -> !co.routine<index> {
+kgen.func @call_it() -> !co.routine {
   %idx2 = index.constant 2
   %true = index.bool.constant true
   pop.compiler.global_store "cond", %true : i1
-  // CHECK: %0 = lit.async.execute <index>
+  // CHECK: %0 = lit.async.execute : index
   // CHECK:   %1 = pop.compiler.global_load
   // CHECK:   hlcf.if %1
   // CHECK:     kgen.return %idx1
   // CHECK:   kgen.return %idx2
   %coroHdl = lit.async.call[(index) async -> index: @async_fn](%idx2)
   // CHECK: kgen.return %0
-  kgen.return %coroHdl : !co.routine<index>
+  kgen.return %coroHdl : !co.routine
 }
 
 // -----

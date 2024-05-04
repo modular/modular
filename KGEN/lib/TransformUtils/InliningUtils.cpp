@@ -37,7 +37,7 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
   } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
     // Nested function-like op should retain scoped location of the callee.
     auto inlinedSubScoped = b.create<LIT::AsyncExecuteOp>(
-        region.getParentOp()->getLoc(), asyncCall.getType());
+        region.getParentOp()->getLoc(), asyncCall.getCalleeType().getResults());
     inlinedSubScoped.setCallLocAttr(call.getLoc());
     scope = inlinedSubScoped;
   } else if (auto createClosure = dyn_cast<CreateClosureOp>(&*call)) {

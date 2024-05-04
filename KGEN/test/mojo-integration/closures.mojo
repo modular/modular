@@ -10,7 +10,7 @@ from sys import argv
 
 @no_inline
 fn takeClosure(formatter: Coroutine[Int]) -> Int:
-    return formatter()
+    return formatter._deprecated_direct_resume()
 
 
 @no_inline

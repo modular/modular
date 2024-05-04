@@ -6,6 +6,7 @@
 
 #include "KGEN/CODialect/COOps.h"
 #include "KGEN/CODialect/CODialect.h"
+#include "KGEN/CODialect/COUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 
 using namespace M;
@@ -32,15 +33,6 @@ LogicalResult CoroutineHandleOp::verify() {
     }
   }
   return success();
-}
-
-//===----------------------------------------------------------------------===//
-// CoroutinePromiseOp
-//===----------------------------------------------------------------------===//
-
-static PointerType getCoroutinePromiseType(Type type) {
-  return PointerType::get(
-      StructType::get(type.getContext(), cast<CoroutineType>(type).getTypes()));
 }
 
 //===----------------------------------------------------------------------===//

@@ -21,7 +21,7 @@ fn foobar[pref: Int](a: Int):
 
     var coro: Coroutine[Int] = just_call_it[but_async]()
     print(pref)
-    print(coro())
+    print(coro._deprecated_direct_resume())
 
 
 fn main():

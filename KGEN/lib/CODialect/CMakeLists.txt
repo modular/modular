@@ -8,6 +8,7 @@ add_modular_dialect_library(CODialect
   CODialect.cpp
   COOps.cpp
   COTypes.cpp
+  COUtils.cpp
 
   DEPENDS
   MLIRCOIncGen

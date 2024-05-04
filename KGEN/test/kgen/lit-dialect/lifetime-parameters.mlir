@@ -38,8 +38,8 @@ lit.func @calls(%f: !lit.signature<[1](!lit.ref<index, mut *[0,0]>) -> !lit.ref<
   // COM: Anchor the types to ensure they match.
   // CHECK: "use"
   // CHECK-COUNT-2: !lit.ref<index, mut a>
-  // CHECK: !co.routine<!lit.ref<index, mut a>>
-  "use"(%0, %1, %2) : (!lit.ref<index, mut a>, !lit.ref<index, mut a>, !co.routine<!lit.ref<index, mut a>>) -> ()
+  // CHECK: !co.routine
+  "use"(%0, %1, %2) : (!lit.ref<index, mut a>, !lit.ref<index, mut a>, !co.routine) -> ()
 
   kgen.return
 }

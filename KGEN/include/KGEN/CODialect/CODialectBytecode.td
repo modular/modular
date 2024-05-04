@@ -13,9 +13,7 @@ include "Support/Compiler/Bytecode.td"
 // CODialect Types
 //===----------------------------------------------------------------------===//
 
-def CoroutineType : DialectType<(type
-  TypeArray:$types
-)>;
+def CoroutineType : DialectType<(type)>;
 
 def CODialectTypes : DialectTypes<"co"> {
   let elems = [

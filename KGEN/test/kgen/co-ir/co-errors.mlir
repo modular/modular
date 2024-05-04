@@ -3,7 +3,7 @@
 // expected-note @below {{see function here}}
 kgen.func @coroutine_handle() {
   // expected-error @below {{'co.handle' op surrounding function must have 1 result}}
-  %hdl = co.handle : <() -> index>
+  %hdl = co.handle : index
   kgen.return
 }
 
@@ -12,7 +12,7 @@ kgen.func @coroutine_handle() {
 // expected-note @below {{surrounding function returns 'index'}}
 kgen.func @coroutine_handle() -> index {
   // expected-error @below {{'co.handle' op surrounding function result type does not match coroutine handle type}}
-  %hdl = co.handle : <() -> index>
+  %hdl = co.handle : index
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
