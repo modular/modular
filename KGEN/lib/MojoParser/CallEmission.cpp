@@ -1490,26 +1490,24 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     }
   }
 
+  // Form a positional operand list with the self argument present, allowing
+  // type inference from it.
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
-  auto argsAddSelf = [&]() {
-    posOperandsWithSelf.clear();
-    if (hasInitSelfArg) {
-      posOperandsWithSelf.reserve(posOperands.size() + 1);
+  if (hasInitSelfArg) {
+    posOperandsWithSelf.reserve(posOperands.size() + 1);
 
-      // Unfortunately, we can't just use 'type' or the dest LValue as the
-      // buffer to initialize, because the concrete result type might need
-      // parameters to be inferred, and those may depend on other value
-      // arguments.  Handle this by setting up a placeholder with the type
-      // we know so far, and use that to filter the overload set.
-      auto inferType = type.getWithUnknownParametersReplaced(shared);
-      auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
-      posOperandsWithSelf.push_back({PValue(attr), expr});
-      posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
-      operands.posOperands = posOperandsWithSelf;
-      operands.hasSelfOperand = true;
-    }
-  };
-  argsAddSelf();
+    // Unfortunately, we can't just use 'type' or the dest LValue as the
+    // buffer to initialize, because the concrete result type might need
+    // parameters to be inferred, and those may depend on other value
+    // arguments.  Handle this by setting up a placeholder with the type
+    // we know so far, and use that to filter the overload set.
+    auto inferType = type.getWithUnknownParametersReplaced(shared);
+    auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
+    posOperandsWithSelf.push_back({PValue(attr), expr});
+    posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
+    operands.posOperands = posOperandsWithSelf;
+    operands.hasSelfOperand = true;
+  }
 
   // Try to resolve the overload set to exactly one candidate, but don't emit an
   // error on failure (we typically want to customize the error).
@@ -1518,46 +1516,21 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
       callee.filterOverloadSet(operands, newFnDecls, allowImplicitConversion,
                                /*emitDiagnosticOnFailure=*/false);
 
-  ASTType operandType;
-  if (callOperands.posOperands.size() == 1 &&
-      callOperands.posOperands[0].ir.getIfCValue())
-    operandType = callOperands.posOperands[0].ir.getIfCValue().getRValueType();
-
-  CValue autoNonmaterializableConversion;
-  SmallVector<ASTExprAnd<AnyValue>> autoConvertedArgs;
-  if (!calleeFn && !callee.isErroneous()) {
-    // If we are converting from a nonmaterializable struct, always allow an
-    // extra implicit conversion to the nonmaterializable target.  Then try
-    // again to find a constructor.
-    if (ASTType nonmaterializableTarget =
-            operandType.getNonmaterializableTarget(shared)) {
-      if (!nonmaterializableTarget.isEqualCanon(type)) {
-        ValueDest autoDest(nonmaterializableTarget, EC_CallArgValue);
-        autoNonmaterializableConversion = emitConstructorCall(
-            nonmaterializableTarget, origPosOperands, origPosOperands[0].expr,
-            syntax, autoDest, /*allowImplicitConversion=*/false);
-        autoConvertedArgs.push_back(
-            {autoNonmaterializableConversion, origPosOperands[0].expr});
-        operands.posOperands = autoConvertedArgs;
-        argsAddSelf();
-        newFnDecls.clear();
-        calleeFn = callee.filterOverloadSet(operands, newFnDecls,
-                                            allowImplicitConversion,
-                                            /*emitDiagnosticOnFailure=*/false);
-      }
-    }
-  }
-
   if (!calleeFn) {
     dest.resetForError();
 
     // If we failed to resolve the set, then try to emit a tailored error.  If
     // constructing from one value, then this is a type conversion (either
     // implicit or explicit).
-    if (operandType && newFnDecls.size() <= 1 && !callee.isErroneous()) {
+    ASTType singleOperandType;
+    if (callOperands.posOperands.size() == 1)
+      if (auto cValue = callOperands.posOperands[0].ir.getIfCValue())
+        singleOperandType = cValue.getRValueType();
+
+    if (singleOperandType && newFnDecls.size() <= 1 && !callee.isErroneous()) {
       // Reject Int(x) where x is already an Int with an error + fixit.
-      if (syntax == CallSyntax::kTypeCall && operandType.isEqualCanon(type) &&
-          isa<CallNode>(expr)) {
+      if (syntax == CallSyntax::kTypeCall &&
+          singleOperandType.isEqualCanon(type) && isa<CallNode>(expr)) {
         auto diag = emitError(expr->getLoc());
         const CallNode &callNode = *cast<CallNode>(expr);
         // This removes the constructor call, but does not remove the parens
@@ -1582,7 +1555,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
         auto diag = emitError(expr->getLoc());
 
         // This is true if passing Int type to Int instead of Int() to Int.
-        bool isConvertingTypeValue = type.getMetaType() == operandType;
+        bool isConvertingTypeValue = type.getMetaType() == singleOperandType;
         bool isImplConvert = dest.getContext() != EC_CallParamValue &&
                              dest.getContext() != EC_CallArgValue;
         diag << "cannot " << (isImplConvert ? "implicitly convert " : "pass ");
@@ -1590,7 +1563,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
         if (isConvertingTypeValue)
           diag << type << " type as a";
         else
-          diag << operandType;
+          diag << singleOperandType;
         diag << " value" << (isImplConvert ? " to " : ", expected ");
         diag << (isConvertingTypeValue ? "an instance of " : "") << type
              << getContextMessage(dest.getContext());
@@ -1640,6 +1613,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // result slot allocation.
   if (!hasInitSelfArg)
     return emitCallUnchecked(calleeFn, operands, dest, expr);
+
   if (!builder) {
     // If we are emitting into a PValue context, remove the 'inout self'
     // argument because it won't be used.
