@@ -10,6 +10,7 @@
 include "KGEN/CODialect/CODialect.td"
 include "KGEN/CODialect/COTypes.td"
 include "Support/MDialect/MAttrs.td"
+include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 
@@ -64,7 +65,8 @@ def CO_CoroutineOpaqueHandleOp : COOp<"opaque_handle"> {
 // CoroutineSuspendOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutineSuspendOp : COOp<"suspend", [SingleBlock]> {
+def CO_CoroutineSuspendOp : COOp<"suspend", [SingleBlock,
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
   let summary = "Suspend the current coroutine and await resumption.";
   let description = [{
     The `co.suspend` operation suspends the current coroutine function
@@ -75,8 +77,7 @@ def CO_CoroutineSuspendOp : COOp<"suspend", [SingleBlock]> {
     Example:
 
     ```mlir
-    %hdl = co.handle
-    co.suspend {
+    co.suspend -> %hdl {
       co.resume %hdl
       co.suspend.end
     }
@@ -84,7 +85,8 @@ def CO_CoroutineSuspendOp : COOp<"suspend", [SingleBlock]> {
   }];
 
   let regions = (region SizedRegion<1>:$body);
-  let assemblyFormat = "$body attr-dict";
+  let assemblyFormat = "`->` custom<SuspendBody>($body) attr-dict";
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
