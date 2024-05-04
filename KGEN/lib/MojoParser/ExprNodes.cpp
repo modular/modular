@@ -346,10 +346,9 @@ AnyValue IntLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   auto attr = KGEN::IntLiteralAttr::get(emitter.getContext(), IPInt(value));
   ASTType type =
       emitter.shared.getBuiltinIntLiteralType(emitter.declScope, getLoc());
-  auto ret =
-      emitter.emitConstructorCall(type, CallOperands({{AnyValue(attr), this}}),
-                                  this, CallSyntax::kImplicitConvert, dest);
-  return ret;
+  return emitter.emitConstructorCall(type,
+                                     CallOperands({{AnyValue(attr), this}}),
+                                     this, CallSyntax::kImplicitConvert, dest);
 }
 
 AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {

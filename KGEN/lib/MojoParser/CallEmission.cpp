@@ -1451,6 +1451,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 
   // Set the parameter bindings for the type we're creating - they can't be
   // inferred since from the result type.
+  // FIXME: Should be able to remove this when kInitReg goes away.
   callee.paramBindings =
       ParamBindings::getForDeclaredType(declScope, shared, type);
 
