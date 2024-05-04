@@ -257,6 +257,9 @@ public:
   /// Return nullptr if not found.
   Symbol *findSymbol(MojoASTDeclRef declRef);
 
+  /// Walk all symbols in the index, regardless of range.
+  void walkSymbols(function_ref<void(Symbol &)> callback);
+
   /// Walk the symbol references in the given range, including references that
   /// are only partially overlapped.
   void walkSymbolRefs(SMRange range, function_ref<void(SymbolRef &)> callback);
@@ -288,6 +291,12 @@ Symbol *SymbolIndex::findSymbol(MojoASTDeclRef declRef) {
   if (auto it = symbolTable.find(&*declRef); it != symbolTable.end())
     return it->getSecond().get();
   return nullptr;
+}
+
+void SymbolIndex::walkSymbols(function_ref<void(Symbol &)> callback) {
+  for (const std::unique_ptr<Symbol> &symbol :
+       llvm::make_second_range(symbolTable))
+    callback(*symbol);
 }
 
 void SymbolIndex::walkSymbolRefs(SMRange range,
@@ -594,6 +603,40 @@ struct MojoDocument::Context {
 // MojoDocument
 //===----------------------------------------------------------------------===//
 
+namespace {
+std::vector<lsp::Diagnostic> checkUnusedVariables(SymbolIndex &index,
+                                                  MojoDocument &doc) {
+  std::vector<lsp::Diagnostic> diags;
+
+  index.walkSymbols([&](const Symbol &symbol) {
+    if (!doc.containsLocation(symbol.declRef->getLoc()))
+      return;
+
+    // Ignore variables beginning with _. This is the traditional syntax for an
+    // intentionally unused variable and allows users to silence the diagnostic
+    // if necessary.
+    if (StringRef(symbol.identifier).starts_with("_"))
+      return;
+
+    if (symbol.declRef.getApproximateViewKind() !=
+        DeclViewKind::DK_VariableDeclView)
+      return;
+
+    if (symbol.symbolRefs.size() == 1) {
+      lsp::Diagnostic lspDiag;
+      lspDiag.source = "mojo";
+      lspDiag.severity = lsp::DiagnosticSeverity::Warning;
+      lspDiag.message = "unused variable '" + symbol.identifier + "'";
+      lspDiag.range = lsp::Range(doc.getSourceMgr(), symbol.range);
+
+      diags.push_back(lspDiag);
+    }
+  });
+
+  return diags;
+}
+} // namespace
+
 MojoDocument::MojoDocument(Kind kind, ArrayRef<lsp::URIForFile> uris,
                            int64_t version,
                            SendDiagnosticsFnRef sendDiagnosticsFn,
@@ -694,6 +737,13 @@ void MojoDocument::parseDocument() {
   llvm::StringMap<std::optional<lsp::PublishDiagnosticsParams>> fileToDiags;
   for (auto &uri : uris)
     fileToDiags[uri.file()].emplace(uri, version);
+
+  // Find unused variables in this document.
+  std::vector<lsp::Diagnostic> unusedDiags =
+      checkUnusedVariables(context->symbolIndex, *this);
+  std::vector<lsp::Diagnostic> &fileDiags =
+      fileToDiags[uris.front().file()]->diagnostics;
+  fileDiags.insert(fileDiags.end(), unusedDiags.begin(), unusedDiags.end());
 
   for (ArrayRef<llvm::SMDiagnostic> diags : handlerCtx.smDiagnostics) {
     // Skip diagnostics that weren't emitted within the main file.
