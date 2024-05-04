@@ -2643,7 +2643,7 @@ static bool mightPointTo(Value p1, Value p2) {
 // need to defend against weird situations where "src" doesn't dominate
 // "tmp" and where "src" gets mutated before the use of "tmp", e.g.:
 //
-//    %tmp = lit.varlet.decl "anonymous"
+//    %tmp = lit.var.decl "anonymous"
 //    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
 // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
 //    kgen.call __init__(%src)  <<== Could reinitialize %src before use of %tmp!
@@ -2692,7 +2692,7 @@ static bool canEntirelyElideMemoryTemporary(LIT::CallOp copyInitCall,
       // the value.
       // NOTE: This could be extended in the future to be more powerful, e.g. to
       // support patterns like:
-      //    %tmp = lit.varlet.decl "anonymous"
+      //    %tmp = lit.var.decl "anonymous"
       //    kgen.call __copyinit__(%tmp, %src)  <<== Last use of %src
       // ** kgen.call __del__(%src)   <<== Thinking about inserting this.
       //    use(%tmp)
@@ -2815,14 +2815,73 @@ LogicalResult DestructorInsertion::elideCopyDestroyPair(Value value,
   }
 
   // Otherwise handle memory passable copies like:
-  //   %tmp = lit.varlet.decl "anonymous"
+  //   %tmp = lit.var.decl "anonymous"
   //   kgen.call __copyinit__(%tmp, %src)
   //   kgen.call __del__(%src)   <<= Thinking about inserting this.
   //   kgen.call user(%tmp)      <<= Consuming call.
   if (callee.getSpecialFunctionKind() != SpecialFunctionKind::kCopyInit)
     return failure();
 
-  // Make sure we're destroying the whole value, not a subvalue.
+  // Register passable types will pass the 'existing' value in a register copies
+  // If we have:
+  //   %tmp = lit.var.decl "anonymous"
+  //   %srcReg = lit.ref.load %src
+  //   lit.call __copyinit__(%tmp, %srcReg)
+  //   ==> destroy %src
+  // Then we can locally optimize this into:
+  //   %tmp = lit.var.decl "anonymous"
+  //   %srcReg = lit.ref.load %src
+  //   lit.ref.store %srcReg -> %tmp
+  // And if the only other operation using '%tmp' is a lit.load.consume:
+  //   %tmp = lit.var.decl "anonymous"
+  //   %srcReg = lit.ref.load %src
+  //   lit.call __copyinit__(%tmp, %srcReg)
+  //   ==> destroy %src
+  //   ...
+  //   %xyz = lit.load.consume %tmp
+  // Then we can optimize this into:
+  //   %srcReg = lit.ref.load %src
+  //   ...
+  //   %xyz = %srcReg
+  if (auto loadOp = copyInitCall.getOperand(1).getDefiningOp<RefLoadOp>()) {
+    if (loadOp.getOperand() == value) {
+      Value copyInitDest = copyInitCall.getOperand(0);
+
+      // We're definitely removing the copyinit.
+      copyInitCall->dropAllReferences();
+      opsToRemove.push_back(copyInitCall);
+
+      // If the operation right after the call is a consuming load from a
+      // varDecl, then we can squash the vardecl and the consuming load and
+      // avoid emitting a store, tidying things right up.
+      if (auto varDecl = copyInitDest.getDefiningOp<VarDeclOp>();
+          varDecl && copyInitDest.hasOneUse()) {
+        if (auto loadConsume =
+                dyn_cast<LoadConsumeOp>(*copyInitDest.user_begin())) {
+
+          // The loadConsume is dead and can be removed.
+          loadConsume.getResult().replaceAllUsesWith(loadOp);
+          // We know the bottom-up scan won't revisit it, so directly remove.
+          loadConsume.erase();
+
+          // The lit.var.decl had one use before so it is now dead, we can
+          // remove it as well.
+          opsToRemove.push_back(varDecl);
+          return success();
+        }
+      }
+
+      // Otherwise we need to insert a store.  Put the store after the call so
+      // it isn't reprocessed by destructor insertion.
+      Operation *opAfterCall = &*++Block::iterator(copyInitCall);
+      ImplicitLocOpBuilder builder(copyInitCall.getLoc(), opAfterCall);
+      builder.create<RefStoreOp>(loadOp, copyInitDest);
+      return success();
+    }
+  }
+
+  // For memory types, make sure we're destroying the whole value, not a
+  // subvalue.
   if (copyInitCall.getOperand(1) != value) {
     // The value being destroyed may be a mutable source, and the source of the
     // copy is (by definition) immutable.

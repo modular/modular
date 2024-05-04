@@ -42,10 +42,10 @@ struct MemPair:
 # CHECK: destructor {{.*}}@RegExample::@"__del__
 @register_passable
 struct RegExample:
-  fn __init__() -> Self:
-    return RegExample{}
-  fn __copyinit__(self) -> Self: # CHECK: lit.func @"__copyinit__
-    return RegExample{}
+  fn __init__(inout self):
+    return 
+  fn __copyinit__(inout self, existing: Self): # CHECK: lit.func @"__copyinit__
+    return
 
   fn noop(self): pass
   # CHECK-LABEL: lit.func @"__del__
@@ -85,8 +85,7 @@ fn destructors(owned arg0: MemExample):
 
   var reg = RegExample()
   # CHECK-NEXT: %reg = lit.var.decl "reg"
-  # CHECK-NEXT: [[REGVAL:%.*]] = lit.call {{.*}}__init__
-  # CHECK-NEXT: lit.ref.store [[REGVAL]], %reg
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%reg)
   # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %reg
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[REG]])
 
@@ -128,10 +127,11 @@ fn destructors(owned arg0: MemExample):
   RegExample{}.noop()
 
   # CHECK-NEXT: %localReg = lit.var.decl
-  # CHECK-NEXT: [[REG2:%.*]] = lit.call {{.*}}@RegExample::@"__init__()"()
-  # CHECK-NEXT: lit.ref.store [[REG2]], %localReg
+  # CHECK-NEXT: lit.call {{.*}}@RegExample::@"__init__{{.*}}(%localReg)
+  # CHECK-NEXT: %anonymous2A_0 = lit.var.decl "anonymous
   # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %localReg
-  # CHECK-NEXT: [[REG2C:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[REG]])
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A_0, [[REG]])
+  # CHECK-NEXT: [[REG2C:%.*]] = lit.load.consume %anonymous2A_0
   # CHECK-NEXT: [[REG:%.*]] = lit.ref.load %localReg
   # CHECK-NEXT: [[BIGREG:%.*]] = lit.struct.create(a=[[REG2C]], b=[[REG]])
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[BIGREG]])
@@ -312,8 +312,7 @@ fn regpassable_owned_args_mutable(owned x: RegExample):
 
   # CHECK-NEXT: [[X:%.*]] = lit.ref.load %x_0
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[X]])
-  # CHECK-NEXT: [[X:%.*]] = {{.*}}"__init__
-  # CHECK-NEXT: lit.ref.store [[X]], %x_0
+  # CHECK-NEXT: lit.call {{.*}}"__init__{{.*}}(%x_0)
   x = RegExample()
 
   # CHECK-NEXT: lit.call {{.*}}mutate{{.*}}(%x_0)
@@ -375,8 +374,7 @@ fn test_result_optimization():
 # CHECK: lit.func @"test_result_consume_reg
 fn test_result_consume_reg(cond: __mlir_type.i1) -> RegExample:
   # CHECK-NEXT: %example2 = lit.var.decl
-  # CHECK: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
-  # CHECK-NEXT: lit.ref.store [[TMP]], %example2
+  # CHECK: lit.call {{.*}}__init__{{.*}}(%example2)
   var example2 = RegExample()
 
   # CHECK-NEXT: hlcf.elif
@@ -431,23 +429,27 @@ struct BigRegExample:
   var a: RegExample
   var b: RegExample
 
-  # CHECK-LABEL: lit.func @"__init__()"
-  fn __init__() -> Self:
-    # CHECK-NEXT: %0 = lit.call {{.*}}__init__{{.*}}()
-    # CHECK-NEXT: %1 = lit.call {{.*}}__init__{{.*}}()
-    # CHECK-NEXT: %2 = lit.struct.create(a=%0, b=%1)
-    # CHECK-NEXT: kgen.return %2
-    return BigRegExample{a: RegExample(), b: RegExample() }
+  # CHECK-LABEL: lit.func @"__init__(ownership::BigRegExample=&)"
+  fn __init__(inout self):
+    # CHECK-NEXT: %0 = kgen.rebind %self
+    # CHECK-NEXT: %1 = lit.ref.struct.ger %0[a]
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%1)
+    # CHECK-NEXT: %3 = lit.ref.struct.ger %0[b]
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%3)
+    self.a = RegExample()
+    self.b = RegExample()
 
   # CHECK-LABEL: lit.func @"__copyinit__
-  fn __copyinit__(self) -> Self:
-    # CHECK-NEXT: %0 = lit.struct.extract %self[a]
-    # CHECK-NEXT: %1 = lit.struct.extract %self[b]
-    # CHECK-NEXT: %2 = lit.call {{.*}}__copyinit__{{.*}}(%0)
-    # CHECK-NEXT: %3 = lit.call {{.*}}__copyinit__{{.*}}(%1)
-    # CHECK-NEXT: %4 = lit.struct.create(a=%2, b=%3)
-    # CHECK-NEXT: kgen.return %4
-    return BigRegExample{a: self.a, b: self.b }
+  fn __copyinit__(inout self, existing: Self):
+    # CHECK-NEXT: %0 = kgen.rebind %self
+    # CHECK-NEXT: %1 = lit.struct.extract %existing[a]
+    # CHECK-NEXT: %2 = lit.ref.struct.ger %0[a]
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%2, %1)
+    # CHECK-NEXT: %4 = lit.struct.extract %existing[b]
+    # CHECK-NEXT: %5 = lit.ref.struct.ger %0[b]
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%5, %4)
+    self.a = existing.a
+    self.b = existing.b
 
   # CHECK-LABEL: lit.func @"__del__
   # CHECK-NEXT: %self_0 = lit.var.decl "self" arg
@@ -467,8 +469,7 @@ struct BigRegExample:
 # CHECK-LABEL: lit.func @"bigreg_test
 fn bigreg_test():
   # CHECK-NEXT: %varThing = lit.var.decl "varThing"
-  # CHECK-NEXT: [[INITVAL:%.*]] = lit.call {{.*}}__init__()
-  # CHECK-NEXT: lit.ref.store [[INITVAL]], %varThing
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%varThing)
   var varThing = BigRegExample()
 
   # CHECK-NEXT: [[FIELD:%.*]] = lit.ref.struct.ger %varThing[a]
@@ -478,14 +479,15 @@ fn bigreg_test():
   consume(varThing.a^)
 
   # CHECK-NEXT: [[BREF:%.*]] = lit.ref.struct.ger %varThing[b]
+  # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous
   # CHECK-NEXT: [[BVAL:%.*]] = lit.ref.load [[BREF]]
-  # CHECK-NEXT: [[BCOPY:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[BVAL]])
+  # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[BVAL]])
+  # CHECK-NEXT: [[BCOPY:%.*]] = lit.load.consume [[ANON]]
   # CHECK-NEXT: lit.call {{.*}}consume{{.*}}([[BCOPY]])
   consume(varThing.b)
 
-  # CHECK-NEXT: [[NEW:%.*]] = lit.call {{.*}}__init__
   # CHECK-NEXT: [[AREF:%.*]] = lit.ref.struct.ger %varThing[a]
-  # CHECK-NEXT: lit.ref.store [[NEW]], [[AREF]]
+  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[AREF]])
   # CHECK-NEXT: [[OLDVAL:%.*]] = lit.ref.load %varThing
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[OLDVAL]])
   varThing.a = RegExample()
@@ -551,8 +553,8 @@ def def_borrowed(borrowed a: MemExample) -> None:
 @register_passable("trivial")
 struct AddrSpace:
     var _value: __mlir_type.index
-    fn __init__(value: __mlir_type.index) -> Self:
-        return Self{_value:value}
+    fn __init__(inout self, value: __mlir_type.index):
+        self._value = value
     fn value(self) -> __mlir_type.index:
         return self._value
 @value
@@ -615,8 +617,8 @@ struct MemoryNoDtor:
 @register_passable
 struct RegExampleValue:
   var x: RegExample
-  fn __init__() -> Self:
-    return Self {x: RegExample()}
+  fn __init__(inout self):
+    self.x = RegExample()
 
   # Make sure the synthesized dtor is taken register style.
   # CHECK: lit.func @"__del__{{.*}}(%self: !RegExampleValue, |)

@@ -38,11 +38,11 @@ struct MemExample:
 # CHECK-LABEL: lit.struct.decl @RegExample
 @register_passable
 struct RegExample:
-    fn __init__() -> Self:
-        return RegExample {}
+    fn __init__(inout self):
+        return
 
-    fn __copyinit__(self) -> Self:
-        return RegExample {}
+    fn __copyinit__(inout self, existing: Self):
+        return
 
     fn noop(self):
         pass
@@ -116,8 +116,8 @@ fn result_mem3(owned a: MemoryMovableCopyable) -> MemoryMovableCopyable:
 
 @register_passable
 struct RegUniqueMovable:
-    fn __init__() -> Self:
-        return Self {}
+    fn __init__(inout self):
+        return
 
     fn __del__(owned self):
         pass
@@ -125,11 +125,11 @@ struct RegUniqueMovable:
 
 @register_passable
 struct RegMovableCopyable:
-    fn __init__() -> Self:
-        return Self {}
+    fn __init__(inout self):
+        return
 
-    fn __copyinit__(existing: Self) -> Self:
-        return Self {}
+    fn __copyinit__(inout self, existing: Self):
+        return
 
     fn __del__(owned self):
         pass
@@ -216,14 +216,15 @@ fn takeTwo(owned x: MemExample, owned y: MemExample):
 # CHECK-LABEL: lit.func @"optimizeCopyElision
 fn optimizeCopyElision():
     # CHECK: %a = lit.var.decl "a"
-    # CHECK-NEXT: [[A:%.*]] = lit.call {{.*}}__init__
-    # CHECK-NEXT: lit.ref.store [[A]], %a
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%a)
     var a = RegExample()
 
     # We need one copy of 'a' here, not two + dtor.
+    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl 
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
-    # CHECK-NEXT: [[ACOPY:%.*]] = lit.call {{.*}}__copyinit__{{.*}}([[A]])
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[A]])
     # CHECK-NEXT: [[A:%.*]] = lit.ref.load %a
+    # CHECK-NEXT: [[ACOPY:%.*]] = lit.load.consume [[ANON]]
     # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ACOPY]], [[A]])
     takeTwo(a, a)
 
@@ -233,13 +234,13 @@ fn optimizeCopyElision():
 
     # We need one copy of 'x' here, not two + dtor.
 
-    # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous*"
+    # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
-    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%anonymous2A, [[IMMREF]])
+    # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}([[ANON]], [[IMMREF]])
     # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut %x
     # CHECK-NEXT: kgen.param.declare
     # CHECK-NEXT: [[PTR:%.*]] = kgen.rebind [[IMMREF]]
-    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}(%anonymous2A, [[PTR]])
+    # CHECK-NEXT: lit.call {{.*}}takeTwo{{.*}}([[ANON]], [[PTR]])
     takeTwo(x, x)
 
     # CHECK-NEXT: kgen.param.constant: none
@@ -277,8 +278,7 @@ fn optimizeCopyToMove():
     # All the copyinit's should be removed.
 
     # CHECK-NEXT: %r1 = lit.var.decl "r1"
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
-    # CHECK-NEXT: lit.ref.store
+    # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%r1)
     var r1 = RegExample()
     # CHECK-NEXT: [[R1:%.*]] = lit.ref.load %r1
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[R1]])
@@ -303,8 +303,7 @@ fn optimizeCopyToMove():
     # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[R3]])
 
     # CHECK-NEXT: %v1 = lit.var.decl
-    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}()
-    # CHECK-NEXT: lit.ref.store [[TMP]], %v1
+    # CHECK-NEXT: [[TMP:%.*]] = lit.call {{.*}}__init__{{.*}}(%v1)
     var v1 = RegExample()  # expected-warning {{never mutated}}
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %v1
     # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[TMP]])
