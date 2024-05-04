@@ -26,7 +26,7 @@ fn test_sync_coro():
         return await test_llcl_add[5](a) + await test_llcl_add[2](b)
 
     # CHECK: 57
-    print(test_llcl_add_two_of_them(20, 30)())
+    print(test_llcl_add_two_of_them(20, 30)._deprecated_direct_resume())
 
 
 fn test_sync_raising_coro():

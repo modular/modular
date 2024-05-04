@@ -113,7 +113,7 @@ fn _del_llcl_chain(chain: Pointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_DestroyChain", NoneType](chain.address)
 
 
-fn _async_and_then(hdl: __mlir_type.`!kgen.pointer<i8>`, chain: Pointer[Chain]):
+fn _async_and_then(hdl: AnyCoroutine, chain: Pointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_AndThen", NoneType](
         _coro_resume_fn, chain.address, hdl
     )
@@ -121,7 +121,7 @@ fn _async_and_then(hdl: __mlir_type.`!kgen.pointer<i8>`, chain: Pointer[Chain]):
 
 fn _async_execute[
     type: AnyRegType
-](handle: Coroutine[type]._handle_type, rt: Runtime, desired_worker_id: Int,):
+](handle: AnyCoroutine, rt: Runtime, desired_worker_id: Int,):
     external_call["KGEN_CompilerRT_LLCL_Execute", NoneType](
         _coro_resume_fn, handle, rt.ptr, desired_worker_id
     )
@@ -288,9 +288,9 @@ struct Task[type: AnyRegType]:
 
         @always_inline
         @parameter
-        fn await_body(cur_hdl: Pointer[__mlir_type.i8]):
+        fn await_body(cur_hdl: AnyCoroutine):
             _async_and_then(
-                cur_hdl.address,
+                cur_hdl,
                 AsyncContext.get_chain(self.handle._get_ctx[AsyncContext]()),
             )
 
@@ -386,9 +386,7 @@ struct TaskGroup:
         return task^
 
     @staticmethod
-    fn await_body_impl(
-        hdl: __mlir_type.`!kgen.pointer<i8>`, inout task_group: TaskGroup
-    ):
+    fn await_body_impl(hdl: AnyCoroutine, inout task_group: TaskGroup):
         _async_and_then(hdl, Pointer[Chain].address_of(task_group.chain))
         task_group._task_complete()
 
@@ -396,8 +394,8 @@ struct TaskGroup:
     fn __await__(inout self):
         @always_inline
         @parameter
-        fn await_body(cur_hdl: Pointer[__mlir_type.i8]):
-            Self.await_body_impl(cur_hdl.address, self)
+        fn await_body(cur_hdl: AnyCoroutine):
+            Self.await_body_impl(cur_hdl, self)
 
         _suspend_async[await_body]()
 
