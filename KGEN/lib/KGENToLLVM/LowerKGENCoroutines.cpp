@@ -672,13 +672,10 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
                        function_ref<LLVMFuncOp()> getCoroProjFn) {
   // Collect all the relevant ops.
   SmallVector<CoroutineHandleOp> handles;
-  SmallVector<CoroutineOpaqueHandleOp> opaques;
   SmallVector<CoroutineSuspendOp> awaits;
   WalkResult result = func.walk([&](Operation *op) {
     if (auto handle = dyn_cast<CoroutineHandleOp>(op)) {
       handles.push_back(handle);
-    } else if (auto opaque = dyn_cast<CoroutineOpaqueHandleOp>(op)) {
-      opaques.push_back(opaque);
     } else if (auto await = dyn_cast<CoroutineSuspendOp>(op)) {
       awaits.push_back(await);
     } else if (auto promise = dyn_cast<CoroutinePromiseOp>(op)) {
@@ -697,16 +694,6 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
   // The presence of `co.handle` inside a function indicates
   // that it is a coroutine.
   if (handles.empty()) {
-    // Replace opaque handles with a null pointer.
-    for (CoroutineOpaqueHandleOp opaque : opaques) {
-      b.setLoc(opaque.getLoc());
-      b.setInsertionPoint(opaque);
-      Value cstNullPtr = b.create<IntToPtrOp>(
-          cache.opaquePtr, b.create<ConstantOp>(b.getIndexType(), 0));
-      opaque.replaceAllUsesWith(cstNullPtr);
-      opaque.erase();
-    }
-
     // If we saw any `co.suspend` operations not inside a coroutine,
     // that likely means an `__await__` function was not marked as
     // `always_inline`.
@@ -728,15 +715,6 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
 
   // The coroutine handle is now the first argument of the coroutine function.
   for (CoroutineHandleOp op : handles) {
-    b.setLoc(op.getLoc());
-    b.setInsertionPoint(op);
-    Value contextPtr = b.create<GEPOp>(
-        cache.opaquePtr, coro->getHdlType(), coro->getHdlValue(),
-        GEPArg(-coro->contextBaseSize), /*inbounds=*/true);
-    op.replaceAllUsesWith(contextPtr);
-    op.erase();
-  }
-  for (CoroutineOpaqueHandleOp op : opaques) {
     b.setLoc(op.getLoc());
     b.setInsertionPoint(op);
     Value contextPtr = b.create<GEPOp>(
