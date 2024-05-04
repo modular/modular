@@ -5,7 +5,7 @@
   "uri":"test:///foo.mojo",
   "languageId":"mojo",
   "version":1,
-  "text":"fn foo() -> Int:\n  var i = 10"
+  "text":"fn foo() -> Int:\n  var _i = 10"
 }}}
 // CHECK: "method": "textDocument/publishDiagnostics",
 // CHECK-NEXT: "params": {
