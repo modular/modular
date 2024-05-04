@@ -14,13 +14,13 @@ kgen.func @slow_function(%arg0: i32) -> !co.routine {
 // CHECK-LABEL: kgen.func @async_coroutine
 kgen.func @async_coroutine(%arg0: i32) -> !co.routine {
   // CHECK: %[[HDL:.*]] = co.handle : i32
-  %hdl = co.handle : i32
+  %curHdl = co.handle : i32
   // CHECK: %[[OPAQUE:.*]] = co.opaque_handle
   %opaque = co.opaque_handle
   // CHECK: %[[CALLEE_HDL:.*]] = kgen.call @slow_function
   %calleeHdl = kgen.call @slow_function(%arg0) : (i32) -> !co.routine
-  // CHECK-NEXT: co.suspend {
-  co.suspend {
+  // CHECK-NEXT: co.suspend -> %hdl {
+  co.suspend -> %hdl {
     // CHECK-NEXT: co.resume %[[CALLEE_HDL]]
     co.resume %calleeHdl
     // CHECK-NEXT: co.suspend.end
@@ -29,5 +29,5 @@ kgen.func @async_coroutine(%arg0: i32) -> !co.routine {
   }
   // CHECK-NEXT: co.destroy %[[CALLEE_HDL]]
   co.destroy %calleeHdl
-  kgen.return %hdl : !co.routine
+  kgen.return %curHdl : !co.routine
 }

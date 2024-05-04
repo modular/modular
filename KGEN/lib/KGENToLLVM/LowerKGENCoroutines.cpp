@@ -549,9 +549,15 @@ lowerCoroutineSuspendAsync(SymbolTable &symtab, LLVMBuilder &b,
   mlir::getUsedValuesDefinedAbove(op->getRegions(), uniqueCaptures);
   SmallVector<Value, 0> captures = uniqueCaptures.takeVector();
 
+  // Replace uses of the current coroutine handle argument.
   Region &awaitBody = op.getBody();
+  b.setInsertionPointToStart(&awaitBody.front());
+  Value hdlArg = awaitBody.getArgument(0);
+  Value coroHdl = b.createConversion(hdlArg.getType(), hdlArg);
+  hdlArg.setType(cache.opaquePtr);
+  hdlArg.replaceAllUsesExcept(coroHdl, coroHdl.getDefiningOp());
+
   SmallVector<Type> captureTypes{cache.opaquePtr};
-  awaitBody.addArgument(cache.opaquePtr, op.getLoc());
   for (Value &capture : captures) {
     Type captureType = b.convertType(capture.getType());
     if (!captureType)
