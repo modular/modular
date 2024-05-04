@@ -7,7 +7,7 @@
 
 from sys.ffi import DLHandle
 from memory.unsafe import DTypePointer, Pointer
-from builtin.coroutine import _coro_resume_fn
+from builtin.coroutine import _coro_resume_fn, _suspend_async
 
 from max.engine import InferenceSession
 from max.engine._utils import call_dylib_func, exchange
@@ -167,19 +167,18 @@ struct AwaitableCBatch:
 
     @always_inline
     fn __await__(self) -> CBatch:
-        var cur_hdl = __mlir_op.`co.opaque_handle`()
-
-        __mlir_region await_body():
+        @always_inline
+        @parameter
+        fn await_body(cur_hdl: Pointer[__mlir_type.i8]):
             call_dylib_func(
                 self._lib,
                 AsyncCBatch._AsyncAndThenFnName,
                 _coro_resume_fn,
                 self._ptr,
-                cur_hdl,
+                cur_hdl.address,
             )
-            __mlir_op.`co.suspend.end`()
 
-        __mlir_op.`co.suspend`[_region = "await_body".value]()
+        _suspend_async[await_body]()
         return self._ptr.get(self._lib)
 
 
