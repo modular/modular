@@ -538,10 +538,10 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
 }
 
 static LogicalResult
-lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
-                         CoroutineInfo &coro, TypeAttrCache &cache,
-                         LLVMFuncOp coroProjFn, CoroutineSuspendOp op,
-                         unsigned index) {
+lowerCoroutineSuspendAsync(SymbolTable &symtab, LLVMBuilder &b,
+                           CoroutineInfo &coro, TypeAttrCache &cache,
+                           LLVMFuncOp coroProjFn, CoroutineSuspendOp op,
+                           unsigned index) {
   b.setLoc(op.getLoc());
 
   // Outline the body of the await into a function.
@@ -550,7 +550,8 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
   SmallVector<Value, 0> captures = uniqueCaptures.takeVector();
 
   Region &awaitBody = op.getBody();
-  SmallVector<Type> captureTypes;
+  SmallVector<Type> captureTypes{cache.opaquePtr};
+  awaitBody.addArgument(cache.opaquePtr, op.getLoc());
   for (Value &capture : captures) {
     Type captureType = b.convertType(capture.getType());
     if (!captureType)
@@ -642,7 +643,7 @@ lowerCoroutineAwaitAsync(SymbolTable &symtab, LLVMBuilder &b,
       b.create<BitcastOp>(cache.i8PtrType, b.create<AddressOfOp>(coroProjFn));
   SmallVector<Value> suspendAsyncArgs{
       b.create<ConstantOp>(b.getI32IntegerAttr(0)), resumeFn, typedPtr,
-      b.create<AddressOfOp>(suspendFn)};
+      b.create<AddressOfOp>(suspendFn), contextPtr};
   llvm::append_range(suspendAsyncArgs, captures);
 
   // TODO: replace i8PtrType with opaquePtr after llvm update
@@ -739,8 +740,8 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     op.erase();
   }
   for (auto [i, op] : llvm::enumerate(awaits)) {
-    if (failed(lowerCoroutineAwaitAsync(symtab, b, *coro, cache,
-                                        getCoroProjFn(), op, i)))
+    if (failed(lowerCoroutineSuspendAsync(symtab, b, *coro, cache,
+                                          getCoroProjFn(), op, i)))
       return failure();
   }
   return success();
