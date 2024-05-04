@@ -16,12 +16,12 @@
 struct NmTarget:
     var x: Bool
 
-    fn __init__(x: Bool) -> Self:
-        return Self{x: x}
+    fn __init__(inout self, x: Bool):
+        self.x = x
 
     @always_inline("nodebug")
-    fn __init__(nms: NmStruct) -> Self:
-        return Self{x: True if (nms.x == 77) else False}
+    fn __init__(inout self, nms: NmStruct):
+        self.x = True if (nms.x == 77) else False
 
     fn __bool__(self: Self) -> Bool:
         return self.x
