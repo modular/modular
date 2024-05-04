@@ -652,7 +652,7 @@ def function[
       .hover(doc, *doc.findFirstPos("function"),
              [&](const lsp::Hover &hover) {
                EXPECT_EQ(hover.contents.value, R"(```mojo
-(function) def function[func: fn(Int, /) capturing -> Int]() raises -> fn(Int, /) capturing -> Int
+(function) def function[func: fn(Int) capturing -> Int]() raises -> fn(Int) capturing -> Int
 ```)");
              })
       .execute();

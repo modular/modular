@@ -38,7 +38,7 @@ struct MemType: pass
 
 
 fn test_func_type():
-    # expected-error @below {{fn(Int, /) -> Int}}
+    # expected-error @below {{fn(Int) -> Int}}
     alias float0: fn(Int) -> Int = test_func_type
     # expected-error @below {{async fn() -> None}}
     alias float1: async fn() -> None = test_func_type

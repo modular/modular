@@ -49,6 +49,11 @@ alias alias_construct = IntTuple(0, 1, 2, 3, 4)
 # CHECK:  "value": "2 if triple_is_nvidia_cuda() else 1"
 alias alias_cond = 2 if triple_is_nvidia_cuda() else 1
 
+# CHECK:  "kind": "alias",
+# CHECK:  "name": "alias_fn",
+# CHECK:  "value": "fn(Int, Int) -> None"
+alias alias_fn = fn (Int, Int) -> None
+
 
 # CHECK:  "kind": "alias",
 # CHECK:  "name": "alias_str",

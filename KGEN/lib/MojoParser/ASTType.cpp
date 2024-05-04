@@ -624,6 +624,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
     }
     os << '(';
     PassingKindPrinter passingKindPrinter(os, sig.getArgListAttrs());
+    bool hadAnyNames = false;
     for (auto [idx, typeX, conventionX] :
          llvm::enumerate(sig.getArguments(), sig.getArgConventions())) {
       ASTType type = typeX;
@@ -655,6 +656,7 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       // The formal type is VariadicPack[] and the thing to print is a pack
       // attribute, not a type.
       StringAttr name = sig.getArgName(idx);
+      hadAnyNames |= !name.empty();
       if (sig.isPackVarArg(idx)) {
         convention = sig.getPackVarArgConvention(idx);
         printConvention();
@@ -684,7 +686,11 @@ void ASTType::print(raw_ostream &os, bool forDiag, bool demangleParams) const {
       }
 
       // Check if we are at the end; if so, we might still have to print a '/'.
-      passingKindPrinter.printOptionalTrailingSlash(idx);
+      // If we're pretty printing for a diagnostic, and don't have any names,
+      // then we don't print the trailing slash. This makes the extremely
+      // common case of a source signature `fn(...) -> ...` look nicer.
+      if (!forDiag || hadAnyNames)
+        passingKindPrinter.printOptionalTrailingSlash(idx);
     }
     os << ')';
     for (auto [enabled, effect] :
