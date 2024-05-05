@@ -24,14 +24,29 @@ from .tensor_spec import TensorSpec
 from ._tensor_impl import _Numpy, CTensor
 
 
+struct _OwningPointer(Movable):
+    """A type that deallocates the specified pointer when it is destroyed."""
+
+    var ptr: DTypePointer[DType.invalid]
+
+    fn __init__(inout self, ptr: DTypePointer[DType.invalid]):
+        self.ptr = ptr
+
+    fn __moveinit__(inout self, owned existing: Self):
+        self.ptr = existing.ptr
+
+    fn __del__(owned self):
+        self.ptr.free()
+
+
 @value
 struct NamedTensor:
     """A named input tensor."""
 
     var name: String
     """Name of the tensor."""
-    var _tensor: Arc[Tensor[DType.invalid]]
-    """Reference-counted pointer keeping the original tensor alive."""
+    var _tensor_data: Arc[_OwningPointer]
+    """Reference-counted pointer keeping the tensor data alive."""
     var _view: EngineTensorView
 
     fn __init__[
@@ -48,17 +63,20 @@ struct NamedTensor:
         """
         self.name = name^
 
-        var tensor_arc = Arc(tensor^)
+        # The view takes a pointer to the element data in the tensor, but
+        # doesn't extend the lifetime of the tensor buffer data.
+        self._view = EngineTensorView(tensor)
 
-        # Get an lvalue reference to the heap-allocated Tensor data, and
-        # construct an EngineTensorView from that.
-        # This is valid because the data owned by an `Arc` in memory does
-        # not move memory location.
-        self._view = EngineTensorView(tensor_arc[])
+        # We want NamedTensor to be copyable but it needs to keep the underlying
+        # buffer alive.  Use an Arc[OwningPointer] to keep the underlying data
+        # alive and us copyable.  We don't care what `dtype` is, and don't want
+        # NamedTensor to have to be generic on `dtype`.
+        self._tensor_data = Arc(
+            _OwningPointer(tensor._take_data_ptr().bitcast[DType.invalid]())
+        )
 
-        # Store a type-erased owned copy of the tensor. Erase the type so that
-        # `NamedTensor` does not have to be generic.
-        self._tensor = tensor_arc._bitcast[Tensor[DType.invalid]]()
+        # FIXME(MSDK-230): This is leaking tensors.
+        self._tensor_data._inner[].add_ref()
 
 
 @value
