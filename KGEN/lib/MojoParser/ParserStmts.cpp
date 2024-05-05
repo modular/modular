@@ -172,6 +172,11 @@ struct StmtParser : public ParserBase {
     }
   }
 
+  TypeCheckScopeInfo getScopeInfo() {
+    // Statements are never in a parameter expression context.
+    return {*curDeclScope, false, shared};
+  }
+
   ASTDecl &getParentDecl() { return parentDecl; }
   OpBuilder &getBuilder() { return builder; }
   UnresolvedType getUnresolvedType() {
@@ -1286,7 +1291,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // __enter__ method is.  Be careful about invalid cases - the errors will get
   // diagnosed when emitting the method call.
   if (PValue enterMethod =
-          OverloadSet::lookup(*curDeclScope, shared, contextRVType, "__enter__",
+          OverloadSet::lookup(getScopeInfo(), contextRVType, "__enter__",
                               CallOperands({{contextVal, contextExp}}),
                               contextExp, CallSyntax::kMethodCall)) {
     // If there is no exit method, we can pass the argument as an RValue so the

@@ -276,6 +276,11 @@ public:
   /// If specified, implicitly declared variables are added after this iterator.
   std::optional<OpBuilder> varDeclCursor;
 
+  /// Return information about the scope we're looking into.
+  TypeCheckScopeInfo getScopeInfo() const {
+    return TypeCheckScopeInfo{declScope, !varDeclCursor.has_value(), shared};
+  }
+
   /// Emit an error about use of a dynamic value (the expression) in a context
   /// that only allows parameter expressions.  This always returns a null
   /// PValue.

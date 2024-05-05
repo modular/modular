@@ -619,7 +619,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     // If the value has any unbound parameters, they might be default arguments
     // or an variadic list that should be bound to an empty list.
     if (!signature.getParamTypes().empty()) {
-      ParamBindings paramBindings(*this);
+      ParamBindings paramBindings(getScopeInfo());
       auto [bindingAttr, _] = paramBindings.verifyBindings(signature);
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
@@ -853,7 +853,7 @@ std::pair<PValue, bool> ExprEmitter::canConstructType(
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
   OverloadSet callee =
-      OverloadSet::lookup(declScope, shared, requiredType, "__init__", expr,
+      OverloadSet::lookup(getScopeInfo(), requiredType, "__init__", expr,
                           CallSyntax::kImplicitConvert,
                           /*no error emission on failure */ {});
 
@@ -886,7 +886,7 @@ std::pair<PValue, bool> ExprEmitter::canConstructType(
     // from the Self target into the parameter bindings set because they cannot
     // be inferred.
     callee.paramBindings =
-        ParamBindings::getForDeclaredType(declScope, shared, requiredType);
+        ParamBindings::getForDeclaredType(getScopeInfo(), requiredType);
   }
 
   CallOperands adjOperands(posOperands, operands.kwOperands);
@@ -1054,12 +1054,12 @@ PValue ExprEmitter::bindMLIRTypeToTrait(ASTExprAnd<CValue> value,
       }
       // We know the stub will provide exactly one overload for each allowed
       // trait requirement.
-      auto ovSet = OverloadSet::lookup(declScope, shared, boundWrapper, name,
+      auto ovSet = OverloadSet::lookup(getScopeInfo(), boundWrapper, name,
                                        value.expr, CallSyntax::kMethodCall);
       // Manually bind the type into the parameter list so the vtable entries
       // are specialized on the MLIR type.
       ovSet.paramBindings =
-          ParamBindings::getForDeclaredType(declScope, shared, boundWrapper);
+          ParamBindings::getForDeclaredType(getScopeInfo(), boundWrapper);
 
       PValue callee = ovSet.getIfPValue();
       if (!callee) {
@@ -1190,8 +1190,8 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
           TraitSelfBinder(typeValue).replace(requirementFn.getFullSignature());
 
       // Form a set of bindings to plow into the impl signature.
-      auto implBindings = ParamBindings::getForDeclaredType(declScope, shared,
-                                                            ASTType(typeValue));
+      auto implBindings =
+          ParamBindings::getForDeclaredType(getScopeInfo(), ASTType(typeValue));
 
       // Bind the implicit T parameter on trait members to something with the
       // right metatype to keep the remapper happy.  We already replaced all
@@ -1508,7 +1508,7 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     // TODO: Eliminate special register form and eliminate this extra check.
     {
       auto callee =
-          OverloadSet::lookup(declScope, shared, valueType, "__copyinit__",
+          OverloadSet::lookup(getScopeInfo(), valueType, "__copyinit__",
                               value.expr, CallSyntax::kTypeCall);
       bool hasInitSelfResult = true;
       for (auto fnDecl : callee.fnDecls) {
@@ -1737,7 +1737,7 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
 
   // Build up a ParamBindings set to validate and check the bindings. Skip
   // unbound values.
-  ParamBindings paramBindings(*this);
+  ParamBindings paramBindings(getScopeInfo());
   for (TypedAttr binding : type.getParamBindings())
     paramBindings.addPrechecked(binding);
 
@@ -1839,7 +1839,7 @@ ASTType ExprEmitter::getBuiltinTupleInstantiation(llvm::SMLoc loc,
   }
 
   SyntheticNode tmpExpr(loc);
-  ParamBindings bindings(*this);
+  ParamBindings bindings(getScopeInfo());
   for (ASTType elt : elements)
     bindings.add(&tmpExpr, PValue(elt));
 
