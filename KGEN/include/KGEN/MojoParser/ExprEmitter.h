@@ -34,7 +34,7 @@ class VarDeclOp;
 /// diagnostics more specific.  Each comment gives an example where the
 /// expression is named "x".
 enum ExprContext {
-  EC_Unknown,               // No context known.
+  EC_InvalidContext,        // Not a valid context, will abort.
   EC_VarInit,               // var thing = x
   EC_Assignment,            // y = x
   EC_Type,                  // var v : x         (and many other places)
@@ -76,6 +76,7 @@ enum ExprContext {
   EC_MutabilitySpec,        // ref[mut=x, y] z
   EC_LifetimeSpec,          // ref[x] y
   EC_Trait,                 // trait conformance checking for `T`
+  EC_Closure,               // closure formation
 };
 const char *getContextMessage(ExprContext context);
 
@@ -123,7 +124,7 @@ struct LValueBufferTaken {};
 class ValueDest {
 public:
   /*implicit*/
-  ValueDest(ExprContext context = EC_Unknown)
+  ValueDest(ExprContext context)
       : representation(NullRepresentation()), context(context) {}
   ValueDest(const ExprNode *target, ExprContext context)
       : representation(target), context(context) {
@@ -243,8 +244,9 @@ public:
   /// Create an ExprEmitter for a dynamic context with a builder.
   ExprEmitter(SharedState &shared, ASTDecl &declScope, OpBuilder builder,
               std::optional<OpBuilder> varDeclCursor = {})
-      : SharedStateUser(shared), builder(builder), paramContext(EC_Unknown),
-        declScope(declScope), varDeclCursor(varDeclCursor) {}
+      : SharedStateUser(shared), builder(builder),
+        paramContext(EC_InvalidContext), declScope(declScope),
+        varDeclCursor(varDeclCursor) {}
 
   /// Create an ExprEmitter for a parameter context.
   ExprEmitter(SharedState &shared, ASTDecl &declScope, ExprContext paramContext)

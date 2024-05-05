@@ -2171,7 +2171,7 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
   if (initExpr) {
     // If we have a type, then emit directly into the LValue.  Otherwise emit
     // into the varOp to infer its type.
-    ValueDest dest;
+    ValueDest dest(EC_VarInit);
     ExprContext exprContext = EC_VarInit;
     if (parsedType) {
       varOp.getResult().setType(
