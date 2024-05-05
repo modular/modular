@@ -182,6 +182,8 @@ fn test_model_tuple_input_different_dtypes() raises:
 
     assert_equal(output_tensor.spec(), "5xint32")
 
+    for i in range(5):
+        assert_equal(output_tensor[i], i)
     assert_equal(input_tensor_int, output_tensor)
 
 
