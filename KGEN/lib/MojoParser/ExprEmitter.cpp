@@ -40,9 +40,9 @@ using namespace M::KGEN::LIT;
 
 const char *LIT::getContextMessage(ExprContext context) {
   switch (context) {
-  case EC_Unknown:
+  case EC_InvalidContext:
+    assert(0 && "cannot emit an invalid context");
     return "";
-
   case EC_VarInit:
     return " in 'var' initializer";
   case EC_Assignment:
@@ -125,6 +125,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in lifetime specifier";
   case EC_Trait:
     return " in trait conformance checking";
+  case EC_Closure:
+    return " in internal closure formation";
   }
   llvm_unreachable("invalid expr context");
 }
@@ -212,7 +214,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   if (auto *expr = dyn_cast<const ExprNode *>(representation)) {
     // If we have a contextual type available, pass that down to the emitter so
     // implicitly declared variables and discard patterns can know their type.
-    ValueDest dest;
+    ValueDest dest(context);
     if (existingValueType) {
       if (ASTType nmTarget = ASTType(existingValueType)
                                  .getNonmaterializableTarget(emitter.shared))
@@ -400,7 +402,8 @@ MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
 /// PValue.
 PValue ExprEmitter::emitErrorForDynamicValueInParameter(const ExprNode *expr,
                                                         const char *message) {
-  assert(paramContext != EC_Unknown && "parameter context not set correctly");
+  assert(paramContext != EC_InvalidContext &&
+         "parameter context not set correctly");
   if (!message)
     message = "cannot use a dynamic value";
   emitError(expr->getLoc(), message)

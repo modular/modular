@@ -770,7 +770,7 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
 
   // Create Closure Impl type by adding captured parameters to the ClosureImpl
   // DeclType.
-  ValueDest closureDest;
+  ValueDest closureDest(EC_Closure);
   Type closureImplType = closureImpl.bindReference(llvm::map_to_vector(
       paramCaptures, [](ParamDeclRefAttr ref) -> TypedAttr { return ref; }));
   CValue value = exprEmitter.emitConstructorCall(

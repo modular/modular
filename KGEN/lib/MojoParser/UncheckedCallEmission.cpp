@@ -1054,7 +1054,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     TypedAttr paramCallResult;
     {
       llvm::SaveAndRestore savedBuilder(builder, {});
-      assert(dest.getContext() != EC_Unknown &&
+      assert(dest.getContext() != EC_InvalidContext &&
              "parametric emitCallUnchecked must include an ExprContext");
       llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
       argumentValues = dropResultSlots(argumentValues, calleeSig);
