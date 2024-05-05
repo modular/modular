@@ -386,6 +386,16 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         existing._spec = TensorSpec()
         existing._ptr = DTypePointer[type]()
 
+    fn _take_ptr(owned self) -> DTypePointer[type]:
+        """Destroy this object and return the owned data pointer from within it.
+        Returns:
+            A pointer that owns the underlying buffer.
+        """
+
+        # Don't run the destructor on self.
+        __mlir_op.`lit.ownership.mark_destroyed`(Reference(self).value)
+        return self._ptr
+
     @always_inline
     fn ireshape(inout self, new_shape: TensorShape) raises -> None:
         """(Inplace) Reshapes the tensor by assigning it a new shape.
