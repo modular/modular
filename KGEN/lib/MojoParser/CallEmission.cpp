@@ -56,9 +56,6 @@ raw_ostream &M::KGEN::LIT::operator<<(raw_ostream &os,
   return os << '}';
 }
 
-ParamBindings::ParamBindings(ExprEmitter &emitter)
-    : ParamBindings(emitter.declScope, emitter.shared) {}
-
 /// Replace our bindings with another set.  This can't be done with operator=
 /// because we have
 void ParamBindings::operator=(ParamBindings &&other) {
@@ -71,10 +68,10 @@ void ParamBindings::operator=(ParamBindings &&other) {
 /// Create a (possibly partially unbound) set of bindings for the given type.
 /// This can be used to initialize the binding set for methods. If the given
 /// type is not a parametric user defined type, this returns empty bindings.
-ParamBindings ParamBindings::getForDeclaredType(ASTDecl &declScope,
-                                                SharedState &shared,
-                                                ASTType type) {
-  ParamBindings paramBindings(declScope, shared);
+ParamBindings
+ParamBindings::getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
+                                  ASTType type) {
+  ParamBindings paramBindings(scopeInfo);
   ArrayRef<Type> params = type.getParameters();
   paramBindings.numCtadParams = params.size();
   paramBindings.defaultTypeParams = type.getDefaultPosParams();
@@ -891,7 +888,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
   // If we found exactly one viable candidate then we succeed.
   if (newFnDecls.size() == 1) {
     // On success, wrap things up into one callee.
-    ParamBindings newBindings(paramBindings.declScope, getShared());
+    ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(bind);
     return getCallee(newFnDecls, baseName, newBindings, expr);
@@ -1011,7 +1008,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
 
-    ParamBindings newBindings(paramBindings.declScope, getShared());
+    ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
     return getCallee(validCandidates, baseName, newBindings, expr);
@@ -1073,12 +1070,13 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
 /// On failure, this returns a null OverloadSet and invokes errorHandler if
 /// the problem hasn't already been diagnosed. This does not emit an error on
 /// failure.
-OverloadSet OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
+OverloadSet OverloadSet::lookup(const TypeCheckScopeInfo &scopeInfo,
                                 ASTType type, StringRef methodName,
                                 const ExprNode *expr, CallSyntax syntax,
                                 function_ref<void()> errorHandler) {
+  SharedState &shared = scopeInfo.shared;
 
-  OverloadSet result(declScope, shared, expr, syntax, /*isErroneous=*/false);
+  OverloadSet result(scopeInfo, expr, syntax, /*isErroneous=*/false);
   result.baseName = methodName;
 
   // If this is a previously-reported error, ignore and don't report an
@@ -1145,14 +1143,14 @@ OverloadSet OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
 /// Lookup of a named named method on the specified type, filtered to match a
 /// concrete operand set. If successful, this provides a non-null PValue for a
 /// single callee.
-PValue OverloadSet::lookup(ASTDecl &declScope, SharedState &shared,
-                           ASTType type, StringRef methodName,
+PValue OverloadSet::lookup(const TypeCheckScopeInfo &scopeInfo, ASTType type,
+                           StringRef methodName,
                            const CallOperands &callOperands,
                            const ExprNode *callExpr, CallSyntax syntax,
                            function_ref<void()> lookupFailureErrorHandler,
                            bool shouldPrintOverloadErrors) {
-  auto ovSet = OverloadSet::lookup(declScope, shared, type, methodName,
-                                   callExpr, syntax, lookupFailureErrorHandler);
+  auto ovSet = OverloadSet::lookup(scopeInfo, type, methodName, callExpr,
+                                   syntax, lookupFailureErrorHandler);
 
   // If the core lookup failed, don't filter.
   if (ovSet.isNull())
@@ -1308,8 +1306,8 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
   }
 
   // Check to see if we can apply these operands to the callee signature.
-  OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindings(*this), callExpr,
-                       CallSyntax::kIndirectCall};
+  OverloadSet bindings{"callee", /*fnDecls=*/{}, ParamBindings(getScopeInfo()),
+                       callExpr, CallSyntax::kIndirectCall};
   auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
                                            bindings, callOperands,
                                            /*allowImplicitConversions=*/true);
@@ -1380,7 +1378,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
     // If the type doesn't have the specified method, but it's
     // nonmaterializable, give it a second chance with the materialized type.
     // If the type doesn't have the specified method, emit an error.
-    callee = OverloadSet::lookup(declScope, shared, type, methodName, operands,
+    callee = OverloadSet::lookup(getScopeInfo(), type, methodName, operands,
                                  callNode, syntax);
     if (!callee) {
       ValueDest selfDest(EC_CallArgValue);
@@ -1421,7 +1419,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 
   // If the type doesn't have the specified method, emit an error.
   if (!callee)
-    callee = OverloadSet::lookup(declScope, shared, type, methodName, operands,
+    callee = OverloadSet::lookup(getScopeInfo(), type, methodName, operands,
                                  callNode, syntax, emitNoMethodError, true);
   if (!callee) {
     dest.resetForError();
@@ -1445,7 +1443,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
 
   // Check to see if we can invoke an __init__ method to convert it.
   auto callee =
-      OverloadSet::lookup(declScope, shared, type, "__init__", expr, syntax);
+      OverloadSet::lookup(getScopeInfo(), type, "__init__", expr, syntax);
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
                               callOperands);
 
@@ -1453,7 +1451,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // inferred since from the result type.
   // FIXME: Should be able to remove this when kInitReg goes away.
   callee.paramBindings =
-      ParamBindings::getForDeclaredType(declScope, shared, type);
+      ParamBindings::getForDeclaredType(getScopeInfo(), type);
 
   // Init gets a self argument passed in as the first argument by-ref.
   ArrayRef<ASTExprAnd<AnyValue>> origPosOperands = callOperands.posOperands;

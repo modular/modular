@@ -36,8 +36,8 @@ getTraitFunctionSignature(ExprEmitter &emitter, LIT::FuncOp traitFn,
   // Add trait's T replacement.
   params.push_back(TypeConstantAttr::get(structSelfType, trait));
   ParserParamEvaluator evaluator(emitter.getDeclResolver(), params);
-  auto bindings = ParamBindings::getForDeclaredType(
-      emitter.declScope, emitter.shared, structSelfType);
+  auto bindings =
+      ParamBindings::getForDeclaredType(emitter.getScopeInfo(), structSelfType);
   // Leave the rest alone.
   for (Type type : paramTypes.drop_front()) {
     params.push_back(UnboundAttr::get(type));

@@ -559,7 +559,8 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   if (auto firstCandidate = dyn_cast<LIT::FuncOp>(decls[0])) {
     // Form an overload set value with all the candidates.
     auto result = OverloadSetUValue::create(
-        spelling, decls, ParamBindings(emitter), this, CallSyntax::kDirectCall);
+        spelling, decls, ParamBindings(emitter.getScopeInfo()), this,
+        CallSyntax::kDirectCall);
     return emitter.emitResult(result, this, dest);
   }
 
@@ -752,7 +753,7 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
 static std::optional<ParamBindings>
 getBindingsForParameterOperands(ArrayRef<Operand> operands,
                                 ExprEmitter &emitter) {
-  ParamBindings paramBindings(emitter);
+  ParamBindings paramBindings(emitter.getScopeInfo());
   for (const Operand &operand : operands) {
     // _ and *_ in parameter expressions are magically treated as special syntax
     // for unbound values, which get a special representation in a parameter
@@ -962,8 +963,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       // different parameters that should be inferred from the actual arguments
       // passed to the call.  We should bind to the functions parameters
       // somehow, e.g. keyword parameters or something?
-      set.paramBindings = ParamBindings::getForDeclaredType(
-          emitter.declScope, emitter.shared, baseType);
+      set.paramBindings =
+          ParamBindings::getForDeclaredType(emitter.getScopeInfo(), baseType);
 
       return bindParamValuesToDirectCall(set, exprOperands, emitter);
     }
@@ -986,8 +987,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // If there are any __refitem__/__refattr__ methods, prefer it.
   StringRef refferName = isSubscript ? "__refitem__" : "__refattr__";
-  OverloadSet refferSet = OverloadSet::lookup(
-      emitter.declScope, emitter.shared, baseType, refferName, node, syntax);
+  OverloadSet refferSet = OverloadSet::lookup(emitter.getScopeInfo(), baseType,
+                                              refferName, node, syntax);
   if (refferSet) {
     // Emit the operands however required and then filter with them.
     if (failed(emitOperands(refferSet, /*isSetter=*/false)))
@@ -1068,8 +1069,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   StringRef getterName = isSubscript ? "__getitem__" : "__getattr__";
   StringRef setterName = isSubscript ? "__setitem__" : "__setattr__";
 
-  OverloadSet getterSet = OverloadSet::lookup(
-      emitter.declScope, emitter.shared, baseType, getterName, node, syntax);
+  OverloadSet getterSet = OverloadSet::lookup(emitter.getScopeInfo(), baseType,
+                                              getterName, node, syntax);
   if (getterSet.isErroneous())
     return {}; // Ignore already emitted errors.
 
@@ -1094,8 +1095,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   // If we don't have a getter then check to see if we have a setter.  This
   // is tricky: get an unfiltered candidate set and try to sort it out.
-  OverloadSet setterSet = OverloadSet::lookup(
-      emitter.declScope, emitter.shared, baseType, setterName, node, syntax);
+  OverloadSet setterSet = OverloadSet::lookup(emitter.getScopeInfo(), baseType,
+                                              setterName, node, syntax);
   if (setterSet.isErroneous())
     return {}; // Ignore already emitted errors.
 
@@ -1133,8 +1134,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // overload set.
     // Hard code the parameter bindings for 'self' since we aren't using type
     // inference properly.
-    setterSet.paramBindings = ParamBindings::getForDeclaredType(
-        emitter.declScope, emitter.shared, baseType);
+    setterSet.paramBindings =
+        ParamBindings::getForDeclaredType(emitter.getScopeInfo(), baseType);
     auto directSymbolAttr = setterSet.getBoundConstantAttr();
     if (!directSymbolAttr) {
       lookupError();
@@ -1305,11 +1306,10 @@ AnyValue AttributeRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Handle method references, which might be overloaded.
   if (auto fnOp = dyn_cast<LIT::FuncOp>(memberDecls[0])) {
     // Build an overload set of all matching function declarations.
-    auto result =
-        OverloadSetUValue::create(spelling, memberDecls,
-                                  ParamBindings::getForDeclaredType(
-                                      emitter.declScope, shared, baseRVType),
-                                  this, CallSyntax::kDirectCall);
+    auto result = OverloadSetUValue::create(
+        spelling, memberDecls,
+        ParamBindings::getForDeclaredType(emitter.getScopeInfo(), baseRVType),
+        this, CallSyntax::kDirectCall);
 
     // If the callee is a static method, we can directly reference it
     // without binding a self parameter.  If this is an instance method, we
@@ -2159,8 +2159,8 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
   if (auto lhsCV = lhs.ir.getIfCValue()) {
     CallOperands operands(argValues);
     if (PValue callee = OverloadSet::lookup(
-            emitter.declScope, emitter.shared, lhsCV.getRValueType(),
-            specialFnInfo.name, operands, callExpr, CallSyntax::kOperator))
+            emitter.getScopeInfo(), lhsCV.getRValueType(), specialFnInfo.name,
+            operands, callExpr, CallSyntax::kOperator))
       return emitter.emitIndirectCall(callee, operands, dest, callExpr);
   }
 
@@ -2171,10 +2171,10 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
     std::swap(argValues[0], argValues[1]);
     if (auto rhsCV = rhs.ir.getIfCValue()) {
       CallOperands operands(argValues);
-      if (PValue callee = OverloadSet::lookup(
-              emitter.declScope, emitter.shared, rhsCV.getRValueType(),
-              reversedFnInfo.name, operands, callExpr,
-              CallSyntax::kReversedOperator))
+      if (PValue callee =
+              OverloadSet::lookup(emitter.getScopeInfo(), rhsCV.getRValueType(),
+                                  reversedFnInfo.name, operands, callExpr,
+                                  CallSyntax::kReversedOperator))
         return emitter.emitIndirectCall(callee, operands, dest, callExpr);
     }
 

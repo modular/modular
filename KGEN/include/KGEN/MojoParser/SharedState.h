@@ -69,6 +69,20 @@ private:
   Kind kind;
 };
 
+/// This struct is a common combination of information that is used when type
+/// checking expressions.
+struct TypeCheckScopeInfo {
+  /// This is the declaration that we do name lookup against.
+  ASTDecl &declScope;
+
+  /// This is true if we're in a parameter/alias context, false if we're able to
+  /// generate operations inside a function body.
+  bool isParamContext;
+
+  /// This is the shared state for the entire parser.
+  SharedState &shared;
+};
+
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
 enum class DeclResolvedness : int8_t {

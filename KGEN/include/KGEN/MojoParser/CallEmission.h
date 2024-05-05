@@ -11,7 +11,7 @@
 #ifndef KGEN_MOJOPARSER_CALLEMISSION_H
 #define KGEN_MOJOPARSER_CALLEMISSION_H
 
-#include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/SharedState.h"
 
 namespace M::KGEN {
 class ParameterExprArrayAttr;
@@ -19,17 +19,14 @@ class SignatureType;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
-class FuncOp;
 class LITSignatureType;
 class PogListAttr;
 class ParserParamEvaluator;
-class StructDeclOp;
 class TypeSignatureType;
-enum class PassingKind : uint32_t;
 
 /// Struct that carries both positional and keyword operands for a call or
-/// parameter binding. This does not own any values, only references pointers to
-/// their containers.
+/// parameter binding. This does not own any values, only references pointers
+/// to their containers.
 template <typename OperandType>
 class OperandContainer {
 public:
@@ -89,7 +86,7 @@ public:
 /// will be bound as the TypedAttr value of param2.  We cannot type check the
 /// bindings until overload resolution has resolved which 'method' we are
 /// talking about and when inference is complete, so we keep a flag.
-class ParamBindings {
+class ParamBindings : public TypeCheckScopeInfo {
 public:
   struct Binding {
     /// This is the expression tree that produced the binding in the case of an
@@ -112,9 +109,8 @@ public:
 
   /// Initialize ParamBindings with a declscope to perform lookups against
   /// and a notion of shared context.
-  ParamBindings(ExprEmitter &emitter);
-  ParamBindings(ASTDecl &declScope, SharedState &shared)
-      : declScope(declScope), shared(shared) {}
+  ParamBindings(const TypeCheckScopeInfo &scopeInfo)
+      : TypeCheckScopeInfo(scopeInfo) {}
   ParamBindings(const ParamBindings &) = default;
 
   /// Replace our bindings with another set.
@@ -123,8 +119,8 @@ public:
   /// Create a (possibly partially unbound) set of bindings for the given type.
   /// This can be used to initialize the binding set for methods. If the given
   /// type is not a parametric user defined type, this returns empty bindings.
-  static ParamBindings getForDeclaredType(ASTDecl &declScope,
-                                          SharedState &shared, ASTType type);
+  static ParamBindings getForDeclaredType(const TypeCheckScopeInfo &scopeInfo,
+                                          ASTType type);
 
   /// Utility function to perform substitutions of the bindings into the symbol
   /// for the given function declaration. It returns the resultant
@@ -240,12 +236,6 @@ public:
   ParameterExprArrayAttr
   verifyBindings(LITSignatureType sig, StringRef baseName, llvm::SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt) const;
-
-  /// This is the scope that any references are resolved against.
-  ASTDecl &declScope;
-
-  /// Reference to the shared parser state these binding exist in.
-  SharedState &shared;
 
 private:
   /// Check that our set of parameter bindings work with the specified input
@@ -373,9 +363,9 @@ public:
   /// On failure, this returns a null OverloadSet and invokes errorHandler if
   /// the problem hasn't already been diagnosed and it is non-null. This does
   /// not emit an error on failure.
-  static OverloadSet lookup(ASTDecl &declScope, SharedState &shared,
-                            ASTType type, StringRef methodName,
-                            const ExprNode *callExpr, CallSyntax syntax,
+  static OverloadSet lookup(const TypeCheckScopeInfo &scopeInfo, ASTType type,
+                            StringRef methodName, const ExprNode *callExpr,
+                            CallSyntax syntax,
                             function_ref<void()> errorHandler = {});
 
   /// Lookup of a named method on the specified type, filtered to match a
@@ -383,18 +373,18 @@ public:
   /// single callee. If non-null, it invokes lookupFailureErrorHandler if the
   /// lookup of the named method fails.  If that succeeds, it will complain
   /// about overload resolution when 'shouldPrintOverloadErrors' is true.
-  static PValue lookup(ASTDecl &declScope, SharedState &shared, ASTType type,
+  static PValue lookup(const TypeCheckScopeInfo &scopeInfo, ASTType type,
                        StringRef methodName, const CallOperands &callOperands,
                        const ExprNode *callExpr, CallSyntax syntax,
                        function_ref<void()> lookupFailureErrorHandler,
                        bool shouldPrintOverloadErrors);
 
   /// Same as the above but a convenience when never emitting an error.
-  static PValue lookup(ASTDecl &declScope, SharedState &shared, ASTType type,
+  static PValue lookup(const TypeCheckScopeInfo &scopeInfo, ASTType type,
                        StringRef methodName, const CallOperands &callOperands,
                        const ExprNode *callExpr, CallSyntax syntax) {
-    return lookup(declScope, shared, type, methodName, callOperands, callExpr,
-                  syntax, {}, false);
+    return lookup(scopeInfo, type, methodName, callOperands, callExpr, syntax,
+                  {}, false);
   }
 
   bool isNull() const { return fnDecls.empty(); }
@@ -406,6 +396,7 @@ public:
   /// lookup results when processing to find further errors.
   bool isErroneous() const { return erroneous; }
 
+  const TypeCheckScopeInfo &getScopeInfo() const { return paramBindings; }
   SharedState &getShared() const { return paramBindings.shared; }
 
   /// Perform substitutions of the specified bindings into the symbol, returning
@@ -459,9 +450,9 @@ public:
       function_ref<InflightDiag &(llvm::SMLoc)> emitError) const;
 
 private:
-  OverloadSet(ASTDecl &declScope, SharedState &shared, const ExprNode *expr,
+  OverloadSet(const TypeCheckScopeInfo &scopeInfo, const ExprNode *expr,
               CallSyntax syntax, bool erroneous)
-      : paramBindings(declScope, shared), expr(expr), syntax(syntax),
+      : paramBindings(scopeInfo), expr(expr), syntax(syntax),
         erroneous(erroneous){};
 };
 
