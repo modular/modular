@@ -54,7 +54,7 @@ struct NamedTensor:
         # construct an EngineTensorView from that.
         # This is valid because the data owned by an `Arc` in memory does
         # not move memory location.
-        self._view = EngineTensorView(tensor_arc._data_ptr()[])
+        self._view = EngineTensorView(tensor_arc[])
 
         # Store a type-erased owned copy of the tensor. Erase the type so that
         # `NamedTensor` does not have to be generic.
@@ -62,7 +62,6 @@ struct NamedTensor:
 
 
 @value
-@register_passable
 struct EngineTensorView:
     """A non-owning register_passable view of a tensor
     that does runtime type checking.
@@ -70,11 +69,11 @@ struct EngineTensorView:
     CAUTION: Make sure the source tensor outlives the view.
     """
 
-    var _ptr: Pointer[Tensor[DType.invalid]]
+    var _spec: TensorSpec
     var _data_ptr: DTypePointer[DType.invalid]
     var _dtype: DType
 
-    fn __init__[type: DType](inout self, inout tensor: Tensor[type]):
+    fn __init__[type: DType](inout self, tensor: Tensor[type]):
         """Creates a non-owning view of given Tensor.
 
         Parameters:
@@ -83,7 +82,7 @@ struct EngineTensorView:
         Args:
             tensor: Tensor backing the view.
         """
-        self._ptr = Pointer.address_of(tensor).bitcast[Tensor[DType.invalid]]()
+        self._spec = tensor._spec
         self._data_ptr = tensor.data().bitcast[DType.invalid]()
         self._dtype = type
 
@@ -111,50 +110,14 @@ struct EngineTensorView:
         """
         return self._data_ptr
 
-    fn spec(self) raises -> TensorSpec:
+    fn spec(self) -> TensorSpec:
         """Returns the spec of tensor backing the view.
 
         Returns:
             Stdlib TensorSpec of the tensor.
         """
 
-        @always_inline
-        @parameter
-        fn get_spec[ty: DType]() -> TensorSpec:
-            return self._get_value[ty]().spec()
-
-        if self._dtype.is_int8():
-            return get_spec[DType.int8]()
-        if self._dtype.is_int16():
-            return get_spec[DType.int16]()
-        if self._dtype.is_int32():
-            return get_spec[DType.int32]()
-        if self._dtype.is_int64():
-            return get_spec[DType.int64]()
-
-        if self._dtype.is_uint8():
-            return get_spec[DType.uint8]()
-        if self._dtype.is_uint16():
-            return get_spec[DType.uint16]()
-        if self._dtype.is_uint32():
-            return get_spec[DType.uint32]()
-        if self._dtype.is_uint64():
-            return get_spec[DType.uint64]()
-
-        if self._dtype.is_float16():
-            return get_spec[DType.float16]()
-        if self._dtype.is_float32():
-            return get_spec[DType.float32]()
-        if self._dtype.is_float64():
-            return get_spec[DType.float64]()
-        if self._dtype.is_bool():
-            return get_spec[DType.bool]()
-
-        raise String("Expected type: ") + self._dtype.__str__()
-
-    @always_inline("nodebug")
-    fn _get_value[type: DType](self) -> Tensor[type]:
-        return self._ptr.bitcast[Tensor[type]]()[]
+        return self._spec
 
 
 @value
