@@ -322,7 +322,7 @@ struct ModuleHandle:
             _get_dylib_function[
                 "cuModuleLoad",
                 fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result,
-            ]()(Pointer.address_of(module), path_cstr._as_ptr())
+            ]()(Pointer.address_of(module), path_cstr.unsafe_ptr())
         )
         _ = path_cstr
         self.module = module
@@ -403,7 +403,7 @@ struct ModuleHandle:
                 ) -> Result,
             ]()(
                 Pointer.address_of(module),
-                content._as_ptr(),
+                content.unsafe_ptr(),
                 UInt32(num_options),
                 opts,
                 option_vals,
@@ -428,7 +428,7 @@ struct ModuleHandle:
                     fn (
                         Pointer[_ModuleImpl], DTypePointer[DType.int8]
                     ) -> Result,
-                ]()(Pointer.address_of(module), content._as_ptr())
+                ]()(Pointer.address_of(module), content.unsafe_ptr())
             )
 
         self.module = module
@@ -470,7 +470,7 @@ struct ModuleHandle:
                     _ModuleImpl,
                     DTypePointer[DType.int8],
                 ) -> Result,
-            ]()(Pointer.address_of(func), self.module, name_cstr._as_ptr())
+            ]()(Pointer.address_of(func), self.module, name_cstr.unsafe_ptr())
         )
 
         _ = name_cstr
