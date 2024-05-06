@@ -1,4 +1,4 @@
-mo.graph @add(%0: !mo.tensor<[5], f32>, %1: !mo.tensor<[5], si32>) -> (!mo.tensor<[5], si32>) no_inline attributes {argument_names = ["input0", "input1"], result_names = ["output"]} {
+mo.graph @add(%0: !mo.tensor<[5], f32>, %1: !mo.tensor<[5], si32>) -> (!mo.tensor<[5], si32>) attributes {argument_names = ["input0", "input1"], result_names = ["output"]} {
   // Add a 0-array to the %1 input tensor so that the returned tensor
   // value is not literally the same borrowed pointer as was passed in,
   // to avoid lifetime issues that currently effect only this contrived test.
