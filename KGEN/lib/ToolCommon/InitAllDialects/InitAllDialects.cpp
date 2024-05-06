@@ -33,20 +33,10 @@ namespace {
 // InterpreterDialectExtension
 //===----------------------------------------------------------------------===//
 
-struct ValueOpInterpreterInterface
-    : public InterpreterOpInterface::ExternalModel<ValueOpInterpreterInterface,
-                                                   DebugInfo::ValueOp> {
-  /// Implement the interpret hook for this operation. Since the operation has
-  /// no results, we cannot use the fold hook.
-  ErrorTreeOrSuccess interpret(Operation *op, ArrayRef<Attribute> operands,
-                               InterpreterState &state) const {
-    return success();
-  }
-};
-
-struct KillOpInterpreterInterface
-    : public InterpreterOpInterface::ExternalModel<ValueOpInterpreterInterface,
-                                                   DebugInfo::KillOp> {
+template <typename Concrete>
+struct DebugOpInterpreterInterface
+    : public InterpreterOpInterface::ExternalModel<
+          DebugOpInterpreterInterface<Concrete>, Concrete> {
   /// Implement the interpret hook for this operation. Since the operation has
   /// no results, we cannot use the fold hook.
   ErrorTreeOrSuccess interpret(Operation *op, ArrayRef<Attribute> operands,
@@ -65,8 +55,10 @@ public:
   /// Apply the extension by injecting the operation interfaces.
   void apply(MLIRContext *ctx,
              MutableArrayRef<Dialect *> dialects) const override {
-    DebugInfo::ValueOp::attachInterface<ValueOpInterpreterInterface>(*ctx);
-    DebugInfo::KillOp::attachInterface<KillOpInterpreterInterface>(*ctx);
+    DebugInfo::ValueOp::attachInterface<
+        DebugOpInterpreterInterface<DebugInfo::ValueOp>>(*ctx);
+    DebugInfo::KillOp::attachInterface<
+        DebugOpInterpreterInterface<DebugInfo::KillOp>>(*ctx);
   }
 
   /// Clone the extension.
