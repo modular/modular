@@ -64,7 +64,7 @@ fn fused_reduce_inner_test[
     var output_buf_device0 = NDBuffer[type, rank](res_device0, out_shape)
     var output_buf_device1 = NDBuffer[type, rank](res_device1, out_shape)
 
-    _copy_host_to_device(vec_device, vec_host.data(), in_size)
+    _copy_host_to_device(vec_device, vec_host.unsafe_ptr(), in_size)
 
     @__copy_capture(input_buf_device)
     @parameter
@@ -99,8 +99,8 @@ fn fused_reduce_inner_test[
     )
 
     stream.synchronize()
-    _copy_device_to_host(res_host0.data(), res_device0, out_size)
-    _copy_device_to_host(res_host1.data(), res_device1, out_size)
+    _copy_device_to_host(res_host0.unsafe_ptr(), res_device0, out_size)
+    _copy_device_to_host(res_host1.unsafe_ptr(), res_device1, out_size)
 
     for i in range(out_shape.flattened_length()):
         assert_equal(res_host0[i], expected_vals0[i])
@@ -155,7 +155,7 @@ fn reduce_inner_test[
     var input_buf_device = NDBuffer[type, rank](vec_device, shape)
     var output_buf_device = NDBuffer[type, rank](res_device, out_shape)
 
-    _copy_host_to_device(vec_device, vec_host.data(), in_size)
+    _copy_host_to_device(vec_device, vec_host.unsafe_ptr(), in_size)
 
     @always_inline
     @parameter
@@ -196,7 +196,7 @@ fn reduce_inner_test[
     ](shape, axis, init, stream)
 
     stream.synchronize()
-    _copy_device_to_host(res_host.data(), res_device, out_size)
+    _copy_device_to_host(res_host.unsafe_ptr(), res_device, out_size)
 
     for i in range(out_shape.flattened_length()):
         assert_equal(res_host[i], expected_vals[i])

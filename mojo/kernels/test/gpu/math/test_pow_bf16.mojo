@@ -48,7 +48,7 @@ def run_elementwise(exponent: Int):
     var in_device = _malloc[type](flattened_length)
     var out_device = _malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data(), flattened_length)
+    _copy_host_to_device(in_device, in_host.unsafe_ptr(), flattened_length)
 
     var in_buffer = NDBuffer[type, 1](in_device, (length))
     var out_buffer = NDBuffer[type, 1](out_device, (length))
@@ -71,7 +71,7 @@ def run_elementwise(exponent: Int):
     )
     synchronize()
 
-    _copy_device_to_host(out_host.data(), out_device, flattened_length)
+    _copy_device_to_host(out_host.unsafe_ptr(), out_device, flattened_length)
 
     for i in range(length):
         assert_almost_equal[type, 1](

@@ -57,9 +57,15 @@ fn test_batched_matmul() raises:
     var rhs_buffer = NDBuffer[DType.float32, 3](lhs_device, Index(b, k, n))
     var dst_buffer = NDBuffer[DType.float32, 3](dst_device, Index(b, m, n))
 
-    _copy_host_to_device(lhs_device, lhs_host.data(), lhs_host.num_elements())
-    _copy_host_to_device(rhs_device, rhs_host.data(), rhs_host.num_elements())
-    _copy_host_to_device(dst_device, dst_host.data(), dst_host.num_elements())
+    _copy_host_to_device(
+        lhs_device, lhs_host.unsafe_ptr(), lhs_host.num_elements()
+    )
+    _copy_host_to_device(
+        rhs_device, rhs_host.unsafe_ptr(), rhs_host.num_elements()
+    )
+    _copy_host_to_device(
+        dst_device, dst_host.unsafe_ptr(), dst_host.num_elements()
+    )
 
     @always_inline
     @__copy_capture(dst_buffer)
@@ -85,7 +91,9 @@ fn test_batched_matmul() raises:
     )
     synchronize()
 
-    _copy_device_to_host(dst_host.data(), dst_device, dst_host.num_elements())
+    _copy_device_to_host(
+        dst_host.unsafe_ptr(), dst_device, dst_host.num_elements()
+    )
 
     #      CHECK: Tensor(
     # CHECK-SAME: 30.0, 36.0

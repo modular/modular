@@ -107,7 +107,7 @@ fn run_mandelbrot() raises:
         time_function[run_mandelbrot](stream) / 1_000_000_000.0,
     )
 
-    _copy_device_to_host(out_host.data(), out_device, width * height)
+    _copy_device_to_host(out_host.unsafe_ptr(), out_device, width * height)
 
     var accum = SIMD[int_type, 1](0)
     for i in range(width):

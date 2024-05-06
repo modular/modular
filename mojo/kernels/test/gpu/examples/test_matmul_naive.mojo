@@ -80,8 +80,8 @@ fn run_matmul() raises:
     var b_device = _malloc[Float32](k * n)
     var c_device = _malloc[Float32](m * n)
 
-    _copy_host_to_device(a_device, a_host.data(), m * k)
-    _copy_host_to_device(b_device, b_host.data(), k * n)
+    _copy_host_to_device(a_device, a_host.unsafe_ptr(), m * k)
+    _copy_host_to_device(b_device, b_host.unsafe_ptr(), k * n)
 
     var func = Function[__type_of(matmul), matmul](debug=True)
 
@@ -98,7 +98,7 @@ fn run_matmul() raises:
     )
     synchronize()
 
-    _copy_device_to_host(c_host.data(), c_device, m * n)
+    _copy_device_to_host(c_host.unsafe_ptr(), c_device, m * n)
 
     for i in range(BLOCK_DIM):
         for j in range(BLOCK_DIM):

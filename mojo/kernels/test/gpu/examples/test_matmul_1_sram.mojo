@@ -159,8 +159,8 @@ fn run_matmul() raises:
     var b_device = _malloc[Float32](K * N)
     var c_device = _malloc[Float32](M * N)
 
-    _copy_host_to_device(a_device, a_host.data(), M * K)
-    _copy_host_to_device(b_device, b_host.data(), K * N)
+    _copy_host_to_device(a_device, a_host.unsafe_ptr(), M * K)
+    _copy_host_to_device(b_device, b_host.unsafe_ptr(), K * N)
 
     var func = Function[
         # fmt: off
@@ -185,7 +185,7 @@ fn run_matmul() raises:
     )
     synchronize()
 
-    _copy_device_to_host(c_host.data(), c_device, M * N)
+    _copy_device_to_host(c_host.unsafe_ptr(), c_device, M * N)
 
     var failed = False
     for i in range(M - 10, M):

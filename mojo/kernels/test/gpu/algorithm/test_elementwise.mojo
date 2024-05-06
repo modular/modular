@@ -44,7 +44,7 @@ fn run_elementwise[type: DType]() raises:
     var in_device = _malloc[type](flattened_length)
     var out_device = _malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data(), flattened_length)
+    _copy_host_to_device(in_device, in_host.unsafe_ptr(), flattened_length)
 
     var in_buffer = NDBuffer[type, 2](in_device, Index(2, 8))
     var out_buffer = NDBuffer[type, 2](out_device, Index(2, 8))
@@ -75,7 +75,7 @@ fn run_elementwise[type: DType]() raises:
     )
     synchronize()
 
-    _copy_device_to_host(out_host.data(), out_device, flattened_length)
+    _copy_device_to_host(out_host.unsafe_ptr(), out_device, flattened_length)
 
     var expected_vals = List[Scalar[type]](
         42.0,
@@ -123,7 +123,7 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
     var in_device = _malloc[type](flattened_length)
     var out_device = _malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data(), flattened_length)
+    _copy_host_to_device(in_device, in_host.unsafe_ptr(), flattened_length)
 
     var in_buffer = NDBuffer[type, 2](in_device, Index(3, 3))
     var out_buffer = NDBuffer[type, 2](out_device, Index(3, 3))
@@ -153,7 +153,7 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
         StaticIntTuple[2](3, 3),
     )
     synchronize()
-    _copy_device_to_host(out_host.data(), out_device, flattened_length)
+    _copy_device_to_host(out_host.unsafe_ptr(), out_device, flattened_length)
 
     var expected_vals = List[Scalar[type]](
         42.0, 43.0, 44.0, 43.0, 44.0, 45.0, 44.0, 45.0, 46.0
@@ -186,7 +186,7 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
     var in_device = _malloc[type](flattened_length)
     var out_device = _malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data(), flattened_length)
+    _copy_host_to_device(in_device, in_host.unsafe_ptr(), flattened_length)
 
     var in_buffer_transposed = NDBuffer[type, 3](
         in_device, Index(4, 2, 5), Index(5, 20, 1)
@@ -207,7 +207,7 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
         StaticIntTuple[3](4, 2, 5),
     )
     synchronize()
-    _copy_device_to_host(out_host.data(), out_device, flattened_length)
+    _copy_device_to_host(out_host.unsafe_ptr(), out_device, flattened_length)
 
     var expected_vals = List[Scalar[type]](
         0.0,

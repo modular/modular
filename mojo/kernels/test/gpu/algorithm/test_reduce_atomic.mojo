@@ -48,7 +48,7 @@ fn run_reduce() raises:
     var vec_device = _malloc[Float32](n)
     var res_device = _malloc[Float32](1)
 
-    _copy_host_to_device(vec_device, vec_host.data(), n)
+    _copy_host_to_device(vec_device, vec_host.unsafe_ptr(), n)
     _memset(res_device, 0, 1)
 
     var func = Function[__type_of(reduce), reduce](verbose=True)
