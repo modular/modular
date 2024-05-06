@@ -218,19 +218,19 @@ struct SelfRefTest:
   fn __init__(inout self): pass
 
   # CHECK-LABEL: lit.func @"method
-  # CHECK-SAME: (%self: !lit.ref<!SelfRefTest, mut=isMut, lt> borrow)
-  fn method[isMut: __mlir_type.i1, lt: AnyLifetime[isMut].type](
-     self: Reference[Self, isMut, lt]._mlir_type) -> Reference[Self, isMut, lt]:
-      return Reference(self)
+  # CHECK-SAME: (%self: !lit.declref<#Reference
+  fn method(self: Reference[Self, _, _]) -> Reference[
+    Self, self.is_mutable, self.lifetime]:
+      return self
 
 # CHECK-LABEL: lit.func @"testSelfRef
 fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
   # Bind immutably to a
-  # CHECK: = lit.call {{.*}}method{{.*}}:lifetime<0> *"a`">(%a)
+  # CHECK: = lit.call {{.*}}method{{.*}}<:i1 0, :lifetime<0> *"a`">
   _ = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}:lifetime<1> *"b`1">(%b)
+  # CHECK: = lit.call {{.*}}method{{.*}}<:i1 1, :lifetime<1> *"b`1">
   _ = b.method()
 
 
@@ -317,21 +317,17 @@ struct CutDownVariadicPack[
 # Test that you can implicitly convert an immortal mutable reference (as is returned
 # by UnsafePointer for example) to mortal reference with specified lifetime.
 # CHECK: lit.func @"test_immortal_to_mortal
-fn test_immortal_to_mortal[mutability: __mlir_type.`i1`, life: AnyLifetime[mutability].type](arg:
-   Reference[Int, mutability, life]._mlir_type)
-    -> Reference[Int, mutability, life]:
-  # CHECK-NEXT: [[ANON:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON]], %arg)
-  # CHECK-NEXT: [[REFVAL:%.*]] = lit.ref.load [[ANON]]
-  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}([[REFVAL]])
+fn test_immortal_to_mortal(arg: Reference[Int, _, _])
+    -> Reference[Int, arg.is_mutable, arg.lifetime]:
+  # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}(%arg)
   # CHECK-NEXT: [[LITREFVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__refitem__{{.*}}([[PTRVAL]])
 
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[LITREFVAL]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=mutability, life>
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[LITREFVAL]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=*"is_mutable`", *"lifetime`1">
   # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON2]], [[ADJREFVAL]])
   # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[ANON2:%.*]]
   # CHECK-NEXT: kgen.return [[RES]]
-  return UnsafePointer(Reference(arg))[]
+  return UnsafePointer(arg)[]
 
 
 # CHECK-LABEL: lit.func @"ref_copyability

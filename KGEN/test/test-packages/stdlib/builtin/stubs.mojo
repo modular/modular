@@ -354,6 +354,9 @@ struct Reference[
         `>`,
     ]
 
+    fn __init__(inout self, value: Self._mlir_type):
+        pass
+
     fn __mlir_ref__(self) -> Self._mlir_type:
         while __mlir_attr.true:
             pass
@@ -370,11 +373,9 @@ struct Tuple[*element_types: AnyType]:
         pass
 
     fn __refitem__[
-        i: Int,
-        mutability: __mlir_type.i1,
-        self_life: AnyLifetime[mutability].type,
-    ](self_lit: Reference[Self, mutability, self_life]._mlir_type) -> Reference[
-        element_types[i.value], mutability, self_life
+        i: Int
+    ](self: Reference[Self, _, _]) -> Reference[
+        element_types[i.value], self.is_mutable, self.lifetime
     ]:
         while __mlir_attr.true:
             pass
