@@ -372,6 +372,8 @@ class InferenceSession:
         device = kwargs["device"] if kwargs and "device" in kwargs else None
         if device:
             config["device"] = device
+        if "custom_ops_path" in kwargs:
+            config["custom_ops_path"] = str(kwargs["custom_ops_path"])
         self._impl = _InferenceSession(config)
 
     def __repr__(self) -> str:
