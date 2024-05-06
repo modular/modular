@@ -1173,43 +1173,11 @@ cc_library(
     ],
 )
 
-genrule(
-    name = "FakeCASIDHeadersGen",
-    outs = [
-        "COMPILERRTCASID.h",
-        "ORCCASID.h",
-    ],
-    cmd = """
-touch $(location :ORCCASID.h)
-echo '
-
-#ifndef BAZEL_CAS_SIDESTEP
-#define BAZEL_CAS_SIDESTEP
-#include "llvm/ADT/StringRef.h"
-
-namespace M::CASID {
-
-inline constexpr llvm::StringLiteral kCompilerRT = "bazel not support this yet";
-inline constexpr llvm::StringLiteral kOrcRT = "bazel not support this yet";
-}  // namespace M::CASID
-
-#endif
-' > $(location :COMPILERRTCASID.h)
-""",
-)
-
-cc_library(
-    name = "FakeCASIDHeaders",
-    hdrs = [":FakeCASIDHeadersGen"],
-    include_prefix = "KGEN/ExecutionEngine",
-)
-
 cc_library(
     name = "ExecutionEngine",
     srcs = glob(["lib/ExecutionEngine/*.cpp"]),
     strip_include_prefix = "include",
     deps = [
-        ":FakeCASIDHeaders",
         ":MojoParser",
         ":MojoTooling",
         ":VersionHeader",
