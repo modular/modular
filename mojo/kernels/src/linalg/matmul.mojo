@@ -105,7 +105,6 @@ fn tiledMatmulRun[
     elementwise_epilogue_fn: fn (GemmShape, GemmShape) escaping -> None,
     global_tile_shape: GemmShape,
     global_tile_offset: GemmShape,
-    kernel_type_m: Int = 0,
 ):
     """Interface function to run tiled matmul on a given sub-tile.
 
@@ -117,7 +116,6 @@ fn tiledMatmulRun[
         elementwise_epilogue_fn: The elementwise epilogue function.
         global_tile_shape: Tile shape this call will process.
         global_tile_offset: Tile offset on the original buffer.
-        kernel_type_m: M value of the matmul for the kernel type.
     """
 
     var tile_n_k = calculate_tile_n_k[
@@ -526,7 +524,6 @@ fn _matmul_cpu_impl[
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
-    kernel_type_m: Int,
     num_threads: Int = -1,
 ):
     @parameter
@@ -599,7 +596,9 @@ fn _matmul_cpu_impl[
                 a.type,
                 b.type,
                 c.type,
-            ](m, 1, k, task_id, num_tasks, kernel_type_m)
+                config.kernel_rows,
+                config.kernel_cols,
+            ](m, 1, k, task_id, num_tasks)
             var t0 = sub_matmul_config.offset[0]
             var t1 = t0 + sub_matmul_config.shape[0]
             packA_i8mm[a.type](t0, t1, k, a.data, a_packed_ptr)
@@ -612,7 +611,9 @@ fn _matmul_cpu_impl[
                 a.type,
                 b.type,
                 c.type,
-            ](m, n, k, task_id, num_tasks, kernel_type_m)
+                config.kernel_rows,
+                config.kernel_cols,
+            ](m, n, k, task_id, num_tasks)
 
             if (
                 sub_matmul_config.shape[0] <= 0
@@ -631,7 +632,6 @@ fn _matmul_cpu_impl[
                 b,
                 sub_matmul_config.shape,
                 sub_matmul_config.offset,
-                kernel_type_m,
             )
 
         # i8mm partition needs to be optimized as a function of m, n and k
@@ -692,7 +692,6 @@ fn _matmul_cpu[
                 c,
                 a,
                 b,
-                kernel_type_m,
                 num_threads,
             )
         elif kernel_id == InnerKernelID.VNNI:
@@ -708,7 +707,6 @@ fn _matmul_cpu[
                 c,
                 a,
                 b,
-                kernel_type_m,
                 num_threads,
             )
         elif kernel_id == InnerKernelID.NEON:
@@ -724,7 +722,6 @@ fn _matmul_cpu[
                 c,
                 a,
                 b,
-                kernel_type_m,
                 num_threads,
             )
         elif kernel_id == InnerKernelID.I8MM:
@@ -740,7 +737,6 @@ fn _matmul_cpu[
                 c,
                 a,
                 b,
-                kernel_type_m,
                 num_threads,
             )
         else:
@@ -821,7 +817,6 @@ fn _submatmul_sequential_sync[
     b: NDBuffer[_, 2, _],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
-    kernel_type_m: Int = 0,
 ):
     alias simd_size = config.simd_size
 
@@ -856,7 +851,6 @@ fn _submatmul_sequential_sync[
         elementwise_closure,
         sub_matrix_shape,
         sub_matrix_offset,
-        kernel_type_m,
     )
 
 
@@ -872,7 +866,6 @@ fn _submatmul_sequential_sync[
     b: NDBuffer[_, 2, _],
     sub_matrix_shape: GemmShape,
     sub_matrix_offset: GemmShape,
-    kernel_type_m: Int = 0,
 ):
     alias kernel_id = select_inner_kernel[a.type, b.type, c.type]()
 
@@ -891,7 +884,6 @@ fn _submatmul_sequential_sync[
             b,
             sub_matrix_shape,
             sub_matrix_offset,
-            kernel_type_m,
         )
     elif kernel_id == InnerKernelID.VNNI:
         _submatmul_sequential_sync[
@@ -907,7 +899,6 @@ fn _submatmul_sequential_sync[
             b,
             sub_matrix_shape,
             sub_matrix_offset,
-            kernel_type_m,
         )
     elif kernel_id == InnerKernelID.NEON:
         _submatmul_sequential_sync[
@@ -923,7 +914,6 @@ fn _submatmul_sequential_sync[
             b,
             sub_matrix_shape,
             sub_matrix_offset,
-            kernel_type_m,
         )
     elif kernel_id == InnerKernelID.I8MM:
         _submatmul_sequential_sync[
@@ -939,7 +929,6 @@ fn _submatmul_sequential_sync[
             b,
             sub_matrix_shape,
             sub_matrix_offset,
-            kernel_type_m,
         )
     else:
         constrained[False, "no _run_inner_loop implementation"]()

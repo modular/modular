@@ -404,7 +404,7 @@ fn _batched_matmul_cpu[
                     func[c_type, width, rank](batch_coords, out_val)
 
             var sub_matmul_config = get_partitioned_matmul[
-                a_type, b_type, c_type
+                a_type, b_type, c_type, config.kernel_rows, config.kernel_cols
             ](m, n, k, matmul_task_id, num_tasks_matmul)
             if (
                 sub_matmul_config.shape[0] <= 0

@@ -423,41 +423,20 @@ fn partition_work(
 
 
 fn get_partitioned_matmul[
-    a_type: DType, b_type: DType, c_type: DType
-](
-    m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int, kernel_type_m: Int = 0
-) -> SubMatmulConfig:
-    if get_kernel_type(kernel_type_m, n, k):
-        return get_partitioned_matmul[a_type, b_type, c_type, True](
-            m, n, k, task_id, num_tasks
-        )
-    else:
-        return get_partitioned_matmul[a_type, b_type, c_type, False](
-            m, n, k, task_id, num_tasks
-        )
-
-
-fn get_partitioned_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    kernel_type: Bool,
+    kernel_rows: Int,
+    kernel_cols: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    alias kernel_shape = get_matmul_kernel_shape[
-        a_type, b_type, c_type, kernel_type
-    ]()
-
     alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-
-    alias kernel_rows = kernel_shape.simd_rows
-    alias kernel_cols = kernel_shape.simd_cols * simdwidthof[c_type]()
 
     @parameter
     if use_i8mm:
         # i8mm needs to have even partitions in m.
         # Only the last range is allowed to be odd.
         var partition = get_partitioned_matmul_mojo[
-            a_type, b_type, c_type, kernel_rows, kernel_cols, use_i8mm
+            b_type, kernel_rows, kernel_cols, use_i8mm
         ](m // 2, n, k, task_id, num_tasks)
         var t0 = 2 * partition.offset[0]
         var t1 = 2 * partition.shape[0]
@@ -467,29 +446,27 @@ fn get_partitioned_matmul[
         partition.shape[0] = t1
         return partition
     else:
-        return get_partitioned_matmul_mojo[
-            a_type, b_type, c_type, kernel_rows, kernel_cols
-        ](m, n, k, task_id, num_tasks)
+        return get_partitioned_matmul_mojo[b_type, kernel_rows, kernel_cols](
+            m, n, k, task_id, num_tasks
+        )
 
 
 fn get_partitioned_matmul_mojo[
-    a_type: DType,
     b_type: DType,
-    c_type: DType,
-    kernel_m: Int,
-    kernel_n: Int,
+    kernel_rows: Int,
+    kernel_cols: Int,
     use_i8mm: Bool = False,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
     var shape = get_partitioned_matmul_mojo_shape[
-        a_type, b_type, c_type, kernel_m, kernel_n, use_i8mm
+        b_type, kernel_rows, kernel_cols, use_i8mm
     ](m, n, k, num_tasks)
     var num_row_tasks = shape[0]
     var num_col_tasks = shape[1]
     var row_task_id = task_id // num_col_tasks
     var col_task_id = task_id % num_col_tasks
 
-    var row_range = partition_work(row_task_id, num_row_tasks, m, kernel_m)
-    var col_range = partition_work(col_task_id, num_col_tasks, n, kernel_n)
+    var row_range = partition_work(row_task_id, num_row_tasks, m, kernel_rows)
+    var col_range = partition_work(col_task_id, num_col_tasks, n, kernel_cols)
     return SubMatmulConfig(
         Index(row_range[0], col_range[0], 0),
         Index(row_range[1], col_range[1], k),
@@ -497,11 +474,9 @@ fn get_partitioned_matmul_mojo[
 
 
 fn get_partitioned_matmul_mojo_shape[
-    a_type: DType,
     b_type: DType,
-    c_type: DType,
-    kernel_m: Int,
-    kernel_n: Int,
+    kernel_rows: Int,
+    kernel_cols: Int,
     use_i8mm: Bool,
 ](m: Int, n: Int, k: Int, num_tasks: Int) -> StaticIntTuple[2]:
     var num_row_tasks = 1
@@ -509,8 +484,8 @@ fn get_partitioned_matmul_mojo_shape[
 
     var min_work = m * n
 
-    var num_packs_m = ceildiv(m, kernel_m)
-    var num_packs_n = ceildiv(n, kernel_n)
+    var num_packs_m = ceildiv(m, kernel_rows)
+    var num_packs_n = ceildiv(n, kernel_cols)
     var max_num_packs_m = num_packs_m
     var max_num_packs_n = num_packs_n
     if (use_i8mm and 2 * m > n) or m > n:
@@ -521,9 +496,9 @@ fn get_partitioned_matmul_mojo_shape[
             max_num_packs_n = min(num_packs_n, num_packs_n2)
     else:
         # get the minimum work in n
-        var worki = kernel_n * max((num_packs_n // num_tasks), 1)
+        var worki = kernel_cols * max((num_packs_n // num_tasks), 1)
         # ensure the work in m is not much smaller than in n
-        var num_packs_m2 = ceildiv(m, align_down(worki, kernel_m))
+        var num_packs_m2 = ceildiv(m, align_down(worki, kernel_rows))
         if num_packs_n * num_packs_m2 >= num_tasks:
             max_num_packs_m = min(max_num_packs_m, num_packs_m2)
 
@@ -531,9 +506,9 @@ fn get_partitioned_matmul_mojo_shape[
     max_num_packs_n = min(max_num_packs_n, num_tasks)
     # Loop over all possible partitions and find the the partition that balances the work best.
     for j in range(max_num_packs_m, 0, -1):
-        var workj = kernel_m * ceildiv(num_packs_m, j) if j != 1 else m
+        var workj = kernel_rows * ceildiv(num_packs_m, j) if j != 1 else m
         for i in range(min(num_tasks // j, max_num_packs_n), 0, -1):
-            var worki = kernel_n * ceildiv(num_packs_n, i) if i != 1 else n
+            var worki = kernel_cols * ceildiv(num_packs_n, i) if i != 1 else n
             var work = workj * worki
             if work <= min_work:
                 min_work = work

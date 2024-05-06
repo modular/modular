@@ -7,11 +7,9 @@
 
 from LinAlg.MatmulUtils import SubMatmulConfig, get_partitioned_matmul_mojo
 
-alias kernel_height = 6
-alias kernel_width = 64
-alias a_type = DType.float32
+alias kernel_rows = 6
+alias kernel_cols = 64
 alias b_type = DType.float32
-alias c_type = DType.float32
 
 
 # CHECK-LABEL: test_partition
@@ -26,65 +24,65 @@ fn test_partition():
 
     var config: SubMatmulConfig
 
-    config = get_partitioned_matmul_mojo[
-        a_type, b_type, c_type, kernel_height, kernel_width
-    ](M, N, K, 0, num_tasks)
+    config = get_partitioned_matmul_mojo[b_type, kernel_rows, kernel_cols](
+        M, N, K, 0, num_tasks
+    )
     # CHECK: (0, 0, 0)
     print(config.offset)
     # CHECK: (4, 128, 3072)
     print(config.shape)
 
-    config = get_partitioned_matmul_mojo[
-        a_type, b_type, c_type, kernel_height, kernel_width
-    ](M, N, K, 1, num_tasks)
+    config = get_partitioned_matmul_mojo[b_type, kernel_rows, kernel_cols](
+        M, N, K, 1, num_tasks
+    )
     # CHECK: (0, 128, 0)
     print(config.offset)
     # CHECK: (4, 128, 3072)
     print(config.shape)
 
-    config = get_partitioned_matmul_mojo[
-        a_type, b_type, c_type, kernel_height, kernel_width
-    ](M, N, K, 2, num_tasks)
+    config = get_partitioned_matmul_mojo[b_type, kernel_rows, kernel_cols](
+        M, N, K, 2, num_tasks
+    )
     # CHECK: (0, 256, 0)
     print(config.offset)
     # CHECK: (4, 128, 3072)
     print(config.shape)
 
-    config = get_partitioned_matmul_mojo[
-        a_type, b_type, c_type, kernel_height, kernel_width
-    ](M, N, K, 3, num_tasks)
+    config = get_partitioned_matmul_mojo[b_type, kernel_rows, kernel_cols](
+        M, N, K, 3, num_tasks
+    )
     # CHECK: (0, 384, 0)
     print(config.offset)
     # CHECK: (4, 128, 3072)
     print(config.shape)
 
-    config = get_partitioned_matmul_mojo[
-        a_type, b_type, c_type, kernel_height, kernel_width
-    ](M, N, K, 4, num_tasks)
+    config = get_partitioned_matmul_mojo[b_type, kernel_rows, kernel_cols](
+        M, N, K, 4, num_tasks
+    )
     # CHECK: (0, 512, 0)
     print(config.offset)
     # CHECK: (4, 64, 3072)
     print(config.shape)
 
-    config = get_partitioned_matmul_mojo[
-        a_type, b_type, c_type, kernel_height, kernel_width
-    ](M, N, K, 5, num_tasks)
+    config = get_partitioned_matmul_mojo[b_type, kernel_rows, kernel_cols](
+        M, N, K, 5, num_tasks
+    )
     # CHECK: (0, 576, 0)
     print(config.offset)
     # CHECK: (4, 64, 3072)
     print(config.shape)
 
-    config = get_partitioned_matmul_mojo[
-        a_type, b_type, c_type, kernel_height, kernel_width
-    ](M, N, K, 6, num_tasks)
+    config = get_partitioned_matmul_mojo[b_type, kernel_rows, kernel_cols](
+        M, N, K, 6, num_tasks
+    )
     # CHECK: (0, 640, 0)
     print(config.offset)
     # CHECK: (4, 64, 3072)
     print(config.shape)
 
-    config = get_partitioned_matmul_mojo[
-        a_type, b_type, c_type, kernel_height, kernel_width
-    ](M, N, K, 7, num_tasks)
+    config = get_partitioned_matmul_mojo[b_type, kernel_rows, kernel_cols](
+        M, N, K, 7, num_tasks
+    )
     # CHECK: (0, 704, 0)
     print(config.offset)
     # CHECK: (4, 64, 3072)
