@@ -17,6 +17,7 @@
 #include "KGEN/LITDialect/SpecialFunctions.h"
 #include "KGEN/MojoParser/ASTType.h"
 #include "KGEN/MojoParser/Lexer.h"
+#include "KGEN/MojoParser/TypeCheckScopeInfo.h"
 
 namespace M::KGEN::LIT {
 class ASTDecl;
@@ -134,7 +135,7 @@ public:
 };
 
 /// This contains the result state from type checking a parameter signature.
-class TypeCheckedParamList {
+class TypeCheckedParamList : public TypeCheckScopeInfo {
 public:
   /// Type check each of the parameters from 'parsedParams' into their
   /// decomposed representation.
@@ -143,9 +144,6 @@ public:
 
   /// Get an PogListAttr for this parameter list.
   PogListAttr getParamListAttr();
-
-  ASTDecl &declScope;
-  SharedState &shared;
 
   // These are the results of type checking 'params' in typeCheck.
   /// One ParamDeclAttr for each parameter being declared.

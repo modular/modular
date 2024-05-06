@@ -177,14 +177,14 @@ void ParameterInferenceDiagnostics::attach(LITSignatureType signature,
 namespace {
 /// This class provides the implementation details that help to infer
 /// information about the specified parameter.
-class ParameterInferenceState {
+class ParameterInferenceState : public TypeCheckScopeInfo {
 public:
-  ParameterInferenceState(ASTDecl &declScope, SharedState &shared,
+  ParameterInferenceState(const TypeCheckScopeInfo &scopeInfo,
                           ArrayRef<TypedAttr> bindingsSoFar,
                           const ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
                           bool allowImplicitConversions)
-      : declScope(declScope), shared(shared), evaluator(evaluator),
+      : TypeCheckScopeInfo(scopeInfo), evaluator(evaluator),
         inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()),
         diags(diags), allowImplicitConversions(allowImplicitConversions) {}
 
@@ -213,8 +213,6 @@ private:
     diags.addFailure(parameterIndex, curArgExpr, std::move(info));
   }
 
-  ASTDecl &declScope;
-  SharedState &shared;
   ParserParamEvaluator evaluator;
 
   /// One entry for each parameter from the original binding list.  If
@@ -1394,7 +1392,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
                                  size_t &numImplicitConversions,
                                  size_t &numMismatchedConventions,
                                  bool allowImplicitConversions, SMLoc loc,
-                                 ASTDecl &declScope, SharedState &shared) {
+                                 const TypeCheckScopeInfo &scopeInfo) {
+  SharedState &shared = scopeInfo.shared;
   switch (expectedConvention) {
   case ArgConvention::InitSelf:
     // If this is an UnknownAttr, then it is a placeholder for 'self' which will
@@ -1452,7 +1451,8 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (!argVal) {
       if (auto initValue = operand.ir.getIfInitializer()) {
         // Initializer lists are good if we can construct the expected type.
-        ExprEmitter emitter(shared, declScope, ExprContext::EC_CallArgValue);
+        ExprEmitter emitter(shared, scopeInfo.declScope,
+                            ExprContext::EC_CallArgValue);
         auto [initFn, erroneousDecl] = emitter.canConstructType(
             expectedType, initValue.get(), operand.expr);
         // If there were declaration errors, assume construction is possible to
@@ -1504,7 +1504,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // If implicit conversions are possible and one will work, then we succeed
     // with that conversion.
     if (allowImplicitConversions &&
-        ExprEmitter(shared, declScope, ExprContext::EC_CallArgValue)
+        ExprEmitter(shared, scopeInfo.declScope, ExprContext::EC_CallArgValue)
             .canImplicitlyConvertToType({argVal, operand.expr}, expectedType)) {
       // If we had one, this bumps our # implicit conversions.
       numImplicitConversions += 2;
@@ -1737,8 +1737,8 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   auto parameterInferenceHook = [&](ArrayRef<TypedAttr> bindingsSoFar,
                                     const ParserParamEvaluator &evaluator) {
     // Infer information from this signature holistically.
-    ParameterInferenceState inferrence(callable.paramBindings.declScope, shared,
-                                       bindingsSoFar, evaluator, inferenceDiags,
+    ParameterInferenceState inferrence(callable.paramBindings, bindingsSoFar,
+                                       evaluator, inferenceDiags,
                                        allowImplicitConversions);
     if (failed(inferrence.infer(signature, callOperands, variadicKwOperands)))
       return PValue();
@@ -1805,7 +1805,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
     return checkOneOperand(operand, expectedConvention, expectedType,
                            numImplicitConversions, numMismatchedConventions,
                            allowImplicitConversions, loc,
-                           callable.paramBindings.declScope, shared);
+                           callable.paramBindings);
   };
 
   // Use a ParserParamEvaluator to substitute 'apply' expressions in the

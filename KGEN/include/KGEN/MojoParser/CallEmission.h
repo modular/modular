@@ -11,7 +11,8 @@
 #ifndef KGEN_MOJOPARSER_CALLEMISSION_H
 #define KGEN_MOJOPARSER_CALLEMISSION_H
 
-#include "KGEN/MojoParser/SharedState.h"
+#include "KGEN/MojoParser/IRValues.h"
+#include "KGEN/MojoParser/TypeCheckScopeInfo.h"
 
 namespace M::KGEN {
 class ParameterExprArrayAttr;
@@ -22,6 +23,7 @@ namespace M::KGEN::LIT {
 class LITSignatureType;
 class PogListAttr;
 class ParserParamEvaluator;
+class StructDeclOp;
 class TypeSignatureType;
 
 /// Struct that carries both positional and keyword operands for a call or
