@@ -619,7 +619,8 @@ public:
       // to actually debug the sliced kernel directly. Users would debug the
       // base kernel.
       slicedComputeFunction.walk([](Operation *op) {
-        if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op))
+        if (llvm::isa_and_nonnull<DebugInfo::DebugInfoDialect>(
+                op->getDialect()))
           op->erase();
       });
 
@@ -681,7 +682,8 @@ public:
       // to actually debug the sliced kernel directly. Users would debug the
       // base kernel.
       slicedComputeFunction.walk([](Operation *op) {
-        if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op))
+        if (llvm::isa_and_nonnull<DebugInfo::DebugInfoDialect>(
+                op->getDialect()))
           op->erase();
       });
 
