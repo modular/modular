@@ -101,7 +101,8 @@ ASTType ASTType::getWithoutParameters(SharedState &shared) const {
     return cast<StructDeclOp>(getDecl(shared)).bindReference();
   if (AnyStructType metaType = dyn_cast_or_null<AnyStructType>(mlirType))
     return AnyStructType::get(metaType.getSymbol(), metaType.getSignature());
-  return {};
+  // Not parameterized.
+  return *this;
 }
 
 ArrayRef<TypedAttr> ASTType::getDefaultPosParams() const {

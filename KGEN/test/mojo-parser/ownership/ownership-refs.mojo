@@ -385,3 +385,20 @@ fn parametric_mut_mbvalue[
    -> Reference[Int, is_mutable, lifetime]:
   # CHECK: lit.ref.struct.ger
   return a[].field
+
+
+# Reference directly with inferred params.
+struct SomeStructWithReferenceSelfArgument:
+    fn __init__(inout self): pass
+    fn hello(self: Reference[Self, _, _, _]):
+        pass
+
+# CHECK-LABEL: lit.func @"testMethodRef
+fn testMethodRef(a: SomeStructWithReferenceSelfArgument):
+    # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
+    # CHECK-NEXT: lit.call {{.*}}Reference::@"__init__{{.*}}(%anonymous2A, %a)
+    # CHECK-NEXT: %1 = lit.ref.load %anonymous2A
+    # CHECK-NEXT: lit.call {{.*}}@"hello{{.*}}(%1)
+    a.hello()
+
+

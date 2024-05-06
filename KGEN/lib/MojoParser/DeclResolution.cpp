@@ -317,7 +317,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
   if (selfType && !funcOp.getIsStatic()) {
     // Implement this as a lambda so we can early exit with 'return'.
     auto checkSelf = [&]() {
-      Type selfArgType = argTypes[kSelfArgNo];
+      ASTType selfArgType = argTypes[kSelfArgNo];
       const ParsedArgument &selfArg = parsedArgs[kSelfArgNo];
 
       // Don't check broken args, becaue we don't want redundant diagnostics.
@@ -351,6 +351,19 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
           return;
         }
         return; // ok!
+      }
+
+      // For non-inout arguments, it is also ok if the argument is some type
+      // like Reference[Self] that an instance of Self implicitly converts to.
+      if (selfArg.convention != ParsedArgument::kConventionInOut) {
+        ExprEmitter tmpEmitter(shared, tcSignature.paramList.declScope,
+                               ExprContext::EC_CallArgValue);
+        auto tmpValue = PValue(UnboundAttr::get(selfType));
+        SyntheticNode exprNode(selfArg.loc);
+        if (tmpEmitter.canImplicitlyConvertToType(
+                {tmpValue, &exprNode},
+                selfArgType.getWithoutParameters(shared)))
+          return;
       }
 
       // Otherwise, this is an unrecognized self type. If this is a trait, the
