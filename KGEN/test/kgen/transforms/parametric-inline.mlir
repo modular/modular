@@ -312,22 +312,14 @@ kgen.generator @callee<B>() always_inline {
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<A>() {
   // CHECK-NEXT: declare B0 = <A>
-  // CHECK-NEXT: declare A0 = <0>
-  // CHECK-NEXT: constant = <A0>
   // CHECK-NOT: kgen.call @callee
   kgen.call @callee<A>() : () -> ()
+  kgen.param.declare B = <0>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<B>() always_inline {
-  kgen.call @result_params<[] -> A>() : () -> ()
-  kgen.param.constant = <A>
-  kgen.return
-}
-
-kgen.generator @result_params<() -> A>() {
-  kgen.param.result_bind<0>
   kgen.return
 }
 
@@ -335,17 +327,13 @@ kgen.generator @result_params<() -> A>() {
 
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent<B>() {
-  // CHECK-NEXT: declare A0 = <B>
-  // CHECK-NEXT: declare A = <A0>
-  // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<B -> A>() : () -> ()
-  kgen.param.constant = <A>
+  // CHECK-NEXT: declare B0 = <B>
+  kgen.call @callee<B>() : () -> ()
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A -> B>() always_inline {
-  kgen.param.result_bind<A>
+kgen.generator @callee<B>() always_inline {
   kgen.return
 }
 
@@ -357,22 +345,19 @@ kgen.generator @parent<B>() {
   // CHECK-NEXT: declare.region F = <C, D>
   // CHECK-NEXT: constant = <C>
   // CHECK-NEXT: constant = <D>
-  // CHECK: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<B -> A>() : () -> ()
-  // CHECK: constant = <A>
-  kgen.param.constant = <A>
+  kgen.call @callee<B>() : () -> ()
+  kgen.param.declare A = <0>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A -> B>() always_inline {
+kgen.generator @callee<A>() always_inline {
   kgen.param.declare.region F = <C, D>() {
     kgen.param.constant = <C>
     kgen.param.constant = <D>
     kgen.return
   }
-  kgen.param.result_bind<A>
   kgen.return
 }
 
@@ -384,22 +369,19 @@ kgen.generator @parent<B>() {
   // CHECK-NEXT: declare.region F = <C>
   // CHECK-NEXT:   constant = <A0>
   // CHECK-NEXT:   constant = <C>
-  // CHECK: declare A = <A0>
   // CHECK-NOT: kgen.call @callee
-  kgen.call @callee<B -> A>() : () -> ()
-  // CHECK: constant = <A>
-  kgen.param.constant = <A>
+  kgen.call @callee<B>() : () -> ()
+  kgen.param.declare A = <0>
   kgen.return
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<A -> B>() always_inline {
+kgen.generator @callee<A>() always_inline {
   kgen.param.declare.region F = <C>() {
     kgen.param.constant = <A>
     kgen.param.constant = <C>
     kgen.return
   }
-  kgen.param.result_bind<A>
   kgen.return
 }
 
@@ -720,8 +702,7 @@ kgen.generator @dependent_types() {
   // CHECK-NEXT: declare shape1: array<rank1, index> = <rebind(:array<1, index> [2])>
   // CHECK: declare rank0 = <rank1>
   // CHECK-NEXT: declare shape0: array<rank0, index> = <rebind(:array<rank1, index> shape1)>
-  // CHECK-NEXT: declare output: array<1, index> = <rebind(:array<rank1, index> shape1)>
-  kgen.call @callee<1, :array<1, index> [2] -> output: array<1, index>>() : () -> ()
+  kgen.call @callee<1, :array<1, index> [2]>() : () -> ()
   kgen.return
 }
 
@@ -731,9 +712,8 @@ kgen.generator @call_me<rank, shape: array<rank, index>>() {
 }
 
 // CHECK-LABEL: kgen.generator @callee
-kgen.generator @callee<rank, shape: array<rank, index> -> output: array<rank, index>>() always_inline {
+kgen.generator @callee<rank, shape: array<rank, index>>() always_inline {
   kgen.call @call_me<rank, :array<rank, index> shape>() : () -> ()
-  kgen.param.result_bind<:array<rank, index> shape>
   kgen.return
 }
 

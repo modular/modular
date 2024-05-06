@@ -158,28 +158,13 @@ kgen.func @bad_param<x>() {
 // -----
 
 // expected-note @below {{@only_returns declared here}}
-kgen.generator @only_returns<p1 -> p2>() {
-  kgen.param.result_bind<p1>
+kgen.generator @only_returns<p1>() {
   kgen.return
 }
 
 kgen.func @test_only_returns() {
   // expected-error @below {{symbol use has 0 input parameters but @only_returns expects 1}}
-  kgen.call @only_returns<[] -> p2>() : () -> ()
-  kgen.return
-}
-
-// -----
-
-// expected-note @below {{@only_returns declared here}}
-kgen.generator @only_returns<() -> p1: i4>() {
-  kgen.param.result_bind<:i4 2>
-  kgen.return
-}
-
-kgen.func @test_only_returns() {
-  // expected-error @below {{symbol use result parameter #0 has type 'index' but @only_returns expected type 'i4'}}
-  kgen.call @only_returns<[] -> p2>() : () -> ()
+  kgen.call @only_returns() : () -> ()
   kgen.return
 }
 
@@ -203,35 +188,26 @@ kgen.func @result_type(%a: i1) {
 
 // -----
 
-kgen.generator @take_and_return<p1 -> p2>() {
-  kgen.param.result_bind<0>
-  kgen.return
-}
-
 // expected-error @below {{cyclic reference between expressions defining and using parameters}}
 kgen.generator @self_cyclic() {
   // Uses r1 and defines r1
   // expected-note @below {{parameter "r1" is defined here, which references itself}}
-  kgen.call @take_and_return<r1 -> r1>() : () -> ()
+  kgen.param.declare r1 = <r1>
   kgen.return
 }
 
 // -----
 
-kgen.generator @take_and_return<p1 -> r1>() {
-  kgen.param.result_bind<0>
-  kgen.return
-}
 
 // expected-error @below {{cyclic reference between expressions defining and using parameters}}
 kgen.generator @mutually_recursive() {
   // Uses r2 and defines r1
   // expected-note @below {{parameter "r1" is defined here, which references the first expression}}
-  kgen.call @take_and_return<r2 -> r1>() : () -> ()
+  kgen.param.declare r1 = <r2>
 
   // Uses r1 and defines r2
   // expected-note @below {{parameter "r2" is defined here, which references the expression:}}
-  kgen.call @take_and_return<r1 -> r2>() : () -> ()
+  kgen.param.declare r2 = <r1>
 
   kgen.return
 }
@@ -288,10 +264,6 @@ kgen.generator @caller<DT: dtype>(%arg0: !pop.scalar<DT>) {
 // but they are allowed to call generators with no parameters.
 
 kgen.generator @hasInputParam<param>() {
-  kgen.return
-}
-kgen.generator @nothing<() -> param>() {
-  kgen.param.result_bind<42>
   kgen.return
 }
 
@@ -507,44 +479,18 @@ kgen.func @no_return() {
 
 // -----
 
-kgen.generator @fwd<in -> out>() {
-  kgen.param.result_bind<in>
-  kgen.return
-}
-
 // expected-error @below {{cyclic reference between expressions}}
 kgen.generator @cyclicIf() {
   kgen.param.declare cond_var: i1 = <1>
-  // This outputs a single parameter that is either the result of the call
-  // or N itself.
   // expected-note @below {{parameter "M2" is defined here}}
-  kgen.param.if <cond_var -> M2> {
-    kgen.call @fwd<N -> outM>() : () -> ()
-    kgen.param.result_bind<outM>
-    kgen.param.yield
-  } else {
-    kgen.param.result_bind<N>
-    kgen.param.yield
+  kgen.param.declare.region M2 = () -> index {
+    kgen.param.constant = <N>
+    kgen.unreachable
   }
   // This forwards the output parameter of the if statement back around to N,
   // creating a cycle.
   // expected-note @below {{parameter "N" is defined here}}
-  kgen.call @fwd<M2 -> N>() : () -> ()
-  kgen.return
-}
-
-// -----
-
-kgen.generator @badResultParam() {
-  kgen.param.declare cond_var: i1 = <1>
-  kgen.param.if <cond_var -> out> {
-    // expected-error @below {{'kgen.param.result_bind' op parameter #0 has type 'i1' but should be 'index'}}
-    kgen.param.result_bind<:i1 1>
-    kgen.param.yield
-  } else {
-    kgen.param.result_bind<:i1 0>
-    kgen.param.yield
-  }
+  kgen.param.declare N = <apply(:() -> index M2)>
   kgen.return
 }
 
@@ -587,16 +533,6 @@ kgen.generator @name_shadwing_2<a>() {
     kgen.param.declare b = <a>
     kgen.unreachable
   }
-  kgen.return
-}
-
-// -----
-
-kgen.generator @duplicate_def<() -> out>() {
-  // expected-note @below {{see previous definition here}}
-  kgen.param.result_bind<1>
-  // expected-error @below {{redefinition of parameter "out"}}
-  kgen.param.result_bind<2>
   kgen.return
 }
 

@@ -21,24 +21,6 @@ kgen.generator @use_Itf3two() {
 
 // -----
 
-kgen.generator @getSIMDLength<dt: dtype -> length>() {
-  // This could be implemented as a constraint.
-  kgen.param.assert <eq(:dtype dt, f32)>, "this only works for f32"
-  kgen.param.result_bind<4>
-  kgen.return
-}
-
-// expected-error @+1 {{function instantiation failed}}
-kgen.generator @brokenVLenAssert() {
-  kgen.call @getSIMDLength<:dtype f32 -> flen>() : () -> ()
-
-  // expected-note @+1 {{vector length should be 3}}
-  kgen.param.assert <eq(flen, 3)>, "vector length should be 3"
-  kgen.return
-}
-
-// -----
-
 // expected-error @+1 {{function instantiation failed}}
 kgen.generator @unfoldableIndex() {
   kgen.param.declare x = <4>
@@ -112,23 +94,6 @@ kgen.generator @brokenVLenAssert() {
 
   // expected-note @+1 {{constraint failed: foo}}
   kgen.param.assert <eq(2, 3)>, B
-  kgen.return
-}
-
-// -----
-
-// expected-note @below {{function instantiation failed}}
-kgen.generator @paramRecurse<() -> out>() {
-  // expected-note @below {{recursive call to function with result parameters}}
-  kgen.call @paramRecurse<[] -> val>() : () -> ()
-  kgen.param.result_bind<0>
-  kgen.return
-}
-
-// expected-error @below {{function instantiation failed}}
-kgen.generator export @caller() {
-  // expected-note @below {{call expansion failed - no concrete specializations}}
-  kgen.call @paramRecurse<[] -> v>() : () -> ()
   kgen.return
 }
 

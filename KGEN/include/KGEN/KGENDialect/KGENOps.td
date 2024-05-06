@@ -615,42 +615,6 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
 }
 
 //===----------------------------------------------------------------------===//
-// ParamResultBindOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamResultBindOp : KGENOp<"param.result_bind",
-    [DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>]>,
-    NoParamDecls {
-  let summary = "bind values for the result parameters of the nearest scope";
-  let description = [{
-    The `kgen.param.result_bind` operation binds values for the result
-    parameters of the nearest enclosing parameter scope. Values for the result
-    parameters must be bound at least once.
-
-    Example:
-
-    ```mlir
-    kgen.generator @result_params<in: i1 -> out>() {
-      kgen.param.if <in -> value> {
-        kgen.param.result_bind<1>
-        kgen.param.yield
-      } else {
-        kgen.param.result_bind<2>
-        kgen.param.yield
-      }
-      kgen.param.result_bind<value>
-      kgen.return
-    }
-    ```
-  }];
-
-  let arguments = (ins KGEN_ParameterExprArrayAttr:$parameters);
-  let assemblyFormat = "`` custom<ParameterValues>($parameters) attr-dict";
-
-  let hasVerifier = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 

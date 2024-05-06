@@ -261,46 +261,6 @@ static ElaborationState processParamDeclareOp(ImplNode *inode,
 }
 
 //===----------------------------------------------------------------------===//
-// processParamResultBindOp
-//===----------------------------------------------------------------------===//
-
-/// Process a `kgen.param.result_bind` operation by setting the result parameter
-/// values of the parent operation.
-static ElaborationState processParamResultBindOp(ImplNode *node,
-                                                 ParamResultBindOp op) {
-  // Concretize the result parameter values.
-  IREvaluator &evaluator = node->getEvaluator();
-  SmallVector<TypedAttr> resultParams;
-
-  // Retrieve the required parameter decls from the nearest declaration.
-  // However, if it refers to the function being elaborated, the declarations
-  // are in the generator.
-  ArrayRef<ParamDeclAttr> resultParamDecls;
-  auto parentDecl = op->getParentOfType<DeclInterface>();
-  bool isFunc = isa<FuncOp>(parentDecl.getOperation());
-  if (isFunc)
-    resultParamDecls = node->parent->gen.getResultParams();
-  else
-    resultParamDecls = parentDecl.getResultParams();
-
-  for (auto [decl, value] : llvm::zip(resultParamDecls, op.getParameters())) {
-    Attribute resultValue;
-    HANDLE_EVALUATOR_CONC(resultValue, node, op.getLoc(), value);
-    resultParams.push_back(cast<TypedAttr>(resultValue));
-    evaluator.setOrOverwriteParameterValue(decl, resultParams.back());
-  }
-
-  // If this operation binds values for the result parameters of the generator,
-  // set them in the node.
-  if (isFunc)
-    node->resultParams =
-        ParameterExprArrayAttr::get(op.getContext(), resultParams);
-
-  op.erase();
-  return ElaborationState::advance();
-}
-
-//===----------------------------------------------------------------------===//
 // processRebindOp
 //===----------------------------------------------------------------------===//
 
@@ -1216,8 +1176,6 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
 
   if (auto declare = dyn_cast<ParamDeclareOp>(op)) {
     return processParamDeclareOp(node, declare);
-  } else if (auto bind = dyn_cast<ParamResultBindOp>(op)) {
-    return processParamResultBindOp(node, bind);
   } else if (auto constant = dyn_cast<ParamConstantOp>(op)) {
     return processParamConstantOp(node, constant);
   } else if (auto constant = dyn_cast<ParamMaterializeOp>(op)) {
