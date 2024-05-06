@@ -13,6 +13,7 @@ include "Support/MDialect/MAttrs.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
 
 class COOp<string mnemonic, list<Trait> traits = []> :
     Op<CODialect, mnemonic, traits>;
@@ -71,7 +72,7 @@ def CO_SuspendOp : COOp<"suspend", [SingleBlock,
 // SuspendEndOp
 //===----------------------------------------------------------------------===//
 
-def CO_SuspendEndOp : COOp<"suspend.end", [Terminator,
+def CO_SuspendEndOp : COOp<"suspend.end", [Pure, Terminator,
     HasParent<"SuspendOp">]> {
   let summary = "terminator for `co.suspend`";
   let description = [{
@@ -89,7 +90,7 @@ def CO_SuspendEndOp : COOp<"suspend.end", [Terminator,
 // PromiseOp
 //===----------------------------------------------------------------------===//
 
-def CO_PromiseOp : COOp<"promise"> {
+def CO_PromiseOp : COOp<"promise", [Pure]> {
   let summary = "Get the coroutine promise.";
   let description = [{
     The `co.promise` operation returns the pointer to the coroutine
@@ -151,7 +152,7 @@ def CO_DestroyOp : COOp<"destroy"> {
     ```
   }];
 
-  let arguments = (ins CoroutineType:$coroutine);
+  let arguments = (ins Res<CoroutineType, "", [MemFree]>:$coroutine);
   let assemblyFormat = "$coroutine attr-dict";
 }
 
