@@ -710,16 +710,22 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // to infer the lifetime and mutability of the MValue.
   if (auto expectedRef = dyn_cast<RefType>(expectedType.mlirType)) {
     if (expectedConvention == ArgConvention::BorrowedInReg &&
-        !isa<RefType>(argType) && value.isMValue()) {
-      auto valueRefType = cast<RefType>(value.getMValueReference().getType());
+        !isa<RefType>(argType)) {
+      RefType valueRefType;
+      if (value.isMValue())
+        valueRefType = cast<RefType>(value.getMValueReference().getType());
+      else if (value.getIfPValue() && isParamContext)
+        valueRefType = RefType::getImmortal(argType, /*isMut=*/true);
 
-      if (succeeded(matchTypes(valueRefType, expectedRef)))
-        return success();
+      if (valueRefType) {
+        if (succeeded(matchTypes(valueRefType, expectedRef)))
+          return success();
 
-      // If that didn't work out, keep going, but with the original
-      // diagnostics.
-      diags.resetDiags(std::move(savedDiags));
-      savedDiags = diags.saveDiags();
+        // If that didn't work out, keep going, but with the original
+        // diagnostics.
+        diags.resetDiags(std::move(savedDiags));
+        savedDiags = diags.saveDiags();
+      }
     }
   }
 
@@ -1520,10 +1526,18 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
       // Element type and address have to be exactly equal, the mutability just
       // has to be compatible.
-      if (ASTType(argType).isEqualCanon(expectedRef.getElementType()) &&
-          argVal.isMValue()) {
-        auto argRefType = cast<RefType>(argVal.getMValueReference().getType());
-        if (canConvertWithRebind(argRefType, expectedRef, shared))
+      if (ASTType(argType).isEqualCanon(expectedRef.getElementType())) {
+        // The argument must be an MValue in the case of a dynamic call.
+        if (argVal.isMValue()) {
+          auto argRefType =
+              cast<RefType>(argVal.getMValueReference().getType());
+          if (canConvertWithRebind(argRefType, expectedRef, shared))
+            return {kValidType, expectedType};
+        }
+
+        // In a parameter expression, it can be a PValue.  It will get an
+        // immortal lifetime.
+        if (argVal.getIfPValue() && scopeInfo.isParamContext)
           return {kValidType, expectedType};
       }
     }

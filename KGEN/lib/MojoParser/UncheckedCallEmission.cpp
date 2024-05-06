@@ -254,11 +254,17 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
       auto cValue = operand.ir.getIfCValue();
       if (cValue && convention == ArgConvention::BorrowedInReg &&
           cValue.getRValueType().isEqualCanon(expectedRef.getElementType())) {
-        // We don't support non-MValues: you shouldn't be able to form a
-        // reference to something that isn't in memory.  We could relax this to
-        // support things like Reference("foo") - such a thing could dump the
-        // value into a memory temp - but we can do that later if there is
-        // demand.
+        // If we're in a parameter context, dump this into memory with a
+        // lifetime matching the expectation (typically inferred immortal).
+        if (emitter.getScopeInfo().isParamContext) {
+          if (auto pv = cValue.getIfPValue())
+            return PValue(StoreToMemAttr::get(pv, expectedRef));
+        }
+
+        // We don't support non-MValue's currently.  We could relax this to
+        // support things like Reference(42) - such a thing could dump the value
+        // into a memory temp - but we can do that later if there is demand.
+        // This is tricky due to parameter inference phase ordering.
         if (!cValue.isMValue()) {
           emitter.emitError(operand.expr->getLoc(),
                             "cannot bind a non-memory value to a Reference");
