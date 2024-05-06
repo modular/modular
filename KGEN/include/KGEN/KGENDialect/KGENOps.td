@@ -89,6 +89,11 @@ def KGEN_FuncOp : KGENOp<"func", [
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
+  let assemblyFormat = [{
+    `` custom<FuncOp>($exportKind, $sym_name, $signature, $inlineLevel,
+                     $decorators, attr-dict, $bodyRegion)
+  }];
+
   let extraClassDeclaration = [{
     using OpTrait::SingleBlock<FuncOp>::getBody;
 
@@ -112,8 +117,6 @@ def KGEN_FuncOp : KGENOp<"func", [
             exportKind, /*precompiledBodyRef=*/{}, llvmMetadata);
     }]>,
   ];
-
-  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//
