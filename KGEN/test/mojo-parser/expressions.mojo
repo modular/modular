@@ -1368,8 +1368,7 @@ fn variadic_attr_callee[key_type: CollectionElement](
 # Test that parameter inference works with implicit conversions - in this case
 # that we can infer the parameters of 'thing_taking_reference' even though x
 # needs to be built as a Reference.
-fn thing_taking_reference[type: AnyType, m: __mlir_type.i1, l: AnyLifetime[m].type](
-    arg: Reference[type, m, l]): pass
+fn thing_taking_reference[type: AnyType](arg: Reference[type, _, _]): pass
 
 # CHECK-LABEL: lit.func @"test_thing_taking_reference
 fn test_thing_taking_reference(inout x: String):
@@ -1391,7 +1390,6 @@ fn infer_through_alias():
 
 # CHECK-LABEL: lit.func @"infer_address_space
 fn infer_address_space[
-# FIXME should just use _ here: https://github.com/modularml/modular/issues/38281
     is_mutable: __mlir_type.i1,
     lifetime: AnyLifetime[is_mutable].type
 ](a: Reference[Int,is_mutable, lifetime, AddressSpace(4)]._mlir_type):
@@ -1405,16 +1403,12 @@ fn infer_address_space[
 # https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context
 # [References] We cannot bind !lit.ref in parameter context
 struct ThingWithMethodReferenceSelf:
-    fn method[
-      # FIXME should just use _ here: https://github.com/modularml/modular/issues/38281
-      is_mutable: __mlir_type.i1,
-      lifetime: AnyLifetime[is_mutable].type
-    ](a: Reference[Self, is_mutable, lifetime]._mlir_type):
+    fn method(a: Reference[Self, _, _]):
       pass
 
 # CHECK-LABEL: lit.func @"testThingWithMethodReferenceSelf
 fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
-    # CHECK-SAME: <apply(:!lit.signature<("a": !lit.ref<!ThingWithMethodReferenceSelf, mut #lit.lifetime> borrow) -> !kgen.none> {{.*}}@"method{{[^"]*}}"
-    # CHECK-SAME:       <:i1 1, :lifetime<1> #lit.lifetime>, store_to_mem(a))>
+    # CHECK-SAME: <apply(:!lit.signature<("a": !lit.declref<#Reference 
+    # CHECK-SAME:       :i1 1, :lifetime<1> #lit.lifetime, :!AddressSpace {_value: !Int = {0}}>), store_to_mem(a))
     alias sizzle = a.method()

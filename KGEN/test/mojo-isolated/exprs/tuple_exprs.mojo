@@ -72,12 +72,15 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     # CHECK-NEXT: [[TMPVAR:%.*]] = lit.var.decl
     # CHECK: [[TUP:%.*]] = lit.ref.immut %iTup
     # CHECK: lit.call {{.*}}@"__copyinit__{{.*}}([[TMPVAR]], [[TUP]])
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[TMPVAR]])
+    # CHECK: [[REFTMPVAR:%.*]] = lit.var.decl "anonymous
+    # CHECK: lit.call {{.*}}Reference::@"__init__{{.*}}([[REFTMPVAR]], [[TMPVAR]]
+    # CHECK: [[REFVAL:%.*]] = lit.ref.load [[REFTMPVAR]]
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[REFVAL]])
     # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}([[TMPVAR]])
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}(
     # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
     # CHECK: lit.ref.store [[ELTV]], %i2
@@ -90,18 +93,19 @@ fn tuples_lv(i0: Int, f0: FloatDyn):
     # CHECK: [[TMPVAR:%.*]] = lit.var.decl {{.*}}@Tuple
     # CHECK: [[TUPRV:%.*]] = lit.call {{.*}}__init__{{.*}}([[TMPVAR]],
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>([[TMPVAR]])
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>(
     # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
     # CHECK: lit.ref.store [[ELTV]], %i1
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>([[TMPVAR]])
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}Tuple::@"__refitem__{{.*}}>(
     # CHECK: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
     # CHECK: [[ELTV:%.*]] = lit.ref.load [[ELTR]]
     # CHECK: lit.ref.store [[ELTV]], %i2
     (i1, i2) = (i2, i1)
 
-    # CHECK: [[ELT:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%iTup)
+    # CHECK: lit.call {{.*}}Reference::@"__init__{{.*}}(%anonymous{{.*}}, %iTup)
+    # CHECK: [[ELT:%.*]] = lit.call {{.*}}__refitem__{{.*}}(
     # CHECK-NEXT: [[ELTR:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELT]])
     # CHECK-NEXT: [[TMP:%.*]] = lit.ref.load %i1
     # CHECK-NEXT: lit.ref.store [[TMP]], [[ELTR]]
