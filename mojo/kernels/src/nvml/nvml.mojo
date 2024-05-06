@@ -26,7 +26,7 @@ alias CUDA_NVML_LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so"
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
+fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     if not Path(CUDA_NVML_LIBRARY_PATH).exists():
         print("the CUDA NVML library was not found at", CUDA_NVML_LIBRARY_PATH)
         abort()
@@ -34,10 +34,10 @@ fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
     var handle = DLHandle(CUDA_NVML_LIBRARY_PATH)
     _ = handle.get_function[fn () -> Result]("nvmlInit_v2")()
     ptr[] = handle
-    return ptr.bitcast[NoneType]()
+    return ptr.bitcast[NoneType]().address
 
 
-fn _destroy_dylib(ptr: Pointer[NoneType]):
+fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
     ptr.bitcast[DLHandle]()[].close()
     ptr.free()
 
