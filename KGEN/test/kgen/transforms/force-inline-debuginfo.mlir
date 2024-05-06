@@ -64,7 +64,7 @@ kgen.func @call_inline_me() -> index {
 kgen.func @call_async() -> !co.routine {
   // CHECK-NEXT: %idx2 = index.constant 2 loc(#[[LOC_SCOPED_CALLER:.*]])
   %idx2 = index.constant 2 loc(#locAsyncCaller)
-  // CHECK-NEXT: lit.async.execute : index
+  // CHECK-NEXT: co.execute : index
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx2 : index loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return %idx2 : index loc(#[[LOC_ASYNC_EXECUTE_RET:.*]])
   // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} loc(#[[LOC_ASYNC_EXECUTE1:.*]])
@@ -86,7 +86,7 @@ kgen.func @async_wrapper() -> !co.routine always_inline {
 // CHECK-LABEL: kgen.func @call_async_indirect
 kgen.func @call_async_indirect() -> !co.routine {
   // CHECK-NEXT: %idx3 = index.constant 3 loc(#[[INLINED_LOC:.*]])
-  // CHECK-NEXT: lit.async.execute : index
+  // CHECK-NEXT: co.execute : index
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE]])
   // CHECK-NEXT:   kgen.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE_RET2:.*]])
   // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} loc(#[[LOC_ASYNC_EXECUTE2:.*]])
@@ -98,7 +98,7 @@ kgen.func @call_async_indirect() -> !co.routine {
 // CHECK-LABEL: @call_async_no_debuginfo
 kgen.func @call_async_no_debuginfo() -> !co.routine {
   // CHECK-NEXT: index.constant 2
-  // CHECK-NEXT: lit.async.execute
+  // CHECK-NEXT: co.execute
   // CHECK-NOT: debuginfo.value
   %idx2 = index.constant 2 loc(#locAsyncCaller)
   %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)

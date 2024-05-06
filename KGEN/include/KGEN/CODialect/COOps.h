@@ -8,7 +8,9 @@
 #define KGEN_CODIALECT_COOPS_H
 
 #include "KGEN/CODialect/COTypes.h"
+#include "KGEN/KGENDialect/KGENInterfaces.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
 #include "mlir/Bytecode/BytecodeOpInterface.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"

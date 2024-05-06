@@ -81,7 +81,7 @@ void LowerCallingConventionsPass::runOnOperation() {
 
   auto walkFn = [&](Operation *op) {
     // Recursively replace all signatures in the operation. This will handle the
-    // signatures of `kgen.func`, `kgen.stage_closure`, and `lit.async.execute`.
+    // signatures of `kgen.func`, `kgen.stage_closure`, and `co.execute`.
     replacer.replaceElementsIn(op, /*replaceAttrs=*/true, /*replaceLocs=*/true,
                                /*replaceAttrs=*/true);
 

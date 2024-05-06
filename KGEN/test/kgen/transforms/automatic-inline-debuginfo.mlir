@@ -63,7 +63,7 @@ kgen.func @nodebug_inline_me(%arg0: index) -> index {
 kgen.func @call_async() -> !co.routine {
   // CHECK-NEXT: [[IDX2:%.*]] = index.constant 2 loc(#[[LOC_SCOPED_CALLER:.*]])
   %idx2 = index.constant 2 loc(#locAsyncCaller)
-  // CHECK-NEXT: [[V0:%.*]]lit.async.execute : index {
+  // CHECK-NEXT: [[V0:%.*]]co.execute : index {
   // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_VALUE:.*]])
   // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
   // DEFERRED-NEXT: } {inliner_debuginfo_update = 3 : i8} loc(#[[LOC_ASYNC_EXECUTE]])

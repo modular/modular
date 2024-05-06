@@ -55,9 +55,9 @@ lit.globalvar.decl @foo : index {
 #loc5 = loc(fused<#subprogram1>[#loc2])
 
 lit.func @foo() {
-  %0 = lit.async.execute {
+  %0 = co.execute {
     kgen.return loc(#loc5)
-  // CHECK: foo.mlir:325:11: error: 'lit.async.execute' op must have callsite location
+  // CHECK: foo.mlir:325:11: error: 'co.execute' op must have callsite location
   } loc(#loc5)
   lit.return loc(#loc4)
 } loc(#loc4)

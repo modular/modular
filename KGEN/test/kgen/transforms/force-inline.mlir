@@ -83,7 +83,7 @@ kgen.func @call_it() -> !co.routine {
   %idx2 = index.constant 2
   %true = index.bool.constant true
   pop.compiler.global_store "cond", %true : i1
-  // CHECK: %0 = lit.async.execute : index
+  // CHECK: %0 = co.execute : index
   // CHECK:   %1 = pop.compiler.global_load
   // CHECK:   hlcf.if %1
   // CHECK:     kgen.return %idx1

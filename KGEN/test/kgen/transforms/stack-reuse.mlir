@@ -185,8 +185,8 @@ kgen.func @function_boundary(%arg0: index) -> index {
   pop.store %arg0, %0 : !kgen.pointer<index>
   %1 = pop.stack_allocation 1 x index
   pop.store %arg0, %1 : !kgen.pointer<index>
-  // CHECK: lit.async.execute
-  lit.async.execute : index {
+  // CHECK: co.execute
+  co.execute : index {
     // CHECK: [[S1:%.*]] = pop.stack_allocation
     %3 = pop.stack_allocation 1 x index
     pop.store %arg0, %3 : !kgen.pointer<index>

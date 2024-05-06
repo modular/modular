@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/TransformUtils/InliningUtils.h"
+#include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
@@ -36,7 +37,7 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
                                    ValueRange(), label);
   } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
     // Nested function-like op should retain scoped location of the callee.
-    auto inlinedSubScoped = b.create<LIT::AsyncExecuteOp>(
+    auto inlinedSubScoped = b.create<CO::ExecuteOp>(
         region.getParentOp()->getLoc(), asyncCall.getCalleeType().getResults());
     inlinedSubScoped.setCallLocAttr(call.getLoc());
     scope = inlinedSubScoped;
@@ -90,7 +91,7 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
       ++numReturns;
       return WalkResult::skip();
     }
-    if (isa<LIT::AsyncExecuteOp, StageClosureOp>(op))
+    if (isa<CO::ExecuteOp, StageClosureOp>(op))
       return WalkResult::skip();
 
     if (auto sourceLocOp = dyn_cast<SourceLocOp>(op))
@@ -201,7 +202,9 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
       // Recurse inside if the inlined subprogram has a tag (deferred update),
       // or noDebug is requried (immediate update, and need to go inside to
       // erase pre-existing debug info).
-      if (auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName))
+      IntegerAttr tag;
+      if (updateAttrName &&
+          (tag = op->getAttrOfType<IntegerAttr>(updateAttrName)))
         updateScopeDebugInfoFrom(op, tag, updateAttrName);
       else if (noDebug)
         updateScopeDebugInfoFrom(op, tag, nullptr);
@@ -226,7 +229,7 @@ void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
   CompilerTimeTraceScope updateScopeDebugInfo(
       "updateScopeDebugInfo", [&func] { return func.getSymName().str(); });
   func.getBody()->walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    if (!isa<HLCF::LoopOp, LIT::AsyncExecuteOp, StageClosureOp>(op))
+    if (!isa<HLCF::LoopOp, CO::ExecuteOp, StageClosureOp>(op))
       return WalkResult::advance();
     auto tag = op->getAttrOfType<IntegerAttr>(updateAttrName);
     if (!tag)

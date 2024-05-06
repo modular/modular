@@ -8,11 +8,27 @@
 #include "KGEN/CODialect/COTypes.h"
 #include "KGEN/KGENDialect/KGENDialect.h"
 #include "Support/Compiler/Bytecode.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
+#include "mlir/Interfaces/FoldInterfaces.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace CO;
+
+//===----------------------------------------------------------------------===//
+// CODialectFoldInterface
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct CODialectFoldInterface : public mlir::DialectFoldInterface {
+  using DialectFoldInterface::DialectFoldInterface;
+
+  bool shouldMaterializeInto(Region *region) const override {
+    return DebugInfo::shouldMaterializeConstantsInto(*region);
+  }
+};
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // CODialectBytecodeInterface
@@ -56,6 +72,7 @@ struct CODialectBytecodeInterface : public mlir::BytecodeDialectInterface {
 void CODialect::initialize() {
   registerTypes();
   registerOperations();
+  addInterface<CODialectFoldInterface>();
   addInterface<CODialectBytecodeInterface>();
 }
 

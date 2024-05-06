@@ -9,6 +9,7 @@
 
 include "KGEN/CODialect/CODialect.td"
 include "KGEN/CODialect/COTypes.td"
+include "KGEN/KGENDialect/KGENInterfaces.td"
 include "Support/MDialect/MAttrs.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/OpBase.td"
@@ -84,6 +85,39 @@ def CO_SuspendEndOp : COOp<"suspend.end", [Pure, Terminator,
   }];
 
   let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// ExecuteOp
+//===----------------------------------------------------------------------===//
+
+def CO_ExecuteOp : COOp<"execute", [SingleBlock,
+    DeclareOpInterfaceMethods<FunctionLike>,
+    DebugInfo_InlinedSubprogramScoped]> {
+  let summary = "an inline async region";
+  let description = [{
+    The `co.execute` operation declares an inline async region and returns a
+    coroutine handle to the region. This operation can represent an inlined
+    post-elaboration async function.
+
+    Example:
+
+    ```mlir
+    %0 = kgen.param.constant: i32 = <3>
+    %coro = co.execute : i32, i64 {
+      %1 = kgen.param.constant: i64 = <5>
+      kgen.return %0, %1 : i32, i64
+    }
+    ```
+  }];
+
+  let arguments = (ins M_TypeArrayAttr:$types);
+  let results = (outs Res<CoroutineType, "", [MemAlloc]>:$coroutine);
+  let regions = (region SizedRegion<1>:$bodyRegion);
+
+  let assemblyFormat = [{
+    custom<CoroutineTypes>($types) $bodyRegion attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//
