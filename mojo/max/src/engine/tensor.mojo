@@ -16,7 +16,7 @@ from buffer.list import Dim
 from sys.ffi import DLHandle
 
 from tensor import Tensor
-from memory._arc import Arc
+from memory import Arc
 from python import Python, PythonObject
 
 from .session import InferenceSession
