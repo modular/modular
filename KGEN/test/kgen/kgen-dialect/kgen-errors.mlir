@@ -150,13 +150,6 @@ kgen.generator @g2() {
 
 // -----
 
-// expected-error @below {{concrete functions cannot have input or result parameters}}
-kgen.func @bad_param<x>() {
-  kgen.return
-}
-
-// -----
-
 // expected-note @below {{@only_returns declared here}}
 kgen.generator @only_returns<p1>() {
   kgen.return

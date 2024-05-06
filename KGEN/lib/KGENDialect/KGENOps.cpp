@@ -489,24 +489,75 @@ void GeneratorOp::print(OpAsmPrinter &p) {
 // FuncOp
 //===----------------------------------------------------------------------===//
 
-/// Parses a concrete KGEN func.
-///
-/// operation ::=
-///   `kgen.func` function-signature function-attributes? function-body
-///
-ParseResult FuncOp::parse(OpAsmParser &parser, OperationState &result) {
-  ExportKindAttr exportKind;
-  if (parseSymbolExport(parser, exportKind))
+static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
+                               StringAttr &name, TypeAttr &signature,
+                               InlineLevelAttr &inlineLevel,
+                               DecoratorsAttr &decorators, NamedAttrList &attrs,
+                               Region &body) {
+  if (parseSymbolExport(p, exportKind) || p.parseSymbolName(name))
     return failure();
-  result.addAttribute(getExportKindAttrName(result.name), exportKind);
-  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::func);
+
+  SmallVector<OpAsmParser::Argument> args;
+  FunctionType functionType;
+  SmallVector<ArgConvention> conventions;
+  FnEffects effects;
+  auto parseArg = [&](SmallVectorImpl<Type> &argTypes) -> ParseResult {
+    OpAsmParser::Argument &arg = args.emplace_back();
+    if (p.parseArgument(arg, /*allowType=*/true) ||
+        parseArgConvention(p, conventions.emplace_back()))
+      return failure();
+    argTypes.push_back(arg.type);
+    return success();
+  };
+  llvm::SMLoc loc = p.getCurrentLocation();
+  if (parseSignatureValues(p, parseArg, functionType, effects,
+                           /*optionalResultList=*/true))
+    return failure();
+  auto sig = SignatureType::getChecked([&] { return p.emitError(loc); },
+                                       functionType, conventions, effects);
+  if (!sig)
+    return failure();
+  signature = TypeAttr::get(sig);
+
+  if (parseOptionalInline(p, inlineLevel) ||
+      parseOptionalDecorators(p, decorators) ||
+      p.parseOptionalAttrDictWithKeyword(attrs) ||
+      p.parseRegion(body, args, /*enableNameShadowing=*/true))
+    return failure();
+  return success();
 }
 
-/// Print the FuncOp. We use a shared printer with the GeneratorOp since it is
-/// a superset of what a func is.
-void FuncOp::print(OpAsmPrinter &p) {
-  printSymbolExport(p, *this, getExportKindAttr());
-  printGeneratorOrFunc(p, *this);
+static void printFuncOp(OpAsmPrinter &p, Operation *op,
+                        ExportKindAttr exportKind, StringAttr name,
+                        TypeAttr signature, InlineLevelAttr inlineLevel,
+                        DecoratorsAttr decorators, DictionaryAttr attrs,
+                        Region &body) {
+  auto sig = cast<SignatureType>(signature.getValue());
+  auto func = cast<FuncOp>(op);
+
+  printSymbolExport(p, op, exportKind);
+  p << ' ';
+  p.printSymbolName(name);
+  auto printArg = [&](unsigned i) {
+    p.printRegionArgument(body.getArgument(i));
+    printArgConvention(p, sig.getArgConvention(i));
+  };
+  printSignatureValues(p, printArg, sig.getValues(), sig,
+                       /*optionalResultList=*/true);
+  printOptionalInline(p, inlineLevel.getValue());
+  printOptionalDecorators(p, op, decorators);
+
+  SmallVector<StringRef, 6> elidedAttrs{
+      func.getExportKindAttrName(), func.getSymNameAttrName(),
+      func.getSignatureAttrName(), func.getInlineLevelAttrName(),
+      func.getDecoratorsAttrName()};
+  if (attrs.get(func.getLLVMMetadataAttrName()) ==
+      DictionaryAttr::get(op->getContext()))
+    elidedAttrs.push_back(func.getLLVMMetadataAttrName());
+  p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
+
+  p << ' ';
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
 //===----------------------------------------------------------------------===//
