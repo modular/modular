@@ -140,14 +140,14 @@ public:
 
   /// Return true if this AsyncValue is "ready" and filled with a concrete
   /// value. get() will return a value in this state.
-  bool isValueAvailable() const { return value->isValueAvailable(); }
+  bool isValueAvailable() const { return value && value->isValueAvailable(); }
 
   /// Return true if the AsyncValue is "ready" and either filled with a concrete
   /// value or an error.
-  bool isReady() const { return value->isReady(); }
+  bool isReady() const { return value && value->isReady(); }
 
   /// Return true if the AsyncValue is fulfilled with an error state.
-  bool isError() const { return value->isError(); }
+  bool isError() const { return value && value->isError(); }
 
   /// Constructs the payload of the referenced AsyncValue in place.
   ///
