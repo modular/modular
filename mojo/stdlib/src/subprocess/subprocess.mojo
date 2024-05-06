@@ -34,7 +34,7 @@ struct _POpenHandle:
             raise "the mode specified `" + mode + "` is not valid"
 
         self._handle = external_call["popen", Pointer[NoneType]](
-            cmd._as_ptr(), mode._as_ptr()
+            cmd.unsafe_ptr(), mode.unsafe_ptr()
         )
 
         if not self._handle:
