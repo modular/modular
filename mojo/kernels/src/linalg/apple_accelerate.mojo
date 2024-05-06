@@ -28,16 +28,16 @@ alias LIB_ACC_PLIST = "/System/Library/Frameworks/Accelerate.framework/Versions/
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
+fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     var handle = DLHandle(LIB_ACC_PATH)
     if not handle:
         abort("the accelerate library was not found at " + LIB_ACC_PATH)
-    var ptr = Pointer[DLHandle].alloc(1)
+    var ptr = UnsafePointer[DLHandle].alloc(1)
     ptr[] = handle
     return ptr.bitcast[NoneType]()
 
 
-fn _destroy_dylib(ptr: Pointer[NoneType]):
+fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
     ptr.bitcast[DLHandle]()[].close()
     ptr.free()
 
