@@ -109,7 +109,7 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
                                     Operation *ret) {
   b.setLoc(ret->getLoc());
   b.setInsertionPoint(ret);
-  Value promise = b.create<CO::CoroutinePromiseOp>(
+  Value promise = b.create<CO::PromiseOp>(
       PointerType::get(StructType::get(
           b.getContext(), llvm::to_vector(ret->getOperandTypes()))),
       hdl);
@@ -138,7 +138,7 @@ static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
   // Insert the coroutine handle.
   ImplicitLocOpBuilder b(op.getLocNoInlined(),
                          OpBuilder::atBlockBegin(&body.front()));
-  Value coroHdl = b.create<CO::CoroutineHandleOp>(op.getTypes());
+  Value coroHdl = b.create<CO::HandleOp>(op.getTypes());
 
   // Replace all returns.
   op.walk([&](ReturnOp ret) {
@@ -284,7 +284,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
   if (isAsyncFn) {
     // Create the coroutine handle. The coroutine result types are the
     // function result types.
-    coroHdl = b.create<CO::CoroutineHandleOp>(func.getResultTypes());
+    coroHdl = b.create<CO::HandleOp>(func.getResultTypes());
 
     // Update the function result type.
     SignatureType origSig = func.getSignature();

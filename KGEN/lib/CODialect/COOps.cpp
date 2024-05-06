@@ -14,10 +14,10 @@ using namespace KGEN;
 using namespace CO;
 
 //===----------------------------------------------------------------------===//
-// CoroutineHandleOp
+// HandleOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult CoroutineHandleOp::verify() {
+LogicalResult HandleOp::verify() {
   if (auto func = (*this)->getParentOfType<FuncOp>()) {
     if (func.getNumResults() != 1) {
       return emitOpError("surrounding function must have 1 result")
@@ -54,13 +54,13 @@ static void printSuspendBody(OpAsmPrinter &p, Operation *op, Region &body) {
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
-void CoroutineSuspendOp::getAsmBlockArgumentNames(
+void SuspendOp::getAsmBlockArgumentNames(
     Region &region, llvm::function_ref<void(Value, StringRef)> setNameFn) {
   // Sugar the SSA value name
   setNameFn(region.getArgument(0), "hdl");
 }
 
-LogicalResult CoroutineSuspendOp::verify() {
+LogicalResult SuspendOp::verify() {
   Region &body = getBody();
   if (body.getNumArguments() == 1 &&
       isa<CoroutineType>(body.getArgument(0).getType()))

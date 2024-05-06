@@ -104,7 +104,7 @@ static LogicalResult tweakSpilledAllocas(Operation *func,
       // Deactivate the alloca.
       allocas.erase(it);
 
-    } else if (auto await = dyn_cast<CoroutineSuspendOp>(op)) {
+    } else if (auto await = dyn_cast<SuspendOp>(op)) {
       // All active allocas are spilled.
       for (auto &[alloca, info] : allocas) {
         // If the lifetime start marker of the alloca has been encountered, the
@@ -164,9 +164,8 @@ struct LowerKGENCoroutinesAsyncPass
 };
 } // namespace
 
-static LogicalResult lowerCoroutinePromiseAsync(LLVMBuilder &b,
-                                                TypeAttrCache &cache,
-                                                CoroutinePromiseOp op) {
+static LogicalResult
+lowerCoroutinePromiseAsync(LLVMBuilder &b, TypeAttrCache &cache, PromiseOp op) {
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
@@ -188,7 +187,7 @@ static LogicalResult lowerCoroutinePromiseAsync(LLVMBuilder &b,
 }
 
 static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
-                                      CoroutineResumeOp op) {
+                                      CO::ResumeOp op) {
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
@@ -200,7 +199,7 @@ static void lowerCoroutineResumeAsync(LLVMBuilder &b, TypeAttrCache &cache,
 }
 
 static void lowerCoroutineDestroyAsync(LLVMBuilder &b, TypeAttrCache &cache,
-                                       CoroutineDestroyOp op) {
+                                       DestroyOp op) {
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
@@ -537,11 +536,9 @@ createAsyncCoroutine(SymbolTable &symtab, LLVMFuncOp func,
   return CoroutineInfo(asyncFn, contextBaseSize, contextType, hdl, hdleType);
 }
 
-static LogicalResult
-lowerCoroutineSuspendAsync(SymbolTable &symtab, LLVMBuilder &b,
-                           CoroutineInfo &coro, TypeAttrCache &cache,
-                           LLVMFuncOp coroProjFn, CoroutineSuspendOp op,
-                           unsigned index) {
+static LogicalResult lowerCoroutineSuspendAsync(
+    SymbolTable &symtab, LLVMBuilder &b, CoroutineInfo &coro,
+    TypeAttrCache &cache, LLVMFuncOp coroProjFn, SuspendOp op, unsigned index) {
   b.setLoc(op.getLoc());
 
   // Outline the body of the await into a function.
@@ -585,7 +582,7 @@ lowerCoroutineSuspendAsync(SymbolTable &symtab, LLVMBuilder &b,
       LLVMFunctionType::get(LLVMVoidType::get(ctx), captureTypes),
       Linkage::Internal);
   symtab.insert(suspendFn, coro.asyncFn->getIterator());
-  cast<CoroutineSuspendEndOp>(awaitBody.front().getTerminator()).erase();
+  cast<SuspendEndOp>(awaitBody.front().getTerminator()).erase();
   suspendFn.getBody().takeBody(awaitBody);
 
   // If possible, we need to add a subprogram scope to the new function.
@@ -671,19 +668,19 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
                        function_ref<LLVMFuncOp()> getCoroEndFn,
                        function_ref<LLVMFuncOp()> getCoroProjFn) {
   // Collect all the relevant ops.
-  SmallVector<CoroutineHandleOp> handles;
-  SmallVector<CoroutineSuspendOp> awaits;
+  SmallVector<HandleOp> handles;
+  SmallVector<SuspendOp> awaits;
   WalkResult result = func.walk([&](Operation *op) {
-    if (auto handle = dyn_cast<CoroutineHandleOp>(op)) {
+    if (auto handle = dyn_cast<HandleOp>(op)) {
       handles.push_back(handle);
-    } else if (auto await = dyn_cast<CoroutineSuspendOp>(op)) {
+    } else if (auto await = dyn_cast<SuspendOp>(op)) {
       awaits.push_back(await);
-    } else if (auto promise = dyn_cast<CoroutinePromiseOp>(op)) {
+    } else if (auto promise = dyn_cast<PromiseOp>(op)) {
       if (failed(lowerCoroutinePromiseAsync(b, cache, promise)))
         return WalkResult::interrupt();
-    } else if (auto resume = dyn_cast<CoroutineResumeOp>(op)) {
+    } else if (auto resume = dyn_cast<CO::ResumeOp>(op)) {
       lowerCoroutineResumeAsync(b, cache, resume);
-    } else if (auto destroy = dyn_cast<CoroutineDestroyOp>(op)) {
+    } else if (auto destroy = dyn_cast<DestroyOp>(op)) {
       lowerCoroutineDestroyAsync(b, cache, destroy);
     }
     return WalkResult::advance();
@@ -714,7 +711,7 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
     return failure();
 
   // The coroutine handle is now the first argument of the coroutine function.
-  for (CoroutineHandleOp op : handles) {
+  for (HandleOp op : handles) {
     b.setLoc(op.getLoc());
     b.setInsertionPoint(op);
     Value contextPtr = b.create<GEPOp>(

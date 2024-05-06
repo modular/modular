@@ -18,10 +18,10 @@ class COOp<string mnemonic, list<Trait> traits = []> :
     Op<CODialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// CoroutineHandleOp
+// HandleOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutineHandleOp : COOp<"handle"> {
+def CO_HandleOp : COOp<"handle"> {
   let summary = "Get the handle to the current coroutine.";
   let description = [{
     The `co.handle` operation returns the handle to the current coroutine.
@@ -40,10 +40,10 @@ def CO_CoroutineHandleOp : COOp<"handle"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineSuspendOp
+// SuspendOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutineSuspendOp : COOp<"suspend", [SingleBlock,
+def CO_SuspendOp : COOp<"suspend", [SingleBlock,
     DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>]> {
   let summary = "Suspend the current coroutine and await resumption.";
   let description = [{
@@ -68,11 +68,11 @@ def CO_CoroutineSuspendOp : COOp<"suspend", [SingleBlock,
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineSuspendEndOp
+// SuspendEndOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutineSuspendEndOp : COOp<"suspend.end", [Terminator,
-    HasParent<"CoroutineSuspendOp">]> {
+def CO_SuspendEndOp : COOp<"suspend.end", [Terminator,
+    HasParent<"SuspendOp">]> {
   let summary = "terminator for `co.suspend`";
   let description = [{
     The `co.suspend.end` operation is the terminator for the
@@ -86,10 +86,10 @@ def CO_CoroutineSuspendEndOp : COOp<"suspend.end", [Terminator,
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutinePromiseOp
+// PromiseOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutinePromiseOp : COOp<"promise"> {
+def CO_PromiseOp : COOp<"promise"> {
   let summary = "Get the coroutine promise.";
   let description = [{
     The `co.promise` operation returns the pointer to the coroutine
@@ -109,10 +109,10 @@ def CO_CoroutinePromiseOp : COOp<"promise"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineResumeOp
+// ResumeOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutineResumeOp : COOp<"resume"> {
+def CO_ResumeOp : COOp<"resume"> {
   let summary = "Resume execution of a coroutine.";
   let description = [{
     The `co.resume` operation resumes execution of a suspended coroutine.
@@ -131,10 +131,10 @@ def CO_CoroutineResumeOp : COOp<"resume"> {
 }
 
 //===----------------------------------------------------------------------===//
-// CoroutineDestroyOp
+// DestroyOp
 //===----------------------------------------------------------------------===//
 
-def CO_CoroutineDestroyOp : COOp<"destroy"> {
+def CO_DestroyOp : COOp<"destroy"> {
   let summary = "Destroy the memory associated with a coroutine.";
   let description = [{
     The `co.destroy` operation destroys any memory associated with
@@ -154,7 +154,5 @@ def CO_CoroutineDestroyOp : COOp<"destroy"> {
   let arguments = (ins CoroutineType:$coroutine);
   let assemblyFormat = "$coroutine attr-dict";
 }
-
-
 
 #endif // COOPS_TD
