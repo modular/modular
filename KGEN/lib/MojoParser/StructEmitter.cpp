@@ -314,7 +314,7 @@ LIT::FuncOp StructEmitter::synthesizeMemberwiseInit(
   // self.
   if (isInitSelf) {
     BlockArgument selfArg = body->getArgument(0);
-    assert(selfArg.getType().isa<RefType>());
+    assert(isa<RefType>(selfArg.getType()));
     for (auto [idx, field] : llvm::enumerate(structOp.getFieldDecls())) {
       // Add the block argument, get it as an RValue since it is owned. Skip the
       // self argument.

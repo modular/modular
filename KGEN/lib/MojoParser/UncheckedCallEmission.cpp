@@ -534,7 +534,7 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       if (calleeSig.isPosVarArg(argIdx)) {
         // VarArgs arguments are fulfilled with an empty !kgen.variadic list.
         auto argAttr = VariadicAttr::get(ArrayRef<TypedAttr>(),
-                                         expectedType.cast<VariadicType>());
+                                         cast<VariadicType>(expectedType));
         argumentValues.push_back({PValue(argAttr), callExpr});
         continue;
       }

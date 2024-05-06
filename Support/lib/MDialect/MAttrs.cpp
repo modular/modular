@@ -132,7 +132,7 @@ public:
 
   /// Parse a comma-separated list of integers or floats.
   ParseResult parseElements(AsmParser &p) {
-    if (type.isa<FloatType>())
+    if (isa<FloatType>(type))
       return p.parseCommaSeparatedList([&] { return parseSingleFloat(p); });
     return p.parseCommaSeparatedList([&] { return parseSingleInteger(p); });
   }
@@ -169,7 +169,7 @@ public:
   /// Print a single float.
   void printSingleFloat(AsmPrinter &p, unsigned i) {
     APInt intVal = getValue(i);
-    APFloat fpVal(type.cast<FloatType>().getFloatSemantics(), intVal);
+    APFloat fpVal(cast<FloatType>(type).getFloatSemantics(), intVal);
     p.printFloat(fpVal);
   }
 
@@ -203,7 +203,7 @@ private:
 static ParseResult parsePrimitiveArray(AsmParser &p,
                                        std::vector<uint8_t> &values,
                                        Type elementType) {
-  auto intOrFp = elementType.dyn_cast<ArithmeticType>();
+  auto intOrFp = dyn_cast<ArithmeticType>(elementType);
   if (!intOrFp)
     return p.emitError(p.getCurrentLocation(),
                        "expected integer, index, or float element type");
@@ -226,13 +226,13 @@ static void printPrimitiveArray(AsmPrinter &p, ArrayRef<uint8_t> values,
   if (values.empty())
     return;
   p << ": ";
-  PrimitiveElementPrinter handler(elementType.cast<ArithmeticType>(), values);
+  PrimitiveElementPrinter handler(cast<ArithmeticType>(elementType), values);
   handler.printElements(p);
 }
 
 int64_t PrimitiveArrayAttr::size() const {
   return getData().size() /
-         getElementType().cast<ArithmeticType>().getNearestByteSize();
+         mlir::cast<ArithmeticType>(getElementType()).getNearestByteSize();
 }
 
 PrimitiveArrayAttr PrimitiveArrayAttr::get(ArrayRef<uint8_t> data,
@@ -292,7 +292,7 @@ Attribute ArrayElementsAttr::parse(AsmParser &p, Type attrType) {
 /// Print the elements of an array elements attribute.
 void ArrayElementsAttr::print(AsmPrinter &p) const {
   p << '<';
-  PrimitiveElementPrinter handler(getElementType().cast<ArithmeticType>(),
+  PrimitiveElementPrinter handler(mlir::cast<ArithmeticType>(getElementType()),
                                   getData().getData());
   handler.printElements(p);
   p << '>';
@@ -314,14 +314,14 @@ ArrayElementsAttr::try_value_begin_impl(OverloadToken<Attribute>) const {
 }
 
 Attribute detail::AttrIterator::operator*() const {
-  auto type = elementType.cast<ArithmeticType>();
+  auto type = cast<ArithmeticType>(elementType);
   APInt val(type.getWidth(), 0);
   unsigned byteSize = type.getNearestByteSize();
   llvm::LoadIntFromMemory(val, getBase() + getIndex() * byteSize, byteSize);
   if (type.isIntOrIndex())
     return IntegerAttr::get(type, val);
-  APFloat fpVal(type.cast<FloatType>().getFloatSemantics(), val);
-  return FloatAttr::get(type.cast<FloatType>(), fpVal);
+  APFloat fpVal(cast<FloatType>(type).getFloatSemantics(), val);
+  return FloatAttr::get(cast<FloatType>(type), fpVal);
 }
 
 /// HasAlignedBytesInterface::getAlignedBytesTypes
@@ -329,7 +329,7 @@ AlignedBytesType ArrayElementsAttr::getAlignedBytesType() const {
   if (auto alignedBytesType = llvm::dyn_cast<AlignedBytesType>(getType()))
     return alignedBytesType;
   uint64_t elementByteSize = static_cast<uint64_t>(llvm::divideCeil(
-      getElementType().cast<ArithmeticType>().getWidth(), CHAR_BIT));
+      mlir::cast<ArithmeticType>(getElementType()).getWidth(), CHAR_BIT));
   uint64_t byteSize = elementByteSize * static_cast<uint64_t>(size());
   uint64_t align = llvm::PowerOf2Ceil(elementByteSize);
   return AlignedBytesType::get(getContext(), byteSize, align);
@@ -362,14 +362,14 @@ IntArrayElementsAttr IntArrayElementsAttr::get(ShapedType type,
                                                ArrayRef<APInt> values) {
   std::vector<uint8_t> data =
       packIntegerValues(type.getElementTypeBitWidth(), values);
-  return ArrayElementsAttr::get(data, type).cast<IntArrayElementsAttr>();
+  return mlir::cast<IntArrayElementsAttr>(ArrayElementsAttr::get(data, type));
 }
 
 IntArrayElementsAttr IntArrayElementsAttr::get(ShapedType type,
                                                ArrayRef<APSInt> values) {
   std::vector<uint8_t> data =
       packIntegerValues(type.getElementTypeBitWidth(), values);
-  return ArrayElementsAttr::get(data, type).cast<IntArrayElementsAttr>();
+  return mlir::cast<IntArrayElementsAttr>(ArrayElementsAttr::get(data, type));
 }
 
 APInt IntArrayElementsAttr::Iterator::operator*() const {
@@ -381,17 +381,18 @@ APInt IntArrayElementsAttr::Iterator::operator*() const {
 }
 
 auto IntArrayElementsAttr::begin() const -> Iterator {
-  return Iterator(getElementType().cast<IntegerType>(), getRawData().data(), 0);
+  return Iterator(mlir::cast<IntegerType>(getElementType()),
+                  getRawData().data(), 0);
 }
 
 auto IntArrayElementsAttr::end() const -> Iterator {
-  return Iterator(getElementType().cast<IntegerType>(), getRawData().data(),
-                  size());
+  return Iterator(mlir::cast<IntegerType>(getElementType()),
+                  getRawData().data(), size());
 }
 
 bool IntArrayElementsAttr::classof(Attribute attr) {
   if (auto arr = llvm::dyn_cast<ArrayElementsAttr>(attr))
-    return arr.getElementType().isa<IntegerType>();
+    return mlir::isa<IntegerType>(arr.getElementType());
   return false;
 }
 
@@ -469,7 +470,8 @@ FloatArrayElementsAttr FloatArrayElementsAttr::get(ShapedType type,
 
   std::vector<uint8_t> rawData =
       packIntegerValues(type.getElementTypeBitWidth(), ArrayRef(intVals));
-  return ArrayElementsAttr::get(rawData, type).cast<FloatArrayElementsAttr>();
+  return mlir::cast<FloatArrayElementsAttr>(
+      ArrayElementsAttr::get(rawData, type));
 }
 
 FloatArrayElementsAttr FloatArrayElementsAttr::get(ArrayRef<APFloat> values,
@@ -488,17 +490,18 @@ APFloat FloatArrayElementsAttr::Iterator::operator*() const {
 }
 
 auto FloatArrayElementsAttr::begin() const -> Iterator {
-  return Iterator(getElementType().cast<FloatType>(), getRawData().data(), 0);
+  return Iterator(mlir::cast<FloatType>(getElementType()), getRawData().data(),
+                  0);
 }
 
 auto FloatArrayElementsAttr::end() const -> Iterator {
-  return Iterator(getElementType().cast<FloatType>(), getRawData().data(),
+  return Iterator(mlir::cast<FloatType>(getElementType()), getRawData().data(),
                   size());
 }
 
 bool FloatArrayElementsAttr::classof(Attribute attr) {
   if (auto arr = llvm::dyn_cast<ArrayElementsAttr>(attr))
-    return arr.getElementType().isa<FloatType>();
+    return mlir::isa<FloatType>(arr.getElementType());
   return false;
 }
 
@@ -510,12 +513,12 @@ IndexArrayElementsAttr IndexArrayElementsAttr::get(ShapedType type,
                                                    ArrayRef<int64_t> values) {
   ArrayRef<uint8_t> data(reinterpret_cast<const uint8_t *>(values.data()),
                          values.size() * sizeof(int64_t));
-  return ArrayElementsAttr::get(data, type).cast<IndexArrayElementsAttr>();
+  return mlir::cast<IndexArrayElementsAttr>(ArrayElementsAttr::get(data, type));
 }
 
 bool IndexArrayElementsAttr::classof(Attribute attr) {
   if (auto arr = llvm::dyn_cast<ArrayElementsAttr>(attr))
-    return arr.getElementType().isa<IndexType>();
+    return mlir::isa<IndexType>(arr.getElementType());
   return false;
 }
 
@@ -546,7 +549,7 @@ Attribute M::convertDenseElements(Attribute attr) {
   }
 
   // Unpack the data.
-  if (denseElements.getElementType().isa<FloatType>()) {
+  if (mlir::isa<FloatType>(denseElements.getElementType())) {
     auto values = llvm::to_vector(denseElements.getValues<APFloat>());
     return FloatArrayElementsAttr::get(denseElements.getType(), values);
   }

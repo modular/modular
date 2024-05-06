@@ -805,7 +805,7 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type) {
   StringRef keyword;
   if (succeeded(p.parseOptionalKeyword(&keyword))) {
     // Check to see if we're parsing a dtype name like 'f32'.
-    if (type.isa<DTypeType>()) {
+    if (isa<DTypeType>(type)) {
       auto dtype = KGENDType::getFromString(keyword);
       if (succeeded(dtype)) {
         value = DTypeConstantAttr::get(p.getContext(), *dtype);
@@ -1095,7 +1095,7 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type,
 
     // If this is a inverted boolean sugar, handle it.
     if (expr.getOpcode() == POC::Xor && expr.getType().isSignlessInteger(1) &&
-        expr.getNumOperands() == 2 && expr.getOperand(1).isa<IntegerAttr>()) {
+        expr.getNumOperands() == 2 && isa<IntegerAttr>(expr.getOperand(1))) {
       if (auto invertedExpr = dyn_cast<ParamOperatorAttr>(expr.getOperand(0))) {
         if (invertedExpr.getOpcode() == POC::EQ) {
           expr = invertedExpr;
@@ -1959,7 +1959,7 @@ LogicalResult KGEN::checkResultParameterTypes(Operation *op,
 
   for (size_t i = 0, e = paramResults.size(); i != e; ++i) {
     Type expectedTy = paramResults[i].getType();
-    Type actualTy = resultParams[i].cast<TypedAttr>().getType();
+    Type actualTy = cast<TypedAttr>(resultParams[i]).getType();
     if (actualTy != expectedTy)
       return op->emitOpError("parameter #") << i << " has type " << actualTy
                                             << " but should be " << expectedTy;

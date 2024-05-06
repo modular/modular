@@ -93,7 +93,7 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   // If we have a simd type, then the bitwidths must match.
   std::optional<int64_t> inputSize = 1, outputSize = 1;
   if (auto inputSimd = dyn_cast<SIMDType>(inputType)) {
-    auto outputSimd = outputType.cast<SIMDType>();
+    auto outputSimd = cast<SIMDType>(outputType);
     inputSize = inputSimd.getResolvedSize();
     outputSize = outputSimd.getResolvedSize();
     // If neither size could be resolved, allow the cast.
@@ -116,8 +116,8 @@ bool BitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
 bool PointerBitcastOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   if (inputs.size() != 1 || outputs.size() != 1)
     return false;
-  return inputs.front().isa<ParamRefType, PointerType, SignatureType>() &&
-         outputs.front().isa<ParamRefType, PointerType, SignatureType>();
+  return isa<ParamRefType, PointerType, SignatureType>(inputs.front()) &&
+         isa<ParamRefType, PointerType, SignatureType>(outputs.front());
 }
 
 //===----------------------------------------------------------------------===//
@@ -160,7 +160,7 @@ LogicalResult SIMDShuffleOp::verify() {
     return emitOpError("expected result to be a vector of ")
            << mask.getValues().size() << " elements";
 
-  auto lhsType = getLhs().getType().cast<SIMDType>();
+  auto lhsType = cast<SIMDType>(getLhs().getType());
   if (lhsType.getDType() != getType().getDType())
     return emitOpError("expected result dtype to match operand dtypes");
 
@@ -289,7 +289,7 @@ static LogicalResult verifyArrayIndex(Operation *op, TypedAttr indexExpr,
 
 void ArrayGetOp::build(OpBuilder &b, OperationState &state, Value array,
                        int64_t index) {
-  return build(b, state, array.getType().cast<ArrayType>().getElementType(),
+  return build(b, state, cast<ArrayType>(array.getType()).getElementType(),
                array, b.getIndexAttr(index));
 }
 
