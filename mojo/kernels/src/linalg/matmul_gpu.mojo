@@ -11,7 +11,8 @@ from buffer.buffer import NDBuffer
 from buffer.list import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
 from gpu.host import Function, Stream
-from gpu.memory import AddressSpace
+from gpu.host.memory import _memset_async
+from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
 from gpu.tensor_ops import tc_reduce
 from .MatmulUtils import (
@@ -25,6 +26,17 @@ from collections import OptionalReg
 from utils.index import Index
 from utils.static_tuple import StaticTuple
 from utils._numerics import get_accum_type
+
+from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
+from layout.int_tuple import IntTuple
+from layout.layout import *
+from layout.layout_tensor import (
+    LayoutTensor,
+    outer_product_acc,
+    copy_dram_to_sram_async,
+    copy_sram_to_local,
+    copy_local_to_dram,
+)
 
 
 @always_inline
@@ -595,6 +607,307 @@ fn matmul_kernel[
             c[Index(row, col)] = result.cast[c_type]()
 
 
+fn apply_epilogue[
+    elementwise_lambda: elementwise_epilogue_type,
+    dst_layout: Layout,
+    dst_element_layout: Layout = Layout(1, 1),
+](src: LayoutTensor, offset: Int):  # register or shared memory
+    # Check if input is 2D simd tile. This is only for double buffer gemm
+    # TODO: extend it to 1D simd tile.
+    @parameter
+    if (
+        src.element_layout.rank() == 2
+        and dst_element_layout.shape == src.element_layout.shape
+        and dst_element_layout.stride[1] == 1
+        and src.element_layout.stride[1] == 1
+    ):
+        # update an element tensor.
+        @parameter
+        fn update_element[i: Int]():
+            # Offset to the current element.
+            alias src_offset = src.layout(i)
+            alias dst_offset = dst_layout(i)
+            alias num_copies = src.element_layout.shape[0].value()
+            alias vec_width = src.element_layout.shape[1].value()
+
+            @parameter
+            fn update_vec[j: Int]():
+                alias src_idx = src_offset + src.element_layout(j)
+                alias dst_idx = dst_offset + dst_element_layout(j)
+                # C matrix dimension. For 2D simd tile, element_layout perserves
+                # the matrix dimension, layout doesn't.
+                alias N = dst_element_layout.stride[0].value()
+
+                var vec = src.ptr.load[
+                    width=vec_width,
+                    alignment = alignof[SIMD[src.dtype, vec_width]](),
+                ](src_idx)
+
+                var m = (dst_idx + offset) // N
+                var n = (dst_idx + offset) % N
+
+                elementwise_lambda[src.dtype, vec_width]((m, n), vec)
+
+            unroll[update_vec, num_copies]()
+
+        unroll[update_element, dst_layout.size()]()
+
+    # Scalar case
+    # TODO: 1D vector is included, should handle it in a separate branch.
+    else:
+        constrained[dst_element_layout.rank() == 1]()
+
+        @parameter
+        fn update_scalar[i: Int]():
+            alias src_idx = make_layout(src.element_layout, src.layout)(i)
+            alias dst_idx = make_layout(dst_element_layout, dst_layout)(i)
+            # C matrix dimension. For scalar or 1D vector element, the layout
+            # preserves the matrix dimension.
+            alias N = dst_layout.stride[0].value()
+
+            var m = (src_idx + offset) // N
+            var n = (src_idx + offset) % N
+
+            elementwise_lambda[src.dtype, 1]((m, n), src.ptr[src_idx + offset])
+
+        unroll[update_scalar, src.layout.size() * src.element_size]()
+
+
+fn sgemm_double_buffer_kernel[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    b_layout: Layout,
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    TM: Int,
+    TN: Int,
+    NUM_THREADS: Int,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    m: Int,
+    c: DTypePointer[c_type],
+    a: DTypePointer[a_type],
+    b: LayoutTensor[b_type, b_layout],
+):
+    alias simd_size = simdwidthof[c_type]()
+
+    alias N = b.dim[1]()
+    alias K = b.dim[0]()
+
+    alias num_warps_m = BM // WM
+    alias num_warps_n = BN // WN
+
+    var tid = ThreadIdx.x()
+    var warp_id = tid // WARP_SIZE
+    var lane_id = tid % WARP_SIZE
+
+    # Coordinates of the current warp.
+    var warp_x = warp_id % num_warps_n
+    var warp_y = warp_id // num_warps_n
+
+    # Warp shape in 2D.
+    alias warp_dim_x = WN // TN
+    alias warp_dim_y = WM // TM
+    constrained[
+        warp_dim_x * warp_dim_y == WARP_SIZE,
+        "Warp 2d shape doesn't match 32 threads",
+    ]()
+
+    # Pad BM to avoid back conflict
+    alias pad_avoid_bank_conflict = 4
+    alias BM_padded = BM + pad_avoid_bank_conflict
+
+    # Double buffer in shared memory.
+    alias a_smem_size = BK * BM_padded
+    var a_smem_tile = LayoutTensor[
+        a_type,
+        Layout.row_major(2 * BK, BM_padded),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation().slice[:, :BM]().split[2]()
+
+    # Align the address by the maximum async copy size (16 bytes).
+    alias b_smem_size = BK * BN
+    var b_smem_tile = LayoutTensor[
+        b_type,
+        Layout.row_major(2 * BK, BN),
+        address_space = AddressSpace.SHARED,
+    ].stack_allocation().split[2]()
+
+    # Global memory tile.
+    alias a_gmem_layout = Layout(IntTuple(BM, BK), IntTuple(K, 1))
+    var a_offset = BlockIdx.y() * BM * K
+    var a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](a.offset(a_offset))
+    var b_gmem_tile = b.tile[BK, BN](0, BlockIdx.x())
+
+    # Load A tile from global memory to shared.
+    # Row major thread layout for coalesced access.
+    alias thread_loada_gmem_layout = Layout.row_major(NUM_THREADS // BK, BK)
+    alias thread_storea_smem_layout = Layout.col_major(BK, NUM_THREADS // BK)
+    copy_dram_to_sram_async[
+        src_thread_layout=thread_loada_gmem_layout,
+        dst_thread_layout=thread_storea_smem_layout,
+    ](a_smem_tile[0], a_gmem_tile)
+
+    # Load B tile from global memory to shared.
+    # Row major thread layout for coalesced access.
+    alias thread_layout_loadb = Layout.row_major(
+        (NUM_THREADS // BN) * simd_size, BN // simd_size
+    )
+    copy_dram_to_sram_async[
+        src_thread_layout=thread_layout_loadb,
+        dst_thread_layout=thread_layout_loadb,
+    ](
+        b_smem_tile[0].vectorize[1, simd_size](),
+        b_gmem_tile.vectorize[1, simd_size](),
+    )
+
+    async_copy_wait_all()
+    barrier()
+
+    # Advance A and B to next k tile.
+    a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](a.offset(a_offset + BK))
+    b_gmem_tile = b.tile[BK, BN](1, BlockIdx.x())
+
+    # Double buffer in registers (fragments in nvidia terms).
+    var a_reg = StaticTuple[_, 2](
+        LayoutTensor[a_type, Layout(TM)].stack_allocation(),
+        LayoutTensor[a_type, Layout(TM)].stack_allocation(),
+    )
+    var b_reg = StaticTuple[_, 2](
+        LayoutTensor[b_type, Layout(TN)].stack_allocation(),
+        LayoutTensor[b_type, Layout(TN)].stack_allocation(),
+    )
+    var c_reg = LayoutTensor[
+        c_type, Layout.row_major(TM, TN)
+    ].stack_allocation()
+    c_reg.fill(0)
+
+    # Thread swizzling
+    # Warp has 2D Layout [warp_dim_x, warp_dim_y]. Current thread is mapped to
+    # (mma_x, mma_y) in this layout as follow (the number is thread id).
+    # 0  2  4  6  8  10 12 14
+    # 1  3  5  7  9  11 13 15
+    # 16 18 20 22 24 26 28 30
+    # 17 19 21 23 25 27 29 31
+    alias thread_layout = Layout(
+        IntTuple(IntTuple(2, 2), 8), IntTuple(IntTuple(1, 16), 2)
+    )
+
+    # Load A fragments to the first buffer.
+    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
+    var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
+    copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
+        a_reg[0].vectorize[simd_size](), a_smem_warp_row.vectorize[simd_size]()
+    )
+
+    # Load B fragments to the first buffer.
+    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
+    var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
+    copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
+        b_reg[0].vectorize[simd_size](), b_smem_warp_row.vectorize[simd_size]()
+    )
+
+    var num_k_tiles = ceildiv(K, BK)
+
+    # Update (num_k_tile - 1) tiles while switching buffers.
+    # for k_tile_id in range(num_k_tiles - 1):
+    for k_tile_id in range(num_k_tiles):
+        # The shared memory buffer to be prefetched
+        var prefetch_id = 1 if k_tile_id % 2 == 0 else 0
+
+        @unroll
+        for k in range(BK):
+            var next_k = (k + 1) % BK
+
+            # Buffer id for the double register buffers. They alternate.
+            var buffer_id = k % 2
+            var next_buffer_id = (k + 1) % 2
+
+            if k == BK - 1:
+                async_copy_wait_all()
+                barrier()
+
+                a_smem_warp_tile = a_smem_tile[prefetch_id].tile[BK, WM](
+                    0, warp_y
+                )
+                b_smem_warp_tile = b_smem_tile[prefetch_id].tile[BK, WN](
+                    0, warp_x
+                )
+
+            # Fill the other A fragments buffer using the next row in A.
+            var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](
+                next_k, 0
+            ).coalesce()
+            copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
+                a_reg[next_buffer_id].vectorize[simd_size](),
+                a_smem_warp_row.vectorize[simd_size](),
+            )
+
+            var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
+                next_k, 0
+            ).coalesce()
+            copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
+                b_reg[next_buffer_id].vectorize[simd_size](),
+                b_smem_warp_row.vectorize[simd_size](),
+            )
+
+            # Load next k tile from global memory to shared memory.
+            if k == 0 and k_tile_id < num_k_tiles - 1:
+                a_gmem_tile = LayoutTensor[a_type, a_gmem_layout](
+                    a.offset(BlockIdx.y() * BM * K + (k_tile_id + 1) * BK)
+                )
+                copy_dram_to_sram_async[
+                    src_thread_layout=thread_loada_gmem_layout,
+                    dst_thread_layout=thread_storea_smem_layout,
+                ](a_smem_tile[prefetch_id], a_gmem_tile)
+
+                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, BlockIdx.x())
+                copy_dram_to_sram_async[
+                    src_thread_layout=thread_layout_loadb,
+                    dst_thread_layout=thread_layout_loadb,
+                ](
+                    b_smem_tile[prefetch_id].vectorize[1, simd_size](),
+                    b_gmem_tile.vectorize[1, simd_size](),
+                )
+
+            outer_product_acc(c_reg, a_reg[buffer_id], b_reg[buffer_id])
+
+    # Map global memory tile down to thread.
+    var c_offset = BlockIdx.y() * BM * N + BlockIdx.x() * BN
+    alias c_gmem_layout = Layout(IntTuple(BM, BN), IntTuple(N, 1))
+    var c_gmem_tile = LayoutTensor[c_type, c_gmem_layout](c.offset(c_offset))
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
+
+    # Copy results to global memory.
+    # Vectorize by [simd_size, simd_size] because the outer product results are
+    # implicitly organized by simd_size x simd_size tiles.
+
+    @parameter
+    if elementwise_lambda_fn:
+        var c_gmem_frag = c_gmem_warp_tile.vectorize[
+            simd_size, simd_size
+        ]().distribute[thread_layout](ThreadIdx.x())
+
+        alias epilogue = elementwise_lambda_fn.value()
+
+        apply_epilogue[
+            epilogue, c_gmem_frag.layout, c_gmem_frag.element_layout
+        ](
+            c_reg.vectorize[simd_size, simd_size](),
+            c_gmem_frag.distance(c),
+        )
+
+    else:
+        copy_local_to_dram[dst_thread_layout=thread_layout](
+            c_gmem_warp_tile.vectorize[simd_size, simd_size](),
+            c_reg.vectorize[simd_size, simd_size](),
+        )
+
+
 fn matmul_kernel_naive[
     c_type: DType,
     a_type: DType,
@@ -730,20 +1043,74 @@ fn _matmul_gpu_dispatch[
     try:
         var stream = Stream.get_current_stream()
 
+        alias s_type = DType.float32 if (
+            a_type == DType.bfloat16 or a_type == DType.float16
+        ) else c_type
+
         # Currently sgemm_warp_tiling_kernel is supportred only for float32 and
         # no elementwise_epilogue, fallback to generic matmul_kernel.
-        var warp_tiled_matmul_suppoered_shape = (
+        var warp_tiled_matmul_supported_shape = (
             m % 128 == 0 and n % 128 == 0 and k % 128 == 0
         )
-        var warp_tiled_matmul_supported_format = (
+        alias matmul_supported_format = (
             a_type == DType.float32
             and b_type == DType.float32
             and c_type == DType.float32
         )
-        if (
-            warp_tiled_matmul_suppoered_shape
-            and warp_tiled_matmul_supported_format
-        ):
+        var double_buffer_supported_cond = (
+            m % 128 == 0 and n % 128 == 0 and k % 16 == 0 and k < m and k < n
+        )
+
+        # Dispatch bouble buffer gemm for FP32, constant B, and certain shapes.
+        @parameter
+        if matmul_supported_format and b_shape.all_known[2]():
+            if double_buffer_supported_cond:
+                # TODO: Add shape constraints for K << M and K << N.
+                alias NUM_THREADS = 256
+                alias K = b_shape.get[0]()
+                alias N = b_shape.get[1]()
+                alias BM = 128
+                alias BN = 128
+                alias BK = 16
+                alias WM = 32
+                alias WN = 64
+                alias TM = 8
+                alias TN = 8
+                alias b_layout = Layout.row_major(K, N)
+
+                var b_tsr = LayoutTensor[b_type, b_layout](b.data)
+
+                alias dbuffgemm = sgemm_double_buffer_kernel[
+                    c_type,
+                    a_type,
+                    b_type,
+                    b_layout,
+                    BM,
+                    BN,
+                    BK,
+                    WM,
+                    WN,
+                    TM,
+                    TN,
+                    NUM_THREADS,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ]
+                var gpu_func = Function[__type_of(dbuffgemm), dbuffgemm](
+                    threads_per_block=NUM_THREADS
+                )
+                var stream = Stream.get_current_stream()
+                gpu_func(
+                    m,
+                    c.data,
+                    a.data,
+                    b_tsr,
+                    grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
+                    block_dim=(NUM_THREADS, 1, 1),
+                    stream=stream,
+                )
+                return
+
+        if warp_tiled_matmul_supported_shape and matmul_supported_format:
             # TODO: Auto tune these for A100.
             # TODO: NUM_THREADS need to vary as M, N varies.
             alias NUM_THREADS = 128
