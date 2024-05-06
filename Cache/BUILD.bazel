@@ -18,7 +18,7 @@ cc_library(
         "//Support:Compiler",
         "//Support:Configuration",
         "//Support:HMAC",
-        "//Support:HTTPHeaders",
+        "//Support:HTTP",
         "//Support:Telemetry",
         "//Support:URI",
     ],

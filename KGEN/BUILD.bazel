@@ -820,6 +820,7 @@ cc_library(
     name = "KGENDialectHeaders",
     hdrs = glob(["include/KGEN/KGENDialect/*.h"]),
     strip_include_prefix = "include",
+    visibility = ["//visibility:private"],
     deps = [
         ":KGENAttrInterfacesIncGen",
         ":KGENAttrsIncGen",
@@ -870,17 +871,15 @@ cc_library(
     include_prefix = "KGEN/KGENVersion",
 )
 
-_TOOL_COMMON_HEADERS = [
-    "include/KGEN/ToolCommon/CLOptions.h",
-    "include/KGEN/ToolCommon/CompilationOptions.h",
-    "include/KGEN/ToolCommon/KGENPasses.h",
-]
-
-# NOTE: Broken out to break circular dependencies
 cc_library(
     name = "ToolCommonHeaders",
-    hdrs = _TOOL_COMMON_HEADERS,
+    hdrs = [
+        "include/KGEN/ToolCommon/CLOptions.h",
+        "include/KGEN/ToolCommon/CompilationOptions.h",
+        "include/KGEN/ToolCommon/KGENPasses.h",
+    ],
     strip_include_prefix = "include",
+    visibility = ["//visibility:private"],
     deps = [
         ":KGENPassesIncGen",
         "//Support:CommonCLOptions",
@@ -981,7 +980,6 @@ globals_library(
         "//CUDASupport:Globals",
         "//LLCL:Runtime",
         "//LLCL:RuntimeGlobals",
-        "//LLCL:RuntimeHeaders",
         "//LLCL:Support",
         "//Support:Base",
         "//Support:Configuration",
@@ -1048,7 +1046,6 @@ cc_library(
         ":HLCFDialectAnalysis",
         ":KGENDialect",
         ":ToolCommon",
-        ":ToolCommonHeaders",
         "//Support:DebugInfoTransforms",
         "@llvm-project//mlir:IR",
     ],
@@ -1224,13 +1221,10 @@ cc_library(
 cc_library(
     name = "ToolCommon",
     srcs = glob(["lib/ToolCommon/**/*.cpp"]),
-    hdrs = glob(
-        [
-            "include/KGEN/ToolCommon/*.h",
-            "include/KGEN/Compiler/*.h",
-        ],
-        exclude = _TOOL_COMMON_HEADERS,
-    ),
+    hdrs = glob([
+        "include/KGEN/ToolCommon/*.h",
+        "include/KGEN/Compiler/*.h",
+    ]),
     strip_include_prefix = "include",
     deps = [
         ":CODialect",

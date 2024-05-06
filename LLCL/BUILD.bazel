@@ -22,11 +22,8 @@ cc_library(
     ]) + [
         "include/LLCL/ForwardDecls.h",
     ],
-    local_defines = select({
-        "@platforms//os:linux": ["MODULAR_HAVE_SEM_TIMEDWAIT"],
-        "//conditions:default": [],
-    }),
     strip_include_prefix = "include",
+    visibility = ["//visibility:private"],
     deps = [
         ":SupportHeaders",
         "//Support:ProfilingHeaders",
@@ -37,6 +34,7 @@ cc_library(
     name = "SupportHeaders",
     hdrs = glob(["include/LLCL/Support/*.h"]),
     strip_include_prefix = "include",
+    visibility = ["//visibility:private"],
 )
 
 cc_library(

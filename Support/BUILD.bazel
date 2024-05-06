@@ -357,21 +357,6 @@ cc_library(
 )
 
 cc_library(
-    name = "HTTPHeaders",
-    hdrs = glob(["include/Support/HTTP/*.h"]),
-    strip_include_prefix = "include",
-    deps = [
-        ":Base",
-        ":Base64",
-        ":Buffer",
-        ":Configuration",
-        ":URI",
-        "@curl",
-        "@llvm-project//llvm:Support",
-    ],
-)
-
-cc_library(
     name = "HTTP",
     srcs = glob(["lib/HTTP/*.cpp"]),
     hdrs = glob(["include/Support/HTTP/*.h"]),
@@ -499,6 +484,8 @@ cc_library(
         ":Base",
         ":Configuration",
         ":Entitlements",
+        ":Filesystem",
+        ":HTTP",
         ":MArchTarget",
         ":Settings",
         "@io_opentelemetry_cpp//api",
