@@ -602,8 +602,7 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
   // If this is a parameter, we need to materialize it, either as an
   // index.constant or as a parameter expression.
   if (!builder) {
-    emitError(expr->getLoc(), "cannot use a dynamic value")
-        << getContextMessage(context) << expr->getRange();
+    emitErrorForDynamicValueInParameter(expr);
     return {};
   }
 
