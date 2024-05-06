@@ -49,7 +49,7 @@ ErrorOrSuccess
 CommandLineFunc::verifyFuncSignature(mlir::FunctionType funcType) const {
   if (signature == "f32()") {
     if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1 ||
-        !funcType.getResult(0).isa<Float32Type>()) {
+        !isa<Float32Type>(funcType.getResult(0))) {
       return Error("command-line specified signature does not match the IR "
                    "signature, expected " +
                    mlir::debugString(funcType) + ", but got " + signature);
@@ -65,7 +65,7 @@ CommandLineFunc::verifyFuncSignature(mlir::FunctionType funcType) const {
     return M::success();
   } else if (signature == "index()") {
     if (funcType.getNumInputs() != 0 || funcType.getNumResults() != 1 ||
-        !funcType.getResult(0).isa<IndexType>()) {
+        !isa<IndexType>(funcType.getResult(0))) {
       return Error("command-line specified signature does not match the IR "
                    "signature, expected " +
                    mlir::debugString(funcType) + ", but got " + signature);
@@ -73,8 +73,8 @@ CommandLineFunc::verifyFuncSignature(mlir::FunctionType funcType) const {
     return M::success();
   } else if (signature == "f32(f32)") {
     if (funcType.getNumInputs() != 1 || funcType.getNumResults() != 1 ||
-        !funcType.getResult(0).isa<Float32Type>() ||
-        !funcType.getInput(0).isa<Float32Type>()) {
+        !isa<Float32Type>(funcType.getResult(0)) ||
+        !isa<Float32Type>(funcType.getInput(0))) {
       std::string ktype;
       llvm::raw_string_ostream os(ktype);
       os << funcType;

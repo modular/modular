@@ -56,12 +56,12 @@ static LogicalResult getCTypeForDType(FuncOp func, KGENDType dt,
 
 /// Get the C type for an elementary scalar type.
 static ErrorOr<std::string> getCTypeForElementary(Type t) {
-  if (t.isa<IntegerType>()) {
+  if (isa<IntegerType>(t)) {
     if (auto bitWidth = t.getIntOrFloatBitWidth(); bitWidth > 1)
       return ("int" + Twine(bitWidth) + "_t").str();
     return "bool";
   }
-  if (t.isa<IndexType>())
+  if (isa<IndexType>(t))
     return "ssize_t";
   if (t.isF16())
     llvm::report_fatal_error("no support for fp16 yet");
@@ -130,12 +130,12 @@ static LogicalResult getCTypeForType(FuncOp func, Type t,
     return success();
   }
 
-  if (t.isa<DTypeType>()) {
+  if (isa<DTypeType>(t)) {
     types.push_back("uint8_t");
     return success();
   }
 
-  if (!t.isa<IndexType, IntegerType, FloatType>())
+  if (!isa<IndexType, IntegerType, FloatType>(t))
     return func.emitError("unsupported argument type: ") << t;
   if (!t.isIndex() && !llvm::isPowerOf2_64(t.getIntOrFloatBitWidth()))
     return func.emitError("integer or float bitwidth must be a power of 2");

@@ -166,11 +166,10 @@ public:
   static IntArrayElementsAttr get(MLIRContext *ctx, ArrayRef<IntT> values,
                                   IntegerType::SignednessSemantics signedness) {
     auto type = IntegerType::get(ctx, sizeof(IntT) * CHAR_BIT, signedness);
-    return ArrayElementsAttr::get(
-               {reinterpret_cast<const uint8_t *>(values.data()),
-                values.size() * sizeof(IntT)},
-               ArrayType::get(values.size(), type))
-        .template cast<IntArrayElementsAttr>();
+    return mlir::cast<IntArrayElementsAttr>(ArrayElementsAttr::get(
+        {reinterpret_cast<const uint8_t *>(values.data()),
+         values.size() * sizeof(IntT)},
+        ArrayType::get(values.size(), type)));
   }
 
   /// Iterate over the integer elements as `APInt`s.
