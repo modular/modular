@@ -46,19 +46,19 @@ fn _human_memory(size: Int) -> String:
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
+fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     if not Path(CUDA_DRIVER_PATH).exists():
         print("the CUDA library was not found at", CUDA_DRIVER_PATH)
         abort()
 
-    var ptr = Pointer[DLHandle].alloc(1)
+    var ptr = UnsafePointer[DLHandle].alloc(1)
     var handle = DLHandle(CUDA_DRIVER_PATH)
     _ = handle.get_function[fn (UInt32) -> Result]("cuInit")(0)
     ptr[] = handle
     return ptr.bitcast[NoneType]()
 
 
-fn _destroy_dylib(ptr: Pointer[NoneType]):
+fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
     ptr.bitcast[DLHandle]()[].close()
     ptr.free()
 
