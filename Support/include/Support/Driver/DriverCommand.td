@@ -42,6 +42,21 @@ multiclass CommandOption<list<string> prefixes, string name, OptionGroup group,
                    Index<0>, Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
 }
 
+// Hidden version of CommmadOption
+multiclass CommandOptionHidden<list<string> prefixes, string name,
+                        OptionGroup group, Index i, MetaVarName meta,
+                        HelpText help> {
+  def NAME : Separate<prefixes, name>, Group<group>, Index<i.index>,
+             MetaVarName<meta.MetaVarName>, HelpText<help.HelpText>,
+             Flags<[HelpHidden]>;
+
+  // The `=` alias is the first alias, at index 0. (However, since it's hidden,
+  // it will not be displayed in the list of aliases.)
+  def NAME # _eq : Joined<prefixes, name # "=">, Group<group>,
+                   Index<0>, Alias<!cast<Separate>(NAME)>, Flags<[HelpHidden]>;
+}
+
+
 // Like CommandOption, but also accepts Values.
 multiclass CommandOptionWithValues<list<string> prefixes, string name,
                                    OptionGroup group, Index i, MetaVarName meta,
