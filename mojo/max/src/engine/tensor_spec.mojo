@@ -104,7 +104,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
         var dtype = spec.dtype()
         var rank = spec.rank()
         var shape = List[Int64]()
-        var name_str = name._as_ptr()
+        var name_str = name.unsafe_ptr()
         for i in range(rank):
             shape.append(spec[i])
         self._ptr = call_dylib_func[CTensorSpec](
@@ -182,7 +182,7 @@ struct EngineTensorSpec(Stringable, CollectionElement):
             session: Copy of InferenceSession from which this instance
                      was created.
         """
-        var name_str = name._as_ptr()
+        var name_str = name.unsafe_ptr()
         if shape:
             var inner_shape = shape._value_copy()
             var rank = len(inner_shape)

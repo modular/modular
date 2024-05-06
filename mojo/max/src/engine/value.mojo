@@ -75,7 +75,7 @@ struct Value:
         var ptr = call_dylib_func[CValue](
             lib,
             Self._NewBorrowedTensorFnName,
-            tensor.data(),
+            tensor.unsafe_ptr(),
             spec._borrow_ptr(),
             ctx,
         )

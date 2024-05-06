@@ -101,7 +101,7 @@ struct EngineTensorView:
             tensor: Tensor backing the view.
         """
         self._spec = tensor._spec
-        self._data_ptr = tensor.data().bitcast[DType.invalid]()
+        self._data_ptr = tensor.unsafe_ptr().bitcast[DType.invalid]()
         self._dtype = type
 
     fn data[type: DType](self) raises -> DTypePointer[type]:
@@ -120,7 +120,7 @@ struct EngineTensorView:
             raise String("Expected type: ") + self._dtype.__str__()
         return self._data_ptr.bitcast[type]()
 
-    fn data(self) -> DTypePointer[DType.invalid]:
+    fn unsafe_ptr(self) -> DTypePointer[DType.invalid]:
         """Returns type erased pointer to the start of tensor.
 
         Returns:
@@ -159,7 +159,7 @@ struct EngineNumpyView:
         self._np = _Numpy()
         self._obj = tensor
 
-    fn data(self) raises -> DTypePointer[DType.invalid]:
+    fn unsafe_ptr(self) raises -> DTypePointer[DType.invalid]:
         """Returns type erased pointer to the start of numpy array.
 
         Returns:

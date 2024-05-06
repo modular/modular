@@ -76,7 +76,7 @@ struct CTensorMap:
             lib,
             Self.BorrowValueIntoFnName,
             self,
-            name._as_ptr(),
+            name.unsafe_ptr(),
             ptr,
             status.borrow_ptr(),
         )

@@ -47,7 +47,9 @@ struct CRuntimeConfig:
         device._strref_keepalive()
 
     fn set_api_language(self, lib: DLHandle, source: String):
-        call_dylib_func(lib, Self.SetAPILanguageFnName, self, source._as_ptr())
+        call_dylib_func(
+            lib, Self.SetAPILanguageFnName, self, source.unsafe_ptr()
+        )
 
     fn set_allocator_type(self, lib: DLHandle, allocator_type: AllocatorType):
         call_dylib_func(lib, Self.SetAllocatorTypeFnName, self, allocator_type)

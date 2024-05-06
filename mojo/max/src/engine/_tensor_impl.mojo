@@ -41,7 +41,7 @@ struct CTensor:
             lib, Self.GetTensorDTypeFnName, self
         )
 
-    fn data(self, lib: DLHandle) -> DTypePointer[DType.invalid]:
+    fn unsafe_ptr(self, lib: DLHandle) -> DTypePointer[DType.invalid]:
         return call_dylib_func[DTypePointer[DType.invalid]](
             lib, Self.GetTensorDataFnName, self
         )
@@ -86,11 +86,11 @@ struct EngineTensor(Sized):
     fn __len__(self) -> Int:
         return self.ptr.size(self.lib)
 
-    fn data(self) -> DTypePointer[DType.invalid]:
-        return self.ptr.data(self.lib)
+    fn unsafe_ptr(self) -> DTypePointer[DType.invalid]:
+        return self.ptr.unsafe_ptr(self.lib)
 
     fn data[type: DType](self) raises -> DTypePointer[type]:
-        var ptr = self.data()
+        var ptr = self.unsafe_ptr()
         return ptr.bitcast[type]()
 
     fn dtype(self) -> DType:
@@ -106,13 +106,13 @@ struct EngineTensor(Sized):
 
     fn buffer(self) -> Buffer[DType.invalid]:
         return Buffer[DType.invalid](
-            self.data(), len(self) * _get_runtime_dtype_size(self.dtype())
+            self.unsafe_ptr(), len(self) * _get_runtime_dtype_size(self.dtype())
         )
 
     fn tensor[type: DType](self) raises -> Tensor[type]:
         var tensor = Tensor[type](self.spec())
         memcpy(
-            tensor.data(),
+            tensor.unsafe_ptr(),
             self.data[type](),
             len(self),
         )

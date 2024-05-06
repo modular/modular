@@ -28,7 +28,7 @@ fn test_tensor_map() raises:
     map.borrow(
         "tensor2",
         t1.spec(),
-        t1.data(),
+        t1.unsafe_ptr(),
     )
 
     assert_equal(len(map), 2)

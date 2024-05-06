@@ -156,7 +156,7 @@ struct TorchInputSpec(Movable):
                 converted_shape.append(
                     CTensorSpec.get_dynamic_dimension_value(engine_lib)
                 )
-                converted_dim_names.append(dim[]._name._as_ptr())
+                converted_dim_names.append(dim[]._name.unsafe_ptr())
 
         self.shape = converted_shape^
         self.dtype = dtype
@@ -374,7 +374,7 @@ struct CCompiledModel:
             lib,
             Self.GetModelInputSpecByNameFnName,
             self,
-            tensor_name._as_ptr(),
+            tensor_name.unsafe_ptr(),
             status.ptr,
         )
         if status:
@@ -393,7 +393,7 @@ struct CCompiledModel:
             lib,
             Self.GetModelOutputSpecByNameFnName,
             self,
-            tensor_name._as_ptr(),
+            tensor_name.unsafe_ptr(),
             status.ptr,
         )
         if status:

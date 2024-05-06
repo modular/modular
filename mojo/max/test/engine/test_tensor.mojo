@@ -18,7 +18,7 @@ fn test_tensor_view() raises:
 
     var t1_view = EngineTensorView(t1)
 
-    assert_equal(t1.data(), t1_view.data[DType.float32]())
+    assert_equal(t1.unsafe_ptr(), t1_view.data[DType.float32]())
 
     assert_equal(t1.spec(), t1_view.spec())
 

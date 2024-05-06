@@ -110,7 +110,7 @@ struct TensorMap(SizedRaising):
             self._session,
         )
         self._ptr.borrow_tensor_by_name(
-            value.data().bitcast[DType.invalid](), spec, self._lib
+            value.unsafe_ptr().bitcast[DType.invalid](), spec, self._lib
         )
         key._strref_keepalive()
 
@@ -157,7 +157,7 @@ struct TensorMap(SizedRaising):
             self._lib,
             self._session,
         )
-        self._ptr.borrow_tensor_by_name(value.data(), spec, self._lib)
+        self._ptr.borrow_tensor_by_name(value.unsafe_ptr(), spec, self._lib)
         key._strref_keepalive()
 
     fn borrow(self, key: String, value: EngineNumpyView) raises:
@@ -175,7 +175,7 @@ struct TensorMap(SizedRaising):
             self._lib,
             self._session,
         )
-        self._ptr.borrow_tensor_by_name(value.data(), spec, self._lib)
+        self._ptr.borrow_tensor_by_name(value.unsafe_ptr(), spec, self._lib)
         key._strref_keepalive()
 
     fn borrow(self, key: String, value: Value) raises:
@@ -241,7 +241,9 @@ struct TensorMap(SizedRaising):
             Buffer of the tensor pointed by the key, as a
             [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
         """
-        var tensor_ptr = self._ptr.get_tensor_by_name(key._as_ptr(), self._lib)
+        var tensor_ptr = self._ptr.get_tensor_by_name(
+            key.unsafe_ptr(), self._lib
+        )
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
         return mof_tensor.spec()
 
