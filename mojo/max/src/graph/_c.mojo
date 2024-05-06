@@ -21,7 +21,7 @@ import _mlir
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
+fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     var mof_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.int8]
     ](".graph_lib")
@@ -41,10 +41,10 @@ fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
         DLHandle(mof_lib_path._strref_dangerous(), RTLD.NOW | RTLD.GLOBAL)
     )
     mof_lib_path._strref_keepalive()
-    return ptr.bitcast[NoneType]()
+    return ptr.bitcast[NoneType]().address
 
 
-fn _destroy_dylib(ptr: Pointer[NoneType]):
+fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
     ptr.bitcast[DLHandle]()[].close()
     ptr.free()
 

@@ -47,7 +47,7 @@ struct _InferenceSessionImpl(Movable):
         var config = RuntimeConfig(
             self.engine.lib,
             device,
-            max_context=_get_global_or_null["MaxContext"](),
+            max_context=_get_global_or_null["MaxContext"]().address,
         )
         self.context = RuntimeContext(config^, self.engine.lib)
         self.ref_count = 1
