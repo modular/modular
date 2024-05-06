@@ -258,7 +258,7 @@ struct Trace[level: TraceLevel]:
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBeginDetail", Int
             ](
-                self.name.data(),
+                self.name.unsafe_ptr(),
                 len(self.name),
                 detail_strref.data,
                 detail_strref.length.value,
@@ -270,7 +270,7 @@ struct Trace[level: TraceLevel]:
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBeginTask", Int
             ](
-                self.name.data(),
+                self.name.unsafe_ptr(),
                 len(self.name),
                 self.parent_id,
                 self.int_payload.value(),
@@ -280,7 +280,7 @@ struct Trace[level: TraceLevel]:
             #    a profiler event without copying until explicit intern call.
             self.event_id = external_call[
                 "KGEN_CompilerRT_TimeTraceProfilerBegin", Int
-            ](self.name.data(), len(self.name), self.parent_id)
+            ](self.name.unsafe_ptr(), len(self.name), self.parent_id)
         external_call[
             "KGEN_CompilerRT_TimeTraceProfilerSetCurrentId", NoneType
         ](self.event_id)
