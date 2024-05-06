@@ -553,23 +553,14 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     // Walk over nested functions. Control-flow does not cross them.
     if (isa<FuncInterface>(op))
       return WalkResult::skip();
-    if (!isa<ReturnOp, ParamResultBindOp>(op))
+    if (!isa<ReturnOp>(op))
       return WalkResult::advance();
 
     Operation *cloned = map.lookup(op);
     b.setInsertionPoint(cloned);
-    if (auto bind = dyn_cast<ParamResultBindOp>(cloned)) {
-      for (auto [decl, value] :
-           llvm::zip(call.getParamDecls(), bind.getParameters())) {
-        auto rebound = ParamOperatorAttr::get(b.getContext(), POC::Rebind,
-                                              value, decl.getType());
-        b.create<ParamDeclareOp>(bind.getLoc(), decl, rebound);
-      }
-    } else {
-      ++numReturns;
-      b.create<HLCF::BreakOp>(cloned->getLoc(),
-                              rebindReturnOperands(b, cloned, call), label);
-    }
+    ++numReturns;
+    b.create<HLCF::BreakOp>(cloned->getLoc(),
+                            rebindReturnOperands(b, cloned, call), label);
     cloned->erase();
     return WalkResult::advance();
   });

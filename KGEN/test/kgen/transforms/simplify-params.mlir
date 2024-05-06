@@ -13,7 +13,7 @@ kgen.generator @callee_fn<f: () -> ()>() {
 }
 
 // CHECK-LABEL: kgen.generator @param_prop
-kgen.generator @param_prop<p0, p1 -> p2>() {
+kgen.generator @param_prop<p0, p1>() {
   // CHECK-NOT: declare a0 = <p0>
   kgen.param.declare a0 = <p0>
   // CHECK-NOT: declare a2 = <2>
@@ -62,8 +62,8 @@ kgen.generator @param_prop<p0, p1 -> p2>() {
   // CHECK: :() -> () @unbound_fn<2>
   kgen.call @callee_fn<:() -> () @unbound_fn<a2>>() : () -> ()
 
-  // CHECK: result_bind<2>
-  kgen.param.result_bind<a2>
+  // CHECK: constant = <2>
+  kgen.param.constant = <a2>
   kgen.return
 }
 

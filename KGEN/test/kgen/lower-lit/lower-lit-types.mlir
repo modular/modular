@@ -102,9 +102,8 @@ lit.struct.decl @IndexField {
 }
 
 // CHECK-LABEL: @structExtract
-kgen.generator @structExtract<p: !lit.declref<@IndexField> -> res: index>() {
-  // CHECK: kgen.param.result_bind<#kgen.struct.extract<:struct<(index, index) memoryOnly> p, 1>>
-  kgen.param.result_bind<#lit.struct.extract<:!lit.declref<@IndexField> p, "second">>
+kgen.generator @structExtract<p: !lit.declref<@IndexField>>() {
+  kgen.param.constant = <#lit.struct.extract<:!lit.declref<@IndexField> p, "second">>
   kgen.return
 }
 

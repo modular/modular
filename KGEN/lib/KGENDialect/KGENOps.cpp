@@ -410,27 +410,6 @@ ErrorTreeOrSuccess CostOfOp::interpret(ArrayRef<Attribute> operands,
 }
 
 //===----------------------------------------------------------------------===//
-// ParamResultBind
-//===----------------------------------------------------------------------===//
-
-void ParamResultBindOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  auto scope = (*this)->getParentOfType<DeclInterface>();
-  for (auto [decl, value] : llvm::zip(scope.getResultParams(), getParameters()))
-    walkDef(decl, value);
-}
-
-/// This operation is parametric even if it defines no parameters.
-bool ParamResultBindOp::isImplicitlyParametric() { return true; }
-
-LogicalResult ParamResultBindOp::verify() {
-  auto scope = (*this)->getParentOfType<DeclInterface>();
-  if (!scope)
-    return emitOpError("expected to be nested beneath a declaration scope");
-  return checkResultParameterTypes(*this, getParameters(), scope);
-}
-
-//===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
 

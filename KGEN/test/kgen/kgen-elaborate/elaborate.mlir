@@ -1,16 +1,5 @@
 // RUN: kgen-opt %s -split-input-file -elaborate-generators="enable-search=true allow-multiple-primary-impls=true" -allow-unregistered-dialect | FileCheck %s
 
-// This is left untouched.
-// CHECK-LABEL: kgen.func @test0() -> index {
-// CHECK-NEXT: %[[V0:.*]] = kgen.param.constant = <1>
-// CHECK-NEXT:  kgen.return %[[V0]] : index
-// CHECK-NEXT: }
-kgen.generator @test0<() -> result>() -> index {
-  %0 = kgen.param.constant = <1>
-  kgen.param.result_bind<123456>
-  kgen.return %0 : index
-}
-
 // CHECK-LABEL: kgen.func @parameter_use_chain()
 kgen.generator @parameter_use_chain() {
   // Uses r2 and defines r1
@@ -68,7 +57,7 @@ kgen.generator @trivial_generator(%arg0: si32) -> si32 {
 // CHECK-NEXT:    kgen.return %[[ARG0]] : si32
 // CHECK-NEXT: }
 
-kgen.generator @genA<size, DT: dtype, val: f32 -> result: index>(%arg0: si32) -> si32 {
+kgen.generator @genA<size, DT: dtype, val: f32>(%arg0: si32) -> si32 {
 
   %0 = kgen.param.constant = <add(size, 4)>
   %1 = kgen.param.constant: dtype = <DT>
@@ -77,7 +66,6 @@ kgen.generator @genA<size, DT: dtype, val: f32 -> result: index>(%arg0: si32) ->
   // Silly op so we know when something used this.
   "genA.op"() { value = #kgen.param.decl.ref<"size"> : index} : () -> !pop.scalar<DT>
 
-  kgen.param.result_bind<mul(size, 2)>
   kgen.return %arg0 : si32
 }
 
@@ -101,8 +89,7 @@ kgen.generator @genA<size, DT: dtype, val: f32 -> result: index>(%arg0: si32) ->
 
 // CHECK-LABEL: kgen.func @call_generator_test
 // CHECK-SAME: %[[ARG0:.*]]: si32, %[[ARG1:.*]]: si32
-kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
-   -> (si32, si32, si32, index, index) {
+kgen.generator @call_generator_test(%arg0: si32, %arg1: si32) -> (si32, si32, si32) {
   // Can invoke the generator directly.
   %0 = kgen.call @trivial_generator(%arg0) : (si32) -> si32
   // CHECK-NEXT: %{{.*}} = kgen.call @trivial_generator(%[[ARG0]])
@@ -111,32 +98,16 @@ kgen.generator @call_generator_test(%arg0: si32, %arg1: si32)
   kgen.param.declare our_size = <42>
 
   // Can invoke parameterized generators directly.
-  %1 = kgen.call @genA<our_size, :dtype f32, :f32 2.0 -> resultSizeA>(%arg0) : (si32) -> si32
   // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=42,DT=f32,val=2.00{{.*}}"(%[[ARG0]]) : (si32) -> si32
+  %1 = kgen.call @genA<our_size, :dtype f32, :f32 2.0>(%arg0) : (si32) -> si32
 
-  %2 = kgen.call @genA<19, :dtype si8, :f32 1.5 -> resultSizeB>(%arg1) : (si32) -> si32
   // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=19,DT=si8,val=1.50{{.*}}"(%[[ARG1]]) : (si32) -> si32
+  %2 = kgen.call @genA<19, :dtype si8, :f32 1.5>(%arg1) : (si32) -> si32
 
-  %3 = kgen.call @genA<19, :dtype si8, :f32 1.5 -> resultSizeC>(%arg1) : (si32) -> si32
   // CHECK-NEXT: %{{.*}} = kgen.call @"genA,size=19,DT=si8,val=1.50{{.*}}"(%[[ARG1]]) : (si32) -> si32
+  %3 = kgen.call @genA<19, :dtype si8, :f32 1.5>(%arg1) : (si32) -> si32
 
-
-  %4 = kgen.param.constant = <resultSizeA>
-  // CHECK-NEXT: %{{.*}} = kgen.param.constant = <84>
-
-  %5 = kgen.param.constant = <resultSizeB>
-  // CHECK-NEXT: %{{.*}} = kgen.param.constant = <38>
-
-  %6 = kgen.param.constant = <resultSizeC>
-  // CHECK-NEXT: %{{.*}} = kgen.param.constant = <38>
-
-  %7 = kgen.call @test0<[] -> kernelResult>() : () -> index
-  // CHECK-NEXT: %{{.*}} = kgen.call @test0()
-
-  %8 = kgen.param.constant = <kernelResult>
-  // CHECK-NEXT: %{{.*}} = kgen.param.constant = <123456>
-
-  kgen.return %0, %1, %2, %4, %5 : si32, si32, si32, index, index
+  kgen.return %0, %1, %2 : si32, si32, si32
 }
 
 // CHECK-LABEL: kgen.func @test_variadic_ptr_map
@@ -194,23 +165,11 @@ kgen.generator @test_f32() -> f32 {
 // Test that we can do static assertions on computed parameter expressions (e.g.
 // those that are the result of a sub-generator invocation.
 
-kgen.generator @getSIMDLength<dt: dtype -> length>() {
-  kgen.param.if <eq(:dtype dt, f32) -> dtype_length: index> {
-    kgen.param.result_bind<4>
-    kgen.param.yield
-  } else {
-    kgen.param.result_bind<2>
-    kgen.param.yield
-  }
-  kgen.param.result_bind<dtype_length>
-  kgen.return
-}
 
 // CHECK-LABEL: kgen.func @paramAssertExample()
-// CHECK-NEXT:    kgen.call @"getSIMDLength,dt=f32"()
-// CHECK-NEXT:    kgen.return
+// CHECK-NOT: kgen.param.assert
 kgen.generator @paramAssertExample() {
-  kgen.call @getSIMDLength<:dtype f32 -> flen>() : () -> ()
+  kgen.param.declare flen = <4>
 
   // Should succeed.
   kgen.param.assert <eq(flen, 4)>, "vector length should be 4 for floats"
@@ -460,16 +419,15 @@ kgen.generator @passTypeList() {
   kgen.return
 }
 
-kgen.generator @type_of_unknown<T: type, value: !kgen.paramref<T> -> is_unknown: i1>() {
-  kgen.param.result_bind<:i1 eq(:!kgen.paramref<T> value, *?)>
+// CHECK-LABEL: @"type_of_unknown
+kgen.generator @type_of_unknown<T: type, value: !kgen.paramref<T>>() {
+  // CHECK-NEXT: <0>
+  kgen.param.constant: i1 = <eq(:!kgen.paramref<T> value, *?)>
   kgen.return
 }
 
-// CHECK-LABEL: @check
 kgen.generator @check() {
-  kgen.call @type_of_unknown<:type i32, :i32 1 -> result: i1>() : () -> ()
-  // CHECK: = <0>
-  %0 = kgen.param.constant: i1 = <result>
+  kgen.call @type_of_unknown<:type i32, :i32 1>() : () -> ()
   kgen.return
 }
 
@@ -637,19 +595,15 @@ kgen.generator @constexprIfBasic() {
   kgen.param.declare cond_var = <32>
 
   // CHECK-NEXT: "should.appear"
-  %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
+  %0 = kgen.param.if <lt(cond_var, 10)> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.param.result_bind<next_lt>
     kgen.param.yield %1 : index
   } else {
     %3 = "should.appear"() : () -> index
     kgen.param.declare next_gt = <add(cond_var, 20)>
-    kgen.param.result_bind<next_gt>
     kgen.param.yield %3 : index
   }
-  // CHECK-NEXT: param.constant = <52>
-  %4 = kgen.param.constant = <next>
 
   kgen.return
 }
@@ -660,28 +614,20 @@ kgen.generator @nestedConstexprIf() {
 
   // CHECK-NEXT: "should.appear"
   // CHECK-NOT: "should.not.appear"
-  %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
+  %0 = kgen.param.if <lt(cond_var, 10)> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.param.result_bind<next_lt>
     kgen.param.yield %1 : index
   } else {
-    %3 = kgen.param.if <gt(cond_var, 30) -> next_gt> -> index {
+    %3 = kgen.param.if <gt(cond_var, 30)> -> index {
       %4 = "should.appear"() : () -> index
-      kgen.param.declare next_gt_gt = <add(cond_var, 20)>
-      kgen.param.result_bind<next_gt_gt>
       kgen.param.yield %4 : index
     } else {
       %4 = "should.not.appear"() : () -> index
-      kgen.param.declare next_gt_lt = <add(cond_var, 1)>
-      kgen.param.result_bind<next_gt_lt>
       kgen.param.yield %4 : index
     }
-    kgen.param.result_bind<next_gt>
     kgen.param.yield %3 : index
   }
-  // CHECK-NEXT: param.constant = <52>
-  %4 = kgen.param.constant = <next>
 
   kgen.return
 }
@@ -690,10 +636,9 @@ kgen.generator @nestedConstexprIf() {
 kgen.generator @nestedConstexprIf2() {
   kgen.param.declare cond_var = <32>
 
-  %0 = kgen.param.if <lt(cond_var, 10) -> next> -> index {
+  %0 = kgen.param.if <lt(cond_var, 10)> -> index {
     %1 = "should.not.appear"() : () -> index
     kgen.param.declare next_lt = <add(cond_var, 10)>
-    kgen.param.result_bind<next_lt>
     kgen.param.yield %1 : index
   } else {
     // CHECK-NEXT: param.constant: i1 = <1>
@@ -713,11 +658,8 @@ kgen.generator @nestedConstexprIf2() {
       hlcf.yield %4 : index
     }
     // CHECK-NOT: param.yield
-    kgen.param.result_bind<next_inner>
     kgen.param.yield %3 : index
   }
-  // CHECK: param.constant = <35>
-  %const = kgen.param.constant = <next>
 
   kgen.return
 }
@@ -727,19 +669,15 @@ kgen.generator @nestedConstexprIf2() {
 // CHECK-LABEL: @"constexprIfInputParam,x=11"
 kgen.generator @constexprIfInputParam<x>() {
   // CHECK-NEXT: "should.appear"
-  %0 = kgen.param.if <gt(x, 10) -> next> -> index {
+  %0 = kgen.param.if <gt(x, 10)> -> index {
     %1 = "should.appear"() : () -> index
     kgen.param.declare next_lt = <add(x, 10)>
-    kgen.param.result_bind<next_lt>
     kgen.param.yield %1 : index
   } else {
     %3 = "should.not.appear"() : () -> index
     kgen.param.declare next_gt = <add(x, 20)>
-    kgen.param.result_bind<next_gt>
     kgen.param.yield %3 : index
   }
-  // CHECK-NEXT: param.constant = <21>
-  %4 = kgen.param.constant = <next>
 
   kgen.return
 }
@@ -994,22 +932,18 @@ kgen.generator @produce_one() -> index {
 // CHECK-LABEL:func  @"paramRecurse,in=3"()
 // CHECK-NEXT: call @"paramRecurse,in=2"
 
-kgen.generator @paramRecurse<in -> out>() {
-  kgen.param.if <eq(in, 0) -> v> {
-    kgen.param.result_bind<0>
+kgen.generator @paramRecurse<in>() {
+  kgen.param.if <eq(in, 0)> {
     kgen.param.yield
   } else {
-    kgen.call @paramRecurse<add(in, -1) -> val>() : () -> ()
-    kgen.param.result_bind<val>
+    kgen.call @paramRecurse<add(in, -1)>() : () -> ()
     kgen.param.yield
   }
-  kgen.param.result_bind<v>
   kgen.return
 }
 
 kgen.generator @caller() {
-  kgen.param.constant = <v>
-  kgen.call @paramRecurse<3 -> v>() : () -> ()
+  kgen.call @paramRecurse<3>() : () -> ()
   kgen.return
 }
 
