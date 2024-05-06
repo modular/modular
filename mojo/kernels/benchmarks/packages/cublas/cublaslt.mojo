@@ -25,19 +25,19 @@ alias Context = NoneType
 alias CUDA_CUBLASLT_LIBRARY_PATH = "/usr/local/cuda/lib64/libcublasLt.so"
 
 
-fn _init_dylib(ignored: Pointer[NoneType]) -> Pointer[NoneType]:
+fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     if not Path(CUDA_CUBLASLT_LIBRARY_PATH).exists():
-        return abort[Pointer[NoneType]](
+        return abort[UnsafePointer[NoneType]](
             "the CUDA NVRTC library was not found at "
             + CUDA_CUBLASLT_LIBRARY_PATH
         )
-    var ptr = Pointer[DLHandle].alloc(1)
+    var ptr = UnsafePointer[DLHandle].alloc(1)
     var handle = DLHandle(CUDA_CUBLASLT_LIBRARY_PATH)
     ptr[] = handle
-    return ptr.bitcast[NoneType]()
+    return ptr.bitcast[NoneType]().address
 
 
-fn _destroy_dylib(ptr: Pointer[NoneType]):
+fn _destroy_dylib(ptr: UnsafePointer[NoneType]):
     ptr.bitcast[DLHandle]()[].close()
     ptr.free()
 
