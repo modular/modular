@@ -32,11 +32,11 @@ struct ServerStats(ServerCallbacks):
 
     var options: ServerStatsOptions
 
-    var total_batches: Atomic[DType.int64]
-    var total_requests: Atomic[DType.int64]
-    var total_ok_requests: Atomic[DType.int64]
-    var total_failed_requests: Atomic[DType.int64]
-    var total_request_ns: Atomic[DType.int64]
+    var total_batches: Int
+    var total_requests: Int
+    var total_ok_requests: Int
+    var total_failed_requests: Int
+    var total_request_ns: Int
 
     fn __init__(
         inout self, owned options: ServerStatsOptions = ServerStatsOptions()
@@ -50,11 +50,11 @@ struct ServerStats(ServerCallbacks):
 
     fn __moveinit__(inout self: Self, owned existing: Self):
         self.options = existing.options^
-        self.total_batches = existing.total_batches^
-        self.total_requests = existing.total_requests^
-        self.total_ok_requests = existing.total_ok_requests^
-        self.total_failed_requests = existing.total_failed_requests^
-        self.total_request_ns = existing.total_request_ns^
+        self.total_batches = existing.total_batches
+        self.total_requests = existing.total_requests
+        self.total_ok_requests = existing.total_ok_requests
+        self.total_failed_requests = existing.total_failed_requests
+        self.total_request_ns = existing.total_request_ns
 
     fn on_server_start(inout self):
         pass
@@ -65,7 +65,8 @@ struct ServerStats(ServerCallbacks):
 
     fn on_batch_receive(inout self, batch: Batch):
         alias print_interval = 1024
-        var pos = self.total_batches.fetch_add(1)
+        var pos = self.total_batches
+        self.total_batches += 1
         if self.options.printAtInterval and pos % print_interval == 0:
             print()
             self.print()
@@ -93,9 +94,9 @@ struct ServerStats(ServerCallbacks):
         print(unit, end="")
         print(")")
         print("---------------------")
-        var total_batches = int(self.total_batches.load())
-        var total_requests = int(self.total_requests.load())
-        var total_request_ns = int(self.total_request_ns.load())
+        var total_batches = int(self.total_batches)
+        var total_requests = int(self.total_requests)
+        var total_request_ns = int(self.total_request_ns)
         print("Batch Total:", total_batches)
         print(
             "Batch Occupancy Mean:",
@@ -106,8 +107,8 @@ struct ServerStats(ServerCallbacks):
             total_request_ns / total_batches / divisor,
         )
         print("Request Total:", total_requests)
-        print("Request OK Total:", self.total_ok_requests.load())
-        print("Request Failed Total:", self.total_failed_requests.load())
+        print("Request OK Total:", self.total_ok_requests)
+        print("Request Failed Total:", self.total_failed_requests)
         print(
             "Request Latency Mean:",
             total_request_ns / total_requests / divisor,
