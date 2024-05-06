@@ -151,16 +151,15 @@ struct FunctionHandle(Boolable):
         stream: Optional[Stream] = None,
     ) raises:
         var args_stack = stack_allocation[
-            num_captures + len(VariadicList(Ts)), Pointer[NoneType]
+            num_captures + len(VariadicList(Ts)), UnsafePointer[NoneType]
         ]()
         populate(args_stack.bitcast[NoneType]())
 
         @parameter
         fn unrolled[i: Int]():
             var arg_offset = num_captures + i
-            args_stack[arg_offset] = (
-                args.get_element[i]().get_legacy_pointer().bitcast[NoneType]()
-            )
+            var elt_addr = UnsafePointer.address_of(args.get_element[i]()[])
+            args_stack[arg_offset] = elt_addr.bitcast[NoneType]()
 
         unroll[unrolled, args.__len__()]()
 
@@ -175,7 +174,7 @@ struct FunctionHandle(Boolable):
     @always_inline
     fn __call_impl(
         self,
-        args: Pointer[Pointer[NoneType]],
+        args: Pointer[UnsafePointer[NoneType]],
         *,
         grid_dim: Dim,
         block_dim: Dim,
@@ -196,7 +195,7 @@ struct FunctionHandle(Boolable):
                     UInt32,  # BlockDimX
                     UInt32,  # SharedMemSize
                     _StreamImpl,
-                    Pointer[Pointer[NoneType]],  # Args
+                    Pointer[UnsafePointer[NoneType]],  # Args
                     DTypePointer[DType.invalid],  # Extra
                 ) -> Result,
             ]()(
