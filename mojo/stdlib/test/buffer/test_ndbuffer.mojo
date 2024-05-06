@@ -292,9 +292,9 @@ fn test_print():
     # CHECK{LITERAL}: [[6, 7, 8],
     # CHECK{LITERAL}: [9, 10, 11]]], dtype=index, shape=2x2x3)
     var tensor = Tensor[DType.index](2, 2, 3)
-    iota(tensor.data(), tensor.num_elements())
+    iota(tensor.unsafe_ptr(), tensor.num_elements())
 
-    var buffer = NDBuffer[DType.index, 3, DimList(2, 2, 3)](tensor.data())
+    var buffer = NDBuffer[DType.index, 3, DimList(2, 2, 3)](tensor.unsafe_ptr())
 
     print(str(buffer))
     _ = tensor^
@@ -311,7 +311,7 @@ def test_ndbuffer_tofile():
     with open(TEMP_FILE, "r") as f:
         var str = f.read()
         var buf_read = NDBuffer[DType.float32, 2, DimList(2, 2)](
-            str._as_ptr().bitcast[DType.float32]()
+            str.unsafe_ptr().bitcast[DType.float32]()
         )
         for i in range(2):
             for j in range(2):

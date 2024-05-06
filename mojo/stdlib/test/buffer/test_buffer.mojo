@@ -42,7 +42,7 @@ def test_buffer_tofile():
     with open(TEMP_FILE, "r") as f:
         var str = f.read()
         var buf_read = Buffer[DType.float32, 4](
-            str._as_ptr().bitcast[DType.float32]()
+            str.unsafe_ptr().bitcast[DType.float32]()
         )
         for i in range(4):
             # CHECK: 0.0
