@@ -1400,3 +1400,21 @@ fn infer_address_space[
 
   # CHECK: lit.call {{.*}}@Reference::@"__init__{{.*}}:!AddressSpace {_value: !Int = {4}}>
   var x = Reference(a)
+
+
+# https://linear.app/modularml/issue/MOCO-584/[references]-we-cannot-bind-litref-in-parameter-context
+# [References] We cannot bind !lit.ref in parameter context
+struct ThingWithMethodReferenceSelf:
+    fn method[
+      # FIXME should just use _ here: https://github.com/modularml/modular/issues/38281
+      is_mutable: __mlir_type.i1,
+      lifetime: AnyLifetime[is_mutable].type
+    ](a: Reference[Self, is_mutable, lifetime]._mlir_type):
+      pass
+
+# CHECK-LABEL: lit.func @"testThingWithMethodReferenceSelf
+fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
+    # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
+    # CHECK-SAME: <apply(:!lit.signature<("a": !lit.ref<!ThingWithMethodReferenceSelf, mut #lit.lifetime> borrow) -> !kgen.none> {{.*}}@"method{{[^"]*}}"
+    # CHECK-SAME:       <:i1 1, :lifetime<1> #lit.lifetime>, store_to_mem(a))>
+    alias sizzle = a.method()
