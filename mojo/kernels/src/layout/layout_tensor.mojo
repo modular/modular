@@ -706,6 +706,20 @@ struct LayoutTensor[
         ](self.ptr)
 
     @always_inline
+    fn distance(self, addr: DTypePointer[dtype, address_space]) -> Int:
+        """Returns the distance from the input address."""
+
+        return (int(self.ptr) - int(addr)) // sizeof[dtype]()
+
+    @always_inline
+    fn distance(
+        self, src: LayoutTensor[dtype, _, _, address_space=address_space]
+    ) -> Int:
+        """Returns the distance from the input address."""
+
+        return (int(self.ptr) - int(src.ptr)) // sizeof[dtype]()
+
+    @always_inline
     fn copy_from[
         other_layout: Layout, other_mask: Bool
     ](
