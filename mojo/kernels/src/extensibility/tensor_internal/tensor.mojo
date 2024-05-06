@@ -1319,7 +1319,7 @@ fn _serialize_as_tensor[
     Returns:
       Tensor containing the bytes of object.
     """
-    var self_ptr = object.get_legacy_pointer().bitcast[Int8]()
+    var self_ptr = LegacyPointer.address_of(object[]).bitcast[Int8]()
     alias size = sizeof[type]()
     var bytes = Tensor[DType.int8](size)
     memcpy(bytes.data(), self_ptr, size)
