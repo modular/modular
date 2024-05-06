@@ -436,7 +436,10 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         if self._spec != other._spec:
             return False
 
-        return memcmp(self.data(), other.data(), self.num_elements()) == 0
+        return (
+            memcmp(self.unsafe_ptr(), other.unsafe_ptr(), self.num_elements())
+            == 0
+        )
 
     @always_inline
     fn __ne__(self, other: Self) -> Bool:
@@ -733,7 +736,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         return result
 
     @always_inline
-    fn data(self) -> DTypePointer[type]:
+    fn unsafe_ptr(self) -> DTypePointer[type]:
         """Gets the underlying Data pointer to the Tensor.
 
         Returns:
@@ -816,7 +819,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
             shape.append(self.shape()[i])
 
         _serialize[serialize_fn=serialize, serialize_end_line=False](
-            self.data(), shape
+            self.unsafe_ptr(), shape
         )
 
         return res + ")"
@@ -1266,7 +1269,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
             var ptr = data._as_scalar_pointer().bitcast[UInt32]()
             return __get_address_as_owned_value(ptr.address)
 
-        var major_format_ptr = bytes.data() + len(_SERIALIZATION_HEADER)
+        var major_format_ptr = bytes.unsafe_ptr() + len(_SERIALIZATION_HEADER)
         var major_format = _uint32_from_bytes(major_format_ptr)
         var minor_format_ptr = major_format_ptr + sizeof[UInt32]()
         var minor_format = _uint32_from_bytes(minor_format_ptr)
@@ -1290,7 +1293,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         var tensor = Self(spec)
         if spec.num_elements() == 0:
             return tensor
-        memcpy(tensor.data(), data.bitcast[type](), spec.num_elements())
+        memcpy(tensor.unsafe_ptr(), data.bitcast[type](), spec.num_elements())
         _ = bytes^
         return tensor
 
@@ -1322,7 +1325,7 @@ fn _serialize_as_tensor[
     var self_ptr = LegacyPointer.address_of(object[]).bitcast[Int8]()
     alias size = sizeof[type]()
     var bytes = Tensor[DType.int8](size)
-    memcpy(bytes.data(), self_ptr, size)
+    memcpy(bytes.unsafe_ptr(), self_ptr, size)
     return bytes^
 
 
@@ -1365,8 +1368,8 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     ) -> Int:
         var size = src.num_elements()
         memcpy(
-            dest.data() + offset,
-            src.data(),
+            dest.unsafe_ptr() + offset,
+            src.unsafe_ptr(),
             size,
         )
         return offset + size
@@ -1380,8 +1383,8 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
 
     # TODO: Avoid this copy.
     memcpy(
-        bytes.data() + copied,
-        tensor.data().bitcast[DType.int8](),
+        bytes.unsafe_ptr() + copied,
+        tensor.unsafe_ptr().bitcast[DType.int8](),
         tensor.num_elements() * type.sizeof(),
     )
     copied += tensor.num_elements() * type.sizeof()
