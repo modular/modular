@@ -90,7 +90,7 @@ struct AsyncContext:
 
     @staticmethod
     fn get_chain(ctx: Pointer[AsyncContext]) -> Pointer[Chain]:
-        return Reference(ctx[].chain).get_legacy_pointer()
+        return LegacyPointer.address_of(ctx[].chain)
 
     @staticmethod
     fn complete(hdl: Pointer[NoneType], ch: Chain):
