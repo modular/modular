@@ -18,6 +18,7 @@
 namespace M::KGEN::LIT {
 class CallOperands;
 class LITSignatureType;
+struct TypeCheckScopeInfo;
 
 /// This struct indicates whether a signature can be successfully applied to a
 /// parameter binding and argument list. If so, it keeps track of several
@@ -112,7 +113,7 @@ private:
       ASTExprAnd<AnyValue> operand, ArgConvention expectedConvention,
       ASTType expectedType, size_t &numImplicitConversions,
       size_t &numMismatchedConventions, bool allowImplicitConversions,
-      SMLoc loc, ASTDecl &declScope, SharedState &shared);
+      SMLoc loc, const TypeCheckScopeInfo &scopeInfo);
 };
 
 } // namespace M::KGEN::LIT
