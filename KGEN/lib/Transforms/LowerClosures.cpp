@@ -119,9 +119,9 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
 
 /// Lower an async execute by making it isolated from above and hoisting it into
 /// a function. The conversion is done post-order, so there should be no nested
-/// `lit.async.execute` operations nested beneath this one when the function
+/// `co.execute` operations nested beneath this one when the function
 /// gets called.
-static void lowerAsyncExecute(FuncOp parent, LIT::AsyncExecuteOp op,
+static void lowerAsyncExecute(FuncOp parent, CO::ExecuteOp op,
                               Shared<SymbolTable &> &sharedTable,
                               size_t &nameCounter,
                               mlir::DominanceInfo &domInfo) {
@@ -315,7 +315,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
       call.replaceAllUsesWith(newCall);
       call.erase();
 
-    } else if (auto exec = dyn_cast<LIT::AsyncExecuteOp>(op)) {
+    } else if (auto exec = dyn_cast<CO::ExecuteOp>(op)) {
       lowerAsyncExecute(func, exec, sharedTable, closureNameCounter, domInfo);
     } else if (auto closure = dyn_cast<StageClosureOp>(op)) {
       lowerStageClosure(func, closure, sharedTable, closureNameCounter,
@@ -327,7 +327,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
     return failure();
 
   // If the surrounding function is an async function, go rewrite all the return
-  // sites now. Do this after nested `lit.async.execute` ops are lifted to not
+  // sites now. Do this after nested `co.execute` ops are lifted to not
   // clobber their returns.
   if (isAsyncFn) {
     func.getBodyRegion().walk([&](ReturnOp ret) {

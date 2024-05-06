@@ -56,12 +56,12 @@ kgen.func @async_execute(%arg0: index) {
   // CHECK-NEXT: kgen.call @async_execute_async_closure_0(%arg0)
   // CHECK-NEXT: kgen.call @async_execute_async_closure_2(%arg0, %0)
   %arg1 = index.add %arg0, %arg0
-  %0 = lit.async.execute : index {
+  %0 = co.execute : index {
     kgen.return %arg0 : index
   }
-  %1 = lit.async.execute  {
+  %1 = co.execute  {
     %idx1 = index.constant 1
-    %2 = lit.async.execute : index {
+    %2 = co.execute : index {
       %3 = index.add %idx1, %arg0
       %4 = index.add %3, %arg1
       kgen.return %4 : index
@@ -140,7 +140,7 @@ kgen.func @create_closure() {
 
 // CHECK-LABEL: kgen.func @async_closure_in_async
 kgen.func @async_closure_in_async(%arg1: index) async {
-  %0 = lit.async.execute : index {
+  %0 = co.execute : index {
     %idx = index.constant 5
     kgen.return %idx : index
   }

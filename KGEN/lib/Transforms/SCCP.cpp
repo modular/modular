@@ -4,12 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/Analysis/CFG.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "mlir/Analysis/DataFlow/ConstantPropagationAnalysis.h"
@@ -525,7 +525,7 @@ LogicalResult SCCPAnalysis::processRegion(Region &region,
       break;
     }
 
-    if (isa<KGEN::StageClosureOp, LIT::AsyncExecuteOp>(op)) {
+    if (isa<KGEN::StageClosureOp, CO::ExecuteOp>(op)) {
       //  TODO: Skip inter-procedural analysis for now. Mark anyone of its
       //  result as Unknown.
       for (Value result : op.getResults())

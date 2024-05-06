@@ -175,7 +175,7 @@ def LowerClosures : Pass<"lower-closures", "mlir::ModuleOp"> {
   let description = [{
     The `lower-closures` pass transforms `async` functions into normal
     `kgen.func` by adding the required POP-level coroutine machinery, and it
-    lowers inline closure operations like `lit.async.execute` and
+    lowers inline closure operations like `co.execute` and
     `kgen.stage_closure` by lifting their regions into top-level functions.
   }];
 

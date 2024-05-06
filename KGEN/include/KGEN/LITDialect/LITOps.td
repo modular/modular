@@ -944,42 +944,6 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
 }
 
 //===----------------------------------------------------------------------===//
-// AsyncExecuteOp
-//===----------------------------------------------------------------------===//
-
-// TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
-def Builtin_LocationAttr : Builtin_Attr<"Location", "location", []> {}
-
-def LIT_AsyncExecuteOp : LITOp<"async.execute", [SingleBlock,
-    DeclareOpInterfaceMethods<FunctionLike>,
-    DebugInfo_InlinedSubprogramScoped]> {
-  let summary = "Execute an async region.";
-  let description = [{
-    The `lit.async.execute` operation asynchronously executes a region and
-    returns a coroutine handle to the region. This operation can represent
-    an inlined post-elaboration async function.
-
-    Example:
-
-    ```mlir
-    %0 = kgen.param.constant: i32 = <3>
-    %coroHdl = lit.async.execute : i32, i64 {
-      %1 = kgen.param.constant: i64 = <5>
-      kgen.return %0, %1 : i32, i64
-    }
-    ```
-  }];
-
-  let arguments = (ins M_TypeArrayAttr:$types);
-  let results = (outs Res<CoroutineType, "", [MemAlloc]>:$coroutine);
-  let regions = (region SizedRegion<1>:$bodyRegion);
-
-  let assemblyFormat = [{
-    custom<CoroutineTypes>($types) $bodyRegion attr-dict
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // EndFuncOp
 //===----------------------------------------------------------------------===//
 
@@ -1256,6 +1220,9 @@ def LIT_ContinueOp : LITOp<"continue"> {
 //===----------------------------------------------------------------------===//
 // UnresolvedImportOp
 //===----------------------------------------------------------------------===//
+
+// TODO(LLVM Issue #59877): Why isn't this in BuiltinAttributes.td?
+def Builtin_LocationAttr : Builtin_Attr<"Location", "location", []> {}
 
 def LIT_UnresolvedImportOp : LITOp<"unresolved_import"> {
   let summary = "Lexical unresolved import.";

@@ -34,7 +34,7 @@ kgen.func @foo() {
   %array = kgen.param.constant: array<0, i1> = <[]> loc(#loc6)
 
   // CHECK-NEXT: kgen.call @foo_async_closure_0() : () -> !co.routine loc(#[[LOC_CALLSITE]])
-  %0 = lit.async.execute : !pop.array<0, i1> {
+  %0 = co.execute : !pop.array<0, i1> {
     %array_1 = kgen.param.constant: array<1, i1> = <[1]> loc(#loc7)
     kgen.return %array : !pop.array<0, i1> loc(#loc7)
   } {inliner_debuginfo_update = 1 : i8} loc(#loc9)
