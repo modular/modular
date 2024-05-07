@@ -361,12 +361,6 @@ enum class GeneratorOrFuncKind { func, generator };
 ParseResult parseSymbolExport(AsmParser &p, ExportKindAttr &exportKind);
 void printSymbolExport(AsmPrinter &p, Operation *op, ExportKindAttr exportKind);
 
-/// Parse the MLIR syntax for a kgen.generator, kgen.func and related
-/// operators.
-ParseResult parseGeneratorOrFunc(OpAsmParser &parser, OperationState &result,
-                                 GeneratorOrFuncKind opKind);
-void printGeneratorOrFunc(OpAsmPrinter &p, FuncInterface op);
-
 /// Check that the specified declaration signatures match, checking the
 /// parameter and value type information.
 LogicalResult verifyDeclSignaturesMatch(StringRef originatorName,
