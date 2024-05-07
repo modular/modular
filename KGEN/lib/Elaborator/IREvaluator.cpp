@@ -137,9 +137,6 @@ FailureOr<TypedAttr> IREvaluator::evaluateExpression(ParamOperatorAttr op) {
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
   SmallVector<TypedAttr> operands = llvm::to_vector(op.getOperands());
-  if (!llvm::all_of(operands, ParameterAttr::isSimpleConstant))
-    return failure();
-
   for (TypedAttr &operand : operands) {
     ErrorTreeOr<TypedAttr> result =
         elaborator->concretizeSymbolsWithin(operand, parent, *errorLoc);
