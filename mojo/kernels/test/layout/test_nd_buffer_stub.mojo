@@ -8,8 +8,13 @@
 from buffer import NDBuffer
 from buffer.list import DimList
 
-from layout import LayoutTensor, Layout
-from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
+from layout import LayoutTensor, Layout, IntTuple
+from layout.layout import LayoutList
+from layout.nd_buffer_stub import (
+    copy_from_nd_buffer,
+    copy_to_nd_buffer,
+    distribute,
+)
 
 
 fn linspace_fill[
@@ -224,8 +229,135 @@ fn test_copy_to_nd_buffer_vectors():
     print_buff(buff)
 
 
+# CHECK-LABEL: test_distribute
+fn test_distribute():
+    print("== test_distribute")
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 4)].stack_allocation()
+    linspace_fill(buff)
+
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 0.0 2.0
+    # CHECK: 8.0 10.0
+    # CHECK: 16.0 18.0
+    # CHECK: 24.0 26.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 1.0 3.0
+    # CHECK: 9.0 11.0
+    # CHECK: 17.0 19.0
+    # CHECK: 25.0 27.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 4.0 6.0
+    # CHECK: 12.0 14.0
+    # CHECK: 20.0 22.0
+    # CHECK: 28.0 30.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 5.0 7.0
+    # CHECK: 13.0 15.0
+    # CHECK: 21.0 23.0
+    # CHECK: 29.0 31.0
+
+    for th_i in range(4):
+        print("----fragments-data[", th_i, "]----")
+        var buff_th_local = distribute[thread_layout = Layout.row_major(2, 2)](
+            buff, th_i
+        )
+        print_buff(buff_th_local)
+
+
+# CHECK-LABEL: test_tile_and_distribute
+fn test_tile_and_distribute():
+    print("== test_tile_and_distribute")
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    linspace_fill(buff)
+
+    # CHECK: ----tile-data[ 0 , 0 ]----
+    # CHECK: 0.0 1.0 2.0 3.0
+    # CHECK: 8.0 9.0 10.0 11.0
+    # CHECK: 16.0 17.0 18.0 19.0
+    # CHECK: 24.0 25.0 26.0 27.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 0.0 2.0
+    # CHECK: 16.0 18.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 1.0 3.0
+    # CHECK: 17.0 19.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 8.0 10.0
+    # CHECK: 24.0 26.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 9.0 11.0
+    # CHECK: 25.0 27.0
+    # CHECK: ----tile-data[ 0 , 1 ]----
+    # CHECK: 4.0 5.0 6.0 7.0
+    # CHECK: 12.0 13.0 14.0 15.0
+    # CHECK: 20.0 21.0 22.0 23.0
+    # CHECK: 28.0 29.0 30.0 31.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 4.0 6.0
+    # CHECK: 20.0 22.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 5.0 7.0
+    # CHECK: 21.0 23.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 12.0 14.0
+    # CHECK: 28.0 30.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 13.0 15.0
+    # CHECK: 29.0 31.0
+    # CHECK: ----tile-data[ 1 , 0 ]----
+    # CHECK: 32.0 33.0 34.0 35.0
+    # CHECK: 40.0 41.0 42.0 43.0
+    # CHECK: 48.0 49.0 50.0 51.0
+    # CHECK: 56.0 57.0 58.0 59.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 32.0 34.0
+    # CHECK: 48.0 50.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 33.0 35.0
+    # CHECK: 49.0 51.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 40.0 42.0
+    # CHECK: 56.0 58.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 41.0 43.0
+    # CHECK: 57.0 59.0
+    # CHECK: ----tile-data[ 1 , 1 ]----
+    # CHECK: 36.0 37.0 38.0 39.0
+    # CHECK: 44.0 45.0 46.0 47.0
+    # CHECK: 52.0 53.0 54.0 55.0
+    # CHECK: 60.0 61.0 62.0 63.0
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: 36.0 38.0
+    # CHECK: 52.0 54.0
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: 37.0 39.0
+    # CHECK: 53.0 55.0
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: 44.0 46.0
+    # CHECK: 60.0 62.0
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: 45.0 47.0
+    # CHECK: 61.0 63.0
+    for tile_i in range(2):
+        for tile_j in range(2):
+            var tile_4x4 = buff.tile[4, 4]((tile_i, tile_j))
+            print("----tile-data[", tile_i, ",", tile_j, "]----")
+            print_buff(tile_4x4)
+            for th_i in range(4):
+                var fragment_2x2 = distribute[
+                    thread_layout = Layout.row_major(2, 2)
+                ](
+                    tile_4x4,
+                    th_i,
+                )
+                print("----fragments-data[", th_i, "]----")
+                print_buff(fragment_2x2)
+
+
 fn main():
     test_copy_from_nd_buffer_scalars()
     test_copy_to_nd_buffer_scalars()
     test_copy_from_nd_buffer_vectors()
     test_copy_to_nd_buffer_vectors()
+    test_distribute()
+    test_tile_and_distribute()

@@ -5,12 +5,85 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import LayoutTensor, Layout
-from layout.int_tuple import to_int, flatten
+from layout.int_tuple import to_int, flatten, depth
 
 from buffer import NDBuffer
-from buffer.list import (
-    DimList,
-)
+from buffer.list import DimList, Dim
+
+
+# Returns the shape of distribute `thread_layout` into `shape`.
+#
+fn __distribute_shape[thread_layout: Layout](shape: DimList) -> DimList:
+    constrained[
+        thread_layout.rank() <= 3,
+        "__distribute_shape requires thread_layout <= 3",
+    ]()
+
+    var res = StaticTuple[Dim][thread_layout.rank()]()
+
+    @parameter
+    fn _get_dim[i: Int]():
+        if shape.at[i]().is_dynamic():
+            res[i] = Dim()
+        else:
+            res[i] = shape.at[i]() // to_int(thread_layout.shape[i])
+
+    unroll[_get_dim, thread_layout.rank()]()
+
+    if thread_layout.rank() == 1:
+        return DimList(res[0])
+    elif thread_layout.rank() == 2:
+        return DimList(res[0], res[1])
+    elif thread_layout.rank() == 3:
+        return DimList(res[0], res[1], res[2])
+    return DimList()
+
+
+# Distribute thread_layout and returns the fragments of `thread_id`.
+#
+@always_inline("nodebug")
+fn distribute[
+    dtype: DType,
+    rank: Int,
+    shape: DimList,
+    thread_layout: Layout,
+    _result_shape: DimList = __distribute_shape[thread_layout](shape),
+](buff: NDBuffer[dtype, rank, shape], thread_id: Int) -> NDBuffer[
+    dtype, rank, _result_shape
+]:
+    constrained[
+        depth(thread_layout.shape) == 1,
+        "distribute threads to NDBuffer only supports depth-1 thread layouts",
+    ]()
+
+    var res_strides = StaticIntTuple[rank]()
+    var res_shape = StaticIntTuple[rank]()
+
+    @parameter
+    fn _fill_shape_and_stride[i: Int]():
+        alias thread_shape_i = to_int(thread_layout.shape[i])
+        res_shape[i] = buff.dynamic_shape[i] // thread_shape_i
+        res_strides[i] = buff.dynamic_stride[i] * thread_shape_i
+
+    unroll[_fill_shape_and_stride, rank]()
+
+    var thread_offset = 0
+
+    @parameter
+    fn _compute_offset[i: Int]():
+        alias shape_i = to_int(thread_layout.shape[i])
+        alias stride_i = to_int(thread_layout.stride[i])
+        var thread_coords_i = (thread_id // stride_i) % shape_i
+        thread_offset += thread_coords_i * buff.dynamic_stride[i]
+
+    unroll[_compute_offset, rank]()
+
+    var res = NDBuffer[dtype, rank, _result_shape](
+        buff.data.offset(thread_offset),
+        dynamic_shape=res_shape,
+        dynamic_stride=res_strides,
+    )
+    return res
 
 
 # Copies an nd-buffer fragment to `thread_id` thread local LayoutTensor element
