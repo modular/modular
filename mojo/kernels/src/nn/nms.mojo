@@ -9,7 +9,6 @@ from math import iota
 
 from algorithm.sort import _quicksort
 from buffer import NDBuffer
-from tensor import Tensor, TensorShape
 
 from utils.index import Index
 
@@ -64,43 +63,6 @@ fn _get_bounding_box[
     var y2 = boxes[batch_size, box_idx, 2]
     var x2 = boxes[batch_size, box_idx, 3]
     return BoundingBox(y1, x1, y2, x2)
-
-
-fn non_max_suppression[
-    type: DType
-](
-    boxes: NDBuffer[type, 3],
-    scores: NDBuffer[type, 3],
-    max_output_boxes_per_class: Int,
-    iou_threshold: Float32,
-    score_threshold: Float32,
-) -> Tensor[DType.int64]:
-    """Value semantic overload. Graph compiler does not support this yet."""
-    var output_predictions = List[Int64]()
-
-    @parameter
-    @always_inline
-    fn store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
-        output_predictions.append(batch_idx)
-        output_predictions.append(class_idx)
-        output_predictions.append(box_idx)
-
-    non_max_suppression[type, store_to_outputs](
-        boxes,
-        scores,
-        max_output_boxes_per_class,
-        iou_threshold,
-        score_threshold,
-    )
-
-    # note that the output tensor takes ownership of output_predictions.data
-    # output_predictions.data may be larger than the actual tensor size indicated
-    # by the shape, but that is OK since the tensor.__del__() frees the pointer
-    var output_shape = TensorShape(len(output_predictions) // 3, 3)
-    return Tensor[DType.int64](
-        output_shape,
-        rebind[DTypePointer[DType.int64]](output_predictions.steal_data()),
-    )
 
 
 fn non_max_suppression[

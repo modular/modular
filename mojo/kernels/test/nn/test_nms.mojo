@@ -8,7 +8,7 @@
 from collections import List
 
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
-from tensor import Tensor, TensorShape
+from buffer import NDBuffer
 
 from utils.index import Index
 
@@ -31,12 +31,16 @@ struct BoxCoords[type: DType]:
 
 fn fill_boxes[
     type: DType
-](batch_size: Int, box_list: VariadicList[BoxCoords[type]]) -> Tensor[type]:
+](batch_size: Int, box_list: VariadicList[BoxCoords[type]]) -> NDBuffer[
+    type, 3
+]:
     var num_boxes = len(box_list) // batch_size
-    var boxes = Tensor[type](batch_size, num_boxes, 4)
+    var shape = StaticIntTuple[3](batch_size, num_boxes, 4)
+    var storage = DTypePointer[type].alloc(shape.flattened_length())
+    var boxes = NDBuffer[type, 3](storage, shape)
     for i in range(len(box_list)):
-        var coords = linear_offset_to_coords[2](
-            i, TensorShape(batch_size, num_boxes)
+        var coords = linear_offset_to_coords(
+            i, StaticIntTuple[2](batch_size, num_boxes)
         )
         boxes[Index(coords[0], coords[1], 0)] = box_list[i].y1
         boxes[Index(coords[0], coords[1], 1)] = box_list[i].x1
@@ -48,7 +52,7 @@ fn fill_boxes[
 
 fn linear_offset_to_coords[
     rank: Int
-](idx: Int, shape: TensorShape) -> StaticIntTuple[rank]:
+](idx: Int, shape: StaticIntTuple[rank]) -> StaticIntTuple[rank]:
     var output = StaticIntTuple[rank](0)
     var curr_idx = idx
     for i in reversed(range(rank)):
@@ -62,13 +66,14 @@ fn fill_scores[
     type: DType
 ](
     batch_size: Int, num_classes: Int, scores_list: VariadicList[Scalar[type]]
-) -> Tensor[type]:
+) -> NDBuffer[type, 3]:
     var num_boxes = len(scores_list) // batch_size // num_classes
 
-    var shape = TensorShape(batch_size, num_classes, num_boxes)
-    var scores = Tensor[type](shape)
+    var shape = StaticIntTuple[3](batch_size, num_classes, num_boxes)
+    var storage = DTypePointer[type].alloc(shape.flattened_length())
+    var scores = NDBuffer[type, 3](storage, shape)
     for i in range(len(scores_list)):
-        var coords = linear_offset_to_coords[3](i, shape)
+        var coords = linear_offset_to_coords(i, shape)
         scores[coords] = scores_list[i]
 
     return scores
@@ -90,25 +95,25 @@ fn test_case[
     var scores = fill_scores[type](batch_size, num_classes, scores_list)
 
     var shape = non_max_suppression_shape_func(
-        boxes._to_ndbuffer[3](),
-        scores._to_ndbuffer[3](),
+        boxes,
+        scores,
         max_output_boxes_per_class,
         iou_threshold,
         score_threshold,
     )
-    var selected_idxs = Tensor[DType.int64](shape[0], shape[1])
+    var idxs_shape = StaticIntTuple[2](shape[0], shape[1])
+    var idxs_storage = DTypePointer[DType.int64].alloc(
+        idxs_shape.flattened_length()
+    )
+    var selected_idxs = NDBuffer[DType.int64, 2](idxs_storage, idxs_shape)
     non_max_suppression(
-        boxes._to_ndbuffer[3](),
-        scores._to_ndbuffer[3](),
-        selected_idxs._to_ndbuffer[2](),
+        boxes,
+        scores,
+        selected_idxs,
         max_output_boxes_per_class,
         iou_threshold,
         score_threshold,
     )
-
-    # FIXME: missing lifetimes support, needed so that these tensors don't get destroyed
-    _ = boxes
-    _ = scores
 
     for i in range(selected_idxs.dim(0)):
         print(selected_idxs[i, 0], end="")
@@ -118,6 +123,10 @@ fn test_case[
         print(selected_idxs[i, 2], end="")
         print(",", end="")
         print("")
+
+    boxes.data.free()
+    scores.data.free()
+    selected_idxs.data.free()
 
 
 fn main():
