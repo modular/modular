@@ -158,7 +158,7 @@ struct FunctionHandle(Boolable):
         @parameter
         fn unrolled[i: Int]():
             var arg_offset = num_captures + i
-            var elt_addr = UnsafePointer.address_of(args.get_element[i]()[])
+            var elt_addr = UnsafePointer.address_of(args[i])
             args_stack[arg_offset] = elt_addr.bitcast[NoneType]()
 
         unroll[unrolled, args.__len__()]()
