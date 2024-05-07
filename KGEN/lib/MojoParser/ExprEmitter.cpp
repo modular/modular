@@ -218,9 +218,8 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     if (existingValueType) {
       if (ASTType nmTarget = ASTType(existingValueType)
                                  .getNonmaterializableTarget(emitter.shared))
-        dest = ValueDest(LValueInitializerType{nmTarget}, context);
-      else
-        dest = ValueDest(LValueInitializerType{existingValueType}, context);
+        existingValueType = nmTarget;
+      dest = ValueDest(LValueInitializerType{existingValueType}, context);
     }
 
     /// Emit the target as an LValue to understand what we're assigning into. If
@@ -1248,14 +1247,13 @@ PValue ExprEmitter::emitMetaTypeToTraitConversion(ASTExprAnd<CValue> value,
 /// be further specialized.
 static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
                                   ExprEmitter &emitter) {
-  Type valueType;
   // Only CValues can be specialized. OverloadSetUValues don't have a type.
-  if (auto cValue = value.getIfCValue())
-    valueType = cValue.getType();
-  else
+  auto cValue = value.getIfCValue();
+  if (!cValue)
     return value;
 
   ParserParamEvaluator evaluator(emitter.getDeclResolver());
+  Type valueType = cValue.getType();
   Type refinedType = evaluator.refineType(valueType);
   if (refinedType == valueType)
     return value;
@@ -1328,23 +1326,6 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
         value = rebindValue({value, expr}, requiredType);
         assert(value.isMValue() && "mvalues should rebind to mvalues");
         return emitResult(SRValue(value.getMValueReference()), expr, dest);
-      }
-
-      // If this is a conversion to the non-materializable target of a type,
-      // emit the conversion in the parameter domain.
-      if (rvalueType.getNonmaterializableTarget(shared).isEqualCanon(
-              requiredType) &&
-          cValue.getIfPValue()) {
-        CValue converted;
-        {
-          llvm::SaveAndRestore savedBuilder(builder, {});
-          llvm::SaveAndRestore savedContext(paramContext, dest.getContext());
-          ValueDest ctorDest = ValueDest(dest.getContext());
-          converted =
-              emitConstructorCall(requiredType, CallOperands({{cValue, expr}}),
-                                  expr, CallSyntax::kImplicitConvert, ctorDest);
-        }
-        return emitResult(converted, expr, dest);
       }
 
       // Emit metatype conversions to trait types if the metatype implements the
@@ -1606,6 +1587,7 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       value = {nmConversionVal, value.expr};
     }
   }
+
   if (!value.ir.getRValueType())
     return {};
 

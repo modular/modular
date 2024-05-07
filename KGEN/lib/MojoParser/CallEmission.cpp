@@ -1373,31 +1373,6 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 
   ASTType type = selfVal.getRValueType();
 
-  PValue callee = {};
-  if (ASTType nmTarget = type.getNonmaterializableTarget(shared)) {
-    // If the type doesn't have the specified method, but it's
-    // nonmaterializable, give it a second chance with the materialized type.
-    // If the type doesn't have the specified method, emit an error.
-    callee = OverloadSet::lookup(getScopeInfo(), type, methodName, operands,
-                                 callNode, syntax);
-    if (!callee) {
-      ValueDest selfDest(EC_CallArgValue);
-      CValue convertedSelf = emitConstructorCall(
-          nmTarget, CallOperands({{selfVal, posOperands[0].expr}}), callNode,
-          CallSyntax::kImplicitConvert, selfDest,
-          /*allowImplicitConversion=*/true);
-      if (!convertedSelf) {
-        dest.resetForError();
-        return {};
-      }
-      updatedPosOperands.clear();
-      updatedPosOperands.append(posOperands.begin(), posOperands.end());
-      updatedPosOperands[0].ir = convertedSelf;
-      posOperands = updatedPosOperands;
-      type = nmTarget;
-    }
-  }
-
   auto emitNoMethodError = [&]() {
     auto diag = emitError(callNode->getLoc(), "")
                 << type << " does not implement the '" << methodName
@@ -1418,9 +1393,9 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
   };
 
   // If the type doesn't have the specified method, emit an error.
-  if (!callee)
-    callee = OverloadSet::lookup(getScopeInfo(), type, methodName, operands,
-                                 callNode, syntax, emitNoMethodError, true);
+  PValue callee =
+      OverloadSet::lookup(getScopeInfo(), type, methodName, operands, callNode,
+                          syntax, emitNoMethodError, true);
   if (!callee) {
     dest.resetForError();
     return {};
@@ -1494,13 +1469,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   if (hasInitSelfArg) {
     posOperandsWithSelf.reserve(posOperands.size() + 1);
 
-    // Unfortunately, we can't just use 'type' or the dest LValue as the
-    // buffer to initialize, because the concrete result type might need
-    // parameters to be inferred, and those may depend on other value
-    // arguments.  Handle this by setting up a placeholder with the type
-    // we know so far, and use that to filter the overload set.
-    auto inferType = type.getWithUnknownParametersReplaced(shared);
-    auto attr = UnknownAttr::get(RefType::getImmortal(inferType, true));
+    auto attr = UnknownAttr::get(RefType::getImmortal(type, true));
     posOperandsWithSelf.push_back({PValue(attr), expr});
     posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
     operands.posOperands = posOperandsWithSelf;
