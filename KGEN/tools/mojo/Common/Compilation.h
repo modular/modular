@@ -67,7 +67,8 @@ ErrorOrSuccess parseTargetOptions(
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
-    LLCL::Runtime &runtime, llvm::opt::OptSpecifier docWarnMissingId,
+    LLCL::Runtime &runtime, llvm::opt::OptSpecifier docDiagnoseMissingId,
+    llvm::opt::OptSpecifier docErrorOnInvalidDocId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
                                        mlir::TimingScope &)>

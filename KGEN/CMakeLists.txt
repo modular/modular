@@ -575,14 +575,14 @@ function(add_mojo_package_doc target visibility package_dir output_directory)
     add_dependencies(modular-internal-doc ${target})
   endif()
 
-  # Invoke `mojo --warn-missing-doc-strings` on the given file and pipe any
+  # Invoke `mojo --diagnose-missing-doc-strings` on the given file and pipe any
   # stderr warnings to a file.
   set(DOC_VALIDATE_WARNINGS_FILE ${GEN_DOC_JSON_FILE}.warnings.txt)
   add_custom_command(
     OUTPUT "${DOC_VALIDATE_WARNINGS_FILE}"
 
     COMMAND ${CMAKE_COMMAND} -E remove ${DOC_VALIDATE_WARNINGS_FILE}
-    COMMAND $<TARGET_FILE:mojo> doc -warn-missing-doc-strings -o /dev/null
+    COMMAND $<TARGET_FILE:mojo> doc -diagnose-missing-doc-strings -o /dev/null
       ${KGEN_INCLUDE_FLAGS} ${package_dir} > "${DOC_VALIDATE_WARNINGS_FILE}" 2>&1
 
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
@@ -594,7 +594,7 @@ function(add_mojo_package_doc target visibility package_dir output_directory)
   set(failure_message
       "warnings were output when was run on '${package_name}'")
   add_custom_target("${target}-validate"
-    COMMENT "Checking `mojo doc -warn-missing-doc-strings '${package_dir}'`..."
+    COMMENT "Checking `mojo doc -diagnose-missing-doc-strings '${package_dir}'`..."
     COMMAND "${Python3_EXECUTABLE}"
       "${MODULAR_SOURCE_DIR}/KGEN/utils/check-file-is-empty.py"
       "${DOC_VALIDATE_WARNINGS_FILE}"

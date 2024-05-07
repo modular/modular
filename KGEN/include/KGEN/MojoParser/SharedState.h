@@ -106,8 +106,11 @@ public:
   llvm::SourceMgr &getSourceMgr() const { return diags.sourceMgr; }
   MLIRContext *getContext() const { return diags.context; }
 
-  /// Returns if we should emitting warnings for missing doc strings.
-  bool shouldWarnMissingDocStrings() const;
+  /// Returns if we should diagnose missing doc strings.
+  bool shouldDiagnoseMissingDocStrings() const;
+
+  /// Returns if we should emit errors for invalid doc strings.
+  bool shouldErrorOnInvalidDocStrings() const;
 
   /// Initialize the shared state for the given top-level decl.
   void initialize(ASTDecl &topLevelDecl);

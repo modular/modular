@@ -56,10 +56,9 @@ int main(int argc, char *argv[]) {
       cl::desc("Use prebuilt packages when parsing the input Mojo file."),
       cl::init(false)};
 
-  M::cl::MOpt<bool> warnMissingDocStrings{
-      "mojo-warn-missing-doc-strings",
-      cl::desc("Emit warnings for partial or missing doc strings."),
-      cl::init(false)};
+  M::cl::MOpt<bool> diagnoseMissingDocStrings{
+      "mojo-diagnose-missing-doc-strings",
+      cl::desc("Diagnose partial or missing doc strings."), cl::init(false)};
 
   M::cl::MOpt<unsigned> maxNotesPerDiagnostic{
       "max-notes-per-diagnostic",
@@ -101,7 +100,7 @@ int main(int argc, char *argv[]) {
         options.searchPaths = parserSearchPaths.getValue();
         LIT::ParserConfig config(context, options);
         config.useMLIRDiagnostics = useMLIRDiagnostics;
-        config.warnMissingDocStrings = warnMissingDocStrings;
+        config.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
         config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
         config.disablePrebuiltPackages = !enablePrebuiltPackages;
         config.useBuiltinModule = !disableBuiltinModule;

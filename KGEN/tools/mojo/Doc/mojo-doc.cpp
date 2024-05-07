@@ -104,8 +104,10 @@ static int doc(const State &state) {
 
   CompilationOptions compilationOptions;
   LIT::ParserConfig parserConfig(&context, compilationOptions);
-  parserConfig.warnMissingDocStrings =
-      args.hasArg(options::OPT_warn_missing_dog_strings);
+  parserConfig.diagnoseMissingDocStrings =
+      args.hasArg(options::OPT_diagnose_missing_doc_strings);
+  parserConfig.errorOnInvalidDocStrings =
+      args.hasArg(options::OPT_validate_doc_strings);
 
   // We also don't allow users to configure the time profiler.
   mlir::DefaultTimingManager timingManager;
@@ -120,7 +122,7 @@ static int doc(const State &state) {
 
   MojoParserContext parserContext(sourceManager, parserConfig);
   MojoASTDeclRef moduleDecl = parserContext.parseFileOrPackage(*pathOrErr);
-  if (!moduleDecl)
+  if (!moduleDecl || parserContext.wasErrorEmitted())
     return state.reportError("could not generate documentation");
 
   std::unique_ptr<DeclView> declView = moduleDecl.getView();

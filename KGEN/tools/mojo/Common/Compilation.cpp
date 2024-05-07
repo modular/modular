@@ -170,7 +170,8 @@ ErrorOrSuccess M::parseTargetOptions(
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
-    LLCL::Runtime &runtime, llvm::opt::OptSpecifier docWarnMissingId,
+    LLCL::Runtime &runtime, llvm::opt::OptSpecifier docDiagnoseMissingId,
+    llvm::opt::OptSpecifier docErrorOnInvalidDocId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
         parseFn) {
@@ -184,7 +185,8 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
 
   // Parse the input Mojo file into an MLIR module.
   ParserConfig parseConfig(ctx, compilationOptions);
-  parseConfig.warnMissingDocStrings = args.hasArg(docWarnMissingId);
+  parseConfig.diagnoseMissingDocStrings = args.hasArg(docDiagnoseMissingId);
+  parseConfig.errorOnInvalidDocStrings = args.hasArg(docErrorOnInvalidDocId);
   int maxNotes = 0;
   if (!args.getLastArgValue(maxNotesId).getAsInteger(10, maxNotes))
     parseConfig.maxNotesPerDiagnostic = maxNotes;

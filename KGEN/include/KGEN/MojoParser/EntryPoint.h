@@ -52,8 +52,12 @@ struct ParserConfig {
   /// SourceMgr to get ranges and fixit hints.
   bool useMLIRDiagnostics = false;
 
-  /// If true, this will warn on missing pieces of documentation strings.
-  bool warnMissingDocStrings = false;
+  /// If true, this will diagnose missing pieces of documentation strings.
+  bool diagnoseMissingDocStrings = false;
+
+  /// If true, this will emit errors instead of warnings for documentation
+  /// issues.
+  bool errorOnInvalidDocStrings = false;
 
   /// If true, ignore any already-compiled `foo.mojopkg` that appear in
   /// its import search paths. Doing so results in Mojo source packages named

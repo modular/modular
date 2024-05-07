@@ -357,8 +357,8 @@ static int run(const State &state) {
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceManager, &mlirCtx);
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, &mlirCtx, runtime,
-      options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
-      options::OPT_D,
+      options::OPT_diagnose_missing_doc_strings,
+      options::OPT_validate_doc_strings, options::OPT_max_notes, options::OPT_D,
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         return LIT::importMojoFile(runtime, sourceManager, parserConfig, ts);
       });
