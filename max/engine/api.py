@@ -457,6 +457,9 @@ class InferenceSession:
         _model.load()
         return Model._init(_model)
 
+    def get_torch_custom_op_schemas(self):
+        return self._impl.get_torch_custom_op_schemas()
+
 
 def remove_annotations(cls: Type) -> Type:
     del cls.__annotations__
