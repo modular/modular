@@ -10,11 +10,35 @@ from pathlib import Path
 from sys.arg import argv
 
 from stdlib.builtin.file import FileHandle
+from stdlib.builtin.io import _snprintf
+from stdlib.builtin.string import _calc_initial_buffer_size_int32
 
 from utils._numerics import FlushDenormals
 
 from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
+
+
+fn _str_fmt_width(str: String, str_width: Int) -> String:
+    """Formats string with a given width.
+
+    Returns:
+        sprintf("%-*s", str_width, str)
+    """
+    debug_assert(str_width > 0, "Should have str_width>0")
+    alias N = 2048
+    var x = String._buffer_type()
+    x.reserve(N)
+    x.size += _snprintf(
+        x.data,
+        N,
+        "%-*s",
+        str_width,
+        str,
+    )
+    debug_assert(x.size < N, "Attempted to access outside array bounds!")
+    x.size += 1
+    return String(x)
 
 
 @value
@@ -39,6 +63,10 @@ struct BenchConfig(CollectionElement):
     """Number of times the benchmark has to be repeated."""
     var flush_denormals: Bool
     """Whether or not the denormal values are flushed."""
+    var show_progress: Bool
+    """Whether or not to show the progress of each benchmark."""
+    var tabular_view: Bool
+    """Whether to print results in csv readable/tabular format."""
 
     fn __init__(
         inout self,
@@ -73,6 +101,9 @@ struct BenchConfig(CollectionElement):
         self.out_file = out_file
         self.num_repetitions = num_repetitions
         self.flush_denormals = flush_denormals
+        self.show_progress = True
+        # TODO: set tabular_view=True as default
+        self.tabular_view = False
 
         @parameter
         fn argparse() raises:
@@ -85,6 +116,12 @@ struct BenchConfig(CollectionElement):
                     i += 2
                 elif args[i] == "-r":
                     self.num_repetitions = int(args[i + 1])
+                elif args[i] == "--tabular":
+                    self.tabular_view = True
+                elif args[i] == "--plain":
+                    self.tabular_view = False
+                elif args[i] == "--no-progress":
+                    self.show_progress = False
 
         argparse()
 
@@ -164,6 +201,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         """
 
         var elems = "," + str(self._throughput()) if self.elems else ""
+
         return (
             self.name
             + ","
@@ -172,6 +210,44 @@ struct BenchmarkInfo(CollectionElement, Stringable):
             + str(self.result.iters())
             + elems
         )
+
+    fn _csv_str(self, name_width: Int = 0, iters_width: Int = 10) -> String:
+        """Formats Benchmark Statistical Info.
+
+        Returns:
+            A string representing benchmark statistics.
+        """
+        debug_assert(name_width > 0, "Name width should be >0")
+        alias N = 2048
+        var x = String._buffer_type()
+        x.reserve(N)
+        x.size += _snprintf(
+            x.data,
+            N,
+            "%-*s, %12.3f, ",
+            name_width,
+            self.name,
+            self.result.mean(unit=Unit.ms),
+        )
+        debug_assert(x.size < N, "Attempted to access outside array bounds!")
+        x.size += _snprintf(
+            x.data + x.size,
+            N,
+            "%*d",
+            iters_width,
+            self.result.iters(),
+        )
+        debug_assert(x.size < N, "Attempted to access outside array bounds!")
+
+        if self.elems:
+            x.size += _snprintf(
+                x.data + x.size, N, ", %.6f", self._throughput()
+            )
+            debug_assert(
+                x.size < N, "Attempted to access outside array bounds!"
+            )
+        x.size += 1
+        return String(x)
 
 
 @value
@@ -195,13 +271,6 @@ struct Mode:
         """
 
         return self.value == other.value
-
-
-fn _argv_no_progress() -> Bool:
-    for arg in argv():
-        if arg == "--no-progress":
-            return True
-    return False
 
 
 @value
@@ -418,8 +487,10 @@ struct Bench:
             return b.elapsed
 
         var full_name = bench_id.func_name + "/" + bench_id.input_id.value()[] if bench_id.input_id else bench_id.func_name
-        if not _argv_no_progress():
+        if self.config.show_progress:
             print("Running", full_name, "...", end="")
+        else:
+            print(".", end="")
 
         var res = _run_impl(
             _RunOptions[benchmark_fn](
@@ -441,12 +512,32 @@ struct Bench:
 
     fn dump_report(self) raises:
         """Prints out the report from a Benchmark execution."""
-
-        var report = String("name, met (ms), iters, throughput (Gelems/s)\n")
+        var report = String("")
         var num_runs = len(self.info_vec)
-        for i in range(num_runs):
-            var sep = "\n" if i < num_runs - 1 else ""
-            report += str(self.info_vec[i]) + sep
+
+        if self.config.tabular_view:
+            var max_name_width = self._get_max_name_width()
+            var max_iters_width = max(
+                len(", iters"), self._get_max_iters_width()
+            )
+
+            report += (
+                _str_fmt_width("name", max_name_width)
+                + _str_fmt_width(",met (ms)", 12 + 2)
+                + _str_fmt_width(",iters", max_iters_width + 2)
+                + String(",throughput (Gelems/s)\n")
+            )
+
+            for i in range(num_runs):
+                var sep = "\n" if i < num_runs - 1 else ""
+                report += (
+                    self.info_vec[i]._csv_str(max_name_width, max_iters_width)
+                ) + sep
+        else:
+            report += String("name, met (ms), iters, throughput (Gelems/s)\n")
+            for i in range(num_runs):
+                var sep = "\n" if i < num_runs - 1 else ""
+                report += String(self.info_vec[i]) + sep
         print("------------------------------------------")
         print("Benchmark results")
         print("------------------------------------------")
@@ -455,6 +546,22 @@ struct Bench:
         if self.config.out_file:
             with open(self.config.out_file.value()[], "w") as f:
                 f.write(report)
+
+    fn _get_max_name_width(self) -> Int:
+        var max_val = 0
+        for i in range(len(self.info_vec)):
+            var namelen = len(self.info_vec[i].name)
+            if namelen > max_val:
+                max_val = namelen
+        return max_val
+
+    fn _get_max_iters_width(self) -> Int:
+        var max_val = 0
+        for i in range(len(self.info_vec)):
+            var iter = self.info_vec[i].result.iters()
+            if iter > max_val:
+                max_val = iter
+        return _calc_initial_buffer_size_int32(max_val)
 
 
 @value
