@@ -43,4 +43,4 @@ fn main():
     var pp = MyPairPair(5, 6, 7, 8)
     print(pp.second.first)  # breakpoint
 
-    keep_alive(p)
+    keep_alive(p, pp)
