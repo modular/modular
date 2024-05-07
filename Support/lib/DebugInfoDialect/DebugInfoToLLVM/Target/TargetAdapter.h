@@ -61,8 +61,9 @@ void sinkDebugKills(mlir::Operation *op);
 /// its entire scope)
 /// - >1 dbg.value, =1 non-undef: use dbg.value, allocate to stack (i.e. var is
 /// stationary for its entire lifetime)
-/// - >1 dbg.value, >1 non-undef: use dbg.value, don't allocate to stack (i.e.
-/// var moves around, or exists as fragments)
+/// - >1 dbg.value, >1 non-undef: use dbg.declare, do allocate to stack but only
+/// for debuginfo, don't replace original SSA variable reads with stack reads
+/// (in case of re-ordering) (i.e. var moves around, or exists as fragments).
 ///
 /// TODO: As we grow support we may want to consider making this optional
 /// depending on the debug mode.
