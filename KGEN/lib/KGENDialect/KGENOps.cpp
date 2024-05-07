@@ -470,19 +470,61 @@ bool ParamAssertOp::isImplicitlyParametric() { return true; }
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
-/// Parses a KGEN Generator.
-ParseResult GeneratorOp::parse(OpAsmParser &parser, OperationState &result) {
-  ExportKindAttr exportKind;
-  if (parseSymbolExport(parser, exportKind))
+static ParseResult parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
+                                    StringAttr &name, TypeAttr &signatureAttr,
+                                    TypeAttr &functionTypeAttr,
+                                    ParamDeclArrayAttr &inputParams,
+                                    ParamDeclArrayAttr &resultParams,
+                                    InlineLevelAttr &inlineLevel,
+                                    DecoratorsAttr &decorators,
+                                    NamedAttrList &attrs, Region &body) {
+  if (parseSymbolExport(p, exportKind) || p.parseSymbolName(name))
     return failure();
-  result.addAttribute(getExportKindAttrName(result.name), exportKind);
-  return parseGeneratorOrFunc(parser, result, GeneratorOrFuncKind::generator);
+
+  SmallVector<OpAsmParser::Argument> args;
+  SignatureType signature;
+  FunctionType functionType;
+  if (parseFunctionSignature(p, args, inputParams, resultParams, functionType,
+                             signature))
+    return failure();
+  signatureAttr = TypeAttr::get(signature);
+  functionTypeAttr = TypeAttr::get(functionType);
+
+  if (parseOptionalInline(p, inlineLevel) ||
+      parseOptionalDecorators(p, decorators) ||
+      p.parseOptionalAttrDictWithKeyword(attrs) ||
+      p.parseRegion(body, args, /*enableNameShadowing=*/true))
+    return failure();
+  return success();
 }
 
-// Print the GeneratorOp using the shared printing logic.
-void GeneratorOp::print(OpAsmPrinter &p) {
-  printSymbolExport(p, *this, getExportKindAttr());
-  printGeneratorOrFunc(p, *this);
+static void printGeneratorOp(
+    OpAsmPrinter &p, Operation *op, ExportKindAttr exportKind, StringAttr name,
+    TypeAttr signature, TypeAttr functionType, ParamDeclArrayAttr inputParams,
+    ParamDeclArrayAttr resultParams, InlineLevelAttr inlineLevel,
+    DecoratorsAttr decorators, DictionaryAttr attrs, Region &body) {
+  printSymbolExport(p, op, exportKind);
+  p << ' ';
+  p.printSymbolName(name);
+  printFunctionSignature(p, &body, inputParams, resultParams,
+                         cast<FunctionType>(functionType.getValue()),
+                         cast<SignatureType>(signature.getValue()));
+  printOptionalInline(p, inlineLevel.getValue());
+  printOptionalDecorators(p, op, decorators);
+
+  auto gen = cast<GeneratorOp>(op);
+  SmallVector<StringRef, 10> elidedAttrs{
+      gen.getExportKindAttrName(),  gen.getSymNameAttrName(),
+      gen.getSignatureAttrName(),   gen.getFunctionTypeAttrName(),
+      gen.getInputParamsAttrName(), gen.getResultParamsAttrName(),
+      gen.getInlineLevelAttrName(), gen.getDecoratorsAttrName()};
+  if (attrs.get(gen.getLLVMMetadataAttrName()) ==
+      DictionaryAttr::get(op->getContext()))
+    elidedAttrs.push_back(gen.getLLVMMetadataAttrName());
+  p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
+
+  p << ' ';
+  p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
 //===----------------------------------------------------------------------===//

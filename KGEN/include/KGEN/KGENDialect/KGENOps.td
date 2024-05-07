@@ -160,6 +160,12 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
   );
   let regions = (region MaxSizedRegion<1>:$bodyRegion);
 
+  let assemblyFormat = [{
+    custom<GeneratorOp>($exportKind, $sym_name, $signature, $functionType,
+                        $inputParams, $resultParams, $inlineLevel, $decorators,
+                        attr-dict, $bodyRegion)
+  }];
+
   let extraClassDeclaration = [{
     using OpTrait::SingleBlock<GeneratorOp>::getBody;
     Region *getCallableRegion() { return &getBodyRegion(); }
@@ -179,8 +185,6 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
       build($_builder, $_state, name, signature, signature.getValues(), {}, {});
     }]>
   ];
-
-  let hasCustomAssemblyFormat = 1;
 }
 
 //===----------------------------------------------------------------------===//
