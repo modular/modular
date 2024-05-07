@@ -1692,7 +1692,6 @@ void DestructorInsertion::scanBlock(Block &block) {
     lifetimeEffects.clear();
     auto overall =
         getOperationEffects(op, operandEffects, resultEffects, lifetimeEffects);
-
     switch (overall) {
     case OverallOpValueEffect::unknownOp:
       // NOTE: Enable logging when debugging.
@@ -1807,15 +1806,8 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
   consumedValues.set(0); // Slot 0 indicates that this block is reachable.
 
   for (const ValueInfo &valueInfo : valueSet.getValueInfos()) {
-    if (isUninitializedAtExit(valueInfo, op)) {
-      // A `isFullObjectLiveOnEntry` value (i.e., the 'self' member in an
-      // __init__) demands the full-object bit (which is live on entry)
-      // because it cannot be destroyed without all the fields.  We don't
-      // want to run the destructor on 'self' itself.
-      if (valueInfo.isFullObjectLiveOnEntry)
-        consumedValues.set(valueInfo.endValueBit - 1);
+    if (isUninitializedAtExit(valueInfo, op))
       continue;
-    }
 
     consumedValues.set(valueInfo.startValueBit, valueInfo.endValueBit);
   }
@@ -1858,6 +1850,7 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
 
   // Compute successor list and predecessor list.
   llvm::DenseSet<int> errorRegions;
+  llvm::DenseSet<int> throwRegions;
   for (unsigned curr = 0, e = op.getNumRegions(); curr < e; curr++) {
     Region &region = op.getRegion(curr);
     HLCF::ControlFlowTerminator term =
@@ -1874,8 +1867,11 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
       if (isa<HLCF::BreakOp>(term))
         succ[curr].push_back(Break);
 
-      if (isa<LIT::TryRaiseOp>(term))
+      if (isa<LIT::TryRaiseOp>(term)) {
         succ[curr].push_back(Raise);
+        throwRegions.insert(curr);
+      }
+
       continue;
     }
     SmallVector<HLCF::ControlFlowTarget> termTargets;
@@ -1960,43 +1956,12 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
     int curr = *currPtr;
     BitVector consumedInSomeSucc(consumedValues.size(), false);
     SmallVector<int> &successors = getSuccessors(curr);
-    // Consider the following data flow, where A,B,C are regions
-    // and B and C are potential successors of A.
-    //            [A]
-    //           /   \
-    //         [B]   [C]
-    // If `hasSuccessorSetThatMarksSelfInitialized` is true for A then
-    // either B marks an error initialized and C marks self as initialized
-    // or vice versa. Today we don't emit ops that have more than two
-    // successors in a conditional initialization context but if we did the
-    // assumption is that at least one marks the self as initialized and at
-    // least one marks the error as initialized and all others do one or the
-    // other. In any case, the destruction of self should not be emitted into
-    // any successor of a node where `hasSuccessorSetThatMarksSelfInitialized`
-    // is true. To prevent this from happening in the unification step, we
-    // record such exceptions here.
-    bool hasSuccessorSetThatMarksSelfInitialized =
-        selfInitIndex > -1 && successors.size() == 2;
-    if (hasSuccessorSetThatMarksSelfInitialized) {
-      int errorRegionCandidate = successors[0];
-      int succRegionCandidate = successors[1];
-      bool candidateIsError =
-          errorRegions.contains(errorRegionCandidate) &&
-          consumedValuesInRegion[errorRegionCandidate].test(selfInitIndex) &&
-          consumedValuesInRegion[errorRegionCandidate].test(0);
-      hasSuccessorSetThatMarksSelfInitialized =
-          candidateIsError &&
-          !consumedValuesInRegion[succRegionCandidate].test(selfInitIndex) &&
-          consumedValuesInRegion[succRegionCandidate].test(0);
-    }
     for (unsigned successor : successors) {
       assert(consumedValuesInRegion.contains(successor) &&
              "a successor to current has not been processed, which suggests a "
              "cycle!");
       BitVector &consumptionInSucc = consumedValuesInRegion[successor];
       consumedInSomeSucc |= consumptionInSucc;
-      if (hasSuccessorSetThatMarksSelfInitialized)
-        errorToValueNoDestruction.insert(successor);
     }
 
     if (curr == ParentPrev)
@@ -2058,21 +2023,20 @@ void DestructorInsertion::checkAcyclicControlFlowOp(Operation &op) {
           continue;
         consumedInSomeSucc |= consumedValuesInRegion[successor];
       }
-
       for (int successor : getSuccessors(curr)) {
         // Only self contained successors are corrected.
         if (successor < 0)
           continue;
-        if (errorToValueNoDestruction.contains(successor)) {
-          consumedInSomeSucc.reset(selfInitIndex);
-          consumedValuesInRegion[successor].reset(selfInitIndex);
-        }
         BitVector consumedInAltBranch(consumedInSomeSucc);
         consumedInAltBranch ^= consumedValuesInRegion[successor];
         consumedValuesInRegion[successor] = consumedInSomeSucc;
         if (consumedInAltBranch.none())
           continue;
         needsUpdate = true;
+        // Do not destroy the self out the error/throw regions.
+        if (selfInitIndex > -1 && (errorRegions.contains(successor) ||
+                                   throwRegions.contains(successor)))
+          consumedInAltBranch.reset(selfInitIndex);
         if (!dryRun)
           destroyValuesAtEntry(consumedInAltBranch,
                                op.getRegion(successor).front(), op.getLoc());
@@ -2263,6 +2227,28 @@ void DestructorInsertion::checkLoopOp(HLCF::LoopOp loopOp) {
   // to insert destructors.
   if (!dryRun) {
     loopBodySets.dryRun = false;
+
+    // Correct values in the continue set. Any value that is both
+    // (a) not consumed in consumedValues (after loop)
+    // (b) partially consumed in continueSet (we referenced a subfield of this
+    // value in loop) should be fully consumed in the loop.
+    for (auto [index, valueInfo] : llvm::enumerate(valueSet.getValueInfos())) {
+      ValueRef valueRef(index, valueInfo.startValueBit, valueInfo.endValueBit,
+                        valueInfo.isIndirect);
+      bool isMissingInUpwardConsumeSet = valueRef.isAllMissing(consumedValues);
+      bool isPartialSetInLoop = false;
+      if (isMissingInUpwardConsumeSet &&
+          !loopBodySets.continueSet->test(valueInfo.endValueBit - 1)) {
+        BitVector justMe(*loopBodySets.continueSet);
+        justMe.reset(0, valueInfo.startValueBit);
+        justMe.reset(valueInfo.endValueBit - 1, consumedValues.size());
+        isPartialSetInLoop = justMe.any();
+      }
+
+      if (isMissingInUpwardConsumeSet && isPartialSetInLoop)
+        loopBodySets.continueSet->set(valueInfo.startValueBit,
+                                      valueInfo.endValueBit);
+    }
     loopBodySets.scanBlock(loopOp.getBody().front());
   }
   consumedValues = std::move(loopBodySets.consumedValues);
@@ -2401,8 +2387,12 @@ void DestructorInsertion::checkUse(Value value,
     //
     // This also handles the case of indirect references, resetting to the
     // correct value to destroy.
+    // If dryRun, then the upward consume set is unset for values potentially
+    // consumed beneath the loop. As a result, we don't know if this is the last
+    // reference to whole value. Assuming that it is will result in destruction
+    // of that value in a break branch.
     if (value != valueInfo.value &&
-        !consumedValues[valueInfo.endValueBit - 1]) {
+        !consumedValues[valueInfo.endValueBit - 1] && !dryRun) {
       value = valueInfo.value;
       valueRef = valueSet.getFullValueRef(valueRef.valueId);
     }
