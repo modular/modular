@@ -1556,7 +1556,8 @@ private:
   void checkUse(Value value, Operation &op, bool isDeref);
   void checkUse(Value value, mlir::ImplicitLocOpBuilder &builder,
                 Operation *opWithUse, bool isDeref);
-  void checkDef(Value value, Operation &op, bool isDeref);
+  void checkDef(Value value, Operation &op, bool isDeref,
+                bool needsCheckUse = true);
   void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
   void destroyValuesAtEntry(const BitVector &entries, Block &block,
                             Location loc);
@@ -1785,7 +1786,7 @@ void DestructorInsertion::scanBlock(Block &block) {
           consumedValues.set(valueRef.endBit - 1);
         break;
       case OperandEffect::memStoreConditional:
-        // This should have been handled by `checkIfLikeOp` above.
+        checkDef(operand, op, /*isDeref=*/true, /*needsCheckUse=*/false);
         break;
       }
     }
@@ -2429,19 +2430,36 @@ void DestructorInsertion::checkUse(Value value,
 
 /// This operation defines the specified value.  If the value is dead on
 /// arrival, emit a destructor of the value.
-void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref) {
+void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
+                                   bool needsCheckUse) {
   // If there is no use of the value we are defining, emit a dtor after the op.
   // This happens when we have things like:
   //
   //   init(&aggregate)
   //   ...
   //   aggregate.field1 = newValue  <<-- we are here
-  checkUse(value, op, isDeref);
+  if (needsCheckUse)
+    checkUse(value, op, isDeref);
 
   // This call defines the result, so anything above it is either dead or
   // needs a destructor if live.  If this is a direct reference, we mark the
   // target as being consumed.
-  if (auto direct = valueSet.getDirectValueRef(value, isDeref)) {
+  if (ValueRef direct = valueSet.getDirectValueRef(value, isDeref)) {
+    // FIXME(#579): Rework Error handling in the Compiler so we can remove error
+    // handling.
+    if (isa<OwnershipMarkInitializedOp>(op)) {
+      ValueInfo valueInfo = valueSet.getValueInfo(direct.valueId);
+      bool isUninitInErrorBranch =
+          valueInfo.endInitState == LifetimeTrackable::EndsUninit ||
+          valueInfo.endInitState == LifetimeTrackable::InitOnNormal;
+      Operation *term = op.getParentRegion()->front().getTerminator();
+      bool isError = isa<ErrorReturnOp, TryRaiseOp>(term);
+      // If is initialized in error branch, avoid generating destruction in
+      // success branch. Destruction of overwritten memory will be handled at
+      // callsite.
+      if (!isError && !isUninitInErrorBranch)
+        return;
+    }
     direct.markBits(consumedValues, false);
     return;
   }
