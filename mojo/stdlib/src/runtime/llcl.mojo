@@ -12,7 +12,7 @@ from sys.ffi import _get_global, _get_global_or_null
 from sys.info import num_physical_cores
 from sys.param_env import is_defined
 
-from builtin.coroutine import _coro_resume_fn, _suspend_async
+from builtin.coroutine import AnyCoroutine, _coro_resume_fn, _suspend_async
 from memory.unsafe import DTypePointer, Pointer
 
 from utils import StringRef
@@ -133,6 +133,33 @@ fn _async_wait(chain: Pointer[Chain]):
 
 fn _async_complete(chain: Pointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_Complete", NoneType](chain.address)
+
+
+struct ChainPromise:
+    var chain: Chain
+
+    fn __init__(inout self, rt: Runtime):
+        self.chain = Chain()
+        _init_llcl_chain(rt, LegacyPointer.address_of(self.chain))
+
+    fn __init__(inout self, owned chain: Chain):
+        self.chain = chain
+
+    fn __del__(owned self):
+        if self.chain:
+            _del_llcl_chain(LegacyPointer.address_of(self.chain))
+
+    @always_inline
+    fn __await__(self):
+        @always_inline
+        @parameter
+        fn await_body(cur_hdl: AnyCoroutine):
+            _async_and_then(cur_hdl, LegacyPointer.address_of(self.chain))
+
+        _suspend_async[await_body]()
+
+    fn wait(self):
+        _async_wait(LegacyPointer.address_of(self.chain))
 
 
 # ===----------------------------------------------------------------------===#
