@@ -270,9 +270,7 @@ void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
                           bool optionalResultList);
 
 /// Parse a plain (i.e. non-lit) signature.
-ParseResult parseKGENSignature(AsmParser &p,
-                               ParamDeclArrayAttr resultParamDecls,
-                               FunctionType &functionType,
+ParseResult parseKGENSignature(AsmParser &p, FunctionType &functionType,
                                SignatureType &signature);
 
 /// Parse a function signature with optional metadata. In the assembly format,
@@ -309,25 +307,9 @@ void printParameterValues(OpAsmPrinter &p, Operation *op,
                           ParameterExprArrayAttr values);
 void printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
 
-/// Parse and print the parameter spec for a call op.
-/// parameter-decl   ::= identifier (`:` type)?
-/// parameter-bind   ::= identifier (`:` type)? `=` attribute-value
-/// param-decl-list  ::= parameter-decl (`,` parameter-decl)* | `(` `)`
-/// param-bind-list  ::= parameter-bind (`,` parameter-bind)* | `(` `)`
-/// parameter-spec   ::= `<` param-bind-list (`->` param-decl-list)? `>`
-ParseResult parseCallOpParams(OpAsmParser &p,
-                              ParameterExprArrayAttr &paramValues,
-                              ParamDeclArrayAttr &resultDecls);
-void printCallOpParams(OpAsmPrinter &p, Operation *op,
-                       ArrayRef<TypedAttr> paramValues,
-                       ArrayRef<ParamDeclAttr> resultDecls,
-                       ArrayRef<Type> resultParamTypes);
-
 /// Parse and print a parametric callee and result parameter declarations.
-ParseResult parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
-                                  ParamDeclArrayAttr &paramDecls);
-void printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee,
-                           ArrayRef<ParamDeclAttr> paramDecls);
+ParseResult parseParametricCallee(OpAsmParser &p, TypedAttr &callee);
+void printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee);
 
 /// Parse an address space parameter if present.
 ParseResult parseOptionalAddressSpaceParamValue(AsmParser &p,

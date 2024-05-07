@@ -933,7 +933,7 @@ def LIT_AsyncCallOp : LITOp<"async.call", [
   let results = (outs CoroutineType:$coroutine);
 
   let assemblyFormat = [{
-    `` custom<Callee>($callee) ``
+    `` custom<ParametricCallee>($callee) ``
     custom<LifetimeParams>($implicitLifetimes) ``
     custom<AsyncCallOpTypes>(type($operands), ref($callee),
                              ref($implicitLifetimes))

@@ -599,7 +599,7 @@ void DeadArgumentElimination::rewriteCalleesFromFunction(CallGraphNode *node) {
                                                    newFunc.getSignature());
       auto newOp = b.create<CallOp>(
           callOp.getLoc(), newFunc.getSignature().getValues().getResults(),
-          newCalleeAttr, kgenCall.getParamDeclsAttr(), newOperands);
+          newCalleeAttr, newOperands);
 
       for (auto [newIdx, oldIdx] :
            llvm::enumerate(calleeNode->liveResultIndices)) {

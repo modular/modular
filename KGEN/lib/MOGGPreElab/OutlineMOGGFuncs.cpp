@@ -233,11 +233,9 @@ private:
     // Create the KGEN parameter bindings. I.E the <> "template" parameters.
     // Note this is empty as we expect all parameters to be bound in the above
     // sig.
-    KGEN::ParamDeclArrayAttr params = KGEN::ParamDeclArrayAttr::get(ctx, {});
-
     auto callOp = builder.create<KGEN::CallOp>(
         outlinedFunction.getLoc(), symbol.getType().getResults(), symbol,
-        params, usesFromAbove.getArrayRef());
+        usesFromAbove.getArrayRef());
 
     builder.create<KGEN::ReturnOp>(gen.getLoc(), callOp->getResults());
   }
