@@ -14,13 +14,10 @@
 include "KGEN/KGENDialect/KGENAttrInterfaces.td"
 include "KGEN/KGENDialect/KGENDialect.td"
 include "KGEN/KGENDialect/KGENEnums.td"
+include "Support/Compiler/AttrBase.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/EnumAttr.td"
-
-class AttrOfType<Type type> : ConfinedAttr<TypedAttrInterface, [
-  AttrConstraint<SubstLeaves<"$_self", "$_self.cast<TypedAttr>().getType()",
-                             type.predicate>, type.summary>]>;
 
 /// An attribute in the KGEN dialect.
 class KGENAttr<string attrName, string attrMnemonic, list<Trait> traits = []>

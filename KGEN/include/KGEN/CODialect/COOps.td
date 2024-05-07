@@ -10,6 +10,7 @@
 include "KGEN/CODialect/CODialect.td"
 include "KGEN/CODialect/COTypes.td"
 include "KGEN/KGENDialect/KGENInterfaces.td"
+include "Support/Compiler/AttrBase.td"
 include "Support/MDialect/MAttrs.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/OpBase.td"
@@ -85,6 +86,42 @@ def CO_SuspendEndOp : COOp<"suspend.end", [Pure, Terminator,
   }];
 
   let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// InvokeOp
+//===----------------------------------------------------------------------===//
+
+def CO_InvokeOp : COOp<"invoke", [
+    DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
+    DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
+    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
+    TypesMatchWith<"callee argument types", "callee", "operands",
+                   "cast<SignatureType>($_self).getArguments()">]>,
+    CallLikeOperation {
+  let summary = "invoke an async function, forming a coroutine";
+  let description = [{
+    The `co.invoke` operation calls an `async` parametric callable. It returns
+    a cold-started `!co.routine` from the callee and the bound arguments.
+
+    Example:
+
+    ```mlir
+    %coro = co.invoke[:() -> index: @foo]()
+    ```
+  }];
+
+  let arguments = (ins
+    AttrOfType<KGEN_SignatureType>:$callee,
+    Variadic<AnyType>:$operands
+  );
+  let results = (outs CoroutineType:$coroutine);
+
+  let assemblyFormat = [{
+    `` custom<ParametricCallee>($callee) `(` $operands `)` attr-dict
+  }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
