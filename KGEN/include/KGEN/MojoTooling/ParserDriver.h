@@ -137,6 +137,9 @@ public:
   MojoASTDeclRef
   parseFileOrPackageNonRecursive(const std::filesystem::path &path);
 
+  /// Returns true if an error occurred during parsing.
+  bool wasErrorEmitted() const;
+
   //===--------------------------------------------------------------------===//
   // Code Completion
 

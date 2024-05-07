@@ -317,7 +317,9 @@ class DocStringValidator {
 public:
   DocStringValidator(SharedState &sharedState, ASTDecl &decl)
       : sharedState(sharedState),
-        warnMissingDocStrings(sharedState.shouldWarnMissingDocStrings()),
+        diagnoseMissingDocStrings(
+            sharedState.shouldDiagnoseMissingDocStrings()),
+        errorOnInvalidDocStrings(sharedState.shouldErrorOnInvalidDocStrings()),
         docStr(decl.getDocString()
                    ? std::optional<DocString>(decl.getDocString())
                    : std::nullopt) {
@@ -363,9 +365,9 @@ public:
                                           ? ValidationKind::Strict
                                           : ValidationKind::Normal;
           if (!docStr) {
-            if (validation == ValidationKind::Strict && warnMissingDocStrings &&
-                !isOpInPrivateModule(op))
-              sharedState.emitWarning(op.getLoc(), "public symbol ")
+            if (validation == ValidationKind::Strict &&
+                diagnoseMissingDocStrings && !isOpInPrivateModule(op))
+              emitDiag(op.getLoc(), "public symbol ")
                   << op.getDeclName() << " is missing a doc string";
             return;
           }
@@ -377,14 +379,14 @@ public:
             StringRef summary = docStr->getSummary();
             if (!summary.empty()) {
               if (!isValidFirstCharacter(summary.front()))
-                sharedState.emitWarning(docStr->getLoc(),
-                                        "doc string summary should begin with "
-                                        "a capital letter or non-alpha "
-                                        "character, but this begins with '")
+                emitDiag(docStr->getLoc(),
+                         "doc string summary should begin with "
+                         "a capital letter or non-alpha "
+                         "character, but this begins with '")
                     << summary.front() << "'";
 
               if (!summary.ends_with("."))
-                sharedState.emitWarning(
+                emitDiag(
                     docStr->getLoc(),
                     "doc string summary should end with a period '.', but this "
                     "ends with '")
@@ -440,12 +442,12 @@ private:
   /// 2. The last character is not a period.
   void validateStyle(StringRef name, const char *first, const char *last) {
     if (!isValidFirstCharacter(*first))
-      emitWarning(first, name) << " should begin with a capital letter or "
-                                  "non-alpha character, but this begins with '"
-                               << *first << "'";
+      emitDiag(first, name) << " should begin with a capital letter or "
+                               "non-alpha character, but this begins with '"
+                            << *first << "'";
 
     if (*last != '.')
-      emitWarning(last, name)
+      emitDiag(last, name)
           << " should end with a period '.', but this ends with '" << *last
           << "'";
   }
@@ -469,15 +471,15 @@ private:
 
       auto it = elements.find(paramName);
       if (it == elements.end()) {
-        emitWarning(paramLoc)
-            << "unknown " << tag << " '" << paramName << "' in doc string";
+        emitDiag(paramLoc) << "unknown " << tag << " '" << paramName
+                           << "' in doc string";
         return;
       }
 
       // If we have already seen this element, emit a warning.
       if (std::exchange(it->second, paramLoc)) {
-        emitWarning(paramLoc)
-            << "duplicate " << tag << " '" << paramName << "' in doc string";
+        emitDiag(paramLoc) << "duplicate " << tag << " '" << paramName
+                           << "' in doc string";
         return;
       }
 
@@ -485,7 +487,7 @@ private:
       if (!emittedUnexpectedOrderWarning) {
         size_t expectedEltIndex = it - elements.begin();
         if (currentEltIndex != expectedEltIndex) {
-          emitWarning(paramLoc)
+          emitDiag(paramLoc)
               << "'" << paramName << "' is defined at index "
               << expectedEltIndex << ", but specified in doc string at index "
               << currentEltIndex;
@@ -496,8 +498,8 @@ private:
       // Diagnose empty element descriptions.
       const char *docEndLoc = paramBody.end();
       if (paramBody.empty()) {
-        emitWarning(paramLoc)
-            << "'" << paramName << "' does not have a description";
+        emitDiag(paramLoc) << "'" << paramName
+                           << "' does not have a description";
         docEndLoc = paramName.end();
       }
 
@@ -517,7 +519,7 @@ private:
       auto &[element, seenLoc] = it;
       if (seenLoc)
         continue;
-      InflightDiag diag = emitWarning(loc)
+      InflightDiag diag = emitDiag(loc)
                           << tag << " '" << element << "' is not documented";
 
       // Attach a fixit to add the element to the doc string.
@@ -562,7 +564,7 @@ private:
         sectionIt = sections.find(section);
         if (sectionIt == sections.end())
           continue;
-        emitWarning(section.data())
+        emitDiag(section.data())
             << "section tag '" << section << "' is overindented";
       }
       const char *lineLoc = section.data();
@@ -570,8 +572,8 @@ private:
 
       // If we have already seen this section, emit a warning.
       if (sectionLoc) {
-        auto diag = emitWarning(lineLoc, "duplicate '" + section +
-                                             "' section found in doc string");
+        auto diag = emitDiag(lineLoc, "duplicate '" + section +
+                                          "' section found in doc string");
         diag.attachNote(translateLoc(sectionLoc))
             << "see previous definition here";
         continue;
@@ -581,7 +583,7 @@ private:
       // Check that text follows the section header. For example, this should
       // diagnose a doc string that ends with `Returns:"""`.
       if (lines.size() == 1) {
-        emitWarning(sectionLoc, "'" + section + "' section is empty");
+        emitDiag(sectionLoc, "'" + section + "' section is empty");
         break;
       }
 
@@ -628,12 +630,12 @@ private:
         return processParameters(loc, seenParameters, description, validation);
 
       if (section == DocString::kSectionReturns && !hasResults)
-        emitWarning(loc, "unexpected 'Returns' in doc string for "
-                         "function with no results");
+        emitDiag(loc, "unexpected 'Returns' in doc string for "
+                      "function with no results");
 
       if (section == DocString::kSectionRaises && !canThrow)
-        emitWarning(loc, "unexpected 'Raises' in doc string for "
-                         "function that does not throw");
+        emitDiag(loc, "unexpected 'Raises' in doc string for "
+                      "function that does not throw");
 
       // Validate paragraph sections such as "Constraints:" and "Returns:".
       if (validation == ValidationKind::Strict) {
@@ -644,20 +646,18 @@ private:
     };
     processDocSections(description, sections, processFn);
 
-    if (validation == ValidationKind::Strict && warnMissingDocStrings &&
+    if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
         !isOpInPrivateModule(funcOp)) {
       if (!sections[DocString::kSectionParameters] && !seenParameters.empty())
-        sharedState.emitWarning(
+        emitDiag(
             funcOp.getLoc(),
             "function takes parameters, but no 'Parameters' in doc string");
       if (!sections[DocString::kSectionArgs] && !seenArguments.empty())
-        sharedState.emitWarning(
-            funcOp.getLoc(),
-            "function takes arguments, but no 'Args' in doc string");
+        emitDiag(funcOp.getLoc(),
+                 "function takes arguments, but no 'Args' in doc string");
       if (!sections[DocString::kSectionReturns] && hasResults)
-        sharedState.emitWarning(
-            funcOp.getLoc(),
-            "function has results, but no 'Returns' in doc string");
+        emitDiag(funcOp.getLoc(),
+                 "function has results, but no 'Returns' in doc string");
     }
   }
 
@@ -682,12 +682,11 @@ private:
     };
     processDocSections(description, sections, processFn);
 
-    if (validation == ValidationKind::Strict && warnMissingDocStrings &&
+    if (validation == ValidationKind::Strict && diagnoseMissingDocStrings &&
         !isOpInPrivateModule(structOp) &&
         !sections[DocString::kSectionParameters] && !seenParameters.empty())
-      sharedState.emitWarning(
-          structOp.getLoc(),
-          "struct takes parameters, but no 'Parameters' in doc string");
+      emitDiag(structOp.getLoc(),
+               "struct takes parameters, but no 'Parameters' in doc string");
   }
 
   //===--------------------------------------------------------------------===//
@@ -709,12 +708,17 @@ private:
   //===--------------------------------------------------------------------===//
   // Diagnostics
 
-  /// Emit a warning at the given doc string location.
-  InflightDiag emitWarning(const char *loc, const Twine &msg = {}) {
+  /// Emit a diagnostic at the given doc string location.
+  InflightDiag emitDiag(const char *loc, const Twine &msg = {}) {
     SMLoc smLoc = translateLoc(loc);
-    if (!smLoc.isValid())
-      return sharedState.emitWarning(docStr->getLoc(), msg);
-    return sharedState.emitWarning(smLoc, msg);
+    return smLoc.isValid() ? emitDiag(smLoc, msg)
+                           : emitDiag(docStr->getLoc(), msg);
+  }
+  template <typename T>
+  InflightDiag emitDiag(T loc, const Twine &msg = {}) {
+    if (errorOnInvalidDocStrings)
+      return sharedState.emitError(loc, msg);
+    return sharedState.emitWarning(loc, msg);
   }
 
   /// Translate a doc string location to a source location.
@@ -730,8 +734,11 @@ private:
   /// Reference to the main shared state.
   SharedState &sharedState;
 
-  /// Flag indicating if we should warn on missing doc strings.
-  bool warnMissingDocStrings;
+  /// Flag indicating if we should diagnose missing doc strings.
+  bool diagnoseMissingDocStrings;
+
+  /// Flag indicating if we should error on invalid doc strings.
+  bool errorOnInvalidDocStrings;
 
   /// The doc string currently being processed.
   std::optional<DocString> docStr;

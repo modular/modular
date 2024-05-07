@@ -252,3 +252,7 @@ MojoASTDeclRef MojoParserContext::parseFileOrPackageNonRecursive(
   (void)impl->sharedState.declResolver->resolveFully(*moduleDecl, SMLoc());
   return MojoASTDeclRef(moduleDecl);
 }
+
+bool MojoParserContext::wasErrorEmitted() const {
+  return impl->sharedState.diags.isErrorEmitted();
+}

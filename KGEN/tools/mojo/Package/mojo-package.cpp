@@ -431,7 +431,8 @@ static int package(const State &state) {
                                                     &packageArgs.ctx);
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
       state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
-      options::OPT_warn_missing_dog_strings, options::OPT_max_notes,
+      options::OPT_diagnose_missing_doc_strings,
+      options::OPT_validate_doc_strings, options::OPT_max_notes,
       /*definesId=*/llvm::opt::OptSpecifier(),
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;

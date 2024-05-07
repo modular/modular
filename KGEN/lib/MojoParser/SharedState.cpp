@@ -278,8 +278,12 @@ struct SharedState::Impl {
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
 
-  /// Flag indicating if we should warn on missing doc strings while parsing.
-  bool warnMissingDocStrings = false;
+  /// Flag indicating if we should diagnose missing doc strings while parsing.
+  bool diagnoseMissingDocStrings = false;
+
+  /// Flag indicating if errors should be emitted instead of warnings for
+  /// documentation issues.
+  bool errorOnInvalidDocStrings = false;
 
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
@@ -330,7 +334,8 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
   } else {
     collectDefaultImportPaths(impl->autoImportDirs);
   }
-  impl->warnMissingDocStrings = config.warnMissingDocStrings;
+  impl->diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
+  impl->errorOnInvalidDocStrings = config.errorOnInvalidDocStrings;
 
   preloadAllKGENDialects(config.context);
 
@@ -362,8 +367,12 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
 
 SharedState::~SharedState() { declResolver.reset(); }
 
-bool SharedState::shouldWarnMissingDocStrings() const {
-  return impl->warnMissingDocStrings;
+bool SharedState::shouldDiagnoseMissingDocStrings() const {
+  return impl->diagnoseMissingDocStrings;
+}
+
+bool SharedState::shouldErrorOnInvalidDocStrings() const {
+  return impl->errorOnInvalidDocStrings;
 }
 
 void SharedState::initialize(ASTDecl &topLevelDecl) {
