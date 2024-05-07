@@ -16,3 +16,11 @@ kgen.func @coroutine_handle() -> index {
   %idx0 = index.constant 0
   kgen.return %idx0 : index
 }
+
+// -----
+
+kgen.func @invalid_callee() {
+  // expected-error @below {{callable must be 'async'}}
+  %0 = co.invoke[() -> (): @not_async]()
+  kgen.return
+}

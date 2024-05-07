@@ -8,6 +8,7 @@
 #include "KGEN/CODialect/CODialect.h"
 #include "KGEN/CODialect/COUtils.h"
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 
 using namespace M;
 using namespace KGEN;
@@ -67,6 +68,16 @@ LogicalResult SuspendOp::verify() {
     return success();
   return emitOpError("expected its body region to have a "
                      "single `!co.routine` type argument");
+}
+
+//===----------------------------------------------------------------------===//
+// InvokeOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult InvokeOp::verify() {
+  if (!cast<SignatureType>(getCallee().getType()).isAsync())
+    return emitOpError("callable must be 'async'");
+  return success();
 }
 
 //===----------------------------------------------------------------------===//

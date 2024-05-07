@@ -49,3 +49,14 @@ kgen.func @async_execute() -> !co.routine {
   // CHECK: kgen.return %[[HDL]]
   kgen.return %coroHdl : !co.routine
 }
+
+kgen.func @async_fn(%arg0: index) async {
+  kgen.return
+}
+
+// CHECK-LABEL: @call_async_fn
+kgen.func @call_async_fn(%arg0: index) -> !co.routine {
+  // CHECK-NEXT: co.invoke[(index) async -> (): @async_fn](%arg0)
+  %0 = co.invoke[(index) async -> (): @async_fn](%arg0)
+  kgen.return %0 : !co.routine
+}
