@@ -208,7 +208,7 @@ ASTType BValue::getRValueType() const {
   return type;
 }
 
-/// Given an XValue, return the underlying reference.
+/// Given an MValue, return the underlying reference.
 Value VariantValueStorageBase::getMValueReference() const {
   if (auto lvalue = dyn_cast<MLValue>(storage))
     return lvalue;
@@ -217,6 +217,10 @@ Value VariantValueStorageBase::getMValueReference() const {
   if (auto bvalue = dyn_cast<MBValue>(storage))
     return bvalue;
   llvm_unreachable("invalid use of non-MValue");
+}
+
+RefType VariantValueStorageBase::getMValueType() const {
+  return cast<RefType>(getMValueReference().getType());
 }
 
 /// Given an S*Value, return the underlying register.

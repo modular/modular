@@ -1050,10 +1050,18 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
     // Check to see if we get a reference with an element type that is a down
     // casted metatype.  If we have this, we rebind the reference itself to get
-    // the original type.  This happens when a type gets used with Reference -
-    // which downcasts the metatype to AnyType. After remapping it through the
-    // parameter system we should strip this off.
-    // TODO: This seems like a very specific hack, why do we need this?
+    // the original type.
+    //
+    // This happens (for example) when a type gets used with Reference - which
+    // downcasts the metatype to AnyType because we don't have subtyping
+    // in MLIR (we can't pass something known to have "trait Copyable" to
+    // Reference which expects "trait AnyType" so we have to downcast with a
+    // rebind to make the types match. After remapping it through the parameter
+    // system we need to strip this off so we know we have something that is
+    // copyable.
+
+    // TODO: This seems like a very specific hack and this causes problems, we
+    // should figure out another solution.
     if (auto paramRef = dyn_cast<ParamRefType>(resultRefType.getElementType()))
       if (auto rebind = dyn_cast<ParamOperatorAttr>(paramRef.getParam());
           rebind && rebind.getOpcode() == POC::Rebind) {
@@ -3034,14 +3042,13 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
       emitter.emitError(getLoc(), "cannot use non-memory value") << getRange();
       return {};
     }
-    Value refValue = subExprValue.getMValueReference();
 
     // If the lifetime is an InvalidRefLifetimeAttr then this value is
     // derived from an argument which might be bound (after elaboration)
     // to a register value that has no lifetime.  Emit an error because
     // you can't form a Reference to these things.
     if (isa<InvalidRefLifetimeAttr>(
-            cast<RefType>(refValue.getType()).getLifetime())) {
+            subExprValue.getMValueType().getLifetime())) {
       emitter.emitError(subExpr->getLoc(),
                         "cannot form a reference to an argument that might "
                         "instantiate to @register_passable type");
@@ -3049,6 +3056,7 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
     }
 
     // Return the MValue as an SRValue since the ref itself is the result.
+    Value refValue = subExprValue.getMValueReference();
     return emitter.emitResult(SRValue(refValue), this, dest);
   }
 
@@ -3095,7 +3103,7 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
   // __lifetime_of(someMValue) -> PValue.
   RefType refType;
   if (subExprValue.isMValue()) {
-    refType = cast<RefType>(subExprValue.getMValueReference().getType());
+    refType = subExprValue.getMValueType();
   } else {
     // FIXME(Variadics): work around variadic arguments not being formally
     // VariadicListMem, by allowing digging a lifetime out of the kgen.variadic.

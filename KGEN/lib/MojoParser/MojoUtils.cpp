@@ -127,10 +127,26 @@ bool LIT::canConvertWithRebind(ASTType fromType, ASTType toType,
   if (auto fromRef = dyn_cast<RefType>(fromType))
     if (auto toRef = dyn_cast<RefType>(toType)) {
       // Element types and address space have to be exactly equal.
-      if (!ASTType(fromRef.getElementType())
-               .isEqualCanon(toRef.getElementType()) ||
-          fromRef.getAddressSpace() != toRef.getAddressSpace())
+      if (fromRef.getAddressSpace() != toRef.getAddressSpace())
         return false;
+
+      // The element type needs to exactly match, but we allow rebinds to a
+      // different metatype in the way.
+      auto fromEltType = fromRef.getElementType();
+      auto toEltType = toRef.getElementType();
+      if (!ASTType(fromEltType).isEqualCanon(toEltType)) {
+        // If these are both parametric types, they may have a rebind in the
+        // way.  This rebind will be a downcast of a trait, e.g. from Copyable
+        // to AnyType, which is needed because Mojo/MLIR doesn't have subtype
+        // type compatibility of attributes.
+        bool isJustRebind = false;
+        if (isa<ParamRefType>(fromEltType) && isa<ParamRefType>(toEltType) &&
+            canConvertWithRebind(fromEltType, toEltType, shared))
+          isJustRebind = true;
+
+        if (!isJustRebind)
+          return false;
+      }
 
       // Verify compatible LifetimeType(mutability).  This is checking the type
       // of the lifetime, which contains its mutability specifier.

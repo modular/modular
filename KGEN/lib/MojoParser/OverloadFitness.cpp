@@ -240,6 +240,7 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
   if (auto expectedParamRef = dyn_cast<ParamRefType>(expectedType)) {
     if (auto actualParamRef = dyn_cast<ParamRefType>(actualType)) {
       auto actualParam = actualParamRef.getParam();
+      auto expectedParam = expectedParamRef.getParam();
       // If this type is a rebind of another type, then this is a downcast that
       // type erases, e.g. because it passed through some generic function which
       // had a looser type bound.  Remove the downcast to infer from the
@@ -247,8 +248,11 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       if (auto rebind = dyn_cast<ParamOperatorAttr>(actualParam);
           rebind && rebind.getOpcode() == POC::Rebind)
         actualParam = rebind.getOperand(0);
+      if (auto rebind = dyn_cast<ParamOperatorAttr>(expectedParam);
+          rebind && rebind.getOpcode() == POC::Rebind)
+        expectedParam = rebind.getOperand(0);
 
-      return matchParams(actualParam, expectedParamRef.getParam());
+      return matchParams(actualParam, expectedParam);
     }
 
     ASTType type = actualType;
@@ -1221,7 +1225,7 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
     return;
   }
 
-  auto operandRefTy = cast<RefType>(operand.ir.getMValueReference().getType());
+  auto operandRefTy = operand.ir.getMValueType();
   if (!ASTType(argType.getElementType())
            .isEqualCanon(operandRefTy.getElementType())) {
     diag.attachNote(loc) << "operand element type "
@@ -1524,22 +1528,18 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
     // This is magic used by Reference.__init__, allowing Reference(someMValue)
     // to infer the lifetime and mutability of the MValue.
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
-      // Element type and address have to be exactly equal, the mutability just
-      // has to be compatible.
-      if (ASTType(argType).isEqualCanon(expectedRef.getElementType())) {
-        // The argument must be an MValue in the case of a dynamic call.
-        if (argVal.isMValue()) {
-          auto argRefType =
-              cast<RefType>(argVal.getMValueReference().getType());
-          if (canConvertWithRebind(argRefType, expectedRef, shared))
-            return {kValidType, expectedType};
-        }
+      // Element type and address have to match and the mutability has to be
+      // compatible.
 
-        // In a parameter expression, it can be a PValue.  It will get an
-        // immortal lifetime.
-        if (argVal.getIfPValue() && scopeInfo.isParamContext)
-          return {kValidType, expectedType};
-      }
+      // The argument must be an MValue in the case of a dynamic call.
+      if (argVal.isMValue() &&
+          canConvertWithRebind(argVal.getMValueType(), expectedRef, shared))
+        return {kValidType, expectedType};
+
+      // In a parameter expression, it can be a PValue.  It will get an
+      // immortal lifetime.
+      if (argVal.getIfPValue() && scopeInfo.isParamContext)
+        return {kValidType, expectedType};
     }
 
     // Otherwise this is the wrong type for the argument.

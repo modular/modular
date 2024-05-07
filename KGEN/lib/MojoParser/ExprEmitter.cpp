@@ -1304,13 +1304,13 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
     }
 
     if (!requiredType.isEqualCanon(rvalueType)) {
+      // If we are dealing with types that differ only pre-elaboration,
+      // we insert a rebind.
       if (canConvertWithRebind(rvalueType, requiredType, shared)) {
-        // If we are dealing with types that differ only pre-elaboration,
-        // we insert a rebind.
-        if (cValue.isMValue()) {
-          requiredType =
-              cast<RefType>(cValue.getType()).getWithElement(requiredType);
-        }
+        // The RValue types need to be rebound, but MValues have a level of
+        // reference around them that we want to maintain.
+        if (cValue.isMValue())
+          requiredType = cValue.getMValueType().getWithElement(requiredType);
 
         // PValues of lifetime type have a special conversion.
         if (isa<LifetimeType>(requiredType) &&
@@ -1319,7 +1319,15 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
             value = LifetimeMutCastAttr::get(pv, requiredType);
 
         value = rebindValue({value, expr}, requiredType);
-        return emitCValue({value, expr}, dest);
+        return emitResult(value, expr, dest);
+      }
+
+      // If looking for a !lit.ref, allow convertible lit.ref values.
+      if (isa<RefType>(requiredType) && cValue.isMValue() &&
+          canConvertWithRebind(cValue.getMValueType(), requiredType, shared)) {
+        value = rebindValue({value, expr}, requiredType);
+        assert(value.isMValue() && "mvalues should rebind to mvalues");
+        return emitResult(SRValue(value.getMValueReference()), expr, dest);
       }
 
       // If this is a conversion to the non-materializable target of a type,

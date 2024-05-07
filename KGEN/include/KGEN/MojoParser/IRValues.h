@@ -326,6 +326,8 @@ struct VariantValueStorageBase {
 
   /// Given an M*Value, return the underlying reference.
   Value getMValueReference() const;
+  RefType getMValueType() const;
+
   /// Given an S*Value, return the underlying register.
   Value getSValueRegister() const;
 
