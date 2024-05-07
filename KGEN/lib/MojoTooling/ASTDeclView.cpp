@@ -52,17 +52,6 @@ static bool compareDeclNames(StringRef lhs, StringRef rhs) {
   return false;
 }
 
-/// Return if a decl should be hidden given its name.
-static bool shouldHideName(StringRef name) {
-  // Non-underscore names are never hidden.
-  if (!name.starts_with("_"))
-    return false;
-
-  // Keep special language names, which have leading and trailing underscores,
-  // even though they start with `_`.
-  return !(name.starts_with("__") && name.ends_with("__"));
-}
-
 /// Return the indentation level of the first line of the string.
 static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
@@ -233,12 +222,12 @@ extractChildDecls(const ASTDecl &decl,
   SmallVector<DeclViewType, 2> children;
 
   for (const auto &[name, decls] : decl.getDeclsInScope()) {
-    if (shouldHideName(name) || decls.empty() || !isa<OpType>(**decls.begin()))
+    if (decls.empty() || !isa<OpType>(**decls.begin()))
       continue;
 
-    for (auto &child : decls) {
+    for (ASTDecl *child : decls) {
       OpType childOp = dyn_cast<OpType>(*child);
-      if (!childOp)
+      if (!childOp || shouldHideDeclInDocGen(*child, name))
         continue;
 
       // Skip declarations that were imported from other scopes.

@@ -393,16 +393,13 @@ LogicalResult checkResultArgumentTypes(Operation *op,
                                        ArrayRef<TypedAttr> resultParams,
                                        FuncInterface func);
 
-/// Whether the generator operation has a decorator with the given annotation.
-bool isDecorator(TypedAttr decorator, StringLiteral annotation);
-
 /// Whether the decorator's name is (starts with) the specific annotation.
-bool hasDecorator(GeneratorOp gen, StringLiteral annotation);
+bool hasDecorator(ArrayRef<TypedAttr> decorators, StringRef annotation);
 
 /// Whether the generator operation contains any decorator with any of the given
 /// annotations.
-bool hasAnyDecorator(GeneratorOp gen,
-                     llvm::ArrayRef<StringLiteral> annotations);
+bool hasAnyDecorator(ArrayRef<TypedAttr> decorators,
+                     ArrayRef<StringLiteral> annotations);
 
 } // namespace M::KGEN
 

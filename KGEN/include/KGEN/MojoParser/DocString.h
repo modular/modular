@@ -123,6 +123,9 @@ private:
 // Entry Point
 //===----------------------------------------------------------------------===//
 
+/// Returns if the given decl should be hidden during documentation generation.
+bool shouldHideDeclInDocGen(ASTDecl &decl, StringRef name);
+
 /// Validate the doc string for the given decl, emitting warnings for any
 /// invalid format issues.
 void validateDocString(SharedState &sharedState, ASTDecl &decl);

@@ -79,7 +79,21 @@ fn empty_fn():
     return
 
 
-# CHECK:  "kind": "function",
+# CHECK-NOT:  fn_hidden
+
+
+@doc_private
+fn fn_hidden() -> Int:
+    """This is a function summary.
+
+    The is some kind of description.
+
+    Returns:
+        An Int.
+    """
+    return 33
+
+
 # CHECK:  "name": "fn_that_async",
 # CHECK:  "overloads":
 # CHECK:      "async": true
@@ -489,12 +503,11 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
 # CHECK:  "kind": "function",
 # CHECK:  "name": "__init__",
 # CHECK:  "name": "__copyinit__",
+# CHECK:  "name": "__del__",
 
 # CHECK: "name": "__add__",
 # CHECK: "overloads":
 # CHECK:      "signature": "__add__(self: Self, other: Self) -> Self"
-
-# CHECK:  "name": "__del___",
 
 # CHECK:  "kind": "function",
 # CHECK:  "name": "fn_with_by_conventions",
@@ -529,7 +542,7 @@ struct InMemoryStruct(Sized):
     fn __copyinit__(inout self, existing: Self):
         pass
 
-    fn __del___(owned self):
+    fn __del__(owned self):
         pass
 
     fn __add__(self, other: Self) -> Self:
