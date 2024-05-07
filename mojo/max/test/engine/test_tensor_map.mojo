@@ -76,6 +76,35 @@ fn test_tensor_map_value() raises:
     _ = t1^
 
 
+fn test_tensor_map_copy() raises:
+    var t1 = Tensor[DType.float32](TensorShape(2, 3))
+    for i in range(2):
+        for j in range(3):
+            t1[Index(i, j)] = 1
+
+    var session = InferenceSession()
+    var map = session.new_tensor_map()
+
+    map.borrow("tensor", t1)
+    assert_equal(len(map), 1)
+
+    var map2 = map
+    assert_equal(len(map2), 1)
+
+    var mt1 = map.get[DType.float32]("tensor")
+    var mt2 = map2.get[DType.float32]("tensor")
+    for i in range(2):
+        for j in range(3):
+            assert_equal(mt1[Index(i, j)], mt2[Index(i, j)])
+
+    _ = mt1^
+    _ = mt2^
+    _ = map^
+    _ = map2^
+    _ = t1^
+
+
 fn main() raises:
     test_tensor_map()
     test_tensor_map_value()
+    test_tensor_map_copy()

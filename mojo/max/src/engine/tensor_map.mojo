@@ -12,7 +12,7 @@ from sys.ffi import DLHandle
 
 from .session import InferenceSession
 from ._context import CRuntimeContext
-from ._utils import call_dylib_func, exchange
+from ._utils import call_dylib_func, exchange, CString
 from ._tensor_impl import EngineTensor
 from ._tensor_map_impl import CTensorMap
 from .value import Value
@@ -20,7 +20,7 @@ from .value import Value
 from max.tensor import Tensor, TensorSpec
 
 
-struct TensorMap(SizedRaising):
+struct TensorMap(CollectionElement, SizedRaising):
     """
     Maps inputs and outputs to their respective names and can
     be used to supply and receive data to MAX Engine model.
@@ -92,6 +92,16 @@ struct TensorMap(SizedRaising):
         )
         self._lib = existing._lib
         self._session = existing._session^
+
+    fn __copyinit__(inout self, existing: Self):
+        """Copy contructor for TensorMap.
+
+        Args:
+            existing: Instance of TensorMap to copy from.
+        """
+        self._ptr = existing._ptr.copy(existing._lib)
+        self._lib = existing._lib
+        self._session = existing._session
 
     fn borrow[type: DType](self, key: String, value: Tensor[type]) raises:
         """Borrow the given tensor into the map at the key location.
@@ -264,6 +274,21 @@ struct TensorMap(SizedRaising):
         )
         key._strref_keepalive()
         return Value(value_ptr, self._lib, self._session)
+
+    fn keys(self) raises -> List[String]:
+        """Returns all held keys.
+
+        Returns:
+            A list with all contained keys.
+        """
+        var size: Int64 = 0
+        var keys_arr = self._ptr.keys(LegacyPointer.address_of(size), self._lib)
+        var keys = List[String](capacity=int(size))
+        for i in range(size):
+            keys.append(keys_arr[i])
+
+        CString.free_array(keys_arr)
+        return keys
 
     fn __len__(self) raises -> Int:
         """Gets number of elements in the map.

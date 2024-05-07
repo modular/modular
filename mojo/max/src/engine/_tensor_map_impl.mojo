@@ -20,12 +20,14 @@ struct CTensorMap:
 
     var ptr: DTypePointer[DType.invalid]
 
+    alias CopyAsyncTensorMapFnName = "M_copyAsyncTensorMap"
     alias FreeAsyncTensorMapFnName = "M_freeAsyncTensorMap"
     alias BorrowTensorIntoFnName = "M_borrowTensorInto"
     alias BorrowValueIntoFnName = "M_borrowValueInto"
     alias GetTensorByNameFromFnName = "M_getTensorByNameFrom"
     alias GetValueByNameFromFnName = "M_getValueByNameFrom"
     alias GetTensorMapSizeFnName = "M_getTensorMapSize"
+    alias KeysFnName = "M_tensorMapKeys"
 
     fn get_tensor_by_name(self, name: CString, lib: DLHandle) raises -> CTensor:
         var status = Status(lib)
@@ -82,6 +84,13 @@ struct CTensorMap:
         if status:
             raise status.__str__()
 
+    fn keys(
+        self, size_ptr: Pointer[Int64], lib: DLHandle
+    ) raises -> Pointer[CString]:
+        return call_dylib_func[Pointer[CString]](
+            lib, Self.KeysFnName, self, size_ptr
+        )
+
     fn size(self, lib: DLHandle) raises -> Int:
         var status = Status(lib)
         var size = call_dylib_func[Int](
@@ -90,6 +99,16 @@ struct CTensorMap:
         if status:
             raise status.__str__()
         return size
+
+    fn copy(self, lib: DLHandle) -> CTensorMap:
+        """
+        Copies the AsyncTensorMap ptr. Increases underlying refcount.
+        """
+        return call_dylib_func[CTensorMap, CTensorMap](
+            lib,
+            Self.CopyAsyncTensorMapFnName,
+            self,
+        )
 
     fn free(self, lib: DLHandle):
         """
