@@ -45,6 +45,14 @@
   arg = 0,
   alignInBits = 64
 > : !debuginfo.unresolved<!llvm.ptr>
+#local_variable4 = #debuginfo.local_variable<
+  scope = #subprogram,
+  name = "foo_4",
+  file = #file,
+  line = 10,
+  arg = 0,
+  alignInBits = 32
+> : !debuginfo.unresolved<i32>
 #deref_expr = #debuginfo.expr.deref<#debuginfo.expr.irvalue : !debuginfo.ptr<!llvm.ptr {sizeInBits = 64, alignInBits = 64}>> : !debuginfo.unresolved<!llvm.ptr>
 
 // CHECK-LABEL: func @simple
@@ -91,10 +99,14 @@ func.func @value_to_addr_op() -> i32 {
 
 // CHECK-LABEL: func @value_with_two_nontrivial_ops
 func.func @value_with_two_nontrivial_ops() -> (i32, i32) {
+  // CHECK: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN:.*]])
+  // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // CHECK: %[[VALUE1:.*]] = "test.op"() : () -> i32
-  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[VALUE1]] : i32
+  // CHECK: llvm.store %[[VALUE1]], %[[ALLOC]] : i32, !llvm.ptr
+  // CHECK: llvm.intr.dbg.declare #[[VARIABLE:.*]] = %[[ALLOC]] : !llvm.ptr
   // CHECK: %[[VALUE2:.*]] = "test.op2"() : () -> i32
-  // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[VALUE2]] : i32
+  // CHECK: llvm.store %[[VALUE2]], %[[ALLOC]] : i32, !llvm.ptr
+  // CHECK-NOT: llvm.intr.dbg.value #[[VARIABLE]]
   // CHECK: return %[[VALUE1]], %[[VALUE2]] : i32, i32
 
   %value1 = "test.op"() : () -> i32
@@ -102,6 +114,35 @@ func.func @value_with_two_nontrivial_ops() -> (i32, i32) {
   %value2 = "test.op2"() : () -> i32
   debuginfo.value #local_variable = %value2 : i32
   return %value1, %value2 : i32, i32
+}
+
+// CHECK-LABEL: func @value_shared_with_two_nontrivial_ops
+func.func @value_shared_with_two_nontrivial_ops() -> (i32, i32, i32) {
+  // CHECK: %[[COUNT2:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN:.*]])
+  // CHECK: %[[ALLOC2:.*]] = llvm.alloca %[[COUNT2]] x i32 : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[COUNT1:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN:.*]])
+  // CHECK: %[[ALLOC1:.*]] = llvm.alloca %[[COUNT1]] x i32 : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
+  // CHECK: %[[VALUE1:.*]] = "test.op"() : () -> i32
+  // CHECK: llvm.store %[[VALUE1]], %[[ALLOC2]] : i32, !llvm.ptr
+  // CHECK: llvm.store %[[VALUE1]], %[[ALLOC1]] : i32, !llvm.ptr
+  // CHECK-DAG: llvm.intr.dbg.declare #[[VARIABLE1:.*]] = %[[ALLOC1]] : !llvm.ptr
+  // CHECK-DAG: llvm.intr.dbg.declare #[[VARIABLE2:.*]] = %[[ALLOC2]] : !llvm.ptr
+  // CHECK: %[[VALUE2:.*]] = "test.op2"() : () -> i32
+  // CHECK: llvm.store %[[VALUE2]], %[[ALLOC1]] : i32, !llvm.ptr
+  // CHECK: %[[VALUE3:.*]] = "test.op3"() : () -> i32
+  // CHECK: llvm.store %[[VALUE3]], %[[ALLOC2]] : i32, !llvm.ptr
+  // CHECK-NOT: llvm.intr.dbg.value #[[VARIABLE1]]
+  // CHECK-NOT: llvm.intr.dbg.value #[[VARIABLE2]]
+  // CHECK: return %[[VALUE1]], %[[VALUE2]], %[[VALUE3]] : i32, i32, i32
+
+  %value1 = "test.op"() : () -> i32
+  debuginfo.value #local_variable = %value1 : i32
+  debuginfo.value #local_variable4 = %value1 : i32
+  %value2 = "test.op2"() : () -> i32
+  debuginfo.value #local_variable = %value2 : i32
+  %value3 = "test.op3"() : () -> i32
+  debuginfo.value #local_variable4 = %value3 : i32
+  return %value1, %value2, %value3 : i32, i32, i32
 }
 
 // CHECK-LABEL: func @value_with_one_kill
