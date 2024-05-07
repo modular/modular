@@ -20,5 +20,6 @@ static void removeDebugKills(mlir::ModuleOp module) {
 }
 
 TargetAdapter DebugInfo::getNVPTXAdapter() {
-  return TargetAdapter{removeDebugKills, convertDbgValueToDeclare};
+  return TargetAdapter{populateFallbackConversionPatterns, removeDebugKills,
+                       convertDbgValueToDeclare};
 }

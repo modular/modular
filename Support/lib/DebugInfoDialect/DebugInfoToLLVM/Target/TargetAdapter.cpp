@@ -27,8 +27,39 @@ TargetAdapter DebugInfo::getTargetAdapter(M::TargetInfoAttr target) {
 }
 
 TargetAdapter DebugInfo::getFallbackAdapter() {
-  return TargetAdapter{[](ModuleOp module) { sinkDebugKills(module); },
+  return TargetAdapter{populateFallbackConversionPatterns,
+                       [](ModuleOp module) { sinkDebugKills(module); },
                        convertDbgValueToDeclare};
+}
+
+//===----------------------------------------------------------------------===//
+// Conversion Patterns
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct ConvertLineTableLocOp : public OpRewritePattern<LineTableLocOp> {
+  ConvertLineTableLocOp(MLIRContext *ctx, DIAttrTypeReplacer &replacer)
+      : OpRewritePattern<LineTableLocOp>(ctx), replacer(replacer) {}
+
+  LogicalResult matchAndRewrite(LineTableLocOp op,
+                                PatternRewriter &rewriter) const override {
+    rewriter.create<LLVM::InlineAsmOp>(
+        replacer.replace<LocationAttr>(op.getLoc()), TypeRange{}, ValueRange{},
+        "nop", "", /*has_side_effects=*/true, /*is_align_stack=*/false,
+        LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
+        ArrayAttr());
+    rewriter.eraseOp(op);
+    return success();
+  }
+
+  /// The replacer used to update attributes.
+  DIAttrTypeReplacer &replacer;
+};
+} // namespace
+
+void DebugInfo::populateFallbackConversionPatterns(
+    DIAttrTypeReplacer &replacer, RewritePatternSet &patterns) {
+  patterns.add<ConvertLineTableLocOp>(patterns.getContext(), replacer);
 }
 
 //===----------------------------------------------------------------------===//

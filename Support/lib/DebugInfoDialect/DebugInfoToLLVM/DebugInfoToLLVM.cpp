@@ -367,31 +367,6 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIVectorType type) {
 }
 
 //===----------------------------------------------------------------------===//
-// MarkLocationOp
-//===----------------------------------------------------------------------===//
-
-namespace {
-struct ConvertLineTableLocOp : public OpRewritePattern<LineTableLocOp> {
-  ConvertLineTableLocOp(MLIRContext *ctx, DIAttrTypeReplacer &replacer)
-      : OpRewritePattern<LineTableLocOp>(ctx), replacer(replacer) {}
-
-  LogicalResult matchAndRewrite(LineTableLocOp op,
-                                PatternRewriter &rewriter) const override {
-    rewriter.create<LLVM::InlineAsmOp>(
-        replacer.replace<LocationAttr>(op.getLoc()), TypeRange{}, ValueRange{},
-        "nop", "", /*has_side_effects=*/true, /*is_align_stack=*/false,
-        LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
-        ArrayAttr());
-    rewriter.eraseOp(op);
-    return success();
-  }
-
-  /// The replacer used to update attributes.
-  DIAttrTypeReplacer &replacer;
-};
-} // namespace
-
-//===----------------------------------------------------------------------===//
 // KillOp
 //===----------------------------------------------------------------------===//
 
@@ -473,8 +448,8 @@ struct ConvertOpLocations : public mlir::RewritePattern {
 
 static void populateDebugInfoToLLVMPatterns(DIAttrTypeReplacer &replacer,
                                             RewritePatternSet &patterns) {
-  patterns.add<ConvertLineTableLocOp, ConvertKillOp, ConvertValueOp,
-               ConvertOpLocations>(patterns.getContext(), replacer);
+  patterns.add<ConvertKillOp, ConvertValueOp, ConvertOpLocations>(
+      patterns.getContext(), replacer);
 }
 
 //===----------------------------------------------------------------------===//
@@ -604,8 +579,10 @@ void DebugInfoToLLVMPass::runOnOperation() {
   mlir::RewritePatternSet patterns(&getContext());
   populateDebugInfoToLLVMPatterns(replacer, patterns);
 
-  // Massage DebugInfo before conversion.
   TargetAdapter targetAdapter = getTargetAdapter(getTargetInfo(getOperation()));
+  targetAdapter.populateConversionPatterns(replacer, patterns);
+
+  // Massage DebugInfo before conversion.
   targetAdapter.preTranslationAdapter(getOperation());
 
   // Legalize DebugValues.
