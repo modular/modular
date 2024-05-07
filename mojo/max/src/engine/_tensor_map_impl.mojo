@@ -4,11 +4,9 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from memory.unsafe import bitcast, DTypePointer
+from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from tensor import Tensor, TensorShape
 
-from .session import InferenceSession
 from ._status import Status
 from ._utils import call_dylib_func, CString
 from ._tensor_impl import CTensor

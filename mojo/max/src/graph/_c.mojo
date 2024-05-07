@@ -7,8 +7,6 @@
 from builtin._startup import _get_current_or_global_runtime
 from memory import UnsafePointer
 from memory.unsafe import Pointer
-from os import getenv
-from tensor import Tensor
 from sys.ffi import RTLD, DLHandle, _get_dylib_function
 from pathlib import Path
 from utils import StringRef

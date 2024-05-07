@@ -5,12 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 """Library for graph Symbol Types."""
 
-from tensor import TensorSpec
 from utils.variant import Variant
 
 import _mlir
 
 import ._c
+
+from max.tensor import TensorSpec
 
 
 fn _dyn() -> Int64:

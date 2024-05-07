@@ -6,12 +6,10 @@
 """Ops that slice, index, stack, concat etc."""
 
 from collections.optional import Optional
-from tensor import TensorShape
 from math.limit import max_finite
 
 from ..error import error
 from ..symbol import SymbolicSlice
-
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
 

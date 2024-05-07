@@ -6,11 +6,9 @@
 # UNSUPPORTED: windows
 # RUN: %mojo -debug-level full %s
 
-from max.engine import EngineTensorView, InferenceSession
-from tensor import Tensor, TensorShape
 from testing import assert_equal, assert_false, assert_true
-from utils.index import Index
-from python import Python
+
+from max.engine import InferenceSession
 
 
 fn test_list_value() raises:

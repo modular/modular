@@ -4,12 +4,11 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
 from pathlib import Path
-from tensor import Tensor
 from testing import assert_almost_equal, assert_equal
 
 from max.engine import InferenceSession, TensorMap
+from max.tensor import Tensor
 
 
 fn assert_tensors_almost_equal[

@@ -5,9 +5,9 @@
 # ===----------------------------------------------------------------------=== #
 """Ops commonly used in convolutional networks."""
 
-
-from tensor import Tensor, TensorShape
 from ..error import error
+
+from max.tensor import Tensor, TensorShape
 
 
 def conv2d(

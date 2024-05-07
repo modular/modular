@@ -6,15 +6,17 @@
 """
 Defines `EngineTensorSpec` to define a model's input and output specs.
 """
-from memory.unsafe import DTypePointer
-from sys.ffi import DLHandle
-from ._utils import call_dylib_func
-from tensor import TensorSpec
-from ._dtypes import EngineDType
+
 from collections import List
 from collections.optional import Optional
+from sys.ffi import DLHandle
+
+from ._utils import call_dylib_func
+from ._dtypes import EngineDType
 from .session import InferenceSession
 from ._tensor_spec_impl import CTensorSpec
+
+from max.tensor import TensorSpec
 
 
 struct EngineTensorSpec(Stringable, CollectionElement):

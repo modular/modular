@@ -11,17 +11,14 @@ You can pass each of the types shown here to
 [`Model.execute()`](/engine/reference/mojo/engine/model/Model#execute).
 """
 from collections import List
-from memory.unsafe import bitcast, DTypePointer, Pointer
-from buffer.list import Dim
-from sys.ffi import DLHandle
-
-from tensor import Tensor
+from memory.unsafe import bitcast, DTypePointer
 from memory import Arc
 from python import Python, PythonObject
 
-from .session import InferenceSession
 from .tensor_spec import TensorSpec
 from ._tensor_impl import _Numpy, CTensor
+
+from max.tensor import Tensor
 
 
 struct _OwningPointer(Movable):

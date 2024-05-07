@@ -8,7 +8,6 @@
 
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
-from tensor import Tensor, TensorSpec
 
 from max.engine import InferenceSession, TensorMap
 from max.engine._utils import (
@@ -16,10 +15,10 @@ from max.engine._utils import (
     call_dylib_func,
     exchange,
 )
+from max.tensor import TensorSpec
 
-from ._serve_rt import Batch, MuttServerAsync, TensorView
+from ._serve_rt import TensorView
 from .service import InferenceRequest, InferenceResponse
-from .stats import ServerStats
 
 # ===----------------------------------------------------------------------=== #
 # Utilities

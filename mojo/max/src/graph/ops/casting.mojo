@@ -5,12 +5,10 @@
 # ===----------------------------------------------------------------------=== #
 """Ops that modify the shape or data type of a symbolic tensor."""
 
-from tensor import Tensor, TensorShape
-from utils.variant import Variant
-
 from ..error import error
 from ..type import Dim
 
+from max.tensor import Tensor, TensorShape
 
 # TODO: Add checks or extend to unranked support, where static shapes assumed.
 

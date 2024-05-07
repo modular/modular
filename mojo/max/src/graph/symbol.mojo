@@ -6,7 +6,6 @@
 """Symbolic value primitives."""
 
 from collections.optional import Optional
-from tensor import Tensor, TensorShape, TensorSpec
 from utils.variant import Variant
 
 import _mlir

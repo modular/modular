@@ -5,9 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 """Core graph primitives."""
 
-from collections import Optional
 from sys.info import has_neon
-from tensor import Tensor
 
 import _mlir
 from _mlir.builtin_attributes import TypeAttr
@@ -17,6 +15,8 @@ from ._attributes import _tensor_attr, _vector_attr
 from .error import error
 from .symbol import Symbol
 from .type import ListType, TensorType, Type
+
+from max.tensor import Tensor
 
 
 # TODO: Add examples throughout.
@@ -71,7 +71,7 @@ struct Graph(CollectionElement, Stringable):
 
     ```mojo
     from max.graph import Type, Graph, TensorType, ops
-    from tensor import Tensor, TensorShape
+    from max.tensor import Tensor, TensorShape
 
     def build_model() -> Graph:
         var graph = Graph(TensorType(DType.float32, 2, 6))

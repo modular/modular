@@ -13,9 +13,8 @@ parts respectively.
 # These operations assume that all tensors have last dim == 2, representing real
 # and imaginary parts.
 
-
-from tensor import Tensor, TensorShape
 from max.graph.type import Dim
+from max.tensor import Tensor, TensorShape
 
 
 # ===----------------------------------------------------------------------=== #

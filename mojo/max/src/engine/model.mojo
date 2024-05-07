@@ -7,17 +7,16 @@
 Defines the `Model` type that holds a model ready for execution.
 """
 
+from sys.ffi import DLHandle
+
 from ._model_impl import CModel
 from ._compilation import CompiledModel
 from ._context import CRuntimeContext
-from sys.ffi import DLHandle
 from ._utils import call_dylib_func, exchange
 from ._status import Status
 from .tensor_map import CTensorMap
-from tensor import TensorSpec
-from sys.intrinsics import _mlirtype_is_eq
-from utils import StringRef
-from tensor import Tensor
+
+from max.tensor import Tensor
 
 
 @value

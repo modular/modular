@@ -7,10 +7,7 @@
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 from ._utils import call_dylib_func, CString
-from tensor import TensorSpec
 from ._dtypes import EngineDType
-from collections import List
-from .session import InferenceSession
 
 
 @value

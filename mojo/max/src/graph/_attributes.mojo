@@ -16,13 +16,12 @@ of the constant it holds.
 lists, tensors, etc.
 """
 
-from tensor import Tensor
-from pathlib import Path
-
 import _mlir
 
 from .type import TensorType
 import ._c
+
+from max.tensor import Tensor
 
 
 # ===------------------------------------------------------------------=== #

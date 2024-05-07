@@ -4,13 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from os import getenv
 from sys import external_call
 from sys.ffi import DLHandle
 from memory.unsafe import DTypePointer
-from ._status import Status
 from ._utils import call_dylib_func, exchange, CString
-from tensor import TensorSpec
 from pathlib import Path
 
 

@@ -7,16 +7,13 @@
 Defines the `InferenceSession` type that serves as an entry point to
 MAX Engine.
 """
+
 from collections import List
 from collections.optional import Optional
-from collections.vector import InlinedFixedVector
 from os.atomic import Atomic
 from pathlib import Path
-from sys.ffi import DLHandle, _get_global_or_null
-
-from max.graph import Graph
+from sys.ffi import _get_global_or_null
 from memory import Arc
-from tensor import Tensor
 
 from ._compilation import (
     CCompiledModel,
@@ -29,8 +26,10 @@ from ._context import RuntimeConfig, RuntimeContext, _Device
 from ._engine_impl import _EngineImpl, _get_engine_path
 from ._model_impl import CModel
 from ._status import Status
-from ._tensor_spec_impl import TensorSpec
 from ._utils import call_dylib_func
+
+from max.graph import Graph
+from max.tensor import Tensor, TensorSpec
 
 
 struct _InferenceSessionImpl(Movable):
