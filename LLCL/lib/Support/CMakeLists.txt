@@ -31,6 +31,7 @@ add_modular_library(LLCLSupport
   Semaphore.cpp
   SpinWaiter.cpp
   ThreadAffinity.cpp
+  TimerHeap.cpp
   UnknownLocationDecoder.cpp
   )
 target_link_libraries(LLCLSupport PUBLIC ${LIBS} MThreading)
