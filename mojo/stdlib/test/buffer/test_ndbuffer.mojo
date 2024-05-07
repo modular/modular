@@ -13,9 +13,10 @@ from sys.param_env import env_get_string
 from buffer.buffer import NDBuffer, _compute_ndbuffer_offset
 from buffer.list import DimList
 from memory import memcmp, memset_zero
-from tensor import Tensor
 
 from utils.index import Index, StaticIntTuple
+
+from testing import assert_equal
 
 alias TEMP_FILE_DIR = env_get_string["TEMP_FILE_DIR"]()
 
@@ -284,20 +285,22 @@ fn test_get_nd_index():
     print(matrix1.get_nd_index(104))
 
 
-# CHECK-LABEL: test_print
-fn test_print():
-    print("== test_print")
-    # CHECK{LITERAL}: NDBuffer([[[0, 1, 2],
-    # CHECK{LITERAL}: [3, 4, 5]],
-    # CHECK{LITERAL}: [[6, 7, 8],
-    # CHECK{LITERAL}: [9, 10, 11]]], dtype=index, shape=2x2x3)
-    var tensor = Tensor[DType.index](2, 2, 3)
-    iota(tensor.unsafe_ptr(), tensor.num_elements())
+def test_print():
+    var buffer = NDBuffer[DType.index, 3, DimList(2, 2, 3)].stack_allocation()
+    for i in range(2):
+        for j in range(2):
+            for k in range(3):
+                buffer[Index(i, j, k)] = i * 2 * 3 + j * 3 + k
 
-    var buffer = NDBuffer[DType.index, 3, DimList(2, 2, 3)](tensor.unsafe_ptr())
-
-    print(str(buffer))
-    _ = tensor^
+    assert_equal(
+        str(buffer),
+        (
+            "NDBuffer([[[0, 1, 2],\n"
+            "[3, 4, 5]],\n"
+            "[[6, 7, 8],\n"
+            "[9, 10, 11]]], dtype=index, shape=2x2x3)"
+        ),
+    )
 
 
 # CHECK-LABEL: test_ndbuffer
