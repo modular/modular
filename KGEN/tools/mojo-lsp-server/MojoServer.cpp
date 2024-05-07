@@ -31,11 +31,6 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
-
-// FIXME: SourceMgrUtils.h is using the wrong header guard, so we have to undef
-// it here before we can include the file. This should be fixed with the next
-// llvm integrate, at which point we can remove this #undef.
-#undef MLIR_TOOLS_LSPSERVERSUPPORT_TRANSPORT_H
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
