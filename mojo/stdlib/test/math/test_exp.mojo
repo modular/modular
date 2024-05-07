@@ -6,16 +6,13 @@
 # RUN: %mojo %s
 
 from math import exp
-from random import seed
+from random import seed, randn_float64
 
-from tensor import Tensor, TensorShape, randn
 from test_utils import libm_call
-from testing import *
+from testing import assert_equal, assert_almost_equal
 
 
-# CHECK-LABEL: test_exp_float16
 def test_exp_float16():
-    print("== test_exp_float16")
     assert_almost_equal(exp(Float16(-0.1)), 0.9047)
     assert_almost_equal(exp(Float16(0.1)), 1.105)
     assert_almost_equal(exp(Float16(2)), 7.389)
@@ -23,9 +20,7 @@ def test_exp_float16():
     assert_equal(str(exp(Float16(108.5230))), "inf")
 
 
-# CHECK-LABEL: test_exp_float32
 def test_exp_float32():
-    print("== test_exp_float32")
     assert_almost_equal(exp(Float32(-0.1)), 0.90483)
     assert_almost_equal(exp(Float32(0.1)), 1.10517)
     assert_almost_equal(exp(Float32(2)), 7.38905)
@@ -33,9 +28,7 @@ def test_exp_float32():
     assert_equal(str(exp(Float32(108.5230))), "inf")
 
 
-# CHECK-LABEL: test_exp_float64
 def test_exp_float64():
-    print("== test_exp_float64")
     assert_almost_equal(exp(Float64(-0.1)), 0.90483)
     assert_almost_equal(exp(Float64(0.1)), 1.10517)
     assert_almost_equal(exp(Float64(2)), 7.38905)
@@ -54,12 +47,9 @@ def exp_libm[
 def test_exp_libm[type: DType]():
     seed(0)
     alias N = 8192
-    var x = randn[type](N, 0, 9.0)
-
     for i in range(N):
-        assert_almost_equal(
-            exp(x[i]), exp_libm(x[i]), msg="for the input " + str(x[i])
-        )
+        var x = randn_float64(0, 9.0).cast[type]()
+        assert_almost_equal(exp(x), exp_libm(x), msg="for the input " + str(x))
 
 
 def main():
