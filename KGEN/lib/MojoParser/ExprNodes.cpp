@@ -2344,20 +2344,14 @@ static LogicalResult materializeTypesInConditional(ExprEmitter &emitter,
   ASTType lTarget = lhsV.getType().getNonmaterializableTarget(emitter.shared);
   ASTType rTarget = rhsV.getType().getNonmaterializableTarget(emitter.shared);
   if (lTarget) {
-    ValueDest lhsDest(lTarget, EC_CondExpr);
-    lhsV = emitter.emitCValue({lhsV, lhs}, lhsDest);
-    if (!lhsV) {
-      dest.resetForError();
+    lhsV = emitter.emitCValue({lhsV, lhs}, EC_CondExpr, lTarget);
+    if (!lhsV)
       return failure();
-    }
   }
   if (rTarget) {
-    ValueDest rhsDest(rTarget, EC_CondExpr);
-    rhsV = emitter.emitCValue({rhsV, rhs}, rhsDest);
-    if (!rhsV) {
-      dest.resetForError();
+    rhsV = emitter.emitCValue({rhsV, rhs}, EC_CondExpr, rTarget);
+    if (!rhsV)
       return failure();
-    }
   }
   return success();
 }
@@ -2429,8 +2423,10 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, ExprEmitter &emitter) const {
     return {};
 
   if (failed(materializeTypesInConditional(emitter, this, lhsV, rhsV, lhs, rhs,
-                                           dest)))
+                                           dest))) {
+    dest.resetForError();
     return {};
+  }
 
   /// If the types disagree, then we need to emit a conversion to a common
   /// type. See if one is convertible to the other, and if so, emit a
@@ -2735,8 +2731,10 @@ AnyValue IfElseOpNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   }
 
   if (failed(materializeTypesInConditional(emitter, this, trueVal, falseVal,
-                                           trueExpr, falseExpr, dest)))
+                                           trueExpr, falseExpr, dest))) {
+    dest.resetForError();
     return {};
+  }
 
   auto resultType = trueVal.getRValueType();
 
