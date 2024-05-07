@@ -5,11 +5,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoParser/DocString.h"
-#include "KGEN/MojoParser/ASTDecl.h"
-
 #include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/LITDialect/LITUtils.h"
+#include "KGEN/MojoParser/ASTDecl.h"
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/StringExtras.h"
@@ -26,18 +26,38 @@ static size_t getIndentationLevel(StringRef str) {
   return str.size() - str.ltrim().size();
 }
 
-/// A struct requires a doc string if it's defined at the top level of a module,
-/// unless its name begins with an underscore.
-static bool requiresDocString(ASTDeclInterface op) {
-  return !op.getDeclName().strref().starts_with("_") &&
-         isa<FileModuleOp>(op->getParentOp());
+/// Return if one of the given decorators is the doc_private decorator.
+static bool hasDocPrivateDecorator(ArrayRef<TypedAttr> decorators) {
+  return hasDecorator(decorators,
+                      "stdlib::builtin::_documentation::doc_private");
 }
 
 /// Given a function name such as "__init__(module::Struct=&)", returns whether
 /// it is a "special function," also known as a "dunder method"
 /// (double-underscore method).
-static bool isSpecialFunction(StringRef name) {
-  return SpecialFunctionInfo::getKind(name) != SpecialFunctionKind::kNormal;
+static bool isPublicSpecialFunction(StringRef name) {
+  return SpecialFunctionInfo::getKind(name) != SpecialFunctionKind::kNormal &&
+         !name.starts_with("__mlir");
+}
+
+/// Return if a decl should be hidden given its name.
+bool LIT::shouldHideDeclInDocGen(ASTDecl &decl, StringRef name) {
+  // Hide private names (non special names starting with _).
+  if (name.starts_with("_") && !isPublicSpecialFunction(name))
+    return true;
+
+  // Otherwise, check to see if this was marked explicitly to be hidden.
+  return TypeSwitch<ASTDecl &, bool>(decl)
+      .Case<FuncOp, GlobalVarDeclOp, StructDeclOp>(
+          [&](auto op) { return hasDocPrivateDecorator(op.getDecorators()); })
+      .Default(false);
+}
+
+/// A struct requires a doc string if it's defined at the top level of a module,
+/// unless its name begins with an underscore.
+static bool requiresDocString(ASTDeclInterface op) {
+  return !op.getDeclName().strref().starts_with("_") &&
+         isa<FileModuleOp>(op->getParentOp());
 }
 
 /// If a function matches all of the following conditions, it requires a doc
@@ -48,7 +68,11 @@ static bool isSpecialFunction(StringRef name) {
 ///    method on a struct that itself requires a doc string.
 static bool requiresDocString(LIT::FuncOp op) {
   StringRef name = *op.getSourceName();
-  if (name.starts_with("_") && !isSpecialFunction(name))
+  if (name.starts_with("_") && !isPublicSpecialFunction(name))
+    return false;
+
+  // Don't require doc strings for explicitly annotated methods.
+  if (hasDocPrivateDecorator(op.getDecorators()))
     return false;
 
   Operation *parent = op->getParentOp();

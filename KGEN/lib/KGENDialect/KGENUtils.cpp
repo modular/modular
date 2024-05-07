@@ -1987,31 +1987,42 @@ ExportMap KGEN::getExportedSymbols(ModuleOp module) {
   return exportedSymbols;
 }
 
-bool KGEN::isDecorator(TypedAttr decorator, StringLiteral annotation) {
+/// Return if the given decorator matches an annotation, whose scopes are split
+/// into the given parts.
+static bool isDecorator(TypedAttr decorator,
+                        ArrayRef<StringRef> annotationParts) {
   if (auto apply = dyn_cast<KGEN::ParamOperatorAttr>(decorator))
-    if (auto sym = dyn_cast<KGEN::SymbolConstantAttr>(apply.getOperand(0))) {
-      StringRef decoratorName = sym.getSymbol().getLeafReference().strref();
-      if (decoratorName.starts_with(annotation))
-        return true;
-    }
-  return false;
+    decorator = apply.getOperand(0);
+
+  auto sym = dyn_cast<KGEN::SymbolConstantAttr>(decorator);
+  if (!sym)
+    return false;
+  SymbolRefAttr symRef = sym.getSymbol();
+  ArrayRef<FlatSymbolRefAttr> nestedRefs = symRef.getNestedReferences();
+
+  // Check the root reference.
+  if (symRef.getRootReference() != annotationParts.front() ||
+      nestedRefs.size() != annotationParts.size() - 1)
+    return false;
+  // Check the middle references.
+  for (int i = 0, e = annotationParts.size() - 2; i < e; ++i)
+    if (nestedRefs[i].getValue() != annotationParts[i + 1])
+      return false;
+  // Check the leaf reference.
+  return nestedRefs.back().getValue().starts_with(annotationParts.back());
 }
 
-bool KGEN::hasDecorator(GeneratorOp gen, StringLiteral annotation) {
-  llvm::ArrayRef<TypedAttr> decorators = gen.getDecorators();
-  return std::any_of(
-      decorators.begin(), decorators.end(),
-      [&](TypedAttr decorator) { return isDecorator(decorator, annotation); });
+bool KGEN::hasDecorator(ArrayRef<TypedAttr> decorators, StringRef annotation) {
+  SmallVector<StringRef> parts;
+  annotation.split(parts, "::");
+  return llvm::any_of(decorators, [&](TypedAttr decorator) {
+    return isDecorator(decorator, parts);
+  });
 }
 
-bool KGEN::hasAnyDecorator(GeneratorOp gen,
-                           llvm::ArrayRef<StringLiteral> annotations) {
-  llvm::ArrayRef<TypedAttr> decorators = gen.getDecorators();
-  return std::any_of(
-      decorators.begin(), decorators.end(), [&](TypedAttr decorator) {
-        return std::any_of(annotations.begin(), annotations.end(),
-                           [&](const StringLiteral &annot) {
-                             return isDecorator(decorator, annot);
-                           });
-      });
+bool KGEN::hasAnyDecorator(ArrayRef<TypedAttr> decorators,
+                           ArrayRef<StringLiteral> annotations) {
+  return llvm::any_of(annotations, [&](const StringLiteral &annot) {
+    return hasDecorator(decorators, annot);
+  });
 }
