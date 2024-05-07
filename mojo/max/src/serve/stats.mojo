@@ -85,7 +85,7 @@ struct ServerStats(ServerCallbacks):
     fn on_request_fail(inout self, request: ModelInferRequest):
         self.total_failed_requests += 1
 
-    fn print(inout self, unit: String = Unit.s):
+    fn print(inout self, unit: String = Unit.ms):
         """
         Prints out a summary of collected statistics.
         """
