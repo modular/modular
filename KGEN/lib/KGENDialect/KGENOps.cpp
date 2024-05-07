@@ -636,21 +636,19 @@ static void printExternGenerator(OpAsmPrinter &p, Operation *op,
 
 static ParseResult
 parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
-            ParamDeclArrayAttr &paramDecls,
             SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
             SmallVectorImpl<Type> &operandTypes,
             SmallVectorImpl<Type> &resultTypes) {
   SymbolRefAttr callee;
   ParameterExprArrayAttr paramValues;
-  if (p.parseAttribute(callee) ||
-      parseCallOpParams(p, paramValues, paramDecls) ||
+  if (p.parseAttribute(callee) || parseParameterValues(p, paramValues) ||
       p.parseOperandList(operands, AsmParser::Delimiter::Paren) ||
       p.parseColon())
     return failure();
 
   SignatureType signature;
   FunctionType functionType;
-  if (parseKGENSignature(p, paramDecls, functionType, signature))
+  if (parseKGENSignature(p, functionType, signature))
     return failure();
   calleeCst = SymbolConstantAttr::get(callee, paramValues, signature);
   llvm::append_range(operandTypes, functionType.getInputs());
@@ -659,12 +657,10 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
 }
 
 static void printCallOp(OpAsmPrinter &p, Operation *op,
-                        SymbolConstantAttr calleeCst,
-                        ParamDeclArrayAttr paramDecls, ValueRange operands,
+                        SymbolConstantAttr calleeCst, ValueRange operands,
                         TypeRange operandTypes, TypeRange resultTypes) {
   p << calleeCst.getSymbol();
-  printCallOpParams(p, op, calleeCst.getParamValues(), paramDecls,
-                    calleeCst.getType().getResultParamTypes());
+  printParameterValues(p, calleeCst.getParamValues());
   p << '(';
   p.printOperands(operands);
   p << ") : ";
@@ -685,7 +681,6 @@ mlir::CallInterfaceCallable CallOp::getCallableForCallee() {
 
 void CallOp::concretizeCallee(mlir::IRRewriter &b, SymbolConstantAttr callee) {
   setCalleeAttr(callee);
-  setParamDecls({});
 }
 
 void CallOp::setCalleeFromCallable(CallInterfaceCallable callee) {
@@ -709,7 +704,7 @@ LogicalResult CallParamOp::canonicalize(CallParamOp op,
     return failure();
 
   rewriter.replaceOpWithNewOp<CallOp>(op, op.getResultTypes(), callee,
-                                      op.getParamDecls(), op.getOperands());
+                                      op.getOperands());
   return success();
 }
 
@@ -867,7 +862,7 @@ LogicalResult CallIndirectOp::canonicalize(CallIndirectOp op,
   SmallVector<Value> args = llvm::to_vector(create.getCaptures());
   llvm::append_range(args, op.getArguments());
   b.replaceOpWithNewOp<CallParamOp>(op, op.getResultTypes(), create.getCallee(),
-                                    create.getParamDeclsAttr(), args);
+                                    args);
   return success();
 }
 
@@ -928,18 +923,6 @@ static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
 //===----------------------------------------------------------------------===//
 // CreateClosureOp
 //===----------------------------------------------------------------------===//
-
-void CreateClosureOp::build(OpBuilder &b, OperationState &state,
-                            TypedAttr callee, ValueRange captures) {
-  build(b, state, callee, captures,
-        ParamDeclArrayAttr::get(b.getContext(), {}));
-}
-
-void CreateClosureOp::build(OpBuilder &b, OperationState &state, Type type,
-                            TypedAttr callee, ValueRange captures) {
-  build(b, state, type, callee, captures,
-        ParamDeclArrayAttr::get(b.getContext(), {}));
-}
 
 LogicalResult CreateClosureOp::inferReturnTypes(
     MLIRContext *ctx, std::optional<Location> loc, ValueRange captures,

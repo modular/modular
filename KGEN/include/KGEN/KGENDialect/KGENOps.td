@@ -285,21 +285,13 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
   let arguments = (ins
     KGEN_SymbolConstantAttr:$callee,
-    KGEN_ParamDeclArrayAttr:$paramDecls,
     Variadic<AnyType>:$operands
   );
   let results = (outs Variadic<AnyType>:$results);
 
-  let builders = [
-    OpBuilder<(ins "TypeRange":$types, "SymbolConstantAttr":$callee,
-                   "ValueRange":$operands), [{
-      build($_builder, $_state, types, callee, std::nullopt, operands);
-    }]>
-  ];
-
   let assemblyFormat = [{
-    custom<CallOp>($callee, $paramDecls, $operands, type($operands),
-                   type($results)) attr-dict
+    custom<CallOp>($callee, $operands, type($operands), type($results))
+    attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -339,20 +331,12 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
 
   let arguments = (ins
     AttrOfType<KGEN_SignatureType>:$callee,
-    KGEN_ParamDeclArrayAttr:$paramDecls,
-    Variadic<AnyType>:$operands);
+    Variadic<AnyType>:$operands
+  );
   let results = (outs Variadic<AnyType>:$results);
 
-  let builders = [
-    OpBuilder<(ins "TypeRange":$types, "TypedAttr":$callee,
-                   "ValueRange":$operands), [{
-      build($_builder, $_state, types, callee, std::nullopt, operands);
-    }]>
-  ];
-
   let assemblyFormat = [{
-    `` custom<ParametricCallee>($callee, $paramDecls) `(` $operands `)`
-    attr-dict
+    `` custom<ParametricCallee>($callee) `(` $operands `)` attr-dict
   }];
 
   let extraClassDeclaration = [{
@@ -605,8 +589,7 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
     ```
   }];
 
-  let arguments = (ins TypedAttrInterface:$callee,
-                       KGEN_ParamDeclArrayAttr:$paramDecls);
+  let arguments = (ins TypedAttrInterface:$callee);
   let results = (outs Index:$loads,
                       Index:$stores,
                       Index:$additions,
@@ -617,7 +600,7 @@ def KGEN_CostOfOp : KGENOp<"cost_of", [
                       Index:$other);
 
   let assemblyFormat = [{
-    `` custom<ParametricCallee>($callee, $paramDecls) attr-dict
+    `` custom<ParametricCallee>($callee) attr-dict
   }];
 }
 
@@ -968,11 +951,10 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
   }];
 
   let arguments = (ins AttrOfType<KGEN_SignatureType>:$callee,
-                       Variadic<AnyType>:$captures,
-                       KGEN_ParamDeclArrayAttr:$paramDecls);
+                       Variadic<AnyType>:$captures);
   let results = (outs KGEN_SignatureType:$result);
   let assemblyFormat = [{
-    `` custom<ParametricCallee>($callee, $paramDecls) `(` $captures `)`
+    `` custom<ParametricCallee>($callee) `(` $captures `)`
     custom<ClosureCaptureTypes>(ref($callee), ref($captures), type($captures))
     attr-dict
   }];
@@ -981,8 +963,6 @@ def KGEN_CreateClosureOp : KGEN_CallOpBase<"create_closure", [Pure,
     OpBuilder<(ins "TypedAttr":$callee), [{
       build($_builder, $_state, callee, {});
     }]>,
-    OpBuilder<(ins "TypedAttr":$callee, "ValueRange":$captures)>,
-    OpBuilder<(ins "Type":$type, "TypedAttr":$callee, "ValueRange":$captures)>
   ];
 
   let hasVerifier = 1;

@@ -261,9 +261,6 @@ kgen.generator @hasInputParam<param>() {
 }
 
 kgen.func @test() {  // expected-note {{within 'kgen.func' @test}}
-  // ok
-  kgen.call @hasResultParam<[] -> result>() : () -> ()
-
   // expected-error@+1 {{cannot reference generator with input parameters from within a concrete 'kgen.func'}}
   kgen.call @hasInputParam<42>() : () -> ()
 

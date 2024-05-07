@@ -1420,9 +1420,7 @@ void KGEN::printSignature(AsmPrinter &p, Operation *op, TypeAttr signature) {
   printSignature(p, cast<SignatureType>(signature.getValue()));
 }
 
-ParseResult KGEN::parseKGENSignature(AsmParser &p,
-                                     ParamDeclArrayAttr resultParamDecls,
-                                     FunctionType &functionType,
+ParseResult KGEN::parseKGENSignature(AsmParser &p, FunctionType &functionType,
                                      SignatureType &signature) {
   llvm::SMLoc loc = p.getCurrentLocation();
 
@@ -1450,15 +1448,15 @@ ParseResult KGEN::parseKGENSignature(AsmParser &p,
       return p.emitError(loc, "expected a KGEN signature");
     functionType = signature.getValues();
     signature = SignatureType::remapToSignature(
-        {}, resultParamDecls, functionType, signature.getArgConventions(),
+        {}, {}, functionType, signature.getArgConventions(),
         signature.getFnEffects(), signature.getMetadata(),
         [&] { return p.emitError(loc); });
     return success();
   }
 
-  signature = SignatureType::remapToSignature(
-      {}, resultParamDecls, functionType, argConventions, effects, {},
-      [&] { return p.emitError(loc); });
+  signature = SignatureType::remapToSignature({}, {}, functionType,
+                                              argConventions, effects, {},
+                                              [&] { return p.emitError(loc); });
   return success(!!signature);
 }
 
@@ -1606,106 +1604,25 @@ void KGEN::printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
   p << '>';
 }
 
-ParseResult KGEN::parseCallOpParams(OpAsmParser &p,
-                                    ParameterExprArrayAttr &paramValues,
-                                    ParamDeclArrayAttr &resultDecls) {
-
-  if (p.parseOptionalLess()) {
-    // If there is no <, then the params of the call op are empty, so set
-    // paramValues and paramDecls to empty and return.
-    paramValues = ParameterExprArrayAttr::get(p.getContext(), {});
-    resultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
-    return success();
-  }
-
-  // Parse the input list
-  SmallVector<TypedAttr> values;
-  if (p.parseOptionalLSquare()) {
-    if (p.parseCommaSeparatedList([&] {
-          return parseParamValueDefaultingToIndex(p, values.emplace_back());
-        }))
-      return failure();
-  } else if (p.parseRSquare()) {
-    return failure();
-  }
-  paramValues = ParameterExprArrayAttr::get(p.getContext(), values);
-
-  // Check to see if we have results and parse them if so.
-  if (p.parseOptionalArrow()) {
-    resultDecls = ParamDeclArrayAttr::get(p.getContext(), {});
-    return p.parseGreater();
-  }
-
-  SmallVector<ParamDeclAttr> decls;
-  auto parseElt = [&]() -> ParseResult {
-    StringAttr declName;
-    Type type;
-    if (parseParamName(p, declName) || parseColonTypeOrIndex(p, type))
-      return failure();
-    decls.push_back(ParamDeclAttr::get(declName, type));
-    return success();
-  };
-  if (p.parseCommaSeparatedList(parseElt))
-    return failure();
-  resultDecls = ParamDeclArrayAttr::get(p.getContext(), decls);
-  return p.parseGreater();
-}
-
-void KGEN::printCallOpParams(OpAsmPrinter &p, Operation *op,
-                             ArrayRef<TypedAttr> paramValues,
-                             ArrayRef<ParamDeclAttr> resultDecls,
-                             ArrayRef<Type> resultParamTypes) {
-  if (paramValues.empty() && resultDecls.empty())
-    return;
-  p << "<";
-  if (paramValues.empty())
-    p << "[]";
-  else
-    llvm::interleaveComma(paramValues, p, [&](TypedAttr value) {
-      printColonTypeParamValue(p, value);
-    });
-  if (!resultDecls.empty()) {
-    p << " -> ";
-    llvm::interleaveComma(resultDecls, p, [&](ParamDeclAttr decl) {
-      printParamName(p, decl.getName());
-      printColonTypeOrIndex(p, decl.getType());
-    });
-  }
-  p << ">";
-}
-
-ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee,
-                                        ParamDeclArrayAttr &paramDecls) {
+ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee) {
   Type type;
   llvm::SMLoc loc = p.getCurrentLocation();
   if (p.parseLSquare() || parseKGENType(p, type) || p.parseColon() ||
       parseParamValue(p, callee, type) || p.parseRSquare())
     return failure();
-  if (succeeded(p.parseOptionalLess())) {
-    if (p.parseLParen() || p.parseRParen() || p.parseArrow() ||
-        parseParamDecls(p, paramDecls) || p.parseGreater())
-      return failure();
-  } else {
-    paramDecls = ParamDeclArrayAttr::get(p.getContext(), {});
-  }
 
   if (!isa<ParamRefType, SignatureType>(callee.getType()))
     return p.emitError(loc, "callee parameter type must be a signature type");
   return success();
 }
 
-void KGEN::printParametricCallee(OpAsmPrinter &p, Operation *, TypedAttr callee,
-                                 ArrayRef<ParamDeclAttr> paramDecls) {
+void KGEN::printParametricCallee(OpAsmPrinter &p, Operation *,
+                                 TypedAttr callee) {
   p << "[";
   printKGENType(p, callee.getType());
   p << ": ";
   printParamValue(p, callee);
   p << "]";
-  if (!paramDecls.empty()) {
-    p << "<() -> ";
-    printParamDecls(p, paramDecls);
-    p << '>';
-  }
 }
 
 /// Parse an address space parameter if present.

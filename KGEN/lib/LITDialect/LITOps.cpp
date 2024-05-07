@@ -202,21 +202,6 @@ LogicalResult PackageOp::verify() {
 // CallOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseCallee(OpAsmParser &p, TypedAttr &callee) {
-  ParamDeclArrayAttr paramDecls;
-  if (parseParametricCallee(p, callee, paramDecls))
-    return failure();
-  if (!paramDecls.empty()) {
-    return p.emitError(p.getCurrentLocation(),
-                       "operation does not support result parameters");
-  }
-  return success();
-}
-
-static void printCallee(OpAsmPrinter &p, Operation *op, TypedAttr callee) {
-  printParametricCallee(p, op, callee, /*paramDecls=*/{});
-}
-
 static ParseResult
 parseLifetimeParams(AsmParser &p, ParameterExprArrayAttr &implicitLifetimes) {
   SmallVector<TypedAttr> values;
@@ -293,30 +278,24 @@ parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
   OptionalParseResult optResult = p.parseOptionalAttribute(callee);
   if (!optResult.has_value()) {
     // Otherwise, parse the parametric call syntax `lit.call[...: @abc]`
-    if (parseCallee(p, calleeAttr))
+    if (parseParametricCallee(p, calleeAttr))
       return failure();
   } else if (failed(*optResult)) {
     return failure();
   }
 
   ParameterExprArrayAttr paramValues;
-  ParamDeclArrayAttr paramDecls;
   if (parseLifetimeParams(p, implicitLifetimes))
     return failure();
-  if (callee && parseCallOpParams(p, paramValues, paramDecls))
+  if (callee && parseParameterValues(p, paramValues))
     return failure();
-  if (paramDecls && !paramDecls.empty()) {
-    return p.emitError(p.getCurrentLocation(),
-                       "result parameters are not supported");
-  }
   if (p.parseOperandList(operands, AsmParser::Delimiter::Paren))
     return failure();
 
   if (callee) {
     SignatureType signature;
     FunctionType functionType;
-    if (p.parseColon() ||
-        parseKGENSignature(p, paramDecls, functionType, signature))
+    if (p.parseColon() || parseKGENSignature(p, functionType, signature))
       return failure();
     calleeAttr = SymbolConstantAttr::get(callee, paramValues, signature);
   }
@@ -336,12 +315,10 @@ static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
   if (symbolCst)
     p << ' ' << symbolCst.getSymbol();
   else
-    printCallee(p, op, calleeAttr);
+    printParametricCallee(p, op, calleeAttr);
   printLifetimeParams(p, op, implicitLifetimes);
-  if (symbolCst) {
-    printCallOpParams(p, op, symbolCst.getParamValues(), /*resultDecls=*/{},
-                      symbolCst.getType().getResultParamTypes());
-  }
+  if (symbolCst)
+    printParameterValues(p, symbolCst.getParamValues());
   p << '(';
   p.printOperands(operands);
   p << ')';
