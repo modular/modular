@@ -7,6 +7,7 @@
 #ifndef SUPPORT_DEBUGINFODIALECT_DEBUGINFOTOLLVM_TARGET_TARGETADAPTER_H
 #define SUPPORT_DEBUGINFODIALECT_DEBUGINFOTOLLVM_TARGET_TARGETADAPTER_H
 
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/BuiltinOps.h"
 
@@ -15,8 +16,12 @@ namespace M::DebugInfo {
 // TargetAdapter
 //===----------------------------------------------------------------------===//
 struct TargetAdapter {
-  using DebugAdapterFn = std::function<void(mlir::ModuleOp)>;
+  /// Conversion patterns.
+  std::function<void(DIAttrTypeReplacer &, RewritePatternSet &)>
+      populateConversionPatterns;
 
+  /// Custom massaging.
+  using DebugAdapterFn = std::function<void(mlir::ModuleOp)>;
   DebugAdapterFn preTranslationAdapter;
   DebugAdapterFn postTranslationAdapter;
 };
@@ -30,6 +35,9 @@ TargetAdapter getFallbackAdapter();
 //===----------------------------------------------------------------------===//
 // Common Routines
 //===----------------------------------------------------------------------===//
+void populateFallbackConversionPatterns(DIAttrTypeReplacer &replacer,
+                                        RewritePatternSet &patterns);
+
 /// Sink kill Debug Value ops so that they are the last instructions from
 /// their source line. This way variables are guaranteed to be killed only at
 /// the end of the line.
