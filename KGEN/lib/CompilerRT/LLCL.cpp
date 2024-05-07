@@ -227,7 +227,12 @@ KGEN_CompilerRT_CreateAsync_bool(bool data, LLCLWrapper<AnyAsyncValueRef> async,
                                  LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
-  value = value.createReady<bool>(runtime, data);
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<bool>(data);
+  } else {
+    assert(!value.isReady());
+    value = value.createReady<bool>(runtime, data);
+  }
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
@@ -236,7 +241,12 @@ KGEN_CompilerRT_CreateAsync_ssizet(ssize_t data,
                                    LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
-  value = value.createReady<size_t>(runtime, data);
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<size_t>(data);
+  } else {
+    assert(!value.isReady());
+    value = value.createReady<size_t>(runtime, data);
+  }
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
@@ -245,7 +255,12 @@ KGEN_CompilerRT_CreateAsyncVoidStar(void *data,
                                     LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
-  value = value.createReady<void *>(runtime, data);
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<void *>(data);
+  } else {
+    assert(!value.isReady());
+    value = value.createReady<void *>(runtime, data);
+  }
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
@@ -254,8 +269,14 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
                                      LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
-  value = AnyAsyncValueRef::createReady<GML::BufferRef>(
-      runtime, ::M::GML::BufferRef::take(runtime, size, data));
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    value.copy().emplaceIndirect<GML::BufferRef>(
+        ::M::GML::BufferRef::take(runtime, size, data));
+  } else {
+    assert(!value.isReady());
+    value = value.createReady<GML::BufferRef>(
+        runtime, ::M::GML::BufferRef::take(runtime, size, data));
+  }
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
@@ -264,9 +285,18 @@ KGEN_CompilerRT_CreateAsyncTensorSpec(LLCLWrapper<TensorSpec> specPtr,
                                       LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
-  llvm::SmallVector<size_t> dims;
-  TensorSpec &spec = unwrap(specPtr);
-  value = AnyAsyncValueRef::createReady<TensorSpec>(runtime, TensorSpec(spec));
+  llvm::errs() << "create tensor spec\n";
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    llvm::SmallVector<size_t> dims;
+    TensorSpec &spec = unwrap(specPtr);
+    value.copy().emplaceIndirect<TensorSpec>(TensorSpec(spec));
+  } else {
+    llvm::SmallVector<size_t> dims;
+    TensorSpec &spec = unwrap(specPtr);
+    assert(!value.isReady());
+    value =
+        AnyAsyncValueRef::createReady<TensorSpec>(runtime, TensorSpec(spec));
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -276,12 +306,18 @@ KGEN_CompilerRT_CreateAsyncTensorSpec(LLCLWrapper<TensorSpec> specPtr,
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetValueFromAsync(LLCLWrapper<AnyAsyncValueRef> async) {
   AnyAsyncValueRef &value = unwrap(async);
-  return value.getPointerToData();
+  assert(value.isReady());
+  if (value.getPointer() && value.getPointer()->isIndirect()) {
+    return value.getPointer()->getUnderlyingPtr();
+  } else {
+    return value.getPointerToData();
+  }
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
 KGEN_CompilerRT_GetDataFromBuffer(LLCLWrapper<AnyAsyncValueRef> async) {
   AnyAsyncValueRef &value = unwrap(async);
+  assert(value.isReady());
   auto &buffer = value.get<GML::BufferRef>();
   return buffer.getBuffer();
 }
