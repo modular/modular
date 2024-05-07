@@ -290,6 +290,8 @@ KGEN::compileElaboratorAsm(GeneratorOp func, SymbolConstantAttr symbol,
     llvm::LLVMContext llvmCtx;
     std::unique_ptr<llvm::Module> llvmModule =
         compiler.lowerAllFuncsToLLVM(llvmCtx, cast<ModuleOp>(op));
+    if (!llvmModule)
+      return Error("failed to lower to LLVM");
 
     if (emissionKind == EmissionKind::LLVM) {
       llvmModule->print(*buffer, nullptr);
