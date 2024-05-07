@@ -65,6 +65,7 @@ struct ServerStats(ServerCallbacks):
 
     fn on_batch_receive(inout self, batch: Batch):
         alias print_interval = 1024
+        # TODO: Wrap this with lock!
         var pos = self.total_batches
         self.total_batches += 1
         if self.options.printAtInterval and pos % print_interval == 0:

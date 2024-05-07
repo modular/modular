@@ -9,8 +9,10 @@ from sys.ffi import DLHandle
 from memory.unsafe import DTypePointer, Pointer
 from builtin.coroutine import _coro_resume_fn, _suspend_async
 
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
+from max.engine._compilation import CCompiledModel
 from max.engine._utils import call_dylib_func, exchange
+from max.engine._model_impl import CModel
 
 from ._kserve_impl import (
     ModelInferRequest,
@@ -107,6 +109,12 @@ struct Batch(Sized, CollectionElement):
     fn __len__(self) -> Int:
         return int(self._ptr.size(self._lib))
 
+    fn model_name(self) -> String:
+        return ""
+
+    fn model_version(self) -> String:
+        return ""
+
     fn request_at(self, index: Int64) -> ModelInferRequest:
         return ModelInferRequest(
             self._ptr.request_at(self._lib, index),
@@ -189,9 +197,11 @@ struct CMuttServerAsync:
 
     alias _NewFnName = "M_newMuttServer"
     alias _FreeFnName = "M_freeMuttServer"
+    alias _InitFnName = "M_muttInit"
     alias _RunFnName = "M_muttRun"
     alias _PopReadyFnName = "M_muttPopReady"
     alias _PushCompleteFnName = "M_muttPushComplete"
+    alias _PushFailedFnName = "M_muttPushFailed"
 
     @staticmethod
     fn new(lib: DLHandle, address: StringRef) -> CMuttServerAsync:
@@ -199,6 +209,11 @@ struct CMuttServerAsync:
 
     fn free(owned self, lib: DLHandle):
         call_dylib_func(lib, Self._FreeFnName, self.ptr)
+
+    fn init(owned self, lib: DLHandle, models: List[CCompiledModel]):
+        call_dylib_func(
+            lib, Self._InitFnName, self.ptr, models.data, len(models)
+        )
 
     fn run(owned self, lib: DLHandle):
         call_dylib_func(lib, Self._RunFnName, self.ptr)
@@ -224,6 +239,18 @@ struct CMuttServerAsync:
             index,
         )
 
+    fn push_failed(
+        owned self, lib: DLHandle, batch: CBatch, index: Int64, message: String
+    ):
+        call_dylib_func(
+            lib,
+            self._PushFailedFnName,
+            self.ptr,
+            batch.ptr,
+            index,
+            message._strref_dangerous(),
+        )
+
 
 struct MuttServerAsync:
     var _ptr: CMuttServerAsync
@@ -239,7 +266,6 @@ struct MuttServerAsync:
         self._ptr = CMuttServerAsync.new(lib, address._strref_dangerous())
         self._lib = lib
         self._session = session^
-        address._strref_keepalive()
 
     fn __moveinit__(inout self: Self, owned existing: Self):
         self._ptr = exchange[CMuttServerAsync](
@@ -257,6 +283,12 @@ struct MuttServerAsync:
         self._ptr.free(self._lib)
         _ = self._session^
 
+    fn init(self, models: List[Model]):
+        var ptrs = List[CCompiledModel](capacity=len(models))
+        for model in models:
+            ptrs.append(model[]._compiled_model.ptr)
+        self._ptr.init(self._lib, ptrs)
+
     fn run(self):
         self._ptr.run(self._lib)
 
@@ -266,3 +298,6 @@ struct MuttServerAsync:
 
     fn push_complete(self, batch: Batch, index: Int64):
         self._ptr.push_complete(self._lib, batch._ptr, index)
+
+    fn push_failed(self, batch: Batch, index: Int64, message: String):
+        self._ptr.push_failed(self._lib, batch._ptr, index, message)

@@ -167,8 +167,16 @@ fn set_tensors[
 struct CModelInferRequest:
     var ptr: DTypePointer[DType.invalid]
 
+    alias _ModelNameFnName = "M_modelInferRequestModelName"
+    alias _ModelVersionFnName = "M_modelInferRequestModelVersion"
     alias _OutputsSizeFnName = "M_modelInferRequestOutputsSize"
     alias _OutputNameFnName = "M_modelInferRequestOutputName"
+
+    fn model_name(owned self, lib: DLHandle) -> CString:
+        return call_dylib_func[CString](lib, Self._ModelNameFnName, self.ptr)
+
+    fn model_version(owned self, lib: DLHandle) -> CString:
+        return call_dylib_func[CString](lib, Self._ModelVersionFnName, self.ptr)
 
     fn outputs_size(owned self, lib: DLHandle) -> Int64:
         return call_dylib_func[Int64](lib, Self._OutputsSizeFnName, self.ptr)
@@ -179,7 +187,7 @@ struct CModelInferRequest:
         )
 
 
-struct ModelInferRequest(InferenceRequest, CollectionElement):
+struct ModelInferRequest(InferenceRequest):
     var _ptr: CModelInferRequest
     var _lib: DLHandle
     var _session: InferenceSession
@@ -205,6 +213,12 @@ struct ModelInferRequest(InferenceRequest, CollectionElement):
         self._ptr = existing._ptr
         self._lib = existing._lib
         self._session = existing._session
+
+    fn get_model_name(self) raises -> String:
+        return self._ptr.model_name(self._lib)
+
+    fn get_model_version(self) raises -> String:
+        return self._ptr.model_version(self._lib)
 
     fn get_input_tensors(self) raises -> TensorMap:
         return get_tensors[
@@ -235,7 +249,7 @@ struct CModelInferResponse:
     var ptr: DTypePointer[DType.invalid]
 
 
-struct ModelInferResponse(InferenceResponse, CollectionElement):
+struct ModelInferResponse(InferenceResponse):
     var _ptr: CModelInferResponse
     var _lib: DLHandle
     var _session: InferenceSession

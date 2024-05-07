@@ -5,11 +5,19 @@
 # ===----------------------------------------------------------------------=== #
 """Includes common traits and data types for inference services."""
 
-from max.engine import TensorMap
+from utils.variant import Variant
+
+from max.engine import TensorMap, Model
 
 
-trait InferenceRequest(Movable):
+trait InferenceRequest(CollectionElement):
     """A trait for singular inference requests."""
+
+    fn get_model_name(self) raises -> String:
+        ...
+
+    fn get_model_version(self) raises -> String:
+        ...
 
     fn get_input_tensors(self) raises -> TensorMap:
         """Returns all input tensors.
@@ -37,7 +45,7 @@ trait InferenceRequest(Movable):
         ...
 
 
-trait InferenceResponse(Movable):
+trait InferenceResponse(CollectionElement):
     """A trait for singular inference responses."""
 
     fn get_output_tensors(self) raises -> TensorMap:
@@ -63,7 +71,7 @@ trait InferenceService:
 
     fn infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
-    ](self, request: req_type, inout response: resp_type) -> None:
+    ](self, request: req_type, inout response: resp_type) raises -> None:
         """Runs a single inference request.
 
         Parameters:
@@ -78,7 +86,9 @@ trait InferenceService:
 
     async fn async_infer[
         req_type: InferenceRequest, resp_type: InferenceResponse
-    ](self, request: req_type, inout response: resp_type) -> None:
+    ](
+        self, request: req_type, inout response: Variant[resp_type, Error]
+    ) -> None:
         """Asynchronously runs a single inference request.
 
         Parameters:
@@ -87,7 +97,7 @@ trait InferenceService:
 
         Args:
             request: Request object.
-            response: Response object.
+            response: Error or response object.
         """
         ...
 
@@ -97,5 +107,5 @@ struct FileModel:
     """File-backed model artifact details."""
 
     var name: String
+    var version: String
     var path: String
-    var version: Int
