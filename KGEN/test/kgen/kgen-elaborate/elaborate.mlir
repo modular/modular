@@ -1722,3 +1722,24 @@ kgen.generator export @apply_op() {
   kgen.param.constant = <x>
   kgen.return
 }
+
+// -----
+
+kgen.generator @fwd_type(%arg0: !kgen.type) -> !kgen.type {
+  kgen.return %arg0 : !kgen.type
+}
+
+kgen.generator @fwd_sig(%arg0: !kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>) -> !kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()> {
+  kgen.return %arg0 :  !kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>
+}
+
+kgen.generator @fn<T: type>(%arg0: !kgen.paramref<apply(:(!kgen.type) -> !kgen.type @fwd_type, T)>) {
+  kgen.return
+}
+
+// CHECK-LABEL: kgen.func export @top
+kgen.generator export @top() {
+  // COM: Just check that the parameter expression can be resolved.
+  kgen.param.declare f: <type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> () = <apply(:(!kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>) -> !kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()> @fwd_sig, @fn)>
+  kgen.return
+}
