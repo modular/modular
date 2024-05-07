@@ -703,7 +703,7 @@ fn sgemm_double_buffer_kernel[
 
     var tid = ThreadIdx.x()
     var warp_id = tid // WARP_SIZE
-    var lane_id = tid % WARP_SIZE
+    var lane_id = lane_id()
 
     # Coordinates of the current warp.
     var warp_x = warp_id % num_warps_n
@@ -824,8 +824,8 @@ fn sgemm_double_buffer_kernel[
             var next_k = (k + 1) % BK
 
             # Buffer id for the double register buffers. They alternate.
-            var buffer_id = k % 2
-            var next_buffer_id = (k + 1) % 2
+            var buffer_id = k & 1
+            var next_buffer_id = (k + 1) & 1
 
             if k == BK - 1:
                 async_copy_wait_all()
