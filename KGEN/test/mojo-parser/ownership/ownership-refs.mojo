@@ -336,7 +336,7 @@ fn ref_copyability[*element_types: Copyable](*args: *element_types):
   # Cast away the metatype rebind to AnyType.
   # CHECK: [[TMP:%.*]] = kgen.rebind {{.*}} : !lit.ref<:!AnyType rebind(:!Copyable variadic_get(:variadic<!Copyable> element_types, 4)), imm *"args`"> to !lit.ref<:!Copyable variadic_get(:variadic<!Copyable> element_types, 4), imm *"args`">
   # CHECK-NEXT: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__copyinit__{{.*}}(%x, [[TMP]])
-  var x = args.get_element[4]()[]
+  var x = args[4]
 
   # CHECK-NEXT: lit.call[{{.*}}get_type_method(:!Copyable{{.*}}__del__{{.*}}(%x)
 
