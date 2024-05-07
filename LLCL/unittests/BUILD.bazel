@@ -50,3 +50,15 @@ cc_test(
         "@com_github_google_googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "TimerHeapTest",
+    srcs = ["TimerHeapTest.cpp"],
+    deps = [
+        "//LLCL:Runtime",
+        "//LLCL:RuntimeGlobals",
+        "//LLCL:Support",
+        "//Support:Globals",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
