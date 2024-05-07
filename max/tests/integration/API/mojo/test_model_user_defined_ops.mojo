@@ -7,11 +7,12 @@
 # RUN: mojo package %S/../../Inputs/test_user_op -o %t.mojopkg
 # RUN: %mojo -debug-level full %s %S/mo.mlir %t.mojopkg
 
-from max.engine import InferenceSession, TensorMap, EngineTensorView
 from sys import argv
-from tensor import Tensor, TensorShape
 from testing import assert_equal
 from pathlib import Path
+
+from max.engine import InferenceSession
+from max.tensor import Tensor, TensorShape
 
 
 fn test_model_metadata() raises:

@@ -18,18 +18,14 @@
 # RUN: chmod +x %t/bin/python3
 # RUN: env "PATH=%t/bin:$PATH" %mojo -debug-level full %s %S/mo.mlir %S/model_different_input_output.mlir %S/model_different_dtypes.mlir
 
-from max.engine import (
-    InferenceSession,
-    TensorMap,
-    EngineTensorView,
-    NamedTensor,
-)
 from sys import argv
-from tensor import Tensor, TensorShape
-from testing import assert_equal, assert_false, assert_true
+from testing import assert_equal
 from collections import List
 from pathlib import Path
 from python import Python
+
+from max.engine import InferenceSession, NamedTensor
+from max.tensor import Tensor, TensorShape
 
 
 fn test_model_num_io_and_names() raises:

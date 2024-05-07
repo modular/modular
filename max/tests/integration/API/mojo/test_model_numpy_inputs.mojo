@@ -8,17 +8,16 @@
 # REQUIRES: numpy
 # RUN: %mojo -debug-level full %s %S/mo.mlir
 
-from max.engine import (
-    InferenceSession,
-    TensorMap,
-    EngineNumpyView,
-)
 from pathlib import Path
 from sys import argv
-from tensor import Tensor, TensorShape
 from testing import assert_equal
-from collections import List
 from python import Python
+
+from max.engine import (
+    InferenceSession,
+    EngineNumpyView,
+)
+from max.tensor import Tensor, TensorShape
 
 
 fn test_model_numpy_input() raises:

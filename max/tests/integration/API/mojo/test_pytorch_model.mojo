@@ -7,18 +7,17 @@
 # REQUIRES: mtorch
 # RUN: %mojo -debug-level full %s %S/../../Inputs/relu3x100x100.torchscript
 
-from max.engine import (
-    EngineTensorView,
-    InferenceSession,
-    InputSpec,
-    ShapeElement,
-    TensorMap,
-)
 from sys import argv
-from tensor import Tensor, TensorSpec
 from collections import Optional
 from testing import assert_equal, assert_raises
 from pathlib import Path
+
+from max.engine import (
+    InferenceSession,
+    InputSpec,
+    ShapeElement,
+)
+from max.tensor import Tensor, TensorSpec
 
 
 fn test_pytorch_model() raises:

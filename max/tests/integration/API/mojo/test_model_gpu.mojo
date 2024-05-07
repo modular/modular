@@ -7,17 +7,13 @@
 # REQUIRES: cuda
 # RUN: %mojo %s %S/mo.mlir
 
-from max.engine import (
-    InferenceSession,
-    TensorMap,
-    EngineTensorView,
-    SessionOptions,
-)
-from max.engine._context import _Device
 from sys import argv
-from tensor import Tensor, TensorShape
 from testing import assert_equal, assert_true
 from pathlib import Path
+
+from max.engine import InferenceSession, SessionOptions
+from max.engine._context import _Device
+from max.tensor import Tensor, TensorShape
 
 
 fn test_model_metadata() raises:
