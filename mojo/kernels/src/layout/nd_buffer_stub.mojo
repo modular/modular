@@ -86,6 +86,117 @@ fn distribute[
     return res
 
 
+# FIXME: Move to a shared utility.
+# Returns the size of variadic integer parameters.
+#
+fn __get_len[*var_int: Int]() -> Int:
+    return __mlir_op.`pop.variadic.size`(var_int)
+
+
+fn __vectorize_shape[*sizes: Int](shape: DimList) -> DimList:
+    alias rank = __get_len[sizes]()
+
+    constrained[
+        rank <= 3,
+        "__vectorize_shape vector sizes <= 3",
+    ]()
+
+    var res = StaticTuple[Dim, rank]()
+
+    @parameter
+    fn _fill_shape[i: Int]():
+        alias size_i = sizes[i]
+
+        if shape.at[i]().is_dynamic():
+            res[i] = Dim()
+        else:
+            res[i] = shape.at[i]() // size_i
+
+    unroll[_fill_shape, rank]()
+
+    @parameter
+    if rank == 1:
+        return DimList(res[0])
+    elif rank == 2:
+        return DimList(res[0], res[1])
+    elif rank == 3:
+        return DimList(res[0], res[1], res[2])
+    return DimList()
+
+
+fn __to_static_tuple[*sizes: Int, rank: Int]() -> StaticIntTuple[rank]:
+    var vals = StaticIntTuple[rank]()
+
+    @parameter
+    fn _fill[i: Int]():
+        vals[i] = sizes[i]
+
+    unroll[_fill, rank]()
+    return vals
+
+
+# Stores the layout of the vectorized buffer element.
+#
+struct ElementLayout[rank: Int, shape: StaticIntTuple[rank]](
+    CollectionElement, Stringable
+):
+    var stride: StaticIntTuple[rank]
+
+    fn __init__(inout self):
+        self.stride = StaticIntTuple[rank]()
+
+    fn __copyinit__(inout self, exisiting: Self):
+        self.stride = exisiting.stride
+
+    fn __moveinit__(inout self, owned exisiting: Self):
+        self.stride = exisiting.stride
+
+    fn __str__(self) -> String:
+        return shape.__str__() + ":" + self.stride
+
+
+# Vectorizes buffer and returns the vecrtorized buffer and its dynamic layout.
+#
+@always_inline("nodebug")
+fn vectorize[
+    *sizes: Int,
+    dtype: DType,
+    rank: Int,
+    shape: DimList,
+    _res_shape: DimList = __vectorize_shape[sizes](shape),
+](
+    buff: NDBuffer[
+        dtype,
+        rank,
+        shape,
+    ]
+) -> Tuple[
+    NDBuffer[dtype, rank, _res_shape],
+    ElementLayout[rank, __to_static_tuple[sizes, rank=rank]()],
+]:
+    var buff_shape = StaticIntTuple[rank]()
+    var buff_stride = StaticIntTuple[rank]()
+
+    var element_layout = ElementLayout[
+        rank, __to_static_tuple[sizes, rank=rank]()
+    ]()
+
+    @parameter
+    fn _fill_layout_data[i: Int]():
+        element_layout.stride[i] = buff.dynamic_stride[i]
+        buff_shape[i] = buff.dynamic_shape[i] // sizes[i]
+        buff_stride[i] = buff.dynamic_stride[i] * sizes[i]
+
+    unroll[_fill_layout_data, rank]()
+
+    return Tuple(
+        NDBuffer[dtype, rank, _res_shape](
+            buff.data, dynamic_shape=buff_shape, dynamic_stride=buff_stride
+        ),
+        element_layout,
+    )
+
+
 # Copies an nd-buffer fragment to `thread_id` thread local LayoutTensor element
 # where each element of the fragment is originally distributed by `thread_layout`.
 #

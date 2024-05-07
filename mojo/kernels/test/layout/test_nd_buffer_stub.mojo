@@ -7,6 +7,7 @@
 
 from buffer import NDBuffer
 from buffer.list import DimList
+from utils import Index
 
 from layout import LayoutTensor, Layout, IntTuple
 from layout.layout import LayoutList
@@ -14,6 +15,8 @@ from layout.nd_buffer_stub import (
     copy_from_nd_buffer,
     copy_to_nd_buffer,
     distribute,
+    vectorize,
+    ElementLayout,
 )
 
 
@@ -38,6 +41,41 @@ fn print_buff[
     for m in range(buff.dim(0)):
         for n in range(buff.dim(1)):
             print(buff[m, n], end=" ")
+        print("")
+
+
+fn print_element[
+    dtype: DType,
+    rank: Int,
+    element_shape: StaticIntTuple[rank],
+](
+    element_ptr: DTypePointer[dtype],
+    element_layout: ElementLayout[rank, element_shape],
+):
+    var simd_element = SIMD[dtype, element_shape[0] * element_shape[1]](0)
+
+    @parameter
+    fn _fill_element[i: Int, j: Int]():
+        simd_element[i * element_shape[1] + j] = element_ptr[
+            i * element_layout.stride[0] + j * element_layout.stride[1]
+        ]
+
+    unroll[_fill_element, element_shape[0], element_shape[1]]()
+    print(simd_element, end=" ")
+
+
+fn print_vectorized_buff[
+    dtype: DType,
+    rank: Int,
+    shape: DimList,
+    element_shape: StaticIntTuple[rank],
+](
+    buff: NDBuffer[dtype, rank, shape],
+    element_layout: ElementLayout[rank, element_shape],
+):
+    for m in range(buff.dim(0)):
+        for n in range(buff.dim(1)):
+            print_element(buff._offset((m, n)), element_layout)
         print("")
 
 
@@ -354,6 +392,37 @@ fn test_tile_and_distribute():
                 print_buff(fragment_2x2)
 
 
+# CHECK-LABEL: test_1d_2d_vectorize
+fn test_1d_2d_vectorize():
+    print("== test_1d_2d_vectorize")
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    linspace_fill(buff)
+
+    var buff_v_1_and_element_layout = vectorize[1, 4](buff)
+    # CHECK: (1, 4):(8, 1)
+    print(buff_v_1_and_element_layout[1])
+    # CHECK: [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0]
+    # CHECK: [8.0, 9.0, 10.0, 11.0] [12.0, 13.0, 14.0, 15.0]
+    # CHECK: [16.0, 17.0, 18.0, 19.0] [20.0, 21.0, 22.0, 23.0]
+    # CHECK: [24.0, 25.0, 26.0, 27.0] [28.0, 29.0, 30.0, 31.0]
+    # CHECK: [32.0, 33.0, 34.0, 35.0] [36.0, 37.0, 38.0, 39.0]
+    # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
+    # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
+    # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
+    print_vectorized_buff(
+        buff_v_1_and_element_layout[0], buff_v_1_and_element_layout[1]
+    )
+
+    var buff_v_4_4_and_element_layout = vectorize[4, 4](buff)
+    # CHECK: (4, 4):(8, 1)
+    print(buff_v_4_4_and_element_layout[1])
+    # CHECK: [0.0, 1.0, 2.0, 3.0, 8.0, 9.0, 10.0, 11.0, 16.0, 17.0, 18.0, 19.0, 24.0, 25.0, 26.0, 27.0] [4.0, 5.0, 6.0, 7.0, 12.0, 13.0, 14.0, 15.0, 20.0, 21.0, 22.0, 23.0, 28.0, 29.0, 30.0, 31.0]
+    # CHECK: [32.0, 33.0, 34.0, 35.0, 40.0, 41.0, 42.0, 43.0, 48.0, 49.0, 50.0, 51.0, 56.0, 57.0, 58.0, 59.0] [36.0, 37.0, 38.0, 39.0, 44.0, 45.0, 46.0, 47.0, 52.0, 53.0, 54.0, 55.0, 60.0, 61.0, 62.0, 63.0]
+    print_vectorized_buff(
+        buff_v_4_4_and_element_layout[0], buff_v_4_4_and_element_layout[1]
+    )
+
+
 fn main():
     test_copy_from_nd_buffer_scalars()
     test_copy_to_nd_buffer_scalars()
@@ -361,3 +430,4 @@ fn main():
     test_copy_to_nd_buffer_vectors()
     test_distribute()
     test_tile_and_distribute()
+    test_1d_2d_vectorize()
