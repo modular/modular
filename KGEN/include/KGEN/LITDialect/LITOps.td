@@ -80,6 +80,7 @@ def LIT_FuncOp : LITOp<"func", [
     OptionalAttr<StrAttr>:$preElaborationName,
     OptionalAttr<StrAttr>:$sourceName,
     OptionalAttr<LIT_DocStringAttr>:$docString,
+    OptionalAttr<StrAttr>:$deprecationWarning,
     DefaultValuedAttr<DictionaryAttr, "std::nullopt">:$LLVMMetadata
   );
   let regions = (region SizedRegion<1>:$bodyRegion);
@@ -366,18 +367,19 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
     OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$closureSignature,
     OptionalAttr<LIT_DocStringAttr>:$docString,
+    OptionalAttr<StrAttr>:$deprecationWarning,
     OptionalAttr<SourceNameAttr>:$sourceName,
     EnumProperty<"TypeConvention">:$convention
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
     $sym_name ``
-    custom<StructParameterSpec>($params, $signature, $parentTypes)
+    custom<StructParameterSpec>($params, $signature, $parentTypes) ``
     custom<TypeConvention>($convention) attr-dict-with-keyword
     (`\n` `destructor` custom<Symbol>($destructor)^ ``)?
     (`\n` `move` custom<Symbol>($moveInit)^ ``)?
     (`\n` `copy` custom<Symbol>($copyInit)^ ``)?
-    custom<OptionalDecorators>($decorators) `` $fields
+    custom<OptionalDecorators>($decorators) $fields
   }];
 
   let extraClassDeclaration = [{
@@ -441,7 +443,9 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
   }];
 
   let arguments = (ins
-    StrAttr:$name, TypeAttr:$type, OptionalAttr<LIT_DocStringAttr>:$docString
+    StrAttr:$name,
+    TypeAttr:$type,
+    OptionalAttr<LIT_DocStringAttr>:$docString
   );
   let assemblyFormat = "custom<KeywordAsString>($name) attr-dict `:` $type";
 
@@ -455,7 +459,6 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
     /// substitute those bound parameters into our type and return the result.
     Type getReboundType(DeclRefType structSelfType);
   }];
-
 }
 
 //===----------------------------------------------------------------------===//
@@ -603,7 +606,8 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     KGEN_ParamDeclArrayAttr:$params,
     TypeLineageArrayAttr:$parentTypes,
     OptionalAttr<TypeAttrOf<KGEN_SignatureType>>:$dtorSig,
-    OptionalAttr<LIT_DocStringAttr>:$docString
+    OptionalAttr<LIT_DocStringAttr>:$docString,
+    OptionalAttr<StrAttr>:$deprecationWarning
   );
 
   let regions = (region SizedRegion<1>:$fields);
@@ -745,8 +749,10 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
   }];
 
   let arguments = (ins
-    KGEN_ParamDeclAttr:$paramDecl, TypedAttrInterface:$value,
-    OptionalAttr<LIT_DocStringAttr>:$docString
+    KGEN_ParamDeclAttr:$paramDecl,
+    TypedAttrInterface:$value,
+    OptionalAttr<LIT_DocStringAttr>:$docString,
+    OptionalAttr<StrAttr>:$deprecationWarning
   );
   let assemblyFormat = [{
     custom<AliasDeclOpValue>($paramDecl, $value) attr-dict
@@ -760,7 +766,8 @@ def LIT_AliasDeclOp : LITOp<"alias.decl", [
 
   let builders = [
     OpBuilder<(ins "ParamDeclAttr":$decl, "TypedAttr":$value), [{
-      build($_builder, $_state, decl, value, /*docString=*/{});
+      build($_builder, $_state, decl, value, /*deprecationWarning=*/{},
+            /*docString=*/{});
     }]>
   ];
 
@@ -794,10 +801,12 @@ def LIT_VarDeclOp : LITOp<"var.decl", [
     ```
   }];
 
-  let arguments = (ins StrAttr:$name, LIT_VarDeclKindAttr:$kind,
-                       KGEN_ParamDeclAttr:$paramDecl,
-                       OptionalAttr<LIT_DocStringAttr>:$docString,
-                       OptionalAttr<I32Attr>:$argShadowIndex);
+  let arguments = (ins
+    StrAttr:$name,
+    LIT_VarDeclKindAttr:$kind,
+    KGEN_ParamDeclAttr:$paramDecl,
+    OptionalAttr<I32Attr>:$argShadowIndex
+  );
   let results = (outs LIT_RefType:$result);
 
   let assemblyFormat = [{
@@ -850,7 +859,8 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
     KGEN_ExportKindAttr:$exportKind,
     KGEN_DecoratorsAttr:$decorators,
     OptionalAttr<StrAttr>:$linkageName,
-    OptionalAttr<LIT_DocStringAttr>:$docString
+    OptionalAttr<LIT_DocStringAttr>:$docString,
+    OptionalAttr<StrAttr>:$deprecationWarning
   );
   let regions = (region SizedRegion<1>:$ctor, SizedRegion<1>:$dtor);
 
@@ -869,7 +879,8 @@ def LIT_GlobalVarDeclOp : LITOp<"globalvar.decl", [
   let builders = [
     OpBuilder<(ins "StringRef":$sym_name, "Type":$type), [{
       build($_builder, $_state, sym_name, type, ExportKind::NotExported,
-            DecoratorsAttr::get(type.getContext(), {}), {}, {});
+            DecoratorsAttr::get(type.getContext(), {}), /*linkageName=*/{},
+            /*docString=*/{}, /*deprecationWarning=*/{});
     }]>
   ];
 

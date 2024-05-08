@@ -567,6 +567,18 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   assert(decls.size() == 1 && "Only functions may be overloaded");
   ASTDecl &decl = *decls[0];
 
+  // If the referenced decl is deprecated, emit a deprecation warning.
+  // Overloaded declarations like functions can't be handled here. They are
+  // handled when overload sets are resolved to a deprecated entry.
+  if (auto declItf = dyn_cast<ASTDeclInterface>(decl)) {
+    if (StringAttr warning = declItf.getDeprecationWarningAttr()) {
+      auto diag = emitter.emitWarning(getLoc(), warning.getValue())
+                  << getRange();
+      diag.attachNote(decl.getLoc())
+          << "'" << declItf.getDeclName().getValue() << "' declared here";
+    }
+  }
+
   // Aliases form a PValue.
   if (auto param = dyn_cast<AliasDeclOp>(decl)) {
     PValue result = resolveAliasDeclareValue(param, /*bindings=*/{}, getLoc(),

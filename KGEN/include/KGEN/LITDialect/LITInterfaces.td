@@ -55,6 +55,24 @@ def ASTDeclInterface : OpInterface<"ASTDeclInterface"> {
     }], "Attribute", "removeDocStringAttr", (ins), [{}], [{
       return Attribute();
     }]>,
+
+    InterfaceMethod<[{
+      If the decl has an attached deprecation warning, return it.
+    }], "StringAttr", "getDeprecationWarningAttr", (ins), [{}], [{
+      return StringAttr();
+    }]>,
+
+    InterfaceMethod<[{
+      Set the deprecation warning for the operation.
+    // }], "void", "setDeprecationWarningAttr", (ins "StringAttr":$warning), [{}], [{
+      llvm_unreachable("TODO: decl does not support deprecation warnings");
+    }]>,
+
+    InterfaceMethod<[{
+      Set the decorators on this operation.
+    }], "void", "setDecoratorsAttr", (ins "DecoratorsAttr":$decorators), [{}], [{
+      llvm_unreachable("TODO: decl does not support decorators");
+    }]>,
   ];
 }
 

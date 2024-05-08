@@ -80,16 +80,25 @@ namespace {
 /// This is the base class for handling decorators on declarations. Signature
 /// decorators are processed first and then leftover decorators are persisted
 /// until body resolution is complete via the SharedState.
-struct Decorators : public SharedStateUser {
-  Decorators(ASTDecl &decl, SharedState &shared)
-      : SharedStateUser(shared), decl(decl) {}
+class Decorators : public SharedStateUser {
+public:
+  /// Create a class to handle decorators for a decl. If `signatureOnly` is set,
+  /// the class will reject any decorator not processed during signature
+  /// resolution.
+  Decorators(ASTDecl &decl, SharedState &shared, bool signatureOnly = false)
+      : SharedStateUser(shared), decl(decl), signatureOnly(signatureOnly) {}
+
+  /// Handle the `@deprecated` decorator for all decls.
+  LogicalResult handleDeprecated(ExprNode *expr);
 
   /// Process signature decorators on the declaration using the provided
   /// functor. The functor should return success if the decorator was processed
   /// as a signature decorator.
   void applySignatureDecorators(
       ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
-      function_ref<LogicalResult(ExprNode *)> process);
+      function_ref<LogicalResult(ExprNode *)> process = [](ExprNode *) {
+        return failure();
+      });
 
   /// Process body decorators on the declaration using the provided functor.
   /// The functor should return success if the decorator was processed as a
@@ -97,10 +106,42 @@ struct Decorators : public SharedStateUser {
   /// the operation.
   void applyBodyDecorators(function_ref<LogicalResult(ExprNode *)> process);
 
+private:
   /// The declaration this class is applying decorators to.
   ASTDecl &decl;
+  /// Whether only signature decorators are allowed.
+  bool signatureOnly;
 };
 } // namespace
+
+LogicalResult Decorators::handleDeprecated(ExprNode *expr) {
+  // Detect expression `deprecated` and complain that a warning message should
+  // be explicitly specified.
+  if (auto declRef = dyn_cast<DeclRefNode>(expr);
+      declRef && declRef->spelling == "deprecated") {
+    shared.emitError(expr->getLoc(), "@deprecated requires a warning message")
+        << FixIt::insertAfterToken(expr->getRange().getEnd(),
+                                   "(\"insert deprecation message here\")",
+                                   shared.diags);
+    return success();
+  }
+
+  // Detect expression `deprecated("some string")`.
+  auto callNode = dyn_cast<CallNode>(expr);
+  if (!callNode)
+    return failure();
+  auto declRef = dyn_cast<DeclRefNode>(callNode->callee);
+  if (!declRef || declRef->spelling != "deprecated" ||
+      callNode->operands.size() != 1 ||
+      !callNode->operands.front().isPositional())
+    return failure();
+  auto strExpr = dyn_cast<StringLiteralNode>(callNode->operands.front().expr);
+  if (!strExpr)
+    return failure();
+  cast<ASTDeclInterface>(decl).setDeprecationWarningAttr(
+      StringAttr::get(getContext(), strExpr->getValue()));
+  return success();
+}
 
 void Decorators::applySignatureDecorators(
     ArrayRef<std::pair<ExprNode *, LexerCursor>> decoratorExprs,
@@ -111,9 +152,13 @@ void Decorators::applySignatureDecorators(
     // Return if we are out of decorators.
     if (decoratorExprs.empty())
       return;
-    if (failed(process(decoratorExprs.front().first)))
-      break;
-    decoratorExprs = decoratorExprs.drop_front();
+    ExprNode *decorator = decoratorExprs.front().first;
+    if (succeeded(handleDeprecated(decorator)) ||
+        succeeded(process(decorator))) {
+      decoratorExprs = decoratorExprs.drop_front();
+      continue;
+    }
+    break;
   }
   // Ensure that there are no other signature decorators afterwards. This is
   // an error.
@@ -135,6 +180,15 @@ void Decorators::applySignatureDecorators(
         << "previous body decorator applied here" << bodyDecorator->getRange();
     break;
   }
+
+  if (!bodyDecorators.empty() && signatureOnly) {
+    shared.emitError(bodyDecorators.front()->getLoc(),
+                     "unsupported decorator on this statement")
+        << SourceRange(bodyDecorators.front()->getRangeStart(),
+                       bodyDecorators.back()->getRangeEnd());
+    return;
+  }
+
   // Defer the rest of the decorators through the shared state.
   decl.setBodyDecorators(bodyDecorators, shared);
 }
@@ -180,10 +234,8 @@ void Decorators::applyBodyDecorators(
     break;
   }
 
-  TypeSwitch<ASTDecl &, void>(decl)
-      .Case<LIT::FuncOp, StructDeclOp, GlobalVarDeclOp>([&](auto op) {
-        op.setDecoratorsAttr(DecoratorsAttr::get(op.getContext(), decoPValues));
-      });
+  cast<ASTDeclInterface>(decl).setDecoratorsAttr(
+      DecoratorsAttr::get(getContext(), decoPValues));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1457,9 +1509,11 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
                                              Lexer &lexer, ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  SMLoc identifierLoc;
+  Decorators(decl, shared, /*signatureOnly=*/true)
+      .applySignatureDecorators(decoratorExprs);
 
   // Parse the type if present.
+  SMLoc identifierLoc;
   if (p.parseToken(Token::kw_alias, "internal error: checked by stmt parser") ||
       p.parseIdentifier("internal error: checked by stmt parser",
                         &identifierLoc))
@@ -1497,7 +1551,6 @@ LogicalResult DeclResolver::resolveSignature(AliasDeclOp aliasDeclOp,
   attrs.set(aliasDeclOp.getParamDeclAttrName(),
             ParamDeclAttr::get(aliasDeclOp.getName(), type));
   aliasDeclOp->setAttrs(attrs.getDictionary(decl.getContext()));
-  rejectDecorators(decoratorExprs, decl, shared);
 
   // Process the doc string of the alias.
   p.parseDocString(decl);
@@ -2108,7 +2161,8 @@ LogicalResult DeclResolver::resolveSignature(TraitDeclOp traitOp, Lexer &lexer,
                                              ASTDecl &decl) {
   ParserBase p(shared, lexer);
   auto decoratorExprs = p.parseDecorators(decl);
-  rejectDecorators(decoratorExprs, decl, shared);
+  Decorators(decl, shared, /*signatureOnly=*/true)
+      .applySignatureDecorators(decoratorExprs);
 
   SMLoc identifierLoc;
   if (p.parseToken(Token::kw_trait, "internal error: checked by stmt parser") ||
