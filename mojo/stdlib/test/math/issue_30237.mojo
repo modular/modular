@@ -6,6 +6,8 @@
 # RUN: %mojo %s
 
 from testing import *
+from utils import StaticTuple, unroll
+
 
 alias dtype = DType.float32
 alias simd_width = 1
