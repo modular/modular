@@ -707,16 +707,15 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
 }
 
 /// Resolve the callee into a single PValue callee.
-static PValue getCallee(SharedState &shared, ArrayRef<ASTDecl *> fnDecls,
+static PValue getCallee(SharedState &shared, ASTDecl *fnDecl,
                         StringRef baseName, const ParamBindings &paramBindings,
                         const ExprNode *expr) {
-  assert(fnDecls.size() == 1 && "expected a single resolved callee");
-  auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
+  auto funcOp = cast<LIT::FuncOp>(*fnDecl);
   // Check if the function overload set resolved to a deprecated overload.
   if (StringAttr warning = funcOp.getDeprecationWarningAttr()) {
     auto diag = shared.emitWarning(expr->getLoc(), warning.getValue())
                 << expr->getRange();
-    diag.attachNote(fnDecls.front()->getLoc())
+    diag.attachNote(fnDecl->getLoc())
         << "'" << *funcOp.getSourceName() << "' declared here";
   }
   return paramBindings.getBoundConstAttrFor(funcOp, baseName, expr);
@@ -898,7 +897,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(bind);
-    return getCallee(getShared(), newFnDecls, baseName, newBindings, expr);
+    return getCallee(getShared(), newFnDecls[0], baseName, newBindings, expr);
   }
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
@@ -1010,7 +1009,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
   // If we have exactly one viable candidate, then we succeed.
   if (validCandidates.size() == 1) {
     if (paramBindings.empty()) {
-      return getCallee(getShared(), validCandidates, baseName, paramBindings,
+      return getCallee(getShared(), validCandidates[0], baseName, paramBindings,
                        expr);
     }
 
@@ -1020,7 +1019,8 @@ PValue OverloadSet::filterOverloadSetForValueType(
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
-    return getCallee(getShared(), validCandidates, baseName, newBindings, expr);
+    return getCallee(getShared(), validCandidates[0], baseName, newBindings,
+                     expr);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
@@ -1049,27 +1049,27 @@ PValue OverloadSet::filterOverloadSetForValueType(
 /// returning null. This allows producing a reference to a parameterized
 /// function without the parameters specified.  They can be bound later.
 TypedAttr OverloadSet::getBoundConstantAttr() const {
-  if (fnDecls.size() != 1) {
-    assert(!fnDecls.empty() && "DirectCallable malformed");
-    auto diag = getShared().emitError(
-                    expr->getLoc(),
-                    "cannot form a reference to overloaded declaration of '")
-                << baseName << "'" << expr->getRange();
-    for (ASTDecl *candidate : fnDecls) {
-      auto func = cast<LIT::FuncOp>(candidate);
-      InflightDiag &note = diag.attachNote(candidate->getLoc());
-      if (func.getIsSynthetic()) {
-        note << "candidate generated with type "
-             << ASTType(func.getFullSignature());
-      } else {
-        note << "candidate declared here";
-      }
-    }
+  if (fnDecls.size() == 1)
+    return getCallee(getShared(), fnDecls[0], baseName, paramBindings, expr);
 
-    return {};
+  // If we have multiple candidates, emit an ambiguity error.
+  assert(!fnDecls.empty() && "DirectCallable malformed");
+  auto diag = getShared().emitError(
+                  expr->getLoc(),
+                  "cannot form a reference to overloaded declaration of '")
+              << baseName << "'" << expr->getRange();
+  for (ASTDecl *candidate : fnDecls) {
+    auto func = cast<LIT::FuncOp>(candidate);
+    InflightDiag &note = diag.attachNote(candidate->getLoc());
+    if (func.getIsSynthetic()) {
+      note << "candidate generated with type "
+           << ASTType(func.getFullSignature());
+    } else {
+      note << "candidate declared here";
+    }
   }
 
-  return getCallee(getShared(), fnDecls, baseName, paramBindings, expr);
+  return {};
 }
 
 /// Get a OverloadSet for a lookup of a named method on the specified type.
