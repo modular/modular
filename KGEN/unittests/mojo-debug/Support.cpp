@@ -89,6 +89,9 @@ static SBDebugger getOrCreateSBDebugger() {
             .string()
             .c_str());
 
+    if (!lldbInitPath.Exists())
+      llvm::report_fatal_error("lldbinit doesn't exist");
+
     SBCommandReturnObject result;
     SBExecutionContext exeCtx;
     SBCommandInterpreterRunOptions options;
