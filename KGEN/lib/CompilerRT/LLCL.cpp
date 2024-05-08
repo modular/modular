@@ -348,16 +348,6 @@ KGEN_CompilerRT_LLCL_DestroySpinWaiter(LLCLSpinWaiterRef waiter) {
 // Strings
 //===----------------------------------------------------------------------===//
 
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_DestroyString(const char *str) {
-  delete str;
-}
-
-COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_LLCL_DestroyStringArray(const char **arr) {
-  delete[] arr;
-}
-
 void M::KGEN::registerLLCL(
     std::vector<std::pair<llvm::StringLiteral, void *>> &funcs) {
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeChain",
@@ -412,9 +402,4 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_SpinWaiter_Wait});
   funcs.push_back({"KGEN_CompilerRT_LLCL_DestroySpinWaiter",
                    (void *)&KGEN_CompilerRT_LLCL_DestroySpinWaiter});
-
-  funcs.push_back({"KGEN_CompilerRT_LLCL_DestroyString",
-                   (void *)&KGEN_CompilerRT_LLCL_DestroyString});
-  funcs.push_back({"KGEN_CompilerRT_LLCL_DestroyStringArray",
-                   (void *)&KGEN_CompilerRT_LLCL_DestroyStringArray});
 }
