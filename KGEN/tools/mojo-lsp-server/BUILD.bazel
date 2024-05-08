@@ -1,3 +1,5 @@
+load("//utils/bazel/build/rules:opt_wrapper.bzl", "opt_wrapper")
+
 package(default_visibility = ["//visibility:public"])
 
 cc_binary(
@@ -24,4 +26,9 @@ cc_binary(
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:MlirLspServerLib",
     ],
+)
+
+opt_wrapper(
+    name = "mojo-lsp-server.opt",
+    dep = ":mojo-lsp-server",
 )
