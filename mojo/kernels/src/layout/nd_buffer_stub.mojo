@@ -6,6 +6,7 @@
 
 from layout import LayoutTensor, Layout
 from layout.int_tuple import to_int, flatten, depth
+from layout.layout import make_layout
 
 from buffer import NDBuffer
 from buffer.list import DimList, Dim
@@ -155,6 +156,79 @@ struct ElementLayout[rank: Int, shape: StaticIntTuple[rank]](
         return shape.__str__() + ":" + self.stride
 
 
+# Returns the linear index of an element, this is equivalent to concat
+# the element layout and the buffer layout
+fn _get_element_idx[
+    rank: Int,
+    dtype: DType,
+    shape: DimList,
+    element_shape: StaticIntTuple[rank],
+](
+    linear_coord: Int,
+    buff: NDBuffer[dtype, rank, shape],
+    element_layout: ElementLayout[rank, element_shape],
+) -> Int:
+    var result = 0
+    var curr_linear_crd = linear_coord
+
+    # evaluate according to
+    # iterate over outer most
+    @unroll
+    for i in range(rank):
+        result += (
+            curr_linear_crd % element_layout.shape[i]
+        ) * element_layout.stride[i]
+        curr_linear_crd = curr_linear_crd // element_layout.shape[i]
+
+    @unroll
+    for i in range(rank):
+        result += (
+            curr_linear_crd % buff.dynamic_shape[i]
+        ) * buff.dynamic_stride[i]
+        curr_linear_crd = curr_linear_crd // buff.dynamic_shape[i]
+
+    return result
+
+
+fn _get_element_idx[
+    rank: Int,
+    dtype: DType,
+    shape: DimList,
+](linear_coord: Int, buff: NDBuffer[dtype, rank, shape]) -> Int:
+    var result = 0
+    var curr_linear_crd = linear_coord
+
+    @unroll
+    for i in range(rank):
+        result += (
+            curr_linear_crd % buff.dynamic_shape[i]
+        ) * buff.dynamic_stride[i]
+        curr_linear_crd = curr_linear_crd // buff.dynamic_shape[i]
+    return result
+
+
+fn _get_element_idx[
+    rank: Int,
+    element_shape: StaticIntTuple[rank],
+](
+    linear_coord: Int,
+    element_layout: ElementLayout[rank, element_shape],
+) -> Int:
+    var result = 0
+    var curr_linear_crd = linear_coord
+
+    # evaluate according to
+    # iterate over outer most
+    @unroll
+    for i in range(rank):
+        result += (
+            curr_linear_crd % element_layout.shape[i]
+        ) * element_layout.stride[i]
+        curr_linear_crd = curr_linear_crd // element_layout.shape[i]
+
+    return result
+
+
 # Vectorizes buffer and returns the vecrtorized buffer and its dynamic layout.
 #
 @always_inline("nodebug")
@@ -195,6 +269,210 @@ fn vectorize[
         ),
         element_layout,
     )
+
+
+fn _copy_nd_buffer_to_layout_tensor[
+    dst_rank: Int,
+    src_rank: Int,
+    dtype: DType,
+    layout: Layout,
+    shape: DimList,
+    dst_address_space: AddressSpace,
+    tensor_element_layout: Layout,
+    buff_element_layout_shape: StaticIntTuple[src_rank],
+](
+    dst: LayoutTensor[
+        dtype,
+        layout,
+        dst_rank,
+        address_space=dst_address_space,
+        element_layout=tensor_element_layout,
+    ],
+    src: NDBuffer[dtype, src_rank, shape],
+    buff_element_layout: ElementLayout[src_rank, buff_element_layout_shape],
+):
+    alias num_elements = dst.layout.size()
+    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+
+    # 1d-vector load/store
+    @parameter
+    if (
+        tensor_element_layout.rank() == 1
+        and tensor_element_layout.stride[0] == 1
+        and dst.element_size != 1
+    ):
+        constrained[
+            tensor_element_layout.shape[0] == buff_element_layout_shape[1],
+            "LayoutTensor element shape != buffer element shape",
+        ]()
+        constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
+
+        alias vec_size = to_int(tensor_element_layout.shape[0])
+        alias alignment = alignof[dst.element_type]()
+
+        @parameter
+        fn _copy_vector[i: Int]():
+            alias dst_idx = make_layout(tensor_element_layout, dst.layout)(
+                i * vec_size
+            )
+            var src_idx = _get_element_idx(
+                i * vec_size, src, buff_element_layout
+            )
+
+            var src_element = src.data.offset(src_idx).load[
+                width=vec_size, alignment=alignment
+            ]()
+            dst.ptr.offset(dst_idx).store[width=vec_size, alignment=alignment](
+                src_element
+            )
+
+        unroll[_copy_vector, num_elements]()
+    # 2d-vector load/store
+    elif (
+        tensor_element_layout.rank() == 2
+        and tensor_element_layout.stride[1] == 1
+    ):
+        alias num_copies = tensor_element_layout.shape[0].value()
+        alias vec_width = tensor_element_layout.shape[1].value()
+
+        @parameter
+        fn copy_by_element[i: Int]():
+            alias dst_offset = layout(i)
+            var src_offset = _get_element_idx(i, src)
+
+            @parameter
+            fn copy_by_vec[j: Int]():
+                alias dst_idx = dst_offset + tensor_element_layout(j)
+                var src_idx = src_offset + _get_element_idx(
+                    j, buff_element_layout
+                )
+
+                var src_vec = src.data.load[
+                    width=vec_width,
+                    alignment = alignof[SIMD[dtype, vec_width]](),
+                ](src_idx).cast[dtype]()
+
+                dst.ptr.store[
+                    width=vec_width,
+                    alignment = alignof[SIMD[dtype, vec_width]](),
+                ](dst_idx, src_vec)
+
+            unroll[copy_by_vec, num_copies]()
+
+        unroll[copy_by_element, num_elements]()
+    # Scalar case.
+    else:
+
+        @parameter
+        fn _copy_element[i: Int]():
+            alias dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
+            var src_idx = _get_element_idx(i, src, buff_element_layout)
+            dst.ptr[dst_idx] = src.data[src_idx]
+
+        unroll[_copy_element, num_elements * dst.element_size]()
+
+
+fn _copy_layout_tensor_to_nd_buffer[
+    dst_rank: Int,
+    src_rank: Int,
+    dtype: DType,
+    layout: Layout,
+    shape: DimList,
+    dst_address_space: AddressSpace,
+    tensor_element_layout: Layout,
+    buff_element_layout_shape: StaticIntTuple[dst_rank],
+](
+    dst: NDBuffer[dtype, dst_rank, shape],
+    buff_element_layout: ElementLayout[dst_rank, buff_element_layout_shape],
+    src: LayoutTensor[
+        dtype,
+        layout,
+        src_rank,
+        address_space=dst_address_space,
+        element_layout=tensor_element_layout,
+    ],
+):
+    alias num_elements = src.layout.size()
+    constrained[src_rank == dst_rank, "src and dst should have same rank"]()
+
+    # 1d-vector load/store
+    @parameter
+    if (
+        tensor_element_layout.rank() == 1
+        and tensor_element_layout.stride[0] == 1
+        and src.element_size != 1
+    ):
+        constrained[
+            tensor_element_layout.shape[0] == buff_element_layout_shape[1],
+            "LayoutTensor element shape != buffer element shape",
+        ]()
+        constrained[buff_element_layout_shape[0] == 1, "Expecting row vector"]()
+
+        alias vec_size = to_int(tensor_element_layout.shape[0])
+        alias alignment = alignof[src.element_type]()
+
+        @parameter
+        fn _copy_vector[i: Int]():
+            var dst_idx = _get_element_idx(
+                i * vec_size, dst, buff_element_layout
+            )
+            alias src_idx = make_layout(tensor_element_layout, src.layout)(
+                i * vec_size
+            )
+
+            var src_element = src.ptr.offset(src_idx).load[
+                width=vec_size, alignment=alignment
+            ]()
+            dst.data.offset(dst_idx).store[width=vec_size, alignment=alignment](
+                src_element
+            )
+
+        unroll[_copy_vector, num_elements]()
+    # 2d-vector load/store
+    elif (
+        tensor_element_layout.rank() == 2
+        and tensor_element_layout.stride[1] == 1
+    ):
+        alias num_copies = tensor_element_layout.shape[0].value()
+        alias vec_width = tensor_element_layout.shape[1].value()
+
+        @parameter
+        fn copy_by_element[i: Int]():
+            # Offset to the current element.
+            var dst_offset = _get_element_idx(i, dst)
+
+            alias src_offset = layout(i)
+
+            @parameter
+            fn copy_by_vec[j: Int]():
+                var dst_idx = dst_offset + _get_element_idx(
+                    j, buff_element_layout
+                )
+                alias src_idx = src_offset + tensor_element_layout(j)
+
+                var src_vec = src.ptr.load[
+                    width=vec_width,
+                    alignment = alignof[SIMD[dtype, vec_width]](),
+                ](src_idx).cast[dtype]()
+
+                dst.data.store[
+                    width=vec_width,
+                    alignment = alignof[SIMD[dtype, vec_width]](),
+                ](dst_idx, src_vec)
+
+            unroll[copy_by_vec, num_copies]()
+
+        unroll[copy_by_element, num_elements]()
+    # Scalar case.
+    else:
+
+        @parameter
+        fn _copy_element[i: Int]():
+            alias src_idx = make_layout(tensor_element_layout, src.layout)(i)
+            var dst_idx = _get_element_idx(i, dst, buff_element_layout)
+            dst.data[dst_idx] = src.ptr[src_idx]
+
+        unroll[_copy_element, num_elements * src.element_size]()
 
 
 # Copies an nd-buffer fragment to `thread_id` thread local LayoutTensor element

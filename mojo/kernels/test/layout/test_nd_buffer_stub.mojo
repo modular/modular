@@ -17,6 +17,8 @@ from layout.nd_buffer_stub import (
     distribute,
     vectorize,
     ElementLayout,
+    _copy_nd_buffer_to_layout_tensor,
+    _copy_layout_tensor_to_nd_buffer,
 )
 
 
@@ -463,6 +465,131 @@ fn test_vectorize_and_distribute():
         print_vectorized_buff(buff_thread_local, buff_v_1_and_element_layout[1])
 
 
+# CHECK-LABEL: test_copy_nd_buffer_to_layout_tensor
+fn test_copy_nd_buffer_to_layout_tensor():
+    print("== test_copy_nd_buffer_to_layout_tensor")
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    linspace_fill(buff)
+
+    var buff_v_1_1_and_element_layout = vectorize[1, 1](buff)
+
+    var tensor_1_1 = LayoutTensor[
+        DType.float32, Layout.row_major(8, 8)
+    ].stack_allocation()
+    tensor_1_1.fill(0)
+    _copy_nd_buffer_to_layout_tensor(
+        tensor_1_1,
+        buff_v_1_1_and_element_layout[0],
+        buff_v_1_1_and_element_layout[1],
+    )
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+    # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+    # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+    # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+    tensor_1_1.print()
+
+    var buff_v_1_4_and_element_layout = vectorize[1, 4](buff)
+
+    var tensor_4_1 = LayoutTensor[
+        DType.float32, Layout.row_major(8, 8)
+    ].stack_allocation().vectorize[1, 4]()
+    tensor_4_1.fill(0)
+    _copy_nd_buffer_to_layout_tensor(
+        tensor_4_1,
+        buff_v_1_4_and_element_layout[0],
+        buff_v_1_4_and_element_layout[1],
+    )
+
+    # CHECK: [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0]
+    # CHECK: [8.0, 9.0, 10.0, 11.0] [12.0, 13.0, 14.0, 15.0]
+    # CHECK: [16.0, 17.0, 18.0, 19.0] [20.0, 21.0, 22.0, 23.0]
+    # CHECK: [24.0, 25.0, 26.0, 27.0] [28.0, 29.0, 30.0, 31.0]
+    # CHECK: [32.0, 33.0, 34.0, 35.0] [36.0, 37.0, 38.0, 39.0]
+    # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
+    # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
+    # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
+    tensor_4_1.print()
+
+    var buff_v_4_4_and_element_layout = vectorize[4, 4](buff)
+    var tensor_4_4 = LayoutTensor[
+        DType.float32, Layout.row_major(8, 8)
+    ].stack_allocation().vectorize[4, 4]()
+    tensor_4_4.fill(0)
+    _copy_nd_buffer_to_layout_tensor(
+        tensor_4_4,
+        buff_v_4_4_and_element_layout[0],
+        buff_v_4_4_and_element_layout[1],
+    )
+
+    # CHECK: [0.0, 8.0, 16.0, 24.0, 1.0, 9.0, 17.0, 25.0, 2.0, 10.0, 18.0, 26.0, 3.0, 11.0, 19.0, 27.0] [4.0, 12.0, 20.0, 28.0, 5.0, 13.0, 21.0, 29.0, 6.0, 14.0, 22.0, 30.0, 7.0, 15.0, 23.0, 31.0]
+    # CHECK: [32.0, 40.0, 48.0, 56.0, 33.0, 41.0, 49.0, 57.0, 34.0, 42.0, 50.0, 58.0, 35.0, 43.0, 51.0, 59.0] [36.0, 44.0, 52.0, 60.0, 37.0, 45.0, 53.0, 61.0, 38.0, 46.0, 54.0, 62.0, 39.0, 47.0, 55.0, 63.0]
+    tensor_4_4.print()
+
+
+# CHECK-LABEL: test_copy_layout_tensor_to_buffer
+fn test_copy_layout_tensor_to_buffer():
+    print("== test_copy_layout_tensor_to_buffer")
+    var tensor = LayoutTensor[
+        DType.float32, Layout.row_major(8, 8)
+    ].stack_allocation()
+    tensor.linspace()
+
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    zero_fill(buff)
+
+    var buff_v_1_1_and_element_layout = vectorize[1, 1](buff)
+    _copy_layout_tensor_to_nd_buffer(
+        buff_v_1_1_and_element_layout[0],
+        buff_v_1_1_and_element_layout[1],
+        tensor.vectorize[1, 1](),
+    )
+    # CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0
+    # CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
+    # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
+    # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
+    # CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0
+    # CHECK: 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
+    # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
+    # CHECK: 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
+    print_vectorized_buff(
+        buff_v_1_1_and_element_layout[0], buff_v_1_1_and_element_layout[1]
+    )
+
+    zero_fill(buff)
+    var buff_v_1_4_and_element_layout = vectorize[1, 4](buff)
+    _copy_layout_tensor_to_nd_buffer(
+        buff_v_1_4_and_element_layout[0],
+        buff_v_1_4_and_element_layout[1],
+        tensor.vectorize[1, 4](),
+    )
+    # CHECK: [0.0, 1.0, 2.0, 3.0] [4.0, 5.0, 6.0, 7.0]
+    # CHECK: [8.0, 9.0, 10.0, 11.0] [12.0, 13.0, 14.0, 15.0]
+    # CHECK: [16.0, 17.0, 18.0, 19.0] [20.0, 21.0, 22.0, 23.0]
+    # CHECK: [24.0, 25.0, 26.0, 27.0] [28.0, 29.0, 30.0, 31.0]
+    # CHECK: [32.0, 33.0, 34.0, 35.0] [36.0, 37.0, 38.0, 39.0]
+    # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
+    # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
+    # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
+    print_vectorized_buff(
+        buff_v_1_4_and_element_layout[0], buff_v_1_4_and_element_layout[1]
+    )
+
+    zero_fill(buff)
+    var buff_v_4_4_and_element_layout = vectorize[4, 4](buff)
+    _copy_layout_tensor_to_nd_buffer(
+        buff_v_4_4_and_element_layout[0],
+        buff_v_4_4_and_element_layout[1],
+        tensor.vectorize[4, 4](),
+    )
+    print_vectorized_buff(
+        buff_v_4_4_and_element_layout[0], buff_v_4_4_and_element_layout[1]
+    )
+
+
 fn main():
     test_copy_from_nd_buffer_scalars()
     test_copy_to_nd_buffer_scalars()
@@ -472,3 +599,5 @@ fn main():
     test_tile_and_distribute()
     test_1d_2d_vectorize()
     test_vectorize_and_distribute()
+    test_copy_nd_buffer_to_layout_tensor()
+    test_copy_layout_tensor_to_buffer()
