@@ -14,11 +14,9 @@
 #include "KGEN/TransformUtils/InliningUtils.h"
 #include "LLCL/CompilerSupport/Context.h"
 #include "LLCL/Runtime/Algorithms.h"
-#include "LLCL/Runtime/Allocator.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/Compiler/Threading.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
@@ -818,43 +816,6 @@ struct InlineParametricPass : impl::InlineParametricBase<InlineParametricPass> {
 } // namespace
 
 void InlineParametricPass::runOnOperation() {
-  // Inline "trivial" functions inside parameter expressions in the form of
-  //
-  // ```mlir
-  // kgen.generator @anything(%arg0: !SomeType) -> !SomeType {
-  //   kgen.return %arg0 : !SomeType
-  // }
-  // ```
-  DenseSet<StringAttr> trivialFuncs;
-  for (auto func : getOperation().getOps<GeneratorOp>()) {
-    auto term = dyn_cast<ReturnOp>(func.getBody()->getTerminator());
-    // The only op in the body is a return.
-    if (func.getNumArguments() == 1 && term == &func.getBody()->front() &&
-        term.getNumOperands() == 1 && term.getOperand(0) == func.getArgument(0))
-      trivialFuncs.insert(func.getSymNameAttr());
-  }
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement(
-      [&trivialFuncs](ParamOperatorAttr apply) -> TypedAttr {
-        // Peephole `apply(:... @fn, x)` -> `x` where `@fn` is trivial.
-        if (apply.getOpcode() != POC::Apply || apply.getNumOperands() != 2)
-          return apply;
-        auto cst = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
-        if (!cst || !trivialFuncs.contains(cst.getSymbol().getRootReference()))
-          return apply;
-        // Rebind the type if necessary.
-        return apply.getOperand(1);
-      });
-  // The replacers have an internal cache, so make sure to share them correctly.
-  auto substTrivialFuncs = [](mlir::AttrTypeReplacer &replacer, Operation *op) {
-    replacer.recursivelyReplaceElementsIn(
-        op, /*replaceAttrs=*/true, /*replaceLocs=*/true, /*replaceTypes=*/true);
-  };
-  std::vector<Operation *> ops;
-  for (Operation &op : getOperation().getOps())
-    ops.push_back(&op);
-  parallelForEach(&getContext(), ops, substTrivialFuncs, replacer);
-
   SymbolTable &symtab =
       getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
   auto &paramCache = getAnalysis<ParameterCollector::Analysis>();

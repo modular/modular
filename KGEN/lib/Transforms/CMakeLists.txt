@@ -5,6 +5,7 @@
 ##===----------------------------------------------------------------------===##
 
 add_modular_library(KGENTransforms
+  ApplyInliner.cpp
   AutomaticInline.cpp
   Canonicalizer.cpp
   DeadArgumentElimination.cpp
