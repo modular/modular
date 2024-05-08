@@ -14,7 +14,7 @@ from layout.nd_buffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
 from buffer import NDBuffer, DimList
 
 from gpu.id import BlockIdx, ThreadIdx
-from gpu.memory import AddressSpace
+from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.sync import barrier
 from gpu import WARP_SIZE
 from gpu.host.event import time_function
@@ -115,7 +115,8 @@ fn gemm_kernel[
             Layout.row_major(NUM_THREADS // BK, BK)
         ](ThreadIdx.x())
         copy_from_nd_buffer[
-            thread_layout = Layout.row_major(NUM_THREADS // BK, BK)
+            thread_layout = Layout.row_major(NUM_THREADS // BK, BK),
+            is_async=True,
         ](a_tile_sram_local, a_tile_dram, ThreadIdx.x())
 
         var b_tile_dram = mat_b.tile[BK, BN]((k_i, BlockIdx.x()))
@@ -123,9 +124,10 @@ fn gemm_kernel[
             Layout.row_major(NUM_THREADS // BN, BN)
         ](ThreadIdx.x())
         copy_from_nd_buffer[
-            thread_layout = Layout.row_major(NUM_THREADS // BN, BN)
+            thread_layout = Layout.row_major(NUM_THREADS // BN, BN),
+            is_async=True,
         ](b_tile_sram_local, b_tile_dram, ThreadIdx.x())
-
+        async_copy_wait_all()
         barrier()
 
         @parameter
