@@ -132,12 +132,14 @@ struct GRPCInferenceServer[Callbacks: ServerCallbacks = NoopServerCallbacks]:
                 var respOr = Variant[ModelInferResponse, Error](resp^)
                 await handle_fn(req, respOr)
                 if respOr.isa[Error]():
-                    self._impl.push_failed(batch, i, str(respOr.take[Error]()))
+                    self._impl.push_failed(
+                        batch, i, str(respOr.unsafe_take[Error]())
+                    )
                     self._callbacks.on_request_fail(req)
                 else:
                     self._impl.push_complete(batch, i)
                     self._callbacks.on_request_ok(start, req)
-                    _ = respOr.take[ModelInferResponse]()
+                    _ = respOr.unsafe_take[ModelInferResponse]()
 
         @always_inline
         @parameter
@@ -229,9 +231,9 @@ struct MuxInferenceService(InferenceService):
         var rt = Runtime()
         rt.run(self.async_infer(request, respOr))
         if respOr.isa[Error]():
-            raise respOr.take[Error]()
+            raise respOr.unsafe_take[Error]()
         else:
-            response = respOr.take[resp_type]()
+            response = respOr.unsafe_take[resp_type]()
 
     async fn async_infer[
         req_type: InferenceRequest, resp_type: InferenceResponse

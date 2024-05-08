@@ -58,9 +58,9 @@ struct GRPCInferenceClient:
         var result = Variant[ModelInferResponse, Error](Error())
         rt.run(self.async_infer(name, version, inputs, outputs, result))
         if result.isa[Error]():
-            raise result.take[Error]()
+            raise result.unsafe_take[Error]()
         else:
-            return result.take[ModelInferResponse]()
+            return result.unsafe_take[ModelInferResponse]()
 
     # TODO: Add TensorMap variant that owns tensors.
     async fn async_infer(
