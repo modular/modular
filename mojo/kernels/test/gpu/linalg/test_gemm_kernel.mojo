@@ -45,6 +45,20 @@ fn is_benchmark() -> Bool:
     return False
 
 
+fn dump_ptx() -> Bool:
+    for arg in argv():
+        if arg == "--dump_ptx" or arg == "--dump_ptx":
+            return True
+    return False
+
+
+fn dump_llvm() -> Bool:
+    for arg in argv():
+        if arg == "--dump_llvm" or arg == "--dump_llvm":
+            return True
+    return False
+
+
 fn gemm_kernel[
     c_type: DType,
     c_shape: DimList,
@@ -133,6 +147,9 @@ fn gemm_kernel[
 
         unroll[reduce_k, BK]()
 
+        # Otherwise a data race, faster threads will modify shared memory.
+        barrier()
+
     var c_warp_tile = mat_c.tile[BM, BN]((BlockIdx.y(), BlockIdx.x())).tile[
         WM, WN
     ]((warp_m, warp_n))
@@ -198,7 +215,7 @@ fn test_gemm_kernel_dynamic() raises:
 
     var gemm_kernel_func = Function[
         __type_of(gemm_kernel_func_t), gemm_kernel_func_t
-    ]()
+    ](dump_ptx=dump_ptx(), dump_llvm=dump_llvm())
 
     var mat_a = NDBuffer[DType.float32, 2, DimList.create_unknown[2]()](
         a_device, dynamic_shape=Index(M, K)
