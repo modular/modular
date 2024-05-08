@@ -24,7 +24,7 @@ from LinAlg.transpose import transpose_inplace
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
-from utils.index import Index
+from utils import Index, StaticTuple
 
 
 struct _MatmulConfig:

@@ -20,8 +20,7 @@ from runtime.llcl import Runtime
 from runtime.tracing import Trace, TraceLevel
 
 from collections import OptionalReg
-from utils.index import StaticIntTuple
-from utils.loop import unroll
+from utils import StaticIntTuple, StaticTuple, unroll
 
 from .reshape import reshape
 

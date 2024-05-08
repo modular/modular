@@ -14,9 +14,7 @@ from buffer.list import Dim, DimList
 from nn.pad import _AxisParams, _do_pad, _fill, pad_constant, pad_reflect
 from python import Python
 from testing import assert_equal, assert_true
-
-from utils.index import Index, StaticIntTuple
-from utils.loop import unroll
+from utils import StaticIntTuple, StaticTuple, unroll
 
 
 @always_inline

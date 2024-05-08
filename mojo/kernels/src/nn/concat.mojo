@@ -23,7 +23,7 @@ from memory import memcpy
 from memory.unsafe import DTypePointer
 from register import mogg_register
 
-from utils.index import StaticIntTuple, product
+from utils import StaticIntTuple, product, StaticTuple
 
 # ===----------------------------------------------------------------------===#
 # concat
