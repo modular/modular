@@ -58,6 +58,7 @@ private:
   LLVM::DILocalVariableAttr convertAttrImpl(DILocalVariableAttr attr);
   LLVM::DIScopeAttr convertAttrImpl(DIScopeAttr attr);
   LLVM::DISubprogramAttr convertAttrImpl(DISubprogramAttr attr);
+  LocationAttr convertAttrImpl(DICallLocAttr attr);
 
   LLVM::DIExpressionAttr convertAttrImpl(DIAggregatesIntoExprAttr attr);
   LLVM::DIExpressionAttr convertAttrImpl(DIRefOfExprAttr attr);
@@ -94,7 +95,8 @@ Attribute MetadataConverter::convertAttrImpl(DIAttr attr) {
       TypeSwitch<DIAttr, Attribute>(attr)
           .Case<DIAggregatesIntoExprAttr, DICompileUnitAttr, DIDerefExprAttr,
                 DIFileAttr, DIIRValueExprAttr, DILexicalBlockAttr,
-                DILocalVariableAttr, DIRefOfExprAttr, DISubprogramAttr>(
+                DILocalVariableAttr, DIRefOfExprAttr, DISubprogramAttr,
+                DICallLocAttr>(
               [&](auto attr) { return convertAttrImpl(attr); });
   return convertedAttrs[attr] = result;
 }
@@ -140,6 +142,10 @@ MetadataConverter::convertAttrImpl(DISubprogramAttr attr) {
       convertAttr(attr.getFile()), attr.getLine(), attr.getScopeLine(),
       static_cast<LLVM::DISubprogramFlags>(attr.getSubprogramFlags()),
       convertType(attr.getType()));
+}
+
+LocationAttr MetadataConverter::convertAttrImpl(DICallLocAttr attr) {
+  return attr.getCallLoc();
 }
 
 //===----------------------------------------------------------------------===//
