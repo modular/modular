@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/CODialect/COTypes.h"
+#include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFDialect.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/HLCFDialect/HLCFUtils.h"
@@ -179,7 +179,11 @@ void LITLowerer::lowerLITOps(LIT::FuncOp func) {
       b.replaceOpWithNewOp<KGEN::CallIndirectOp>(call, call.getResultTypes(),
                                                  call.getCallee(), newOperands);
     } else if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
-      call.setImplicitLifetimes({});
+      auto calleeType = cast<SignatureType>(call.getCallee().getType());
+      // Cast the arguments, but not the callee.
+      auto newOperands =
+          castCallOperands(call.getOperands(), calleeType, call.getLoc(), b);
+      b.replaceOpWithNewOp<CO::InvokeOp>(call, call.getCallee(), newOperands);
     } else if (auto varDecl = dyn_cast<VarDeclOp>(op)) {
       RefType varRegType = varDecl.getType();
 

@@ -1012,9 +1012,9 @@ kgen.generator @async_function() async {
 
 // CHECK-LABEL: kgen.func @call_it
 kgen.generator @call_it() {
-  // CHECK: lit.async.call[() async -> (): @async_function]
+  // CHECK: co.invoke[() async -> (): @async_function]
   kgen.param.declare fn: () async -> () = <@async_function>
-  lit.async.call[() async -> (): fn]()
+  co.invoke[() async -> (): fn]()
   kgen.return
 }
 
@@ -1027,8 +1027,8 @@ kgen.generator @async_fn() async {
 
 // CHECK-LABEL: kgen.func export @nonparametric_async_call
 kgen.generator export @nonparametric_async_call() {
-  // CHECK-NEXT: call[() async -> (): @async_fn]
-  lit.async.call[() async -> (): @async_fn]()
+  // CHECK-NEXT: co.invoke[() async -> (): @async_fn]
+  co.invoke[() async -> (): @async_fn]()
   kgen.return
 }
 

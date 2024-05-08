@@ -6,7 +6,6 @@
 
 #include "KGEN/CODialect/COOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/POPDialect/POPDialect.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
@@ -295,7 +294,7 @@ static LogicalResult lowerAsyncFunction(FuncOp func,
 
   WalkResult result = func.walk([&](Operation *op) -> WalkResult {
     // Replace async calls with a simple `kgen.call`.
-    if (auto call = dyn_cast<LIT::AsyncCallOp>(op)) {
+    if (auto call = dyn_cast<CO::InvokeOp>(op)) {
       b.setLoc(call.getLoc());
       b.setInsertionPoint(call);
       // Be defensive about pass ordering.

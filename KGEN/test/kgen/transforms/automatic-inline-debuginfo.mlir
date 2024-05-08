@@ -68,7 +68,7 @@ kgen.func @call_async() -> !co.routine {
   // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
   // DEFERRED-NEXT: } {inliner_debuginfo_update = 3 : i8} loc(#[[LOC_ASYNC_EXECUTE]])
   // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE]])
-  %0 = lit.async.call[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
+  %0 = co.invoke[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
   kgen.return %0: !co.routine loc(#locAsyncCaller)
 // CHECK-NEXT: } loc(#[[LOC_SCOPED_CALLER]])
