@@ -34,7 +34,7 @@ from builtin.dtype import _uint_type_of_width
 from gpu.host import Stream
 from memory.unsafe import bitcast
 
-from utils.index import Index, StaticIntTuple
+from utils.index import Index, StaticIntTuple, StaticTuple
 from utils.loop import unroll
 
 from ._gpu.reduction import reduce_launch
