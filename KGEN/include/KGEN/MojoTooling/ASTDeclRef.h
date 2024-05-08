@@ -55,6 +55,9 @@ public:
   /// Get the name of this declaration if available.
   std::optional<StringRef> getName() const;
 
+  /// Get the deprecation warning on this declaration if available.
+  std::optional<StringRef> getDeprecationWarning() const;
+
   /// Get the location of the start token of this decl. It might not be the
   /// identifier.
   llvm::SMLoc getLoc() const;

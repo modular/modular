@@ -61,6 +61,13 @@ alias alias_fn = fn (Int, Int) -> None
 alias alias_str = ""
 
 
+# CHECK:  "deprecated": "deprecated alias",
+# CHECK:  "kind": "alias",
+# CHECK:  "name": "deprecated_alias",
+@deprecated("deprecated alias")
+alias deprecated_alias = 1
+
+
 # CHECK:  "description": "",
 # CHECK:  "functions": [
 # CHECK:  "name": "empty_fn",
@@ -489,6 +496,15 @@ fn parameter_with_escaped_mlir_name[type: AnyType](value: type):
     pass
 
 
+# CHECK: "kind": "function"
+# CHECK: "overloads":
+# CHECK:    "deprecated": "deprecated function"
+# CHECK:    "name": "deprecated_function"
+@deprecated("deprecated function")
+fn deprecated_function():
+    pass
+
+
 # CHECK:  "kind": "module",
 # CHECK:  "name": "mojo-doc",
 
@@ -621,6 +637,13 @@ struct StructWithDefault[a: Int = 1]:
     pass
 
 
+# CHECK: "deprecated": "deprecated struct"
+# CHECK: "name": "DeprecatedStruct"
+@deprecated("deprecated struct")
+struct DeprecatedStruct:
+    pass
+
+
 # CHECK:  "summary": "This is a module summary, that spills over to the next line."
 
 ##===----------------------------------------------------------------------===##
@@ -649,6 +672,13 @@ trait Trait:
     fn f(self: Self):
         """This is a trait function doc."""
         ...
+
+
+# CHECK: "deprecated": "deprecated trait"
+# CHECK: "name": "DeprecatedTrait"
+@deprecated("deprecated trait")
+trait DeprecatedTrait:
+    pass
 
 
 # Check that we include version information in the generated JSON.
