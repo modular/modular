@@ -9,17 +9,11 @@
 
 from benchmark import *
 from nn.gather_scatter import scatter_elements
-from tensor import Tensor, TensorShape
+from buffer import NDBuffer
+from buffer.list import Dim, DimList
 from collections.vector import InlinedFixedVector
-from random import random_si64
-
-
-fn linear_fill[
-    type: DType,
-](inout t: Tensor[type], elems: InlinedFixedVector[Scalar[type]]):
-    var buf = t._to_buffer()
-    for i in range(t.num_elements()):
-        buf[i] = elems[i]
+from random import rand, randint
+from utils.index import Index
 
 
 fn bench_scatter(inout m: Bench, spec: ScatterSpec) raises:
@@ -38,33 +32,39 @@ fn bench_scatter(inout bencher: Bencher, spec: ScatterSpec) capturing:
     var indices = InlinedFixedVector[Int32](spec.n1 * spec.n2)
     var updates = InlinedFixedVector[Float32](spec.n1 * spec.n2)
 
-    var rand_min = -1000
-    var rand_max = 1000
     var index_rand_min = 0
     var index_rand_max = spec.n1 * spec.n2 - 1
 
-    for x in range(spec.m1 * spec.m2):
-        var val = random_si64(rand_min, rand_max)
-        data[x] = val.cast[DType.float32]()
+    var input_shape = Index(spec.m1, spec.m2)
+    var indices_shape = Index(spec.n1, spec.n2)
 
-    for x in range(spec.n1 * spec.n2):
-        var val = random_si64(rand_min, rand_max)
-        updates[x] = val.cast[DType.float32]()
+    var data_ptr = DTypePointer[DType.float32].alloc(
+        input_shape.flattened_length()
+    )
+    rand(data_ptr, input_shape.flattened_length())
+    var data_tensor = NDBuffer[DType.float32, 2](data_ptr, input_shape)
 
-    for x in range(spec.n1 * spec.n2):
-        var val = random_si64(index_rand_min, index_rand_max)
-        indices[x] = val.cast[DType.int32]()
+    var indices_ptr = DTypePointer[DType.int32].alloc(
+        indices_shape.flattened_length()
+    )
+    randint(
+        indices_ptr,
+        indices_shape.flattened_length(),
+        index_rand_min,
+        index_rand_max,
+    )
+    var indices_tensor = NDBuffer[DType.int32, 2](indices_ptr, indices_shape)
 
-    var input_shape = TensorShape(spec.m1, spec.m2)
-    var indices_shape = TensorShape(spec.n1, spec.n2)
-    var data_tensor = Tensor[DType.float32](input_shape)
-    var indices_tensor = Tensor[DType.int32](indices_shape)
-    var updates_tensor = Tensor[DType.float32](indices_shape)
-    var output_tensor = Tensor[DType.float32](input_shape)
+    var updates_ptr = DTypePointer[DType.float32].alloc(
+        indices_shape.flattened_length()
+    )
+    rand(updates_ptr, indices_shape.flattened_length())
+    var updates_tensor = NDBuffer[DType.float32, 2](updates_ptr, indices_shape)
 
-    linear_fill(data_tensor, data)
-    linear_fill(indices_tensor, indices)
-    linear_fill(updates_tensor, updates)
+    var output_ptr = DTypePointer[DType.float32].alloc(
+        input_shape.flattened_length()
+    )
+    var output_tensor = NDBuffer[DType.float32, 2](output_ptr, input_shape)
 
     @always_inline
     @parameter
@@ -80,11 +80,11 @@ fn bench_scatter(inout bencher: Bencher, spec: ScatterSpec) capturing:
 
         try:
             scatter_elements[reduce_fn](
-                data_tensor._to_ndbuffer[2](),
-                indices_tensor._to_ndbuffer[2](),
-                updates_tensor._to_ndbuffer[2](),
+                data_tensor,
+                indices_tensor,
+                updates_tensor,
                 spec.axis,
-                output_tensor._to_ndbuffer[2](),
+                output_tensor,
             )
         except e:
             print("Err => ", e)
