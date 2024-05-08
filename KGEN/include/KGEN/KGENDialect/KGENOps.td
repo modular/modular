@@ -238,10 +238,7 @@ def KGEN_ExternGeneratorOp : KGENOp<"extern.generator", [
 class KGEN_CallOpBase<string mnemonic, list<Trait> traits = []>
     : KGENOp<mnemonic, traits # [
         DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
-        DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
-        DeclareOpInterfaceMethods<ParamOpInterface,
-                                  ["isImplicitlyParametric"]>]>,
-      CallLikeOperation;
+        DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>]>;
 
 //===----------------------------------------------------------------------===//
 // CallOp
@@ -566,9 +563,7 @@ def KGEN_ParamApplyOp : KGENOp<"param.apply",
 
 def KGEN_CostOfOp : KGENOp<"cost_of", [
     DeclareOpInterfaceMethods<InterpreterOpInterface>,
-    DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>
-  ]>, CallLikeOperation {
+    DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>]> {
   let summary = "Return the 'cost' of the function.";
   let description = [{
     The `kgen.cost_of` operation takes a parametric callee and returns
