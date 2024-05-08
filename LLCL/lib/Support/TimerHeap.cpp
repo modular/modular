@@ -10,14 +10,14 @@
 using namespace M::LLCL;
 
 void TimerHeap::push(const deadline expiration, AsyncValueRef<Chain> chain) {
-  std::unique_lock lk(mu);
+  std::unique_lock<std::mutex> lk(mu);
   entries.emplace(Entry(expiration, std::move(chain)));
   cv.notify_one();
 }
 
 void TimerHeap::stop() {
   {
-    std::unique_lock lk(mu);
+    std::unique_lock<std::mutex> lk(mu);
     if (!running)
       return;
     running = false;
@@ -27,7 +27,7 @@ void TimerHeap::stop() {
 }
 
 void TimerHeap::run() {
-  std::unique_lock lk(mu);
+  std::unique_lock<std::mutex> lk(mu);
   while (running) {
     if (entries.empty()) {
       cv.wait(lk, [&] { return !running || !entries.empty(); });
