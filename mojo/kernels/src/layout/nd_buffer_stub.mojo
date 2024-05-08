@@ -516,105 +516,32 @@ fn copy_from_nd_buffer[
         "thread and data layout should have the same rank",
     ]()
 
-    alias dim_0_shape = to_int(dst_thread_local.shape[0]())
-    alias dim_1_shape = to_int(dst_thread_local.shape[1]())
-
-    alias tile_dim_0 = to_int(thread_layout.shape[0])
-    alias tile_dim_1 = to_int(thread_layout.shape[1])
-
-    for th_0 in range(dim_0_shape):
-        for th_1 in range(dim_1_shape):
-            # TODO: Can we do tile and then reuse it instead of evaluating it every time ?
-            var src_tile_i_j = src.tile[tile_dim_0, tile_dim_1](
-                tile_coords=(th_0, th_1)
-            )
-
-            var offset = 0
-
-            # Returns the coords of the current thread.
-            @parameter
-            fn get_thread_coords() -> StaticIntTuple[src_rank]:
-                var thread_coords = StaticIntTuple[src_rank]()
-
-                @parameter
-                fn fill[i: Int]():
-                    alias shape_i = to_int(flatten(thread_layout.shape)[i])
-                    alias stride_i = to_int(flatten(thread_layout.stride)[i])
-                    thread_coords[i] = (thread_id // stride_i) % shape_i
-
-                unroll[fill, src_rank]()
-                return thread_coords
-
-            var thread_coords = get_thread_coords()
-
-            # Returns the stride of vectorized elements of the current thread.
-            @parameter
-            fn get_thread_vec_stride() -> StaticIntTuple[src_rank]:
-                var strides = StaticIntTuple[src_rank](1)
-
-                @parameter
-                if dst_thread_local.element_layout.rank() == 1:
-                    strides[1] = to_int(
-                        dst_thread_local.element_layout.shape[0]
-                    )
-
-                @parameter
-                if dst_thread_local.element_layout.rank() == 2:
-                    strides[0] = to_int(
-                        dst_thread_local.element_layout.shape[0]
-                    )
-                    strides[1] = to_int(
-                        dst_thread_local.element_layout.shape[1]
-                    )
-                return strides
-
-            var thread_vec_stride = get_thread_vec_stride()
-
-            # Compute the offset of the element taking into account the
-            @parameter
-            fn compute_offset[i: Int]():
-                var fragments_stride_i = src_tile_i_j.dynamic_stride[i]
-                offset += (
-                    thread_coords[i] * thread_vec_stride[i] * fragments_stride_i
-                )
-
-            unroll[compute_offset, threads_layout_rank]()
-
-            alias vec_dim: Int = 0 if dst_thread_local.element_layout.rank() == 1 else 1
-            alias vec_shape = to_int(
-                dst_thread_local.element_layout.shape[vec_dim]
-            )
-
-            @parameter
-            if dst_thread_local.element_layout.rank() == 1:
-                var src_val = src_tile_i_j.data.offset(offset).load[
-                    width=vec_shape
-                ]()
-                dst_thread_local[th_0, th_1] = rebind[
-                    dst_thread_local.element_type
-                ](src_val)
-            else:
-                alias num_vec = to_int(dst_thread_local.element_layout.shape[0])
-                var res_vec = SIMD[dtype, dst_thread_local.element_size]()
-
-                @unroll
-                for i in range(num_vec):
-                    alias eleme_stride = to_int(
-                        dst_thread_local.element_layout.stride[0]
-                    )
-                    var vec_offset = offset + i * src_tile_i_j.dynamic_stride[0]
-                    var src_val = src_tile_i_j.data.offset(vec_offset).load[
-                        width=vec_shape
-                    ]()
-
-                    #  2D rank vectors are stored columnwise.
-                    @unroll
-                    for j in range(vec_shape):
-                        res_vec[j * vec_shape + i] = src_val[j]
-
-                dst_thread_local[th_0, th_1] = rebind[
-                    dst_thread_local.element_type
-                ](res_vec)
+    @parameter
+    if dst_element_layout.rank() == 1:
+        var src_vectorized = vectorize[1, to_int(dst_element_layout.shape[0])](
+            src
+        )
+        var src_vectorized_buffer = src_vectorized[0]
+        var src_element_layout = src_vectorized[1]
+        var src_thread_local = distribute[thread_layout=thread_layout](
+            src_vectorized_buffer, thread_id
+        )
+        _copy_nd_buffer_to_layout_tensor(
+            dst_thread_local, src_thread_local, src_element_layout
+        )
+    elif dst_element_layout.rank() == 2:
+        var src_vectorized = vectorize[
+            to_int(dst_element_layout.shape[0]),
+            to_int(dst_element_layout.shape[1]),
+        ](src)
+        var src_vectorized_buffer = src_vectorized[0]
+        var src_element_layout = src_vectorized[1]
+        var src_thread_local = distribute[thread_layout=thread_layout](
+            src_vectorized_buffer, thread_id
+        )
+        _copy_nd_buffer_to_layout_tensor(
+            dst_thread_local, src_thread_local, src_element_layout
+        )
 
 
 # Copies LayoutTensor element into `dst` NDBuffer fragments, where each element
@@ -658,92 +585,29 @@ fn copy_to_nd_buffer[
         "thread and data layout should have the same rank",
     ]()
 
-    alias dim_0_shape = to_int(src_thread_local.shape[0]())
-    alias dim_1_shape = to_int(src_thread_local.shape[1]())
-
-    alias tile_dim_0 = to_int(thread_layout.shape[0])
-    alias tile_dim_1 = to_int(thread_layout.shape[1])
-
-    for th_0 in range(dim_0_shape):
-        for th_1 in range(dim_1_shape):
-            # TODO: Can we do tile and then reuse it instead of evaluating it every time ?
-            var src_tile_i_j = dst.tile[tile_dim_0, tile_dim_1](
-                tile_coords=(th_0, th_1)
-            )
-
-            var offset = 0
-
-            # Returns the coords of the current thread.
-            @parameter
-            fn get_thread_coords() -> StaticIntTuple[src_rank]:
-                var thread_coords = StaticIntTuple[src_rank]()
-
-                @parameter
-                fn fill[i: Int]():
-                    alias shape_i = to_int(flatten(thread_layout.shape)[i])
-                    alias stride_i = to_int(flatten(thread_layout.stride)[i])
-                    thread_coords[i] = (thread_id // stride_i) % shape_i
-
-                unroll[fill, src_rank]()
-                return thread_coords
-
-            var thread_coords = get_thread_coords()
-
-            # Returns the stride of vectorized elements of the current thread.
-            @parameter
-            fn get_thread_vec_stride() -> StaticIntTuple[src_rank]:
-                var strides = StaticIntTuple[src_rank](1)
-
-                @parameter
-                if src_thread_local.element_layout.rank() == 1:
-                    strides[1] = to_int(
-                        src_thread_local.element_layout.shape[0]
-                    )
-
-                @parameter
-                if src_thread_local.element_layout.rank() == 2:
-                    strides[0] = to_int(
-                        src_thread_local.element_layout.shape[0]
-                    )
-                    strides[1] = to_int(
-                        src_thread_local.element_layout.shape[1]
-                    )
-                return strides
-
-            var thread_vec_stride = get_thread_vec_stride()
-
-            # Compute the offset of the element taking into account the
-            @parameter
-            fn compute_offset[i: Int]():
-                var fragments_stride_i = src_tile_i_j.dynamic_stride[i]
-                offset += (
-                    thread_coords[i] * thread_vec_stride[i] * fragments_stride_i
-                )
-
-            unroll[compute_offset, threads_layout_rank]()
-
-            alias vec_dim: Int = 0 if src_thread_local.element_layout.rank() == 1 else 1
-            alias vec_shape = to_int(
-                src_thread_local.element_layout.shape[vec_dim]
-            )
-
-            @parameter
-            if src_thread_local.element_layout.rank() == 1:
-                src_tile_i_j.data.offset(offset).store[
-                    width = src_thread_local.element_size
-                ](src_thread_local[th_0, th_1])
-            else:
-                alias num_vecs = to_int(
-                    src_thread_local.element_layout.shape[0]
-                )
-
-                @parameter
-                fn store_slice[i: Int]():
-                    var vec_offset = offset + i * src_tile_i_j.dynamic_stride[0]
-                    src_tile_i_j.data.offset(vec_offset).store[width=vec_shape](
-                        src_thread_local[th_0, th_1].slice[
-                            vec_shape, offset = i * vec_shape
-                        ]()
-                    )
-
-                unroll[store_slice, num_vecs]()
+    @parameter
+    if src_element_layout.rank() == 1:
+        var dst_vectorized = vectorize[1, to_int(src_element_layout.shape[0])](
+            dst
+        )
+        var dst_vectorized_buffer = dst_vectorized[0]
+        var dst_element_layout = dst_vectorized[1]
+        var dst_thread_local = distribute[thread_layout=thread_layout](
+            dst_vectorized_buffer, thread_id
+        )
+        _copy_layout_tensor_to_nd_buffer(
+            dst_thread_local, dst_element_layout, src_thread_local
+        )
+    else:
+        var dst_vectorized = vectorize[
+            to_int(src_element_layout.shape[0]),
+            to_int(src_element_layout.shape[1]),
+        ](dst)
+        var dst_vectorized_buffer = dst_vectorized[0]
+        var dst_element_layout = dst_vectorized[1]
+        var dst_thread_local = distribute[thread_layout=thread_layout](
+            dst_vectorized_buffer, thread_id
+        )
+        _copy_layout_tensor_to_nd_buffer(
+            dst_thread_local, dst_element_layout, src_thread_local
+        )
