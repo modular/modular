@@ -10,13 +10,15 @@
 from math import erf
 from random import seed, randn
 from test_utils import libm_call
+from utils import InlineArray
+
 
 alias alignment = 64
 
 
 fn get_minmax[
     dtype: DType
-](x: DTypePointer[dtype], N: Int) -> StaticTuple[Scalar[dtype], 2]:
+](x: DTypePointer[dtype], N: Int) -> InlineArray[Scalar[dtype], 2]:
     var max_val = x[0]
     var min_val = x[0]
     for i in range(1, N):
@@ -24,7 +26,7 @@ fn get_minmax[
             max_val = x[i]
         if x[i] < min_val:
             min_val = x[i]
-    return StaticTuple[Scalar[dtype], 2](min_val, max_val)
+    return InlineArray[Scalar[dtype], 2](min_val, max_val)
 
 
 fn compare[
