@@ -231,3 +231,46 @@ fn test_variadic_and_kw_only_params_indirect[x: int]():
 
     # CHECK: call{{.*}}bind_signature(:!lit.signature<{{.*}}> [[CALLEE]], x, x, [x, x], x, 0)]()
     callee[x, x, x, x, c=x]()
+
+
+## Complex address space support
+
+# Passing non-default address space through initself.
+
+# CHECK-LABEL: lit.func @"initialize_in_addrspace
+fn initialize_in_addrspace(ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]):
+    # Get !lit.ref in addr space #1
+    # CHECK-NEXT: [[REFPTR1:%.*]] = lit.call {{.*}}@UnsafePointer::@"__refitem__{{.*}}(%ptr) {{.*}} mut #lit.lifetime, 1>>
+
+    # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
+    # CHECK-NEXT: lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}(%anonymous2A)
+
+    # Use lit.load/store to move into addrspace 1
+    # CHECK-NEXT: [[REGVAL:%.*]] = lit.load.consume %anonymous2A
+    # CHECK-NEXT: lit.ref.store [[REGVAL]], [[REFPTR1]] : <!ExampleRegPassable, mut #lit.lifetime, 1> 
+    ptr[] = ExampleRegPassable()
+
+# Passing non-default address space through inout arg, must use temporary.
+# CHECK-LABEL: lit.func @"mutate_in_addrspace
+fn mutate_in_addrspace(a: ExampleRegPassable, ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]):
+    # Get !lit.ref in addr space #1
+    # CHECK-NEXT: [[REFPTR1:%.*]] = lit.call {{.*}}@UnsafePointer::@"__refitem__{{.*}}(%ptr) {{.*}} mut #lit.lifetime, 1>>
+
+    # Use a temporary to get an MLValue in the default address space.
+    # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
+    # CHECK-NEXT: [[REGVAL:%.*]] = lit.ref.load [[REFPTR1]] : <!ExampleRegPassable, mut #lit.lifetime, 1>
+    # CHECK-NEXT: lit.ref.store [[REGVAL]], %anonymous2A
+    # CHECK-NEXT: lit.call {{.*}}@ExampleRegPassable::@"mutateArg{{.*}}(%a, %anonymous2A)
+
+    # Use lit.load/store to move back into addrspace 1
+    # CHECK-NEXT: [[REGVAL:%.*]] = lit.load.consume %anonymous2A
+    # CHECK-NEXT: lit.ref.store [[REGVAL]], [[REFPTR1]] : <!ExampleRegPassable, mut #lit.lifetime, 1> 
+    a.mutateArg(ptr[])
+
+@register_passable("trivial")
+struct ExampleRegPassable:
+  fn __init__(inout self): pass
+  fn mutateArg(self, inout other: Self): pass
+
+
+

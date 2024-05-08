@@ -525,6 +525,7 @@ static void verifyFunctionNameBinding(ASTDecl &decl, StringAttr name,
     // in.
     assert(!parsedArgs.empty() && "arg count already checked above");
     SMLoc selfArgLoc = parsedArgs[0].loc;
+
     // __init__ methods must take their self argument 'inout' syntactically.
     if (parsedArgs[0].convention != ParsedArgument::kConventionInitSelfResult) {
       auto diag = emitErrorLoc(selfArgLoc, "'self' in struct ")

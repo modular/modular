@@ -808,8 +808,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     LValue lv = argValAndExpr.ir.getIfLValue();
     assert(lv && "type checking ensures we will have an lvalue");
 
+    // If this is already an MLValue in the default address space, we can pass
+    // in the reference directly.
     if (auto ref = lv.getIfMLValue())
-      return ref;
+      if (lv.getMValueType().isDefaultAddrSpace())
+        return ref;
 
     // If dynamic, we need to generate a temporary slot, emit a 'get' into
     // that slot, pass the address, then write it back when we're done.
@@ -1083,8 +1086,8 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   SmallVector<TypedAttr> implicitLifetimes;
   ArrayRef<ArgConvention> conventions = calleeSig.getArgConventions();
   bool needInitSelfSlot = false;
-  for (auto [argIdx, argValAndExpr, conventionX] :
-       llvm::enumerate(argumentValues, conventions)) {
+  for (auto [argIdx, argValAndExpr, conventionX, declaredArgType] :
+       llvm::enumerate(argumentValues, conventions, calleeSig.getArguments())) {
     ArgConvention convention = conventionX;
 
     // If this is a byref_result slot, we will have emitted a null value for
@@ -1126,6 +1129,19 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
       RefPackType packType = ASTType(arg.getType()).getVariadicPackInfo();
       implicitLifetimes.push_back(packType.getLifetime());
     }
+
+    // If the address space of a by-ref argument mismatches, then we need to
+    // throw an error.  This can happen when non-default address space lvalues
+    // are passed to borrowed or inout arguments.
+    if (auto refType = dyn_cast<RefType>(arg.getType()))
+      if (refType.getAddressSpace() !=
+          cast<RefType>(declaredArgType).getAddressSpace()) {
+        emitError(argValAndExpr.expr->getLoc(),
+                  "value cannot be passed from a non-default address space")
+            << argValAndExpr.expr->getRange();
+        dest.resetForError();
+        return {};
+      }
 
     callArgs.push_back(arg);
   }
@@ -1220,15 +1236,16 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
   // expected type if needed.  We do this after the first pass above, because
   // there can be forward refefences from the result slot to the later
   // arguments' lifetimes.
-  for (auto [arg, conv, expectedType] :
-       llvm::zip(callArgs, conventions, expectedCalleeType.getInputs())) {
+  for (auto [arg, expectedType] :
+       llvm::zip(callArgs, expectedCalleeType.getInputs())) {
     // Make sure the parameters of an argument line up by emitting a rebind
     // operation.
     if (arg.getType() == expectedType)
       continue;
 
-    // Insert a rebind.
-    arg = builder->create<RebindOp>(loc, expectedType, arg);
+    // Use rebindValue to do this so we get assertions and checks.
+    arg = rebindValue({SRValue(arg), callExpr}, expectedType).getIfSRValue();
+    assert(arg && "rebindValue always succeeds");
   }
 
   assert(expectedCalleeType.getResults().size() == 1 &&

@@ -444,6 +444,9 @@ def LIT_RefType : LITType<"Ref", "ref",
     /// `!lit.lifetime<mutability>` type.
     LifetimeType getLifetimeType();
 
+    /// Return true if this is in address space 0.
+    bool isDefaultAddrSpace();
+
     /// Return a reference to the specified element type and mutability with an
     /// immortal (#lit.lifetime) lifetime.
     static RefType getImmortal(Type elementType, bool isMut,

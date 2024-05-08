@@ -218,6 +218,10 @@ public:
   /// null.
   MLValue getDefinedMLValueIfExists(ASTType resultType, ExprEmitter &emitter);
 
+  /// Return true if this is an MLValue that could be in a non-default address
+  /// space.
+  bool isNonDefaultAddressSpace() const;
+
   /// When an error is emitted instead of generating IR, this method resets the
   /// ValueDest so it doesn't complain when emission is done.
   void resetForError() { representation = NullRepresentation(); }
