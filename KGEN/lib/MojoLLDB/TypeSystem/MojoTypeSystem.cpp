@@ -389,10 +389,10 @@ MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
   if (isa<POP::SIMDType>(astType))
     return lldb::eTypeClassVector;
 
-  if (isa<POP::ArrayType, PackType>(astType))
+  if (isa<POP::ArrayType>(astType))
     return lldb::eTypeClassArray;
 
-  if (impl->getIfStructDecl(astType))
+  if (impl->getIfStructDecl(astType) || isa<StructType, PackType>(astType))
     return lldb::eTypeClassStruct;
 
   return lldb::eTypeClassOther;
@@ -646,6 +646,9 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
     return 0;
   }
 
+  if (auto structType = dyn_cast<StructType>(astType))
+    return structType.getElementTypes().size();
+
   // One for the discriminator, one for each variant.
   if (auto variantType = dyn_cast<VariantType>(astType))
     return 1 + variantType.getNumTypes();
@@ -750,7 +753,7 @@ lldb_private::CompilerType MojoTypeSystem::GetChildCompilerTypeAtIndex(
     return {};
   }
 
-  if (auto packType = dyn_cast<PackType>(astType)) {
+  if (isa<PackType, StructType>(astType)) {
     if (const std::optional<MojoTypeDataLayout> &layout =
             impl->dataLayoutContext->getOrCalculate(astType)) {
       childName = std::string(llvm::formatv("[{0}]", idx));
@@ -815,7 +818,7 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
   }
 
   // Check if the name is an index of a SIMD or of a pack, which are 0-indexed.
-  if (isa<PackType, POP::SIMDType, POP::ArrayType>(astType)) {
+  if (isa<PackType, StructType, POP::SIMDType, POP::ArrayType>(astType)) {
     unsigned long index;
     if (name.consume_front("[") && !name.consumeInteger(10, index) &&
         name.consume_front("]") && name.empty()) {
