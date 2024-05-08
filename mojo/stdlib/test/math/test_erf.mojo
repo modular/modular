@@ -4,17 +4,19 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: linux
-# RUN: %mojo  -I%S/../.. %s | FileCheck %s
+# RUN: %mojo  -I%S/../ %s | FileCheck %s
 
 
 from math import erf
-from random import seed
-
-from tensor import Tensor, TensorShape, randn
+from random import seed, randn
 from test_utils import libm_call
 
+alias alignment = 64
 
-fn get_minmax[dtype: DType](x: Tensor[dtype], N: Int) -> Tensor[dtype]:
+
+fn get_minmax[
+    dtype: DType
+](x: DTypePointer[dtype], N: Int) -> StaticTuple[Scalar[dtype], 2]:
     var max_val = x[0]
     var min_val = x[0]
     for i in range(1, N):
@@ -22,16 +24,18 @@ fn get_minmax[dtype: DType](x: Tensor[dtype], N: Int) -> Tensor[dtype]:
             max_val = x[i]
         if x[i] < min_val:
             min_val = x[i]
-    return Tensor[dtype](TensorShape(2), min_val, max_val)
+    return StaticTuple[Scalar[dtype], 2](min_val, max_val)
 
 
-fn compare[_dtype: DType, N: Int](x: Tensor, y: Tensor, label: String):
-    var atol = Tensor[_dtype](TensorShape(N))
-    var rtol = Tensor[_dtype](TensorShape(N))
+fn compare[
+    dtype: DType, N: Int
+](x: DTypePointer[dtype], y: DTypePointer[dtype], label: String):
+    var atol = DTypePointer[dtype].alloc(N, alignment=alignment)
+    var rtol = DTypePointer[dtype].alloc(N, alignment=alignment)
 
     for i in range(N):
-        var xx = x[i].cast[_dtype]()
-        var yy = y[i].cast[_dtype]()
+        var xx = x[i].cast[dtype]()
+        var yy = y[i].cast[dtype]()
 
         var d = abs(xx - yy)
         var e = abs(d / yy)
@@ -39,11 +43,13 @@ fn compare[_dtype: DType, N: Int](x: Tensor, y: Tensor, label: String):
         rtol[i] = e
 
     print(label)
-    var atol_minmax = get_minmax[_dtype](atol, N)
-    var rtol_minmax = get_minmax[_dtype](rtol, N)
+    var atol_minmax = get_minmax[dtype](atol, N)
+    var rtol_minmax = get_minmax[dtype](rtol, N)
     print("AbsErr-Min/Max", atol_minmax[0], atol_minmax[1])
     print("RelErr-Min/Max", rtol_minmax[0], rtol_minmax[1])
     print("==========================================================")
+    DTypePointer[dtype].free(atol)
+    DTypePointer[dtype].free(rtol)
 
 
 # CHECK-LABEL: test_erf_float32
@@ -103,14 +109,17 @@ fn test_erf_libm():
     print("== test_erf_libm")
     seed(0)
     alias N = 8192
+    alias test_dtype = DType.float32
+
     # generate input values and write them to file
-    var x32 = randn[DType.float32](N, 0, 9.0)
+    var x32 = DTypePointer[test_dtype].alloc(N, alignment=alignment)
+    randn[test_dtype](x32, N, 0, 9.0)
     print("For N=" + String(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # math.erf result
     ####################
-    var y32 = Tensor[DType.float32](TensorShape(N))
+    var y32 = DTypePointer[test_dtype].alloc(N, alignment=alignment)
     for i in range(N):
         y32[i] = erf(x32[i])  # math.erf
 
@@ -124,14 +133,18 @@ fn test_erf_libm():
         var eval = libm_call[type, simd_width, "erff", "err"](arg)
         return eval
 
-    var libm_out = Tensor[DType.float32](TensorShape(N))
+    var libm_out = DTypePointer[test_dtype].alloc(N, alignment=alignment)
     for i in range(N):
         libm_out[i] = erf_libm(x32[i])
 
     # CHECK: Compare Mojo math.erf vs. LibM
     # CHECK: AbsErr-Min/Max 0.0 5.9604644775390625e-08
     # CHECK: RelErr-Min/Max 0.0 1.172195140952681e-07
-    compare[DType.float32, N](y32, libm_out, "Compare Mojo math.erf vs. LibM")
+    compare[test_dtype, N](y32, libm_out, "Compare Mojo math.erf vs. LibM")
+
+    DTypePointer[test_dtype].free(x32)
+    DTypePointer[test_dtype].free(y32)
+    DTypePointer[test_dtype].free(libm_out)
 
 
 fn main():
