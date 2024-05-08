@@ -355,45 +355,48 @@ fn multistage_gemm[
                     )
 
             if k_mma + 2 == num_k_mmas:
-                # Prefetch next k tile from global memory to current shared memory buffer.
                 var prefetch_tile_id = k_tile_id + num_pipeline_stages - 1
-                var prefetch_stage = prefetch_tile_id % num_pipeline_stages
 
-                var a_smem_prefetch_tile = LayoutTensor[
-                    a_type,
-                    Layout.row_major(BM, BK),
-                    address_space = AddressSpace.SHARED,
-                ](a_smem + prefetch_stage * BM * BK)
+                # Prefetch one k tile (if valid) from global memory to current
+                # shared memory buffer.
+                if prefetch_tile_id < num_k_tiles:
+                    var prefetch_stage = prefetch_tile_id % num_pipeline_stages
 
-                var b_smem_prefetch_tile = LayoutTensor[
-                    b_type,
-                    Layout.row_major(BN, BK),
-                    address_space = AddressSpace.SHARED,
-                ](b_smem + prefetch_stage * BN * BK)
+                    var a_smem_prefetch_tile = LayoutTensor[
+                        a_type,
+                        Layout.row_major(BM, BK),
+                        address_space = AddressSpace.SHARED,
+                    ](a_smem + prefetch_stage * BM * BK)
 
-                # TODO: Extend the async copy instrinsic to creat dummy copies. The
-                # prefetch for the three two iterations should be dummy.
-                copy_dram_to_sram_async[
-                    src_thread_layout=thread_async_copy_layout,
-                    dst_thread_layout=thread_async_copy_layout,
-                    swizzle=xor_2bits_per8T,
-                ](
-                    a_smem_prefetch_tile.vectorize[1, simd_size](),
-                    a.tile[BM, BK](
-                        BlockIdx.y(), prefetch_tile_id % num_k_tiles
-                    ).vectorize[1, simd_size](),
-                )
+                    var b_smem_prefetch_tile = LayoutTensor[
+                        b_type,
+                        Layout.row_major(BN, BK),
+                        address_space = AddressSpace.SHARED,
+                    ](b_smem + prefetch_stage * BN * BK)
 
-                copy_dram_to_sram_async[
-                    src_thread_layout=thread_async_copy_layout,
-                    dst_thread_layout=thread_async_copy_layout,
-                    swizzle=xor_2bits_per8T,
-                ](
-                    b_smem_prefetch_tile.vectorize[1, simd_size](),
-                    b.tile[BN, BK](
-                        BlockIdx.x(), prefetch_tile_id % num_k_tiles
-                    ).vectorize[1, simd_size](),
-                )
+                    # TODO: Extend the async copy instrinsic to creat dummy copies. The
+                    # prefetch for the three two iterations should be dummy.
+                    copy_dram_to_sram_async[
+                        src_thread_layout=thread_async_copy_layout,
+                        dst_thread_layout=thread_async_copy_layout,
+                        swizzle=xor_2bits_per8T,
+                    ](
+                        a_smem_prefetch_tile.vectorize[1, simd_size](),
+                        a.tile[BM, BK](
+                            BlockIdx.y(), prefetch_tile_id % num_k_tiles
+                        ).vectorize[1, simd_size](),
+                    )
+
+                    copy_dram_to_sram_async[
+                        src_thread_layout=thread_async_copy_layout,
+                        dst_thread_layout=thread_async_copy_layout,
+                        swizzle=xor_2bits_per8T,
+                    ](
+                        b_smem_prefetch_tile.vectorize[1, simd_size](),
+                        b.tile[BN, BK](
+                            BlockIdx.x(), prefetch_tile_id % num_k_tiles
+                        ).vectorize[1, simd_size](),
+                    )
 
                 async_copy_commit_group()
 
@@ -427,8 +430,8 @@ fn test() raises:
     alias M = 8192
     alias N = 8192
     alias K = 128
-    alias BM = 64
-    alias BN = 256
+    alias BM = 128
+    alias BN = 128
     alias BK = 16
     alias WM = 64
     alias WN = 64
@@ -492,8 +495,8 @@ fn test() raises:
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             shared_mem_bytes
         ),
-        dump_llvm=Path("./pipelined-gemm-spill.ir"),
-        dump_ptx=Path("./pipelined-gemm-spill.ptx"),
+        # dump_llvm=Path("./pipeline-gemm.ir"),
+        # dump_ptx=Path("./pipeline-gemm.ptx"),
     )
 
     if is_benchmark():
@@ -516,7 +519,15 @@ fn test() raises:
 
         # Warmup
         for i in range(nwarmup):
-            run_func(stream)
+            func(
+                c_tensor,
+                a_tensor,
+                b_tensor,
+                grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
+                block_dim=(num_threads, 1, 1),
+                shared_mem_bytes=shared_mem_bytes,
+                stream=stream,
+            )
 
         var nstime = time_function[run_func](stream) / nrun
         var sectime = nstime * 1e-9
