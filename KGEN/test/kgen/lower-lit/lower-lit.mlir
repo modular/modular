@@ -21,7 +21,7 @@ lit.func @calls[imm a, mut b]<f: !lit.signature<[2]() -> ()>>(%arg0: !lit.signat
 
 // CHECK-LABEL: kgen.generator @async_call
 lit.func @async_call[imm a, mut b]() async {
-  // CHECK: lit.async.call[() async -> (): @async_call]()
+  // CHECK: co.invoke[() async -> (): @async_call]()
   lit.async.call[!lit.signature<[2]() async -> ()>: @async_call][imm a, mut b]()
   kgen.return
 }

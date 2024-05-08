@@ -920,8 +920,7 @@ def LIT_GlobalVarRefOp : LITOp<"globalvar.ref",
 //===----------------------------------------------------------------------===//
 
 def LIT_AsyncCallOp : LITOp<"async.call", [
-    DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
-    DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>]> {
+    DeclareOpInterfaceMethods<KGEN_CallOpInterface>]> {
   let summary = "Call to an async function.";
   let description = [{
     The `lit.async.call` operation calls an `async` parametric callable. It

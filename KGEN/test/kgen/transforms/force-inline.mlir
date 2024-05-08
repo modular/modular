@@ -88,7 +88,7 @@ kgen.func @call_it() -> !co.routine {
   // CHECK:   hlcf.if %1
   // CHECK:     kgen.return %idx1
   // CHECK:   kgen.return %idx2
-  %coroHdl = lit.async.call[(index) async -> index: @async_fn](%idx2)
+  %coroHdl = co.invoke[(index) async -> index: @async_fn](%idx2)
   // CHECK: kgen.return %0
   kgen.return %coroHdl : !co.routine
 }

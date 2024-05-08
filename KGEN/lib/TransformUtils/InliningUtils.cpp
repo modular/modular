@@ -10,7 +10,6 @@
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENDialect/KGENParameters.h"
-#include "KGEN/LITDialect/LITOps.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
@@ -35,7 +34,7 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
   if (isa<CallOp>(&*call)) {
     scope = b.create<HLCF::LoopOp>(call.getLoc(), call->getResultTypes(),
                                    ValueRange(), label);
-  } else if (auto asyncCall = dyn_cast<LIT::AsyncCallOp>(&*call)) {
+  } else if (auto asyncCall = dyn_cast<CO::InvokeOp>(&*call)) {
     // Nested function-like op should retain scoped location of the callee.
     auto inlinedSubScoped = b.create<CO::ExecuteOp>(
         region.getParentOp()->getLoc(), asyncCall.getCalleeType().getResults());
@@ -80,7 +79,7 @@ std::pair<Operation *, bool> KGEN::inlineRegion(IRMapping &map,
       b.setInsertionPoint(op);
       if (isa<CallOp>(&*call)) {
         b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(), label);
-      } else if (isa<CreateClosureOp, LIT::AsyncCallOp>(*&call)) {
+      } else if (isa<CreateClosureOp, CO::InvokeOp>(*&call)) {
         // Just `return` is ok.
       } else {
         llvm::report_fatal_error("unknown call operation '" +

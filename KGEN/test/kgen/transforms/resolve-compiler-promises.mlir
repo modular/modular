@@ -63,8 +63,8 @@ kgen.func @capturing() capturing {
 // CHECK-LABEL: kgen.func @make_a_coroutine(%arg0: index)
 kgen.func @make_a_coroutine(%arg0: index) {
   pop.compiler.global_store "foobar", %arg0 : index
-  // CHECK: lit.async.call[(index) async|capturing -> (): @async_fn](%arg0)
-  lit.async.call [() async|capturing -> (): @async_fn]()
+  // CHECK: co.invoke[(index) async|capturing -> (): @async_fn](%arg0)
+  co.invoke [() async|capturing -> (): @async_fn]()
   kgen.return
 }
 
