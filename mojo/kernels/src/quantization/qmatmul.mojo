@@ -12,12 +12,14 @@ from LinAlg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
 from math import align_down, ceildiv
 from memory.unsafe import DTypePointer
 from sys.info import (
+    has_avx512f,
     has_neon_int8_dotprod,
     has_neon_int8_matmul,
     is_x86,
     is_apple_silicon,
 )
 from sys.intrinsics import llvm_intrinsic
+from utils import StaticTuple
 from utils.index import Index
 
 
@@ -76,8 +78,36 @@ fn _quantize_a_block[
 
     @parameter
     @always_inline
-    fn cast_to_s8(x: SIMD[type, group_size]) -> SIMD[DType.int8, group_size]:
+    fn roundeven_to_int32(
+        x: SIMD[type, group_size]
+    ) -> SIMD[DType.int32, group_size]:
         alias simd_width = simdwidthof[type]()
+
+        # Use the AVX512 instruction `vcvtps2dq` with embedded rounding control
+        # set to do rounding to nearest with ties to even (roundeven). This
+        # replaces a `vrndscaleps` and `vcvttps2dq` instruction pair.
+        @parameter
+        if has_avx512f() and type == DType.float32 and group_size >= simd_width:
+            var x_i32 = SIMD[DType.int32, group_size]()
+
+            @parameter
+            @always_inline
+            fn cvtps2dq_fn[idx: Int]():
+                alias i = idx * simd_width
+                var part = llvm_intrinsic[
+                    "llvm.x86.avx512.mask.cvtps2dq.512",
+                    SIMD[DType.int32, simd_width],
+                    has_side_effect=False,
+                ](
+                    x.slice[simd_width, offset=i](),
+                    SIMD[DType.int32, simd_width](0),
+                    Int16(-1),  # no mask
+                    Int32(8),  # round to nearest
+                )
+                x_i32 = x_i32.insert[offset=i](part)
+
+            unroll[cvtps2dq_fn, group_size // simd_width]()
+            return x_i32
 
         # Use the NEON instruction `fcvtns` to fuse the conversion to int32
         # with rounding to nearest with ties to even (roundeven). This
@@ -98,16 +128,18 @@ fn _quantize_a_block[
                 x_i32 = x_i32.insert[offset=i](part)
 
             unroll[fcvtns_fn, group_size // simd_width]()
-            return x_i32.cast[DType.int8]()
+            return x_i32
 
-        return x.roundeven().cast[DType.int8]()
+        return x.roundeven().cast[DType.int32]()
 
     var fp_data = a_ptr.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
     var scale = (max_value / 127.0).cast[scale_type]()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
 
-    var quant_data_s8 = cast_to_s8(fp_data * multiplier)
+    var quant_data_s8 = roundeven_to_int32(fp_data * multiplier).cast[
+        DType.int8
+    ]()
     var quant_data = quant_data_s8.cast[aq_type]() + a_zero_point
 
     return (quant_data, scale)
