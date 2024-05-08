@@ -20,6 +20,7 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
+from utils import StaticTuple
 from algorithm.functional import elementwise
 from nn.concat import _concat_gpu_elementwise
 

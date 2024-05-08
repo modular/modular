@@ -13,6 +13,7 @@ from os import abort
 from pathlib import Path
 from sys.ffi import DLHandle
 from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
+from utils import StaticTuple
 
 from memory.unsafe import Pointer
 
