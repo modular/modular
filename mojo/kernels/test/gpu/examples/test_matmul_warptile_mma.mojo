@@ -27,7 +27,7 @@ from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer, bitcast
 
 from collections import OptionalReg
-from utils.index import Index
+from utils import StaticTuple, unroll, Index
 
 
 @always_inline

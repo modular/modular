@@ -16,6 +16,7 @@ from gpu.host.memory import (
     _malloc,
 )
 from testing import assert_equal
+from utils import StaticIntTuple, StaticTuple
 
 alias num_reductions = 2
 
