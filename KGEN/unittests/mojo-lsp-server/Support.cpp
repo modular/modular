@@ -38,7 +38,9 @@ LSPBatchClient M::createTestClient() {
 }
 
 Document M::createDocumentFromInputFile(StringRef fileName) {
-  std::string fullPath = std::filesystem::path(std::getenv("MODULAR_PATH")) /
+  std::string fullPath = std::filesystem::absolute(
+                             std::filesystem::path(std::getenv("MODULAR_PATH")))
+                             .lexically_normal() /
                          "KGEN" / "unittests" / "mojo-lsp-server" / "inputs" /
                          fileName.str();
   auto bufferOr = toModularErrorOr(llvm::MemoryBuffer::getFile(fullPath));
