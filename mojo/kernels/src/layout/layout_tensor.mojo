@@ -7,10 +7,10 @@
 from collections.optional import Optional, OptionalReg
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
+from utils import StaticTuple, StaticIntTuple
 
 from algorithm import vectorize
-from gpu import WARP_SIZE
-from gpu.memory import async_copy, async_copy_wait_all
+from gpu.memory import async_copy
 from gpu.id import ThreadIdx
 from memory import memcpy
 from memory.unsafe import DTypePointer

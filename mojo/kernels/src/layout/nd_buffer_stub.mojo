@@ -5,11 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import LayoutTensor, Layout
-from layout.int_tuple import to_int, flatten, depth
+from layout.int_tuple import to_int, depth
 from layout.layout import make_layout
 
 from buffer import NDBuffer
 from buffer.list import DimList, Dim
+
+from utils import StaticTuple, StaticIntTuple
 
 
 # Returns the shape of distribute `thread_layout` into `shape`.
