@@ -5,8 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn identity[T: AnyRegType](data: T) -> T:
-    return data
+fn identity[T: Movable](data: T) -> T:
+    return data^
 
 
 trait PackageTrait:
