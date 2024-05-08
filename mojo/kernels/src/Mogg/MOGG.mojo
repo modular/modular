@@ -26,6 +26,7 @@ from sys import external_call
 from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
+from utils import StaticTuple
 
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin
