@@ -126,8 +126,12 @@ fn memoryOnlyOps(inout a: MemoryOnlyPair) -> MemoryOnlyPair:
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}(%mpFloat, [[IMMREF]])
   var mpFloat : MemoryOnlyFloat64 = v2.x
 
+  # CHECK: [[SIMDTMP:%.*]] = lit.var.decl "anonymous*"
+  # CHECK-NEXT: lit.call {{.*}}SIMD::@"__init__{{.*}}([[SIMDTMP]])
+  # CHECK-NEXT: [[SIMDVAL:%.*]] = lit.ref.load [[SIMDTMP]]
+
   # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
-  # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}({{.*}}, [[TMP]])
+  # CHECK-NEXT: lit.call @{{.*}}inferred_function_with_memory_result{{.*}}([[SIMDVAL]], [[TMP]])
   _ = inferred_function_with_memory_result(SIMD[DType.float32, 4]())
 
   # Memory-only default argument with memory-only result.
