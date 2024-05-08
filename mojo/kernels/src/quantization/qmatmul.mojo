@@ -17,6 +17,7 @@ from sys.info import (
     is_x86,
     is_apple_silicon,
 )
+from sys.intrinsics import llvm_intrinsic
 from utils.index import Index
 
 
@@ -73,12 +74,40 @@ fn _quantize_a_block[
 ](a_ptr: DTypePointer[type]) -> (SIMD[aq_type, group_size], Scalar[scale_type]):
     alias a_zero_point = 128 if aq_type.is_unsigned() else 0
 
+    @parameter
+    @always_inline
+    fn cast_to_s8(x: SIMD[type, group_size]) -> SIMD[DType.int8, group_size]:
+        alias simd_width = simdwidthof[type]()
+
+        # Use the NEON instruction `fcvtns` to fuse the conversion to int32
+        # with rounding to nearest with ties to even (roundeven). This
+        # replaces a `frintn` and `fcvtzs` instruction pair.
+        @parameter
+        if has_neon() and type == DType.float32 and group_size >= simd_width:
+            var x_i32 = SIMD[DType.int32, group_size]()
+
+            @parameter
+            @always_inline
+            fn fcvtns_fn[idx: Int]():
+                alias i = idx * simd_width
+                var part = llvm_intrinsic[
+                    "llvm.aarch64.neon.fcvtns.v4i32.v4f32",
+                    SIMD[DType.int32, simd_width],
+                    has_side_effect=False,
+                ](x.slice[simd_width, offset=i]())
+                x_i32 = x_i32.insert[offset=i](part)
+
+            unroll[fcvtns_fn, group_size // simd_width]()
+            return x_i32.cast[DType.int8]()
+
+        return x.roundeven().cast[DType.int8]()
+
     var fp_data = a_ptr.load[width=group_size]()
     var max_value = abs(fp_data).reduce_max()
     var scale = (max_value / 127.0).cast[scale_type]()
     var multiplier = 127.0 / max_value if max_value != 0.0 else 0.0
 
-    var quant_data_s8 = (fp_data * multiplier).roundeven().cast[DType.int8]()
+    var quant_data_s8 = cast_to_s8(fp_data * multiplier)
     var quant_data = quant_data_s8.cast[aq_type]() + a_zero_point
 
     return (quant_data, scale)
