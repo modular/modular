@@ -428,7 +428,8 @@ class VariadicElementType<string lhs, string rhs> : TypesMatchWith<
 //===----------------------------------------------------------------------===//
 
 def KGEN_NoneType : KGENType<"None", "none",
-    [DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+    [DeclareTypeInterfaceMethods<DataLayoutInterface>,
+     DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
   let summary = "Type used for 'void' function results";
   let description = [{
     The `!kgen.none` type represents a value with no contents. When used as a
