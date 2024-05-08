@@ -563,7 +563,7 @@ def KGEN_PackType : KGENType<"Pack", "pack", [
 
     kgen.generator @pack<Ts: variadic<!kgen.type>, T0: type, T1: type>(
       // A pack type parameterized on a variadic sequence of elements.
-      %0: !kgen,pack<Ts>,
+      %0: !kgen.pack<Ts>,
       // A pack type parameterized on two element types.
       %1: !kgen.pack<[T0, T1]>,
     ) { kgen.return }

@@ -36,6 +36,10 @@ struct MojoTypeDataLayoutContext::Impl {
   std::optional<MojoTypeDataLayout> calculateForPack(MojoASTTypeRef typeRef,
                                                      PackType packType);
 
+  /// Calculate the data layout of the given struct.
+  std::optional<MojoTypeDataLayout>
+  calculateForStruct(MojoASTTypeRef typeRef, KGEN::StructType structType);
+
   /// Calculate the data layout of the given variant.
   std::optional<MojoTypeDataLayout>
   calculateForVariant(MojoASTTypeRef typeRef, VariantType variantType);
@@ -105,6 +109,14 @@ MojoTypeDataLayoutContext::Impl::calculateForPack(MojoASTTypeRef typeRef,
 }
 
 std::optional<MojoTypeDataLayout>
+MojoTypeDataLayoutContext::Impl::calculateForStruct(
+    MojoASTTypeRef typeRef, KGEN::StructType structType) {
+  return calculateForStructLike(
+      llvm::map_to_vector(structType.getElementTypes(),
+                          [&](Type value) { return MojoASTTypeRef(value); }));
+}
+
+std::optional<MojoTypeDataLayout>
 MojoTypeDataLayoutContext::Impl::calculateForVariant(MojoASTTypeRef typeRef,
                                                      VariantType variantType) {
   // FIXME(35592): We are disabling printing of variants for the time being,
@@ -163,6 +175,9 @@ MojoTypeDataLayoutContext::Impl::calculate(MojoASTTypeRef type) {
 
   if (auto packType = dyn_cast<KGEN::PackType>(type))
     return calculateForPack(type, packType);
+
+  if (auto structType = dyn_cast<KGEN::StructType>(type))
+    return calculateForStruct(type, structType);
 
   if (auto variantType = dyn_cast<VariantType>(type))
     return calculateForVariant(type, variantType);
