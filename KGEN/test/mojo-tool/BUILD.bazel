@@ -26,6 +26,15 @@ lit_tests(
         "//KGEN/tools/mojo-build-server",
         "//Kernels/mojo/layout",
         "//Kernels/mojo/stdlib",
+
+        # TODO: The below are transitive dependencies to layout, I don't
+        # know why they aren't being included when running remotely.
+        "//Kernels/mojo/gpu",
+        "//Kernels/mojo/algorithm",
+        "//Kernels/mojo/math",
+        "//Kernels/mojo/buffer",
+        "//Kernels/mojo/compile",
+        "//Kernels/mojo/runtime",
         "@llvm-project//compiler-rt:orc_rt",
     ] + glob([
         "**/inputs/**",
@@ -40,7 +49,7 @@ lit_tests(
         "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
         "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
         "MODULAR_CRASH_REPORTING_ENABLED": "false",
-        "MODULAR_MOJO_IMPORT_PATH": "$(location //Kernels/mojo/stdlib),$(location //Kernels/mojo/layout)",
+        "MODULAR_MOJO_IMPORT_PATH": "$(location //Kernels/mojo/stdlib),$(location //Kernels/mojo/layout),$(location //Kernels/mojo/gpu),$(location //Kernels/mojo/algorithm),$(location //Kernels/mojo/math),$(location //Kernels/mojo/buffer),$(location //Kernels/mojo/compile),$(location //Kernels/mojo/runtime)",
         "MODULAR_MOJO_BUILD_SERVER_PATH": "$(location //KGEN/tools/mojo-build-server)",
     },
     tags = [
