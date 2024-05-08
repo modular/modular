@@ -1089,6 +1089,15 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
     return success();
   }
 
+  void getDependentDialects(DialectRegistry &registry) const override {
+    mlir::OpPassManager pipeline;
+    if (buildFuncPasses)
+      buildFuncPasses(pipeline);
+    else
+      mlir::parsePassPipeline(funcPipelineStr, pipeline);
+    pipeline.getDependentDialects(registry);
+  }
+
   void runOnOperation() override;
 
   /// The function pass pipeline builder.
