@@ -26,13 +26,6 @@ struct CString:
         """
         return StringRef(self.ptr)
 
-    fn free(self):
-        external_call["KGEN_CompilerRT_LLCL_DestroyString", NoneType](self.ptr)
-
-    @staticmethod
-    fn free_array(arr: Pointer[CString]):
-        external_call["KGEN_CompilerRT_LLCL_DestroyStringArray", NoneType](arr)
-
     fn __str__(self) -> String:
         """
         Get `CString` as a owning `String`.

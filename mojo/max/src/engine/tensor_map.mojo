@@ -36,6 +36,7 @@ struct TensorMap(CollectionElement, SizedRaising):
     var _session: InferenceSession
 
     alias _NewTensorMapFnName = "M_newAsyncTensorMap"
+    alias _DeleteTensorMapKeysFnName = "M_deleteTensorMapKeys"
 
     fn __init__(
         inout self,
@@ -287,7 +288,9 @@ struct TensorMap(CollectionElement, SizedRaising):
         for i in range(size):
             keys.append(keys_arr[i])
 
-        CString.free_array(keys_arr)
+        call_dylib_func[NoneType](
+            self._lib, Self._DeleteTensorMapKeysFnName, keys_arr
+        )
         return keys
 
     fn __len__(self) raises -> Int:
