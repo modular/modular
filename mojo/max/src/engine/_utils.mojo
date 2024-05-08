@@ -72,7 +72,7 @@ fn handle_from_config(name: String, param: String) -> DLHandle:
     var lib_path = String._from_bytes(lib_path_str_ptr)
 
     if not Path(lib_path).exists():
-        abort("cannot load " + name + "  library from " + lib_path)
+        abort("cannot load " + name + " library from " + lib_path)
 
     return DLHandle(lib_path)
 

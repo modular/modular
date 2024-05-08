@@ -5,7 +5,6 @@
 # ===----------------------------------------------------------------------=== #
 """Provides C bindings to KServe data structures."""
 
-
 from memory.unsafe import DTypePointer
 from sys.ffi import DLHandle
 
@@ -15,10 +14,10 @@ from max.engine._utils import (
     call_dylib_func,
     exchange,
 )
+from max.serve.service import InferenceRequest, InferenceResponse
 from max.tensor import TensorSpec
 
 from ._serve_rt import TensorView
-from .service import InferenceRequest, InferenceResponse
 
 # ===----------------------------------------------------------------------=== #
 # Utilities
@@ -27,8 +26,8 @@ from .service import InferenceRequest, InferenceResponse
 
 fn get_tensor_spec(view: TensorView) -> TensorSpec:
     var dtype = view.dtype
-    var shape = List[Int](capacity=view.shapeSize)
-    for i in range(view.shapeSize):
+    var shape = List[Int](capacity=view.rank)
+    for i in range(view.rank):
         shape.append(int(view.shape[i]))
 
     if dtype == "BOOL":
@@ -171,6 +170,7 @@ struct CModelInferRequest:
     alias _ModelVersionFnName = "M_modelInferRequestModelVersion"
     alias _OutputsSizeFnName = "M_modelInferRequestOutputsSize"
     alias _OutputNameFnName = "M_modelInferRequestOutputName"
+    alias _AddOutputFnName = "M_modelInferRequestAddOutput"
 
     fn model_name(owned self, lib: DLHandle) -> CString:
         return call_dylib_func[CString](lib, Self._ModelNameFnName, self.ptr)
@@ -185,6 +185,9 @@ struct CModelInferRequest:
         return call_dylib_func[CString](
             lib, Self._OutputNameFnName, self.ptr, index
         )
+
+    fn add_output(owned self, lib: DLHandle, name: StringRef):
+        call_dylib_func[NoneType](lib, Self._AddOutputFnName, self.ptr, name)
 
 
 struct ModelInferRequest(InferenceRequest):
@@ -227,14 +230,6 @@ struct ModelInferRequest(InferenceRequest):
             CModelInferRequest,
         ](self._lib, self._ptr, self._session)
 
-    fn get_requested_outputs(self) -> List[String]:
-        var result = List[String](
-            capacity=int(self._ptr.outputs_size(self._lib))
-        )
-        for i in range(self._ptr.outputs_size(self._lib)):
-            result.append(self._ptr.output_name(self._lib, i).__str__())
-        return result^
-
     fn set_input_tensors(self, names: List[String], map: TensorMap) raises:
         set_tensors[
             "M_modelInferRequestAddInput",
@@ -242,27 +237,53 @@ struct ModelInferRequest(InferenceRequest):
             CModelInferRequest,
         ](self._lib, self._ptr, names, map)
 
+    fn get_requested_outputs(self) -> List[String]:
+        # TODO: Pass back an array.
+        var result = List[String](
+            capacity=int(self._ptr.outputs_size(self._lib))
+        )
+        for i in range(self._ptr.outputs_size(self._lib)):
+            result.append(self._ptr.output_name(self._lib, i).__str__())
+        return result^
+
+    fn set_requested_outputs(self, outputs: List[String]) -> None:
+        for output in outputs:
+            self._ptr.add_output(self._lib, output[]._strref_dangerous())
+
 
 @value
 @register_passable("trivial")
 struct CModelInferResponse:
     var ptr: DTypePointer[DType.invalid]
 
+    alias _NewFnName = "M_newModelInferResponse"
+    alias _FreeFnName = "M_freeModelInferResponse"
+
+    @staticmethod
+    fn new(lib: DLHandle, address: StringRef) -> CModelInferResponse:
+        return call_dylib_func[CModelInferResponse](lib, Self._NewFnName)
+
+    fn free(owned self, lib: DLHandle):
+        call_dylib_func(lib, Self._FreeFnName, self.ptr)
+
 
 struct ModelInferResponse(InferenceResponse):
     var _ptr: CModelInferResponse
     var _lib: DLHandle
     var _session: InferenceSession
+    var _owning: Bool
 
     fn __init__(
         inout self,
         ptr: CModelInferResponse,
         lib: DLHandle,
         owned session: InferenceSession,
+        owning: Bool = False,
     ):
         self._ptr = ptr
         self._lib = lib
         self._session = session^
+        self._owning = owning
 
     fn __moveinit__(inout self, owned existing: Self):
         self._ptr = exchange[CModelInferResponse](
@@ -270,16 +291,22 @@ struct ModelInferResponse(InferenceResponse):
         )
         self._lib = existing._lib
         self._session = existing._session^
+        self._owning = existing._owning
 
     fn __copyinit__(inout self, existing: Self):
         self._ptr = existing._ptr
         self._lib = existing._lib
         self._session = existing._session
+        self._owning = existing._owning
+
+    fn __del__(owned self):
+        if self._owning:
+            self._ptr.free(self._lib)
 
     fn get_output_tensors(self) raises -> TensorMap:
         return get_tensors[
-            "M_modelInferRequestOutputsSize",
-            "M_modelInferRequestOutput",
+            "M_modelInferResponseOutputsSize",
+            "M_modelInferResponseOutput",
             CModelInferResponse,
         ](self._lib, self._ptr, self._session)
 

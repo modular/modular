@@ -13,12 +13,19 @@ from runtime.llcl import (
     TaskGroupTask,
     TaskGroupTaskList,
 )
+from tensor import TensorSpec
 from time import now
 from utils.variant import Variant
 
 from max.engine import InferenceSession, Model
 from max.engine._model_impl import CModel
 from max.engine._utils import handle_from_config
+from max.serve.service import (
+    InferenceRequest,
+    InferenceResponse,
+    InferenceService,
+    FileModel,
+)
 
 from .callbacks import (
     CallbacksPair,
@@ -28,12 +35,7 @@ from .callbacks import (
     make_callbacks_triple,
 )
 from .config import BATCH_HEAT_MAP_ENABLED, STATS_ENABLED
-from .service import (
-    InferenceRequest,
-    InferenceResponse,
-    InferenceService,
-    FileModel,
-)
+
 from ._kserve_impl import ModelInferRequest, ModelInferResponse
 from ._serve_rt import Batch, MuttServerAsync, TensorView
 from .stats import ServerStats, ServerStatsOptions
