@@ -264,15 +264,21 @@ fn multistage_gemm[
             ](a_mma_tile, 0)
         )
 
+    # TF32 mma only needs 2 8x4 matrices but we can combine 2 mmas and load
+    # 4 matrics per iteration. This reduces the instruction count.
     @unroll
-    for n_mma in range(num_n_mmas):
-        var b_mma_tile = b_warp_tile.tile[MMA_N, BK](n_mma, 0)
-        b_reg_tiles[0][n_mma, 0] = rebind[b_frag_type](
-            ld_mma[
-                2,
-                Layout(IntTuple(8, 2), IntTuple(BK // simd_size, 1)),
-                swizzle=xor_2bits_per8T,
-            ](b_mma_tile, 0)
+    for n_mma2 in range(num_n_mmas // 2):
+        var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
+        var vec = ld_mma[
+            4,
+            Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
+            swizzle=xor_2bits_per8T,
+        ](b_mma_tile, 0)
+        b_reg_tiles[0][2 * n_mma2, 0] = rebind[b_frag_type](
+            SIMD[b_type, 2](vec[0], vec[2])
+        )
+        b_reg_tiles[0][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
+            SIMD[b_type, 2](vec[1], vec[3])
         )
 
     var num_k_tiles = ceildiv(K, BK)
@@ -332,14 +338,18 @@ fn multistage_gemm[
                 )
 
             @unroll
-            for n_mma in range(num_n_mmas):
-                var b_mma_tile = b_warp_tile.tile[MMA_N, BK](n_mma, 0)
-                b_reg_tiles[next][n_mma, 0] = rebind[b_frag_type](
-                    ld_mma[
-                        2,
-                        Layout(IntTuple(8, 2), IntTuple(BK // simd_size, 1)),
-                        swizzle=xor_2bits_per8T,
-                    ](b_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
+            for n_mma2 in range(num_n_mmas // 2):
+                var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
+                var vec = ld_mma[
+                    4,
+                    Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
+                    swizzle=xor_2bits_per8T,
+                ](b_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
+                b_reg_tiles[next][2 * n_mma2, 0] = rebind[b_frag_type](
+                    SIMD[b_type, 2](vec[0], vec[2])
+                )
+                b_reg_tiles[next][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
+                    SIMD[b_type, 2](vec[1], vec[3])
                 )
 
             @unroll
