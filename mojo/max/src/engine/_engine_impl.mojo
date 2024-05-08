@@ -14,7 +14,7 @@ from pathlib import Path
 fn _get_engine_path() raises -> String:
     var engine_lib_path_str_ptr = external_call[
         "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.int8]
-    ](".engine_lib")
+    ](StringRef(".engine_lib"))
 
     if not engine_lib_path_str_ptr:
         raise "cannot get the location of AI engine library from modular.cfg"

@@ -236,7 +236,7 @@ struct CompileConfig:
         # can lazy load it here.
         var torch_ext_lib_path_str_ptr = external_call[
             "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.int8]
-        ](".torch_ext_lib")
+        ](StringRef(".torch_ext_lib"))
 
         if not torch_ext_lib_path_str_ptr:
             return None
