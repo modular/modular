@@ -98,10 +98,10 @@ fn scatter_nd[
     indices_rank: Int,
     updates_rank: Int,
 ](
-    data: NDBuffer[type, data_rank],
-    indices: NDBuffer[indices_type, indices_rank],
-    updates: NDBuffer[type, updates_rank],
-    output: NDBuffer[type, data_rank],
+    data: NDBuffer[type, data_rank, _],
+    indices: NDBuffer[indices_type, indices_rank, _],
+    updates: NDBuffer[type, updates_rank, _],
+    output: NDBuffer[type, data_rank, _],
 ) raises:
     """
     Implements ONNX ScatterND operation as defined in https://github.com/onnx/onnx/blob/main/docs/Operators.md#ScatterND.
@@ -262,44 +262,45 @@ fn scatter_nd[
     _ = stream^
 
 
-fn linear_fill[type: DType](t: Tensor[type], elems: VariadicList[Scalar[type]]):
+fn linear_fill[
+    type: DType
+](buf: NDBuffer[type, _, _], elems: VariadicList[Scalar[type]]):
     debug_assert(
-        t.num_elements() == len(elems), "must fill all elements of tensor"
+        buf.num_elements() == len(elems), "must fill all elements of tensor"
     )
 
-    var buf = t._to_buffer()
-    for i in range(t.num_elements()):
+    for i in range(buf.num_elements()):
         buf[i] = elems[i]
 
 
 fn test_case[
     type: DType,
+    input_shape: DimList,
+    indices_shape: DimList,
+    updates_shape: DimList,
 ](
-    input_shape: TensorShape,
-    indices_shape: TensorShape,
-    updates_shape: TensorShape,
     data_vals: VariadicList[Scalar[type]],
     indices_vals: VariadicList[Int64],
     updates_vals: VariadicList[Scalar[type]],
     output_ref_vals: VariadicList[Scalar[type]],
 ):
-    var data = Tensor[type](input_shape)
+    var data = NDBuffer[type, 3, input_shape].stack_allocation()
     linear_fill(data, data_vals)
-    var indices = Tensor[DType.int64](indices_shape)
+    var indices = NDBuffer[DType.int64, 2, indices_shape].stack_allocation()
     linear_fill(indices, indices_vals)
-    var updates = Tensor[type](updates_shape)
+    var updates = NDBuffer[type, 3, updates_shape].stack_allocation()
     linear_fill(updates, updates_vals)
-    var output = Tensor[type](input_shape)
+    var output = NDBuffer[type, 3, input_shape].stack_allocation()
 
     # Note: This is for the specific set of examples
     #      (due to _to_ndbuffer[] parameters).
     try:
         with Context() as ctx:
-            scatter_nd[type, DType.int64, 3, 2, 3](
-                data._to_ndbuffer[3](),
-                indices._to_ndbuffer[2](),
-                updates._to_ndbuffer[3](),
-                output._to_ndbuffer[3](),
+            scatter_nd(
+                data,
+                indices,
+                updates,
+                output,
             )
     except e:
         print("CUDA_ERROR:", e)
@@ -308,11 +309,11 @@ fn test_case[
     _ = indices
     _ = updates
 
-    var output_ref = Tensor[type](input_shape)
+    var output_ref = NDBuffer[type, 3, input_shape].stack_allocation()
     linear_fill(output_ref, output_ref_vals)
 
-    for i in range(output.num_elements()):
-        if output_ref._to_buffer()[i] != output._to_buffer()[i]:
+    for i in range(output.size()):
+        if output_ref[i] != output[i]:
             print("FAILURE: Mismatch at idx: ", end="")
             print(i)
 
@@ -377,10 +378,13 @@ fn main():
             # fmt: on
         )
 
-        test_case[DType.float32](
-            TensorShape(4, 4, 4),
-            TensorShape(2, 1),
-            TensorShape(2, 4, 4),
+        test_case[
+            DType.float32,
+            input_shape = DimList(4, 4, 4),
+            indices_shape = DimList(2, 1),
+            updates_shape = DimList(2, 4, 4),
+        ]
+        (
             data,
             indices,
             updates,
