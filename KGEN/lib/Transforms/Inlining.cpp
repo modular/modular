@@ -1094,7 +1094,7 @@ struct ForceInlinePass : impl::ForceInlineBase<ForceInlinePass> {
     if (buildFuncPasses)
       buildFuncPasses(pipeline);
     else
-      mlir::parsePassPipeline(funcPipelineStr, pipeline);
+      (void)mlir::parsePassPipeline(funcPipelineStr, pipeline);
     pipeline.getDependentDialects(registry);
   }
 
