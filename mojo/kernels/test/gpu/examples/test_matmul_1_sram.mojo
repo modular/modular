@@ -9,7 +9,7 @@
 from math import align_down, ceildiv
 
 from algorithm.functional import tile_and_unswitch
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
@@ -19,7 +19,6 @@ from gpu.host.memory import (
     _malloc,
 )
 from memory import stack_allocation
-from tensor import Tensor
 
 from utils.index import Index
 
@@ -139,9 +138,9 @@ fn run_matmul() raises:
 
     var stream = Stream()
 
-    var a_host = Tensor[DType.float32](M, K)
-    var b_host = Tensor[DType.float32](K, N)
-    var c_host = Tensor[DType.float32](M, N)
+    var a_host = NDBuffer[DType.float32, 2, DimList(M, K)].stack_allocation()
+    var b_host = NDBuffer[DType.float32, 2, DimList(K, N)].stack_allocation()
+    var c_host = NDBuffer[DType.float32, 2, DimList(M, N)].stack_allocation()
 
     for i in range(M):
         for j in range(K):
@@ -159,8 +158,8 @@ fn run_matmul() raises:
     var b_device = _malloc[Float32](K * N)
     var c_device = _malloc[Float32](M * N)
 
-    _copy_host_to_device(a_device, a_host.unsafe_ptr(), M * K)
-    _copy_host_to_device(b_device, b_host.unsafe_ptr(), K * N)
+    _copy_host_to_device(a_device, a_host.data, M * K)
+    _copy_host_to_device(b_device, b_host.data, K * N)
 
     var func = Function[
         # fmt: off
@@ -185,7 +184,7 @@ fn run_matmul() raises:
     )
     synchronize()
 
-    _copy_device_to_host(c_host.unsafe_ptr(), c_device, M * N)
+    _copy_device_to_host(c_host.data, c_device, M * N)
 
     var failed = False
     for i in range(M - 10, M):

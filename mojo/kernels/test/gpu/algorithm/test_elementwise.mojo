@@ -11,7 +11,7 @@ from sys.info import triple_is_nvidia_cuda
 
 from algorithm.functional import _elementwise_impl
 from benchmark._cuda import run
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream
 from gpu.host._compile import _get_nvptx_target
@@ -23,7 +23,6 @@ from gpu.host.memory import (
     _memset,
 )
 from gpu.host.sync import synchronize
-from tensor import Tensor
 from testing import assert_equal
 
 from utils.index import Index
@@ -33,8 +32,8 @@ from utils.index import Index
 fn run_elementwise[type: DType]() raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
 
-    var in_host = Tensor[type](2, 8)
-    var out_host = Tensor[type](2, 8)
+    var in_host = NDBuffer[type, 2, DimList(2, 8)].stack_allocation()
+    var out_host = NDBuffer[type, 2, DimList(2, 8)].stack_allocation()
 
     var flattened_length = in_host.num_elements()
     for i in range(2):
@@ -44,7 +43,7 @@ fn run_elementwise[type: DType]() raises:
     var in_device = _malloc[type](flattened_length)
     var out_device = _malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.unsafe_ptr(), flattened_length)
+    _copy_host_to_device(in_device, in_host.data, flattened_length)
 
     var in_buffer = NDBuffer[type, 2](in_device, Index(2, 8))
     var out_buffer = NDBuffer[type, 2](out_device, Index(2, 8))
@@ -75,7 +74,7 @@ fn run_elementwise[type: DType]() raises:
     )
     synchronize()
 
-    _copy_device_to_host(out_host.unsafe_ptr(), out_device, flattened_length)
+    _copy_device_to_host(out_host.data, out_device, flattened_length)
 
     var expected_vals = List[Scalar[type]](
         42.0,
@@ -102,9 +101,6 @@ fn run_elementwise[type: DType]() raises:
                 expected_vals[i * 8 + j],
             )
 
-    _ = in_host^
-    _ = out_host^
-
     _free(in_device)
     _free(out_device)
 
@@ -112,8 +108,8 @@ fn run_elementwise[type: DType]() raises:
 # CHECK-LABEL: run_elementwise_uneven_simd
 fn run_elementwise_uneven_simd[type: DType]() raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
-    var in_host = Tensor[type](3, 3)
-    var out_host = Tensor[type](3, 3)
+    var in_host = NDBuffer[type, 2, DimList(3, 3)].stack_allocation()
+    var out_host = NDBuffer[type, 2, DimList(3, 3)].stack_allocation()
 
     var flattened_length = in_host.num_elements()
     for i in range(3):
@@ -123,7 +119,7 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
     var in_device = _malloc[type](flattened_length)
     var out_device = _malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.unsafe_ptr(), flattened_length)
+    _copy_host_to_device(in_device, in_host.data, flattened_length)
 
     var in_buffer = NDBuffer[type, 2](in_device, Index(3, 3))
     var out_buffer = NDBuffer[type, 2](out_device, Index(3, 3))
@@ -153,7 +149,7 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
         StaticIntTuple[2](3, 3),
     )
     synchronize()
-    _copy_device_to_host(out_host.unsafe_ptr(), out_device, flattened_length)
+    _copy_device_to_host(out_host.data, out_device, flattened_length)
 
     var expected_vals = List[Scalar[type]](
         42.0, 43.0, 44.0, 43.0, 44.0, 45.0, 44.0, 45.0, 46.0
@@ -165,17 +161,14 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
                 expected_vals[i * 3 + j],
             )
 
-    _ = in_host^
-    _ = out_host^
-
     _free(in_device)
     _free(out_device)
 
 
 fn run_elementwise_transpose_copy[type: DType]() raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
-    var in_host = Tensor[type](2, 4, 5)
-    var out_host = Tensor[type](4, 2, 5)
+    var in_host = NDBuffer[type, 3, DimList(2, 4, 5)].stack_allocation()
+    var out_host = NDBuffer[type, 3, DimList(4, 2, 5)].stack_allocation()
 
     var flattened_length = in_host.num_elements()
     for i in range(2):
@@ -186,7 +179,7 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
     var in_device = _malloc[type](flattened_length)
     var out_device = _malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.unsafe_ptr(), flattened_length)
+    _copy_host_to_device(in_device, in_host.data, flattened_length)
 
     var in_buffer_transposed = NDBuffer[type, 3](
         in_device, Index(4, 2, 5), Index(5, 20, 1)
@@ -207,7 +200,7 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
         StaticIntTuple[3](4, 2, 5),
     )
     synchronize()
-    _copy_device_to_host(out_host.unsafe_ptr(), out_device, flattened_length)
+    _copy_device_to_host(out_host.data, out_device, flattened_length)
 
     var expected_vals = List[Scalar[type]](
         0.0,
@@ -258,9 +251,6 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
                     out_host[Index(i, j, k)],
                     expected_vals[i * 2 * 5 + j * 5 + k],
                 )
-
-    _ = in_host^
-    _ = out_host^
 
     _free(in_device)
     _free(out_device)

@@ -9,7 +9,7 @@
 
 from math import ceildiv
 
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from gpu import BlockDim, BlockIdx, ThreadIdx
 from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
@@ -19,7 +19,6 @@ from gpu.host.memory import (
     _malloc,
 )
 from memory.unsafe import DTypePointer
-from tensor import Tensor
 
 from utils.index import Index
 
@@ -60,9 +59,9 @@ fn run_matmul() raises:
 
     var stream = Stream()
 
-    var a_host = Tensor[DType.float32](m, k)
-    var b_host = Tensor[DType.float32](k, n)
-    var c_host = Tensor[DType.float32](m, n)
+    var a_host = NDBuffer[DType.float32, 2, DimList(m, k)].stack_allocation()
+    var b_host = NDBuffer[DType.float32, 2, DimList(k, n)].stack_allocation()
+    var c_host = NDBuffer[DType.float32, 2, DimList(m, n)].stack_allocation()
 
     for i in range(m):
         for j in range(k):
@@ -80,8 +79,8 @@ fn run_matmul() raises:
     var b_device = _malloc[Float32](k * n)
     var c_device = _malloc[Float32](m * n)
 
-    _copy_host_to_device(a_device, a_host.unsafe_ptr(), m * k)
-    _copy_host_to_device(b_device, b_host.unsafe_ptr(), k * n)
+    _copy_host_to_device(a_device, a_host.data, m * k)
+    _copy_host_to_device(b_device, b_host.data, k * n)
 
     var func = Function[__type_of(matmul), matmul](debug=True)
 
@@ -98,7 +97,7 @@ fn run_matmul() raises:
     )
     synchronize()
 
-    _copy_device_to_host(c_host.unsafe_ptr(), c_device, m * n)
+    _copy_device_to_host(c_host.data, c_device, m * n)
 
     for i in range(BLOCK_DIM):
         for j in range(BLOCK_DIM):
@@ -114,10 +113,6 @@ fn run_matmul() raises:
     _free(a_device)
     _free(b_device)
     _free(c_device)
-
-    _ = a_host
-    _ = b_host
-    _ = c_host
 
     _ = func^
     _ = stream^

@@ -11,7 +11,7 @@ from sys.info import has_neon, triple_is_nvidia_cuda
 
 from algorithm.functional import _elementwise_impl
 from benchmark._cuda import run
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from builtin.io import _printf
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream
@@ -24,7 +24,6 @@ from gpu.host.memory import (
     _memset,
 )
 from gpu.host.sync import synchronize
-from tensor import Tensor
 from testing import *
 
 alias type = DType.float32
@@ -35,8 +34,8 @@ def run_elementwise(exponent: Int):
 
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
 
-    var in_host = Tensor[type](length)
-    var out_host = Tensor[type](length)
+    var in_host = NDBuffer[type, 1, DimList(length)].stack_allocation()
+    var out_host = NDBuffer[type, 1, DimList(length)].stack_allocation()
 
     var flattened_length = in_host.num_elements()
 
@@ -48,7 +47,7 @@ def run_elementwise(exponent: Int):
     var in_device = _malloc[type](flattened_length)
     var out_device = _malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.unsafe_ptr(), flattened_length)
+    _copy_host_to_device(in_device, in_host.data, flattened_length)
 
     var in_buffer = NDBuffer[type, 1](in_device, (length))
     var out_buffer = NDBuffer[type, 1](out_device, (length))
@@ -71,7 +70,7 @@ def run_elementwise(exponent: Int):
     )
     synchronize()
 
-    _copy_device_to_host(out_host.unsafe_ptr(), out_device, flattened_length)
+    _copy_device_to_host(out_host.data, out_device, flattened_length)
 
     for i in range(length):
         assert_almost_equal[type, 1](
@@ -81,9 +80,6 @@ def run_elementwise(exponent: Int):
             atol=1e-04,
             rtol=2e-02,
         )
-
-    _ = in_host^
-    _ = out_host^
 
     _free(in_device)
     _free(out_device)

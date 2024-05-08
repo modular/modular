@@ -15,7 +15,6 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from tensor import Tensor
 from testing import assert_equal
 
 alias num_reductions = 2
@@ -50,9 +49,9 @@ fn fused_reduce_inner_test[
     )
     var stream = Stream()
 
-    var vec_host = Tensor[type](in_size)
-    var res_host0 = Tensor[type](out_size)
-    var res_host1 = Tensor[type](out_size)
+    var vec_host = DTypePointer[type].alloc(in_size)
+    var res_host0 = DTypePointer[type].alloc(out_size)
+    var res_host1 = DTypePointer[type].alloc(out_size)
 
     for i in range(in_size):
         vec_host[i] = i // shape[axis] + 1
@@ -64,7 +63,7 @@ fn fused_reduce_inner_test[
     var output_buf_device0 = NDBuffer[type, rank](res_device0, out_shape)
     var output_buf_device1 = NDBuffer[type, rank](res_device1, out_shape)
 
-    _copy_host_to_device(vec_device, vec_host.unsafe_ptr(), in_size)
+    _copy_host_to_device(vec_device, vec_host, in_size)
 
     @__copy_capture(input_buf_device)
     @parameter
@@ -99,8 +98,8 @@ fn fused_reduce_inner_test[
     )
 
     stream.synchronize()
-    _copy_device_to_host(res_host0.unsafe_ptr(), res_device0, out_size)
-    _copy_device_to_host(res_host1.unsafe_ptr(), res_device1, out_size)
+    _copy_device_to_host(res_host0, res_device0, out_size)
+    _copy_device_to_host(res_host1, res_device1, out_size)
 
     for i in range(out_shape.flattened_length()):
         assert_equal(res_host0[i], expected_vals0[i])
@@ -112,9 +111,9 @@ fn fused_reduce_inner_test[
     _free(res_device0)
     _free(res_device1)
 
-    _ = vec_host
-    _ = res_host0
-    _ = res_host1
+    vec_host.free()
+    res_host0.free()
+    res_host1.free()
 
     _ = stream^
 
@@ -144,8 +143,8 @@ fn reduce_inner_test[
 
     var stream = Stream()
 
-    var vec_host = Tensor[type](in_size)
-    var res_host = Tensor[type](out_size)
+    var vec_host = DTypePointer[type].alloc(in_size)
+    var res_host = DTypePointer[type].alloc(out_size)
 
     for i in range(in_size):
         vec_host[i] = i // shape[axis] + 1
@@ -155,7 +154,7 @@ fn reduce_inner_test[
     var input_buf_device = NDBuffer[type, rank](vec_device, shape)
     var output_buf_device = NDBuffer[type, rank](res_device, out_shape)
 
-    _copy_host_to_device(vec_device, vec_host.unsafe_ptr(), in_size)
+    _copy_host_to_device(vec_device, vec_host, in_size)
 
     @always_inline
     @parameter
@@ -196,7 +195,7 @@ fn reduce_inner_test[
     ](shape, axis, init, stream)
 
     stream.synchronize()
-    _copy_device_to_host(res_host.unsafe_ptr(), res_device, out_size)
+    _copy_device_to_host(res_host, res_device, out_size)
 
     for i in range(out_shape.flattened_length()):
         assert_equal(res_host[i], expected_vals[i])
@@ -204,8 +203,8 @@ fn reduce_inner_test[
     _free(vec_device)
     _free(res_device)
 
-    _ = vec_host
-    _ = res_host
+    vec_host.free()
+    res_host.free()
 
     _ = stream^
 

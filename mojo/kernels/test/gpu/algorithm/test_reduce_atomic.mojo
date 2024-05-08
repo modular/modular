@@ -8,6 +8,8 @@
 
 from math import ceildiv
 
+from buffer import NDBuffer, DimList
+
 from gpu import *
 from gpu.host import Context, Function, Stream
 from gpu.host.memory import (
@@ -17,7 +19,6 @@ from gpu.host.memory import (
     _malloc,
     _memset,
 )
-from tensor import Tensor
 
 
 fn reduce(
@@ -40,7 +41,7 @@ fn run_reduce() raises:
 
     var stream = Stream()
 
-    var vec_host = Tensor[DType.float32](n)
+    var vec_host = NDBuffer[DType.float32, 1, DimList(n)].stack_allocation()
 
     for i in range(n):
         vec_host[i] = 1
@@ -48,7 +49,7 @@ fn run_reduce() raises:
     var vec_device = _malloc[Float32](n)
     var res_device = _malloc[Float32](1)
 
-    _copy_host_to_device(vec_device, vec_host.unsafe_ptr(), n)
+    _copy_host_to_device(vec_device, vec_host.data, n)
     _memset(res_device, 0, 1)
 
     var func = Function[__type_of(reduce), reduce](verbose=True)
@@ -69,8 +70,6 @@ fn run_reduce() raises:
     print("res = ", res)
 
     _free(vec_device)
-
-    _ = vec_host
 
     _ = func^
     _ = stream^

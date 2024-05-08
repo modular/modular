@@ -21,7 +21,6 @@ from gpu.host.memory import (
 from LinAlg.Matmul import matmul as _matmul
 from LinAlg.MatmulGPU import matmul_kernel_naive
 from memory import memset_zero, stack_allocation
-from tensor import Tensor
 from math import isclose
 from testing import assert_true
 
@@ -116,9 +115,13 @@ fn run_matmul() raises:
 
     var stream = Stream()
 
-    var a_host = Tensor[DType.float32](m, k)
-    var b_host = Tensor[DType.float32](k, n)
-    var c_host = Tensor[DType.float32](m, n)
+    var a_host_mem = DTypePointer[DType.float32].alloc(m * k)
+    var b_host_mem = DTypePointer[DType.float32].alloc(k * m)
+    var c_host_mem = DTypePointer[DType.float32].alloc(m * n)
+
+    var a_host = NDBuffer[DType.float32, 2, DimList(m, k)](a_host_mem)
+    var b_host = NDBuffer[DType.float32, 2, DimList(k, m)](b_host_mem)
+    var c_host = NDBuffer[DType.float32, 2, DimList(m, n)](c_host_mem)
 
     for i in range(m):
         for j in range(k):
@@ -136,8 +139,8 @@ fn run_matmul() raises:
     var b_device = _malloc[Float32](k * n)
     var c_device = _malloc[Float32](m * n)
 
-    _copy_host_to_device(a_device, a_host.unsafe_ptr(), m * k)
-    _copy_host_to_device(b_device, b_host.unsafe_ptr(), k * n)
+    _copy_host_to_device(a_device, a_host.data, m * k)
+    _copy_host_to_device(b_device, b_host.data, k * n)
 
     var func = Function[__type_of(matmul), matmul]()
 
@@ -154,7 +157,7 @@ fn run_matmul() raises:
     )
     synchronize()
 
-    _copy_device_to_host(c_host.unsafe_ptr(), c_device, m * n)
+    _copy_device_to_host(c_host.data, c_device, m * n)
 
     for i in range(10):
         for j in range(10):
@@ -175,10 +178,15 @@ fn run_matmul() raises:
 fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     var stream = Stream()
 
-    var a_host = Tensor[type](M, K)
-    var b_host = Tensor[type](K, N)
-    var c_host = Tensor[type](M, N)
-    var c_host_ref = Tensor[type](M, N)
+    var a_host_mem = DTypePointer[type].alloc(M * K)
+    var b_host_mem = DTypePointer[type].alloc(K * N)
+    var c_host_mem = DTypePointer[type].alloc(M * N)
+    var c_host_ref_mem = DTypePointer[type].alloc(M * N)
+
+    var a_host = NDBuffer[type, 2, DimList(M, K)](a_host_mem)
+    var b_host = NDBuffer[type, 2, DimList(K, N)](b_host_mem)
+    var c_host = NDBuffer[type, 2, DimList(M, N)](c_host_mem)
+    var c_host_ref = NDBuffer[type, 2, DimList(M, N)]((c_host_ref_mem))
 
     for i in range(M):
         for j in range(K):
@@ -204,10 +212,10 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     var b_device_nd = NDBuffer[type, 2, b_shape](b_device, Index(K, N))
     alias c_shape = DimList(M, N)
     var c_device_nd = NDBuffer[type, 2, c_shape](c_device, Index(M, N))
-    _copy_host_to_device(a_device, a_host.unsafe_ptr(), M * K)
-    _copy_host_to_device(b_device, b_host.unsafe_ptr(), K * N)
-    _copy_host_to_device(c_device, c_host.unsafe_ptr(), M * N)
-    _copy_host_to_device(c_device_ref, c_host_ref.unsafe_ptr(), M * N)
+    _copy_host_to_device(a_device, a_host.data, M * K)
+    _copy_host_to_device(b_device, b_host.data, K * N)
+    _copy_host_to_device(c_device, c_host.data, M * N)
+    _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
 
     _matmul[
         type,
@@ -219,7 +227,7 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
         target="cuda",
     ](c_device_nd, a_device_nd, b_device_nd)
     synchronize()
-    _copy_device_to_host(c_host.unsafe_ptr(), c_device, M * N)
+    _copy_device_to_host(c_host.data, c_device, M * N)
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
@@ -246,7 +254,7 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     )
 
     synchronize()
-    _copy_device_to_host(c_host_ref.unsafe_ptr(), c_device_ref, M * N)
+    _copy_device_to_host(c_host_ref.data, c_device_ref, M * N)
 
     for i in range(M):
         for j in range(N):
@@ -257,10 +265,10 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     _free(c_device)
     _free(c_device_ref)
 
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_ref
+    a_host_mem.free()
+    b_host_mem.free()
+    c_host_mem.free()
+    c_host_ref_mem.free()
 
     _ = func_naive^
     _ = stream^
@@ -271,10 +279,15 @@ fn run_matmul_from_mogg_interface_with_epilogue[
 ]() raises:
     var stream = Stream()
 
-    var a_host = Tensor[type](M, K)
-    var b_host = Tensor[type](K, N)
-    var c_host = Tensor[type](M, N)
-    var c_host_ref = Tensor[type](M, N)
+    var a_host_mem = DTypePointer[type].alloc(M * K)
+    var b_host_mem = DTypePointer[type].alloc(K * N)
+    var c_host_mem = DTypePointer[type].alloc(M * N)
+    var c_host_ref_mem = DTypePointer[type].alloc(M * N)
+
+    var a_host = NDBuffer[type, 2, DimList(M, K)](a_host_mem)
+    var b_host = NDBuffer[type, 2, DimList(K, N)](b_host_mem)
+    var c_host = NDBuffer[type, 2, DimList(M, N)](c_host_mem)
+    var c_host_ref = NDBuffer[type, 2, DimList(M, N)]((c_host_ref_mem))
 
     for i in range(M):
         for j in range(K):
@@ -301,10 +314,10 @@ fn run_matmul_from_mogg_interface_with_epilogue[
     alias c_shape = DimList(M, N)
     var c_device_nd = NDBuffer[type, 2, c_shape](c_device, Index(M, N))
     var c_device_ref_nd = NDBuffer[type, 2, c_shape](c_device_ref, Index(M, N))
-    _copy_host_to_device(a_device, a_host.unsafe_ptr(), M * K)
-    _copy_host_to_device(b_device, b_host.unsafe_ptr(), K * N)
-    _copy_host_to_device(c_device, c_host.unsafe_ptr(), M * N)
-    _copy_host_to_device(c_device_ref, c_host_ref.unsafe_ptr(), M * N)
+    _copy_host_to_device(a_device, a_host.data, M * K)
+    _copy_host_to_device(b_device, b_host.data, K * N)
+    _copy_host_to_device(c_device, c_host.data, M * N)
+    _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
 
     alias some_constant = 20
 
@@ -337,7 +350,7 @@ fn run_matmul_from_mogg_interface_with_epilogue[
         elementwise_lambda_fn=epilogue_fn,
     ](c_device_nd, a_device_nd, b_device_nd)
     synchronize()
-    _copy_device_to_host(c_host.unsafe_ptr(), c_device, M * N)
+    _copy_device_to_host(c_host.data, c_device, M * N)
 
     alias BLOCK_DIM = 16
     var func_naive = Function[
@@ -370,7 +383,7 @@ fn run_matmul_from_mogg_interface_with_epilogue[
     )
 
     synchronize()
-    _copy_device_to_host(c_host_ref.unsafe_ptr(), c_device_ref, M * N)
+    _copy_device_to_host(c_host_ref.data, c_device_ref, M * N)
 
     for i in range(M):
         for j in range(N):
@@ -381,10 +394,10 @@ fn run_matmul_from_mogg_interface_with_epilogue[
     _free(c_device)
     _free(c_device_ref)
 
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_ref
+    a_host_mem.free()
+    b_host_mem.free()
+    c_host_mem.free()
+    c_host_ref_mem.free()
 
     _ = func_naive^
     _ = stream^

@@ -11,13 +11,12 @@ from math import ceildiv, iota
 from sys.info import simdwidthof
 
 from algorithm import vectorize
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from complex import ComplexSIMD
 from gpu import *
 from gpu.host import Context, Function, Stream
 from gpu.host.event import time_function
 from gpu.host.memory import _copy_device_to_host, _free, _malloc
-from tensor import Tensor
 
 from utils.index import Index
 
@@ -85,7 +84,9 @@ fn mandelbrot(out: NDBuffer[int_type, 2, DimList(height, width)]):
 fn run_mandelbrot() raises:
     var stream = Stream()
 
-    var out_host = Tensor[int_type](width, height)
+    var out_host = NDBuffer[
+        int_type, 2, DimList(width, height)
+    ].stack_allocation()
 
     var out_device = _malloc[int_type](width * height)
 
@@ -107,7 +108,7 @@ fn run_mandelbrot() raises:
         time_function[run_mandelbrot](stream) / 1_000_000_000.0,
     )
 
-    _copy_device_to_host(out_host.unsafe_ptr(), out_device, width * height)
+    _copy_device_to_host(out_host.data, out_device, width * height)
 
     var accum = SIMD[int_type, 1](0)
     for i in range(width):

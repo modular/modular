@@ -21,7 +21,6 @@ from gpu.host.memory import (
 from gpu.memory import AddressSpace
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
-from tensor import Tensor
 
 from utils.index import Index
 
@@ -127,8 +126,8 @@ fn run_stencil2d[smem: Bool]() raises:
     alias num_rows = 8
     alias num_cols = 8
 
-    var a_host = Tensor[DType.float32](m)
-    var b_host = Tensor[DType.float32](m)
+    var a_host = NDBuffer[DType.float32, 1, DimList(m)].stack_allocation()
+    var b_host = NDBuffer[DType.float32, 1, DimList(m)].stack_allocation()
 
     var stream = Stream()
 
@@ -139,7 +138,7 @@ fn run_stencil2d[smem: Bool]() raises:
     var a_device = _malloc[Float32](m)
     var b_device = _malloc[Float32](m)
 
-    _copy_host_to_device(a_device, a_host.unsafe_ptr(), m)
+    _copy_host_to_device(a_device, a_host.data, m)
 
     alias func_select = stencil2d_smem if smem == True else stencil2d
 
@@ -170,7 +169,7 @@ fn run_stencil2d[smem: Bool]() raises:
         b_device = a_device
         a_device = tmp_ptr
 
-    _copy_device_to_host(b_host.unsafe_ptr(), b_device, m)
+    _copy_device_to_host(b_host.data, b_device, m)
 
     # CHECK: == run_stencil2d
     # CHECK: 37729.0 ,52628.0 ,57021.0 ,60037.0 ,58925.0 ,39597.0 ,

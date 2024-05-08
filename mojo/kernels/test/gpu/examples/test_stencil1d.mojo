@@ -9,7 +9,7 @@
 
 from math import ceildiv
 
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
 from gpu.host import Context, Function, Stream, synchronize
 from gpu.host.memory import (
@@ -20,7 +20,6 @@ from gpu.host.memory import (
 )
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
-from tensor import Tensor
 
 from utils.index import Index
 
@@ -87,8 +86,8 @@ fn run_stencil1d[smem: Bool]() raises:
     alias coeff2 = 4
     alias iterations = 4
 
-    var a_host = Tensor[DType.float32](m)
-    var b_host = Tensor[DType.float32](m)
+    var a_host = NDBuffer[DType.float32, 1, DimList(m)].stack_allocation()
+    var b_host = NDBuffer[DType.float32, 1, DimList(m)].stack_allocation()
 
     var stream = Stream()
 
@@ -99,7 +98,7 @@ fn run_stencil1d[smem: Bool]() raises:
     var a_device = _malloc[Float32](m)
     var b_device = _malloc[Float32](m)
 
-    _copy_host_to_device(a_device, a_host.unsafe_ptr(), m)
+    _copy_host_to_device(a_device, a_host.data, m)
 
     alias func_select = stencil1d_smem if smem == True else stencil1d
 
@@ -123,7 +122,7 @@ fn run_stencil1d[smem: Bool]() raises:
         b_device = a_device
         a_device = tmp_ptr
 
-    _copy_device_to_host(b_host.unsafe_ptr(), b_device, m)
+    _copy_device_to_host(b_host.data, b_device, m)
 
     # CHECK: == run_stencil1d
     # CHECK: 912.0 ,1692.0 ,2430.0 ,3159.0 ,3888.0 ,4617.0 ,5346.0 ,6075.0 ,

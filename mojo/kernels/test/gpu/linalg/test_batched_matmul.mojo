@@ -8,10 +8,9 @@
 
 
 from LinAlg.BatchedMatmul import batched_matmul
-from buffer import NDBuffer
+from buffer import NDBuffer, DimList
 from gpu.host import Context, synchronize
 from gpu.host.memory import _copy_device_to_host, _copy_host_to_device, _malloc
-from tensor import Tensor
 
 from utils.index import Index, StaticIntTuple
 
@@ -25,9 +24,15 @@ fn test_batched_matmul() raises:
     alias n = 2
     alias k = 4
 
-    var lhs_host = Tensor[DType.float32](b, m, k)
-    var rhs_host = Tensor[DType.float32](b, k, n)
-    var dst_host = Tensor[DType.float32](b, m, n)
+    var lhs_host = NDBuffer[
+        DType.float32, 3, DimList(b, m, k)
+    ].stack_allocation()
+    var rhs_host = NDBuffer[
+        DType.float32, 3, DimList(b, k, n)
+    ].stack_allocation()
+    var dst_host = NDBuffer[
+        DType.float32, 3, DimList(b, m, n)
+    ].stack_allocation()
 
     var csum = 0.0
     for bi in range(b):
@@ -57,15 +62,9 @@ fn test_batched_matmul() raises:
     var rhs_buffer = NDBuffer[DType.float32, 3](lhs_device, Index(b, k, n))
     var dst_buffer = NDBuffer[DType.float32, 3](dst_device, Index(b, m, n))
 
-    _copy_host_to_device(
-        lhs_device, lhs_host.unsafe_ptr(), lhs_host.num_elements()
-    )
-    _copy_host_to_device(
-        rhs_device, rhs_host.unsafe_ptr(), rhs_host.num_elements()
-    )
-    _copy_host_to_device(
-        dst_device, dst_host.unsafe_ptr(), dst_host.num_elements()
-    )
+    _copy_host_to_device(lhs_device, lhs_host.data, lhs_host.num_elements())
+    _copy_host_to_device(rhs_device, rhs_host.data, rhs_host.num_elements())
+    _copy_host_to_device(dst_device, dst_host.data, dst_host.num_elements())
 
     @always_inline
     @__copy_capture(dst_buffer)
@@ -91,20 +90,13 @@ fn test_batched_matmul() raises:
     )
     synchronize()
 
-    _copy_device_to_host(
-        dst_host.unsafe_ptr(), dst_device, dst_host.num_elements()
-    )
+    _copy_device_to_host(dst_host.data, dst_device, dst_host.num_elements())
 
-    #      CHECK: Tensor(
-    # CHECK-SAME: 30.0, 36.0
-    # CHECK-NEXT: 78.0, 100.0
-    # CHECK-NEXT: 430.0, 468.0
-    # CHECK-NEXT: 606.0, 660.0
+    # CHECK: [30.0, 36.0],
+    # CHECK: [78.0, 100.0]],
+    # CHECK: [430.0, 468.0],
+    # CHECK: [606.0, 660.0]
     print(dst_host)
-
-    _ = lhs_host^
-    _ = rhs_host^
-    _ = dst_host^
 
 
 # CHECK-NOT: CUDA_ERROR
