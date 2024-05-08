@@ -32,7 +32,7 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   // the module.
   if (options.debugLevel != CompilationOptions::kFullDebugInfo) {
     pm.addPass(DebugInfo::createDebugInfoStrip(
-        {/*preserveLineTables*/ options.debugLevel ==
+        {/*preserveLineTables=*/options.debugLevel ==
          CompilationOptions::kLineTablesOnly}));
   }
   buildCheckLITPipeline(pm, options);
@@ -68,21 +68,17 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
   // FIXME(#32286): The bodies of precompiled functions are not available to the
   // parametric inliner.
   pm.addPass(createInlineParametric(inlinerOpts));
-  if (options.optimizationLevel >= 1) {
-    pm.addPass(createVerifyParameters(
-        VerifyParametersOptions{/*simplifyParameters=*/true}));
-  }
+  pm.addPass(createVerifyParameters(
+      VerifyParametersOptions{/*simplifyParameters=*/true}));
 
   // These passes don't influence parameters, so we don't need to verify them.
-
-  // We use the canonicalizer, but disable region simplifications, since it is
-  // very CFG centric and we have region trees with a single block per region.
   if (options.optimizationLevel >= 1) {
     pm.addNestedPass<GeneratorOp>(createSROA());
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
     pm.addNestedPass<GeneratorOp>(createSCCP());
     pm.addNestedPass<GeneratorOp>(createCanonicalizer());
   }
+  pm.addPass(createApplyInliner());
 }
 
 void KGEN::buildElaborateModulePipeline(

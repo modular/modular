@@ -26,7 +26,7 @@ def Canonicalizer : Pass<"canonicalizer"> {
 // VerifyParameters
 //===----------------------------------------------------------------------===//
 
-def VerifyParameters : Pass<"verify-parameters", "mlir::ModuleOp"> {
+def VerifyParameters : Pass<"verify-parameters", "ModuleOp"> {
   let summary = "Run the parameter verifier.";
   let description = [{
     The `verify-parameters` pass runs the KGEN parameter verifier. The pass
@@ -45,7 +45,7 @@ def VerifyParameters : Pass<"verify-parameters", "mlir::ModuleOp"> {
 // LiftAndFoldApply
 //===----------------------------------------------------------------------===//
 
-def LiftAndFoldApply : Pass<"lift-and-fold-apply", "mlir::ModuleOp"> {
+def LiftAndFoldApply : Pass<"lift-and-fold-apply", "ModuleOp"> {
   let summary = "Lift apply operators and fold them if possible.";
   let description = [{
     This pass walks parameter expressions within the bodies of functions and
@@ -74,7 +74,7 @@ def LiftAndFoldApply : Pass<"lift-and-fold-apply", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def LowerSemanticCF
-  : Pass<"lower-semantic-cf", "mlir::ModuleOp"> {
+  : Pass<"lower-semantic-cf", "ModuleOp"> {
   let summary = "Lower lexical terminators and prune unreachable code.";
   let description = [{
     The `lower-semantic-cf` pass will replace lexical Lit terminators with
@@ -99,7 +99,7 @@ def CheckLifetimes : Pass<"check-lifetimes"> {
 // LowerLIT
 //===----------------------------------------------------------------------===//
 
-def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
+def LowerLIT : Pass<"lower-lit", "ModuleOp"> {
   let summary = "Lower the `lit` dialects to the `kgen` dialect.";
   let description = [{
     This pass performs lowers high level abstractions from "lit" to "kgen"
@@ -125,7 +125,7 @@ def LowerLIT : Pass<"lower-lit", "mlir::ModuleOp"> {
 // LowerLITTypes
 //===----------------------------------------------------------------------===//
 
-def LowerLITTypes : Pass<"lower-lit-types", "mlir::ModuleOp"> {
+def LowerLITTypes : Pass<"lower-lit-types", "ModuleOp"> {
   let summary = "Lower struct declarations to POP structs.";
   let description = [{
     This pass lowers a variety of high level Mojo types in the 'lit' dialect
@@ -170,7 +170,7 @@ def MaterializePackages : Pass<"materialize-packages", "ModuleOp"> {
 // LowerClosures
 //===----------------------------------------------------------------------===//
 
-def LowerClosures : Pass<"lower-closures", "mlir::ModuleOp"> {
+def LowerClosures : Pass<"lower-closures", "ModuleOp"> {
   let summary = "Lower `async` functions and closures.";
   let description = [{
     The `lower-closures` pass transforms `async` functions into normal
@@ -186,7 +186,7 @@ def LowerClosures : Pass<"lower-closures", "mlir::ModuleOp"> {
 // OutlineClosures
 //===----------------------------------------------------------------------===//
 
-def OutlineClosures : Pass<"outline-closures", "mlir::ModuleOp"> {
+def OutlineClosures : Pass<"outline-closures", "ModuleOp"> {
   let summary = "Outlines region parameters into explicit closures.";
   let description = [{
     This pass outlines region parameters into functions that are called with
@@ -205,7 +205,7 @@ def OutlineClosures : Pass<"outline-closures", "mlir::ModuleOp"> {
 // LowerKGENToLLVM
 //===----------------------------------------------------------------------===//
 
-def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "mlir::ModuleOp"> {
+def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "ModuleOp"> {
   let summary = "Lower the `kgen` dialect to the `llvm` dialect.";
   let description = [{
     This pass performs a conversion from the fully-elaborated and specified
@@ -285,7 +285,7 @@ def TweakSpilledAllocas : Pass<"tweak-spilled-allocas",
 //===----------------------------------------------------------------------===//
 
 def LowerKGENCoroutinesAsync : Pass<"lower-coroutines-async",
-                                    "mlir::ModuleOp"> {
+                                    "ModuleOp"> {
   let summary = "Lower async functions to async LLVM coroutines.";
   let description = [{
     The `lower-coroutines-async` pass lowers KGEN coroutines implemented with
@@ -317,7 +317,7 @@ def LowerPOPToLLVM : Pass<"lower-pop-to-llvm"> {
 // LowerGlobalPOPToLLVM
 //===----------------------------------------------------------------------===//
 
-def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "mlir::ModuleOp"> {
+def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "ModuleOp"> {
   let summary = "Lower global `pop` dialect operations to the `llvm` dialect.";
   let description = [{
     This module pass lowers `pop` operations that have global implications,
@@ -365,7 +365,7 @@ def LowerControlFlow : Pass<"lower-control-flow"> {
 // ElaborateGenerators
 //===----------------------------------------------------------------------===//
 
-def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
+def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
   let summary = "elaborate generators into fully concrete funcs";
   let description = [{
     This pass performs the elaboration step for the kgen pipeline,
@@ -403,7 +403,7 @@ def ElaborateGenerators : Pass<"elaborate-generators", "mlir::ModuleOp"> {
 // InlineParametric
 //===----------------------------------------------------------------------===//
 
-def InlineParametric : Pass<"inline-param", "mlir::ModuleOp"> {
+def InlineParametric : Pass<"inline-param", "ModuleOp"> {
   let summary = "Process concrete 'always_inline' operations and heuristics";
   let description = [{
     The `inline-param` pass will process all concrete calls to
@@ -430,10 +430,24 @@ def InlineParametric : Pass<"inline-param", "mlir::ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// ApplyInliner
+//===----------------------------------------------------------------------===//
+
+def ApplyInliner : Pass<"apply-inliner", "ModuleOp"> {
+  let summary = "Inline trivial 'apply' operators in parameter expressions.";
+  let description = [{
+    The `apply-inline` pass processes `apply` operators on trivial functions, by
+    certain definitions of trivial. This could be, for example, simplify
+    parameter calls to functions that just return an argument or a constant. The
+    primary goal of this pass is to simplify parameter expressions in the IR.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // ForceInline
 //===----------------------------------------------------------------------===//
 
-def ForceInline : Pass<"force-inline", "mlir::ModuleOp"> {
+def ForceInline : Pass<"force-inline", "ModuleOp"> {
   let summary = "Process all 'always_inline' functions";
   let description = [{
     The `force-inline` pass will process all calls to 'always_inline` functions
@@ -811,7 +825,7 @@ def StripParserMetadata : Pass<"strip-parser-metadata"> {
 // LowerRuntimeClosures
 //===----------------------------------------------------------------------===//
 
-def LowerRuntimeClosures : Pass<"lower-runtime-closures", "mlir::ModuleOp"> {
+def LowerRuntimeClosures : Pass<"lower-runtime-closures", "ModuleOp"> {
   let summary = "Lowers closure types into struct of two pointers";
 
   let description = [{
@@ -837,7 +851,7 @@ def LowerRuntimeClosures : Pass<"lower-runtime-closures", "mlir::ModuleOp"> {
 // SynthesizeDebugInfo
 //===----------------------------------------------------------------------===//
 
-def SynthesizeDebugInfo : Pass<"synth-debuginfo", "mlir::ModuleOp"> {
+def SynthesizeDebugInfo : Pass<"synth-debuginfo", "ModuleOp"> {
   let summary = "Synthesize debuginfo from IR locations";
 
   let description = [{
@@ -915,7 +929,7 @@ def LowerLoops: Pass<"lower-loops", "KGEN::FuncOp"> {
 // AutomaticInliner
 //===----------------------------------------------------------------------===//
 
-def AutomaticInline: Pass<"automatic-inline", "mlir::ModuleOp"> {
+def AutomaticInline: Pass<"automatic-inline", "ModuleOp"> {
   let summary = "KGEN automatic inliner pass";
   let description = [{
     The `automatic inliner` pass inlines functions with InlineLevel::Automatic
@@ -974,7 +988,7 @@ def SCCP: Pass<"sccp"> {
 //===----------------------------------------------------------------------===//
 
 def DeadArgumentElimination:
-    Pass<"dead-argument-elimination", "mlir::ModuleOp"> {
+    Pass<"dead-argument-elimination", "ModuleOp"> {
   let summary = "KGEN dead argument elimination`";
   let description = [{
     The `dead argument elimination` pass eliminates dead function arguments and

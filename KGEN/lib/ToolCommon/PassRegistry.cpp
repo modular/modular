@@ -22,6 +22,7 @@ void KGEN::registerDefaultKGENPasses() {
   mlir::registerConvertIndexToLLVMPass();
 
   // Register opt passes.
+  KGEN::registerApplyInliner();
   KGEN::registerCanonicalizer();
   KGEN::registerCheckLifetimes();
   KGEN::registerEliminateDeadSymbols();

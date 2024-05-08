@@ -1202,19 +1202,6 @@ kgen.generator @top() {
 
 // -----
 
-kgen.generator @trivial<T: type>(%arg0: !kgen.paramref<T>) -> !kgen.paramref<T> {
-  kgen.return %arg0 : !kgen.paramref<T>
-}
-
-// CHECK-LABEL: kgen.generator @trivial_exprs
-kgen.generator @trivial_exprs() {
-  // CHECK-NEXT: constant = <2>
-  kgen.param.constant = <apply(:(index) -> index @trivial<:type index>, 2)>
-  kgen.return
-}
-
-// -----
-
 // CHECK-LABEL: kgen.generator @inline_heuristic
 kgen.generator @inline_heuristic<A>() {
   // CHECK: %[[V:.*]] = "some.producer"
