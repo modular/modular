@@ -125,7 +125,50 @@ endif()
 
 set(MBLACK_BIN "${CMAKE_BINARY_DIR}/lib/mblack/mblack${CMAKE_EXECUTABLE_SUFFIX}")
 set(MBLACK_SRC_DIR "${MODULAR_UTILS_DIR}/mblack/src")
-set(MBLACK_SRC "${MBLACK_SRC_DIR}/mblack/__main__.py")
+
+# Track all of the files part of the mblack project, which are all important
+# for the building of the `mblack` binary.
+set(MBLACK_FILES
+  ${MBLACK_SRC_DIR}/mblack/__init__.py
+  ${MBLACK_SRC_DIR}/mblack/__main__.py
+  ${MBLACK_SRC_DIR}/mblack/brackets.py
+  ${MBLACK_SRC_DIR}/mblack/cache.py
+  ${MBLACK_SRC_DIR}/mblack/comments.py
+  ${MBLACK_SRC_DIR}/mblack/concurrency.py
+  ${MBLACK_SRC_DIR}/mblack/const.py
+  ${MBLACK_SRC_DIR}/mblack/debug.py
+  ${MBLACK_SRC_DIR}/mblack/files.py
+  ${MBLACK_SRC_DIR}/mblack/handle_ipynb_magics.py
+  ${MBLACK_SRC_DIR}/mblack/linegen.py
+  ${MBLACK_SRC_DIR}/mblack/lines.py
+  ${MBLACK_SRC_DIR}/mblack/mode.py
+  ${MBLACK_SRC_DIR}/mblack/nodes.py
+  ${MBLACK_SRC_DIR}/mblack/numerics.py
+  ${MBLACK_SRC_DIR}/mblack/output.py
+  ${MBLACK_SRC_DIR}/mblack/parsing.py
+  ${MBLACK_SRC_DIR}/mblack/py.typed
+  ${MBLACK_SRC_DIR}/mblack/report.py
+  ${MBLACK_SRC_DIR}/mblack/rusty.py
+  ${MBLACK_SRC_DIR}/mblack/strings.py
+  ${MBLACK_SRC_DIR}/mblack/trans.py
+
+  ${MBLACK_SRC_DIR}/mblib2to3/__init__.py
+  ${MBLACK_SRC_DIR}/mblib2to3/Grammar.txt
+  ${MBLACK_SRC_DIR}/mblib2to3/PatternGrammar.txt
+  ${MBLACK_SRC_DIR}/mblib2to3/pygram.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pytree.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pgen2/__init__.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pgen2/conv.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pgen2/driver.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pgen2/grammar.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pgen2/literals.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pgen2/parse.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pgen2/pgen.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pgen2/token.py
+  ${MBLACK_SRC_DIR}/mblib2to3/pgen2/tokenize.py
+
+  ${MBLACK_SRC_DIR}/_mblack_version.py
+)
 
 add_custom_command(
   OUTPUT "${MBLACK_BIN}"
@@ -133,8 +176,8 @@ add_custom_command(
     "${PYTHON_EXE}" -m PyInstaller -y -D --name mblack
     --add-data "${MBLACK_SRC_DIR}/mblib2to3${mblackPathSeparator}mblib2to3"
     --distpath "${CMAKE_BINARY_DIR}/lib"
-    "${MBLACK_SRC}"
-  DEPENDS "${MBLACK_SRC}" "${MBLACK_SRC_DIR}/mblib2to3/Grammar.txt"
+    "${MBLACK_SRC_DIR}/mblack/__main__.py"
+  DEPENDS ${MBLACK_FILES}
   COMMENT "Building mblack."
   VERBATIM
   )
