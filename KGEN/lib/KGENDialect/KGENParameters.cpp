@@ -485,12 +485,21 @@ static void collectUses(ParameterUseDefGraph &g, VerifyingParameterCollector &c,
     impl::scanAllAttrsAndTypes(op, scanAttr, scanType);
   }
 
+  // Operations that are implicitly parametric need to be visited even if they
+  // don't contain parameter expressions or parameter uses. Defer to the
+  // interface if it is implemented; otherwise, consider all generator users to
+  // be parametric.
+  auto isImplicitlyParametric = [&] {
+    return (itf && itf.isImplicitlyParametric()) ||
+           isa<GeneratorUserOpInterface>(op);
+  };
+
   // If the operation is parametric, add it to the list.
   if (hasConstExpr || !uses.empty()) {
     if (!isDefOrDecl)
       g.paramOps.push_back(op);
     g.opUses[op] = std::move(uses);
-  } else if (!isDefOrDecl && itf && itf.isImplicitlyParametric()) {
+  } else if (!isDefOrDecl && isImplicitlyParametric()) {
     // Track implicitly parametric operations only when they don't already
     // declare parameters.
     g.paramOps.push_back(op);

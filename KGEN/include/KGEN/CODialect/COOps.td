@@ -95,10 +95,8 @@ def CO_SuspendEndOp : COOp<"suspend.end", [Pure, Terminator,
 def CO_InvokeOp : COOp<"invoke", [
     DeclareOpInterfaceMethods<KGEN_CallOpInterface>,
     DeclareOpInterfaceMethods<KGEN_GeneratorUserOpInterface>,
-    DeclareOpInterfaceMethods<ParamOpInterface, ["isImplicitlyParametric"]>,
     TypesMatchWith<"callee argument types", "callee", "operands",
-                   "cast<SignatureType>($_self).getArguments()">]>,
-    CallLikeOperation {
+                   "cast<SignatureType>($_self).getArguments()">]> {
   let summary = "invoke an async function, forming a coroutine";
   let description = [{
     The `co.invoke` operation calls an `async` parametric callable. It returns

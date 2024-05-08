@@ -1871,11 +1871,6 @@ LogicalResult AsyncCallOp::verify() {
   return success();
 }
 
-bool AsyncCallOp::isImplicitlyParametric() { return true; }
-
-void AsyncCallOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
-
 //===----------------------------------------------------------------------===//
 // ReturnOp
 //===----------------------------------------------------------------------===//
