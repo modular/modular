@@ -83,19 +83,19 @@ struct AsyncContext:
     to available.
     """
 
-    alias callback_fn_type = fn (Pointer[NoneType], Chain) -> None
+    alias callback_fn_type = fn (UnsafePointer[NoneType], Chain) -> None
 
     var callback: Self.callback_fn_type
     var chain: Chain
 
     @staticmethod
-    fn get_chain(ctx: Pointer[AsyncContext]) -> Pointer[Chain]:
-        return LegacyPointer.address_of(ctx[].chain)
+    fn get_chain(ctx: UnsafePointer[AsyncContext]) -> UnsafePointer[Chain]:
+        return UnsafePointer.address_of(ctx[].chain)
 
     @staticmethod
-    fn complete(hdl: Pointer[NoneType], ch: Chain):
+    fn complete(hdl: UnsafePointer[NoneType], ch: Chain):
         var tmp = ch
-        _async_complete(Pointer[Chain].address_of(tmp))
+        _async_complete(UnsafePointer[Chain].address_of(tmp))
 
 
 # ===----------------------------------------------------------------------===#
@@ -103,17 +103,17 @@ struct AsyncContext:
 # ===----------------------------------------------------------------------===#
 
 
-fn _init_llcl_chain(rt: Runtime, chain: Pointer[Chain]):
+fn _init_llcl_chain(rt: Runtime, chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_InitializeChain", NoneType](
         rt.ptr, chain.address
     )
 
 
-fn _del_llcl_chain(chain: Pointer[Chain]):
+fn _del_llcl_chain(chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_DestroyChain", NoneType](chain.address)
 
 
-fn _async_and_then(hdl: AnyCoroutine, chain: Pointer[Chain]):
+fn _async_and_then(hdl: AnyCoroutine, chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_AndThen", NoneType](
         _coro_resume_fn, chain.address, hdl
     )
@@ -127,11 +127,11 @@ fn _async_execute[
     )
 
 
-fn _async_wait(chain: Pointer[Chain]):
+fn _async_wait(chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_Wait", NoneType](chain.address)
 
 
-fn _async_complete(chain: Pointer[Chain]):
+fn _async_complete(chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_Complete", NoneType](chain.address)
 
 
@@ -140,26 +140,26 @@ struct ChainPromise:
 
     fn __init__(inout self, rt: Runtime):
         self.chain = Chain()
-        _init_llcl_chain(rt, LegacyPointer.address_of(self.chain))
+        _init_llcl_chain(rt, UnsafePointer.address_of(self.chain))
 
     fn __init__(inout self, owned chain: Chain):
         self.chain = chain
 
     fn __del__(owned self):
         if self.chain:
-            _del_llcl_chain(LegacyPointer.address_of(self.chain))
+            _del_llcl_chain(UnsafePointer.address_of(self.chain))
 
     @always_inline
     fn __await__(self):
         @always_inline
         @parameter
         fn await_body(cur_hdl: AnyCoroutine):
-            _async_and_then(cur_hdl, LegacyPointer.address_of(self.chain))
+            _async_and_then(cur_hdl, UnsafePointer.address_of(self.chain))
 
         _suspend_async[await_body]()
 
     fn wait(self):
-        _async_wait(LegacyPointer.address_of(self.chain))
+        _async_wait(UnsafePointer.address_of(self.chain))
 
 
 # ===----------------------------------------------------------------------===#
@@ -270,7 +270,9 @@ struct Runtime:
         desired_worker_id: Int = -1,
     ) -> Task[type]:
         """Run the coroutine as a task on the LLCL Runtime."""
-        var ctx = handle._get_ctx[AsyncContext]()
+        var ctx: UnsafePointer[AsyncContext] = handle._get_ctx[
+            AsyncContext
+        ]().address
         _init_llcl_chain(self, AsyncContext.get_chain(ctx))
         ctx[].callback = AsyncContext.complete
         _async_execute[type](handle._handle, self, desired_worker_id)
@@ -301,8 +303,10 @@ struct Task[type: AnyRegType]:
         """Destroy the memory associated with a task. This must be manually
         called when a task goes out of scope.
         """
-        var ctx: Pointer[AsyncContext] = self.handle._get_ctx[AsyncContext]()
-        var chainPtr: Pointer[Chain] = AsyncContext.get_chain(ctx)
+        var ctx: UnsafePointer[AsyncContext] = self.handle._get_ctx[
+            AsyncContext
+        ]().address
+        var chainPtr: UnsafePointer[Chain] = AsyncContext.get_chain(ctx)
         _del_llcl_chain(chainPtr)
         _ = self.handle^
 
@@ -318,7 +322,9 @@ struct Task[type: AnyRegType]:
         fn await_body(cur_hdl: AnyCoroutine):
             _async_and_then(
                 cur_hdl,
-                AsyncContext.get_chain(self.handle._get_ctx[AsyncContext]()),
+                AsyncContext.get_chain(
+                    self.handle._get_ctx[AsyncContext]().address
+                ),
             )
 
         _suspend_async[await_body]()
@@ -327,7 +333,7 @@ struct Task[type: AnyRegType]:
     fn wait(self) -> type:
         """Block the current thread until the future value becomes available."""
         _async_wait(
-            AsyncContext.get_chain(self.handle._get_ctx[AsyncContext]())
+            AsyncContext.get_chain(self.handle._get_ctx[AsyncContext]().address)
         )
         return self.get()
 
@@ -374,13 +380,13 @@ struct TaskGroup:
 
     fn __init__(inout self, rt: Runtime):
         var chain = Chain()
-        _init_llcl_chain(rt, Pointer[Chain].address_of(chain))
+        _init_llcl_chain(rt, UnsafePointer[Chain].address_of(chain))
         self.counter = 1
         self.chain = chain
         self.rt = rt
 
     fn __del__(owned self):
-        _del_llcl_chain(Pointer[Chain].address_of(self.chain))
+        _del_llcl_chain(UnsafePointer[Chain].address_of(self.chain))
 
     @always_inline
     fn _counter_decr(inout self) -> Int:
@@ -393,7 +399,7 @@ struct TaskGroup:
 
     fn _task_complete(inout self: TaskGroup):
         if self._counter_decr() == 0:
-            _async_complete(Pointer[Chain].address_of(self.chain))
+            _async_complete(UnsafePointer[Chain].address_of(self.chain))
 
     fn create_task[
         type: AnyRegType
@@ -403,7 +409,7 @@ struct TaskGroup:
         desired_worker_id: Int = -1,
     ) -> TaskGroupTask[type]:
         self.counter += 1
-        task._get_ctx[TaskGroupContext]().store(
+        LegacyPointer(task._get_ctx[TaskGroupContext]().address).store(
             TaskGroupContext {
                 callback: Self._task_complete_callback,
                 task_group: Pointer[TaskGroup].address_of(self),
@@ -414,7 +420,7 @@ struct TaskGroup:
 
     @staticmethod
     fn await_body_impl(hdl: AnyCoroutine, inout task_group: TaskGroup):
-        _async_and_then(hdl, Pointer[Chain].address_of(task_group.chain))
+        _async_and_then(hdl, UnsafePointer[Chain].address_of(task_group.chain))
         task_group._task_complete()
 
     @always_inline
@@ -428,7 +434,7 @@ struct TaskGroup:
 
     fn wait(inout self):
         self._task_complete()
-        _async_wait(Pointer[Chain].address_of(self.chain))
+        _async_wait(UnsafePointer[Chain].address_of(self.chain))
 
 
 # ===----------------------------------------------------------------------===#
@@ -568,7 +574,9 @@ struct MojoCallTask:
     ) -> Self:
         var result = Self {coro: coro^}
         # Set the callback and payload.
-        result.coro._get_ctx[_MojoCallTaskContext]().store(
+        LegacyPointer(
+            result.coro._get_ctx[_MojoCallTaskContext]().address
+        ).store(
             _MojoCallTaskContext {
                 callback: _MojoCallTaskContext.callback_impl, payload: ctx.ptr
             }
@@ -659,7 +667,9 @@ struct MojoCallRaisingTask:
         owned coro: Coroutine[_OptionalError], ctx: MojoCallContextPtr
     ) -> Self:
         var result = Self {coro: coro^}
-        result.coro._get_ctx[_MojoCallRaisingTaskContext]().store(
+        LegacyPointer(
+            result.coro._get_ctx[_MojoCallRaisingTaskContext]().address
+        ).store(
             _MojoCallRaisingTaskContext {
                 callback: _MojoCallRaisingTaskContext.callback_impl,
                 payload: ctx.ptr,
