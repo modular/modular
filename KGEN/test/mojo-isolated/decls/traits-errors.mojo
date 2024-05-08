@@ -33,11 +33,6 @@ fn different_trait_types[T: Copyable, U: Copyable](x: T) -> U:
     return x
 
 
-@register_passable  # expected-error {{decorators not supported on this statement}}
-trait NoDecorators:
-    pass
-
-
 trait SimpleTrait:
     fn some_method(self):
         pass

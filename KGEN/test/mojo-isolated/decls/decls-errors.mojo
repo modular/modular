@@ -482,6 +482,48 @@ fn someFn2():
   if True: # expected-error {{unknown tokens at the end of a declaration}}
     pass
 
+@register_passable  # expected-error {{unsupported decorator on this statement}}
+trait NoDecorators:
+    pass
+
+##===----------------------------------------------------------------------===##
+# @deprecated
+##===----------------------------------------------------------------------===##
+
+@deprecated("use of deprecated struct 'DeprecatedStruct'")
+# expected-note @below {{'DeprecatedStruct' declared here}}
+struct DeprecatedStruct:
+    pass
+
+@deprecated("deprecated overload")
+# expected-note @below {{'foobar' declared here}}
+fn foobar():
+    pass
+
+# expected-warning @below {{use of deprecated struct 'DeprecatedStruct'}}
+fn foobar(value: DeprecatedStruct):
+    pass
+
+
+fn deprecated_function():
+   # expected-warning @below {{deprecated overload}}
+   foobar()
+
+
+from imported_module import DeprecatedInAnotherModule
+
+
+# expected-warning @below {{use of deprecated struct 'DeprecatedInAnotherModule'}}
+fn use_deprecated_import(value: DeprecatedInAnotherModule):
+    pass
+
+
+# expected-error @below {{@deprecated requires a warning message}}
+@deprecated
+fn no_message():
+    pass
+
+
 ##===----------------------------------------------------------------------===##
 # Structs
 ##===----------------------------------------------------------------------===##

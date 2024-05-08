@@ -940,14 +940,13 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   mlir::UnitAttr none;
   build(builder, result, name, ParamDeclAttr(), TypeAttr::get(signature),
-        TypeAttr::get(signature.getValues()),
-        /*params=*/ParamDeclArrayAttr::get(ctx, {}),
+        TypeAttr::get(signature.getValues()), ParamDeclArrayAttr::get(ctx, {}),
         DecoratorsAttr::get(ctx, {}), /*isStatic=*/none, /*isDef=*/none,
         /*isInherited=*/none, /*isSynthetic=*/none,
         ExportKindAttr::get(ctx, ExportKind::NotExported),
         InlineLevelAttr::get(ctx, InlineLevel::Automatic),
         builder.getI8IntegerAttr(uint8_t(specialFnKind)), FlatSymbolRefAttr(),
-        StringAttr(), StringAttr(), sourceName, DocStringAttr(),
+        StringAttr(), StringAttr(), sourceName, DocStringAttr(), StringAttr(),
         DictionaryAttr::get(ctx));
   result.regions[0]->push_back(new Block());
 }
@@ -982,7 +981,7 @@ static ParseResult parseTypeConvention(AsmParser &p, TypeConvention &value) {
 static void printTypeConvention(AsmPrinter &p, Operation *op,
                                 TypeConvention value) {
   if (value != TypeConvention::MemoryOnly)
-    p << stringifyTypeConvention(value);
+    p << ' ' << stringifyTypeConvention(value);
 }
 
 static ParseResult parseStructParameterSpec(AsmParser &p,
@@ -1145,11 +1144,10 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), DecoratorsAttr::get(ctx, {}),
-        TypeLineageArrayAttr::get(ctx, {}), /*isSynthetic=*/nullptr,
-        /*nonmaterializableTarget=*/nullptr,
-        /*destructor=*/nullptr, /*moveInit=*/nullptr, /*copyInit=*/nullptr,
-        /*closureSignature=*/nullptr, /*docString=*/nullptr,
-        /*sourceName=*/nullptr);
+        TypeLineageArrayAttr::get(ctx, {}), /*isSynthetic=*/{},
+        /*nonmaterializableTarget=*/{}, /*destructor=*/{}, /*moveInit=*/{},
+        /*copyInit=*/{}, /*closureSignature=*/{}, /*docString=*/{},
+        /*deprecationWarning=*/{}, /*sourceName=*/{});
   result.regions[0]->push_back(new Block());
 }
 
@@ -1182,7 +1180,7 @@ Type StructFieldOp::getReboundType(DeclRefType structSelfType) {
 
 void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
                           StringAttr name, Type type) {
-  build(builder, odsState, name, type, nullptr);
+  build(builder, odsState, name, type, /*docString=*/{});
 }
 
 void StructFieldOp::build(OpBuilder &builder, OperationState &odsState,
@@ -1599,7 +1597,7 @@ void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
   MLIRContext *ctx = builder.getContext();
   build(builder, result, name, TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}), TypeLineageArrayAttr::get(ctx, {}),
-        /*dtorSig=*/nullptr, /*docString=*/nullptr);
+        /*dtorSig=*/{}, /*docString=*/{}, /*deprecationWarning=*/{});
   result.regions[0]->push_back(new Block());
 }
 
@@ -1772,11 +1770,9 @@ void VarDeclOp::build(OpBuilder &b, OperationState &state, Type elementType,
   auto lifetimeType = b.getType<LifetimeType>(/*isMutable=*/true);
   auto lifetimeNameAttr = b.getAttr<StringAttr>(lifetimeName);
   auto lifetimeDecl = ParamDeclAttr::get(lifetimeNameAttr, lifetimeType);
-  // Lets are mutable because they may be lazy initialized.
   auto resultType = RefType::get(
       elementType, ParamDeclRefAttr::get(lifetimeNameAttr, lifetimeType));
-  build(b, state, resultType, name, kind, lifetimeDecl, /*docString=*/{},
-        /*argShadowIndex=*/{});
+  build(b, state, resultType, name, kind, lifetimeDecl, /*argShadowIndex=*/{});
 }
 
 bool VarDeclOp::isSynthetic() { return getKind() == VarDeclKind::Synthesized; }

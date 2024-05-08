@@ -707,11 +707,18 @@ TypedAttr ParamBindings::getBoundConstAttrFor(LIT::FuncOp funcOp,
 }
 
 /// Resolve the callee into a single PValue callee.
-static PValue getCallee(ArrayRef<ASTDecl *> fnDecls, StringRef baseName,
-                        const ParamBindings &paramBindings,
+static PValue getCallee(SharedState &shared, ArrayRef<ASTDecl *> fnDecls,
+                        StringRef baseName, const ParamBindings &paramBindings,
                         const ExprNode *expr) {
   assert(fnDecls.size() == 1 && "expected a single resolved callee");
   auto funcOp = cast<LIT::FuncOp>(*fnDecls.front());
+  // Check if the function overload set resolved to a deprecated overload.
+  if (StringAttr warning = funcOp.getDeprecationWarningAttr()) {
+    auto diag = shared.emitWarning(expr->getLoc(), warning.getValue())
+                << expr->getRange();
+    diag.attachNote(fnDecls.front()->getLoc())
+        << "'" << *funcOp.getSourceName() << "' declared here";
+  }
   return paramBindings.getBoundConstAttrFor(funcOp, baseName, expr);
 }
 
@@ -891,7 +898,7 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : bestFitness->getParamBindings())
       newBindings.addPrechecked(bind);
-    return getCallee(newFnDecls, baseName, newBindings, expr);
+    return getCallee(getShared(), newFnDecls, baseName, newBindings, expr);
   }
 
   // Otherwise, we have multiple viable candidates that are ambiguous because
@@ -1002,8 +1009,10 @@ PValue OverloadSet::filterOverloadSetForValueType(
 
   // If we have exactly one viable candidate, then we succeed.
   if (validCandidates.size() == 1) {
-    if (paramBindings.empty())
-      return getCallee(validCandidates, baseName, paramBindings, expr);
+    if (paramBindings.empty()) {
+      return getCallee(getShared(), validCandidates, baseName, paramBindings,
+                       expr);
+    }
 
     LITSignatureType candidateType =
         cast<LIT::FuncOp>(*fnDecls.front()).getFullSignature();
@@ -1011,7 +1020,7 @@ PValue OverloadSet::filterOverloadSetForValueType(
     ParamBindings newBindings((const TypeCheckScopeInfo &)paramBindings);
     for (TypedAttr bind : getBindingsForSignature(candidateType))
       newBindings.addPrechecked(bind);
-    return getCallee(validCandidates, baseName, newBindings, expr);
+    return getCallee(getShared(), validCandidates, baseName, newBindings, expr);
   }
 
   // If we aren't to emit a diagnostic, just return the failure.
@@ -1060,8 +1069,7 @@ TypedAttr OverloadSet::getBoundConstantAttr() const {
     return {};
   }
 
-  return paramBindings.getBoundConstAttrFor(cast<LIT::FuncOp>(*fnDecls[0]),
-                                            baseName, expr);
+  return getCallee(getShared(), fnDecls, baseName, paramBindings, expr);
 }
 
 /// Get a OverloadSet for a lookup of a named method on the specified type.

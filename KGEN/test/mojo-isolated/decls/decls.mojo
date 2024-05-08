@@ -265,8 +265,13 @@ fn useIt(a: __mlir_type.index) -> __mlir_type.index:
     # CHECK: %index3 = kgen.param.constant = <3>
     # CHECK: %0 = lit.call @decls::@"math(
     # CHECK: lit.return %0 : index
-    return math(a, math(__mlir_op.`index.constant`[value = __mlir_attr.`1:index`](),
-                        __mlir_op.`index.constant`[value = __mlir_attr.`2:index`]()))
+    return math(
+        a,
+        math(
+            __mlir_op.`index.constant`[value = __mlir_attr.`1:index`](),
+            __mlir_op.`index.constant`[value = __mlir_attr.`2:index`](),
+        ),
+    )
 
 
 @always_inline("nodebug")
@@ -1161,6 +1166,44 @@ fn decorated_fn():
 @decorator_arg(2)
 struct DecoratedStruct:
     pass
+
+
+##===----------------------------------------------------------------------===##
+# @deprecated
+##===----------------------------------------------------------------------===##
+
+
+# CHECK-LABEL: lit.struct.decl @DeprecatedStruct
+# CHECK-SAME: deprecationWarning = "struct"
+@deprecated("struct")
+struct DeprecatedStruct:
+    pass
+
+
+# CHECK-LABEL: lit.func @"deprecated_func
+# CHECK-SAME: deprecationWarning = "func"
+@deprecated("func")
+fn deprecated_func():
+    pass
+
+
+# CHECK-LABEL: lit.trait.decl @DeprecatedTrait
+# CHECK-SAME: deprecationWarning = "trait"
+@deprecated("trait")
+trait DeprecatedTrait:
+    pass
+
+
+# CHECK-LABEL: lit.globalvar.decl @deprecated_global
+# CHECK-SAME: deprecationWarning = "global"
+@deprecated("global")
+var deprecated_global = 1
+
+
+# CHECK-LABEL: lit.alias.decl
+# CHECK-SAME: deprecationWarning = "alias"
+@deprecated("alias")
+alias deprecated_alias = 1
 
 
 ##===----------------------------------------------------------------------===##
