@@ -4151,6 +4151,12 @@ fn no_mask_flash_attention_cpu[
 fn with_mask_flash_attention_split_kv_cache_cpu[
     type: DType,
     rank: Int,
+    input_1_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_2_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
     input_3_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -4165,8 +4171,8 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
     target: StringLiteral = "cpu",
 ](
     q: NDBuffer[type, rank],
-    k: NDBuffer[type, rank],
-    v: NDBuffer[type, rank],
+    input_1_shape: StaticIntTuple[rank],
+    input_2_shape: StaticIntTuple[rank],
     input_3_shape: StaticIntTuple[rank + 1],
     input_4_shape: StaticIntTuple[rank + 1],
     input_5_shape: StaticIntTuple[rank],
@@ -4186,8 +4192,8 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
 
     Arguments have the following shapes:
         q: BHSD
-        k: BHSD
-        v: BHSD
+        input_1_fn (k): BHSD
+        input_2_fn (v): BHSD
         input_3_fn (k_cache): 1BHSD
         input_4_fn (v_cache: 1BHSD
     """
@@ -4196,18 +4202,20 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
 
     constrained[target == "cpu"]()
 
-    with Trace[TraceLevel.OP]("mojo.flash_attention_split_kv") as t:
+    with Trace[TraceLevel.OP]("mojo.flash_attention_split_kv"):
         cpu_flash_attention_split_kv[
             type,
             rank,
+            input_1_fn,
+            input_2_fn,
             input_3_fn,
             input_4_fn,
             input_5_fn,
             input_7_static_shape,
         ](
             q,
-            k,
-            v,
+            input_1_shape,
+            input_2_shape,
             input_3_shape,
             input_4_shape,
             output,
