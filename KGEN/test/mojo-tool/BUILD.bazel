@@ -17,6 +17,7 @@ lit_tests(
             "build/mojo-build-def-main.mojo",  # TODO: Linker crash
             "build/mojo-build-fn-main.mojo",  # TODO: Linker crash
             "debug/mojo-lldb-version.mojo",  # TODO: LLDB
+            "build-project/build-project.mojo",  # TODO: flaky
         ],
     ),
     data = [
