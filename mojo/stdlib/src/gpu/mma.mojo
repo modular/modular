@@ -7,7 +7,7 @@
 warp-matrix-matrix-multiplication (wmma) instructions."""
 
 from sys import llvm_intrinsic, _RegisterPackType
-
+from utils import StaticTuple
 from memory.unsafe import Pointer, bitcast
 from gpu.memory import AddressSpace
 
