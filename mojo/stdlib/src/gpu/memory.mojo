@@ -51,7 +51,7 @@ fn async_copy[
 
 @always_inline
 fn async_copy[
-    size: Int, type: AnyRegType
+    size: Int, type: AnyRegType, bypass_L1_16B: Bool = True
 ](
     src: Pointer[type, AddressSpace.GLOBAL],
     dst: Pointer[type, AddressSpace.SHARED],
@@ -62,6 +62,7 @@ fn async_copy[
     Parameters:
         size: Number of bytes to copy.
         type: The pointer type.
+        bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
 
     Args:
         src: Global memory pointer.
@@ -70,24 +71,15 @@ fn async_copy[
     # TODO: Constrained on device capability.
     constrained[size == 4 or size == 8 or size == 16]()
 
-    @parameter
-    if size == 4:
-        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.4", NoneType](
-            dst, src
-        )
-    elif size == 8:
-        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.8", NoneType](
-            dst, src
-        )
-    else:
-        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.16", NoneType](
-            dst, src
-        )
+    alias cache_op = "cg" if (bypass_L1_16B and size == 16) else "ca"
+    alias access_size = "4" if size == 4 else ("8" if size == 8 else "16")
+    alias command = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size
+    llvm_intrinsic[command, NoneType](dst, src)
 
 
 @always_inline
 fn async_copy[
-    size: Int, type: AnyRegType
+    size: Int, type: AnyRegType, bypass_L1_16B: Bool = True
 ](
     src: Pointer[type, AddressSpace.GLOBAL],
     dst: Pointer[type, AddressSpace.SHARED],
@@ -99,6 +91,7 @@ fn async_copy[
     Parameters:
         size: Number of bytes to copy.
         type: The pointer type.
+        bypass_L1_16B: Bypass the L1 cache for 16 bypes copy.
 
     Args:
         src: Global memory pointer.
@@ -110,19 +103,10 @@ fn async_copy[
     # TODO: Constrained on device capability.
     constrained[size == 4 or size == 8 or size == 16]()
 
-    @parameter
-    if size == 4:
-        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.4.s", NoneType](
-            dst, src, src_size
-        )
-    elif size == 8:
-        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.8.s", NoneType](
-            dst, src, src_size
-        )
-    else:
-        llvm_intrinsic["llvm.nvvm.cp.async.ca.shared.global.16.s", NoneType](
-            dst, src, src_size
-        )
+    alias cache_op = "cg" if (bypass_L1_16B and size == 16) else "ca"
+    alias access_size = "4" if size == 4 else ("8" if size == 8 else "16")
+    alias command = "llvm.nvvm.cp.async." + cache_op + ".shared.global." + access_size + ".s"
+    llvm_intrinsic[command, NoneType](dst, src, src_size)
 
 
 @always_inline
