@@ -8,6 +8,9 @@ from layout import LayoutTensor, Layout
 from layout.int_tuple import to_int, depth
 from layout.layout import make_layout
 
+from gpu.memory import async_copy
+from memory.reference import AddressSpace, _GPUAddressSpace
+
 from buffer import NDBuffer
 from buffer.list import DimList, Dim
 
@@ -282,6 +285,7 @@ fn _copy_nd_buffer_to_layout_tensor[
     dst_address_space: AddressSpace,
     tensor_element_layout: Layout,
     buff_element_layout_shape: StaticIntTuple[src_rank],
+    is_async: Bool = False,
 ](
     dst: LayoutTensor[
         dtype,
@@ -321,12 +325,25 @@ fn _copy_nd_buffer_to_layout_tensor[
                 i * vec_size, src, buff_element_layout
             )
 
-            var src_element = src.data.offset(src_idx).load[
-                width=vec_size, alignment=alignment
-            ]()
-            dst.ptr.offset(dst_idx).store[width=vec_size, alignment=alignment](
-                src_element
-            )
+            @parameter
+            if is_async:
+                alias element_size_bytes = vec_size * sizeof[dtype]()
+                var src_ptr = src.data.bitcast[
+                    address_space = _GPUAddressSpace.GLOBAL
+                ]()
+                var dst_ptr = dst.ptr.bitcast[
+                    address_space = _GPUAddressSpace.SHARED
+                ]()
+                async_copy[element_size_bytes](
+                    src_ptr + src_idx, dst_ptr + dst_idx
+                )
+            else:
+                var src_element = src.data.offset(src_idx).load[
+                    width=vec_size, alignment=alignment
+                ]()
+                dst.ptr.offset(dst_idx).store[
+                    width=vec_size, alignment=alignment
+                ](src_element)
 
         unroll[_copy_vector, num_elements]()
     # 2d-vector load/store
@@ -349,15 +366,28 @@ fn _copy_nd_buffer_to_layout_tensor[
                     j, buff_element_layout
                 )
 
-                var src_vec = src.data.load[
-                    width=vec_width,
-                    alignment = alignof[SIMD[dtype, vec_width]](),
-                ](src_idx).cast[dtype]()
+                @parameter
+                if is_async:
+                    alias element_size_bytes = vec_width * sizeof[dtype]()
+                    var src_ptr = src.data.bitcast[
+                        address_space = _GPUAddressSpace.GLOBAL
+                    ]()
+                    var dst_ptr = dst.ptr.bitcast[
+                        address_space = _GPUAddressSpace.SHARED
+                    ]()
+                    async_copy[element_size_bytes](
+                        src_ptr + src_idx, dst_ptr + dst_idx
+                    )
+                else:
+                    var src_vec = src.data.load[
+                        width=vec_width,
+                        alignment = alignof[SIMD[dtype, vec_width]](),
+                    ](src_idx).cast[dtype]()
 
-                dst.ptr.store[
-                    width=vec_width,
-                    alignment = alignof[SIMD[dtype, vec_width]](),
-                ](dst_idx, src_vec)
+                    dst.ptr.store[
+                        width=vec_width,
+                        alignment = alignof[SIMD[dtype, vec_width]](),
+                    ](dst_idx, src_vec)
 
             unroll[copy_by_vec, num_copies]()
 
@@ -369,7 +399,18 @@ fn _copy_nd_buffer_to_layout_tensor[
         fn _copy_element[i: Int]():
             alias dst_idx = make_layout(tensor_element_layout, dst.layout)(i)
             var src_idx = _get_element_idx(i, src, buff_element_layout)
-            dst.ptr[dst_idx] = src.data[src_idx]
+
+            @parameter
+            if is_async:
+                var src_ptr = src.data.bitcast[
+                    address_space = _GPUAddressSpace.GLOBAL
+                ]()
+                var dst_ptr = dst.ptr.bitcast[
+                    address_space = _GPUAddressSpace.SHARED
+                ]()
+                async_copy[4](src_ptr + src_idx, dst_ptr + dst_idx)
+            else:
+                dst.ptr[dst_idx] = src.data[src_idx]
 
         unroll[_copy_element, num_elements * dst.element_size]()
 
@@ -490,6 +531,7 @@ fn copy_from_nd_buffer[
     src_buff_shape: DimList,
     dst_element_layout: Layout,
     thread_layout: Layout,
+    is_async: Bool = False,
 ](
     dst_thread_local: LayoutTensor[
         dtype,
@@ -528,7 +570,7 @@ fn copy_from_nd_buffer[
         var src_thread_local = distribute[thread_layout=thread_layout](
             src_vectorized_buffer, thread_id
         )
-        _copy_nd_buffer_to_layout_tensor(
+        _copy_nd_buffer_to_layout_tensor[is_async=is_async](
             dst_thread_local, src_thread_local, src_element_layout
         )
     elif dst_element_layout.rank() == 2:
@@ -541,7 +583,7 @@ fn copy_from_nd_buffer[
         var src_thread_local = distribute[thread_layout=thread_layout](
             src_vectorized_buffer, thread_id
         )
-        _copy_nd_buffer_to_layout_tensor(
+        _copy_nd_buffer_to_layout_tensor[is_async=is_async](
             dst_thread_local, src_thread_local, src_element_layout
         )
 
