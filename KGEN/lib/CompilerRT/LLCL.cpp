@@ -285,7 +285,6 @@ KGEN_CompilerRT_CreateAsyncTensorSpec(LLCLWrapper<TensorSpec> specPtr,
                                       LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
-  llvm::errs() << "create tensor spec\n";
   if (value.getPointer() && value.getPointer()->isIndirect()) {
     llvm::SmallVector<size_t> dims;
     TensorSpec &spec = unwrap(specPtr);
