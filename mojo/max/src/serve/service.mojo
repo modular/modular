@@ -7,7 +7,7 @@
 
 from utils.variant import Variant
 
-from max.engine import TensorMap, Model
+from max.engine import InputSpec, TensorMap, Model
 
 
 trait InferenceRequest(CollectionElement):
@@ -108,4 +108,6 @@ struct FileModel:
 
     var name: String
     var version: String
+
     var path: String
+    var input_specs: Optional[List[InputSpec]]

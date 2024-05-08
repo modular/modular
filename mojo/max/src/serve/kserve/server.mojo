@@ -17,7 +17,7 @@ from tensor import TensorSpec
 from time import now
 from utils.variant import Variant
 
-from max.engine import InferenceSession, Model
+from max.engine import InferenceSession, InputSpec, Model
 from max.engine._model_impl import CModel
 from max.engine._utils import handle_from_config
 from max.serve.service import (
@@ -198,7 +198,11 @@ struct MuxInferenceService(InferenceService):
             var version = model[].version
             var versioned = self._model_dict[name]
             if version not in versioned[]:
-                self._models.append(self._session.load(model[].path))
+                self._models.append(
+                    self._session.load(
+                        model[].path, input_specs=model[].input_specs
+                    )
+                )
                 var back = self._models.__get_ref(-1)
                 versioned[][version] = LegacyPointer.address_of(back.value)
             else:
