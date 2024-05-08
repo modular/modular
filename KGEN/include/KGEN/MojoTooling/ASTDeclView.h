@@ -128,6 +128,7 @@ private:
 
   std::string type;
   bool isGlobalVariable;
+  StringRef deprecated;
 };
 
 /// View for parameters of structs or functions.
@@ -304,6 +305,7 @@ private:
   // Parsed DocString
   //===----------------------------------------------------------------------===//
 
+  StringRef deprecated;
   std::string description;
   std::string summary;
 };
@@ -430,6 +432,7 @@ private:
   // Parsed DocString
   //===----------------------------------------------------------------------===//
 
+  StringRef deprecated;
   std::string constraints;
   std::string description;
   std::string raisesDoc;
@@ -556,6 +559,7 @@ private:
   // Parsed DocString
   //===----------------------------------------------------------------------===//
 
+  StringRef deprecated;
   std::string description;
   std::string summary;
   MojoASTDeclRef decl;
@@ -616,6 +620,7 @@ private:
   // Parsed DocString
   //===----------------------------------------------------------------------===//
 
+  StringRef deprecated;
   std::string constraints;
   std::string description;
   std::string summary;

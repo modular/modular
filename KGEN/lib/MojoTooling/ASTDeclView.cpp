@@ -392,6 +392,7 @@ std::string VariableDeclView::getDeclarationSnippet() const {
 
 llvm::json::Object VariableDeclView::toJSON(MojoParserContext &ctx) const {
   return llvm::json::Object{
+      {"deprecated", deprecated},
       {"kind", getKindAsString()},
       {"name", getName()},
       {"type", type},
@@ -401,7 +402,8 @@ llvm::json::Object VariableDeclView::toJSON(MojoParserContext &ctx) const {
 VariableDeclView::VariableDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_VariableDeclView,
                declRef.getName().value_or(StringRef{})),
-      isGlobalVariable(false) {
+      isGlobalVariable(false),
+      deprecated(declRef.getDeprecationWarning().value_or(StringRef())) {
   TypeSwitch<mlir::Operation *>(declRef.getIfOperation())
       .Case([&](VarDeclOp op) {
         type = declRef.getType().getReferenceElementType().getAsString();
@@ -513,11 +515,10 @@ std::string AliasDeclView::getMarkdownDocString() const {
 }
 
 llvm::json::Object AliasDeclView::toJSON(MojoParserContext &ctx) const {
-  return llvm::json::Object{{"description", description},
-                            {"kind", getKindAsString()},
-                            {"name", getName().str()},
-                            {"summary", summary},
-                            {"value", value}};
+  return llvm::json::Object{
+      {"deprecated", deprecated},  {"description", description},
+      {"kind", getKindAsString()}, {"name", getName().str()},
+      {"summary", summary},        {"value", value}};
 }
 
 /// Return if the given alias decl is global, i.e. nested within a module,
@@ -529,7 +530,8 @@ static bool isGlobalAliasDecl(MojoASTDeclRef declRef) {
 AliasDeclView::AliasDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_AliasDeclView,
                declRef.getName().value_or(StringRef())),
-      isGlobalAlias(isGlobalAliasDecl(declRef)) {
+      isGlobalAlias(isGlobalAliasDecl(declRef)),
+      deprecated(declRef.getDeprecationWarning().value_or(StringRef())) {
   auto aliasOp = cast<LIT::AliasDeclOp>(declRef->getIfOperation());
 
   llvm::raw_string_ostream valueOS(value);
@@ -685,6 +687,7 @@ llvm::json::Object FunctionDeclView::toJSON(MojoParserContext &ctx) const {
       {"args", toJSONArray(ctx, args)},
       {"async", isAsync()},
       {"constraints", constraints},
+      {"deprecated", deprecated},
       {"description", description},
       {"isDef", isDef()},
       {"isStatic", isStatic()},
@@ -702,7 +705,8 @@ llvm::json::Object FunctionDeclView::toJSON(MojoParserContext &ctx) const {
 
 FunctionDeclView::FunctionDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_FunctionDeclView,
-               declRef.getName().value_or(StringRef{})) {
+               declRef.getName().value_or(StringRef{})),
+      deprecated(declRef.getDeprecationWarning().value_or(StringRef{})) {
   auto funcOp = cast<LIT::FuncOp>(declRef.getIfOperation());
   isStaticFlag = funcOp.getIsStatic();
   isMethodFlag = !isStaticFlag && isa<StructDeclOp>(funcOp->getParentOp());
@@ -926,6 +930,7 @@ llvm::json::Object TraitDeclView::toJSON(MojoParserContext &ctx) const {
   collectParentTypes(ctx, parentTraits,
                      cast<TraitDeclOp>(*decl).getParentTypes());
   return llvm::json::Object{
+      {"deprecated", deprecated},
       {"description", description},
       {"fields", llvm::json::Array()},
       {"functions", toJSONArray(ctx, functionOverloads)},
@@ -939,6 +944,7 @@ llvm::json::Object TraitDeclView::toJSON(MojoParserContext &ctx) const {
 TraitDeclView::TraitDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_TraitDeclView,
                declRef.getName().value_or(StringRef())),
+      deprecated(declRef.getDeprecationWarning().value_or(StringRef())),
       decl(declRef) {
   if (auto docStr = decl->getParsedDocString()) {
     summary = docStr->getSummary();
@@ -1003,6 +1009,7 @@ llvm::json::Object StructDeclView::toJSON(MojoParserContext &ctx) const {
   return llvm::json::Object{
       {"aliases", toJSONArray(ctx, aliases)},
       {"constraints", constraints},
+      {"deprecated", deprecated},
       {"description", description},
       {"fields", toJSONArray(ctx, fields)},
       {"functions", toJSONArray(ctx, functionOverloads)},
@@ -1017,6 +1024,7 @@ llvm::json::Object StructDeclView::toJSON(MojoParserContext &ctx) const {
 StructDeclView::StructDeclView(MojoASTDeclRef declRef)
     : DeclView(DeclViewKind::DK_StructDeclView,
                declRef.getName().value_or(StringRef())),
+      deprecated(declRef.getDeprecationWarning().value_or(StringRef())),
       decl(declRef) {
   auto structOp = cast<StructDeclOp>(declRef.getIfOperation());
   TypeSignatureType signature = structOp.getSignature();

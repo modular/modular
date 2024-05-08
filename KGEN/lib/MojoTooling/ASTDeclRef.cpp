@@ -162,6 +162,13 @@ std::optional<StringRef> MojoASTDeclRef::getName() const {
   return getFromOp(getDefiningOpFromIR(*this));
 }
 
+std::optional<StringRef> MojoASTDeclRef::getDeprecationWarning() const {
+  if (auto declItf = dyn_cast<ASTDeclInterface>(decl->getIfOperation()))
+    if (StringAttr attr = declItf.getDeprecationWarningAttr())
+      return attr.getValue();
+  return {};
+}
+
 llvm::SMLoc MojoASTDeclRef::getLoc() const { return decl->getLoc(); }
 
 MojoASTDeclRef MojoASTDeclRef::getParentDecl() const {
