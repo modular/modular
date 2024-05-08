@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+from collections.optional import OptionalReg
 
 from layout import LayoutTensor, Layout
 from layout.int_tuple import to_int, depth
@@ -15,6 +16,8 @@ from buffer import NDBuffer
 from buffer.list import DimList, Dim
 
 from utils import StaticTuple, StaticIntTuple
+
+alias _swizzle_signature = fn[type: DType] (Scalar[type]) -> Scalar[type]
 
 
 # Returns the shape of distribute `thread_layout` into `shape`.
@@ -54,6 +57,8 @@ fn distribute[
     shape: DimList,
     thread_layout: Layout,
     _result_shape: DimList = __distribute_shape[thread_layout](shape),
+    swizzle: OptionalReg[_swizzle_signature] = None,
+    element_size: Int = 1,
 ](buff: NDBuffer[dtype, rank, shape], thread_id: Int) -> NDBuffer[
     dtype, rank, _result_shape
 ]:
@@ -73,7 +78,7 @@ fn distribute[
 
     unroll[_fill_shape_and_stride, rank]()
 
-    var thread_offset = 0
+    var thread_offset: Scalar[DType.int32] = 0
 
     @parameter
     fn _compute_offset[i: Int]():
@@ -83,6 +88,14 @@ fn distribute[
         thread_offset += thread_coords_i * buff.dynamic_stride[i]
 
     unroll[_compute_offset, rank]()
+
+    @parameter
+    if swizzle:
+        alias swizzle_fn = swizzle.value()
+        thread_offset = (
+            swizzle_fn[DType.int32](thread_offset // element_size)
+            * element_size
+        )
 
     var res = NDBuffer[dtype, rank, _result_shape](
         buff.data.offset(thread_offset),
@@ -532,6 +545,7 @@ fn copy_from_nd_buffer[
     dst_element_layout: Layout,
     thread_layout: Layout,
     is_async: Bool = False,
+    swizzle: OptionalReg[_swizzle_signature] = None,
 ](
     dst_thread_local: LayoutTensor[
         dtype,
@@ -567,9 +581,12 @@ fn copy_from_nd_buffer[
         )
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        var src_thread_local = distribute[thread_layout=thread_layout](
-            src_vectorized_buffer, thread_id
-        )
+        alias element_size = to_int(dst_element_layout.shape[0])
+        var src_thread_local = distribute[
+            thread_layout=thread_layout,
+            swizzle=swizzle,
+            element_size=element_size,
+        ](src_vectorized_buffer, thread_id)
         _copy_nd_buffer_to_layout_tensor[is_async=is_async](
             dst_thread_local, src_thread_local, src_element_layout
         )
@@ -580,9 +597,12 @@ fn copy_from_nd_buffer[
         ](src)
         var src_vectorized_buffer = src_vectorized[0]
         var src_element_layout = src_vectorized[1]
-        var src_thread_local = distribute[thread_layout=thread_layout](
-            src_vectorized_buffer, thread_id
-        )
+        alias element_size = to_int(dst_element_layout.shape[1])
+        var src_thread_local = distribute[
+            thread_layout=thread_layout,
+            swizzle=swizzle,
+            element_size=element_size,
+        ](src_vectorized_buffer, thread_id)
         _copy_nd_buffer_to_layout_tensor[is_async=is_async](
             dst_thread_local, src_thread_local, src_element_layout
         )
