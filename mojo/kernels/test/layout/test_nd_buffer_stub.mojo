@@ -423,6 +423,46 @@ fn test_1d_2d_vectorize():
     )
 
 
+# CHECK-LABEL: test_vectorize_and_distribute
+fn test_vectorize_and_distribute():
+    print("== test_vectorize_and_distribute")
+    var buff = NDBuffer[DType.float32, 2, DimList(8, 8)].stack_allocation()
+    linspace_fill(buff)
+
+    var buff_v_1_and_element_layout = vectorize[1, 4](buff)
+
+    # CHECK: ----fragments-data[ 0 ]----
+    # CHECK: [0.0, 1.0, 2.0, 3.0]
+    # CHECK: [32.0, 33.0, 34.0, 35.0]
+    # CHECK: ----fragments-data[ 1 ]----
+    # CHECK: [4.0, 5.0, 6.0, 7.0]
+    # CHECK: [36.0, 37.0, 38.0, 39.0]
+    # CHECK: ----fragments-data[ 2 ]----
+    # CHECK: [8.0, 9.0, 10.0, 11.0]
+    # CHECK: [40.0, 41.0, 42.0, 43.0]
+    # CHECK: ----fragments-data[ 3 ]----
+    # CHECK: [12.0, 13.0, 14.0, 15.0]
+    # CHECK: [44.0, 45.0, 46.0, 47.0]
+    # CHECK: ----fragments-data[ 4 ]----
+    # CHECK: [16.0, 17.0, 18.0, 19.0]
+    # CHECK: [48.0, 49.0, 50.0, 51.0]
+    # CHECK: ----fragments-data[ 5 ]----
+    # CHECK: [20.0, 21.0, 22.0, 23.0]
+    # CHECK: [52.0, 53.0, 54.0, 55.0]
+    # CHECK: ----fragments-data[ 6 ]----
+    # CHECK: [24.0, 25.0, 26.0, 27.0]
+    # CHECK: [56.0, 57.0, 58.0, 59.0]
+    # CHECK: ----fragments-data[ 7 ]----
+    # CHECK: [28.0, 29.0, 30.0, 31.0]
+    # CHECK: [60.0, 61.0, 62.0, 63.0]
+    for th_i in range(8):
+        var buff_thread_local = distribute[
+            thread_layout = Layout.row_major(4, 2)
+        ](buff_v_1_and_element_layout[0], th_i)
+        print("----fragments-data[", th_i, "]----")
+        print_vectorized_buff(buff_thread_local, buff_v_1_and_element_layout[1])
+
+
 fn main():
     test_copy_from_nd_buffer_scalars()
     test_copy_to_nd_buffer_scalars()
@@ -431,3 +471,4 @@ fn main():
     test_distribute()
     test_tile_and_distribute()
     test_1d_2d_vectorize()
+    test_vectorize_and_distribute()
