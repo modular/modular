@@ -821,6 +821,12 @@ fn flash_attention[
 fn flash_attention_split_kv[
     type: DType,
     rank: Int,
+    input_k_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
+    input_v_fn: fn[simd_width: Int, rank: Int] (
+        StaticIntTuple[rank]
+    ) capturing -> SIMD[type, simd_width],
     input_k_cache_fn: fn[simd_width: Int, rank: Int] (
         StaticIntTuple[rank]
     ) capturing -> SIMD[type, simd_width],
@@ -833,17 +839,17 @@ fn flash_attention_split_kv[
     output_static_shape: DimList = DimList.create_unknown[rank](),
 ](
     q: NDBuffer[type, rank],
-    k: NDBuffer[type, rank],
-    v: NDBuffer[type, rank],
-    # {k,v}_shape have rank + 1 dims because reshape in MO IR prevents fusion.
+    k_shape: StaticIntTuple[rank],
+    v_shape: StaticIntTuple[rank],
+    # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
     k_cache_shape: StaticIntTuple[rank + 1],
     v_cache_shape: StaticIntTuple[rank + 1],
     output: NDBuffer[type, rank, output_static_shape],
     scale: Float32,
 ):
     """Variant of flash attention that takes the previous KV cache
-    `input_{k,v}_cache_fn` and the current KV tensors `k` and `v` as separate
-    arguments.
+    `input_{k,v}_cache_fn` and the current KV tensors `input_k_fn` and
+    `input_v_fn` as separate arguments.
 
     This works around the fact that fusion can't currently look through concat.
     So this kernel does an in-place concat fusion by changing the input lambdas
@@ -852,8 +858,8 @@ fn flash_attention_split_kv[
     """
     # This expects the following layouts:
     # q: BHSD
-    # v: BHSD
-    # k: BHSD
+    # k (input_k_fn): BHSD
+    # v (input_v_fn): BHSD
     # k_cache (input_k_cache_fn): 1BHS'D
     # v_cache (input_v_cache_fn): 1BHS'D
     constrained[rank == 4]()
@@ -865,7 +871,7 @@ fn flash_attention_split_kv[
     var num_heads = v_cache_shape[2]
     var prev_seq_len = v_cache_shape[3]
     var depth_dim = v_cache_shape[4]
-    var seq_len = v.dim[rank - 2]()
+    var seq_len = v_shape[rank - 2]
 
     # Wrap `input_{k,v}_cache_fn` with lambdas that operate on indices of
     # rank 4, as expected by `_FlashAttention.run()`.
@@ -881,10 +887,7 @@ fn flash_attention_split_kv[
     fn kv_index[
         rank: Int
     ](idx: StaticIntTuple[rank]) -> StaticIntTuple[kv_rank]:
-        # Index into the previous kv_cache.
-        constrained[rank == 4]()
-
-        # Unsqueeze dim 0.
+        # Index into the previous kv_cache by unsqueezing dim 0.
         return rebind[StaticIntTuple[kv_rank]](
             Index(0, idx[0], idx[1], idx[2], idx[3])
         )
@@ -892,23 +895,25 @@ fn flash_attention_split_kv[
     @always_inline
     @parameter
     fn load_from_split_cache[
+        curr_fn: fn[simd_width: Int, rank: Int] (
+            StaticIntTuple[rank]
+        ) capturing -> SIMD[type, simd_width],
         cache_fn: fn[simd_width: Int, rank: Int] (
             StaticIntTuple[rank]
         ) capturing -> SIMD[type, simd_width],
         rank: Int,
         simd_width: Int,
-    ](curr: NDBuffer, idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        # Load directly from either `curr` or `cache_fn` depending on
-        # the sequence index.
+    ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
+        # Load directly from either `curr_fn` or `cache_fn` depending on the
+        # sequence index.
         # Boundary condition handling is done by the caller since
         # the last dim `depth_dim` is contiguous.
         var seq_idx = idx[2]
 
         if seq_idx >= prev_seq_len:
-            # Rebind due to the `_FlashAttention` input lambda signature.
-            return rebind[SIMD[type, simd_width]](
-                curr.load[width=simd_width](
-                    idx[0], idx[1], seq_idx - prev_seq_len, idx[3]
+            return curr_fn[simd_width, rank](
+                rebind[StaticIntTuple[rank]](
+                    Index(idx[0], idx[1], seq_idx - prev_seq_len, idx[3])
                 )
             )
 
@@ -920,7 +925,9 @@ fn flash_attention_split_kv[
         simd_width: Int,
         rank: Int,
     ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        return load_from_split_cache[input_k_cache_fn, rank, simd_width](k, idx)
+        return load_from_split_cache[
+            input_k_fn, input_k_cache_fn, rank, simd_width
+        ](idx)
 
     @always_inline
     @parameter
@@ -928,7 +935,9 @@ fn flash_attention_split_kv[
         simd_width: Int,
         rank: Int,
     ](idx: StaticIntTuple[rank]) -> SIMD[type, simd_width]:
-        return load_from_split_cache[input_v_cache_fn, rank, simd_width](v, idx)
+        return load_from_split_cache[
+            input_v_fn, input_v_cache_fn, rank, simd_width
+        ](idx)
 
     _FlashAttention[
         type,

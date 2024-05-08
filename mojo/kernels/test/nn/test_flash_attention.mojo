@@ -435,6 +435,20 @@ def test_case_split_kv[
     # Define input lambdas for split KV cache attn `flash_attention_split_kv`.
     @parameter
     @always_inline
+    fn input_k_fn[
+        simd_width: Int, _rank: Int
+    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
+        return k.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+
+    @parameter
+    @always_inline
+    fn input_v_fn[
+        simd_width: Int, _rank: Int
+    ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
+        return v.load[width=simd_width](rebind[StaticIntTuple[rank]](idx))
+
+    @parameter
+    @always_inline
     fn input_k_cache_fn[
         simd_width: Int, _rank: Int
     ](idx: StaticIntTuple[_rank]) -> SIMD[type, simd_width]:
@@ -461,14 +475,16 @@ def test_case_split_kv[
     flash_attention_split_kv[
         type,
         rank,
+        input_k_fn,
+        input_v_fn,
         input_k_cache_fn,
         input_v_cache_fn,
         mask_fn,
         output_static_shape,
     ](
         q,
-        k,
-        v,
+        k.get_shape(),
+        v.get_shape(),
         rebind[StaticIntTuple[rank + 1]](k_cache.get_shape()),
         rebind[StaticIntTuple[rank + 1]](v_cache.get_shape()),
         output,
