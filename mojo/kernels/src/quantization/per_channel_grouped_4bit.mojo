@@ -14,7 +14,7 @@ from memory.unsafe import bitcast
 from LinAlg.neon_intrinsics import _neon_dotprod
 from LinAlg.vnni_intrinsics import dot_i8_to_i32_saturated_x86
 
-from utils.index import Index
+from utils import StaticIntTuple, StaticTuple, unroll, Index
 
 
 @always_inline
