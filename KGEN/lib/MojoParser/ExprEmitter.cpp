@@ -251,14 +251,15 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
       representation = lValue;
     } else {
       dest.resetForError();
-      representation = NullRepresentation(); // Consumed!
+      representation = NullRepresentation(); // Error already emitted!
     }
   }
 
   // Check for the simple case.
   if (LValue lValue = dyn_cast<LValue>(representation)) {
     if (MLValue refValue = lValue.getIfMLValue()) {
-      if (lValue.getRValueType().isEqualCanon(resultType))
+      if (lValue.getRValueType().isEqualCanon(resultType) &&
+          lValue.getMValueType().isDefaultAddrSpace())
         return refValue;
     }
   }
@@ -335,9 +336,16 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
     // doesn't care if it matches, then we can directly return it.
     if (allowIncompatibleTypes ||
         lValue.getRValueType().isEqualCanon(resultType)) {
-      // If the client requires a stored LValue and we don't have one, don't
-      // consume it.
-      if (!requireMLValue || lValue.getIfMLValue()) {
+      // If the client accepts any sort of LValue, then we succeed.
+      if (!requireMLValue) {
+        representation = LValueBufferTaken(); // Buffer taken!
+        return lValue;
+      }
+
+      // Otherwise, we can only work if we have an MLValue in the correct
+      // address space.
+      if (auto mlVal = lValue.getIfMLValue();
+          mlVal && lValue.getMValueType().isDefaultAddrSpace()) {
         representation = LValueBufferTaken(); // Buffer taken!
         return lValue;
       }
@@ -390,6 +398,16 @@ MLValue ValueDest::getMLValueForResult(SMLoc loc, ASTType resultType,
 
   assert(lv.getIfMLValue());
   return lv.getIfMLValue();
+}
+
+/// Return true if this is an MLValue that could be in a non-default address
+/// space.
+bool ValueDest::isNonDefaultAddressSpace() const {
+  if (LValue lValue = dyn_cast<LValue>(representation))
+    if (MLValue refValue = lValue.getIfMLValue())
+      if (!lValue.getMValueType().isDefaultAddrSpace())
+        return true;
+  return false;
 }
 
 //===----------------------------------------------------------------------===//
@@ -991,6 +1009,8 @@ AnyValue ExprEmitter::rebindValue(ASTExprAnd<AnyValue> value, Type destType) {
         assert(!(srcRefType.isMutableKnown(false) &&
                  dstRefType.isMutableKnown(true)) &&
                "Rebind is introducing mutability");
+        assert(srcRefType.getAddressSpace() == dstRefType.getAddressSpace() &&
+               "rebind cannot change address space");
       }
     return builder->create<RebindOp>(translateLocation(value.expr->getLoc()),
                                      destType, v);
@@ -1514,6 +1534,15 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
     }
     [[fallthrough]];
   case TypeConvention::MemoryOnly:
+    // Memory-only copyinit will take the destination as address space zero, so
+    // we need to reject ValueDest's expecting it in GPU memory.
+    if (dest.isNonDefaultAddressSpace()) {
+      emitError(exprLoc, "value of type ")
+          << valueType << " cannot be copied into a non-default address space"
+          << value.expr->getRange();
+      return {};
+    }
+
     // __copyinit__ has signature: `(inout self, existing: Self)`.
     MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
     if (!destBuffer)

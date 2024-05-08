@@ -132,3 +132,18 @@ fn test_missing_positional_arg_with_vararg_keyword(x: int):
 
 fn test_missing_keyword_arg_with_vararg_keyword(x: int):
     takes_kw_only_args(x, x, c=`2`)
+
+
+struct MemExample:
+  fn __init__(inout self): pass
+  fn __copyinit__(inout self, existing: Self): pass
+
+fn mutateMem(inout a: MemExample): pass
+
+fn initialize_in_addrspace(ptr: UnsafePointer[MemExample, AddressSpace(1)]):
+    # expected-error @+1 {{value of type 'MemExample' cannot be copied into a non-default address space}}
+    ptr[] = MemExample()
+
+fn mutate_in_addrspace(ptr: UnsafePointer[MemExample, AddressSpace(1)]):
+    # expected-error @+1 {{value cannot be passed from a non-default address space}}
+    mutateMem(ptr[])

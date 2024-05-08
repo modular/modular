@@ -379,3 +379,23 @@ struct Tuple[*element_types: AnyType]:
     ]:
         while __mlir_attr.true:
             pass
+
+
+@register_passable("trivial")
+struct UnsafePointer[
+    T: AnyType, address_space: AddressSpace = AddressSpace.GENERIC
+]:
+    alias _ref_type = Reference[
+        T,
+        __mlir_attr.`1: i1`,
+        __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`,
+        address_space,
+    ]
+
+    fn __refitem__(self) -> Self._ref_type._mlir_type:
+        while __mlir_attr.true:
+            pass
+
+    fn __refitem__(self, offset: Int) -> Self._ref_type._mlir_type:
+        while __mlir_attr.true:
+            pass

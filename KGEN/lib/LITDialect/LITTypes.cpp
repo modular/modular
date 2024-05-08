@@ -687,6 +687,13 @@ TypedAttr RefType::isMutable() {
   return ::cast<LifetimeType>(getLifetime().getType()).isMutable();
 }
 
+/// Return true if this is in address space 0.
+bool RefType::isDefaultAddrSpace() {
+  if (auto intAttr = ::dyn_cast<IntegerAttr>(getAddressSpace()))
+    return intAttr.getInt() == 0;
+  return false;
+}
+
 OptionalParseResult RefType::parseValue(AsmParser &p, TypedAttr &value) const {
   // Parse a `store_to_mem` directive.
   if (succeeded(p.parseOptionalKeyword("store_to_mem"))) {

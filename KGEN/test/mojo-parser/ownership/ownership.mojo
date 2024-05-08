@@ -553,6 +553,7 @@ def def_borrowed(borrowed a: MemExample) -> None:
 @register_passable("trivial")
 struct AddrSpace:
     var _value: __mlir_type.index
+    @always_inline("nodebug")
     fn __init__(inout self, value: __mlir_type.index):
         self._value = value
     fn value(self) -> __mlir_type.index:
@@ -561,7 +562,7 @@ struct AddrSpace:
 @register_passable("trivial")
 struct MemExamplePtr[addrspace: AddrSpace = __mlir_attr.`0:index`]:
     var value: __mlir_type[
-        `!kgen.pointer<`, MemExample, `, `, addrspace.value(), `>`
+        `!kgen.pointer<`, MemExample, `, `, addrspace._value, `>`
     ]
 
 fn sadge(ptr: MemExamplePtr[]):
