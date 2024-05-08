@@ -146,11 +146,13 @@ fn test_async_copy(src: DTypePointer[DType.float32, AddressSpace.GLOBAL]):
         4, DType.float32, address_space = AddressSpace.SHARED
     ]()
     async_copy[4](src, shared_mem)
+    async_copy[16](src, shared_mem)
 
 
 @always_inline
 fn _verify_async_copy(asm: String) raises -> None:
     assert_true("cp.async.ca.shared.global" in asm)
+    assert_true("cp.async.cg.shared.global" in asm)
 
 
 def test_async_copy_sm80():
