@@ -9,7 +9,7 @@
 
 using namespace M;
 
-TEST(HoverTest, testModule) {
+TEST(DefinitionTest, testModule) {
   Document doc("test:///foo.mojo", "");
 
   createTestClient()
@@ -21,7 +21,7 @@ TEST(HoverTest, testModule) {
       .execute();
 }
 
-TEST(HoverTest, testTypes) {
+TEST(DefinitionTest, testTypes) {
   Document doc("test:///foo.mojo",
                R"(
 from utils.index import StaticIntTuple # skip
@@ -99,7 +99,7 @@ fn parametrizedFunction[
       .execute();
 }
 
-TEST(HoverTest, testMultiLocation) {
+TEST(DefinitionTest, testMultiLocation) {
   Document doc("test:///foo.mojo", R"(
 fn print(x: StringRef):
     pass
@@ -134,7 +134,7 @@ fn function[type: AnyRegType](arg: type):
       .execute();
 }
 
-TEST(HoverTest, testImplicitVariables) {
+TEST(DefinitionTest, testImplicitVariables) {
   Document doc("test:///foo.mojo", R"(
 fn test() raises:
     with open("test", "r") as with_var:
