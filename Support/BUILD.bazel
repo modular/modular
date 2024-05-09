@@ -247,16 +247,22 @@ cc_library(
 expand_root_cert_inc(
     name = "CertificatesHeader",
     cert_pem = select({
+        "//:DevBuild": "lib/Entitlements/RootCertificates/dev/cert.pem",
+        "//:LocalBuild": "lib/Entitlements/RootCertificates/local/cert.pem",
         "//:ProdBuild": "lib/Entitlements/RootCertificates/prod/cert.pem",
-        "//:DevBuild": "lib/Entitlements/RootCertificates/local/cert.pem",
+        "//:StagingBuild": "lib/Entitlements/RootCertificates/staging/cert.pem",
     }),
     endpoint = select({
+        "//:DevBuild": "lib/Entitlements/RootCertificates/dev/endpoint.txt",
+        "//:LocalBuild": "lib/Entitlements/RootCertificates/local/endpoint.txt",
         "//:ProdBuild": "lib/Entitlements/RootCertificates/prod/endpoint.txt",
-        "//:DevBuild": "lib/Entitlements/RootCertificates/local/endpoint.txt",
+        "//:StagingBuild": "lib/Entitlements/RootCertificates/staging/endpoint.txt",
     }),
     key_pem = select({
+        "//:DevBuild": "lib/Entitlements/RootCertificates/dev/key.pem",
+        "//:LocalBuild": "lib/Entitlements/RootCertificates/local/key.pem",
         "//:ProdBuild": "lib/Entitlements/RootCertificates/prod/key.pem",
-        "//:DevBuild": "lib/Entitlements/RootCertificates/local/key.pem",
+        "//:StagingBuild": "lib/Entitlements/RootCertificates/staging/key.pem",
     }),
     source = "lib/Entitlements/RootCertificates/RootCert.inc.in",
 )
@@ -475,7 +481,7 @@ cc_library(
         "//:ProdBuild": [
             'MODULAR_TELEMETRY_URL=\\"https://telemetry.modular.com:443\\"',
         ],
-        "//:DevBuild": [
+        "//conditions:default": [
             'MODULAR_TELEMETRY_URL=\\"https://telemetry-dev.modular.com:443\\"',
         ],
     }),
