@@ -323,7 +323,7 @@ static void dumpMarkdownTextSection(llvm::raw_ostream &os,
 // DeclView
 //===----------------------------------------------------------------------===//
 
-StringRef DeclView::getKindAsString() const {
+StringRef DeclView::getKindAsString(DeclViewKind kind) {
   switch (kind) {
   case DeclViewKind::DK_AliasDeclView:
     return "alias";
@@ -348,6 +348,8 @@ StringRef DeclView::getKindAsString() const {
   }
   llvm_unreachable("invalid kind");
 }
+
+StringRef DeclView::getKindAsString() const { return getKindAsString(kind); }
 
 std::string DeclView::getFullMarkdownString() const {
   std::string buff;
