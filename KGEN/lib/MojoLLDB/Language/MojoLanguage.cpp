@@ -102,15 +102,11 @@ static bool kgenNoneSummaryProvider(ValueObject &valobj, Stream &stream,
   return true;
 }
 
-// Bool types are rendered nicely as True or False.
-static bool
-popScalarBoolSummaryProvider(ValueObject &valobj, Stream &stream,
-                             const TypeSummaryOptions &summaryOptions) {
-  ValueObjectSP valueChild(valobj.GetChildAtIndex(0, true));
-  if (!valueChild)
-    return false;
+/// Bool types are rendered nicely as True or False.
+static bool boolSummaryProvider(ValueObject &valobj, Stream &stream,
+                                const TypeSummaryOptions &summaryOptions) {
   bool success = false;
-  int val = valueChild->GetValueAsUnsigned(/*default=*/0, &success);
+  int val = valobj.GetValueAsUnsigned(/*default=*/0, &success);
   if (success) {
     if (val == 0)
       stream << "False";
@@ -203,24 +199,20 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   summaryFlags.SetCascades(true)
       .SetSkipPointers(false)
       .SetSkipReferences(false)
-      .SetDontShowChildren(false)
-      .SetDontShowValue(false)
+      .SetDontShowChildren(true)
+      .SetDontShowValue(true)
       .SetShowMembersOneLiner(false)
       .SetHideItemNames(false);
 
   // Summary providers are matched in reverse order.
   AddCXXSummary(mojoCategorySP, MojoLLDBWrappingTypeSummaryProvider,
                 "Mojo decorator-based summary provider",
-                kLLDBFormatterWrappingTypeRegex, summaryFlags,
-                /*regex=*/true);
-
-  summaryFlags.SetDontShowChildren(true).SetDontShowValue(true);
+                kLLDBFormatterWrappingTypeRegex, summaryFlags, /*regex=*/true);
   AddCXXSummary(mojoCategorySP, kgenNoneSummaryProvider,
                 "!kgen.none summary provider", "!kgen.none", summaryFlags,
                 /*regex=*/false);
-  AddCXXSummary(mojoCategorySP, popScalarBoolSummaryProvider,
-                "!pop.scalar<bool> summary provider", "!pop.scalar<bool>",
-                summaryFlags, /*regex=*/false);
+  AddCXXSummary(mojoCategorySP, boolSummaryProvider, "bool summary provider",
+                "i1", summaryFlags, /*regex=*/false);
   AddCXXSummary(mojoCategorySP, builtinStringSummaryProvider,
                 "builtin::string::String summary provider",
                 R"(!lit.declref<(@stdlib::)?@builtin::@string::@String>)",

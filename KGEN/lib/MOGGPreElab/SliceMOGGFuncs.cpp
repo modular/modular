@@ -130,9 +130,7 @@ private:
   // Since we own the tensors force them all to false and disable refcounting /
   // memory deallocation in the kernel.
   void markAllTensorsAsOwned(GeneratorOp gen, SymbolTable &symTab) {
-    auto boolType = DTypeConstantAttr::get(ctx, DType::kBool);
-    auto boolFalse = POP::SIMDAttr::get({false, KGENDType::kBool},
-                                        POP::SIMDType::get(1, boolType));
+    auto boolFalse = BoolAttr::get(ctx, false);
 
     // As we rewrite the calls identify the non constant parameters which are
     // being used. We will then replace these too.
@@ -441,9 +439,7 @@ private:
 
     OpBuilder builder{gen.getContext()};
 
-    auto boolType = DTypeConstantAttr::get(ctx, DType::kBool);
-    auto boolFalse = POP::SIMDAttr::get({false, KGENDType::kBool},
-                                        POP::SIMDType::get(1, boolType));
+    auto boolFalse = BoolAttr::get(ctx, false);
 
     SmallVector<KGEN::ParamDeclAttr> params;
     for (KGEN::ParamDeclAttr p : gen.getInputParams())

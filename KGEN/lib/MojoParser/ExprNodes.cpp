@@ -367,9 +367,7 @@ AnyValue FloatLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
 
 AnyValue BoolLiteralNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
   // Create the SIMDAttr to represent the constant.
-  auto boolDType = DTypeConstantAttr::get(emitter.getContext(), DType::kBool);
-  auto boolAttr = POP::SIMDAttr::get({value, KGENDType::kBool},
-                                     POP::SIMDType::get(1, boolDType));
+  auto boolAttr = BoolAttr::get(emitter.getContext(), value);
 
   // Convert this to an instance of Bool. Bool must be in scope since it is
   // auto-imported.
