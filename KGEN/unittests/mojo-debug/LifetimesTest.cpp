@@ -93,3 +93,18 @@ TEST(LifetimesTest, testFullEagerDestruction) {
   SBValue number2 = ctx->frame.FindVariable("number2");
   EXPECT_EQ(number2.GetValueAsSigned(), 8);
 }
+
+TEST(LifetimesTest, testResurrection) {
+  /// Ensures that if a variable is killed and re-initialized again, it is
+  /// visible.
+  std::optional<StopContext> ctx = buildAndLaunch("resurrection.mojo");
+
+  SBValue text2 = ctx->frame.FindVariable("text2");
+  EXPECT_STREQ(text2.GetSummary(), R"("hello")");
+  assertVarNotAvailable(*ctx, "text1");
+
+  ctx.emplace(ctx->resume());
+  SBValue text1 = ctx->frame.FindVariable("text1");
+  EXPECT_STREQ(text1.GetSummary(), R"("hello")");
+  assertVarNotAvailable(*ctx, "text2");
+}

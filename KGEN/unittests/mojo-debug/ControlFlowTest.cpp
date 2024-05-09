@@ -68,8 +68,7 @@ TEST(ControlFlowTest, testAssignment) {
   assertIndex(*ctx, "j", 13);
 }
 
-// TODO(https://linear.app/modularml/issue/MOTO-429/)
-TEST(DISABLED_ControlFlowTest, testIteration) {
+TEST(ControlFlowTest, testIteration) {
   // Make sure changes to basic loop index variable is tracked.
   std::optional<StopContext> ctx =
       buildAndLaunch("var_mutation_iteration.mojo");
