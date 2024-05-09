@@ -165,12 +165,6 @@ struct Graph(CollectionElement, Stringable):
         for type in out_types:
             out_types_mlir.append(type[].to_mlir(ctx))
 
-        var function_type = _mlir.builtin_types.FunctionType(
-            ctx,
-            in_types_mlir,
-            out_types_mlir,
-        )
-
         var op = _c.graph_new(
             module,
             loc,
