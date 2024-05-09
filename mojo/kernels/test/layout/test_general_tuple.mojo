@@ -19,14 +19,14 @@ struct GeneralDelegate(ElementDelegate):
     @staticmethod
     fn is_equal[T: CollectionElement](va: Variant[T], vb: Variant[T]) -> Bool:
         if va.isa[General]() and vb.isa[General]():
-            var a = va.get[General]()[]
-            var b = vb.get[General]()[]
+            var a = va[General]
+            var b = vb[General]
             if a.isa[Int]() and b.isa[Int]():
-                return a.get[Int]()[] == b.get[Int]()[]
+                return a[Int] == b[Int]
             elif a.isa[Float32]() and b.isa[Float32]():
-                return a.get[Float32]()[] == b.get[Float32]()[]
+                return a[Float32] == b[Float32]
             elif a.isa[String]() and b.isa[String]():
-                return a.get[String]()[] == b.get[String]()[]
+                return a[String] == b[String]
         abort("Unexpected data type.")
         return False
 
@@ -38,17 +38,17 @@ struct GeneralDelegate(ElementDelegate):
         if not a.isa[General]():
             abort("Unexpected data type.")
 
-        var v = a.get[General]()[]
+        var v = a[General]
 
         if v.isa[Int]():
-            write_to(writer, v.get[Int]()[])
+            write_to(writer, v[Int])
         if v.isa[Float32]():
             # FIXME(#37912):
             #   Implement a Mojo float formatting algorithm that can be used
             #   format floating point values even on GPU, and use it here.
             write_to(writer, "<UnsupportedFormattedFloat:#37912>")
         if v.isa[String]():
-            write_to(writer, v.get[String]()[])
+            write_to(writer, v[String])
 
 
 alias GeneralTupleBase = DynamicTupleBase[General, GeneralDelegate]
@@ -74,9 +74,9 @@ fn test_tuple_general() raises:
     # CHECK: 3.5
     # CHECK: Mojo
     # CHECK: (1, (<UnsupportedFormattedFloat:#37912>, Mojo))
-    print(gt[0].value().get[Int]()[])
-    print(gt[1][0].value().get[Float32]()[])
-    print(gt[1][1].value().get[String]()[])
+    print(gt[0].value()[Int])
+    print(gt[1][0].value()[Float32])
+    print(gt[1][1].value()[String])
     print(gt)
 
     # CHECK: (7, (<UnsupportedFormattedFloat:#37912>, Mojo))

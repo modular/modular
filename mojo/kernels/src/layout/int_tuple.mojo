@@ -20,7 +20,7 @@ struct IntDelegate(ElementDelegate):
     @staticmethod
     fn is_equal[T: CollectionElement](a: Variant[T], b: Variant[T]) -> Bool:
         if a.isa[Int]() and b.isa[Int]():
-            return a.get[Int]()[] == b.get[Int]()[]
+            return a[Int] == b[Int]
         else:
             abort("Unexpected data type.")
             return False
@@ -31,7 +31,7 @@ struct IntDelegate(ElementDelegate):
         T: CollectionElement
     ](inout writer: Formatter, a: Variant[T]):
         if a.isa[Int]():
-            write_to(writer, a.get[Int]()[])
+            write_to(writer, a[Int])
         else:
             abort("Unexpected data type.")
 

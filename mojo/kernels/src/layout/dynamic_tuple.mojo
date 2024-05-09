@@ -109,11 +109,11 @@ struct DynamicTupleBase[
     @staticmethod
     fn format_element_to(inout writer: Formatter, v: Self.Element):
         if v.isa[T]():
-            return D.format_element_to[T](writer, v.get[T]()[])
+            return D.format_element_to[T](writer, v[T])
         else:
             writer.write_str("(")
             if v.isa[Self]():
-                var _elements = v.get[Self]()[]._elements
+                var _elements = v[Self]._elements
                 for i in range(len(_elements)):
                     var e: Self.Element = _elements[i]
                     Self.format_element_to(writer, e)
@@ -124,10 +124,10 @@ struct DynamicTupleBase[
     @staticmethod
     fn is_equal(a: Self.Element, b: Self.Element) -> Bool:
         if a.isa[T]() and b.isa[T]():
-            return D.is_equal[T](a.get[T]()[], b.get[T]()[])
+            return D.is_equal[T](a[T], b[T])
         if a.isa[Self]() and b.isa[Self]():
-            var ta = a.get[Self]()[]
-            var tb = b.get[Self]()[]
+            var ta = a[Self]
+            var tb = b[Self]
             if len(ta) == len(tb):
                 for i in range(len(ta)):
                     if not Self.is_equal(ta[i], tb[i]):
@@ -255,7 +255,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn tuple(self) -> Self.BaseType:
-        return self._value.get[Self.BaseType]()[]
+        return self._value[Self.BaseType]
 
     @always_inline
     fn is_value(self) -> Bool:
@@ -263,7 +263,7 @@ struct DynamicTuple[T: CollectionElement, D: ElementDelegate = DefaultDelegate](
 
     @always_inline
     fn value(self) -> T:
-        return self._value.get[T]()[]
+        return self._value[T]
 
     @always_inline
     fn __getitem__(self, _idx: Int) -> Self:
