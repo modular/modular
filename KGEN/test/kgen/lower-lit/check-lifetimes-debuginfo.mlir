@@ -40,9 +40,10 @@ lit.struct.decl @S attributes {
 lit.func @test_var() -> index {
   // Create `x`.
   // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
-  // CHECK-NEXT: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
   %0 = kgen.param.constant: index = <42> loc(#locX)
+  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
+  // CHECK-NEXT: lit.call @S::@__init__
   lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
 
   // Use `x.a`.
@@ -62,24 +63,65 @@ lit.func @test_var() -> index {
   kgen.return %x_a_val : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])
 
+// CHECK-LABEL: lit.func @test_uninit_var
+lit.func @test_uninit_var() {
+  // CHECK-NOT: debuginfo.{{(value)|(kill)}}
+  %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
+  kgen.return loc(#locRet)
+} loc(fused<#sp>["test.mlir":10:10])
+
+// CHECK-LABEL: lit.func @test_def_in_loop
+lit.func @test_def_in_loop() {
+  // Create `x`.
+  // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
+  %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
+  // CHECK: hlcf.loop "loop0"
+  hlcf.loop "loop0" {
+    %0 = kgen.param.constant: index = <42> loc(#locX)
+    // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
+    // CHECK-NEXT: lit.call @S::@__init__
+    lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+    // CHECK-NEXT: debuginfo.kill #[[DIVAR_X]]
+    hlcf.continue loc(#locX)
+  } loc(#locX)
+  kgen.return loc(#locRet)
+} loc(fused<#sp>["test.mlir":10:10])
+
+// CHECK-LABEL: lit.func @test_def_twice
+lit.func @test_def_twice() -> index {
+  // Create `x`.
+  // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var : ![[VAR_X_TYPE:.*]] loc
+  %x = lit.var.decl "x"  var : !lit.ref<@S, mut *"x`0"> loc(#locX)
+  %0 = kgen.param.constant: index = <42> loc(#locX)
+  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
+  // CHECK-NEXT: lit.call @S::@__init__
+  lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+
+  // CHECK-NOT: debuginfo.value
+  lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+
+  kgen.return %0 : index loc(#locRet)
+} loc(fused<#sp>["test.mlir":10:10])
+
 // CHECK-LABEL: lit.func @test_consumed
 lit.func @test_consumed() -> index {
   // Create `x`.
   // CHECK-NEXT: %[[VAR_X:.*]] = lit.var.decl "x" var
-  // CHECK-NEXT: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]]
   %x = lit.var.decl "x"  var : !lit.ref<@S, mut xlife> loc(#locX)
   %0 = kgen.param.constant: index = <42> loc(#locX)
+  // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]]
+  // CHECK-NEXT: lit.call @S::@__init__
   lit.call @S::@__init__(%x, %0) : !lit.signature<("self": !lit.ref<@S, mut xlife> init_self, |, "num": index) -> !kgen.none> loc(#locX)
 
   // Create `y`.
   // CHECK: %[[VAR_Y:.*]] = lit.var.decl "y" var
-  // CHECK: debuginfo.value #[[DIVAR_Y]] #[[DIEXPR_DEREF]] = %[[VAR_Y]]
   %y = lit.var.decl "y"  var : !lit.ref<@S, mut ylife> loc(#locY)
 
   // Move `x` into `y`.
   // CHECK: debuginfo.kill #[[DIVAR_X]] loc(#[[LOC_USE:.*]])
-  // CHECK: lit.transfer_mem_ownership {{.*}} loc(#[[LOC_USE]])
-  // CHECK: lit.call @S::@__moveinit__{{.*}} loc(#[[LOC_USE]])
+  // CHECK-NEXT: lit.transfer_mem_ownership {{.*}} loc(#[[LOC_USE]])
+  // CHECK-NEXT: debuginfo.value #[[DIVAR_Y]] #[[DIEXPR_DEREF]] = %[[VAR_Y]]
+  // CHECK-NEXT: lit.call @S::@__moveinit__{{.*}} loc(#[[LOC_USE]])
   %x_moved = lit.transfer_mem_ownership %x : !lit.ref<@S, mut xlife> -> !lit.ref<@S, mut xlifetrans> {paramDecl = #kgen<param.decl xlifetrans : !lit.lifetime<1>>} loc(#locUse)
   lit.call @S::@__moveinit__(%y, %x_moved) : !lit.signature<(!lit.ref<@S, mut ylife> init_self, !lit.ref<@S, mut xlifetrans> owned_in_mem) -> !kgen.none> loc(#locUse)
 
@@ -104,12 +146,14 @@ lit.func @test_arg(%x: !lit.ref<@S, mut *"x"> loc(#locX) owned_in_mem, %ys: !kge
   // CHECK-NEXT: lit.call @S::@__del__{{.*}}(%x) : {{.*}} loc(#[[LOC_USE]])
 
   // `ys` is shadowed (using a fake shadowing type for simplicity).
-  %yshadow = lit.var.decl "ys" arg(1) : !lit.ref<!kgen.variadic<@S, owned_in_mem>, mut *"ys"> loc(#locY)
+  %yshadow = lit.var.decl "ys" arg(1) : !lit.ref<!kgen.variadic<!lit.ref<@S, imm *"ys">, borrow_in_mem>, mut *"ys"> loc(#locY)
+  lit.ref.store %ys, %yshadow : !lit.ref<!kgen.variadic<!lit.ref<@S, imm *"ys">, borrow_in_mem>, mut *"ys"> loc(#locY)
   // CHECK: %[[YSHADOW:.*]] = lit.var.decl "ys"
   // CHECK: debuginfo.value #[[DIARG_YS]] {{.*}} = %[[YSHADOW]]
 
   // `z` is shadowed.
   %zshadow = lit.var.decl "z" arg(2) : !lit.ref<index, mut *"z"> loc(#locZ)
+  lit.ref.store %z, %zshadow : <index, mut *"z"> loc(#locZ)
   // CHECK: %[[ZSHADOW:.*]] = lit.var.decl "z"
   // CHECK: debuginfo.value #[[DIARG_Z]] {{.*}} = %[[ZSHADOW]]
 
