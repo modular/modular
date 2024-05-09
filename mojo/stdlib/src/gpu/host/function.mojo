@@ -402,13 +402,13 @@ struct Function[
 
         fn dump_q(val: Variant[Path, Bool]) -> Bool:
             if val.isa[Bool]():
-                return val.get[Bool]()[]
-            return val.get[Path]()[] != ""
+                return val[Bool]
+            return val[Path] != ""
 
         if dump_q(dump_ptx):
             alias ptx = Self._impl.asm
             if dump_ptx.isa[Path]():
-                with open(dump_ptx.get[Path]()[], "w") as f:
+                with open(dump_ptx[Path], "w") as f:
                     f.write(ptx)
             else:
                 print(ptx)
@@ -418,7 +418,7 @@ struct Function[
             ]().asm
 
             if dump_llvm.isa[Path]():
-                with open(dump_llvm.get[Path]()[], "w") as f:
+                with open(dump_llvm[Path], "w") as f:
                     f.write(llvm)
             else:
                 print(llvm)
