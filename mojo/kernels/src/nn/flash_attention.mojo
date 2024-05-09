@@ -15,7 +15,6 @@ from algorithm.reduction import (
     _simd_sum_elementwise,
     map_reduce,
 )
-from algorithm.swap import swap
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from LinAlg.accumulate import _Accumulator

@@ -10,7 +10,7 @@ from math import iota
 
 from algorithm.functional import parallelize_over_rows
 from algorithm.reduction import _get_nd_indices_from_flat_index
-from algorithm.sort import _quicksort, partition, sort
+from builtin.sort import _quicksort
 from buffer import NDBuffer
 from register import mogg_register
 
@@ -146,7 +146,7 @@ fn _top_k[
                         rebind[Pointer[Int64]](idxs.data), len(idxs)
                     )
                 else:
-                    partition[Int64, _val_greater_than_eq](
+                    _ = partition[Int64, _val_greater_than_eq](
                         rebind[Pointer[Int64]](idxs.data), k, len(idxs)
                     )
             else:
@@ -163,7 +163,7 @@ fn _top_k[
                         rebind[Pointer[Int64]](idxs.data), len(idxs)
                     )
                 else:
-                    partition[Int64, _val_less_than_eq](
+                    _ = partition[Int64, _val_less_than_eq](
                         rebind[Pointer[Int64]](idxs.data), k, len(idxs)
                     )
 
