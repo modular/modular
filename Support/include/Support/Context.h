@@ -40,6 +40,14 @@ public:
 
   /// Returns a pointer to the object of type T held by the context object set.
   /// If it does not contain such an object, calls the creator function to
+  /// create one and install. The creator function may not fail.
+  template <typename T>
+  T *createIfMissing(llvm::unique_function<std::unique_ptr<T>()> creator) {
+    return storage.createIfMissing<T>(std::move(creator));
+  }
+
+  /// Returns a pointer to the object of type T held by the context object set.
+  /// If it does not contain such an object, calls the creator function to
   /// create one and install. Returns any error the creator function returns.
   template <typename T>
   ErrorOr<T *> createIfMissing(

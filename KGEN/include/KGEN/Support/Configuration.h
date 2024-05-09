@@ -8,9 +8,14 @@
 #define KGEN_SUPPORT_CONFIGURATION_H
 
 #include "Support/Configuration.h"
+#include "Support/Context.h"
 #include "Support/ErrorOr.h"
 
 #include <filesystem>
+
+namespace M {
+class Settings;
+} // namespace M
 
 namespace M::KGEN {
 
@@ -27,6 +32,9 @@ public:
 
   /// Open the default configuration, and parse it.
   static ErrorOr<MojoConfig> open();
+
+  /// Open the configuration using settings from the provided context.
+  static MojoConfig fromContext(ContextRef ctx);
 
   //===--------------------------------------------------------------------===//
   // Parser Configurations
@@ -103,9 +111,12 @@ public:
   void getSystemLibraryLinkArgs(SmallVectorImpl<StringRef> &libs);
 
 private:
-  MojoConfig(Config config) : config(std::move(config)) {}
+  MojoConfig(Config config) : configSource(std::move(config)) {}
+  MojoConfig(Settings *settings) : configSource(settings) {}
 
-  Config config;
+  StringRef getValue(StringLiteral key);
+
+  std::variant<Config, Settings *> configSource;
 };
 } // namespace M::KGEN
 

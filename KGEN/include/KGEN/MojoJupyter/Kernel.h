@@ -11,6 +11,7 @@
 #ifndef KGEN_MOJOJUPYTER_KERNEL_H
 #define KGEN_MOJOJUPYTER_KERNEL_H
 
+#include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/SymbolExport.h"
 #include "llvm/ADT/FunctionExtras.h"
@@ -56,7 +57,8 @@ public:
   ///
   /// If `lldbInitFile` is not empty, LLDB will silently execute all the
   /// commands in this file upon initialization of the kernel.
-  LogicalResult initialize(StringRef mojoReplExe, StringRef workingDirectory,
+  LogicalResult initialize(std::optional<ContextRef> ctx, StringRef mojoReplExe,
+                           StringRef workingDirectory,
                            ArrayRef<std::string> additionalDirectories,
                            StringRef lldbInitFile);
 

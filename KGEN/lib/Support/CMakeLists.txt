@@ -13,6 +13,7 @@ add_modular_library(KGENSupport
 
   LINK_LIBS PUBLIC
   MLIRIR
+  MSupportSettings
 )
 
 target_compile_definitions(KGENSupport
