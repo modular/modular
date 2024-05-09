@@ -38,7 +38,7 @@ from utils.index import Index, StaticIntTuple
 from .MatmulGPU import _matmul_gpu
 from .MatmulPack import BTileGenerator
 
-from .apple_accelerate import apple_matmul, use_apple_accelerate_lib
+from .apple_accelerate import apple_matmul, apple_gemv, use_apple_accelerate_lib
 
 # Define a trait that defines the common functions across all existing
 # microkernels:
@@ -122,15 +122,11 @@ fn tiledMatmulRun[
         a.type, b.type, c.type, config.kernel_cols
     ](global_tile_shape)
 
-    alias b_packed2 = False if use_apple_accelerate_lib(
-        c.type, a.type, b.type
-    ) else b_packed
-
     alias packed_shape = DimList.create_unknown[3]()
     var matmul = TiledMatmul[
         config,
         transpose_b,
-        b_packed2,
+        b_packed,
         elementwise_epilogue_enabled,
         kernel_id,
     ](
@@ -148,7 +144,7 @@ fn tiledMatmulRun[
             c.type,
             b.shape,
             transpose_b,
-            b_packed2,
+            b_packed,
         ].get(b, tile_n_k),
         elementwise_epilogue_fn,
     )
@@ -542,7 +538,6 @@ fn _matmul_cpu_impl[
     var m = shape.M
     var n = shape.N
     var k = shape.K
-
     # Matrix by vector pattern -> use gemv
     if n == 1:
         var out = Buffer[c.type](c.data, c.dim[0]())
@@ -559,13 +554,41 @@ fn _matmul_cpu_impl[
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](out, lhs, rhs)
     else:
-        # SGEMM calls for MacOS >= 13.0.0 are directed to the CBLAS implementation.
+        # SGEMM calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
+        # directed to the special Apple-specific implementations.
+        # apple_matmul handles generic matmuls.
+        # apple_gemv handles cases with M=1 (where apple_matmul is suboptimal).
         @parameter
-        if use_apple_accelerate_lib(c.type, a.type, b.type):
-            apple_matmul[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b)
+        if use_apple_accelerate_lib[c.type, a.type, b.type]():
+            if m == 1:
+                apple_gemv[
+                    c.shape,
+                    c.type,
+                    a.shape,
+                    a.type,
+                    b.shape,
+                    b.type,
+                    b_packed,
+                    transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b)
+            else:
+                # if b_packed = True and transpose_b = True:
+                #       input is transposed already. We need apple_matmul with
+                #       transpose_b=True.
+                # if b_packed = True and transpose_b = False:
+                #       input is not transposed. Will be transposed by pack function.
+                #       We need apple_matmul with transpose_b=True.
+                # if b_packed=False and transpose_b = True:
+                #       input is transposed already. We need apple_matmul with
+                #       transpose_b=True.
+                # if b_packed=False and transpose_b = False:
+                #       We need apple_matmul with transpose_b=False.
+                alias apple_transpose = True if b_packed else transpose_b
+                apple_matmul[
+                    transpose_b=apple_transpose,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b)
             return
 
         var complexity = m * n * k

@@ -10,7 +10,7 @@ from sys.intrinsics import PrefetchOptions
 
 from algorithm import unswitch
 
-from buffer.buffer import NDBuffer, partial_simd_load
+from buffer.buffer import Buffer, NDBuffer, partial_simd_load
 from buffer.list import DimList
 
 from .Gemv import gemv
@@ -27,7 +27,7 @@ from .MatmulUtils import (
     get_pack_data_size,
 )
 
-from .transpose import transpose_inplace
+from .transpose import transpose, transpose_inplace
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
 from register import mogg_register
@@ -557,11 +557,19 @@ fn _pack_matmul_b_shape_func_impl[
         output[0] = b_input.dim(0)
         output[1] = b_input.dim(1)
 
-    # If we are on MacOS with below data types, we use cblas_sgemm, so override
-    # packing
-    if not use_apple_accelerate_lib(c_type, a_type, b_type):
+    # If we are on MacOS with Float32 data types, we use apple_matmul
+    # (which is a binding for cblas_sgemm that doesn't support packing) and a
+    # special gemv for M=1 (apple_gemv).
+    # So override packing, BUT pack functions will do transpose (facilitates
+    # apple_gemv), so assign the transposed B dimensions.
+    @parameter
+    if not use_apple_accelerate_lib[c_type, a_type, b_type]():
         output[0] = ceildiv(output[0], tile_n_k[1]) * tile_n_k[1]
         output[1] = ceildiv(output[1], tile_n_k[0]) * tile_n_k[0]
+    else:
+        var tmp = output[0]
+        output[0] = output[1]
+        output[1] = tmp
 
     return output
 
@@ -746,14 +754,25 @@ fn _pack_b_ndbuffer_impl[
         var n = b_input.dim(0) if transposed else b_input.dim(1)
         var k = b_input.dim(1) if transposed else b_input.dim(0)
 
-        # If we are on MacOS with below data types, we use cblas_sgemm, so override
-        # packing.
-        if use_apple_accelerate_lib(c_type, a_type, b_type):
-            memcpy(
-                output_buffer.data,
-                b_input.data,
-                n * k,
-            )
+        # If we are on MacOS with Float32 data types, we use apple_matmul
+        # (which is a binding for cblas_sgemm that doesn't support packing) and a
+        # special gemv for M=1 (apple_gemv).
+        # So override packing, BUT do transpose (facilitates apple_gemv).
+        @parameter
+        if use_apple_accelerate_lib[c_type, a_type, b_type]():
+            # If already transposed, skip transpose step and do a memcpy.
+            @parameter
+            if not transposed:
+                var perm = Buffer[DType.index, 2].stack_allocation()
+                perm[0] = 1
+                perm[1] = 0
+
+                try:
+                    transpose(output_buffer, b_input, perm.data)
+                except e:
+                    abort(e)
+            else:
+                memcpy(output_buffer.data, b_input.data, n * k)
             return
 
         # The config (in particular inner size and tile_k) needs to EXACTLY match the

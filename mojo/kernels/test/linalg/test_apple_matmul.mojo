@@ -4,11 +4,13 @@
 #
 # ===----------------------------------------------------------------------=== #
 #
-# Checks Apple cblas_sgemm matmul C = A*B when called from Matmul.mojo functions
+# Checks Apple cblas_sgemm matmul C = A*B and apple_gemv, when called from
+# Matmul.mojo functions
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s
-
+from testing import assert_almost_equal
+import benchmark
 from buffer import NDBuffer
 from buffer.list import DimList
 from LinAlg.Matmul import (
@@ -17,46 +19,45 @@ from LinAlg.Matmul import (
 )
 from LinAlg.MatmulPack import (
     pack_b_ndbuffer,
+    pack_transposed_b_ndbuffer,
     _pack_b_ndbuffer_impl,
     pack_matmul_b_shape_func,
     _pack_matmul_b_shape_func_impl,
 )
 from LinAlg.MatmulUtils import elementwise_epilogue_type
 from collections import OptionalReg
-
 from utils.index import Index, StaticIntTuple
-
 from sys.info import os_is_macos
 
 alias alignment = 64
-
 alias some_constant = 30
+alias do_benchmarking = False
 
 
-fn gemm_naive(
-    a: NDBuffer,
-    b: NDBuffer,
-    c: NDBuffer,
-    m: Int,
-    n: Int,
-    k: Int,
-):
+@parameter
+fn bench_run[func: fn () capturing -> None]() -> benchmark.Report:
+    return benchmark.run[func](2, 1_000_000, 1, 3)
+
+
+fn gemm_naive[
+    transpose_b: Bool
+](a: NDBuffer, b: NDBuffer, c: NDBuffer, m: Int, n: Int, k: Int,):
     for i in range(m):
         for p in range(k):
             for j in range(n):
                 var a_val = a[i, p].cast[c.type]()
-                var b_val = b[p, j].cast[c.type]()
+                var b_val = b[(j, p) if transpose_b else (p, j)].cast[c.type]()
                 c[(i, j)] += a_val * b_val
 
 
-fn gemm_naive_elementwise(
-    a: NDBuffer, b: NDBuffer, c: NDBuffer, m: Int, n: Int, k: Int, val: Int
-):
+fn gemm_naive_elementwise[
+    transpose_b: Bool
+](a: NDBuffer, b: NDBuffer, c: NDBuffer, m: Int, n: Int, k: Int, val: Int):
     for i in range(m):
         for p in range(k):
             for j in range(n):
                 var a_val = a[i, p].cast[c.type]()
-                var b_val = b[p, j].cast[c.type]()
+                var b_val = b[(j, p) if transpose_b else (p, j)].cast[c.type]()
                 c[(i, j)] += a_val * b_val
 
     for i in range(m):
@@ -64,7 +65,7 @@ fn gemm_naive_elementwise(
             c[(i, j)] += val
 
 
-fn test_matmul[
+def test_matmul[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -91,69 +92,126 @@ fn test_matmul[
             golden[StaticIntTuple[2]((i, j))] = 0
 
     if b_packed:
-        if kernel_type_m != 0:
-            _pack_b_ndbuffer_impl[
-                a_type, a_shape, b_type, b_shape, c_type, c_shape, transpose_b
-            ](b, bp, kernel_type_m)
+        if not transpose_b:
+            if kernel_type_m != 0:
+                _pack_b_ndbuffer_impl[
+                    a_type,
+                    a_shape,
+                    b_type,
+                    b_shape,
+                    c_type,
+                    c_shape,
+                    transpose_b,
+                ](b, bp, kernel_type_m)
+            else:
+                pack_b_ndbuffer[
+                    a_type,
+                    a_shape,
+                    b_type,
+                    b_shape,
+                    c_type,
+                    c_shape,
+                ](b, bp)
         else:
-            pack_b_ndbuffer[
+            if kernel_type_m != 0:
+                _pack_b_ndbuffer_impl[
+                    a_type,
+                    a_shape,
+                    b_type,
+                    b_shape,
+                    c_type,
+                    c_shape,
+                    transpose_b,
+                ](b, bp, kernel_type_m)
+            else:
+                pack_transposed_b_ndbuffer[
+                    a_type,
+                    a_shape,
+                    b_type,
+                    b_shape,
+                    c_type,
+                    c_shape,
+                ](b, bp)
+
+    @always_inline
+    @__copy_capture(c, a, bp)
+    @parameter
+    fn bench_fn_matmul():
+        if kernel_type_m != 0:
+            _matmul_cpu[
                 a_type,
                 a_shape,
                 b_type,
                 b_shape,
                 c_type,
                 c_shape,
-            ](b, bp)
+                transpose_b=transpose_b,
+                b_packed=b_packed,
+                elementwise_lambda_fn=epilogue_fn,
+            ](
+                c,
+                a,
+                rebind[NDBuffer[b_type, 2, b_shape]](bp),
+                kernel_type_m,
+            )
+        else:
+            matmul[
+                a_type,
+                a_shape,
+                b_type,
+                b_shape,
+                c_type,
+                c_shape,
+                transpose_b=transpose_b,
+                b_packed=b_packed,
+                elementwise_lambda_fn=epilogue_fn,
+            ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp))
 
-    if kernel_type_m != 0:
-        _matmul_cpu[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_b,
-            b_packed=b_packed,
-            elementwise_lambda_fn=epilogue_fn,
-        ](
-            c,
-            a,
-            rebind[NDBuffer[b_type, 2, b_shape]](bp),
-            kernel_type_m,
+    bench_fn_matmul()
+
+    @parameter
+    if do_benchmarking:
+        var matmul_perf = bench_run[bench_fn_matmul]()
+        benchmark.keep(c[0, 0])
+        matmul_perf.print()
+        print(
+            "Apple Matmul GFLOP/s",
+            1e-9 * ((2 * m * k * n) / matmul_perf.mean()),
         )
-    else:
-        matmul[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_b,
-            b_packed=b_packed,
-            elementwise_lambda_fn=epilogue_fn,
-        ](c, a, rebind[NDBuffer[b_type, 2, b_shape]](bp))
 
     if epilogue_fn:
-        gemm_naive_elementwise(a, b, golden, m, n, k, some_constant)
+        gemm_naive_elementwise[transpose_b](
+            a, b, golden, m, n, k, some_constant
+        )
     else:
-        gemm_naive(a, b, golden, m, n, k)
+        gemm_naive[transpose_b](a, b, golden, m, n, k)
 
     var errors: Int = 0
     for i in range(m):
         for j in range(n):
             if c[i, j] != golden[i, j]:
-                errors += 1
-
-    if errors != 0:
-        print("\nMatrices don't agree!")
+                assert_almost_equal(
+                    c[i, j],
+                    golden[i, j],
+                    msg="values do not agree for "
+                    + str(m)
+                    + "x"
+                    + str(n)
+                    + "x"
+                    + str(k)
+                    + " using the dtype="
+                    + str(a_type)
+                    + ","
+                    + str(b_type)
+                    + ","
+                    + str(c_type),
+                )
 
     c1_ptr.free()
     return errors
 
 
-fn test_matmul[
+def test_matmul[
     lambdas_have_fusion: Bool,
     *,
     a_type: DType,
@@ -161,6 +219,7 @@ fn test_matmul[
     c_type: DType,
     b_packed: Bool,
     mixed_kernels: Bool,
+    transpose_b: Bool,
 ](m: Int, n: Int, k: Int):
     print("== test_matmul")
     var errors = 0
@@ -171,7 +230,9 @@ fn test_matmul[
 
     var a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
     var b_ptr = DTypePointer[b_type].alloc(k * n, alignment=alignment)
-    var b = NDBuffer[b_type, 2, b_shape](b_ptr, Index(k, n))
+    var b = NDBuffer[b_type, 2, b_shape](
+        b_ptr, Index(n, k) if transpose_b else Index(k, n)
+    )
 
     var padded_n_k = StaticIntTuple[2]()
     if kernel_type_m != 0:
@@ -182,7 +243,7 @@ fn test_matmul[
             b_shape,
             c_type,
             c_shape,
-            False,
+            transpose_b,
             True,
         ](b, kernel_type_m)
     else:
@@ -193,12 +254,16 @@ fn test_matmul[
             b_shape,
             c_type,
             c_shape,
-            False,
+            transpose_b,
             True,
         ](b)
 
-    var padded_n = padded_n_k[1] if b_packed else n
-    var padded_k = padded_n_k[0] if b_packed else k
+    var padded_n = padded_n_k[1] if b_packed or (
+        not b_packed and transpose_b
+    ) else n
+    var padded_k = padded_n_k[0] if b_packed or (
+        not b_packed and transpose_b
+    ) else k
 
     var c0_ptr = DTypePointer[c_type].alloc(m * n, alignment=alignment)
 
@@ -209,25 +274,21 @@ fn test_matmul[
     var bp = NDBuffer[b_type, 2, DimList.create_unknown[2]()](
         bp_ptr, Index(padded_k, padded_n)
     )
-
     var a = NDBuffer[a_type, 2, a_shape](a_ptr, Index(m, k))
 
     var c = NDBuffer[c_type, 2, c_shape](c0_ptr, Index(m, n))
 
-    # saturated VNNI only has a range [0,127] for the input a
-    var vnni_range: Int = 256
-    var cnt: Int = 0
     for i in range(m):
         for p in range(k):
-            a[StaticIntTuple[2]((i, p))] = cnt % vnni_range
-            cnt += 1
+            a[StaticIntTuple[2]((i, p))] = 0.001 * i
 
-    cnt = 0
-    for p in range(k):
-        for j in range(n):
-            b[StaticIntTuple[2]((p, j))] = cnt % 256 - 128
-            bp[StaticIntTuple[2]((p, j))] = b[StaticIntTuple[2]((p, j))]
-            cnt += 1
+    for p in range(n if transpose_b else k):
+        for j in range(k if transpose_b else n):
+            b[StaticIntTuple[2]((p, j))] = 0.002 * p
+            if b_packed and not transpose_b:
+                bp[StaticIntTuple[2]((j, p))] = b[StaticIntTuple[2]((p, j))]
+            else:
+                bp[StaticIntTuple[2]((p, j))] = b[StaticIntTuple[2]((p, j))]
 
     for i in range(m):
         for j in range(n):
@@ -250,7 +311,7 @@ fn test_matmul[
             b_shape,
             c_type,
             c_shape,
-            False,  # transpose_b
+            transpose_b,  # transpose_b
             b_packed,  # b_packed
             epilogue_fn,
         ](
@@ -271,7 +332,7 @@ fn test_matmul[
             b_shape,
             c_type,
             c_shape,
-            False,  # transpose_b
+            transpose_b,  # transpose_b
             b_packed,  # b_packed
             None,
         ](
@@ -295,7 +356,7 @@ fn test_matmul[
     c0_ptr.free()
 
 
-fn test_shapes[
+def test_shapes[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -303,7 +364,7 @@ fn test_shapes[
     mixed_kernels: Bool,
 ]():
     @parameter
-    fn test_shapes_helper(m: Int, n: Int, k: Int):
+    def test_shapes_helper[transpose_b: Bool = False](m: Int, n: Int, k: Int):
         # Test without output fusion.
         test_matmul[
             False,
@@ -312,6 +373,7 @@ fn test_shapes[
             c_type=c_type,
             b_packed=b_packed,
             mixed_kernels=mixed_kernels,
+            transpose_b=transpose_b,
         ](m, n, k)
         # Test with output fusion.
         test_matmul[
@@ -321,9 +383,12 @@ fn test_shapes[
             c_type=c_type,
             b_packed=b_packed,
             mixed_kernels=mixed_kernels,
+            transpose_b=transpose_b,
         ](m, n, k)
 
-    # Test various shapes.
+    # Test various matmul and gemv shapes with and without transpose_b.
+
+    # Test with transpose_b = False
     test_shapes_helper(256, 1024, 4096)
     test_shapes_helper(4, 5, 6)
     test_shapes_helper(15, 16, 17)
@@ -333,8 +398,32 @@ fn test_shapes[
     test_shapes_helper(256, 256, 256)
     test_shapes_helper(2, 65, 1200)
 
+    # Test with transpose_b = True
+    test_shapes_helper[True](256, 1024, 4096)
+    test_shapes_helper[True](4, 5, 6)
+    test_shapes_helper[True](15, 16, 17)
+    test_shapes_helper[True](24, 32, 64)
+    test_shapes_helper[True](61, 73, 79)
+    test_shapes_helper[True](123, 456, 321)
+    test_shapes_helper[True](256, 256, 256)
+    test_shapes_helper[True](2, 65, 1200)
 
-fn test_types[b_packed: Bool, mixed_kernels: Bool]():
+    # Test with transpose_b = False
+    test_shapes_helper(1, 5120, 3072)
+    test_shapes_helper(1, 3072, 3072)
+    test_shapes_helper(1, 12288, 3072)
+    test_shapes_helper(1, 3072, 12288)
+    test_shapes_helper(1, 32768, 3072)
+
+    # Test with transpose_b = True
+    test_shapes_helper[True](1, 5120, 3072)
+    test_shapes_helper[True](1, 3072, 3072)
+    test_shapes_helper[True](1, 12288, 3072)
+    test_shapes_helper[True](1, 3072, 12288)
+    test_shapes_helper[True](1, 32768, 3072)
+
+
+def test_types[b_packed: Bool, mixed_kernels: Bool]():
     test_shapes[
         DType.float32,
         DType.float32,
@@ -344,15 +433,12 @@ fn test_types[b_packed: Bool, mixed_kernels: Bool]():
     ]()
 
 
-fn main():
+def main():
     @parameter
     if not os_is_macos():
         return
 
-    test_types[b_packed=False, mixed_kernels=False]()
-    test_types[b_packed=False, mixed_kernels=True]()
-    # Note: b_packed = True doesn't apply for Apple cblas_sgemm. This is handled
-    #       in the packing functions, and in get_kernel_config, if we are on
-    #       MacOs and for DType.float32 a, b, c used in cblas_sgemm.
     test_types[b_packed=True, mixed_kernels=False]()
     test_types[b_packed=True, mixed_kernels=True]()
+    test_types[b_packed=False, mixed_kernels=False]()
+    test_types[b_packed=False, mixed_kernels=True]()

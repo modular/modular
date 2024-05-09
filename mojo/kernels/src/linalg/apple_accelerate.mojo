@@ -13,7 +13,12 @@ from buffer.buffer import NDBuffer
 from .BatchedMatmul import _reshape_nd_buffer_with_batch_to_3d
 from utils.index import Index
 from .MatmulUtils import elementwise_epilogue_type
-from algorithm import elementwise
+from algorithm import elementwise, vectorize
+from algorithm.functional import parallelize_over_rows
+from buffer.list import DimList
+from math import fma
+from .MatmulPack import pack_b_ndbuffer
+
 
 # ===----------------------------------------------------------------------===#
 # Constants
@@ -62,11 +67,11 @@ fn _get_dylib_function[
 
 
 @always_inline
-fn use_apple_accelerate_lib(
+fn use_apple_accelerate_lib[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-) -> Bool:
+]() -> Bool:
     return os_is_macos() and a_type == b_type == c_type == DType.float32
 
 
@@ -103,7 +108,7 @@ fn _cblas_f32[
     var K = Int32(a.dim[1]())
 
     var lda = K
-    var ldb = N
+    var ldb = N if not transpose_b else K
     var ldc = N
 
     # void cblas_sgemm(const enum CBLAS_ORDER ORDER,
@@ -507,6 +512,119 @@ fn _bnns_matmul[
         b_desc=b_desc,
         o_desc=c_desc,
     )
+
+
+# ===----------------------------------------------------------------------===#
+# GEMV (for M=1)
+# ===----------------------------------------------------------------------===#
+
+
+# Parallelized/vectorized version of GEMV for M = 1.
+# Currently, use is limited in Apple Float32 case.
+# apple_matmul (which internally calls cblas_sgemm, which in turns calls a
+# cblas_sgemv has been found to have suboptimal performance compared to this.
+@always_inline
+fn apple_gemv[
+    c_shape: DimList,
+    c_type: DType,
+    a_shape: DimList,
+    a_type: DType,
+    b_shape: DimList,
+    b_type: DType,
+    b_packed: Bool,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+](
+    c: NDBuffer[c_type, 2, c_shape],
+    a: NDBuffer[a_type, 2, a_shape],
+    b: NDBuffer[b_type, 2, b_shape],
+):
+    # Recall:
+    # if b_packed=True, this will be called AFTER pack shape and actual packing
+    # function (in MatmulPack.mojo), which will TRANSPOSE the input.
+    var M = a.dim[0]()
+    var K = a.dim[1]() if b_packed else b.dim[0]()
+    var N = b.dim[0]() if transpose_b or b_packed else b.dim[1]()
+
+    var transposed_b = NDBuffer[b_type, 2]()
+    var transposed_b_ptr = DTypePointer[b_type]()
+    # If both b_packed and transpose_b are False, we need to transpose B at
+    # runtime (which is suboptimal, but enables faster gemv below).
+    if b_packed == False and not transpose_b:
+        var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
+        transposed_b_ptr = DTypePointer[b_type].alloc(b.num_elements())
+        transposed_b = NDBuffer[b_type, 2](transposed_b_ptr, transposed_b_shape)
+
+        pack_b_ndbuffer[
+            a_type,
+            a_shape,
+            b_type,
+            b_shape,
+            c_type,
+            c_shape,
+        ](b, transposed_b)
+
+    # If b_packed == False and B comes transposed (transpose_b == True) we need
+    # to adjust K accordingly.
+    # We will also need to use the original B instead of transposed_b in the
+    # calculations further below.
+    if b_packed == False and transpose_b == True:
+        K = b.dim(1)
+
+    alias simd_width = simdwidthof[c.type]()
+
+    @always_inline
+    @__copy_capture(c, a, b, K)
+    @parameter
+    fn process_rows(start_row: Int, end_row: Int):
+        for n in range(start_row, end_row):
+            var acc_vector = SIMD[c.type, simd_width]()
+            var acc_scalar = Scalar[c.type]()
+
+            @always_inline
+            @parameter
+            fn compute_fn[width: Int](k: Int):
+                @parameter
+                if width == 1:
+                    acc_scalar += (
+                        a[0, k].cast[c.type]()
+                        * b[n, k].cast[c.type]() if b_packed
+                        or (not b_packed and transpose_b) else transposed_b[
+                            n, k
+                        ].cast[c.type]()
+                    )
+                else:
+                    acc_vector = fma(
+                        a.load[width=simd_width](0, k).cast[c.type](),
+                        b.load[width=simd_width](n, k).cast[
+                            c.type
+                        ]() if b_packed
+                        or (
+                            not b_packed and transpose_b
+                        ) else transposed_b.load[width=simd_width](n, k).cast[
+                            c.type
+                        ](),
+                        acc_vector,
+                    )
+
+            vectorize[compute_fn, simd_width](K)
+
+            var val = acc_vector.reduce_add() + acc_scalar
+
+            @parameter
+            if elementwise_lambda_fn:
+                alias func = elementwise_lambda_fn.value()
+                func[c.type, 1](Index(0, n), val)
+            else:
+                c[Index(0, n)] = val
+
+    # TODO: Experiment with this.
+    alias parallelism_grain_size = 16
+    parallelize_over_rows[process_rows](
+        StaticIntTuple[2](N, K), 1, parallelism_grain_size
+    )
+
+    transposed_b_ptr.free()
 
 
 # ===----------------------------------------------------------------------===#

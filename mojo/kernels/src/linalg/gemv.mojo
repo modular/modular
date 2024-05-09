@@ -12,6 +12,7 @@ from .MatmulUtils import elementwise_epilogue_type
 from collections import OptionalReg as Optional
 from utils.index import Index
 
+
 # Parallelized version of Gemv
 
 
