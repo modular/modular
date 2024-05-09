@@ -298,11 +298,10 @@ static M::ErrorOr<HostMachineInfo> getHostMachineInfoImpl() {
     return cpuModelNameOr.takeError();
   machineInfo.cpuModelName = std::move(*cpuModelNameOr);
 
-  // Get OS version
+  // Get OS version.  Note some barebones setups might not set this.
   auto osVersion = getHostOSVersion();
-  if (osVersion.isError())
-    return osVersion.takeError();
-  machineInfo.osVersion = osVersion.takeValue();
+  if (!osVersion.isError())
+    machineInfo.osVersion = osVersion.takeValue();
 
   auto hostFeaturesOr = decodeFeatures(getHostCPUFeatures());
   if (hostFeaturesOr.isError())
