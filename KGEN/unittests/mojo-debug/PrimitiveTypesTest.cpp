@@ -86,16 +86,16 @@ static void checkIntPair(SBValue &strct, int fst, int snd) {
 TEST(PrimitiveTypesTest, testStructAccess) {
   /// Ensures that the a DType.invalid pointer is correctly parsed.
 
-  std::optional<StopContext> ctx = buildAndLaunch("struct_access.mojo");
-  SBValue p = ctx->frame.FindVariable("p");
+  StopContext ctx = buildAndLaunch("struct_access.mojo");
+  SBValue p = ctx.frame.FindVariable("p");
   checkIntPair(p, 1, 2);
 
-  ctx.emplace(ctx->resume());
-  p = ctx->frame.FindVariable("p");
+  ctx.resume();
+  p = ctx.frame.FindVariable("p");
   checkIntPair(p, 3, 4);
 
-  ctx.emplace(ctx->resume());
-  SBValue pp = ctx->frame.FindVariable("pp");
+  ctx.resume();
+  SBValue pp = ctx.frame.FindVariable("pp");
   EXPECT_STREQ(pp.GetDisplayTypeName(), "MyPairPair");
   ASSERT_EQ((int)pp.GetNumChildren(), 2);
   SBValue ppFirst = pp.GetChildAtIndex(0);

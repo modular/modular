@@ -191,40 +191,28 @@ static StopContext runTarget(SBTarget target, MojoBinary binary) {
                      thread.GetFrameAtIndex(0)};
 }
 
-StopContext StopContext::stepOver() {
+void StopContext::updateAfterStateChange(StringRef action) {
+  this->process = this->target.GetProcess();
+  if (this->process.GetState() != lldb::eStateStopped)
+    llvm::report_fatal_error("Process is not stopped after " + action);
+
+  this->thread = process.GetSelectedThread();
+  this->frame = this->thread.GetFrameAtIndex(0);
+}
+
+void StopContext::stepOver() {
   thread.StepOver();
-
-  if (process.GetState() != lldb::eStateStopped)
-    llvm::report_fatal_error("Process is not stopped after step over");
-
-  SBThread newThread = process.GetSelectedThread();
-
-  return StopContext{std::move(binary), target, process, newThread,
-                     newThread.GetFrameAtIndex(0)};
+  updateAfterStateChange("step over");
 }
 
-StopContext StopContext::stepInto() {
+void StopContext::stepInto() {
   thread.StepInto();
-
-  if (process.GetState() != lldb::eStateStopped)
-    llvm::report_fatal_error("Process is not stopped after step over");
-
-  SBThread newThread = process.GetSelectedThread();
-
-  return StopContext{std::move(binary), target, process, newThread,
-                     newThread.GetFrameAtIndex(0)};
+  updateAfterStateChange("step into");
 }
 
-StopContext StopContext::resume() {
+void StopContext::resume() {
   process.Continue();
-
-  if (process.GetState() != lldb::eStateStopped)
-    llvm::report_fatal_error("Process is not stopped after step over");
-
-  SBThread newThread = process.GetSelectedThread();
-
-  return StopContext{std::move(binary), target, process, newThread,
-                     newThread.GetFrameAtIndex(0)};
+  updateAfterStateChange("resume");
 }
 
 CommandResult StopContext::runCommand(StringRef command) {

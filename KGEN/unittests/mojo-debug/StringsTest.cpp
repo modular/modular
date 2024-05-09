@@ -12,18 +12,18 @@ using namespace lldb;
 
 TEST(StringsTest, testStrings) {
   // Ensures that String and StringLiteral can be parsed correctly from memory.
-  std::optional<StopContext> ctx = buildAndLaunch("strings.mojo");
+  StopContext ctx = buildAndLaunch("strings.mojo");
 
-  SBValue st = ctx->frame.FindVariable("st");
+  SBValue st = ctx.frame.FindVariable("st");
   EXPECT_TRUE(StringRef(st.GetSummary()).contains("\"012345678910111213141"));
 
-  ctx.emplace(ctx->resume());
+  ctx.resume();
 
-  SBValue literal = ctx->frame.FindVariable("literal");
-  SBValue s1 = ctx->frame.FindVariable("s1");
-  SBValue s2 = ctx->frame.FindVariable("s2");
-  SBValue s3 = ctx->frame.FindVariable("s3");
-  SBValue s4 = ctx->frame.FindVariable("s4");
+  SBValue literal = ctx.frame.FindVariable("literal");
+  SBValue s1 = ctx.frame.FindVariable("s1");
+  SBValue s2 = ctx.frame.FindVariable("s2");
+  SBValue s3 = ctx.frame.FindVariable("s3");
+  SBValue s4 = ctx.frame.FindVariable("s4");
 
   // StringLiterals, being built-in, provide the underlying strings as value. On
   // the other hand, String, being parsed by a data formatter, provides the
