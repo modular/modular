@@ -7,25 +7,12 @@
 from sys import external_call
 from sys.ffi import DLHandle
 from memory.unsafe import DTypePointer
-from ._utils import call_dylib_func, exchange, CString
+from ._utils import call_dylib_func, exchange, CString, get_lib_path_from_cfg
 from pathlib import Path
 
 
 fn _get_engine_path() raises -> String:
-    var engine_lib_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.int8]
-    ](StringRef(".engine_lib"))
-
-    if not engine_lib_path_str_ptr:
-        raise "cannot get the location of AI engine library from modular.cfg"
-
-    # this transfers ownership of the underlying data buffer allocated in
-    # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
-    var engine_lib_path = String._from_bytes(engine_lib_path_str_ptr)
-
-    if not Path(engine_lib_path).exists():
-        raise "AI engine library not found at " + engine_lib_path
-    return engine_lib_path
+    return get_lib_path_from_cfg(".engine_lib", "AI engine lib")
 
 
 struct _EngineImpl:

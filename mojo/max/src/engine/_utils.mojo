@@ -334,3 +334,24 @@ struct OwningVector[T: Movable](Sized):
         for i in range(self.size):
             destroy_pointee(self.ptr + i)
         self.ptr.free()
+
+
+fn get_lib_path_from_cfg(
+    name: StringRef, err_name: StringLiteral
+) raises -> String:
+    var lib_path_str_ptr = external_call[
+        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.int8]
+    ](name)
+
+    if not lib_path_str_ptr:
+        raise "cannot get the location of " + str(
+            name
+        ) + " library from modular.cfg"
+
+    # this transfers ownership of the underlying data buffer allocated in
+    # `KGEN_CompilerRT_getMAXConfigValue` so that it can be destroyed by Mojo.
+    var lib_path = String._from_bytes(lib_path_str_ptr)
+
+    if not Path(lib_path).exists():
+        raise "AI engine library not found at " + lib_path
+    return lib_path
