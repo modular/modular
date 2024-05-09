@@ -77,6 +77,24 @@ public:
 
   /// Returns a pointer to the object of type T held by the set. If it does
   /// not exist, calls the creator function to create one and install it.
+  /// The function must always succeed.
+  template <typename T>
+  T *createIfMissing(llvm::unique_function<std::unique_ptr<T>()> creator) {
+    std::lock_guard<std::recursive_mutex> lock(mu);
+    auto denseIndex = TypeID::get<T>().getDenseIndex();
+    auto itr = map.find(denseIndex);
+    if (itr != map.end())
+      return itr->second.template get<T>();
+    std::unique_ptr<T> owner = creator();
+    T *result = owner.get();
+    GenericUniquePtr genericPtr;
+    genericPtr.reset(std::move(owner));
+    map.insert({denseIndex, std::move(genericPtr)});
+    return result;
+  }
+
+  /// Returns a pointer to the object of type T held by the set. If it does
+  /// not exist, calls the creator function to create one and install it.
   /// Returns any error the creator function returns.
   template <typename T>
   ErrorOr<T *> createIfMissing(

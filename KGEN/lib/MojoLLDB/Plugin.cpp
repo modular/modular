@@ -9,6 +9,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/MojoLLDB/Plugin.h"
 #include "./Language/MojoLanguage.h"
 #include "Commands/CommandObjectLLVMDebug.h"
 #include "Commands/CommandObjectMojo.h"
@@ -30,7 +31,17 @@ using namespace M::KGEN::Mojo;
 // Plugin Initialization
 //===--------------------------------------------------------------===//
 
+static std::atomic<M::Context *> existingContext;
+
+void M::KGEN::setLLDBPluginContext(ContextRef ctx) {
+  auto oldCtx = ContextRef::take(existingContext.exchange(ctx.release()));
+  // Let oldCtx get disposed to decrement the reference count on the previous
+  // value, if any.
+}
+
 static ErrorOr<ContextRef> getOrCreateGlobalContext() {
+  if (auto ctx = ContextRef::copy(existingContext.load()))
+    return ctx;
   // Crash reporting should only really be used when we "own" the program, and
   // that's not necessarily the case for LLDB... but we have no real better
   // place to put this, since the only better place ('main' function of the
@@ -42,6 +53,7 @@ static ErrorOr<ContextRef> getOrCreateGlobalContext() {
                                              .withMainWillNotDonate()));
   if (ctxOr.isError())
     return Error(ctxOr.getError());
+  M::KGEN::setLLDBPluginContext(ctxOr->copy());
   return ctxOr->copy();
 }
 

@@ -12,6 +12,7 @@
 
 #include "KGEN/MojoJupyter/Kernel.h"
 #include "KGEN/Support/Configuration.h"
+#include "Support/Init/Init.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/CommandLine.h"
@@ -199,14 +200,17 @@ int main(int argc, char *argv[]) {
       llvm::cl::value_desc("filename"), llvm::cl::Optional, llvm::cl::Hidden);
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-  // Determine the path of the repl entry point.
-  ErrorOr<KGEN::MojoConfig> config = KGEN::MojoConfig::open();
-  if (failed(config)) {
-    llvm::errs() << "failed to parse 'modular.cfg': " << config.getError()
-                 << "\n";
+  ErrorOr<ContextRef> ctxOr = Init::createContext(
+      "mojo-test-executor", Init::Options().withRuntimeOptions());
+  if (ctxOr.isError()) {
+    llvm::errs() << "failed to create context: " << ctxOr.getError() << "\n";
     return 1;
   }
-  StringRef exePath = config->getREPLEntryPoint();
+  ContextRef ctx = ctxOr.takeValue();
+
+  // Determine the path of the repl entry point.
+  KGEN::MojoConfig config = KGEN::MojoConfig::fromContext(ctx);
+  StringRef exePath = config.getREPLEntryPoint();
 
   // If this is a notebook, add the working directory to the kernel.
   std::string workingDirectory;
@@ -219,7 +223,7 @@ int main(int argc, char *argv[]) {
   MojoKernel kernel([](StringRef kind, StringRef msg) {
     llvm::outs() << "[" << kind << "] " << msg << "\n";
   });
-  if (failed(kernel.initialize(exePath, workingDirectory,
+  if (failed(kernel.initialize(ctx, exePath, workingDirectory,
                                /*additionalDirectories=*/{}, lldbInitFile)))
     return 1;
 

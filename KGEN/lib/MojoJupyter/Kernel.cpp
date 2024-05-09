@@ -16,6 +16,7 @@
 #include "KGEN/MojoJupyter/MatplotlibInitialization.h"
 
 #include "KGEN/MojoJupyter/Kernel.h"
+#include "KGEN/MojoLLDB/Plugin.h"
 #include "KGEN/MojoTooling/CodeComplete.h"
 #include "KGEN/Support/Configuration.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -138,7 +139,8 @@ struct MojoKernel::Impl {
   ///
   /// If `lldbInitFile` is not empty, LLDB will silently execute all the
   /// commands in this file upon initialization of the kernel.
-  LogicalResult initialize(StringRef mojoReplExe, StringRef workingDirectory,
+  LogicalResult initialize(std::optional<ContextRef> ctx, StringRef mojoReplExe,
+                           StringRef workingDirectory,
                            ArrayRef<std::string> additionalDirectories,
                            StringRef lldbInitFile);
 
@@ -229,11 +231,12 @@ MojoKernel::MojoKernel(OutputFn outputFn, bool initializeMatPlotLib)
 MojoKernel::~MojoKernel() = default;
 
 LogicalResult
-MojoKernel::initialize(StringRef mojoReplExe, StringRef workingDirectory,
+MojoKernel::initialize(std::optional<ContextRef> ctx, StringRef mojoReplExe,
+                       StringRef workingDirectory,
                        ArrayRef<std::string> additionalDirectories,
                        StringRef lldbInitFile) {
-  return impl->initialize(mojoReplExe, workingDirectory, additionalDirectories,
-                          lldbInitFile);
+  return impl->initialize(ctx, mojoReplExe, workingDirectory,
+                          additionalDirectories, lldbInitFile);
 }
 
 ExecutionFinishedState MojoKernel::startExecution(StringRef cellId,
@@ -278,7 +281,7 @@ EXPORT MojoKernel *initMojoKernel(RawOutputFn outputFn, const char *mojoReplExe,
       std::make_unique<MojoKernel>([=](StringRef type, StringRef output) {
         outputFn(type.data(), output.data());
       });
-  if (failed(kernel->initialize(mojoReplExe, workingDirectory,
+  if (failed(kernel->initialize(std::nullopt, mojoReplExe, workingDirectory,
                                 /*additionalDirectories=*/{}, lldbInitFile)))
     return nullptr;
   return kernel.release();
@@ -367,7 +370,8 @@ static void runLLDBInitFile(Debugger &debugger, FileSpec lldbInitFile) {
 }
 
 LogicalResult
-MojoKernel::Impl::initialize(StringRef mojoReplExe, StringRef workingDirectory,
+MojoKernel::Impl::initialize(std::optional<ContextRef> ctx,
+                             StringRef mojoReplExe, StringRef workingDirectory,
                              ArrayRef<std::string> additionalDirectories,
                              StringRef lldbInitFile) {
   // Initialize a new debugger instance.
@@ -395,6 +399,13 @@ MojoKernel::Impl::initialize(StringRef mojoReplExe, StringRef workingDirectory,
   FileSpec mojoPlugin(config->getLLDBPluginPath().str());
   if (!FileSystem::Instance().Exists(mojoPlugin))
     return reportKernelError("unable to locate Mojo LLDB plugin");
+
+  // LLDB needs access to an M::Context.  At initialization time, it will
+  // create its own if one has not been provided to it, but this causes
+  // problems if there is already an M::Context in the process, so hand off our
+  // context before it initializes if we have one.
+  if (ctx)
+    KGEN::setLLDBPluginContext(ctx.value());
 
   CommandReturnObject result(/*colors=*/false);
   Status err;

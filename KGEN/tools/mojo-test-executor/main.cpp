@@ -58,7 +58,7 @@ emitInitializationError(ArrayRef<ExecutableTest> tests,
 }
 
 /// Execute the given tests, emitting results to the given function.
-static void executeTests(StringRef workingDirectory,
+static void executeTests(ContextRef ctx, StringRef workingDirectory,
                          ArrayRef<std::string> includeDirs,
                          ArrayRef<ExecutableTest> tests,
                          function_ref<void(TestExecutionResult)> emitFn) {
@@ -85,7 +85,7 @@ static void executeTests(StringRef workingDirectory,
 
   // Initialize the kernel.
   MojoKernel kernel(outputFn, /*initializeMatPlotLib=*/false);
-  if (failed(kernel.initialize(exePath, workingDirectory, includeDirs,
+  if (failed(kernel.initialize(ctx, exePath, workingDirectory, includeDirs,
                                /*lldbInitFile=*/{})))
     return emitInitError("failed to initialize test executor kernel");
 
@@ -200,7 +200,7 @@ getExecutableTest(llvm::SourceMgr &sourceMgr, const std::filesystem::path &path,
   return getUnitTest(path, test.getTestID());
 }
 
-static mlir::LogicalResult runTestExecutor(ArrayRef<Test> tests,
+static mlir::LogicalResult runTestExecutor(ContextRef ctx, ArrayRef<Test> tests,
                                            bool prettyOutput,
                                            ArrayRef<std::string> includeDirs) {
   JSONTransport transport(stdin, llvm::outs(), JSONStreamStyle::Standard,
@@ -252,7 +252,7 @@ static mlir::LogicalResult runTestExecutor(ArrayRef<Test> tests,
   std::filesystem::path workingDirectory = path.parent_path();
   while (Filesystem::isMojoSourcePackagePath(workingDirectory))
     workingDirectory = workingDirectory.parent_path();
-  executeTests(workingDirectory.string(), includeDirs, executableTests,
+  executeTests(ctx, workingDirectory.string(), includeDirs, executableTests,
                onTestResultFn);
   return success();
 }
@@ -317,5 +317,5 @@ int main(int argc, char **argv) {
     return 0;
 
   // Run the executor.
-  return failed(runTestExecutor(*tests, prettyPrint, includeDirs));
+  return failed(runTestExecutor(*ctxOr, *tests, prettyPrint, includeDirs));
 }
