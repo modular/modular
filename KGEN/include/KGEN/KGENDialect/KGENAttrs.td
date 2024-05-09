@@ -464,6 +464,12 @@ def KGEN_IntLiteralAttr : KGEN_ExprAttr<"IntLiteral", "int_literal"> {
   let extraClassDeclaration = [{
     Type getType() const;
   }];
+
+  let builders = [
+    AttrBuilder<(ins "int64_t":$value), [{
+      return $_get($_ctxt, IPInt(value));
+    }]>,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
