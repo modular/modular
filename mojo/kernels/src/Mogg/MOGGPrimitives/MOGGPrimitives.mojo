@@ -92,16 +92,20 @@ fn unpack_async(
     ](async_ptr)
 
 
-@mogg_register("builtin.unpack_buffer_data")
+@mogg_register("builtin.unpack_buffer")
 @always_inline
 @export
-fn unpack_buffer_data(
+fn unpack_buffer(
     async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-) -> __mlir_type.`!kgen.pointer<scalar<invalid>>`:
-    return external_call[
+) -> NDBuffer[DType.uint8, 1]:
+    var size: UInt64 = 0
+    var data_ptr = external_call[
         "KGEN_CompilerRT_GetDataFromBuffer",
         __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-    ](async_ptr)
+    ](async_ptr, Pointer.address_of(size))
+
+    var shape = StaticIntTuple[1](int(size))
+    return NDBuffer[DType.uint8, 1](Pointer(data_ptr).bitcast[UInt8](), shape)
 
 
 @mogg_register("builtin.unpack_tensor_spec")
@@ -116,6 +120,15 @@ fn unpack_tensor_spec(
     ](async_ptr)
     var spec = Pointer(raw_spec_ptr).bitcast[TensorSpec]()
     return spec[]
+
+
+@mogg_register("builtin.get_buffer_data")
+@always_inline
+@export
+fn get_buffer_data(
+    buffer: NDBuffer[DType.uint8, 1]
+) -> DTypePointer[DType.uint8]:
+    return buffer.data
 
 
 # ===----------------------------------------------------------------------===#
@@ -379,3 +392,34 @@ fn mgp_chain_device_to_host[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
 @export
 fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
     return
+
+
+@always_inline
+fn fillBuffer[
+    type: DType
+](buf: NDBuffer[DType.uint8, 1], vals: VariadicList[Int]):
+    var ptr = buf.data.bitcast[type]()
+    var offset: Int = 0
+    for val in vals:
+        ptr.store(offset, val)
+        offset += 1
+
+
+@mogg_register("mgp.buffer.set_with_index")
+@always_inline
+@export
+fn mgp_buffer_set_with_index(buffer: NDBuffer[DType.uint8, 1], *vals: Int):
+    var bufSize = buffer.num_elements()
+    var numArgs = len(vals)
+    debug_assert(
+        bufSize % numArgs == 0,
+        "buffer size not divisible by number of index args",
+    )
+
+    var elSize = bufSize / numArgs
+    if elSize == 4:
+        fillBuffer[DType.int32](buffer, vals)
+    elif elSize == 8:
+        fillBuffer[DType.int64](buffer, vals)
+    else:
+        debug_assert(False, "unsupported element size")
