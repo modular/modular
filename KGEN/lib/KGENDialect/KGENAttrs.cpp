@@ -1894,24 +1894,26 @@ static Attribute simplifyTargetGetField(SmallVectorImpl<TypedAttr> &operands,
                                     field))
     resultType = b.getType<StringType>();
   else
-    resultType = b.getIndexType();
+    resultType = b.getType<IntLiteralType>();
 
   if (!target)
     return {};
 
-  if (field.getValue() == "triple")
+  if (field.getValue() == "triple") {
     return StringAttr::get(target.getTarget().getTriple().getTriple(),
                            resultType);
+  }
   if (field.getValue() == "os")
     return StringAttr::get(target.getTarget().getOS(), resultType);
   if (field.getValue() == "arch")
     return StringAttr::get(target.getTarget().getArch(), resultType);
   if (field.getValue() == "simd_bit_width")
-    return b.getIndexAttr(target.getTarget().getSimdBitWidth());
-  if (field.getValue() == "endianness")
+    return b.getAttr<IntLiteralAttr>(target.getTarget().getSimdBitWidth());
+  if (field.getValue() == "endianness") {
     return StringAttr::get(
         target.getTarget().getTriple().isLittleEndian() ? "little" : "big",
         resultType);
+  }
   return {};
 }
 
