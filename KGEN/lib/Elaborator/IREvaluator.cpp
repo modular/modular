@@ -254,10 +254,6 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
   auto populateFnType = SignatureType::get(
       b.getFunctionType(PointerType::get(noneType), noneType), {}, {},
       {ArgConvention::BorrowedInReg}, FnEffects().setCapturing());
-  auto strType = StringType::get(ctx);
-  auto structType = StructType::get(
-      b.getContext(), {strType, b.getIndexType(), populateFnType});
-  auto variant = VariantType::get({structType, strType});
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it
@@ -288,20 +284,20 @@ IREvaluator::evaluateCompileAssembly(ParamOperatorAttr op) {
     os << closure.getError();
     handler.emitDiagnostics(
         [&](Diagnostic &diag) { emitDiagnosticToStream(os, diag); });
-    return {VariantAttr::get(StringAttr::get(os.str(), strType), 1, variant)};
+    // Note: return -1 to indicate an error state.
+    return {StructAttr::get({StringAttr::get(os.str(), StringType::get(ctx)),
+                             b.getIndexAttr(-1),
+                             UnknownAttr::get(populateFnType)})};
   }
 
   auto populate = cast<FuncOp>(closure->populateCapturesFn.release());
   elaborator->addDeferredFunction(populate);
 
-  SmallVector<TypedAttr> fieldValues{
-      closure->contents, b.getIndexAttr(closure->numCaptures),
-      SymbolConstantAttr::get(FlatSymbolRefAttr::get(populate.getSymNameAttr()),
-                              populate.getSignature())};
-  TypedAttr result = StructAttr::get(fieldValues, structType);
-  if (propagateError)
-    result = VariantAttr::get(result, 0, variant);
-  return result;
+  auto populateFnRef = SymbolConstantAttr::get(
+      FlatSymbolRefAttr::get(populate.getSymNameAttr()), populateFnType);
+  return {
+      StructAttr::get({closure->contents, b.getIndexAttr(closure->numCaptures),
+                       populateFnRef})};
 }
 
 FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {

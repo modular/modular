@@ -1664,14 +1664,14 @@ kgen.generator @might_fail<succeed: i1>() {
   kgen.return
 }
 
-!result_type = !kgen.variant<struct<(string, index, (!kgen.pointer<none>) -> ())>, string>
+!capture = !kgen.struct<(string, index, (!kgen.pointer<pointer<none>> borrow) capturing -> !kgen.none)>
 
 // CHECK-LABEL: @compile_assembly_conditional
 kgen.generator export @compile_assembly_conditional() {
-  // CHECK-NEXT: <#kgen.variant<:string "failed {{.*}}", 1>>
-  kgen.param.constant: !result_type = <compile_assembly(current_target(), llvm, 1, :() -> () @might_fail<:i1 0>)>
-  // CHECK-NEXT: <#kgen.variant<:struct<{{.*}}> { "{{.*}}", 0, [[CAP_FN:@.*]] }, 0>>
-  kgen.param.constant: !result_type = <compile_assembly(current_target(), llvm, 1, :() -> () @might_fail<:i1 1>)>
+  // CHECK-NEXT: <{ "failed {{.*}}", -1, *? }>
+  kgen.param.constant: !capture = <compile_assembly(current_target(), llvm, 1, :() -> () @might_fail<:i1 0>)>
+  // CHECK-NEXT: <{ "{{.*}}", 0, [[CAP_FN:@.*]] }>
+  kgen.param.constant: !capture = <compile_assembly(current_target(), llvm, 1, :() -> () @might_fail<:i1 1>)>
   kgen.return
 }
 
