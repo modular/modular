@@ -17,6 +17,7 @@
 #include "LLCL/Runtime/WorkQueue.h"
 #include "LLCL/Support/ForkJoin.h"
 #include "Support/Context.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
 #include "mlir/Analysis/CallGraph.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -108,9 +109,11 @@ struct CallGraphNode
 
 struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
   explicit CallGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
-                     const std::optional<StringAttr> updateAttrName)
+                     const std::optional<StringAttr> updateAttrName,
+                     bool debugCallsite)
       : runtime(runtime), pms(pms), externalNode(nullptr, runtime),
-        updateAttrName(updateAttrName), numWorkItems(0),
+        updateAttrName(updateAttrName), debugCallsite(debugCallsite),
+        numWorkItems(0),
         done(LLCL::AsyncValueRef<LLCL::Chain>::allocate(runtime)) {}
 
   /// Build the CallGraph.
@@ -154,6 +157,9 @@ private:
   ///   with the StringAttr.
   /// - Optional does not have value: Do not update debuginfo.
   std::optional<StringAttr> updateAttrName;
+
+  /// Whether to insert debug information for inlined callsites.
+  bool debugCallsite;
 
   /// Number of work items (i.e. functions to inline)
   std::atomic<size_t> numWorkItems;
@@ -259,6 +265,9 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
       // Nuke debuginfo from the callee if inlining a function without
       // debuginfo into one that does.
       bool noDebug = !callee->func.getLocScope() && caller->func.getLocScope();
+      // Mark callsite location explicitly.
+      if (debugCallsite && callee->func.getLocScope())
+        OpBuilder(call).create<DebugInfo::LineTableLocOp>(call->getLoc());
       // Inline the callee.
       auto [scope, singleExit] =
           inlineRegion(map, call, callee->func.getBodyRegion());
@@ -368,7 +377,7 @@ void AutomaticInline::runOnOperation() {
 
   LLCL::Runtime &runtime = *loadContext(&getContext())->get<LLCL::Runtime>();
   PerThreadPassManagers pms(&getContext(), buildFuncPasses);
-  CallGraph graph(runtime, pms, updateAttrName);
+  CallGraph graph(runtime, pms, updateAttrName, !optimizationLevel.getValue());
 
   graph.build(getOperation(), symtab);
   graph.performInlining(getInlineThreshold());

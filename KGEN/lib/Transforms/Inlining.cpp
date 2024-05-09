@@ -381,7 +381,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
                                 const ParameterUseDefGraph &calleeParams,
                                 const llvm::SetVector<StringAttr> &calleeDecls,
                                 AttrTypeMangler::Cache &manglerCache,
-                                bool updateDebugInfo) {
+                                bool updateDebugInfo, bool debugCallsite) {
   CompilerTimeTraceScope traceScope("inlineGeneratorCall",
                                     [&] { return callee.getSymName().str(); });
 
@@ -407,6 +407,9 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
       type = mangler.mangleRefsIn(type);
 
   b.setInsertionPointAfter(call);
+  if (debugCallsite && callee.getLocScope())
+    b.create<DebugInfo::LineTableLocOp>(call->getLoc());
+
   SmallVector<Value> argVals =
       rebindValues(b, call.getLoc(), call->getOperands(), argTypes);
 
@@ -794,7 +797,7 @@ void ParametricInliningGraph::performInlining(
     inlineGeneratorCall(caller->func, call, callee->func, callee->level,
                         callerParams, callee->calleeParamGraph,
                         callee->allDecls, manglerCaches.getThreadLocalCache(),
-                        updateDebugInfo);
+                        updateDebugInfo, !optimizationLevel);
   }
 }
 
@@ -832,7 +835,8 @@ void InlineParametricPass::runOnOperation() {
   //
   // Note: we choose not to iterate because most nodebug inline functions should
   // be trivial and not have calls to recursive functions.
-  auto inlineReadyFn = [&graph, updateDebugInfo = updateDebugInfo.getValue()](
+  auto inlineReadyFn = [&graph, updateDebugInfo = updateDebugInfo.getValue(),
+                        optimizationLevel = optimizationLevel.getValue()](
                            ParametricInliningGraphNode &caller) {
     // Skip nodes that are completely processed.
     if (caller.numProcessedCalls == caller.callsites.size())
@@ -843,10 +847,11 @@ void InlineParametricPass::runOnOperation() {
       // Skip nodes that are not complete.
       if (callee->numProcessedCalls != callee->callsites.size())
         continue;
-      inlineGeneratorCall(
-          caller.func, call, callee->func, callee->level, callerParams,
-          callee->calleeParamGraph, callee->allDecls,
-          graph.manglerCaches.getThreadLocalCache(), updateDebugInfo);
+      inlineGeneratorCall(caller.func, call, callee->func, callee->level,
+                          callerParams, callee->calleeParamGraph,
+                          callee->allDecls,
+                          graph.manglerCaches.getThreadLocalCache(),
+                          updateDebugInfo, !optimizationLevel);
     }
   };
 
@@ -909,8 +914,10 @@ struct InliningGraphNode
 struct InliningGraph
     : public InliningGraphBase<InliningGraph, InliningGraphNode> {
   explicit InliningGraph(LLCL::Runtime &runtime, PerThreadPassManagers &pms,
-                         std::optional<StringAttr> updateAttrName)
-      : InliningGraphBase(runtime), pms(pms), updateAttrName(updateAttrName) {}
+                         std::optional<StringAttr> updateAttrName,
+                         unsigned optimizationLevel)
+      : InliningGraphBase(runtime), pms(pms), updateAttrName(updateAttrName),
+        optimizationLevel(optimizationLevel) {}
 
   /// CallGraphBase interface for whether to add the node to the graph.
   bool shouldAddToGraph(KGENCallOpInterface call, InliningGraphNode *node) {
@@ -936,6 +943,9 @@ struct InliningGraph
   ///   with the StringAttr.
   /// - Optional does not have value: Do not update debuginfo.
   std::optional<StringAttr> updateAttrName;
+
+  /// Compiler optimization level.
+  unsigned optimizationLevel;
 };
 } // namespace
 
@@ -968,6 +978,9 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
     // into one that does.
     bool noDebug = callee->level == InlineLevel::AlwaysNoDebug ||
                    (!callee->func.getLocScope() && caller->func.getLocScope());
+    // Mark callsite location explicitly.
+    if (!optimizationLevel && callee->func.getLocScope())
+      OpBuilder(call).create<DebugInfo::LineTableLocOp>(call->getLoc());
     if (callee->numTimesInlined.fetch_add(1) + 1 == callee->callers.size()) {
       // If so, we can take the body instead of cloning it. Acquire an exclusive
       // lock to wait for all other users to finish cloning.
@@ -1124,7 +1137,8 @@ void ForceInlinePass::runOnOperation() {
 
   LLCL::Runtime &runtime = *loadContext(&getContext())->get<LLCL::Runtime>();
   PerThreadPassManagers pms(&getContext(), buildFuncPasses);
-  InliningGraph graph(runtime, pms, updateAttrName);
+  InliningGraph graph(runtime, pms, updateAttrName,
+                      optimizationLevel.getValue());
   graph.build(getOperation(), symtab);
   graph.process();
 

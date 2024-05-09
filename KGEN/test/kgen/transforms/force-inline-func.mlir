@@ -19,4 +19,4 @@ kgen.func @bar(%arg0: index) -> index always_inline {
   kgen.return %0 : index
 }
 
-// REPRO: pipeline: "builtin.module(force-inline{func-pipeline=canonicalize,cse update-debug-info=deferred}, test-always-fail)"
+// REPRO: pipeline: "builtin.module(force-inline{func-pipeline=canonicalize,cse optimization-level=1 update-debug-info=deferred}, test-always-fail)"
