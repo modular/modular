@@ -1074,6 +1074,11 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
   return StructAttr::get(values, *this);
 }
 
+StructType StructType::get(ArrayRef<Type> types) {
+  assert(!types.empty() && "expected at least one type");
+  return StructType::get(types.front().getContext(), types);
+}
+
 TypedAttr KGEN::createUninitializedValueOf(Type type) {
   // If the value being allocated is an aggregate, initialize the aggregate
   // with undef subelements.

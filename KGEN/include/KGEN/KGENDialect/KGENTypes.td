@@ -528,6 +528,7 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
   }];
 
   let builders = [
+    TypeBuilderWithInferredContext<(ins "ArrayRef<Type>":$types)>,
     TypeBuilder<(ins "ArrayRef<Type>":$types), [{
       return $_get($_ctxt, types, /*isMemoryOnly=*/false);
     }]>

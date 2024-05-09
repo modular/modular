@@ -629,6 +629,15 @@ LogicalResult StructAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
+StructAttr StructAttr::get(ArrayRef<TypedAttr> values) {
+  assert(!values.empty() && "expected at least one value");
+  SmallVector<Type> types;
+  types.reserve(values.size());
+  for (TypedAttr value : values)
+    types.push_back(value.getType());
+  return StructAttr::get(values, StructType::get(types));
+}
+
 //===----------------------------------------------------------------------===//
 // StructExtractAttr
 //===----------------------------------------------------------------------===//
