@@ -9,7 +9,6 @@ from math import ceildiv
 from register import *
 from buffer import NDBuffer
 from buffer.list import DimList
-from tensor import TensorSpec
 from MOGGIntList import IntList
 from extensibility import Tensor as ExtensibilityTensor
 
