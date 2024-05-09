@@ -46,27 +46,8 @@ alias _EMISSION_KIND_ASM: __mlir_type.index = (0).__as_mlir_index()
 alias _EMISSION_KIND_LLVM: __mlir_type.index = (1).__as_mlir_index()
 
 
-alias _ErrorOrInfo = __mlir_type[`!kgen.variant<`, _Info, `, string>`]
-
-
 fn _noop_populate(ptr: Pointer[NoneType]) capturing:
     return
-
-
-fn _is_error(variant: _ErrorOrInfo) -> Bool:
-    return __mlir_op.`kgen.variant.is`[index = __mlir_attr.`1 : index`](variant)
-
-
-fn _get_info(variant: _ErrorOrInfo) -> _Info:
-    return __mlir_op.`kgen.variant.take`[index = __mlir_attr.`0 : index`](
-        variant
-    )
-
-
-fn _get_error(variant: _ErrorOrInfo) -> StringLiteral:
-    return __mlir_op.`kgen.variant.take`[index = __mlir_attr.`1 : index`](
-        variant
-    )
 
 
 @always_inline
@@ -86,20 +67,18 @@ fn _compile_info_asm_failable_impl[
         `,`,
         func,
         `> : `,
-        _ErrorOrInfo,
+        _Info,
     ]
-    alias is_error = _is_error(impl)
 
     @parameter
-    if is_error:
-        alias result = Info("", "", 0, _noop_populate, _get_error(impl), True)
+    if Int(impl.num_captures) == -1:
+        alias result = Info("", "", 0, _noop_populate, impl.asm, True)
         return result
-    alias cls = _get_info(impl)
     alias result = Info(
-        cls.asm,
+        impl.asm,
         get_linkage_name[target, func_type, func](),
-        cls.num_captures,
-        rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
+        impl.num_captures,
+        rebind[fn (Pointer[NoneType]) capturing -> None](impl.populate),
         "",
         False,
     )
@@ -154,25 +133,22 @@ fn _compile_info_llvm_failable_impl[
         `,`,
         func,
         `> : `,
-        _ErrorOrInfo,
+        _Info,
     ]
-    alias is_error = _is_error(impl)
 
     @parameter
-    if is_error:
-        alias result = Info("", "", 0, _noop_populate, _get_error(impl), True)
+    if Int(impl.num_captures) == -1:
+        alias result = Info("", "", 0, _noop_populate, impl.asm, True)
         return result
-    else:
-        alias cls = _get_info(impl)
-        alias result = Info(
-            cls.asm,
-            get_linkage_name[target, func_type, func](),
-            cls.num_captures,
-            rebind[fn (Pointer[NoneType]) capturing -> None](cls.populate),
-            "",
-            False,
-        )
-        return result
+    alias result = Info(
+        impl.asm,
+        get_linkage_name[target, func_type, func](),
+        impl.num_captures,
+        rebind[fn (Pointer[NoneType]) capturing -> None](impl.populate),
+        "",
+        False,
+    )
+    return result
 
 
 @always_inline
