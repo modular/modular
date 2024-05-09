@@ -18,6 +18,7 @@ add_modular_unittest(
 
   BreakpointTest.cpp
   ControlFlowTest.cpp
+  InlinedCallsiteTest.cpp
   LifetimesTest.cpp
   PrimitiveTypesTest.cpp
   SourceNamesTest.cpp

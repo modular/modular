@@ -473,6 +473,8 @@ def ForceInline : Pass<"force-inline", "ModuleOp"> {
            "\"deferred\", \"Update at the end of the pass.\"),"
            "clEnumValN(M::KGEN::InlinerDebugInfoUpdateTime::kNever,"
            "\"never\", \"Do not update debug info.\"))">,
+    Option<"optimizationLevel", "optimization-level", "unsigned", "1",
+           "Specify the compilation optimization level.">,
     Option<"funcPipelineStr", "func-pipeline", "std::string", "\"\"",
            "Specify the inner pipeline to use on functions.">
   ];

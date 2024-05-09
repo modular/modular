@@ -59,6 +59,8 @@ public:
         DebugOpInterpreterInterface<DebugInfo::ValueOp>>(*ctx);
     DebugInfo::KillOp::attachInterface<
         DebugOpInterpreterInterface<DebugInfo::KillOp>>(*ctx);
+    DebugInfo::LineTableLocOp::attachInterface<
+        DebugOpInterpreterInterface<DebugInfo::LineTableLocOp>>(*ctx);
   }
 
   /// Clone the extension.
