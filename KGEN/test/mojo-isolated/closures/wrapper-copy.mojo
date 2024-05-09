@@ -41,17 +41,19 @@
 # CHECK: lit.func @"fn{{.*}}_copyinit_`_CI_{{.*}}(%other: !kgen.pointer<none>, |)
 
 # Allocate memory on the heap for impl and copy existing contents into it.
-# CHECK-NEXT:  %index = kgen.param.constant = <get_sizeof(
-# CHECK-NEXT:  %index_0 = kgen.param.constant = <get_alignof(
-# CHECK-NEXT:  [[V0:%.*]] = pop.aligned_alloc %index_0, %index
-# CHECK-NEXT:  [[V1:%.*]] = pop.pointer.bitcast %other
-# CHECK-NEXT:  %2 = lit.ref.from_pointer [[V0]]
-# CHECK-NEXT:  %3 = lit.ref.from_pointer [[V1]]
-# CHECK-NEXT:  %4 = lit.ref.immut %3
-# CHECK-NEXT:  [[V2:%.*]] = lit.call {{.*}}__copyinit__{{.*}}(%2, %4)
+# CHECK-NEXT:  %[[SIZEOF:.*]] = kgen.param.constant: !kgen.int_literal = <get_sizeof(
+# CHECK-NEXT:  %[[SIZEOF_IDX:.*]] = kgen.int_literal.convert %[[SIZEOF]] : to index
+# CHECK-NEXT:  %[[ALIGNOF:.*]] = kgen.param.constant: !kgen.int_literal = <get_alignof(
+# CHECK-NEXT:  %[[ALIGNOF_IDX:.*]] = kgen.int_literal.convert %[[ALIGNOF]] : to index
+# CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %[[ALIGNOF_IDX]], %[[SIZEOF_IDX]]
+# CHECK-NEXT:  %[[V1:.*]] = pop.pointer.bitcast %other
+# CHECK-NEXT:  %[[REF0:.*]] = lit.ref.from_pointer %[[V0]]
+# CHECK-NEXT:  %[[REF1:.*]] = lit.ref.from_pointer %[[V1]]
+# CHECK-NEXT:  %[[REF2:.*]] = lit.ref.immut %[[REF1]]
+# CHECK-NEXT:  lit.call {{.*}}__copyinit__{{.*}}(%[[REF0]], %[[REF2]])
 
 # Store the address of the heap allocated memory into the self.
-# CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast [[V0]]
+# CHECK-NEXT:  [[V4:%.*]] = pop.pointer.bitcast %[[V0]]
 # CHECK-NEXT:  return [[V4]]
 
 

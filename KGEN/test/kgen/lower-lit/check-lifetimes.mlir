@@ -1186,8 +1186,10 @@ lit.func @createConditionallyInitializedImmortalReferenceInRepl[mut topArg, mut 
 
   %2 = lit.ref.struct.ger %__mojo_repl_arg[__new_repl_var] : <pointer<pointer<!PythonObject>>, mut topArg> from !Context
   %3 = lit.ref.load %2 : <pointer<pointer<!PythonObject>>, mut topArg>
-  %index_3 = kgen.param.constant = <get_sizeof(!PythonObject, current_target())>
-  %index_4 = kgen.param.constant = <get_alignof(!PythonObject, current_target())>
+  %int_3 = kgen.param.constant: !kgen.int_literal = <get_sizeof(!PythonObject, current_target())>
+  %index_3 = kgen.int_literal.convert %int_3 : to index
+  %int_4 = kgen.param.constant: !kgen.int_literal = <get_alignof(!PythonObject, current_target())>
+  %index_4 = kgen.int_literal.convert %int_4 : to index
   %4 = pop.aligned_alloc %index_4, %index_3 : <!PythonObject>
   pop.store %4, %3 : !kgen.pointer<pointer<!PythonObject>>
 

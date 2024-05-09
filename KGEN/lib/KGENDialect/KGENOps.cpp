@@ -1258,6 +1258,8 @@ ErrorTreeOrSuccess IntLiteralConvertOp::interpret(ArrayRef<Attribute> operands,
                                                   InterpreterState &state) {
   assert(!operands.empty() && "IntLiteralConvertOp must have an operand");
   auto inval = ::dyn_cast<IntLiteralAttr>(operands[0]);
+  if (!inval)
+    return ErrorTree(getLoc(), Error("input must be IntLiteralAttr"));
   IntegerAttr attrResult;
   ErrorTreeOrSuccess errOrSuccess = intLiteralConvertOpHelper(
       inval.getValue(), getType(), attrResult, getLoc());
@@ -1300,7 +1302,9 @@ IntLiteralToFloatLiteralOp::interpret(ArrayRef<Attribute> operands,
                                       InterpreterState &state) {
   assert(!operands.empty() &&
          "IntLiteralToFloatLiteralOp must have an operand");
-  auto inval = ::cast<IntLiteralAttr>(operands[0]);
+  auto inval = ::dyn_cast<IntLiteralAttr>(operands[0]);
+  if (!inval)
+    return ErrorTree(getLoc(), Error("input must be IntLiteralAttr"));
   FloatLiteralAttr attrResult = FloatLiteralAttr::get(
       inval.getContext(),
       FloatLiteralSpecialValuesAttr::get(inval.getContext(),

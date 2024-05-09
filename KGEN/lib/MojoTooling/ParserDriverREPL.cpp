@@ -521,20 +521,23 @@ static void processVariablesForPersistence(MojoParserREPLListener &listener,
     // TODO: Whenever we have globals, we should be able to use a global
     // variable for the address and ensure it gets preserved. For now, we just
     // malloc the memory.
-    mlir::Type indexType = structBuilder.getIndexType();
+    auto intLiteralType = structBuilder.getType<IntLiteralType>();
+    auto idxType = structBuilder.getIndexType();
     SmallVector<TypedAttr> operands{
         TypeConstantAttr::get(elementType, anyRegTypeType),
         cast<TypedAttr>(targetAttr)};
     // Compute the size of the type.
-    Attribute sizeOfAttr =
-        ParamOperatorAttr::get(POC::GetSizeOf, operands, indexType);
-    Value sizeOf =
-        builder.create<ParamConstantOp>(indexType, cast<TypedAttr>(sizeOfAttr));
+    auto sizeOfAttr =
+        ParamOperatorAttr::get(POC::GetSizeOf, operands, intLiteralType);
+    auto sizeOfConst =
+        builder.create<ParamConstantOp>(intLiteralType, sizeOfAttr);
+    Value sizeOf = builder.create<IntLiteralConvertOp>(idxType, sizeOfConst);
     // Compute the alignment of the type.
-    Attribute alignOfAttr =
-        ParamOperatorAttr::get(POC::GetAlignOf, operands, indexType);
-    Value alignOf = builder.create<ParamConstantOp>(
-        indexType, cast<TypedAttr>(alignOfAttr));
+    auto alignOfAttr =
+        ParamOperatorAttr::get(POC::GetAlignOf, operands, intLiteralType);
+    auto alignOfConst =
+        builder.create<ParamConstantOp>(intLiteralType, alignOfAttr);
+    Value alignOf = builder.create<IntLiteralConvertOp>(idxType, alignOfConst);
     // Allocate an aligned blob for the variable.
     Value mallocCast = builder.create<POP::AlignedAllocOp>(
         type, ArrayRef<Value>{alignOf, sizeOf});

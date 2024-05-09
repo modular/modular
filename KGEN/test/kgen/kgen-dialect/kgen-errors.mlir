@@ -75,36 +75,36 @@ kgen.generator @dtype_params() {
 
 // -----
 
-// expected-error @below {{'get_sizeof' operator requires two operands}}
+// expected-error @below {{get_sizeof operator requires two operands}}
 "someop"() {a = #kgen.param.expr<get_sizeof, 1>} : () -> ()
 
 // -----
 
-// expected-error @below {{'get_sizeof' operand 0 should be a type expression}}
+// expected-error @below {{get_sizeof operand 0 should be a type expression}}
 "someop"() {a = #kgen.param.expr<get_sizeof, 1, 2> : !kgen.dtype} : () -> ()
 
 // -----
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
-// expected-error @below {{'get_sizeof' should return an index}}
+// expected-error @below {{get_sizeof should return a !kgen.int_literal}}
 "someop"() {a = #kgen.param.expr<get_sizeof, #kgen.concretetype.constant<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----
 
-// expected-error @below {{'get_alignof' operator requires two operands}}
+// expected-error @below {{get_alignof operator requires two operands}}
 "someop"() {a = #kgen.param.expr<get_alignof, 1>} : () -> ()
 
 // -----
 
-// expected-error @below {{'get_alignof' operand 0 should be a type expression}}
+// expected-error @below {{get_alignof operand 0 should be a type expression}}
 "someop"() {a = #kgen.param.expr<get_alignof, 1, 2> : !kgen.dtype} : () -> ()
 
 // -----
 
 #target = #kgen.target<triple="", arch="", features="", data_layout="", simd_bit_width=128> : !kgen.target
 
-// expected-error @below {{'get_alignof' should return an index}}
+// expected-error @below {{get_alignof should return a !kgen.int_literal}}
 "someop"() {a = #kgen.param.expr<get_alignof, #kgen.concretetype.constant<i32> : !kgen.type, #target> : !kgen.dtype} : () -> ()
 
 // -----
