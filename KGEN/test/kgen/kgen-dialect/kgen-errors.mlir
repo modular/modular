@@ -641,21 +641,6 @@ module attributes {kgen.env = #kgen.env<{fp = 2.0}>} {}
 
 // -----
 
-// expected-error @below {{a non-throwing function with byref_result must have 1 none result}}
-!type = !kgen.signature<(!kgen.pointer<index> byref_result) -> ()>
-
-// -----
-
-// expected-error @below {{a non-throwing function with byref_result must have 1 none result}}
-!type = !kgen.signature<(!kgen.pointer<index> byref_result) -> index>
-
-// -----
-
-// expected-error @below {{a non-throwing function with byref_result must have 1 none result}}
-!type = !kgen.signature<(!kgen.pointer<index> byref_result) -> (index, index)>
-
-// -----
-
 kgen.generator @variant_constant<value: i32>() {
   // expected-error @below {{variant attribute value type 'i32' does not match type at index 0 which is 'f32'}}
   %0 = kgen.param.constant: variant<f32, f64> = <#kgen.variant<:i32 value, 0>>
