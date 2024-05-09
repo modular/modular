@@ -314,10 +314,12 @@ KGEN_CompilerRT_GetValueFromAsync(LLCLWrapper<AnyAsyncValueRef> async) {
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
-KGEN_CompilerRT_GetDataFromBuffer(LLCLWrapper<AnyAsyncValueRef> async) {
+KGEN_CompilerRT_GetDataFromBuffer(LLCLWrapper<AnyAsyncValueRef> async,
+                                  size_t *sizeOut) {
   AnyAsyncValueRef &value = unwrap(async);
   assert(value.isReady());
   auto &buffer = value.get<GML::BufferRef>();
+  *sizeOut = buffer.getSize();
   return buffer.getBuffer();
 }
 
