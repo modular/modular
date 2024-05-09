@@ -5,8 +5,9 @@
 //===----------------------------------------------------------------------===//
 
 include "Package/PackageDescription.td"
+
+include "Common/DiagnosticOptions.td"
 include "Support/Driver/CommonOptions.td"
-include "../Common/DiagnosticOptions.td"
 
 //===----------------------------------------------------------------------===//
 // Compilation Options
