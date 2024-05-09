@@ -4166,7 +4166,7 @@ fn no_mask_flash_attention_cpu[
         )
 
     with Trace[TraceLevel.OP](
-        "mojo.flash_attention",
+        "mojo.flash_attention_no_mask",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ) as t:
 
