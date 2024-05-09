@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -debug-level full -mlir-print-debuginfo %s --kgen-print-inline-vtables | FileCheck %s
+# RUN: %parse-mojo-isolated -debug-level full -mlir-print-debuginfo %s --kgen-print-inline-vtables -split-input-file | FileCheck %s
 
 
 ##===----------------------------------------------------------------------===##
@@ -30,3 +30,29 @@ fn testAlwaysInlineNoDebug():
 
 # CHECK-DAG: #[[LOC_INLINE_NODEBUG]] = loc("{{.+}}":{{[0-9]+}}:{{[0-9]+}})
 # CHECK-DAG: #[[LOC_INLINE]] = loc(fused<
+
+# // -----
+
+
+# CHECK-LABEL: lit.func @"testImplicitVarDeclScope
+def testImplicitVarDeclScope():
+    # CHECK-DAG: lit.var.decl "outer" {{.*}} loc(#[[LOC_OUTER:.+]])
+    # CHECK-DAG: lit.var.decl "inner" {{.*}} loc(#[[LOC_INNER:.+]])
+    outer = 8
+    if True:
+        inner = 5
+
+
+# CHECK-LABEL: lit.func @"testImplicitVarDeclScopeNoDebug
+# CHECK-SAME: always_inline_no_debug
+@always_inline("nodebug")
+def testImplicitVarDeclScopeNoDebug():
+    # CHECK-DAG: lit.var.decl "inner" {{.*}} loc(#[[LOC_INNER_NODEBUG:.+]])
+    if True:
+        inner = 5
+
+
+# CHECK-DAG: #[[SP:.+]] = #debuginfo.subprogram<{{.*}}linkageName = "testImplicitVarDeclScope()"
+# CHECK-DAG: #[[LOC_OUTER]] = loc(fused<#[[SP]]>
+# CHECK-DAG: #[[LOC_INNER]] = loc(fused<#[[SP]]>
+# CHECK-DAG: #[[LOC_INNER_NODEBUG]] = loc("{{.*}}":{{[0-9]+}}:{{[0-9]+}})

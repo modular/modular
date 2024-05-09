@@ -477,10 +477,6 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
         std::next(emitter.varDeclCursor->getInsertionPoint()));
     ExprEmitter varDeclEmitter(emitter.shared, emitter.declScope,
                                varDeclBuilder);
-    VarDeclOp varDecl = varDeclEmitter.emitVarDecl(
-        spelling, contextualType, getLocation(emitter),
-        // Marked Implicit to disable warnings.
-        VarDeclKind::Implicit);
 
     // Add implicitly declared variable to the name table OF THE FUNCTION, so
     // subsequent uses find this one.  We don't want implicit declarations in
@@ -490,6 +486,19 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
       scopeToInsert = scopeToInsert->getParentDecl();
       assert(scopeToInsert && "not in a def?");
     }
+
+    // Get the raw FileLineColLoc, and fuse with the debug scope of the
+    // container if it exists.
+    Location varDeclLoc = emitter.shared.diags.translateLocation(getLoc());
+    if (DebugInfo::DISubprogramAttr varDeclSubprogram = DebugInfo::extractScope(
+            cast<mlir::FunctionOpInterface>(scopeToInsert))) {
+      varDeclLoc = mlir::FusedLoc::get(emitter.getContext(), {varDeclLoc},
+                                       varDeclSubprogram);
+    }
+    VarDeclOp varDecl =
+        varDeclEmitter.emitVarDecl(spelling, contextualType, varDeclLoc,
+                                   // Marked Implicit to disable warnings.
+                                   VarDeclKind::Implicit);
 
     ASTDecl &varASTDecl = emitter.getDeclResolver().addFullyResolvedDecl(
         DeclIRValue(varDecl), varDecl.getNameAttr(), getLoc(), scopeToInsert);
