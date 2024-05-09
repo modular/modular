@@ -43,22 +43,18 @@ struct TestOptTable : public llvm::opt::PrecomputedOptTable {
 /// should continue.
 static std::optional<int> parseArgs(const State &state,
                                     llvm::opt::InputArgList &args) {
-  // First, parse all arguments, in order to find the index of the input
-  // argument.
   TestOptTable options;
   unsigned unused = 0;
   args = options.ParseArgs(state.arguments, unused, unused);
 
-  // If those arguments include `--help`, print help before checking any other
-  // arguments.
+  // If `--help` appears anywhere in the argument list, print help before
+  // checking any other arguments.
   if (args.hasArg(options::OPT_help)) {
     return state.printHelp(
 #include "Test/TestOptionsHelpText.inc"
     );
   }
 
-  // Otherwise, within this subset of arguments that appear before the input,
-  // unknown arguments are rejected.
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 
@@ -101,10 +97,8 @@ static int test(const State &state) {
   }
   ErrorOr<std::optional<Test>> testOr =
       Test::discoverFromID(testID, additionalImportPaths);
-  if (testOr.isError()) {
-    llvm::errs() << "error: " << testOr.getError() << "\n";
-    return 1;
-  }
+  if (testOr.isError())
+    return state.reportError(testOr.getError());
   std::optional<Test> test = std::move(*testOr);
 
   // Utility functor used to format the output for a given result.
