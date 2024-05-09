@@ -231,7 +231,7 @@ struct Dim(CollectionElement):
             Otherwise, return an internal value representing an unknown
             dimension size.
         """
-        return self.value.get[StaticDim]()[].dim if self.is_static() else _dyn()
+        return self.value[StaticDim].dim if self.is_static() else _dyn()
 
     fn __eq__(self, other: Dim) -> Bool:
         """Checks whether two dimensions are equal.
@@ -252,15 +252,13 @@ struct Dim(CollectionElement):
         elif self.value.isa[SymbolicDim]():
             return (
                 other.value.isa[SymbolicDim]()
-                and self.value.get[SymbolicDim]()[]
-                == other.value.get[SymbolicDim]()[]
+                and self.value[SymbolicDim] == other.value[SymbolicDim]
             )
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")
             return (
                 other.value.isa[StaticDim]()
-                and self.value.get[StaticDim]()[]
-                == other.value.get[StaticDim]()[]
+                and self.value[StaticDim] == other.value[StaticDim]
             )
 
     fn __ne__(self, other: Dim) -> Bool:
@@ -291,13 +289,13 @@ struct Dim(CollectionElement):
         if self.value.isa[DynamicDim]():
             return _c.dim_new_dynamic(ctx)
         elif self.value.isa[SymbolicDim]():
-            var name = self.value.get[SymbolicDim]()[].name
+            var name = self.value[SymbolicDim].name
             var result = _c.dim_new_symbolic(ctx, name._strref_dangerous())
             name._strref_keepalive()
             return result
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")
-            var dim = self.value.get[StaticDim]()[].dim
+            var dim = self.value[StaticDim].dim
             return _c.dim_new_static(ctx, dim)
 
     fn __str__(self) -> String:
@@ -309,10 +307,10 @@ struct Dim(CollectionElement):
         if self.value.isa[DynamicDim]():
             return "?"
         elif self.value.isa[SymbolicDim]():
-            return self.value.get[SymbolicDim]()[].name
+            return self.value[SymbolicDim].name
         else:
             debug_assert(self.value.isa[StaticDim](), "variant cases")
-            return str(self.value.get[StaticDim]()[].dim)
+            return str(self.value[StaticDim].dim)
 
 
 @value
@@ -623,7 +621,7 @@ struct Type(CollectionElement):
         """
         if not self.type.isa[ListType]():
             raise "Not a list type!"
-        return self.type.get[ListType]()[]
+        return self.type[ListType]
 
     fn tensor(self) raises -> TensorType:
         """Extracts the type as a tensor type.
@@ -639,7 +637,7 @@ struct Type(CollectionElement):
         """
         if not self.type.isa[TensorType]():
             raise "Not a tensor type!"
-        return self.type.get[TensorType]()[]
+        return self.type[TensorType]
 
     fn to_mlir(self, ctx: _mlir.Context) -> _mlir.Type:
         """Converts to an _mlir.Type instance.
@@ -651,10 +649,10 @@ struct Type(CollectionElement):
             An _mlir.Type in the specified Context.
         """
         if self.type.isa[TensorType]():
-            return self.type.get[TensorType]()[].to_mlir(ctx)
+            return self.type[TensorType].to_mlir(ctx)
         else:
             debug_assert(self.type.isa[ListType](), "MO type variants")
-            return self.type.get[ListType]()[].to_mlir(ctx)
+            return self.type[ListType].to_mlir(ctx)
 
     @staticmethod
     fn from_mlir(t: _mlir.Type) raises -> Self:

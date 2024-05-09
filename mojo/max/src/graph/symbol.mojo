@@ -135,9 +135,9 @@ struct Symbol(CollectionElement, Stringable):
         for dim in dims:
             if dim[].isa[Symbol]():
                 static_shape.append(Dim.dynamic())
-                symbolic_dims.append(dim[].get[Symbol]()[])
+                symbolic_dims.append(dim[][Symbol])
             else:
-                var d = dim[].get[Int]()[]
+                var d = dim[][Int]
                 static_shape.append(d if d >= 0 else Dim.dynamic())
                 symbolic_dims.append(self.graph().scalar[DType.int64](d))
 

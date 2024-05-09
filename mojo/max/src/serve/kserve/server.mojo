@@ -248,7 +248,7 @@ struct MuxInferenceService(InferenceService):
 
             var inputs = request.get_input_tensors()
             var outputs = model[].execute(inputs^)
-            response.get[resp_type]()[].set_output_tensors(
+            response[resp_type].set_output_tensors(
                 request.get_requested_outputs(), outputs^
             )
         except e:
