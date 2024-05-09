@@ -19,7 +19,7 @@ from sys.info import (
     is_apple_silicon,
 )
 from sys.intrinsics import llvm_intrinsic
-from utils import StaticTuple
+from utils import InlineArray
 from utils.index import Index
 
 
@@ -209,7 +209,7 @@ fn _unpack_weights[
         b_scale_ptr += tile_n * simd_width
         b_packed_ptr += DType.float16.sizeof() * tile_n * simd_width
 
-        var b_column_sums = StaticTuple[SIMD[DType.int32, simd_width], tile_n](
+        var b_column_sums = InlineArray[SIMD[DType.int32, simd_width], tile_n](
             0
         )
 
@@ -287,7 +287,7 @@ fn _scale_and_accumulate[
     inout c_int32: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
     inout c_float: _Accumulator[DType.float32, tile_m, tile_n, simd_width],
 ):
-    var b_scale = StaticTuple[SIMD[DType.float32, simd_width], tile_n]()
+    var b_scale = InlineArray[SIMD[DType.float32, simd_width], tile_n](0)
 
     # Load the per-column scale values for the B matrix.
     @unroll
@@ -480,7 +480,7 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
         @unroll
         for k in range(0, group_size, 16):
-            var a_tile = StaticTuple[SIMD[DType.int8, 16], tile_m]()
+            var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](0)
 
             @unroll
             for row in range(tile_m):
@@ -603,9 +603,9 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
 
         @unroll
         for k in range(0, group_size, 8):
-            var a_tile = StaticTuple[
-                SIMD[DType.int8, simd_width * 4], block_m
-            ]()
+            var a_tile = InlineArray[SIMD[DType.int8, simd_width * 4], block_m](
+                0
+            )
 
             @parameter
             if tile_m > 1:
