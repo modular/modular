@@ -13,10 +13,66 @@ from tensor import TensorSpec
 from MOGGIntList import IntList
 from extensibility import Tensor as ExtensibilityTensor
 
+from builtin.dtype import _get_runtime_dtype_size
+
 
 # ===----------------------------------------------------------------------===#
 # Helper Structures
 # ===----------------------------------------------------------------------===#
+
+
+@register_passable("trivial")
+struct StaticTensorSpec[rank: Int]():
+    """Defines a static-rank tensor spec which - has a static-rank shape
+    in a StaticIntTuple and dtype. This is analagous to TensorSpec from
+    tensor_spec, but this is fully static and will not have any allocations."""
+
+    var shape: StaticIntTuple[rank]
+    var dType: DType
+
+    @always_inline
+    fn __init__(inout self, shape: StaticIntTuple[rank], dType: DType):
+        """Constructs a static tensor spec with a static rank shape and dType.
+
+        Args:
+            shape: The shape of static rank we are creating tensor spec with.
+            dType: The DType we are creating tensor spec with.
+        """
+        self.shape = shape
+        self.dType = dType
+
+    @always_inline
+    fn __len__(self) -> Int:
+        """Returns the size of the StaticTensorSpec.
+
+        Returns:
+            The flattened size of the shape.
+        """
+        return self.shape.flattened_length()
+
+    @always_inline
+    fn bytecount(self) -> Int:
+        """Returns the byte size of the StaticTensorSpec.
+
+        Returns:
+            The byte size of the tensor-spec.
+        """
+        return len(self) * _get_runtime_dtype_size(self.dType)
+
+    @always_inline
+    fn __eq__(self, rhs: StaticTensorSpec[rank]) -> Bool:
+        """Compares this StaticTensorSpec to another StaticTensorSpec for equality.
+
+        The StaticTensorSpec are equal if the shapes are equal and the dTypes are
+        also equal.
+
+        Args:
+            rhs: The other StaticTensorSpec.
+
+        Returns:
+            The comparison result.
+        """
+        return self.shape == rhs.shape and self.dType == rhs.dType
 
 
 # ===----------------------------------------------------------------------===#
@@ -69,15 +125,20 @@ fn create_buffer_ref_async(
 fn create_tensor_spec_async[
     rank: Int
 ](
-    spec: TensorSpec,
+    spec: StaticTensorSpec[rank],
     async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
     runtime: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
 ):
     # Mojo impl is bitwise compatible with cpp variant, can construct TensorSpec in mojo
-    # and pass it back to C++
+    # and pass it back to C++ -- However, this is an issue for the heap allocated dims.
+    # For the benefit of simplicity, allocate the shapes and ptrs and free explicitly after
+    var shape_ptr = DTypePointer[DType.index].alloc(rank)
+    for i in range(rank):
+        shape_ptr[i] = spec.shape[i]
     external_call["KGEN_CompilerRT_CreateAsyncTensorSpec", NoneType](
-        Pointer.address_of(spec), async_ptr, runtime
+        shape_ptr, rank, spec.dType, async_ptr, runtime
     )
+    shape_ptr.free()
 
 
 @mogg_register("builtin.unpack_async")
@@ -111,15 +172,23 @@ fn unpack_buffer(
 @mogg_register("builtin.unpack_tensor_spec")
 @always_inline
 @export
-fn unpack_tensor_spec(
+fn unpack_tensor_spec[
+    rank: Int
+](
     async_ptr: __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-) -> TensorSpec:
-    var raw_spec_ptr = external_call[
-        "KGEN_CompilerRT_GetValueFromAsync",
-        __mlir_type.`!kgen.pointer<scalar<invalid>>`,
-    ](async_ptr)
-    var spec = Pointer(raw_spec_ptr).bitcast[TensorSpec]()
-    return spec[]
+) -> StaticTensorSpec[
+    rank
+]:
+    var shape_ptr = DTypePointer[DType.index].alloc(rank)
+    var raw_dtype = external_call[
+        "KGEN_CompilerRT_GetTensorSpecFromAsync",
+        UInt8,
+    ](shape_ptr, rank, async_ptr)
+    var shape = StaticIntTuple[rank]()
+    for i in range(rank):
+        shape[i] = int(shape_ptr[i])
+    shape_ptr.free()
+    return StaticTensorSpec[rank](shape, DType._from_ui8(raw_dtype.value))
 
 
 @mogg_register("builtin.get_buffer_data")
@@ -341,7 +410,7 @@ fn mgp_tensor_spec_create[
     bRawDType: UInt8,
     aRawDims: DimList,
     aRawDimsRank: Int,
-](*runtimeDims: Int) -> TensorSpec:
+](*runtimeDims: Int) -> StaticTensorSpec[aRawDimsRank]:
     var dType = DType._from_ui8(bRawDType.value)
     var static_shape = IntList[aRawDims]()
     var shape = StaticIntTuple[aRawDimsRank]()
@@ -353,13 +422,15 @@ fn mgp_tensor_spec_create[
         else:
             shape[i] = runtimeDims[runtimeIndex]
             runtimeIndex = runtimeIndex + 1
-    return TensorSpec(dType, shape)
+    return StaticTensorSpec[aRawDimsRank](shape, dType)
 
 
 @mogg_register("mgp.tensor_spec.size")
 @always_inline
 @export
-fn mgp_tensor_spec_size(spec: TensorSpec) -> Int:
+fn mgp_tensor_spec_size[
+    rank: Int
+](borrowed spec: StaticTensorSpec[rank]) -> Int:
     return spec.bytecount()
 
 
