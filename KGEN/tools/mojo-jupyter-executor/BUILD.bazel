@@ -5,8 +5,8 @@ cc_binary(
     srcs = ["main.cpp"],
     deps = [
         "//KGEN:ExecutionEngine",
-        "//KGEN:LLDB",
         "//KGEN:MojoJupyter",
+        "//KGEN:liblldb.wrapper",
         "//LLCL:RuntimeGlobals",
         "//Support:Globals",
     ],

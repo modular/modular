@@ -1,0 +1,37 @@
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+lit_tests(
+    name = "test",
+    srcs = glob([
+        "*.lldb",
+        "*.mojo",
+    ]),
+    custom_substitutions = {
+        # Mirrored from lit.cfg.py to avoid searching $PATH for 'mojo'
+        "%debug": "$(rlocationpath //KGEN/tools/mojo) debug -Xlldb --source-quietly -Xlldb -S -Xlldb ../../../utils/lit-lldb-init.in",
+    },
+    data = glob(["Inputs/*.mojo"]) + [
+        "//KGEN:CompilerRT.distributable",
+        "//KGEN:CompilerRT.shared.file",
+        "//KGEN:MojoLLDB.shared.file",
+        "//KGEN:mojo-lldb",
+        "//Kernels/mojo/stdlib",
+        "//utils:lit-lldb-init.in",
+        "@llvm-project//compiler-rt:orc_rt",
+        "@llvm-project//lldb:lldb-server",
+    ],
+    env = {
+        "LLDB_DEBUGSERVER_PATH": "$(location @llvm-project//lldb:lldb-server)",
+        "MODULAR_CRASH_REPORTING_ENABLED": "false",
+        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
+        "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
+        "MODULAR_MOJO_DRIVER_PATH": "$(location //KGEN/tools/mojo)",
+        "MODULAR_MOJO_IMPORT_PATH": "$(location //Kernels/mojo/stdlib)",
+        "MODULAR_MOJO_LLDB_PATH": "$(location //KGEN:mojo-lldb)",
+        "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB.shared.file)",
+        "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
+    },
+    tools = [
+        "//KGEN/tools/mojo",
+    ],
+)

@@ -3,7 +3,7 @@ cc_library(
     srcs = ["Support.cpp"],
     hdrs = ["Support.h"],
     deps = [
-        "//KGEN:LLDB",
+        "//KGEN:liblldb.wrapper",
         "//KGEN/tools/mojo-lsp-test-client",
         "//KGEN/unittests:include_shim",
         "@com_github_google_googletest//:gtest",

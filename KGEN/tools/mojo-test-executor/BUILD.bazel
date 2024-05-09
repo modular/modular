@@ -6,10 +6,10 @@ cc_binary(
     deps = [
         "//KGEN:ExecutionEngine",
         "//KGEN:LITDialect",
-        "//KGEN:LLDB",
         "//KGEN:MojoJupyter",
         "//KGEN:MojoTesting",
         "//KGEN:ObjectCompiler",
+        "//KGEN:liblldb.wrapper",
         "//LLCL:RuntimeGlobals",
         "//Support:Globals",
         "//Support:Init",
