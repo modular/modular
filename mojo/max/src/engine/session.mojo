@@ -35,7 +35,6 @@ from max.tensor import Tensor, TensorSpec
 struct _InferenceSessionImpl(Movable):
     var engine: _EngineImpl
     var context: RuntimeContext
-    var ref_count: Atomic[DType.int64]
 
     fn __init__(
         inout self,
@@ -49,12 +48,10 @@ struct _InferenceSessionImpl(Movable):
             max_context=_get_global_or_null["MaxContext"]().address,
         )
         self.context = RuntimeContext(config^, self.engine.lib)
-        self.ref_count = 1
 
     fn __moveinit__(inout self, owned existing: Self):
         self.engine = existing.engine^
         self.context = existing.context^
-        self.ref_count = existing.ref_count.fetch_add(0)
 
     fn _compile_model_from_config(
         self,
