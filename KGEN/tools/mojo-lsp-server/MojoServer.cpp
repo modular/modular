@@ -608,25 +608,34 @@ std::vector<lsp::Diagnostic> checkUnusedVariables(SymbolIndex &index,
     if (!doc.containsLocation(symbol.declRef->getLoc()))
       return;
 
+    // This indicates that the symbol is referenced outside of its decl, so it's
+    // being used.
+    if (symbol.symbolRefs.size() > 1)
+      return;
+
     // Ignore variables beginning with _. This is the traditional syntax for an
     // intentionally unused variable and allows users to silence the diagnostic
     // if necessary.
     if (StringRef(symbol.identifier).starts_with("_"))
       return;
 
-    if (symbol.declRef.getApproximateViewKind() !=
-        DeclViewKind::DK_VariableDeclView)
+    std::optional<DeclViewKind> declKind =
+        symbol.declRef.getApproximateViewKind();
+
+    if (declKind != DeclViewKind::DK_VariableDeclView &&
+        declKind != DeclViewKind::DK_ArgumentDeclView)
       return;
 
-    if (symbol.symbolRefs.size() == 1) {
-      lsp::Diagnostic lspDiag;
-      lspDiag.source = "mojo";
-      lspDiag.severity = lsp::DiagnosticSeverity::Warning;
-      lspDiag.message = "unused variable '" + symbol.identifier + "'";
-      lspDiag.range = lsp::Range(doc.getSourceMgr(), symbol.range);
+    StringRef kind = DeclView::getKindAsString(*declKind);
 
-      diags.push_back(lspDiag);
-    }
+    lsp::Diagnostic lspDiag;
+    lspDiag.source = "mojo";
+    lspDiag.severity = lsp::DiagnosticSeverity::Warning;
+    lspDiag.message =
+        llvm::formatv("unused {0} '{1}'", kind, symbol.identifier).str();
+    lspDiag.range = lsp::Range(doc.getSourceMgr(), symbol.range);
+
+    diags.emplace_back(std::move(lspDiag));
   });
 
   return diags;

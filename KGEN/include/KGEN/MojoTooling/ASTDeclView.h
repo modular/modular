@@ -67,6 +67,8 @@ public:
   /// 'function', etc.
   StringRef getKindAsString() const;
 
+  static StringRef getKindAsString(DeclViewKind kind);
+
   /// Serialize the fields in this view to JSON.
   virtual llvm::json::Object toJSON(MojoParserContext &ctx) const = 0;
 
