@@ -555,16 +555,6 @@ SignatureType::verify(function_ref<InFlightDiagnostic()> emitError,
     }
   }
 
-  // A non-throwing function with a byref result must have a single none result.
-  if (!argConventions.empty() &&
-      argConventions[0] == ArgConvention::ByRefResult && !effects.isThrows()) {
-    if (values.getNumResults() != 1 ||
-        !::isa<KGEN::NoneType>(values.getResult(0))) {
-      return emitError() << "a non-throwing function with byref_result must "
-                            "have 1 none result";
-    }
-  }
-
   return success();
 }
 
