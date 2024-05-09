@@ -45,9 +45,3 @@ type can be gotten via `GetType()`.
 As a final tip, don't hardcode line numbers in your tests. They break often, so
 it's better to add markers in the source code and do string search for them
 to use them in asserts. The class `SourceFile` should help with that.
-
-### Helpers
-
-You can invoke the tests with environment variable
-`DUMP_STOP_CONTEXT_AT_LAUNCH`, which will print in the screen the stop location
-where the first breakpoint is hit after launch.

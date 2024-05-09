@@ -8,7 +8,6 @@
 #include "KGEN/Support/Configuration.h"
 #include "lldb/API/SBDebugger.h"
 #include "llvm/Support/Program.h"
-#include "gtest/gtest.h"
 
 using namespace M;
 using namespace lldb;
@@ -83,7 +82,10 @@ static SBDebugger getOrCreateSBDebugger() {
   std::call_once(flag, []() {
     // Initialize the singleton debugger.
     SBError err = SBDebugger::InitializeWithErrorHandling();
-    ASSERT_FALSE(err.Fail()) << err.GetCString();
+    if (err.Fail()) {
+      llvm::report_fatal_error(llvm::formatv(
+          "Couldn't create the debugger instance: {0}", err.GetCString()));
+    }
     debugger = SBDebugger::Create(/*source_init_files=*/false);
     debugger.SetAsync(false);
 
@@ -169,13 +171,13 @@ static void setBreakpointsForComments(const MojoSource &source,
 }
 
 static StopContext runTarget(SBTarget target, MojoBinary binary) {
-  // We use this command because it nicely uses all the defaults from
-  // the lldb init file, unlike debugger.Launch.
-  if (std::getenv("DUMP_STOP_CONTEXT_AT_LAUNCH")) {
-    dumpCommandForContext("run", target);
-  } else {
-    const char **argv = {};
-    target.LaunchSimple(argv, nullptr, nullptr);
+  SBLaunchInfo launchInfo = target.GetLaunchInfo();
+
+  SBError err;
+  target.Launch(launchInfo, err);
+  if (err.Fail()) {
+    llvm::report_fatal_error(
+        llvm::formatv("Couldn't launch the target: {0}", err.GetCString()));
   }
 
   SBProcess process = target.GetProcess();
