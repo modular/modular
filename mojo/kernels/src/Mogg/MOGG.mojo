@@ -3933,21 +3933,47 @@ fn multi_head_flash_attention[
 
     constrained[target == "cuda", "only valid on CUDA GPUs"]()
 
-    flash_attention[
-        rank,
-        input_0_static_shape,
-        input_1_static_shape,
-        input_2_static_shape,
-        input_3_static_shape,
-        DimList.create_unknown[rank](),
-        q_type,
-        k_type,
-        v_type,
-        mask_type,
-        output_type,
-        True,
-        target,
-    ](output, q, k, v, mask, scale[0])
+    @always_inline
+    @__copy_capture(q, k, v, mask, output)
+    @parameter
+    fn description_fn() -> String:
+        var q_shape_str = String("q_shape=") + String("x").join(q.dynamic_shape)
+        var k_shape_str = String("k_shape=") + String("x").join(k.dynamic_shape)
+        var v_shape_str = String("v_shape=") + String("x").join(v.dynamic_shape)
+        var mask_shape_str = String("mask_shape=") + String("x").join(
+            mask.dynamic_shape
+        )
+        var out_shape_str = String("o_shape=") + String("x").join(
+            output.dynamic_shape
+        )
+
+        return String(";").join(
+            q_shape_str,
+            k_shape_str,
+            v_shape_str,
+            mask_shape_str,
+            out_shape_str,
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.flash_attention",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ) as t:
+        flash_attention[
+            rank,
+            input_0_static_shape,
+            input_1_static_shape,
+            input_2_static_shape,
+            input_3_static_shape,
+            DimList.create_unknown[rank](),
+            q_type,
+            k_type,
+            v_type,
+            mask_type,
+            output_type,
+            True,
+            target,
+        ](output, q, k, v, mask, scale[0])
 
 
 @mogg_register("no_mask_fused_attention_cpu")
@@ -4121,7 +4147,28 @@ fn no_mask_flash_attention_cpu[
 
     constrained[target == "cpu"]()
 
-    with Trace[TraceLevel.OP]("mojo.flash_attention") as t:
+    @always_inline
+    @__copy_capture(q, input_1_shape, input_2_shape, output)
+    @parameter
+    fn description_fn() -> String:
+        var q_shape_str = String("q_shape=") + String("x").join(q.dynamic_shape)
+        var k_shape_str = String("k_shape=") + String("x").join(input_1_shape)
+        var v_shape_str = String("v_shape=") + String("x").join(input_2_shape)
+        var out_shape_str = String("o_shape=") + String("x").join(
+            output.dynamic_shape
+        )
+
+        return String(";").join(
+            q_shape_str,
+            k_shape_str,
+            v_shape_str,
+            out_shape_str,
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.flash_attention",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ) as t:
 
         @parameter
         @always_inline
@@ -4203,7 +4250,48 @@ fn with_mask_flash_attention_split_kv_cache_cpu[
 
     constrained[target == "cpu"]()
 
-    with Trace[TraceLevel.OP]("mojo.flash_attention_split_kv"):
+    @always_inline
+    @__copy_capture(
+        q,
+        input_1_shape,
+        input_2_shape,
+        input_3_shape,
+        input_4_shape,
+        input_5_shape,
+        output,
+    )
+    @parameter
+    fn description_fn() -> String:
+        var q_shape_str = String("q_shape=") + String("x").join(q.dynamic_shape)
+        var k_shape_str = String("k_shape=") + String("x").join(input_1_shape)
+        var v_shape_str = String("v_shape=") + String("x").join(input_2_shape)
+        var k_cache_shape_str = String("k_cache_shape=") + String("x").join(
+            input_3_shape
+        )
+        var v_cache_shape_str = String("v_cache_shape=") + String("x").join(
+            input_4_shape
+        )
+        var mask_shape_str = String("mask_shape=") + String("x").join(
+            input_5_shape
+        )
+        var out_shape_str = String("o_shape=") + String("x").join(
+            output.dynamic_shape
+        )
+
+        return String(";").join(
+            q_shape_str,
+            k_shape_str,
+            v_shape_str,
+            k_cache_shape_str,
+            v_cache_shape_str,
+            mask_shape_str,
+            out_shape_str,
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.flash_attention_split_kv",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ):
         cpu_flash_attention_split_kv[
             type,
             rank,
@@ -4272,7 +4360,32 @@ fn with_mask_flash_attention_cpu[
 
     constrained[target == "cpu"]()
 
-    with Trace[TraceLevel.OP]("mojo.flash_attention") as t:
+    @always_inline
+    @__copy_capture(q, input_1_shape, input_2_shape, input_3_shape, output)
+    @parameter
+    fn description_fn() -> String:
+        var q_shape_str = String("q_shape=") + String("x").join(q.dynamic_shape)
+        var k_shape_str = String("k_shape=") + String("x").join(input_1_shape)
+        var v_shape_str = String("v_shape=") + String("x").join(input_2_shape)
+        var mask_shape_str = String("mask_shape=") + String("x").join(
+            input_3_shape
+        )
+        var out_shape_str = String("o_shape=") + String("x").join(
+            output.dynamic_shape
+        )
+
+        return String(";").join(
+            q_shape_str,
+            k_shape_str,
+            v_shape_str,
+            mask_shape_str,
+            out_shape_str,
+        )
+
+    with Trace[TraceLevel.OP](
+        "mojo.flash_attention",
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+    ) as t:
         cpu_flash_attention[
             type,
             rank,
