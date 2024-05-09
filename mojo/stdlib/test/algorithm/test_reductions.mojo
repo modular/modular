@@ -348,7 +348,7 @@ fn test_boolean():
     ###################################################
 
     for i in range(size):
-        vector[i] = True.value
+        vector[i] = True
 
     # CHECK: True
     print(all_true(vector))
@@ -364,7 +364,7 @@ fn test_boolean():
     ###################################################
 
     for i in range(size):
-        vector[i] = False.value
+        vector[i] = False
 
     # CHECK: False
     print(all_true(vector))
