@@ -5,6 +5,7 @@ load("//utils/bazel/build/rules:pytest_test.bzl", "pytest_test")
 py_library(
     name = "support",
     srcs = glob(["modular/**/*.py"]),
+    data = ["modular/utils/debuglib/py.typed"],
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
