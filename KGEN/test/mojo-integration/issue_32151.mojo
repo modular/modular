@@ -53,10 +53,10 @@ struct MTuple[T: CollectionElement](CollectionElement, Stringable):
         for i in range(len(self.elts)):
             if self.elts[i].isa[Int]():
                 var value = self.elts[i]
-                result += value.get[Int]()[]
+                result += value[Int]
             elif self.elts[i].isa[MTuple[T]]():
                 var value = self.elts[i]
-                result += str(value.get[MTuple[T]]()[])
+                result += str(value[MTuple[T]])
             else:
                 result += "?"
             if i < len(self.elts) - 1:
