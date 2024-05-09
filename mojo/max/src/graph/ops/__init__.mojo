@@ -80,5 +80,6 @@ from .linalg import (
     outer,
 )
 from .lists import list
+from .quantized_ops import qmatmul
 from .reduction import mean, arg_max
 from .slicing import gather, slice, split, concat, stack
