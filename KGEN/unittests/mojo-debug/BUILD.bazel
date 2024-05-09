@@ -1,0 +1,49 @@
+cc_library(
+    name = "Support",
+    srcs = ["Support.cpp"],
+    hdrs = ["Support.h"],
+    deps = [
+        "//KGEN:LLDB",
+        "//KGEN/tools/mojo-lsp-test-client",
+        "//KGEN/unittests:include_shim",
+        "@com_github_google_googletest//:gtest",
+        "@llvm-project//lldb:APIHeaders",
+        "@llvm-project//lldb:Headers",
+    ],
+)
+
+cc_test(
+    name = "unittests",
+    srcs = glob(
+        ["*.cpp"],
+        exclude = ["Support.cpp"],
+    ),
+    data = glob([
+        "inputs/*.mojo",
+    ]) + [
+        "//KGEN:CompilerRT.distributable",
+        "//KGEN:CompilerRT.shared.file",
+        "//KGEN:MojoLLDB.shared.file",
+        "//KGEN/tools/mojo:mojo.opt",
+        "//Kernels/mojo/stdlib",
+        "//utils:lit-lldb-init.in",
+        "@llvm-project//compiler-rt:orc_rt",
+        "@llvm-project//lldb:lldb-server",
+    ],
+    env = {
+        "LLDB_DEBUGSERVER_PATH": "$(location @llvm-project//lldb:lldb-server)",
+        "MODULAR_CRASH_REPORTING_ENABLED": "false",
+        "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
+        "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
+        "MODULAR_MOJO_DRIVER_PATH": "$(location //KGEN/tools/mojo:mojo.opt)",
+        "MODULAR_MOJO_IMPORT_PATH": "Kernels/mojo/stdlib",
+        "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB.shared.file)",
+        "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
+        "MODULAR_PATH": ".",
+    },
+    deps = [
+        ":Support",
+        "@com_github_google_googletest//:gtest",
+        "@com_github_google_googletest//:gtest_main",
+    ],
+)
