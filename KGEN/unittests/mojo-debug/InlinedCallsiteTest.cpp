@@ -10,25 +10,25 @@
 using namespace M;
 using namespace lldb;
 
-llvm::StringRef getFunctionName(std::optional<StopContext> &ctx) {
-  return ctx->thread.GetSelectedFrame().GetFunctionName();
+llvm::StringRef getFunctionName(StopContext &ctx) {
+  return ctx.thread.GetSelectedFrame().GetFunctionName();
 }
 
 TEST(InlinedCallsiteTest, testBreakingOnInlinedCalsite) {
   // Tests that setting breakpoints on callsites that were inlined works.
 
-  std::optional<StopContext> ctx = buildAndLaunch("inlined_callsite.mojo");
+  StopContext ctx = buildAndLaunch("inlined_callsite.mojo");
   std::vector<int> expectedBreakingLines =
-      ctx->binary.getSource().findLinesWithText("# breakpoint");
+      ctx.binary.getSource().findLinesWithText("# breakpoint");
 
   EXPECT_TRUE(getFunctionName(ctx).contains("main"));
-  EXPECT_EQ((int)ctx->frame.GetLineEntry().GetLine(), expectedBreakingLines[1]);
+  EXPECT_EQ((int)ctx.frame.GetLineEntry().GetLine(), expectedBreakingLines[1]);
 
-  ctx.emplace(ctx->resume());
+  ctx.resume();
   EXPECT_TRUE(getFunctionName(ctx).contains("callee_regular"));
-  EXPECT_EQ((int)ctx->frame.GetLineEntry().GetLine(), expectedBreakingLines[0]);
+  EXPECT_EQ((int)ctx.frame.GetLineEntry().GetLine(), expectedBreakingLines[0]);
 
-  ctx.emplace(ctx->resume());
+  ctx.resume();
   EXPECT_TRUE(getFunctionName(ctx).contains("main"));
-  EXPECT_EQ((int)ctx->frame.GetLineEntry().GetLine(), expectedBreakingLines[2]);
+  EXPECT_EQ((int)ctx.frame.GetLineEntry().GetLine(), expectedBreakingLines[2]);
 }

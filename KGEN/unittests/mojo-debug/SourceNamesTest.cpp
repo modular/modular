@@ -20,7 +20,7 @@ TEST(SourceNamesTest, testFunctionBeforeStructParsing) {
   SBValue x = ctx.frame.FindVariable("x");
   EXPECT_EQ((int)x.GetValueAsSigned(), 1);
 
-  StopContext ctx2 = ctx.stepOver();
-  SBValue p1 = ctx2.frame.FindVariable("p1");
+  ctx.stepOver();
+  SBValue p1 = ctx.frame.FindVariable("p1");
   EXPECT_STREQ(p1.GetTypeName(), "!lit.declref<@point::@Point>");
 }

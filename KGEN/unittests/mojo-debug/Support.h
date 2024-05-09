@@ -62,13 +62,13 @@ struct CommandResult {
 
 struct StopContext {
   /// Step over the current thread and return the StopContext once it stops.
-  StopContext stepOver();
+  void stepOver();
 
   /// Step int the current thread and return the StopContext once it stops.
-  StopContext stepInto();
+  void stepInto();
 
   /// Resume the current process and return the StopContext once it stops.
-  StopContext resume();
+  void resume();
 
   /// Run the given command using the current frame as context.
   CommandResult runCommand(StringRef command);
@@ -78,6 +78,11 @@ struct StopContext {
   lldb::SBProcess process;
   lldb::SBThread thread;
   lldb::SBFrame frame;
+
+private:
+  /// Method to be invoked after a stop state change to refresh the values of
+  /// this struct, e.g. after resuming the process and hitting a stop.
+  void updateAfterStateChange(StringRef action);
 };
 
 /// Builds the given source file, then creates a target with the resultant
