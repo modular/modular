@@ -517,7 +517,7 @@ private:
   static unsigned resolveAlignment(std::optional<TypedAttr> alignment) {
     if (!alignment)
       return 0;
-    return alignment->cast<IntegerAttr>().getInt();
+    return cast<IntegerAttr>(*alignment).getInt();
   }
 };
 

@@ -52,7 +52,7 @@ static Type parseScalarType(AsmParser &p) {
 LogicalResult
 POP::ArrayType::verify(function_ref<InFlightDiagnostic()> emitError,
                        TypedAttr size, Type elementType) {
-  if (!size.getType().isa<IndexType>())
+  if (!llvm::isa<IndexType>(size.getType()))
     return emitError() << "expected size expression to be index type";
   return success();
 }
@@ -125,7 +125,7 @@ ErrorOrSuccess POP::ArrayType::writeTo(TypedAttr value, int64_t addr,
 ErrorOr<TypedAttr> POP::ArrayType::readFrom(int64_t addr,
                                             InterpreterState &state) const {
   Type elemType = getElementType();
-  auto dl = elemType.cast<DataLayoutInterface>();
+  auto dl = ::cast<DataLayoutInterface>(elemType);
   int64_t offset = llvm::alignTo(*dl.getTypeSize(state.getTarget()),
                                  *dl.getTypeAlign(state.getTarget()));
   SmallVector<TypedAttr> values;
@@ -148,7 +148,7 @@ LogicalResult SIMDType::verify(function_ref<InFlightDiagnostic()> emitError,
     return emitError() << "simd type requires size and dtype";
   if (!size.getType().isIndex())
     return emitError() << "size parameter for simd must have type `index`";
-  if (!dtype.getType().isa<DTypeType>())
+  if (!llvm::isa<DTypeType>(dtype.getType()))
     return emitError() << "type parameter for simd must be a !kgen.dtype";
   return success();
 }
@@ -211,7 +211,7 @@ ErrorOrSuccess SIMDType::writeTo(TypedAttr value, int64_t addr,
   if (mem.isError())
     return mem.takeError();
   auto *data = reinterpret_cast<uint8_t *>(*mem);
-  ArrayRef<DTypeValue> values = value.cast<SIMDAttr>().getValues();
+  ArrayRef<DTypeValue> values = llvm::cast<SIMDAttr>(value).getValues();
 
   // Integer dtypes s/ui1/2/4 are densely packed. Handle them here.
   if (dtype.isInt()) {

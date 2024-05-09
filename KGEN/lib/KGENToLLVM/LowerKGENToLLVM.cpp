@@ -837,7 +837,7 @@ struct ConvertKGENVariantIs : public ConvertPOPToLLVMPattern<VariantIsOp> {
     Value discr = rewriter.create<LLVM::ExtractValueOp>(
         op.getLoc(), adaptor.getVariant(), 1);
     auto variantType =
-        adaptor.getVariant().getType().cast<LLVM::LLVMStructType>();
+        cast<LLVM::LLVMStructType>(adaptor.getVariant().getType());
     Value discrVal = rewriter.create<LLVM::ConstantOp>(
         op.getLoc(), variantType.getBody().back(), op.getIndex());
     rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::eq,
@@ -860,7 +860,7 @@ struct ConvertKGENVariantGet : ConvertPOPToLLVMPattern<VariantTakeOp> {
     if (!valueType)
       return failure();
     auto variantType =
-        adaptor.getVariant().getType().cast<LLVM::LLVMStructType>();
+        cast<LLVM::LLVMStructType>(adaptor.getVariant().getType());
     auto contentType = cast<LLVM::LLVMArrayType>(variantType.getBody().front());
 
     // Extract the content and put it in the block of memory.

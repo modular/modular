@@ -65,7 +65,7 @@ void KGENDialect::registerTypes() {
 Type ParamRefType::get(TypedAttr param) {
   // If the parameter is already resolved to a constant, fold this to the
   // indicated type.
-  if (auto constant = mlir::dyn_cast<TypeConstantAttr>(param))
+  if (auto constant = llvm::dyn_cast<TypeConstantAttr>(param))
     return constant.getValue();
 
   // Otherwise, form the ParamRefType like normal.
@@ -436,14 +436,14 @@ OptionalParseResult SignatureType::parseValue(AsmParser &p,
     return failure();
 
   // Parse a symbol reference as a signature type attribute.
-  if (auto symbol = mlir::dyn_cast<SymbolRefAttr>(attr)) {
+  if (auto symbol = llvm::dyn_cast<SymbolRefAttr>(attr)) {
     // Parse any trailing parameter bindings.
     ParameterExprArrayAttr paramValues;
     if (parseParameterValues(p, paramValues))
       return failure();
     value = SymbolConstantAttr::get(symbol, paramValues, *this);
   } else {
-    value = mlir::cast<TypedAttr>(attr);
+    value = llvm::cast<TypedAttr>(attr);
   }
   return mlir::success();
 }
@@ -599,7 +599,7 @@ ErrorOrSuccess PointerType::writeTo(TypedAttr value, int64_t addr,
   if (mem.isError())
     return mem.takeError();
   // The pointer size of the target is variable.
-  APInt intVal(size * CHAR_BIT, mlir::cast<PointerAttr>(value).getAddr());
+  APInt intVal(size * CHAR_BIT, llvm::cast<PointerAttr>(value).getAddr());
   llvm::StoreIntToMemory(intVal, reinterpret_cast<uint8_t *>(*mem), size);
   return success();
 }
@@ -1062,7 +1062,7 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
   SmallVector<TypedAttr> values;
   int64_t offset = 0;
   for (Type elType : getElementTypes()) {
-    auto dl = mlir::cast<DataLayoutInterface>(elType);
+    auto dl = llvm::cast<DataLayoutInterface>(elType);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     ErrorOr<TypedAttr> value =
         state.readAttributeFromMemory(addr + offset, elType);
@@ -1204,7 +1204,7 @@ ErrorOr<TypedAttr> PackType::readFrom(int64_t addr,
   int64_t offset = 0;
   for (TypedAttr elTypeAttr : typeList.getValues()) {
     Type elType = ::cast<TypeConstantAttr>(elTypeAttr).getValue();
-    auto dl = mlir::cast<DataLayoutInterface>(elType);
+    auto dl = llvm::cast<DataLayoutInterface>(elType);
     offset = llvm::alignTo(offset, *dl.getTypeAlign(state.getTarget()));
     ErrorOr<TypedAttr> value =
         state.readAttributeFromMemory(addr + offset, elType);

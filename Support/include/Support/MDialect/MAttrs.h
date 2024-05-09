@@ -166,7 +166,7 @@ public:
   static IntArrayElementsAttr get(MLIRContext *ctx, ArrayRef<IntT> values,
                                   IntegerType::SignednessSemantics signedness) {
     auto type = IntegerType::get(ctx, sizeof(IntT) * CHAR_BIT, signedness);
-    return mlir::cast<IntArrayElementsAttr>(ArrayElementsAttr::get(
+    return llvm::cast<IntArrayElementsAttr>(ArrayElementsAttr::get(
         {reinterpret_cast<const uint8_t *>(values.data()),
          values.size() * sizeof(IntT)},
         ArrayType::get(values.size(), type)));

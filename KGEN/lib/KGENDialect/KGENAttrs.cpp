@@ -106,7 +106,7 @@ OptionalParseResult VariadicType::parseValue(AsmParser &p,
 }
 
 LogicalResult VariadicType::printValue(AsmPrinter &p, TypedAttr value) const {
-  auto variadic = value.dyn_cast<VariadicAttr>();
+  auto variadic = llvm::dyn_cast<VariadicAttr>(value);
   if (!variadic)
     return failure();
   p << '[';
@@ -180,7 +180,8 @@ TypedAttr TypeConstantAttr::get(Type value, Type type, VTableAttr vtable) {
 }
 
 bool TypeConstantAttr::classof(Attribute attr) {
-  return attr.isa<ConcreteTypeConstantAttr, ParameterizedTypeConstantAttr>();
+  return llvm::isa<ConcreteTypeConstantAttr, ParameterizedTypeConstantAttr>(
+      attr);
 }
 
 bool TypeConstantAttr::isConcreteType(Type type) {
@@ -314,7 +315,7 @@ bool DTypeConstantAttr::isConvertibleFrom(Type type) {
     return false;
 
   // Index dtypes can be converted if the type is an IndexType.
-  if (dtype.isIndex() && type.isa<IndexType>())
+  if (dtype.isIndex() && llvm::isa<IndexType>(type))
     return true;
 
   if (auto intType = llvm::dyn_cast<IntegerType>(type)) {
@@ -1075,16 +1076,16 @@ LogicalResult ParamOperatorAttr::verify(
   case POC::CurrentTarget:
     if (!operands.empty())
       return emitError() << "'current_target' expected no operands";
-    if (!type.isa<TargetType>())
+    if (!llvm::isa<TargetType>(type))
       return emitError() << "'current_target' must return a target type";
     break;
   case POC::TargetHasFeature:
   case POC::TargetGetField:
     if (operands.size() != 2)
       return emitError() << "target_get_field must have two operands";
-    if (!operands[0].getType().isa<TargetType>())
+    if (!llvm::isa<TargetType>(operands[0].getType()))
       return emitError() << "target_get_field operand 0 must be a target type";
-    if (!operands[1].getType().isa<StringType>())
+    if (!llvm::isa<StringType>(operands[1].getType()))
       return emitError() << "target_get_field operand 1 must be a string type";
     break;
   case POC::In:
@@ -1107,7 +1108,7 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode)
                          << " operand 1 should be a !kgen.target";
     }
-    if (!type.isa<IntLiteralType>()) {
+    if (!llvm::isa<IntLiteralType>(type)) {
       return emitError() << stringifyEnum(opcode)
                          << " should return a !kgen.int_literal";
     }
@@ -1242,7 +1243,7 @@ static IntegerAttr foldBinaryValues(
     resultTy = valueTy;
 
   auto result1 = calculateFn(lhs, rhs);
-  if (!valueTy.isa<IndexType>())
+  if (!llvm::isa<IndexType>(valueTy))
     return IntegerAttr::get(resultTy, result1);
 
   // If this is an index computation, then we just did the 64-bit computation,
@@ -1308,11 +1309,12 @@ static Attribute simplifyAssocOp(
   llvm::stable_sort(operands, ParameterAttr::compare);
 
   // Merge any constants, they will appear at the back of the operand list now.
-  if (operands.back().isa<IntegerAttr>()) {
+  if (llvm::isa<IntegerAttr>(operands.back())) {
     while (operands.size() >= 2 &&
-           operands[operands.size() - 2].isa<IntegerAttr>()) {
-      APInt c1 = operands[operands.size() - 2].cast<IntegerAttr>().getValue();
-      APInt c2 = operands.back().cast<IntegerAttr>().getValue();
+           llvm::isa<IntegerAttr>(operands[operands.size() - 2])) {
+      APInt c1 =
+          llvm::cast<IntegerAttr>(operands[operands.size() - 2]).getValue();
+      APInt c2 = llvm::cast<IntegerAttr>(operands.back()).getValue();
       if (auto resultConstant = foldBinaryValues(
               unsignedFn, signedFn ? signedFn : unsignedFn, c1, c2, type)) {
         operands.pop_back();
@@ -1324,7 +1326,7 @@ static Attribute simplifyAssocOp(
       }
     }
 
-    auto resultCst = operands.back().cast<IntegerAttr>();
+    auto resultCst = llvm::cast<IntegerAttr>(operands.back());
 
     // If the resulting constant is the destructive constant (e.g. `x*0`), then
     // return it.

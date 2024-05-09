@@ -290,7 +290,7 @@ public:
                 LLVMStructType contextType, Value hdlValue, Type hdlType)
       : asyncFn(asyncFn), contextBaseSize(contextBaseSize),
         contextType(contextType), hdlValue(hdlValue), hdlType(hdlType) {
-    assert(hdlValue.getType().isa<LLVMPointerType>() &&
+    assert(llvm::isa<LLVMPointerType>(hdlValue.getType()) &&
            "handle type must be a pointer");
   }
   Type getContextType() const { return contextType; }

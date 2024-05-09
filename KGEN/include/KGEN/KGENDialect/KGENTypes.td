@@ -351,7 +351,7 @@ def PointerType : KGENType<"Pointer", "pointer", [
   let extraClassDeclaration = [{
     /// Get the element type as the provided type.
     template <typename ElTy>
-    ElTy getElementAs() { return getElementType().cast<ElTy>(); }
+    ElTy getElementAs() { return llvm::cast<ElTy>(getElementType()); }
   }];
 }
 
@@ -360,12 +360,12 @@ def PointerType : KGENType<"Pointer", "pointer", [
 
 class PointerElementType<string lhs, string rhs> : TypesMatchWith<
     "pointer element type", lhs, rhs,
-    "$_self.cast<PointerType>().getElementType()">;
+    "llvm::cast<PointerType>($_self).getElementType()">;
 
 class PointerOf<Type type> : ConfinedType<PointerType,
-    [CPred<"$_self.cast<PointerType>().getElementType()">,
+    [CPred<"llvm::cast<PointerType>($_self).getElementType()">,
      SubstLeaves<"$_self",
-      "$_self.cast<PointerType>().getElementType()",
+      "llvm::cast<PointerType>($_self).getElementType()",
       type.predicate>],
     "pointer to " # type.summary> {
   let cppClassName = "::M::KGEN::PointerType";
@@ -420,7 +420,7 @@ def KGEN_VariadicType : KGENType<"Variadic", "variadic", [
 
 class VariadicElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches variadic element type", lhs, rhs,
-    "$_self.cast<KGEN::VariadicType>().getElementType()",
+    "llvm::cast<KGEN::VariadicType>($_self).getElementType()",
     "typeRangeMatches">;
 
 //===----------------------------------------------------------------------===//

@@ -68,11 +68,11 @@ def POP_ArrayType : POPType<"Array", "array", [
 
 class ArrayElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches array element type", lhs, rhs,
-    "$_self.cast<POP::ArrayType>().getElementType()",
+    "llvm::cast<POP::ArrayType>($_self).getElementType()",
     "typeRangeMatches">;
 
 def ArrayKnownSize : ConfinedType<POP_ArrayType,
-    [CPred<"$_self.cast<POP::ArrayType>().getResolvedSize()">],
+    [CPred<"llvm::cast<POP::ArrayType>($_self).getResolvedSize()">],
     "array with known size">;
 
 //===----------------------------------------------------------------------===//
@@ -141,7 +141,7 @@ class UnboundOr<DTypeConstraint pred> : OrDType<[UnboundDType, pred]>;
 /// A SIMD type whose dtype conforms to a constraint.
 class SIMDOfDType<DTypeConstraint constraint, string desc> :
   ConfinedType<POP_SIMDType,
-    [CPred<!subst("$_self", "$_self.cast<POP::SIMDType>().getResolvedDType()",
+    [CPred<!subst("$_self", "llvm::cast<POP::SIMDType>($_self).getResolvedDType()",
                  constraint.pred)>], desc> {
   let cppClassName = "::M::KGEN::POP::SIMDType";
 }
@@ -187,8 +187,8 @@ def UnboundOrAddressOrBoolOrIndexOrArithmeticSIMD : SIMDOfDType<
 
 /// A "scalar" type is a SIMD of size 1.
 def ScalarType : ConfinedType<POP_SIMDType,
-    [CPred<"$_self.cast<POP::SIMDType>().getResolvedSize() && "
-           "*$_self.cast<POP::SIMDType>().getResolvedSize() == 1">],
+    [CPred<"llvm::cast<POP::SIMDType>($_self).getResolvedSize() && "
+           "*llvm::cast<POP::SIMDType>($_self).getResolvedSize() == 1">],
     "SIMD with size 1">;
 
 /// A scalar type whose dtype conforms to a constraint.
@@ -222,7 +222,7 @@ def UnboundOrIndexOrInt : AnyTypeOf<[
 // Matches if Value has size=1 and same dtype as Operand
 class SIMDSizeOneOfSameDType<string operand, string value> : TypesMatchWith<
     value # " type matches dtype of the " # operand # " operand", operand,
-    value, "POP::SIMDType::get(1, $_self.cast<SIMDType>().getDType())">;
+    value, "POP::SIMDType::get(1, llvm::cast<SIMDType>($_self).getDType())">;
 
 class SIMDSize<string name> :
     StrFunc<"$" # name # ".getType().cast<POP::SIMDType>().getResolvedSize()">;
@@ -232,12 +232,12 @@ class SIMDOfSameSize<string lhs, string rhs> :
 
 class AddressSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
-    value, "POP::SIMDType::get($_self.cast<SIMDType>().getSize(), "
+    value, "POP::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
     "DTypeConstantAttr::get($_self.getContext(), KGENDType::address))">;
 
 class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
-    value, "POP::SIMDType::get($_self.cast<SIMDType>().getSize(), "
+    value, "POP::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
     "DTypeConstantAttr::get($_self.getContext(), KGENDType::kBool))">;
 
 #endif // KGEN_POPDIALECT_POPTYPES_TD

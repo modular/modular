@@ -2338,7 +2338,8 @@ OpFoldResult StructExtractOp::fold(FoldAdaptor adaptor) {
 
 static ParseResult parseStructValueType(AsmParser &p, Type &valueType,
                                         Type structType, IntegerAttr index) {
-  ArrayRef<Type> elementTypes = structType.cast<StructType>().getElementTypes();
+  ArrayRef<Type> elementTypes =
+      llvm::cast<StructType>(structType).getElementTypes();
   if (index.getInt() > static_cast<int64_t>(elementTypes.size()))
     return p.emitError(p.getCurrentLocation(), "element index out of bounds (")
            << index.getInt() << " >= " << elementTypes.size() << ")";

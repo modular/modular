@@ -1515,7 +1515,7 @@ def KGEN_PackLoadOp : KGENOp<"pack.load",
 def KGEN_StructCreateOp : KGENOp<"struct.create", [Pure,
     TypesMatchWith<"operand types match struct element types",
                    "result", "elements",
-                   "$_self.cast<StructType>().getElementTypes()">
+                   "llvm::cast<StructType>($_self).getElementTypes()">
 ]> {
   let summary = "create an instance of a struct";
   let description = [{

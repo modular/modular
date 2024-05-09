@@ -68,21 +68,21 @@ static ParseResult parseDITypes(AsmParser &parser,
 //===----------------------------------------------------------------------===//
 
 uint64_t DIType::getSizeInBits() const {
-  if (auto arrayType = mlir::dyn_cast<DIArrayType>(*this)) {
+  if (auto arrayType = llvm::dyn_cast<DIArrayType>(*this)) {
     return arrayType.getElementCount() *
            arrayType.getElementType().getSizeInBits();
   }
-  if (auto basicType = mlir::dyn_cast<DIBasicType>(*this))
+  if (auto basicType = llvm::dyn_cast<DIBasicType>(*this))
     return basicType.getSizeInBits();
-  if (auto memberType = mlir::dyn_cast<DIMemberType>(*this))
+  if (auto memberType = llvm::dyn_cast<DIMemberType>(*this))
     return memberType.getType().getSizeInBits();
-  if (auto pointerType = mlir::dyn_cast<DIPointerType>(*this))
+  if (auto pointerType = llvm::dyn_cast<DIPointerType>(*this))
     return pointerType.getSizeInBits();
-  if (auto structType = mlir::dyn_cast<DIStructType>(*this))
+  if (auto structType = llvm::dyn_cast<DIStructType>(*this))
     return structType.getSizeInBits();
-  if (auto variantType = mlir::dyn_cast<DIVariantType>(*this))
+  if (auto variantType = llvm::dyn_cast<DIVariantType>(*this))
     return variantType.getSizeInBits();
-  if (auto vectorType = mlir::dyn_cast<DIVectorType>(*this)) {
+  if (auto vectorType = llvm::dyn_cast<DIVectorType>(*this)) {
     return vectorType.getElementCount() *
            vectorType.getElementType().getSizeInBits();
   }
@@ -90,19 +90,19 @@ uint64_t DIType::getSizeInBits() const {
 }
 
 uint32_t DIType::getAlignInBits() const {
-  if (auto arrayType = mlir::dyn_cast<DIArrayType>(*this))
+  if (auto arrayType = llvm::dyn_cast<DIArrayType>(*this))
     return arrayType.getElementType().getAlignInBits();
-  if (auto basicType = mlir::dyn_cast<DIBasicType>(*this))
+  if (auto basicType = llvm::dyn_cast<DIBasicType>(*this))
     return basicType.getAlignInBits();
-  if (auto memberType = mlir::dyn_cast<DIMemberType>(*this))
+  if (auto memberType = llvm::dyn_cast<DIMemberType>(*this))
     return memberType.getType().getAlignInBits();
-  if (auto pointerType = mlir::dyn_cast<DIPointerType>(*this))
+  if (auto pointerType = llvm::dyn_cast<DIPointerType>(*this))
     return pointerType.getAlignInBits();
-  if (auto structType = mlir::dyn_cast<DIStructType>(*this))
+  if (auto structType = llvm::dyn_cast<DIStructType>(*this))
     return structType.getAlignInBits();
-  if (auto variantType = mlir::dyn_cast<DIVariantType>(*this))
+  if (auto variantType = llvm::dyn_cast<DIVariantType>(*this))
     return variantType.getAlignInBits();
-  if (auto vectorType = mlir::dyn_cast<DIVectorType>(*this))
+  if (auto vectorType = llvm::dyn_cast<DIVectorType>(*this))
     return vectorType.getElementType().getAlignInBits();
   return 0;
 }
