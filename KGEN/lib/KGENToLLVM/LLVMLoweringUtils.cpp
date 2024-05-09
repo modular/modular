@@ -529,7 +529,7 @@ Value VariantHelper::materializeLLVMVariant(Type type, Value value,
   Value variant = b.create<LLVM::UndefOp>(variantType);
   variant = b.create<LLVM::InsertValueOp>(variant, content, 0);
   Value discrVal = b.create<LLVM::ConstantOp>(
-      variantType.getBody().back().cast<IntegerType>(), index);
+      llvm::cast<IntegerType>(variantType.getBody().back()), index);
   return b.create<LLVM::InsertValueOp>(variant, discrVal, 1);
 }
 

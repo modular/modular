@@ -13,17 +13,17 @@ bool M::areEquivalentFloatTypes(DType dtype, FloatType fpType) {
   assert(dtype.isFloat() && "expected a float dtype");
   switch (dtype.getValue()) {
   case DType::f16:
-    return fpType.isa<Float16Type>();
+    return llvm::isa<Float16Type>(fpType);
   case DType::f32:
-    return fpType.isa<Float32Type>();
+    return llvm::isa<Float32Type>(fpType);
   case DType::f64:
-    return fpType.isa<Float64Type>();
+    return llvm::isa<Float64Type>(fpType);
   case DType::f80:
-    return fpType.isa<Float80Type>();
+    return llvm::isa<Float80Type>(fpType);
   case DType::f128:
-    return fpType.isa<Float128Type>();
+    return llvm::isa<Float128Type>(fpType);
   case DType::bf16:
-    return fpType.isa<BFloat16Type>();
+    return llvm::isa<BFloat16Type>(fpType);
   default:
     return false;
   }

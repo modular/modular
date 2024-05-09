@@ -420,7 +420,7 @@ DebugInfo::DIExprLeafReplacer::DIExprLeafReplacer(
 
 ErrorOr<DIExprAttr> DebugInfo::DIExprLeafReplacer::apply(DIExprAttr expr) {
   currErrorMsg = {};
-  auto newExpr = replacer.replace(expr).dyn_cast_or_null<DIExprAttr>();
+  auto newExpr = dyn_cast_or_null<DIExprAttr>(replacer.replace(expr));
   if (!currErrorMsg.empty())
     return Error(currErrorMsg);
   if (!newExpr)

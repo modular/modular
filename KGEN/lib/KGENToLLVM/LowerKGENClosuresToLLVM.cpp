@@ -338,7 +338,7 @@ struct CallIndirectOpConversion
       SmallVector<Type> wrapperFnArgTypes;
       wrapperFnArgTypes.push_back(pointerType);
 
-      auto calleeFuncTy = callee.getType().cast<SignatureType>().getValues();
+      auto calleeFuncTy = cast<SignatureType>(callee.getType()).getValues();
       for (Type argTy : calleeFuncTy.getInputs()) {
         Type ty = convertType(argTy);
         if (!ty)

@@ -417,7 +417,7 @@ def LIT_RefType : LITType<"Ref", "ref",
   let extraClassDeclaration = [{
     /// Get the element type as the provided type.
     template <typename ElTy>
-    ElTy getElementAs() { return getElementType().cast<ElTy>(); }
+    ElTy getElementAs() { return llvm::cast<ElTy>(getElementType()); }
 
     /// Return the pointer type that corresponds to this reference type,
     /// ignoring the lifetime and the mutability.
@@ -458,12 +458,12 @@ def LIT_RefType : LITType<"Ref", "ref",
 
 class ReferenceElementType<string lhs, string rhs> : TypesMatchWith<
     "reference element type", lhs, rhs,
-    "$_self.cast<RefType>().getElementType()">;
+    "llvm::cast<RefType>($_self).getElementType()">;
 
 class RefOf<Type type> : ConfinedType<LIT_RefType,
-    [CPred<"$_self.cast<::M::KGEN::LIT::RefType>().getElementType()">,
+    [CPred<"llvm::cast<::M::KGEN::LIT::RefType>($_self).getElementType()">,
      SubstLeaves<"$_self",
-      "$_self.cast<::M::KGEN::LIT::RefType>().getElementType()",
+      "llvm::cast<::M::KGEN::LIT::RefType>($_self).getElementType()",
       type.predicate>],
     "reference to " # type.summary> {
   let cppClassName = "::M::KGEN::LIT::RefType";

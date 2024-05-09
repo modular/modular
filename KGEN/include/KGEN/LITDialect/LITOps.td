@@ -1488,7 +1488,7 @@ def LIT_OwnershipMarkDestroyedOp : LITOp<"ownership.mark_destroyed"> {
 
 class RefImmutType<string lhs, string rhs> : TypesMatchWith<
     "reference as pointer type", lhs, rhs,
-    "$_self.cast<RefType>().getWithMutability(false)">;
+    "llvm::cast<RefType>($_self).getWithMutability(false)">;
 
 def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
   let summary = "Drop mutability from a reference";
@@ -1514,7 +1514,7 @@ def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
 // Given a `!lit.ref<X, life>`, return `!kgen.pointer<X>`.
 class RefPointerType<string lhs, string rhs> : TypesMatchWith<
     "reference as pointer type", lhs, rhs,
-    "$_self.cast<RefType>().getAsPointerType()">;
+    "mlir::cast<RefType>($_self).getAsPointerType()">;
 
 def LIT_RefToPointerOp : LITOp<"ref.to_pointer",
                               [RefPointerType<"ref", "ptr">]> {
