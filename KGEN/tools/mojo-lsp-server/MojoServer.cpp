@@ -32,6 +32,7 @@
 #include "mlir/Tools/lsp-server-support/Logging.h"
 #include "mlir/Tools/lsp-server-support/Protocol.h"
 #include "mlir/Tools/lsp-server-support/SourceMgrUtils.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/CrashRecoveryContext.h"
@@ -278,13 +279,13 @@ private:
   SmallVector<std::unique_ptr<SymbolRef>> symbolRefs;
 
   /// Mapping from an ASTDecl to an LSP Symbol.
-  llvm::DenseMap<ASTDecl *, std::unique_ptr<Symbol>> symbolTable;
+  llvm::MapVector<ASTDecl *, std::unique_ptr<Symbol>> symbolTable;
 };
 } // namespace
 
 Symbol *SymbolIndex::findSymbol(MojoASTDeclRef declRef) {
   if (auto it = symbolTable.find(&*declRef); it != symbolTable.end())
-    return it->getSecond().get();
+    return it->second.get();
   return nullptr;
 }
 
