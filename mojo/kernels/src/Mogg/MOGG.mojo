@@ -121,8 +121,6 @@ from nn.topk import top_k_shape
 from register import *
 from runtime.llcl import (
     MojoCallContextPtr,
-    MojoCallRaisingTask,
-    MojoCallTask,
     Runtime,
 )
 from runtime.tracing import Trace, TraceLevel
