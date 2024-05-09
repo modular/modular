@@ -93,11 +93,11 @@ kgen.generator @param_expr<p1, p2, int1: i1, int2: i1, type: dtype, type2: dtype
   // CHECK: = kgen.param.constant: i1 = <1>
   %22 = kgen.param.constant: i1 = <le(5, 9)>
 
-  // CHECK: = kgen.param.constant = <get_sizeof(mlirType, #kgen.target<{{.*}}>)>
-  %23 = kgen.param.constant = <get_sizeof(mlirType, #target)>
+  // CHECK: = kgen.param.constant: !kgen.int_literal = <get_sizeof(mlirType, #kgen.target<{{.*}}>)>
+  %23 = kgen.param.constant: !kgen.int_literal = <get_sizeof(mlirType, #target)>
 
-  // CHECK: = kgen.param.constant = <get_alignof(mlirType, #kgen.target<{{.*}}>)>
-  %24 = kgen.param.constant = <get_alignof(mlirType, #target)>
+  // CHECK: = kgen.param.constant: !kgen.int_literal = <get_alignof(mlirType, #kgen.target<{{.*}}>)>
+  %24 = kgen.param.constant: !kgen.int_literal = <get_alignof(mlirType, #target)>
 
   // CHECK: = kgen.param.constant = <max(p1, 2)>
   %25 = kgen.param.constant = <max(p1, 2)>
@@ -433,31 +433,31 @@ kgen.generator @param_canonicalize<p1, p2>() {
 // CHECK-LABEL: kgen.generator @datalayout_operators()
 kgen.generator @datalayout_operators() {
   // CHECK-NEXT: <4>
-  kgen.param.constant = <get_sizeof(i32, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_sizeof(i32, #target)>
   // CHECK-NEXT: <3>
-  kgen.param.constant = <get_sizeof(i20, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_sizeof(i20, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant = <get_sizeof(f64, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_sizeof(f64, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant = <get_sizeof(index, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_sizeof(index, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant = <get_sizeof(!kgen.signature<() -> ()>, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_sizeof(!kgen.signature<() -> ()>, #target)>
   // CHECK-NEXT: <16>
-  kgen.param.constant = <get_sizeof(!kgen.signature<() capturing -> ()>, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_sizeof(!kgen.signature<() capturing -> ()>, #target)>
 
   // CHECK-NEXT: <4>
-  kgen.param.constant = <get_alignof(i32, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_alignof(i32, #target)>
   // CHECK-NEXT: <4>
-  kgen.param.constant = <get_alignof(i20, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_alignof(i20, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant = <get_alignof(f64, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_alignof(f64, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant = <get_alignof(index, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_alignof(index, #target)>
   // CHECK-NEXT: <8>
-  kgen.param.constant = <get_alignof(!kgen.signature<() -> ()>, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_alignof(!kgen.signature<() -> ()>, #target)>
 
   // CHECK-NEXT: <1>
-  kgen.param.constant = <get_alignof(!pop.simd<0, f32>, #target)>
+  kgen.param.constant: !kgen.int_literal = <get_alignof(!pop.simd<0, f32>, #target)>
 
   kgen.return
 }
@@ -626,9 +626,9 @@ lit.struct.decl @B {}
 
 // CHECK-LABEL: @symbol_exprs
 kgen.generator @symbol_exprs() {
-  // CHECK: <add(get_sizeof(@A, #kgen.target<{{.*}}>),
+  // CHECK: <eq(:!kgen.int_literal get_sizeof(@A, #kgen.target<{{.*}}>),
   // CHECK-SAME: get_sizeof(@B, #kgen.target<{{.*}}>))>
-  %0 = kgen.param.constant = <add(get_sizeof(!lit.declref<@A>, #target),
+  %0 = kgen.param.constant: i1 = <eq(:!kgen.int_literal get_sizeof(!lit.declref<@A>, #target),
                                   get_sizeof(!lit.declref<@B>, #target))>
   kgen.return
 }

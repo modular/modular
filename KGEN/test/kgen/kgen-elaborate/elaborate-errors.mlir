@@ -41,7 +41,7 @@ kgen.generator @unfoldableIndex() {
 // expected-error @below {{function instantiation failed}}
 kgen.generator @sizeof_unknown() {
   // expected-note @below {{could not simplify operator get_sizeof}}
-  %0 = kgen.param.constant = <get_sizeof(!opaque<"type">, #target)>
+  %0 = kgen.param.constant: !kgen.int_literal = <get_sizeof(!opaque<"type">, #target)>
   kgen.return
 }
 

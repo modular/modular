@@ -1085,26 +1085,23 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << "comparisons return i1";
     break;
   case POC::GetSizeOf:
-    if (operands.size() != 2)
-      return emitError() << "'get_sizeof' operator requires two operands";
-    if (!isTypeExpr(operands.front()))
-      return emitError()
-             << "'get_sizeof' operand 0 should be a type expression";
-    if (!operands[1].getType().isa<TargetType>())
-      return emitError() << "'get_sizeof' operand 1 should be a !kgen.target";
-    if (!type.isa<IndexType>())
-      return emitError() << "'get_sizeof' should return an index";
-    break;
   case POC::GetAlignOf:
-    if (operands.size() != 2)
-      return emitError() << "'get_alignof' operator requires two operands";
-    if (!isTypeExpr(operands.front()))
-      return emitError()
-             << "'get_alignof' operand 0 should be a type expression";
-    if (!operands[1].getType().isa<TargetType>())
-      return emitError() << "'get_alignof' operand 1 should be a !kgen.target";
-    if (!type.isa<IndexType>())
-      return emitError() << "'get_alignof' should return an index";
+    if (operands.size() != 2) {
+      return emitError() << stringifyEnum(opcode)
+                         << " operator requires two operands";
+    }
+    if (!isTypeExpr(operands.front())) {
+      return emitError() << stringifyEnum(opcode)
+                         << " operand 0 should be a type expression";
+    }
+    if (!operands[1].getType().isa<TargetType>()) {
+      return emitError() << stringifyEnum(opcode)
+                         << " operand 1 should be a !kgen.target";
+    }
+    if (!type.isa<IntLiteralType>()) {
+      return emitError() << stringifyEnum(opcode)
+                         << " should return a !kgen.int_literal";
+    }
     break;
   case POC::BindSignature: {
     // It's possible that a function's specialized signature is more specific
@@ -1981,7 +1978,7 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
       target.getTarget(), typeCst.getValue());
   if (!size)
     return {};
-  return Builder(typeCst.getContext()).getIndexAttr(*size);
+  return Builder(typeCst.getContext()).getAttr<IntLiteralAttr>(*size);
 }
 
 /// Simplifies a `get_alignof` operator. Try to narrow the operand to a type
@@ -1995,7 +1992,7 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
       target.getTarget(), typeCst.getValue());
   if (!size)
     return {};
-  return Builder(typeCst.getContext()).getIndexAttr(*size);
+  return Builder(typeCst.getContext()).getAttr<IntLiteralAttr>(*size);
 }
 
 static Attribute simplifyBindSignature(MLIRContext *ctx,
@@ -2385,11 +2382,11 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     break;
   case POC::GetSizeOf:
     result = simplifyGetSizeOf(operands);
-    resultType = IndexType::get(ctx);
+    resultType = IntLiteralType::get(ctx);
     break;
   case POC::GetAlignOf:
     result = simplifyGetAlignOf(operands);
-    resultType = IndexType::get(ctx);
+    resultType = IntLiteralType::get(ctx);
     break;
   case POC::BindSignature:
     result = simplifyBindSignature(ctx, operands, resultType);
