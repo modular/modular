@@ -40,7 +40,7 @@ struct NmStruct:
 
 # CHECK: lit.alias.decl{{.*}}notMaterializedAlias{{.*}}NmStruct{{.*}}77
 alias notMaterializedAlias = NmStruct(77)
-# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}NmTarget{{.*}}false
+# CHECK: lit.alias.decl{{.*}}notMaterializedButConverted{{.*}}NmTarget{{.*}}{:i1 0}
 alias notMaterializedButConverted: NmTarget = NmStruct(76)
 
 
@@ -51,21 +51,22 @@ fn tail_types[T: AnyType, *U: AnyType](a: T, *b: *U):
 fn nmTargetNoop(x: NmTarget):
     pass
 
+
 # CHECK-LABEL: lit.func @"useNonmaterializable
 fn useNonmaterializable(p: Bool):
     # CHECK: lit.var.decl "gotConverted1" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}true
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 1}
     var gotConverted1 = NmStruct(76) + NmStruct(1)
     # CHECK: lit.var.decl "gotConverted2" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}false
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 0}
     var gotConverted2 = notMaterializedAlias + NmStruct(1)
     # CHECK: lit.alias.decl{{.*}}useIfAlias{{.*}}NmStruct{{.*}}2
     alias useIfAlias = NmStruct(2) if True else NmStruct(3)
     # CHECK: lit.var.decl "useIfVar" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}false
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 0}
     var useIfVar = NmStruct(2) if p else NmStruct(77)
     # CHECK: lit.var.decl "useIfVarLopsided" var : !lit.ref<!NmTarget
-    # CHECK: kgen.param.constant: !NmTarget {{.*}}true
+    # CHECK: kgen.param.constant: !NmTarget {{.*}}{:i1 1}
     var useIfVarLopsided = NmTarget(False) if not p else NmStruct(77)
 
     # CHECK: lit.var.decl "useOrVar1" var : !lit.ref<!NmTarget

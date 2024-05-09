@@ -38,11 +38,11 @@ TEST(ControlFlowTest, testStepStraightLine) {
   }
 }
 
-static void assertSI64(StopContext &ctx, StringRef name, int64_t expected) {
+static void assertIndex(StopContext &ctx, StringRef name, int64_t expected) {
   SBValue var = ctx.frame.FindVariable(name.data());
   EXPECT_STREQ(var.GetValue(), std::to_string(expected).c_str());
-  EXPECT_STREQ(var.GetTypeName(), "si64");
-  EXPECT_STREQ(var.GetDisplayTypeName(), "si64");
+  EXPECT_STREQ(var.GetTypeName(), "index");
+  EXPECT_STREQ(var.GetDisplayTypeName(), "index");
   EXPECT_TRUE(var.GetType().GetTypeFlags() | lldb::eTypeIsInteger);
   EXPECT_EQ(var.GetValueAsSigned(expected - 1), expected);
 }
@@ -52,20 +52,20 @@ TEST(ControlFlowTest, testAssignment) {
   std::optional<StopContext> ctx =
       buildAndLaunch("var_mutation_assignment.mojo");
 
-  assertSI64(*ctx, "i", 5);
-  assertSI64(*ctx, "j", 7);
+  assertIndex(*ctx, "i", 5);
+  assertIndex(*ctx, "j", 7);
 
   ctx.emplace(ctx->resume());
-  assertSI64(*ctx, "i", 15);
-  assertSI64(*ctx, "j", 7);
+  assertIndex(*ctx, "i", 15);
+  assertIndex(*ctx, "j", 7);
 
   ctx.emplace(ctx->resume());
-  assertSI64(*ctx, "i", 15);
-  assertSI64(*ctx, "j", 13);
+  assertIndex(*ctx, "i", 15);
+  assertIndex(*ctx, "j", 13);
 
   ctx.emplace(ctx->resume());
-  assertSI64(*ctx, "i", 2);
-  assertSI64(*ctx, "j", 13);
+  assertIndex(*ctx, "i", 2);
+  assertIndex(*ctx, "j", 13);
 }
 
 // TODO(https://linear.app/modularml/issue/MOTO-429/)
@@ -74,9 +74,9 @@ TEST(DISABLED_ControlFlowTest, testIteration) {
   std::optional<StopContext> ctx =
       buildAndLaunch("var_mutation_iteration.mojo");
 
-  assertSI64(*ctx, "i", 0);
+  assertIndex(*ctx, "i", 0);
   ctx.emplace(ctx->resume());
-  assertSI64(*ctx, "i", 1);
+  assertIndex(*ctx, "i", 1);
   ctx.emplace(ctx->resume());
-  assertSI64(*ctx, "i", 2);
+  assertIndex(*ctx, "i", 2);
 }

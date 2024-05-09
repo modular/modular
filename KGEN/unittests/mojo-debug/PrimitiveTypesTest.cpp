@@ -17,21 +17,21 @@ TEST(PrimitiveTypesTest, testBool) {
 
   StopContext ctx = buildAndLaunch("bool.mojo");
   SBValue trueVar = ctx.frame.FindVariable("true");
-  EXPECT_STREQ(trueVar.GetTypeName(), "!pop.scalar<bool>");
+  EXPECT_STREQ(trueVar.GetTypeName(), "i1");
   EXPECT_EQ((int)trueVar.GetByteSize(), 1);
-  EXPECT_EQ((int)trueVar.GetChildAtIndex(0).GetValueAsUnsigned(2), 1);
+  EXPECT_EQ((int)trueVar.GetValueAsUnsigned(2), 1);
   EXPECT_STREQ(trueVar.GetSummary(), "True");
 
   SBValue falseVar = ctx.frame.FindVariable("false");
-  EXPECT_STREQ(falseVar.GetTypeName(), "!pop.scalar<bool>");
+  EXPECT_STREQ(falseVar.GetTypeName(), "i1");
   EXPECT_EQ((int)falseVar.GetByteSize(), 1);
-  EXPECT_EQ((int)falseVar.GetChildAtIndex(0).GetValueAsUnsigned(2), 0);
+  EXPECT_EQ((int)falseVar.GetValueAsUnsigned(2), 0);
   EXPECT_STREQ(falseVar.GetSummary(), "False");
 
   SBValue otherVar = ctx.frame.FindVariable("other");
-  EXPECT_STREQ(otherVar.GetTypeName(), "!pop.scalar<bool>");
+  EXPECT_STREQ(otherVar.GetTypeName(), "i1");
   EXPECT_EQ((int)otherVar.GetByteSize(), 1);
-  EXPECT_EQ((int)otherVar.GetChildAtIndex(0).GetValueAsUnsigned(2), 1);
+  EXPECT_EQ((int)otherVar.GetValueAsUnsigned(2), 1);
   EXPECT_STREQ(otherVar.GetSummary(), "True");
 }
 
@@ -138,7 +138,7 @@ TEST(PrimitiveTypesTest, testTupleAndSIMD) {
 TEST(PrimitiveTypesTest, testBuiltinTypes) {
   StopContext ctx = buildAndLaunch("builtin-types.mojo");
   EXPECT_EQ(ctx.runCommand("v a_var_index").output,
-            "(si64) a_var_index = 48\n");
+            "(index) a_var_index = 48\n");
   EXPECT_EQ(ctx.runCommand("v a_register_passable_struct").output,
             R"((ARegisterPassableStruct) a_register_passable_struct = {
   int = -101
@@ -170,7 +170,7 @@ TEST(PrimitiveTypesTest, testBuiltinTypes) {
 )");
   EXPECT_TRUE(RE::PartialMatch(ctx.runCommand("v p_struct_stringref").output,
                                "length = 5"));
-  EXPECT_EQ(ctx.runCommand("v an_int").output, "(si64) an_int = 123\n");
+  EXPECT_EQ(ctx.runCommand("v an_int").output, "(index) an_int = 123\n");
   EXPECT_EQ(ctx.runCommand("v a_literal_float").output,
             "(scalar<f64>) a_literal_float = ([0] = 3.125)\n");
   EXPECT_EQ(ctx.runCommand("v a_float").output,

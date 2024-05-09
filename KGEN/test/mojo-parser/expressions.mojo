@@ -543,7 +543,7 @@ fn test_if_cond(owned cond: Bool, memCond: MemBoolish):
     # CHECK-NEXT: lit.ref.store %[[IF_RES]], %i
     var i: Int = 2 if cond else 3
 
-    # CHECK: [[TRUEB:%.+]] = kgen{{.*}} true}
+    # CHECK: [[TRUEB:%.+]] = kgen{{.*}}{:i1 1}
     # CHECK-NEXT: lit.ref.store [[TRUEB]], %cond_0
     cond = True
     i += i
@@ -783,8 +783,8 @@ def literals():
     # Test parsing for this value with lots of underscores here because mblack
     # can't handle it.
     alias b = 1_2.3__1e+1_1 # CHECK: #kgen.float_literal<1231000000000|1>
-    c = False         # CHECK: !Bool = <{:scalar<bool> false}>
-    c = True          # CHECK: !Bool = <{:scalar<bool> true}>
+    c = False         # CHECK: !Bool = <{:i1 0}>
+    c = True          # CHECK: !Bool = <{:i1 1}>
 
 # CHECK-LABEL: lit.func @"_strings
 fn _strings():
@@ -980,11 +980,11 @@ fn chained_cmp(a: Int, b: Int, c: Int, d: Int, e: Int):
 
 # Test chained comparison op in parameter domain for issue
 # https://github.com/modularml/modular/issues/22050
-# CHECK: lit.alias.decl *"chainedCmpAlias1{{.*}}": !Bool ={{.*}}false
+# CHECK: lit.alias.decl *"chainedCmpAlias1{{.*}}": !Bool ={{.*}}{:i1 0}
 alias chainedCmpAlias1 = 1 == 2 == 3 == 4 == 5
-# CHECK: lit.alias.decl *"chainedCmpAlias2{{.*}}": !Bool ={{.*}}true
+# CHECK: lit.alias.decl *"chainedCmpAlias2{{.*}}": !Bool ={{.*}}{:i1 1}
 alias chainedCmpAlias2 = 1 <= 2 <= 3 <= 4 <= 5
-# CHECK: lit.alias.decl *"chainedCmpAlias3{{.*}}": !Bool ={{.*}}false
+# CHECK: lit.alias.decl *"chainedCmpAlias3{{.*}}": !Bool ={{.*}}{:i1 0}
 alias chainedCmpAlias3 = 1 <= 2 <= 9 <= 4 <= 5
 fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   # CHECK: [[XCMP:%.*]] = lit.var.decl "xCmp"
@@ -998,7 +998,7 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   # CHECK-NEXT:     [[CMPRESULT2:%.*]] = {{.*}}__lt__{{.*}}(%x, [[PV]])
   # CHECK-NEXT:     [[IFCOND:%.*]] = {{.*}}__mlir_i1__{{.*}}([[CMPRESULT2]])
   # CHECK-NEXT:     [[MOSTINNERRESULT:%.*]] = hlcf.if [[IFCOND]] -> !Bool {
-  # CHECK-NEXT:       [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}true
+  # CHECK-NEXT:       [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:i1 1}
   # CHECK-NEXT:       hlcf.yield [[TRUEPARAM]]
   # CHECK-NEXT:     } else {
   # CHECK-NEXT:       hlcf.yield [[CMPRESULT2]]
@@ -1009,7 +1009,7 @@ fn chainedCmpSemiDyn(x: Int, a: Int, b: Int, c: Int):
   # CHECK-NEXT:   }
   # CHECK-NEXT:   hlcf.yield [[INNERRESULT]]
   # CHECK-NEXT: } else {
-  # CHECK-NEXT:   [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}true
+  # CHECK-NEXT:   [[TRUEPARAM:%.*]] = kgen.param.constant: !Bool = {{.*}}{:i1 1}
   # CHECK-NEXT:   hlcf.yield [[TRUEPARAM]]
   # CHECK-NEXT: }
   # CHECK-NEXT: lit.ref.store [[FINALRESULT]], [[XCMP]]
@@ -1413,6 +1413,6 @@ struct ThingWithMethodReferenceSelf:
 # CHECK-LABEL: lit.func @"testThingWithMethodReferenceSelf
 fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
-    # CHECK-SAME: <apply(:!lit.signature<("a": !lit.declref<#Reference 
+    # CHECK-SAME: <apply(:!lit.signature<("a": !lit.declref<#Reference
     # CHECK-SAME:       :i1 1, :lifetime<1> #lit.lifetime, :!AddressSpace {_value: !Int = {0}}>), store_to_mem(a))
     alias sizzle = a.method()

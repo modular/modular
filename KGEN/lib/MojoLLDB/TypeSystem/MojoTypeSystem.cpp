@@ -906,15 +906,13 @@ MojoTypeSystem::getBuiltinTypeFromMLIRTypeName(llvm::StringRef typeName) {
 CompilerType MojoTypeSystem::getBuiltinScalarType(llvm::StringRef typeName,
                                                   uint32_t dwarfEncoding,
                                                   uint32_t byteSize) {
-  if (dwarfEncoding == DW_ATE_unsigned)
-    return createCompilerType(IntegerType::get(getMLIRContext(), byteSize * 8,
-                                               IntegerType::Unsigned));
+  if (succeeded(DebugInfoEncoding::getKGENDTypeFromString(typeName)))
+    return createCompilerTypeFromDType(typeName);
 
-  if (dwarfEncoding == DW_ATE_signed)
-    return createCompilerType(
-        IntegerType::get(getMLIRContext(), byteSize * 8, IntegerType::Signed));
+  if (dwarfEncoding == DW_ATE_unsigned || dwarfEncoding == DW_ATE_signed)
+    return getBuiltinTypeFromMLIRTypeName(typeName);
 
-  return createCompilerTypeFromDType(typeName);
+  return {};
 }
 
 lldb_private::CompilerType

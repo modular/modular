@@ -513,6 +513,14 @@ OpFoldResult OrOp::fold(FoldAdaptor adaptor) {
 }
 
 OpFoldResult XOrOp::fold(FoldAdaptor adaptor) {
+  // `xor(x, 0)` -> `x`.
+  SIMDAttr attr;
+  if (mlir::matchPattern(getRhs(), mlir::m_Constant(&attr)) &&
+      llvm::all_of(attr.getValues(), [](const DTypeValue &value) {
+        return value.getData().isZero();
+      }))
+    return getLhs();
+
   return foldSIMDOp(
       adaptor.getOperands(), [](APSInt lhs, APSInt rhs) { return lhs ^ rhs; },
       [](bool lhs, bool rhs) -> bool { return lhs ^ rhs; });
