@@ -4403,9 +4403,11 @@ fn with_mask_flash_attention_cpu[
 
 
 # # ===----------------------------------------------------------------------===#
-# # INT4/5/6 packing format
+# # INT4/5/6 packing format and op implementations
 # # ===----------------------------------------------------------------------===#
-from quantization import Q4sym, ggml_q4_0_matmul_impl as matmul_int4
+
+from quantization import Q4sym, ggml_q4_0_matmul_impl
+from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 
 
 # TODO: closures to make this simpler
@@ -4558,7 +4560,7 @@ fn qmatmul_Af32_BTQ4symG32_Cf32[
     c: NDBuffer[type, 2],
     ctx: MojoCallContextPtr,
 ) raises:
-    matmul_int4[32](a, b, c)
+    ggml_q4_0_matmul_impl[32](a, b, c)
 
 
 @mogg_register_shape_func("qmatmul_Af32_BTQ4symG32_Cf32")
@@ -4610,3 +4612,59 @@ fn pytorch_test_custom[
     rank: Int,
 ](data: NDBuffer[type, rank], out: NDBuffer[type, rank]):
     print("hello")
+
+
+@mogg_register_override("vroom_q4_0_matmul", 1)
+@always_inline
+@export
+fn vroom_q4_0_matmul(
+    a: NDBuffer[DType.float32, 2],
+    b: NDBuffer[DType.uint8, 2],
+    c: NDBuffer[DType.float32, 2],
+    ctx: MojoCallContextPtr,
+) raises:
+    constrained[
+        (a.type == c.type) and a.type.is_floating_point(),
+        "expected float inputs and outputs",
+    ]()
+    constrained[b.type == DType.uint8, "expected uint8 input b"]()
+
+    with Trace[TraceLevel.OP]("mojo.vroom_q4_0_matmul"):
+        matmul_qint4[32](a, b, c)
+
+
+@mogg_register_shape_func("vroom_q4_0_matmul")
+@always_inline
+@export
+fn vroom_q4_0_matmul_shape_func[
+    single_thread_blocking_override: Bool
+](a: NDBuffer[DType.float32, 2], b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[
+    2
+]:
+    constrained[
+        a.type.is_floating_point(), "expected float inputs and outputs"
+    ]()
+    constrained[b.type == DType.uint8, "expected uint8 input b"]()
+    constrained[a.rank == b.rank == 2, "expected rank to be 2"]()
+
+    return StaticIntTuple[2](a.dim[0](), b.dim[0]())
+
+
+@mogg_register_override("vroom_q4_0_repack_weights", 1)
+@always_inline
+@export
+fn vroom_q4_0_repack_weights(
+    b: NDBuffer[DType.uint8, 2],
+    b_packed: NDBuffer[DType.uint8, 2],
+    ctx: MojoCallContextPtr,
+) raises:
+    matmul_qint4_pack_b[32](b, b_packed)
+
+
+@mogg_register_shape_func("vroom_q4_0_repack_weights")
+@always_inline
+@export
+fn vroom_q4_0_repack_weights_func[
+    single_thread_blocking_override: Bool
+](b: NDBuffer[DType.uint8, 2]) -> StaticIntTuple[2]:
+    return b.get_shape()
