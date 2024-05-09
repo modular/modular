@@ -24,7 +24,7 @@ from LinAlg.transpose import transpose_inplace
 from memory import memset_zero, stack_allocation
 from memory.unsafe import DTypePointer
 from runtime.llcl import Runtime
-from utils import Index, StaticTuple
+from utils import Index, InlineArray
 
 
 struct _MatmulConfig:
@@ -100,7 +100,7 @@ struct _Matmul[
         @parameter
         @always_inline
         fn loop_body[lane_count: Int](k: Int):
-            var a_tile = StaticTuple[SIMD[type, lane_count], tile_m]()
+            var a_tile = InlineArray[SIMD[type, lane_count], tile_m](0)
 
             @unroll
             for m in range(tile_m):
@@ -141,7 +141,7 @@ struct _Matmul[
         @parameter
         @always_inline
         fn loop_body[unroll_factor: Int](k: Int):
-            var b_tile = StaticTuple[SIMD[type, simd_width], tile_n]()
+            var b_tile = InlineArray[SIMD[type, simd_width], tile_n](0)
 
             @unroll
             for k in range(unroll_factor):
@@ -326,7 +326,7 @@ struct _Matmul[
             ](
                 start: Int,
                 end: Int,
-                inout accum: StaticTuple[SIMD[type, _simd_width], tile_n],
+                inout accum: InlineArray[SIMD[type, _simd_width], tile_n],
             ):
                 for k in range(start, end, _simd_width):
                     var a_data = a_ptr.load[width=_simd_width](k)
@@ -341,11 +341,11 @@ struct _Matmul[
             fn do_reduce_accum[
                 target_width: Int, _simd_width: Int
             ](
-                accum: StaticTuple[SIMD[type, _simd_width], tile_n]
-            ) -> StaticTuple[SIMD[type, target_width], tile_n]:
-                var accum_reduce = StaticTuple[
+                accum: InlineArray[SIMD[type, _simd_width], tile_n]
+            ) -> InlineArray[SIMD[type, target_width], tile_n]:
+                var accum_reduce = InlineArray[
                     SIMD[type, target_width], tile_n
-                ]()
+                ](0)
 
                 @unroll
                 for nn in range(tile_n):
@@ -356,7 +356,7 @@ struct _Matmul[
             alias unroll_simd_width = simd_width * unroll_factor
 
             var unroll_loop_end = align_down(K, unroll_simd_width)
-            var unroll_accum = StaticTuple[
+            var unroll_accum = InlineArray[
                 SIMD[type, unroll_simd_width], tile_n
             ](0)
             do_reduce(0, unroll_loop_end, unroll_accum)
