@@ -943,12 +943,12 @@ fn broadcast_to_shape[
 # `mlir.index` typed so we need to return as `mlir.index` and then cast to int.
 @mogg_register("simd_target")
 fn get_target_simd[type: DType]() -> __mlir_type.index:
-    return simdwidthof[type]().value
+    return int(simdwidthof[type]()).value
 
 
 @mogg_register("simd_target_cuda")
 fn get_target_simd_cuda[type: DType]() -> __mlir_type.index:
-    return simdwidthof[Scalar[type], target = _get_nvptx_target()]().value
+    return int(simdwidthof[Scalar[type], target = _get_nvptx_target()]()).value
 
 
 @mogg_register("simd_target_to_int")
