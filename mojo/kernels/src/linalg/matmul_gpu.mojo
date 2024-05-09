@@ -947,7 +947,7 @@ fn matmul_kernel_naive[
 
 @always_inline
 fn _matmul_gpu[
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type],
+    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     single_thread_blocking_override: Bool = False,
 ](
     c: NDBuffer[_, 2, _],
