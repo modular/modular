@@ -46,5 +46,3 @@ from .reduction import (
     argmin,
     cumsum,
 )
-from .sort import partition, sort
-from .swap import swap
