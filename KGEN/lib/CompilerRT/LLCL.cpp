@@ -280,21 +280,22 @@ KGEN_CompilerRT_CreateAsyncBufferRef(void *data, size_t size,
 }
 
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
-KGEN_CompilerRT_CreateAsyncTensorSpec(LLCLWrapper<TensorSpec> specPtr,
+KGEN_CompilerRT_CreateAsyncTensorSpec(ssize_t *data, ssize_t rank,
+                                      int8_t rawDType,
                                       LLCLWrapper<AnyAsyncValueRef> async,
                                       LLCLWrapper<Runtime> runtimePtr) {
   Runtime &runtime = unwrap(runtimePtr);
   AnyAsyncValueRef &value = unwrap(async);
+  llvm::SmallVector<ssize_t> dims;
+  for (int i = 0; i < rank; ++i)
+    dims.push_back(data[i]);
+
   if (value.getPointer() && value.getPointer()->isIndirect()) {
-    llvm::SmallVector<size_t> dims;
-    TensorSpec &spec = unwrap(specPtr);
-    value.copy().emplaceIndirect<TensorSpec>(TensorSpec(spec));
+    value.copy().emplaceIndirect<TensorSpec>(TensorSpec(dims, DType(rawDType)));
   } else {
-    llvm::SmallVector<size_t> dims;
-    TensorSpec &spec = unwrap(specPtr);
     assert(!value.isReady());
-    value =
-        AnyAsyncValueRef::createReady<TensorSpec>(runtime, TensorSpec(spec));
+    value = AnyAsyncValueRef::createReady<TensorSpec>(
+        runtime, TensorSpec(dims, DType(rawDType)));
   }
 }
 
@@ -321,6 +322,17 @@ KGEN_CompilerRT_GetDataFromBuffer(LLCLWrapper<AnyAsyncValueRef> async,
   auto &buffer = value.get<GML::BufferRef>();
   *sizeOut = buffer.getSize();
   return buffer.getBuffer();
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint8_t
+KGEN_CompilerRT_GetTensorSpecFromAsync(ssize_t *data, ssize_t rank,
+                                       LLCLWrapper<AnyAsyncValueRef> async) {
+  AnyAsyncValueRef &value = unwrap(async);
+  assert(value.isReady());
+  auto &spec = value.get<TensorSpec>();
+  for (int i = 0; i < rank; ++i)
+    data[i] = spec[i];
+  return spec.getEltType().getValue();
 }
 
 //===----------------------------------------------------------------------===//
@@ -392,6 +404,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_CreateAsyncTensorSpec});
   funcs.push_back({"KGEN_CompilerRT_GetValueFromAsync",
                    (void *)&KGEN_CompilerRT_GetValueFromAsync});
+  funcs.push_back({"KGEN_CompilerRT_GetTensorSpecFromAsync",
+                   (void *)&KGEN_CompilerRT_GetTensorSpecFromAsync});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_Complete",
                    (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_Complete});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_SetToError",
