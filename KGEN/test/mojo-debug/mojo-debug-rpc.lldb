@@ -67,7 +67,7 @@
 # CHECK-MOJO:          "PATH=
 # CHECK-MOJO:        ]
 # CHECK-MOJO-NEXT:   "modularHomePath": "
-# CHECK-MOJO-NEXT:   "program": "{{.*}}/bin/mojo
+# CHECK-MOJO-NEXT:   "program": "{{.*}}/mojo
 # CHECK-MOJO-NEXT:   "request": "launch"
 # CHECK-MOJO-NEXT:   "runInTerminal": true
 # CHECK-MOJO-NEXT:   "type": "mojo-lldb"

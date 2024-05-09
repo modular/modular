@@ -1249,23 +1249,59 @@ genrule(
     cmd = "sed 's/^/_/g' $(SRCS) > $(OUTS)",
 )
 
-globals_library(
-    name = "LLDB",
-    srcs = [],
-    additional_linker_inputs = [
-        "@llvm-project//lldb:source/API/liblldb-private.exports",
-        ":gen_exports_file_linux",
-        ":gen_exports_file_macos",
-    ],
-    linkopts = ["-ledit"] + select({
+# TODO: Delete once https://github.com/llvm/llvm-project/pull/91549 is in
+cc_binary(
+    name = "lldb19.0.0git",
+    additional_linker_inputs = select({
+        "@platforms//os:linux": [
+            ":gen_exports_file_linux",
+        ],
+        "@platforms//os:macos": [
+            ":gen_exports_file_macos",
+        ],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
         "@platforms//os:linux": [
             "-Wl,--export-dynamic-symbol-list=$(location :gen_exports_file_linux)",
         ],
         "@platforms//os:macos": [
             "-Wl,-exported_symbols_list,$(location :gen_exports_file_macos)",
         ],
+        "//conditions:default": [],
     }),
-    deps = ["@llvm-project//lldb:liblldb.static"],
+    linkshared = True,
+    deps = [
+        "@llvm-project//lldb:API",
+        "@llvm-project//lldb:Interpreter",
+    ],
+)
+
+cc_import(
+    name = "liblldb.wrapper",
+    shared_library = "lldb19.0.0git",
+)
+
+# TODO: Replace with copy_file when https://github.com/llvm/llvm-project/pull/91549 is in
+cc_binary(
+    name = "mojo-lldb",
+    srcs = [
+        "//:third-party/llvm-project/lldb/tools/driver/Driver.cpp",
+        "//:third-party/llvm-project/lldb/tools/driver/Driver.h",
+        "//:third-party/llvm-project/lldb/tools/driver/Platform.cpp",
+        "//:third-party/llvm-project/lldb/tools/driver/Platform.h",
+    ],
+    data = [
+        "@llvm-project//lldb:lldb-argdumper",
+    ],
+    deps = [
+        ":liblldb.wrapper",
+        "@llvm-project//lldb:APIHeaders",
+        "@llvm-project//lldb:Host",
+        "@llvm-project//lldb:lldb_options_inc_gen",
+        "@llvm-project//llvm:Option",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 globals_library(
@@ -1282,16 +1318,17 @@ globals_library(
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",
-        ":LLDB",
-        ":LLDB.headers",
         ":MojoTooling",
         ":ObjectCompiler",
+        ":liblldb.wrapper",
         "//LLCL:RuntimeGlobals",
         "//Support:Base",
         "//Support:CrashReporting",
         "//Support:Globals",
         "//Support:Init",
         "@llvm-project//lldb/source/Plugins:PluginSymbolFileDWARFHeaders",
+        "@llvm-project//llvm:ExecutionEngine",
+        "@llvm-project//llvm:MCJIT",
     ],
 )
 
