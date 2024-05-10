@@ -186,7 +186,11 @@ def main():
             test_layout_mma[DType.float32, DType.float32, shape_1688, 16, 8, 8](
                 rtol=1e-01
             )
-            # test_layout_mma[DType.float32, DType.bfloat16, shape_1688, 16, 8, 8](rtol=1e-01)
-            # test_layout_mma[DType.float32, DType.float16, shape_1688, 16, 8, 8](rtol=1e-01)
+            test_layout_mma[
+                DType.float32, DType.bfloat16, shape_1688, 16, 8, 8
+            ](rtol=1e-01)
+            test_layout_mma[DType.float32, DType.float16, shape_1688, 16, 8, 8](
+                rtol=1e-01
+            )
     except e:
         print("CUDA_ERROR:", e)
