@@ -578,6 +578,16 @@ kgen.func @cast_address_to_index() -> !pop.scalar<index> {
   kgen.return %1 : !pop.scalar<index>
 }
 
+// CHECK-LABEL: @cast_and_trancate
+kgen.func @cast_and_trancate(%v0 : !pop.simd<2, si64>) -> !pop.simd<2, si32> {
+  // CHECK-NEXT: pop.cast %arg0 : !pop.simd<2, si64> to !pop.simd<2, si32>
+  // CHECK-NOT: pop.cast
+  %v1 = pop.cast %v0 : !pop.simd<2, si64> to !pop.simd<2, si32>
+  %v2 = pop.cast %v1 : !pop.simd<2, si32> to !pop.simd<2, si64>
+  %v3 = pop.cast %v2 : !pop.simd<2, si64> to !pop.simd<2, si32>
+  kgen.return %v3 : !pop.simd<2, si32>
+}
+
 // CHECK-LABEL: @simd_extractelement
 kgen.func @simd_extractelement() -> (!pop.scalar<si8>) {
   // CHECK-NEXT: <20>

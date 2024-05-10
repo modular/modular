@@ -550,6 +550,7 @@ def POP_CastOp : POPOp<"cast", [Pure]> {
   }];
   let hasVerifier = 1;
   let hasFolder = 1;
+  let hasCanonicalizeMethod = 1;
 }
 
 //===----------------------------------------------------------------------===//

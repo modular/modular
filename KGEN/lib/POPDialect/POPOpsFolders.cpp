@@ -667,6 +667,41 @@ OpFoldResult CastOp::fold(FoldAdaptor adaptor) {
       [](const APFloat &in) { return !in.isZero(); });
 }
 
+/// Canonicalize integer type `cast(cast(x : T1 to T2) : T3) -> cast(T1 to T3)`,
+/// when second cast discards the result of the first cast.
+LogicalResult CastOp::canonicalize(CastOp op, PatternRewriter &b) {
+  auto cast = op.getInput().getDefiningOp<CastOp>();
+  if (!cast)
+    return b.notifyMatchFailure(op.getLoc(), "not a cast of a cast");
+  if (!cast->hasOneUse())
+    return b.notifyMatchFailure(op.getLoc(),
+                                "intermediate cast has multiple uses");
+
+  auto inType = op.getInput().getType().getResolvedDType();
+  auto type = op.getType().getResolvedDType();
+  auto castType = cast.getInput().getType().getResolvedDType();
+  if (!inType || !type || !castType)
+    return b.notifyMatchFailure(op.getLoc(), "not all types are known");
+
+  if (!(*inType).isInt() || !(*type).isInt() || !(*castType).isInt())
+    return b.notifyMatchFailure(op.getLoc(), "not all types are integer");
+
+  size_t inWidth = inType->getIntegerWidthInBits();
+  size_t width = type->getIntegerWidthInBits();
+  size_t castWidth = castType->getIntegerWidthInBits();
+
+  // Intermediate cast is redundant if the final cast truncates its result
+  // and all bits created by the intermediate cast are discarded.
+  if (!(width <= inWidth && width <= castWidth))
+    return b.notifyMatchFailure(op.getLoc(),
+                                "intermediate cast affects result");
+
+  b.replaceOpWithNewOp<CastOp>(op, op.getType(), cast.getInput());
+  // Erase the intermediate cast -- its only use has been removed.
+  b.eraseOp(cast);
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // SIMDExtractElementOp
 //===----------------------------------------------------------------------===//
