@@ -108,12 +108,7 @@ static void createCoroutineFinalize(ImplicitLocOpBuilder &b, Value hdl,
                                     Operation *ret) {
   b.setLoc(ret->getLoc());
   b.setInsertionPoint(ret);
-  Value promise = b.create<CO::PromiseOp>(
-      PointerType::get(StructType::get(
-          b.getContext(), llvm::to_vector(ret->getOperandTypes()))),
-      hdl);
-  for (auto [idx, result] : llvm::enumerate(ret->getOperands()))
-    b.create<StoreOp>(result, b.create<StructGEPOp>(promise, idx));
+  b.create<CO::SetResultsOp>(hdl, ret->getOperands());
 }
 
 /// Lower an async execute by making it isolated from above and hoisting it into

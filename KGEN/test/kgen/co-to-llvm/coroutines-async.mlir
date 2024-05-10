@@ -2,16 +2,6 @@
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 
-// CHECK-LABEL: llvm.func @coro_promise
-llvm.func @coro_promise() {
-  %0 = "make_handle"() : () -> !co.routine
-  // CHECK: %2 = llvm.getelementptr inbounds %1[24] : (!llvm.ptr) -> !llvm.ptr, i8
-  %1 = co.promise %0 : <struct<(i32, i64)>>
-  // CHECK: "use"(%2)
-  "use"(%1) : (!kgen.pointer<struct<(i32, i64)>>) -> ()
-  llvm.return
-}
-
 // CHECK-LABEL: llvm.func @coro_resume
 llvm.func @coro_resume() {
   %0 = "make_handle"() : () -> !co.routine
@@ -35,10 +25,67 @@ llvm.func @coro_destroy() {
 llvm.func @coro_get_results() {
   %0 = builtin.unrealized_conversion_cast to !co.routine
   // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[24]
-  // CHECK-NEXT: [[STRUCT:%.*]] = llvm.load [[PTR]]
-  // CHECK-NEXT: extractvalue [[STRUCT]][0]
-  // CHECK-NEXT: extractvalue [[STRUCT]][1]
-  %1:2 = co.get_results %0 : i32, i64
+  // CHECK-NEXT: [[STRUCT:%.*]] = llvm.load [[PTR]] : !llvm.ptr -> !llvm.struct<(i32, i64)>
+  // CHECK-NEXT: [[R0:%.*]] = llvm.extractvalue [[STRUCT]][0]
+  // CHECK-NEXT: [[R1:%.*]] = llvm.extractvalue [[STRUCT]][1]
+  // CHECK-NEXT: unrealized_conversion_cast [[R1]] : i64 to index
+  %1:2 = co.get_results %0 : i32, index
+  "use"(%1#0, %1#1) : (i32, index) -> ()
+  llvm.return
+}
+
+// CHECK-LABEL: llvm.func @coro_get_results_none
+llvm.func @coro_get_results_none() {
+  // CHECK: unrealized_conversion_cast
+  %0 = builtin.unrealized_conversion_cast to !co.routine
+  co.get_results %0
+  // CHECK-NEXT: return
+  llvm.return
+}
+
+
+// CHECK-LABEL: llvm.func @coro_get_results_one
+llvm.func @coro_get_results_one() {
+  %0 = builtin.unrealized_conversion_cast to !co.routine
+  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[24]
+  // CHECK-NEXT: [[R:%.*]] = llvm.load [[PTR]] : !llvm.ptr -> i64
+  // CHECK-NEXT: unrealized_conversion_cast [[R]] : i64 to index
+  %1 = co.get_results %0 : index
+  "use"(%1) : (index) -> ()
+  llvm.return
+}
+
+// CHECK-LABEL: llvm.func @coro_set_results
+llvm.func @coro_set_results(%arg0: i32) {
+  %0 = builtin.unrealized_conversion_cast to !co.routine
+  %idx0 = index.constant 0
+  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[24]
+  // CHECK-NEXT: [[V0:%.*]] = llvm.mlir.undef : !llvm.struct<(i64, i32)>
+  // CHECK-NEXT: [[ELE:%.*]] = builtin.unrealized_conversion_cast %idx0 : index to i64
+  // CHECK-NEXT: [[V1:%.*]] = llvm.insertvalue [[ELE]], [[V0]][0]
+  // CHECK-NEXT: [[V2:%.*]] = llvm.insertvalue %arg0, [[V1]][1]
+  // CHECK-NEXT: store [[V2]], [[PTR]]
+  co.set_results %0(%idx0, %arg0) : index, i32
+  llvm.return
+}
+
+// CHECK-LABEL: llvm.func @coro_set_results_none
+llvm.func @coro_set_results_none() {
+  // CHECK-NEXT: unrealized_conversion_cast
+  %0 = builtin.unrealized_conversion_cast to !co.routine
+  co.set_results %0()
+  // CHECK-NEXT: return
+  llvm.return
+}
+
+// CHECK-LABEL: llvm.func @coro_set_results_one
+llvm.func @coro_set_results_one() {
+  %0 = builtin.unrealized_conversion_cast to !co.routine
+  %idx0 = index.constant 0
+  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[24]
+  // CHECK-NEXT: [[ELE:%.*]] = builtin.unrealized_conversion_cast %idx0 : index to i64
+  // CHECK-NEXT: store [[ELE]], [[PTR]]
+  co.set_results %0(%idx0) : index
   llvm.return
 }
 
@@ -62,7 +109,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: llvm.func internal @async_fn_af_suspend
 // CHECK-SAME: (%arg0: !llvm.ptr loc({{.*}}), %arg1: i64 loc({{.*}}))
 // CHECK-NEXT:   %0 = builtin.unrealized_conversion_cast %arg1 : i64 to index
-// CHECK-NEXT:   %1 = builtin.unrealized_conversion_cast %arg0 : !llvm.ptr to !co.routine
 // CHECK-NEXT:   "do_something"(%0)
 // CHECK-NEXT:   llvm.return loc(#[[SUSPEND_LOC]])
 // CHECK-NEXT: } loc(#[[SUSPEND_LOC]])
@@ -176,8 +222,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %1 = builtin.unrealized_conversion_cast %0 : !co.routine to !llvm.ptr loc(#loc8)
 
     // CHECK-LABEL: llvm.func internal @foo_af_suspend_0(%arg0: !llvm.ptr loc({{.*}}))
-    // CHECK-NEXT:    %0 = builtin.unrealized_conversion_cast %arg0
-    // CHECK-NEXT:    %1 = llvm.mlir.constant(1 : i64) : i64 loc(#[[LOC1_INL:.*]])
+    // CHECK-NEXT:    %0 = llvm.mlir.constant(1 : i64) : i64 loc(#[[LOC1_INL:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP1:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP1]])
     co.suspend -> %hdl0 {
@@ -186,8 +231,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     } loc(#loc11)
 
     // CHECK-LABEL: llvm.func internal @foo_af_suspend_1(%arg0: !llvm.ptr loc({{.*}}))
-    // CHECK-NEXT:    %0 = builtin.unrealized_conversion_cast %arg0
-    // CHECK-NEXT:    %1 = llvm.mlir.constant(2 : i64) : i64 loc(#[[LOC2_INL:.*]])
+    // CHECK-NEXT:    %0 = llvm.mlir.constant(2 : i64) : i64 loc(#[[LOC2_INL:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP2:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP2]])
     co.suspend -> %hdl1 {

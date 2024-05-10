@@ -4,10 +4,8 @@
 kgen.func @slow_function(%arg0: i32) -> !co.routine {
   // CHECK-NEXT: %[[HDL:.*]] = co.handle : i32
   %hdl = co.handle : i32
-  // CHECK-NEXT: %[[PROMISE:.*]] = co.promise %[[HDL]] : <struct<(i32)>>
-  %promise = co.promise %hdl : <struct<(i32)>>
-  // CHECK-NEXT: kgen.struct.gep %[[PROMISE]][0] : <struct<(i32)>>
-  %res0 = kgen.struct.gep %promise[0] : <struct<(i32)>>
+  // CHECK-NEXT: co.set_results %[[HDL]](%arg0) : i32
+  co.set_results %hdl(%arg0) : i32
   kgen.return %hdl : !co.routine
 }
 

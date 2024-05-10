@@ -173,17 +173,48 @@ static Value getOffsetToResults(LLVMBuilder &b, TypeAttrCache &cache,
                          /*inbounds=*/true);
 }
 
-static LogicalResult
-lowerCoroutinePromiseAsync(LLVMBuilder &b, TypeAttrCache &cache, PromiseOp op) {
+static LogicalResult lowerCoroutineSetResults(LLVMBuilder &b,
+                                              TypeAttrCache &cache,
+                                              SetResultsOp op) {
+  // Handle the case where there are no result values.
+  ValueRange values = op.getValues();
+  if (values.empty()) {
+    op.erase();
+    return success();
+  }
+
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
+  // Load out the results as a whole struct. There should only be a small number
+  // of results.
+  SmallVector<Type> resultTypes;
+  resultTypes.reserve(values.size());
+  for (Type type : values.getType()) {
+    resultTypes.push_back(b.convertType(type));
+    if (!resultTypes.back())
+      return op.emitError("failed to convert result type");
+  }
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
-  Type elType = b.convertType(op.getType().getElementType());
-  if (!elType)
-    return op.emitError("failed to convert promise type");
+  Value resultsPtr = getOffsetToResults(b, cache, hdl);
 
-  op.replaceAllUsesWith(getOffsetToResults(b, cache, hdl));
+  // If there is a single result, don't bother wrapping it into a struct.
+  if (resultTypes.size() == 1) {
+    b.create<StoreOp>(b.createConversion(resultTypes.front(), values.front()),
+                      resultsPtr);
+    op.erase();
+    return success();
+  }
+
+  // Pack the results into a struct and then store them.
+  auto structType = LLVMStructType::getLiteral(b.getContext(), resultTypes);
+  Value result = b.create<UndefOp>(structType);
+  for (auto [i, value, type] : llvm::enumerate(values, resultTypes)) {
+    result =
+        b.create<InsertValueOp>(result, b.createConversion(type, value), i);
+  }
+  b.create<StoreOp>(result, resultsPtr);
+
   op.erase();
   return success();
 }
@@ -213,6 +244,12 @@ static LogicalResult lowerCoroutineCallback(LLVMBuilder &b,
 static LogicalResult lowerCoroutineGetResults(LLVMBuilder &b,
                                               TypeAttrCache &cache,
                                               GetResultsOp op) {
+  // Peephole the case where there are no results.
+  if (op.getNumResults() == 0) {
+    op.erase();
+    return success();
+  }
+
   b.setLoc(op.getLoc());
   b.setInsertionPoint(op);
 
@@ -225,15 +262,29 @@ static LogicalResult lowerCoroutineGetResults(LLVMBuilder &b,
     if (!resultTypes.back())
       return op.emitError("failed to convert result type");
   }
-  auto structType = LLVMStructType::getLiteral(b.getContext(), resultTypes);
-
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
-  Value resultPack =
-      b.create<LoadOp>(structType, getOffsetToResults(b, cache, hdl));
+  Value resultsPtr = getOffsetToResults(b, cache, hdl);
+
+  // Handle the case where there is a single result and no need to pack the
+  // results into a struct.
+  if (resultTypes.size() == 1) {
+    Value result = b.create<LoadOp>(resultTypes.front(), resultsPtr);
+    op.replaceAllUsesWith(
+        ArrayRef(b.createConversion(op.getResultTypes().front(), result)));
+    op.erase();
+    return success();
+  }
+
+  // Load the packed results as a struct and extract them.
+  auto structType = LLVMStructType::getLiteral(b.getContext(), resultTypes);
+  Value resultPack = b.create<LoadOp>(structType, resultsPtr);
   SmallVector<Value> results;
   results.reserve(op.getNumResults());
-  for (auto [i, type] : llvm::enumerate(resultTypes))
-    results.push_back(b.create<ExtractValueOp>(type, resultPack, i));
+  for (auto [i, type, origType] :
+       llvm::enumerate(resultTypes, op.getResultTypes())) {
+    results.push_back(b.createConversion(
+        origType, b.create<ExtractValueOp>(type, resultPack, i)));
+  }
 
   op.replaceAllUsesWith(results);
   op.erase();
@@ -728,8 +779,8 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
       handles.push_back(handle);
     } else if (auto await = dyn_cast<SuspendOp>(op)) {
       awaits.push_back(await);
-    } else if (auto promise = dyn_cast<PromiseOp>(op)) {
-      if (failed(lowerCoroutinePromiseAsync(b, cache, promise)))
+    } else if (auto setResults = dyn_cast<SetResultsOp>(op)) {
+      if (failed(lowerCoroutineSetResults(b, cache, setResults)))
         return WalkResult::interrupt();
     } else if (auto callback = dyn_cast<GetCallbackPtrOp>(op)) {
       if (failed(lowerCoroutineCallback(b, cache, callback)))

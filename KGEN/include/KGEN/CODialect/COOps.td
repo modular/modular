@@ -156,27 +156,27 @@ def CO_ExecuteOp : COOp<"execute", [SingleBlock,
 }
 
 //===----------------------------------------------------------------------===//
-// PromiseOp
+// SetResultsOp
 //===----------------------------------------------------------------------===//
 
-def CO_PromiseOp : COOp<"promise", [Pure]> {
-  let summary = "Get the coroutine promise.";
+def CO_SetResultsOp : COOp<"set_results"> {
+  let summary = "Set the direct results of the coroutine.";
   let description = [{
-    The `co.promise` operation returns the pointer to the coroutine
-    promise, which contains the result values of the promise. Located at the
-    end of the promise is the async context. Attempting to access data beyond
-    the pointee is undefined behaviour.
+    The `co.set_results` operation sets the direct SSA result values of the
+    async function from which the coroutine was formed.
 
     Example:
 
     ```mlir
-    %promise = co.promise %hdl : struct<i32, i64>
+    co.set_results %hdl(%0, %1) : i32, i64
     ```
   }];
 
-  let arguments = (ins CoroutineType:$coroutine);
-  let results = (outs PointerType:$promise);
-  let assemblyFormat = "$coroutine attr-dict `:` type($promise)";
+  let arguments = (ins Arg<CoroutineType, "", [MemWrite]>:$coroutine,
+                       Variadic<AnyType>:$values);
+  let assemblyFormat = [{
+    $coroutine `(` $values `)` attr-dict (`:` type($values)^)?
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -205,7 +205,7 @@ def CO_GetResultsOp : COOp<"get_results"> {
 
   let arguments = (ins Arg<CoroutineType, "", [MemRead]>:$coroutine);
   let results = (outs Variadic<AnyType>:$results);
-  let assemblyFormat = "$coroutine attr-dict `:` type($results)";
+  let assemblyFormat = "$coroutine attr-dict (`:` type($results)^)?";
 }
 
 //===----------------------------------------------------------------------===//

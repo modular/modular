@@ -146,6 +146,8 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
 
   /// Create an `unrealized_conversion_cast` operation.
   Value createConversion(Type type, Value src) {
+    if (src.getType() == type)
+      return src;
     return create<mlir::UnrealizedConversionCastOp>(type, src).getResult(0);
   }
 
