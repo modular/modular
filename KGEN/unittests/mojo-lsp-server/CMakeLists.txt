@@ -35,5 +35,6 @@ add_modular_unittest(
   mojo-sdk
 
   LINK_LIBS PRIVATE
+  MSupportGlobals
   mojo-lsp-test-client
 )

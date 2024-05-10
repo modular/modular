@@ -33,5 +33,6 @@ add_modular_unittest(
   LINK_LIBS PRIVATE
   liblldb
   KGENSupport
+  MSupportGlobals
   MSupport
 )
