@@ -7,18 +7,14 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   // CHECK: hlcf.if
   hlcf.if %arg0 {
     %idx1 = index.constant 1
-    // CHECK: %[[PROMISE:.*]] = co.promise %[[HDL]]
-    // CHECK-NEXT: %[[RES:.*]] = kgen.struct.gep %[[PROMISE]][0]
-    // CHECK-NEXT: pop.store %idx1, %[[RES]]
+    // CHECK: co.set_results %[[HDL]](%idx1)
     // CHECK-NEXT: kgen.return %[[HDL]]
     kgen.return %idx1 : index
   } else {
     hlcf.yield
   }
   %idx0 = index.constant 0
-  // CHECK: %[[PROMISE:.*]] = co.promise %[[HDL]]
-  // CHECK-NEXT: %[[RES:.*]] = kgen.struct.gep %[[PROMISE]][0]
-  // CHECK-NEXT: pop.store %idx0, %[[RES]]
+  // CHECK: co.set_results %[[HDL]](%idx0)
   // CHECK-NEXT: kgen.return %[[HDL]]
   kgen.return %idx0 : index
 }
@@ -134,9 +130,7 @@ kgen.func @create_closure() {
 }
 
 // CHECK-LABEL: kgen.func @async_closure_in_async_async_closure_0()
-// CHECK: [[PROMISE:%.*]] = co.promise {{.*}} : <struct<(index)>>
-// CHECK: [[GEP:%.*]] = kgen.struct.gep [[PROMISE]][0]
-// CHECK: store %idx5, [[GEP]]
+// CHECK: co.set_results {{.*}}(%idx5)
 
 // CHECK-LABEL: kgen.func @async_closure_in_async
 kgen.func @async_closure_in_async(%arg1: index) async {
@@ -144,7 +138,7 @@ kgen.func @async_closure_in_async(%arg1: index) async {
     %idx = index.constant 5
     kgen.return %idx : index
   }
-  // CHECK: co.promise {{.*}} : <struct<()>>
+  // CHECK: co.set_results {{.*}}()
   kgen.return
 }
 
