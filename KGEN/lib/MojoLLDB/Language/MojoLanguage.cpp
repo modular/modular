@@ -199,7 +199,7 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   summaryFlags.SetCascades(true)
       .SetSkipPointers(false)
       .SetSkipReferences(false)
-      .SetDontShowChildren(true)
+      .SetDontShowChildren(false)
       .SetDontShowValue(true)
       .SetShowMembersOneLiner(false)
       .SetHideItemNames(false);
@@ -208,6 +208,8 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, MojoLLDBWrappingTypeSummaryProvider,
                 "Mojo decorator-based summary provider",
                 kLLDBFormatterWrappingTypeRegex, summaryFlags, /*regex=*/true);
+
+  summaryFlags.SetDontShowChildren(true);
   AddCXXSummary(mojoCategorySP, kgenNoneSummaryProvider,
                 "!kgen.none summary provider", "!kgen.none", summaryFlags,
                 /*regex=*/false);
