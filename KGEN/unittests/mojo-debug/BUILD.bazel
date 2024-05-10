@@ -43,6 +43,7 @@ cc_test(
     },
     deps = [
         ":Support",
+        "//Support:Globals",
         "@com_github_google_googletest//:gtest",
         "@com_github_google_googletest//:gtest_main",
     ],

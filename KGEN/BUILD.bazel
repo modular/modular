@@ -1017,6 +1017,7 @@ cc_library(
         "//Support:Configuration",
         "//Support:ML",
         "//Support:Profiling",
+        "//Support:Settings",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
     ],
@@ -1304,6 +1305,12 @@ cc_binary(
     ],
 )
 
+cc_library(
+    name = "MojoLLDBHeaders",
+    hdrs = glob(["include/KGEN/MojoLLDB/*.h"]),
+    strip_include_prefix = "include",
+)
+
 globals_library(
     name = "MojoLLDB",
     srcs = glob(["lib/MojoLLDB/**/*.cpp"]),
@@ -1318,6 +1325,7 @@ globals_library(
     deps = [
         ":ExecutionEngine",
         ":KGENDialect",
+        ":MojoLLDBHeaders",
         ":MojoTooling",
         ":ObjectCompiler",
         ":liblldb.wrapper",
@@ -1387,6 +1395,7 @@ cc_library(
     deps = [
         ":KGENDialect",
         ":MojoLLDB",
+        ":MojoLLDBHeaders",
         ":MojoTooling",
         "@llvm-project//lldb/source/Plugins:PluginSymbolFileDWARFHeaders",
     ],
