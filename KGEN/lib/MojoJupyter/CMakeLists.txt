@@ -25,6 +25,7 @@ add_modular_library(MojoJupyter SHARED
 
   LINK_LIBS PRIVATE
   KGENSupport
+  MSupportGlobals
   MSupport
   MojoLLDB
 
