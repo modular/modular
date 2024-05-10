@@ -16,7 +16,7 @@ import math
 from python import Python
 
 from layout import *
-from layout.layout_tensor import LayoutTensor, TensorBuilder
+from layout.layout_tensor import LayoutTensor
 
 
 alias M = 512  # rows of A and C
@@ -116,9 +116,9 @@ fn matmul_unrolled(inout C: Matrix, A: Matrix, B: Matrix):
 
 
 fn matmul_tiled_layout(inout C: Matrix, A: Matrix, B: Matrix):
-    var dst = TensorBuilder[M, N, dtype].Wrap(C.data)
-    var lhs = TensorBuilder[M, K, dtype].Wrap(A.data)
-    var rhs = TensorBuilder[K, N, dtype].Wrap(B.data)
+    var dst = LayoutTensor[dtype, Layout.row_major(M, N)](C.data)
+    var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
+    var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
 
     alias vec_size = simdwidthof[dtype]() * 2
 
@@ -181,9 +181,9 @@ fn alloc_aligned_tile[M: Int, N: Int, dtype: DType]() -> DTypePointer[dtype]:
 
 
 fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
-    var dst = TensorBuilder[M, N, dtype].Wrap(C.data)
-    var lhs = TensorBuilder[M, K, dtype].Wrap(A.data)
-    var rhs = TensorBuilder[K, N, dtype].Wrap(B.data)
+    var dst = LayoutTensor[dtype, Layout.row_major(M, N)](C.data)
+    var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
+    var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
 
     alias vec_size = simdwidthof[dtype]() * 2
 
@@ -197,7 +197,9 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
 
     @parameter
     fn calc_row(m_1: Int):
-        var rhs_cache = TensorBuilder[tile_k, tile_n, dtype].BuildAligned()
+        var rhs_cache = LayoutTensor[
+            dtype, Layout.row_major(tile_k, tile_n)
+        ].stack_allocation()
 
         for k_1 in range(K // tile_k):
             for n_1 in range(N // tile_n):
@@ -241,9 +243,9 @@ fn matmul_tiled_layout_cache(inout C: Matrix, A: Matrix, B: Matrix):
 
 
 fn matmul_layout_transposed(inout C: Matrix, A: Matrix, B: Matrix):
-    var dst = TensorBuilder[M, N, dtype].Wrap(C.data)
-    var lhs = TensorBuilder[M, K, dtype].Wrap(A.data)
-    var rhs = TensorBuilder[K, N, dtype].Wrap(B.data)
+    var dst = LayoutTensor[dtype, Layout.row_major(M, N)](C.data)
+    var lhs = LayoutTensor[dtype, Layout.row_major(M, K)](A.data)
+    var rhs = LayoutTensor[dtype, Layout.row_major(K, N)](B.data)
 
     alias vec_size = 4 * simdwidthof[dtype]()
 
@@ -261,8 +263,12 @@ fn matmul_layout_transposed(inout C: Matrix, A: Matrix, B: Matrix):
 
     @parameter
     fn calc_row(m_1: Int):
-        var rhs_cache = TensorBuilder[tile_n, tile_k, dtype].BuildAligned()
-        var lhs_cache = TensorBuilder[tile_m, tile_k, dtype].BuildAligned()
+        var rhs_cache = LayoutTensor[
+            dtype, Layout.row_major(tile_n, tile_k)
+        ].stack_allocation()
+        var lhs_cache = LayoutTensor[
+            dtype, Layout.row_major(tile_m, tile_k)
+        ].stack_allocation()
 
         for k_1 in range(K // tile_k):
             var lhs_view = lhs.tile[tile_m, tile_k](m_1, k_1)
