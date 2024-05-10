@@ -52,6 +52,10 @@ fn nmTargetNoop(x: NmTarget):
     pass
 
 
+fn nmResult() -> NmStruct:
+    pass
+
+
 # CHECK-LABEL: lit.func @"useNonmaterializable
 fn useNonmaterializable(p: Bool):
     # CHECK: lit.var.decl "gotConverted1" var : !lit.ref<!NmTarget
@@ -84,3 +88,6 @@ fn useNonmaterializable(p: Bool):
     tail_types(NmStruct(5))
     # CHECK: call {{.*}}tail_types{{.*}}<:!AnyType #NmTarget1, :variadic<!AnyType> [#NmTarget1]>
     tail_types(NmStruct(5), NmStruct(6))
+
+    # CHECK: apply({{.*}}@"nmResult()")
+    var nmResult = nmResult()
