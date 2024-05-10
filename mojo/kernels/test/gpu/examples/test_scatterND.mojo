@@ -18,7 +18,6 @@ from gpu.host.memory import (
     _free,
     _malloc,
 )
-from tensor import Tensor, TensorShape
 
 from utils.index import Index
 
