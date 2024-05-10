@@ -10,7 +10,7 @@
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 
 class AttrOfType<Type type> : ConfinedAttr<TypedAttrInterface, [
-  AttrConstraint<SubstLeaves<"$_self", "$_self.cast<TypedAttr>().getType()",
+  AttrConstraint<SubstLeaves<"$_self", "llvm::cast<TypedAttr>($_self).getType()",
                              type.predicate>, type.summary>]>;
 
 #endif // SUPPORT_COMPILER_ATTRBASE_TD

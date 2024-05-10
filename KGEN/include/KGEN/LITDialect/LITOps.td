@@ -1514,7 +1514,7 @@ def LIT_RefImmutOp : LITOp<"ref.immut", [RefImmutType<"ref", "result">]> {
 // Given a `!lit.ref<X, life>`, return `!kgen.pointer<X>`.
 class RefPointerType<string lhs, string rhs> : TypesMatchWith<
     "reference as pointer type", lhs, rhs,
-    "mlir::cast<RefType>($_self).getAsPointerType()">;
+    "llvm::cast<RefType>($_self).getAsPointerType()">;
 
 def LIT_RefToPointerOp : LITOp<"ref.to_pointer",
                               [RefPointerType<"ref", "ptr">]> {
