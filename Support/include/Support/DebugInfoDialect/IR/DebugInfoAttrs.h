@@ -147,15 +147,16 @@ private:
 };
 
 enum class LocWalkPolicy {
-  CalleeOnly,     // Walk only to the innermost callee.
-  CallerOnly,     // Walk only to the outermost caller.
-  CalleePriority, // Walk call-chain inside-out.
-  CallerPriority  // Walk call-chain outside-in.
+  CalleePriority, // Walk inlined call-stack inside-out.
+  CallerPriority  // Walk inlined call-stack outside-in.
 };
 
+/// Pre-order walk on location tree. `policy` determines which child of a
+/// CallSiteLoc to walk first.
 WalkResult walkLocation(Location loc, LocWalkPolicy policy,
                         function_ref<WalkResult(Location)> walkFn);
 
+/// Wrapper for `walkLocation` that visits fused debug scopes of locations.
 WalkResult walkScope(Location loc, LocWalkPolicy policy,
                      function_ref<WalkResult(DIScopeAttr)> walkFn);
 

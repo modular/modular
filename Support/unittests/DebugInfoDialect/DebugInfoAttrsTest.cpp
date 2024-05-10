@@ -124,10 +124,6 @@ TEST_F(DIScopeAttrUtilTest, TestScopeWalk) {
   // 2 -> 1 -> 0
   Location innerCallsite = CallSiteLoc::get(fused[0], fused[1]);
   Location callsite = CallSiteLoc::get(innerCallsite, fused[2]);
-  EXPECT_THAT(getVisitedScopes(callsite, LocWalkPolicy::CalleeOnly),
-              ElementsAre(sp[0]));
-  EXPECT_THAT(getVisitedScopes(callsite, LocWalkPolicy::CallerOnly),
-              ElementsAre(sp[2]));
   EXPECT_THAT(getVisitedScopes(callsite, LocWalkPolicy::CalleePriority),
               ElementsAre(sp[0], sp[1], sp[2]));
   EXPECT_THAT(getVisitedScopes(callsite, LocWalkPolicy::CallerPriority),
@@ -154,12 +150,6 @@ TEST_F(DIScopeAttrUtilTest, TestExtractScopeFrom) {
   Location callsite = CallSiteLoc::get(innerCallsite, fused[2]);
 
   // Find top scope.
-  EXPECT_EQ(
-      extractScopeFrom<DILexicalBlockAttr>(callsite, LocWalkPolicy::CalleeOnly),
-      block[0]);
-  EXPECT_EQ(
-      extractScopeFrom<DILexicalBlockAttr>(callsite, LocWalkPolicy::CallerOnly),
-      block[2]);
   EXPECT_EQ(extractScopeFrom<DILexicalBlockAttr>(callsite,
                                                  LocWalkPolicy::CalleePriority),
             block[0]);
@@ -168,16 +158,48 @@ TEST_F(DIScopeAttrUtilTest, TestExtractScopeFrom) {
             block[2]);
 
   // Find nested scope.
-  EXPECT_EQ(
-      extractScopeFrom<DISubprogramAttr>(callsite, LocWalkPolicy::CalleeOnly),
-      sp[0]);
-  EXPECT_EQ(
-      extractScopeFrom<DISubprogramAttr>(callsite, LocWalkPolicy::CallerOnly),
-      sp[2]);
   EXPECT_EQ(extractScopeFrom<DISubprogramAttr>(callsite,
                                                LocWalkPolicy::CalleePriority),
             sp[0]);
   EXPECT_EQ(extractScopeFrom<DISubprogramAttr>(callsite,
                                                LocWalkPolicy::CallerPriority),
             sp[2]);
+}
+
+TEST_F(DIScopeAttrUtilTest, TestExtractSourceLoc) {
+  std::vector<DISubprogramAttr> sp;
+  std::vector<FileLineColLoc> loc;
+  std::vector<Location> fused;
+  for (int64_t i = 0; i < 3; i++) {
+    std::string suffix = std::to_string(i);
+    sp.push_back(getSimpleSubprogram("func" + suffix));
+    loc.push_back(
+        FileLineColLoc::get(StringAttr::get(&ctx, "foo" + suffix), 1, 1));
+    fused.emplace_back(
+        FusedLocWith<DISubprogramAttr>::get(&ctx, {loc.back()}, sp.back()));
+  }
+
+  {
+    // Call tree:
+    // 2 -> 1 -> 0
+    Location innerCallsite = CallSiteLoc::get(fused[0], fused[1]);
+    Location callsite = CallSiteLoc::get(innerCallsite, fused[2]);
+    EXPECT_EQ(extractSourceLoc(callsite), loc[0]);
+  }
+
+  {
+    // Call tree:
+    // 2(raw) -> 1(raw) -> 0(raw)
+    Location innerCallsite = CallSiteLoc::get(loc[0], loc[1]);
+    Location callsite = CallSiteLoc::get(innerCallsite, loc[2]);
+    EXPECT_EQ(extractSourceLoc(callsite), loc[0]);
+  }
+
+  {
+    // Call tree:
+    // 2 -> 1(raw) -> 0
+    Location innerCallsite = CallSiteLoc::get(fused[0], loc[1]);
+    Location callsite = CallSiteLoc::get(innerCallsite, fused[2]);
+    EXPECT_EQ(extractSourceLoc(callsite), loc[0]);
+  }
 }

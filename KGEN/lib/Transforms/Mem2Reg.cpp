@@ -160,11 +160,11 @@ struct PromotedStackAlloc {
   }
 
 private:
-  /// Attempt to get the source subprogram scope from a Location.
+  /// Get the innermost scope from a series of callsite locations.
   static DebugInfo::DISubprogramAttr
   extractPreInlineSubprogramScope(Location loc) {
     return DebugInfo::extractScopeFrom<DebugInfo::DISubprogramAttr>(
-        loc, DebugInfo::LocWalkPolicy::CalleeOnly);
+        loc, DebugInfo::LocWalkPolicy::CalleePriority);
   }
 };
 } // namespace

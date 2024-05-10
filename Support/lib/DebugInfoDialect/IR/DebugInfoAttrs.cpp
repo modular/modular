@@ -434,29 +434,27 @@ ErrorOr<DIExprAttr> DebugInfo::DIExprLeafReplacer::apply(DIExprAttr expr) {
 
 WalkResult DebugInfo::walkLocation(Location loc, LocWalkPolicy policy,
                                    function_ref<WalkResult(Location)> walkFn) {
-  if (walkFn(loc).wasInterrupted())
+  WalkResult locWalkResult = walkFn(loc);
+  if (locWalkResult.wasInterrupted())
     return WalkResult::interrupt();
+  if (locWalkResult.wasSkipped())
+    return WalkResult::advance();
+
   return TypeSwitch<Location, WalkResult>(loc)
       .Case([&](mlir::CallSiteLoc callLoc) -> WalkResult {
         LocationAttr firstChoice, secondChoice;
         switch (policy) {
         case LocWalkPolicy::CalleePriority:
           secondChoice = callLoc.getCaller();
-          LLVM_FALLTHROUGH;
-        case LocWalkPolicy::CalleeOnly:
           firstChoice = callLoc.getCallee();
           break;
         case LocWalkPolicy::CallerPriority:
           secondChoice = callLoc.getCallee();
-          LLVM_FALLTHROUGH;
-        case LocWalkPolicy::CallerOnly:
           firstChoice = callLoc.getCaller();
         }
         if (walkLocation(firstChoice, policy, walkFn).wasInterrupted())
           return WalkResult::interrupt();
-        if (secondChoice)
-          return walkLocation(secondChoice, policy, walkFn);
-        return WalkResult::advance();
+        return walkLocation(secondChoice, policy, walkFn);
       })
       .Case([&](FusedLoc fusedLoc) -> WalkResult {
         for (Location subLoc : fusedLoc.getLocations())
@@ -477,20 +475,24 @@ WalkResult DebugInfo::walkScope(Location loc, LocWalkPolicy policy,
                                 function_ref<WalkResult(DIScopeAttr)> walkFn) {
   return walkLocation(loc, policy, [&](Location loc) {
     if (auto fusedLoc = dyn_cast<mlir::FusedLocWith<DIScopeAttr>>(loc))
-      if (walkFn(fusedLoc.getMetadata()).wasInterrupted())
-        return WalkResult::interrupt();
+      return walkFn(fusedLoc.getMetadata()).wasInterrupted()
+                 ? WalkResult::interrupt()
+                 : WalkResult::skip();
     return WalkResult::advance();
   });
 }
 
 FileLineColLoc DebugInfo::extractSourceLoc(Location callLoc) {
-  Location resolvedLoc = callLoc;
-  DebugInfo::walkLocation(callLoc, DebugInfo::LocWalkPolicy::CalleeOnly,
-                          [&](Location loc) {
-                            resolvedLoc = loc;
-                            return mlir::WalkResult::advance();
-                          });
-  return resolvedLoc->findInstanceOf<FileLineColLoc>();
+  FileLineColLoc resolvedLoc;
+  DebugInfo::walkLocation(
+      callLoc, DebugInfo::LocWalkPolicy::CalleePriority, [&](Location loc) {
+        if (auto fileLineCol = dyn_cast<FileLineColLoc>(loc)) {
+          resolvedLoc = fileLineCol;
+          return mlir::WalkResult::interrupt();
+        }
+        return mlir::WalkResult::advance();
+      });
+  return resolvedLoc;
 }
 
 DISubprogramAttr DebugInfo::extractScope(mlir::FunctionOpInterface funcOp) {
