@@ -20,7 +20,7 @@ from .value import Value
 from max.tensor import Tensor, TensorSpec
 
 
-struct TensorMap(CollectionElement, SizedRaising):
+struct TensorMap(CollectionElement, SizedRaising, Stringable):
     """
     Maps inputs and outputs to their respective names and can
     be used to supply and receive data to MAX Engine model.
@@ -276,7 +276,7 @@ struct TensorMap(CollectionElement, SizedRaising):
         key._strref_keepalive()
         return Value(value_ptr, self._lib, self._session)
 
-    fn keys(self) raises -> List[String]:
+    fn keys(self) -> List[String]:
         """Returns all held keys.
 
         Returns:
@@ -308,3 +308,51 @@ struct TensorMap(CollectionElement, SizedRaising):
         """Destructor for the tensor map."""
         self._ptr.free(self._lib)
         _ = self._session^
+
+    fn __str__(self) -> String:
+        """Returns a `String` representation of this `TensorMap`.
+
+        Returns:
+            A textual representation of this `TensorMap`.
+        """
+        var repr: String = "{"
+        try:
+            var keys = self.keys()
+            for i in range(len(keys)):
+                if i > 0:
+                    repr += ",\n"
+
+                var key = keys[i]
+                var dtype = self.get_spec(key).dtype()
+                repr += "'" + key + "' : "
+                if dtype == DType.bool:
+                    repr += self.get[DType.bool](key)
+                elif dtype == DType.uint8:
+                    repr += self.get[DType.uint8](key)
+                elif dtype == DType.uint16:
+                    repr += self.get[DType.uint16](key)
+                elif dtype == DType.uint32:
+                    repr += self.get[DType.uint32](key)
+                elif dtype == DType.uint64:
+                    repr += self.get[DType.uint64](key)
+                elif dtype == DType.int8:
+                    repr += self.get[DType.int8](key)
+                elif dtype == DType.int16:
+                    repr += self.get[DType.int16](key)
+                elif dtype == DType.int32:
+                    repr += self.get[DType.int32](key)
+                elif dtype == DType.int64:
+                    repr += self.get[DType.int64](key)
+                elif dtype == DType.float16:
+                    repr += self.get[DType.float16](key)
+                elif dtype == DType.float32:
+                    repr += self.get[DType.float32](key)
+                elif dtype == DType.float64:
+                    repr += self.get[DType.float64](key)
+                else:
+                    repr += self.get[DType.uint8](key)
+        except:
+            return "{}"
+
+        repr += "}"
+        return repr

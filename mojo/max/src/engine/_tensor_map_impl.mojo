@@ -84,9 +84,7 @@ struct CTensorMap:
         if status:
             raise status.__str__()
 
-    fn keys(
-        self, size_ptr: Pointer[Int64], lib: DLHandle
-    ) raises -> Pointer[CString]:
+    fn keys(self, size_ptr: Pointer[Int64], lib: DLHandle) -> Pointer[CString]:
         return call_dylib_func[Pointer[CString]](
             lib, Self.KeysFnName, self, size_ptr
         )
