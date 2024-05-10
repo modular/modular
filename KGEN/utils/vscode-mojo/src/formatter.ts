@@ -20,16 +20,14 @@ export function registerFormatter(loggingService: LoggingService,
       const cwd = workspaceFolder?.uri?.fsPath || backupFolder?.uri.fsPath;
       const args = get<string[]>('formatting.args', workspaceFolder, []);
 
-      const sdk =
-          await mojoSDKManager.findSDK({workspaceFolder : workspaceFolder});
+      const sdk = await mojoSDKManager.findSDK();
       if (!sdk)
         return [];
 
       // Grab the formatter from the Mojo SDK (i.e. `mojo format`).
       var command = sdk.config.mojoDriverPath + " format";
 
-      let env = process.env;
-      env['MODULAR_HOME'] = sdk.config.modularHomePath;
+      let env = sdk.config.getProcessEnv();
 
       command += " --quiet " + args.join(' ') + ' -';
 

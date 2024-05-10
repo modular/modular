@@ -61,8 +61,7 @@ class ExecutionManager extends DisposableContext {
       return;
 
     // Find the config for processing this file.
-    let sdk = await this.context.sdkManager.findSDK(
-        {workspaceFolder : vscode.workspace.getWorkspaceFolder(doc.uri)});
+    let sdk = await this.context.sdkManager.findSDK();
     if (!sdk)
       return;
 
@@ -114,9 +113,8 @@ class ExecutionManager extends DisposableContext {
       return terminal;
 
     // Build a new terminal.
-    let env = process.env;
-    env['MODULAR_HOME'] = config.modularHomePath;
-    return vscode.window.createTerminal({name : terminalName, env : env});
+    return vscode.window.createTerminal(
+        {name : terminalName, env : config.getProcessEnv()});
   }
 
   /**

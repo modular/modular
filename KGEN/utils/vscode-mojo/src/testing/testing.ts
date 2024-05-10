@@ -208,9 +208,7 @@ export class MojoTestContext extends DisposableContext {
     };
 
     // Grab the sdk for the execution context.
-    const workspaceFolder = vscode.workspace.getWorkspaceFolder(test.uri!);
-    let sdk = await this.context.sdkManager.findSDK(
-        {workspaceFolder : workspaceFolder});
+    let sdk = await this.context.sdkManager.findSDK();
     if (!sdk) {
       this.controller.items.delete(test.uri!.fsPath);
       return;
@@ -218,6 +216,7 @@ export class MojoTestContext extends DisposableContext {
 
     // Invoke the `test` subcommand of the mojo tool to discover tests in the
     // document.
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(test.uri!);
     let result = await this.runMojoTestCommand<MojoTestExecutionResult>(
         sdk, test.id, workspaceFolder);
     if (!result) {
@@ -279,8 +278,7 @@ export class MojoTestContext extends DisposableContext {
     // Build the command to run.
     var command = sdk.config.mojoDriverPath + " test --json " +
                   "'" + testId + "' " + args.join(' ');
-    let env = process.env;
-    env['MODULAR_HOME'] = sdk.config.modularHomePath;
+    let env = sdk.config.getProcessEnv();
 
     return new Promise<Result|undefined>(function(resolve, reject) {
       exec(command, {env}, (error, stdout, stderr) => {
@@ -302,9 +300,7 @@ export class MojoTestContext extends DisposableContext {
       return;
 
     // Invoke the mojo tool to discover tests in the document.
-    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
-    let sdk = await this.context.sdkManager.findSDK(
-        {workspaceFolder : workspaceFolder});
+    let sdk = await this.context.sdkManager.findSDK();
     if (!sdk) {
       this.controller.items.delete(document.uri.fsPath);
       return;
@@ -312,6 +308,7 @@ export class MojoTestContext extends DisposableContext {
 
     // Invoke the `test` subcommand of the mojo tool to discover tests in the
     // document.
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
     let mojoTestSuite = await this.runMojoTestCommand<MojoTest>(
         sdk, document.uri.fsPath, workspaceFolder, [ '--co' ]);
     if (!mojoTestSuite || !mojoTestSuite.children) {

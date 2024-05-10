@@ -101,8 +101,7 @@ export class MojoLSPContext extends DisposableContext {
 
     // Get the path of the lsp-server that is used to provide language
     // functionality.
-    let sdk = await this.mojoContext.sdkManager.findSDK(
-        {workspaceFolder : workspaceFolder});
+    let sdk = await this.mojoContext.sdkManager.findSDK();
     if (!sdk)
       return undefined;
 
@@ -120,8 +119,7 @@ export class MojoLSPContext extends DisposableContext {
     const serverOptions: vscodelc.ServerOptions = {
       command : sdk.config.mojoLanguageServerPath,
       args,
-      options :
-          {env : {...process.env, MODULAR_HOME : sdk.config.modularHomePath}}
+      options : {env : sdk.config.getProcessEnv()}
     };
 
     // Configure file patterns relative to the workspace folder.
