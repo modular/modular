@@ -1050,57 +1050,6 @@ struct LayoutTensor[
                 print(vec)
 
 
-struct TensorBuilder[
-    M: Int,
-    N: Int,
-    dtype: DType,
-    address_space: AddressSpace = AddressSpace.GENERIC,
-    layout: Layout = Layout(IntTuple(M, N), IntTuple(N, 1)),
-]:
-    alias Type = LayoutTensor[dtype, layout, address_space=address_space]
-    alias AlignedType = LayoutTensor[dtype, Self._aligned_layout()]
-
-    @staticmethod
-    fn Wrap(ptr: DTypePointer[dtype, address_space]) -> Self.Type:
-        return Self.Type(ptr)
-
-    @staticmethod
-    fn Build() -> Self.Type:
-        return Self.Type(
-            DTypePointer[dtype, address_space].alloc(
-                M * N, alignment=alignof[SIMD[dtype]]()
-            ),
-            owning=True,
-        )
-
-    @staticmethod
-    fn OnStack() -> Self.Type:
-        return Self.Type.stack_allocation()
-
-    @staticmethod
-    fn OnStackAligned[alignment: Int]() -> Self.Type:
-        return Self.Type.aligned_stack_allocation[alignment]()
-
-    @staticmethod
-    fn _aligned_layout() -> Layout:
-        alias alignment = alignof[SIMD[dtype]]()
-        alias n_aligned = ((N + alignment - 1) // alignment) * alignment
-        alias data_layout = Layout(
-            IntTuple(M, n_aligned), IntTuple(n_aligned, 1)
-        )
-        return LayoutTensor[dtype, data_layout]._compute_tile_layout[M, N]()[0]
-
-    @staticmethod
-    fn BuildAligned[
-        *, __target_layout: Layout = Self._aligned_layout()
-    ]() -> LayoutTensor[dtype, __target_layout]:
-        var ptr = DTypePointer[dtype].alloc(
-            M * to_int(__target_layout.stride[0]),
-            alignment=alignof[SIMD[dtype]](),
-        )
-        return LayoutTensor[dtype, __target_layout](ptr, owning=True)
-
-
 fn stack_allocation_like[
     layout: Layout,
     dtype: DType,
