@@ -1033,7 +1033,9 @@ shouldEmitParameterCall(LITSignatureType calleeSig,
     return arg.ir.getIfPValue().getType().getNonmaterializableTarget(shared);
   };
   return llvm::all_of(argumentValues, isPValue) &&
-         llvm::any_of(argumentValues, isNonMaterializable);
+         (llvm::any_of(argumentValues, isNonMaterializable) ||
+          ASTType(calleeSig.getUserResultType())
+              .getNonmaterializableTarget(shared));
 }
 
 CValue ExprEmitter::emitCallUnchecked(RValue callee,
