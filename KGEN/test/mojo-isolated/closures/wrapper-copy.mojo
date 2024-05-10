@@ -41,11 +41,9 @@
 # CHECK: lit.func @"fn{{.*}}_copyinit_`_CI_{{.*}}(%other: !kgen.pointer<none>, |)
 
 # Allocate memory on the heap for impl and copy existing contents into it.
-# CHECK-NEXT:  %[[SIZEOF:.*]] = kgen.param.constant: !kgen.int_literal = <get_sizeof(
-# CHECK-NEXT:  %[[SIZEOF_IDX:.*]] = kgen.int_literal.convert %[[SIZEOF]] : to index
-# CHECK-NEXT:  %[[ALIGNOF:.*]] = kgen.param.constant: !kgen.int_literal = <get_alignof(
-# CHECK-NEXT:  %[[ALIGNOF_IDX:.*]] = kgen.int_literal.convert %[[ALIGNOF]] : to index
-# CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %[[ALIGNOF_IDX]], %[[SIZEOF_IDX]]
+# CHECK-NEXT:  %[[SIZEOF:.*]] = kgen.param.constant = <get_sizeof(
+# CHECK-NEXT:  %[[ALIGNOF:.*]] = kgen.param.constant = <get_alignof(
+# CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %[[ALIGNOF]], %[[SIZEOF]]
 # CHECK-NEXT:  %[[V1:.*]] = pop.pointer.bitcast %other
 # CHECK-NEXT:  %[[REF0:.*]] = lit.ref.from_pointer %[[V0]]
 # CHECK-NEXT:  %[[REF1:.*]] = lit.ref.from_pointer %[[V1]]

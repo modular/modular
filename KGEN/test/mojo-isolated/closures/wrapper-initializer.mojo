@@ -25,11 +25,9 @@
 # CHECK-NEXT: lit.ref.store %[[V10]], %[[V9]]
 
 # Allocate memory on heap
-# CHECK-NEXT:  %[[SIZEOF:.*]] = kgen.param.constant: !kgen.int_literal = <get_sizeof({{.*}}escaping0{{.*}}, current_target())>
-# CHECK-NEXT:  %[[SIZEOF_IDX:.*]] = kgen.int_literal.convert %[[SIZEOF]] : to index
-# CHECK-NEXT:  %[[ALIGNOF:.*]] = kgen.param.constant: !kgen.int_literal = <get_alignof({{.*}}escaping0{{.*}}, current_target())>
-# CHECK-NEXT:  %[[ALIGNOF_IDX:.*]] = kgen.int_literal.convert %[[ALIGNOF]] : to index
-# CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %[[ALIGNOF_IDX]], %[[SIZEOF_IDX]]
+# CHECK-NEXT:  %[[SIZEOF:.*]] = kgen.param.constant = <get_sizeof({{.*}}escaping0{{.*}}, current_target())>
+# CHECK-NEXT:  %[[ALIGNOF:.*]] = kgen.param.constant = <get_alignof({{.*}}escaping0{{.*}}, current_target())>
+# CHECK-NEXT:  %[[V0:.*]] = pop.aligned_alloc %[[ALIGNOF]], %[[SIZEOF]]
 
 # Copy source (stack) into target (heap)
 # CHECK-NEXT:  %[[V0REF:.*]] = lit.ref.from_pointer %[[V0]]
