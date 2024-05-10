@@ -172,16 +172,37 @@ lowerCoroutinePromiseAsync(LLVMBuilder &b, TypeAttrCache &cache, PromiseOp op) {
   Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
   Type elType = b.convertType(op.getType().getElementType());
   if (!elType)
-    return op.emitError("failed to convert coroutine type");
+    return op.emitError("failed to convert promise type");
 
   // The context contains the resume function pointer, and then the callback
   // closure. Skip over them (3 pointers) to reach the results.
-  Value promise = b.create<GEPOp>(
-      cache.opaquePtr, b.getI8Type(), hdl,
-      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 3),
-      /*inbounds=*/true);
+  Value promise =
+      b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
+                      GEPArg(b.getPointerByteWidth() * 3), /*inbounds=*/true);
 
   op.replaceAllUsesWith(promise);
+  op.erase();
+  return success();
+}
+
+static LogicalResult lowerCoroutineCallback(LLVMBuilder &b,
+                                            TypeAttrCache &cache,
+                                            GetCallbackPtrOp op) {
+  b.setLoc(op.getLoc());
+  b.setInsertionPoint(op);
+
+  Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
+  Type elType = b.convertType(op.getType().getElementType());
+  if (!elType)
+    return op.emitError("failed to convert callback type");
+
+  // The context contains the resume function pointer, and then the callback
+  // closure. Skip over the resume function (1 pointer).
+  Value callback =
+      b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
+                      GEPArg(b.getPointerByteWidth()), /*inbounds=*/true);
+
+  op.replaceAllUsesWith(callback);
   op.erase();
   return success();
 }
@@ -240,10 +261,9 @@ static LLVMFuncOp synthesizeCoroEndFunc(SymbolTable &symtab, LLVMBuilder &b,
   Value ctxt = endFn.getArgument(0);
   Type closureType = LLVMStructType::getLiteral(
       b.getContext(), {cache.opaquePtr, cache.opaquePtr});
-  Value closure = b.create<GEPOp>(
-      cache.opaquePtr, b.getI8Type(), ctxt,
-      GEPArg(llvm::divideCeil(b.getIndexTypeBitwidth(), CHAR_BIT) * 1),
-      /*inbounds=*/true);
+  Value closure =
+      b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), ctxt,
+                      GEPArg(b.getPointerByteWidth()), /*inbounds=*/true);
   auto ptrToAsyncFn =
       b.create<GEPOp>(cache.opaquePtr, closureType, closure,
                       ArrayRef<GEPArg>{0, 0}, /*inbounds=*/true);
@@ -677,6 +697,9 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
       awaits.push_back(await);
     } else if (auto promise = dyn_cast<PromiseOp>(op)) {
       if (failed(lowerCoroutinePromiseAsync(b, cache, promise)))
+        return WalkResult::interrupt();
+    } else if (auto callback = dyn_cast<GetCallbackPtrOp>(op)) {
+      if (failed(lowerCoroutineCallback(b, cache, callback)))
         return WalkResult::interrupt();
     } else if (auto resume = dyn_cast<CO::ResumeOp>(op)) {
       lowerCoroutineResumeAsync(b, cache, resume);
