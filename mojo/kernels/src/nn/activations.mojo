@@ -260,7 +260,7 @@ fn gelu_approximate[
 # ===----------------------------------------------------------------------=== #
 
 
-@mogg_register("mo.sigmoid")
+@mogg_register("rmo.sigmoid")
 @always_inline
 fn sigmoid[
     type: DType, simd_width: Int
