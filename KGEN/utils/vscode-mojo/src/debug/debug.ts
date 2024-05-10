@@ -45,25 +45,6 @@ type MojoDebugConfiguration = {
 const DEBUG_TYPE: string = "mojo-lldb";
 
 /**
- * Find a suitable SDK config for a set of debug session settings. Some debug
- * sessions have a workspace folder and other don't, in which case the mojoFile,
- * if it's a part of the config, is used to find a workspace folder.
- */
-async function findSDKForDebugSession(
-    context: MojoContext, configuration: MojoDebugConfiguration,
-    workspaceFolder?: vscode.WorkspaceFolder): Promise<MojoSDK|undefined> {
-  let resolvedWorkspace = workspaceFolder;
-  if (!workspaceFolder && configuration.mojoFile) {
-    resolvedWorkspace = await vscode.workspace.getWorkspaceFolder(
-        vscode.Uri.file(configuration.mojoFile));
-  }
-  return await context.sdkManager.findSDK({
-    sdkPath : configuration.modularHomePath,
-    workspaceFolder : resolvedWorkspace,
-  });
-}
-
-/**
  * This class defines a factory used to find the lldb-vscode binary to use
  * depending on the session configuration.
  */
@@ -77,8 +58,7 @@ class MojoDebugAdapterDescriptorFactory implements
                                      _executable: vscode.DebugAdapterExecutable|
                                      undefined):
       Promise<vscode.DebugAdapterDescriptor|undefined> {
-    let sdk = await findSDKForDebugSession(this.context, session.configuration,
-                                           session.workspaceFolder);
+    let sdk = await this.context.sdkManager.findSDK();
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
     if (!sdk)
@@ -105,8 +85,7 @@ class MojoDebugConfigurationResolver implements
           Promise<undefined|vscode.DebugConfiguration> {
     // Load the MojoLLDB plugin. The SDK must be present because otherwise we
     // can't get access to the debug adapter.
-    let sdk =
-        await findSDKForDebugSession(this.context, debugConfiguration, folder);
+    let sdk = await this.context.sdkManager.findSDK();
     // We don't need to show error messages here because
     // `findSDKConfigForDebugSession` does that.
     if (!sdk)
@@ -194,7 +173,7 @@ class MojoDebugConfigurationResolver implements
 
     // We add the MODULAR_HOME env var to enable debugging of SDK artifacts,
     // giving preference to the env specified by the user.
-    if (config)
+    if (sdk.config.modularHomePath)
       env.push(`MODULAR_HOME=${sdk.config.modularHomePath}`);
 
     debugConfiguration.env = [...env, ...(debugConfiguration.env || []) ];
