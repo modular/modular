@@ -468,7 +468,7 @@ struct TaskGroupTaskList[type: AnyRegType](Sized):
         Remove this implementation once #35168 lands since Lists should suffice
         """
         debug_assert(i < self.size, "index must be within bounds")
-        var hdl = (__get_address_as_owned_value(self.data.offset(i).address))
+        var hdl = (move_from_pointee(self.data.offset(i).address))
         var ret_val = Pointer[TaskGroupTask[type]].address_of(hdl)
         return ret_val
 
@@ -477,7 +477,7 @@ struct TaskGroupTaskList[type: AnyRegType](Sized):
 
     fn __del__(owned self):
         for i in range(self.size):
-            _ = __get_address_as_owned_value(self.data.offset(i).address)
+            destroy_pointee(self.data.offset(i).address)
         self.data.free()
 
 
