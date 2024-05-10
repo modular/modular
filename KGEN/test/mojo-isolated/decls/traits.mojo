@@ -252,7 +252,7 @@ fn move_me[T: Movable](owned value: T) -> T:
     # CHECK-NEXT: [[VI:%.*]] = kgen.rebind %value {{.*}}#lit.invalid.ref.lifetime
     # CHECK-NEXT: %value28transfer29 = lit.transfer_mem_ownership [[VI]]
     # CHECK-NEXT: call[{{.*}}get_type_method({{.*}} T, "__moveinit__")]{{.*}}(%__result__, %value28transfer29)
-    return value ^
+    return value^
 
 
 # COM: Just check that conformance checking succeeds.
@@ -790,6 +790,18 @@ struct KeysContainer[end: int](KeysBuilder):
         pass
 
 
+# CHECK-LABEL: lit.func @"param_trait
+fn param_trait[T: SimpleTrait, value: T]():
+    # CHECK-NEXT: apply({{.*}} get_type_method(:!SimpleTrait T, "method"){{.*}} store_to_mem(value)), 1)
+    alias param = value.method(`1`)
+    # CHECK-NEXT: [[VAR:%.*]] = lit.var.decl
+    # CHECK-NEXT: [[VALUE:%.*]] = kgen.param.materialize
+    # CHECK-NEXT: store [[VALUE]], [[VAR]]
+    # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[VAR]]
+    # CHECK: call[{{.*}}get_type_method(:!SimpleTrait T, "method"){{.*}}([[IMM]], %index2)
+    value.method(`2`)
+
+
 # ===----------------------------------------------------------------------=== #
 # Implicit Conformance
 # ===----------------------------------------------------------------------=== #
@@ -893,7 +905,9 @@ fn test_infer_sub_trait[T: OtherEmptyTrait](owned foo: Foo[T], bar: Bar[T]):
     var copy = foo.infer_sub_trait(bar)
 
 
-# AnyTrait subtyping.
+# ===----------------------------------------------------------------------=== #
+# AnyTrait subtyping
+# ===----------------------------------------------------------------------=== #
 
 
 # CHECK-LABEL: lit.func @"test_anytrait_subtyping
