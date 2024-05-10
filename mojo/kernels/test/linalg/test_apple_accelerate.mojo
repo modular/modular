@@ -9,7 +9,7 @@ from sys.info import os_is_macos
 
 from buffer import NDBuffer
 from buffer.list import DimList
-from LinAlg.apple_accelerate import apple_matmul, batched_matmul
+from LinAlg.apple_accelerate import apple_matmul, apple_batched_matmul
 from utils.index import Index, StaticIntTuple
 from testing import *
 
@@ -157,7 +157,7 @@ def test_batched_matmul(
                 c[(batch, i, j)] = 0
                 golden[(batch, i, j)] = 0
 
-    batched_matmul(c, a, b)
+    apple_batched_matmul(c, a, b)
     bmm_naive(golden, a, b, batches, m, n, k)
 
     var errors: Int = 0

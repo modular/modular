@@ -36,6 +36,9 @@ from collections import OptionalReg
 from utils.index import StaticIntTuple
 from utils._numerics import get_accum_type
 
+from .apple_accelerate import use_apple_accelerate_lib, apple_batched_matmul
+
+
 alias elementwise_epilogue_type = fn[c_type: DType, width: Int, rank: Int] (
     StaticIntTuple[rank], SIMD[c_type, width]
 ) capturing -> None
@@ -277,6 +280,16 @@ fn _batched_matmul_cpu[
     b_buf: NDBuffer[b_type, rank],
 ):
     constrained[rank < 5, "max rank for batched matmul is currently 4"]()
+
+    # Batched matmul calls for MacOS >= 13.0.0 and a, b, c of type Float32 are
+    # directed to the special Apple-specific implementation.
+    @parameter
+    if use_apple_accelerate_lib[c_type, a_type, b_type]():
+        apple_batched_matmul[
+            transpose_b=transpose_b,
+            elementwise_epilogue_fn=elementwise_epilogue_fn,
+        ](c_buf, a_buf, b_buf)
+        return
 
     # Flatten to 3D Tensor.
     var c = _reshape_nd_buffer_with_batch_to_3d(c_buf)

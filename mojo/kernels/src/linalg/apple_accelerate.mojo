@@ -18,6 +18,13 @@ from algorithm.functional import parallelize_over_rows
 from buffer.list import DimList
 from math import fma
 from .MatmulPack import pack_b_ndbuffer
+from .MatmulUtils import (
+    elementwise_epilogue_type as matmul_elementwise_epilogue_type,
+)
+from .BatchedMatmul import (
+    elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
+)
+from algorithm.functional import _get_start_indices_of_nth_subvolume
 
 
 # ===----------------------------------------------------------------------===#
@@ -672,18 +679,17 @@ fn apple_matmul[
 
 
 @always_inline
-fn batched_matmul[
+fn apple_batched_matmul[
     *,
     transpose_b: Bool = False,
+    elementwise_epilogue_fn: OptionalReg[
+        batched_matmul_elementwise_epilogue_type
+    ] = None,
 ](c: NDBuffer, a: NDBuffer, b: NDBuffer):
     var c3 = _reshape_nd_buffer_with_batch_to_3d(c)
     var a3 = _reshape_nd_buffer_with_batch_to_3d(a)
     var b3 = _reshape_nd_buffer_with_batch_to_3d(b)
-    var batch_size = c.dim[0]()
-
-    var m = c3.dim[1]()
-    var n = c3.dim[2]()
-    var k = a3.dim[2]()
+    var batch_size = c3.dim[0]()
 
     var c_shape = Index(c3.dim[1](), c3.dim[2]())
     var a_shape = Index(a3.dim[1](), a3.dim[2]())
@@ -700,4 +706,29 @@ fn batched_matmul[
             b3.data + (b_shape[0] * b_shape[1]) * batch, b_shape
         )
 
-        apple_matmul[transpose_b=transpose_b](c2, a2, b2)
+        alias rank = c.rank
+        var batch_coords = _get_start_indices_of_nth_subvolume[rank, 2](
+            batch, rebind[StaticIntTuple[rank]](c.get_shape())
+        )
+
+        @parameter
+        fn elementwise_lambda_2d[
+            c_type: DType, width: Int
+        ](out_coords: StaticIntTuple[2], out_val: SIMD[c_type, width]):
+            # the caller provided the elementwise epilogue fn over the original
+            # buffer rank, not the collapsed buffer rank
+            # so un-collapse the batch dims here
+            @parameter
+            if elementwise_epilogue_fn:
+                batch_coords[rank - 1] = out_coords[1]
+                batch_coords[rank - 2] = out_coords[0]
+
+                alias func = elementwise_epilogue_fn.value()
+                func[c_type, width, rank](batch_coords, out_val)
+
+        apple_matmul[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn = OptionalReg[
+                matmul_elementwise_epilogue_type
+            ](elementwise_lambda_2d) if elementwise_epilogue_fn else None,
+        ](c2, a2, b2)
