@@ -1,5 +1,9 @@
 // RUN: kgen-opt -lower-calling-conventions -allow-unregistered-dialect %s | FileCheck %s
 
+//===----------------------------------------------------------------------===//
+// `!kgen.none` lowering
+//===----------------------------------------------------------------------===//
+
 // CHECK-LABEL: kgen.func @none_func() {
 kgen.func @none_func() -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
@@ -88,6 +92,17 @@ kgen.func @call_indirect(%arg0: !kgen.signature<() -> !kgen.none>) {
 kgen.func @async_signature(%arg0: !kgen.signature<() async -> !kgen.none>) {
   kgen.return
 }
+
+// CHECK-LABEL: kgen.func @co_get_results
+kgen.func @co_get_results(%arg0: !co.routine) {
+  // CHECK-NEXT: %0 = co.get_results %arg0 : i32
+  %0:2 = co.get_results %arg0 : !kgen.none, i32
+  kgen.return
+}
+
+//===----------------------------------------------------------------------===//
+// `!kgen.pack` lowering
+//===----------------------------------------------------------------------===//
 
 // CHECK-LABEL: @lower_pack
 // CHECK-SAME: %arg0: !kgen.struct<(i32, i64)>

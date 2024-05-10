@@ -4,6 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "KGEN/CODialect/COOps.h"
 #include "KGEN/HLCFDialect/HLCFOps.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -113,8 +114,10 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
     return;
   }
 
-  // Handle `hlcf.if`, `hlcf.loop`, `kgen.call`, and `kgen.call_indirect`.
-  if (isa<HLCF::IfOp, HLCF::LoopOp, CallOp, CallIndirectOp>(op)) {
+  // Handle `hlcf.if`, `hlcf.loop`, `kgen.call`, `kgen.call_indirect`, and
+  // `co.get_results`.
+  if (isa<HLCF::IfOp, HLCF::LoopOp, CallOp, CallIndirectOp, CO::GetResultsOp>(
+          op)) {
     auto [anyNone, newResults] = removeNoneTypes(op->getResultTypes());
     // Exit early if there are no none results.
     if (!anyNone)
