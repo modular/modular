@@ -124,6 +124,7 @@ fn multistage_gemm[
     a_layout: Layout,
     b_type: DType,
     b_layout: Layout,
+    transpose_b: Bool,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -172,9 +173,13 @@ fn multistage_gemm[
         Scalar[b_type]
     ]()
 
-    alias thread_async_copy_layout = Layout.row_major(
+    alias async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
     )
+
+    alias b_smem_layout = Layout.row_major(
+        BN, BK
+    ) if transpose_b else Layout.row_major(BK, BN)
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @unroll
@@ -187,27 +192,39 @@ fn multistage_gemm[
 
         var b_smem_tile = LayoutTensor[
             b_type,
-            Layout.row_major(BN, BK),
+            b_smem_layout,
             address_space = AddressSpace.SHARED,
         ](b_smem + stage * BN * BK)
 
         copy_dram_to_sram_async[
-            src_thread_layout=thread_async_copy_layout,
-            dst_thread_layout=thread_async_copy_layout,
+            src_thread_layout=async_copy_a_layout,
+            dst_thread_layout=async_copy_a_layout,
             swizzle=xor_2bits_per8T,
         ](
             a_smem_tile.vectorize[1, simd_size](),
             a.tile[BM, BK](BlockIdx.y(), stage).vectorize[1, simd_size](),
         )
 
-        copy_dram_to_sram_async[
-            src_thread_layout=thread_async_copy_layout,
-            dst_thread_layout=thread_async_copy_layout,
-            swizzle=xor_2bits_per8T,
-        ](
-            b_smem_tile.vectorize[1, simd_size](),
-            b.tile[BN, BK](BlockIdx.x(), stage).vectorize[1, simd_size](),
-        )
+        # fmt: off
+        @parameter
+        if transpose_b:
+            copy_dram_to_sram_async[
+                src_thread_layout=Layout.row_major(num_threads * simd_size // BK, BK // simd_size),
+                dst_thread_layout=Layout.row_major(num_threads * simd_size // BK, BK // simd_size),
+                swizzle= xor_2bits_per8T,
+            ](
+                b_smem_tile.vectorize[1, simd_size](),
+                b.tile[BN, BK](BlockIdx.x(), stage).vectorize[1, simd_size](),
+            )
+        else:
+            copy_dram_to_sram_async[
+                src_thread_layout=Layout.row_major(num_threads * simd_size // BN, BN // simd_size),
+                dst_thread_layout=Layout.row_major(num_threads * simd_size // BN, BN // simd_size),
+            ](
+                b_smem_tile.vectorize[1, simd_size](),
+                b.tile[BK, BN](stage, BlockIdx.x()).vectorize[1, simd_size](),
+            )
+        # fmt: on
 
         async_copy_commit_group()
 
@@ -246,11 +263,22 @@ fn multistage_gemm[
 
     var b_smem_tile0 = LayoutTensor[
         b_type,
-        Layout.row_major(BN, BK),
+        b_smem_layout,
         address_space = AddressSpace.SHARED,
     ](b_smem)
+
     var a_warp_tile = a_smem_tile0.tile[WM, BK](int(warp_y), 0)
-    var b_warp_tile = b_smem_tile0.tile[WN, BK](int(warp_x), 0)
+
+    # TODO: warp the following in the tile method, maybe tile[shape: IntTuple].
+    # I can't use b_warp_tile = ... if transpose_b else ... because the operands
+    # are deduced as different types since their layout are different.
+    alias b_wtile_dim0 = WN if transpose_b else BK
+    alias b_wtile_dim1 = BK if transpose_b else WN
+    var b_wtile_coord0 = int(warp_x) if transpose_b else 0
+    var b_wtile_coord1 = 0 if transpose_b else int(warp_x)
+    var b_warp_tile = b_smem_tile0.tile[b_wtile_dim0, b_wtile_dim1](
+        b_wtile_coord0, b_wtile_coord1
+    )
 
     # TODO: possbile to not rebind?
     @unroll
@@ -264,22 +292,40 @@ fn multistage_gemm[
             ](a_mma_tile, 0)
         )
 
-    # TF32 mma only needs 2 8x4 matrices but we can combine 2 mmas and load
-    # 4 matrics per iteration. This reduces the instruction count.
-    @unroll
-    for n_mma2 in range(num_n_mmas // 2):
-        var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
-        var vec = ld_mma[
-            4,
-            Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-            swizzle=xor_2bits_per8T,
-        ](b_mma_tile, 0)
-        b_reg_tiles[0][2 * n_mma2, 0] = rebind[b_frag_type](
-            SIMD[b_type, 2](vec[0], vec[2])
-        )
-        b_reg_tiles[0][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
-            SIMD[b_type, 2](vec[1], vec[3])
-        )
+    @parameter
+    if transpose_b:
+        # Use ld_matrix because with transposed B the thread layout in mma is
+        # row-major(8, 4). TF32 mma needs 2 8x4 matrices but we can combine 2
+        # mmas and load 4 matrics per iteration, reducing instruction count.
+        @unroll
+        for n_mma2 in range(num_n_mmas // 2):
+            var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
+            var vec = ld_mma[
+                4,
+                Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
+                swizzle=xor_2bits_per8T,
+            ](b_mma_tile, 0)
+            b_reg_tiles[0][2 * n_mma2, 0] = rebind[b_frag_type](
+                SIMD[b_type, 2](vec[0], vec[2])
+            )
+            b_reg_tiles[0][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
+                SIMD[b_type, 2](vec[1], vec[3])
+            )
+
+    else:
+        # Use normal scalar load because the thread layout in mma is column-majored.
+        @unroll
+        for n_mma in range(num_n_mmas):
+            var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](0, n_mma)
+            var b_mma_frag = b_mma_tile.distribute[Layout.col_major(4, 8)](
+                int(lane_id)
+            )
+            b_reg_tiles[0][n_mma, 0] = rebind[b_frag_type](
+                SIMD[b_type, 2](
+                    rebind[Scalar[b_type]](b_mma_frag[0]),
+                    rebind[Scalar[b_type]](b_mma_frag[1]),
+                )
+            )
 
     var num_k_tiles = ceildiv(K, BK)
 
@@ -294,13 +340,14 @@ fn multistage_gemm[
 
         var b_smem_tile = LayoutTensor[
             b_type,
-            Layout.row_major(BN, BK),
+            b_smem_layout,
             address_space = AddressSpace.SHARED,
         ](b_smem + stage * BN * BK)
 
-        # TODO: remove the cast.
         var a_warp_tile = a_smem_tile.tile[WM, BK](int(warp_y), 0)
-        var b_warp_tile = b_smem_tile.tile[WN, BK](int(warp_x), 0)
+        var b_warp_tile = b_smem_tile.tile[b_wtile_dim0, b_wtile_dim1](
+            b_wtile_coord0, b_wtile_coord1
+        )
 
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
@@ -319,12 +366,14 @@ fn multistage_gemm[
 
                 var b_smem_next_tile = LayoutTensor[
                     b_type,
-                    Layout.row_major(BN, BK),
+                    b_smem_layout,
                     address_space = AddressSpace.SHARED,
                 ](b_smem + next_stage * BN * BK)
 
                 a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
-                b_warp_tile = b_smem_next_tile.tile[WN, BK](int(warp_x), 0)
+                b_warp_tile = b_smem_next_tile.tile[b_wtile_dim0, b_wtile_dim1](
+                    b_wtile_coord0, b_wtile_coord1
+                )
 
             @unroll
             for m_mma in range(num_m_mmas):
@@ -337,20 +386,39 @@ fn multistage_gemm[
                     ](a_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
                 )
 
-            @unroll
-            for n_mma2 in range(num_n_mmas // 2):
-                var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
-                var vec = ld_mma[
-                    4,
-                    Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
-                    swizzle=xor_2bits_per8T,
-                ](b_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
-                b_reg_tiles[next][2 * n_mma2, 0] = rebind[b_frag_type](
-                    SIMD[b_type, 2](vec[0], vec[2])
-                )
-                b_reg_tiles[next][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
-                    SIMD[b_type, 2](vec[1], vec[3])
-                )
+            @parameter
+            if transpose_b:
+
+                @unroll
+                for n_mma2 in range(num_n_mmas // 2):
+                    var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
+                    var vec = ld_mma[
+                        4,
+                        Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
+                        swizzle=xor_2bits_per8T,
+                    ](b_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
+                    b_reg_tiles[next][2 * n_mma2, 0] = rebind[b_frag_type](
+                        SIMD[b_type, 2](vec[0], vec[2])
+                    )
+                    b_reg_tiles[next][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
+                        SIMD[b_type, 2](vec[1], vec[3])
+                    )
+            else:
+
+                @unroll
+                for n_mma in range(num_n_mmas):
+                    var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](
+                        (k_mma + 1) % num_k_mmas, n_mma
+                    )
+                    var b_mma_frag = b_mma_tile.distribute[
+                        Layout.col_major(4, 8)
+                    ](int(lane_id))
+                    b_reg_tiles[next][n_mma, 0] = rebind[b_frag_type](
+                        SIMD[b_type, 2](
+                            rebind[Scalar[b_type]](b_mma_frag[0]),
+                            rebind[Scalar[b_type]](b_mma_frag[1]),
+                        )
+                    )
 
             @unroll
             for m_mma in range(num_m_mmas):
@@ -380,15 +448,15 @@ fn multistage_gemm[
 
                     var b_smem_prefetch_tile = LayoutTensor[
                         b_type,
-                        Layout.row_major(BN, BK),
+                        b_smem_layout,
                         address_space = AddressSpace.SHARED,
                     ](b_smem + prefetch_stage * BN * BK)
 
                     # TODO: Extend the async copy instrinsic to creat dummy copies. The
                     # prefetch for the three two iterations should be dummy.
                     copy_dram_to_sram_async[
-                        src_thread_layout=thread_async_copy_layout,
-                        dst_thread_layout=thread_async_copy_layout,
+                        src_thread_layout=async_copy_a_layout,
+                        dst_thread_layout=async_copy_a_layout,
                         swizzle=xor_2bits_per8T,
                     ](
                         a_smem_prefetch_tile.vectorize[1, simd_size](),
@@ -397,16 +465,36 @@ fn multistage_gemm[
                         ).vectorize[1, simd_size](),
                     )
 
-                    copy_dram_to_sram_async[
-                        src_thread_layout=thread_async_copy_layout,
-                        dst_thread_layout=thread_async_copy_layout,
-                        swizzle=xor_2bits_per8T,
-                    ](
-                        b_smem_prefetch_tile.vectorize[1, simd_size](),
-                        b.tile[BN, BK](
-                            BlockIdx.x(), prefetch_tile_id % num_k_tiles
-                        ).vectorize[1, simd_size](),
-                    )
+                    @parameter
+                    if transpose_b:
+                        copy_dram_to_sram_async[
+                            src_thread_layout = Layout.row_major(
+                                num_threads * simd_size // BK, BK // simd_size
+                            ),
+                            dst_thread_layout = Layout.row_major(
+                                num_threads * simd_size // BK, BK // simd_size
+                            ),
+                            swizzle=xor_2bits_per8T,
+                        ](
+                            b_smem_prefetch_tile.vectorize[1, simd_size](),
+                            b.tile[BN, BK](
+                                BlockIdx.x(), prefetch_tile_id % num_k_tiles
+                            ).vectorize[1, simd_size](),
+                        )
+                    else:
+                        copy_dram_to_sram_async[
+                            src_thread_layout = Layout.row_major(
+                                num_threads * simd_size // BN, BN // simd_size
+                            ),
+                            dst_thread_layout = Layout.row_major(
+                                num_threads * simd_size // BN, BN // simd_size
+                            ),
+                        ](
+                            b_smem_prefetch_tile.vectorize[1, simd_size](),
+                            b.tile[BK, BN](
+                                prefetch_tile_id % num_k_tiles, BlockIdx.x()
+                            ).vectorize[1, simd_size](),
+                        )
 
                 async_copy_commit_group()
 
@@ -434,7 +522,7 @@ fn multistage_gemm[
             c_frag.aligned_store[2](1, 0, SIMD[c_type, 2](c_reg[2], c_reg[3]))
 
 
-fn test() raises:
+fn test[transpose_b: Bool]() raises:
     alias num_threads = 128
     alias num_pipeline_stages = 4
     alias M = 8192
@@ -450,7 +538,9 @@ fn test() raises:
     var stream = Stream()
 
     alias a_layout = Layout.row_major(M, K)
-    alias b_layout = Layout.row_major(N, K)
+    alias b_layout = Layout.row_major(
+        N, K
+    ) if transpose_b else Layout.row_major(K, N)
     alias c_layout = Layout.row_major(M, N)
 
     var a_host = DTypePointer[DType.float32].alloc(M * K)
@@ -466,7 +556,12 @@ fn test() raises:
     for k in range(K):
         for n in range(N):
             b_host[k * N + n] = k * N + n
-            b_trans_host[n * K + k] = k * N + n
+
+            @parameter
+            if transpose_b:
+                b_trans_host[n * K + k] = k * N + n
+            else:
+                b_trans_host[k * N + n] = k * N + n
 
     var a_device = _malloc[Float32](M * K)
     var b_device = _malloc[Float32](K * N)
@@ -491,6 +586,7 @@ fn test() raises:
         a_layout,
         DType.float32,
         b_layout,
+        transpose_b,
         BM,
         BN,
         BK,
@@ -542,7 +638,15 @@ fn test() raises:
         var nstime = time_function[run_func](stream) / nrun
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
-        print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
+        print(
+            "Tranpose B ",
+            transpose_b,
+            nrun,
+            " runs avg(s)",
+            sectime,
+            "TFlops/s",
+            TFlop / sectime,
+        )
 
     func(
         c_tensor,
@@ -606,6 +710,7 @@ fn test() raises:
 def main():
     try:
         with Context() as ctx:
-            test()
+            test[False]()
+            test[True]()
     except e:
         print("ERROR:", e)
