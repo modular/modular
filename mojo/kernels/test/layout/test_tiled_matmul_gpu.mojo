@@ -152,8 +152,8 @@ fn sram_blocked_matmul[
         var rhs_sram_tile_local = rhs_sram_tile.distribute[thread_layout](
             ThreadIdx.x()
         )
-        lhs_sram_tile_local.copy_from_numa(lhs_tile_local)
-        rhs_sram_tile_local.copy_from_numa(rhs_tile_local)
+        lhs_sram_tile_local.copy_from(lhs_tile_local)
+        rhs_sram_tile_local.copy_from(rhs_tile_local)
 
         barrier()
 
@@ -173,7 +173,12 @@ fn sram_blocked_matmul[
         unroll[accumulate, BK]()
 
     # Move data from register tile to DRAM
-    dst_local_tile.copy_from(dst_register_tile)
+    # FIXME: unrolled copy loop doesn't produce the correct results for some
+    # tiles!!
+    # dst_local_tile.copy_from(dst_register_tile)
+    for m in range(dst_local_tile.dim[0]()):
+        for n in range(dst_local_tile.dim[1]()):
+            dst_local_tile[m, n] = dst_register_tile[m, n]
 
 
 fn test_sram_blocked_matmul() raises:

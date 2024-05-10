@@ -50,7 +50,7 @@ fn async_copy_kernel[
     var ty = ThreadIdx.y()
     smem_tile[tx, ty] += ty
 
-    input_tile.copy_from_numa(smem_tile)
+    input_tile.copy_from(smem_tile)
 
 
 fn test_async_copy() raises:
@@ -142,7 +142,7 @@ fn multistage_copy[
         var a_smem_frag = a_smem_tiles[stage].vectorize[
             1, simd_size
         ]().distribute[thread_layout](ThreadIdx.x())
-        b_gmem_frag.copy_from_numa(a_smem_frag)
+        b_gmem_frag.copy_from(a_smem_frag)
 
         # Prefetch stage $(current + num_pipeline_stages - 1)
         # When the prefetch goes OOB, Cutlass sets src_in_bytes to 0 and does
@@ -289,7 +289,7 @@ fn swizzle_copy[
     var a_smem_frag = a_smem_tile.vectorize[1, simd_size]().distribute[
         thread_layout
     ](ThreadIdx.x())
-    b_gmem_frag.copy_from_numa(a_smem_frag)
+    b_gmem_frag.copy_from(a_smem_frag)
 
 
 fn test_swizzle_copy() raises:

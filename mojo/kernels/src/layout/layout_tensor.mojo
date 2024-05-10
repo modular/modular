@@ -721,38 +721,6 @@ struct LayoutTensor[
 
     @always_inline
     fn copy_from[
-        other_layout: Layout, other_mask: Bool
-    ](
-        self,
-        other: LayoutTensor[
-            dtype,
-            other_layout,
-            address_space=address_space,
-            element_layout=element_layout,  # TODO: Remove this assumtion.
-            masked=other_mask,
-        ],
-    ):
-        for m in range(Self.dim[0]()):
-
-            @parameter
-            if (
-                to_int(self.layout.stride[1]) <= 1
-                and to_int(other.layout.stride[1]) <= 1
-                and not triple_is_nvidia_cuda()
-            ):
-                # Optimize copy for row major layouts.
-                memcpy(
-                    self.ptr.offset(self._offset(m, 0)),
-                    other.ptr.offset(other._offset(m, 0)),
-                    Self.dim[1](),
-                )
-            else:
-                for n in range(Self.dim[1]()):
-                    self[m, n] = other[m, n]
-
-    # When source and destination address spaces differ
-    @always_inline
-    fn copy_from_numa[
         other_layout: Layout,
         other_addr_space: AddressSpace,
         other_element_layout: Layout,
@@ -1230,7 +1198,7 @@ fn copy_dram_to_sram[
     var dst_framgents = dst.distribute[dst_thread_layout, swizzle=swizzle](
         ThreadIdx.x()
     )
-    dst_framgents.copy_from_numa(src_framgents)
+    dst_framgents.copy_from(src_framgents)
 
 
 # Asynchronous copy from DRAM -> SRAM, this requires w/r thread affinity mapping.
@@ -1304,10 +1272,10 @@ fn copy_sram_to_local[
         var src_fragments = src.distribute[
             src_warp_layout, axis = axis._value_copy()
         ](ThreadIdx.x())
-        dst.copy_from_numa(src_fragments)
+        dst.copy_from(src_fragments)
     else:
         var src_fragments = src.distribute[src_warp_layout](ThreadIdx.x())
-        dst.copy_from_numa(src_fragments)
+        dst.copy_from(src_fragments)
 
 
 # Copy local memory to DRAM, thread affinity is needed only for dst fragments.
@@ -1339,4 +1307,4 @@ fn copy_local_to_dram[
     ],
 ):
     var dst_framgents = dst.distribute[dst_thread_layout](ThreadIdx.x())
-    dst_framgents.copy_from_numa(src)
+    dst_framgents.copy_from(src)
