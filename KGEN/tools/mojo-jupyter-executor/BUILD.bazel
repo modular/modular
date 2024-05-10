@@ -6,8 +6,11 @@ cc_binary(
     deps = [
         "//KGEN:ExecutionEngine",
         "//KGEN:MojoJupyter",
+        "//KGEN:MojoLLDB",
+        "//KGEN:MojoLLDBHeaders",
         "//KGEN:liblldb.wrapper",
         "//LLCL:RuntimeGlobals",
         "//Support:Globals",
+        "//Support:Init",
     ],
 )
