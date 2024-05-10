@@ -148,6 +148,11 @@ struct LLVMBuilder : public ImplicitLocOpBuilder,
   Value createConversion(Type type, Value src) {
     return create<mlir::UnrealizedConversionCastOp>(type, src).getResult(0);
   }
+
+  /// Get the pointer width in bytes.
+  size_t getPointerByteWidth() {
+    return llvm::divideCeil(getIndexTypeBitwidth(), CHAR_BIT);
+  }
 };
 
 //===----------------------------------------------------------------------===//

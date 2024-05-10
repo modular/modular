@@ -179,6 +179,33 @@ def CO_PromiseOp : COOp<"promise", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
+// GetCallbackPtrOp
+//===----------------------------------------------------------------------===//
+
+def CO_GetCallbackPtrOp : COOp<"get_callback_ptr", [Pure]> {
+  let summary = "Get a pointer to the coroutine callback.";
+  let description = [{
+    The `co.get_callback_ptr` takes a coroutine and returns a pointer to its
+    callback closure. Every coroutine has a callback closure that is invoked
+    when the coroutine exits. This operation can be used to access the callback
+    closure value and modify it. It is by default a garbage value. The callback
+    closure is exactly twice the pointer width, enough to fit a function pointer
+    and a single data field. Attempting to access data beyond the pointee is
+    undefined behaviour.
+
+    Example:
+
+    ```mlir
+    %ptr = co.get_callback_ptr %coro : <struct<(index, pointer<none>)>>
+    ```
+  }];
+
+  let arguments = (ins CoroutineType:$coroutine);
+  let results = (outs PointerType:$callback);
+  let assemblyFormat = "$coroutine attr-dict `:` type($callback)";
+}
+
+//===----------------------------------------------------------------------===//
 // ResumeOp
 //===----------------------------------------------------------------------===//
 
