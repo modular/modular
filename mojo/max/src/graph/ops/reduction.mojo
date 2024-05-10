@@ -19,7 +19,7 @@ fn _reduce[
     if axis < 0:
         axis += v_type.rank()
     if not 0 <= axis < v_type.rank():
-        raise error("axis out of range")
+        raise error(g, "axis out of range")
 
     v_type.dims[axis] = 1
     if dtype:

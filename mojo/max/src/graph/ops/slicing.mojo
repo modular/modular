@@ -41,10 +41,11 @@ def gather(input: Symbol, indices: Symbol, axis: Int = 0) -> Symbol:
         axis += input_type.rank()
     if axis < 0 or axis >= input_type.rank():
         raise error(
+            g,
             "gather axis out of bounds: axis="
             + String(axis)
             + ", rank="
-            + String(input_type.rank())
+            + String(input_type.rank()),
         )
 
     var dims = List[Dim]()
@@ -276,20 +277,21 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
         as each input tensor's for each dimension other than `axis`, which will
         have size equal to the sum of all tensor's size for that dimension.
     """
-    if not len(values):
-        raise error("must concat at least 1 value")
-    var v0 = values[0]
     var g = values[0].graph()
+    if not len(values):
+        raise error(g, "must concat at least 1 value")
+    var v0 = values[0]
 
     var v0_type = v0.tensor_type()
     var rank = v0_type.rank()
     var norm_axis = axis + v0_type.rank() if axis < 0 else axis
     if norm_axis < 0 or norm_axis >= v0_type.rank():
         raise error(
+            g,
             "concat axis out of bounds: axis="
             + String(norm_axis)
             + ", rank="
-            + String(v0_type.rank())
+            + String(v0_type.rank()),
         )
 
     var concat_dim: Dim = 0
@@ -297,18 +299,19 @@ def concat(values: List[Symbol], axis: Int = 0) -> Symbol:
         var v_type = values[i].tensor_type()
         if v_type.rank() != rank:
             raise error(
+                g,
                 "all concat values must have same rank: rank[0]="
                 + String(rank)
                 + ", rank["
                 + String(i)
                 + "]="
-                + String(v_type.rank())
+                + String(v_type.rank()),
             )
         var dim = v_type.dims[norm_axis]
         if concat_dim.is_dynamic() or dim.is_dynamic():
             concat_dim = Dim.dynamic()
         elif dim.is_symbolic():
-            raise error("Concat doesn't yet support symbolic dimensions")
+            raise error(g, "Concat doesn't yet support symbolic dimensions")
         else:
             concat_dim = Dim.static(
                 concat_dim.num_elements() + dim.num_elements()

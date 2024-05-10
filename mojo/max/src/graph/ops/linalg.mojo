@@ -112,20 +112,22 @@ def matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
         matricies together according to `matmul_broadcast` and then performing
         a matrix multiply along the last two dimension of each tensor.
     """
+    var g = lhs.graph()
     var lhs_type = lhs.tensor_type()
     var rhs_type = rhs.tensor_type()
     var lk = lhs_type.dims[-1]
     var rk = rhs_type.dims[-2]
     if rhs_type.rank() < 2:
         raise error(
-            "right hand side of matrix multiply must have rank at least 2"
+            g, "right hand side of matrix multiply must have rank at least 2"
         )
     if lk != rk and not (lk.is_dynamic() or rk.is_dynamic()):
         raise error(
+            g,
             str("matrix multiply K dimensions don't match: ")
             + str(lk)
             + " != "
-            + str(rk)
+            + str(rk),
         )
     if rhs_type.rank() > 2:
         return batch_matmul(lhs, rhs)
@@ -188,7 +190,7 @@ def matmul_by_matrix(lhs: Symbol, rhs: Symbol) -> Symbol:
     var lhs_type = lhs.tensor_type()
     var rhs_type = rhs.tensor_type()
     if rhs_type.rank() != 2:
-        raise error("rhs must be a matrix")
+        raise error(g, "rhs must be a matrix")
 
     var lhs_shape = shape_of(lhs)
     var rhs_shape = shape_of(rhs)

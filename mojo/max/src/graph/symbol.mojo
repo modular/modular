@@ -597,11 +597,13 @@ struct Symbol(CollectionElement, Stringable):
             label: A label to accompany the printout.
         """
         var g = self.graph()
+        var layer = g.current_layer()
+        var label_prefix = (layer + ": ") if layer else ""
         _ = g.nvop(
             "mo.debug.tensor.print",
             self,
             List[Type](),
-            _string_attr(g._context(), "label", label),
+            _string_attr(g._context(), "label", label_prefix + label),
         )
 
     # ===------------------------------------------------------------------=== #

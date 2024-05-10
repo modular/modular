@@ -505,9 +505,10 @@ def _unary_float_op[op_name: StringLiteral](value: Symbol) -> Symbol:
     var dtype = value.tensor_type().dtype
     if not dtype.is_floating_point():
         raise error(
+            value.graph(),
             op_name
             + " only supports floating point inputs. Please explicitly cast to"
-            " your desired float type first."
+            " your desired float type first.",
         )
     return value.graph().op(op_name, value, value.tensor_type())
 

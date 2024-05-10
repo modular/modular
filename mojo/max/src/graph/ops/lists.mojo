@@ -23,7 +23,8 @@ fn list(elements: List[Symbol]) raises -> Symbol:
         The list filled with `elements`. It's type will be `ListType`.
     """
     if len(elements) == 0:
-        raise error("`elements` cannot be empty")
+        # Unfortunately no way to get a graph here :(
+        raise error(None, "`elements` cannot be empty")
 
     var g = elements[0].graph()
     var ctx = g._context()
@@ -33,12 +34,13 @@ fn list(elements: List[Symbol]) raises -> Symbol:
         var elt_type = elements[i].tensor_type()
         if not elt_type == type:
             raise error(
+                g,
                 "elements must all have the same type "
                 + str(type.to_mlir(ctx))
                 + ", got "
                 + str(elt_type.to_mlir(ctx))
                 + " at position "
-                + str(i)
+                + str(i),
             )
 
     return g.op("mo.list.create", elements, ListType(type))

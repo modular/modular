@@ -12,6 +12,7 @@ from max.tensor import Tensor, TensorShape
 
 
 def _padded_dimensions(
+    g: Graph,
     input: TensorType,
     filter_shape: (Dim, Dim),
     padding: (Int, Int, Int, Int),
@@ -24,6 +25,7 @@ def _padded_dimensions(
     by the padding applied before and after each dimension.
 
     Args:
+        g: The Graph instance.
         input: The shape of the rank-4 input tensor.
         filter_shape: The shape of the filter being applied.
         padding: The padding to apply to the height and width of the input
@@ -41,7 +43,7 @@ def _padded_dimensions(
         output_type.dims[1] = Dim.dynamic()
     elif input_height.is_symbolic():
         raise error(
-            "padding an input with named dimensions is not yet supported"
+            g, "padding an input with named dimensions is not yet supported"
         )
     else:
         output_type.dims[1] = Dim.static(
@@ -60,7 +62,7 @@ def _padded_dimensions(
         output_type.dims[2] = Dim.dynamic()
     elif input_width.is_symbolic():
         raise error(
-            "padding an input with named dimensions is not yet supported"
+            g, "padding an input with named dimensions is not yet supported"
         )
     else:
         output_type.dims[2] = Dim.static(
@@ -126,6 +128,7 @@ def avg_pool(
     )
 
     output_type = _padded_dimensions(
+        g,
         input.tensor_type(),
         filter_shape=(Dim.static(filter_shape[0]), Dim.static(filter_shape[1])),
         padding=padding,
@@ -208,11 +211,11 @@ def conv2d(
     Returns:
         A symbolic tensor value with the convolution applied.
     """
+    g = input.graph()
     filter_type = filter.tensor_type()
     if filter_type.rank() != 4:
-        raise error("filter for a 2-D convolution must be rank 4")
+        raise error(g, "filter for a 2-D convolution must be rank 4")
 
-    g = input.graph()
     stride_constant = g.constant(
         Tensor[DType.int64](TensorShape(2), stride[0], stride[1])
     )
@@ -226,6 +229,7 @@ def conv2d(
     )
 
     output_type = _padded_dimensions(
+        g,
         input.tensor_type(),
         filter_shape=(filter_type.dims[0], filter_type.dims[1]),
         padding=padding,
@@ -301,11 +305,11 @@ def conv3d(
     Returns:
         A symbolic tensor value with the convolution applied.
     """
+    g = input.graph()
     filter_type = filter.tensor_type()
     if filter_type.rank() != 5:
-        raise error("filter for a 3-D convolution must be rank 5")
+        raise error(g, "filter for a 3-D convolution must be rank 5")
 
-    g = input.graph()
     stride_constant = g.constant(
         Tensor[DType.int64](TensorShape(3), stride[0], stride[1], stride[2])
     )
@@ -332,7 +336,7 @@ def conv3d(
     if input_depth.is_dynamic() or filter_depth.is_dynamic():
         output_type.dims[1] = Dim.dynamic()
     elif input_depth.is_symbolic():
-        raise error("Convolution doesn't yet support symbolic dimensions")
+        raise error(g, "Convolution doesn't yet support symbolic dimensions")
     else:
         output_type.dims[1] = Dim.static(
             input_depth.num_elements()
@@ -346,7 +350,7 @@ def conv3d(
     if input_height.is_dynamic() or filter_height.is_dynamic():
         output_type.dims[2] = Dim.dynamic()
     elif input_height.is_symbolic():
-        raise error("Convolution doesn't yet support symbolic dimensions")
+        raise error(g, "Convolution doesn't yet support symbolic dimensions")
     else:
         output_type.dims[2] = Dim.static(
             input_height.num_elements()
@@ -360,7 +364,7 @@ def conv3d(
     if input_width.is_dynamic() or filter_width.is_dynamic():
         output_type.dims[3] = Dim.dynamic()
     elif input_width.is_symbolic():
-        raise error("Convolution doesn't yet support symbolic dimensions")
+        raise error(g, "Convolution doesn't yet support symbolic dimensions")
     else:
         output_type.dims[3] = Dim.static(
             input_width.num_elements()
@@ -436,6 +440,7 @@ def max_pool(
     )
 
     output_type = _padded_dimensions(
+        g,
         input.tensor_type(),
         filter_shape=(Dim.static(filter_shape[0]), Dim.static(filter_shape[1])),
         padding=padding,

@@ -8,7 +8,7 @@
 from sys.info import has_neon
 
 import _mlir
-from _mlir.builtin_attributes import TypeAttr
+from _mlir.builtin_attributes import StringAttr, TypeAttr
 from _mlir.builtin_types import FunctionType
 
 from ._attributes import _tensor_attr, _vector_attr
@@ -25,6 +25,7 @@ from max.tensor import Tensor
 struct _OwnedGraph(Movable):
     var ctx: _mlir.Context
     var op: _mlir.Operation
+    var layers: List[String]
 
     fn __init__(
         inout self,
@@ -33,6 +34,15 @@ struct _OwnedGraph(Movable):
     ):
         self.ctx = ctx^
         self.op = op^
+        self.layers = List[String]()
+
+    fn current_layer(self) -> String:
+        var layer: String = ""
+        for layer_name in self.layers:
+            if layer:
+                layer += "."
+            layer += layer_name[]
+        return layer^
 
     fn module(self) -> _mlir.Module:
         try:
@@ -43,6 +53,7 @@ struct _OwnedGraph(Movable):
     fn __moveinit__(inout self, owned existing: Self):
         self.ctx = existing.ctx^
         self.op = existing.op^
+        self.layers = existing.layers^
 
     fn __del__(owned self):
         self.module().as_op().destroy()
@@ -50,6 +61,23 @@ struct _OwnedGraph(Movable):
 
 
 alias _GraphRef = Arc[_OwnedGraph]
+
+
+@value
+struct _GraphLayerContext:
+    var graph: _GraphRef
+    var name: String
+
+    fn __enter__(inout self):
+        self.graph[].layers.append(self.name)
+
+    fn __exit__(inout self, _error: Error) -> Bool:
+        self.__exit__()
+        return False
+
+    fn __exit__(inout self):
+        var name = self.graph[].layers.pop()
+        debug_assert(name == self.name, "non-hiercharchical graph layers")
 
 
 @value
@@ -202,7 +230,34 @@ struct Graph(CollectionElement, Stringable):
             print a diagnostic message indicating the error.
         """
         if not self._graph[].op.verify():
-            raise error("graph did not verify")
+            raise error(self, "graph did not verify")
+
+    fn layer(inout self, name: String) -> _GraphLayerContext:
+        """Creates a context manager for a graph layer.
+
+        Graph layers don't have a functional meaning for graph execution.
+        They help provide debug and visualization information, tagging
+        nodes in the graph with informal information about the structure
+        of the overall graph.
+
+        Args:
+            name: The name of the layer.
+
+        Returns:
+            A context manager. Inside this context, the layer will be "active".
+        """
+        return _GraphLayerContext(self._graph, name)
+
+    fn current_layer(self) -> String:
+        """Returns the full path of the current layer.
+
+        This is a `.`-separated string of each nested layer context created
+        by `Graph.layer()`.
+
+        Returns:
+            The full path of the current layer.
+        """
+        return self._graph[].current_layer()
 
     # ===------------------------------------------------------------------=== #
     # Basic accessors
@@ -247,11 +302,12 @@ struct Graph(CollectionElement, Stringable):
         var num_args = self._body().num_arguments()
         if (n >= num_args) or (n < 0):
             raise error(
+                self,
                 "index out of bounds: "
                 + str(n)
                 + ", graph has "
                 + num_args
-                + " arguments"
+                + " arguments",
             )
         return Symbol(self._graph, self._body().argument(n))
 
@@ -308,6 +364,10 @@ struct Graph(CollectionElement, Stringable):
             attributes=attrs,
             enable_result_type_inference=enable_result_type_inference,
         )
+
+        var layer = self._graph[].current_layer()
+        if layer:
+            op.set_discardable_attr("layer", StringAttr(ctx, layer^))
 
         var output_op = self._body().terminator()
         if output_op:
@@ -489,7 +549,7 @@ struct Graph(CollectionElement, Stringable):
         if dtype == DType.float64:
             return self.scalar(Float64(value))
 
-        raise error("unimplemented Int conversion dtype: " + str(dtype))
+        raise error(self, "unimplemented Int conversion dtype: " + str(dtype))
 
     fn scalar(self, value: Float64, dtype: DType) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
@@ -524,7 +584,7 @@ struct Graph(CollectionElement, Stringable):
             return self.scalar(Float64(value))
 
         raise error(
-            "unimplemented FloatLiteral conversion dtype: " + str(dtype)
+            self, "unimplemented FloatLiteral conversion dtype: " + str(dtype)
         )
 
     fn range[
@@ -575,7 +635,7 @@ struct Graph(CollectionElement, Stringable):
         var shape = List[Symbol]()
         for i in range(len(dims)):
             if dims[i].tensor_type().rank() != 0:
-                raise error("zeros inputs must be scalars")
+                raise error(self, "zeros inputs must be scalars")
             shape.append(dims[i])
             out_dims.append(Dim.dynamic())
         return self.op(

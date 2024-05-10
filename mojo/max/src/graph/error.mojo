@@ -11,7 +11,7 @@ from sys.ffi import external_call
 
 
 @always_inline
-def error[T: Stringable](message: T) -> Error:
+def error[T: Stringable](graph: Optional[Graph], message: T) -> Error:
     """Creates an error to raise that includes call information.
 
     This should be called internally at every point that can raise inside
@@ -22,13 +22,19 @@ def error[T: Stringable](message: T) -> Error:
         T: The message type.
 
     Args:
+        graph: The graph for context information.
         message: An error message to raise.
 
     Returns:
         The error message augmented with call context information.
     """
+    var message_string: String
+    if graph:
+        message_string = graph.value()[].current_layer() + " - " + message
+    else:
+        message_string = str(message)
     return (
-        str(message)
+        message_string
         + "\n\tat"
         + str(__call_location())
         + "\n\n"
