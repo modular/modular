@@ -15,7 +15,7 @@ struct CPUDescriptor:
     var numa_id: Int
 
     fn __init__(inout self, *, numa_id: Optional[Int] = None):
-        self.numa_id = numa_id.unsafe_take() if numa_id else -1
+        self.numa_id = numa_id.value()[] if numa_id else -1
 
 
 fn _get_driver_path() raises -> String:
