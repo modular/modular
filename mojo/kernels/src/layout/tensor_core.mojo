@@ -57,6 +57,10 @@ struct TensorCore[out_type: DType, in_type: DType, shape: StaticIntTuple[3]]:
         IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
         IntTuple(IntTuple(32, 1), IntTuple(16, 8)),
     )
+    alias tile_16x16_row = Layout(
+        IntTuple(IntTuple(4, 8), IntTuple(2, 2, 2)),
+        IntTuple(IntTuple(31, 1), IntTuple(16, 8, 128)),
+    )
 
     fn __init__(inout self):
         pass
@@ -84,7 +88,11 @@ struct TensorCore[out_type: DType, in_type: DType, shape: StaticIntTuple[3]]:
         var a_reg = SIMD[in_type, num_matrix_reg[shape[0], shape[2]]()]()
         alias reg_per_thread = num_matrix_reg[mma_m, mma_k]()
 
-        alias layout_a = self.tile_16x4 if reg_per_thread == 2 else self.tile_16x8
+        alias layout_tf32 = self.tile_16x4 if reg_per_thread == 2 else self.tile_16x8
+        alias layout_f16 = self.tile_16x8_row if reg_per_thread == 4 else self.tile_16x16_row
+        alias layout_a = (layout_f16) if (
+            in_type == DType.bfloat16 or in_type == DType.float16
+        ) else (layout_tf32)
 
         var mat_a = a.reshape[layout_a]()
         var group_id = int(lane_id()) >> 2
@@ -118,6 +126,26 @@ struct TensorCore[out_type: DType, in_type: DType, shape: StaticIntTuple[3]]:
                 constrained[
                     False, "No valid mma shape to load matrix fragment a"
                 ]()
+        elif in_type == DType.bfloat16 or in_type == DType.float16:
+
+            @parameter
+            if reg_per_thread == 4:
+                a_reg[0] = rebind[Scalar[in_type]](
+                    mat_a[group_lane_id, group_id, 0, 0]
+                )
+                a_reg[1] = rebind[Scalar[in_type]](
+                    mat_a[group_lane_id, group_id, 1, 0]
+                )
+                a_reg[2] = rebind[Scalar[in_type]](
+                    mat_a[group_lane_id, group_id, 0, 1]
+                )
+                a_reg[3] = rebind[Scalar[in_type]](
+                    mat_a[group_lane_id, group_id, 1, 1]
+                )
+            else:
+                constrained[
+                    False, "No valid mma shape to load matrix fragment a"
+                ]()
         else:
             constrained[False, "No valid type to load matrix fragment a"]()
         return a_reg
@@ -132,7 +160,11 @@ struct TensorCore[out_type: DType, in_type: DType, shape: StaticIntTuple[3]]:
         var b_reg = SIMD[in_type, num_matrix_reg[shape[2], shape[1]]()]()
         alias reg_per_thread = num_matrix_reg[mma_k, mma_n]()
 
-        alias layout_b = self.tile_8x4 if reg_per_thread == 1 else self.tile_8x8
+        alias layout_tf32 = self.tile_8x4 if reg_per_thread == 1 else self.tile_8x8
+        alias layout_f16 = self.tile_8x8_row if reg_per_thread == 2 else self.tile_16x8
+        alias layout_b = (layout_f16) if (
+            in_type == DType.bfloat16 or in_type == DType.float16
+        ) else (layout_tf32)
 
         var mat_b = b.transpose().reshape[layout_b]()
         var group_id = int(lane_id()) >> 2
@@ -147,6 +179,20 @@ struct TensorCore[out_type: DType, in_type: DType, shape: StaticIntTuple[3]]:
                     mat_b[group_lane_id, group_id]
                 )
             elif reg_per_thread == 2:
+                b_reg[0] = rebind[Scalar[in_type]](
+                    mat_b[group_lane_id, group_id, 0]
+                )
+                b_reg[1] = rebind[Scalar[in_type]](
+                    mat_b[group_lane_id, group_id, 1]
+                )
+            else:
+                constrained[
+                    False, "No valid mma shape to load matrix fragment b"
+                ]()
+        elif in_type == DType.bfloat16 or in_type == DType.float16:
+
+            @parameter
+            if reg_per_thread == 2:
                 b_reg[0] = rebind[Scalar[in_type]](
                     mat_b[group_lane_id, group_id, 0]
                 )
