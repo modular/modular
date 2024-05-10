@@ -322,7 +322,7 @@ struct CompileConfig:
             torch.close()
 
         self.ptr[].free(self.lib)
-        _ = __get_address_as_owned_value(self.ptr.address)
+        destroy_pointee(self.ptr.address)
         self.ptr.free()
 
 
