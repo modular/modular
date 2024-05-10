@@ -56,21 +56,6 @@ ValueRange getCalleeArguments(Operation *op);
 /// declaration.
 SymbolRefAttr getFullyResolvedSymbolRef(mlir::SymbolOpInterface op);
 
-/// Returns the user-defined result type of a signature, looking through
-/// implicit memory results and stripping off the variant from error throwing
-/// results if needed.
-Type getSignatureUserResultType(SignatureType sigType, ArrayRef<Type> argTypes,
-                                Type resultType);
-
-/// The Lit parser and KGEN have different semantics for binding function
-/// argument and result types. The parser will evaluate 'apply' expressions, but
-/// KGEN does not since it cannot always have access to a symbol table.
-/// Specialize a signature type while rebinding the input parameter values to
-/// the expected input parameter types.
-std::pair<LITSignatureType, ParameterExprArrayAttr>
-getUnboundSpecializedSignature(LITSignatureType type,
-                               ParameterExprArrayAttr bindings);
-
 /// Get the full signature of a declaration in the given context.
 LITSignatureType getFullSignature(Operation *container,
                                   LITSignatureType signature);

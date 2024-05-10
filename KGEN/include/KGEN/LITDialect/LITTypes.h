@@ -13,16 +13,18 @@
 
 #include "KGEN/KGENDialect/KGENTypes.h"
 
-//===----------------------------------------------------------------------===//
-// SignatureType
-//===----------------------------------------------------------------------===//
-
-namespace M::KGEN::LIT {
+namespace M::KGEN {
+class ParameterExprArrayAttr;
+namespace LIT {
 class PogListAttr;
 class FnMetadataAttr;
 class RefPackType;
 class SymbolAttr;
 enum class PassingKind : uint32_t;
+
+//===----------------------------------------------------------------------===//
+// LITSignatureType
+//===----------------------------------------------------------------------===//
 
 /// Create an uninitialized TypedAttr instance of the type for symbolic
 /// interpretation.
@@ -70,6 +72,9 @@ public:
 
   /// LIT-level signatures always have one result type.
   Type getResultType() { return getResults().front(); }
+
+  /// Get the user result type of the signature.
+  Type getUserResultType();
 
   /// Return this signature with the input parameters dropped.
   LITSignatureType dropParamValues();
@@ -157,7 +162,28 @@ public:
                                         ArrayRef<ParamDeclAttr> parentParams,
                                         ArrayRef<bool> parentVariadicMask);
 };
-} // namespace M::KGEN::LIT
+
+//===----------------------------------------------------------------------===//
+// Type Utilities
+//===----------------------------------------------------------------------===//
+
+/// Returns the user-defined result type of a signature, looking through
+/// implicit memory results and stripping off the variant from error throwing
+/// results if needed.
+Type getSignatureUserResultType(SignatureType sigType, ArrayRef<Type> argTypes,
+                                Type resultType);
+
+/// The Lit parser and KGEN have different semantics for binding function
+/// argument and result types. The parser will evaluate 'apply' expressions, but
+/// KGEN does not since it cannot always have access to a symbol table.
+/// Specialize a signature type while rebinding the input parameter values to
+/// the expected input parameter types.
+std::pair<LITSignatureType, ParameterExprArrayAttr>
+getUnboundSpecializedSignature(LITSignatureType type,
+                               ParameterExprArrayAttr bindings);
+
+} // namespace LIT
+} // namespace M::KGEN
 
 //===----------------------------------------------------------------------===//
 // ODS-Generated Declarations

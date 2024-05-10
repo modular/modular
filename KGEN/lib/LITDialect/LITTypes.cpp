@@ -962,6 +962,11 @@ size_t LITSignatureType::getNumImplicitLifetimeDecls() {
   return getMetadata().getNumImplicitLifetimeDecls();
 }
 
+Type LITSignatureType::getUserResultType() {
+  return LIT::getSignatureUserResultType(*this, getArguments(),
+                                         getResultType());
+}
+
 LITSignatureType LITSignatureType::dropParamValues() {
   return get(
       getValues(), /*paramTypes=*/{}, getArgConventions(), getFnEffects(),
@@ -1196,4 +1201,46 @@ LITSignatureType::prependParams(LITSignatureType sig,
                             remapper.replace(sig.getResultParamTypes()),
                             sig.getArgConventions(), sig.getFnEffects(),
                             metadata);
+}
+
+//===----------------------------------------------------------------------===//
+// Type Utilities
+//===----------------------------------------------------------------------===//
+
+Type LIT::getSignatureUserResultType(SignatureType sigType,
+                                     ArrayRef<Type> argTypes, Type resultType) {
+  // If this function has an init_self argument, then it returns None.
+  if (sigType.hasInitSelfArg())
+    return KGEN::NoneType::get(sigType.getContext());
+  // If this function has a byref_result, return the reference element type.
+  if (sigType.hasMemoryOnlyResult())
+    return cast<RefType>(argTypes.back()).getElementType();
+  return resultType;
+}
+
+std::pair<LITSignatureType, ParameterExprArrayAttr>
+LIT::getUnboundSpecializedSignature(LITSignatureType type,
+                                    ParameterExprArrayAttr bindings) {
+  if (bindings.empty())
+    return {type, bindings};
+
+  // KGEN expects different bindings types than Lit can provide. Rebind the
+  // parameters to the expected types.
+  SmallVector<TypedAttr> unboundBindings;
+  ParameterEvaluator evaluator;
+  for (auto [binding, type] : llvm::zip(bindings, type.getParamTypes())) {
+    TypedAttr value = binding;
+    Type unboundType = evaluator.getReboundType(type);
+    if (unboundType != value.getType())
+      value = ParamOperatorAttr::get(POC::Rebind, value, unboundType);
+    evaluator.addInputValue(value);
+    unboundBindings.push_back(value);
+  }
+  type = type.getSpecializedSignature(
+      unboundBindings, [&]() -> InFlightDiagnostic {
+        return mlir::emitError(UnknownLoc::get(type.getContext()));
+      });
+  assert(type && "bad bindings specified");
+  return {type,
+          ParameterExprArrayAttr::get(type.getContext(), unboundBindings)};
 }
