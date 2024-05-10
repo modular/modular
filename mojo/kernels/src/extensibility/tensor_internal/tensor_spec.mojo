@@ -219,4 +219,4 @@ struct TensorSpec(Stringable, CollectionElement, EqualityComparable):
           Given bytes as TensorSpec.
         """
         var ptr = data._as_scalar_pointer().bitcast[Self]()
-        return __get_address_as_owned_value(ptr.address)
+        return move_from_pointee(ptr.address)
