@@ -31,8 +31,9 @@ namespace {
 /// This class handles the conversion of DebugInfo metadata to the LLVM IR
 /// metadata equivalent.
 struct MetadataConverter {
-  MetadataConverter(DebugInfo::DebugInfoTypeConverter &typeConverter)
-      : typeConverter(typeConverter) {}
+  MetadataConverter(DebugInfo::DebugInfoTypeConverter &typeConverter,
+                    M::TargetInfoAttr target)
+      : typeConverter(typeConverter), target(target) {}
 
   /// Convert the given derived debug info attribute to LLVM.
   template <typename T>
@@ -77,6 +78,7 @@ private:
   LLVM::DITypeAttr convertTypeImpl(DIVectorType type);
 
   DebugInfo::DebugInfoTypeConverter &typeConverter;
+  M::TargetInfoAttr target;
   DenseMap<Attribute, Attribute> convertedAttrs;
   DenseMap<Type, LLVM::DITypeAttr> convertedTypes;
 };
@@ -262,10 +264,44 @@ LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIArrayType type) {
       /*alignInBits=*/0, element);
 }
 
+static StringAttr convertDebugTypeNameForNVPTX(StringAttr name) {
+  auto attrify = [ctx = name.getContext()](StringRef s) {
+    return StringAttr::get(ctx, s);
+  };
+  if (name.getValue() == "kgen.dtype.bool")
+    return attrify("bool");
+  if (name.getValue() == "kgen.dtype.si8")
+    return attrify("char");
+  if (name.getValue() == "kgen.dtype.ui8")
+    return attrify("unsigned char");
+  if (name.getValue() == "kgen.dtype.si16")
+    return attrify("short");
+  if (name.getValue() == "kgen.dtype.ui16")
+    return attrify("unsigned short");
+  if (name.getValue() == "kgen.dtype.si32")
+    return attrify("int");
+  if (name.getValue() == "kgen.dtype.ui32")
+    return attrify("unsigned int");
+  if (name.getValue() == "kgen.dtype.si64")
+    return attrify("long");
+  if (name.getValue() == "kgen.dtype.ui64")
+    return attrify("unsigned long");
+  if (name.getValue() == "kgen.dtype.f32")
+    return attrify("float");
+  if (name.getValue() == "kgen.dtype.f64")
+    return attrify("double");
+  if (name.getValue() == "i1")
+    return attrify("bool");
+  return name;
+}
+
 LLVM::DIBasicTypeAttr MetadataConverter::convertTypeImpl(DIBasicType type) {
-  return LLVM::DIBasicTypeAttr::get(
-      type.getContext(), llvm::dwarf::DW_TAG_base_type, type.getName(),
-      type.getSizeInBits(), type.getEncoding());
+  StringAttr name = type.getName();
+  if (target && target.getTriple().isNVPTX())
+    name = convertDebugTypeNameForNVPTX(name);
+  return LLVM::DIBasicTypeAttr::get(type.getContext(),
+                                    llvm::dwarf::DW_TAG_base_type, name,
+                                    type.getSizeInBits(), type.getEncoding());
 }
 
 LLVM::DITypeAttr MetadataConverter::convertTypeImpl(DIPointerType type) {
@@ -576,7 +612,8 @@ void DebugInfoToLLVMPass::runOnOperation() {
 
   // Configure the metadata converter.
   DebugInfoToLLVMTypeConverter debugTypeConverter(typeConverter);
-  MetadataConverter metadataConverter(debugTypeConverter);
+  MetadataConverter metadataConverter(debugTypeConverter,
+                                      getTargetInfo(getOperation()));
   DIAttrTypeReplacer replacer;
   replacer.addReplacement(
       [&](DIAttr attr) { return metadataConverter.convertAttr(attr); });
