@@ -164,7 +164,8 @@ def CO_PromiseOp : COOp<"promise", [Pure]> {
   let description = [{
     The `co.promise` operation returns the pointer to the coroutine
     promise, which contains the result values of the promise. Located at the
-    end of the promise is the async context.
+    end of the promise is the async context. Attempting to access data beyond
+    the pointee is undefined behaviour.
 
     Example:
 
@@ -176,6 +177,35 @@ def CO_PromiseOp : COOp<"promise", [Pure]> {
   let arguments = (ins CoroutineType:$coroutine);
   let results = (outs PointerType:$promise);
   let assemblyFormat = "$coroutine attr-dict `:` type($promise)";
+}
+
+//===----------------------------------------------------------------------===//
+// GetResultsOp
+//===----------------------------------------------------------------------===//
+
+def CO_GetResultsOp : COOp<"get_results"> {
+  let summary = "Get the direct results of the coroutine.";
+  let description = [{
+    The `co.get_results` operation reads from the coroutine object the SSA
+    value results of the async function from which the coroutine was formed. For
+    example, given the following async function:
+
+    ```mlir
+    kgen.func @async_fn() async -> (i32, i64)
+    ```
+
+    The coroutine formed from this function will contain the `i32` and `i64`
+    SSA value results of the function, and they can be read from the coroutine:
+
+    ```mlir
+    %coro = co.invoke[() async -> (i32, i64): @async_fn]()
+    %0, %1 = co.get_results %coro : i32, i64
+    ```
+  }];
+
+  let arguments = (ins Arg<CoroutineType, "", [MemRead]>:$coroutine);
+  let results = (outs Variadic<AnyType>:$results);
+  let assemblyFormat = "$coroutine attr-dict `:` type($results)";
 }
 
 //===----------------------------------------------------------------------===//
