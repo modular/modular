@@ -1108,9 +1108,9 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode)
                          << " operand 1 should be a !kgen.target";
     }
-    if (!llvm::isa<IntLiteralType>(type)) {
+    if (!::isa<IntLiteralType, IndexType>(type)) {
       return emitError() << stringifyEnum(opcode)
-                         << " should return a !kgen.int_literal";
+                         << " should return an index or !kgen.int_literal";
     }
     break;
   case POC::BindSignature: {
@@ -1980,7 +1980,12 @@ static Attribute simplifyIn(SmallVectorImpl<TypedAttr> &operands) {
 
 /// Simplifies a `get_sizeof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
-static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
+                                   Type &resultType) {
+  Builder b(operands[0].getContext());
+  if (!resultType)
+    resultType = b.getIndexType();
+
   auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands[0]);
   auto target = dyn_cast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
@@ -1989,12 +1994,20 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands) {
       target.getTarget(), typeCst.getValue());
   if (!size)
     return {};
-  return Builder(typeCst.getContext()).getAttr<IntLiteralAttr>(*size);
+
+  if (isa<IndexType>(resultType))
+    return b.getIndexAttr(*size);
+  return b.getAttr<IntLiteralAttr>(*size);
 }
 
 /// Simplifies a `get_alignof` operator. Try to narrow the operand to a type
 /// constant. If it does, query its data layout.
-static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands,
+                                    Type &resultType) {
+  Builder b(operands[0].getContext());
+  if (!resultType)
+    resultType = b.getIndexType();
+
   auto typeCst = dyn_cast<ConcreteTypeConstantAttr>(operands[0]);
   auto target = dyn_cast<TargetParamAttr>(operands[1]);
   if (!typeCst || !target)
@@ -2003,7 +2016,10 @@ static Attribute simplifyGetAlignOf(SmallVectorImpl<TypedAttr> &operands) {
       target.getTarget(), typeCst.getValue());
   if (!size)
     return {};
-  return Builder(typeCst.getContext()).getAttr<IntLiteralAttr>(*size);
+
+  if (isa<IndexType>(resultType))
+    return b.getIndexAttr(*size);
+  return b.getAttr<IntLiteralAttr>(*size);
 }
 
 static Attribute simplifyBindSignature(MLIRContext *ctx,
@@ -2392,12 +2408,10 @@ static TypedAttr getParamOperator(MLIRContext *ctx, POC opcode,
     resultType = IntegerType::get(ctx, 1);
     break;
   case POC::GetSizeOf:
-    result = simplifyGetSizeOf(operands);
-    resultType = IntLiteralType::get(ctx);
+    result = simplifyGetSizeOf(operands, resultType);
     break;
   case POC::GetAlignOf:
-    result = simplifyGetAlignOf(operands);
-    resultType = IntLiteralType::get(ctx);
+    result = simplifyGetAlignOf(operands, resultType);
     break;
   case POC::BindSignature:
     result = simplifyBindSignature(ctx, operands, resultType);
@@ -2467,7 +2481,8 @@ TypedAttr ParamOperatorAttr::get(POC opcode, ArrayRef<TypedAttr> operandsIn) {
   Type resultType;
   if (opcode == POC::Cond)
     resultType = operandsIn[1].getType();
-  else if (opcode != POC::BindSignature)
+  else if (opcode != POC::BindSignature && opcode != POC::GetSizeOf &&
+           opcode != POC::GetAlignOf)
     resultType = operandsIn.front().getType();
   assert(llvm::is_contained(
              {POC::BindSignature, POC::Apply, POC::ApplyResultSlot,

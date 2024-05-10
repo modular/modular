@@ -740,19 +740,10 @@ static Value allocateHeapMemory(PointerType ptrType, ImplicitLocOpBuilder &b) {
       ptrType.getElementType(), TypeType::get(ptrType.getContext()));
   TypedAttr target =
       ParamOperatorAttr::get(POC::CurrentTarget, {}, b.getType<TargetType>());
-  Type intLiteralType = b.getType<IntLiteralType>();
-  IndexType idxType = b.getIndexType();
-
-  auto sizeOfAttr = ParamOperatorAttr::get(
-      POC::GetSizeOf, {elementType, target}, intLiteralType);
-  auto sizeOfConst = b.create<ParamConstantOp>(intLiteralType, sizeOfAttr);
-  Value sizeOf = b.create<IntLiteralConvertOp>(idxType, sizeOfConst);
-
-  auto alignOfAttr = ParamOperatorAttr::get(
-      POC::GetAlignOf, {elementType, target}, intLiteralType);
-  auto alignOfConst = b.create<ParamConstantOp>(intLiteralType, alignOfAttr);
-  Value alignOf = b.create<IntLiteralConvertOp>(idxType, alignOfConst);
-
+  Value sizeOf = b.create<ParamConstantOp>(
+      ParamOperatorAttr::get(POC::GetSizeOf, {elementType, target}));
+  Value alignOf = b.create<ParamConstantOp>(
+      ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
   return b.create<POP::AlignedAllocOp>(ptrType, ValueRange{alignOf, sizeOf});
 }
 
