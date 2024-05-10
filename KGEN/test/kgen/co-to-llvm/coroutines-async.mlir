@@ -31,6 +31,17 @@ llvm.func @coro_destroy() {
   llvm.return
 }
 
+// CHECK-LABEL: llvm.func @coro_get_results
+llvm.func @coro_get_results() {
+  %0 = builtin.unrealized_conversion_cast to !co.routine
+  // CHECK: [[PTR:%.*]] = llvm.getelementptr inbounds {{%.*}}[24]
+  // CHECK-NEXT: [[STRUCT:%.*]] = llvm.load [[PTR]]
+  // CHECK-NEXT: extractvalue [[STRUCT]][0]
+  // CHECK-NEXT: extractvalue [[STRUCT]][1]
+  %1:2 = co.get_results %0 : i32, i64
+  llvm.return
+}
+
 }
 
 // -----

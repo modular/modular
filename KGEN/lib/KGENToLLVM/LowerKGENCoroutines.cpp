@@ -164,6 +164,15 @@ struct LowerKGENCoroutinesAsyncPass
 };
 } // namespace
 
+static Value getOffsetToResults(LLVMBuilder &b, TypeAttrCache &cache,
+                                Value hdl) {
+  // The context contains the resume function pointer, and then the callback
+  // closure. Skip over them (3 pointers) to reach the results.
+  return b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
+                         GEPArg(b.getPointerByteWidth() * 3),
+                         /*inbounds=*/true);
+}
+
 static LogicalResult
 lowerCoroutinePromiseAsync(LLVMBuilder &b, TypeAttrCache &cache, PromiseOp op) {
   b.setLoc(op.getLoc());
@@ -174,13 +183,7 @@ lowerCoroutinePromiseAsync(LLVMBuilder &b, TypeAttrCache &cache, PromiseOp op) {
   if (!elType)
     return op.emitError("failed to convert promise type");
 
-  // The context contains the resume function pointer, and then the callback
-  // closure. Skip over them (3 pointers) to reach the results.
-  Value promise =
-      b.create<GEPOp>(cache.opaquePtr, b.getI8Type(), hdl,
-                      GEPArg(b.getPointerByteWidth() * 3), /*inbounds=*/true);
-
-  op.replaceAllUsesWith(promise);
+  op.replaceAllUsesWith(getOffsetToResults(b, cache, hdl));
   op.erase();
   return success();
 }
@@ -203,6 +206,36 @@ static LogicalResult lowerCoroutineCallback(LLVMBuilder &b,
                       GEPArg(b.getPointerByteWidth()), /*inbounds=*/true);
 
   op.replaceAllUsesWith(callback);
+  op.erase();
+  return success();
+}
+
+static LogicalResult lowerCoroutineGetResults(LLVMBuilder &b,
+                                              TypeAttrCache &cache,
+                                              GetResultsOp op) {
+  b.setLoc(op.getLoc());
+  b.setInsertionPoint(op);
+
+  // Load out the results as a whole struct. There should only be a small number
+  // of results.
+  SmallVector<Type> resultTypes;
+  resultTypes.reserve(op.getNumResults());
+  for (Type type : op.getResultTypes()) {
+    resultTypes.push_back(b.convertType(type));
+    if (!resultTypes.back())
+      return op.emitError("failed to convert result type");
+  }
+  auto structType = LLVMStructType::getLiteral(b.getContext(), resultTypes);
+
+  Value hdl = b.createConversion(cache.opaquePtr, op.getCoroutine());
+  Value resultPack =
+      b.create<LoadOp>(structType, getOffsetToResults(b, cache, hdl));
+  SmallVector<Value> results;
+  results.reserve(op.getNumResults());
+  for (auto [i, type] : llvm::enumerate(resultTypes))
+    results.push_back(b.create<ExtractValueOp>(type, resultPack, i));
+
+  op.replaceAllUsesWith(results);
   op.erase();
   return success();
 }
@@ -700,6 +733,9 @@ lowerCoroutineFunction(SymbolTable &symtab, LLVMFuncOp func, LLVMBuilder &b,
         return WalkResult::interrupt();
     } else if (auto callback = dyn_cast<GetCallbackPtrOp>(op)) {
       if (failed(lowerCoroutineCallback(b, cache, callback)))
+        return WalkResult::interrupt();
+    } else if (auto getResults = dyn_cast<GetResultsOp>(op)) {
+      if (failed(lowerCoroutineGetResults(b, cache, getResults)))
         return WalkResult::interrupt();
     } else if (auto resume = dyn_cast<CO::ResumeOp>(op)) {
       lowerCoroutineResumeAsync(b, cache, resume);
