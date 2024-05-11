@@ -913,6 +913,7 @@ fn matmul_kernel_naive[
     a_type: DType,
     b_type: DType,
     BLOCK_DIM: Int,
+    transpose_b: Bool = False,
     elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
     s_type: DType = get_accum_type[c_type](),
 ](
@@ -930,12 +931,20 @@ fn matmul_kernel_naive[
         return
 
     var a = NDBuffer[a_type, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
-
     var accum = SIMD[s_type, 1]()
-    for i in range(k):
-        accum = a[x, i].cast[s_type]() * b[i, y].cast[s_type]() + accum
+
+    @parameter
+    if transpose_b:
+        var b = NDBuffer[b_type, 2](b_ptr, Index(n, k))
+        for i in range(k):
+            accum = a[x, i].cast[s_type]() * b[y, i].cast[s_type]() + accum
+
+    else:
+        var b = NDBuffer[b_type, 2](b_ptr, Index(k, n))
+        for i in range(k):
+            accum = a[x, i].cast[s_type]() * b[i, y].cast[s_type]() + accum
+
+    var c = NDBuffer[c_type, 2](c_ptr, Index(m, n))
 
     @parameter
     if elementwise_lambda_fn:
