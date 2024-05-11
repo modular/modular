@@ -392,10 +392,10 @@ struct UnsafePointer[
         address_space,
     ]
 
-    fn __refitem__(self) -> Self._ref_type._mlir_type:
+    fn __refitem__(self) -> Self._ref_type:
         while __mlir_attr.true:
             pass
 
-    fn __refitem__(self, offset: Int) -> Self._ref_type._mlir_type:
+    fn __refitem__(self, offset: Int) -> Self._ref_type:
         while __mlir_attr.true:
             pass

@@ -240,7 +240,8 @@ fn test_variadic_and_kw_only_params_indirect[x: int]():
 # CHECK-LABEL: lit.func @"initialize_in_addrspace
 fn initialize_in_addrspace(ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]):
     # Get !lit.ref in addr space #1
-    # CHECK-NEXT: [[REFPTR1:%.*]] = lit.call {{.*}}@UnsafePointer::@"__refitem__{{.*}}(%ptr) {{.*}} mut #lit.lifetime, 1>>
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@UnsafePointer::@"__refitem__{{.*}}(%ptr)
+    # CHECK-NEXT: [[REFPTR1:%.*]] = lit.call {{.*}}Reference::@"__mlir_ref__{{.*}}([[PTRREF]]){{.*}}mut #lit.lifetime, 1>>
 
     # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous
     # CHECK-NEXT: lit.call {{.*}}@ExampleRegPassable::@"__init__{{.*}}(%anonymous2A)
@@ -254,7 +255,8 @@ fn initialize_in_addrspace(ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1
 # CHECK-LABEL: lit.func @"mutate_in_addrspace
 fn mutate_in_addrspace(a: ExampleRegPassable, ptr: UnsafePointer[ExampleRegPassable, AddressSpace(1)]):
     # Get !lit.ref in addr space #1
-    # CHECK-NEXT: [[REFPTR1:%.*]] = lit.call {{.*}}@UnsafePointer::@"__refitem__{{.*}}(%ptr) {{.*}} mut #lit.lifetime, 1>>
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@UnsafePointer::@"__refitem__{{.*}}(%ptr)
+    # CHECK-NEXT: [[REFPTR1:%.*]] = lit.call {{.*}}Reference::@"__mlir_ref__{{.*}}([[PTRREF]]){{.*}}mut #lit.lifetime, 1>>
 
     # Use a temporary to get an MLValue in the default address space.
     # CHECK-NEXT: %anonymous2A = lit.var.decl "anonymous

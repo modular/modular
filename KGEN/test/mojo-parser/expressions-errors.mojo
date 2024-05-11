@@ -535,7 +535,8 @@ struct Reference[
 
     # expected-note @+1 {{function declared here}}
     fn __init__(inout self, value: Self._mlir_type): pass
-    fn __refitem__(self) -> Self._mlir_type: pass
+    fn __refitem__(self) -> Self: pass
+    fn __mlir_ref__(self) -> Self._mlir_type: pass
 
 fn test_bad_ref_errors(a: MemoryOnlyPair, b: MemoryOnlyPair):
   var aref = Reference(a)
