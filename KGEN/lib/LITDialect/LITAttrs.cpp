@@ -691,7 +691,7 @@ TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, TypedAttr isMutable) {
 
 TypedAttr LifetimeMutCastAttr::get(TypedAttr operand, Type type) {
   assert(::isa<LifetimeType>(type) && ::isa<LifetimeType>(operand.getType()) &&
-         "#lit.lifetime.union always has !lit.lifetime type");
+         "#lit.lifetime.mutcast always has !lit.lifetime type");
   if (operand.getType() == type)
     return operand;
   return get(operand, ::cast<LifetimeType>(type).isMutable());

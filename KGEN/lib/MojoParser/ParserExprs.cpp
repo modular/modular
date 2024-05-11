@@ -1056,14 +1056,21 @@ ParseResult ExprParser::parseMagicFunction(ExprNode *&result) {
   }
   SMLoc baseLoc = consumeToken().getLoc();
 
-  ExprNode *subExpr = nullptr;
+  SmallVector<ExprNode *> subExprs;
   SMLoc rpLoc;
   // All "magic" functions take an argument.
-  if (parseToken(Token::l_paren, "expected '('") || parseExpression(subExpr) ||
-      parseToken(Token::r_paren, "expected ')'", &rpLoc))
+  if (parseToken(Token::l_paren, "expected '('"))
     return failure();
+  if (!consumeIf(Token::r_paren, &rpLoc)) {
+    if (parseCommaSeparatedList(
+            [&] { return parseExpression(subExprs.emplace_back()); },
+            Token::r_paren) ||
+        parseToken(Token::r_paren, "expected ')'", &rpLoc))
+      return failure();
+  }
 
-  result = alloc<MagicFunctionNode>(nodeKind, baseLoc, subExpr, rpLoc);
+  result = alloc<MagicFunctionNode>(nodeKind, baseLoc,
+                                    copyArrayRef<ExprNode *>(subExprs), rpLoc);
   return success();
 }
 
