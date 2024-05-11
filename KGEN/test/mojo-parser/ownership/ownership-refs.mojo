@@ -102,7 +102,8 @@ fn testUseConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
-  # CHECK-NEXT: lit.ref.immut [[MREF]]
+  # CHECK-NEXT: [[MREF2:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[MREF]])
+  # CHECK-NEXT: lit.ref.immut [[MREF2]]
   # CHECK-NEXT: lit.call @{{.*}}noop
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%a)
   # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}(%b)
@@ -129,7 +130,8 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
-  # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}([[MREF]])
+  # CHECK-NEXT: [[MREF2:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[MREF]])
+  # CHECK-NEXT: lit.call @{{.*}}mutate{{.*}}([[MREF2]])
 
   # Overwriting one means that we need to immediately destroy the same reference
   # because we cannot know which one is being set.
@@ -139,8 +141,9 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
-  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[MREF]])
+  # CHECK-NEXT: [[MREF2:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[MREF]])
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF2]])
+  # CHECK-NEXT: lit.call @{{.*}}__init__{{.*}}([[MREF2]])
 
   # Overwriting is eligible for copy => move optimization as well.
   var shouldBeMovedFrom = MemExample()
@@ -151,9 +154,10 @@ fn testDefConditional(cond: __mlir_type.i1):
   # CHECK-NEXT: lit.call @{{.*}}@Reference::@"__init__{{.*}}([[REFREF]], [[CR]])
   # CHECK-NEXT: [[REF:%.*]] = lit.ref.load [[REFREF]]
   # CHECK-NEXT: [[MREF:%.*]] = lit.call @{{.*}}__refitem__{{.*}}([[REF]])
+  # CHECK-NEXT: [[MREF2:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[MREF]])
   # CHECK-NEXT: lit.ref.immut
-  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF]])
-  # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}([[MREF]], %shouldBeMovedFrom)
+  # CHECK-NEXT: lit.call @{{.*}}__del__{{.*}}([[MREF2]])
+  # CHECK-NEXT: lit.call @{{.*}}__moveinit__{{.*}}([[MREF2]], %shouldBeMovedFrom)
 
   # The mutation above could either of A or B, so we needed to extend both of
   # their lifetimes, but now we can say goodbye.
@@ -179,14 +183,16 @@ fn testUseConditionalReference(cond: __mlir_type.i1, imm: MemExample):
   alias aLifetime =  aref.lifetime
 
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
-  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[AR]])
+  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[AR]])
+  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[REF]])
   aref[].noop()
   # CHECK-NEXT: [[IMMREF:%.*]] = lit.ref.immut [[LITREF]]
   # CHECK-NEXT: lit.call {{.*}}noop{{.*}}([[IMMREF]])
 
   # This is a mutable reference so go head and store through it whynot?
   # CHECK-NEXT: [[AR:%.*]] = lit.ref.load %aref
-  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[AR]])
+  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[AR]])
+  # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[REF]])
   aref[] = MemExample()
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}([[LITREF]])
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[LITREF]])
@@ -284,7 +290,8 @@ struct SomeStruct:
   fn refBindingToImmortal(inout self, ptr: UnsafePointer[Int])
       -> Reference[Int, __mlir_attr.`1: i1`, __lifetime_of(self)]:
     # CHECK: [[REFVAL:%.*]] = lit.call {{.*}}__refitem__{{.*}}(%ptr)
-    # CHECK: [[REBIND:%.*]] = kgen.rebind [[REFVAL]]
+    # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[REFVAL]])
+    # CHECK: [[REBIND:%.*]] = kgen.rebind [[LITREF]]
     # CHECK-SAME : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut *"self`2x">
     # CHECK: [[TMP:%.*]] = lit.var.decl "anonymous*"
     # CHECK: lit.call {{.*}}__init__{{.*}}([[TMP]], [[REBIND]]
@@ -302,7 +309,8 @@ struct CutDownVariadicPack[
     fn each_hack[i: Int, func: fn[T: element_trait] (T) -> None](self):
         # Test that we can infer the type of 'T' from the argument.
         # CHECK-NEXT: [[REFVAL:%.*]] = lit.call {{.*}}get_element{{.*}}(%self)
-        # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}Reference::@"__refitem__{{.*}}([[REFVAL]])
+        # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Reference::@"__refitem__{{.*}}([[REFVAL]])
+        # CHECK-NEXT: [[LITREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[REF]])
         # CHECK-NEXT: [[LITREFRB:%.*]] = kgen.rebind [[LITREF]] : !lit.ref<:!AnyType {{.*}} to !lit.ref<:!kgen.paramref<:!lit.anytrait<!AnyType> element_trait>
         # CHECK-NEXT: lit.call{{.*}}([[LITREFRB]])
         func(self.get_element[i]()[])
@@ -320,7 +328,8 @@ struct CutDownVariadicPack[
 fn test_immortal_to_mortal(arg: Reference[Int, _, _])
     -> Reference[Int, arg.is_mutable, arg.lifetime]:
   # CHECK-NEXT: [[PTRVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__init__{{.*}}(%arg)
-  # CHECK-NEXT: [[LITREFVAL:%.*]] = lit.call {{.*}}UnsafePointer::@"__refitem__{{.*}}([[PTRVAL]])
+  # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__refitem__{{.*}}([[PTRVAL]])
+  # CHECK-NEXT: [[LITREFVAL:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[REF]])
 
   # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[LITREFVAL]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=*"is_mutable`", *"lifetime`1">
   # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"

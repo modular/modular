@@ -757,7 +757,8 @@ fn variadic_inout_mems_iter(inout *mems: MemExample):
 
   # __next__ returns a Reference which needs to turn in to !lit.ref
   # CHECK-NEXT: [[ELTDEREF:%.*]] = lit.call {{.*}}__refitem__{{.*}}([[ELTREF]])
-  # CHECK-NEXT: [[ELTDEREFIMM:%.*]] = lit.ref.immut [[ELTDEREF]]
+  # CHECK-NEXT: [[ELTMDEREF:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[ELTDEREF]])
+  # CHECK-NEXT: [[ELTDEREFIMM:%.*]] = lit.ref.immut [[ELTMDEREF]]
   # CHECK-NEXT: lit.call {{.*}}__copyinit__{{.*}}(%x, [[ELTDEREFIMM]])
   var x : MemExample = iter.__next__()[]
   # CHECK-NEXT: lit.call {{.*}}__del__{{.*}}(%x)
