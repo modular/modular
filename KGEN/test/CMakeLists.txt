@@ -32,7 +32,6 @@ add_subdirectory(kgen)
 
 add_subdirectory(mojo-parser)
 add_subdirectory(mojo-isolated)
-add_subdirectory(mojo-builtins)
 
 add_subdirectory(mojo-tool)
 add_subdirectory(mojo-integration)
