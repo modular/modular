@@ -618,7 +618,7 @@ static ErrorTreeOrSuccess interpretOpWithFolder(Operation *op,
     return reportFoldError(op, operands, "failed to fold operation ");
   for (auto [i, result, output] : llvm::zip(
            llvm::seq<int>(0, op->getNumResults()), results, op->getResults())) {
-    if (auto value = result.dyn_cast<Attribute>())
+    if (auto value = llvm::dyn_cast<Attribute>(result))
       state.mapOrOverwrite(output, value);
     else
       state.mapOrOverwrite(output, state.lookupValue(result.get<Value>()));

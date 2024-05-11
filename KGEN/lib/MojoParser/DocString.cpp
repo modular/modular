@@ -488,53 +488,53 @@ private:
     bool emittedUnexpectedOrderWarning = false;
     ptrdiff_t nextEltIndex = 0;
     SmallVector<const char *> elementDocEndLocs(elements.size());
-    process2ColumnDocSection(lines, [&](StringRef paramName,
-                                        StringRef paramBody) {
-      const char *paramLoc = paramName.data();
-      size_t currentEltIndex = nextEltIndex++;
+    process2ColumnDocSection(
+        lines, [&](StringRef paramName, StringRef paramBody) {
+          const char *paramLoc = paramName.data();
+          size_t currentEltIndex = nextEltIndex++;
 
-      auto it = elements.find(paramName);
-      if (it == elements.end()) {
-        emitDiag(paramLoc) << "unknown " << tag << " '" << paramName
-                           << "' in doc string";
-        return;
-      }
+          auto it = elements.find(paramName);
+          if (it == elements.end()) {
+            emitDiag(paramLoc)
+                << "unknown " << tag << " '" << paramName << "' in doc string";
+            return;
+          }
 
-      // If we have already seen this element, emit a warning.
-      if (std::exchange(it->second, paramLoc)) {
-        emitDiag(paramLoc) << "duplicate " << tag << " '" << paramName
-                           << "' in doc string";
-        return;
-      }
+          // If we have already seen this element, emit a warning.
+          if (std::exchange(it->second, paramLoc)) {
+            emitDiag(paramLoc) << "duplicate " << tag << " '" << paramName
+                               << "' in doc string";
+            return;
+          }
 
-      // Ensure the elements are in the same order as the decl.
-      if (!emittedUnexpectedOrderWarning) {
-        size_t expectedEltIndex = it - elements.begin();
-        if (currentEltIndex != expectedEltIndex) {
-          emitDiag(paramLoc)
-              << "'" << paramName << "' is defined at index "
-              << expectedEltIndex << ", but specified in doc string at index "
-              << currentEltIndex;
-          emittedUnexpectedOrderWarning = true;
-        }
-      }
+          // Ensure the elements are in the same order as the decl.
+          if (!emittedUnexpectedOrderWarning) {
+            size_t expectedEltIndex = it - elements.begin();
+            if (currentEltIndex != expectedEltIndex) {
+              emitDiag(paramLoc) << "'" << paramName << "' is defined at index "
+                                 << expectedEltIndex
+                                 << ", but specified in doc string at index "
+                                 << currentEltIndex;
+              emittedUnexpectedOrderWarning = true;
+            }
+          }
 
-      // Diagnose empty element descriptions.
-      const char *docEndLoc = paramBody.end();
-      if (paramBody.empty()) {
-        emitDiag(paramLoc) << "'" << paramName
-                           << "' does not have a description";
-        docEndLoc = paramName.end();
-      }
+          // Diagnose empty element descriptions.
+          const char *docEndLoc = paramBody.end();
+          if (paramBody.empty()) {
+            emitDiag(paramLoc)
+                << "'" << paramName << "' does not have a description";
+            docEndLoc = paramName.end();
+          }
 
-      // Diagnose descriptions with poor style.
-      if (validation == ValidationKind::Strict && !paramBody.empty())
-        validateStyle((Twine("'") + paramName + "' description").str(),
-                      paramBody.begin(), paramBody.end() - 1);
+          // Diagnose descriptions with poor style.
+          if (validation == ValidationKind::Strict && !paramBody.empty())
+            validateStyle((Twine("'") + paramName + "' description").str(),
+                          paramBody.begin(), paramBody.end() - 1);
 
-      // Record the location of the end of the doc string for this element.
-      elementDocEndLocs[it - elements.begin()] = docEndLoc;
-    });
+          // Record the location of the end of the doc string for this element.
+          elementDocEndLocs[it - elements.begin()] = docEndLoc;
+        });
 
     // Emit warnings for any elements that were not documented.
     StringRef indentStr = sectionLine.take_front(loc - sectionLine.data());
