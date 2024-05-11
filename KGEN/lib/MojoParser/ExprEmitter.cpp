@@ -119,10 +119,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in capture";
   case EC_Decorator:
     return " in decorator";
-  case EC_MutabilitySpec:
-    return " in reference mutability specifier";
-  case EC_LifetimeSpec:
-    return " in lifetime specifier";
+  case EC_AutoDeref:
+    return " in automatic dereference";
   case EC_Trait:
     return " in trait conformance checking";
   case EC_Closure:
@@ -172,6 +170,31 @@ raw_ostream &LIT::operator<<(raw_ostream &os, const ValueDest &value) {
   }
   os << '\n';
   return os;
+}
+
+/// If this indicates an explicit expected RValue type, return that type.
+ASTType ValueDest::getExpectedTypeIfSpecified() const {
+  // Operations generally don't have implied types, except if this is global
+  // variable declaration.
+  if (auto op = dyn_cast<Operation *>(representation)) {
+    if (auto globalVarDecl = dyn_cast<GlobalVarDeclOp>(*op)) {
+      if (!isa<UnresolvedType>(globalVarDecl.getType()))
+        return globalVarDecl.getType();
+    }
+    return {};
+  }
+
+  // These have no implied type.
+  if (isa<NullRepresentation, LValueBufferTaken, const ExprNode *>(
+          representation))
+    return {};
+
+  // If we just have a contextual type, return it.
+  if (ASTType type = dyn_cast<ASTType>(representation))
+    return type;
+  if (isa<LValueInitializerType>(representation))
+    return cast<LValueInitializerType>(representation).type;
+  return cast<LValue>(representation).getRValueType();
 }
 
 /// Inspect the ValueDest to see if it implies a specific type for the value
@@ -505,9 +528,7 @@ CValue ExprEmitter::emitCValue(ASTExprAnd<AnyValue> value, ValueDest &dest) {
 
   // We can't emit an initializer list without a contextual type.  See if we
   // have one.
-  ASTType expectedType =
-      dest.resolveImpliedType(value.expr->getLoc(),
-                              /*no implied type*/ Type(), *this);
+  ASTType expectedType = dest.getExpectedTypeIfSpecified();
   if (!expectedType) {
     emitError(value.expr->getLoc(),
               "cannot emit initializer list without a contextual type");
@@ -1281,6 +1302,12 @@ static AnyValue refineResultValue(AnyValue value, const ExprNode *expr,
   return emitter.rebindValue({value, expr}, refinedType);
 }
 
+/// Emit the specified value into the current destination if present.  This
+/// accepts (and silently propagates) null values.
+///
+/// Note that the `value` provided here may require an implicit conversion
+/// into the destination slot, so the input may be memory-only and result be
+/// register-passable (and visa-versa).
 AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
                                  ValueDest &dest) {
   if (!value) {

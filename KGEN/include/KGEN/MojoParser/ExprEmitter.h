@@ -74,8 +74,7 @@ enum ExprContext {
   EC_Destructor,            // Looking up T's destructor for `var x : T`
   EC_Capture,               // def f(): var x = 4; def nested(): use(x)
   EC_Decorator,             // @x
-  EC_MutabilitySpec,        // ref[mut=x, y] z
-  EC_LifetimeSpec,          // ref[x] y
+  EC_AutoDeref,             // dereference Reference x
   EC_Trait,                 // trait conformance checking for `T`
   EC_Closure,               // closure formation
 };
@@ -175,6 +174,9 @@ public:
       return cast<LValueInitializerType>(representation).type;
     return {};
   }
+
+  /// If this indicates an explicit expected RValue type, return that type.
+  ASTType getExpectedTypeIfSpecified() const;
 
   /// Inspect the ValueDest to see if it implies a specific type for the value
   /// being computed, emiting ExprNode targets if present to get their implied
