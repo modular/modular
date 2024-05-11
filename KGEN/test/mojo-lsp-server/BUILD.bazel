@@ -8,12 +8,9 @@ lit_tests(
             "definition.test",  # TODO: Debug and enable
         ],
     ),
-    data = [
+    mojo_deps = [
         "//Kernels/mojo/stdlib",
     ],
-    env = {
-        "MODULAR_MOJO_IMPORT_PATH": "$(location //Kernels/mojo/stdlib)",
-    },
     tools = [
         "//KGEN/tools/mojo-lsp-server",
     ],
