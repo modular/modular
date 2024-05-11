@@ -570,15 +570,15 @@ struct FunctionTypeNode final : public ExprNode {
 /// __get_address_as_owned_value(some_ptr) # returns RValue
 /// __lifetime_of(decl)                    # returns !lit.lifetime<mut>
 struct MagicFunctionNode final : public ExprNode {
-  MagicFunctionNode(ExprNode::Kind kind, SMLoc baseLoc, ExprNode *subExpr,
-                    SMLoc rparenLoc)
-      : ExprNode(kind), baseLoc(baseLoc), subExpr(subExpr),
+  MagicFunctionNode(ExprNode::Kind kind, SMLoc baseLoc,
+                    ArrayRef<ExprNode *> subExprs, SMLoc rparenLoc)
+      : ExprNode(kind), baseLoc(baseLoc), subExprs(subExprs),
         rparenLoc(rparenLoc) {
     assert(classof(this) && "Kind is wrong");
   }
 
   const SMLoc baseLoc;
-  ExprNode *const subExpr;
+  const ArrayRef<ExprNode *> subExprs;
   const SMLoc rparenLoc;
 
   static bool classof(const ExprNode *node) {

@@ -3042,6 +3042,12 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
   if (kind == kLifetimeOf)
     return emitLifetimeOf(dest, emitter);
 
+  // All other magic function types take exactly one argument.
+  if (subExprs.size() != 1) {
+    emitter.emitError(getLoc(), "expected a single argument") << getRange();
+    return {};
+  }
+
   if (kind == kTypeOf)
     return emitTypeOf(dest, emitter);
 
@@ -3049,6 +3055,7 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
     return emitter.emitErrorForDynamicValueInParameter(this);
 
   // Emit the subexpression.
+  ExprNode *subExpr = subExprs.front();
   AnyValue subExprValue = emitter.emitExpr(subExpr, dest.getContext());
   if (!subExprValue)
     return {};
@@ -3113,47 +3120,62 @@ AnyValue MagicFunctionNode::emitIR(ValueDest &dest,
 
 AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
                                            ExprEmitter &emitter) const {
-  AnyValue subExprValue = emitter.emitExpr(subExpr, dest.getContext());
-  if (!subExprValue)
-    return {};
+  // Gather the lifetimes of each subexpression value. If any of the lifetimes
+  // are immutable, then we mutcast the rest to immutable.
+  SmallVector<TypedAttr> lifetimes;
+  bool anyImm = false;
+  for (ExprNode *subExpr : subExprs) {
+    AnyValue subExprValue = emitter.emitExpr(subExpr, dest.getContext());
+    if (!subExprValue)
+      return {};
 
-  // __lifetime_of(someMValue) -> PValue.
-  RefType refType;
-  if (subExprValue.isMValue()) {
-    refType = subExprValue.getMValueType();
-  } else {
-    // FIXME(Variadics): work around variadic arguments not being formally
-    // VariadicListMem, by allowing digging a lifetime out of the kgen.variadic.
-    if (auto sValue = subExprValue.getIfSBValue()) {
-      if (auto variadic = dyn_cast<VariadicType>(sValue.getType()))
-        refType = dyn_cast<RefType>(variadic.getElementType());
+    // __lifetime_of(someMValue) -> PValue.
+    RefType refType;
+    if (subExprValue.isMValue()) {
+      refType = subExprValue.getMValueType();
+    } else {
+      // FIXME(Variadics): work around variadic arguments not being formally
+      // VariadicListMem, by allowing digging a lifetime out of the
+      // kgen.variadic.
+      if (auto sValue = subExprValue.getIfSBValue()) {
+        if (auto variadic = dyn_cast<VariadicType>(sValue.getType()))
+          refType = dyn_cast<RefType>(variadic.getElementType());
+      }
+      if (!refType) {
+        emitter.emitError(subExpr->getLoc())
+            << "value doesn't have a memory type" << subExpr->getRange();
+        return {};
+      }
     }
-    if (!refType) {
-      emitter.emitError(getLoc())
-          << "value doesn't have a memory type" << getRange();
+    lifetimes.push_back(refType.getLifetime());
+    anyImm |=
+        cast<LifetimeType>(lifetimes.back().getType()).isMutableKnown(false);
+
+    // If the lifetime is an InvalidRefLifetimeAttr then this value is
+    // derived from an argument which might be bound (after elaboration)
+    // to a register value that has no lifetime.  Emit an error because
+    // you can't form a Reference to these things.
+    if (isa<InvalidRefLifetimeAttr>(lifetimes.back())) {
+      emitter.emitError(subExpr->getLoc(),
+                        "cannot get the lifetime of an argument that might "
+                        "instantiate to @register_passable type");
       return {};
     }
   }
 
-  auto lifetime = refType.getLifetime();
-
-  // If the lifetime is an InvalidRefLifetimeAttr then this value is
-  // derived from an argument which might be bound (after elaboration)
-  // to a register value that has no lifetime.  Emit an error because
-  // you can't form a Reference to these things.
-  if (isa<InvalidRefLifetimeAttr>(lifetime)) {
-    emitter.emitError(getLoc(),
-                      "cannot get the lifetime of an argument that might "
-                      "instantiate to @register_passable type");
-    return {};
+  if (anyImm) {
+    for (TypedAttr &lifetime : lifetimes)
+      lifetime = LifetimeMutCastAttr::get(lifetime, /*isMut=*/false);
   }
-
-  return emitter.emitResult(PValue(lifetime), this, dest);
+  return LifetimeUnionAttr::get(
+      lifetimes,
+      LifetimeType::get(emitter.getContext(), !anyImm || lifetimes.empty()));
 }
 
 AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
                                        ExprEmitter &emitter) const {
-  CValue subExprValue = emitter.emitExprCValue(subExpr, dest.getContext());
+  CValue subExprValue =
+      emitter.emitExprCValue(subExprs.front(), dest.getContext());
   if (!subExprValue)
     return {};
 
