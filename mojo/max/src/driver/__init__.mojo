@@ -4,4 +4,4 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from .device import Device
+from .device import Device, CPUDescriptor
