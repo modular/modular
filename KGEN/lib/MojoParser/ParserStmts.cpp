@@ -733,10 +733,12 @@ ParseResult StmtParser::parseReturnStmt(size_t returnIndent) {
   if (declSig.hasInitSelfArg() && declSig.isThrows())
     resultValue = PValue(BoolAttr::get(getContext(), false));
 
+  auto resultVal = emitter.emitSRValue(
+      {resultValue, operandExpr}, EC_ReturnValue, decl.getMLIRResultType());
+  if (!resultVal)
+    return {};
   ImplicitLocOpBuilder b(translateLocation(loc), builder);
-  ExprEmitter::emitNormalReturn(
-      b, emitter.emitSRValue({resultValue, operandExpr}, EC_ReturnValue),
-      getParentDecl());
+  ExprEmitter::emitNormalReturn(b, resultVal, getParentDecl());
   return success();
 }
 

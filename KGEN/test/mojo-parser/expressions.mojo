@@ -1027,9 +1027,9 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # Get the address of the specified physical bvalue or lvalue as a lit.ref.
 
   # CHECK: %ref1 = lit.var.decl "ref1"
-  var ref1 = Reference(a).value
+  var ref1 = __get_mvalue_as_litref(a)
   # CHECK: %ref2 = lit.var.decl "ref2"
-  var ref2 = Reference(b).value
+  var ref2 = __get_mvalue_as_litref(b)
 
   # CHECK: %ptr1 = lit.var.decl "ptr1"
   # CHECK: [[REF1V:%.*]] = lit.ref.load %ref1
@@ -1040,12 +1040,12 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-NEXT: %localLet = lit.var.decl "localLet"
   var localLet = MemoryOnlyInt()
   # CHECK: %ref3 = lit.var.decl "ref3"
-  var ref3 = Reference(localLet).value
+  var ref3 = __get_mvalue_as_litref(localLet)
 
   # CHECK: %localVar = lit.var.decl "localVar"
   var localVar = MemoryOnlyInt()
   # CHECK: %ref4 = lit.var.decl "ref4"
-  var ref4 = Reference(localVar).value
+  var ref4 = __get_mvalue_as_litref(localVar)
 
   # CHECK: %ref5 = lit.var.decl "ref5"
   # CHECK: [[COMMON:%.*]] = hlcf.if %cond -> !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1"), (mutcast mut *"c`2")}> {
@@ -1062,12 +1062,11 @@ fn ref_utilities(a: MemoryOnlyInt, inout b: MemoryOnlyInt,
   # CHECK-SAME:           !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1")}> to !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1"), (mutcast mut *"c`2")}>
   # CHECK-NEXT:    hlcf.yield [[TMP]]
   # CHECK-NEXT: } else {
-  # CHECK:         [[TMP:%.*]] = kgen.rebind {{.*}} : !lit.ref<!lit.ref<!MemoryOnlyInt, mut *"c`2">, mut *"anonymous*`15">
-  # CHECK-NEXT:   [[TMPV:%.*]] = lit.ref.load [[TMP]] : <!lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1"), (mutcast mut *"c`2")}>, mut *"anonymous*`15">
-  # CHECK-NEXT:   hlcf.yield [[TMPV]] : !lit.ref<{{.*}}>
+  # CHECK-NEXT:   [[TMP:%.*]] = kgen.rebind %c : !lit.ref<!MemoryOnlyInt, mut *"c`2"> to !lit.ref<!MemoryOnlyInt, imm {*"a`", (mutcast mut *"b`1"), (mutcast mut *"c`2")}>
+  # CHECK-NEXT:   hlcf.yield [[TMP]] : !lit.ref<{{.*}}>
   # CHECK-NEXT: }
   # CHECK-NEXT: lit.ref.store [[COMMON]], %ref5
-  var ref5 = ref1 if cond else ref2 if cond else Reference(c).value
+  var ref5 = ref1 if cond else ref2 if cond else __get_mvalue_as_litref(c)
 
 struct CallableStruct:
     var value: Int

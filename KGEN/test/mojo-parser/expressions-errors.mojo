@@ -517,6 +517,7 @@ fn invalid_call_variadic_int(a: Int):
 
 ## FIXME: Shouldn't have to duplicate this from stdlib, but otherwise
 ## Verify diagnostics gets happy because we have no check line for the note :(
+@automatically_dereference
 struct Reference[
     type: AnyType,
     is_mutable: __mlir_type.i1,

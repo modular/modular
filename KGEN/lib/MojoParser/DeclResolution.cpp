@@ -1667,6 +1667,13 @@ static LogicalResult processStructSignatureDecorator(ExprNode *decorator,
       // Fallthrough the decorator to body resolution.
       return failure();
     }
+
+    // @automatically_dereference for Reference.
+    if (declRef->spelling == "automatically_dereference") {
+      structOp.setIsAutoDereference(true);
+      // Fallthrough the decorator to body resolution to check it.
+      return failure();
+    }
   }
 
   // `x()` forms.
@@ -1810,11 +1817,12 @@ static SymbolConstantAttr lookupDestructor(ASTDecl &structDecl,
   return func.getBoundSymbolRef();
 }
 
-/// Look up a __copyinit__/__moveinit__  impl for the specified `type`.  This
-/// returns the method if successful, and returns null if there is none.
-static SymbolConstantAttr lookupCopyMoveInit(ASTDecl &structDecl,
-                                             SharedState &shared,
-                                             SpecialFunctionKind specialKind) {
+/// Look up a special method impl for the specified `type` when there is exactly
+/// one implementation (not overloaded).  This returns the method if successful,
+/// and returns null if there is none.
+static SymbolConstantAttr lookupSpecialMethod(ASTDecl &structDecl,
+                                              SharedState &shared,
+                                              SpecialFunctionKind specialKind) {
   const char *name = SpecialFunctionInfo::get(specialKind).name;
   LookupResult inits = shared.lookupAndResolveDecl(
       name, structDecl.getLoc(), structDecl, /*searchParentScopes=*/false);
@@ -1947,6 +1955,19 @@ LogicalResult StructBodyDecorators::processDecorator(ExprNode *decorator,
       processValueDecorator(decorator->getRangeStart(), moveFunc, copyFunc);
       return success();
     }
+    // @automatically_dereference for Reference.
+    if (declRef->spelling == "automatically_dereference") {
+      if (!lookupSpecialMethod(structDecl, shared,
+                               SpecialFunctionKind::kMLIRRef)) {
+        emitError(
+            decorator->getLoc(),
+            "'@automatically_dereference' requires an '__mlir_ref__' method");
+        structDecl.setErroneous();
+        structOp.setIsAutoDereference(false);
+      }
+      return success();
+    }
+
     return failure();
   }
   return failure();
@@ -2052,11 +2073,11 @@ ParseResult DeclResolver::resolveBody(StructDeclOp structOp, Lexer &lexer,
 
   // Look up move and copy constructors and record them.
   if (!structOp.isRegisterPassable()) {
-    if (auto copyInitAttr = lookupCopyMoveInit(structDecl, shared,
-                                               SpecialFunctionKind::kCopyInit))
+    if (auto copyInitAttr = lookupSpecialMethod(structDecl, shared,
+                                                SpecialFunctionKind::kCopyInit))
       structOp.setCopyInitAttr(copyInitAttr);
-    if (auto moveInitAttr = lookupCopyMoveInit(structDecl, shared,
-                                               SpecialFunctionKind::kMoveInit))
+    if (auto moveInitAttr = lookupSpecialMethod(structDecl, shared,
+                                                SpecialFunctionKind::kMoveInit))
       structOp.setMoveInitAttr(moveInitAttr);
   }
 

@@ -30,7 +30,7 @@
 //       PValue         <- with a parameter value
 //
 // Note that SRValue is not compatible with memory-only types, but MRValue
-// can hold any type, including a register compatible type.
+// can hold any type, including a @register_passable type.
 //
 //===----------------------------------------------------------------------===//
 

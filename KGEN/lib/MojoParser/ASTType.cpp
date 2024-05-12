@@ -141,6 +141,15 @@ ASTType ASTType::getNonmaterializableTarget(SharedState &shared) const {
   return {};
 }
 
+/// Return true if this is a struct decl that has a __mlir_ref__ member, this
+/// allows Reference to automatically decay to an MLValue/MBValue.
+bool ASTType::isAutoDereferenceStruct(SharedState &shared) const {
+  if (ASTDecl *decl = getDecl(shared))
+    if (auto structOp = dyn_cast<StructDeclOp>(decl))
+      return structOp.getIsAutoDereference();
+  return false;
+}
+
 /// Return whether the specified type is known to be @register_passable; if
 /// generic, this returns the 'genericsDefault' value.
 static TypeConvention getRegisterPassability(ASTType type, llvm::SMLoc loc,

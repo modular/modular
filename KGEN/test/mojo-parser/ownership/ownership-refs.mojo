@@ -9,9 +9,6 @@
 # RUN: kgen-translate -import-mojo %s --mlir-print-debuginfo -o %t.mlir
 # RUN: kgen-opt %t.mlir -lower-semantic-cf -check-lifetimes -verify-diagnostics | FileCheck %s
 
-# TODO: should autoimport some day.
-from memory.unsafe import AddressSpace, Reference
-
 # ===----------------------------------------------------------------------=== #
 # Parsing of references
 # ===----------------------------------------------------------------------=== #
@@ -69,11 +66,11 @@ fn parametricMut[isMut: __mlir_type.i1,
 fn testParametricMut(i: MemExample, inout m: MemExample):
   # This infers an immutable reference.
   # CHECK:  lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, imm *"i`">
-  _ = parametricMut(Reference(i).value)
+  _ = parametricMut(__get_mvalue_as_litref(i))
 
   # This infers a mutable reference.
   # CHECK: lit.call {{.*}}parametricMut{{.*}}!lit.ref<!MemExample, mut *"m`1">
-  _ = parametricMut(Reference(m).value)
+  _ = parametricMut(__get_mvalue_as_litref(m))
 
 ##===----------------------------------------------------------------------===##
 # Conditional lifetimes
@@ -89,8 +86,8 @@ fn testUseConditional(cond: __mlir_type.i1):
   # CHECK: lit.call @{{.*}}__init__{{.*}}(%b)
   var b = MemExample()
 
-  var aref = Reference(a).value
-  var bref = Reference(b).value
+  var aref = __get_mvalue_as_litref(a)
+  var bref = __get_mvalue_as_litref(b)
 
   # CHECK: %cref = lit.var.decl "cref"
   var cref = aref if cond else bref
@@ -116,8 +113,8 @@ fn testDefConditional(cond: __mlir_type.i1):
 
   var b = MemExample()
 
-  var aref = Reference(a).value
-  var bref = Reference(b).value
+  var aref = __get_mvalue_as_litref(a)
+  var bref = __get_mvalue_as_litref(b)
 
   # CHECK: %cref = lit.var.decl "cref"
   var cref = aref if cond else bref
