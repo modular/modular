@@ -29,13 +29,13 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 /// Helper to get the RValueType from an operand.
-static ASTType getRValueTypeIfResolvable(AnyValue value) {
+static ASTType getRValueTypeIfResolvable(AnyValue value, SharedState &shared) {
   if (auto cValue = value.getIfCValue())
-    return cValue.getRValueType();
+    return cValue.getRValueType(shared);
   // Otherwise, try to narrow an overload set to a PValue.
   if (auto ovSet = value.getIfOverloadSet())
     if (auto pValue = ovSet->getIfPValue())
-      return pValue.getType();
+      return pValue.getRValueType();
   // Initializer lists have no implied type.
   return ASTType();
 }
@@ -630,7 +630,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
       return failure();
 
     // By-ref argument types must exactly match, no conversions are allowed.
-    return matchTypes(argVal.getRValueType(),
+    return matchTypes(argVal.getLValueStorageType(),
                       expectedType.getReferenceElementType());
   }
 
@@ -681,7 +681,7 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   }
 
   // If the argument types exactly match, then they are good.
-  ASTType argType = argVal.getRValueType();
+  ASTType argType = argVal.getRValueType(shared);
   if (argType.isEqualCanon(expectedType))
     return success();
 
@@ -970,7 +970,7 @@ ParameterInferenceState::infer(LITSignatureType signature,
       SyntheticNode node(shared.getTopLevelDecl().getLoc());
       while (posOperandIdx != numPosOperands) {
         ASTExprAnd<AnyValue> operand = posOperands[posOperandIdx++];
-        ASTType toPush = getRValueTypeIfResolvable(operand.ir);
+        ASTType toPush = getRValueTypeIfResolvable(operand.ir, shared);
         if (!toPush) {
           shared.emitWarning(operand.expr->getLoc(),
                              "could not infer parameter type for this value, "
@@ -1181,7 +1181,7 @@ static void addTypeConversionDetail(InflightDiag &diag,
                                     ASTExprAnd<AnyValue> operand,
                                     ASTType argType, SharedState &shared) {
   auto loc = operand.expr->getLoc();
-  ASTType operandType = getRValueTypeIfResolvable(operand.ir);
+  ASTType operandType = getRValueTypeIfResolvable(operand.ir, shared);
   if (!operandType) {
     diag.attachNote(loc) << "try resolving the overloaded function first";
     return;
@@ -1261,7 +1261,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
          callSyntax == CallSyntax::kMethodCallSynthetic) &&
         argIdx == 0) {
       diag << "invalid use of mutating method on rvalue of type ";
-      if (ASTType type = getRValueTypeIfResolvable(operand.ir))
+      if (ASTType type = getRValueTypeIfResolvable(operand.ir, shared))
         diag << type;
       else if (operand.ir.getIfInitializer())
         diag << "initializer list";
@@ -1275,14 +1275,14 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
     return diag;
   case ArgTypeMismatchKind::kWrongLVType:
     return std::move(diag) << "l-value of type "
-                           << operand.ir.getIfLValue().getRValueType()
+                           << operand.ir.getIfLValue().getLValueStorageType()
                            << " cannot be converted to reference of type "
                            << ty.getReferenceElementType()
                            << operand.expr->getRange();
   case ArgTypeMismatchKind::kWrongType: {
     describeArgumentNo(diag, argIdx);
     diag << " cannot be converted from " << operand.expr->getRange();
-    ASTType rValueType = getRValueTypeIfResolvable(operand.ir);
+    ASTType rValueType = getRValueTypeIfResolvable(operand.ir, shared);
     bool isConvertingTypeValue = ty.getMetaType() == rValueType;
     if (rValueType) {
       if (isConvertingTypeValue)
@@ -1436,7 +1436,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
 
     // By-ref argument types must exactly match, no conversions are allowed.
     ASTType elementType = expectedType.getReferenceElementType();
-    if (!argVal.getRValueType().isEqualCanon(elementType))
+    if (!argVal.getLValueStorageType().isEqualCanon(elementType))
       return {kWrongLVType, expectedType};
     // If a register-passable type is being returned in-memory, remember this.
     numMismatchedConventions += elementType.isRegisterPassable(loc, shared);
@@ -1488,7 +1488,7 @@ OverloadFitness::checkOneOperand(ASTExprAnd<AnyValue> operand,
         return {kWrongType, expectedType};
     }
 
-    ASTType argType = argVal.getRValueType();
+    ASTType argType = argVal.getRValueType(shared);
     // Otherwise, we pass as an r-value.  If the argument types match, then
     // they are good.
     if (argType.isEqualCanon(expectedType))

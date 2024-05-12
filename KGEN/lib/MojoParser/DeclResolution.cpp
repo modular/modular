@@ -1105,7 +1105,7 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
 
 /// Given a value of !kgen.variadic<..> construct a VariadicList and return
 /// the variable declaration holding it.
-static VarDeclOp makeVarArgWrapper(const CValue &argValue, StringAttr argName,
+static VarDeclOp makeVarArgWrapper(SRValue argValue, StringAttr argName,
                                    ASTDecl &parentDecl, ExprEmitter &emitter,
                                    SMLoc loc) {
   // Expr to provide location information.
@@ -1113,7 +1113,7 @@ static VarDeclOp makeVarArgWrapper(const CValue &argValue, StringAttr argName,
 
   // Determine if this is VariadicList or VariadicListMem, and get it.
   auto variadicEltType =
-      cast<VariadicType>(argValue.getRValueType()).getElementType();
+      cast<VariadicType>(argValue.getType()).getElementType();
   bool isMem = isa<RefType>(variadicEltType);
   ASTType varListType =
       emitter.shared.getBuiltinVariadicListType(parentDecl, loc, isMem);

@@ -194,7 +194,7 @@ ASTType ValueDest::getExpectedTypeIfSpecified() const {
     return type;
   if (isa<LValueInitializerType>(representation))
     return cast<LValueInitializerType>(representation).type;
-  return cast<LValue>(representation).getRValueType();
+  return cast<LValue>(representation).getLValueStorageType();
 }
 
 /// Inspect the ValueDest to see if it implies a specific type for the value
@@ -257,7 +257,7 @@ ASTType ValueDest::resolveImpliedType(SMLoc loc, Type existingValueType,
   }
 
   // If we have an lvalue already specified, return it.
-  return cast<LValue>(representation).getRValueType();
+  return cast<LValue>(representation).getLValueStorageType();
 }
 
 /// If this ValueDest specifies an MLValue that will be returned by
@@ -281,7 +281,7 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
   // Check for the simple case.
   if (LValue lValue = dyn_cast<LValue>(representation)) {
     if (MLValue refValue = lValue.getIfMLValue()) {
-      if (lValue.getRValueType().isEqualCanon(resultType) &&
+      if (lValue.getLValueStorageType().isEqualCanon(resultType) &&
           lValue.getMValueType().isDefaultAddrSpace())
         return refValue;
     }
@@ -357,8 +357,8 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
   if (LValue lValue = dyn_cast<LValue>(representation)) {
     // If asking for a buffer of the type we happen to have, or if the client
     // doesn't care if it matches, then we can directly return it.
-    if (allowIncompatibleTypes ||
-        lValue.getRValueType().isEqualCanon(resultType)) {
+    ASTType lvalueStorage = lValue.getLValueStorageType();
+    if (allowIncompatibleTypes || lvalueStorage.isEqualCanon(resultType)) {
       // If the client accepts any sort of LValue, then we succeed.
       if (!requireMLValue) {
         representation = LValueBufferTaken(); // Buffer taken!
@@ -947,7 +947,7 @@ bool ExprEmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
                                              ASTType requiredType) {
   assert(value.ir && "Should only query valid values");
   // If it already matches, then we're done.
-  ASTType rvType = value.ir.getRValueType();
+  ASTType rvType = value.ir.getRValueType(shared);
   if (rvType.isEqualCanon(requiredType) ||
       canConvertWithRebind(rvType, requiredType, shared))
     return true;
@@ -1333,7 +1333,7 @@ AnyValue ExprEmitter::emitResult(AnyValue value, const ExprNode *expr,
 
   // OK, if there is a destination specified, handle them by converging the set
   // of value types we have.
-  auto rvalueType = cValue.getRValueType();
+  auto rvalueType = cValue.getRValueType(shared);
 
   // If there is a known type for the destination but the value disagrees, emit
   // an implicit conversion directly into the destination.  This keeps values in
@@ -1513,7 +1513,7 @@ CValue ExprEmitter::emitLoadOfLValue(ASTExprAnd<LValue> value,
 }
 
 CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
-  ASTType valueType = value.ir.getRValueType();
+  ASTType valueType = value.ir.getRValueType(shared);
   SMLoc exprLoc = value.expr->getLoc();
   if (!value.ir)
     return {};
@@ -1624,10 +1624,12 @@ CValue ExprEmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ValueDest &dest) {
 
 BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
                                       ExprContext context) {
+  auto valueType = value.ir.getRValueType(shared);
+  assert(valueType && "missing a type");
+
   // Convert nonmaterializables.
-  if (auto nmTarget =
-          value.ir.getRValueType().getNonmaterializableTarget(shared)) {
-    if (nmTarget.isEqualCanon(destLV.getRValueType())) {
+  if (auto nmTarget = valueType.getNonmaterializableTarget(shared)) {
+    if (nmTarget.isEqualCanon(destLV.getLValueStorageType())) {
       // If the destination is an MLValue with a matching type, then just
       // materialize directly into it and return instead of allocating a
       // temporary if the conversion constructor requires one.
@@ -1641,13 +1643,11 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
       if (destML)
         return MBValue(destML);
       value = {nmConversionVal, value.expr};
+      valueType = value.ir.getRValueType(shared);
     }
   }
 
-  if (!value.ir.getRValueType())
-    return {};
-
-  assert(value.ir.getRValueType().isEqualCanon(destLV.getRValueType()) &&
+  assert(valueType.isEqualCanon(destLV.getLValueStorageType()) &&
          "Types should match");
 
   // If this is a computed LValue, then perform a writeback.
@@ -1670,7 +1670,6 @@ BValue ExprEmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     return emitBValue(value, context, {});
   }
 
-  ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
 
   // If the input is an LValue/BValue (incl PValue) that we don't own, or if it
@@ -1807,7 +1806,7 @@ RValue ExprEmitter::emitI1(ASTExprAnd<CValue> value, ExprContext context) {
   if (!value.ir)
     return {};
 
-  ASTType valueRValueType = value.ir.getRValueType();
+  ASTType valueRValueType = value.ir.getRValueType(shared);
 
   // If this is already an 'i1', then we're done.
   if (valueRValueType.mlirType.isInteger(1))
@@ -1852,7 +1851,7 @@ CValue ExprEmitter::emitMLIRIndex(ASTExprAnd<AnyValue> value,
                                   ExprContext context) {
   // If the value is already of index type, just use it.
   if (CValue cvalue = value.ir.getIfCValue())
-    if (isa<IndexType>(cvalue.getRValueType().mlirType))
+    if (isa<IndexType>(cvalue.getRValueType(shared).mlirType))
       return cvalue;
 
   CValue index = emitIndex(value, context);
@@ -1860,7 +1859,7 @@ CValue ExprEmitter::emitMLIRIndex(ASTExprAnd<AnyValue> value,
     return {};
 
   // If the value is already of index type, just use it.
-  if (isa<IndexType>(index.getRValueType().mlirType))
+  if (isa<IndexType>(index.getRValueType(shared).mlirType))
     return index;
 
   ValueDest dest(context);
@@ -2096,7 +2095,7 @@ void TupleDLValue::emitStore(ASTExprAnd<CValue> value,
   // TODO(generalize): Need @parameter fn's for methods
   // https://github.com/modularml/modular/issues/14945
   ASTDecl &tupleLiteralDecl = *elementType.getDecl(emitter.shared);
-  ASTType srcRValueType = value.ir.getRValueType();
+  ASTType srcRValueType = value.ir.getRValueType(emitter.shared);
 
   // TODO: We need to support storing anything into a tuple that can be
   // extracted from, even things with dynamic length.  For example, Python
