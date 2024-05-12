@@ -1293,7 +1293,7 @@ CValue ExprEmitter::emitIndirectCall(CValue callee,
                                      const CallOperands &callOperands,
                                      ValueDest &dest,
                                      const ExprNode *callExpr) {
-  auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType());
+  auto calleeSig = dyn_cast<SignatureType>(callee.getRValueType(shared));
   if (!calleeSig) {
     // If we are invoking something other than a SignatureType, try to invoke
     // its `__call__` method.
@@ -1379,7 +1379,7 @@ CValue ExprEmitter::emitNamedMethodCall(StringRef methodName,
 
   CallOperands operands(posOperands, callOperands.kwOperands);
 
-  ASTType type = selfVal.getRValueType();
+  ASTType type = selfVal.getRValueType(shared);
 
   auto emitNoMethodError = [&]() {
     auto diag = emitError(callNode->getLoc(), "")
@@ -1500,7 +1500,7 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     ASTType singleOperandType;
     if (callOperands.posOperands.size() == 1)
       if (auto cValue = callOperands.posOperands[0].ir.getIfCValue())
-        singleOperandType = cValue.getRValueType();
+        singleOperandType = cValue.getRValueType(shared);
 
     if (singleOperandType && newFnDecls.size() <= 1 && !callee.isErroneous()) {
       // Reject Int(x) where x is already an Int with an error + fixit.

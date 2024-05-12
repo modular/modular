@@ -453,8 +453,8 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
   // Collect the types of the capture values.
   auto captures = shared.getCaptureRangeInScope(nestedFnDecl);
   SmallVector<Type> fieldTypes = llvm::map_to_vector(
-      llvm::make_second_range(captures), [](const Capture &capture) {
-        return capture.getValue().getRValueType().mlirType;
+      llvm::make_second_range(captures), [&](const Capture &capture) {
+        return capture.getValue().getRValueType(shared).mlirType;
       });
 
   // Check for parameter closure captures.
@@ -536,7 +536,7 @@ StructDeclOp ClosureEmitter::replaceNestedFunctionWithClosureImplStructDecl(
     // value in the closure, otherwise we are taking an RValue that is either
     // copied or moved.
     bool isRef = capture.isRef();
-    ASTType rvalueType = capture.getValue().getRValueType();
+    ASTType rvalueType = capture.getValue().getRValueType(shared);
     initSigNames.push_back(StringAttr::get(ctx, "fld" + Twine(fieldNameIdx++)));
     // FIXME: By-reference captures should be capturable either as by-imm-ref or
     // by-mut-ref.  Right now we type check var captures as mutable but codegen

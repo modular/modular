@@ -400,7 +400,7 @@ ParseResult StmtParser::parseLocalScopeSuite(ssize_t curIndent,
 /// returns a result.
 static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
                                   SharedState &shared) {
-  ASTType valueType = value.getRValueType();
+  ASTType valueType = value.getRValueType(shared);
 
   // Return true if the specified type can be implicitly ignored.
   // TODO: Should have a better way to say that it is safe to implicitly ignore
@@ -1257,7 +1257,7 @@ ParseResult StmtParser::parseWithStmt(size_t curIndent) {
   // familiar to Pythonistas.
 
   // In erroneous code, ASTDecl may be missing, e.g. a 'with' on an MLIR type.
-  ASTType contextRVType = MLValue(contextMgrDecl).getRValueType();
+  ASTType contextRVType = MLValue(contextMgrDecl).getRValueType(shared);
   bool hasExitMethod =
       shared.typeHasMember(contextRVType, "__exit__", contextExp->getLoc());
 

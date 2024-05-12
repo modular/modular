@@ -253,7 +253,8 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     if (auto expectedRef = dyn_cast<RefType>(expectedType)) {
       auto cValue = operand.ir.getIfCValue();
       if (cValue && convention == ArgConvention::BorrowedInReg &&
-          cValue.getRValueType().isEqualCanon(expectedRef.getElementType())) {
+          cValue.getRValueType(emitter.shared)
+              .isEqualCanon(expectedRef.getElementType())) {
         // If we're in a parameter context, dump this into memory with a
         // lifetime matching the expectation (typically inferred immortal).
         if (emitter.getScopeInfo().isParamContext) {
@@ -818,7 +819,7 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     // that slot, pass the address, then write it back when we're done.
     ValueDest dlvBuffer(lv, EC_CallArgValue);
     MLValue mlvBuffer = dlvBuffer.getMLValueForResult(
-        argValAndExpr.expr->getLoc(), lv.getRValueType(), emitter);
+        argValAndExpr.expr->getLoc(), lv.getLValueStorageType(), emitter);
     // Emit the 'get' into the buffer.
     ValueDest bufferDest(mlvBuffer, EC_CallArgValue);
     if (!emitter.emitLoadOfLValue({lv, argValAndExpr.expr}, bufferDest)) {

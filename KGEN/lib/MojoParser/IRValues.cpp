@@ -187,24 +187,34 @@ ASTType RValue::getRValueType() const {
   return type;
 }
 
-ASTType CValue::getRValueType() const {
+ASTType CValue::getRValueType(SharedState &shared) const {
   auto type = getType();
   if (isa<MLValue, MRValue, MBValue>(storage))
-    return type.getReferenceElementType();
+    type = type.getReferenceElementType();
+  // TODO: RValue promotions.
   return type;
 }
 
-ASTType LValue::getRValueType() const {
+ASTType LValue::getRValueType(SharedState &shared) const {
   auto type = getType();
   if (isa<MLValue>(storage))
-    return type.getReferenceElementType();
+    type = type.getReferenceElementType();
+  // TODO: RValue promotions.
   return type;
 }
 
-ASTType BValue::getRValueType() const {
+ASTType BValue::getRValueType(SharedState &shared) const {
   auto type = getType();
   if (isa<MBValue>(storage))
-    return type.getReferenceElementType();
+    type = type.getReferenceElementType();
+  // TODO: RValue promotions.
+  return type;
+}
+
+ASTType LValue::getLValueStorageType() const {
+  auto type = getType();
+  if (isa<MLValue>(storage))
+    type = type.getReferenceElementType();
   return type;
 }
 
