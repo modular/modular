@@ -337,6 +337,7 @@ struct AddressSpace:
 
 
 @value
+@automatically_dereference
 @register_passable("trivial")
 struct Reference[
     type: AnyType,

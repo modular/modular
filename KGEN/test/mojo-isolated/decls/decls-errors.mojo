@@ -757,6 +757,11 @@ struct Outer34551: # expected-error {{all members of '@register_passable' struct
     fn __del__(owned self): # expected-error {{cannot transfer value into destination, because 'Outer34551' doesn't implement `__moveinit__`}}
         _ = self._inner ^
 
+# expected-error @+1 {{'@automatically_dereference' requires an '__mlir_ref__' method}}
+@automatically_dereference
+struct BadAutoDereference:
+    pass
+
 ##===----------------------------------------------------------------------===##
 # Traits
 ##===----------------------------------------------------------------------===##
