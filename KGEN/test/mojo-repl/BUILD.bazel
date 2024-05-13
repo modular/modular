@@ -1,0 +1,40 @@
+load("@pip_deps//:requirements.bzl", "requirement")
+load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
+
+lit_tests(
+    name = "test",
+    srcs = glob(["*.lldb"]),
+    custom_substitutions = {
+        # Mirrored from lit.cfg.py to avoid searching $PATH for 'mojo'
+        "%repl": "$(rlocationpath //KGEN/tools/mojo) repl --source-quietly -S ../../../utils/lit-lldb-init.in",
+        "\\\\$MODULAR_DERIVED_PATH/third-party/llvm-project/build/bin/lldb": "$(rlocationpath //KGEN:mojo-lldb)",
+        "source \\\\$MODULAR_DERIVED_PATH/autovenv/bin/activate": "true",
+    },
+    data = glob(["Inputs/*.mojo"]) + [
+        "//KGEN:MojoLLDB.shared.file",
+        "//KGEN:mojo-lldb",
+        "//KGEN/tools/mojo-repl-entry-point",
+        "@llvm-project//lldb:lldb-server",
+        "@stock-torch//:libpython",
+    ],
+    env = {
+        "LLDB_DEBUGSERVER_PATH": "$(location @llvm-project//lldb:lldb-server)",
+        "MODULAR_CRASH_REPORTING_ENABLED": "false",
+        "MODULAR_MOJO_LLDB_PATH": "$(location //KGEN:mojo-lldb)",
+        "MOJO_PYTHON_LIBRARY": "$(location @stock-torch//:libpython)",
+        "MODULAR_MOJO_REPL_ENTRY_POINT": "$(location //KGEN/tools/mojo-repl-entry-point)",
+        "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB.shared.file)",
+    },
+    mojo_deps = [
+        "//Kernels/mojo/buffer",
+        "//Kernels/mojo/gpu",
+        "//Kernels/mojo/runtime",
+        "//Kernels/mojo/stdlib",
+    ],
+    tools = [
+        "//KGEN/tools/mojo",
+    ],
+    deps = [
+        requirement("matplotlib"),
+    ],
+)
