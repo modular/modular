@@ -85,7 +85,6 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_from:
   case Token::kw_import:
   case Token::kw_pass:
-  case Token::kw_let:
   case Token::kw_var:
   case Token::kw_alias:
   case Token::kw___mlir_region:
@@ -247,7 +246,7 @@ struct StmtParser : public ParserBase {
   ParseResult parseStructStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseTraitStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseClassStmt(LexerCursor startCursor, size_t curIndent);
-  ParseResult parseLetVarStmt(LexerCursor startCursor, size_t stmtIndent);
+  ParseResult parseVarStmt(LexerCursor startCursor, size_t stmtIndent);
   ParseResult parseAliasDeclStmt(LexerCursor startCursor, size_t stmtIndent);
   ParseResult parseMLIRRegionStmt(LexerCursor startCursor, size_t curIndent);
 
@@ -627,9 +626,8 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     // doc string
     consumeToken();
     return success();
-  case Token::kw_let:
   case Token::kw_var:
-    return parseLetVarStmt(startCursor, stmtIndent);
+    return parseVarStmt(startCursor, stmtIndent);
   case Token::kw_alias:
     return parseAliasDeclStmt(startCursor, stmtIndent);
   case Token::kw___mlir_region:
@@ -2056,11 +2054,10 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
   return success();
 }
 
-/// var_decl_stmt ::= var_or_let identifier ":" expression ["=" expression]
-///                 | var_or_let identifier "=" expression
-/// var_or_let    ::= "var" | "let"
-ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
-                                        size_t stmtIndent) {
+/// var_decl_stmt ::= "var" identifier ":" expression ["=" expression]
+///                 | "var" identifier "=" expression
+ParseResult StmtParser::parseVarStmt(LexerCursor startCursor,
+                                     size_t stmtIndent) {
   // Global var decls are allowed to have decorators, but nothing else.
   bool hasDecorators = startCursor != getLexer().getCursor();
   auto rejectDecorator = [&, declTok = getToken()]() {
@@ -2069,14 +2066,6 @@ ParseResult StmtParser::parseLetVarStmt(LexerCursor startCursor,
     emitError(declTok.getLoc()) << "'" << declTok.getSpelling()
                                 << "' statement does not allow decorators";
   };
-
-  // TODO: let is still supported for now, but should be removed entirely in
-  // the future.
-  if (getToken().is(Token::kw_let)) {
-    auto loc = getToken().getLoc();
-    emitError(loc, "'let' is being removed, please use 'var' instead")
-        << FixIt::replaceToken(loc, "var");
-  }
 
   auto smLoc = consumeToken().getLoc();
   auto loc = translateLocation(smLoc);
