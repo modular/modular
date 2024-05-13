@@ -72,7 +72,11 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     if (succeeded(p.parseOptionalIdentifier(maybeArgName, Token::colon)))
       name = maybeArgName;
   } else {
-    if (p.parseIdentifier(name, "expected parameter name", &loc)) {
+    StringRef argOrParam =
+        kind == ArgListKind::kParamList || kind == ArgListKind::kFnTypeParamList
+            ? "parameter"
+            : "argument";
+    if (p.parseIdentifier(name, "expected " + argOrParam + " name", &loc)) {
       // TODO: Scan ahead for better recovery.
       return failure();
     }
