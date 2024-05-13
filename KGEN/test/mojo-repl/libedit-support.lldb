@@ -9,4 +9,4 @@
 # RUN: ldd $MODULAR_DERIVED_PATH/third-party/llvm-project/build/bin/lldb | FileCheck %s
 
 # We need libedit as a dependency on linux to have a nice LLDB and REPL experience.
-# CHECK: libedit
+# CHECK: libedit.so.2 => /
