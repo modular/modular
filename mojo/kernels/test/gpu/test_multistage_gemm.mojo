@@ -46,6 +46,7 @@ from layout.layout_tensor import (
     _swizzle_signature,
 )
 from layout.swizzle import Swizzle
+from layout.tensor_core import get_accum_type, get_mma_shape, get_fragment_size
 
 
 fn is_benchmark() -> Bool:
@@ -53,12 +54,6 @@ fn is_benchmark() -> Bool:
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
-
-
-# Shape for tf32 mma.
-alias MMA_M = 16
-alias MMA_N = 8
-alias MMA_K = 8
 
 
 # Mask ^ tid's 2 least significant and every 8 threads share one mask.
@@ -232,21 +227,30 @@ fn multistage_gemm[
     async_copy_wait_group(num_pipeline_stages - 2)
     barrier()
 
+    alias mma_shape = get_mma_shape[a_type, get_accum_type[a_type]()]()
+    alias MMA_M = mma_shape[0]
+    alias MMA_N = mma_shape[1]
+    alias MMA_K = mma_shape[2]
     alias num_k_mmas = BK // MMA_K
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
+    alias frag_size = get_fragment_size[mma_shape]()
+    alias a_frag_size = frag_size[0]
+    alias b_frag_size = frag_size[1]
+    alias c_frag_size = frag_size[2]
+
     # Register tiles.
     # TODO: parameterize fragment size based on data type.
     var a_reg_tiles = LayoutTensor[
-        a_type, Layout.row_major(2 * num_m_mmas, 4)
-    ].stack_allocation().vectorize[1, 4]().split[2]()
+        a_type, Layout.row_major(2 * num_m_mmas, a_frag_size)
+    ].stack_allocation().vectorize[1, a_frag_size]().split[2]()
     var b_reg_tiles = LayoutTensor[
-        b_type, Layout.row_major(2 * num_n_mmas, 2)
-    ].stack_allocation().vectorize[1, 2]().split[2]()
+        b_type, Layout.row_major(2 * num_n_mmas, b_frag_size)
+    ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
     var c_reg_tile = LayoutTensor[
-        c_type, Layout.row_major(num_m_mmas * num_n_mmas, 4)
-    ].stack_allocation().vectorize[1, 4]()
+        c_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
+    ].stack_allocation().vectorize[1, c_frag_size]()
 
     c_reg_tile.fill(0)
 
@@ -383,7 +387,10 @@ fn multistage_gemm[
                         4,
                         Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
                         swizzle=xor_2bits_per8T,
-                    ](a_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
+                    ](
+                        a_mma_tile,
+                        (k_mma + 1) % num_k_mmas * MMA_K // simd_size,
+                    )
                 )
 
             @parameter
@@ -396,7 +403,10 @@ fn multistage_gemm[
                         4,
                         Layout(IntTuple(16, 2), IntTuple(BK // simd_size, 1)),
                         swizzle=xor_2bits_per8T,
-                    ](b_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
+                    ](
+                        b_mma_tile,
+                        (k_mma + 1) % num_k_mmas * MMA_K // simd_size,
+                    )
                     b_reg_tiles[next][2 * n_mma2, 0] = rebind[b_frag_type](
                         SIMD[b_type, 2](vec[0], vec[2])
                     )
