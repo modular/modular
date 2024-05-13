@@ -294,6 +294,12 @@ fn ld_matrix[
     Loads in a fashion that can be used directly by tensor core MMA instructions.
     """
 
+    # TODO: Investigate if fp8 can work with transposed ld_matrix.
+    constrained[
+        (transpose and type.is_half_float()) or (not transpose),
+        "Transposed ld_matrix is only for half precision.",
+    ]()
+
     # The register width is fixed at 4 Bytes (32 bits)
     alias register_width = 4
     alias num_registers = (sizeof[type]() * simd_width) // register_width
