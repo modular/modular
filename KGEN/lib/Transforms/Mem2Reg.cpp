@@ -136,27 +136,50 @@ struct PromotedStackAlloc {
     // Duplicate a DebugInfo::ValueOp for `newValue` if one existed before.
     // The new op is created after `op`.
 
-    // If the mutator is inlined and the original callee does not have debug
-    // info, new debuginfo should not be created. This can show up in two ways:
-    // 1. An op with a callsite loc but the callee has no debug scope.
-    auto mutatorScope = extractPreInlineSubprogramScope(mutator->getLoc());
-    if (!mutatorScope)
-      return;
+    // Walk the series of inlined scopes of the mutator op from outermost caller
+    // to innermost callee. For each scope where a variable is registered with
+    // this value, create a DebugInfo::ValueOp for that variable.
+    OpBuilder b(mutator->getContext());
+    b.setInsertionPointAfter(mutator);
 
-    // 2. An op inside an InlinedSubprogramScope that doesn't have a debug
-    // scope.
-    if (auto subprogramParent =
-            mutator->getParentOfType<DebugInfo::InlinedSubprogramScoped>())
-      if (!subprogramParent.getSubprogramScope())
+    // The current location corresponding to the depth of the walk.
+    // Since the walk is from caller to callee, the CallSite tree created is
+    // caller-side heavy.
+    LocationAttr cumulativeLoc;
+    // Update `cumulativeLoc` with a new callee location.
+    auto appendCallee = [&cumulativeLoc](LocationAttr callee) {
+      if (!cumulativeLoc) {
+        cumulativeLoc = callee;
         return;
+      }
+      cumulativeLoc = mlir::CallSiteLoc::get(callee, cumulativeLoc);
+    };
 
-    if (auto it = debugValues.find(mutatorScope); it != debugValues.end()) {
-      OpBuilder b(mutator->getContext());
-      b.setInsertionPointAfter(mutator);
-      DebugValue &dbgValue = it->second;
-      b.create<DebugInfo::ValueOp>(mutator->getLoc(), newValue,
-                                   dbgValue.varInfo, dbgValue.conversionExpr);
-    }
+    DebugInfo::walkLocation(
+        mutator->getLoc(), DebugInfo::LocWalkPolicy::CallerPriority,
+        [&](Location loc) -> WalkResult {
+          // Update the current cumulative location at each leaf location.
+          if (isa<FileLineColLoc>(loc)) {
+            appendCallee(loc);
+          } else if (auto fused =
+                         dyn_cast<mlir::FusedLocWith<DebugInfo::DIScopeAttr>>(
+                             loc)) {
+            appendCallee(loc);
+
+            DebugInfo::DISubprogramAttr mutatorSubprogram =
+                DebugInfo::getParentScopeOfType<DebugInfo::DISubprogramAttr>(
+                    fused.getMetadata());
+            if (auto it = debugValues.find(mutatorSubprogram);
+                it != debugValues.end()) {
+              DebugValue &dbgValue = it->second;
+              b.create<DebugInfo::ValueOp>(cumulativeLoc, newValue,
+                                           dbgValue.varInfo,
+                                           dbgValue.conversionExpr);
+            }
+            return WalkResult::skip();
+          }
+          return WalkResult::advance();
+        });
   }
 
 private:
