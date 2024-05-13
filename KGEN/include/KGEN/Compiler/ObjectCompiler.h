@@ -182,17 +182,6 @@ public:
   ErrorOrSuccess add(StringRef libName, const SymbolTable &symtab,
                      ExportMap &exports);
 
-  /// Look up a generated archive buffer. Returns `nullopt` if nothing was found
-  /// for that module. Note that `nullopt` could be returned if codegen failed
-  /// *or* if codegen simply didn't happen (which would be the case if the JIT's
-  /// `lookup` method has not been called).
-  std::optional<BufferRef> lookupArchive(ModuleOp theModule) {
-    auto found = generatedArchives.find(theModule);
-    if (found != generatedArchives.end())
-      return found->second.copy();
-    return std::nullopt;
-  }
-
   /// Emit a given module. This will immediately run the materialization.
   void emit(std::unique_ptr<llvm::orc::MaterializationResponsibility> mr,
             const SymbolTable &symtab, const ExportMap &exports);
@@ -224,7 +213,6 @@ private:
 private:
   ObjectCompiler objectCompiler;
   llvm::orc::ObjectLayer &baseLayer;
-  DenseMap<ModuleOp, BufferRef> generatedArchives;
 };
 
 //===----------------------------------------------------------------------===//

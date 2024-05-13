@@ -411,9 +411,6 @@ ObjectCompilerLayer::emitImpl(llvm::orc::MaterializationResponsibility &mr,
   if (bufOr.isError())
     return bufOr.takeError();
   BufferRef archiveBuf = std::move(*bufOr);
-  // Store a copy to the ref of the archive.
-  generatedArchives[theModule] = archiveBuf.copy();
-
   // Create an Archive object.
   auto archiveOr = toModularErrorOr(llvm::object::Archive::create(
       llvm::MemoryBufferRef(archiveBuf->getBuffer(),
