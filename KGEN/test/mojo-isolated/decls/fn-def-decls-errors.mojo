@@ -34,7 +34,7 @@ fn missing_colon()  # expected-error {{expected ':' in function definition}}
 def missing_colon_2()
     test_never_declared_fn()
 
-# expected-error @below {{expected parameter name}}
+# expected-error @below {{expected argument name}}
 fn missing_argument_name(*: int): pass
 
 # expected-error @below {{expected parameter name}}

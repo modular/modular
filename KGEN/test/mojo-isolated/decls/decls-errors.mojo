@@ -135,7 +135,7 @@ fn starStarLast(**a: Int, b: Int): pass
 # expected-error @below {{'**' marker must be at end of argument list}}
 fn twoStarStar(**a: Int, **b: Int): pass
 
-# expected-error @+1 {{expected parameter name}}
+# expected-error @+1 {{expected argument name}}
 fn starSpaceStar(* *a: Int): pass
 
 # expected-error @+1 {{variadic arguments may not have defaults}}
