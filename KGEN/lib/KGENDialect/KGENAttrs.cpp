@@ -1104,7 +1104,7 @@ LogicalResult ParamOperatorAttr::verify(
       return emitError() << stringifyEnum(opcode)
                          << " operand 0 should be a type expression";
     }
-    if (!operands[1].getType().isa<TargetType>()) {
+    if (!::isa<TargetType>(operands[1].getType())) {
       return emitError() << stringifyEnum(opcode)
                          << " operand 1 should be a !kgen.target";
     }
