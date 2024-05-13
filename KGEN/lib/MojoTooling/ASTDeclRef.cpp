@@ -104,6 +104,9 @@ static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
 /// Return the defining Op from the IR encapsulated by this decl. It might be
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
+  if (!declRef->getIRValue().getOpaqueValue())
+    return nullptr;
+
   return TypeSwitch<DeclIRValue, Operation *>(declRef->getIRValue())
       .Case<SBValue, SRValue, MBValue, MLValue>(
           [&](auto val) -> Operation * { return Value(val).getDefiningOp(); })
@@ -179,7 +182,7 @@ MojoASTDeclRef MojoASTDeclRef::getParentDecl() const {
 std::unique_ptr<ArgumentDeclView> createArgumentDeclView(MojoASTDeclRef declRef,
                                                          unsigned arg) {
   // The parent FunctionDeclView is the one who owns the docstring of this
-  // argument, so it's easier just to contruct that view and extract the
+  // argument, so it's easier just to construct that view and extract the
   // argument from it.
   MojoASTDeclRef parentDecl = declRef.getParentDecl();
   auto functionView =
