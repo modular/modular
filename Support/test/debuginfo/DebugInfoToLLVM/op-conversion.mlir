@@ -74,8 +74,7 @@ func.func @value_to_addr_arg(%arg: i32) -> i32 {
   // CHECK: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
   // CHECK: llvm.store %[[ARG]], %[[ALLOC]] : i32, !llvm.ptr loc(#[[LOC_STORE:.*]])
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr -> i32
-  // CHECK: return %[[RESULT]] : i32
+  // CHECK: return %[[ARG]] : i32
 
   debuginfo.value #local_variable = %arg : i32
   return %arg : i32
@@ -89,8 +88,7 @@ func.func @value_to_addr_op() -> i32 {
   // CHECK: %[[VALUE:.*]] = "test.op"() : () -> i32
   // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : i32, !llvm.ptr
   // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
-  // CHECK: return %[[RESULT]] : i32
+  // CHECK: return %[[VALUE]] : i32
 
   %value = "test.op"() : () -> i32
   debuginfo.value #local_variable = %value : i32
@@ -154,8 +152,7 @@ func.func @value_with_one_kill() -> i32 {
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR:.*]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF]]
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
-  // CHECK: return %[[RESULT]] : i32
+  // CHECK: return %[[VALUE]] : i32
 
   %value = "test.op"() : () -> i32
   debuginfo.value #local_variable = %value : i32
@@ -174,8 +171,7 @@ func.func @value_with_two_kills() -> i32 {
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
   // CHECK: %[[UNDEF2:.*]] = llvm.mlir.undef
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF2]]
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
-  // CHECK: return %[[RESULT]] : i32
+  // CHECK: return %[[VALUE]] : i32
 
   debuginfo.kill #local_variable
   %value = "test.op"() : () -> i32
@@ -193,8 +189,7 @@ func.func @undef_value_and_kill() -> i32 {
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
   // CHECK: %[[UNDEF2:.*]] = llvm.mlir.undef
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF2]]
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
-  // CHECK: return %[[RESULT]] : i32
+  // CHECK: return %[[UNDEF1]] : i32
 
   %undef1 = llvm.mlir.undef : i32
   debuginfo.value #local_variable = %undef1 : i32
@@ -210,8 +205,7 @@ func.func @two_value_to_addr_op() -> !llvm.ptr {
   // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr, !llvm.ptr
   // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
   // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
-  // CHECK: return %[[RESULT]] : !llvm.ptr
+  // CHECK: return %[[VALUE]] : !llvm.ptr
 
   %value = "test.op"() : () -> !llvm.ptr
   debuginfo.value #local_variable_2 = %value : !llvm.ptr
@@ -229,8 +223,7 @@ func.func @one_value_one_value_and_kill() -> !llvm.ptr {
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR3]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
   // CHECK: %[[UNDEF:.*]] = llvm.mlir.undef
   // CHECK: llvm.intr.dbg.value #[[LOCAL_VAR3]] = %[[UNDEF]]
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
-  // CHECK: return %[[RESULT]] : !llvm.ptr
+  // CHECK: return %[[VALUE]] : !llvm.ptr
 
   %value = "test.op"() : () -> !llvm.ptr
   debuginfo.value #local_variable_2 = %value : !llvm.ptr
@@ -247,8 +240,7 @@ func.func @one_value_one_deref_to_addr_op() -> !llvm.ptr {
   // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr, !llvm.ptr
   // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
   // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[VALUE]] : !llvm.ptr
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
-  // CHECK: return %[[RESULT]] : !llvm.ptr
+  // CHECK: return %[[VALUE]] : !llvm.ptr
 
   %value = "test.op"() : () -> !llvm.ptr
   debuginfo.value #local_variable_2 = %value : !llvm.ptr
@@ -264,8 +256,7 @@ func.func @one_deref_one_value_to_addr_op() -> !llvm.ptr {
   // CHECK: llvm.store %[[VALUE]], %[[ALLOC]] : !llvm.ptr, !llvm.ptr
   // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[VALUE]] : !llvm.ptr
   // CHECK: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
-  // CHECK: %[[RESULT:.*]] = llvm.load %[[ALLOC]] : !llvm.ptr
-  // CHECK: return %[[RESULT]] : !llvm.ptr
+  // CHECK: return %[[VALUE]] : !llvm.ptr
 
   %value = "test.op"() : () -> !llvm.ptr
   debuginfo.value #local_variable_2 #deref_expr = %value : !llvm.ptr
@@ -311,7 +302,6 @@ func.func @sink_kill_debug_values() -> i32 {
   // CHECK: "test.op3"
   // CHECK: llvm.intr.dbg.value
   // CHECK: "test.op4"
-  // CHECK: llvm.load
   // CHECK: return
 
   debuginfo.kill #local_variable loc(#loc0)

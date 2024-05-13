@@ -427,22 +427,6 @@ void DebugInfo::convertDbgValueToDeclare(ModuleOp module) {
             }
             continue;
           }
-
-          // If the user was already converted to a declare, skip it.
-          if (isa<LLVM::DbgDeclareOp>(user))
-            continue;
-
-          // Otherwise, this is a normal use, replace it with a load from an
-          // alloca, unless we are dealing with a mutable variable.  If
-          // reads/writes of a mutable variable are reordered, the debuginfo
-          // will be wrong, but at least we won't bork the program.
-          if (!anyMutable) {
-            OpBuilder loadBuilder(user);
-            user->replaceUsesOfWith(
-                oldValue,
-                loadBuilder.create<LLVM::LoadOp>(
-                    user->getLoc(), oldValue.getType(), getAllocaOp(tracker)));
-          }
         }
 
         // Store into the alloca at the place where the value was defined.
