@@ -11,6 +11,7 @@
 #include "Support/ErrorOr.h"
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 //===----------------------------------------------------------------------===//
 // DIAttr
@@ -186,6 +187,17 @@ DISubprogramAttr extractScope(mlir::FunctionOpInterface funcOp);
 
 /// Extract the debug info scope from the location of the given operation.
 DIScopeAttr extractScope(Operation *op);
+
+/// Get the closest parent scope of a given type, or null if non-existent.
+template <typename ScopeTy>
+ScopeTy getParentScopeOfType(DIScopeAttr scope) {
+  while (scope && !isa<ScopeTy>(scope))
+    scope = TypeSwitch<DIScopeAttr, DIScopeAttr>(scope)
+                .Case([](DILexicalBlockAttr block) { return block.getScope(); })
+                .Case([](DISubprogramAttr sp) { return sp.getScope(); })
+                .Default(DIScopeAttr());
+  return llvm::cast_if_present<ScopeTy>(scope);
+}
 
 /// This class represents an attribute/type replacer with proper defaults for
 /// updating debug information within operations.
