@@ -102,7 +102,7 @@ TOK_PUNCTUATION(right_right_equal, ">>=")
 // NOTE: Please key these alphabetized to make it easier to find something in
 // this list and to cater to OCD.
 TOK_KEYWORD(_)
-TOK_KEYWORD(alias)
+TOK_KEYWORD(alias) // Mojo extension.
 TOK_KEYWORD(and)
 TOK_KEYWORD(as)
 TOK_KEYWORD(assert)
@@ -130,7 +130,6 @@ TOK_KEYWORD(in)
 TOK_KEYWORD(inout) // Mojo extension.
 TOK_KEYWORD(is)
 TOK_KEYWORD(lambda)
-TOK_KEYWORD(let) // Mojo extension.
 TOK_KEYWORD(match)
 TOK_KEYWORD(None)
 TOK_KEYWORD(nonlocal)
@@ -140,9 +139,9 @@ TOK_KEYWORD(owned) // NOTE: Could be turned into soft keyword
 TOK_KEYWORD(pass)
 TOK_KEYWORD(raise)
 TOK_KEYWORD(return)
-TOK_KEYWORD(Self)
-TOK_KEYWORD(struct)
-TOK_KEYWORD(trait)
+TOK_KEYWORD(Self)   // Mojo extension.
+TOK_KEYWORD(struct) // Mojo extension.
+TOK_KEYWORD(trait)  // Mojo extension.
 TOK_KEYWORD(True)
 TOK_KEYWORD(try)
 TOK_KEYWORD(var) // Mojo extension.

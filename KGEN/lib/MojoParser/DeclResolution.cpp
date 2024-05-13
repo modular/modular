@@ -1410,7 +1410,7 @@ LogicalResult DeclResolver::resolveSignature(GlobalVarDeclOp op, Lexer &lexer,
       p.parseDecorators(decl);
 
   // Re-parse the preamble. The syntax should have been checked already.
-  if (!p.consumeIf(Token::kw_var) && !p.consumeIf(Token::kw_let)) {
+  if (!p.consumeIf(Token::kw_var)) {
     return shared.emitError(
         decl.getLoc(), "internal error: should be checked by statement parser");
   }
