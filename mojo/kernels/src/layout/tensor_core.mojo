@@ -294,3 +294,72 @@ struct TensorCore[out_type: DType, in_type: DType, shape: StaticIntTuple[3]]:
         var d = SIMD[out_type, num_matrix_reg[shape[0], shape[1]]()]()
         mma(d, a, b, c)
         return d
+
+
+@always_inline
+fn get_mma_shape[
+    input_type: DType, accum_type: DType, shape_id: Int = 0
+]() -> StaticIntTuple[3]:
+    @parameter
+    if accum_type == DType.float32 and input_type == DType.float32:
+
+        @parameter
+        if shape_id == 0:
+            return shape_16x8x8
+        else:
+            return shape_16x8x4
+
+    elif accum_type == DType.float32 and input_type == DType.bfloat16:
+
+        @parameter
+        if shape_id == 0:
+            return shape_16x8x16
+        else:
+            return shape_16x8x8
+
+    elif accum_type == DType.float32 and input_type == DType.float16:
+
+        @parameter
+        if shape_id == 0:
+            return shape_16x8x16
+        elif shape_id == 1:
+            return shape_16x8x8
+        else:
+            return shape_8x8x4
+    else:
+        constrained[False, "Unsupported mma shape."]()
+        return shape_null
+
+
+@always_inline
+fn get_accum_type[
+    input_type: DType, preferred_accum_type: DType = input_type
+]() -> DType:
+    @parameter
+    if input_type == DType.float32:
+        return DType.float32
+    elif input_type == DType.bfloat16:
+        return DType.float32
+    # fp16 accumulation can be done in fp16 or fp32. Use fp16 by default for better
+    # performance and use fp32 only when it's specified via preferred type.
+    elif input_type == DType.float16:
+
+        @parameter
+        if preferred_accum_type == DType.float32:
+            return preferred_accum_type
+        else:
+            return DType.float16
+    else:
+        constrained[
+            False, "Only support fp16, bf16, fp32 accumulation for now."
+        ]()
+        return input_type
+
+
+@always_inline
+fn get_fragment_size[mma_shape: StaticIntTuple[3]]() -> StaticIntTuple[3]:
+    return StaticIntTuple[3](
+        mma_shape[0] * mma_shape[2] // WARP_SIZE,
+        mma_shape[1] * mma_shape[2] // WARP_SIZE,
+        mma_shape[0] * mma_shape[1] // WARP_SIZE,
+    )
