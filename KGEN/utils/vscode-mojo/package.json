@@ -25,9 +25,8 @@
   ],
   "main": "./out/extension",
   "scripts": {
-    "vscode:prepublish": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "format": "clang-format -i --glob=\"{src,test}/*.ts\"",
+    "vscode:prepublish": "tsc -b ./",
+    "watch": "tsc -b -watch ./",
     "package": "vsce package --out ./out/vscode-mojo.vsix",
     "publish": "vsce publish"
   },
@@ -45,7 +44,7 @@
     "ini": "4.1.1",
     "shell-escape": "0.2.0",
     "string-argv": "0.3.2",
-    "vscode-languageclient": "^8.0.2-next.5",
+    "vscode-languageclient": "^9.0.1",
     "yaml": "2.3.2"
   },
   "repository": {

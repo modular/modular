@@ -4,9 +4,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+import * as path from 'path';
 import * as vscode from 'vscode';
 import * as vscodelc from 'vscode-languageclient/node';
+import {TransportKind} from 'vscode-languageclient/node';
 
+import {InitializationOptions} from '../../lsp-proxy/src/types';
 import {MojoContext} from "../mojoContext";
 import * as config from '../utils/config';
 import {DisposableContext} from "../utils/disposableContext";
@@ -105,21 +108,27 @@ export class MojoLSPContext extends DisposableContext {
     if (!sdk)
       return undefined;
 
-    let args = [];
+    let serverArgs: string[] = [];
     if (launchAndDebugLanguageServer)
-      args.push("--attach-debugger-on-startup");
+      serverArgs.push("--attach-debugger-on-startup");
 
     const includeDirs = await config.get<string[]|undefined>("lsp.includeDirs",
                                                              workspaceFolder) ||
                         [];
     for (const includeDir of includeDirs)
-      args.push("-I", includeDir);
+      serverArgs.push("-I", includeDir);
 
-    // Configure the server options.
+    const initializationOptions: InitializationOptions = {
+      serverArgs : serverArgs,
+      serverEnv : sdk.config.getProcessEnv(),
+      serverPath : sdk.config.mojoLanguageServerPath,
+    };
+
+    const module = this.mojoContext.extensionContext.asAbsolutePath(
+        path.join('lsp-proxy', 'out', 'proxy.js'));
     const serverOptions: vscodelc.ServerOptions = {
-      command : sdk.config.mojoLanguageServerPath,
-      args,
-      options : {env : sdk.config.getProcessEnv()}
+      run : {module, transport : TransportKind.ipc},
+      debug : {module, transport : TransportKind.ipc}
     };
 
     // Configure file patterns relative to the workspace folder.
@@ -173,16 +182,18 @@ export class MojoLSPContext extends DisposableContext {
 
       // Don't switch to output window when the server returns output.
       revealOutputChannelOn : vscodelc.RevealOutputChannelOn.Never,
+      initializationOptions : initializationOptions,
     };
 
     // Create the language client and start the client.
     let languageClient = new vscodelc.LanguageClient(
         'mojo-lsp', clientTitle, serverOptions, clientOptions);
     this.mojoContext.loggingService.lsp.logInfo(
-        `Launching Language Server '${serverOptions.command}' with options:`,
-        serverOptions.args)
+        `Launching Language Server '${
+            initializationOptions.serverPath}' with options:`,
+        initializationOptions.serverArgs);
+    this.mojoContext.loggingService.lsp.logInfo("Launching Language Server");
     languageClient.start();
-    this.mojoContext.loggingService.lsp.logInfo("Language Server started");
     return languageClient;
   }
 
