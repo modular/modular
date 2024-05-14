@@ -52,6 +52,9 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
       options.debugLevel != CompilationOptions::DebugInfoLevel::kNoDebug;
   pm.addPass(MOGGPreElab::createMOGGPreElabPipeline(moggOpts));
 
+  if (options.optimizationLevel >= 1)
+    pm.addPass(createRemoveUnusedParams());
+
   // Eliminate dead symbols. If we don't use the symbol *somewhere* it doesn't
   // need to be in the IR.
   pm.addPass(createEliminateDeadSymbols());
@@ -73,10 +76,14 @@ void KGEN::buildGenerateLibraryPipeline(mlir::PassManager &pm,
 
   // These passes don't influence parameters, so we don't need to verify them.
   if (options.optimizationLevel >= 1) {
+    pm.addPass(createRemoveUnusedParams());
+    pm.addPass(createEliminateDeadSymbols());
     pm.addNestedPass<GeneratorOp>(createSROA());
     pm.addNestedPass<GeneratorOp>(createMem2Reg());
     pm.addNestedPass<GeneratorOp>(createSCCP());
     pm.addNestedPass<GeneratorOp>(createCanonicalizer());
+    pm.addPass(createRemoveUnusedParams());
+    pm.addPass(createEliminateDeadSymbols());
   }
   pm.addPass(createApplyInliner());
 }

@@ -23,6 +23,7 @@ add_modular_library(KGENTransforms
   Mem2Reg.cpp
   OutlineClosures.cpp
   RaiseForLoops.cpp
+  RemoveUnusedParams.cpp
   ResolveCompilerPromises.cpp
   SCCP.cpp
   SimplifyCF.cpp
