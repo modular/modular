@@ -133,9 +133,11 @@ struct PromotedStackAlloc {
   void updateValue(Operation *mutator, Value newValue) {
     currValue = newValue;
 
+    if (debugValues.empty())
+      return;
+
     // Duplicate a DebugInfo::ValueOp for `newValue` if one existed before.
     // The new op is created after `op`.
-
     // Walk the series of inlined scopes of the mutator op from outermost caller
     // to innermost callee. For each scope where a variable is registered with
     // this value, create a DebugInfo::ValueOp for that variable.
