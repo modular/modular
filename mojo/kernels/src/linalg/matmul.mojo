@@ -227,7 +227,7 @@ struct TiledMatmul[
         @__copy_capture(knm_bounds)
         @parameter
         @always_inline
-        fn unswitch_residual_n[skip_col_bound: Bool]():
+        fn unswitch_residual_n[skip_boundary_check: Bool]():
             var b_packed_tile = self.b_tile_generator.get_tile[
                 tile_kernel_cols
             ](
@@ -251,7 +251,7 @@ struct TiledMatmul[
                     tile_kernel_rows,
                     tile_kernel_cols,
                     config.simd_size,
-                    skip_col_bound,
+                    skip_boundary_check,
                 ](
                     self.c,
                     self.a,
@@ -292,9 +292,9 @@ struct TiledMatmul[
 
         @parameter
         if has_neon():
-            # The performance of the skip_col_bound=True path is the same as
-            # skip_col_bound=False, so reduce code size and emit only the
-            # skip_col_bound=False path.
+            # The performance of the skip_boundary_check=True path is the same as
+            # skip_boundary_check=False, so reduce code size and emit only the
+            # skip_boundary_check=False path.
             unswitch_residual_n[False]()
         else:
             unswitch[unswitch_residual_n](knm_bounds[1] > sub_tile_n)
