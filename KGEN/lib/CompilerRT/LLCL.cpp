@@ -13,6 +13,7 @@
 #include "LLCL/Runtime/AsyncValueRef.h"
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
+#include "LLCL/Support/TimerHeap.h"
 #include "LLCL/Support/UnknownLocationDecoder.h"
 #include "Support/ML/TensorSpec.h"
 #include "Support/SymbolExport.h"
@@ -83,6 +84,42 @@ KGEN_CompilerRT_LLCL_Complete(LLCLAsyncChainRef chain) {
 COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
 KGEN_CompilerRT_LLCL_Wait(LLCLAsyncChainRef chain) {
   await(unwrap(chain));
+}
+
+/// Blocks until the given chain is ready, or the given deadline is hit.
+///
+/// The timeout provided is in nanoseconds. True is returned if the value is
+/// ready, false is a timeout occurred. Note that the value may be ready by the
+/// time the function returns regardless.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT bool
+KGEN_CompilerRT_LLCL_Wait_Timeout(LLCLAsyncChainRef chain, int64_t ns) {
+  static TimerHeap heap;
+  AsyncValueRef<Chain> &done = unwrap(chain);
+  AsyncValueRef<Chain> expired =
+      AsyncValueRef<Chain>::allocate(done.getRuntime());
+  AsyncValueRef<Chain> either =
+      AsyncValueRef<Chain>::allocate(done.getRuntime());
+
+  // Compute the expiration and push it to the heap.
+  TimerHeap::deadline expiration =
+      std::chrono::steady_clock::now() + std::chrono::nanoseconds(ns);
+  heap.push(expiration, expired.copy());
+
+  // Wait for either, return true if our wrapped chain is ready. Unfortunately
+  // we have to have a separate shared allocation and two additional anonymous
+  // functions. This is quite inefficient, and can be improved in the future.
+  auto emplaced = std::make_shared<std::atomic<bool>>();
+  done.andThenSync([emplaced, either = either.copy()]() mutable {
+    if (!emplaced->exchange(true))
+      std::move(either).emplace();
+  });
+  expired.andThenSync([emplaced, either = either.copy()]() mutable {
+    if (!emplaced->exchange(true))
+      std::move(either).emplace();
+  });
+
+  await(either);
+  return done.isReady();
 }
 
 //===----------------------------------------------------------------------===//
@@ -371,6 +408,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_Complete});
   funcs.push_back(
       {"KGEN_CompilerRT_LLCL_Wait", (void *)&KGEN_CompilerRT_LLCL_Wait});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_Wait_Timeout",
+                   (void *)&KGEN_CompilerRT_LLCL_Wait_Timeout});
 
   funcs.push_back(
       {"KGEN_CompilerRT_LLCL_Execute", (void *)&KGEN_CompilerRT_LLCL_Execute});
