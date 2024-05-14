@@ -353,16 +353,16 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         setParamValue(value);
         continue;
       }
+
+      if (boundness == Boundness::Partial) {
+        setParamValue(UnboundAttr::get(requestedType));
+        continue;
+      }
+
       if (passingKind == PassingKind::Implicit) {
         if (diagEmitter.emitInferOnlyFailure)
           diagEmitter.emitInferOnlyFailure(idx);
         return {{}, fitness};
-      }
-
-      // Otherwise, we're simply missing bindings.
-      if (boundness == Boundness::Partial) {
-        setParamValue(UnboundAttr::get(requestedType));
-        continue;
       }
 
       if (passingKind == PassingKind::KwOnly) {
