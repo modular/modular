@@ -1,0 +1,539 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#include "KGEN/ToolCommon/KGENPasses.h"
+
+#include "KGEN/HLCFDialect/Analysis/CFG.h"
+#include "KGEN/KGENDialect/KGENOps.h"
+#include "KGEN/KGENDialect/KGENParameters.h"
+#include "KGEN/POPDialect/POPOps.h"
+#include "KGEN/POPDialect/POPTypes.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
+#include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/Pass/Pass.h"
+
+using namespace M;
+using namespace KGEN;
+using namespace POP;
+
+namespace M::KGEN {
+#define GEN_PASS_DEF_REMOVEUNUSEDPARAMS
+#include "KGEN/KGENPasses.h.inc"
+} // namespace M::KGEN
+
+namespace {
+class RemoveUnusedParams
+    : public impl::RemoveUnusedParamsBase<RemoveUnusedParams> {
+public:
+  using RemoveUnusedParamsBase::RemoveUnusedParamsBase;
+  void runOnOperation() override;
+
+private:
+  // Memory cache of data structures we can reuse without reallocating.
+  llvm::BitVector unusedArgs, unusedParamsIndex;
+  llvm::SmallPtrSet<StringAttr, 8> unusedParamsAttr;
+
+  SmallVector<ParamDeclAttr> inputParams;
+  SmallVector<TypedAttr> newParams;
+  SmallVector<Value> newOperands;
+  SmallVector<Type> inputTypes;
+  SmallVector<ArgConvention> conventions;
+
+  void clearState() {
+    unusedArgs.clear();
+    unusedParamsIndex.clear();
+    unusedParamsAttr.clear();
+    inputParams.clear();
+    inputTypes.clear();
+    conventions.clear();
+  }
+
+  void identifyUnusedArguments(GeneratorOp oldFunction, StringAttr oldSymbol,
+                               bool isRecursive) {
+    SignatureType oldSig = oldFunction.getSignature();
+
+    unusedArgs = llvm::BitVector(oldFunction.getNumArguments(), true);
+
+    // Identify unused parameters.
+    for (auto [idx, arg, argConvention] : llvm::enumerate(
+             oldFunction.getArguments(), oldSig.getArgConventions())) {
+      // If the function is recursive check that this argument has users beyond
+      // the recursive call.
+      if (isRecursive) {
+        bool allCallsToSelf = true;
+        for (Operation *op : arg.getUsers()) {
+          CallOp call = dyn_cast<CallOp>(op);
+          if (!call) {
+            allCallsToSelf = false;
+            break;
+          }
+          if (oldSymbol !=
+              cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()) {
+            allCallsToSelf = false;
+            break;
+          }
+        }
+
+        if (allCallsToSelf)
+          break;
+      }
+
+      if (!arg.use_empty()) {
+        unusedArgs[idx] = false;
+        inputTypes.push_back(arg.getType());
+        conventions.push_back(argConvention);
+      }
+    }
+  }
+
+  void identifyUnusedParameters(GeneratorOp oldFunction, StringAttr oldSymbol,
+                                bool isRecursive) {
+    // Start with all parameters.
+    for (ParamDeclAttr decl : oldFunction.getInputParams())
+      unusedParamsAttr.insert(decl.getName());
+
+    unusedParamsIndex = llvm::BitVector(unusedParamsAttr.size(), true);
+
+    // Walk over all parameter uses.
+    mlir::AttrTypeWalker walker;
+    walker.addWalk(
+        [&](ParamDeclRefAttr ref) { unusedParamsAttr.erase(ref.getName()); });
+
+    oldFunction.walk([&](Operation *op) {
+      if (unusedParamsAttr.empty())
+        return WalkResult::interrupt();
+
+      // Don't include the parameters on the recursive calls.
+      if (isRecursive) {
+        if (CallOp call = dyn_cast<CallOp>(op)) {
+          if (oldSymbol ==
+              cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()) {
+
+            // Exclude direct uses but not uses within expressions. E.G
+            // foo<x+step, step>
+            for (auto [param, decl] :
+                 llvm::zip(call.getCallee().getParamValues(),
+                           oldFunction.getInputParams())) {
+              auto asRef = dyn_cast<ParamDeclRefAttr>(param);
+              // A direct pass through of the same parameter doesn't count.
+              if (!asRef || asRef.getName() != decl.getName() ||
+                  asRef.getType() != decl.getType())
+                walker.walk(param);
+            }
+            return WalkResult::advance();
+          }
+        }
+      }
+
+      // Don't scan the input parameters on the function since they obviously
+      // will include a hit.
+      if (op == oldFunction) {
+        walker.walk(oldFunction.getLLVMMetadata());
+
+        // Most function attrs will only contain false positives, types on the
+        // arguments / results are the real source of truth.
+        walker.walk(oldFunction.getDecoratorsAttr());
+        for (const NamedAttribute &attr : op->getDiscardableAttrs())
+          walker.walk(attr.getValue());
+        // Exclude arguments only used on unused inputs.
+        for (auto [idx, arg] : llvm::enumerate(oldFunction.getArguments())) {
+          if (!unusedArgs[idx])
+            walker.walk(arg.getType());
+        }
+      } else {
+        // Anything else just scan normally.
+        for (const NamedAttribute &attr : op->getAttrs())
+          walker.walk(attr.getValue());
+        for (Type type : op->getOperandTypes())
+          walker.walk(type);
+        for (Region &region : op->getRegions()) {
+          for (Type type : region.getArgumentTypes())
+            walker.walk(type);
+        }
+      }
+
+      for (Type type : op->getResultTypes())
+        walker.walk(type);
+      return WalkResult::advance();
+    });
+
+    // Map from the actual parameters we know are unused onto their index in the
+    // function parameter list.
+    for (auto [idx, decl] : llvm::enumerate(oldFunction.getInputParams())) {
+      if (!unusedParamsAttr.contains(decl.getName())) {
+        unusedParamsIndex[idx] = false;
+        inputParams.push_back(decl);
+      }
+    }
+  }
+
+  void replaceCall(OpBuilder &builder, CallOp oldCall, GeneratorOp newFunc,
+                   FlatSymbolRefAttr flatSym) {
+    builder.setInsertionPoint(oldCall);
+    newParams.clear();
+    newOperands.clear();
+
+    for (auto [idx, inParam] :
+         llvm::enumerate(oldCall.getCallee().getParamValues())) {
+      if (!unusedParamsIndex[idx])
+        newParams.push_back(inParam);
+    }
+
+    for (auto [idx, operand] : llvm::enumerate(oldCall.getOperands())) {
+      if (!unusedArgs[idx])
+        newOperands.push_back(operand);
+    }
+    auto symbol =
+        SymbolConstantAttr::get(flatSym, newParams,
+                                newFunc.getSignature().getSpecializedSignature(
+                                    newParams, oldCall.getLoc()));
+
+    auto newCall = builder.create<CallOp>(
+        oldCall.getLoc(), oldCall->getResultTypes(), symbol, newOperands);
+
+    oldCall.replaceAllUsesWith(newCall);
+    oldCall.erase();
+  }
+};
+
+// Tracker of all the calls to a function and the set of function those calls
+// are contained within.
+struct CallSites {
+  llvm::SetVector<GeneratorOp> callers;
+  SmallVector<CallOp> calls;
+};
+
+// This worklist helper tracks which ops are still to be scheudled.
+struct WorklistHelper {
+  WorklistHelper(size_t numFuncs)
+      : shouldScheudle(numFuncs, false), allOps(numFuncs), numProcessed(0) {
+    funcToIndex.reserve(numFuncs);
+  }
+
+  // 1:1 mapping between generator and a bool which marks it as ready to
+  // scheudle. std::vector to make use of the bool optimization.
+  std::vector<bool> shouldScheudle;
+
+  // All the ops so we can traverse cheaply.
+  SmallVector<GeneratorOp> allOps;
+
+  // Fast lookup for generators in the above.
+  DenseMap<GeneratorOp, size_t> funcToIndex;
+
+  // The number of ops which have been processed. Same as
+  // std::all_of(shouldScheudle)
+  size_t numProcessed;
+
+  // We include the index in the worklist so we have an O(1) way to update the
+  // scheudle.
+  SmallVector<std::pair<GeneratorOp, size_t>> worklist;
+
+  // Preserved temporaries to find cycles
+  DenseSet<GeneratorOp> cycleSeenFuncs;
+  SmallVector<GeneratorOp> cycleFinderWorklist;
+
+  void addToScheudle(GeneratorOp gen, size_t index) {
+    allOps[index] = gen;
+    shouldScheudle[index] = true;
+    funcToIndex[gen] = index;
+  }
+
+  void markProcessed(std::pair<GeneratorOp, size_t> pair) {
+    shouldScheudle[pair.second] = false;
+    ++numProcessed;
+  }
+
+  std::pair<GeneratorOp, size_t>
+  pop(DenseMap<GeneratorOp, CallSites> &funcUsers,
+      DenseMap<GeneratorOp, SmallVector<GeneratorOp>> &genToCallees,
+      DenseMap<GeneratorOp, size_t> &numCallersFromFunc, bool &brokeCycle) {
+    // If the worklist isn't empty obviously we can just pop from the back right
+    // away.
+    if (!worklist.empty()) {
+      auto pair = worklist.back();
+      worklist.pop_back();
+      return pair;
+    }
+
+    // Otherwise look and see if there's anything that can be obviously
+    // scheudled.
+    for (auto [idx, gen] : llvm::enumerate(allOps)) {
+      // Skip ops which should not be scheudled.
+      if (!shouldScheudle[idx])
+        continue;
+
+      // Remove any with no calls.
+      CallSites &callSites = funcUsers[gen];
+      if (callSites.calls.empty()) {
+        shouldScheudle[idx] = false;
+        ++numProcessed;
+      } else if (numCallersFromFunc[gen] == 0) {
+        // Add any functions with no dependencies.
+        worklist.push_back({gen, idx});
+      }
+    }
+
+    if (!worklist.empty())
+      return pop_back();
+
+    // Finally if we couldn't find anything it must mean there is a cycle in the
+    // graph.
+    for (auto [idx, gen] : llvm::enumerate(allOps)) {
+      // Skip ops which should not be scheudled.
+      if (!shouldScheudle[idx])
+        continue;
+
+      cycleSeenFuncs.clear();
+      cycleFinderWorklist.clear();
+      cycleFinderWorklist.push_back(gen);
+
+      while (!cycleFinderWorklist.empty()) {
+        GeneratorOp head = cycleFinderWorklist.back();
+        cycleFinderWorklist.pop_back();
+        if (!shouldScheudle[funcToIndex[head]])
+          continue;
+        cycleSeenFuncs.insert(head);
+
+        SmallVector<GeneratorOp> &uniqueCallees = genToCallees[head];
+        for (GeneratorOp called : uniqueCallees) {
+          if (!shouldScheudle[funcToIndex[called]])
+            continue;
+          // Found the cycle, break it.
+          if (cycleSeenFuncs.contains(called)) {
+            // By returning the function with the cycle we will scheudle it
+            // immediately. This however means we need to remove any pending
+            // dependencies on it.
+            brokeCycle = true;
+            return {head, funcToIndex[head]};
+          } else {
+            cycleFinderWorklist.push_back(called);
+          }
+        }
+      }
+    }
+
+    // If all possible cycles have been eliminated and we still couldn't find
+    // something legal then theres no more we can do and there's no more
+    // functions to scheudle.
+    return {nullptr, 0};
+  }
+
+  bool empty() { return numProcessed == allOps.size(); }
+
+private:
+  std::pair<GeneratorOp, size_t> pop_back() {
+    auto pair = worklist.back();
+    worklist.pop_back();
+    return pair;
+  }
+};
+
+} // namespace
+
+void RemoveUnusedParams::runOnOperation() {
+  ModuleOp mod = getOperation();
+  MLIRContext *ctx = mod.getContext();
+  OpBuilder builder{mod->getContext()};
+  auto &analysis = getAnalysis<mlir::SymbolTableAnalysis>();
+  SymbolTable &symTab = analysis.getTopLevelSymbolTable();
+
+  // Count number of functions cloned to tell how much memory to alloc.
+  size_t numFuncs = 0;
+  for (auto _ : mod.getOps<GeneratorOp>()) {
+    (void)_;
+    ++numFuncs;
+  }
+
+  DenseMap<GeneratorOp, CallSites> funcUsers;
+  funcUsers.reserve(numFuncs);
+
+  // Maintain a map of all the functions called by this function.
+  DenseMap<GeneratorOp, llvm::SmallVector<GeneratorOp>> genToCallees;
+  genToCallees.reserve(numFuncs);
+
+  // Maintaining a seperate dict of the number of unique callers avoids the need
+  // to resize the above vector which is needed for deterministic traversal.
+  DenseMap<GeneratorOp, size_t> numCallersFromFunc;
+  numCallersFromFunc.reserve(numFuncs);
+
+  // A set of the functions which are immediately recursive, i.e directly call
+  // themselves. This is excludes indirect recursion through calls ect. They
+  // will need to manually remap their calls.
+  DenseSet<GeneratorOp> recursiveFuncs;
+
+  // Maintain a seperate list of operations we are going to process but arent
+  // ready yet. The active worklist of functions which are ready for us to
+  // remove their arguments from them.
+  WorklistHelper toScheudle(numFuncs);
+
+  DenseSet<GeneratorOp> seenCallees;
+
+  // Build call graph.
+  for (auto [idx, generator] : llvm::enumerate(mod.getOps<GeneratorOp>())) {
+    seenCallees.clear();
+    SmallVector<GeneratorOp> callees;
+
+    numCallersFromFunc[generator] = 0;
+
+    // Gen needs explicit capture to make structured bindings capture legal.
+    generator.walk([&, gen = generator](CallOp call) {
+      // We can also call external generators and other things so it's not safe
+      // to assume it's a generator op.
+      auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(
+          cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
+      if (calledFunc) {
+
+        // Track the caller of this generator, but only one entry per call.
+        if (!seenCallees.contains(calledFunc)) {
+          callees.push_back(calledFunc);
+          seenCallees.insert(calledFunc);
+          ++numCallersFromFunc[gen];
+        }
+
+        // Track recursive functions seperately.
+        if (calledFunc == gen) {
+          recursiveFuncs.insert(gen);
+        } else {
+          // Get or allocate.
+          funcUsers[calledFunc];
+          // Then insert without iteration invalidation in case of allocate.
+          funcUsers[calledFunc].callers.insert(gen);
+          funcUsers[calledFunc].calls.push_back(call);
+        }
+      }
+    });
+
+    toScheudle.addToScheudle(generator, idx);
+
+    // Start from the leaf nodes, i.e the functions which don't call anything.
+    if (callees.empty())
+      toScheudle.worklist.push_back({generator, idx});
+
+    genToCallees.try_emplace(generator, callees);
+  }
+
+  // The actual algorithm which will traverse the calls, identify unused
+  // parameters and a rewrite them.
+  while (!toScheudle.empty()) {
+    bool brokeCycle = false;
+    std::pair<GeneratorOp, size_t> pair =
+        toScheudle.pop(funcUsers, genToCallees, numCallersFromFunc, brokeCycle);
+    GeneratorOp oldFunction = pair.first;
+
+    // Will return null if there's nothing left to scheudle.
+    if (!oldFunction)
+      break;
+
+    // To optimize memory allocations we reuse the allocations of previous steps
+    // by just clearing the data structures.
+    clearState();
+
+    bool isRecursive = recursiveFuncs.contains(oldFunction);
+    StringAttr oldSymbol = oldFunction.getSymNameAttr();
+
+    SignatureType oldSig = oldFunction.getSignature();
+
+    // Collate information about unused parameters + arguments in the shared
+    // state.
+    identifyUnusedArguments(oldFunction, oldSymbol, isRecursive);
+    identifyUnusedParameters(oldFunction, oldSymbol, isRecursive);
+
+    CallSites &callSites = funcUsers[oldFunction];
+
+    // If nothing is unused we need to clear the calls and treat this as
+    // having already been processed so the rest of the call graph can
+    // progress.
+    if (callSites.calls.empty() ||
+        (unusedArgs.none() && unusedParamsIndex.none())) {
+      callSites.calls.clear();
+      for (GeneratorOp caller : callSites.callers)
+        --numCallersFromFunc[caller];
+
+      // We don't need to process this anymore.
+      toScheudle.markProcessed(pair);
+      continue;
+    }
+
+    GeneratorOp newFunc = oldFunction.clone();
+
+    // Recursive functions may still have one reference so we need to drop it.
+    if (isRecursive) {
+      for (size_t i = 0; i < unusedArgs.size(); ++i) {
+        if (unusedArgs[i])
+          newFunc.getArgument(i).dropAllUses();
+      }
+    }
+
+    newFunc.eraseArguments(unusedArgs);
+    auto functionType = FunctionType::get(
+        ctx, inputTypes, oldFunction.getFunctionType().getResults());
+
+    // Update the sig to partially specialize on those function types.
+    newFunc.setSignature(SignatureType::remapToSignature(
+        inputParams, {}, functionType,
+        /*argConventions=*/conventions,
+        /*fnEffects=*/oldSig.getFnEffects(),
+        /*metadata*/ oldSig.getMetadata(), [&] {
+          llvm_unreachable("Failed to remap generator signature.");
+          return oldFunction.emitError("Failed to remap generator signature.");
+        }));
+    newFunc.setFunctionType(functionType);
+    newFunc.setInputParams(inputParams);
+
+    // Will either be an internal func or a cloned copy of an external func.
+    newFunc.setNotExported();
+
+    // Update the name so the ABI's don't clash. I.E so this doesn't name match
+    // with another package which didn't run this optimization.
+    // TODO: shouldn't need to do this but we need to do it while internal
+    // functions are being linked across packages by the package include.
+    newFunc.setSymName((Twine(newFunc.getSymName()) + "_REMOVED_ARG").str());
+    symTab.insert(newFunc);
+
+    auto flatSym = FlatSymbolRefAttr::get(ctx, newFunc.getSymName());
+
+    // Update all the callers to call the new function, dropping the unused
+    // parameters on their side.
+    for (CallOp oldCall : llvm::make_early_inc_range(callSites.calls))
+      replaceCall(builder, oldCall, newFunc, flatSym);
+    callSites.calls.clear();
+
+    // Manually rewrite any recursive calls to self.
+    if (isRecursive) {
+      newFunc.walk([&](CallOp oldCall) {
+        if (oldSymbol ==
+            cast<FlatSymbolRefAttr>(oldCall.getCalleeSymbol()).getValue())
+          replaceCall(builder, oldCall, newFunc, flatSym);
+      });
+    }
+
+    toScheudle.markProcessed(pair);
+
+    // If we broke a cycle we need to add the calls we have which have not been
+    // updated yet to the call graph so they will be updated later as well.
+    if (brokeCycle && newFunc != oldFunction) {
+      newFunc.walk([&](CallOp call) {
+        auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(
+            cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
+        if (calledFunc && calledFunc != newFunc) {
+          // Update the calls of any called function if they are still to be
+          // scheudled.
+          auto itr = funcUsers.find(calledFunc);
+          if (itr != funcUsers.end() && !itr->second.calls.empty())
+            itr->second.calls.push_back(call);
+        }
+      });
+    }
+
+    // Remove this function as a dependency from any callers.
+    for (GeneratorOp caller : callSites.callers)
+      --numCallersFromFunc[caller];
+  }
+
+  // Control-flow is not modified.
+  markAnalysesPreserved<HLCF::CFGAnalysis>();
+}

@@ -46,6 +46,7 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerMem2Reg();
   KGEN::registerOutlineClosures();
   KGEN::registerRaiseForLoops();
+  KGEN::registerRemoveUnusedParams();
   KGEN::registerSROA();
   KGEN::registerSimplifyCF();
   KGEN::registerStackReuse();

@@ -1000,3 +1000,17 @@ def DeadArgumentElimination:
 
   let dependentDialects = ["MDialect"];
 }
+
+
+//===----------------------------------------------------------------------===//
+// Remove unused arguments
+//===----------------------------------------------------------------------===//
+
+def RemoveUnusedParams : Pass<"remove-unused-params", "mlir::ModuleOp"> {
+  let summary = "Rewrites functions to remove unused args & params";
+  let description = [{
+    Replaces a function with a new function that drops all unused 
+    parameters and arguments, updating all the callers to reflect
+    the new function call.
+  }];
+}
