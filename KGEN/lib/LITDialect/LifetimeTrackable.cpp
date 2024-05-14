@@ -247,6 +247,47 @@ Value LifetimeTrackable::findUnderlyingValueFromField(Value value) {
 // OperationValueEffects
 //===----------------------------------------------------------------------===//
 
+/// Given a call to a function that takes a VariadicPack argument, we need to
+/// dig out the RefPackCreateOp that formed it.  This code grovels through the
+/// IR to find it, looking for the standard pattern of:
+///
+///   %1 = lit.ref.pack.create(...)
+///   %anonymous2A_0 = lit.var.decl "anonymous*"
+///   lit.call VariadicPack::__init__(%anonymous2A_0, %1, ...)
+///   %4 = lit.load.consume / lit.ref.load %anonymous2A_0  <<= we are here.
+///
+/// This happens because we're passing the VariadicPack to the callee, and it
+/// has a memory-style init.
+///
+/// TODO: We should eliminate this when/if we support more fine grain declared
+/// effects on function declarations.  We could then say that we consume the
+/// lifetimes for these values (in the owned case) instead of relying on this.
+static Value findRefPackCreate(Value val) {
+  Value loadOperand;
+  if (auto load = val.getDefiningOp<RefLoadOp>())
+    loadOperand = load.getOperand();
+  else if (auto load = val.getDefiningOp<LoadConsumeOp>())
+    loadOperand = load.getOperand();
+  else
+    return {};
+
+  auto varDecl = loadOperand.getDefiningOp<VarDeclOp>();
+  if (!varDecl)
+    return {};
+
+  for (Operation *user : varDecl.getResult().getUsers()) {
+    auto call = dyn_cast<LIT::CallOp>(user);
+    if (!call)
+      continue;
+    // Make sure any change to the API forces this code to get updated.
+    assert(call.getNumOperands() == 3 &&
+           "VariadicPack::init currently takes 3 arguments");
+    return call.getOperand(1);
+  }
+
+  return {};
+}
+
 /// This is a helper for LIT::getOperationEffects split out since calls are so
 /// interesting.
 static void
@@ -312,7 +353,8 @@ getCallOpEffects(Operation &op,
   };
 
   SmallVector<Type> typesAccessibleByCallee;
-  auto addArgument = [&](Value arg, ArgConvention conv) {
+  auto addArgument = [&](Value arg, ArgConvention conv,
+                         bool noIndirect = false) {
     // Get normal argument effect.
     auto effect = getOperandEffectForConvention(conv);
     Type argType = arg.getType();
@@ -332,6 +374,10 @@ getCallOpEffects(Operation &op,
     // (whether the argument convention is fancy or if it is an explicitly
     // passed reference) treat this as a field sensitive access so we can
     operands.push_back({arg, effect});
+
+    // If the caller doesn't want us to add type-based lifetime effects, don't.
+    if (noIndirect)
+      return;
 
     // If this is a memConsume or memStoreOwned, then the lifetime of the
     // reference is handled directly, strip it off.  Otherwise handle borrowed,
@@ -356,13 +402,13 @@ getCallOpEffects(Operation &op,
     // pop.variadic.create, so we can model the effects of the variadic.create
     // instead of seeing abstract uses of the lifetimes.  This provides two
     // benefits:
-    //   1) it allows us to reason about the varargs uses field-sensitively,
+    //   1) given "direct" access information, it allows us to model 'owned'
+    //      argument conventions which consume the operand, something lifetime
+    //      accesses cannot model (because it requires field sensitivity).
+    //   2) it allows us to reason about the varargs uses field-sensitively,
     //      e.g. you can pass `a.x` through varargs and `a.y` through an inout
     //      without the compiler imagining a conflict on "a" just like other
     //      arguments.
-    //   2) given "direct" access information, it allows us to model 'owned'
-    //      argument conventions which consume the operand, something lifetime
-    //      accesses cannot model (because it requires field sensitivity).
     if (auto vararg = arg.getDefiningOp<POP::VariadicCreateOp>()) {
       auto varargConvention = vararg.getType().getConvention();
       for (auto varOperand : vararg.getOperands())
@@ -370,14 +416,32 @@ getCallOpEffects(Operation &op,
       continue;
     }
 
-    if (auto pack = arg.getDefiningOp<RefPackCreateOp>()) {
-      if (signature.isPackVarArg(idx + argIdxOffset)) {
-        auto argConvention =
-            signature.getPackVarArgConvention(idx + argIdxOffset);
-        for (auto packOperand : pack.getOperands())
-          addArgument(packOperand, argConvention);
-        continue;
+    // If this is a pack, dig out the pack create so we can model owned
+    // arguments correctly.
+    // TODO: It would be nice to handle more fine grain effects in a general way
+    // on calls.  This is a hack.
+    if (signature.isPackVarArg(idx)) {
+      auto packVal = findRefPackCreate(arg);
+      assert(packVal && "couldn't decode variadic pack information!");
+
+      if (auto pack = packVal.getDefiningOp<RefPackCreateOp>()) {
+        if (signature.isPackVarArg(idx + argIdxOffset)) {
+          auto argConvention =
+              signature.getPackVarArgConvention(idx + argIdxOffset);
+          for (auto packOperand : pack.getOperands())
+            addArgument(packOperand, argConvention);
+
+          // Also add the pack itself so the VariadicPack doesn't get destroyed
+          // too early.  We already handled all the individual elements, so
+          // don't redundantly process them.  Doing so is a problem for owned
+          // operands.
+          addArgument(arg, convention, true);
+          continue;
+        }
       }
+      /// Zero argument packs are kgen.param.constant but they have no
+      /// references anyway.
+      assert(packVal.getDefiningOp<ParamConstantOp>());
     }
 
     addArgument(arg, convention);

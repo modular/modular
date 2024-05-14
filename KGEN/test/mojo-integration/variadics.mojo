@@ -229,31 +229,32 @@ fn owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
 fn test_owned_variadic_pack():
     # CHECK: -- testing owned variadic pack with 0 elements
     owned_variadic_pack()
-    # CHECK: done zero
+    # CHECK-NEXT: owned_variadic_pack done
+    # CHECK-NEXT: done zero
     print("done zero")
 
-    # CHECK: -- testing owned variadic pack with 2 elements
-    # CHECK: hello foo
-    # CHECK: hello 42
-    # CHECK: owned_variadic_pack done
+    # CHECK-NEXT: -- testing owned variadic pack with 2 elements
+    # CHECK-NEXT: hello foo
+    # CHECK-NEXT: hello 42
+    # CHECK-NEXT: owned_variadic_pack done
     owned_variadic_pack("foo", 42)
-    # CHECK: done two
+    # CHECK-NEXT: done two
     print("done two")
 
-    # CHECK: initializing 1
-    # CHECK: initializing 2
-    # CHECK: initializing 3
-    # CHECK: -- testing owned variadic pack with 3 elements
-    # CHECK: hello talkative 1
-    # CHECK: hello talkative 2
-    # CHECK: hello talkative 3
-    # CHECK: destroying 3
-    # CHECK: destroying 2
-    # CHECK: destroying 1
-    # CHECK: owned_variadic_pack done
+    # CHECK-NEXT: initializing 1
+    # CHECK-NEXT: initializing 2
+    # CHECK-NEXT: initializing 3
+    # CHECK-NEXT: -- testing owned variadic pack with 3 elements
+    # CHECK-NEXT: hello talkative 1
+    # CHECK-NEXT: hello talkative 2
+    # CHECK-NEXT: hello talkative 3
+    # CHECK-NEXT: destroying 3
+    # CHECK-NEXT: destroying 2
+    # CHECK-NEXT: destroying 1
+    # CHECK-NEXT: owned_variadic_pack done
     owned_variadic_pack(TalkativeMem(1), TalkativeMem(2), TalkativeMem(3))
 
-    # CHECK: done three
+    # CHECK-NEXT: done three
     print("done three")
 
 
@@ -364,10 +365,8 @@ fn test_tuple():
 
     # CHECK-NEXT: initializing 1
     # CHECK-NEXT: initializing 2
-    # CHECK-NEXT: copying 1
-    # CHECK-NEXT: copying 2
-    # CHECK-NEXT: destroying 1
-    # CHECK-NEXT: destroying 2
+    # CHECK-NEXT: moving 1
+    # CHECK-NEXT: moving 2
     var t1 = TalkativeCopableMovableMem(1), TalkativeCopableMovableMem(2)
 
     # CHECK-NEXT: p1: talkative 2 before copy

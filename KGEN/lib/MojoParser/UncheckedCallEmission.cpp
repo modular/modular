@@ -68,7 +68,9 @@ static CValue emitVariadicPackConstructor(
   auto callResult = emitter.emitConstructorCall(
       variadicPackType, operands, expr, CallSyntax::kTypeCall, packDest);
 
-  // RValue->BValue decay since we're passing VariadicPack as an SBValue.
+  if (isOwned)
+    return callResult;
+  // RValue->BValue decay if we're passing VariadicPack as an SBValue.
   return emitter.emitBValue({callResult, expr}, ExprContext::EC_PackArgument);
 }
 
@@ -1111,8 +1113,19 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // together and consolidated into a pop.variadic.create/pop.variadic.attr,
     // which is emitted as an SRValue instead of whatever the underlying type
     // is.
-    if (calleeSig.isPosVarArg(argIdx) || calleeSig.isPackVarArg(argIdx))
+    if (calleeSig.isPosVarArg(argIdx))
       convention = ArgConvention::BorrowedInReg;
+
+    // Owned and borrowed packs are passed as expected, but byref is passed
+    // borrowed.
+    if (calleeSig.isPackVarArg(argIdx)) {
+      if (convention == ArgConvention::ByRef)
+        convention = ArgConvention::BorrowedInReg;
+      else if (convention == ArgConvention::OwnedInMem)
+        convention = ArgConvention::OwnedInReg;
+      else if (convention == ArgConvention::BorrowedInMem)
+        convention = ArgConvention::BorrowedInReg;
+    }
 
     Value arg = callEmitter.emitPreemittedArgumentAsDynamicValue(argValAndExpr,
                                                                  convention);
