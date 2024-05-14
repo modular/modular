@@ -7,6 +7,8 @@
 # Checks x86 int8 matmul C = A*B with prepacked B
 #
 # ===----------------------------------------------------------------------=== #
+# COM: Crashes on darwin (mac). See https://linear.app/modularml/issue/KERN-438/kernelstestlinalgtest-matmulmojo-fails-to-run-on-macos
+# REQUIRES: linux
 # RUN: %mojo %s | FileCheck %s
 
 from sys.info import has_avx2, has_neon_int8_matmul
