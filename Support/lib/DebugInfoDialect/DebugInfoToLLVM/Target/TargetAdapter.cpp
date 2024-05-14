@@ -152,35 +152,52 @@ void DebugInfo::sinkDebugKills(Operation *op) {
     for (Block &block : region.getBlocks()) {
       // The kill Debug Value Ops corresponding to the current line at each
       // inlined scope.
-      CallStackWith<SmallVector<Operation *>> pendingKillsByLoc;
+      CallStackWith<SmallVector<KillOp>> pendingKillsByLoc;
+      // The debug kills that have been superceded by a non-kill debug value.
+      // This ensures we never change the order of values for a variable.
+      DenseSet<DILocalVariableAttr> staleKills;
       for (Operation &op : llvm::make_early_inc_range(block.getOperations())) {
+        if (auto value = dyn_cast<ValueOp>(op))
+          staleKills.insert(value.getValueInfo());
+
         // Ops without a location follow the location of the previous op.
         const CallStack callStack(op.getLoc());
         if (!callStack.frames.empty()) {
-          SmallVector<SmallVector<Operation *>> invalidated =
+          SmallVector<SmallVector<KillOp>> invalidated =
               pendingKillsByLoc.updateTo(callStack);
           // This is the start of a new line. Move all pending kill debug values
           // before this op.
-          for (SmallVector<Operation *> &kills : invalidated)
-            for (Operation *kill : kills)
-              kill->moveBefore(&op);
+          for (SmallVector<KillOp> &kills : invalidated) {
+            for (KillOp kill : kills) {
+              if (!staleKills.contains(kill.getValueInfo()))
+                kill->moveBefore(&op);
+              else
+                kill->erase();
+            }
+          }
         }
 
-        if (!pendingKillsByLoc.empty() && isa<KillOp>(op)) {
-          pendingKillsByLoc.backData().push_back(&op);
+        if (auto kill = dyn_cast<KillOp>(op)) {
+          staleKills.erase(kill.getValueInfo());
+          if (!pendingKillsByLoc.empty())
+            pendingKillsByLoc.backData().push_back(kill);
         }
-
         sinkDebugKills(&op);
       }
 
       // Any still pending kills can be moved before the last op of the block.
       if (!pendingKillsByLoc.empty()) {
         Operation *lastOp = &block.back();
-        SmallVector<SmallVector<Operation *>> invalidated =
+        SmallVector<SmallVector<KillOp>> invalidated =
             pendingKillsByLoc.updateTo({});
-        for (SmallVector<Operation *> &kills : invalidated)
-          for (Operation *kill : kills)
-            kill->moveBefore(lastOp);
+        for (SmallVector<KillOp> &kills : invalidated) {
+          for (KillOp kill : kills) {
+            if (!staleKills.contains(kill.getValueInfo()))
+              kill->moveBefore(lastOp);
+            else
+              kill->erase();
+          }
+        }
       }
     }
   }

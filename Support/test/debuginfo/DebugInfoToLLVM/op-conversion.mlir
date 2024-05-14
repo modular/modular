@@ -292,8 +292,8 @@ llvm.func @block_arguments() {
 #loc2 = loc(fused<#subprogram>["foo.mlir":2:0])
 #loc3 = loc(fused<#subprogram>["foo.mlir":3:0])
 
-// CHECK-LABEL: func @sink_kill_debug_values
-func.func @sink_kill_debug_values() -> i32 {
+// CHECK-LABEL: func @sink_debug_kills
+func.func @sink_debug_kills() -> i32 {
   // CHECK: llvm.mlir.undef
   // CHECK: llvm.intr.dbg.value
   // CHECK: "test.op"
@@ -311,6 +311,31 @@ func.func @sink_kill_debug_values() -> i32 {
   %value2 = "test.op2"() : () -> i32 loc(#loc2)
   %value3 = "test.op3"() : () -> i32 loc(#loc2)
   %value4 = "test.op4"() : () -> i32 loc(#loc3)
+  return %value : i32  loc(#loc3)
+} loc(#loc0)
+
+// CHECK-LABEL: func @sink_debug_kills_stale_after_value
+func.func @sink_debug_kills_stale_after_value() -> i32 {
+  // CHECK: "test.op"
+  // COM: First debug kill made stale by first debug value.
+  // CHECK: llvm.intr.dbg.value
+  // CHECK: "test.op2"
+  // CHECK: "test.op3"
+  // COM: Second debug kill made stale by second debug value.
+  // CHECK: llvm.intr.dbg.value
+  // COM: Last debug kill remains.
+  // CHECK: llvm.mlir.undef
+  // CHECK: return
+
+  debuginfo.kill #local_variable loc(#loc0)
+  %value = "test.op"() : () -> i32 loc(#loc0)
+  debuginfo.value #local_variable = %value : i32 loc(#loc1)
+  debuginfo.kill #local_variable loc(#loc2)
+  %value2 = "test.op2"() : () -> i32 loc(#loc2)
+  %value3 = "test.op3"() : () -> i32 loc(#loc2)
+  debuginfo.value #local_variable = %value : i32 loc(#loc2)
+  %value4 = "test.op4"() : () -> i32 loc(#loc2)
+  debuginfo.kill #local_variable loc(#loc3)
   return %value : i32  loc(#loc3)
 } loc(#loc0)
 
