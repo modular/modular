@@ -22,7 +22,6 @@ from math import (
     sin,
 )
 from math.limit import inf, neginf
-from math.math import _boole
 from sys.info import has_neon
 
 from complex import ComplexFloat32
@@ -245,11 +244,6 @@ fn test_rotate_bits() raises:
     assert_equal(rotate_bits_right[6](Scalar[type](96)), 129)
 
 
-def test_boole():
-    assert_equal(_boole(True), 1)
-    assert_equal(_boole(False), 0)
-
-
 def test_copysign():
     var x = Int32(2)
     assert_equal(2, math.copysign(x, x))
@@ -331,7 +325,6 @@ def main():
     test_factorial()
     test_rotate()
     test_rotate_bits()
-    test_boole()
     test_copysign()
     test_isclose()
     test_ceil()
