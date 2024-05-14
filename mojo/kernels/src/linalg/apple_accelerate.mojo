@@ -103,20 +103,23 @@ struct _CBLASTranspose:
 fn _cblas_f32[
     *,
     transpose_b: Bool = False,
-](c: NDBuffer, a: NDBuffer, b: NDBuffer):
-    constrained[a.rank == b.rank == c.rank == 2, "rank must be 2"]()
+](
+    m: Int32,
+    n: Int32,
+    k: Int32,
+    lda: Int32,
+    ldb: Int32,
+    ldc: Int32,
+    alpha: Float32,
+    beta: Float32,
+    c_ptr: DTypePointer,
+    a_ptr: DTypePointer,
+    b_ptr: DTypePointer,
+):
     constrained[
-        a.type == b.type == c.type == DType.float32,
+        a_ptr.type == b_ptr.type == c_ptr.type == DType.float32,
         "input and output types must be float32",
     ]()
-
-    var M = Int32(a.dim[0]())
-    var N = Int32(b.dim[0]() if transpose_b else b.dim[1]())
-    var K = Int32(a.dim[1]())
-
-    var lda = K
-    var ldb = N if not transpose_b else K
-    var ldc = N
 
     # void cblas_sgemm(const enum CBLAS_ORDER ORDER,
     #                  const enum CBLAS_TRANSPOSE TRANSA,
@@ -155,16 +158,16 @@ fn _cblas_f32[
         _CBLASOrder.ROW_MAJOR,
         _CBLASTranspose.NO_TRANSPOSE,
         _CBLASTranspose.TRANSPOSE if transpose_b else _CBLASTranspose.NO_TRANSPOSE,
-        M,
-        N,
-        K,
-        Float32(1.0),
-        rebind[DTypePointer[DType.float32]](a.data),
+        m,
+        n,
+        k,
+        alpha,
+        rebind[DTypePointer[DType.float32]](a_ptr),
         lda,
-        rebind[DTypePointer[DType.float32]](b.data),
+        rebind[DTypePointer[DType.float32]](b_ptr),
         ldb,
-        Float32(0.0),
-        rebind[DTypePointer[DType.float32]](c.data),
+        beta,
+        rebind[DTypePointer[DType.float32]](c_ptr),
         ldc,
     )
 
@@ -647,7 +650,20 @@ fn apple_matmul[
 ](c: NDBuffer, a: NDBuffer, b: NDBuffer):
     @parameter
     if a.type == b.type == c.type == DType.float32:
-        _cblas_f32[transpose_b=transpose_b](c, a, b)
+        var m = Int32(a.dim[0]())
+        var n = Int32(b.dim[0]() if transpose_b else b.dim[1]())
+        var k = Int32(a.dim[1]())
+
+        var lda = k
+        var ldb = n if not transpose_b else k
+        var ldc = n
+
+        var alpha = 1.0
+        var beta = 0.0
+
+        _cblas_f32[transpose_b=transpose_b](
+            m, n, k, lda, ldb, ldc, alpha, beta, c.data, a.data, b.data
+        )
 
         @parameter
         if elementwise_lambda_fn:
