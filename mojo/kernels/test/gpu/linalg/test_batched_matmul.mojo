@@ -9,14 +9,13 @@
 
 from LinAlg.BatchedMatmul import batched_matmul
 from buffer import NDBuffer, DimList
-from gpu.host import Context, synchronize
-from gpu.host.memory import _copy_device_to_host, _copy_host_to_device, _malloc
+from gpu.host import Context, CudaInstance, Device
 
 from utils.index import Index, StaticIntTuple
 
 
 # CHECK-LABEL: test_batched_matmul
-fn test_batched_matmul() raises:
+fn test_batched_matmul(ctx: Context) raises:
     print("== test_batched_matmul")
 
     alias b = 2
@@ -54,17 +53,17 @@ fn test_batched_matmul() raises:
             for ni in range(n):
                 dst_host[Index(bi, mi, ni)] = 0.0
 
-    var lhs_device = _malloc[DType.float32](lhs_host.num_elements())
-    var rhs_device = _malloc[DType.float32](rhs_host.num_elements())
-    var dst_device = _malloc[DType.float32](dst_host.num_elements())
+    var lhs_device = ctx.malloc[DType.float32](lhs_host.num_elements())
+    var rhs_device = ctx.malloc[DType.float32](rhs_host.num_elements())
+    var dst_device = ctx.malloc[DType.float32](dst_host.num_elements())
 
     var lhs_buffer = NDBuffer[DType.float32, 3](rhs_device, Index(b, m, k))
     var rhs_buffer = NDBuffer[DType.float32, 3](lhs_device, Index(b, k, n))
     var dst_buffer = NDBuffer[DType.float32, 3](dst_device, Index(b, m, n))
 
-    _copy_host_to_device(lhs_device, lhs_host.data, lhs_host.num_elements())
-    _copy_host_to_device(rhs_device, rhs_host.data, rhs_host.num_elements())
-    _copy_host_to_device(dst_device, dst_host.data, dst_host.num_elements())
+    ctx.copy_host_to_device(lhs_device, lhs_host.data, lhs_host.num_elements())
+    ctx.copy_host_to_device(rhs_device, rhs_host.data, rhs_host.num_elements())
+    ctx.copy_host_to_device(dst_device, dst_host.data, dst_host.num_elements())
 
     @always_inline
     @__copy_capture(dst_buffer)
@@ -74,6 +73,7 @@ fn test_batched_matmul() raises:
     ](idx: StaticIntTuple[rank], val: SIMD[c_type, width]) -> None:
         dst_buffer[(idx[0], idx[1], idx[2])] = rebind[Float32](val) + 2.0
 
+    # FIXME: batched_matmul should be passed a context argument
     batched_matmul[
         rank=3,
         a_type = DType.float32,
@@ -88,9 +88,9 @@ fn test_batched_matmul() raises:
         lhs_buffer,
         rhs_buffer,
     )
-    synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(dst_host.data, dst_device, dst_host.num_elements())
+    ctx.copy_device_to_host(dst_host.data, dst_device, dst_host.num_elements())
 
     # CHECK: [30.0, 36.0],
     # CHECK: [78.0, 100.0]],
@@ -102,7 +102,8 @@ fn test_batched_matmul() raises:
 # CHECK-NOT: CUDA_ERROR
 fn main():
     try:
-        with Context() as ctx:
-            test_batched_matmul()
+        with CudaInstance() as instance:
+            with Context(Device(instance)) as ctx:
+                test_batched_matmul(ctx)
     except e:
         print("CUDA_ERROR:", e)

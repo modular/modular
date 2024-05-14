@@ -8,8 +8,7 @@
 
 
 from builtin.io import _printf
-from gpu.host import Context, Function
-from gpu.host.memory import _malloc_managed
+from gpu.host import Context, Function, Device, CudaInstance
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from layout import *
 
@@ -30,16 +29,17 @@ fn gpu_kernel(
 
 
 def main():
-    with Context() as ctx:
-        var vec_a = _malloc_managed[DType.float32](16)
-        var vec_b = _malloc_managed[DType.float32](16)
-        var vec_c = _malloc_managed[DType.float32](16)
-        for i in range(16):
-            vec_a[i] = i
-            vec_b[i] = i
-            vec_c[i] = 0
-        var kernel = Function[__type_of(gpu_kernel), gpu_kernel]()
-        kernel(vec_c, vec_a, vec_b, block_dim=(4), grid_dim=(4))
+    with CudaInstance() as instance:
+        with Context(Device(instance)) as ctx:
+            var vec_a = ctx.malloc_managed[DType.float32](16)
+            var vec_b = ctx.malloc_managed[DType.float32](16)
+            var vec_c = ctx.malloc_managed[DType.float32](16)
+            for i in range(16):
+                vec_a[i] = i
+                vec_b[i] = i
+                vec_c[i] = 0
+            var kernel = Function[__type_of(gpu_kernel), gpu_kernel](ctx)
+            kernel(vec_c, vec_a, vec_b, block_dim=(4), grid_dim=(4))
 
-        for i in range(16):
-            print(vec_a[i], "+", vec_b[i], "=", vec_c[i])
+            for i in range(16):
+                print(vec_a[i], "+", vec_b[i], "=", vec_c[i])

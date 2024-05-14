@@ -8,12 +8,6 @@
 
 from gpu import *
 from gpu.host import Context, Dim, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
 from testing import *
 
 
@@ -29,7 +23,7 @@ fn add_constant_fn(
     out[tid] = input[tid] + constant
 
 
-def run_add_constant():
+fn run_add_constant(ctx: Context) raises:
     alias length = 1024
     var stream = Stream()
 
@@ -39,10 +33,10 @@ def run_add_constant():
     for i in range(length):
         in_host[i] = i
 
-    var in_device = _malloc[Float32](length)
-    var out_device = _malloc[Float32](length)
+    var in_device = ctx.malloc[Float32](length)
+    var out_device = ctx.malloc[Float32](length)
 
-    _copy_host_to_device(in_device, in_host, length)
+    ctx.copy_host_to_device(in_device, in_host, length)
 
     var func = Function[
         fn (
@@ -51,10 +45,11 @@ def run_add_constant():
             Float32,
             Int,
         ) -> None, add_constant_fn
-    ]()
+    ](ctx)
 
     var block_dim = 32
-    alias constant = FloatLiteral(33)
+    # FIXME: why did this have FloatLiteral here?
+    alias constant = Float32(33)
 
     func(
         out_device,
@@ -66,13 +61,13 @@ def run_add_constant():
         stream=stream,
     )
 
-    _copy_device_to_host(out_host, out_device, length)
+    ctx.copy_device_to_host(out_host, out_device, length)
 
     for i in range(10):
         assert_equal(out_host[i], i + constant)
 
-    _free(in_device)
-    _free(out_device)
+    ctx.free(in_device)
+    ctx.free(out_device)
 
     in_host.free()
     out_host.free()
@@ -85,6 +80,6 @@ def run_add_constant():
 def main():
     try:
         with Context() as ctx:
-            run_add_constant()
+            run_add_constant(ctx)
     except e:
         print("CUDA_ERROR:", e)

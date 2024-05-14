@@ -6,16 +6,15 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo %s | FileCheck %s
 
-from gpu.host import Context, Function, FuncAttribute
+from gpu.host import Context, Function, FuncAttribute, Device, CudaInstance
 
 from gpu.memory import dynamic_shared_memory
 from gpu.id import ThreadIdx
 from gpu.sync import barrier
-from gpu.host.memory import _malloc_managed
 
 
 # CHECK-LABEL: test_dynamic_shared_mem
-fn test_dynamic_shared_mem() raises:
+fn test_dynamic_shared_mem(ctx: Context) raises:
     print("== test_dynamic_shared_mem")
 
     fn dynamc_smem_kernel(data: DTypePointer[DType.float32]):
@@ -26,10 +25,11 @@ fn test_dynamic_shared_mem() raises:
 
     # The default limitation is < 48KB for sm_80, 86, 89.
     var func = Function[__type_of(dynamc_smem_kernel), dynamc_smem_kernel](
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(64 * 1024)
+        ctx,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(64 * 1024),
     )
 
-    var res = _malloc_managed[DType.float32](16)
+    var res = ctx.malloc_managed[DType.float32](16)
     for i in range(16):
         res[i] = 0
 
@@ -55,5 +55,6 @@ fn test_dynamic_shared_mem() raises:
 
 
 fn main() raises:
-    with Context() as ctx:
-        test_dynamic_shared_mem()
+    with CudaInstance() as instance:
+        with Context(Device(instance)) as ctx:
+            test_dynamic_shared_mem(ctx)

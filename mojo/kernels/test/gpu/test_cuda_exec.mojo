@@ -10,41 +10,51 @@
 from pathlib import Path
 from sys.param_env import env_get_string
 
-from gpu.host import Context, ModuleHandle, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import Context, Function, Module, Stream, CudaInstance, Device
 from memory.unsafe import Pointer
 
 alias CURRENT_DIR = env_get_string["CURRENT_DIR"]()
 
 
 # CHECK-LABEL: run_cuda_mem_ops
-fn run_cuda_mem_ops() raises:
+fn run_cuda_mem_ops(ctx: Context) raises:
     print("== run_cuda_mem_ops")
 
     alias length = 20
 
     var host_mem = Pointer[Int].alloc(length)
-    var device_mem = _malloc[Int](length)
+    var device_mem = ctx.malloc[Int](length)
 
-    _copy_host_to_device(device_mem, host_mem, length)
-    _copy_device_to_host(host_mem, device_mem, length)
+    ctx.copy_host_to_device(device_mem, host_mem, length)
+    ctx.copy_device_to_host(host_mem, device_mem, length)
 
-    _free(device_mem)
+    ctx.free(device_mem)
     host_mem.free()
 
 
+fn vec_func(
+    in0: DTypePointer[DType.float32],
+    in1: DTypePointer[DType.float32],
+    out: DTypePointer[DType.float32],
+    len: Int,
+):
+    pass
+
+
 # CHECK-LABEL: run_vec_add
-fn run_vec_add() raises:
+fn run_vec_add(ctx: Context) raises:
     print("== run_vec_add")
 
-    var module = ModuleHandle((Path(CURRENT_DIR) / "vec_add.ptx"))
+    var module = Module(ctx, (Path(CURRENT_DIR) / "vec_add.ptx"))
 
-    var func = module.load("vec_add")
+    var func = Function[
+        fn (
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            DTypePointer[DType.float32],
+            Int,
+        ) -> None, vec_func
+    ](module, "vec_add")
 
     alias length = 1024
 
@@ -56,12 +66,12 @@ fn run_vec_add() raises:
         in0_host[i] = i
         in1_host[i] = 2
 
-    var in0_device = _malloc[Float32](length)
-    var in1_device = _malloc[Float32](length)
-    var out_device = _malloc[Float32](length)
+    var in0_device = ctx.malloc[Float32](length)
+    var in1_device = ctx.malloc[Float32](length)
+    var out_device = ctx.malloc[Float32](length)
 
-    _copy_host_to_device(in0_device, in0_host, length)
-    _copy_host_to_device(in1_device, in1_host, length)
+    ctx.copy_host_to_device(in0_device, in0_host, length)
+    ctx.copy_host_to_device(in1_device, in1_host, length)
 
     @parameter
     @always_inline
@@ -69,7 +79,7 @@ fn run_vec_add() raises:
         return
 
     var block_dim = 32
-    func._call_impl[0, populate](
+    func(
         out_device,
         in0_device,
         in1_device,
@@ -78,9 +88,9 @@ fn run_vec_add() raises:
         block_dim=(block_dim),
         stream=Stream(),
     )
-    synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(out_host, out_device, length)
+    ctx.copy_device_to_host(out_host, out_device, length)
 
     # CHECK: at index 0 the value is 2.0
     # CHECK: at index 1 the value is 3.0
@@ -95,9 +105,9 @@ fn run_vec_add() raises:
     for i in range(10):
         print("at index", i, "the value is", out_host.load(i))
 
-    _free(in0_device)
-    _free(in1_device)
-    _free(out_device)
+    ctx.free(in0_device)
+    ctx.free(in1_device)
+    ctx.free(out_device)
 
     in0_host.free()
     in1_host.free()
@@ -110,8 +120,9 @@ fn run_vec_add() raises:
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_cuda_mem_ops()
-            run_vec_add()
+        with CudaInstance() as instance:
+            with Context(Device(instance)) as ctx:
+                run_cuda_mem_ops(ctx)
+                run_vec_add(ctx)
     except e:
         print("CUDA_ERROR:", e)

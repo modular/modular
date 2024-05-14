@@ -13,23 +13,15 @@ from algorithm.functional import _elementwise_impl
 from benchmark._cuda import run
 from buffer import NDBuffer, DimList
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream
+from gpu.host import Context, Dim, Function, Stream, Device, CudaInstance
 from gpu.host._compile import _get_nvptx_target
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-    _memset,
-)
-from gpu.host.sync import synchronize
 from testing import assert_equal
 
 from utils.index import Index
 
 
 # CHECK-LABEL: run_elementwise
-fn run_elementwise[type: DType]() raises:
+fn run_elementwise[type: DType](ctx: Context) raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
 
     var in_host = NDBuffer[type, 2, DimList(2, 8)].stack_allocation()
@@ -40,10 +32,10 @@ fn run_elementwise[type: DType]() raises:
         for j in range(8):
             in_host[Index(i, j)] = i + j
 
-    var in_device = _malloc[type](flattened_length)
-    var out_device = _malloc[type](flattened_length)
+    var in_device = ctx.malloc[type](flattened_length)
+    var out_device = ctx.malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data, flattened_length)
+    ctx.copy_host_to_device(in_device, in_host.data, flattened_length)
 
     var in_buffer = NDBuffer[type, 2](in_device, Index(2, 8))
     var out_buffer = NDBuffer[type, 2](out_device, Index(2, 8))
@@ -67,14 +59,15 @@ fn run_elementwise[type: DType]() raises:
                 in_buffer.load[width=simd_width](idx) + 42,
             )
 
+    # FIXME: _elementwise_impl should take a complete GPU execution environment
     _elementwise_impl[
         func, pack_size, 2, use_blocking_impl=True, target="cuda"
     ](
         StaticIntTuple[2](2, 8),
     )
-    synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(out_host.data, out_device, flattened_length)
+    ctx.copy_device_to_host(out_host.data, out_device, flattened_length)
 
     var expected_vals = List[Scalar[type]](
         42.0,
@@ -101,12 +94,12 @@ fn run_elementwise[type: DType]() raises:
                 expected_vals[i * 8 + j],
             )
 
-    _free(in_device)
-    _free(out_device)
+    ctx.free(in_device)
+    ctx.free(out_device)
 
 
 # CHECK-LABEL: run_elementwise_uneven_simd
-fn run_elementwise_uneven_simd[type: DType]() raises:
+fn run_elementwise_uneven_simd[type: DType](ctx: Context) raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
     var in_host = NDBuffer[type, 2, DimList(3, 3)].stack_allocation()
     var out_host = NDBuffer[type, 2, DimList(3, 3)].stack_allocation()
@@ -116,10 +109,10 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
         for j in range(3):
             in_host[Index(i, j)] = i + j
 
-    var in_device = _malloc[type](flattened_length)
-    var out_device = _malloc[type](flattened_length)
+    var in_device = ctx.malloc[type](flattened_length)
+    var out_device = ctx.malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data, flattened_length)
+    ctx.copy_host_to_device(in_device, in_host.data, flattened_length)
 
     var in_buffer = NDBuffer[type, 2](in_device, Index(3, 3))
     var out_buffer = NDBuffer[type, 2](out_device, Index(3, 3))
@@ -148,8 +141,8 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
     ](
         StaticIntTuple[2](3, 3),
     )
-    synchronize()
-    _copy_device_to_host(out_host.data, out_device, flattened_length)
+    ctx.synchronize()
+    ctx.copy_device_to_host(out_host.data, out_device, flattened_length)
 
     var expected_vals = List[Scalar[type]](
         42.0, 43.0, 44.0, 43.0, 44.0, 45.0, 44.0, 45.0, 46.0
@@ -161,11 +154,11 @@ fn run_elementwise_uneven_simd[type: DType]() raises:
                 expected_vals[i * 3 + j],
             )
 
-    _free(in_device)
-    _free(out_device)
+    ctx.free(in_device)
+    ctx.free(out_device)
 
 
-fn run_elementwise_transpose_copy[type: DType]() raises:
+fn run_elementwise_transpose_copy[type: DType](ctx: Context) raises:
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
     var in_host = NDBuffer[type, 3, DimList(2, 4, 5)].stack_allocation()
     var out_host = NDBuffer[type, 3, DimList(4, 2, 5)].stack_allocation()
@@ -176,10 +169,10 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
             for k in range(5):
                 in_host[Index(i, j, k)] = i * 4 * 5 + j * 5 + k
 
-    var in_device = _malloc[type](flattened_length)
-    var out_device = _malloc[type](flattened_length)
+    var in_device = ctx.malloc[type](flattened_length)
+    var out_device = ctx.malloc[type](flattened_length)
 
-    _copy_host_to_device(in_device, in_host.data, flattened_length)
+    ctx.copy_host_to_device(in_device, in_host.data, flattened_length)
 
     var in_buffer_transposed = NDBuffer[type, 3](
         in_device, Index(4, 2, 5), Index(5, 20, 1)
@@ -199,8 +192,8 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
     _elementwise_impl[func, 4, 3, use_blocking_impl=True, target="cuda"](
         StaticIntTuple[3](4, 2, 5),
     )
-    synchronize()
-    _copy_device_to_host(out_host.data, out_device, flattened_length)
+    ctx.synchronize()
+    ctx.copy_device_to_host(out_host.data, out_device, flattened_length)
 
     var expected_vals = List[Scalar[type]](
         0.0,
@@ -252,18 +245,19 @@ fn run_elementwise_transpose_copy[type: DType]() raises:
                     expected_vals[i * 2 * 5 + j * 5 + k],
                 )
 
-    _free(in_device)
-    _free(out_device)
+    ctx.free(in_device)
+    ctx.free(out_device)
 
 
 fn main() raises:
-    with Context() as ctx:
-        run_elementwise[DType.float32]()
-        run_elementwise_uneven_simd[DType.float32]()
-        run_elementwise_transpose_copy[DType.float32]()
-        run_elementwise[DType.bfloat16]()
-        run_elementwise_uneven_simd[DType.bfloat16]()
-        run_elementwise_transpose_copy[DType.bfloat16]()
-        run_elementwise[DType.float16]()
-        run_elementwise_uneven_simd[DType.float16]()
-        run_elementwise_transpose_copy[DType.float16]()
+    with CudaInstance() as instance:
+        with Context(Device(instance)) as ctx:
+            run_elementwise[DType.float32](ctx)
+            run_elementwise_uneven_simd[DType.float32](ctx)
+            run_elementwise_transpose_copy[DType.float32](ctx)
+            run_elementwise[DType.bfloat16](ctx)
+            run_elementwise_uneven_simd[DType.bfloat16](ctx)
+            run_elementwise_transpose_copy[DType.bfloat16](ctx)
+            run_elementwise[DType.float16](ctx)
+            run_elementwise_uneven_simd[DType.float16](ctx)
+            run_elementwise_transpose_copy[DType.float16](ctx)

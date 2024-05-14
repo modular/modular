@@ -19,14 +19,8 @@ from gpu import (
     barrier,
     lane_id,
 )
-from gpu.host import Context, Function, synchronize, Stream
+from gpu.host import Context, Function, Stream, Device, CudaInstance
 from gpu.host.event import time_function
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
 from gpu.memory import async_copy_wait_all
 from testing import assert_almost_equal
 from sys import argv
@@ -264,7 +258,7 @@ fn sgemm_double_buffer[
     )
 
 
-def test():
+fn test(ctx: Context) raises:
     alias NUM_THREADS = 256
     alias M = 8192
     alias N = 8192
@@ -277,7 +271,7 @@ def test():
     alias TM = 8
     alias TN = 8
 
-    var stream = Stream()
+    var stream = Stream(ctx)
 
     alias a_layout = Layout(IntTuple(M, K), IntTuple(K, 1))
     alias b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
@@ -294,13 +288,13 @@ def test():
     for i in range(K * N):
         b_host[i] = i
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N)
-    var c_device_ref = _malloc[Float32](M * N)
+    var a_device = ctx.malloc[Float32](M * K)
+    var b_device = ctx.malloc[Float32](K * N)
+    var c_device = ctx.malloc[Float32](M * N)
+    var c_device_ref = ctx.malloc[Float32](M * N)
 
-    _copy_host_to_device(a_device, a_host, M * K)
-    _copy_host_to_device(b_device, b_host, K * N)
+    ctx.copy_host_to_device(a_device, a_host, M * K)
+    ctx.copy_host_to_device(b_device, b_host, K * N)
 
     var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](c_device)
     var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](a_device)
@@ -327,7 +321,9 @@ def test():
         TN,
         NUM_THREADS,
     ]
-    var func = Function[__type_of(gemm), gemm](threads_per_block=NUM_THREADS)
+    var func = Function[__type_of(gemm), gemm](
+        ctx, threads_per_block=NUM_THREADS
+    )
 
     if is_benchmark():
         alias nrun = 200
@@ -364,9 +360,9 @@ def test():
         stream=stream,
     )
 
-    synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(c_host, c_device, M * N)
+    ctx.copy_device_to_host(c_host, c_device, M * N)
 
     # Naive gemm.
     alias BLOCK_DIM = 16
@@ -374,7 +370,7 @@ def test():
         DType.float32, DType.float32, DType.float32, BLOCK_DIM
     ]
     var func_naive = Function[__type_of(gemm_naive), gemm_naive](
-        threads_per_block=NUM_THREADS
+        ctx, threads_per_block=NUM_THREADS
     )
     var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](c_device_ref)
     func_naive(
@@ -388,18 +384,18 @@ def test():
         block_dim=(BLOCK_DIM, BLOCK_DIM, 1),
     )
 
-    synchronize()
-    _copy_device_to_host(c_host_ref, c_device_ref, M * N)
+    ctx.synchronize()
+    ctx.copy_device_to_host(c_host_ref, c_device_ref, M * N)
 
     for i in range(M * N):
         if not isclose(c_host[i], c_host_ref[i]):
             print(i, c_host[i], c_host_ref[i])
         assert_almost_equal(c_host[i], c_host_ref[i])
 
-    _free(c_device)
-    _free(c_device_ref)
-    _free(a_device)
-    _free(b_device)
+    ctx.free(c_device)
+    ctx.free(c_device_ref)
+    ctx.free(a_device)
+    ctx.free(b_device)
 
     c_host.free()
     c_host_ref.free()
@@ -413,7 +409,8 @@ def test():
 
 def main():
     try:
-        with Context() as ctx:
-            test()
+        with CudaInstance() as instance:
+            with Context(Device(instance)) as ctx:
+                test(ctx)
     except e:
         print("ERROR:", e)

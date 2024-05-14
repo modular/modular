@@ -6,8 +6,7 @@
 # REQUIRES: has_cuda_device
 # RUN: %mojo-no-debug %s
 
-from gpu.host import CacheConfig, Context, Function, synchronize
-from gpu.host.memory import _malloc_managed
+from gpu.host import CacheConfig, Context, Function, Device, CudaInstance
 from gpu.id import BlockDim, BlockIdx, ThreadIdx
 from testing import *
 
@@ -18,15 +17,16 @@ fn gpu_kernel(buff: DTypePointer[DType.int64]):
 
 
 def main():
-    with Context() as ctx:
-        var buff = _malloc_managed[DType.int64](16)
-        for i in range(16):
-            buff[i] = 0
-        var kernel = Function[__type_of(gpu_kernel), gpu_kernel](
-            cache_config=CacheConfig.PREFER_SHARED
-        )
-        kernel(buff, block_dim=(4), grid_dim=(4))
-        synchronize()
+    with CudaInstance() as instance:
+        with Context(Device(instance)) as ctx:
+            var buff = ctx.malloc_managed[DType.int64](16)
+            for i in range(16):
+                buff[i] = 0
+            var kernel = Function[__type_of(gpu_kernel), gpu_kernel](
+                ctx, cache_config=CacheConfig.PREFER_SHARED
+            )
+            kernel(buff, block_dim=(4), grid_dim=(4))
+            ctx.synchronize()
 
-        for i in range(16):
-            assert_equal(buff[i], i, msg="invalid value at index=" + str(i))
+            for i in range(16):
+                assert_equal(buff[i], i, msg="invalid value at index=" + str(i))

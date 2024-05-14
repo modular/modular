@@ -10,12 +10,14 @@ from pathlib import Path
 from sys.info import triple_is_nvidia_cuda
 
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
+from gpu.host import (
+    CudaInstance,
+    Device,
+    Context,
+    Dim,
+    Function,
+    Stream,
+    synchronize,
 )
 
 
@@ -36,12 +38,12 @@ fn vec_func[
 # CHECK-LABEL: run_binary_add
 # COM: Force the capture to be captured instead of inlined away.
 @no_inline
-fn run_binary_add(capture: Float32) raises:
+fn run_binary_add(ctx: Context, capture: Float32) raises:
     print("== run_binary_add")
 
     alias length = 1024
 
-    var stream = Stream()
+    var stream = Stream(ctx)
 
     var in0_host = Pointer[Float32].alloc(length)
     var in1_host = Pointer[Float32].alloc(length)
@@ -51,12 +53,12 @@ fn run_binary_add(capture: Float32) raises:
         in0_host[i] = i
         in1_host[i] = 2
 
-    var in0_device = _malloc[Float32](length)
-    var in1_device = _malloc[Float32](length)
-    var out_device = _malloc[Float32](length)
+    var in0_device = ctx.malloc[Float32](length)
+    var in1_device = ctx.malloc[Float32](length)
+    var out_device = ctx.malloc[Float32](length)
 
-    _copy_host_to_device(in0_device, in0_host, length)
-    _copy_host_to_device(in1_device, in1_host, length)
+    ctx.copy_host_to_device(in0_device, in0_host, length)
+    ctx.copy_host_to_device(in1_device, in1_host, length)
 
     @parameter
     fn add(lhs: Float32, rhs: Float32) -> Float32:
@@ -69,7 +71,7 @@ fn run_binary_add(capture: Float32) raises:
             DTypePointer[DType.float32],
             Int,
         ) capturing -> None, vec_func[add]
-    ]()
+    ](ctx)
 
     var block_dim = 32
     func(
@@ -83,9 +85,9 @@ fn run_binary_add(capture: Float32) raises:
     )
     # CHECK: number of captures: 1
     print("number of captures:", func._impl.num_captures)
-    synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(out_host, out_device, length)
+    ctx.copy_device_to_host(out_host, out_device, length)
 
     # CHECK: at index 0 the value is 4.5
     # CHECK: at index 1 the value is 5.5
@@ -100,9 +102,9 @@ fn run_binary_add(capture: Float32) raises:
     for i in range(10):
         print("at index", i, "the value is", out_host.load(i))
 
-    _free(in0_device)
-    _free(in1_device)
-    _free(out_device)
+    ctx.free(in0_device)
+    ctx.free(in1_device)
+    ctx.free(out_device)
 
     in0_host.free()
     in1_host.free()
@@ -115,7 +117,8 @@ fn run_binary_add(capture: Float32) raises:
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_binary_add(2.5)
+        with CudaInstance() as instance:
+            with Context(Device(instance)) as ctx:
+                run_binary_add(ctx, 2.5)
     except e:
         print("CUDA_ERROR:", e)

@@ -7,14 +7,7 @@
 
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from gpu.host import Context, Function, synchronize, Stream
-from gpu.host.memory import (
-    _malloc_managed,
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import Context, Function, Stream, CudaInstance, Device
 from gpu import ThreadIdx
 from gpu.memory import (
     AddressSpace,
@@ -51,10 +44,10 @@ fn copy_via_shared(
 
 
 # CHECK-LABEL: run_copy_via_shared
-fn run_copy_via_shared() raises:
+fn run_copy_via_shared(ctx: Context) raises:
     print("== run_copy_via_shared")
-    var in_data = _malloc_managed[DType.float32](16)
-    var out_data = _malloc_managed[DType.float32](16)
+    var in_data = ctx.malloc_managed[DType.float32](16)
+    var out_data = ctx.malloc_managed[DType.float32](16)
 
     for i in range(16):
         in_data[i] = i + 1
@@ -62,9 +55,9 @@ fn run_copy_via_shared() raises:
 
     var copy_via_shared_gpu = Function[
         __type_of(copy_via_shared), copy_via_shared
-    ]()
+    ](ctx)
 
-    var stream = Stream()
+    var stream = Stream(ctx)
     copy_via_shared_gpu(
         in_data, out_data, grid_dim=(1,), block_dim=(16), stream=stream
     )
@@ -106,8 +99,8 @@ fn copy_with_src_size(
     dst[3] = smem[3]
 
 
-fn test_copy_with_src_size() raises:
-    var stream = Stream()
+fn test_copy_with_src_size(ctx: Context) raises:
+    var stream = Stream(ctx)
 
     alias size = 4
     var a_host = DTypePointer[DType.float32].alloc(size)
@@ -116,29 +109,29 @@ fn test_copy_with_src_size() raises:
     for i in range(size):
         a_host[i] = i + 1
 
-    var a_device = _malloc[Float32](size)
-    var b_device = _malloc[Float32](size)
+    var a_device = ctx.malloc[Float32](size)
+    var b_device = ctx.malloc[Float32](size)
 
-    _copy_host_to_device(a_device, a_host, size)
+    ctx.copy_host_to_device(a_device, a_host, size)
 
     alias kernel = copy_with_src_size
-    var func = Function[__type_of(kernel), kernel](threads_per_block=1)
+    var func = Function[__type_of(kernel), kernel](ctx, threads_per_block=1)
 
     alias src_size = 3 * sizeof[DType.float32]()
 
     func(a_device, b_device, src_size, grid_dim=(1, 1, 1), block_dim=(1, 1, 1))
 
-    synchronize()
+    ctx.synchronize()
 
-    _copy_device_to_host(b_host, b_device, size)
+    ctx.copy_device_to_host(b_host, b_device, size)
 
     assert_equal(b_host[0], 1)
     assert_equal(b_host[1], 2)
     assert_equal(b_host[2], 3)
     assert_equal(b_host[3], 0)
 
-    _free(a_device)
-    _free(b_device)
+    ctx.free(a_device)
+    ctx.free(b_device)
     a_host.free()
     b_host.free()
 
@@ -148,8 +141,9 @@ fn test_copy_with_src_size() raises:
 
 fn main():
     try:
-        with Context() as ctx:
-            run_copy_via_shared()
-            test_copy_with_src_size()
+        with CudaInstance() as instance:
+            with Context(Device(instance)) as ctx:
+                run_copy_via_shared(ctx)
+                test_copy_with_src_size(ctx)
     except e:
         print("CUDA_ERROR:", e)
