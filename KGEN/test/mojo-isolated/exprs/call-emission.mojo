@@ -274,5 +274,24 @@ struct ExampleRegPassable:
   fn __init__(inout self): pass
   fn mutateArg(self, inout other: Self): pass
 
+## Partial Binding of Function Symbols With Implicit Parameters
 
+struct Matrix[rows: int, cols: int]:
+  pass
 
+fn matmul_unrolled[I:int](inout C: Matrix):
+  pass
+
+@always_inline
+fn test_matrix_equal[func: fn (inout Matrix) -> None](inout C: Matrix) raises -> Bool:
+  func(C)
+  return True
+
+# CHECK-LABEL: lit.func @"partialBind
+fn partialBind(inout C:Matrix[`1`,`2`]) raises:
+  # CHECK-NEXT: %exp = lit.var.decl "exp
+  # CHECK-NEXT: lit.call @{{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
+  # CHECK-SAME: <:!lit.signature<[1]<?, index, index>(!lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> byref, |) -> !kgen.none>
+  # CHECK-SAME: rebind(:!lit.signature<[1]<?, index, index>("C": !lit.ref<@{{.*}}::@Matrix<*(0,0), *(0,1)>, mut *[0,0]> byref) -> !kgen.none>
+  # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<0, ?, ?>), 1, 2>(%C, %__error__, %exp)
+  var exp = test_matrix_equal[matmul_unrolled[`0`]](C)
