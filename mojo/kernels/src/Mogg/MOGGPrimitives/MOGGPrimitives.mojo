@@ -439,7 +439,7 @@ fn mgp_tensor_spec_size[
 # Issue tracking reenablement: https://github.com/modularml/modular/issues/38551
 
 
-@mogg_register("mgp.chain.create")
+# @mogg_register("mgp.chain.create")
 @always_inline
 @export
 fn mgp_chain_create[
@@ -447,6 +447,20 @@ fn mgp_chain_create[
     bHostDevice: StringLiteral,
     cOtherDevice: StringLiteral,
 ]():
+    return
+
+
+# @mogg_register("mgp.chain.device_to_host")
+@always_inline
+@export
+fn mgp_chain_device_to_host[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
+    return
+
+
+# @mogg_register("mgp.chain.host_to_device")
+@always_inline
+@export
+fn mgp_chain_host_to_device[aRuntimeSlot: UInt64, bDevice: StringLiteral]():
     return
 
 
