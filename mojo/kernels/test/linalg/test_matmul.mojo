@@ -9,7 +9,7 @@
 # ===----------------------------------------------------------------------=== #
 # COM: Crashes on darwin (mac). See https://linear.app/modularml/issue/KERN-438/kernelstestlinalgtest-matmulmojo-fails-to-run-on-macos
 # REQUIRES: linux
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo %s
 
 from sys.info import has_avx2, has_neon_int8_matmul
 
@@ -25,14 +25,11 @@ from LinAlg.MatmulPack import (
     pack_matmul_b_shape_func,
     _pack_matmul_b_shape_func_impl,
 )
+from testing import assert_almost_equal
 
 from utils.index import Index, StaticIntTuple
 
 alias alignment = 64
-
-alias a_type = DType.uint8
-alias b_type = DType.int8
-alias c_type = DType.int32
 
 
 fn gemm_naive[](
@@ -51,7 +48,7 @@ fn gemm_naive[](
                 c[(i, j)] += a_val * b_val
 
 
-fn test_matmul[
+def test_matmul[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -61,7 +58,7 @@ fn test_matmul[
     transpose_b: Bool,
     b_packed: Bool,
     saturated: Bool,
-](m: Int, n: Int, k: Int, kernel_type_m: Int) -> Int:
+](m: Int, n: Int, k: Int, kernel_type_m: Int):
     var a_ptr = DTypePointer[a_type].alloc(m * k, alignment=alignment)
     var b_ptr = DTypePointer[b_type].alloc(k * n, alignment=alignment)
     var b = NDBuffer[b_type, 2, b_shape](b_ptr, Index(k, n))
@@ -130,6 +127,7 @@ fn test_matmul[
             c[StaticIntTuple[2]((i, j))] = 0
             golden[StaticIntTuple[2]((i, j))] = c[StaticIntTuple[2]((i, j))]
 
+    @parameter
     if b_packed:
         if kernel_type_m != 0:
             _pack_b_ndbuffer_impl[
@@ -175,21 +173,31 @@ fn test_matmul[
     var errors: Int = 0
     for i in range(m):
         for j in range(n):
-            if c[i, j] != golden[i, j]:
-                errors += 1
-
-    if errors != 0:
-        print("\nMatrices don't agree!")
+            assert_almost_equal(
+                c[i, j],
+                golden[i, j],
+                msg="values do not agree for "
+                + str(m)
+                + "x"
+                + str(n)
+                + "x"
+                + str(k)
+                + " using the dtype="
+                + str(a_type)
+                + ","
+                + str(b_type)
+                + ","
+                + str(c_type),
+            )
 
     a_ptr.free()
     b_ptr.free()
     bp_ptr.free()
     c0_ptr.free()
     c1_ptr.free()
-    return errors
 
 
-fn test_matmul[
+def test_matmul[
     *,
     a_type: DType,
     b_type: DType,
@@ -198,12 +206,10 @@ fn test_matmul[
     saturated: Bool,
     mixed_kernels: Bool,
 ](m: Int, n: Int, k: Int):
-    print("== test_matmul")
-    var errors = 0
     alias a_shape = DimList.create_unknown[2]()
     alias b_shape = DimList.create_unknown[2]()
     alias c_shape = DimList.create_unknown[2]()
-    errors = test_matmul[
+    test_matmul[
         a_type,
         a_shape,
         b_type,
@@ -214,13 +220,9 @@ fn test_matmul[
         b_packed,  # b_packed
         saturated=saturated,
     ](m, n, k, m if mixed_kernels else 0)
-    if errors > 0:
-        return
-    # CHECK: Success
-    print("Success")
 
 
-fn test_shapes[
+def test_shapes[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -228,8 +230,17 @@ fn test_shapes[
     saturated: Bool,
     mixed_kernels: Bool,
 ]():
-    @parameter
-    fn test_shapes_helper(m: Int, n: Int, k: Int):
+    var shapes = List[Tuple[Int, Int, Int]](
+        (256, 1024, 4096),
+        (4, 5, 6),
+        (15, 16, 17),
+        (24, 32, 64),
+        (61, 73, 79),
+        (123, 456, 321),
+        (256, 256, 256),
+        (2, 65, 1200),
+    )
+    for shape in shapes:
         test_matmul[
             a_type=a_type,
             b_type=b_type,
@@ -237,19 +248,10 @@ fn test_shapes[
             b_packed=b_packed,
             saturated=saturated,
             mixed_kernels=mixed_kernels,
-        ](m, n, k)
-
-    test_shapes_helper(256, 1024, 4096)
-    test_shapes_helper(4, 5, 6)
-    test_shapes_helper(15, 16, 17)
-    test_shapes_helper(24, 32, 64)
-    test_shapes_helper(61, 73, 79)
-    test_shapes_helper(123, 456, 321)
-    test_shapes_helper(256, 256, 256)
-    test_shapes_helper(2, 65, 1200)
+        ](shape[][0], shape[][1], shape[][2])
 
 
-fn test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
+def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
     test_shapes[
         DType.uint8,
         DType.uint8,
@@ -275,7 +277,7 @@ fn test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
         ]()
 
 
-fn main():
+def main():
     test_types[b_packed=False, saturated=False, mixed_kernels=False]()
     test_types[b_packed=True, saturated=False, mixed_kernels=False]()
     test_types[b_packed=False, saturated=True, mixed_kernels=False]()
