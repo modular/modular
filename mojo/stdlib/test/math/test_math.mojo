@@ -20,6 +20,7 @@ from math import (
     rotate_left,
     rotate_right,
     sin,
+    trunc,
 )
 from math.limit import inf, neginf
 from sys.info import has_neon
@@ -317,6 +318,16 @@ def test_floor():
     assert_equal(floor(Float64(-3.4)), -4.0)
 
 
+def test_trunc():
+    # We just test that the `trunc` function resolves correctly for a few common
+    # types. Types should test their own `__floor__` implementation explicitly.
+    assert_equal(trunc(0), 0)
+    assert_equal(trunc(Int(5)), 5)
+    assert_equal(trunc(1.5), 1.0)
+    assert_equal(trunc(Float32(1.6)), 1.0)
+    assert_equal(trunc(Float64(-3.4)), -3.0)
+
+
 def main():
     test_inf()
     test_nan()
@@ -329,3 +340,4 @@ def main():
     test_isclose()
     test_ceil()
     test_floor()
+    test_trunc()
