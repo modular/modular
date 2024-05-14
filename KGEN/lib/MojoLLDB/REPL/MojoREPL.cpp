@@ -410,7 +410,7 @@ static void enableREPLSymbolCache(Debugger &debugger) {
 /// disable them just in case.
 static void disableExpensiveFeatures(Debugger &debugger) {
   // We don't need JIT debugging.
-  runCommand(debugger, "settings set plugin.jit-loader.gdb.enable false");
+  runCommand(debugger, "settings set plugin.jit-loader.gdb.enable off");
   // We don't need to process debug info upfront. This is more useful for remote
   // debugging, e.g. android.
   runCommand(debugger, "settings set target.preload-symbols false");
