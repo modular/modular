@@ -6,7 +6,7 @@
 
 # RUN: mojo %s
 
-from max.driver import Device, CPUDescriptor
+from driver import Device, CPUDescriptor
 from tensor import TensorSpec
 from utils.index import Index
 from testing import assert_equal
