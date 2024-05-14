@@ -1084,9 +1084,10 @@ LogicalResult DeclResolver::resolveSignature(LIT::FuncOp funcOp, Lexer &lexer,
         // closure
         funcOp.setSignature(
             signature.getWithFnEffects(signature.getFnEffects().setEscaping()));
-        decl.irValue = emitClosureInstance(shared, decl, decl.getLoc());
-        if (!decl.irValue)
+        MLValue instance = emitClosureInstance(shared, decl, decl.getLoc());
+        if (!instance)
           return failure();
+        decl.irValue = instance;
       } else {
         funcOp.setParamDeclAttr(
             ParamDeclAttr::get(funcOp.getSymNameAttr(), signature));

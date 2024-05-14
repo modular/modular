@@ -46,7 +46,7 @@ public:
   /// Return the Module, StructDecl, Func, or ParamDecl that this scope
   /// corresponds to.
   DeclIRValue getIRValue() const { return irValue; }
-  void setIRValue(DeclIRValue value) { irValue = value; }
+  void setIRValue(DeclIRValue value) { irValue = std::move(value); }
 
   /// Dump the underlying IR value.
   void dump() const;
@@ -56,7 +56,7 @@ public:
   RValue getIfRValue() const;
   BValue getIfBValue() const;
   PValue getIfPValue() const { return dyn_cast_or_null<PValue>(irValue); }
-  MLValue getIfMLValue() const { return dyn_cast_or_null<MLValue>(irValue); }
+  LValue getIfLValue() const;
 
   /// If the IRValue is an Operation*, return it, otherwise return null.
   Operation *getIfOperation() const {

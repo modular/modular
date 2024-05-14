@@ -58,12 +58,6 @@ DeclResolver::~DeclResolver() {
 //===----------------------------------------------------------------------===//
 // Decl Constructors
 
-ASTDecl &DeclResolver::addDecl(Operation *op, SMLoc loc, StringAttr baseName,
-                               ASTDecl *parentDecl, LexerCursor cursor,
-                               LexerCursor endCursor, ssize_t indentation) {
-  return addDecl(DeclIRValue(op), loc, baseName, parentDecl, cursor, endCursor,
-                 indentation);
-}
 ASTDecl &DeclResolver::addDecl(DeclIRValue irValue, SMLoc loc,
                                StringAttr baseName, ASTDecl *parentDecl,
                                LexerCursor cursor, LexerCursor endCursor,
@@ -117,7 +111,7 @@ ASTDecl &DeclResolver::createUnlistedDecl(DeclIRValue irValue, SMLoc loc,
   if (auto rv = decl->getIfRValue()) {
     if (rv.getType().isTypeCheckErrorType())
       decl->setErroneous();
-  } else if (auto lv = decl->getIfMLValue()) {
+  } else if (auto lv = decl->getIfLValue()) {
     if (lv.getRValueType(shared).isTypeCheckErrorType())
       decl->setErroneous();
   } else if (auto bv = decl->getIfBValue()) {

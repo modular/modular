@@ -104,9 +104,6 @@ static ParamDeclRefAttr getIfParameter(MojoASTDeclRef declRef) {
 /// Return the defining Op from the IR encapsulated by this decl. It might be
 /// null.
 static Operation *getDefiningOpFromIR(MojoASTDeclRef declRef) {
-  if (!declRef->getIRValue().getOpaqueValue())
-    return nullptr;
-
   return TypeSwitch<DeclIRValue, Operation *>(declRef->getIRValue())
       .Case<SBValue, SRValue, MBValue, MLValue>(
           [&](auto val) -> Operation * { return Value(val).getDefiningOp(); })

@@ -17,6 +17,7 @@
 #include "KGEN/MojoParser/IRValues.h"
 #include "KGEN/MojoParser/Lexer.h"
 #include "KGEN/MojoParser/SharedState.h"
+#include "Support/RCRef.h"
 
 namespace M::KGEN {
 class ParamDeclAttr;
@@ -36,6 +37,7 @@ class StructDeclOp;
 class StructFieldOp;
 class TraitDeclOp;
 struct ParsedArgument;
+class BaseDLValue;
 enum class PassingKind : uint32_t;
 
 //===----------------------------------------------------------------------===//
@@ -45,8 +47,8 @@ enum class PassingKind : uint32_t;
 /// This stores declaration references (e.g. vardecls, structdecls, funcdecls)
 /// as operations.  It stores RValues for parameters and SSA values as an
 /// RValue.
-using DeclIRValue = PointerUnion<Operation *, PValue, SRValue, SBValue, MBValue,
-                                 MRValue, MLValue>;
+using DeclIRValue = SmartVariant<Operation *, PValue, SRValue, SBValue, MBValue,
+                                 MRValue, MLValue, RCRef<BaseDLValue>>;
 
 class DeclResolver : public SharedStateUser {
 public:
@@ -58,9 +60,6 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Add a new declaration that needs to be resolved.
-  ASTDecl &addDecl(Operation *op, llvm::SMLoc loc, StringAttr baseName,
-                   ASTDecl *parentDecl, LexerCursor cursor,
-                   LexerCursor endCursor, ssize_t indentation);
   ASTDecl &addDecl(DeclIRValue irValue, llvm::SMLoc loc, StringAttr baseName,
                    ASTDecl *parentDecl, LexerCursor cursor,
                    LexerCursor endCursor, ssize_t indentation);
