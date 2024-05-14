@@ -893,7 +893,8 @@ void FnMetadataAttr::printSignature(AsmPrinter &p, SignatureType sig) const {
     p << signature.getArguments()[i];
     ArgConvention argConv = signature.getArgConvention(i);
     if (variadicness[i] == Variadicness::kPack) {
-      assert(argConv == ArgConvention::BorrowedInReg);
+      assert(argConv == ArgConvention::BorrowedInReg ||
+             argConv == ArgConvention::OwnedInReg);
       argConv = signature.getPackVarArgConvention(i);
     }
     printConventionAndVariadicness(p, argConv, variadicness[i]);

@@ -223,6 +223,8 @@ fn owned_variadic_pack[*Ts: Stringable](owned *pack: *Ts):
 
     pack.each[process]()
 
+    print("owned_variadic_pack done")
+
 
 fn test_owned_variadic_pack():
     # CHECK: -- testing owned variadic pack with 0 elements
@@ -233,6 +235,7 @@ fn test_owned_variadic_pack():
     # CHECK: -- testing owned variadic pack with 2 elements
     # CHECK: hello foo
     # CHECK: hello 42
+    # CHECK: owned_variadic_pack done
     owned_variadic_pack("foo", 42)
     # CHECK: done two
     print("done two")
@@ -247,6 +250,7 @@ fn test_owned_variadic_pack():
     # CHECK: destroying 3
     # CHECK: destroying 2
     # CHECK: destroying 1
+    # CHECK: owned_variadic_pack done
     owned_variadic_pack(TalkativeMem(1), TalkativeMem(2), TalkativeMem(3))
 
     # CHECK: done three
