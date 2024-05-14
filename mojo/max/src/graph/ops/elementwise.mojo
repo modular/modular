@@ -724,7 +724,7 @@ def sigmoid(value: Symbol) -> Symbol:
     Raises:
         If the symbol doesn't represent a tensor value.
     """
-    return _unary_op["mo.sigmoid"](value)
+    return _unary_op["rmo.sigmoid"](value)
 
 
 def silu(value: Symbol) -> Symbol:
