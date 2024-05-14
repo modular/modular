@@ -18,6 +18,7 @@ from algorithm.reduction import (
 from buffer import Buffer, NDBuffer
 from buffer.list import Dim, DimList
 from LinAlg.accumulate import _Accumulator
+from LinAlg.apple_accelerate import use_apple_accelerate_lib, _cblas_f32
 from LinAlg.MatmulUtils import partition_work
 from LinAlg.transpose import transpose_inplace
 from memory import memset_zero, stack_allocation
@@ -444,6 +445,22 @@ struct _Matmul[
             Self._pack_buffer_transposed[input_b_fn, static_k](packed_ptr, N, K)
         else:
             Self._pack_buffer[input_b_fn](packed_ptr, N, K)
+
+        @parameter
+        if use_apple_accelerate_lib[type, type, type]():
+            return _cblas_f32(
+                M,
+                N,
+                K,
+                a_stride,
+                align_up(N, simd_width),
+                c_stride,
+                Float32(1.0),
+                Float32(1.0) if accumulate else Float32(0.0),
+                rebind[DTypePointer[DType.float32]](c_ptr),
+                rebind[DTypePointer[DType.float32]](a_ptr),
+                rebind[DTypePointer[DType.float32]](packed_ptr),
+            )
 
         Self._matmul_packed(
             M,
