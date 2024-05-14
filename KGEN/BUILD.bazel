@@ -1,4 +1,5 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@build_bazel_apple_support//rules:apple_genrule.bzl", "apple_genrule")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 load("//utils/bazel/build/rules:cc_distributable_static_library.bzl", "cc_distributable_static_library")
 load("//utils/bazel/build/rules:globals_library.bzl", "globals_library")
@@ -1283,6 +1284,30 @@ cc_import(
     shared_library = "lldb19.0.0git",
 )
 
+# TODO: Remove once https://github.com/llvm/llvm-project/pull/91789 is in
+apple_genrule(
+    name = "debugserver_signed",
+    srcs = ["@llvm-project//lldb:debugserver"],
+    outs = ["debugserver"],
+    cmd = "cp $(SRCS) $(OUTS) && xcrun codesign -f -s - --entitlements $(location //:third-party/llvm-project/lldb/tools/debugserver/resources/debugserver-macosx-entitlements.plist) $(OUTS)",
+    target_compatible_with = select({
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    tools = [
+        "//:third-party/llvm-project/lldb/tools/debugserver/resources/debugserver-macosx-entitlements.plist",
+    ],
+)
+
+# TODO: Remove once https://github.com/llvm/llvm-project/pull/91789 is in
+alias(
+    name = "gdb-server",
+    actual = select({
+        "@platforms//os:macos": ":debugserver",
+        "//conditions:default": "@llvm-project//lldb:lldb-server",
+    }),
+)
+
 # TODO: Replace with copy_file when https://github.com/llvm/llvm-project/pull/91549 is in
 cc_binary(
     name = "mojo-lldb",
@@ -1292,13 +1317,9 @@ cc_binary(
         "//:third-party/llvm-project/lldb/tools/driver/Platform.cpp",
         "//:third-party/llvm-project/lldb/tools/driver/Platform.h",
     ],
-    data = [
-        "@llvm-project//lldb:lldb-argdumper",
-    ],
     deps = [
         ":liblldb.wrapper",
-        "@llvm-project//lldb:APIHeaders",
-        "@llvm-project//lldb:Host",
+        ":lldb19.0.0git",
         "@llvm-project//lldb:lldb_options_inc_gen",
         "@llvm-project//llvm:Option",
         "@llvm-project//llvm:Support",
@@ -1329,12 +1350,12 @@ globals_library(
         ":MojoTooling",
         ":ObjectCompiler",
         ":liblldb.wrapper",
+        ":lldb19.0.0git",
         "//LLCL:RuntimeGlobals",
         "//Support:Base",
         "//Support:CrashReporting",
         "//Support:Globals",
         "//Support:Init",
-        "@llvm-project//lldb/source/Plugins:PluginSymbolFileDWARFHeaders",
         "@llvm-project//llvm:ExecutionEngine",
         "@llvm-project//llvm:MCJIT",
     ],
@@ -1397,6 +1418,7 @@ cc_library(
         ":MojoLLDB",
         ":MojoLLDBHeaders",
         ":MojoTooling",
-        "@llvm-project//lldb/source/Plugins:PluginSymbolFileDWARFHeaders",
+        ":liblldb.wrapper",
+        ":lldb19.0.0git",
     ],
 )

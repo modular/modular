@@ -4,11 +4,10 @@ cc_library(
     hdrs = ["Support.h"],
     deps = [
         "//KGEN:liblldb.wrapper",
+        "//KGEN:lldb19.0.0git",
         "//KGEN/tools/mojo-lsp-test-client",
         "//KGEN/unittests:include_shim",
         "@com_github_google_googletest//:gtest",
-        "@llvm-project//lldb:APIHeaders",
-        "@llvm-project//lldb:Headers",
     ],
 )
 
@@ -24,14 +23,14 @@ cc_test(
         "//KGEN:CompilerRT.distributable",
         "//KGEN:CompilerRT.shared.file",
         "//KGEN:MojoLLDB.shared.file",
+        "//KGEN:gdb-server",
         "//KGEN/tools/mojo:mojo.opt",
         "//Kernels/mojo/stdlib",
         "//utils:lit-lldb-init.in",
         "@llvm-project//compiler-rt:orc_rt",
-        "@llvm-project//lldb:lldb-server",
     ],
     env = {
-        "LLDB_DEBUGSERVER_PATH": "$(location @llvm-project//lldb:lldb-server)",
+        "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
         "MODULAR_CRASH_REPORTING_ENABLED": "false",
         "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
         "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
