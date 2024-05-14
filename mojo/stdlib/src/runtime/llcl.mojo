@@ -135,6 +135,12 @@ fn _async_complete(chain: UnsafePointer[Chain]):
     external_call["KGEN_CompilerRT_LLCL_Complete", NoneType](chain.address)
 
 
+fn _async_wait_timeout(chain: UnsafePointer[Chain], timeout: Int) -> Bool:
+    return external_call["KGEN_CompilerRT_LLCL_Wait_Timeout", Bool](
+        chain.address, timeout
+    )
+
+
 struct ChainPromise:
     var chain: Chain
 
