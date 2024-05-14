@@ -26,6 +26,8 @@
 #include "lldb/DataFormatters/DumpValueObjectOptions.h"
 #include "lldb/Expression/ExpressionVariable.h"
 #include "lldb/Host/HostInfo.h"
+#include "lldb/Interpreter/CommandInterpreter.h"
+#include "lldb/Interpreter/CommandReturnObject.h"
 #include "lldb/Utility/AnsiTerminal.h"
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
@@ -374,28 +376,80 @@ createInstanceFromDebugger(Debugger &debugger, const char *replOptions) {
   return repl;
 }
 
+static void runCommand(Debugger &debugger, StringRef command) {
+  CommandReturnObject result(/*colors=*/false);
+  debugger.GetCommandInterpreter().HandleCommand(
+      command.data(), /*add_to_history=*/lldb_private::eLazyBoolNo, result);
+}
+
+/// Enable the LLDB symbol cache, which can effectively speed up the startup
+/// time of subsequent invocations by caching the parsed debug info and symbol
+/// tables.
+/// The index is stored in ~/.lldb/repl-symbol-cache. In fact, ~/.lldb is a
+/// folder used already to store many LLDB-related bits, like the editline
+/// history. If this folder is not writable, the cache won't work.
+/// This cache is set up to have a retention per file of 1 day. There's no need
+/// to cache beyond that.
+/// It's also possible to set a size limit to the cache, but as it's only used
+/// for the REPL, we might not need to set this up.
+static void enableREPLSymbolCache(Debugger &debugger) {
+  llvm::SmallString<128> lldbCacheDir;
+  FileSystem::Instance().GetHomeDirectory(lldbCacheDir);
+  llvm::sys::path::append(lldbCacheDir, ".lldb");
+  llvm::sys::path::append(lldbCacheDir, "repl-symbol-cache");
+
+  runCommand(debugger, "settings set symbols.enable-lldb-index-cache true");
+  runCommand(debugger,
+             "settings set symbols.lldb-index-cache-expiration-days 1");
+  runCommand(
+      debugger,
+      ("settings set symbols.lldb-index-cache-path " + lldbCacheDir).str());
+}
+
+/// The following optional features are "sometimes" expensive, but we rather
+/// disable them just in case.
+static void disableExpensiveFeatures(Debugger &debugger) {
+  // We don't need JIT debugging.
+  runCommand(debugger, "settings set plugin.jit-loader.gdb.enable false");
+  // We don't need to process debug info upfront. This is more useful for remote
+  // debugging, e.g. android.
+  runCommand(debugger, "settings set target.preload-symbols false");
+  // We don't need to enable custom scripts embedded in debug info.
+  runCommand(debugger,
+             "settings set target.load-script-from-symbol-file false");
+}
+
+static void setupLLDBForREPL(Debugger &debugger) {
+  disableExpensiveFeatures(debugger);
+  enableREPLSymbolCache(debugger);
+}
+
 /// Create a repl instance for either the given target, or the given
-/// debuggerer. `replOptions` contains a set of options to be passed to the
+/// debugger. `replOptions` contains a set of options to be passed to the
 /// repl.
 static lldb::REPLSP createInstance(Status &error, lldb::LanguageType language,
                                    Debugger *debugger, Target *target,
                                    const char *replOptions) {
   // Needed because the caller might have forgotten to clear this value.
   error.Clear();
+
+  if (!target && !debugger) {
+    error.SetErrorString("must have a debugger or a target to create a REPL");
+    return nullptr;
+  }
+
+  setupLLDBForREPL(debugger ? *debugger : target->GetDebugger());
+
   if (target) {
     auto repl = createInstanceFromTarget(*target, replOptions);
     if (repl)
       return *repl;
     return error = repl.takeError(), nullptr;
   }
-  if (debugger) {
-    auto repl = createInstanceFromDebugger(*debugger, replOptions);
-    if (repl)
-      return *repl;
-    return error = repl.takeError(), nullptr;
-  }
-  error.SetErrorString("must have a debugger or a target to create a REPL");
-  return nullptr;
+  auto repl = createInstanceFromDebugger(*debugger, replOptions);
+  if (repl)
+    return *repl;
+  return error = repl.takeError(), nullptr;
 }
 
 void MojoREPL::Initialize() {
