@@ -793,6 +793,8 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
   // convention.
   if (arg.vararg == VarArgKind::PackVarArg) {
     // Remember the original declared convention, forcing to memory convention.
+    // The VariadicPack itself is passed as borrowed except for owned
+    // convention: this allows the callee to consume the pack.
     switch (arg.convention) {
     case ParsedArgument::kConventionUnspec:
     case ParsedArgument::kConventionByRefResult:
@@ -800,20 +802,17 @@ static void typeCheckOneArgument(size_t idx, ASTType selfType, bool isDef,
       llvm_unreachable("not a pack arg convention");
     case ParsedArgument::kConventionOwned:
       arg.kgenVariadicConvention = ArgConvention::OwnedInMem;
+      arg.kgenConvention = ArgConvention::OwnedInReg;
       break;
     case ParsedArgument::kConventionBorrowed:
       arg.kgenVariadicConvention = ArgConvention::BorrowedInMem;
+      arg.kgenConvention = ArgConvention::BorrowedInReg;
       break;
     case ParsedArgument::kConventionInOut:
       arg.kgenVariadicConvention = ArgConvention::ByRef;
+      arg.kgenConvention = ArgConvention::BorrowedInReg;
       break;
     }
-    // VariadicPack is always passed as borrowed_in_reg, even if the elements
-    // are owned/inout etc.  This is better than owned_in_reg because the
-    // destructor for the pack will be invoked on the caller side, which will
-    // know the constant value of the "is owned" bit without having to do
-    // inlining.
-    arg.kgenConvention = ArgConvention::BorrowedInReg;
   }
 
   // Values passed by memory need an associated lifetime parameter, and need to
