@@ -107,3 +107,15 @@ TEST(LifetimesTest, testResurrection) {
   EXPECT_STREQ(text1.GetSummary(), R"("hello")");
   assertVarNotAvailable(ctx, "text2");
 }
+
+TEST(LifetimesTest, testRedefined) {
+  /// Ensures that if a variable is redefined, it is visible.
+  StopContext ctx = buildAndLaunch("redefined.mojo");
+
+  SBValue x = ctx.frame.FindVariable("x");
+  EXPECT_EQ((int)x.GetValueAsSigned(), 468);
+
+  ctx.resume();
+  SBValue y = ctx.frame.FindVariable("y");
+  EXPECT_STREQ(y.GetSummary(), R"("world")");
+}

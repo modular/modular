@@ -96,9 +96,10 @@ lit.func @test_def_twice() -> index {
   // CHECK: debuginfo.value #[[DIVAR_X]] #[[DIEXPR_DEREF]] = %[[VAR_X]] : ![[VAR_X_TYPE]]
   // CHECK-NEXT: lit.call @S::@__init__
   lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
-
-  // CHECK-NOT: debuginfo.value
+  // CHECK: debuginfo.kill #[[DIVAR_X]]
+  // CHECK: debuginfo.value #[[DIVAR_X]]
   lit.call @S::@__init__[mut *"x`0"](%x, %0) : !lit.signature<[1]("self": !lit.ref<@S, mut *[0,0]> init_self, |, "num": index) -> !kgen.none> loc(#locX)
+  // CHECK: debuginfo.kill #[[DIVAR_X]]
 
   kgen.return %0 : index loc(#locRet)
 } loc(fused<#sp>["test.mlir":10:10])

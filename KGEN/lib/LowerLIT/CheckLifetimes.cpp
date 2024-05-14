@@ -846,10 +846,6 @@ private:
   void checkMarkDestroyed(Value value, Operation &op);
   void checkLifetimeEffect(TypedAttr lifetime, Operation &op);
 
-  /// Emit a debug value for the value if it is tracked with debug info.
-  void emitDebugInit(Value value, ValueRef valueRef,
-                     mlir::ImplicitLocOpBuilder &builder);
-
   /// This is metadata about all the values we are tracking.
   ValueSet &valueSet;
 
@@ -1058,12 +1054,6 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
   // Direct accesses are handled in a field sensitive way, and this can count as
   // an initialization.
   if (ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref)) {
-    // Emit a debug value if this corresponds to a debuggable variable.
-    if (value.getDefiningOp<VarDeclOp>() && valueRef.isAllMissing(liveValues)) {
-      mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
-      emitDebugInit(value, valueRef, builder);
-    }
-
     // Finally, marks its value live so any use after this isn't treated as
     // uninitialized.
     valueRef.markBits(liveValues, true);
@@ -1146,22 +1136,6 @@ void UninitializedValueScan::checkLifetimeEffect(TypedAttr lifetime,
     // The referenced value fields must be live.
     if (!access.isAllPresent(liveValues))
       diagnoseUsageError(access, op, /*isDef=*/isMutate);
-  }
-}
-
-void UninitializedValueScan::emitDebugInit(
-    Value value, ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder) {
-  ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
-  // Insert debug value if full value is initialized.
-  if (info.debugVariable && valueRef.startBit == info.startValueBit &&
-      valueRef.endBit == info.endValueBit) {
-    // The IR type needs to be deref'ed to get the source type. Encode the IR
-    // type as a pointer type.
-    auto diPointerType = DebugInfo::DITargetIndependentPointerType::get(
-        info.debugVariable.getType());
-    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(diPointerType);
-    auto conversion = DebugInfo::DIDerefExprAttr::get(newIrValue);
-    builder.create<DebugInfo::ValueOp>(value, info.debugVariable, conversion);
   }
 }
 
@@ -1584,6 +1558,11 @@ private:
   void emitDestructorCallAt(Value value, bool isIndirect,
                             mlir::ImplicitLocOpBuilder &builder,
                             Operation *opWithUse);
+
+  /// Emit a debug value for the value if it is tracked with debug info.
+  void emitDebugInit(Value value, ValueRef valueRef,
+                     mlir::ImplicitLocOpBuilder &builder);
+
   /// Emit a debug kill marker for the value if it is tracked with debug info.
   void emitDebugKill(ValueRef valueRef, mlir::ImplicitLocOpBuilder &builder);
 
@@ -2474,6 +2453,12 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
       if (!isError && !isUninitInErrorBranch)
         return;
     }
+
+    if (!dryRun && value.getDefiningOp<VarDeclOp>()) {
+      mlir::ImplicitLocOpBuilder builder(op.getLoc(), &op);
+      emitDebugInit(value, direct, builder);
+    }
+
     direct.markBits(consumedValues, false);
     return;
   }
@@ -3053,6 +3038,23 @@ void DestructorInsertion::emitDestructorCallAt(Value value, bool isIndirect,
   // Emit the call to the destructor.
   builder.create<LIT::CallOp>(signature.getResults()[0], dtor,
                               implicitLifetimes, valueToDestroy);
+}
+
+void DestructorInsertion::emitDebugInit(Value value, ValueRef valueRef,
+                                        mlir::ImplicitLocOpBuilder &builder) {
+  assert(!dryRun && "shouldn't be called in a dry run");
+  ValueInfo &info = valueSet.getValueInfo(valueRef.valueId);
+  // Insert debug value if full value is initialized.
+  if (info.debugVariable && valueRef.startBit == info.startValueBit &&
+      valueRef.endBit == info.endValueBit) {
+    // The IR type needs to be deref'ed to get the source type. Encode the IR
+    // type as a pointer type.
+    auto diPointerType = DebugInfo::DITargetIndependentPointerType::get(
+        info.debugVariable.getType());
+    auto newIrValue = DebugInfo::DIIRValueExprAttr::get(diPointerType);
+    auto conversion = DebugInfo::DIDerefExprAttr::get(newIrValue);
+    builder.create<DebugInfo::ValueOp>(value, info.debugVariable, conversion);
+  }
 }
 
 void DestructorInsertion::emitDebugKill(ValueRef valueRef,
