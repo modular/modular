@@ -12,13 +12,13 @@ lit_tests(
     },
     data = glob(["Inputs/*.mojo"]) + [
         "//KGEN:MojoLLDB.shared.file",
+        "//KGEN:gdb-server",
         "//KGEN:mojo-lldb",
         "//KGEN/tools/mojo-repl-entry-point",
-        "@llvm-project//lldb:lldb-server",
         "@stock-torch//:libpython",
     ],
     env = {
-        "LLDB_DEBUGSERVER_PATH": "$(location @llvm-project//lldb:lldb-server)",
+        "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
         "MODULAR_CRASH_REPORTING_ENABLED": "false",
         "MODULAR_MOJO_LLDB_PATH": "$(location //KGEN:mojo-lldb)",
         "MOJO_PYTHON_LIBRARY": "$(location @stock-torch//:libpython)",
