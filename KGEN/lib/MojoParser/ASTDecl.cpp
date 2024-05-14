@@ -162,6 +162,16 @@ BValue ASTDecl::getIfBValue() const {
   return {};
 }
 
+/// If this is a LValue, return it, otherwise return null.
+LValue ASTDecl::getIfLValue() const {
+  if (auto mlValue = dyn_cast_or_null<MLValue>(irValue))
+    return mlValue;
+
+  if (auto storage = dyn_cast_or_null<RCRef<BaseDLValue>>(irValue))
+    return DLValue(storage);
+  return {};
+}
+
 std::optional<StringRef> ASTDecl::getNameIfOperation() const {
   if (Operation *op = getIfOperation())
     if (auto decl = dyn_cast<ASTDeclInterface>(op))

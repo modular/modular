@@ -625,7 +625,7 @@ AnyValue DeclRefNode::emitIR(ValueDest &dest, ExprEmitter &emitter) const {
     value = rvalue;
   } else if (auto bvalue = decl.getIfBValue()) {
     value = bvalue;
-  } else if (auto lvalue = decl.getIfMLValue()) {
+  } else if (auto lvalue = decl.getIfLValue()) {
     value = lvalue;
   } else {
     emitter.emitError(getLoc(), "use of declaration '")
