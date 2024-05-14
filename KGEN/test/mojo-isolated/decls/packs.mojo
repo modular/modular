@@ -79,7 +79,7 @@ fn test_owned_trait():
     # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
-    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
+    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.load.consume [[PACKTMP]]
 
     # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[VARIADICPACK]])
     takeOwnedAnyTypePack(value1^, value2)
@@ -101,7 +101,7 @@ fn test_owned_trait():
     # CHECK: [[ISOWNED:%.*]] = kgen.param.constant: !Bool = <{:i1 1}>
     # CHECK-NEXT: [[PACKTMP:%.*]] = lit.var.decl
     # CHECK-NEXT: lit.call @{{.*}}@VariadicPack::@"__init__{{.*}}([[PACKTMP]], [[PACK]], [[ISOWNED]])
-    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.ref.load [[PACKTMP]]
+    # CHECK-NEXT: [[VARIADICPACK:%.*]] = lit.load.consume [[PACKTMP]]
 
     # CHECK-NEXT: lit.call {{.*}}takeOwnedAnyTypePack{{.*}}([[VARIADICPACK]])
     takeOwnedAnyTypePack(value3^, SomeReg())
