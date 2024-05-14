@@ -11,8 +11,9 @@ from memory.unsafe import DTypePointer, Pointer
 
 from utils import StringRef
 
-from ._utils import _check_error, _get_dylib_function, _human_memory
+from ._utils import _check_error, _human_memory
 from .dim import Dim
+from .cuda_instance import *
 
 # ===----------------------------------------------------------------------===#
 # Device Information
@@ -602,12 +603,9 @@ fn device_count() raises -> Int:
     to 2.0 that are available for execution.
     """
 
+    var cuDeviceGetCount = cuDeviceGetCount.load()
     var res: Int32 = 0
-    _check_error(
-        _get_dylib_function[
-            "cuDeviceGetCount", fn (Pointer[Int32]) -> Result
-        ]()(Pointer.address_of(res))
-    )
+    _check_error(cuDeviceGetCount(Pointer.address_of(res)))
     return int(res)
 
 
@@ -615,9 +613,15 @@ fn device_count() raises -> Int:
 @register_passable("trivial")
 struct Device(StringableRaising):
     var id: Int32
+    var cuda_dll: Pointer[CudaDLL]
 
     fn __init__(inout self, id: Int = 0):
         self.id = id
+        self.cuda_dll = Pointer[CudaDLL]()
+
+    fn __init__(inout self, cuda_instance: CudaInstance, id: Int = 0):
+        self.id = id
+        self.cuda_dll = cuda_instance.cuda_dll
 
     fn __str__(self) raises -> String:
         var res = "name: " + self._name() + "\n"
@@ -683,34 +687,25 @@ struct Device(StringableRaising):
         alias buffer_size = 256
         var buffer = stack_allocation[buffer_size, DType.int8]()
 
-        var ok = _get_dylib_function[
-            "cuDeviceGetName",
-            fn (DTypePointer[DType.int8], Int32, Device) -> Result,
-        ]()(buffer, Int32(buffer_size), self)
+        var cuDeviceGetName = self.cuda_dll[].cuDeviceGetName if self.cuda_dll else cuDeviceGetName.load()
+        var ok = cuDeviceGetName(buffer, Int32(buffer_size), self)
 
         return StringRef(buffer.address)
 
     fn _total_memory(self) raises -> Int:
         """Returns the total amount of memory on the device."""
 
+        var cuDeviceTotalMem = self.cuda_dll[].cuDeviceTotalMem if self.cuda_dll else cuDeviceTotalMem.load()
         var res: Int = 0
-        _check_error(
-            _get_dylib_function[
-                "cuDeviceTotalMem_v2", fn (Pointer[Int], Device) -> Result
-            ]()(Pointer.address_of(res), self)
-        )
+        _check_error(cuDeviceTotalMem(Pointer.address_of(res), self))
         return res
 
     fn _query(self, attr: DeviceAttribute) raises -> Int:
         """Returns information about a particular device attribute."""
 
+        var cuDeviceGetAttribute = self.cuda_dll[].cuDeviceGetAttribute if self.cuda_dll else cuDeviceGetAttribute.load()
         var res: Int32 = 0
-        _check_error(
-            _get_dylib_function[
-                "cuDeviceGetAttribute",
-                fn (Pointer[Int32], DeviceAttribute, Device) -> Result,
-            ]()(Pointer.address_of(res), attr, self)
-        )
+        _check_error(cuDeviceGetAttribute(Pointer.address_of(res), attr, self))
         return int(res)
 
     fn multiprocessor_count(self) raises -> Int:

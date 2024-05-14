@@ -10,7 +10,7 @@ from sys.info import sizeof
 from memory.unsafe import DTypePointer, Pointer, bitcast
 
 from ._utils import _check_error, _get_dylib_function
-from .stream import Stream, _StreamImpl
+from .stream import Stream, _StreamHandle
 
 # ===----------------------------------------------------------------------===#
 # Memory
@@ -111,7 +111,7 @@ fn _copy_host_to_device_async[
     _check_error(
         _get_dylib_function[
             "cuMemcpyHtoDAsync_v2",
-            fn (Pointer[NoneType], Pointer[Int], Int, _StreamImpl) -> Result,
+            fn (Pointer[NoneType], Pointer[Int], Int, _StreamHandle) -> Result,
         ]()(
             device_dst.bitcast[NoneType](),
             host_src.bitcast[Int](),
@@ -179,7 +179,7 @@ fn _copy_device_to_host_async[
     _check_error(
         _get_dylib_function[
             "cuMemcpyDtoHAsync_v2",
-            fn (Pointer[NoneType], Pointer[Int], Int, _StreamImpl) -> Result,
+            fn (Pointer[NoneType], Pointer[Int], Int, _StreamHandle) -> Result,
         ]()(
             host_dest.bitcast[NoneType](),
             device_src.bitcast[Int](),
@@ -213,7 +213,7 @@ fn _copy_device_to_device_async[
     _check_error(
         _get_dylib_function[
             "cuMemcpyDtoDAsync_v2",
-            fn (Pointer[NoneType], Pointer[Int], Int, _StreamImpl) -> Result,
+            fn (Pointer[NoneType], Pointer[Int], Int, _StreamHandle) -> Result,
         ]()(
             dst.bitcast[NoneType](),
             src.bitcast[Int](),
@@ -282,7 +282,7 @@ fn _memset_async[
             _get_dylib_function[
                 "cuMemsetD8Async",
                 fn (
-                    DTypePointer[DType.uint8], UInt8, Int, _StreamImpl
+                    DTypePointer[DType.uint8], UInt8, Int, _StreamHandle
                 ) -> Result,
             ]()(
                 device_dest.bitcast[DType.uint8](),
@@ -296,7 +296,7 @@ fn _memset_async[
             _get_dylib_function[
                 "cuMemsetD16Async",
                 fn (
-                    DTypePointer[DType.uint16], UInt16, Int, _StreamImpl
+                    DTypePointer[DType.uint16], UInt16, Int, _StreamHandle
                 ) -> Result,
             ]()(
                 device_dest.bitcast[DType.uint16](),
@@ -310,7 +310,7 @@ fn _memset_async[
             _get_dylib_function[
                 "cuMemsetD32Async",
                 fn (
-                    DTypePointer[DType.uint32], UInt32, Int, _StreamImpl
+                    DTypePointer[DType.uint32], UInt32, Int, _StreamHandle
                 ) -> Result,
             ]()(
                 device_dest.bitcast[DType.uint32](),
@@ -367,7 +367,7 @@ fn _malloc_async[
     _check_error(
         _get_dylib_function[
             "cuMemAllocAsync",
-            fn (Pointer[Pointer[Int]], Int, _StreamImpl) -> Result,
+            fn (Pointer[Pointer[Int]], Int, _StreamHandle) -> Result,
         ]()(Pointer.address_of(ptr), count * sizeof[type](), stream.stream)
     )
     return ptr.bitcast[type]()
@@ -378,6 +378,6 @@ fn _free_async[type: AnyRegType](ptr: Pointer[type], stream: Stream) raises:
 
     _check_error(
         _get_dylib_function[
-            "cuMemFreeAsync", fn (Pointer[Int], _StreamImpl) -> Result
+            "cuMemFreeAsync", fn (Pointer[Int], _StreamHandle) -> Result
         ]()(ptr.bitcast[Int](), stream.stream)
     )

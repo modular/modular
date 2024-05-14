@@ -16,11 +16,17 @@ from memory.unsafe import DTypePointer, Pointer
 
 from utils.variant import Variant
 
+from .context import Context
 from ._compile import _compile_code, _get_nvptx_fn_name
-from ._utils import _check_error, _get_dylib_function
+from ._utils import (
+    _check_error,
+    _StreamHandle,
+    _ModuleHandle,
+    _FunctionHandle,
+)
 from .dim import Dim
-from .module import ModuleHandle, _ModuleImpl
-from .stream import Stream, _StreamImpl
+from .module import Module
+from .stream import Stream
 
 # ===----------------------------------------------------------------------===#
 # CacheConfig
@@ -90,28 +96,240 @@ struct FuncAttribute(CollectionElement, EqualityComparable):
 
 
 # ===----------------------------------------------------------------------===#
-# FunctionHandle
+# Cached Function Info
 # ===----------------------------------------------------------------------===#
+
 
 alias _populate_fn_type = fn (Pointer[NoneType]) capturing -> None
 
 
 @value
-@register_passable("trivial")
-struct FunctionHandle(Boolable):
-    var handle: DTypePointer[DType.invalid]
+@register_passable
+struct _CachedFunctionInfo(Boolable):
+    var mod_handle: _ModuleHandle
+    var func_handle: _FunctionHandle
+    var error: Error
 
-    @always_inline
     fn __init__(inout self):
-        self.handle = DTypePointer[DType.invalid]()
+        self.mod_handle = _ModuleHandle()
+        self.func_handle = _FunctionHandle()
+        self.error = Error()
+
+    fn __init__(
+        inout self, mod_handle: _ModuleHandle, func_handle: _FunctionHandle
+    ):
+        self.mod_handle = mod_handle
+        self.func_handle = func_handle
+        self.error = Error()
+
+    fn __init__(inout self, error: Error):
+        self.mod_handle = _ModuleHandle()
+        self.func_handle = _FunctionHandle()
+        self.error = error
+
+    fn __del__(owned self):
+        pass
+
+    fn __bool__(self) -> Bool:
+        return self.func_handle.__bool__()
+
+
+@value
+@register_passable
+struct _GlobalPayload:
+    var debug: Bool
+    var verbose: Bool
+    var max_registers: Int32
+    var threads_per_block: Int32
+    var cache_config: Int32
+    var func_attribute: FuncAttribute
+
+    fn __init__(
+        debug: Bool,
+        verbose: Bool,
+        max_registers: Int32,
+        threads_per_block: Int32,
+        cache_config: Int32,
+        func_attribute: FuncAttribute,
+    ) -> Self:
+        return Self {
+            debug: debug,
+            verbose: verbose,
+            max_registers: max_registers,
+            threads_per_block: threads_per_block,
+            cache_config: cache_config,
+            func_attribute: func_attribute,
+        }
+
+
+# ===----------------------------------------------------------------------===#
+# Function
+# ===----------------------------------------------------------------------===#
+
+
+@value
+@register_passable
+struct Function[
+    func_type: AnyRegType, func: func_type, _is_failable: Bool = False
+](Boolable):
+    var info: _CachedFunctionInfo
+    var cuda_dll: Pointer[CudaDLL]
+
+    alias _impl = _compile_code[
+        func_type, func, is_failable=_is_failable, emission_kind="asm"
+    ]()
 
     @always_inline
-    fn __init__(inout self, handle: DTypePointer[DType.invalid]):
-        self.handle = handle
+    fn __init__(
+        inout self,
+        ctx: Context,
+        debug: Bool = False,
+        verbose: Bool = False,
+        dump_ptx: Variant[Path, Bool] = False,
+        dump_llvm: Variant[Path, Bool] = False,
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
+        cache_config: Optional[CacheConfig] = None,
+        func_attribute: Optional[FuncAttribute] = None,
+    ) raises:
+        self.__init__(
+            debug,
+            verbose,
+            dump_ptx,
+            dump_llvm,
+            max_registers,
+            threads_per_block,
+            cache_config,
+            func_attribute,
+            ctx.cuda_dll,
+        )
+
+    @always_inline
+    fn __init__(
+        inout self,
+        debug: Bool = False,
+        verbose: Bool = False,
+        dump_ptx: Variant[Path, Bool] = False,
+        dump_llvm: Variant[Path, Bool] = False,
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
+        cache_config: Optional[CacheConfig] = None,
+        func_attribute: Optional[FuncAttribute] = None,
+        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
+    ) raises:
+        @parameter
+        if _is_failable and self._impl.is_error:
+            raise self._impl.error_msg
+
+        self.cuda_dll = cuda_dll
+
+        Self.dump_rep(dump_ptx, dump_llvm)
+
+        var info = Self._get_global_cache_info[func_type, func](
+            debug=debug,
+            verbose=verbose,
+            max_registers=max_registers.value()[] if max_registers else -1,
+            threads_per_block=threads_per_block.value()[] if threads_per_block else -1,
+            cache_config=cache_config.value()[].code if cache_config else -1,
+            func_attribute=func_attribute.value()[] if func_attribute else FuncAttribute.NULL,
+        )
+
+        if info.error:
+            raise info.error
+
+        self.info = info
+
+        if not self.info.func_handle:
+            raise "Unable to load the CUDA function"
+
+    @always_inline
+    fn __init__(
+        inout self,
+        module: Module,
+        name: String,
+        debug: Bool = False,
+        verbose: Bool = False,
+        dump_ptx: Variant[Path, Bool] = False,
+        dump_llvm: Variant[Path, Bool] = False,
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
+        cache_config: Optional[CacheConfig] = None,
+        func_attribute: Optional[FuncAttribute] = None,
+        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
+    ) raises:
+        @parameter
+        if _is_failable and self._impl.is_error:
+            raise self._impl.error_msg
+
+        self.cuda_dll = cuda_dll
+
+        Self.dump_rep(dump_ptx, dump_llvm)
+
+        var function_handle = module.load(name)
+        if not function_handle:
+            raise "Unable to load the CUDA function"
+
+        self.info = _CachedFunctionInfo(module.module, function_handle)
+
+    @staticmethod
+    fn dump_rep(
+        dump_ptx: Variant[Path, Bool] = False,
+        dump_llvm: Variant[Path, Bool] = False,
+    ) raises:
+        fn dump_q(val: Variant[Path, Bool]) -> Bool:
+            if val.isa[Bool]():
+                return val[Bool]
+            return val[Path] != ""
+
+        if dump_q(dump_ptx):
+            alias ptx = Self._impl.asm
+            if dump_ptx.isa[Path]():
+                with open(dump_ptx[Path], "w") as f:
+                    f.write(ptx)
+            else:
+                print(ptx)
+
+        if dump_q(dump_llvm):
+            alias llvm = _compile_code[
+                func_type, func, emission_kind="llvm"
+            ]().asm
+
+            if dump_llvm.isa[Path]():
+                with open(dump_llvm[Path], "w") as f:
+                    f.write(llvm)
+            else:
+                print(llvm)
+
+    @always_inline
+    fn __del__(owned self):
+        pass
 
     @always_inline
     fn __bool__(self) -> Bool:
-        return self.handle.__bool__()
+        return self.info.__bool__()
+
+    @always_inline
+    @parameter
+    fn __call__[
+        *Ts: AnyType
+    ](
+        self,
+        *args: *Ts,
+        grid_dim: Dim,
+        block_dim: Dim,
+        shared_mem_bytes: Int = 0,
+        stream: Optional[Stream] = None,
+    ) raises:
+        alias num_captures = Self._impl.num_captures
+        alias populate = Self._impl.populate
+
+        self._call_impl_pack[num_captures, populate](
+            args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            stream=stream,
+        )
 
     @always_inline
     fn _call_impl[
@@ -182,24 +400,10 @@ struct FunctionHandle(Boolable):
         stream: Optional[Stream] = None,
     ) raises:
         var stream_value = stream.value()[].stream if stream else Stream()
+        var cuLaunchKernel = self.cuda_dll[].cuLaunchKernel if self.cuda_dll else cuLaunchKernel.load()
         _check_error(
-            _get_dylib_function[
-                "cuLaunchKernel",
-                fn (
-                    Self,
-                    UInt32,  # GridDimZ
-                    UInt32,  # GridDimY
-                    UInt32,  # GridDimX
-                    UInt32,  # BlockDimZ
-                    UInt32,  # BlockDimY
-                    UInt32,  # BlockDimX
-                    UInt32,  # SharedMemSize
-                    _StreamImpl,
-                    Pointer[UnsafePointer[NoneType]],  # Args
-                    DTypePointer[DType.invalid],  # Extra
-                ) -> Result,
-            ]()(
-                self.handle,
+            cuLaunchKernel(
+                self.info.func_handle,
                 UInt32(grid_dim.x()),
                 UInt32(grid_dim.y()),
                 UInt32(grid_dim.z()),
@@ -216,257 +420,90 @@ struct FunctionHandle(Boolable):
         if not stream:
             stream_value.synchronize()
 
+    @staticmethod
+    fn _init_fn[
+        func_type: AnyRegType, func: func_type
+    ](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
+        try:
+            var payload = payload_ptr.bitcast[_GlobalPayload]().load()
 
-# ===----------------------------------------------------------------------===#
-# Cached Function Info
-# ===----------------------------------------------------------------------===#
+            alias _impl = _compile_code[func_type, func, emission_kind="asm"]()
+            alias fn_name = _get_nvptx_fn_name[func_type, func]()
 
-
-@value
-@register_passable
-struct _CachedFunctionInfo(Boolable):
-    var mod_handle: _ModuleImpl
-    var func_handle: FunctionHandle
-    var error: Error
-
-    fn __init__(inout self):
-        self.mod_handle = _ModuleImpl()
-        self.func_handle = FunctionHandle()
-        self.error = Error()
-
-    fn __init__(
-        inout self, mod_handle: _ModuleImpl, func_handle: FunctionHandle
-    ):
-        self.mod_handle = mod_handle
-        self.func_handle = func_handle
-        self.error = Error()
-
-    fn __init__(inout self, error: Error):
-        self.mod_handle = _ModuleImpl()
-        self.func_handle = FunctionHandle()
-        self.error = error
-
-    fn __del__(owned self):
-        pass
-
-    fn __bool__(self) -> Bool:
-        return self.func_handle.__bool__()
-
-
-@value
-@register_passable
-struct _GlobalPayload:
-    var debug: Bool
-    var verbose: Bool
-    var max_registers: Int32
-    var threads_per_block: Int32
-    var cache_config: Int32
-    var func_attribute: FuncAttribute
-
-    fn __init__(
-        debug: Bool,
-        verbose: Bool,
-        max_registers: Int32,
-        threads_per_block: Int32,
-        cache_config: Int32,
-        func_attribute: FuncAttribute,
-    ) -> Self:
-        return Self {
-            debug: debug,
-            verbose: verbose,
-            max_registers: max_registers,
-            threads_per_block: threads_per_block,
-            cache_config: cache_config,
-            func_attribute: func_attribute,
-        }
-
-
-fn _init_fn[
-    func_type: AnyRegType, func: func_type
-](payload_ptr: Pointer[NoneType]) -> Pointer[NoneType]:
-    try:
-        var payload = payload_ptr.bitcast[_GlobalPayload]().load()
-
-        alias _impl = _compile_code[func_type, func, emission_kind="asm"]()
-        alias fn_name = _get_nvptx_fn_name[func_type, func]()
-
-        var mod_handle = ModuleHandle(
-            _impl.asm,
-            debug=payload.debug,
-            verbose=payload.verbose or payload.debug,
-            max_registers=Optional[Int]() if payload.max_registers
-            <= 0 else Optional[Int](int(payload.max_registers)),
-            threads_per_block=Optional[Int]() if payload.threads_per_block
-            <= 0 else Optional[Int](int(payload.threads_per_block)),
-        )
-        var func_handle = mod_handle.load(fn_name)
-        if payload.cache_config != -1:
-            _check_error(
-                _get_dylib_function[
-                    "cuFuncSetCacheConfig", fn (FunctionHandle, Int32) -> Result
-                ]()(func_handle, payload.cache_config)
+            var module = Module(
+                _impl.asm,
+                debug=payload.debug,
+                verbose=payload.verbose or payload.debug,
+                max_registers=Optional[Int]() if payload.max_registers
+                <= 0 else Optional[Int](int(payload.max_registers)),
+                threads_per_block=Optional[Int]() if payload.threads_per_block
+                <= 0 else Optional[Int](int(payload.threads_per_block)),
             )
-        if payload.func_attribute.code != -1:
-            _check_error(
-                _get_dylib_function[
-                    "cuFuncSetAttribute",
-                    fn (FunctionHandle, Int32, Int32) -> Result,
-                ]()(
-                    func_handle,
-                    payload.func_attribute.code,
-                    payload.func_attribute.value,
+            var func_handle = module.load(fn_name)
+            # FIXME: Figure out a way to get the following through self.cuda_dll
+            var cuFuncSetCacheConfig = cuFuncSetCacheConfig.load()
+            var cuFuncSetAttribute = cuFuncSetAttribute.load()
+
+            if payload.cache_config != -1:
+                _check_error(
+                    cuFuncSetCacheConfig(func_handle, payload.cache_config)
                 )
-            )
-        var res = Pointer[_CachedFunctionInfo].alloc(1)
-        res.store(_CachedFunctionInfo(mod_handle._steal_handle(), func_handle))
-        return res.bitcast[NoneType]()
-    except e:
-        var res = Pointer[_CachedFunctionInfo].alloc(1)
-        res.store(_CachedFunctionInfo(e))
-        return res.bitcast[NoneType]()
+            if payload.func_attribute.code != -1:
+                _check_error(
+                    cuFuncSetAttribute(
+                        func_handle,
+                        payload.func_attribute.code,
+                        payload.func_attribute.value,
+                    )
+                )
+            var res = Pointer[_CachedFunctionInfo].alloc(1)
+            res.store(_CachedFunctionInfo(module._steal_handle(), func_handle))
+            return res.bitcast[NoneType]()
+        except e:
+            var res = Pointer[_CachedFunctionInfo].alloc(1)
+            res.store(_CachedFunctionInfo(e))
+            return res.bitcast[NoneType]()
 
+    @staticmethod
+    fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
+        if not cached_value_ptr:
+            return
+        var cached_value = cached_value_ptr.bitcast[
+            _CachedFunctionInfo
+        ]().load()
+        # We do not need to destroy the module, since it will be destroyed once the
+        # CUDA context is destroyed.
+        cached_value_ptr.free()
 
-fn _destroy_fn(cached_value_ptr: Pointer[NoneType]):
-    if not cached_value_ptr:
-        return
-    var cached_value = cached_value_ptr.bitcast[_CachedFunctionInfo]().load()
-    # We do not need to destroy the module, since it will be destroyed once the
-    # CUDA context is destroyed.
-    cached_value_ptr.free()
-
-
-@always_inline
-fn _get_global_cache_info[
-    func_type: AnyRegType, func: func_type
-](
-    debug: Bool = False,
-    verbose: Bool = False,
-    max_registers: Int = -1,
-    threads_per_block: Int = -1,
-    cache_config: Int32 = -1,
-    func_attribute: FuncAttribute = FuncAttribute.NULL,
-) -> _CachedFunctionInfo:
-    alias fn_name = _get_nvptx_fn_name[func_type, func]()
-
-    var payload = _GlobalPayload(
-        debug,
-        verbose,
-        max_registers,
-        threads_per_block,
-        cache_config,
-        func_attribute,
-    )
-
-    var info_ptr = _get_global[
-        fn_name,
-        _init_fn[func_type, func],
-        _destroy_fn,
-    ](Pointer.address_of(payload).bitcast[NoneType]())
-
-    _ = payload
-
-    return info_ptr.bitcast[_CachedFunctionInfo]().load()
-
-
-# ===----------------------------------------------------------------------===#
-# Function
-# ===----------------------------------------------------------------------===#
-
-
-@value
-@register_passable
-struct Function[
-    func_type: AnyRegType, func: func_type, _is_failable: Bool = False
-](Boolable):
-    var info: _CachedFunctionInfo
-
-    alias _impl = _compile_code[
-        func_type, func, is_failable=_is_failable, emission_kind="asm"
-    ]()
-
+    @staticmethod
     @always_inline
-    fn __init__(
-        inout self,
+    fn _get_global_cache_info[
+        func_type: AnyRegType, func: func_type
+    ](
         debug: Bool = False,
         verbose: Bool = False,
-        dump_ptx: Variant[Path, Bool] = False,
-        dump_llvm: Variant[Path, Bool] = False,
-        max_registers: Optional[Int] = None,
-        threads_per_block: Optional[Int] = None,
-        cache_config: Optional[CacheConfig] = None,
-        func_attribute: Optional[FuncAttribute] = None,
-    ) raises:
-        @parameter
-        if _is_failable and self._impl.is_error:
-            raise self._impl.error_msg
+        max_registers: Int = -1,
+        threads_per_block: Int = -1,
+        cache_config: Int32 = -1,
+        func_attribute: FuncAttribute = FuncAttribute.NULL,
+    ) -> _CachedFunctionInfo:
+        alias fn_name = _get_nvptx_fn_name[func_type, func]()
 
-        fn dump_q(val: Variant[Path, Bool]) -> Bool:
-            if val.isa[Bool]():
-                return val[Bool]
-            return val[Path] != ""
-
-        if dump_q(dump_ptx):
-            alias ptx = Self._impl.asm
-            if dump_ptx.isa[Path]():
-                with open(dump_ptx[Path], "w") as f:
-                    f.write(ptx)
-            else:
-                print(ptx)
-        if dump_q(dump_llvm):
-            alias llvm = _compile_code[
-                func_type, func, emission_kind="llvm"
-            ]().asm
-
-            if dump_llvm.isa[Path]():
-                with open(dump_llvm[Path], "w") as f:
-                    f.write(llvm)
-            else:
-                print(llvm)
-
-        var info = _get_global_cache_info[func_type, func](
-            debug=debug,
-            verbose=verbose,
-            max_registers=max_registers.value()[] if max_registers else -1,
-            threads_per_block=threads_per_block.value()[] if threads_per_block else -1,
-            cache_config=cache_config.value()[].code if cache_config else -1,
-            func_attribute=func_attribute.value()[] if func_attribute else FuncAttribute.NULL,
+        var payload = _GlobalPayload(
+            debug,
+            verbose,
+            max_registers,
+            threads_per_block,
+            cache_config,
+            func_attribute,
         )
 
-        if info.error:
-            raise info.error
+        var info_ptr = _get_global[
+            fn_name,
+            Self._init_fn[func_type, func],
+            Self._destroy_fn,
+        ](Pointer.address_of(payload).bitcast[NoneType]())
 
-        self.info = info
+        _ = payload
 
-        if not self.info.func_handle:
-            raise "Unable to load the CUDA function"
-
-    @always_inline
-    fn __del__(owned self):
-        pass
-
-    @always_inline
-    fn __bool__(self) -> Bool:
-        return self.info.__bool__()
-
-    @always_inline
-    @parameter
-    fn __call__[
-        *Ts: AnyType
-    ](
-        self,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        shared_mem_bytes: Int = 0,
-        stream: Optional[Stream] = None,
-    ) raises:
-        alias num_captures = Self._impl.num_captures
-        alias populate = Self._impl.populate
-
-        self.info.func_handle._call_impl_pack[num_captures, populate](
-            args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            stream=stream,
-        )
+        return info_ptr.bitcast[_CachedFunctionInfo]().load()

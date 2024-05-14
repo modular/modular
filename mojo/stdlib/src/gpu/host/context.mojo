@@ -9,54 +9,38 @@ from os import abort
 
 from memory.unsafe import DTypePointer, Pointer
 
-from ._utils import _check_error, _get_dylib_function
+from ._utils import (
+    _check_error,
+    _ContextHandle,
+    _StreamHandle,
+)
 from .device import Device
+from .cuda_instance import *
 
 # ===----------------------------------------------------------------------===#
 # Context
 # ===----------------------------------------------------------------------===#
 
 
-@value
-@register_passable("trivial")
-struct _ContextImpl(Boolable):
-    var handle: DTypePointer[DType.invalid]
-
-    fn __init__(inout self):
-        self.handle = DTypePointer[DType.invalid]()
-
-    fn __init__(inout self, handle: DTypePointer[DType.invalid]):
-        self.handle = handle
-
-    fn __bool__(self) -> Bool:
-        return self.handle.__bool__()
-
-
 struct Context:
-    var ctx: _ContextImpl
+    var ctx: _ContextHandle
+    var cuda_dll: Pointer[CudaDLL]
 
     fn __init__(inout self) raises:
         self.__init__(Device())
 
     fn __init__(inout self, device: Device, flags: Int = 0) raises:
-        var ctx = _ContextImpl()
+        self.cuda_dll = device.cuda_dll
+        self.ctx = _ContextHandle()
 
-        _check_error(
-            _get_dylib_function[
-                "cuCtxCreate_v2",
-                fn (Pointer[_ContextImpl], Int32, Device) -> Result,
-            ]()(Pointer.address_of(ctx), flags, device)
-        )
-        self.ctx = ctx
+        var cuCtxCreate = self.cuda_dll[].cuCtxCreate if self.cuda_dll else cuCtxCreate.load()
+        _check_error(cuCtxCreate(Pointer.address_of(self.ctx), flags, device))
 
     fn __del__(owned self):
         try:
             if self.ctx:
-                _check_error(
-                    _get_dylib_function[
-                        "cuCtxDestroy_v2", fn (_ContextImpl) -> Result
-                    ]()(self.ctx)
-                )
+                var cuCtxDestroy = self.cuda_dll[].cuCtxDestroy if self.cuda_dll else cuCtxDestroy.load()
+                _check_error(cuCtxDestroy(self.ctx))
         except e:
             abort(e.__str__())
 
@@ -65,4 +49,348 @@ struct Context:
 
     fn __moveinit__(inout self, owned existing: Self):
         self.ctx = existing.ctx
-        existing.ctx = _ContextImpl()
+        self.cuda_dll = existing.cuda_dll
+        existing.ctx = _ContextHandle()
+
+    fn synchronize(self) raises:
+        """Blocks for a Cuda Context's tasks to complete."""
+        var cuCtxSynchronize = self.cuda_dll[].cuCtxSynchronize if self.cuda_dll else cuCtxSynchronize.load()
+        _check_error(cuCtxSynchronize())
+
+    fn malloc[type: AnyRegType](self, count: Int) raises -> Pointer[type]:
+        """Allocates GPU device memory."""
+
+        var ptr = Pointer[Int]()
+        var cuMemAlloc = self.cuda_dll[].cuMemAlloc if self.cuda_dll else cuMemAlloc.load()
+        _check_error(
+            cuMemAlloc(Pointer.address_of(ptr), count * sizeof[type]())
+        )
+        return ptr.bitcast[type]()
+
+    fn malloc[type: DType](self, count: Int) raises -> DTypePointer[type]:
+        return self.malloc[Scalar[type]](count)
+
+    fn malloc_managed[
+        type: AnyRegType
+    ](self, count: Int) raises -> Pointer[type]:
+        """Allocates memory that will be automatically managed by the Unified Memory system.
+        """
+        alias CU_MEM_ATTACH_GLOBAL = UInt32(1)
+        var ptr = Pointer[Int]()
+        var cuMemAllocManaged = self.cuda_dll[].cuMemAllocManaged if self.cuda_dll else cuMemAllocManaged.load()
+        _check_error(
+            cuMemAllocManaged(
+                Pointer.address_of(ptr),
+                count * sizeof[type](),
+                CU_MEM_ATTACH_GLOBAL,
+            )
+        )
+        return ptr.bitcast[type]()
+
+    fn malloc_managed[
+        type: DType
+    ](self, count: Int) raises -> DTypePointer[type]:
+        return self.malloc_managed[Scalar[type]](count)
+
+    fn free[type: AnyRegType](self, ptr: Pointer[type]) raises:
+        """Frees allocated GPU device memory."""
+
+        var cuMemFree = self.cuda_dll[].cuMemFree if self.cuda_dll else cuMemFree.load()
+        _check_error(cuMemFree(ptr.bitcast[Int]()))
+
+    fn free[type: DType](self, ptr: DTypePointer[type]) raises:
+        self.free(ptr._as_scalar_pointer())
+
+    fn copy_host_to_device[
+        type: AnyRegType
+    ](
+        self, device_dest: Pointer[type], host_src: Pointer[type], count: Int
+    ) raises:
+        """Copies memory from host to device."""
+
+        var cuMemcpyHtoD = self.cuda_dll[].cuMemcpyHtoD if self.cuda_dll else cuMemcpyHtoD.load()
+        _check_error(
+            cuMemcpyHtoD(
+                device_dest.bitcast[Int](),
+                host_src.bitcast[NoneType](),
+                count * sizeof[type](),
+            )
+        )
+
+    fn copy_host_to_device[
+        type: DType
+    ](
+        self,
+        device_dest: DTypePointer[type],
+        host_src: DTypePointer[type],
+        count: Int,
+    ) raises:
+        self.copy_host_to_device[Scalar[type]](
+            device_dest._as_scalar_pointer(),
+            host_src._as_scalar_pointer(),
+            count,
+        )
+
+    fn copy_host_to_device_async[
+        type: AnyRegType
+    ](
+        self,
+        device_dst: Pointer[type],
+        host_src: Pointer[type],
+        count: Int,
+        stream: Stream,
+    ) raises:
+        """Copies memory from host to device asynchronously."""
+
+        var cuMemcpyHtoDAsync = self.cuda_dll[].cuMemcpyHtoDAsync if self.cuda_dll else cuMemcpyHtoDAsync.load()
+        _check_error(
+            cuMemcpyHtoDAsync(
+                device_dst.bitcast[NoneType](),
+                host_src.bitcast[Int](),
+                count * sizeof[type](),
+                stream.stream,
+            )
+        )
+
+    fn copy_host_to_device_async[
+        type: DType
+    ](
+        self,
+        device_dst: DTypePointer[type],
+        host_src: DTypePointer[type],
+        count: Int,
+        stream: Stream,
+    ) raises:
+        self.copy_host_to_device_async[Scalar[type]](
+            device_dst._as_scalar_pointer(),
+            host_src._as_scalar_pointer(),
+            count,
+            stream,
+        )
+
+    fn copy_device_to_host[
+        type: AnyRegType
+    ](
+        self, host_dest: Pointer[type], device_src: Pointer[type], count: Int
+    ) raises:
+        """Copies memory from device to host."""
+
+        var cuMemcpyDtoH = self.cuda_dll[].cuMemcpyDtoH if self.cuda_dll else cuMemcpyDtoH.load()
+        _check_error(
+            cuMemcpyDtoH(
+                host_dest.bitcast[NoneType](),
+                device_src.bitcast[Int](),
+                count * sizeof[type](),
+            )
+        )
+
+    fn copy_device_to_host[
+        type: DType
+    ](
+        self,
+        host_dest: DTypePointer[type],
+        device_src: DTypePointer[type],
+        count: Int,
+    ) raises:
+        self.copy_device_to_host[Scalar[type]](
+            host_dest._as_scalar_pointer(),
+            device_src._as_scalar_pointer(),
+            count,
+        )
+
+    fn copy_device_to_host_async[
+        type: AnyRegType
+    ](
+        self,
+        host_dest: Pointer[type],
+        device_src: Pointer[type],
+        count: Int,
+        stream: Stream,
+    ) raises:
+        """Copies memory from device to host asynchronously."""
+
+        var cuMemcpyDtoHAsync = self.cuda_dll[].cuMemcpyDtoHAsync if self.cuda_dll else cuMemcpyDtoHAsync.load()
+        _check_error(
+            cuMemcpyDtoHAsync(
+                host_dest.bitcast[NoneType](),
+                device_src.bitcast[Int](),
+                count * sizeof[type](),
+                stream.stream,
+            )
+        )
+
+    fn copy_device_to_host_async[
+        type: DType
+    ](
+        self,
+        host_dest: DTypePointer[type],
+        device_src: DTypePointer[type],
+        count: Int,
+        stream: Stream,
+    ) raises:
+        self.copy_device_to_host_async[Scalar[type]](
+            host_dest._as_scalar_pointer(),
+            device_src._as_scalar_pointer(),
+            count,
+            stream,
+        )
+
+    fn copy_device_to_device_async[
+        type: AnyRegType
+    ](
+        self, dst: Pointer[type], src: Pointer[type], count: Int, stream: Stream
+    ) raises:
+        """Copies memory from device to device asynchronously."""
+
+        var cuMemcpyDtoDAsync = self.cuda_dll[].cuMemcpyDtoDAsync if self.cuda_dll else cuMemcpyDtoDAsync.load()
+        _check_error(
+            cuMemcpyDtoDAsync(
+                dst.bitcast[NoneType](),
+                src.bitcast[Int](),
+                count * sizeof[type](),
+                stream.stream,
+            )
+        )
+
+    fn copy_device_to_device_async[
+        type: DType
+    ](
+        self,
+        dst: DTypePointer[type],
+        src: DTypePointer[type],
+        count: Int,
+        stream: Stream,
+    ) raises:
+        return self.copy_device_to_device_async(
+            dst._as_scalar_pointer(), src._as_scalar_pointer(), count, stream
+        )
+
+    fn memset[
+        type: AnyRegType
+    ](self, device_dest: Pointer[type], val: UInt8, count: Int) raises:
+        """Sets the memory range of N 8-bit values to a specified value."""
+
+        var cuMemsetD8 = self.cuda_dll[].cuMemsetD8 if self.cuda_dll else cuMemsetD8.load()
+        _check_error(
+            cuMemsetD8(
+                device_dest.bitcast[Int](),
+                val,
+                count * sizeof[type](),
+            )
+        )
+
+    fn memset[
+        type: DType
+    ](self, device_dest: DTypePointer[type], val: UInt8, count: Int) raises:
+        self.memset[Scalar[type]](
+            device_dest._as_scalar_pointer(),
+            val,
+            count,
+        )
+
+    fn memset_async[
+        type: DType
+    ](
+        self,
+        device_dest: DTypePointer[type],
+        val: Scalar[type],
+        count: Int,
+        stream: Stream,
+    ) raises:
+        """Sets the memory range of N 8-bit, 16-bit and 32-bit values to a specified value asynchronously.
+        """
+
+        alias bitwidth = type.bitwidth()
+        constrained[
+            bitwidth == 8 or bitwidth == 16 or bitwidth == 32,
+            "bitwidth of memset type must be one of [8,16,32]",
+        ]()
+
+        @parameter
+        if bitwidth == 8:
+            var cuMemsetD8Async = self.cuda_dll[].cuMemsetD8Async if self.cuda_dll else cuMemsetD8Async.load()
+            _check_error(
+                cuMemsetD8Async(
+                    device_dest.bitcast[DType.uint8](),
+                    bitcast[DType.uint8, 1](val),
+                    count * sizeof[type](),
+                    stream.stream,
+                )
+            )
+        elif bitwidth == 16:
+            var cuMemsetD16Async = self.cuda_dll[].cuMemsetD16Async if self.cuda_dll else cuMemsetD16Async.load()
+            _check_error(
+                cuMemsetD16Async(
+                    device_dest.bitcast[DType.uint16](),
+                    bitcast[DType.uint16, 1](val),
+                    count,
+                    stream.stream,
+                )
+            )
+        elif bitwidth == 32:
+            var cuMemsetD32Async = self.cuda_dll[].cuMemsetD32Async if self.cuda_dll else cuMemsetD32Async.load()
+            _check_error(
+                cuMemsetD32Async(
+                    device_dest.bitcast[DType.uint32](),
+                    bitcast[DType.uint32, 1](val),
+                    count,
+                    stream.stream,
+                )
+            )
+
+    @always_inline
+    fn copy_device_to_device[
+        type: AnyRegType
+    ](
+        self,
+        device_dest: Pointer[type],
+        device_src: Pointer[type],
+        count: Int,
+    ) raises:
+        """Copies memory from device to device."""
+
+        var cuMemcpyDtoD = self.cuda_dll[].cuMemcpyDtoD if self.cuda_dll else cuMemcpyDtoD.load()
+        _check_error(
+            cuMemcpyDtoD(
+                device_dest.bitcast[Int](),
+                device_src.bitcast[Int](),
+                count * sizeof[type](),
+            )
+        )
+
+    @always_inline
+    fn copy_device_to_device[
+        type: DType
+    ](
+        self,
+        device_dest: DTypePointer[type],
+        device_src: DTypePointer[type],
+        count: Int,
+    ) raises:
+        self.copy_device_to_device[Scalar[type]](
+            device_dest._as_scalar_pointer(),
+            device_src._as_scalar_pointer(),
+            count,
+        )
+
+    fn malloc_async[
+        type: AnyRegType
+    ](self, count: Int, stream: Stream) raises -> Pointer[type]:
+        """Allocates memory with stream ordered semantics."""
+
+        var ptr = Pointer[Int]()
+        var cuMemAllocAsync = self.cuda_dll[].cuMemAllocAsync if self.cuda_dll else cuMemAllocAsync.load()
+        _check_error(
+            cuMemAllocAsync(
+                Pointer.address_of(ptr), count * sizeof[type](), stream.stream
+            )
+        )
+        return ptr.bitcast[type]()
+
+    fn free_async[
+        type: AnyRegType
+    ](self, ptr: Pointer[type], stream: Stream) raises:
+        """Frees memory with stream ordered semantics."""
+
+        var cuMemFreeAsync = self.cuda_dll[].cuMemFreeAsync if self.cuda_dll else cuMemFreeAsync.load()
+        _check_error(cuMemFreeAsync(ptr.bitcast[Int](), stream.stream))

@@ -74,3 +74,28 @@ fn _get_dylib_function[
         _destroy_dylib,
         result_type,
     ]()
+
+
+@value
+@register_passable("trivial")
+struct CudaHandle(Boolable, Stringable):
+    var handle: DTypePointer[DType.invalid]
+
+    fn __init__(inout self):
+        self.handle = DTypePointer[DType.invalid]()
+
+    fn __init__(inout self, handle: DTypePointer[DType.invalid]):
+        self.handle = handle
+
+    fn __bool__(self) -> Bool:
+        return self.handle.__bool__()
+
+    fn __str__(self) -> String:
+        return str(self.handle)
+
+
+alias _ContextHandle = CudaHandle
+alias _EventHandle = CudaHandle
+alias _StreamHandle = CudaHandle
+alias _ModuleHandle = CudaHandle
+alias _FunctionHandle = CudaHandle

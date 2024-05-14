@@ -14,7 +14,11 @@ from memory.unsafe import DTypePointer, Pointer
 
 from utils import StringRef
 
-from ._utils import _check_error, _get_dylib_function
+from ._utils import (
+    _check_error,
+    _ModuleHandle,
+    _FunctionHandle,
+)
 
 # ===----------------------------------------------------------------------===#
 # JitOptions
@@ -293,39 +297,53 @@ struct JitOptions:
 
 
 @value
-@register_passable("trivial")
-struct _ModuleImpl(Boolable):
-    var handle: DTypePointer[DType.invalid]
-
-    @always_inline
-    fn __init__(inout self):
-        self.handle = DTypePointer[DType.invalid]()
-
-    @always_inline
-    fn __bool__(self) -> Bool:
-        return self.handle.__bool__()
-
-
-@value
 @register_passable
-struct ModuleHandle:
-    var module: _ModuleImpl
+struct Module:
+    var module: _ModuleHandle
+    var cuda_dll: Pointer[CudaDLL]
 
-    fn __init__(inout self):
-        self.module = _ModuleImpl()
+    fn __init__(inout self, ctx: Context):
+        self.__init__(ctx.cuda_dll)
 
-    fn __init__(inout self, path: Path) raises:
-        var module = _ModuleImpl()
+    fn __init__(inout self, cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL]()):
+        self.module = _ModuleHandle()
+        self.cuda_dll = cuda_dll
+
+    fn __init__(inout self, ctx: Context, path: Path) raises:
+        self.__init__(path, ctx.cuda_dll)
+
+    fn __init__(
+        inout self, path: Path, cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL]()
+    ) raises:
+        self.cuda_dll = cuda_dll
+        var module = _ModuleHandle()
         var path_cstr = path.__str__()
 
         _check_error(
-            _get_dylib_function[
-                "cuModuleLoad",
-                fn (Pointer[_ModuleImpl], DTypePointer[DType.int8]) -> Result,
-            ]()(Pointer.address_of(module), path_cstr.unsafe_ptr())
+            cuModuleLoad.load()(
+                Pointer.address_of(module), path_cstr.unsafe_ptr()
+            )
         )
         _ = path_cstr
         self.module = module
+
+    fn __init__(
+        inout self,
+        ctx: Context,
+        content: String,
+        debug: Bool = False,
+        verbose: Bool = False,
+        max_registers: Optional[Int] = None,
+        threads_per_block: Optional[Int] = None,
+    ) raises:
+        self.__init__(
+            content,
+            debug,
+            verbose,
+            max_registers,
+            threads_per_block,
+            ctx.cuda_dll,
+        )
 
     fn __init__(
         inout self,
@@ -334,11 +352,13 @@ struct ModuleHandle:
         verbose: Bool = False,
         max_registers: Optional[Int] = None,
         threads_per_block: Optional[Int] = None,
+        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
     ) raises:
         """Loads a module in the current CUDA context by mapping PTX provided as a NULL terminated text string.
         """
 
-        var module = _ModuleImpl()
+        self.cuda_dll = cuda_dll
+        var module = _ModuleHandle()
         if debug or verbose:
             alias buffer_size = 4096
             alias max_num_options = 10
@@ -392,16 +412,8 @@ struct ModuleHandle:
 
             # Note that content has already gone through _cleanup_asm and
             # is null terminated.
-            var result = _get_dylib_function[
-                "cuModuleLoadDataEx",
-                fn (
-                    Pointer[_ModuleImpl],
-                    DTypePointer[DType.int8],
-                    UInt32,
-                    Pointer[JitOptions],
-                    Pointer[Pointer[NoneType]],
-                ) -> Result,
-            ]()(
+            var cuModuleLoadDataEx = self.cuda_dll[].cuModuleLoadDataEx if self.cuda_dll else cuModuleLoadDataEx.load()
+            var result = cuModuleLoadDataEx(
                 Pointer.address_of(module),
                 content.unsafe_ptr(),
                 UInt32(num_options),
@@ -422,13 +434,11 @@ struct ModuleHandle:
         else:
             # Note that content has already gone through _cleanup_asm and
             # is null terminated.
+            var cuModuleLoadData = self.cuda_dll[].cuModuleLoadData if self.cuda_dll else cuModuleLoadData.load()
             _check_error(
-                _get_dylib_function[
-                    "cuModuleLoadData",
-                    fn (
-                        Pointer[_ModuleImpl], DTypePointer[DType.int8]
-                    ) -> Result,
-                ]()(Pointer.address_of(module), content.unsafe_ptr())
+                cuModuleLoadData(
+                    Pointer.address_of(module), content.unsafe_ptr()
+                )
             )
 
         self.module = module
@@ -437,40 +447,33 @@ struct ModuleHandle:
         """Unloads a module ffrom the current CUDA context."""
 
         try:
+            var cuModuleUnload = self.cuda_dll[].cuModuleUnload if self.cuda_dll else cuModuleUnload.load()
             if self.module:
-                _check_error(
-                    _get_dylib_function[
-                        "cuModuleUnload", fn (_ModuleImpl) -> Result
-                    ]()(self.module)
-                )
-                self.module = _ModuleImpl()
+                _check_error(cuModuleUnload(self.module))
+                self.module = _ModuleHandle()
         except e:
             abort(e.__str__())
 
     @always_inline
-    fn _steal_handle(inout self) -> _ModuleImpl:
+    fn _steal_handle(inout self) -> _ModuleHandle:
         """Steal the underlying handle from the module."""
         var res = self.module
-        self.module = _ModuleImpl()
+        self.module = _ModuleHandle()
         return res
 
-    fn load(self, name: String) raises -> FunctionHandle:
+    fn load(self, name: String) raises -> _FunctionHandle:
         """Returns the handle of a function which matches the input name in
         a particular module.
         """
 
-        var func = FunctionHandle()
+        var func = _FunctionHandle()
         var name_cstr = name
 
+        var cuModuleGetFunction = self.cuda_dll[].cuModuleGetFunction if self.cuda_dll else cuModuleGetFunction.load()
         _check_error(
-            _get_dylib_function[
-                "cuModuleGetFunction",
-                fn (
-                    Pointer[FunctionHandle],
-                    _ModuleImpl,
-                    DTypePointer[DType.int8],
-                ) -> Result,
-            ]()(Pointer.address_of(func), self.module, name_cstr.unsafe_ptr())
+            cuModuleGetFunction(
+                Pointer.address_of(func), self.module, name_cstr.unsafe_ptr()
+            )
         )
 
         _ = name_cstr

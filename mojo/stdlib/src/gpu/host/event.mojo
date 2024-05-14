@@ -10,8 +10,13 @@ from time import now
 
 from memory.unsafe import DTypePointer, Pointer
 
-from ._utils import _check_error, _get_dylib_function
-from .stream import Stream, _StreamImpl
+from ._utils import (
+    _check_error,
+    _EventHandle,
+    _StreamHandle,
+)
+from .stream import Stream
+from .context import Context
 
 # ===----------------------------------------------------------------------===#
 # Flag
@@ -58,39 +63,30 @@ struct Flag:
 # ===----------------------------------------------------------------------===#
 
 
-@value
-@register_passable("trivial")
-struct _EventImpl(Boolable):
-    var handle: DTypePointer[DType.invalid]
-
-    @always_inline
-    fn __init__(inout self):
-        self.handle = DTypePointer[DType.invalid]()
-
-    @always_inline
-    fn __init__(inout self, handle: DTypePointer[DType.invalid]):
-        self.handle = handle
-
-    @always_inline
-    fn __bool__(self) -> Bool:
-        return self.handle.__bool__()
-
-
 @register_passable
 struct Event:
-    var _event: _EventImpl
+    var _event: _EventHandle
+    var cuda_dll: Pointer[CudaDLL]
 
     @always_inline
-    fn __init__(inout self, flags: Flag = Flag.DEFAULT) raises:
+    fn __init__(inout self, ctx: Context, flags: Flag = Flag.DEFAULT) raises:
         """Creates an event for the current CUDA context."""
 
-        var event = _EventImpl()
+        self.__init__(flags, ctx.cuda_dll)
 
-        _check_error(
-            _get_dylib_function[
-                "cuEventCreate", fn (Pointer[_EventImpl], Flag) -> Result
-            ]()(Pointer.address_of(event), flags)
-        )
+    @always_inline
+    fn __init__(
+        inout self,
+        flags: Flag = Flag.DEFAULT,
+        cuda_dll: Pointer[CudaDLL] = Pointer[CudaDLL](),
+    ) raises:
+        """Creates an event for the current CUDA context."""
+
+        self.cuda_dll = cuda_dll
+        var event = _EventHandle()
+
+        var cuEventCreate = self.cuda_dll[].cuEventCreate if self.cuda_dll else cuEventCreate.load()
+        _check_error(cuEventCreate(Pointer.address_of(event), flags))
         self._event = event
 
     @always_inline
@@ -100,12 +96,10 @@ struct Event:
         try:
             if not self._event:
                 return
-            _check_error(
-                _get_dylib_function[
-                    "cuEventDestroy_v2", fn (_EventImpl) -> Result
-                ]()(self._event)
-            )
-            self._event = _EventImpl()
+
+            var cuEventCreate = self.cuda_dll[].cuEventDestroy if self.cuda_dll else cuEventDestroy.load()
+            _check_error(cuEventCreate(self._event))
+            self._event = _EventHandle()
         except e:
             abort(e.__str__())
 
@@ -114,34 +108,28 @@ struct Event:
         """Waits until the completion of all work currently capturend in a particular event.
         """
 
-        _check_error(
-            _get_dylib_function[
-                "cuEventSynchronize", fn (_EventImpl) -> Result
-            ]()(self._event)
-        )
+        var cuEventSynchronize = self.cuda_dll[].cuEventSynchronize if self.cuda_dll else cuEventSynchronize.load()
+        _check_error(cuEventSynchronize(self._event))
 
     @always_inline
     fn record(self, stream: Stream) raises:
         """Captures the contents of a stream in the events object at the time of this call.
         """
 
-        _check_error(
-            _get_dylib_function[
-                "cuEventRecord", fn (_EventImpl, _StreamImpl) -> Result
-            ]()(self._event, stream.stream)
-        )
+        var cuEventRecord = self.cuda_dll[].cuEventRecord if self.cuda_dll else cuEventRecord.load()
+        _check_error(cuEventRecord(self._event, stream.stream))
 
     @always_inline
     fn elapsed(self, other: Event) raises -> Float32:
         """Computes the elapsed time between two events (in milliseconds with a resolution of around 0.5 microseconds).
         """
 
+        var cuEventElapsedTime = self.cuda_dll[].cuEventElapsedTime if self.cuda_dll else cuEventElapsedTime.load()
         var ms = Float32(0)
         _check_error(
-            _get_dylib_function[
-                "cuEventElapsedTime",
-                fn (Pointer[Float32], _EventImpl, _EventImpl) -> Result,
-            ]()(Pointer.address_of(ms), self._event, other._event)
+            cuEventElapsedTime(
+                Pointer.address_of(ms), self._event, other._event
+            )
         )
         return ms
 
