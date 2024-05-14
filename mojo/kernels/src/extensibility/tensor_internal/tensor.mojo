@@ -683,7 +683,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
             A new tensor with the same values but the new type.
         """
-        var result = Tensor[new_type](self._spec)
+        var result = Tensor[new_type](self._spec.shape)
         var buffer = self._to_buffer()
         var result_buffer = result._to_buffer()
 
