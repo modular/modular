@@ -60,8 +60,6 @@ ErrorOrSuccess BSPClient::run() {
                                executeError));
 
   // Send the initialization request to the server.
-  lsp::Logger::debug("--> client build/initialize: displayName='{0}'",
-                     displayName);
   initializeRequestFn(InitializeBuildParams{displayName,
                                             getModularVersionString(),
                                             /*bspVersion=*/"2.2.0", rootUri},
@@ -106,20 +104,14 @@ ErrorOrSuccess BSPClient::run() {
 
 void BSPClient::onBuildInitializeResponse(
     llvm::json::Value id, llvm::Expected<InitializeBuildResult> result) {
-  std::string logPrefix =
-      llvm::formatv("<--- client reply:build/initialize({0}): ", id);
   if (!result) {
     return llvm::handleAllErrors(
         result.takeError(), [&](const lsp::LSPError &err) {
-          lsp::Logger::error("{0}{1}", logPrefix, err.message);
+          lsp::Logger::error("<--- client reply:build/initialize({0}): {1}", id,
+                             err.message);
         });
   }
 
-  lsp::Logger::debug("{0}displayName='{1}'", logPrefix, result->displayName);
-
-  lsp::Logger::debug("--> client build/shutdown");
   transport.call("build/shutdown", nullptr, currentRequestID++);
-
-  lsp::Logger::debug("--> client exit");
   transport.notify("exit", nullptr);
 }
