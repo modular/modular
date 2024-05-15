@@ -80,3 +80,23 @@ fn foo(x: fn[a: int] () -> None):
 # expected-error @below {{non-owned variadic keyword arguments are not supported yet}}
 fn borrowed_kwargs(borrowed **kwargs: int):
     pass
+
+# expected-error @below {{'inferred' parameters must all be at the beginning of the parameter list}}
+fn invalid_inferred[x: int, inferred y: int]():
+    pass
+
+# expected-error @below {{'inferred' parameters must all be at the beginning of the parameter list}}
+fn invalid_inferred_kw_only[*, x: int, inferred y: int]():
+    pass
+
+# expected-error @below {{'inferred' parameters must all be at the beginning of the parameter list}}
+fn invalid_inferred_pos_only[x: int, /, inferred y: int]():
+    pass
+
+# expected-error @below {{only parameters may be specified as 'inferred'}}
+fn invalid_inferred_argument(inferred x: int):
+    pass
+
+# expected-error @below {{inferred parameters may not have defaults}}
+fn invalid_inferred_default[inferred x: int = `1`]():
+    pass
