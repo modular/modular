@@ -31,7 +31,7 @@ public:
   /// sent to the client, from the server) and file descriptor for stdout (for
   /// messages sent from the client, to the server).
   BSPClient(TempFile &&in, std::FILE *inFile, TempFile &&out, int outFD,
-            const std::string &displayName,
+            const std::string &displayName, const std::string &rootUri,
             const std::filesystem::path &serverPath);
 
   /// Starts the client-server communication runloop, blocking until either an
@@ -61,6 +61,8 @@ private:
 
   /// The name of the client.
   std::string displayName;
+  /// The root URI of the workspace.
+  std::string rootUri;
   /// The path to the server executable.
   std::filesystem::path serverPath;
 

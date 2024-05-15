@@ -11,6 +11,9 @@ add_modular_library(MojoBuild
   Server.cpp
 
   LINK_LIBS PUBLIC
+  MSupport
+  MVersion
+
   MLIRLspServerSupportLib
   MLIRSupport
 )

@@ -90,6 +90,17 @@ static int buildProject(const State &subcommandState) {
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 
+  // Determine the path to the project being built.
+  if (args.hasMultipleArgs(options::OPT_INPUT))
+    return state.reportError("too many inputs, expected exactly one");
+  std::filesystem::path rootUri(
+      args.getLastArgValue(options::OPT_INPUT, ".").str());
+  std::error_code ec;
+  rootUri = std::filesystem::weakly_canonical(rootUri, ec);
+  if (ec)
+    return state.reportError("input path could not be made absolute: " +
+                             ec.message());
+
   // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
 
@@ -132,7 +143,7 @@ static int buildProject(const State &subcommandState) {
 
   mlir::lsp::Logger::setLogLevel(mlir::lsp::Logger::Level::Debug);
   Build::BSPClient client(std::move(in), inFile, std::move(out), outFD,
-                          "mojo-build-project", serverPath);
+                          "mojo-build-project", rootUri.string(), serverPath);
   ErrorOrSuccess result = client.run();
   if (result.isError())
     return state.reportError(result.getError());

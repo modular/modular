@@ -16,13 +16,19 @@ using namespace M::Build;
 //===----------------------------------------------------------------------===//
 
 llvm::json::Value M::Build::toJSON(const InitializeBuildParams &value) {
-  return llvm::json::Object{{"displayName", value.displayName}};
+  return llvm::json::Object{{"displayName", value.displayName},
+                            {"version", value.version},
+                            {"bspVersion", value.bspVersion},
+                            {"rootUri", value.rootUri}};
 }
 
 bool M::Build::fromJSON(const llvm::json::Value &value,
                         InitializeBuildParams &result, llvm::json::Path path) {
   llvm::json::ObjectMapper o(value, path);
-  return o && o.map("displayName", result.displayName);
+  return o && o.map("displayName", result.displayName) &&
+         o.map("version", result.version) &&
+         o.map("bspVersion", result.bspVersion) &&
+         o.map("rootUri", result.rootUri);
 }
 
 llvm::json::Value M::Build::toJSON(const InitializeBuildResult &value) {

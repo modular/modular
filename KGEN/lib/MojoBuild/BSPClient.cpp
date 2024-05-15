@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/MojoBuild/BSPClient.h"
+#include "Config/Version.h"
 #include "KGEN/MojoBuild/Protocol.h"
 #include "Support/ErrorOr.h"
 
@@ -25,10 +26,11 @@ using namespace mlir;
 
 BSPClient::BSPClient(TempFile &&in, std::FILE *inFile, TempFile &&out,
                      int outFD, const std::string &displayName,
+                     const std::string &rootUri,
                      const std::filesystem::path &serverPath)
     : in(std::move(in)), inFile(inFile), out(std::move(out)),
       outOS(outFD, /*shouldClose=*/true), transport(inFile, outOS),
-      messageHandler(transport), displayName(displayName),
+      messageHandler(transport), displayName(displayName), rootUri(rootUri),
       serverPath(serverPath) {
   initializeRequestFn = messageHandler.outgoingRequest<InitializeBuildParams,
                                                        InitializeBuildResult>(
@@ -60,7 +62,10 @@ ErrorOrSuccess BSPClient::run() {
   // Send the initialization request to the server.
   lsp::Logger::debug("--> client build/initialize: displayName='{0}'",
                      displayName);
-  initializeRequestFn(InitializeBuildParams{displayName}, currentRequestID++);
+  initializeRequestFn(InitializeBuildParams{displayName,
+                                            getModularVersionString(),
+                                            /*bspVersion=*/"2.2.0", rootUri},
+                      currentRequestID++);
 
   // Repeatedly wait on the server until it exits.
   while (true) {
@@ -78,7 +83,7 @@ ErrorOrSuccess BSPClient::run() {
     if (waitInfo.Pid) {
       if (waitInfo.ReturnCode == 0)
         return success();
-      return Error(llvm::formatv("'{0}' exited unsuccessfully: exit code {0}",
+      return Error(llvm::formatv("'{0}' exited unsuccessfully: exit code {1}",
                                  serverPath, waitInfo.ReturnCode));
     }
 
@@ -103,16 +108,15 @@ void BSPClient::onBuildInitializeResponse(
     llvm::json::Value id, llvm::Expected<InitializeBuildResult> result) {
   std::string logPrefix =
       llvm::formatv("<--- client reply:build/initialize({0}): ", id);
-  if (result) {
-    lsp::Logger::debug("{0}displayName='{1}'", logPrefix, result->displayName);
-  } else {
-    llvm::handleAllErrors(result.takeError(), [&](const lsp::LSPError &err) {
-      lsp::Logger::error("{0}{1}", logPrefix, err.message);
-    });
+  if (!result) {
+    return llvm::handleAllErrors(
+        result.takeError(), [&](const lsp::LSPError &err) {
+          lsp::Logger::error("{0}{1}", logPrefix, err.message);
+        });
   }
 
-  // Note that even in the error cases above, we do not return early -- we still
-  // send the server a shutdown request.
+  lsp::Logger::debug("{0}displayName='{1}'", logPrefix, result->displayName);
+
   lsp::Logger::debug("--> client build/shutdown");
   transport.call("build/shutdown", nullptr, currentRequestID++);
 
