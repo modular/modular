@@ -108,6 +108,10 @@ void printOptionalParamSignature(AsmPrinter &p, ArrayRef<Type> inputParamTypes,
 /// Parse an optional parameter or argument name.
 ParseResult parseOptionalName(AsmParser &p, StringAttr &name);
 
+/// Count the number of inferred passing kinds.
+size_t countNumInferredKinds(ArrayRef<PogMetadataAttr> pogs);
+size_t countNumInferredKinds(PogListAttr pogListAttr);
+
 /// Count the number of positional-only passing kinds.
 size_t countNumPosOnly(ArrayRef<PogMetadataAttr> pogs);
 size_t countNumPosOnly(PogListAttr pogListAttr);
@@ -165,10 +169,11 @@ public:
 private:
   /// Return the number of positional-only, positional-or-keyword, keyword-only
   /// and implicit arguments seen so far, respectively.
-  std::tuple<size_t, size_t, size_t, size_t> getNumPassingKinds() const;
+  std::tuple<size_t, size_t, size_t, size_t, size_t> getNumPassingKinds() const;
 
   AsmParser &parser;
   size_t idx = 0;
+  size_t numInferred = 0;
   size_t numPosOnly = 0;
   size_t numPosOrKw = 0;
   size_t numKwOnly = 0;
@@ -255,10 +260,10 @@ public:
                       ArrayRef<TypedAttr> defaultsPos,
                       ArrayRef<TypedAttr> defaultsKwOnly)
       : pogs(pogs), defaultsPos(defaultsPos), defaultsKwOnly(defaultsKwOnly),
-        numPositional(countNumPositional(pogs)),
+        numPositional(countNumInferredKinds(pogs) + countNumPositional(pogs)),
         defaultPosStart(numPositional - defaultsPos.size()),
         kwOnlyEnd(pogs.size() - countNumImplicitKinds(pogs)),
-        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()){};
+        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()) {};
 
   DefaultValueHandler(PogListAttr pogListAttr);
 

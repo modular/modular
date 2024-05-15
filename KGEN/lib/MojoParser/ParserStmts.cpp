@@ -1011,12 +1011,11 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     getEmitter().shared.notifyListenerOnVariableDecl(decl, targetLoc);
   };
 
-  // If there is a failure before we parse the for loop body, we still
-  // want to call the parser on it so that it builds an ASTDecl node
-  // and adds the for loop VarDecl to the lookup path.  Otherwise,
-  // we will get spurious “use of unknown declaration” errors on it
-  // besides whatever error is raised while processing the loop
-  // header.
+  // If there is a failure before we parse the for loop body, we still want to
+  // call the parser on it so that it builds an ASTDecl node and adds the for
+  // loop VarDecl to the lookup path.  Otherwise, we will get spurious “use of
+  // unknown declaration” errors on it besides whatever error is raised while
+  // processing the loop header.
   auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
     std::ignore = parseLocalScopeSuite(
         curIndent, ScopeDecl{&*varDeclOp, targetLoc, target, [&](ASTDecl &d) {

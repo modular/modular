@@ -56,6 +56,14 @@
 
 // -----
 
+// expected-error @+1 {{'inferred' parameter follows non-inferred parameter}}
+#too_many_packs = #lit.pog_list<
+  [<"a", pos, false>, <"b", inferred, false>],
+  [], [], -1, none
+>
+
+// -----
+
 // expected-error @+1 {{default value of variadic pack must be UnknownAttr}}
 #pack_with_default = #lit.pog_list<
   [<"a", pos, false>, <"b", pos_or_kw, false>, <"c", kw, false>, <"d", kw, false>],
