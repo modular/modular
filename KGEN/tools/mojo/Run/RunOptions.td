@@ -7,6 +7,7 @@
 include "Run/RunDescription.td"
 
 include "Common/CompilationOptions.td"
+include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"
 include "Common/TargetOptions.td"
 include "Support/Driver/CommonOptions.td"

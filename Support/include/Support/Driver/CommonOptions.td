@@ -20,7 +20,7 @@ include "llvm/Option/OptParser.td"
 
 def CommonOptionGroup : OptionGroup<"Common options">, Index<99>;
 
-def help : Flag<["--", "-"], "help">, Group<CommonOptionGroup>, Index<0>,
+def help : Flag<["--", "-"], "help">, Group<CommonOptionGroup>, Index<99>,
   HelpText<"Displays help information.">;
 def h : Flag<["-"], "h">, Group<CommonOptionGroup>, Alias<help>, Index<0>;
 

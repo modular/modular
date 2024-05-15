@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/ErrorOr.h"
 
 #include "Support/Filesystem/Paths.h"
@@ -13,6 +14,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -77,8 +79,38 @@ M::resolveMojoInputFileOrPackage(StringRef path) {
 //===----------------------------------------------------------------------===//
 
 int State::reportError(const Twine &errorMessage) const {
-  llvm::errs() << programName << ": error: " << errorMessage << "\n";
+  switch (diagnosticFormat) {
+  case DiagnosticFormat::Text:
+    llvm::errs() << programName << ": error: " << errorMessage << '\n';
+    break;
+  case DiagnosticFormat::JSON:
+    llvm::errs() << toJSON(json::Diagnostic{json::DiagnosticKind::Error,
+                                            errorMessage.str()})
+                 << '\n';
+    break;
+  }
   return EXIT_FAILURE;
+}
+
+int State::parseDiagnosticFormatArguments(
+    llvm::opt::InputArgList &args,
+    llvm::opt::OptSpecifier diagnosticFormatOptionID) {
+  StringLiteral kDiagnosticFormatText = "text";
+  StringLiteral kDiagnosticFormatJSON = "json";
+  StringRef format =
+      args.getLastArgValue(diagnosticFormatOptionID, kDiagnosticFormatText);
+  if (!llvm::is_contained({kDiagnosticFormatText, kDiagnosticFormatJSON},
+                          format)) {
+    return reportError(
+        llvm::formatv("invalid diagnostic format '{0}', expected one of: `{1}` "
+                      "(the default), or `{2}`",
+                      format, kDiagnosticFormatText, kDiagnosticFormatJSON));
+  }
+
+  diagnosticFormat = llvm::StringSwitch<DiagnosticFormat>(format)
+                         .Case(kDiagnosticFormatText, DiagnosticFormat::Text)
+                         .Case(kDiagnosticFormatJSON, DiagnosticFormat::JSON);
+  return EXIT_SUCCESS;
 }
 
 #if __cplusplus >= 202002

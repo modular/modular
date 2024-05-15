@@ -18,18 +18,21 @@ include "Support/Driver/DriverCommand.td"
 // Diagnostic Options
 //===----------------------------------------------------------------------===//
 
-def DiagnosticOptionGroup : OptionGroup<"Diagnostic options">, Index<10>;
+def DiagnosticOptionGroup : OptionGroup<"Compilation diagnostic options">,
+  Index<10>,
+  HelpText<"Controls how the Mojo compiler outputs diagnostics related to "
+           "compiling and running Mojo source code.">;
 
 def diagnose_missing_doc_strings : Flag<["--", "-"],
-  "diagnose-missing-doc-strings">, Group<DiagnosticOptionGroup>, Index<0>,
+  "diagnose-missing-doc-strings">, Group<DiagnosticOptionGroup>, Index<1>,
   HelpText<"Emits diagnostics for missing or partial doc strings.">;
 
 def validate_doc_strings : Flag<["--", "-"],
-  "validate-doc-strings">, Group<DiagnosticOptionGroup>, Index<1>,
+  "validate-doc-strings">, Group<DiagnosticOptionGroup>, Index<2>,
   HelpText<"Emits errors for invalid doc strings instead of warnings.">;
 
 defm max_notes : CommandOption<["--", "-"], "max-notes-per-diagnostic",
-  DiagnosticOptionGroup, Index<2>, MetaVarName<"INTEGER">,
+  DiagnosticOptionGroup, Index<3>, MetaVarName<"INTEGER">,
   HelpText<"When the Mojo compiler emits diagnostics, it sometimes also prints "
            "notes with additional information. This option sets an upper "
            "threshold on the number of notes that can be printed with a "

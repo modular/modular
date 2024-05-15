@@ -18,6 +18,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "LLCL/Runtime/WorkQueue.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
+#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Init/Init.h"
 
@@ -50,8 +51,9 @@ struct DocOptTable : public llvm::opt::PrecomputedOptTable {
 /// strings in order to generate structured output (currently JSON). Returns an
 /// integer representing a successful exit code is documentation generation
 /// succeeded, otherwise returns a failure code.
-static int doc(const State &state) {
+static int doc(const State &subcommandState) {
   // Parse command line arguments.
+  State state = subcommandState;
   DocOptTable options;
   unsigned missingIndex = 0;
   unsigned missingCount = 0;
@@ -64,6 +66,9 @@ static int doc(const State &state) {
     );
   }
 
+  if (int result = state.parseDiagnosticFormatArguments(
+          args, options::OPT_diagnostic_format))
+    return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 
@@ -94,8 +99,10 @@ static int doc(const State &state) {
   if (pathOrErr)
     return state.reportError(pathOrErr.getError());
 
-  // Initialize the source manager with the includes.
+  // Initialize the source manager with the appropriate diagnostic handler and
+  // include paths.
   llvm::SourceMgr sourceManager;
+  sourceManager.setDiagHandler(getDiagHandler(state.diagnosticFormat));
   sourceManager.setIncludeDirs(args.getAllArgValues(options::OPT_I));
 
   DialectRegistry registry;

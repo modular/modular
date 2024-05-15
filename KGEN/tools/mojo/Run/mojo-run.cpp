@@ -22,6 +22,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Config.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Init/Init.h"
 #include "Support/LLVMForwardDecls.h"
@@ -112,8 +113,7 @@ static std::optional<int> validateSanitizers(const State &state,
 ///    program execution should continue.
 /// 2. `args`: the command line arguments preceding and including the input
 ///    argument ("Foo.mojo" from the example above).
-static std::optional<int> parseArgs(const State &state,
-                                    llvm::opt::InputArgList &args,
+static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     llvm::SourceMgr &sourceManager,
                                     CompilationOptions &compilationOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target,
@@ -155,7 +155,10 @@ static std::optional<int> parseArgs(const State &state,
   }
 
   // Otherwise, within this subset of arguments that appear before the input,
-  // unknown arguments are rejected.
+  // unknown or invalid arguments are rejected.
+  if (int result = state.parseDiagnosticFormatArguments(
+          args, options::OPT_diagnostic_format))
+    return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 
@@ -166,7 +169,9 @@ static std::optional<int> parseArgs(const State &state,
   if (failed(bufferOrErr))
     return state.reportError(bufferOrErr.getError());
 
-  // Initialize the source manager with the input file buffer.
+  // Initialize the source manager with the input file buffer, as well as the
+  // appropriate diagnostic handler.
+  sourceManager.setDiagHandler(getDiagHandler(state.diagnosticFormat));
   sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
 
   if (ErrorOrSuccess err = parseCompilationOptions(
@@ -326,8 +331,9 @@ static int executeModule(const State &state, LLCL::Runtime &runtime,
 /// executes it. Returns an integer representing a successful exit code if
 /// the source file could be compiled and if it executed without raising an
 /// error, otherwise returns a failure code.
-static int run(const State &state) {
+static int run(const State &subcommandState) {
   // Parse arguments.
+  State state = subcommandState;
   RunOptTable optionsTable;
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceManager;
