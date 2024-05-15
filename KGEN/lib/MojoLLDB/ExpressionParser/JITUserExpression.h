@@ -23,7 +23,8 @@ class JitUserExpression : public lldb_private::UserExpression {
 public:
   JitUserExpression(lldb_private::ExecutionContextScope &exeScope,
                     llvm::StringRef expr, llvm::StringRef prefix,
-                    lldb::LanguageType language, ResultType desiredType,
+                    lldb_private::SourceLanguage language,
+                    ResultType desiredType,
                     const lldb_private::EvaluateExpressionOptions &options);
   ~JitUserExpression() override;
 

@@ -390,8 +390,8 @@ ExecutionEngine::create(ExecutionEngineOptions options,
 
     epc = std::make_unique<llvm::orc::SelfExecutorProcessControl>(
         std::make_shared<llvm::orc::SymbolStringPool>(),
-        std::make_unique<llvm::orc::DynamicThreadPoolTaskDispatcher>(), tt,
-        *pageSize, /*MemMgr=*/std::move(*managerOr));
+        std::make_unique<llvm::orc::InPlaceTaskDispatcher>(), tt, *pageSize,
+        /*MemMgr=*/std::move(*managerOr));
   }
   auto sessionPtr =
       std::make_unique<llvm::orc::ExecutionSession>(std::move(epc));

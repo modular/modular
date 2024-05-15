@@ -241,7 +241,7 @@ MojoASTDeclRef MojoDWARFParser::getDeclForDIE(const DWARFDIE &die) {
     dwarf->GetObjectFile()->GetModule()->ReportError(
         "[MojoDWARFParser::getDeclForDIE]: Unhandled type tag. Die = {0:x}, "
         "tag = {1}.",
-        die.GetOffset(), die.GetTagAsCString());
+        die.GetOffset(), DW_TAG_value_to_name(die.Tag()));
     break;
   }
 
@@ -335,7 +335,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
         log,
         "[MojoDWARFParser::ParseTypeFromDWARF] Will parse type. Die = {0:x}, "
         "tag = {1}, name = '{2}', linkage name = '{3}', byte size = {4}.",
-        die.GetOffset(), die.GetTagAsCString(), die.GetName(),
+        die.GetOffset(), DW_TAG_value_to_name(die.Tag()), die.GetName(),
         attrs.linkageName.AsCString(), attrs.byteSize);
   }
 
@@ -380,7 +380,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     dwarf->GetObjectFile()->GetModule()->ReportError(
         "[MojoDWARFParser::ParseTypeFromDWARF] Unexpected unspecified type. "
         "Die = {0:x}, tag = {1}, name = '{2}'.",
-        die.GetOffset(), die.GetTagAsCString(), die.GetName());
+        die.GetOffset(), DW_TAG_value_to_name(die.Tag()), die.GetName());
     [[fallthrough]];
   }
 
@@ -389,7 +389,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
       dwarf->GetObjectFile()->GetModule()->ReportError(
           "[MojoDWARFParser::ParseTypeFromDWARF] Builtin type with 0 byte "
           "size. Die = {0:x}, tag = {1}, name = '{2}'.",
-          die.GetOffset(), die.GetTagAsCString(), die.GetName());
+          die.GetOffset(), DW_TAG_value_to_name(die.Tag()), die.GetName());
       break;
     }
     CompilerType mojoType = typeSystem.getBuiltinScalarType(
@@ -398,7 +398,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
       dwarf->GetObjectFile()->GetModule()->ReportError(
           "[MojoDWARFParser::ParseTypeFromDWARF] Couldn't create builtin type. "
           "Die = {0:x}, tag = {1}, name = '{2}'.",
-          die.GetOffset(), die.GetTagAsCString(), die.GetName());
+          die.GetOffset(), DW_TAG_value_to_name(die.Tag()), die.GetName());
     }
     type = dwarf->MakeType(die.GetID(), attrs.name, attrs.byteSize, nullptr,
                            attrs.type.Reference().GetID(),
@@ -513,7 +513,7 @@ MojoDWARFParser::ParseTypeFromDWARF(const lldb_private::SymbolContext &sc,
     dwarf->GetObjectFile()->GetModule()->ReportError(
         "[MojoDWARFParser::ParseTypeFromDWARF]: Unhandled type tag. "
         "Die = {0:x}, tag = {1}, name = {2}",
-        die.GetOffset(), tag, die.GetTagAsCString(), die.GetName());
+        die.GetOffset(), tag, DW_TAG_value_to_name(die.Tag()), die.GetName());
     break;
   }
 
@@ -594,7 +594,7 @@ bool MojoDWARFParser::CompleteTypeFromDWARF(const DWARFDIE &die,
   dwarf->GetObjectFile()->GetModule()->ReportError(
       "[MojoDWARFParser::CompleteTypeFromDWARF]: Couldn't complete die. Die = "
       "{0:x}, tag = {1}.",
-      die.GetOffset(), die.GetTagAsCString());
+      die.GetOffset(), DW_TAG_value_to_name(die.Tag()));
   return false;
 }
 
@@ -610,7 +610,7 @@ MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
         log,
         "[MojoDWARFParser::ParseFunctionFromDWARF] Will parse function. Die = "
         "{0:x}, tag = {1}, name = '{2}'.",
-        die.GetOffset(), die.GetTagAsCString(), die.GetName());
+        die.GetOffset(), DW_TAG_value_to_name(die.Tag()), die.GetName());
   }
 
   auto doWork = [&]() -> Function * {
@@ -685,7 +685,7 @@ MojoDWARFParser::ParseFunctionFromDWARF(CompileUnit &comp_unit,
     dwarf->GetObjectFile()->GetModule()->ReportError(
         "[MojoDWARFParser::ParseFunctionFromDWARF] failed to create a "
         "function. Die = {0:x}, tag = {1}, name = '{2}'.",
-        die.GetOffset(), die.GetTagAsCString(), die.GetName());
+        die.GetOffset(), DW_TAG_value_to_name(die.Tag()), die.GetName());
   }
   return func;
 }

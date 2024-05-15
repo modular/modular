@@ -58,14 +58,14 @@ void MojoExpressionLogger::broadcastDiagnostics(
     }
 
     switch (diag->GetSeverity()) {
-    case eDiagnosticSeverityError:
+    case lldb::eSeverityError:
       // Log error diagnostics explicitly so they get captured in the error log.
       errorLog(("error: " + diag->GetMessage()).str());
       continue;
-    case eDiagnosticSeverityWarning:
+    case lldb::eSeverityWarning:
       msgOS << "warning: ";
       break;
-    case eDiagnosticSeverityRemark:
+    case lldb::eSeverityInfo:
       break;
     }
     msgOS << diag->GetMessage() << "\n";

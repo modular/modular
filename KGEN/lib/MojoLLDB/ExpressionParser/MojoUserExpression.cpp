@@ -152,7 +152,7 @@ struct MojoUserExpression::Impl {
 MojoUserExpression::MojoUserExpression(ExecutionContextScope &exeScope,
                                        llvm::StringRef expr,
                                        llvm::StringRef prefix,
-                                       lldb::LanguageType language,
+                                       lldb_private::SourceLanguage language,
                                        ResultType desiredType,
                                        const EvaluateExpressionOptions &options)
     : JitUserExpression(exeScope, expr, prefix, language, desiredType, options),
@@ -206,14 +206,14 @@ static LogicalResult processMagics(DiagnosticManager &diagnosticManager,
       const char *errorFmt =
           "`%%{0}` can only be at the beginning of an expression.";
       diagnosticManager.AddDiagnostic(std::make_unique<MojoDiagnostic>(
-          llvm::formatv(errorFmt, magicName).str(), eDiagnosticSeverityError,
+          llvm::formatv(errorFmt, magicName).str(), lldb::eSeverityError,
           false));
       return failure();
     }
 
     auto reportUnknownMagic = [&, magicName = magicName] {
       diagnosticManager.PutString(
-          eDiagnosticSeverityError,
+          lldb::eSeverityError,
           llvm::formatv("unknown magic: {0}", magicName).str());
       return failure();
     };
@@ -230,7 +230,7 @@ static LogicalResult processMagics(DiagnosticManager &diagnosticManager,
     if (magicName == "cd") {
       if (magicArgs.empty()) {
         diagnosticManager.PutString(
-            eDiagnosticSeverityError,
+            lldb::eSeverityError,
             "'%%cd' magic requires a directory argument, or '-' to pop the "
             "directory stack");
         return failure();
@@ -277,7 +277,7 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
   // Check that there actually is a process that can parse the expression.
   if (!process) {
     diagnosticManager.AddDiagnostic(std::make_unique<MojoDiagnostic>(
-        "target mojo process does not exist", eDiagnosticSeverityError, false));
+        "target mojo process does not exist", lldb::eSeverityError, false));
     return false;
   }
   auto *exeScope = process ? (ExecutionContextScope *)process : &impl->target;
@@ -317,9 +317,9 @@ bool MojoUserExpression::Parse(DiagnosticManager &diagnosticManager,
 
     const char *errorCStr = jitError.AsCString();
     if (errorCStr && errorCStr[0])
-      diagnosticManager.PutString(eDiagnosticSeverityError, errorCStr);
+      diagnosticManager.PutString(lldb::eSeverityError, errorCStr);
     else
-      diagnosticManager.PutString(eDiagnosticSeverityError,
+      diagnosticManager.PutString(lldb::eSeverityError,
                                   "expression can't be interpreted or run\n");
     return false;
   }
@@ -424,7 +424,7 @@ LogicalResult MojoUserExpression::wrapTextAndParseExpression(
         "signal number + 128) = {0}",
         crc.RetCode);
     diagnosticManager.PutString(
-        eDiagnosticSeverityError,
+        lldb::eSeverityError,
         "The Mojo REPL has crashed and attempted recovery. If the REPL "
         "behaves inconsistently, please restart to ensure correct behavior.");
     return failure();
@@ -460,7 +460,7 @@ importPythonSymbolsIntoMojo(Debugger &debugger, StringRef pythonExpr,
   ErrorOr<std::vector<std::unique_ptr<ExtractedPythonSymbol>>>
       extractedSymbolsOr = extractPythonSymbolsFromReplExpr(pythonExpr);
   if (failed(extractedSymbolsOr)) {
-    diagnosticManager.PutString(eDiagnosticSeverityWarning,
+    diagnosticManager.PutString(lldb::eSeverityWarning,
                                 extractedSymbolsOr.getError());
     return failure();
   }

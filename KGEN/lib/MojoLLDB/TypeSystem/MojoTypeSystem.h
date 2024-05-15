@@ -184,6 +184,21 @@ public:
 
   uint32_t GetPointerByteSize() override;
 
+  unsigned GetPtrAuthKey(lldb::opaque_compiler_type_t type) override {
+    // Unimplemented.
+    return 0;
+  }
+
+  unsigned GetPtrAuthDiscriminator(lldb::opaque_compiler_type_t type) override {
+    // Unimplemented.
+    return 0;
+  }
+
+  bool GetPtrAuthAddressDiversity(lldb::opaque_compiler_type_t type) override {
+    // Unimplemented.
+    return false;
+  }
+
   lldb_private::ConstString GetTypeName(lldb::opaque_compiler_type_t type,
                                         bool baseOnly) override;
 
@@ -575,7 +590,7 @@ public:
   /// the case of an error.
   lldb_private::UserExpression *
   GetUserExpression(StringRef expr, StringRef prefix,
-                    lldb::LanguageType language,
+                    lldb_private::SourceLanguage language,
                     lldb_private::Expression::ResultType desiredType,
                     const lldb_private::EvaluateExpressionOptions &options,
                     lldb_private::ValueObject *ctxObj) override;
