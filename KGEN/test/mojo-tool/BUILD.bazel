@@ -13,9 +13,6 @@ lit_tests(
             "package/test_package_with_main/**/*.mojo",
             "format/mojo-format.test",  # TODO: Requires mblack
             "test/test_execution.mojo",  # TODO: Debug crash
-            "build/default-output-name.mojo",  # TODO: Linker crash
-            "build/mojo-build-def-main.mojo",  # TODO: Linker crash
-            "build/mojo-build-fn-main.mojo",  # TODO: Linker crash
             "debug/mojo-lldb-version.mojo",  # TODO: LLDB
             "build-project/build-project.mojo",  # TODO: flaky
         ],
