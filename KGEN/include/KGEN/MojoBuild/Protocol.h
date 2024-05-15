@@ -15,15 +15,12 @@
 
 #include <string>
 
-namespace llvm {
-namespace json {
+namespace llvm::json {
 class Path;
 class Value;
-} // namespace json
-} // namespace llvm
+} // namespace llvm::json
 
-namespace M {
-namespace Build {
+namespace M::Build {
 
 //===----------------------------------------------------------------------===//
 // build/initialize
@@ -64,8 +61,6 @@ llvm::json::Value toJSON(const NoParams &value);
 /// Deserialize an empty parameters object from JSON.
 bool fromJSON(const llvm::json::Value &value, NoParams &result,
               llvm::json::Path path);
-
-} // namespace Build
-} // namespace M
+} // namespace M::Build
 
 #endif // KGEN_MOJOBUILD_PROTOCOL_H
