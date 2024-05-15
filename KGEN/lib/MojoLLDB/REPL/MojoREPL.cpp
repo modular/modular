@@ -421,7 +421,13 @@ static void disableExpensiveFeatures(Debugger &debugger) {
 
 static void setupLLDBForREPL(Debugger &debugger) {
   disableExpensiveFeatures(debugger);
+
+// FIXME(MOTO-471): the symbol cache currently has an issue on Mac where
+// re-exported symbols are parsed incorrectly, leading to non-deterministic
+// crashes.
+#if !defined(__APPLE__)
   enableREPLSymbolCache(debugger);
+#endif
 }
 
 /// Create a repl instance for either the given target, or the given
