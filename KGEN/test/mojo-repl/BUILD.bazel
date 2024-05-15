@@ -19,11 +19,10 @@ lit_tests(
     ],
     env = {
         "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
-        "MODULAR_CRASH_REPORTING_ENABLED": "false",
         "MODULAR_MOJO_LLDB_PATH": "$(location //KGEN:mojo-lldb)",
-        "MOJO_PYTHON_LIBRARY": "$(location @stock-torch//:libpython)",
-        "MODULAR_MOJO_REPL_ENTRY_POINT": "$(location //KGEN/tools/mojo-repl-entry-point)",
         "MODULAR_MOJO_LLDB_PLUGIN_PATH": "$(location //KGEN:MojoLLDB.shared.file)",
+        "MODULAR_MOJO_REPL_ENTRY_POINT": "$(location //KGEN/tools/mojo-repl-entry-point)",
+        "MOJO_PYTHON_LIBRARY": "$(location @stock-torch//:libpython)",
     },
     mojo_deps = [
         "//Kernels/mojo/buffer",
