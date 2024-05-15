@@ -319,7 +319,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
                   archiveMembers,
                   /*WriteSymtab=*/llvm::SymtabWritingMode::NormalSymtab,
                   archiveMembers.front().detectKindFromObject(),
-                  /*Deterministic=*/false, /*Thin=*/false);
+                  /*Deterministic=*/true, /*Thin=*/false);
               if (!result) {
                 return std::move(output).setToError(LLCL::getMLIRDiagnostic(
                     "failed to concatenate object files into archive",
@@ -345,7 +345,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
             archiveMembers,
             /*WriteSymtab=*/llvm::SymtabWritingMode::NormalSymtab,
             archiveMembers.front().detectKindFromObject(),
-            /*Deterministic=*/false, /*Thin=*/false);
+            /*Deterministic=*/true, /*Thin=*/false);
         if (!result) {
           return std::move(output).setToError(LLCL::getMLIRDiagnostic(
               "failed to concatenate object files into archive", op->getLoc()));
