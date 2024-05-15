@@ -392,7 +392,7 @@ static void runCommand(Debugger &debugger, StringRef command) {
 /// to cache beyond that.
 /// It's also possible to set a size limit to the cache, but as it's only used
 /// for the REPL, we might not need to set this up.
-static void enableREPLSymbolCache(Debugger &debugger) {
+[[maybe_unused]] static void enableREPLSymbolCache(Debugger &debugger) {
   llvm::SmallString<128> lldbCacheDir;
   FileSystem::Instance().GetHomeDirectory(lldbCacheDir);
   llvm::sys::path::append(lldbCacheDir, ".lldb");
