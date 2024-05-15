@@ -1,0 +1,140 @@
+# ===----------------------------------------------------------------------=== #
+#
+# This file is Modular Inc proprietary.
+#
+# ===----------------------------------------------------------------------=== #
+"""Structs used for maintaining a collection of tensors."""
+from max.tensor import Tensor, TensorSpec
+from collections.dict import _DictKeyIter, _DictEntryIter
+
+
+@value
+struct CheckpointTensor:
+    """A wrapper around a Tensor pointer that can be saved/loaded from disk."""
+
+    var ptr: DTypePointer[DType.uint8]
+    var spec: TensorSpec
+
+    fn __init__(
+        inout self,
+        owned ptr: DTypePointer[DType.uint8],
+        owned spec: TensorSpec,
+    ):
+        """Creates a CheckpointTensor.
+
+        Args:
+            ptr: Pointer to tensor data.
+            spec: Tensor's spec.
+        """
+        self.ptr = ptr
+        self.spec = spec^
+
+    fn to_tensor[T: DType](owned self) -> Tensor[T]:
+        """Converts this object to a Tensor."""
+        var spec = self.spec^
+        var ptr = self.ptr.bitcast[T]()
+        self.spec = TensorSpec()
+        self.ptr = DTypePointer[DType.uint8]()
+        return Tensor[T](spec, ptr)
+
+    @staticmethod
+    fn from_tensor(owned tensor: Tensor) -> Self:
+        """Creates a CheckpointTensor from a Tensor."""
+        var spec = tensor.spec()
+        var ptr = tensor._steal_ptr().bitcast[DType.uint8]()
+        return Self(ptr, spec)
+
+
+struct TensorDict(Sized):
+    """A collection of keyed Tensors.
+
+    Usage example:
+
+    ```mojo
+    from max.graph.checkpoint import TensorDict
+    from max.tensor import Tensor, TensorShape
+    tensors = TensorDict()
+    tensors.set("x", Tensor[DType.int32](TensorShape(1, 2, 2), 1, 2, 3, 4))
+    tensors.set("y", Tensor[DType.float32](TensorShape(10, 5), -1.23))
+
+    var x = tensors.get("x").to_tensor[DType.int32]()
+    ```
+    """
+
+    var _items: Dict[String, CheckpointTensor]
+
+    def __init__(inout self):
+        self._items = Dict[String, CheckpointTensor]()
+
+    fn __setitem__[T: DType](inout self, key: String, value: Tensor[T]):
+        """Set a value in the Tensor dict by key.
+
+        Args:
+            key: The key to associate with the specified value.
+            value: The data to store in the dictionary.
+        """
+        self._items._insert(key, CheckpointTensor.from_tensor(value))
+
+    fn set[T: DType](inout self, key: String, value: Tensor[T]):
+        self._items._insert(key, CheckpointTensor.from_tensor(value))
+
+    fn set(inout self, key: String, value: CheckpointTensor):
+        self._items._insert(key, value)
+
+    fn __getitem__(self, key: String) raises -> CheckpointTensor:
+        return self._items[key]
+
+    fn get(self, key: String) raises -> CheckpointTensor:
+        return self._items[key]
+
+    fn __len__(self) -> Int:
+        return len(self._items)
+
+    fn items(
+        borrowed self: Reference[Self, _, _]
+    ) -> _DictEntryIter[
+        String, CheckpointTensor, self.is_mutable, self.lifetime
+    ]:
+        return _DictEntryIter(0, 0, self[]._items)
+
+    fn keys(
+        borrowed self: Reference[Self, _, _]
+    ) -> _DictKeyIter[String, CheckpointTensor, self.is_mutable, self.lifetime]:
+        return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
+
+    def __iter__(
+        borrowed self: Reference[Self, _, _]
+    ) -> _DictKeyIter[String, CheckpointTensor, self.is_mutable, self.lifetime]:
+        return _DictKeyIter(_DictEntryIter(0, 0, self[]._items))
+
+    fn __copyinit__(inout self, existing: Self):
+        """Copy an existing dictiontary.
+
+        Args:
+            existing: The existing dict.
+        """
+        self._items = existing._items
+
+    fn __moveinit__(inout self, owned existing: Self):
+        """Move data of an existing dict into a new one.
+
+        Args:
+            existing: The existing dict.
+        """
+        self._items = existing._items^
+
+    fn __str__(self) -> String:
+        var contents: String = ""
+        var first = True
+        for key_ref in self._items.keys():
+            var key = key_ref[]
+            if first:
+                first = False
+            else:
+                contents += ", "
+            try:
+                contents += key + ": " + self._items[key].spec
+            except:
+                # Should never happen.
+                contents += key + ": " + "(contents could not be read)"
+        return "TensorDict(" + contents + ")"
