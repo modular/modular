@@ -7,6 +7,7 @@
 #ifndef SUPPORT_DRIVER_DRIVERSUPPORT_H
 #define SUPPORT_DRIVER_DRIVERSUPPORT_H
 
+#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 
@@ -57,8 +58,18 @@ struct State {
       : programName(programName), subcommand(subcommand), arguments(arguments) {
   }
 
+  /// The state object only holds pointers and references; it is cheap to copy.
+  State(const State &) = default;
+
   /// Write the given error message to stderr and return a non-zero exit code.
   int reportError(const Twine &errorMessage) const;
+
+  /// If `args` contains a diagnostic format option (as specified by the given
+  /// option ID), this parses that option and sets this object's
+  /// `diagnosticFormat` member based on its value.
+  int parseDiagnosticFormatArguments(
+      llvm::opt::InputArgList &args,
+      llvm::opt::OptSpecifier diagnosticFormatOptionID);
 
   /// Print the given `helpText` to stdout and return a successful exit code.
 #if __cplusplus >= 202002
@@ -94,6 +105,9 @@ struct State {
   /// The command line arguments that the user provided, excluding the program
   /// and subcommand names.
   const ArrayRef<const char *> arguments;
+
+  /// The output format for driver errors, as reported by `reportError`.
+  DiagnosticFormat diagnosticFormat = DiagnosticFormat::Text;
 };
 
 /// A mapping from each subcommand to a callback function that encapsulates the

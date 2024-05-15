@@ -5,6 +5,8 @@
 //===----------------------------------------------------------------------===//
 
 include "Doc/DocDescription.td"
+
+include "Common/DiagnosticFormatOptions.td"
 include "Support/Driver/CommonOptions.td"
 
 //===----------------------------------------------------------------------===//

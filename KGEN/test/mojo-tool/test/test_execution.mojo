@@ -11,7 +11,7 @@
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC
 # RUN: not mojo test -I %S/inputs "%s@doc_test_failure_first_cell().__doc__::1" | FileCheck %s --check-prefix=CHECK-DOC
 # RUN: not mojo test -I %S/inputs "%s::test_unit_failure()" | FileCheck %s --check-prefix=CHECK-UNIT
-# RUN: not mojo test -I %S/inputs --json "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC-JSON
+# RUN: not mojo test -I %S/inputs --diagnostic-format json "%s@doc_test_failure_first_cell().__doc__" | FileCheck %s --check-prefix=CHECK-DOC-JSON
 
 from imported_module import returns_false
 from testing import assert_true

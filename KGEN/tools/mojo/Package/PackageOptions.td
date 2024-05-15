@@ -6,6 +6,7 @@
 
 include "Package/PackageDescription.td"
 
+include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"
 include "Support/Driver/CommonOptions.td"
 

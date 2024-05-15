@@ -19,6 +19,7 @@
 #include "LLCL/Runtime/Runtime.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "Support/Config.h"
+#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Init/Init.h"
 
@@ -372,12 +373,13 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
 /// package op by generating an archive and attaching those bytes to a new
 /// top-level `lit.package`, suitable for consumption by other mojo
 /// programs.
-static int package(const State &state) {
+static int package(const State &subcommandState) {
   //===--------------------------------------------------------------------===//
   // Options Parsing
   //===--------------------------------------------------------------------===//
 
   // Parse command line arguments.
+  State state = subcommandState;
   PackageOptTable options;
   unsigned missingIndex = 0;
   unsigned missingCount = 0;
@@ -390,10 +392,14 @@ static int package(const State &state) {
     );
   }
 
+  if (int result = state.parseDiagnosticFormatArguments(
+          args, options::OPT_diagnostic_format))
+    return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 
   llvm::SourceMgr sourceMgr;
+  sourceMgr.setDiagHandler(getDiagHandler(state.diagnosticFormat));
   PackageArgs packageArgs;
   if (auto err = parsePackageArgs(state, args, sourceMgr, packageArgs))
     return state.reportError(err.getError());

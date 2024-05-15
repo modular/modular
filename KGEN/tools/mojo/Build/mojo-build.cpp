@@ -21,6 +21,7 @@
 #include "LLCL/CompilerSupport/Context.h"
 #include "Support/Config.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
+#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Init/Init.h"
@@ -66,8 +67,7 @@ struct BuildOptTable : public llvm::opt::PrecomputedOptTable {
 } // namespace
 
 /// Parses the command line arguments from the given `state` object.
-static std::optional<int> parseArgs(const State &state,
-                                    llvm::opt::InputArgList &args,
+static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     llvm::SourceMgr &sourceManager,
                                     CompilationOptions &compilationOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target) {
@@ -83,6 +83,9 @@ static std::optional<int> parseArgs(const State &state,
     );
   }
 
+  if (int result = state.parseDiagnosticFormatArguments(
+          args, options::OPT_diagnostic_format))
+    return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 
@@ -102,7 +105,9 @@ static std::optional<int> parseArgs(const State &state,
   if (failed(bufferOrErr))
     return state.reportError(bufferOrErr.getError());
 
-  // Initialize the source manager with the input file buffer.
+  // Initialize the source manager with the input file buffer and an appropriate
+  // diagnostic handler.
+  sourceManager.setDiagHandler(getDiagHandler(state.diagnosticFormat));
   sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
 
   // Build the compilation options based on the provided arguments.
@@ -359,10 +364,11 @@ static int linkExecutable(const State &state,
 /// executable. Returns an integer representing a successful exit code if the
 /// source file could be compiled without raising an error, otherwise returns a
 /// failure code.
-static int build(const State &state) {
+static int build(const State &subcommandState) {
   CompilationOptions options;
 
   // Parse arguments.
+  State state = subcommandState;
   MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
   TargetInfoAttr target;
   llvm::opt::InputArgList args;

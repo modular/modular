@@ -54,11 +54,12 @@ static ErrorOr<std::string> getMojoBuildServerPath(KGEN::MojoConfig &config) {
 /// For now, this simply launches a `mojo-build-server` executable and sends it
 /// initialization and exit messages. Eventually, this will send messages
 /// that result in the compilation of a Mojo project.
-static int buildProject(const State &state) {
+static int buildProject(const State &subcommandState) {
   //===--------------------------------------------------------------------===//
   // Command line argument parsing & process initialization
   //===--------------------------------------------------------------------===//
 
+  State state = subcommandState;
   BuildProjectOptTable options;
   unsigned missingIndex = 0;
   unsigned missingCount = 0;
@@ -83,6 +84,9 @@ static int buildProject(const State &state) {
     );
   }
 
+  if (int result = state.parseDiagnosticFormatArguments(
+          args, options::OPT_diagnostic_format))
+    return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 

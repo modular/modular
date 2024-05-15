@@ -41,7 +41,7 @@ struct TestOptTable : public llvm::opt::PrecomputedOptTable {
 /// value is either an integer exit code signaling that program execution should
 /// exit immediately with that code, or nullopt, signifying program execution
 /// should continue.
-static std::optional<int> parseArgs(const State &state,
+static std::optional<int> parseArgs(State &state,
                                     llvm::opt::InputArgList &args) {
   TestOptTable options;
   unsigned unused = 0;
@@ -55,6 +55,9 @@ static std::optional<int> parseArgs(const State &state,
     );
   }
 
+  if (int result = state.parseDiagnosticFormatArguments(
+          args, options::OPT_diagnostic_format))
+    return result;
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 
@@ -65,7 +68,8 @@ static std::optional<int> parseArgs(const State &state,
 // Mojo test input
 //===----------------------------------------------------------------------===//
 
-static int test(const State &state) {
+static int test(const State &subcommandState) {
+  State state = subcommandState;
   llvm::opt::InputArgList args;
   if (std::optional<int> exitCode = parseArgs(state, args))
     return *exitCode;
@@ -103,13 +107,15 @@ static int test(const State &state) {
 
   // Utility functor used to format the output for a given result.
   auto emitOutput = [&](const auto &result) {
-    if (args.hasArg(options::OPT_json)) {
+    switch (state.diagnosticFormat) {
+    case DiagnosticFormat::Text:
+      result.print(llvm::outs());
+      break;
+    case DiagnosticFormat::JSON:
       llvm::json::OStream jsonOS(llvm::outs(), /*IndentSize=*/2);
       jsonOS.value(toJSON(result));
-    } else {
-      result.print(llvm::outs());
+      break;
     }
-
     llvm::outs() << "\n";
   };
 
