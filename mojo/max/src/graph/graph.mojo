@@ -16,7 +16,8 @@ from .error import error
 from .symbol import Symbol
 from .type import ListType, TensorType, Type
 
-from max.tensor import Tensor
+from max.graph.quantization import QuantizationEncoding
+from max.tensor import Tensor, TensorShape
 
 
 # TODO: Add examples throughout.
@@ -455,6 +456,25 @@ struct Graph(CollectionElement, Stringable):
             List(_tensor_attr(self._context(), "value", value)),
         )
 
+    def quantize[
+        encoding: QuantizationEncoding
+    ](borrowed self, owned value: Tensor[DType.float32]) -> Symbol:
+        """Quantizes a tensor using a specific quantization encoding.
+
+        This takes the full-precision `value` as owned data and frees it.
+        The resulting quantized constant is allocated and owns its data.
+
+        Parameters:
+            encoding: Describes a specific quantization encoding such as Q4_0.
+
+        Args:
+            value: Full-precision value to quantize.
+
+        Return:
+            Symbol representing the quantized constant.
+        """
+        return self.constant(encoding.quantize(value^))
+
     fn vector[dtype: DType](self, values: List[Scalar[dtype]]) raises -> Symbol:
         """Adds a node representing a `mo.constant` operation.
 
@@ -496,7 +516,7 @@ struct Graph(CollectionElement, Stringable):
             The symbolic output of this node.
         """
         var shape = List[Int](capacity=rank)
-        for i in range(rank):
+        for _ in range(rank):
             shape.append(1)
         return self.constant[dtype](Tensor(shape, value))
 
