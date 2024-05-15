@@ -15,8 +15,8 @@ def _padded_dimensions(
     g: Graph,
     input: TensorType,
     filter_shape: (Dim, Dim),
-    padding: (Int, Int, Int, Int),
-    stride: (Int, Int),
+    borrowed padding: (Int, Int, Int, Int),
+    borrowed stride: (Int, Int),
 ) -> TensorType:
     """Computes the final dimensions of a rank-4 tensor after a 2-D convolution.
 
