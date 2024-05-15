@@ -6,13 +6,17 @@
 
 from math import ceildiv
 
+from builtin.dtype import _get_runtime_dtype_size
 from register import *
 from buffer import NDBuffer
 from buffer.list import DimList
 from MOGGIntList import IntList
 from extensibility import Tensor as ExtensibilityTensor
 
-from builtin.dtype import _get_runtime_dtype_size
+from gpu.host.memory import (
+    _free,
+    _malloc,
+)
 
 
 # ===----------------------------------------------------------------------===#
@@ -72,6 +76,31 @@ struct StaticTensorSpec[rank: Int]():
             The comparison result.
         """
         return self.shape == rhs.shape and self.dType == rhs.dType
+
+
+# ===----------------------------------------------------------------------===#
+# Helper functions
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn byte_buffer_alloc[
+    target: StringLiteral
+](byte_size: Int, alignment: Int) raises -> NDBuffer[DType.int8, 1]:
+    """Function will allocate a 1-D buffer with the specified size/alignment on device.
+    """
+    # This primitive has a byte-size input, so always assume a byte format
+    var shape = StaticIntTuple[1](byte_size)
+
+    @parameter
+    if target == "cuda":
+        # cuda has no notion of alignment since alloc is always aligned
+        return NDBuffer[DType.int8, 1](_malloc[DType.int8](byte_size), shape)
+    else:
+        return NDBuffer[DType.int8, 1](
+            DTypePointer[DType.int8].alloc(byte_size, alignment=alignment),
+            shape,
+        )
 
 
 # ===----------------------------------------------------------------------===#
@@ -355,19 +384,11 @@ fn mgp_buffer_alloc_static[
     bSize: UInt64,
     cRawAlign: UInt64,
     dDevice: StringLiteral,
-]() -> NDBuffer[DType.int8, 1]:
-    var shape = StaticIntTuple[1](int(bSize))
+]() raises -> NDBuffer[DType.int8, 1]:
+    var alignment = int(cRawAlign)
     if cRawAlign == UInt64.MAX:
-        return NDBuffer[DType.int8, 1](
-            DTypePointer[DType.int8].alloc(int(bSize)), shape
-        )
-    else:
-        return NDBuffer[DType.int8, 1](
-            DTypePointer[DType.int8].alloc(
-                int(bSize), alignment=int(cRawAlign)
-            ),
-            shape,
-        )
+        var alignment = alignof[DType.int8]()
+    return byte_buffer_alloc[dDevice](int(bSize), alignment)
 
 
 @mogg_register("mgp.buffer.alloc.dynamic")
@@ -377,17 +398,11 @@ fn mgp_buffer_alloc_dynamic[
     aRuntimeSlot: UInt64,
     bRawAlign: UInt64,
     cDevice: StringLiteral,
-](byte_size: Int) -> NDBuffer[DType.int8, 1]:
-    var shape = StaticIntTuple[1](byte_size)
+](byte_size: Int) raises -> NDBuffer[DType.int8, 1]:
+    var alignment = int(bRawAlign)
     if bRawAlign == UInt64.MAX:
-        return NDBuffer[DType.int8, 1](
-            DTypePointer[DType.int8].alloc(byte_size), shape
-        )
-    else:
-        return NDBuffer[DType.int8, 1](
-            DTypePointer[DType.int8].alloc(byte_size, alignment=int(bRawAlign)),
-            shape,
-        )
+        var alignment = alignof[DType.int8]()
+    return byte_buffer_alloc[cDevice](byte_size, alignment)
 
 
 @always_inline
