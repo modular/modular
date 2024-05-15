@@ -34,7 +34,7 @@ fn _str_fmt_width(str: String, str_width: Int) -> String:
         N,
         "%-*s",
         str_width,
-        str,
+        str.unsafe_ptr(),
     )
     debug_assert(x.size < N, "Attempted to access outside array bounds!")
     x.size += 1
@@ -118,8 +118,6 @@ struct BenchConfig(CollectionElement):
                     self.num_repetitions = int(args[i + 1])
                 elif args[i] == "--tabular":
                     self.tabular_view = True
-                elif args[i] == "--plain":
-                    self.tabular_view = False
                 elif args[i] == "--no-progress":
                     self.show_progress = False
 
@@ -224,9 +222,9 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         x.size += _snprintf(
             x.data,
             N,
-            "%-*s, %12.3f, ",
+            "%-*s, %12.6f, ",
             name_width,
-            self.name,
+            self.name.unsafe_ptr(),
             self.result.mean(unit=Unit.ms),
         )
         debug_assert(x.size < N, "Attempted to access outside array bounds!")
@@ -523,9 +521,9 @@ struct Bench:
 
             report += (
                 _str_fmt_width("name", max_name_width)
-                + _str_fmt_width(",met (ms)", 12 + 2)
-                + _str_fmt_width(",iters", max_iters_width + 2)
-                + String(",throughput (Gelems/s)\n")
+                + _str_fmt_width(", met (ms)", 12 + 2)
+                + _str_fmt_width(", iters", max_iters_width + 2)
+                + String(", throughput (Gelems/s)\n")
             )
 
             for i in range(num_runs):
