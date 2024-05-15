@@ -387,7 +387,8 @@ fn mgp_buffer_alloc_static[
 ]() raises -> NDBuffer[DType.int8, 1]:
     var alignment = int(cRawAlign)
     if cRawAlign == UInt64.MAX:
-        var alignment = alignof[DType.int8]()
+        # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
+        alignment = alignof[DType.int8]()
     return byte_buffer_alloc[dDevice](int(bSize), alignment)
 
 
@@ -401,7 +402,8 @@ fn mgp_buffer_alloc_dynamic[
 ](byte_size: Int) raises -> NDBuffer[DType.int8, 1]:
     var alignment = int(bRawAlign)
     if bRawAlign == UInt64.MAX:
-        var alignment = alignof[DType.int8]()
+        # Default to alignment of 1 if cRawAlign is kUnknownSize (SizeUtils.h).
+        alignment = alignof[DType.int8]()
     return byte_buffer_alloc[cDevice](byte_size, alignment)
 
 
