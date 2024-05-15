@@ -52,8 +52,6 @@ static std::optional<size_t> getDeclArgIndex(ASTDecl &decl,
       continue;
     // Check if the decl is the one we're looking for.
     DeclIRValue childValue = decls.front()->getIRValue();
-    if (!childValue)
-      return std::optional<size_t>();
     auto resIndex =
         TypeSwitch<DeclIRValue, std::optional<size_t>>(childValue)
             .Case<MLValue, SRValue, SBValue, MBValue>([&](Value val) {
@@ -73,8 +71,6 @@ static std::optional<size_t> getDeclArgIndex(ASTDecl &decl,
 /// corresponding BlockArgument. Otherwise, return null.
 static BlockArgument getIfNotOwnedFunctionArgument(MojoASTDeclRef declRef) {
   DeclIRValue irValue = declRef->getIRValue();
-  if (!irValue)
-    return {};
   return TypeSwitch<DeclIRValue, BlockArgument>(irValue)
       .Case<SBValue, SRValue, MBValue, MLValue>([&](Value val) {
         // Look through rebinds of arguments, which may happen for certain
