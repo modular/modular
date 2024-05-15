@@ -17,7 +17,7 @@ from math import align_down, ceildiv, iota
 from math import all_true as _all_true
 from math import any_true as _any_true
 from math import none_true as _none_true
-from math.bit import cttz
+from bit import cttz
 from sys.info import (
     is_little_endian,
     simdwidthof,
