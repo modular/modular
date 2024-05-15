@@ -1025,7 +1025,7 @@
           "patterns": [
             {
               "name": "storage.modifier",
-              "match": "\\b(owned|borrowed|inout)\\b"
+              "match": "\\b(inferred|owned|borrowed|inout)\\b"
             },
             {
               "name": "keyword.operator.positional.parameter.python",
@@ -1194,7 +1194,7 @@
       "patterns": [
         {
           "name": "storage.modifier",
-          "match": "\\b(owned|borrowed|inout)\\b"
+          "match": "\\b(inferred|owned|borrowed|inout)\\b"
         },
         {
           "name": "keyword.operator.positional.parameter.python",
