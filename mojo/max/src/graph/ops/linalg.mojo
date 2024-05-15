@@ -8,6 +8,7 @@
 from .casting import reshape
 from ..error import error
 from ..type import Dim, TensorType
+from max.tensor import Tensor, TensorShape
 
 
 def outer(lhs: Symbol, rhs: Symbol) -> Symbol:
@@ -265,4 +266,109 @@ def band_part(
             g.scalar[DType.bool](exclude),
         ),
         input.type(),
+    )
+
+
+def layer_norm(
+    input: Symbol, gamma: Symbol, beta: Symbol, epsilon: Float32
+) -> Symbol:
+    """Performs layer normalization.
+
+    Args:
+        input: The input tensor to normalize.
+        gamma: The gamma parameter of the normalization.
+        beta: The beta parameter of the normalization.
+        epsilon: The epsilon parameter of the normalization.
+
+    Returns:
+        A symbolic tensor value with the normalization applied.
+    """
+    g = input.graph()
+    epsilon_constant = g.constant(
+        Tensor[DType.float32](TensorShape(1), epsilon)
+    )
+
+    return g.op(
+        "mo.layer_norm",
+        List[Symbol](
+            input,
+            gamma,
+            beta,
+            epsilon_constant,
+        ),
+        input.type(),
+    )
+
+
+def range_fill(start: Symbol, limit: Symbol, step: Symbol) -> Symbol:
+    """Creates a sequence of numbers. The sequence goes from `start` with
+    increments of size `step` up to (but not including) `limit`. All arguments
+    are mandatory and must have the same element type.
+
+    Note the following restrictions on input values:
+    1. `step` must be non-zero
+    2. `limit - start` must be zero or have the same sign as `step`
+
+    Args:
+        start: The start of the range to generate.
+        limit: The range will be generated up to, but not including, this value.
+        step: The step size for the range.
+
+    Returns:
+        A symbolic tensor value containing the defined range of values.
+    """
+    g = limit.graph()
+
+    return g.op(
+        "mo.range",
+        List[Symbol](
+            start,
+            limit,
+            step,
+        ),
+        TensorType(limit.tensor_type().dtype, Dim.dynamic()),
+    )
+
+
+def tile(input: Symbol, repeats: List[Int64]) -> Symbol:
+    """Returns a new Tensor as the result of copying the input tensor N_i times
+    on each dimension, where N_i = tiles[i].
+
+    The i-th dimension of output shape will be the ith dimension of input shape
+    multiplied by N_i.
+
+    Args:
+        input: The input tensor to tile.
+        repeats: A list containing the number of repeats to perform across
+                each dimension. The length of the list must be the same as the
+                rank of the input tensor.
+
+    Returns:
+        A symbolic tensor value containing input repeated across the specified
+        dimensions.
+    """
+    g = input.graph()
+    output_dims = List[Dim]()
+    input_type = input.tensor_type()
+    if not len(repeats) == len(input_type.dims):
+        raise error(
+            g,
+            "the rank of the input must match the dimensions to repeat across",
+        )
+    for i in range(len(repeats)):
+        input_dimension = input_type.dims[i]
+        if input_dimension.is_dynamic() or input_dimension.is_symbolic():
+            output_dims.append(Dim.dynamic())
+        else:
+            output_dims.append(
+                Dim.static(repeats[i] * input_type.dims[i].num_elements())
+            )
+
+    return g.op(
+        "mo.tile",
+        List[Symbol](
+            input,
+            g.vector(repeats),
+        ),
+        TensorType(input.tensor_type().dtype, output_dims),
     )

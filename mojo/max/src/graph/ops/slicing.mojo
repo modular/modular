@@ -140,6 +140,30 @@ def slice(
     )
 
 
+def select(condition: Symbol, x: Symbol, y: Symbol) -> Symbol:
+    """Returns `condition ? x : y` (element-wise), where `cond`, `x` and `y`
+    are input tensors.
+
+    Args:
+        condition: The condition tensor to use for selecting elementwise
+                   values.
+        x: If the condition is true at a position, the value from the same
+           position in this tensor will be selected.
+        y: If the condition is false at a position, the value from the same
+           position in this tensor will be selected.
+
+    Returns:
+        A new symbolic tensor holding either values from either `x` or `y`,
+        based on the elements in `condition`.
+    """
+    var g = condition.graph()
+    return g.op(
+        "mo.select",
+        List[Symbol](condition, x, y),
+        x.tensor_type(),
+    )
+
+
 # TODO: Change to List once Slice is a CollectionElement.
 def slice(input: Symbol, s: Slice) -> Symbol:
     """Slices a symbolic tensor along its first dimension.

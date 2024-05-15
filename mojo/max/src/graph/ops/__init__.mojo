@@ -74,12 +74,15 @@ from .elementwise import (
 from .linalg import (
     band_part,
     batch_matmul,
+    layer_norm,
     matmul,
     matmul_by_matrix,
     matmul_broadcast,
     outer,
+    range_fill,
+    tile,
 )
 from .lists import list
 from .quantized_ops import qmatmul
 from .reduction import mean, arg_max
-from .slicing import gather, slice, split, concat, stack
+from .slicing import gather, select, slice, split, concat, stack
