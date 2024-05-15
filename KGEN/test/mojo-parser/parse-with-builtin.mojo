@@ -28,7 +28,7 @@ fn hasMultiReturnMLIROp() -> Tuple[Int, Int]:
     # CHECK: [[PACK:%.*]] = lit.ref.pack.create
     # CHECK: lit.call {{.*}}@Tuple::@"__init__{{.*}}[#Int1, #Int1]{{.*}}(%r,
     var r = __mlir_op.`op_that_has_multiple_returns`[_type= (Int, Int)]()
-    return r
+    return r^
 
 
 # COM: Check that a load from a SIMD field works.
