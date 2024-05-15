@@ -171,7 +171,7 @@ struct ElementLayout[rank: Int, shape: StaticIntTuple[rank]](
         self.stride = exisiting.stride
 
     fn __str__(self) -> String:
-        return shape.__str__() + ":" + self.stride
+        return str(shape) + ":" + str(self.stride)
 
 
 # Returns the linear index of an element, this is equivalent to concat
