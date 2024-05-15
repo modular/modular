@@ -1277,9 +1277,9 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
             major_format != _SERIALIZATION_MAJOR_FORMAT
             or minor_format != _SERIALIZATION_MINOR_FORMAT
         ):
-            raise "cannot load tensor of format: " + String(
+            raise "cannot load tensor of format: " + str(
                 major_format
-            ) + "." + String(minor_format)
+            ) + "." + str(minor_format)
 
         var spec_size_ptr = minor_format_ptr + sizeof[UInt32]()
         var spec_size = _uint32_from_bytes(spec_size_ptr)

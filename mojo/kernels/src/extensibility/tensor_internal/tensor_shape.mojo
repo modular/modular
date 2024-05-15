@@ -202,7 +202,7 @@ struct _Rep16(Stringable, EqualityComparable):
         for i in range(self.get_rank()):
             if i != 0:
                 buf += "x"
-            buf += String(self[i])
+            buf += str(self[i])
         return buf
 
 
@@ -342,7 +342,7 @@ struct _Rep32(EqualityComparable):
         for i in range(self.get_rank()):
             if i != 0:
                 buf += "x"
-            buf += String(self[i])
+            buf += str(self[i])
         return buf
 
 
@@ -493,7 +493,7 @@ struct _RepOutOfLine(EqualityComparable):
         for i in range(self.get_rank()):
             if i != 0:
                 buf += "x"
-            buf += String(self[i])
+            buf += str(self[i])
         return buf
 
 
