@@ -37,6 +37,9 @@ private:
   /// Handles the `build/initialize` request.
   void onBuildInitialize(const InitializeBuildParams &params,
                          mlir::lsp::Callback<InitializeBuildResult> callback);
+  /// Handles the `buildTarget/compile` request.
+  void onBuildTargetCompile(const CompileParams &params,
+                            mlir::lsp::Callback<CompileResult> callback);
   /// Handles the `build/shutdown` request.
   void onBuildShutdown(const NoParams &params,
                        mlir::lsp::Callback<NoParams> callback);

@@ -29,6 +29,8 @@ BSPServer::BSPServer(bool debug)
       messageHandler(transport) {
   messageHandler.method("build/initialize", this,
                         &BSPServer::onBuildInitialize);
+  messageHandler.method("buildTarget/compile", this,
+                        &BSPServer::onBuildTargetCompile);
   messageHandler.method("build/shutdown", this, &BSPServer::onBuildShutdown);
 }
 
@@ -89,9 +91,21 @@ void BSPServer::onBuildInitialize(
             params.rootUri),
         lsp::ErrorCode::InvalidParams));
 
-  callback(InitializeBuildResult{"mojo-build-server", getModularVersionString(),
-                                 /*bspVersion=*/"2.2.0",
-                                 BuildServerCapabilities{}});
+  callback(InitializeBuildResult{
+      "mojo-build-server", getModularVersionString(),
+      /*bspVersion=*/"2.2.0",
+      BuildServerCapabilities{CompileProvider{{"mojo"}}}});
+}
+
+void BSPServer::onBuildTargetCompile(
+    const CompileParams &params, mlir::lsp::Callback<CompileResult> callback) {
+  // TODO: Run the equivalent of `mojo package`, using the workspace root URI as
+  // the input.
+  CompileResult result;
+  if (params.originId)
+    result.originId = *params.originId;
+  result.statusCode = StatusCode::Cancelled;
+  callback(std::move(result));
 }
 
 void BSPServer::onBuildShutdown(const NoParams &params,

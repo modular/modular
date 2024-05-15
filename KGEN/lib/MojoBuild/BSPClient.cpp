@@ -38,6 +38,11 @@ BSPClient::BSPClient(TempFile &&in, std::FILE *inFile, TempFile &&out,
       [&](llvm::json::Value id, llvm::Expected<InitializeBuildResult> result) {
         onBuildInitializeResponse(std::move(id), std::move(result));
       });
+  buildFn = messageHandler.outgoingRequest<CompileParams, CompileResult>(
+      "buildTarget/compile",
+      [&](llvm::json::Value id, llvm::Expected<CompileResult> result) {
+        onBuildTargetCompileResponse(std::move(id), std::move(result));
+      });
   shutdownFn = messageHandler.outgoingRequest<NoParams, NoParams>(
       "build/shutdown",
       [&](llvm::json::Value id, llvm::Expected<NoParams> result) {
@@ -118,7 +123,31 @@ void BSPClient::onBuildInitializeResponse(
         });
   }
 
-  // We're done initializing; now tell the server to shut down.
+  // There's only one Mojo build server this tool speaks to, and it only
+  // supports compiling Mojo.
+  assert(result->capabilities.compileProvider->languageIds.front() == "mojo" &&
+         "build server does not support compiling Mojo");
+
+  // Send the build request to the server.
+  buildFn(CompileParams{}, currentRequestID++);
+}
+
+void BSPClient::onBuildTargetCompileResponse(
+    llvm::json::Value id, llvm::Expected<CompileResult> result) {
+  std::string logPrefix =
+      llvm::formatv("<--- client reply:buildTarget/compile({0}): ", id);
+  if (!result) {
+    return llvm::handleAllErrors(
+        result.takeError(), [&](const lsp::LSPError &err) {
+          lsp::Logger::error("<--- client reply:buildTarget/compile({0}): {1}",
+                             id, err.message);
+        });
+  }
+
+  // TODO: Determine whether the build was successful, based on the server
+  // response.
+
+  // We're done building; send the shutdown request to the server.
   shutdownFn(NoParams{}, currentRequestID++);
 }
 
