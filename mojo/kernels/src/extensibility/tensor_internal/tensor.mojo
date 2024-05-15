@@ -334,6 +334,8 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
             list: The list to construct this Tensor from.
         """
         # Store the list length before we do a wiping take from it
+        var list_len = len(list)
+
         var data_anyptr = list.steal_data()
         var data_ptr = Pointer[Scalar[type]](address=int(data_anyptr))
         var data_dptr = DTypePointer[type](data_ptr)
