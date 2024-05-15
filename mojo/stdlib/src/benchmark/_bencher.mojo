@@ -203,7 +203,7 @@ struct BenchmarkInfo(CollectionElement, Stringable):
         return (
             self.name
             + ","
-            + self.result.mean(unit=Unit.ms)
+            + str(self.result.mean(unit=Unit.ms))
             + ","
             + str(self.result.iters())
             + elems
@@ -535,7 +535,7 @@ struct Bench:
             report += String("name, met (ms), iters, throughput (Gelems/s)\n")
             for i in range(num_runs):
                 var sep = "\n" if i < num_runs - 1 else ""
-                report += String(self.info_vec[i]) + sep
+                report += str(self.info_vec[i]) + sep
         print("------------------------------------------")
         print("Benchmark results")
         print("------------------------------------------")
