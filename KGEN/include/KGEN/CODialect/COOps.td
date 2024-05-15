@@ -89,6 +89,53 @@ def CO_SuspendEndOp : COOp<"suspend.end", [Pure, Terminator,
 }
 
 //===----------------------------------------------------------------------===//
+// CoroutineAwaitOp
+//===----------------------------------------------------------------------===//
+
+// TODO: Merge with SuspendOp
+def CO_CoroutineAwaitOp : COOp<"await", [SingleBlock]> {
+  let summary = "Suspend the current coroutine and await resumption.";
+  let description = [{
+    The `co.await` operation suspends the current coroutine function
+    at the site of the operation and executes a region. The code in the region
+    must resume the coroutine at some point. This operation can only be used
+    inside an async function.
+
+    Example:
+
+    ```mlir
+    %hdl = co.handle : <i32, index>
+    co.await {
+      co.resume %hdl : <i32>
+      co.await.end
+    }
+    ```
+  }];
+
+  let regions = (region SizedRegion<1>:$body);
+  let assemblyFormat = "$body attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// CoroutineAwaitEndOp
+//===----------------------------------------------------------------------===//
+
+// TODO: Merge with SuspendEndOp
+def CO_CoroutineAwaitEndOp : COOp<"await.end", [Terminator,
+    HasParent<"CoroutineAwaitOp">]> {
+  let summary = "terminator for `co.await`";
+  let description = [{
+    The `co.await.end` operation is the terminator for the
+    `co.await` operation. The operation signifies the end of the
+    coroutine suspension function denoted by the surrounding
+    `co.await` operation. In an async function, it is semantically
+    a fallthrough.
+  }];
+
+  let assemblyFormat = "attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // InvokeOp
 //===----------------------------------------------------------------------===//
 
