@@ -230,17 +230,8 @@ def test_shapes[
     saturated: Bool,
     mixed_kernels: Bool,
 ]():
-    var shapes = List[Tuple[Int, Int, Int]](
-        (256, 1024, 4096),
-        (4, 5, 6),
-        (15, 16, 17),
-        (24, 32, 64),
-        (61, 73, 79),
-        (123, 456, 321),
-        (256, 256, 256),
-        (2, 65, 1200),
-    )
-    for shape in shapes:
+    @parameter
+    fn test_shapes_helper(m: Int, n: Int, k: Int) raises:
         test_matmul[
             a_type=a_type,
             b_type=b_type,
@@ -248,7 +239,16 @@ def test_shapes[
             b_packed=b_packed,
             saturated=saturated,
             mixed_kernels=mixed_kernels,
-        ](shape[][0], shape[][1], shape[][2])
+        ](m, n, k)
+
+    test_shapes_helper(256, 1024, 4096)
+    test_shapes_helper(4, 5, 6)
+    test_shapes_helper(15, 16, 17)
+    test_shapes_helper(24, 32, 64)
+    test_shapes_helper(61, 73, 79)
+    test_shapes_helper(123, 456, 321)
+    test_shapes_helper(256, 256, 256)
+    test_shapes_helper(2, 65, 1200)
 
 
 def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
