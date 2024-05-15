@@ -207,7 +207,7 @@ struct Dim(Intable, Stringable, Boolable):
         """
         if self.is_dynamic():
             return "?"
-        return int(self)
+        return str(int(self))
 
 
 # ===----------------------------------------------------------------------===#
