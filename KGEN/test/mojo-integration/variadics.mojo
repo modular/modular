@@ -372,23 +372,26 @@ fn test_tuple():
     # CHECK-NEXT: p1: talkative 2 before copy
     print("p1:", t1[1], "before copy")
 
-    # CHECK-NEXT: copying 1
-    # CHECK-NEXT: copying 2
-    var t2 = t1
+    # TODO(MSTDL-487):
+    #   Restore implicit copying to Tuple.
+    #   Don't forget to uncomment block ~15 lines down too!
+    # # COM: CHECK-NEXT: copying 1
+    # # COM: CHECK-NEXT: copying 2
+    # var t2 = t1
 
-    # CHECK-NEXT: p2: talkative 1 before transfer
-    print("p2:", t2[0], "before transfer")
+    # # COM: CHECK-NEXT: p2: talkative 1 before transfer
+    # print("p2:", t2[0], "before transfer")
 
     # CHECK-NEXT: moving 1
     # CHECK-NEXT: moving 2
     var t3 = t1^
 
-    # CHECK-NEXT: before use t2
-    print("before use t2")
+    # # COM: CHECK-NEXT: before use t2
+    # print("before use t2")
 
-    use_value(t2)
-    # CHECK-NEXT: destroying 1
-    # CHECK-NEXT: destroying 2
+    # use_value(t2)
+    # # COM: CHECK-NEXT: destroying 1
+    # # COM: CHECK-NEXT: destroying 2
 
     # CHECK-NEXT: before use t3
     print("before use t3")
