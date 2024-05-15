@@ -239,5 +239,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createLowerLoops());
   // Lower async functions and closures as late as possible.
   pm.addPass(createLowerClosures());
+  if (options.optimizationLevel >= 2)
+    pm.addPass(createDeadArgumentElimination());
   pm.addPass(createEliminateDeadSymbols());
 }
