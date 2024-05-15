@@ -204,14 +204,14 @@ def M_AlignedBytesAttr : MAttr<"AlignedBytes", "aligned_bytes", [
 // IntArrayElementsAttr
 //===----------------------------------------------------------------------===//
 
-def IntArrayElementsAttr : Attr<CPred<"$_self.isa<IntArrayElementsAttr>()">,
+def IntArrayElementsAttr : Attr<CPred<"isa<IntArrayElementsAttr>($_self)">,
     "Dense integer array"> {
   let storageType = "IntArrayElementsAttr";
   let returnType = "IntArrayElementsAttr";
 }
 
 def SI32ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<CPred<
-    "$_self.cast<IntArrayElementsAttr>().getElementType().isSignedInteger(32)"
+    "cast<IntArrayElementsAttr>($_self).getElementType().isSignedInteger(32)"
 >>]> {
   let constBuilderCall = "$_builder.getAttr<IntArrayElementsAttr>($0, IntegerType::Signed)";
   let returnType = "ArrayRef<int32_t>";
@@ -219,7 +219,7 @@ def SI32ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<C
 }
 
 def SI64ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<CPred<
-    "$_self.cast<IntArrayElementsAttr>().getElementType().isSignedInteger(64)"
+    "cast<IntArrayElementsAttr>($_self).getElementType().isSignedInteger(64)"
 >>]> {
   let constBuilderCall = "$_builder.getAttr<IntArrayElementsAttr>($0, IntegerType::Signed)";
   let returnType = "ArrayRef<int64_t>";
@@ -227,7 +227,7 @@ def SI64ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<C
 }
 
 def UI64ArrayElementsAttr : ConfinedAttr<IntArrayElementsAttr, [AttrConstraint<CPred<
-    "$_self.cast<IntArrayElementsAttr>().getElementType().isUnsignedInteger(64)"
+    "cast<IntArrayElementsAttr>($_self).getElementType().isUnsignedInteger(64)"
 >>]> {
   let constBuilderCall = "$_builder.getAttr<IntArrayElementsAttr>($0, IntegerType::Unsigned)";
   let returnType = "ArrayRef<uint64_t>";
