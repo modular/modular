@@ -53,8 +53,8 @@ void KGEN::registerDefaultKGENPasses() {
   KGEN::registerSynthesizeDebugInfo();
   KGEN::registerTweakSpilledAllocas();
   KGEN::registerVerifyParameters();
-  KGEN::registerLowerToLLVMPipeline();
   KGEN::registerLowerSuspensionPoints();
+  KGEN::registerLowerToLLVMPipeline();
   KGEN::registerSCCP();
   KGEN::registerStripParserMetadata();
   DebugInfo::registerDebugInfoToLLVM();
