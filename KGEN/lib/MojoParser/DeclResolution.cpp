@@ -864,22 +864,6 @@ static MLValue emitClosureInstance(SharedState &shared, ASTDecl &nestedFnDecl,
   return MLValue(var);
 }
 
-PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
-  // Result slots are not handled through normal call argument resolution.
-  if (SignatureType::isResultSlot(kgenConvention))
-    return PassingKind::Implicit;
-
-  switch (kwArgHandling) {
-  case KWArgHandling::kPositionalOnly:
-    return PassingKind::PosOnly;
-  case KWArgHandling::kKeywordOnly:
-    return PassingKind::KwOnly;
-  case KWArgHandling::kPositionalOrKeyword:
-    return PassingKind::PosOrKw;
-  }
-  llvm_unreachable("unhandled KWArgHandling");
-}
-
 /// funcdef   ::=  [decorators] def_or_fn identifier [param_signature]
 ///                "(" [argument_list] ")" ["->" expression] ":" suite
 /// def_or_fn ::= "def" | "fn"

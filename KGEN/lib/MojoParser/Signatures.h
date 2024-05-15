@@ -34,6 +34,7 @@ class SharedState;
 
 /// This specifies the handling of keyword arguments in a list.
 enum class KWArgHandling {
+  kInferred,            //< explicit 'inferred' keyword
   kPositionalOnly,      //< before a standalone '/'
   kPositionalOrKeyword, //< before a standalone '*'
   kKeywordOnly          //< after a standalone '*'

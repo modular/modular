@@ -76,3 +76,29 @@ fn variadic_param_after_default[
     a: int, b: int = `0`, *args: int, c: int, d: int = `1`
 ]():
     pass
+
+
+# CHECK-LABEL: lit.func @"inferred_params
+# CHECK-SAME: <+ x, + y, |>
+fn inferred_params[inferred x: int, inferred y: int]():
+    # CHECK-NEXT: !lit.signature<<+ "x": index, + "y": index, |>() -> !kgen.none> = <@"
+    alias fn_type: fn[inferred x: int, inferred y: int]() -> None = inferred_params
+
+
+# CHECK-LABEL: lit.func @"inferred_params_regular
+# CHECK-SAME: <+ x, |, y>
+fn inferred_params_regular[inferred x: int, y: int]():
+    # CHECK-NEXT: !lit.signature<<+ "x": index, |, "y": index>() -> !kgen.none> = <@"
+    alias fn_type: fn[inferred x: int, y: int]() -> None = inferred_params_regular
+
+
+# CHECK-LABEL: lit.func @"inferred_params_pos_only
+# CHECK-SAME: <+ x, y = 1, |>
+fn inferred_params_pos_only[inferred x: int, y: int = `1`, /]():
+    pass
+
+
+# CHECK-LABEL: lit.func @"inferred_params_kw_only
+# CHECK-SAME: <+ x, |, *, y>
+fn inferred_params_kw_only[inferred x: int, *, y: int]():
+    pass

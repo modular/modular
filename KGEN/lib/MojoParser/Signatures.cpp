@@ -32,15 +32,26 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
   loc = p.getToken().getLoc();
   cursor = p.getLexer().getCursor();
 
+  // Only parameters may be `inferred`.
+  if (p.getToken().isAny(Token::kw_inferred) &&
+      kind != ArgListKind::kParamList &&
+      kind != ArgListKind::kFnTypeParamList) {
+    p.emitTokenError("only parameters may be specified as 'inferred'");
+    p.consumeToken();
+  }
+
   // Any owned/borrowed/inout keyword sets convention.
+  // TODO: Turn all of these into soft keywords.
   if (p.consumeIf(Token::kw_owned))
     convention = kConventionOwned;
   else if (p.consumeIf(Token::kw_borrowed))
     convention = kConventionBorrowed;
   else if (p.consumeIf(Token::kw_inout))
     convention = kConventionInOut;
+  else if (p.consumeIf(Token::kw_inferred))
+    kwArgHandling = KWArgHandling::kInferred;
   while (p.getToken().isAny(Token::kw_owned, Token::kw_borrowed,
-                            Token::kw_inout)) {
+                            Token::kw_inout, Token::kw_inferred)) {
     p.emitTokenError("argument already has a convention specified");
     p.consumeToken();
   }
@@ -116,6 +127,13 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     if (p.parseExpression(initExpr))
       return failure();
 
+    if (kwArgHandling == KWArgHandling::kInferred) {
+      // TODO: It could be useful for them to have defaults.
+      p.emitError(equalLoc, "inferred parameters may not have defaults")
+          << initExpr->getRange();
+      initExpr = nullptr;
+    }
+
     if (convention == kConventionInOut ||
         convention == kConventionInitSelfResult) {
       p.emitError(equalLoc, "inout arguments may not have defaults")
@@ -131,6 +149,24 @@ ParseResult ParsedArgument::parse(ParserBase &p, KWArgMarkerInfo &markerInfo,
     }
   }
   return success();
+}
+
+PassingKind ParsedArgument::getKWArgHandlingAsPassingKind() const {
+  // Result slots are not handled through normal call argument resolution.
+  if (SignatureType::isResultSlot(kgenConvention))
+    return PassingKind::Implicit;
+
+  switch (kwArgHandling) {
+  case KWArgHandling::kInferred:
+    return PassingKind::Inferred;
+  case KWArgHandling::kPositionalOnly:
+    return PassingKind::PosOnly;
+  case KWArgHandling::kKeywordOnly:
+    return PassingKind::KwOnly;
+  case KWArgHandling::kPositionalOrKeyword:
+    return PassingKind::PosOrKw;
+  }
+  llvm_unreachable("unhandled KWArgHandling");
 }
 
 /// This method handles the function argument list for a Python function.
@@ -176,6 +212,11 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
   bool hasSlashMarker = false, hasStarMarker = false;
   auto defaultKWArgHandling = KWArgHandling::kPositionalOrKeyword;
 
+  // `inferred` parameters must all appear at the beginning of the parameter
+  // list. This flag starts true and is set to false if any non-inferred
+  // parameter is parsed.
+  bool lastWasInferred = true;
+
   // This is invoked when we see a '/' marker.
   StringRef argOrParam =
       kind == ArgListKind::kParamList || kind == ArgListKind::kFnTypeParamList
@@ -200,7 +241,8 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     // Ok, process it by changing all arguments we've seen to be positional
     // only.  The remaining ones will stay kPositionalOrKeyword though.
     for (ParsedArgument &arg : parsedArgs)
-      arg.kwArgHandling = KWArgHandling::kPositionalOnly;
+      if (arg.kwArgHandling != KWArgHandling::kInferred)
+        arg.kwArgHandling = KWArgHandling::kPositionalOnly;
     hasSlashMarker = true;
   };
 
@@ -224,6 +266,15 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
     return success();
   };
 
+  // This is invoked when we see an 'inferred' parameter convention.
+  auto handleInferredParam = [&](SMLoc loc) -> ParseResult {
+    if (lastWasInferred)
+      return success();
+    // Error if this comes after anything that isn't another inferred parameter.
+    return p.emitError(loc, "'inferred' parameters must all be at the "
+                            "beginning of the parameter list");
+  };
+
   // This parses either an argument or a keyword argument specifier.
   bool foundName = false;
   auto parseArgument = [&]() -> ParseResult {
@@ -234,10 +285,23 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
       return failure();
 
     // If this argument is just a marker, process it.
-    if (marker == KWArgMarkerInfo::kSlash)
-      return handleSlashMarker(arg.loc), success();
-    if (marker == KWArgMarkerInfo::kStar)
+    if (marker == KWArgMarkerInfo::kSlash) {
+      lastWasInferred = false;
+      handleSlashMarker(arg.loc);
+      return success();
+    }
+    if (marker == KWArgMarkerInfo::kStar) {
+      lastWasInferred = false;
       return handleStarMarker(arg.loc, /*isMarker=*/true);
+    }
+
+    // Check for an inferred argument.
+    if (arg.kwArgHandling == KWArgHandling::kInferred) {
+      if (handleInferredParam(arg.loc))
+        return failure();
+    } else {
+      lastWasInferred = false;
+    }
 
     if (arg.name.empty()) {
       if (foundName)
@@ -294,7 +358,8 @@ parseArgOrParamList(ParserBase &p, SmallVectorImpl<ParsedArgument> &parsedArgs,
   bool allUnnamedPosOnly = !foundName && !hasSlashMarker && !hasStarMarker;
   for (ParsedArgument &arg : parsedArgs) {
     if (!arg.name.empty() ||
-        arg.kwArgHandling == KWArgHandling::kPositionalOnly || arg.vararg)
+        arg.kwArgHandling == KWArgHandling::kPositionalOnly ||
+        arg.kwArgHandling == KWArgHandling::kInferred || arg.vararg)
       continue;
     if (!allUnnamedPosOnly)
       return p.emitError(arg.loc, "unnamed ")
