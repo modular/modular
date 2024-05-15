@@ -55,9 +55,9 @@ fn addrSpaces[lt1: MutLifetime, lt2: ImmLifetime, as1: AddressSpace]():
 
 # This preserves reference mutability
 # CHECK-LABEL: lit.func @"parametricMut
-# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=isMut, life> borrow)
-# CHECK-SAME: -> !lit.ref<!MemExample, mut=isMut, life>
-fn parametricMut[isMut: __mlir_type.i1,
+# CHECK-SAME: (%a: !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life> borrow)
+# CHECK-SAME: -> !lit.ref<!MemExample, mut=#lit.struct.extract<:!Bool isMut, "value">, life>
+fn parametricMut[isMut: Bool,
                  life: AnyLifetime[isMut].type](a: Reference[MemExample, isMut, life]._mlir_type)
    -> Reference[MemExample, isMut, life]._mlir_type:
   return a
@@ -229,17 +229,17 @@ struct SelfRefTest:
 # CHECK-LABEL: lit.func @"testSelfRef
 fn testSelfRef(a: SelfRefTest, inout b: SelfRefTest):
   # Bind immutably to a
-  # CHECK: = lit.call {{.*}}method{{.*}}<:i1 0, :lifetime<0> *"a`">
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 0}, :lifetime<0> *"a`">
   _ = a.method()
 
   # Bind mutably to b
-  # CHECK: = lit.call {{.*}}method{{.*}}<:i1 1, :lifetime<1> *"b`1">
+  # CHECK: = lit.call {{.*}}method{{.*}}<:!Bool {:i1 1}, :lifetime<1> *"b`1">
   _ = b.method()
 
 
 # CHECK-LABEL: lit.func @"testLifetimeOf1
 # CHECK-SAME: (%a: !lit.ref<!MemExample, imm *"a`"> borrow_in_mem) ->
-# CHECK-SAME: Reference <{{.*}}, :i1 0, :lifetime<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
+# CHECK-SAME: Reference <{{.*}}, :!Bool {:i1 0}, :lifetime<0> *"a`", :!AddressSpace {_value: !Int = {0}}>>
 fn testLifetimeOf1(a: MemExample) ->
   Reference[MemExample, __mlir_attr.`0: i1`, __lifetime_of(a)]:
   return a
@@ -328,7 +328,7 @@ fn test_immortal_to_mortal(arg: Reference[Int, _, _])
   # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}UnsafePointer::@"__refitem__{{.*}}([[PTRVAL]])
   # CHECK-NEXT: [[LITREFVAL:%.*]] = lit.call {{.*}}__mlir_ref__{{.*}}([[REF]])
 
-  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[LITREFVAL]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=*"is_mutable`", *"lifetime`1">
+  # CHECK-NEXT: [[ADJREFVAL:%.*]] = kgen.rebind [[LITREFVAL]] : !lit.ref<!Int, mut #lit.lifetime> to !lit.ref<!Int, mut=#lit.struct.extract<:!Bool *"is_mutable`", "value">, *"lifetime`1">
   # CHECK-NEXT: [[ANON2:%.*]] = lit.var.decl "anonymous*"
   # CHECK-NEXT: lit.call {{.*}}__init__{{.*}}([[ANON2]], [[ADJREFVAL]])
   # CHECK-NEXT: [[RES:%.*]] = lit.load.consume [[ANON2:%.*]]
@@ -402,5 +402,3 @@ fn testMethodRef(a: SomeStructWithReferenceSelfArgument):
     # CHECK-NEXT: %1 = lit.ref.load %anonymous2A
     # CHECK-NEXT: lit.call {{.*}}@"hello{{.*}}(%1)
     a.hello()
-
-

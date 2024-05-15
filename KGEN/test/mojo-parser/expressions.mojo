@@ -1393,7 +1393,7 @@ fn thing_taking_reference[type: AnyType](arg: Reference[type, _, _]): pass
 # CHECK-LABEL: lit.func @"test_thing_taking_reference
 fn test_thing_taking_reference(inout x: String):
 # CHECK: lit.call {{.*}}@Reference::@"__init__
-# CHECK-SAME: <:!AnyType #String1, :i1 1, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
+# CHECK-SAME: <:!AnyType #String1, :!Bool {:i1 1}, :lifetime<1> *"x`", :!AddressSpace {_value: !Int = {0}}>
   thing_taking_reference(x)
 
 struct StructWithStaticMethods:
@@ -1430,5 +1430,5 @@ struct ThingWithMethodReferenceSelf:
 fn testThingWithMethodReferenceSelf[a: ThingWithMethodReferenceSelf]():
     # CHECK-NEXT: lit.alias.decl *"sizzle`": none =
     # CHECK-SAME: <apply(:!lit.signature<("a": !lit.declref<#Reference
-    # CHECK-SAME:       :i1 1, :lifetime<1> #lit.lifetime, :!AddressSpace {_value: !Int = {0}}>), store_to_mem(a))
+    # CHECK-SAME:       :!Bool {:i1 1}, :lifetime<1> #lit.lifetime, :!AddressSpace {_value: !Int = {0}}>), store_to_mem(a))
     alias sizzle = a.method()
