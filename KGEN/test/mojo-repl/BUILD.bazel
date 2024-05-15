@@ -3,10 +3,10 @@ load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
 
 lit_tests(
     name = "test",
-    srcs = glob(["*.lldb"]),
+    srcs = glob(["**/*.lldb"]),
     custom_substitutions = {
         # Mirrored from lit.cfg.py to avoid searching $PATH for 'mojo'
-        "%repl": "$(rlocationpath //KGEN/tools/mojo) repl --source-quietly -S ../../../utils/lit-lldb-init.in",
+        "%repl": "$(rlocationpath //KGEN/tools/mojo) repl --source-quietly -S $(rlocationpath //utils:lit-lldb-init.in)",
         "\\\\$MODULAR_DERIVED_PATH/third-party/llvm-project/build/bin/lldb": "$(rlocationpath //KGEN:mojo-lldb)",
         "source \\\\$MODULAR_DERIVED_PATH/autovenv/bin/activate": "true",
     },
@@ -15,6 +15,7 @@ lit_tests(
         "//KGEN:gdb-server",
         "//KGEN:mojo-lldb",
         "//KGEN/tools/mojo-repl-entry-point",
+        "//utils:lit-lldb-init.in",
         "@stock-torch//:libpython",
     ],
     env = {
