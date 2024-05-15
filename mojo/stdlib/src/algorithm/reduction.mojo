@@ -17,7 +17,7 @@ from math import align_down, ceildiv, iota
 from math import all_true as _all_true
 from math import any_true as _any_true
 from math import none_true as _none_true
-from bit import cttz
+from bit import countr_zero
 from sys.info import (
     is_little_endian,
     simdwidthof,
@@ -69,7 +69,7 @@ fn _index_of_first_one[width: Int](val: SIMD[DType.bool, width]) -> Int:
             llvm_intrinsic["llvm.experimental.cttz.elts", Int8](val, False)
         )
     else:
-        return int(cttz(bitcast[_uint_type_of_width[width]()](val)))
+        return int(countr_zero(bitcast[_uint_type_of_width[width]()](val)))
 
 
 # ===----------------------------------------------------------------------===#
