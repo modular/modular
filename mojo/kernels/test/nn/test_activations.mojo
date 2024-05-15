@@ -7,10 +7,43 @@
 # RUN: %mojo  -I%S/.. %s | FileCheck %s
 
 from math import iota
-from random import seed, randn
+from random import seed
+
 from nn.activations import elu, gelu, gelu_approximate, relu, relu_n1
-from nn._test_utils import compare
+from tensor import Tensor, TensorShape, randn
 from test_utils import libm_call
+
+
+fn get_minmax[dtype: DType](x: Tensor[dtype], N: Int) -> Tensor[dtype]:
+    var max_val = x[0]
+    var min_val = x[0]
+    for i in range(1, N):
+        if x[i] > max_val:
+            max_val = x[i]
+        if x[i] < min_val:
+            min_val = x[i]
+    return Tensor[dtype](TensorShape(2), min_val, max_val)
+
+
+fn compare[_dtype: DType, N: Int](x: Tensor, y: Tensor, label: String):
+    var atol = Tensor[_dtype](TensorShape(N))
+    var rtol = Tensor[_dtype](TensorShape(N))
+
+    for i in range(N):
+        var xx = x[i].cast[_dtype]()
+        var yy = y[i].cast[_dtype]()
+
+        var d = abs(xx - yy)
+        var e = abs(d / yy)
+        atol[i] = d
+        rtol[i] = e
+
+    print(label)
+    var atol_minmax = get_minmax[_dtype](atol, N)
+    var rtol_minmax = get_minmax[_dtype](rtol, N)
+    print("AbsErr-Min/Max", atol_minmax[0], atol_minmax[1])
+    print("RelErr-Min/Max", rtol_minmax[0], rtol_minmax[1])
+    print("==========================================================")
 
 
 # CHECK-LABEL: test_elu
@@ -160,35 +193,30 @@ fn test_gelu_libm():
     print("== test_gelu_libm")
     seed(0)
     alias N = 8192
-    alias dtype = DType.float32
-    alias alignment = 64
     # generate input values and write them to file
-    var x32 = DTypePointer[dtype].alloc(N, alignment=alignment)
-    randn[dtype](x32, N, 0, 9.0)
+    var x32 = randn[DType.float32](N, 0, 9.0)
     print("For N=" + String(N) + " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # math.erf result
     ####################
-    var y32 = DTypePointer[dtype].alloc(N, alignment=alignment)
+    var y32 = Tensor[DType.float32](TensorShape(N))
     for i in range(N):
         y32[i] = gelu(x32[i])  # gelu using math.erf
 
     ####################
     ## libm erf result
     ####################
-    var libm_out = DTypePointer[dtype].alloc(N, alignment=alignment)
+    var libm_out = Tensor[DType.float32](TensorShape(N))
     for i in range(N):
         libm_out[i] = gelu_libm(x32[i])
 
     # CHECK: Compare Mojo activations.gelu vs. LibM
     # CHECK: AbsErr-Min/Max 0.0 4.76837158203125e-07
     # CHECK: RelErr-Min/Max 0.0 0.035714227706193924
-    compare[dtype, N](y32, libm_out, "Compare Mojo activations.gelu vs. LibM")
-
-    x32.free()
-    y32.free()
-    libm_out.free()
+    compare[DType.float32, N](
+        y32, libm_out, "Compare Mojo activations.gelu vs. LibM"
+    )
 
 
 fn main():
