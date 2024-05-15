@@ -43,6 +43,9 @@ private:
   /// Handles the response to the `build/initialize` request.
   void onBuildInitializeResponse(llvm::json::Value id,
                                  llvm::Expected<InitializeBuildResult> result);
+  /// Handles the response to the `buildTarget/compile` request.
+  void onBuildTargetCompileResponse(llvm::json::Value id,
+                                    llvm::Expected<CompileResult> result);
   /// Handles the response to the `build/shutdown` request.
   void onBuildShutdownResponse(llvm::json::Value id,
                                llvm::Expected<NoParams> result);
@@ -76,6 +79,9 @@ private:
   /// A function that, when invoked, sends a "build/initialize" request with the
   /// given params and request ID.
   mlir::lsp::OutgoingRequest<InitializeBuildParams> initializeRequestFn;
+  /// A function that, when invoked, sends a "buildTarget/compile" request with
+  /// the given params and request ID.
+  mlir::lsp::OutgoingRequest<CompileParams> buildFn;
   /// A function that, when invoked, sends a "build/shutdown" request with the
   /// given request ID.
   mlir::lsp::OutgoingRequest<NoParams> shutdownFn;

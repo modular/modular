@@ -93,6 +93,60 @@ bool M::Build::fromJSON(const llvm::json::Value &value,
 }
 
 //===----------------------------------------------------------------------===//
+// buildTarget/compile request params
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value M::Build::toJSON(const BuildTargetIdentifier &value) {
+  return llvm::json::Object{{"uri", value.uri}};
+}
+
+bool M::Build::fromJSON(const llvm::json::Value &value,
+                        BuildTargetIdentifier &result, llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("uri", result.uri);
+}
+
+llvm::json::Value M::Build::toJSON(const CompileParams &value) {
+  llvm::json::Object result{{"targets", value.targets}};
+  if (value.originId)
+    result["originId"] = *value.originId;
+  if (value.arguments)
+    result["arguments"] = llvm::json::Array(*value.arguments);
+  return std::move(result);
+}
+
+bool M::Build::fromJSON(const llvm::json::Value &value, CompileParams &result,
+                        llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  return o && o.map("targets", result.targets) &&
+         mapOptOrNull(value, "originId", result.originId, path) &&
+         mapOptOrNull(value, "arguments", result.arguments, path);
+}
+
+//===----------------------------------------------------------------------===//
+// buildTarget/compile request result
+//===----------------------------------------------------------------------===//
+
+llvm::json::Value M::Build::toJSON(const CompileResult &value) {
+  llvm::json::Object result;
+  if (value.originId)
+    result["originId"] = *value.originId;
+  result["statusCode"] = static_cast<int>(value.statusCode);
+  return std::move(result);
+}
+
+bool M::Build::fromJSON(const llvm::json::Value &value, CompileResult &result,
+                        llvm::json::Path path) {
+  llvm::json::ObjectMapper o(value, path);
+  int statusCode;
+  if (!o || !mapOptOrNull(value, "originId", result.originId, path) ||
+      !o.map("statusCode", statusCode))
+    return false;
+  result.statusCode = static_cast<StatusCode>(statusCode);
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
 // build/shutdown request
 //===----------------------------------------------------------------------===//
 
