@@ -638,12 +638,12 @@ fn get_trace_information(
     transpose_b: Bool,
     b_packed: Bool,
 ) -> String:
-    var a_description = String("A=") + shape.M + "x" + shape.K
-    var b_description = String("B=") + shape.K + "x" + shape.N
-    var c_description = String("C=") + shape.M + "x" + shape.N
-    var transpose_a_description = String("transpose_a=") + transpose_a
-    var transpose_b_description = String("transpose_b=") + transpose_b
-    var b_packed_description = String("b_packed=") + b_packed
+    var a_description = String("A=") + str(shape.M) + "x" + str(shape.K)
+    var b_description = String("B=") + str(shape.K) + "x" + str(shape.N)
+    var c_description = String("C=") + str(shape.M) + "x" + str(shape.N)
+    var transpose_a_description = String("transpose_a=") + str(transpose_a)
+    var transpose_b_description = String("transpose_b=") + str(transpose_b)
+    var b_packed_description = String("b_packed=") + str(b_packed)
 
     return (
         String(name)

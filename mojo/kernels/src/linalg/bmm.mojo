@@ -650,8 +650,8 @@ fn get_trace_information[
     var a_description = String("A=") + a_shape
     var b_description = String("B=") + b_shape
     var c_description = String("C=") + c_shape
-    var transpose_a_description = String("transpose_a=") + transpose_a
-    var transpose_b_description = String("transpose_b=") + transpose_b
+    var transpose_a_description = String("transpose_a=") + str(transpose_a)
+    var transpose_b_description = String("transpose_b=") + str(transpose_b)
 
     return String(";").join(
         String(name),
