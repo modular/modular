@@ -253,6 +253,19 @@ def LowerKGENToLLVM : Pass<"lower-kgen-to-llvm", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerSuspensionPoints
+//===----------------------------------------------------------------------===//
+
+def LowerSuspensionPoints : Pass<"lower-suspension-points",
+                               "mlir::LLVM::LLVMFuncOp"> {
+  let summary = "Lower suspension points in resume functions";
+  let description = [{
+    Lower away the suspension points into a state machine.
+  }];
+  let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // TweakSpilledAllocas
 //===----------------------------------------------------------------------===//
 

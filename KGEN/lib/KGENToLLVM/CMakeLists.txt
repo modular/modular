@@ -13,6 +13,7 @@ add_modular_library(KGENToLLVM
   LowerKGENCoroutines.cpp
   LowerKGENToLLVM.cpp
   LowerPOPToLLVM.cpp
+  LowerSuspensionPoints.cpp
 
   DEPENDS
   MLIRKGENPasses
