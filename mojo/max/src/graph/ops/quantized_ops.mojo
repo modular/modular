@@ -8,9 +8,21 @@
 
 from os import abort
 
-from max.graph.quantization import QuantizationEncoding
-
 from .custom_ops import custom
+
+
+@value
+@register_passable("trivial")
+struct QuantType:
+    """An enum-like struct representing supported quantized operation types."""
+
+    alias Q4_0 = 0
+
+    var value: Int
+
+    @always_inline
+    def is_q4_0(self) -> Bool:
+        return self.value == Self.Q4_0
 
 
 def _q4_0_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
@@ -66,7 +78,7 @@ def _q4_0_matmul(lhs: Symbol, rhs: Symbol) -> Symbol:
     return ops.reshape(qmatmul_out, final_shape, final_dims)
 
 
-def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
+def qmatmul[quant: QuantType](lhs: Symbol, rhs: Symbol) -> Symbol:
     """Quantized matrix multiplication.
 
     Args:
@@ -82,7 +94,7 @@ def qmatmul[encoding: QuantizationEncoding](lhs: Symbol, rhs: Symbol) -> Symbol:
         where . is matrix multiplication.
     """
 
-    if encoding.id() == "Q4_0":
+    if quant.is_q4_0():
         return _q4_0_matmul(lhs, rhs)
     else:
-        return abort[Symbol]("unreachable: unknown `QuantizationEncoding`")
+        return abort[Symbol]("unreachable: unknown `QuantType`")
