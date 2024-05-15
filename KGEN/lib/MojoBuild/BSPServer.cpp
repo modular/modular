@@ -92,8 +92,9 @@ void BSPServer::onBuildInitialize(
 }
 
 void BSPServer::onBuildShutdown(const NoParams &params,
-                                mlir::lsp::Callback<std::nullptr_t> callback) {
+                                mlir::lsp::Callback<NoParams> callback) {
   serverResult = success();
+  callback(NoParams{});
 }
 
 llvm::Error BSPServer::error(Twine message, mlir::lsp::ErrorCode code) {
