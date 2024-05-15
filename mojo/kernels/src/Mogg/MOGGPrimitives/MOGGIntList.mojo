@@ -241,13 +241,13 @@ struct IntList[static_values: DimList = DimList()](Sized):
         return x^
 
     fn print(self):
-        var str: String = "("
+        var result: String = "("
         for i in range(len(self)):
-            str += self[i]
+            result += str(self[i])
             if i != (len(self) - 1):
-                str += ", "
-        str += ")"
-        print(str)
+                result += ", "
+        result += ")"
+        print(result)
 
     @always_inline
     fn __len__(self) -> Int:

@@ -497,14 +497,14 @@ fn elementwise_wrapper[
         var name_str = String("name=") + trace_description
         var shape_str = String("shape=") + String("x").join(buffer.get_shape())
 
-        var vector_width_str = String("vector_width=") + simd_width
+        var vector_width_str = String("vector_width=") + str(simd_width)
 
         var info = String(";").join(name_str, shape_str, vector_width_str)
 
         return (
             info
             + String(";single_thread_blocking_override=")
-            + single_thread_blocking_override
+            + str(single_thread_blocking_override)
         )
 
     if _guard_against_gpu_target[target](ctx):
@@ -2219,7 +2219,7 @@ fn matmul[
         return (
             info
             + String(";single_thread_blocking_override=")
-            + single_thread_blocking_override
+            + str(single_thread_blocking_override)
         )
 
     # TODO(#23049): Pipe info on whether using faster, saturated_vnni is ok
@@ -2301,7 +2301,7 @@ fn batched_matmul[
         return (
             info
             + String(";single_thread_blocking_override=")
-            + single_thread_blocking_override
+            + str(single_thread_blocking_override)
         )
 
     with Trace[TraceLevel.OP](
@@ -3167,7 +3167,7 @@ fn conv[
         var output_shape_str = String("output=") + String("x").join(
             output.dynamic_shape
         )
-        var group_str = String("group=") + int(num_groups[0])
+        var group_str = String("group=") + str(int(num_groups[0]))
         var stride_str = String("stride=") + String("x").join(stride_tuple)
         var padding_h_str = String("padding_h=") + String("x").join(pad_h_tuple)
         var padding_w_str = String("padding_w=") + String("x").join(pad_w_tuple)
@@ -3302,7 +3302,7 @@ fn conv_transpose[
         var output_shape_str = String("output=") + String("x").join(
             output.dynamic_shape
         )
-        var group_str = String("group=") + 1
+        var group_str = String("group=") + str(1)
         var stride_str = String("stride=") + String("x").join(stride_tuple)
         var padding_d_str = String("padding_d=") + String("x").join(Index(0, 0))
         var padding_h_str = String("padding_h=") + String("x").join(pad_h)
