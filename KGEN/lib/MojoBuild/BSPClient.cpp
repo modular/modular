@@ -30,8 +30,12 @@ BSPClient::BSPClient(TempFile &&in, std::FILE *inFile, TempFile &&out,
       outOS(outFD, /*shouldClose=*/true), transport(inFile, outOS),
       messageHandler(transport), displayName(displayName),
       serverPath(serverPath) {
-  messageHandler.notification("build/initialize/reply", this,
-                              &BSPClient::onBuildInitializeReply);
+  initializeRequestFn = messageHandler.outgoingRequest<InitializeBuildParams,
+                                                       InitializeBuildResult>(
+      "build/initialize",
+      [&](llvm::json::Value id, llvm::Expected<InitializeBuildResult> result) {
+        onBuildInitializeResponse(std::move(id), std::move(result));
+      });
 }
 
 ErrorOrSuccess BSPClient::run() {
@@ -56,8 +60,7 @@ ErrorOrSuccess BSPClient::run() {
   // Send the initialization request to the server.
   lsp::Logger::debug("--> client build/initialize: displayName='{0}'",
                      displayName);
-  transport.call("build/initialize", toJSON(InitializeBuildParams{displayName}),
-                 currentRequestID++);
+  initializeRequestFn(InitializeBuildParams{displayName}, currentRequestID++);
 
   // Repeatedly wait on the server until it exits.
   while (true) {
@@ -96,10 +99,20 @@ ErrorOrSuccess BSPClient::run() {
   }
 }
 
-void BSPClient::onBuildInitializeReply(const InitializeBuildResult &result) {
-  lsp::Logger::debug("<-- client build/initialize/reply: displayName='{0}'",
-                     result.displayName);
+void BSPClient::onBuildInitializeResponse(
+    llvm::json::Value id, llvm::Expected<InitializeBuildResult> result) {
+  std::string logPrefix =
+      llvm::formatv("<--- client reply:build/initialize({0}): ", id);
+  if (result) {
+    lsp::Logger::debug("{0}displayName='{1}'", logPrefix, result->displayName);
+  } else {
+    llvm::handleAllErrors(result.takeError(), [&](const lsp::LSPError &err) {
+      lsp::Logger::error("{0}{1}", logPrefix, err.message);
+    });
+  }
 
+  // Note that even in the error cases above, we do not return early -- we still
+  // send the server a shutdown request.
   lsp::Logger::debug("--> client build/shutdown");
   transport.call("build/shutdown", nullptr, currentRequestID++);
 

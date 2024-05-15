@@ -40,8 +40,9 @@ public:
   ErrorOrSuccess run();
 
 private:
-  /// Handles the reply to the `build/initialize` request.
-  void onBuildInitializeReply(const InitializeBuildResult &result);
+  /// Handles the response to the `build/initialize` request.
+  void onBuildInitializeResponse(llvm::json::Value id,
+                                 llvm::Expected<InitializeBuildResult> result);
 
   /// The backing file for the client's input file stream.
   TempFile in;
@@ -66,6 +67,10 @@ private:
   /// An internal counter that represents the ID of the next request to be sent.
   /// This is incremented each time a request is sent to the server.
   int currentRequestID = 0;
+
+  /// A function that, when invoked, sends a "build/initialize" request with the
+  /// given params and request ID.
+  mlir::lsp::OutgoingRequest<InitializeBuildParams> initializeRequestFn;
 };
 } // namespace M::Build
 

@@ -68,10 +68,7 @@ void BSPServer::onBuildInitialize(
     mlir::lsp::Callback<InitializeBuildResult> callback) {
   lsp::Logger::debug("<-- server build/initialize: displayName='{0}'",
                      params.displayName);
-  // FIXME(#36902): Rather than respond via a notification, this should send a
-  // reply via `callback` once MLIR's LSP supports doing so.
-  transport.notify("build/initialize/reply",
-                   InitializeBuildResult{"mojo-build-server"});
+  callback(InitializeBuildResult{"mojo-build-server"});
 }
 
 void BSPServer::onBuildShutdown(const NoParams &params,
