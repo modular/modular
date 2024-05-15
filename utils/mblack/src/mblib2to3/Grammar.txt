@@ -49,7 +49,7 @@ parameters: '(' [typedargslist] ')'
 #
 # It needs to be fully expanded to allow our LL(1) parser to work on it.
 
-convention: OWNED | BORROWED | INOUT
+convention: OWNED | BORROWED | INOUT | INFERRED
 #tname: NAME [metaparams] [':' test]
 
 typedargslist:  [convention] tfpdef ['=' test] (','  [convention] tfpdef ['=' test])* ',' '/' [
@@ -200,7 +200,7 @@ dictsetmaker: ( ((test ':' asexpr_test | '**' expr)
 		 (comp_for | (',' (test [':=' test] | star_expr))* [','])) )
 
 classdef: ('class' | STRUCT | TRAIT) NAME [metaparams] ['(' [arglist] ')'] ':' suite
-typeconv: (['*'|OWNED|BORROWED|INOUT] ['*'] test [':' test]) | '/' | '*'
+typeconv: (['*'|OWNED|BORROWED|INOUT|INFERRED] ['*'] test [':' test]) | '/' | '*'
 functype: [ASYNC] ('def' | FN) [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' NAME* ['->' test]
 
 arglist: argument (',' argument)* [',']
