@@ -358,7 +358,7 @@ struct Function[
         populate: _populate_fn_type,
         *Ts: AnyType,
         elt_is_mutable: __mlir_type.i1,
-        lifetime: AnyLifetime[elt_is_mutable].type,
+        lifetime: AnyLifetime[Bool {value: elt_is_mutable}].type,
     ](
         self,
         # TODO(unpacking): this is just because we can't forward packs!
