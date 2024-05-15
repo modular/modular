@@ -7,7 +7,7 @@
 # RUN: %mojo-no-debug %s
 
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream, synchronize
+from gpu.host import Context, Dim, Function, Stream, CudaInstance, Device
 from testing import *
 
 
@@ -23,9 +23,9 @@ fn add_constant_fn(
     out[tid] = input[tid] + constant
 
 
-fn run_add_constant(ctx: Context) raises:
+def run_add_constant(ctx: Context):
     alias length = 1024
-    var stream = Stream()
+    var stream = Stream(ctx)
 
     var in_host = Pointer[Float32].alloc(length)
     var out_host = Pointer[Float32].alloc(length)
@@ -79,7 +79,8 @@ fn run_add_constant(ctx: Context) raises:
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_add_constant(ctx)
+        with CudaInstance() as instance:
+            with Context(Device(instance)) as ctx:
+                run_add_constant(ctx)
     except e:
         print("CUDA_ERROR:", e)
