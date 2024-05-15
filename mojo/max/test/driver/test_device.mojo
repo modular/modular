@@ -12,9 +12,16 @@ from utils.index import Index
 from testing import assert_equal
 
 
-def main():
+def test_device():
     var dev = Device(CPUDescriptor(numa_id=2))
     assert_equal(str(dev), "Device(type=CPU,numa_id=2)")
+
+    var dev2 = dev
+    assert_equal(str(dev), str(dev2))
+
+
+def test_device_tensor():
+    var dev = Device(CPUDescriptor(numa_id=2))
 
     var dt1 = dev.allocate(
         TensorSpec(DType.float32, 2, 2),
@@ -36,3 +43,8 @@ def main():
     tensor[Index(1, 0)] = 2
     tensor[Index(1, 1)] = 3
     print(tensor)
+
+
+def main():
+    test_device()
+    test_device_tensor()
