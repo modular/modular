@@ -15,10 +15,6 @@ from math import (
     isnan,
     isclose,
     nan,
-    rotate_bits_left,
-    rotate_bits_right,
-    rotate_left,
-    rotate_right,
     sin,
     trunc,
 )
@@ -110,141 +106,6 @@ fn test_factorial() raises:
     assert_equal(factorial(20), 2432902008176640000)
 
 
-fn test_rotate() raises:
-    alias simd_width = 4
-    alias type = DType.uint32
-
-    assert_equal(
-        rotate_right[1](SIMD[DType.uint16, 8](1, 0, 1, 1, 0, 1, 0, 0)),
-        SIMD[DType.uint16, 8](0, 1, 0, 1, 1, 0, 1, 0),
-    )
-    assert_equal(
-        rotate_right[5](SIMD[DType.uint32, 8](1, 0, 1, 1, 0, 1, 0, 0)),
-        SIMD[DType.uint32, 8](1, 0, 1, 0, 0, 1, 0, 1),
-    )
-    assert_equal(rotate_left[2](104), 416)
-    assert_equal(rotate_right[2](104), 26)
-    assert_equal(rotate_left[-2](104), 26)
-    assert_equal(rotate_right[-2](104), 416)
-
-    assert_equal(
-        rotate_left[0](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 0, 1, 1),
-    )
-    assert_equal(
-        rotate_left[1](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](0, 1, 1, 1),
-    )
-    assert_equal(
-        rotate_left[2](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 1, 1, 0),
-    )
-    assert_equal(
-        rotate_left[3](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 1, 0, 1),
-    )
-    assert_equal(
-        rotate_left[-1](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 1, 0, 1),
-    )
-    assert_equal(
-        rotate_left[-2](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 1, 1, 0),
-    )
-    assert_equal(
-        rotate_left[-3](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](0, 1, 1, 1),
-    )
-    assert_equal(
-        rotate_left[-4](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 0, 1, 1),
-    )
-    assert_equal(
-        rotate_right[0](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 0, 1, 1),
-    )
-    assert_equal(
-        rotate_right[1](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 1, 0, 1),
-    )
-    assert_equal(
-        rotate_right[2](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 1, 1, 0),
-    )
-    assert_equal(
-        rotate_right[3](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](0, 1, 1, 1),
-    )
-    assert_equal(
-        rotate_right[4](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 0, 1, 1),
-    )
-    assert_equal(
-        rotate_right[-1](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](0, 1, 1, 1),
-    )
-    assert_equal(
-        rotate_right[-2](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 1, 1, 0),
-    )
-    assert_equal(
-        rotate_right[-3](SIMD[type, simd_width](1, 0, 1, 1)),
-        SIMD[type, simd_width](1, 1, 0, 1),
-    )
-
-
-fn test_rotate_bits() raises:
-    alias simd_width = 1
-    alias type = DType.uint8
-
-    assert_equal(rotate_bits_left[0](104), 104)
-
-    assert_equal(rotate_bits_left[0](UInt64(104)), 104)
-
-    assert_equal(rotate_bits_left[0](SIMD[type, simd_width](104)), 104)
-
-    assert_equal(rotate_bits_left[2](104), 416)
-
-    assert_equal(rotate_bits_left[-2](104), 26)
-
-    assert_equal(rotate_bits_left[2](Scalar[type](104)), 161)
-    assert_equal(
-        rotate_bits_left[2](SIMD[type, 2](104)), SIMD[type, 2](161, 161)
-    )
-    assert_equal(rotate_bits_left[11](Scalar[type](15)), 120)
-
-    assert_equal(rotate_bits_left[0](Scalar[type](96)), 96)
-    assert_equal(rotate_bits_left[1](Scalar[type](96)), 192)
-    assert_equal(rotate_bits_left[2](Scalar[type](96)), 129)
-    assert_equal(rotate_bits_left[3](Scalar[type](96)), 3)
-    assert_equal(rotate_bits_left[4](Scalar[type](96)), 6)
-    assert_equal(rotate_bits_left[5](Scalar[type](96)), 12)
-
-    assert_equal(rotate_bits_right[0](104), 104)
-
-    assert_equal(rotate_bits_right[0](UInt64(104)), 104)
-
-    assert_equal(rotate_bits_right[0](SIMD[type, simd_width](104)), 104)
-
-    assert_equal(rotate_bits_right[2](104), 26)
-
-    assert_equal(rotate_bits_right[-2](104), 416)
-
-    assert_equal(rotate_bits_right[2](Scalar[type](104)), 26)
-    assert_equal(
-        rotate_bits_right[2](SIMD[type, 2](104)), SIMD[type, 2](26, 26)
-    )
-    assert_equal(rotate_bits_right[11](Scalar[type](15)), 225)
-
-    assert_equal(rotate_bits_right[0](Scalar[type](96)), 96)
-    assert_equal(rotate_bits_right[1](Scalar[type](96)), 48)
-    assert_equal(rotate_bits_right[2](Scalar[type](96)), 24)
-    assert_equal(rotate_bits_right[3](Scalar[type](96)), 12)
-    assert_equal(rotate_bits_right[4](Scalar[type](96)), 6)
-    assert_equal(rotate_bits_right[5](Scalar[type](96)), 3)
-    assert_equal(rotate_bits_right[6](Scalar[type](96)), 129)
-
-
 def test_copysign():
     var x = Int32(2)
     assert_equal(2, math.copysign(x, x))
@@ -334,8 +195,6 @@ def main():
     test_sin()
     test_cos()
     test_factorial()
-    test_rotate()
-    test_rotate_bits()
     test_copysign()
     test_isclose()
     test_ceil()
