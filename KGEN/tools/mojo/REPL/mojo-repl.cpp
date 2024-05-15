@@ -47,9 +47,12 @@ static int repl(const State &state) {
 #include "REPL/REPLOptionsHelpText.inc"
     );
   }
-  return invokeLLDB(state, {"--one-line-before-file",
-                            "settings set show-progress false",
-                            "--repl-language", "mojo", "--repl"});
+
+  SmallVector<std::string> lldbArgs = {"--one-line-before-file",
+                                       "settings set show-progress false",
+                                       "--repl-language", "mojo", "--repl"};
+  llvm::append_range(lldbArgs, state.arguments);
+  return invokeLLDB(state, lldbArgs);
 }
 
 void M::registerREPLSubcommand(SubcommandRegistry &registry) {
