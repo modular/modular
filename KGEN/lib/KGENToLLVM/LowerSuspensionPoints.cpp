@@ -44,13 +44,15 @@ struct LowerSuspensionPointsPass
 };
 } // namespace
 
-enum ContinuationFields { State = 0 };
+enum ContinuationFields { State = 0, ClosureState = 1, ClosureFunction = 2 };
 
 struct BuildContext {
   BuildContext(LLVMBuilder &builder) : builder(builder) {
-    // Continuation type: !llvm.struct<(i8)>
+    // Continuation type: !llvm.struct<(i8, ptr, ptr)>
+    Type ptrType = LLVMPointerType::get(builder.getContext());
     continuationType = LLVMStructType::getLiteral(
-        builder.getContext(), ArrayRef<Type>({builder.getI32Type()}));
+        builder.getContext(),
+        ArrayRef<Type>({builder.getI32Type(), ptrType, ptrType}));
   }
   void emitUpdateState(Value continuation) {
     GEPOp slot = builder.create<GEPOp>(
@@ -69,6 +71,10 @@ struct BuildContext {
     switch (fieldIndex) {
     case State:
       type = builder.getI32Type();
+      break;
+    case ClosureFunction:
+    case ClosureState:
+      type = LLVMPointerType::get(builder.getContext());
       break;
     }
     GEPOp slot = builder.create<GEPOp>(
@@ -123,16 +129,20 @@ static LogicalResult lowerSuspensionPoints(Operation *func,
 
   // Find all suspension points. Create a new block for each suspension point.
   BuildContext buildContext(b);
-  for (auto blockIter = func->getRegion(0).begin();
-       blockIter != func->getRegion(0).end(); blockIter++) {
-    Block &block = *blockIter;
+  SmallVector<Block *> exitPaths;
+  Block *block = &*(func->getRegion(0).begin());
+  while (block) {
+    Block *nextBlock = block->getNextNode();
     bool continueInResume = false;
-    b.setInsertionPointToStart(&block);
-    Operation *current = &block.getOperations().front();
+    b.setInsertionPointToStart(block);
+    Operation *current = &block->getOperations().front();
     while (current) {
+      if (isa<ReturnOp>(current))
+        exitPaths.push_back(continueInResume ? buildContext.blockList.back()
+                                             : block);
       if (auto await = dyn_cast<CoroutineAwaitOp>(current)) {
         current = await->getNextNode();
-        Block *b = continueInResume ? buildContext.blockList.back() : &block;
+        Block *b = continueInResume ? buildContext.blockList.back() : block;
         addSuspensionPoint(await, b, buildContext);
         await->erase();
         continueInResume = true;
@@ -140,9 +150,12 @@ static LogicalResult lowerSuspensionPoints(Operation *func,
       }
       current = current->getNextNode();
     }
+    block = nextBlock;
   }
 
-  if (!buildContext.blockList.empty()) {
+  DenseSet<Block *> visited;
+  bool hasSuspensionPoints = !buildContext.blockList.empty();
+  if (hasSuspensionPoints) {
     // Create the initial switch to direct to the correct resume point.
     Block &initialBlock = funcOp.getBody().front();
     Block *controlBlock =
@@ -174,6 +187,20 @@ static LogicalResult lowerSuspensionPoints(Operation *func,
         /*caseOperands=*/operands);
   }
 
+  // Invoke callback in final block before return.
+  Type ptrType = LLVMPointerType::get(buildContext.builder.getContext());
+  Value continuation = funcOp.getArgument(0);
+  for (Block *current : exitPaths) {
+    Operation *terminator = current->getTerminator();
+    b.setInsertionPoint(terminator);
+    Value callbackFnPtr = buildContext.getContinuationField(
+        continuation, ContinuationFields::ClosureFunction);
+    Value parent = buildContext.getContinuationField(
+        continuation, ContinuationFields::ClosureState);
+    SmallVector<Type> params;
+    b.create<CallOp>(LLVMFunctionType::get(b.getContext(), ptrType, params, 0),
+                     ValueRange({callbackFnPtr, parent}));
+  }
   return success();
 }
 
