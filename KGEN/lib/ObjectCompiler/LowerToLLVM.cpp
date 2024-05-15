@@ -132,5 +132,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
 
   // Attach any necessary instrumentation to the module.
   attachInstrumentationAttributes(*llvmModule, options);
+
+  llvmModule->convertToNewDbgValues();
   return llvmModule;
 }
