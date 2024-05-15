@@ -708,7 +708,7 @@ struct TensorShape(Stringable, CollectionElement, EqualityComparable):
 
         @parameter
         fn variadic_size(
-            x: __mlir_type[`!kgen.variadic<`, CollectionElement, `>`]
+            x: __mlir_type[`!kgen.variadic<`, Movable, `>`]
         ) -> Int:
             return __mlir_op.`pop.variadic.size`(x)
 
