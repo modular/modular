@@ -41,15 +41,18 @@ private:
   void onBuildShutdown(const NoParams &params,
                        mlir::lsp::Callback<std::nullptr_t> callback);
 
+  /// Fails the server and returns an error with the given message and code.
+  llvm::Error error(Twine message, mlir::lsp::ErrorCode code);
+
   /// A JSON-RPC transport that reads requests from stdin, and writes responses
   /// and notifications to stdout.
   mlir::lsp::JSONTransport transport;
   /// A message handler that maps request types to response callbacks.
   mlir::lsp::MessageHandler messageHandler;
 
-  /// Internal state to track whether the server has received a `build/shutdown`
-  /// request, indicating that it should shut down and exit successfully.
-  bool shutdownRequestReceived = false;
+  /// If non-null, indicates that the server should shut down and exit with the
+  /// specified result.
+  std::optional<mlir::LogicalResult> serverResult = std::nullopt;
 };
 } // namespace M::Build
 

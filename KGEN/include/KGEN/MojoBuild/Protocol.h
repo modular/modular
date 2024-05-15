@@ -30,6 +30,12 @@ namespace M::Build {
 struct InitializeBuildParams {
   /// Name of the client.
   std::string displayName;
+  /// The version of the client.
+  std::string version;
+  /// The build server protocol that the client speaks.
+  std::string bspVersion;
+  /// The root URI of the workspace.
+  std::string rootUri;
 };
 
 /// Serialize a parameters object to JSON.
