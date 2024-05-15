@@ -39,7 +39,7 @@ private:
                          mlir::lsp::Callback<InitializeBuildResult> callback);
   /// Handles the `build/shutdown` request.
   void onBuildShutdown(const NoParams &params,
-                       mlir::lsp::Callback<std::nullptr_t> callback);
+                       mlir::lsp::Callback<NoParams> callback);
 
   /// Fails the server and returns an error with the given message and code.
   llvm::Error error(Twine message, mlir::lsp::ErrorCode code);

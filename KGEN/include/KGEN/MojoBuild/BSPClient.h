@@ -43,6 +43,9 @@ private:
   /// Handles the response to the `build/initialize` request.
   void onBuildInitializeResponse(llvm::json::Value id,
                                  llvm::Expected<InitializeBuildResult> result);
+  /// Handles the response to the `build/shutdown` request.
+  void onBuildShutdownResponse(llvm::json::Value id,
+                               llvm::Expected<NoParams> result);
 
   /// The backing file for the client's input file stream.
   TempFile in;
@@ -73,6 +76,11 @@ private:
   /// A function that, when invoked, sends a "build/initialize" request with the
   /// given params and request ID.
   mlir::lsp::OutgoingRequest<InitializeBuildParams> initializeRequestFn;
+  /// A function that, when invoked, sends a "build/shutdown" request with the
+  /// given request ID.
+  mlir::lsp::OutgoingRequest<NoParams> shutdownFn;
+  /// A function that, when invoked, sends an "exit" notification.
+  mlir::lsp::OutgoingNotification<NoParams> exitFn;
 };
 } // namespace M::Build
 

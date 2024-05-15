@@ -38,6 +38,12 @@ BSPClient::BSPClient(TempFile &&in, std::FILE *inFile, TempFile &&out,
       [&](llvm::json::Value id, llvm::Expected<InitializeBuildResult> result) {
         onBuildInitializeResponse(std::move(id), std::move(result));
       });
+  shutdownFn = messageHandler.outgoingRequest<NoParams, NoParams>(
+      "build/shutdown",
+      [&](llvm::json::Value id, llvm::Expected<NoParams> result) {
+        onBuildShutdownResponse(std::move(id), std::move(result));
+      });
+  exitFn = messageHandler.outgoingNotification<NoParams>("exit");
 }
 
 ErrorOrSuccess BSPClient::run() {
@@ -112,6 +118,20 @@ void BSPClient::onBuildInitializeResponse(
         });
   }
 
-  transport.call("build/shutdown", nullptr, currentRequestID++);
-  transport.notify("exit", nullptr);
+  // We're done initializing; now tell the server to shut down.
+  shutdownFn(NoParams{}, currentRequestID++);
+}
+
+void BSPClient::onBuildShutdownResponse(llvm::json::Value id,
+                                        llvm::Expected<NoParams> result) {
+  if (!result) {
+    return llvm::handleAllErrors(
+        result.takeError(), [&](const lsp::LSPError &err) {
+          lsp::Logger::error("<--- client reply:build/shutdown({0}): {1}", id,
+                             err.message);
+        });
+  }
+
+  // Server has shut down; tell it to exit.
+  exitFn(NoParams{});
 }
