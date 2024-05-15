@@ -26,7 +26,10 @@
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/ToolOutputFile.h"
+
+#include <filesystem>
 
 using namespace M;
 using namespace KGEN;
@@ -119,7 +122,7 @@ ObjectCompiler::lowerAllFuncsToLLVM(llvm::LLVMContext &ctx, ModuleOp module) {
   // Use the input filename for the module name if possible.
   StringRef moduleName = "LLVMDialectModule";
   if (auto moduleLoc = module.getLoc()->findInstanceOf<FileLineColLoc>())
-    moduleName = moduleLoc.getFilename();
+    moduleName = llvm::sys::path::filename(moduleLoc.getFilename());
 
   // Translate the operation into an LLVM module.
   std::unique_ptr<llvm::Module> llvmModule =
