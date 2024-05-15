@@ -353,6 +353,44 @@ M::ErrorOr<HostMachineInfo> M::getHostMachineInfo() {
   return *hostMachineInfo;
 }
 
+M::ErrorOr<bool> M::getHostIsInContainer() {
+#if defined(__linux__)
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> errOrBufCgroup =
+      llvm::MemoryBuffer::getFileAsStream("/proc/self/cgroup");
+  if (std::error_code ec = errOrBufCgroup.getError())
+    return Error("Can't open /proc/self/cgroup: " + llvm::Twine(ec.message()));
+  SmallVector<StringRef> lines;
+  (*errOrBufCgroup)
+      ->getBuffer()
+      .split(lines, "\n", /*MaxSplit=*/-1,
+             /*KeepEmpty=*/false);
+  for (StringRef line : lines) {
+    auto fields = line.split('/');
+    if (!fields.second.empty())
+      return true;
+  }
+
+  // The above may not work with cgroup v2, so we also try an alternative
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> errOrBufMountinfo =
+      llvm::MemoryBuffer::getFileAsStream("/proc/self/mountinfo");
+  if (std::error_code ec = errOrBufMountinfo.getError())
+    return Error("Can't open /proc/self/mountinfo: " +
+                 llvm::Twine(ec.message()));
+  (*errOrBufMountinfo)
+      ->getBuffer()
+      .split(lines, "\n", /*MaxSplit=*/-1,
+             /*KeepEmpty=*/false);
+  for (StringRef line : lines) {
+    if (line.contains("/docker/containers/"))
+      return true;
+  }
+
+  return false;
+#else
+  return false;
+#endif
+}
+
 M::ErrorOr<std::string> M::getHostTotalMemoryKB() {
 #if defined(__APPLE__)
   int mib[2] = {CTL_HW, HW_MEMSIZE};

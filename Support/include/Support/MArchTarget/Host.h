@@ -110,6 +110,9 @@ struct HostMachineInfo {
 /// triple, cpu and features.
 ErrorOr<HostMachineInfo> getHostMachineInfo();
 
+/// Get a flag indicating whther the host machine is running in a container
+ErrorOr<bool> getHostIsInContainer();
+
 /// Get the host machine total memory in kB
 ErrorOr<std::string> getHostTotalMemoryKB();
 
