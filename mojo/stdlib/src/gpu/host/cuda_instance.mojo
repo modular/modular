@@ -319,23 +319,30 @@ struct CudaDLL:
         self.cuModuleGetFunction = cuModuleGetFunction.load()
 
 
-@value
 struct CudaInstance:
     var cuda_dll: Pointer[CudaDLL]
+    var owner: Bool
 
     fn __init__(inout self) raises:
         self.cuda_dll = Pointer[CudaDLL].alloc(1)
         self.cuda_dll[].__init__()
+        self.owner = True
 
     fn __enter__(owned self) -> Self:
         return self^
 
     fn __moveinit__(inout self, owned existing: Self):
         self.cuda_dll = existing.cuda_dll
+        self.owner = True
         existing.cuda_dll = Pointer[CudaDLL]()
+        existing.owner = False
+
+    fn __copyinit__(inout self, existing: Self):
+        self.cuda_dll = existing.cuda_dll
+        self.owner = False
 
     fn __del__(owned self):
-        if self.cuda_dll:
+        if self.cuda_dll and self.owner:
             self.cuda_dll.free()
 
     fn num_devices(self) raises -> Int:

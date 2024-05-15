@@ -25,6 +25,7 @@ from .cuda_instance import *
 struct Context:
     var ctx: _ContextHandle
     var cuda_dll: Pointer[CudaDLL]
+    var owner: Bool
 
     fn __init__(inout self) raises:
         self.__init__(Device())
@@ -32,15 +33,19 @@ struct Context:
     fn __init__(inout self, device: Device, flags: Int = 0) raises:
         self.cuda_dll = device.cuda_dll
         self.ctx = _ContextHandle()
+        self.owner = True
 
         var cuCtxCreate = self.cuda_dll[].cuCtxCreate if self.cuda_dll else cuCtxCreate.load()
         _check_error(cuCtxCreate(Pointer.address_of(self.ctx), flags, device))
 
     fn __del__(owned self):
         try:
-            if self.ctx:
+            if self.ctx and self.owner:
                 var cuCtxDestroy = self.cuda_dll[].cuCtxDestroy if self.cuda_dll else cuCtxDestroy.load()
                 _check_error(cuCtxDestroy(self.ctx))
+                self.ctx = _ContextHandle()
+                self.cuda_dll = Pointer[CudaDLL]()
+                self.owner = False
         except e:
             abort(e.__str__())
 
@@ -50,7 +55,15 @@ struct Context:
     fn __moveinit__(inout self, owned existing: Self):
         self.ctx = existing.ctx
         self.cuda_dll = existing.cuda_dll
+        self.owner = True
         existing.ctx = _ContextHandle()
+        existing.cuda_dll = Pointer[CudaDLL]()
+        existing.owner = False
+
+    fn __copyinit__(inout self, existing: Self):
+        self.ctx = existing.ctx
+        self.cuda_dll = existing.cuda_dll
+        self.owner = False
 
     fn synchronize(self) raises:
         """Blocks for a Cuda Context's tasks to complete."""

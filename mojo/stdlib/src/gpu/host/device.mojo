@@ -609,7 +609,6 @@ fn device_count() raises -> Int:
     return int(res)
 
 
-@value
 @register_passable("trivial")
 struct Device(StringableRaising):
     var id: Int32
