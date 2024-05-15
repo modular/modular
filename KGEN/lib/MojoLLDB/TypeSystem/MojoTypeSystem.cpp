@@ -861,7 +861,7 @@ MojoTypeSystem::getStructDecorators(lldb::opaque_compiler_type_t type) {
 //===----------------------------------------------------------------------===//
 
 UserExpression *MojoTypeSystem::GetUserExpression(
-    StringRef expr, StringRef prefix, lldb::LanguageType language,
+    StringRef expr, StringRef prefix, lldb_private::SourceLanguage language,
     Expression::ResultType desiredType,
     const EvaluateExpressionOptions &options, ValueObject *ctxObj) {
   if (!impl->target || ctxObj)
@@ -1027,7 +1027,7 @@ MojoASTDeclRef MojoTypeSystem::getOrCreateDeclChainForDie(const DWARFDIE &die,
   if (name.empty()) {
     die.GetDWARF()->GetObjectFile()->GetModule()->ReportError(
         "[MojoTypeSystem::getDeclForDie]: {0} is empty. Die = {1:x16}.",
-        die.GetTagAsCString(), die.GetOffset());
+        DW_TAG_value_to_name(die.Tag()), die.GetOffset());
 
     effectiveName = "__lldb_anonymous__" + std::to_string(die.GetOffset());
   }

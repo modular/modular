@@ -245,18 +245,18 @@ public:
       lastDiagnosticIgnored = false;
 
       // Turn the diagnostic severity into LLDB's severity.
-      DiagnosticSeverity severity;
+      lldb::Severity severity;
       switch (diagKind) {
       case llvm::SourceMgr::DK_Error:
-        severity = eDiagnosticSeverityError;
+        severity = lldb::eSeverityError;
         break;
       case llvm::SourceMgr::DK_Warning:
-        severity = eDiagnosticSeverityWarning;
+        severity = lldb::eSeverityWarning;
         break;
       case llvm::SourceMgr::DK_Remark:
         LLVM_FALLTHROUGH;
       case llvm::SourceMgr::DK_Note:
-        severity = eDiagnosticSeverityRemark;
+        severity = lldb::eSeverityInfo;
         break;
       }
 

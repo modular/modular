@@ -80,7 +80,7 @@ public:
 JitUserExpression::JitUserExpression(ExecutionContextScope &exeScope,
                                      llvm::StringRef expr,
                                      llvm::StringRef prefix,
-                                     lldb::LanguageType language,
+                                     lldb_private::SourceLanguage language,
                                      ResultType desiredType,
                                      const EvaluateExpressionOptions &options)
     : UserExpression(exeScope, expr, prefix, language, desiredType, options) {}
@@ -106,7 +106,7 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
 
   if (m_jit_start_addr == LLDB_INVALID_ADDRESS) {
     diagnosticManager.PutString(
-        eDiagnosticSeverityError,
+        lldb::eSeverityError,
         "Expression can't be run, because there is no JIT compiled function");
     return lldb::eExpressionSetupError;
   }
@@ -115,13 +115,13 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
   if (!prepareToExecuteJITExpression(diagnosticManager, exeCtx,
                                      structAddress)) {
     diagnosticManager.Printf(
-        eDiagnosticSeverityError,
+        lldb::eSeverityError,
         "errored out in %s, couldn't PrepareToExecuteJITExpression",
         __FUNCTION__);
     return lldb::eExpressionSetupError;
   }
   if (!exeCtx.HasThreadScope()) {
-    diagnosticManager.Printf(eDiagnosticSeverityError,
+    diagnosticManager.Printf(lldb::eSeverityError,
                              "%s called with no thread selected", __FUNCTION__);
     return lldb::eExpressionSetupError;
   }
@@ -136,7 +136,7 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
 
   std::vector<lldb::addr_t> args;
   if (!addArguments(exeCtx, args, structAddress, diagnosticManager)) {
-    diagnosticManager.Printf(eDiagnosticSeverityError,
+    diagnosticManager.Printf(lldb::eSeverityError,
                              "errored out in %s, couldn't AddArguments",
                              __FUNCTION__);
     return lldb::eExpressionSetupError;
@@ -147,7 +147,7 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
 
   StreamString ss;
   if (!callPlan || !callPlan->ValidatePlan(&ss)) {
-    diagnosticManager.PutString(eDiagnosticSeverityError, ss.GetString());
+    diagnosticManager.PutString(lldb::eSeverityError, ss.GetString());
     return lldb::eExpressionSetupError;
   }
 
@@ -184,11 +184,11 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
         errorDesc = real_stop_info_sp->GetDescription();
     }
     if (errorDesc)
-      diagnosticManager.Printf(eDiagnosticSeverityError,
+      diagnosticManager.Printf(lldb::eSeverityError,
                                "Execution was interrupted, reason: %s.",
                                errorDesc);
     else
-      diagnosticManager.PutString(eDiagnosticSeverityError,
+      diagnosticManager.PutString(lldb::eSeverityError,
                                   "Execution was interrupted.");
 
     if ((executionResult == lldb::eExpressionInterrupted &&
@@ -212,7 +212,7 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
   }
   if (executionResult == lldb::eExpressionStoppedForDebug) {
     diagnosticManager.PutString(
-        eDiagnosticSeverityRemark,
+        lldb::eSeverityInfo,
         "Execution was halted at the first instruction of the expression "
         "function because \"debug\" was requested.\n"
         "Use \"thread return -x\" to return to the state before expression "
@@ -220,7 +220,7 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
     return executionResult;
   }
   if (executionResult == lldb::eExpressionThreadVanished) {
-    diagnosticManager.Printf(eDiagnosticSeverityError,
+    diagnosticManager.Printf(lldb::eSeverityError,
                              "Couldn't complete execution; the thread "
                              "on which the expression was being run: 0x%" PRIx64
                              " exited during its execution.",
@@ -229,7 +229,7 @@ lldb::ExpressionResults JitUserExpression::DoExecute(
   }
   if (executionResult != lldb::eExpressionCompleted) {
     diagnosticManager.Printf(
-        eDiagnosticSeverityError, "Couldn't execute function; result was %s",
+        lldb::eSeverityError, "Couldn't execute function; result was %s",
         Process::ExecutionResultAsCString(executionResult));
     return executionResult;
   }
@@ -250,7 +250,7 @@ bool JitUserExpression::FinalizeJITExecution(
                  "after execution --");
 
   if (!dematerializer) {
-    diagnosticManager.Printf(eDiagnosticSeverityError,
+    diagnosticManager.Printf(lldb::eSeverityError,
                              "Couldn't apply expression side effects : no "
                              "dematerializer is present");
     return false;
@@ -260,7 +260,7 @@ bool JitUserExpression::FinalizeJITExecution(
   dematerializer->Dematerialize(dematerializeError, functionStackBottom,
                                 functionStackTop);
   if (!dematerializeError.Success()) {
-    diagnosticManager.Printf(eDiagnosticSeverityError,
+    diagnosticManager.Printf(lldb::eSeverityError,
                              "Couldn't apply expression side effects : %s",
                              dematerializeError.AsCString("unknown error"));
     return false;
@@ -283,7 +283,7 @@ bool JitUserExpression::prepareToExecuteJITExpression(
 
   if (!LockAndCheckContext(exeCtx, target, process, frame)) {
     diagnosticManager.PutString(
-        eDiagnosticSeverityError,
+        lldb::eSeverityError,
         "The context has changed before we could JIT the expression!");
     return false;
   }
@@ -298,7 +298,7 @@ bool JitUserExpression::prepareToExecuteJITExpression(
           allocError);
       if (!allocError.Success()) {
         diagnosticManager.Printf(
-            eDiagnosticSeverityError,
+            lldb::eSeverityError,
             "Couldn't allocate space for materialized struct: %s",
             allocError.AsCString());
         return false;
@@ -310,8 +310,7 @@ bool JitUserExpression::prepareToExecuteJITExpression(
     dematerializer = materializer->Materialize(frame, *executionUnit,
                                                structAddress, materializeError);
     if (!materializeError.Success()) {
-      diagnosticManager.Printf(eDiagnosticSeverityError,
-                               "Couldn't materialize: %s",
+      diagnosticManager.Printf(lldb::eSeverityError, "Couldn't materialize: %s",
                                materializeError.AsCString());
       return false;
     }

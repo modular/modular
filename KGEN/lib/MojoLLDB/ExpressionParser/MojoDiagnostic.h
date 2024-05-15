@@ -16,7 +16,7 @@ namespace M::KGEN::Mojo {
 /// from Mojo.
 class MojoDiagnostic : public lldb_private::Diagnostic {
 public:
-  MojoDiagnostic(StringRef message, lldb_private::DiagnosticSeverity severity,
+  MojoDiagnostic(StringRef message, lldb::Severity severity,
                  bool hadFixitsAttached)
       : Diagnostic(message, severity, lldb_private::eDiagnosticOriginLLVM,
                    kMojoCompilerID),
