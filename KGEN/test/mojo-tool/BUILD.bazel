@@ -37,7 +37,6 @@ lit_tests(
         "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
         "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
         "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
-        "MODULAR_CRASH_REPORTING_ENABLED": "false",
         "MODULAR_MOJO_BUILD_SERVER_PATH": "$(location //KGEN/tools/mojo-build-server)",
     },
     mojo_deps = [

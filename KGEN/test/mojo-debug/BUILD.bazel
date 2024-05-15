@@ -21,7 +21,6 @@ lit_tests(
     ],
     env = {
         "LLDB_DEBUGSERVER_PATH": "$(location //KGEN:gdb-server)",
-        "MODULAR_CRASH_REPORTING_ENABLED": "false",
         "MODULAR_MOJO_COMPILERRT_PATH": "$(location //KGEN:CompilerRT.shared.file)",
         "MODULAR_MOJO_COMPILERRT_STATIC_PATH": "$(location //KGEN:CompilerRT.distributable)",
         "MODULAR_MOJO_DRIVER_PATH": "$(location //KGEN/tools/mojo)",
