@@ -468,11 +468,31 @@ ParseResult LIT::parseOptionalName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
+size_t LIT::countNumInferredKinds(ArrayRef<PogMetadataAttr> pogs) {
+  size_t num = 0;
+  for (PogMetadataAttr pogAttr : pogs) {
+    if (pogAttr.getPassingKind() != PassingKind::Inferred)
+      break;
+    ++num;
+  }
+  return num;
+}
+
+size_t LIT::countNumInferredKinds(PogListAttr pogListAttr) {
+  return countNumInferredKinds(pogListAttr.getPogs());
+}
+
 size_t LIT::countNumPosOnly(ArrayRef<PogMetadataAttr> pogs) {
-  for (auto [idx, pogAttr] : llvm::enumerate(pogs))
-    if (pogAttr.getPassingKind() != PassingKind::PosOnly)
-      return idx;
-  return pogs.size();
+  size_t idx = 0;
+  for (PogMetadataAttr pog : pogs) {
+    PassingKind kind = pog.getPassingKind();
+    if (kind == PassingKind::Inferred)
+      continue;
+    if (kind != PassingKind::PosOnly)
+      break;
+    ++idx;
+  }
+  return idx;
 }
 
 size_t LIT::countNumPosOnly(PogListAttr pogListAttr) {
@@ -480,12 +500,16 @@ size_t LIT::countNumPosOnly(PogListAttr pogListAttr) {
 }
 
 size_t LIT::countNumPositional(ArrayRef<PogMetadataAttr> pogs) {
-  for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
-    if (PassingKind kind = pogAttr.getPassingKind();
-        kind != PassingKind::PosOnly && kind != PassingKind::PosOrKw)
-      return idx;
+  size_t idx = 0;
+  for (PogMetadataAttr pog : pogs) {
+    PassingKind kind = pog.getPassingKind();
+    if (kind == PassingKind::Inferred)
+      continue;
+    if (kind != PassingKind::PosOnly && kind != PassingKind::PosOrKw)
+      break;
+    ++idx;
   }
-  return pogs.size();
+  return idx;
 }
 
 size_t LIT::countNumPositional(PogListAttr pogListAttr) {
@@ -512,6 +536,11 @@ size_t LIT::countNumImplicitKinds(PogListAttr pogListAttr) {
 
 OptionalParseResult PassingKindParser::parseOptionalStarSlash() {
   llvm::SMLoc loc = parser.getCurrentLocation();
+
+  if (succeeded(parser.parseOptionalPlus())) {
+    ++numInferred;
+    return std::nullopt;
+  }
 
   if (succeeded(parser.parseOptionalVerticalBar())) {
     if (foundSlash)
@@ -566,14 +595,16 @@ OptionalParseResult PassingKindParser::parseOptionalStarSlash() {
 
 void PassingKindParser::populatePassingKinds(
     SmallVectorImpl<PassingKind> &kinds) const {
-  auto [numPosOnly, numPosOrKw, numKwOnly, numImplicit] = getNumPassingKinds();
+  auto [numInferred, numPosOnly, numPosOrKw, numKwOnly, numImplicit] =
+      getNumPassingKinds();
+  kinds.append(numInferred, PassingKind::Inferred);
   kinds.append(numPosOnly, PassingKind::PosOnly);
   kinds.append(numPosOrKw, PassingKind::PosOrKw);
   kinds.append(numKwOnly, PassingKind::KwOnly);
   kinds.append(numImplicit, PassingKind::Implicit);
 }
 
-std::tuple<size_t, size_t, size_t, size_t>
+std::tuple<size_t, size_t, size_t, size_t, size_t>
 PassingKindParser::getNumPassingKinds() const {
   size_t numPosOrKwSoFar = numPosOrKw;
   if (!foundStar && !foundImplicit)
@@ -581,7 +612,7 @@ PassingKindParser::getNumPassingKinds() const {
   size_t numKwOnlySoFar = numKwOnly;
   if (!foundImplicit)
     numKwOnlySoFar = idx - numPosOnly - numPosOrKwSoFar;
-  return {numPosOnly, numPosOrKwSoFar, numKwOnlySoFar,
+  return {numInferred, numPosOnly, numPosOrKwSoFar, numKwOnlySoFar,
           idx - numKwOnlySoFar - numPosOrKwSoFar - numPosOnly};
 }
 
@@ -607,10 +638,17 @@ PassingKindPrinter::PassingKindPrinter(AsmPrinter &printer,
 
 void PassingKindPrinter::printOptionalStarSlash(size_t idx) {
   PassingKind passingKind = getPassingKind(idx);
+  if (passingKind == PassingKind::Inferred) {
+    os << "+ ";
+    return;
+  }
+
   if (prevPassingKind == passingKind)
     return;
 
   switch (prevPassingKind) {
+  case PassingKind::Inferred:
+    llvm_unreachable("this was handled above");
   case PassingKind::PosOnly:
     // Check if we are in the starting state; if no, this was the last
     // positional-only argument. Optionally, we may want to suppress '/' before
@@ -913,7 +951,8 @@ LIT::verifyPassingKinds(function_ref<InFlightDiagnostic()> emitError,
     return emitTooManyDefaults(numPosDefaults, numPos, "positional");
 
   size_t numEl = pogs.size();
-  size_t numKwOnly = numEl - numPos - countNumImplicitKinds(pogs);
+  size_t numKwOnly = numEl - numPos - countNumImplicitKinds(pogs) -
+                     countNumInferredKinds(pogs);
   if (numKwOnlyDefaults > numKwOnly)
     return emitTooManyDefaults(numKwOnlyDefaults, numKwOnly, "keyword-only");
 

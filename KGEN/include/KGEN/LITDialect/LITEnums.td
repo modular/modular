@@ -38,7 +38,8 @@ def LIT_PassingKind : I32EnumAttr<"PassingKind",
   I32EnumAttrCase<"PosOrKw", 0, "pos_or_kw">,
   I32EnumAttrCase<"PosOnly", 1, "pos">,
   I32EnumAttrCase<"KwOnly", 2, "kw">,
-  I32EnumAttrCase<"Implicit", 3, "implicit">
+  I32EnumAttrCase<"Implicit", 3, "implicit">,
+  I32EnumAttrCase<"Inferred", 4, "inferred">
 ]> {
   let cppNamespace = "M::KGEN::LIT";
   let genSpecializedAttr = 0;

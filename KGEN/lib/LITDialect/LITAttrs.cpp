@@ -120,10 +120,20 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
       return emitError() << "pack convention specified without pack";
   }
 
-  for (auto [idx, pogAttr] : llvm::enumerate(pogs))
+  bool seenInferred = true;
+  for (auto [idx, pogAttr] : llvm::enumerate(pogs)) {
+    if (pogAttr.getPassingKind() == PassingKind::Inferred) {
+      if (!seenInferred) {
+        return emitError()
+               << "'inferred' parameter follows non-inferred parameter";
+      }
+    } else {
+      seenInferred = false;
+    }
     if (pogAttr.isVariadic() &&
         failed(verifyVariadicIdx(idx, /*isPack=*/false)))
       return failure();
+  }
 
   return success();
 }
