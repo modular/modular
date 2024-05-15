@@ -60,7 +60,7 @@ from memory.unsafe import DTypePointer, Pointer, bitcast
 from MOGGIntList import IntList
 from MOGGTensor import Tensor
 from nn._optional_param import OptionalParamInt
-from nn.activations import gelu, relu, sigmoid
+from nn.activations import gelu, relu
 from nn.arange import arange, arange_shape
 from nn.arg_nonzero import arg_nonzero, arg_nonzero_shape
 from nn.concat import concat as _concat
@@ -160,7 +160,6 @@ fn MOGGExport():
     alias _batched_matmul_shape = batched_matmul_shape
     alias _mul = mul
     alias _mod = mod
-    alias _sigmoid = sigmoid
     alias _tanh = tanh
     alias _arange = arange
     alias _arange_shape = arange_shape
