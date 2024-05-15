@@ -8,10 +8,7 @@
 #include "KGEN/KGENDialect/KGENParameters.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "KGEN/TransformUtils/CallGraphUtils.h"
-#include "LLCL/Runtime/Algorithms.h"
 #include "LLCL/Runtime/Allocator.h"
-#include "LLCL/Runtime/WorkQueue.h"
-#include "LLCL/Support/ForkJoin.h"
 #include "Support/STLExtras.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/IRMapping.h"
@@ -19,10 +16,8 @@
 #include "mlir/IR/Threading.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
-#include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/StringSet.h"
-#include "llvm/Support/RWMutex.h"
 
 #define DEBUG_TYPE "kgen-dead-argument-elimination"
 
@@ -54,10 +49,8 @@ struct CallGraphNode
 
   std::vector<CallGraphNode::EdgeT> getCallSites(CallGraphNode *callee);
 
-  FuncOp newFunc;
-  IRMapping irMap;
-  SmallVector<BlockArgument> liveArguments;
-  SmallVector<unsigned> liveResultIndices;
+  bool updated = false;
+  SmallVector<unsigned> liveArguments;
 };
 
 struct CallGraph : public CallGraphBase<CallGraph, CallGraphNode> {
@@ -281,7 +274,8 @@ DeadArgumentElimination::surveyUse(OpOperand &inputUse, CallGraphNode *node,
       return markIfNotLive(Use, maybeLiveUses);
     }
 
-    if (!mlir::isPure((use.getOwner())))
+    if (!mlir::isPure((use.getOwner())) ||
+        use.getOwner()->mightHaveTrait<OpTrait::IsTerminator>())
       return Live;
 
     // We can also more aggressively survey use.getOwner()'s results' uses
@@ -328,7 +322,7 @@ void DeadArgumentElimination::surveyFunction(FuncOp func) {
 
   // Assume all return values are dead
   using RetVals = SmallVector<Liveness, 5>;
-  RetVals retValLiveness(retCount, MaybeLive);
+  RetVals retValLiveness(retCount, Live);
 
   // These vectors map each return value to the uses that make it MaybeLive, so
   // we can add those to the Uses map if the return value really turns out to be
@@ -353,32 +347,15 @@ void DeadArgumentElimination::surveyFunction(FuncOp func) {
         markLive(func);
         return;
       }
-
-      for (OpResult res : call->getResults()) {
-        unsigned idx = res.getResultNumber();
-        if (retValLiveness[idx] == Live)
-          continue;
-
-        UseVector maybeLiveAggregateUses;
-        Liveness result = MaybeLive;
-        for (OpOperand &use : res.getUses()) {
-          result = surveyUse(use, caller, maybeLiveAggregateUses, false);
-          if (result == Live)
-            break;
-        }
-        retValLiveness[idx] = result;
-        if (retValLiveness[idx] != Live) {
-          maybeLiveRetUses[idx].append(maybeLiveAggregateUses.begin(),
-                                       maybeLiveAggregateUses.end());
-        }
-      }
     }
   }
 
-  // Now we've inspected all callers, record the liveness of our return values.
+  // Don't move any results so that we don't change ABI for callers who are
+  // not in the same compilation unit but may still get to call this function
+  // due to per-functions caching.
   for (unsigned idx = 0, e = func.getSignature().getNumResults(); idx < e;
        ++idx)
-    markValue(createRet(func, idx), retValLiveness[idx], maybeLiveRetUses[idx]);
+    markLive(createRet(func, idx));
 
   LLVM_DEBUG(
       llvm::dbgs() << "DeadArgumentEliminationPass - Inspecting args for fn: "
@@ -495,9 +472,7 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
     return;
 
   SmallVector<Type> inputTypes;
-  SmallVector<Type> resultTypes;
   SmallVector<BlockArgument> liveArguments;
-  SmallVector<unsigned> liveResultIndices;
   llvm::SmallSet<Operation *, 4> opsToErase;
   SmallVector<ArgConvention> argConventions;
 
@@ -513,65 +488,47 @@ void DeadArgumentElimination::removeDeadStuffFromFunction(CallGraphNode *node) {
     liveArguments.emplace_back(arg);
   }
 
-  for (auto [idx, type] :
-       llvm::enumerate(func.getSignature().getValues().getResults())) {
-    if (liveValues.count(createRet(func, idx)) == 0)
-      continue;
-
-    resultTypes.push_back(type);
-    liveResultIndices.emplace_back(idx);
-  }
-
   bool dropArguments = func.getNumArguments() != inputTypes.size();
-  bool dropResults =
-      func.getSignature().getValues().getNumResults() != resultTypes.size();
   // Nothing to remove, return
-  if (!dropArguments && !dropResults)
+  if (!dropArguments)
     return;
-
-  if (dropResults) {
-    func.walk([&](ReturnOp retOp) {
-      SmallVector<Value> newReturnValues;
-      for (unsigned idx : liveResultIndices)
-        newReturnValues.push_back(retOp.getOperand(idx));
-
-      OpBuilder b(retOp);
-      b.create<ReturnOp>(retOp->getLoc(), newReturnValues);
-      opsToErase.insert(retOp);
-    });
-  }
 
   OpBuilder b(func);
   FunctionType newFuncType =
-      FunctionType::get(func.getContext(), inputTypes, resultTypes);
+      FunctionType::get(func.getContext(), inputTypes,
+                        func.getSignature().getValues().getResults());
 
   SignatureType newSig = SignatureType::get(
       func.getContext(), currSig.getInputParamTypes(),
       currSig.getResultParamTypes(), newFuncType, argConventions,
       currSig.getFnEffects(), currSig.getMetadata());
 
-  auto newFunc = b.create<FuncOp>(
-      func.getLoc(), func.getSymName(), newSig, func.getDecorators(),
-      func.getInlineLevel(), func.getExportKind(),
-      func.getPrecompiledBodyRefAttr(), func.getLLVMMetadataAttr());
+  Block *block = func.getBody(0);
+  unsigned numArgs = block->getNumArguments();
 
-  Block *block = b.createBlock(&newFunc.getRegion());
-  mlir::IRRewriter rewriter{OpBuilder(newFunc)};
-
+  // Create and rewire live arguments.
   for (BlockArgument arg : liveArguments) {
-    BlockArgument newArg = block->addArgument(arg.getType(), arg.getLoc());
-    node->irMap.map(arg, newArg);
+    node->liveArguments.emplace_back(arg.getArgNumber());
+    arg.replaceAllUsesWith(block->addArgument(arg.getType(), arg.getLoc()));
   }
 
-  for (Operation &op : func.getRegion().getOps()) {
-    if (opsToErase.contains(&op))
-      continue;
-    b.clone(op, node->irMap);
+  // Remove dead ops.
+  for (Operation *op : opsToErase) {
+    op->dropAllUses();
+    op->dropAllReferences();
+    op->erase();
   }
 
-  node->newFunc = newFunc;
-  node->liveArguments = liveArguments;
-  node->liveResultIndices = liveResultIndices;
+  // Drop all uses for old block arguments and erase all of them.
+  for (unsigned i = 0; i < numArgs; i++)
+    block->getArgument(i).dropAllUses();
+  block->eraseArguments(0, numArgs);
+
+  // Set the new signature.
+  func.setSignature(newSig);
+
+  // Update node state to prepare for callee rewrites.
+  node->updated = true;
 }
 
 void DeadArgumentElimination::rewriteCalleesFromFunction(CallGraphNode *node) {
@@ -579,34 +536,25 @@ void DeadArgumentElimination::rewriteCalleesFromFunction(CallGraphNode *node) {
     auto iter = callGraph.nodes.find(callee->func);
     CallGraphNode *calleeNode = &iter->second;
     // No rewrite needed.
-    if (!calleeNode->newFunc)
+    if (!calleeNode->updated)
       continue;
 
-    KGENCallOpInterface callOp =
-        cast_or_null<KGENCallOpInterface>(node->irMap.lookupOrNull(call));
-    if (!callOp)
-      callOp = call;
-
-    OpBuilder b(callOp);
-
-    FuncOp newFunc = calleeNode->newFunc;
+    OpBuilder b(call);
     SmallVector<Value> newOperands;
-    for (BlockArgument arg : calleeNode->liveArguments)
-      newOperands.push_back(callOp->getOperand(arg.getArgNumber()));
 
-    if (auto kgenCall = dyn_cast<CallOp>(callOp.getOperation())) {
-      auto newCalleeAttr = SymbolConstantAttr::get(SymbolRefAttr::get(newFunc),
-                                                   newFunc.getSignature());
+    for (unsigned argIdx : calleeNode->liveArguments)
+      newOperands.push_back(call->getOperand(argIdx));
+
+    if (auto kgenCall = dyn_cast<CallOp>(call.getOperation())) {
+      auto newCalleeAttr =
+          SymbolConstantAttr::get(SymbolRefAttr::get(calleeNode->func),
+                                  calleeNode->func.getSignature());
       auto newOp = b.create<CallOp>(
-          callOp.getLoc(), newFunc.getSignature().getValues().getResults(),
+          call.getLoc(),
+          calleeNode->func.getSignature().getValues().getResults(),
           newCalleeAttr, newOperands);
 
-      for (auto [newIdx, oldIdx] :
-           llvm::enumerate(calleeNode->liveResultIndices)) {
-        Value oldValue = kgenCall.getResult(oldIdx);
-        for (Operation *user : oldValue.getUsers())
-          user->replaceUsesOfWith(oldValue, newOp.getResult(newIdx));
-      }
+      kgenCall->replaceAllUsesWith(newOp.getResults());
 
       kgenCall->dropAllUses();
       kgenCall->dropAllReferences();
@@ -653,12 +601,6 @@ void DeadArgumentElimination::run() {
     rewriteCalleesFromFunction(node);
   });
 
-  // Erase old functions.
-  // callGraph.nodes map will be invalid after this.
-  for (CallGraphNode &node : llvm::make_second_range(callGraph.nodes)) {
-    if (node.newFunc)
-      node.func->erase();
-  }
   callGraph.nodes.clear();
 }
 
