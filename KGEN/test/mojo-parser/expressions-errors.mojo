@@ -520,7 +520,7 @@ fn invalid_call_variadic_int(a: Int):
 @automatically_dereference
 struct Reference[
     type: AnyType,
-    is_mutable: __mlir_type.i1,
+    is_mutable: Bool,
     lifetime: AnyLifetime[is_mutable].type,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ]:
@@ -551,5 +551,5 @@ fn test_bad_ref_errors[T: AnyType](a: Reference[T, _, _, _]):
   var x : Reference[T, a.is_mutable, a.lifetime] = a[]
 
   # expected-error @below {{invalid call to '__init__': argument #1 cannot be converted from 'T' to 'Reference['T', ...]}}
-  # expected-note @below {{operand mutability 'is_mutable' doesn't match expected mutability '1'}}
-  var y : Reference[T, __mlir_attr.`1: i1`, __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
+  # expected-note @below {{operand mutability 'is_mutable.value' doesn't match expected mutability '1'}}
+  var y : Reference[T, True, __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]

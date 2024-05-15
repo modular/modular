@@ -200,8 +200,8 @@ public:
 private:
   LogicalResult matchTypes(Type actualType, Type expectedType);
   LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
-  LogicalResult matchAddressSpace(TypedAttr actualAddrSpace,
-                                  TypedAttr expectedAddrSpace);
+  LogicalResult matchSingleEltStruct(TypedAttr actualAddrSpace,
+                                     TypedAttr expectedAddrSpace);
 
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not
@@ -316,15 +316,16 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
                                   expected.getLifetimeType(), shared))
           return failure();
       }
-      return matchAddressSpace(actual.getAddressSpace(),
-                               expected.getAddressSpace());
+      return matchSingleEltStruct(actual.getAddressSpace(),
+                                  expected.getAddressSpace());
     }
 
   // Handle LifetimeType.
   if (auto actual = dyn_cast<LifetimeType>(actualType))
     if (auto expected = dyn_cast<LifetimeType>(expectedType)) {
       // Try to match up the types so we infer parameters properly.
-      if (succeeded(matchParams(actual.isMutable(), expected.isMutable())))
+      if (succeeded(
+              matchSingleEltStruct(actual.isMutable(), expected.isMutable())))
         return success();
       // If that fails, check compatibility, actualType might be mutable=true,
       // and expected might be mutable=false, and this is fine.
@@ -337,8 +338,8 @@ LogicalResult ParameterInferenceState::matchTypes(Type actualType,
       if (failed(
               matchTypes(actual.getElementType(), expected.getElementType())))
         return failure();
-      return matchAddressSpace(actual.getAddressSpace(),
-                               expected.getAddressSpace());
+      return matchSingleEltStruct(actual.getAddressSpace(),
+                                  expected.getAddressSpace());
     }
 
   // Handle VariadicType.
@@ -564,8 +565,9 @@ LogicalResult ParameterInferenceState::matchParams(TypedAttr actualAttr,
 //
 // The "right" solution is to change pointer and reference to take an
 // AddressSpace directly.  Until then we do a special hack for these things.
-LogicalResult ParameterInferenceState::matchAddressSpace(TypedAttr actual,
-                                                         TypedAttr expected) {
+LogicalResult
+ParameterInferenceState::matchSingleEltStruct(TypedAttr actual,
+                                              TypedAttr expected) {
   if (actual == expected)
     return success();
 
@@ -576,8 +578,8 @@ LogicalResult ParameterInferenceState::matchAddressSpace(TypedAttr actual,
     if (auto actExtract = dyn_cast<LIT::StructExtractAttr>(actual)) {
       if (expExtract.getField() != actExtract.getField())
         return failure();
-      return matchAddressSpace(actExtract.getStructValue(),
-                               expExtract.getStructValue());
+      return matchSingleEltStruct(actExtract.getStructValue(),
+                                  expExtract.getStructValue());
     }
 
     if (actual.getType() != expected.getType())
@@ -588,12 +590,13 @@ LogicalResult ParameterInferenceState::matchAddressSpace(TypedAttr actual,
     auto expDRT = cast<DeclRefType>(expStruct.getType());
     // Conservatively only handle the types we know have a single field.
     if (expDRT.getName().strref() != "AddressSpace" &&
-        expDRT.getName().strref() != "Int")
+        expDRT.getName().strref() != "Int" &&
+        expDRT.getName().strref() != "Bool")
       return failure();
     std::tuple<StringAttr, TypedAttr> actualField(expExtract.getField(),
                                                   actual);
     auto wrappedActual = LITStructAttr::get(actualField, expDRT);
-    return matchAddressSpace(wrappedActual, expStruct);
+    return matchSingleEltStruct(wrappedActual, expStruct);
   }
 
   return matchParams(actual, expected);
