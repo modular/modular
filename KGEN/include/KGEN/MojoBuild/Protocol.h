@@ -13,7 +13,9 @@
 #ifndef KGEN_MOJOBUILD_PROTOCOL_H
 #define KGEN_MOJOBUILD_PROTOCOL_H
 
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace llvm::json {
 class Path;
@@ -23,7 +25,7 @@ class Value;
 namespace M::Build {
 
 //===----------------------------------------------------------------------===//
-// build/initialize
+// build/initialize request params
 //===----------------------------------------------------------------------===//
 
 /// Parameters for the `build/initialize` method.
@@ -44,9 +46,45 @@ llvm::json::Value toJSON(const InitializeBuildParams &value);
 bool fromJSON(const llvm::json::Value &value, InitializeBuildParams &result,
               llvm::json::Path path);
 
+//===----------------------------------------------------------------------===//
+// build/initialize request result
+//===----------------------------------------------------------------------===//
+
+/// The languages fow which the server supports compilation via the
+/// `buildTarget/compile` method.
+struct CompileProvider {
+  std::vector<std::string> languageIds;
+};
+
+/// Serialize a compile provider object to JSON.
+llvm::json::Value toJSON(const CompileProvider &value);
+/// Deserialize a compile provider object from JSON.
+bool fromJSON(const llvm::json::Value &value, CompileProvider &result,
+              llvm::json::Path path);
+
+/// The capabilities of the build server.
+struct BuildServerCapabilities {
+  /// The languages fow which the server supports compilation via the
+  /// `buildTarget/compile` method.
+  std::optional<CompileProvider> compileProvider;
+};
+
+/// Serialize a capabilities object to JSON.
+llvm::json::Value toJSON(const BuildServerCapabilities &value);
+/// Deserialize a capabilities object from JSON.
+bool fromJSON(const llvm::json::Value &value, BuildServerCapabilities &result,
+              llvm::json::Path path);
+
+/// Result included in responses to the `build/initialize` method.
 struct InitializeBuildResult {
   /// Name of the server.
   std::string displayName;
+  /// The version of the server.
+  std::string version;
+  /// The build server protocol that the client speaks.
+  std::string bspVersion;
+  /// The capabilities of the build server.
+  BuildServerCapabilities capabilities;
 };
 
 /// Serialize a result object to JSON.
@@ -56,7 +94,7 @@ bool fromJSON(const llvm::json::Value &value, InitializeBuildResult &result,
               llvm::json::Path path);
 
 //===----------------------------------------------------------------------===//
-// build/shutdown
+// build/shutdown request
 //===----------------------------------------------------------------------===//
 
 /// An empty set of parameters, such as for the `build/shutdown` method.
