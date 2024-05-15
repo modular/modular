@@ -30,15 +30,15 @@ fn _human_memory(size: Int) -> String:
     alias GB = MB * KB
 
     if size >= GB:
-        return String(Float32(size) / GB) + "GB"
+        return str(Float32(size) / GB) + "GB"
 
     if size >= MB:
-        return String(Float32(size) / MB) + "MB"
+        return str(Float32(size) / MB) + "MB"
 
     if size >= KB:
-        return String(Float32(size) / KB) + "KB"
+        return str(Float32(size) / KB) + "KB"
 
-    return String(size) + "B"
+    return str(size) + "B"
 
 
 # ===----------------------------------------------------------------------===#

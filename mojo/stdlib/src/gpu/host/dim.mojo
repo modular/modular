@@ -29,11 +29,11 @@ struct Dim(Stringable):
         return self._value[idx]
 
     fn __str__(self) -> String:
-        var res = String("(x=") + self.x() + ", "
+        var res = String("(x=") + str(self.x()) + ", "
         if self.y() != 1 or self.z() != 1:
-            res += String("y=") + self.y()
+            res += String("y=") + str(self.y())
             if self.z() != 1:
-                res += ", z=" + String(self.z())
+                res += ", z=" + str(self.z())
         res += ")"
         return res
 

@@ -627,24 +627,24 @@ struct Device(StringableRaising):
         res += String("memory: ") + _human_memory(self._total_memory()) + "\n"
         res += (
             String("compute_capability: ")
-            + self._query(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
+            + str(self._query(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR))
             + "."
-            + self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
+            + str(self._query(DeviceAttribute.COMPUTE_CAPABILITY_MINOR))
             + "\n"
         )
         res += (
             String("clock_rate: ")
-            + self._query(DeviceAttribute.CLOCK_RATE)
+            + str(self._query(DeviceAttribute.CLOCK_RATE))
             + "\n"
         )
         res += (
             String("warp_size: ")
-            + self._query(DeviceAttribute.WARP_SIZE)
+            + str(self._query(DeviceAttribute.WARP_SIZE))
             + "\n"
         )
         res += (
             String("max_threads_per_block: ")
-            + self._query(DeviceAttribute.MAX_THREADS_PER_BLOCK)
+            + str(self._query(DeviceAttribute.MAX_THREADS_PER_BLOCK))
             + "\n"
         )
         res += (
@@ -674,7 +674,7 @@ struct Device(StringableRaising):
         )
         res += (
             String("SM count: ")
-            + self._query(DeviceAttribute.MULTIPROCESSOR_COUNT)
+            + str(self._query(DeviceAttribute.MULTIPROCESSOR_COUNT))
             + "\n"
         )
 
