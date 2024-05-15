@@ -73,10 +73,6 @@ ErrorOrSuccess BSPServer::run() {
 void BSPServer::onBuildInitialize(
     const InitializeBuildParams &params,
     mlir::lsp::Callback<InitializeBuildResult> callback) {
-  lsp::Logger::debug("<-- server build/initialize: displayName='{0}', "
-                     "version='{1}', rootUri='{2}'",
-                     params.displayName, params.version, params.rootUri);
-
   std::error_code ec;
   bool exists = std::filesystem::exists(params.rootUri, ec);
   if (ec)
@@ -97,7 +93,6 @@ void BSPServer::onBuildInitialize(
 
 void BSPServer::onBuildShutdown(const NoParams &params,
                                 mlir::lsp::Callback<std::nullptr_t> callback) {
-  lsp::Logger::debug("<-- server build/shutdown");
   serverResult = success();
 }
 
