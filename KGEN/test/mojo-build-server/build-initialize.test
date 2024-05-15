@@ -7,7 +7,10 @@
 // RUN: mojo-build-server --debug < %s | FileCheck %s
 // CHECK-LABEL: "id": 0,
 // CHECK:       "result": {
+// CHECK-NEXT:    "bspVersion": "2.2.0"
+// CHECK-NEXT:    "capabilities": {}
 // CHECK-NEXT:    "displayName": "mojo-build-server"
+// CHECK-NEXT:    "version": "{{.*}}"
 // CHECK-NEXT:  }
 
 {"jsonrpc":"2.0","id":0,"method":"build/initialize","params":{"displayName":"build-initialize.test","version":"0.0.0","bspVersion":"2.2.0","rootUri":"."}}

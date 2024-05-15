@@ -6,6 +6,7 @@
 
 #include "BSPServer.h"
 
+#include "Config/Version.h"
 #include "KGEN/MojoBuild/Protocol.h"
 #include "Support/ErrorOr.h"
 
@@ -88,7 +89,9 @@ void BSPServer::onBuildInitialize(
             params.rootUri),
         lsp::ErrorCode::InvalidParams));
 
-  callback(InitializeBuildResult{"mojo-build-server"});
+  callback(InitializeBuildResult{"mojo-build-server", getModularVersionString(),
+                                 /*bspVersion=*/"2.2.0",
+                                 BuildServerCapabilities{}});
 }
 
 void BSPServer::onBuildShutdown(const NoParams &params,
