@@ -5,10 +5,10 @@
 //===----------------------------------------------------------------------===//
 
 // RUN: mojo-build-server --debug < %s | FileCheck %s
-// CHECK:      "method": "build/initialize/reply"
-// CHECK-NEXT: "params": {
-// CHECK-NEXT:   "displayName": "mojo-build-server"
-// CHECK-NEXT: }
+// CHECK-LABEL: "id": 0,
+// CHECK:       "result": {
+// CHECK-NEXT:    "displayName": "mojo-build-server"
+// CHECK-NEXT:  }
 
 {"jsonrpc":"2.0","id":0,"method":"build/initialize","params":{"displayName":"build-initialize.test"}}
 // -----
