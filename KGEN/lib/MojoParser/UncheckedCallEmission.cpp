@@ -506,16 +506,10 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
     // rebind if the refined type is different than the expected type.
     Type expectedType = evaluator.refineType(expectedTypeX);
 
-    // Memory-only result slots are allocated automatically by the apply
-    // operator.
-    if (!emitter.builder && (convention == ArgConvention::ByRefResult ||
-                             convention == ArgConvention::InitSelf))
-      continue;
-
     // If this is the return slot for a call, we need a temporary to emit into,
     // but don't know the type until the arguments (and their lifetimes) are all
     // emitted. Just skip over it for now.
-    if (emitter.builder && SignatureType::isResultSlot(convention)) {
+    if (SignatureType::isResultSlot(convention)) {
       assert(calleeSig.hasMemoryOnlyResult() ||
              (calleeSig.isThrows() &&
               pogAttr.getPassingKind() == PassingKind::Implicit));

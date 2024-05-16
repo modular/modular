@@ -1602,18 +1602,10 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   // If we successfully resolve the overload set, we know the call will succeed,
   // do it. Register-passable and parameter constructor calls do not require
   // result slot allocation.
-  if (!hasInitSelfArg)
-    return emitCallUnchecked(calleeFn, operands, dest, expr);
-
-  if (!builder) {
-    // If we are emitting into a PValue context, remove the 'inout self'
-    // argument because it won't be used.
-    operands = callOperands;
-    return emitCallUnchecked(calleeFn, operands, dest, expr);
-  }
+  if (hasInitSelfArg)
+    posOperandsWithSelf[0].ir = AnyValue();
 
   // Emit the call directly into the ValueDest. Set the `self` value to null to
   // indicate that we need to try to create an MLValue slot.
-  posOperandsWithSelf[0].ir = AnyValue();
   return emitCallUnchecked(calleeFn, operands, dest, expr);
 }
