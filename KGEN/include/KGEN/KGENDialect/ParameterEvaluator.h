@@ -73,14 +73,6 @@ public:
     setParameterValue(decl.getName(), value);
   }
 
-  /// Set or overwrite the value of a parameter.
-  void setOrOverwriteParameterValue(StringAttr name, Attribute value) {
-    paramValues[name] = value;
-  }
-  void setOrOverwriteParameterValue(ParamDeclAttr decl, Attribute value) {
-    setOrOverwriteParameterValue(decl.getName(), value);
-  }
-
   /// Iterate over the current parameter values.
   const DenseMap<StringAttr, Attribute> &getParameterValues() const {
     return paramValues;

@@ -6,11 +6,20 @@ kgen.generator @loc_ref() {
     kgen.param.yield
   } else {
     kgen.param.declare A = <1>
-    // CHECK: constant = <1> loc([[LOC:#.*]])
+    // CHECK: constant = <1> loc([[LOC1:#.*]])
     kgen.param.constant = <1> loc(fused<#kgen.param.decl.ref<"A">:index>["a":0:0])
+    kgen.param.yield
+  }
+  kgen.param.if <0> {
+    kgen.param.yield
+  } else {
+    kgen.param.declare A = <2>
+    // CHECK: constant = <2> loc([[LOC2:#.*]])
+    kgen.param.constant = <2> loc(fused<#kgen.param.decl.ref<"A">:index>["a":0:0])
     kgen.param.yield
   }
   kgen.return
 }
 
-// CHECK: [[LOC]] = loc(fused<1 : index>
+// CHECK-DAG: [[LOC1]] = loc(fused<1 : index>
+// CHECK-DAG: [[LOC2]] = loc(fused<2 : index>

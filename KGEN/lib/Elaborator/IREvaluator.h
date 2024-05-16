@@ -35,10 +35,7 @@ class IREvaluator : public ParameterEvaluator, public InterpreterState {
 public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
   /// expressions.
-  IREvaluator(Elaborator &elaborator,
-              DenseMap<StringAttr, Attribute> paramValues =
-                  DenseMap<StringAttr, Attribute>());
-  IREvaluator(MLIRContext *ctx) : InterpreterState(ctx) {}
+  IREvaluator(Elaborator &elaborator, ImplNode *parent);
   IREvaluator(const IREvaluator &other)
       : ParameterEvaluator(other), InterpreterState(other.getTarget()),
         elaborator(other.elaborator), parent(other.parent) {}
@@ -66,9 +63,6 @@ public:
   /// Evaluate the result slot function with the provided constant inputs.
   ErrorTreeOr<TypedAttr>
   evaluateFunctionWithResultSlot(FuncOp func, ArrayRef<TypedAttr> inputs);
-
-  /// Set the contextual node.
-  void setParent(ImplNode *parent) { this->parent = parent; }
 
 private:
   /// Evaluate an apply-like operator.
@@ -110,11 +104,9 @@ private:
 struct ImplNode {
   /// Create a new generator implementation node.
   ImplNode(FuncOp func, ParamNode *parent, ParameterUseDefGraph &&graph,
-           std::string &&baseName, IREvaluator evaluator)
+           std::string &&baseName)
       : func(func), parent(parent), paramGraph(std::move(graph)),
-        baseName(std::move(baseName)), evaluator(std::move(evaluator)) {
-    this->evaluator.setParent(this);
-  }
+        baseName(std::move(baseName)) {}
 
   /// Create a special root node. Root nodes can be identified with a null
   /// function.
@@ -129,7 +121,7 @@ struct ImplNode {
   }
 
   /// Get the current active evaluator instance.
-  IREvaluator &getEvaluator() { return evaluator; }
+  IREvaluator &getEvaluator() { return stack.back().evaluator; }
 
   /// This function represents a concrete instantiation of a generator.
   FuncOp func;
@@ -163,13 +155,14 @@ struct ImplNode {
     /// that it accessing them through the node. This is because nodes can be
     /// cloned and the operations get remapped.
     std::function<LogicalResult(ImplNode *)> onComplete;
+
+    /// The evaluator to use. We need one per work item because each represents
+    /// a distinct parameter scope.
+    IREvaluator evaluator;
   };
 
   /// The current stack of worklists and scopes.
   std::vector<WorkItem> stack;
-
-  /// The evaluator to use.
-  IREvaluator evaluator;
 
   /// The elaborator will asynchronously dispatch elaboration of generator
   /// instantiations with no result parameters in separate tasks, deferring

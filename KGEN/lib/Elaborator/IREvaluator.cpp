@@ -326,10 +326,9 @@ FailureOr<TypedAttr> IREvaluator::evaluateGetLinkageName(ParamOperatorAttr op) {
 // IREvaluator
 //===----------------------------------------------------------------------===//
 
-IREvaluator::IREvaluator(Elaborator &elaborator,
-                         DenseMap<StringAttr, Attribute> paramValues)
-    : ParameterEvaluator(std::move(paramValues)),
-      InterpreterState(elaborator.getTarget()), elaborator(&elaborator) {}
+IREvaluator::IREvaluator(Elaborator &elaborator, ImplNode *parent)
+    : InterpreterState(elaborator.getTarget()), elaborator(&elaborator),
+      parent(parent) {}
 
 /// Given a generic parameter expression, simplify it by folding the
 /// expression according to known parameter values.  This returns an error if

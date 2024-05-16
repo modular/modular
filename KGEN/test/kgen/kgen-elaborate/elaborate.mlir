@@ -1744,3 +1744,27 @@ kgen.generator export @top() {
   kgen.param.declare f: <type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> () = <apply(:(!kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>) -> !kgen.signature<<type>(!kgen.paramref<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()> @fwd_sig, @fn)>
   kgen.return
 }
+
+// -----
+
+// CHECK-LABEL: kgen.func @conflicting_values
+kgen.generator @conflicting_values() {
+  // CHECK-NEXT: constant = <1>
+  // CHECK-NEXT: constant = <2>
+  kgen.param.declare b: i1 = <1>
+  kgen.param.if <b> {
+    kgen.param.declare a = <1>
+    kgen.param.constant = <a>
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  kgen.param.if <b> {
+    kgen.param.declare a = <2>
+    kgen.param.constant = <a>
+    kgen.param.yield
+  } else {
+    kgen.param.yield
+  }
+  kgen.return
+}
