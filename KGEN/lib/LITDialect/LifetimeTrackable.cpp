@@ -525,6 +525,11 @@ OverallOpValueEffect LIT::getOperationEffects(
     return {};
   }
 
+  if (auto use = dyn_cast<OwnershipUseLifetimeOp>(op)) {
+    lifetimes.push_back(use.getLifetime());
+    return {};
+  }
+
   // These ops consume their operands, struct.create and param.materialize
   // define a result.
   if (isa<LIT::StructCreateOp, ParamMaterializeOp>(op)) {
