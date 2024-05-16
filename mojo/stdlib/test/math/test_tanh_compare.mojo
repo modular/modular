@@ -10,47 +10,9 @@ from math import tanh
 from random import seed, randn
 from buffer import Buffer
 from test_utils import libm_call
-from utils import InlineArray
+from closed_source_utils import compare
 
 alias alignment = 64
-
-
-fn get_minmax[
-    dtype: DType
-](x: DTypePointer[dtype], N: Int) -> InlineArray[Scalar[dtype], 2]:
-    var max_val = x[0]
-    var min_val = x[0]
-    for i in range(1, N):
-        if x[i] > max_val:
-            max_val = x[i]
-        if x[i] < min_val:
-            min_val = x[i]
-    return InlineArray[Scalar[dtype], 2](min_val, max_val)
-
-
-fn compare[
-    dtype: DType, N: Int
-](x: DTypePointer[dtype], y: DTypePointer[dtype], label: String):
-    var atol = DTypePointer[dtype].alloc(N, alignment=alignment)
-    var rtol = DTypePointer[dtype].alloc(N, alignment=alignment)
-
-    for i in range(N):
-        var xx = x[i].cast[dtype]()
-        var yy = y[i].cast[dtype]()
-
-        var d = abs(xx - yy)
-        var e = abs(d / yy)
-        atol[i] = d
-        rtol[i] = e
-
-    print(label)
-    var atol_minmax = get_minmax[dtype](atol, N)
-    var rtol_minmax = get_minmax[dtype](rtol, N)
-    print("AbsErr-Min/Max", atol_minmax[0], atol_minmax[1])
-    print("RelErr-Min/Max", rtol_minmax[0], rtol_minmax[1])
-    print("==========================================================")
-    DTypePointer[dtype].free(atol)
-    DTypePointer[dtype].free(rtol)
 
 
 fn tanh_libm[
