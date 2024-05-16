@@ -4,10 +4,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-import math
-
+from math import ceil
 from buffer import NDBuffer
 from buffer.list import DimList
+from utils.numerics import min_or_neg_inf
 
 
 @register_passable("trivial")
@@ -184,10 +184,10 @@ fn roi_align_nhwc[
         # Use pooling window size as either sampling_ratio x sampling_ratio or
         # ⌈bin_size_h x bin_size_w⌉.
         var roi_bin_grid_h = int(
-            sampling_ratio if sampling_ratio > 0 else math.ceil(bin_size_h)
+            sampling_ratio if sampling_ratio > 0 else ceil(bin_size_h)
         )
         var roi_bin_grid_w = int(
-            sampling_ratio if sampling_ratio > 0 else math.ceil(bin_size_w)
+            sampling_ratio if sampling_ratio > 0 else ceil(bin_size_w)
         )
 
         # Number of points in the pooling window.
@@ -201,7 +201,7 @@ fn roi_align_nhwc[
             if mode == "AVG":
                 return 0
             else:
-                return math.limit.neginf[type]()
+                return min_or_neg_inf[type]()
 
         @parameter
         @always_inline

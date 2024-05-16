@@ -6,7 +6,7 @@
 
 
 from math import align_down, ceildiv, exp, iota
-from math.limit import neginf
+from utils.numerics import neg_inf
 
 from algorithm import elementwise
 from LinAlg.BatchedMatmul import batched_matmul
@@ -603,7 +603,7 @@ fn flash_attention_kernel[
     # Clear thread's register tile for output.
     _fill[TM * TN](o_thread_tile, 0)
 
-    _fill[TM](rowmax, neginf[DType.float32]())
+    _fill[TM](rowmax, neg_inf[DType.float32]())
     _fill[TM](rowsum, 0)
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
@@ -949,7 +949,7 @@ fn flash_attention_kernel_flexible_seqlen[
     # Clear thread's register tile for output.
     _fill[TM * TN](o_thread_tile, 0)
 
-    _fill[TM](rowmax, neginf[DType.float32]())
+    _fill[TM](rowmax, neg_inf[DType.float32]())
     _fill[TM](rowsum, 0)
 
     # Offset of K/V tile in global K/V buffer, i.e., 1st element of current head.
@@ -1051,7 +1051,7 @@ fn flash_attention_kernel_flexible_seqlen[
             var exceed = kv_tile_start_row + mm_col + TN - num_keys
             if exceed > 0:
                 for j in range(TN - exceed, TN):
-                    reg_result[i * TN + j] = neginf[DType.float32]()
+                    reg_result[i * TN + j] = neg_inf[DType.float32]()
 
             # Shuffle TN elemnents per thread and choose the max among them.
             @unroll

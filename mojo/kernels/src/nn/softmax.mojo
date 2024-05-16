@@ -13,7 +13,6 @@ from math import (
     log,
     reciprocal,
 )
-from math.limit import neginf
 from os import abort
 
 from algorithm import sync_parallelize, vectorize
@@ -32,7 +31,7 @@ from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
 from utils.static_tuple import StaticTuple
-from utils.numerics import get_accum_type
+from utils.numerics import get_accum_type, min_or_neg_inf
 
 from .math import mul, sub
 
@@ -86,7 +85,7 @@ fn _softmax_2_pass_step1[
     #   end for
     #   return runningMax, runningSum
 
-    var running_max_vec = SIMD[type, simd_width].splat(neginf[type]())
+    var running_max_vec = SIMD[type, simd_width].splat(min_or_neg_inf[type]())
     var running_sum_vec = SIMD[type, simd_width].splat(0)
 
     # TODO: Because vectorize cannot currently capture values from outside

@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from math.limit import neginf
+from utils.numerics import min_or_neg_inf
 from sys.info import simdwidthof
 
 from algorithm import stencil
@@ -256,7 +256,7 @@ fn max_pool[
     @always_inline
     @parameter
     fn max_pool_compute_init[simd_width: Int]() -> SIMD[type, simd_width]:
-        return neginf[type]()
+        return min_or_neg_inf[type]()
 
     @always_inline
     @parameter
