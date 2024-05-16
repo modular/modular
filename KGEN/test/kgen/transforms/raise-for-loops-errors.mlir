@@ -64,4 +64,3 @@ kgen.func @can_unroll_inner_loop_2nd_run() -> () {
   } {unrollLevel = #hlcf<unroll_level full>}
   kgen.return
 }
-

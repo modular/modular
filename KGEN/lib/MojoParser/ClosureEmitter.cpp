@@ -74,8 +74,11 @@ createStruct(SharedState &shared, ASTDecl &moduleDecl, StringAttr name,
              ArrayRef<ParamDeclAttr> params) {
   auto module = cast<FileModuleOp>(moduleDecl);
   OpBuilder b(module.getRegion());
-  SmallVector<StringAttr> paramNames(params.size(),
-                                     StringAttr::get(b.getContext()));
+  SmallVector<StringAttr> paramNames;
+  for (ParamDeclAttr param : params) {
+    paramNames.push_back(StringAttr::get(
+        b.getContext(), demangleParameterName(param.getName())));
+  }
   // TODO: The type may contain decl references that need to be remapped.
   SmallVector<PassingKind> passingKinds(params.size(), PassingKind::PosOnly);
   auto paramListAttr =
