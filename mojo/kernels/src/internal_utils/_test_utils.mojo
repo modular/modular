@@ -81,11 +81,11 @@ fn array_equal[
     return True
 
 
-fn create_buffer_from_list[
-    dtype: DType
-](values: List[Scalar[dtype]]) -> DTypePointer[dtype]:
+fn ndbuffer_from_list[
+    dtype: DType, rank: Int
+](shape: DimList, values: List[Scalar[dtype]]) -> NDBuffer[dtype, rank]:
     var N = len(values)
     var buffer = DTypePointer[dtype].alloc(N)
     for i in range(N):
         buffer[i] = values[i]
-    return buffer
+    return NDBuffer[dtype, rank](buffer, shape)
