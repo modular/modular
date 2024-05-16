@@ -28,6 +28,7 @@ from LinAlg.MatmulGPU import (
 from memory.unsafe import DTypePointer
 
 from utils.index import Index
+from utils.numerics import isnan
 
 
 fn run_matvec(M: Int, N: Int, K: Int) raises:
@@ -200,11 +201,7 @@ fn run_matvec(M: Int, N: Int, K: Int) raises:
         var outVal = c_host.load(i)
         var outRef = c_host_naive.load(i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (
-            (relDiff > errorTolerance)
-            or math.isnan(outVal)
-            or math.isnan(outRef)
-        ):
+        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
 
     # CHECK: Success
@@ -427,11 +424,7 @@ fn test_gevm_with_epilogue_fn(M: Int, N: Int, K: Int) raises:
         var outVal = c_host.load(i)
         var outRef = c_host_naive.load(i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (
-            (relDiff > errorTolerance)
-            or math.isnan(outVal)
-            or math.isnan(outRef)
-        ):
+        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             print(i, relDiff, outVal, outRef)
             failed = True
 

@@ -25,6 +25,7 @@ from LinAlg.MatmulGPU import sgemm_warp_tiling_kernel
 from memory.unsafe import DTypePointer
 
 from utils.index import Index
+from utils.numerics import isnan
 
 alias BLOCK_DIM = 8
 
@@ -258,8 +259,8 @@ fn bench_matmuls(inout m: Bench) raises:
     for i in range(M * N):
         if (
             c_host.load(i) != c_host_naive.load(i)
-            or math.isnan(c_host_naive.load(i))
-            or math.isnan(c_host.load(i))
+            or isnan(c_host_naive.load(i))
+            or isnan(c_host.load(i))
         ):
             print(c_host.load(i))
             print(c_host_naive.load(i))

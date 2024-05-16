@@ -28,6 +28,7 @@ from memory.unsafe import DTypePointer, bitcast
 
 from collections import OptionalReg
 from utils import StaticTuple, unroll, Index
+from utils.numerics import isnan
 
 
 @always_inline
@@ -588,11 +589,7 @@ fn run_matmul_mma_warptiling() raises:
         var outVal = c_host.load(i)
         var outRef = c_host_naive.load(i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (
-            (relDiff > REL_DIFF_THRESHOLD)
-            or math.isnan(outVal)
-            or math.isnan(outRef)
-        ):
+        if (relDiff > REL_DIFF_THRESHOLD) or isnan(outVal) or isnan(outRef):
             failed = True
             print(i, outVal, outRef)
 

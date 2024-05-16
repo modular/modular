@@ -8,6 +8,7 @@
 
 from math import ceildiv
 from random import random_si64
+from utils.numerics import isnan
 
 from gpu import WARP_SIZE, BlockIdx
 from gpu.host import Context, Function, Stream
@@ -350,11 +351,7 @@ fn run_mma_fp32_tf32(
         var outVal = c_host.load(i)
         var outRef = c_host_ref.load(i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (
-            (relDiff > errorTolerance)
-            or math.isnan(outVal)
-            or math.isnan(outRef)
-        ):
+        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
             print(i, outVal, outRef)
 
@@ -519,11 +516,7 @@ fn run_mma_fp32_bf16(
         var outVal = c_host.load(i)
         var outRef = c_host_ref.load(i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (
-            (relDiff > errorTolerance)
-            or math.isnan(outVal)
-            or math.isnan(outRef)
-        ):
+        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
             print(i, outVal, outRef)
 
@@ -688,11 +681,7 @@ fn run_mma_fp32_bf16_2(
         var outVal = c_host.load(i)
         var outRef = c_host_ref.load(i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (
-            (relDiff > errorTolerance)
-            or math.isnan(outVal)
-            or math.isnan(outRef)
-        ):
+        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
             print(i, outVal, outRef)
 
@@ -857,11 +846,7 @@ fn run_mma_fp32_fp16(
         var outVal = c_host.load(i)
         var outRef = c_host_ref.load(i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (
-            (relDiff > errorTolerance)
-            or math.isnan(outVal)
-            or math.isnan(outRef)
-        ):
+        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
             print(i, outVal, outRef)
 
@@ -1027,11 +1012,7 @@ fn run_mma_fp16_fp16(
         # var outVal = c_host.load(i)
         var outRef = c_host_ref.load(i)
         var relDiff = (max(outVal, outRef) / min(outVal, outRef)) - 1.0
-        if (
-            (relDiff > errorTolerance)
-            or math.isnan(outVal)
-            or math.isnan(outRef)
-        ):
+        if (relDiff > errorTolerance) or isnan(outVal) or isnan(outRef):
             failed = True
             print(i, outVal, outRef)
 
