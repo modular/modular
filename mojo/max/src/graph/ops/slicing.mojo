@@ -6,7 +6,7 @@
 """Ops that slice, index, stack, concat etc."""
 
 from collections.optional import Optional
-from math.limit import max_finite
+from utils.numerics import max_finite
 
 from ..error import error
 from ..symbol import SymbolicSlice
@@ -182,7 +182,7 @@ def slice(input: Symbol, s: Slice) -> Symbol:
     var dims = List[Dim]()
     var sym_slices = List[SymbolicSlice]()
     # There's a lot of corner cases we're getting wrong here:
-    # - if `s` has no `end` then it uses math.limit.max_finite[DType.index]
+    # - if `s` has no `end` then it uses utils.numerics.max_finite[DType.index]
     #    which causes `len` to be very wrong
     # - slices are allowed to negative-index, and for instance `len(Slice(0, -1)) is -1`
     dims.append(len(s))
