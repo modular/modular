@@ -32,7 +32,7 @@ from runtime.tracing import Trace, TraceLevel
 
 from utils.index import product
 from utils.static_tuple import StaticTuple
-from utils._numerics import get_accum_type
+from utils.numerics import get_accum_type
 
 from .math import mul, sub
 
