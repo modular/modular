@@ -25,7 +25,7 @@ from memory.unsafe import DTypePointer, bitcast
 from collections import OptionalReg
 from utils.index import Index
 from utils.static_tuple import StaticTuple
-from utils._numerics import get_accum_type
+from utils.numerics import get_accum_type
 
 from layout._utils import ManagedLayoutTensor, gpu_free, gpu_managed_alloc
 from layout.int_tuple import IntTuple

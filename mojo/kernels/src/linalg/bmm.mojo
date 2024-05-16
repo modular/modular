@@ -34,7 +34,7 @@ from runtime.llcl import Runtime
 
 from collections import OptionalReg
 from utils.index import StaticIntTuple
-from utils._numerics import get_accum_type
+from utils.numerics import get_accum_type
 
 from .apple_accelerate import use_apple_accelerate_lib, apple_batched_matmul
 
