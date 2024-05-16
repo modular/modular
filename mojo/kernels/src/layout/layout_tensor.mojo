@@ -8,6 +8,7 @@ from collections.optional import Optional, OptionalReg
 from sys.info import sizeof
 from sys.intrinsics import PrefetchOptions
 from utils import StaticTuple, StaticIntTuple
+from utils.numerics import max_finite
 
 from algorithm import vectorize
 from gpu.memory import async_copy
@@ -18,7 +19,6 @@ from memory.reference import AddressSpace, _GPUAddressSpace
 
 from .int_tuple import flatten, idx2crd, to_int, product, fill_like
 from .layout import *
-from math.limit import max_finite
 from builtin.int import int as _int
 
 
