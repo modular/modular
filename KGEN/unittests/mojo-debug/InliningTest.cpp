@@ -31,6 +31,10 @@ TEST(InliningTest, testBreakingOnInlinedCalsite) {
   ctx.resume();
   EXPECT_TRUE(getFunctionName(ctx).contains("main"));
   EXPECT_EQ((int)ctx.frame.GetLineEntry().GetLine(), expectedBreakingLines[2]);
+
+  ctx.resume();
+  EXPECT_TRUE(getFunctionName(ctx).contains("callee_regular"));
+  EXPECT_EQ((int)ctx.frame.GetLineEntry().GetLine(), expectedBreakingLines[0]);
 }
 
 TEST(InliningTest, testLiftedInlinedInoutArgModification) {

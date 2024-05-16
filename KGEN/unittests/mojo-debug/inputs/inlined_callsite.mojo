@@ -12,7 +12,7 @@ fn callee_regular(a: Int):
 
 @always_inline("nodebug")
 fn callee_nodebug(b: Int):
-    print(b)
+    callee_regular(b)
 
 
 fn main():

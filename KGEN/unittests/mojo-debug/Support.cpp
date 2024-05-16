@@ -164,7 +164,7 @@ static void setBreakpointsForComments(const MojoSource &source,
   for (int line : source.findLinesWithText("# breakpoint")) {
     SBBreakpoint bp =
         target.BreakpointCreateByLocation(source.getPath().data(), line);
-    if (bp.GetNumLocations() != 1)
+    if (!bp.GetNumLocations())
       llvm::report_fatal_error(llvm::formatv(
           "Couldn't set a breakpoint at {0}:{1}", source.getPath(), line));
   }
