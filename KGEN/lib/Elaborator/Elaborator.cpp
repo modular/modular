@@ -80,8 +80,7 @@ std::string KGEN::mangleParameterValues(GeneratorOp generator,
 //===----------------------------------------------------------------------===//
 
 ImplNode::ImplNode(ParamNode *parent)
-    : parent(parent), paramGraph(parent->gen.getBodyRegion()),
-      evaluator(parent->gen.getContext()) {}
+    : parent(parent), paramGraph(parent->gen.getBodyRegion()) {}
 
 void ParamNode::andThenAsync(AsyncValue::Waiter &&waiter) {
   expansionGraph->didAddTask();
@@ -252,7 +251,7 @@ static ElaborationState processParamDeclareOp(ImplNode *inode,
   HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getValue());
 
   // Bind it to the parameter declaration it is setting.
-  inode->getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(), value);
+  inode->getEvaluator().setParameterValue(op.getParamDecl(), value);
 
   // The kgen.param.declare operation serves no other purpose: remove it.
   op->erase();
@@ -425,9 +424,9 @@ private:
   /// Insert an ImplNode for a function that is already concrete.
   void addConcreteFunc(FuncOp func) {
     g.concreteNodes.modify([this, func](auto &map) mutable {
-      auto node = std::make_unique<ImplNode>(
-          func, /*parent=*/nullptr, func.getBodyRegion(),
-          func.getSymName().str(), IREvaluator(*this));
+      auto node = std::make_unique<ImplNode>(func, /*parent=*/nullptr,
+                                             func.getBodyRegion(),
+                                             func.getSymName().str());
       map.try_emplace(func, node.get());
       g.elaboratedNodes.push_back(std::move(node));
     });
@@ -855,8 +854,8 @@ ElaborationState ElaboratorImpl::processParamApplyOp(ImplNode *inode,
   }
 
   // Bind the result and erase the operation.
-  inode->getEvaluator().setOrOverwriteParameterValue(op.getParamDecl(),
-                                                     result.takeValue());
+  inode->getEvaluator().setParameterValue(op.getParamDecl(),
+                                          result.takeValue());
   op.erase();
   return ElaborationState::advance();
 }
@@ -900,9 +899,10 @@ ElaboratorImpl::completeCallProcessing(GeneratorUserOpInterface user,
   // Bind the result parameters to the output parameter decls.
   assert(decls.size() == resultParams.size());
   for (auto [decl, bindValue] : llvm::zip(decls, resultParams))
-    node->getEvaluator().setOrOverwriteParameterValue(decl, bindValue);
+    node->getEvaluator().setParameterValue(decl, bindValue);
   return ElaborationState::advance();
 }
+
 //===----------------------------------------------------------------------===//
 // ElaboratorImpl::processCallOp
 //===----------------------------------------------------------------------===//
@@ -913,6 +913,80 @@ ElaborationState ElaboratorImpl::processCallOp(ImplNode *parent,
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
   return processGeneratorUser(call, cast<SymbolConstantAttr>(symbol), parent);
+}
+
+//===----------------------------------------------------------------------===//
+// Locations and DebugInfo
+//===----------------------------------------------------------------------===//
+
+/// Concretizes the attribute that may contains parameters. If unsuccessful,
+/// sets the ImplNode to the error state and returns null.
+template <typename AttrType>
+static AttrType concretizeAttr(AttrType attr, mlir::Location loc,
+                               ImplNode *inode) {
+  auto exprResult =
+      inode->getEvaluator().concretizeParameterExpr(inode, loc, attr);
+  if (exprResult.isError()) {
+    inode->setToError(exprResult.takeError());
+    return {};
+  }
+  if (LLVM_UNLIKELY(!*exprResult)) {
+    inode->setToError(ErrorTree(
+        loc, "concretized parameter expression in attribute is null"));
+    return {};
+  }
+  return cast<AttrType>(*exprResult);
+}
+
+/// Concretizes the location of an op or a block argument.
+template <typename ArgOrOp>
+static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
+  LocationAttr loc = argOrOp.getLoc();
+  if (LocationAttr newLocAttr = concretizeAttr<LocationAttr>(loc, loc, inode)) {
+    argOrOp.setLoc(newLocAttr);
+    return success();
+  }
+  return failure();
+};
+
+/// Concretizes the locations of all operations within scope bound by the
+/// specified block.
+static void concretizeLocsInScope(Block &scope, ImplNode *inode) {
+  scope.walk([&](Operation *op) {
+    if (failed(concretizeLocOf(*op, inode)))
+      return WalkResult::interrupt();
+
+    // Update the ValueInfo attr since they contain types.
+    if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
+      op->setAttrs(
+          concretizeAttr(op->getAttrDictionary(), op->getLoc(), inode));
+      return WalkResult::advance();
+    }
+
+    // To be defensive, we only concretize location attributes if we know
+    // what we are dealing with.
+    if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
+      if (LocationAttr callLoc = inlined.getCallLocAttr()) {
+        inlined.setCallLocAttr(
+            concretizeAttr<LocationAttr>(callLoc, op->getLoc(), inode));
+      }
+    }
+
+    // When elaboration is complete, only the first block in any region is
+    // valid (any other block may be illegal, e.g. due to how kgen.param.if
+    // is handled). So we only need to go through the region arguments.
+    for (Region &r : op->getRegions()) {
+      for (BlockArgument arg : r.getArguments())
+        if (failed(concretizeLocOf(arg, inode)))
+          return WalkResult::interrupt();
+    }
+
+    // Walk over nested scopes.
+    if (isa<DeclInterface>(op))
+      return WalkResult::skip();
+
+    return WalkResult::advance();
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -956,11 +1030,13 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
   collectOpsToProcess(&toProcess, uses, opsToRewrite);
 
   // Push a new node and skip over the current frame until it completes.
-  ImplNode::WorkItem item{std::move(opsToRewrite), nullptr};
+  ImplNode::WorkItem item{std::move(opsToRewrite), nullptr,
+                          parent->getEvaluator()};
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [resultBool](ImplNode *node) -> LogicalResult {
+  item.onComplete = [resultBool, debug = config.elaborateDebugInfo](
+                        ImplNode *node) -> LogicalResult {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
     ImplNode::WorkItem &parentFrame = *std::next(node->stack.rbegin());
@@ -970,6 +1046,14 @@ ElaborationState ElaboratorImpl::processParamIfOp(ImplNode *parent,
     // invalidate.
     Block::iterator iter = op->getIterator();
     Block &block = op->getRegion(!resultBool).front();
+
+    // First update the locations if necessary
+    if (debug) {
+      concretizeLocsInScope(block, node);
+      if (node->error)
+        return failure();
+    }
+
     Operation *terminator = block.getTerminator();
     op->getBlock()->getOperations().splice(iter, block.getOperations());
 
@@ -1202,36 +1286,6 @@ ElaborationState ElaboratorImpl::processOp(ImplNode *node, Operation *op) {
 // ElaboratorImpl::specializeGenerator
 //===----------------------------------------------------------------------===//
 
-/// Concretizes the attribute that may contains parameters. If unsuccessful,
-/// sets the ImplNode to the error state and returns null.
-template <typename AttrType>
-static AttrType concretizeAttr(AttrType attr, mlir::Location loc,
-                               ImplNode *inode) {
-  auto exprResult =
-      inode->getEvaluator().concretizeParameterExpr(inode, loc, attr);
-  if (exprResult.isError()) {
-    inode->setToError(exprResult.takeError());
-    return {};
-  }
-  if (LLVM_UNLIKELY(!*exprResult)) {
-    inode->setToError(ErrorTree(
-        loc, "concretized parameter expression in attribute is null"));
-    return {};
-  }
-  return cast<AttrType>(*exprResult);
-}
-
-/// Concretizes the location of an op or a block argument.
-template <typename ArgOrOp>
-static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
-  LocationAttr loc = argOrOp.getLoc();
-  if (LocationAttr newLocAttr = concretizeAttr<LocationAttr>(loc, loc, inode)) {
-    argOrOp.setLoc(newLocAttr);
-    return success();
-  }
-  return failure();
-};
-
 ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
                                                      ParamNode *genNode,
                                                      ParamNode *from,
@@ -1301,9 +1355,6 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
   ArrayRef<ParamDeclAttr> inputParamDecls = gen.getInputParams();
   assert(inputParamValues.size() == inputParamDecls.size() &&
          "incorrect # input parameter values");
-  IREvaluator evaluator(*this);
-  for (auto [decl, val] : llvm::zip(inputParamDecls, inputParamValues))
-    evaluator.setOrOverwriteParameterValue(decl, val);
 
   CompilerTimeTraceScope traceScope("specializeGenerator: " +
                                     gen.getSymName().str());
@@ -1363,9 +1414,8 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
 
   // The node for this new func is simply the child of the node for the
   // generator.
-  auto childNode =
-      std::make_unique<ImplNode>(newFunc, genNode, std::move(childGraph),
-                                 std::move(baseName), std::move(evaluator));
+  auto childNode = std::make_unique<ImplNode>(
+      newFunc, genNode, std::move(childGraph), std::move(baseName));
   g.concreteNodes.modify(
       [newFunc, node = childNode.get()](DenseMap<FuncOp, ImplNode *> &map) {
         map.try_emplace(newFunc, node);
@@ -1403,38 +1453,10 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     // ops and block arguments. We do this after the worklist is processed, to
     // ensure that all parameter computation is completed, e.g. we have
     // processed all kgen.param.decl ops.
-    onComplete = [&](ImplNode *inode) -> LogicalResult {
-      inode->func->walk([&](Operation *op) -> WalkResult {
-        if (failed(concretizeLocOf(*op, inode)))
-          return WalkResult::interrupt();
-
-        // Update the ValueInfo attr since they contain types.
-        if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
-          op->setAttrs(
-              concretizeAttr(op->getAttrDictionary(), op->getLoc(), inode));
-        }
-
-        // To be defensive, we only concretize location attributes if we know
-        // what we are dealing with.
-        if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
-          if (LocationAttr callLoc = inlined.getCallLocAttr()) {
-            inlined.setCallLocAttr(
-                concretizeAttr<LocationAttr>(callLoc, op->getLoc(), inode));
-          }
-        }
-
-        // When elaboration is complete, only the first block in any region is
-        // valid (any other block may be illegal, e.g. due to how kgen.param.if
-        // is handled). So we only need to go through the region arguments.
-        for (Region &r : op->getRegions()) {
-          for (BlockArgument arg : r.getArguments())
-            if (failed(concretizeLocOf(arg, inode)))
-              return WalkResult::interrupt();
-        }
-
-        return WalkResult::advance();
-      });
-
+    onComplete = [](ImplNode *inode) -> LogicalResult {
+      if (failed(concretizeLocOf(*inode->func, inode)))
+        return failure();
+      concretizeLocsInScope(*inode->func.getBody(), inode);
       if (inode->error)
         return failure();
       return success();
@@ -1443,7 +1465,12 @@ ElaborationState ElaboratorImpl::specializeGenerator(ImplNode *inode,
     onComplete = [](ImplNode *) { return success(); };
   }
 
-  ImplNode::WorkItem item{std::move(opsToRewrite), std::move(onComplete)};
+  IREvaluator evaluator(*this, newFuncNode);
+  for (auto [decl, val] : llvm::zip(inputParamDecls, inputParamValues))
+    evaluator.setParameterValue(decl, val);
+
+  ImplNode::WorkItem item{std::move(opsToRewrite), std::move(onComplete),
+                          std::move(evaluator)};
   newFuncNode->stack.push_back(std::move(item));
 
   if (addWaiter) {

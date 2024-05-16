@@ -171,8 +171,7 @@ static void propagateTrivialParameters(Region *region,
       // For parent decl ops, bind input parameters to themselves.
       for (ParamDeclAttr decl : decl.getInputParams()) {
         decl = cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl));
-        evaluator.setOrOverwriteParameterValue(decl,
-                                               ParamDeclRefAttr::get(decl));
+        evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
       }
       // All required parameters are bound for the parent op. Process it now.
       // Skip the top-level declaration since it cannot reference parameters
@@ -196,11 +195,10 @@ static void propagateTrivialParameters(Region *region,
           evaluator.getReboundAttribute(declare.getParamDecl()));
       if (isa<ParamDeclRefAttr, TypeConstantAttr>(value) ||
           ParameterAttr::isSimpleConstant(value)) {
-        evaluator.setOrOverwriteParameterValue(decl, value);
+        evaluator.setParameterValue(decl, value);
         declare.erase();
       } else {
-        evaluator.setOrOverwriteParameterValue(decl,
-                                               ParamDeclRefAttr::get(decl));
+        evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
         processOp(op, evaluator);
       }
     } else {
@@ -209,8 +207,7 @@ static void propagateTrivialParameters(Region *region,
       cast<ParamOpInterface>(op).walkDefinitions(
           [&](ParamDeclAttr decl, const ParamDefValue &value) {
             decl = cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl));
-            evaluator.setOrOverwriteParameterValue(decl,
-                                                   ParamDeclRefAttr::get(decl));
+            evaluator.setParameterValue(decl, ParamDeclRefAttr::get(decl));
           });
       // Nested regions can declare parameters, so we cannot fully rebind the
       // operation now. It will be handled later when this function recurses.
