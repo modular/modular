@@ -9,7 +9,7 @@
 
 from benchmark import Bench, Bencher, BenchId
 from benchmark._cuda import time_async_cuda_kernel
-from gpu.host import Context, Stream, synchronize
+from gpu.host import Context, Stream, synchronize, CUDADeviceStream
 from gpu.host.memory import (
     _malloc,
     _free,
@@ -17,9 +17,10 @@ from gpu.host.memory import (
     _copy_device_to_host,
 )
 
-from LinAlg.MatmulGPU import _matmul_gpu
 from LinAlg.Matmul import matmul
+from LinAlg.MatmulGPU import _matmul_gpu
 from buffer import NDBuffer, DimList, Dim
+from runtime.llcl import MojoCallContextPtr
 
 from math import isclose
 from testing import assert_almost_equal
@@ -142,14 +143,18 @@ fn matmul_test_case[
     _copy_host_buffer_to_device(mat_a_dev, mat_a_host)
     _copy_host_buffer_to_device(mat_b_dev, mat_b_host)
 
-    _matmul_gpu(mat_c_dev, mat_a_dev, mat_b_dev)
+    _matmul_gpu(mat_c_dev, mat_a_dev, mat_b_dev, CUDADeviceStream(stream))
     synchronize()
 
     _copy_device_buffer_to_host(mat_c_host, mat_c_dev)
 
     # FIXME: We should run a reference gpu matmul, the reference should also
     # support applying the epilogue on the final result.
-    matmul(mat_c_ref_host, mat_a_host, mat_b_host)
+    matmul(
+        mat_c_ref_host,
+        mat_a_host,
+        mat_b_host,
+    )
 
     var success = True
     for m in range(shape_c_dim[0]):

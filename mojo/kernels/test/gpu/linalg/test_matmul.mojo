@@ -11,15 +11,14 @@ from random import random_float64
 from buffer import NDBuffer
 from buffer.list import DimList
 from gpu import AddressSpace, BlockDim, BlockIdx, ThreadIdx, barrier
-from gpu.host import Context, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize, CUDADeviceStream
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from LinAlg.Matmul import matmul as _matmul
-from LinAlg.MatmulGPU import matmul_kernel_naive
+from LinAlg.MatmulGPU import matmul_kernel_naive, _matmul_gpu
 from memory import memset_zero, stack_allocation
 from math import isclose
 from testing import assert_true
@@ -208,17 +207,9 @@ fn test_gemm_transpose_b[type: DType, M: Int, N: Int, K: Int]() raises:
     _copy_host_to_device(c_device, c_host.data, M * N)
     _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
 
-    _matmul[
-        type,
-        a_shape,
-        type,
-        b_shape,
-        type,
-        c_shape,
-        False,
-        True,
-        target="cuda",
-    ](c_device_nd, a_device_nd, b_device_nd)
+    _matmul_gpu[](
+        c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream)
+    )
     synchronize()
     _copy_device_to_host(c_host.data, c_device, M * N)
 
@@ -311,15 +302,9 @@ fn run_matmul_from_mogg_interface[M: Int, K: Int, N: Int, type: DType]() raises:
     _copy_host_to_device(c_device, c_host.data, M * N)
     _copy_host_to_device(c_device_ref, c_host_ref.data, M * N)
 
-    _matmul[
-        type,
-        a_shape,
-        type,
-        b_shape,
-        type,
-        c_shape,
-        target="cuda",
-    ](c_device_nd, a_device_nd, b_device_nd)
+    _matmul_gpu[](
+        c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream)
+    )
     synchronize()
     _copy_device_to_host(c_host.data, c_device, M * N)
 
@@ -433,16 +418,9 @@ fn run_matmul_from_mogg_interface_with_epilogue[
             idx, rebind[SIMD[type, width]](val + some_constant)
         )
 
-    _matmul[
-        type,
-        a_shape,
-        type,
-        b_shape,
-        type,
-        c_shape,
-        target="cuda",
-        elementwise_lambda_fn=epilogue_fn,
-    ](c_device_nd, a_device_nd, b_device_nd)
+    _matmul_gpu[elementwise_lambda_fn=epilogue_fn,](
+        c_device_nd, a_device_nd, b_device_nd, CUDADeviceStream(stream)
+    )
     synchronize()
     _copy_device_to_host(c_host.data, c_device, M * N)
 

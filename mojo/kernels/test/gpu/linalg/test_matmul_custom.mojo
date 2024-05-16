@@ -10,15 +10,14 @@ from math import ceildiv, isclose
 from LinAlg.BatchedMatmul import batched_matmul
 from buffer import NDBuffer
 from buffer.list import DimList
-from gpu.host import Context, Function, Stream, synchronize
+from gpu.host import Context, Function, Stream, synchronize, CUDADeviceStream
 from gpu.host.memory import (
     _copy_device_to_host,
     _copy_host_to_device,
     _free,
     _malloc,
 )
-from LinAlg.Matmul import matmul as _matmul
-from LinAlg.MatmulGPU import matmul_kernel_naive
+from LinAlg.MatmulGPU import matmul_kernel_naive, _matmul_gpu
 from memory.unsafe import DTypePointer
 
 from utils.index import Index
@@ -223,11 +222,7 @@ fn run_matmul[
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_host, K * N)
 
-    _matmul[type, a_shape, type, b_shape, type, c_shape, target="cuda",](
-        c_buf,
-        a_buf,
-        b_buf,
-    )
+    _matmul_gpu[](c_buf, a_buf, b_buf, CUDADeviceStream(stream))
     synchronize()
     _copy_device_to_host(c_host, c_device, M * N)
 
