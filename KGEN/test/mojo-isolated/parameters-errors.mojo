@@ -91,8 +91,8 @@ def generic_fn[a: FloatLiteral, b: Int](c : Int):
   pass
 
 def call_generic[dt: FloatLiteral]():
-  generic_fn[dt, 1, 42](57) # expected-error {{invalid call to 'generic_fn': callee expects 2 parameters, but 3 were specified}}
-  generic_fn[1, dt](57) # expected-error {{cannot pass 'IntLiteral' value, expected 'FloatLiteral' in call parameter}}
+  # expected-error @+1 {{invalid call to 'generic_fn': callee expects 2 parameters, but 3 were specified}}
+  generic_fn[dt, 1, 42](57)
 
 fn meta_param_then_param_redef[
       dt: __mlir_type.index # expected-note {{previous definition here}}
@@ -141,7 +141,7 @@ fn testAliases(variable: Int):
 
 
 fn testConversionQoI():
-  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in alias initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int'}}
   alias intVal : Int = 1.2
 
 

@@ -242,9 +242,12 @@ static void synthesizeRegisterTraitStub(ASTDecl &structDecl,
   bool hasRegisterResult = false;
   if (memSig.hasMemoryOnlyResult())
     dest = ValueDest(MLValue(thunk.getArguments().back()), EC_Trait);
-  else if (memSig.hasInitSelfArg() && hasLegacyInitSelfArg)
-    dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
-  else
+  else if (memSig.hasInitSelfArg()) {
+    if (hasLegacyInitSelfArg)
+      dest = ValueDest(MLValue(thunk.getArgument(0)), EC_Trait);
+    // If both the caller and callee take initself, we initialize it directly
+    // above and need to return none.
+  } else
     hasRegisterResult = true;
 
   CValue callResult = emitter.emitCallUnchecked(

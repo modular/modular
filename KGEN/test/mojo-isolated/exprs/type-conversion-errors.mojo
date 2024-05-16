@@ -8,7 +8,7 @@
 
 
 struct Foo:
-    pass
+    fn __init__(inout self): pass
 
 
 fn take_instance_param[a: Foo]():
@@ -23,11 +23,11 @@ fn takes_instance_arg(a: Foo):
 # COM: Issue #27654: Parser crash: Assertion failed: Types should match
 # COM: https://github.com/modularml/mojo/issues/1607 Improved error message for this common error
 fn test_type_instead_of_instance() -> Foo:
-    # expected-error @+1 {{cannot pass 'Foo' type as a value, expected an instance of 'Foo' in call parameter; did you mean to instantiate 'Foo'?}}
+    # expected-error @+1 {{cannot implicitly convert 'Foo' type as a value to an instance of 'Foo'; did you mean to instantiate 'Foo'?}}
     take_instance_param[Foo]
     # expected-error @+1 {{invalid call to 'takes_instance_arg': argument #0 cannot be converted from type value 'Foo' to an instance of 'Foo'; did you mean to instantiate 'Foo'?}}
     takes_instance_arg(Foo)
-    # expected-error @+1 {{cannot implicitly convert 'Foo' type as a value to an instance of 'Foo' in return value; did you mean to instantiate 'Foo'?}}
+    # expected-error @+1 {{cannot implicitly convert 'Foo' type as a value to an instance of 'Foo'; did you mean to instantiate 'Foo'?}}
     return Foo
 
 
@@ -42,7 +42,7 @@ struct WrapsMadeFromPack[*Ts: AnyType]:
     var data: MadeFromPack[Ts]
 
     fn __init__(inout self, *args: *Ts):
-        # expected-error @+1 {{cannot implicitly convert 'VariadicPack[0, args, AnyType, Ts]' value to 'MadeFromPack[Ts]' in assignment}}
+        # expected-error @+1 {{cannot implicitly convert 'VariadicPack[0, args, AnyType, Ts]' value to 'MadeFromPack[Ts]'}}
         self.data = args
 
 

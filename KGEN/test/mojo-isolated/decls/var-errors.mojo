@@ -16,10 +16,10 @@ fn var_decl_without_type():
     # expected-error @+1 {{declaration must have either a type or an initializer}}
     var x
 
-    # expected-error @+1 {{cannot implicitly convert 'SomeStruct' value to 'SomeOtherStruct' in 'var' initializer}}
+    # expected-error @+1 {{invalid implicit conversion to 'SomeOtherStruct': no constructors found}}
     var y : SomeOtherStruct = SomeStruct()
 
-    # expected-error @+1 {{cannot implicitly convert 'SomeStruct' value to 'SomeOtherStruct' in 'var' initializer}}
+    # expected-error @+1 {{invalid implicit conversion to 'SomeOtherStruct': no constructors found}}
     var z: SomeOtherStruct = SomeStruct()
 
 fn fudge_int(x: Int): pass

@@ -1332,6 +1332,16 @@ static void diagnoseFailedRefTypeConversion(InflightDiag &diag,
   }
 }
 
+static void printRValueTypeInfo(const AnyValue &value, SharedState &shared,
+                                InflightDiag &diag) {
+  if (ASTType type = getRValueTypeIfResolvable(value, shared))
+    diag << type;
+  else if (value.getIfInitializer())
+    diag << "initializer list";
+  else
+    diag << "unknown overload";
+}
+
 InflightDiag
 DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
                              ASTType ty, ASTExprAnd<AnyValue> operand,
@@ -1344,12 +1354,7 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
          callSyntax == CallSyntax::kMethodCallSynthetic) &&
         argIdx == 0) {
       diag << "invalid use of mutating method on rvalue of type ";
-      if (ASTType type = getRValueTypeIfResolvable(operand.ir, shared))
-        diag << type;
-      else if (operand.ir.getIfInitializer())
-        diag << "initializer list";
-      else
-        diag << "unknown overload";
+      printRValueTypeInfo(operand.ir, shared, diag);
     } else {
       describeArgumentNo(diag, argIdx);
       diag << " must be mutable in order to pass as a by-ref argument";
@@ -1363,6 +1368,13 @@ DiagEmitter::argTypeMismatch(OverloadFitness::ArgTypeMismatchKind kind,
                            << ty.getReferenceElementType()
                            << operand.expr->getRange();
   case ArgTypeMismatchKind::kWrongType: {
+    // Special case implicit conversions with a custom message.
+    if (callSyntax == CallSyntax::kImplicitConvert) {
+      printRValueTypeInfo(operand.ir, shared, diag);
+      diag << " value to " << ty;
+      return diag;
+    }
+
     describeArgumentNo(diag, argIdx);
     diag << " cannot be converted from " << operand.expr->getRange();
     ASTType rValueType = getRValueTypeIfResolvable(operand.ir, shared);
@@ -1676,6 +1688,7 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
   // We set up diagnostics.
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = callOperands.posOperands;
   size_t numPosOperands = posOperands.size();
+
   size_t numOperands = numPosOperands + callOperands.getNumKwOperands();
   SMLoc callLoc = callable.expr->getLoc();
   SharedState &shared = callable.getShared();

@@ -483,6 +483,17 @@ LogicalResult CallEmitter::emitRemainingPosOperands(
   return success();
 }
 
+/// Return true if this operand is a placeholder initself that is produced for
+/// constructor calls.  Return false it if it something explicitly specified,
+/// e.g. when a constructor is invoked with `self.__init__()`
+static bool isPlaceholderInitSelf(const AnyValue &value) {
+  if (!value)
+    return true;
+  if (auto pv = value.getIfPValue())
+    return isa<UnknownAttr>(pv.get());
+  return false;
+}
+
 FailureOr<SmallVector<ASTExprAnd<AnyValue>>>
 CallEmitter::emitArgValues(const CallOperands &operands) {
   ArrayRef<ASTExprAnd<AnyValue>> posOperands = operands.posOperands;
@@ -519,7 +530,8 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
 
     // If this is an `init_self` slot that has not been explicitly provided by
     // the user, we will have to find a slot later.
-    if (convention == ArgConvention::InitSelf && !posOperands.front().ir) {
+    if (convention == ArgConvention::InitSelf &&
+        isPlaceholderInitSelf(posOperands.front().ir)) {
       ++posOperandIdx;
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
@@ -1094,7 +1106,7 @@ CValue ExprEmitter::emitCallUnchecked(RValue callee,
     // collect their lifetimes.
     bool isInitSelf = convention == ArgConvention::InitSelf;
     if (SignatureType::isResultSlot(convention) ||
-        (isInitSelf && !argValAndExpr.ir)) {
+        (isInitSelf && isPlaceholderInitSelf(argValAndExpr.ir))) {
       needInitSelfSlot |= isInitSelf;
       // Don't know the right thing yet, use a placeholder.
       callArgs.push_back(Value());

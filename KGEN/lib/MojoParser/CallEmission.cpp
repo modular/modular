@@ -849,51 +849,102 @@ PValue OverloadSet::filterOverloadSet(const CallOperands &operands,
 
   // If all of the candidates are wrong, diagnose this as a failure.
   if (!anyValid) {
-    if (emitDiagnosticOnFailure && !isErroneous()) {
-      auto diag = getShared().emitError(expr->getLoc()) << expr->getRange();
-      if (fnDecls.empty()) {
-        diag << "invalid call to '" << baseName << "': no candidates found";
-        return {};
-      }
-
-      if (fnDecls.size() == 1)
-        diag << "invalid ";
-      else {
-        diag << "no matching ";
-        diag << (getCallKind(syntax) == CallKind::kMethod ? "method"
-                                                          : "function");
-        diag << " in ";
-      }
-
-      switch (syntax) {
-      default:
-        diag << "call to '" << baseName << "'";
-        break;
-      case CallSyntax::kTypeCall:
-        diag << "initialization";
-        break;
-      }
-
-      // If there is a single callee, emit a specific error about the call.
-      if (fnDecls.size() == 1) {
-        auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
-        diag << ": " << evaluations[0].takeDiag();
-        diag.attachNote(fnDecl.getLoc()) << "function declared here";
-        return {};
-      }
-
-      // Add a note for what is wrong with each candidate.
-      for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
-        diag.attachNote(candidate->getLoc())
-            << "candidate not viable: " << eval.takeDiag();
-        auto func = cast<LIT::FuncOp>(candidate);
-        if (func.getIsSynthetic()) {
-          diag.attachNote(candidate->getLoc())
-              << "generated function with type "
-              << ASTType(func.getFullSignature());
-        }
-      }
+    if (!emitDiagnosticOnFailure || isErroneous())
       return {};
+
+    auto diag = getShared().emitError(expr->getLoc()) << expr->getRange();
+
+    // Diagnose the case when there are no candidates found by lookup.
+    if (fnDecls.empty()) {
+      diag << "invalid call to '" << baseName << "': no candidates found";
+      return {};
+    }
+
+    // If we have one operand, get it to help tailor type conversion errors.
+    ASTType selfOperandType, singleOperandType;
+    if (operands.posOperands.size() == 2) {
+      if (auto cValue = operands.posOperands[0].ir.getIfCValue())
+        if (auto selfRef = dyn_cast<RefType>(cValue.getRValueType(getShared())))
+          selfOperandType = selfRef.getElementType();
+      if (auto cValue = operands.posOperands[1].ir.getIfCValue())
+        singleOperandType = cValue.getRValueType(getShared());
+    }
+
+    // Reject Int(x) where x is already an Int with an error + fixit.
+    if (syntax == CallSyntax::kTypeCall && singleOperandType &&
+        selfOperandType && singleOperandType.isEqualCanon(selfOperandType) &&
+        isa<CallNode>(expr)) {
+      const CallNode &callNode = *cast<CallNode>(expr);
+      // This removes the constructor call, but does not remove the parens
+      // because we don't want to introduce precedence problems.
+      diag << "cannot construct " << selfOperandType
+           << " with itself, you can remove the constructor call"
+           << operands.posOperands[0].expr->getRange()
+           << FixIt::remove(callNode.callee->getRange());
+      return {};
+    }
+
+    // Diagnose implicit conversions with a custom message, unless this is
+    // forming a Reference.
+    if (syntax == CallSyntax::kImplicitConvert && selfOperandType &&
+        singleOperandType) {
+      // This is true if passing Int type to Int instead of Int() to Int.
+      bool isConvertingTypeValue =
+          selfOperandType.getMetaType() == singleOperandType;
+      diag << "cannot implicitly convert ";
+      if (isConvertingTypeValue)
+        diag << selfOperandType << " type as a";
+      else
+        diag << singleOperandType;
+      diag << " value to ";
+      diag << (isConvertingTypeValue ? "an instance of " : "")
+           << selfOperandType;
+
+      if (isConvertingTypeValue)
+        diag << "; did you mean to instantiate " << selfOperandType << "?";
+      diag << expr->getRange();
+      return {};
+    }
+
+    if (fnDecls.size() == 1)
+      diag << "invalid ";
+    else {
+      diag << "no matching ";
+      diag << (getCallKind(syntax) == CallKind::kMethod ? "method"
+                                                        : "function");
+      diag << " in ";
+    }
+
+    switch (syntax) {
+    default:
+      diag << "call to '" << baseName << "'";
+      break;
+    case CallSyntax::kTypeCall:
+      diag << "initialization";
+      break;
+    case CallSyntax::kImplicitConvert:
+      diag << "implicit conversion";
+      break;
+    }
+
+    // If there is a single callee, emit a specific error about the call.
+    if (fnDecls.size() == 1) {
+      auto fnDecl = cast<LIT::FuncOp>(*fnDecls[0]);
+      diag << ": " << evaluations[0].takeDiag();
+      diag.attachNote(fnDecl.getLoc()) << "function declared here";
+      return {};
+    }
+
+    // Add a note for what is wrong with each candidate.
+    for (auto [candidate, eval] : llvm::zip(fnDecls, evaluations)) {
+      diag.attachNote(candidate->getLoc())
+          << "candidate not viable: " << eval.takeDiag();
+      auto func = cast<LIT::FuncOp>(candidate);
+      if (func.getIsSynthetic()) {
+        diag.attachNote(candidate->getLoc())
+            << "generated function with type "
+            << ASTType(func.getFullSignature());
+      }
     }
     return {};
   }
@@ -1274,8 +1325,6 @@ CValue OverloadSet::emitAsCValue(ExprEmitter &emitter, ValueDest &dest) {
 /// values.  This emits an error and returns null on failure.
 CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
                              ExprEmitter &emitter) {
-  if (isNull()) // Base was already diagnosed as an error.
-    return {};
 
   // Used in some cases below, lifetime needs to exist for this whole method.
   SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
@@ -1288,9 +1337,6 @@ CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
     posOperandsWithSelf.reserve(posOperands.size() + 1);
     posOperandsWithSelf.push_back(baseValue);
     posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
-    assert((syntax == CallSyntax::kMethodCall ||
-            syntax == CallSyntax::kMethodCallSynthetic) &&
-           "Unexpected syntax form");
     operands.posOperands = posOperandsWithSelf;
     operands.hasSelfOperand = true;
   }
@@ -1300,8 +1346,10 @@ CValue OverloadSet::emitCall(const CallOperands &callOperands, ValueDest &dest,
   PValue callee = filterOverloadSet(operands,
                                     /*allowImplicitConversions=*/true,
                                     /*emitDiagnosticOnFailure=*/true);
-  if (!callee)
+  if (!callee) {
+    dest.resetForError();
     return {};
+  }
   return emitter.emitCallUnchecked(callee, operands, dest, expr);
 }
 
@@ -1446,16 +1494,69 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
   shared.notifyListenerOnCall(callee.fnDecls, expr->getRangeEnd(), syntax,
                               callOperands);
 
+  // If there are no candidates at all, diagnose specific errors.
+  if (!callee) {
+    if (!type.getDecl(shared) && syntax != CallSyntax::kImplicitConvert) {
+      emitError(expr->getLoc())
+          << "MLIR type " << type
+          << " must be created with an MLIR operation, not constructor "
+             "syntax";
+      return {};
+    }
+
+    // Emit helpful error message when user tried to call a module.
+    if (auto refType = dyn_cast<ParamRefType>(type)) {
+      if (auto moduleAttr = dyn_cast<LIT::ModuleAttr>(refType.getParam())) {
+        auto metaType = cast<AnyStructType>(moduleAttr.getType());
+        auto diag = emitError(expr->getLoc());
+        emitModuleCallSubscriptDiag(diag, metaType, "call", expr->getLoc(),
+                                    shared);
+        diag << expr->getRange();
+        return {};
+      }
+    }
+
+    // Diagnose implicit conversions with a custom message
+    if (syntax == CallSyntax::kImplicitConvert) {
+      ASTType singleOperandType;
+      assert(callOperands.posOperands.size() == 1 &&
+             "implicit conversions have one operand");
+      if (auto cValue = callOperands.posOperands[0].ir.getIfCValue())
+        singleOperandType = cValue.getRValueType(shared);
+
+      auto diag = emitError(expr->getLoc());
+      if (isa<DeclRefType>(type)) {
+        diag << "invalid implicit conversion to " << type
+             << ": no constructors found";
+        return {};
+      }
+
+      // This is true if passing Int type to Int instead of Int() to Int.
+      bool isConvertingTypeValue = type.getMetaType() == singleOperandType;
+      bool isImplConvert = dest.getContext() != EC_CallParamValue &&
+                           dest.getContext() != EC_CallArgValue;
+      diag << "cannot " << (isImplConvert ? "implicitly convert " : "pass ");
+
+      if (isConvertingTypeValue)
+        diag << type << " type as a ";
+      else if (singleOperandType)
+        diag << singleOperandType << " ";
+      diag << "value" << (isImplConvert ? " to " : ", expected ");
+      diag << (isConvertingTypeValue ? "an instance of " : "") << type
+           << getContextMessage(dest.getContext());
+
+      if (isConvertingTypeValue)
+        diag << "; did you mean to instantiate " << type << "?";
+      diag << expr->getRange();
+      return {};
+    }
+  }
+
   // Set the parameter bindings for the type we're creating - they can't be
   // inferred since from the result type.
   // FIXME: Should be able to remove this when kInitReg goes away.
   callee.paramBindings =
       ParamBindings::getForDeclaredType(getScopeInfo(), type);
-
-  // Init gets a self argument passed in as the first argument by-ref.
-  ArrayRef<ASTExprAnd<AnyValue>> origPosOperands = callOperands.posOperands;
-  ArrayRef<ASTExprAnd<AnyValue>> posOperands = origPosOperands;
-  CallOperands operands = callOperands;
 
   // As a special extension, register-only types are allowed to return their
   // self directly as a register value instead of taking a memory value in.
@@ -1487,125 +1588,13 @@ CValue ExprEmitter::emitConstructorCall(ASTType type,
     }
   }
 
-  // Form a positional operand list with the self argument present, allowing
-  // type inference from it.
-  SmallVector<ASTExprAnd<AnyValue>> posOperandsWithSelf;
+  // Provide a self value so parameter inferrence can infer parameters from
+  // typeof(self).
   if (hasInitSelfArg) {
-    posOperandsWithSelf.reserve(posOperands.size() + 1);
-
+    assert(!callee.baseValue && "Shouldn't have a self value yet");
     auto attr = UnknownAttr::get(RefType::getImmortal(type, true));
-    posOperandsWithSelf.push_back({PValue(attr), expr});
-    posOperandsWithSelf.append(posOperands.begin(), posOperands.end());
-    operands.posOperands = posOperandsWithSelf;
-    operands.hasSelfOperand = true;
+    callee.baseValue = {PValue(attr), expr};
   }
 
-  // Try to resolve the overload set to exactly one candidate, but don't emit an
-  // error on failure (we typically want to customize the error).
-  SmallVector<ASTDecl *, 1> newFnDecls;
-  PValue calleeFn =
-      callee.filterOverloadSet(operands, newFnDecls, allowImplicitConversion,
-                               /*emitDiagnosticOnFailure=*/false);
-
-  if (!calleeFn) {
-    dest.resetForError();
-
-    // If we failed to resolve the set, then try to emit a tailored error.  If
-    // constructing from one value, then this is a type conversion (either
-    // implicit or explicit).
-    ASTType singleOperandType;
-    if (callOperands.posOperands.size() == 1)
-      if (auto cValue = callOperands.posOperands[0].ir.getIfCValue())
-        singleOperandType = cValue.getRValueType(shared);
-
-    if (singleOperandType && newFnDecls.size() <= 1 && !callee.isErroneous()) {
-      // Reject Int(x) where x is already an Int with an error + fixit.
-      if (syntax == CallSyntax::kTypeCall &&
-          singleOperandType.isEqualCanon(type) && isa<CallNode>(expr)) {
-        auto diag = emitError(expr->getLoc());
-        const CallNode &callNode = *cast<CallNode>(expr);
-        // This removes the constructor call, but does not remove the parens
-        // because we don't want to introduce precedence problems.
-        diag << "cannot construct " << type
-             << " with itself, you can remove the constructor call"
-             << posOperands[0].expr->getRange()
-             << FixIt::remove(callNode.callee->getRange());
-        return {};
-      }
-
-      // Diagnose implicit conversions with a custom message, unless this is
-      // forming a Reference.
-      // FIXME: Why are we duplicating this logic? Just let overload resolution
-      // do its job.
-      bool isReference = false;
-      if (auto declRef = dyn_cast<DeclRefType>(type))
-        isReference = declRef.getName() == "Reference";
-
-      if (syntax == CallSyntax::kImplicitConvert && !isReference) {
-        // Handle common type mismatches with tailored errors.
-        auto diag = emitError(expr->getLoc());
-
-        // This is true if passing Int type to Int instead of Int() to Int.
-        bool isConvertingTypeValue = type.getMetaType() == singleOperandType;
-        bool isImplConvert = dest.getContext() != EC_CallParamValue &&
-                             dest.getContext() != EC_CallArgValue;
-        diag << "cannot " << (isImplConvert ? "implicitly convert " : "pass ");
-
-        if (isConvertingTypeValue)
-          diag << type << " type as a";
-        else
-          diag << singleOperandType;
-        diag << " value" << (isImplConvert ? " to " : ", expected ");
-        diag << (isConvertingTypeValue ? "an instance of " : "") << type
-             << getContextMessage(dest.getContext());
-
-        if (isConvertingTypeValue)
-          diag << "; did you mean to instantiate " << type << "?";
-        diag << expr->getRange();
-        return {};
-      }
-    }
-
-    // If the type has no candidates, complain about that.
-    if (callee.isNull() && !callee.isErroneous()) {
-      auto diag = emitError(expr->getLoc());
-      if (!type.getDecl(shared)) {
-        diag << "MLIR type " << type
-             << " must be created with an MLIR operation, not constructor "
-                "syntax";
-      } else {
-        // Emit helpful error message when user tried to call a module.
-        if (auto refType = dyn_cast<ParamRefType>(type)) {
-          if (auto moduleAttr = dyn_cast<LIT::ModuleAttr>(refType.getParam())) {
-            auto metaType = cast<AnyStructType>(moduleAttr.getType());
-            emitModuleCallSubscriptDiag(diag, metaType, "call", expr->getLoc(),
-                                        shared);
-            diag << expr->getRange();
-            return {};
-          }
-        }
-
-        // If the callee is not a module, emit generic message.
-        diag << type << " does not implement any '__init__' methods";
-      }
-      diag << getContextMessage(dest.getContext()) << expr->getRange();
-      return {};
-    }
-
-    // Otherwise, do it again to emit a generic overload set error.
-    auto calleeFn = callee.filterOverloadSet(operands, allowImplicitConversion,
-                                             /*emitDiagnosticOnFailure=*/true);
-    assert(!calleeFn && "This should fail if it failed before");
-    return {};
-  }
-
-  // If we successfully resolve the overload set, we know the call will succeed,
-  // do it. Register-passable and parameter constructor calls do not require
-  // result slot allocation.
-  if (hasInitSelfArg)
-    posOperandsWithSelf[0].ir = AnyValue();
-
-  // Emit the call directly into the ValueDest. Set the `self` value to null to
-  // indicate that we need to try to create an MLValue slot.
-  return emitCallUnchecked(calleeFn, operands, dest, expr);
+  return callee.emitCall(callOperands, dest, *this);
 }

@@ -32,7 +32,7 @@ fn cannotRaise(err: Error):
 
 # Issue #12358
 fn raise_bad_type() raises:
-    raise 42  # expected-error {{cannot implicitly convert 'IntLiteral' value to 'Error' in raised value}}
+    raise 42
 
 # https://github.com/modularml/mojo/issues/1230
 # Parser crashes on incomplete decorator

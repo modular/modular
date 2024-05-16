@@ -76,7 +76,6 @@ fn test_func_type():
     alias f8 = fn [Int, b: Int] capturing -> Int
 
     alias type = DType.float32
-    # expected-error @below {{SIMD[type.value, 32]}}
     alias value: SIMD[type.value, 32] = SIMD[DType.float32, 32]()
 
 ##===----------------------------------------------------------------------===##
@@ -252,20 +251,20 @@ fn bad_tuple(a: Int):
 
   var c: Int
   var d: Int
-  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, Int, Int]' value to 'Tuple[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, Int, Int]' value to 'Tuple[Int, Int]'}}
   (c, d) = (a, a, a)
-  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int]' value to 'Tuple[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int]' value to 'Tuple[Int, Int]'}}
   (c, d) = (a,)
-  # expected-error @+1 {{cannot implicitly convert 'Int' value to 'Tuple[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Int' value to 'Tuple[Int, Int]'}}
   (c, d) = a
 
   var iTup : Tuple[Int, Int]
-  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, SIMD[float64, 1]]' value to 'Tuple[Int, Int]' in assignment}}
+  # expected-error @+1 {{cannot implicitly convert 'Tuple[Int, SIMD[float64, 1]]' value to 'Tuple[Int, Int]'}}
   iTup = (1, 2.0)
 
 
 def tuple_return():
-  return 32, 17 # expected-error {{cannot implicitly convert 'Tuple[Int, Int]' value to 'object' in return value}}
+  return 32, 17 # expected-error {{'Tuple[Int, Int]' is not copyable because it has no '__copyinit__'}}
 
 
 # Issue https://github.com/modularml/mojo/issues/1917
@@ -324,7 +323,7 @@ fn dict_expression(a: Int):
   _ = MyIntPair{a: a, **a}
   # expected-error @+1 {{no value for field 'b' specified}}
   _ = MyIntPair{a: 4}
-  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in field initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int'}}
   _ = MyIntPair{a: 4.0, b: 4}
   _ = MyIntPair{a: 4, b: 4}
 
@@ -344,7 +343,7 @@ fn bad_exprs(cond: Bool, Float32: Float32, c1: Conv1, c2: Conv2):
   _ = c1 if cond else c2
 
 def bad_assignment0(a: Int, b: Int):
-   # expected-error @+1 {{cannot implicitly convert 'None' value to 'Int' in assignment}}
+   # expected-error @+1 {{cannot implicitly convert 'None' value to 'Int'}}
    a = b += b
 
 def bad_assignment1(a: Int, b: Int):
@@ -385,7 +384,7 @@ struct IncompatElementTypes:
 
 fn test_subscript_implicit_conversion(c: IncompatElementTypes):
   var tmp : Int = c[1]
-  # expected-error-re @+1 {{cannot implicitly convert 'SIMD[float32, 1]' value to 'Int' in assignment}}
+  # expected-error-re @+1 {{cannot implicitly convert 'SIMD[float32, 1]' value to 'Int'}}
   c[1] = Float32(4.0)
   c[1] = tmp
 
@@ -534,7 +533,6 @@ struct Reference[
         `>`,
     ]
 
-    # expected-note @+1 {{function declared here}}
     fn __init__(inout self, value: Self._mlir_type): pass
     fn __refitem__(self) -> Self: pass
     fn __mlir_ref__(self) -> Self._mlir_type: pass
@@ -546,10 +544,8 @@ fn test_bad_ref_errors(a: MemoryOnlyPair, b: MemoryOnlyPair):
   _ = Reference(MemoryOnlyPair())
 
 fn test_bad_ref_errors[T: AnyType](a: Reference[T, _, _, _]):
-  # expected-error @below {{invalid call to '__init__': argument #1 cannot be converted from 'T' to 'Reference['T', ...]}}
-  # expected-note @below {{operand address space 'address_space._value.value' doesn't match expected address space '0'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[T, is_mutable, lifetime, 0]'}}
   var x : Reference[T, a.is_mutable, a.lifetime] = a[]
 
-  # expected-error @below {{invalid call to '__init__': argument #1 cannot be converted from 'T' to 'Reference['T', ...]}}
-  # expected-note @below {{operand mutability 'is_mutable.value' doesn't match expected mutability '1'}}
+  # expected-error @below {{cannot implicitly convert 'T' value to 'Reference[T, 1, #lit.lifetime, address_space]'}}
   var y : Reference[T, True, __mlir_attr.`#lit.lifetime<1>: !lit.lifetime<1>`, a.address_space] = a[]
