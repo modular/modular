@@ -469,3 +469,53 @@ kgen.func @unused_loop_args(%arg0: i32) {
   }
   kgen.return
 }
+
+// CHECK-LABEL: @break_in_both
+kgen.func @break_in_both(%arg0: i1) {
+  hlcf.loop {
+    hlcf.if %arg0 {
+      hlcf.break
+    } else {
+      hlcf.break
+    }
+    hlcf.continue
+  }
+  // CHECK-NEXT: return
+  kgen.return
+}
+
+// CHECK-LABEL: @break_outer
+kgen.func @break_outer(%arg0: i1) {
+  hlcf.loop "outer" {
+    hlcf.loop {
+      hlcf.if %arg0 {
+        hlcf.break "outer"
+      } else {
+        hlcf.break "outer"
+      }
+      hlcf.continue
+    }
+    hlcf.continue
+  }
+  // CHECK-NEXT: return
+  kgen.return
+}
+
+// CHECK-LABEL: @break_different_label
+kgen.func @break_different_label(%arg0: i1) {
+  // CHECK-NEXT: hlcf.loop
+  hlcf.loop "outer" {
+    // CHECK-NEXT: hlcf.loop
+    hlcf.loop {
+      // CHECK-NEXT: hlcf.if
+      hlcf.if %arg0 {
+        hlcf.break "outer"
+      } else {
+        hlcf.break
+      }
+      hlcf.continue
+    }
+    hlcf.continue
+  }
+  kgen.return
+}

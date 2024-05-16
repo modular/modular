@@ -429,8 +429,12 @@ def HLCF_ContinueOp : HLCFTerminatorOp<"continue",
   let arguments = (ins Variadic<AnyType>:$operands,
                        OptionalAttr<StrAttr>:$label);
 
-  let builders =
-    [OpBuilder<(ins), [{ build($_builder, $_state, ValueRange(), {}); }]>];
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange(), {}); }]>,
+    OpBuilder<(ins "ValueRange":$operands), [{
+      build($_builder, $_state, operands, {});
+    }]>,
+  ];
 
   let assemblyFormat = "attr-dict ($label^)? ($operands `:` type($operands)^)?";
 }
@@ -470,8 +474,12 @@ def HLCF_BreakOp : HLCFTerminatorOp<"break", [
   let arguments = (ins Variadic<AnyType>:$operands,
                        OptionalAttr<StrAttr>:$label);
 
-  let builders =
-    [OpBuilder<(ins), [{ build($_builder, $_state, ValueRange(), {}); }]>];
+  let builders = [
+    OpBuilder<(ins), [{ build($_builder, $_state, ValueRange(), {}); }]>,
+    OpBuilder<(ins "ValueRange":$operands), [{
+      build($_builder, $_state, operands, {});
+    }]>,
+  ];
 
   let assemblyFormat = "attr-dict ($label^)? ($operands `:` type($operands)^)?";
 }
@@ -566,11 +574,11 @@ def HLCF_ForYieldOp : HLCFTerminatorOp<"for.yield", [
 //===----------------------------------------------------------------------===//
 
 def HLCF_ElifYieldOp : HLCFTerminatorOp<"elif.yield", [
-    ParentOneOf<["ElifOp"]>, 
+    ParentOneOf<["ElifOp"]>,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "yield operation for elif operations";
   let description = [{
-    The `hlcf.lazy.yield` operation is a control-flow terminator that 
+    The `hlcf.lazy.yield` operation is a control-flow terminator that
     transfers control-flow either to the subsequent region or after the
      parent `hlcf.elif`.
 
@@ -608,9 +616,9 @@ def HLCF_ElifOp : HLCFParentOp<"elif"> {
     either to the subsequent region (if true) or the subsequent even indexed
     on false.
 
-    The odd indexed regions represent value regions. These regions are 
-    terminated by a `hlcf.yield` operation whose result type matches that of 
-    the parent elif operation. The `hlcf.yield` operations transfer control 
+    The odd indexed regions represent value regions. These regions are
+    terminated by a `hlcf.yield` operation whose result type matches that of
+    the parent elif operation. The `hlcf.yield` operations transfer control
     to after the `hlcf.elif` operation.
 
     Example:
@@ -638,7 +646,7 @@ def HLCF_ElifOp : HLCFParentOp<"elif"> {
     ```
   }];
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$elseRegion, 
+  let regions = (region SizedRegion<1>:$elseRegion,
                         VariadicRegion<SizedRegion<1>>:$elifRegions);
 
   let assemblyFormat = [{
