@@ -46,7 +46,11 @@ from layout.layout_tensor import (
     _swizzle_signature,
 )
 from layout.swizzle import Swizzle
-from layout.tensor_core import get_accum_type, get_mma_shape, get_fragment_size
+from layout.tensor_core import (
+    get_accum_type,
+    get_mma_shape,
+    get_fragment_size,
+)
 
 
 fn is_benchmark() -> Bool:
@@ -69,12 +73,15 @@ fn ld_mma[
     # Refactor the three parameters with ComposedLayout
     thread_layout: Layout,
     swizzle: OptionalReg[_swizzle_signature] = None,
+    transposed: Bool = False,
     *,
     # work around parameter deduction
     __layout: Layout,
     __element_layout: Layout,
     __index_type: DType,
     __masked: Bool,
+    # Nvidia GPU register is 4B.
+    __register_width: Int = 4,
 ](
     mat: LayoutTensor[
         _,
@@ -85,7 +92,7 @@ fn ld_mma[
         masked=__masked,
     ],
     offset: Int,
-) -> SIMD[mat.dtype, num_matrices]:
+) -> SIMD[mat.dtype, num_matrices * __register_width // sizeof[mat.dtype]()]:
     constrained[
         num_matrices == 2 or num_matrices == 4,
         "Only support loading 2 or 4 matrices.",
@@ -109,7 +116,11 @@ fn ld_mma[
 
     row_offset = row_offset * simd_size
 
-    return ld_matrix[mat.dtype, num_matrices](mat.ptr + row_offset)
+    return ld_matrix[
+        mat.dtype,
+        num_matrices * __register_width // sizeof[mat.dtype](),
+        transposed,
+    ](mat.ptr + row_offset)
 
 
 fn multistage_gemm[
@@ -132,14 +143,18 @@ fn multistage_gemm[
     a: LayoutTensor[a_type, a_layout],
     b: LayoutTensor[b_type, b_layout],
 ):
+    # Hold on adding fp16 because it counld have differnet precisions than bf16.
     constrained[
-        c_type == DType.float32
-        and a_type == DType.float32
-        and b_type == DType.float32,
-        "Only support tf32 mma",
+        (a_type == DType.float32 or a_type == DType.bfloat16)
+        and a_type == b_type == c_type,
+        "Pipeline gemm only supports tf32 or BF16 mma",
     ]()
 
-    constrained[BK == 16, "Only support BK = 16."]()
+    constrained[
+        (BK == 16 and a_type == DType.float32)
+        or (BK == 32 and a_type == DType.bfloat16),
+        "Pipeline gemm only supports BK = 16 w/ FP32 and BK = 32 w/ BF16.",
+    ]()
 
     alias simd_size = simdwidthof[c_type]()
 
@@ -235,6 +250,7 @@ fn multistage_gemm[
     alias num_m_mmas = WM // MMA_M
     alias num_n_mmas = WN // MMA_N
 
+    alias accum_type = get_accum_type[a_type]()
     alias frag_size = get_fragment_size[mma_shape]()
     alias a_frag_size = frag_size[0]
     alias b_frag_size = frag_size[1]
@@ -249,7 +265,7 @@ fn multistage_gemm[
         b_type, Layout.row_major(2 * num_n_mmas, b_frag_size)
     ].stack_allocation().vectorize[1, b_frag_size]().split[2]()
     var c_reg_tile = LayoutTensor[
-        c_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
+        accum_type, Layout.row_major(num_m_mmas * num_n_mmas, c_frag_size)
     ].stack_allocation().vectorize[1, c_frag_size]()
 
     c_reg_tile.fill(0)
@@ -317,19 +333,40 @@ fn multistage_gemm[
             )
 
     else:
-        # Use normal scalar load because the thread layout in mma is column-majored.
-        @unroll
-        for n_mma in range(num_n_mmas):
-            var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](0, n_mma)
-            var b_mma_frag = b_mma_tile.distribute[Layout.col_major(4, 8)](
-                int(lane_id)
-            )
-            b_reg_tiles[0][n_mma, 0] = rebind[b_frag_type](
-                SIMD[b_type, 2](
-                    rebind[Scalar[b_type]](b_mma_frag[0]),
-                    rebind[Scalar[b_type]](b_mma_frag[1]),
+        # Use normal scalar load for FP32 because the thread layout in mma is column-majored.
+        @parameter
+        if b_type == DType.float32:
+
+            @unroll
+            for n_mma in range(num_n_mmas):
+                var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](0, n_mma)
+                var b_mma_frag = b_mma_tile.distribute[Layout.col_major(4, 8)](
+                    int(lane_id)
                 )
-            )
+                b_reg_tiles[0][n_mma, 0] = rebind[b_frag_type](
+                    SIMD[b_type, 2](
+                        rebind[Scalar[b_type]](b_mma_frag[0]),
+                        rebind[Scalar[b_type]](b_mma_frag[1]),
+                    )
+                )
+        # Use transposed ldmatrix for half precision because the matrix is
+        else:
+
+            @unroll
+            for n_mma2 in range(num_n_mmas // 2):
+                var b_mma_tile = b_warp_tile.tile[BK, 2 * MMA_N](0, n_mma2)
+                var vec = ld_mma[
+                    4,
+                    Layout(IntTuple(16, 2), IntTuple(BN // simd_size, 1)),
+                    swizzle=None,
+                    transposed=True,
+                ](b_mma_tile, 0)
+                b_reg_tiles[0][2 * n_mma2, 0] = rebind[b_frag_type](
+                    SIMD[b_type, 4](vec[0], vec[1], vec[2], vec[3])
+                )
+                b_reg_tiles[0][2 * n_mma2 + 1, 0] = rebind[b_frag_type](
+                    SIMD[b_type, 4](vec[4], vec[5], vec[6], vec[7])
+                )
 
     var num_k_tiles = ceildiv(K, BK)
 
@@ -415,20 +452,44 @@ fn multistage_gemm[
                     )
             else:
 
-                @unroll
-                for n_mma in range(num_n_mmas):
-                    var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](
-                        (k_mma + 1) % num_k_mmas, n_mma
-                    )
-                    var b_mma_frag = b_mma_tile.distribute[
-                        Layout.col_major(4, 8)
-                    ](int(lane_id))
-                    b_reg_tiles[next][n_mma, 0] = rebind[b_frag_type](
-                        SIMD[b_type, 2](
-                            rebind[Scalar[b_type]](b_mma_frag[0]),
-                            rebind[Scalar[b_type]](b_mma_frag[1]),
+                @parameter
+                if b_type == DType.float32:
+
+                    @unroll
+                    for n_mma in range(num_n_mmas):
+                        var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](
+                            (k_mma + 1) % num_k_mmas, n_mma
                         )
-                    )
+                        var b_mma_frag = b_mma_tile.distribute[
+                            Layout.col_major(4, 8)
+                        ](int(lane_id))
+                        b_reg_tiles[next][n_mma, 0] = rebind[b_frag_type](
+                            SIMD[b_type, 2](
+                                rebind[Scalar[b_type]](b_mma_frag[0]),
+                                rebind[Scalar[b_type]](b_mma_frag[1]),
+                            )
+                        )
+                else:
+
+                    @unroll
+                    for n_mma2 in range(num_n_mmas // 2):
+                        var b_mma_tile = b_warp_tile.tile[MMA_K, 2 * MMA_N](
+                            (k_mma + 1) % num_k_mmas, n_mma2
+                        )
+                        var vec = ld_mma[
+                            4,
+                            Layout(
+                                IntTuple(16, 2), IntTuple(BN // simd_size, 1)
+                            ),
+                            swizzle=None,
+                            transposed=True,
+                        ](b_mma_tile, 0)
+                        b_reg_tiles[next][2 * n_mma2, 0] = rebind[b_frag_type](
+                            SIMD[b_type, 4](vec[0], vec[1], vec[2], vec[3])
+                        )
+                        b_reg_tiles[next][2 * n_mma2 + 1, 0] = rebind[
+                            b_frag_type
+                        ](SIMD[b_type, 4](vec[4], vec[5], vec[6], vec[7]))
 
             @unroll
             for m_mma in range(num_m_mmas):
@@ -528,11 +589,23 @@ fn multistage_gemm[
                 Layout.row_major(8, 4)
             ](int(lane_id))
             var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
-            c_frag.aligned_store[2](0, 0, SIMD[c_type, 2](c_reg[0], c_reg[1]))
-            c_frag.aligned_store[2](1, 0, SIMD[c_type, 2](c_reg[2], c_reg[3]))
+            c_frag.aligned_store[2](
+                0,
+                0,
+                SIMD[c_type, 2](
+                    c_reg[0].cast[c_type](), c_reg[1].cast[c_type]()
+                ),
+            )
+            c_frag.aligned_store[2](
+                1,
+                0,
+                SIMD[c_type, 2](
+                    c_reg[2].cast[c_type](), c_reg[3].cast[c_type]()
+                ),
+            )
 
 
-fn test[transpose_b: Bool]() raises:
+fn test[type: DType, transpose_b: Bool]() raises:
     alias num_threads = 128
     alias num_pipeline_stages = 4
     alias M = 8192
@@ -540,7 +613,7 @@ fn test[transpose_b: Bool]() raises:
     alias K = 128
     alias BM = 128
     alias BN = 128
-    alias BK = 16
+    alias BK = 32 if type == DType.bfloat16 else 16
     alias WM = 64
     alias WN = 64
     alias shared_mem_bytes = 80 * 1024
@@ -553,11 +626,11 @@ fn test[transpose_b: Bool]() raises:
     ) if transpose_b else Layout.row_major(K, N)
     alias c_layout = Layout.row_major(M, N)
 
-    var a_host = DTypePointer[DType.float32].alloc(M * K)
-    var b_host = DTypePointer[DType.float32].alloc(K * N)
-    var b_trans_host = DTypePointer[DType.float32].alloc(K * N)
-    var c_host = DTypePointer[DType.float32].alloc(M * N)
-    var c_host_ref = DTypePointer[DType.float32].alloc(M * N)
+    var a_host = DTypePointer[type].alloc(M * K)
+    var b_host = DTypePointer[type].alloc(K * N)
+    var b_trans_host = DTypePointer[type].alloc(K * N)
+    var c_host = DTypePointer[type].alloc(M * N)
+    var c_host_ref = DTypePointer[type].alloc(M * N)
 
     for m in range(M):
         for k in range(K):
@@ -573,28 +646,27 @@ fn test[transpose_b: Bool]() raises:
             else:
                 b_trans_host[k * N + n] = k * N + n
 
-    var a_device = _malloc[Float32](M * K)
-    var b_device = _malloc[Float32](K * N)
-    var c_device = _malloc[Float32](M * N)
-    var c_device_ref = _malloc[Float32](M * N)
+    var a_device = _malloc[type](M * K)
+    var b_device = _malloc[type](K * N)
+    var c_device = _malloc[type](M * N)
+    var c_device_ref = _malloc[type](M * N)
 
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_trans_host, K * N)
 
-    var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](c_device)
-    var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](a_device)
-    var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](b_device)
+    var a_buffer = NDBuffer[type, 2, DimList(M, K)](a_device)
+    var b_buffer = NDBuffer[type, 2, DimList(K, N)](b_device)
 
-    var c_tensor = LayoutTensor[DType.float32, c_layout](c_device)
-    var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
-    var b_tensor = LayoutTensor[DType.float32, b_layout](b_device)
+    var c_tensor = LayoutTensor[type, c_layout](c_device)
+    var a_tensor = LayoutTensor[type, a_layout](a_device)
+    var b_tensor = LayoutTensor[type, b_layout](b_device)
 
     alias gemm = multistage_gemm[
-        DType.float32,
+        type,  # c_type
         c_layout,
-        DType.float32,
+        type,  # a_type
         a_layout,
-        DType.float32,
+        type,  # b_type
         b_layout,
         transpose_b,
         BM,
@@ -675,13 +747,11 @@ fn test[transpose_b: Bool]() raises:
 
     # Naive gemm.
     alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[
-        DType.float32, DType.float32, DType.float32, BLOCK_DIM
-    ]
+    alias gemm_naive = matmul_kernel_naive[type, type, type, BLOCK_DIM]
     var func_naive = Function[__type_of(gemm_naive), gemm_naive](
         threads_per_block=256
     )
-    var c_buffer_ref = NDBuffer[DType.float32, 2, DimList(M, N)](c_device_ref)
+    var c_buffer_ref = NDBuffer[type, 2, DimList(M, N)](c_device_ref)
     func_naive(
         c_buffer_ref,
         a_buffer,
@@ -720,7 +790,8 @@ fn test[transpose_b: Bool]() raises:
 def main():
     try:
         with Context() as ctx:
-            test[False]()
-            test[True]()
+            test[DType.float32, False]()
+            test[DType.float32, True]()
+            test[DType.bfloat16, False]()
     except e:
         print("ERROR:", e)
