@@ -7,6 +7,8 @@
 #ifndef KGEN_MOJOBUILD_BSPSERVER_H
 #define KGEN_MOJOBUILD_BSPSERVER_H
 
+#include "MojoBuildServer.h"
+
 #include "KGEN/MojoBuild/Protocol.h"
 #include "Support/ErrorOr.h"
 
