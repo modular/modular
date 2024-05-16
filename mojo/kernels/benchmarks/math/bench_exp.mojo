@@ -72,8 +72,8 @@ def bench_unary[
         throughput_elems=size * sizeof[type](),
     )
 
-    DTypePointer[type].free(input_ptr)
-    DTypePointer[type].free(output_ptr)
+    input_ptr.free()
+    output_ptr.free()
 
 
 fn ldexp2kf_opt[
