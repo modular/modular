@@ -3170,10 +3170,6 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
   // ownership to track, and number them.
   ValueSet valueSet(typeDeclInfo, func);
 
-  // This is set to true if the function has nested functions inside of it.
-  // Some of our analyses are not safe in the face of closures yet.
-  bool hasClosures = false;
-
   // Check if the local variables of this function need debug info.
   DebugInfo::DISubprogramAttr funcSpAttr = func.getSubprogramScope();
   DebugInfo::DICompileUnitAttr compileUnit =
@@ -3186,10 +3182,8 @@ LogicalResult CheckLifetimes::processFunction(LIT::FuncOp func,
       [&](Operation *op) -> WalkResult {
         // Skip looking at nested functions, they are handled as separate
         // contexts.
-        if (isa<LIT::FuncOp>(op)) {
-          hasClosures = true;
+        if (isa<LIT::FuncOp>(op))
           return WalkResult::skip();
-        }
 
         // All the ops that define trackable values have a single result.
         if (op->getNumResults() == 1) {

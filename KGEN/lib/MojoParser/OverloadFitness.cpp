@@ -111,8 +111,7 @@ public:
 
   /// Attach failed parameter inference diagnostics for parameters with no
   /// values to the overload resolution diagnostic.
-  void attach(LITSignatureType signature, InflightDiag &diag, size_t numActual,
-              const CallOperands &operands);
+  void attach(LITSignatureType signature, InflightDiag &diag, size_t numActual);
 
   struct FailedInference {
     size_t paramIdx;
@@ -139,8 +138,8 @@ static void printNameOrIdx(StringAttr name, size_t idx, InflightDiag &diag) {
 }
 
 void ParameterInferenceDiagnostics::attach(LITSignatureType signature,
-                                           InflightDiag &diag, size_t numActual,
-                                           const CallOperands &operands) {
+                                           InflightDiag &diag,
+                                           size_t numActual) {
   // Pick the first diagnostic for the earliest parameter after numActual.
   const FailedInference *best = nullptr;
   for (const FailedInference &failure : diags) {
@@ -179,12 +178,13 @@ namespace {
 /// information about the specified parameter.
 class ParameterInferenceState : public TypeCheckScopeInfo {
 public:
-  ParameterInferenceState(const TypeCheckScopeInfo &scopeInfo,
+  ParameterInferenceState(const ParamBindings &givenBindings,
                           ArrayRef<TypedAttr> bindingsSoFar,
                           const ParserParamEvaluator &evaluator,
                           ParameterInferenceDiagnostics &diags,
                           bool allowImplicitConversions)
-      : TypeCheckScopeInfo(scopeInfo), evaluator(evaluator),
+      : TypeCheckScopeInfo(givenBindings), givenBindings(givenBindings),
+        evaluator(evaluator),
         inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()),
         diags(diags), allowImplicitConversions(allowImplicitConversions) {}
 
@@ -212,6 +212,14 @@ private:
   void addFailure(size_t parameterIndex, InferenceFailure &&info) {
     diags.addFailure(parameterIndex, curArgExpr, std::move(info));
   }
+
+  /// Infer parameters from a single parameter binding.
+  LogicalResult inferOneParam(const ParamBindings::Binding &binding,
+                              Type expectedType);
+
+  /// These are the bindings originally provided to the callable. These are used
+  /// to infer parameters from other parameter values.
+  OperandContainer<ParamBindings::Binding> givenBindings;
 
   ParserParamEvaluator evaluator;
 
@@ -824,6 +832,16 @@ ParameterInferenceState::inferOneOperand(ASTExprAnd<AnyValue> operand,
   return failure();
 };
 
+LogicalResult
+ParameterInferenceState::inferOneParam(const ParamBindings::Binding &binding,
+                                       Type expectedType) {
+  // Don't infer from unpacked parameters.
+  if (isa<UnpackedAttr>(binding.value))
+    return success();
+  curArgExpr = binding.expr;
+  return matchTypes(binding.getType(), expectedType);
+}
+
 /// Given a signature type that has some of its parameter bindings known, burn
 /// the values for those parameters in, leaving the rest untouched so we can
 /// infer them.
@@ -886,19 +904,9 @@ ParameterInferenceState::infer(LITSignatureType signature,
   signature =
       getPartiallySpecializedSignature(signature, inferredParams, evaluator);
   size_t numAlreadySpecialized = inferredParams.size();
+  DefaultValueHandler defaultHandler({}, {}, {});
 
-  // Match up the operands provided by the call to the input arguments.  Keep in
-  // mind that the callee signature might not match at all, so we have to be
-  // careful here!
-  size_t posOperandIdx = 0;
-  DefaultValueHandler defaultHandler(signature.getArgListAttrs());
-  for (auto [expectedArgIdx, expectedConvention] :
-       llvm::enumerate(signature.getArgConventions())) {
-
-    // There is no provided operand for a by-ref result.
-    if (SignatureType::isResultSlot(expectedConvention))
-      continue;
-
+  auto rebindPartialSignature = [&](bool isParam = false) {
     // If we inferred a value for the parameter from previous arguments,
     // substitute it into the expected types of subsequent arguments.  This
     // allows us to handle dependent argument types like:
@@ -922,9 +930,81 @@ ParameterInferenceState::infer(LITSignatureType signature,
 
       signature = getPartiallySpecializedSignature(signature, effectiveBindings,
                                                    evaluator);
-      defaultHandler = DefaultValueHandler(signature.getArgListAttrs());
+      defaultHandler = isParam
+                           ? DefaultValueHandler(signature.getParamListAttrs())
+                           : DefaultValueHandler(signature.getArgListAttrs());
       numAlreadySpecialized = effectiveBindings.size();
     }
+  };
+
+  // If the signature has any inferred parameters, then we have to infer against
+  // the provided binding list, since we might infer parameters from other
+  // parameters.
+  if (signature.hasInferredParams()) {
+    size_t posIdx = 0, numPosParams = givenBindings.posOperands.size();
+    for (auto [idx, pog] :
+         llvm::enumerate(signature.getParamListAttrs().getPogs())) {
+      // Inferred parameters won't have supplied values because they cannot be
+      // specified by the user. We want to infer them from other parameters.
+      if (pog.getPassingKind() == PassingKind::Inferred)
+        continue;
+      rebindPartialSignature(/*isParam=*/true);
+
+      // Note that 'signature' changes the type as we go, so don't use
+      // llvm::enumerate on the argument type list!
+      Type expectedType = signature.getParamTypes()[idx];
+
+      // If we have a varargs parameters, then it will eat the rest of the
+      // parameters, but we have to check each of them.
+      if (signature.isParamVarArg(idx)) {
+        auto expectedVariadic = cast<VariadicType>(expectedType);
+        Type varArgsEltType = expectedVariadic.getElementType();
+        while (posIdx != numPosParams) {
+          if (failed(inferOneParam(givenBindings.posOperands[posIdx++],
+                                   varArgsEltType)))
+            return failure();
+        }
+        continue;
+      }
+
+      // If we're out of positional bindings, try looking for a provided keyword
+      // parameter binding.
+      if (posIdx == numPosParams) {
+        if (std::optional<ParamBindings::Binding> param =
+                givenBindings.findKwArg(signature.getParamName(idx))) {
+          if (failed(inferOneParam(*param, expectedType)))
+            return failure();
+          continue;
+        }
+
+        // If not, and this parameter has a default value, then just skip it. We
+        // can't infer from default values.
+        if (defaultHandler.getDefault(idx))
+          continue;
+
+        // Otherwise, this is a missing parameter.
+        return failure();
+      }
+
+      // In the typical case, this isn't a variadic or keyword parameter. It
+      // must be a positional binding.
+      if (failed(
+              inferOneParam(givenBindings.posOperands[posIdx++], expectedType)))
+        return failure();
+    }
+  }
+
+  // Match up the operands provided by the call to the input arguments.  Keep in
+  // mind that the callee signature might not match at all, so we have to be
+  // careful here!
+  size_t posOperandIdx = 0;
+  for (auto [expectedArgIdx, expectedConvention] :
+       llvm::enumerate(signature.getArgConventions())) {
+
+    // There is no provided operand for a by-ref result.
+    if (SignatureType::isResultSlot(expectedConvention))
+      continue;
+    rebindPartialSignature();
 
     // Note that 'signature' changes the type as we go, so don't use
     // llvm::enumerate on the argument type list!
@@ -1651,12 +1731,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
               isa<TraitDeclOp>(cast<LIT::FuncOp>(*funcIfDirect)->getParentOp()))
             hidden = 1;
           size_t numExpected = signature.getNumParams() - hidden -
-                               countNumImplicitKinds(paramListAttr);
+                               countNumImplicitKinds(paramListAttr) -
+                               countNumInferredKinds(paramListAttr);
           diag = emitDiagFor.wrongParamCount(numExpected, numActual - hidden);
         }
         // For each of the missing parameters, attach any parameter inference
         // diagnostics.
-        inferenceDiags.attach(signature, diag, numActual, callOperands);
+        inferenceDiags.attach(signature, diag, numActual);
       },
       /*emitPosType=*/
       [&](size_t paramIdx, const ParamBindings::Binding &binding,
@@ -1735,11 +1816,13 @@ OverloadFitness OverloadFitness::evaluate(LITSignatureType signature,
                 diag << " of argument ";
                 printNameOrIdx(signature.getArgName(idx), idx, diag);
                 diag << " type '" << structDecl.getSymName() << "'";
+                inferenceDiags.attach(signature, diag, /*numActual=*/0);
                 return;
               }
             }
           }
         }
+        inferenceDiags.attach(signature, diag, /*numActual=*/0);
       },
       /*emitMissing=*/
       [&](ArrayRef<StringAttr> names, const Twine &kindStr) {

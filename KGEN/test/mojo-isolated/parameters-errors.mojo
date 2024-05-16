@@ -284,7 +284,7 @@ struct NoTraitsType:
     pass
 
 # expected-note @below {{function declared here}}
-fn take_some_trait[T: SomeTrait](x: T):
+fn take_some_trait[inferred T: SomeTrait](x: T):
     pass
 
 fn pass_no_traits(x: NoTraitsType):
@@ -310,7 +310,9 @@ fn invalid_params[f: fn(ParamType) -> None]():
   # expected-error @below {{callee expects 1 parameter, but 2 were specified}}
   autoparams[1, 2](ParamType[2]())
   # expected-error @below {{failed to infer implicit parameter 'p' of argument 'x' type 'ParamType'}}
+  # expected-note @below {{parameter isn't used in any argument}}
   autoparams[1](1)
 
   # expected-error @below {{failed to infer implicit parameter 'p' of argument #0}}
+  # expected-note @below {{parameter isn't used in any argument}}
   f(1)

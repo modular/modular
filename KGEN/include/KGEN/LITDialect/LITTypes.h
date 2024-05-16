@@ -102,6 +102,9 @@ public:
   /// If the specified argument is a variadic pack, return the VariadicPack.
   Type getIfVariadicPack(size_t index);
 
+  //// Return true if the parameter at this index is a parameter vararg.
+  bool isParamVarArg(size_t index);
+
   /// Returns true if the signature has variadic parameters.
   bool hasParamVarArgs();
 
@@ -110,6 +113,9 @@ public:
 
   /// Returns true if the signature has keyword variadic arguments.
   bool hasKwVarArgs();
+
+  /// Return true if the signature has inferred parameters.
+  bool hasInferredParams();
 
   /// Return the offset of the error slot argument from the back of the argument
   /// list, if the signature is raising.
