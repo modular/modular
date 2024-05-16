@@ -908,7 +908,6 @@ struct TensorShape(Stringable, CollectionElement, EqualityComparable):
     @always_inline
     fn __del__(owned self):
         """Delete the shape and release any owned memory."""
-        var rep_kind = self._get_rep_kind()
         if self._is_out_of_line():
             var out_of_line = _as_rep_out_of_line(self._rep)
             out_of_line.dims.free()
