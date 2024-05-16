@@ -5,7 +5,7 @@
 # ===----------------------------------------------------------------------=== #
 # RUN: %mojo %s | FileCheck %s
 
-from math.limit import max_finite, min_finite
+from utils.numerics import max_finite, min_finite
 
 
 # CHECK-LABEL: test_numeric_limits

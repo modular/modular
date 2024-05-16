@@ -14,79 +14,13 @@ from math import (
     sin,
     trunc,
 )
-from math.limit import inf, neginf
+from utils.numerics import inf, neg_inf
 from sys.info import has_neon
 
 from complex import ComplexFloat32
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
 
 from utils.numerics import isfinite, isinf, isnan, nan
-
-
-fn test_inf() raises:
-    @parameter
-    if not has_neon():
-        assert_false(isfinite(inf[DType.bfloat16]()))
-
-    assert_false(isfinite(inf[DType.float32]()))
-    assert_false(isfinite(inf[DType.float64]()))
-    assert_true(isinf(inf[DType.float32]()))
-    assert_true(isinf(inf[DType.float64]()))
-
-    @parameter
-    if not has_neon():
-        assert_false(isfinite(neginf[DType.bfloat16]()))
-
-    assert_false(isfinite(neginf[DType.float32]()))
-    assert_false(isfinite(neginf[DType.float64]()))
-    assert_true(isinf(neginf[DType.float32]()))
-    assert_true(isinf(neginf[DType.float64]()))
-
-    @parameter
-    if not has_neon():
-        assert_false(isfinite(nan[DType.bfloat16]()))
-
-    assert_false(isfinite(nan[DType.float32]()))
-    assert_false(isfinite(nan[DType.float64]()))
-    assert_true(isfinite(Float32(33)))
-    assert_true(isinf(Float32(33) / 0))
-    assert_false(isfinite(Float32(33) / 0))
-
-
-fn test_nan() raises:
-    @parameter
-    if not has_neon():
-        assert_false(isnan(inf[DType.bfloat16]()))
-
-    assert_false(isnan(inf[DType.float32]()))
-    assert_false(isnan(neginf[DType.float32]()))
-
-    @parameter
-    if not has_neon():
-        assert_true(isnan(nan[DType.bfloat16]()))
-
-    assert_true(isnan(nan[DType.float32]()))
-    assert_true(isnan(nan[DType.float64]()))
-    assert_false(isnan(Float32(33)))
-
-    assert_equal(
-        isnan(
-            SIMD[DType.float32, 4](1, 0, 3, -1)
-            / SIMD[DType.float32, 4](0, 0, 1, 0)
-        ),
-        SIMD[DType.bool, 4](False, True, False, False),
-    )
-
-    assert_equal(
-        isnan(
-            SIMD[DType.float64, 4](1, 0, 3, -1)
-            / SIMD[DType.float64, 4](0, 0, 1, 0)
-        ),
-        SIMD[DType.bool, 4](False, True, False, False),
-    )
-
-    assert_false(isnan(Float32(1) / Float32(0)))
-    assert_false(isnan(inf[DType.float64]()))
 
 
 fn test_sin() raises:
@@ -114,7 +48,7 @@ def test_copysign():
     assert_equal(1, math.copysign(Float32(1), Float32(2)))
     assert_equal(-1, math.copysign(Float32(1), Float32(-2)))
     assert_equal(
-        neginf[DType.float32](), math.copysign(inf[DType.float32](), -2.0)
+        neg_inf[DType.float32](), math.copysign(inf[DType.float32](), -2.0)
     )
     assert_equal(
         -nan[DType.float32](), math.copysign(nan[DType.float32](), -2.0)
@@ -179,7 +113,7 @@ def test_floor():
 
 def test_trunc():
     # We just test that the `trunc` function resolves correctly for a few common
-    # types. Types should test their own `__floor__` implementation explicitly.
+    # types. Types should test their own `__trunc__` implementation explicitly.
     assert_equal(trunc(0), 0)
     assert_equal(trunc(Int(5)), 5)
     assert_equal(trunc(1.5), 1.0)
@@ -188,8 +122,6 @@ def test_trunc():
 
 
 def main():
-    test_inf()
-    test_nan()
     test_sin()
     test_cos()
     test_factorial()
