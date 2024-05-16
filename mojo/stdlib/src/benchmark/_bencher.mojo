@@ -13,7 +13,7 @@ from stdlib.builtin.file import FileHandle
 from stdlib.builtin.io import _snprintf
 from stdlib.builtin.string import _calc_initial_buffer_size_int32
 
-from utils._numerics import FlushDenormals
+from utils.numerics import FlushDenormals
 
 from .benchmark import *
 from .benchmark import _run_impl, _RunOptions
