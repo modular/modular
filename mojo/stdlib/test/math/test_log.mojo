@@ -6,7 +6,8 @@
 # RUN: %mojo %s
 
 from sys import has_neon
-from math import frexp, isinf, log, log2, isclose
+from math import frexp, log, log2, isclose
+from utils.numerics import isinf
 from testing import assert_true, assert_equal
 
 

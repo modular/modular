@@ -10,11 +10,7 @@ from math import (
     cos,
     factorial,
     floor,
-    isfinite,
-    isinf,
-    isnan,
     isclose,
-    nan,
     sin,
     trunc,
 )
@@ -23,6 +19,8 @@ from sys.info import has_neon
 
 from complex import ComplexFloat32
 from testing import assert_almost_equal, assert_equal, assert_false, assert_true
+
+from utils.numerics import isfinite, isinf, isnan, nan
 
 
 fn test_inf() raises:
