@@ -227,14 +227,12 @@ def HLCF_LoopOp : HLCFParentOp<"loop"> {
   }];
 
   let builders = [
-    OpBuilder<(ins "mlir::Attribute":$level), [{
+    OpBuilder<(ins CArg<"Attribute", "{}">:$level), [{
       build($_builder, $_state, {}, {}, {}, level);
     }]>,
-    OpBuilder<(ins "mlir::TypeRange":$results,
-                   "mlir::ValueRange":$operands,
-                   "mlir::StringAttr":$label), [{
-      build($_builder, $_state, results, operands, label,
-            HLCF::UnrollLevelAttr::get($_builder.getContext(), 0));
+    OpBuilder<(ins "TypeRange":$results, "ValueRange":$operands,
+                   "StringAttr":$label), [{
+      build($_builder, $_state, results, operands, label, {});
     }]>,
   ];
 

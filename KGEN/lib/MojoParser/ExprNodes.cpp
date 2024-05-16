@@ -3127,7 +3127,6 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
   // Gather the lifetimes of each subexpression value. If any of the lifetimes
   // are immutable, then we mutcast the rest to immutable.
   SmallVector<TypedAttr> lifetimes;
-  bool anyImm = false;
   for (ExprNode *subExpr : subExprs) {
     AnyValue subExprValue = emitter.emitExpr(subExpr, dest.getContext());
     if (!subExprValue)
@@ -3152,8 +3151,6 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
       }
     }
     lifetimes.push_back(refType.getLifetime());
-    anyImm |=
-        cast<LifetimeType>(lifetimes.back().getType()).isMutableKnown(false);
 
     // If the lifetime is an InvalidRefLifetimeAttr then this value is
     // derived from an argument which might be bound (after elaboration)
@@ -3167,13 +3164,7 @@ AnyValue MagicFunctionNode::emitLifetimeOf(ValueDest &dest,
     }
   }
 
-  if (anyImm) {
-    for (TypedAttr &lifetime : lifetimes)
-      lifetime = LifetimeMutCastAttr::get(lifetime, /*isMut=*/false);
-  }
-  return LifetimeUnionAttr::get(
-      lifetimes,
-      LifetimeType::get(emitter.getContext(), !anyImm || lifetimes.empty()));
+  return LifetimeUnionAttr::get(emitter.getContext(), lifetimes);
 }
 
 AnyValue MagicFunctionNode::emitTypeOf(ValueDest &dest,
