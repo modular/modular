@@ -255,6 +255,13 @@ KGEN_CompilerRT_LLCL_MojoCallContext_SetToError(
   unwrap(callContext).setToError(message);
 }
 
+/// Get the cuda stream from the context. Null for cpu kernels.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void *
+KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream(
+    LLCLMojoCallContextRef callContext) {
+  return unwrap(callContext).cuStream;
+}
+
 //===----------------------------------------------------------------------===//
 // Packing functions for creating async values
 //===----------------------------------------------------------------------===//
@@ -449,6 +456,8 @@ void M::KGEN::registerLLCL(
                    (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_Complete});
   funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_SetToError",
                    (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_SetToError});
+  funcs.push_back({"KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream",
+                   (void *)&KGEN_CompilerRT_LLCL_MojoCallContext_GetCUStream});
 
   funcs.push_back({"KGEN_CompilerRT_LLCL_InitializeSpinWaiter",
                    (void *)&KGEN_CompilerRT_LLCL_InitializeSpinWaiter});
