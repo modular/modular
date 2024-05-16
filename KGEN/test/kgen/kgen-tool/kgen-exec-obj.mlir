@@ -17,11 +17,11 @@ kgen.global export @exported_global : i32 [@noop, @noop](0)
 
 // EXEC: --- 'my_exported_kernel' returned 1.0
 
-// OBJ-LABEL: {{.*}}my_kernel.o
-// OBJ-LABEL: {{.*}}my_kernel.o
-// OBJ-LABEL: {{.*}}my_kernel.o
-// OBJ-LABEL: {{.*}}my_kernel.o
-// OBJ-LABEL: {{.*}}my_kernel.o
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.0.o):
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.1.o):
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.2.o):
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.3.o):
+// OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.4.o):
 // OBJ: my_exported_kernel
 // OBJ-LABEL: ({{.*}}kgen-exec-obj.mlir.5.o):
 // OBJ: exported_global

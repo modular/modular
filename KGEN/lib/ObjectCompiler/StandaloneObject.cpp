@@ -185,9 +185,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
 
 #endif
 
-      SmallVector<llvm::NewArchiveMember> archiveMembers;
       SmallVector<BufferRef> archiveBuffers;
-
       // Lower the module to LLVM.
       llvm::LLVMContext ctx;
       auto llvmModule = lowerAllFuncsToLLVM(ctx, cast<ModuleOp>(op));
@@ -283,8 +281,7 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
       if (noSplitting || !options.enableLLVMPerFunctionSplitting) {
         andThenSyncMoving(
             cacheResults,
-            [moduleName = moduleName.str(), op,
-             archiveMembers = std::move(archiveMembers), buf = buf.copy(),
+            [moduleName = moduleName.str(), op, buf = buf.copy(),
              output = output.copy(),
              generatingPtx](MutableArrayRef<AnyAsyncValueRef> values) mutable {
 
@@ -317,14 +314,15 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
 
               // Now that all the object files have been compiled, merge them
               // all into a single archive.
-              SmallVector<std::string> archiveMemberNames;
-              for (auto [index, result] : llvm::enumerate(values)) {
+              SmallVector<std::string> archiveMemberNames(values.size());
+              SmallVector<llvm::NewArchiveMember> archiveMembers;
+              for (auto [idx, result] : llvm::enumerate(values)) {
                 auto &resultBuf = result.get<BufferRef>();
-                archiveMemberNames.emplace_back(
-                    (moduleName + "." + Twine(index) + ".o").str());
+                archiveMemberNames[idx] =
+                    (moduleName + "." + Twine(idx) + ".o").str();
 
                 archiveMembers.emplace_back(llvm::MemoryBufferRef(
-                    resultBuf->getBuffer(), archiveMemberNames[index]));
+                    resultBuf->getBuffer(), archiveMemberNames[idx]));
               }
 
               auto result = llvm::writeArchiveToBuffer(
@@ -347,6 +345,8 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
         // Now that all the object files have been compiled,
         // merge them all into a single archive.
         SmallVector<std::string> archiveMemberNames(archiveBuffers.size());
+        SmallVector<llvm::NewArchiveMember> archiveMembers;
+
         for (auto [index, resultBuf] : llvm::enumerate(archiveBuffers)) {
           archiveMemberNames[index] =
               (moduleName + "." + Twine(index) + ".o").str();
