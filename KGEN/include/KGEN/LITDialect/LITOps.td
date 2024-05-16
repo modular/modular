@@ -1362,6 +1362,28 @@ def LIT_OwnershipUseOp : LITOp<"ownership.use"> {
 }
 
 //===----------------------------------------------------------------------===//
+// OwnershipUseLifetimeOp
+//===----------------------------------------------------------------------===//
+
+def LIT_OwnershipUseLifetimeOp : LITOp<"ownership.use_lifetime"> {
+  let summary = "A use of lifetimes that keep any associated values alive";
+  let description = [{
+    The `lit.ownership.use_lifetime` looks like a use of a lifetime, which keeps
+    any associated values live until at least this point. This operation is a
+    noop that is removed by LowerLIT.
+
+    Example:
+
+    ```mlir
+    lit.ownership.use_lifetime mut lt
+    ```
+  }];
+
+  let arguments = (ins AttrOfType<LIT_LifetimeType>:$lifetime);
+  let assemblyFormat = "custom<LifetimeParamValue>($lifetime) attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
 // OwnershipDefLValueOp
 //===----------------------------------------------------------------------===//
 

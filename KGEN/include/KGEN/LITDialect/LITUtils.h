@@ -69,8 +69,12 @@ AttrOrType demangleIfNeeded(AttrOrType arg) {
 /// Print/Parse a (potentially) parametric mutability specifier and then a
 /// value.  The three forms are: "imm expr", "mut expr", "mut=<expr>, expr"
 /// without quotes.
-void printLifetimeParamValue(AsmPrinter &p, TypedAttr value);
 ParseResult parseLifetimeParamValue(AsmParser &p, TypedAttr &result);
+void printLifetimeParamValue(AsmPrinter &p, TypedAttr value);
+inline void printLifetimeParamValue(AsmPrinter &p, Operation *,
+                                    TypedAttr value) {
+  printLifetimeParamValue(p, value);
+}
 
 /// Pretty print a nested symbol reference to a name.
 void printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol);
@@ -263,7 +267,7 @@ public:
         numPositional(countNumInferredKinds(pogs) + countNumPositional(pogs)),
         defaultPosStart(numPositional - defaultsPos.size()),
         kwOnlyEnd(pogs.size() - countNumImplicitKinds(pogs)),
-        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()) {};
+        defaultKwOnlyStart(kwOnlyEnd - defaultsKwOnly.size()){};
 
   DefaultValueHandler(PogListAttr pogListAttr);
 
