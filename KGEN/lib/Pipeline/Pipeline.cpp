@@ -175,8 +175,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
   pm.addNestedPass<FuncOp>(createSROA());
   pm.addNestedPass<FuncOp>(createMem2Reg());
   pm.addNestedPass<FuncOp>(createCanonicalizer());
-  pm.addNestedPass<FuncOp>(
-      createRaiseForLoops({options.optimizationLevel < 1}));
+  pm.addNestedPass<FuncOp>(createRaiseForLoops());
   pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
 
   if (options.optimizationLevel >= 1) {
@@ -215,8 +214,7 @@ void KGEN::buildPostElaborationPipeline(mlir::PassManager &pm,
       std::move(buildAutomaticInlinerFuncPasses)));
 
   if (options.optimizationLevel >= 1) {
-    pm.addNestedPass<FuncOp>(
-        createRaiseForLoops({options.optimizationLevel < 2}));
+    pm.addNestedPass<FuncOp>(createRaiseForLoops());
     pm.addNestedPass<FuncOp>(createLoopUnrolling({options.optimizationLevel}));
     pm.addNestedPass<FuncOp>(createSROA());
     pm.addNestedPass<FuncOp>(createMem2Reg());
