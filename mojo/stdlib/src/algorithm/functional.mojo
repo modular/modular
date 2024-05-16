@@ -22,7 +22,7 @@ from runtime import tracing
 from runtime.llcl import Runtime, TaskGroup, TaskGroupTaskList
 from runtime.tracing import Trace, TraceLevel
 
-from utils._numerics import FlushDenormals
+from utils.numerics import FlushDenormals
 from utils.index import Index, StaticIntTuple
 
 # ===----------------------------------------------------------------------===#

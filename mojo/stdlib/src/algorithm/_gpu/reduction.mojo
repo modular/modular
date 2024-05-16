@@ -24,7 +24,7 @@ from gpu.memory import AddressSpace
 from memory import stack_allocation
 
 from utils.static_tuple import StaticTuple
-from utils._numerics import get_accum_type
+from utils.numerics import get_accum_type
 
 
 @always_inline
