@@ -2,6 +2,7 @@ load("//utils/bazel/build/rules:lit.bzl", "lit_tests")
 
 lit_tests(
     name = "test",
+    size = "large",
     srcs = glob([
         "*.lldb",
         "*.mojo",
