@@ -4,10 +4,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "KGEN/Compiler/ObjectCompiler.h"
-
 #include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
+#include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENOps.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/POPDialect/POPOps.h"
@@ -15,6 +14,7 @@
 #include "LLCL/CompilerSupport/Context.h"
 #include "LLCL/CompilerSupport/MLIRLocationDecoder.h"
 #include "LLCL/Runtime/Algorithms.h"
+#include "LowerToObject.h"
 #include "Support/Context.h"
 #include "Support/FileSystemExtras.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -230,9 +230,14 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
         cacheResults.clear();
       };
 
+      bool parLLC = !generatingPtx && options.enableParallelLLC;
       if (noSplitting) {
-        cacheResults.push_back(lowerLLVMModuleToObject(
-            *llvmModule, op->getLoc(), op->getContext()));
+        SmallVector<AnyAsyncValueRef> results = lowerLLVMModuleToObjects(
+            *llvmModule, op->getLoc(), op->getContext(), parLLC);
+
+        for (AnyAsyncValueRef &result : results)
+          cacheResults.emplace_back(std::move(result));
+
       } else {
         if (!options.saveTempsPrefix.empty()) {
           std::string outPath = options.saveTempsPrefix + ".pre-split.ll";
@@ -249,8 +254,12 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
               *llvmModule, runtime.getWorkQueue()->getParallelismLevel(),
               [&](llvm::Module *inputModule, int64_t idx, bool sync) {
                 if (inputModule) {
-                  cacheResults.push_back(lowerLLVMModuleToObject(
-                      *inputModule, op->getLoc(), op->getContext(), idx));
+                  SmallVector<AnyAsyncValueRef> results =
+                      lowerLLVMModuleToObjects(*inputModule, op->getLoc(),
+                                               op->getContext(),
+                                               /*parLLC=*/false, idx);
+                  for (AnyAsyncValueRef &result : results)
+                    cacheResults.emplace_back(std::move(result));
                 }
                 if (sync)
                   processSync();
@@ -261,11 +270,13 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
           // (#35345).
           // - Other cases where aggressive splitting actually slow down
           // compilation and needs better heuristics to improve.
-          splitPerExported(
-              *llvmModule, [&](llvm::Module &inputModule, int64_t idx) {
-                cacheResults.push_back(lowerLLVMModuleToObject(
-                    inputModule, op->getLoc(), op->getContext(), idx));
-              });
+          splitPerExported(*llvmModule, [&](llvm::Module &inputModule,
+                                            int64_t idx) {
+            SmallVector<AnyAsyncValueRef> results = lowerLLVMModuleToObjects(
+                inputModule, op->getLoc(), op->getContext(), parLLC, idx);
+            for (AnyAsyncValueRef &result : results)
+              cacheResults.emplace_back(std::move(result));
+          });
         }
       }
 
@@ -306,11 +317,12 @@ ObjectCompiler::produceArchive(const SymbolTable &symtab,
 
               // Now that all the object files have been compiled, merge them
               // all into a single archive.
-              SmallVector<std::string> archiveMemberNames(values.size());
+              SmallVector<std::string> archiveMemberNames;
               for (auto [index, result] : llvm::enumerate(values)) {
                 auto &resultBuf = result.get<BufferRef>();
-                archiveMemberNames[index] =
-                    (moduleName + "." + Twine(index) + ".o").str();
+                archiveMemberNames.emplace_back(
+                    (moduleName + "." + Twine(index) + ".o").str());
+
                 archiveMembers.emplace_back(llvm::MemoryBufferRef(
                     resultBuf->getBuffer(), archiveMemberNames[index]));
               }
@@ -393,103 +405,47 @@ ObjectCompiler::produceStandaloneArchive(const SymbolTable &symtab,
   return produceArchive(symtab, exportedSymbols, /*standalone=*/true);
 }
 
-LLCL::AnyAsyncValueRef
-ObjectCompiler::lowerLLVMModuleToObject(llvm::Module &module, Location loc,
-                                        MLIRContext *mlirContext,
-                                        std::optional<size_t> moduleIdx) {
-  WriteableBufferRef keyBuf = WriteableBuffer::get();
-  options.print(*keyBuf << "lowerLLVMModuleToObject(");
-  *keyBuf << ")";
-  size_t nonBitcodeKeySize = keyBuf->getBufferSize();
-
-  // Serialize the module to bitcode to both allow for transferring to a new
-  // context (LLVM isn't threadsafe), and to use in the cachedTransform key.
-  {
-    CompilerTimeTraceScope traceScope("serialize-input-module");
-    llvm::WriteBitcodeToFile(module, *keyBuf);
-  }
-
-  // Perform a cached transform to compile this module slice to an object file.
-  // This will enable some bare bones incremental compilation, as we will be
-  // able to reuse object files for previously compiled slices.
+SmallVector<LLCL::AnyAsyncValueRef>
+ObjectCompiler::lowerLLVMModuleToObjects(llvm::Module &module, Location loc,
+                                         MLIRContext *mlirContext, bool parLLC,
+                                         std::optional<size_t> moduleIdx) {
   LLCL::Runtime &runtime =
       *loadContext(mgr->getContext())->get<LLCL::Runtime>();
-  auto runTransformation = [this, nonBitcodeKeySize, loc, moduleIdx,
-                            mlirContext, keyBuf = keyBuf.copy(),
-                            &runtime](WriteableBufferRef buf,
-                                      LLCL::AnyAsyncValueRef chain) mutable {
+  SmallVector<LLCL::AnyAsyncValueRef> results;
+
+  // Create the target machine.
+  auto machineOr = createTargetMachine(options, isJIT);
+  if (failed(machineOr)) {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
-#ifdef MODULAR_ENABLE_TELEMETRY
-    CacheTelemetryContext::getCacheTelemetryContext(loadContext(mlirContext))
-        .recordCacheMiss("ObjectCompiler::lowerLLVMModuleToObject");
-#endif
-    chain.andThenAsync([this, mlirContext, nonBitcodeKeySize, loc, moduleIdx,
-                        output = output.copy(), keyBuf = std::move(keyBuf),
-                        buf = buf.copy(), &runtime]() mutable {
-#ifdef MODULAR_ENABLE_TELEMETRY
-      [[maybe_unused]] auto timeScope =
-          loadContext(mlirContext)
-              ->get<M::Telemetry::TelemetryContext>()
-              ->createUInt64Timer<std::chrono::milliseconds>(
-                  "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
-                  {{"pipeline", "ObjectCompiler::lowerLLVMModuleToObject"}});
-#endif
-      // Extract out the bitcode from the key, as LLVM bitcode dies if the
-      // buffer contains other data.
-      BufferRef keyBufRef(std::move(keyBuf));
-      StringRef bitcodeBuffer = keyBufRef->getBuffer();
-      bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
+    std::move(output).setToError(
+        LLCL::getMLIRDiagnostic(machineOr.takeError(), loc));
+    results.emplace_back(std::move(output));
+    return results;
+  }
 
-      // Load the cached bytecode into a new context. This is necessary to
-      // avoid data races during multi-threading.
-      llvm::LLVMContext ctx;
-      llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
-          llvm::parseBitcodeFile(
-              llvm::MemoryBufferRef(bitcodeBuffer, "<split-module>"), ctx);
-      if (!moduleOr) {
-        return std::move(output).setToError(
-            LLCL::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
-      }
-      std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
+  // Set the data layout on the module.
+  module.setDataLayout((*machineOr)->createDataLayout());
 
-      // Create the target machine.
-      auto machineOr = createTargetMachine(options, isJIT);
-      if (failed(machineOr)) {
-        return std::move(output).setToError(
-            LLCL::getMLIRDiagnostic(machineOr.takeError(), loc));
-      }
+  // Optimize the llvm Module.
+  if (failed(optimizeLLVMModule(module, **machineOr, options, runtime,
+                                moduleIdx))) {
+    auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
+    std::move(output).setToError(
+        LLCL::getMLIRDiagnostic("failed to optimize LLVM IR.", loc));
+    results.emplace_back(std::move(output));
+    return results;
+  }
 
-      // Set the data layout on the module.
-      module->setDataLayout((*machineOr)->createDataLayout());
+  // HACK HACK HACK https://github.com/modularml/modular/issues/22959
+  // HACK: Some targets like PTX don't support object files so can only
+  // emit assembly.
+  bool emitAssembly =
+      (*machineOr)->getTargetTriple().str().find("nvptx") != std::string::npos;
 
-      // HACK HACK HACK https://github.com/modularml/modular/issues/22959
-      // HACK: Some targets like PTX don't support object files so can only
-      // emit assembly.
-      bool emitAssembly = (*machineOr)->getTargetTriple().str().find("nvptx") !=
-                          std::string::npos;
-
-      // Lower the LLVM to an object file.
-      if (failed(compileLLVMToObject(*module, **machineOr, *buf, options,
-                                     runtime, emitAssembly, moduleIdx))) {
-        return std::move(output).setToError(LLCL::getMLIRDiagnostic(
-            "failed to lower LLVM IR to object file", loc));
-      }
-      std::move(output).emplace(buf.copy());
-    });
-    return output;
-  };
-  auto onCacheHit = [mlirContext](BufferRef buf) {
-#ifdef MODULAR_ENABLE_TELEMETRY
-    CacheTelemetryContext::getCacheTelemetryContext(loadContext(mlirContext))
-        .recordCacheHit("ObjectCompiler::lowerLLVMModuleToObject");
-#endif
-    return buf.copy();
-  };
-
-  return cachedTransform(
-      LLCL::MLIRLocationDecoder::getEncodedLocation(loc), transformCache.copy(),
-      LLCL::AsyncValueRef<Chain>::createReady(runtime), keyBuf.copy(),
-      std::move(runTransformation), onCacheHit);
+  // Codegen optimized llvm module to object files.
+  return compileOptimizedLLVMToObjects(module, loc, options, runtime,
+                                       transformCache, parLLC, isJIT,
+                                       emitAssembly, moduleIdx);
 }
 
 ErrorOr<ElementsAttr>
@@ -561,9 +517,9 @@ ObjectCompiler::produceStandaloneAssembly(const SymbolTable &symtab,
   // Emit the assembly.
   LLCL::Runtime &runtime =
       *loadContext(mgr->getContext())->get<LLCL::Runtime>();
-  if (failed(compileLLVMToObject(*llvmModule, **machineOr, os, options, runtime,
-                                 /*emitAssembly=*/true))) {
+  if (failed(KGEN::compileLLVMToObject(*llvmModule, **machineOr, os, options,
+                                       runtime, /*emitAssembly=*/true)))
     return Error("failed to lower LLVM IR to assembly");
-  }
+
   return success();
 }

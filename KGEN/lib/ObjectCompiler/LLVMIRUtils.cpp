@@ -385,8 +385,10 @@ void LLVMModulePerFunctionSplitterImpl::split(
   int64_t count = 0;
   SmallVector<llvm::Value *> toSplit;
   for (auto &global : mainModule.globals()) {
-    if (global.hasInternalLinkage())
+    if (global.hasInternalLinkage()) {
+      global.setLinkage(llvm::GlobalValue::WeakAnyLinkage);
       continue;
+    }
     // TODO: Add special handling for `llvm.global_ctors` and
     // `llvm.global_dtors`, because otherwise they end up tying almost all
     // symbols into the same split.
