@@ -10,7 +10,7 @@
 
 from benchmark import Bench, Bencher, BenchId
 from benchmark._cuda import time_async_cuda_kernel
-from gpu.host import Context, Stream
+from gpu.host import Context, Stream, CUDADeviceStream
 from gpu.host.memory import _malloc, _free
 
 from LinAlg.MatmulGPU import _matmul_gpu
@@ -85,7 +85,7 @@ fn bench_matmul[
         @parameter
         @always_inline
         fn kernel_launch(stream: Stream) raises:
-            _matmul_gpu(mat_c, mat_a, mat_b)
+            _matmul_gpu(mat_c, mat_a, mat_b, CUDADeviceStream(stream))
 
         b.iter_custom[time_async_cuda_kernel[kernel_launch]]()
 
