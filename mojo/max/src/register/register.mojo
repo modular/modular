@@ -13,14 +13,25 @@ fn op(name: StringLiteral, priority: Int = 0):
     whether the model is from PyTorch, ONNX, or MAX Graph), or to define
     completely custom ops for use with MAX Graph.
 
+    A function with this decorator must have a signature as follows:
+
+    - All arguments are [`Tensor`](/max/reference/mojo/extensibility/Tensor)
+      types.
+    - The return type is a single
+      [`Tensor`](/max/reference/mojo/extensibility/Tensor).
+    - It does not raise any exceptions.
+
     For example, this registers `my_op` as an override implementation of
     the `mo.add` op:
 
     ```mojo
+    from max.extensibility import Tensor
     from max import register
 
     @register.op("mo.add")
-    fn my_op[...](...):
+    fn my_add[
+        type: DType, rank: Int
+    ](x: Tensor[type, rank], y: Tensor[type, rank]) -> Tensor[type, rank]:
     ```
 
     Args:
@@ -44,11 +55,14 @@ fn elementwise():
     For example:
 
     ```mojo
+    from max.extensibility import Tensor
     from max import register
 
     @register.op("mo.add")
     @register.elementwise()
-    fn my_add[...](x: SIMD[...], y: SIMD[...]) -> SIMD[...]:
+    fn my_add[
+        type: DType, rank: Int
+    ](x: Tensor[type, rank], y: Tensor[type, rank]) -> Tensor[type, rank]:
     ```
     """
     return
