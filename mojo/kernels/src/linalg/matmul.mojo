@@ -25,7 +25,8 @@ from .MatmulUtils import (
 )
 from memory import memset_zero
 from memory.unsafe import DTypePointer
-from runtime.llcl import Runtime
+from runtime.llcl import Runtime, MojoCallContextPtr
+from gpu.host import CUDADeviceStream
 
 from .matmul_vnni import Inner_matmul_vnni
 from .matmul_i8mm import Inner_matmul_i8mm
@@ -790,6 +791,7 @@ fn matmul[
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
+    ctx: MojoCallContextPtr = MojoCallContextPtr(),
     num_threads: Int = -1,
 ):
     constrained[target == "cpu" or target == "cuda", "unsupported target"]()
@@ -822,6 +824,7 @@ fn matmul[
             c,
             a,
             b,
+            ctx.get_cuda_device(),
             num_threads,
         )
 

@@ -10,7 +10,7 @@ from algorithm.functional import tile_and_unswitch
 from buffer.buffer import NDBuffer
 from buffer.list import DimList
 from gpu import WARP_SIZE, BlockDim, BlockIdx, ThreadIdx, barrier, lane_id
-from gpu.host import Function, Stream
+from gpu.host import Function, Stream, CUDADeviceStream
 from gpu.host.memory import _memset_async
 from gpu.memory import AddressSpace, async_copy_wait_all
 from gpu.shuffle import shuffle_down, shuffle_idx, warp_reduce
@@ -962,6 +962,7 @@ fn _matmul_gpu[
     c: NDBuffer[_, 2, _],
     a: NDBuffer[_, 2, _],
     b: NDBuffer[_, 2, _],
+    dev: CUDADeviceStream,
     num_threads: Int = -1,
 ):
     # HACK HACK HACK https://github.com/modularml/modular/issues/22959
@@ -994,7 +995,7 @@ fn _matmul_gpu[
                 c.shape,
                 indexing_integral_dtype = DType.uint32,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b)
+            ](c, a, b, dev)
         else:
             _matmul_gpu_dispatch[
                 a.type,
@@ -1005,7 +1006,7 @@ fn _matmul_gpu[
                 c.shape,
                 indexing_integral_dtype = DType.uint64,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-            ](c, a, b)
+            ](c, a, b, dev)
 
     else:
         if use_32bit_indexing:
@@ -1017,7 +1018,7 @@ fn _matmul_gpu[
                 c.type,
                 c.shape,
                 indexing_integral_dtype = DType.uint32,
-            ](c, a, b)
+            ](c, a, b, dev)
         else:
             _matmul_gpu_dispatch[
                 a.type,
@@ -1027,7 +1028,7 @@ fn _matmul_gpu[
                 c.type,
                 c.shape,
                 indexing_integral_dtype = DType.uint64,
-            ](c, a, b)
+            ](c, a, b, dev)
 
 
 @always_inline
@@ -1044,14 +1045,13 @@ fn _matmul_gpu_dispatch[
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
     b: NDBuffer[b_type, 2, b_shape],
+    dev: CUDADeviceStream,
 ):
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
     var k = shape.K
     try:
-        var stream = Stream.get_current_stream()
-
         alias s_type = DType.float32 if (
             a_type == DType.bfloat16 or a_type == DType.float16
         ) else c_type
@@ -1107,7 +1107,6 @@ fn _matmul_gpu_dispatch[
                 var gpu_func = Function[__type_of(dbuffgemm), dbuffgemm](
                     threads_per_block=NUM_THREADS
                 )
-                var stream = Stream.get_current_stream()
                 gpu_func(
                     m,
                     c.data,
@@ -1115,7 +1114,7 @@ fn _matmul_gpu_dispatch[
                     b_tsr,
                     grid_dim=(ceildiv(n, BN), ceildiv(m, BM), 1),
                     block_dim=(NUM_THREADS, 1, 1),
-                    stream=stream,
+                    stream=dev.stream,
                 )
                 return
 
@@ -1163,7 +1162,7 @@ fn _matmul_gpu_dispatch[
                 Scalar[c_type](0),
                 grid_dim=(ceildiv(n, BN), ceildiv(m, BM)),
                 block_dim=(NUM_THREADS),
-                stream=stream,
+                stream=dev.stream,
             )
         elif n == 1:
             alias WARPS_PER_BLOCK = 32
@@ -1191,7 +1190,7 @@ fn _matmul_gpu_dispatch[
                 k,
                 grid_dim=ceildiv(m, WARPS_PER_BLOCK),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                stream=stream,
+                stream=dev.stream,
             )
         elif m == 1 and n % WARP_SIZE == 0 and k % 32 == 0:
             # k should be a multiple of warps per block
@@ -1221,7 +1220,7 @@ fn _matmul_gpu_dispatch[
                 k,
                 grid_dim=ceildiv(n, WARPS_PER_BLOCK),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                stream=stream,
+                stream=dev.stream,
             )
         else:
             # Tile size for tiling in shared memory.
@@ -1254,7 +1253,7 @@ fn _matmul_gpu_dispatch[
                     k,
                     grid_dim=(ceildiv(n, tile_size), ceildiv(m, tile_size)),
                     block_dim=(tile_size, tile_size),
-                    stream=stream,
+                    stream=dev.stream,
                 )
             else:
                 alias BLOCK_DIM = 16
@@ -1283,7 +1282,7 @@ fn _matmul_gpu_dispatch[
                     k,
                     grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
                     block_dim=(BLOCK_DIM, BLOCK_DIM),
-                    stream=stream,
+                    stream=dev.stream,
                 )
     except e:
         abort(e)
