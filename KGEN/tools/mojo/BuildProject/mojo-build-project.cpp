@@ -83,9 +83,8 @@ static ErrorOr<std::string> getMojoBuildServerPath(KGEN::MojoConfig &config) {
   return path.str();
 }
 
-/// For now, this simply launches a `mojo-build-server` executable and sends it
-/// initialization and exit messages. Eventually, this will send messages
-/// that result in the compilation of a Mojo project.
+/// Launches a `mojo-build-server` executable and sends it messages to build
+/// targets in the given workspace (the current working directory, by default).
 static int buildProject(const State &subcommandState) {
   //===--------------------------------------------------------------------===//
   // Command line argument parsing & process initialization
