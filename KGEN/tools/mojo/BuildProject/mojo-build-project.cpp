@@ -40,6 +40,38 @@ struct BuildProjectOptTable : public llvm::opt::PrecomputedOptTable {
 };
 } // namespace
 
+//===----------------------------------------------------------------------===//
+// parseBuildProjectArgs
+//===----------------------------------------------------------------------===//
+
+namespace {
+/// This struct provides an in-memory representation of the arguments passed to
+/// the `build-project` subcommand for structured access.
+struct BuildProjectArgs {
+  /// The path to the build server's workspace. This is the root directory of
+  /// the Mojo project being built.
+  std::filesystem::path workspacePath;
+};
+} // namespace
+
+/// Parse all command line arguments other than `--help`, and collect them into
+/// the given `buildProjectArgs` struct.
+static ErrorOrSuccess
+parseBuildProjectArgs(const State &state, const llvm::opt::InputArgList &args,
+                      BuildProjectArgs &buildProjectArgs) {
+  if (args.hasMultipleArgs(options::OPT_INPUT))
+    return Error("too many inputs, expected exactly one");
+  buildProjectArgs.workspacePath =
+      args.getLastArgValue(options::OPT_INPUT, ".").str();
+  std::error_code ec;
+  buildProjectArgs.workspacePath =
+      std::filesystem::weakly_canonical(buildProjectArgs.workspacePath, ec);
+  if (ec)
+    return Error("input path could not be made absolute: " + ec.message());
+
+  return success();
+}
+
 /// Returns the path to the `mojo-build-server` executable, or an error if none
 /// could be found.
 static ErrorOr<std::string> getMojoBuildServerPath(KGEN::MojoConfig &config) {
@@ -101,7 +133,17 @@ static int buildProject(const State &subcommandState) {
     return state.reportError("input path could not be made absolute: " +
                              ec.message());
 
-  // Assert that we've parsed all command line arguments.
+  // Parse all command line arguments.
+  if (int result = state.parseDiagnosticFormatArguments(
+          args, options::OPT_diagnostic_format))
+    return result;
+  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
+    return result;
+
+  BuildProjectArgs buildProjectArgs;
+  if (auto err = parseBuildProjectArgs(state, args, buildProjectArgs))
+    return state.reportError(err.getError());
+
   state.assertNoUnusedArguments(args);
 
   //===--------------------------------------------------------------------===//
@@ -143,7 +185,8 @@ static int buildProject(const State &subcommandState) {
 
   mlir::lsp::Logger::setLogLevel(mlir::lsp::Logger::Level::Debug);
   Build::BSPClient client(std::move(in), inFile, std::move(out), outFD,
-                          "mojo-build-project", rootUri.string(), serverPath);
+                          "mojo-build-project", buildProjectArgs.workspacePath,
+                          serverPath);
   ErrorOrSuccess result = client.run();
   if (result.isError())
     return state.reportError(result.getError());
