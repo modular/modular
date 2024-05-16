@@ -125,7 +125,7 @@ fn ld_mma[
 
 fn multistage_gemm[
     c_type: DType,
-    c_layout: Layout,
+    c_shape: DimList,
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
@@ -139,7 +139,7 @@ fn multistage_gemm[
     num_threads: Int,
     num_pipeline_stages: Int,
 ](
-    c: LayoutTensor[c_type, c_layout],
+    c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
     b: LayoutTensor[b_type, b_layout],
 ):
@@ -529,8 +529,8 @@ fn multistage_gemm[
                 barrier()
 
     # Map global memory tile down to thread.
-    var c_gmem_tile = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
+    var c_gmem_tile = c.tile[BM, BN]((BlockIdx.y(), BlockIdx.x()))
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN]((int(warp_y), int(warp_x)))
 
     @unroll
     for m_mma in range(num_m_mmas):
@@ -538,14 +538,19 @@ fn multistage_gemm[
         @unroll
         for n_mma in range(num_n_mmas):
             var c_gmem_mma_tile = c_gmem_warp_tile.tile[MMA_M, MMA_N](
-                m_mma, n_mma
+                (m_mma, n_mma)
             )
-            var c_frag = c_gmem_mma_tile.vectorize[1, 2]().distribute[
-                Layout.row_major(8, 4)
-            ](int(lane_id))
+            var c_frag = vectorize[1, 2](c_gmem_mma_tile)
+            var c_frag_local = distribute[
+                thread_layout = Layout.row_major(8, 4)
+            ](c_frag[0], int(lane_id))
             var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
-            c_frag.aligned_store[2](0, 0, SIMD[c_type, 2](c_reg[0], c_reg[1]))
-            c_frag.aligned_store[2](1, 0, SIMD[c_type, 2](c_reg[2], c_reg[3]))
+            c_frag_local._offset((0, 0)).store[
+                width=2, alignment = alignof[SIMD[c_type, 2]]()
+            ](SIMD[c_type, 2](c_reg[0], c_reg[1]))
+            c_frag_local._offset((1, 0)).store[
+                width=2, alignment = alignof[SIMD[c_type, 2]]()
+            ](SIMD[c_type, 2](c_reg[2], c_reg[3]))
 
 
 fn test[transpose_b: Bool]() raises:
@@ -610,7 +615,7 @@ fn test[transpose_b: Bool]() raises:
 
     alias gemm = multistage_gemm[
         DType.float32,
-        c_layout,
+        c_shape,
         DType.float32,
         a_shape,
         DType.float32,
@@ -643,7 +648,7 @@ fn test[transpose_b: Bool]() raises:
         fn run_func(stream: Stream) raises:
             for i in range(nrun):
                 func(
-                    c_tensor,
+                    c_buffer,
                     a_buffer,
                     b_tensor,
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
@@ -655,7 +660,7 @@ fn test[transpose_b: Bool]() raises:
         # Warmup
         for i in range(nwarmup):
             func(
-                c_tensor,
+                c_buffer,
                 a_buffer,
                 b_tensor,
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
@@ -678,7 +683,7 @@ fn test[transpose_b: Bool]() raises:
         )
 
     func(
-        c_tensor,
+        c_buffer,
         a_buffer,
         b_tensor,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
