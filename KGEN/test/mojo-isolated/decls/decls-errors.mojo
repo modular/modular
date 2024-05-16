@@ -123,7 +123,7 @@ fn defaultArgumentUnknownDeclaration(a: Int = unknown): pass
 # expected-error @+1 {{cannot use a dynamic value in default argument}}
 fn defaultArgumentReferencesArgument(a: Int = 0, b: Int = a): pass
 
-# expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int' in default argument}}
+# expected-error @+1 {{cannot implicitly convert 'FloatLiteral' value to 'Int'}}
 fn defaultArgumentBadType(a: Int = 1.0): pass
 
 # expected-error @+1 {{inout arguments may not have defaults}}
@@ -197,7 +197,7 @@ fn badCalls(arg: Int):
   TestTuple[Int, FloatLiteral]().test[1]()
 
 fn badError(a: ParameterizedStruct[Int]):
-  # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]' in 'var' initializer}}
+  # expected-error @+1 {{cannot implicitly convert 'ParameterizedStruct[Int]' value to 'ParameterizedStruct[Bool]'}}
   var b: ParameterizedStruct[Bool] = a
 
 # expected-note @below {{candidate declared here}}
@@ -615,7 +615,7 @@ struct WrongSelfType[a: Int]:
 struct BadInit[size: __mlir_type.index]:
   fn __init__(inout self, elem: BadInit[Int(1).value]):
     var x : __mlir_type[`!pop.simd<`, size, `, FloatDyn>`]
-    # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatDyn>' value to 'BadInit[size]' in assignment}}
+    # expected-error @+1 {{cannot implicitly convert 'simd<size, FloatDyn>' value to 'BadInit[size]'}}
     self = x
 
 struct StructWithField:
