@@ -666,6 +666,22 @@ TypedAttr LifetimeUnionAttr::get(ArrayRef<TypedAttr> operandsIn,
   return LifetimeUnionAttr::Base::get(type.getContext(), operands, resultType);
 }
 
+TypedAttr LifetimeUnionAttr::get(MLIRContext *ctx,
+                                 ArrayRef<TypedAttr> lifetimes) {
+  SmallVector<TypedAttr> newLifetimes;
+  bool anyImm = false;
+  for (TypedAttr lifetime : lifetimes) {
+    anyImm |= ::cast<LifetimeType>(lifetime.getType()).isMutableKnown(false);
+    newLifetimes.push_back(lifetime);
+  }
+  if (anyImm) {
+    for (TypedAttr &lifetime : newLifetimes)
+      lifetime = LifetimeMutCastAttr::get(lifetime, /*isMut=*/false);
+  }
+  return LifetimeUnionAttr::get(
+      newLifetimes, LifetimeType::get(ctx, !anyImm || newLifetimes.empty()));
+}
+
 //===----------------------------------------------------------------------===//
 // LifetimeMutCastAttr
 //===----------------------------------------------------------------------===//

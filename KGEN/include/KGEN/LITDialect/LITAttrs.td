@@ -234,6 +234,8 @@ def LIT_FnMetadataAttr : LITAttr<"FnMetadata", "fn_metadata",
 
   let builders = [
     AttrBuilder<(ins)>,
+    AttrBuilder<(ins "size_t":$numParams, "size_t":$numArgs,
+                     CArg<"size_t", "0">:$numImplicitLifetimeDecls)>,
     AttrBuilderWithInferredContext<(ins
       "PogListAttr":$argListAttrs,
       "PogListAttr":$paramListAttrs,
@@ -439,17 +441,17 @@ def BindTypeAttr : LITTypedAttr<"BindType", "bind_type"> {
   let skipDefaultBuilders = 1;
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
                                         "ArrayRef<TypedAttr>":$values,
                                         "AnyStructType":$type), [{
       return get(type.getContext(), typeValue, values, type);
     }], "TypedAttr">,
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
                                         "ArrayRef<TypedAttr>":$values), [{
       return get(typeValue.getContext(), typeValue, values,
                  getBindTypeResultType(typeValue, values));
     }], "TypedAttr">,
-    TypeBuilder<(ins "TypedAttr":$typeValue, "ArrayRef<TypedAttr>":$values,
+    AttrBuilder<(ins "TypedAttr":$typeValue, "ArrayRef<TypedAttr>":$values,
                      "AnyStructType":$type), "", "TypedAttr">
   ];
 }
@@ -475,14 +477,14 @@ def InvalidRefLifetimeAttr
   let assemblyFormat = "";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Type":$type), [{
+    AttrBuilderWithInferredContext<(ins "Type":$type), [{
       assert(::isa<LifetimeType>(type) && "LifetimeAttr must have LifetimeType");
       return get(type.getContext(), ::cast<LifetimeType>(type));
     }]>,
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
       return get(isMutable.getContext(), LifetimeType::get(isMutable));
     }]>,
-    TypeBuilder<(ins "bool":$isMutable), [{
+    AttrBuilder<(ins "bool":$isMutable), [{
       return get($_ctxt, LifetimeType::get($_ctxt, isMutable));
     }]>
  ];
@@ -506,14 +508,14 @@ def LifetimeAttr : LITTypedAttr<"Lifetime", "lifetime"> {
   let assemblyFormat = "";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Type":$type), [{
+    AttrBuilderWithInferredContext<(ins "Type":$type), [{
       assert(::isa<LifetimeType>(type) && "LifetimeAttr must have LifetimeType");
       return get(type.getContext(), ::cast<LifetimeType>(type));
     }]>,
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
+    AttrBuilderWithInferredContext<(ins "TypedAttr":$isMutable), [{
       return get(isMutable.getContext(), LifetimeType::get(isMutable));
     }]>,
-    TypeBuilder<(ins "bool":$isMutable), [{
+    AttrBuilder<(ins "bool":$isMutable), [{
       return get($_ctxt, LifetimeType::get($_ctxt, isMutable));
     }]>
  ];
@@ -537,13 +539,14 @@ def LifetimeUnionAttr : LITTypedAttr<"LifetimeUnion", "lifetime.union"> {
   let skipDefaultBuilders = 1;
   let builders = [
     // Override the default builder used by the generated parser.
-    TypeBuilderWithInferredContext<(ins
+    AttrBuilderWithInferredContext<(ins
       "ArrayRef<TypedAttr>":$operands,
       "LifetimeType":$type
     ), "", "TypedAttr">,
-    TypeBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeType":$type), [{
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands, "LifetimeType":$type), [{
       return get(operands, type);
-    }], "TypedAttr">
+    }], "TypedAttr">,
+    AttrBuilder<(ins "ArrayRef<TypedAttr>":$operands), [{}], "TypedAttr">,
   ];
 
   let extraClassDeclaration = [{
@@ -575,13 +578,13 @@ def LifetimeMutCastAttr : LITTypedAttr<"LifetimeMutCast", "lifetime.mutcast"> {
   let skipDefaultBuilders = 1;
   let builders = [
     // These builders fold the request automatically.
-    TypeBuilderWithInferredContext<(ins
+    AttrBuilderWithInferredContext<(ins
       "TypedAttr":$operand, "TypedAttr":$isMutable), "", "TypedAttr">,
-    TypeBuilderWithInferredContext<(ins
+    AttrBuilderWithInferredContext<(ins
       "TypedAttr":$operand, "mlir::Type":$type), "", "TypedAttr">,
-    TypeBuilderWithInferredContext<(ins
+    AttrBuilderWithInferredContext<(ins
       "TypedAttr":$operand, "bool":$isMutable), "", "TypedAttr">,
-    TypeBuilder<(ins "TypedAttr":$operand, "LifetimeType":$type), [{
+    AttrBuilder<(ins "TypedAttr":$operand, "LifetimeType":$type), [{
       return get(operand, type);
     }], "TypedAttr">,
   ];
@@ -620,7 +623,7 @@ def ImplicitLifetimeRefAttr
   let assemblyFormat = "`<` $depth `,` $index `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins
+    AttrBuilderWithInferredContext<(ins
       "size_t":$depth, "size_t":$index, "Type":$type), [{
       return get(type.getContext(), depth, index, ::cast<LifetimeType>(type));
     }]>
