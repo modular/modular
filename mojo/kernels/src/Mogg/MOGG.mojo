@@ -11,8 +11,6 @@ from math import (
     erf,
     exp,
     fma,
-    isinf,
-    isnan,
     log,
     log1p,
     pow,
@@ -27,6 +25,7 @@ from sys.info import simdwidthof
 from sys.intrinsics import strided_load
 from sys.param_env import is_defined
 from utils import StaticTuple
+from utils.numerics import isinf, isnan
 
 from algorithm import argmax as _argmax
 from algorithm import argmin as _argmin

@@ -9,13 +9,12 @@ from math import (
     erf,
     exp,
     iota,
-    isinf,
-    isnan,
     log,
     log1p,
     rsqrt,
     sqrt,
 )
+from utils.numerics import isinf, isnan
 
 from algorithm.reduction import _reduce_generator
 from buffer.list import DimList
