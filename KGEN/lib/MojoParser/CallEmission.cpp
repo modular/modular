@@ -326,7 +326,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
     PassingKind passingKind = pogAttr.getPassingKind();
     StringAttr paramName = pogAttr.getName();
     if (posBindingIdx == numPosBindings ||
-        (parameterInferenceHook && passingKind == PassingKind::Implicit)) {
+        (parameterInferenceHook && (passingKind == PassingKind::Implicit ||
+                                    passingKind == PassingKind::Inferred))) {
       // We first check if we have a keyword parameter.
       if (std::optional<Binding> binding = operands.findKwArg(paramName)) {
         assert(passingKind != PassingKind::PosOnly);
@@ -359,7 +360,8 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
         continue;
       }
 
-      if (passingKind == PassingKind::Implicit) {
+      if (passingKind == PassingKind::Implicit ||
+          passingKind == PassingKind::Inferred) {
         if (diagEmitter.emitInferOnlyFailure)
           diagEmitter.emitInferOnlyFailure(idx);
         return {{}, fitness};
@@ -484,8 +486,9 @@ ParamBindings::verifyBindings(ArrayRef<Type> expectedParamTypes,
                               llvm::SMLoc exprLoc,
                               std::optional<Location> opLoc,
                               Boundness boundness) const {
-  size_t maxAllowed =
-      expectedParamTypes.size() - countNumImplicitKinds(paramListAttr);
+  size_t maxAllowed = expectedParamTypes.size() -
+                      countNumImplicitKinds(paramListAttr) -
+                      countNumInferredKinds(paramListAttr);
   DiagEmitter diagEmitter{
       /*emitParamCount=*/[&](size_t numActual, bool posOnly) {
         InflightDiag diag = shared.emitError(exprLoc, baseName);
@@ -628,6 +631,19 @@ ParamBindings::verifyBindings(LITSignatureType sig, StringRef baseName,
       opLoc ? Twine("'") + baseName + "'" : Twine(baseName), exprLoc, opLoc,
       opLoc ? Boundness::Partial : Boundness::Explicit);
   return newBindings;
+}
+
+void ParamBindings::dump() const {
+  llvm::dbgs() << "Positional bindings:\n";
+  for (auto [i, binding] : llvm::enumerate(posBindings)) {
+    llvm::dbgs() << "  " << i << "[" << binding.typeChecked
+                 << "]: " << binding.value << "\n";
+  }
+  llvm::dbgs() << "Kewword bindings:\n";
+  for (auto [name, binding] : kwBindings) {
+    llvm::dbgs() << "  " << name.getValue() << "[" << binding.typeChecked
+                 << "]: " << binding.value << "\n";
+  }
 }
 
 //===----------------------------------------------------------------------===//

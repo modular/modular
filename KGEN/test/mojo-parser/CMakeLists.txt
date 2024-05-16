@@ -17,4 +17,5 @@ add_modular_testsuite(check-mojo-parser
   TOOLS
   kgen-opt
   kgen-translate
+  hash-mlir
 )

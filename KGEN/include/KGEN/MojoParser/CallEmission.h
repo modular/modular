@@ -239,6 +239,14 @@ public:
   verifyBindings(LITSignatureType sig, StringRef baseName, llvm::SMLoc exprLoc,
                  std::optional<Location> opLoc = std::nullopt) const;
 
+  /// Allow implicit conversion to an operand container.
+  operator OperandContainer<Binding>() const {
+    return {posBindings, &kwBindings};
+  }
+
+  /// Method for debugging.
+  LLVM_DUMP_METHOD void dump() const;
+
 private:
   /// Check that our set of parameter bindings work with the specified input
   /// parameters. If so, return a checked ParameterExprArrayAttr, along with
