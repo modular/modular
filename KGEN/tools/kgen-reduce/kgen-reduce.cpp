@@ -65,10 +65,12 @@ struct Reducer {
   }
 
   ErrorOrSuccess run();
+  ErrorOrSuccess reduceFunctionsBinary(IRState &curState);
   ErrorOrSuccess reduceFunctions(IRState &curState);
   ErrorOrSuccess reduceRegions(IRState &curState);
   ErrorOrSuccess reduceOps(IRState &curState);
-  ErrorOrSuccess tryDCE(IRState &curState);
+  ErrorOrSuccess reduceDCE(IRState &curState);
+  ErrorOr<bool> tryDCE(IRState &curState);
 
   /// Run the pass pipeline on a clone of the module and return the diagnostics
   /// if any were emitted.
@@ -150,29 +152,45 @@ ErrorOrSuccess Reducer::run() {
     return err;
 
   if (startAt <= 0) {
-    if (auto err = reduceFunctions(curModule))
+    if (auto err = reduceFunctionsBinary(curModule))
       return err;
     if (auto err = tryDCE(curModule))
-      return err;
-    if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions"))
+      return err.takeError();
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions.binary"))
       return err;
   }
 
   if (startAt <= 1) {
-    if (auto err = reduceRegions(curModule))
+    if (auto err = reduceFunctions(curModule))
       return err;
     if (auto err = tryDCE(curModule))
-      return err;
-    if (auto err = stashFile(*curModule.ir, "kgen-reduce.regions"))
+      return err.takeError();
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.functions"))
       return err;
   }
 
   if (startAt <= 2) {
+    if (auto err = reduceRegions(curModule))
+      return err;
+    if (auto err = tryDCE(curModule))
+      return err.takeError();
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.regions"))
+      return err;
+  }
+
+  if (startAt <= 3) {
     if (auto err = reduceOps(curModule))
       return err;
     if (auto err = tryDCE(curModule))
-      return err;
+      return err.takeError();
     if (auto err = stashFile(*curModule.ir, "kgen-reduce.ops"))
+      return err;
+  }
+
+  if (startAt <= 4) {
+    if (auto err = reduceDCE(curModule))
+      return err;
+    if (auto err = stashFile(*curModule.ir, "kgen-reduce.ops.dce"))
       return err;
   }
 
@@ -227,6 +245,227 @@ ErrorOrSuccess Reducer::maybeSnapshot(ModuleOp module) {
     auto drop = std::move(snapshots.front());
     snapshots.pop();
     unkeepToolOutputFile(*drop);
+  }
+
+  return success();
+}
+
+/// This reduction function uses a bisecting search to determine the set of
+/// functions in the module that can be stubbed while still reproducing the
+/// original error. The algorithm is as follows:
+///
+/// We initialize a vector with all active (unstubbed) functions. The goal is to
+/// find the minimum set of functions that need to be active for the error to
+/// reproduce. We can stub and unstub subranges of functions in the vector at a
+/// time and then test whether the error reproduces.
+///
+/// Given a subrange [low, high] of the vector where all functions are active
+/// and the error is known to current reproduce, we find the lower bound [low,
+/// ub) of functions that can be stubbed. This is done by iteratively stubbing
+/// and unstubbing functions half of the subrange at a time.
+///
+/// Then we do the same to find the upper bound [lb, high). We know that the
+/// functions at `ub` and `lb` (if they are within the original subrange) are
+/// required to reproduce the error. We repeat this algorithm on the new
+/// subrange (ub, lb).
+///
+/// Computing the lower bound is O(N + C*log(N)^2), where C is big (cost to
+/// clone the module and run the pass pipeline times average size of a
+/// function). Thus, the overall algorithm is approximately
+/// O( (N + C*log(N)^2) * M ) where M is the number of functions in the minimum
+/// reproducer and N is the number of functions in the module. You can see that
+/// if the vector is sparse (M << N), then this runs in linear time, but what
+/// actually matters is stomping the C factor as much as possible, because
+/// cloning and running the pass pipeline is really, really slow compared to
+/// stubbing functions (just moving regions around).
+///
+/// This algorithm assumes that the minium reproducer is the same regardless of
+/// the order in which it is found, which is almost certainly not the case.
+/// That's why we still run a linear search after this one. The linear search is
+/// O( N^2 + C*N*log(N) ). The C component is O(N*log(N)) because the module
+/// gets smaller as we stub out more functions. From above, the C component
+/// actually dominates. The C component is likely not constant either due to
+/// memory shenanigans (pointer chasing/caching, memory allocator, etc.).
+ErrorOrSuccess Reducer::reduceFunctionsBinary(IRState &curState) {
+  std::vector<KGEN::FuncOp> funcs;
+  bool anyKgenFunc = false;
+  for (auto func : curState.ir->getOps<KGEN::FuncOp>()) {
+    anyKgenFunc = true;
+    // Ignore functions that are already stubbed.
+    if (isStubbed(func.getBodyRegion()))
+      continue;
+    funcs.push_back(func);
+  }
+  if (!anyKgenFunc) {
+    return Error("zero 'kgen.func' operations found, 'kgen-reduce' only works "
+                 "on post-elaboration IR right now");
+  }
+
+  log << "[kgen-reduce] attempt to binary stub\n";
+
+  /// We'll be stubbing multiple functions at once. Keep track of them all in
+  /// this dandy data structure with helpers for stubbing and unstubbing.
+  struct StubbedFunction {
+    KGEN::FuncOp func;
+    Region owner;
+#ifndef NDEBUG
+    /// This flag is used for correctness checking the algorithm.
+    bool isStubbed = false;
+#endif // NDEBUG
+
+    void stub() {
+      assert(!isStubbed && "already stubbed?");
+      stubRegion(func.getBodyRegion(), owner);
+      isStubbed = true;
+    }
+    void unstub() {
+      assert(isStubbed && "not stubbed?");
+      func.getBodyRegion().takeBody(owner);
+      isStubbed = false;
+    }
+  };
+
+  std::vector<StubbedFunction> span(funcs.size());
+  for (auto [stub, func] : llvm::zip(span, funcs))
+    stub.func = func;
+
+  // This functor stubs a span of functions in [low, high].
+  auto stubSpan = [&span](int64_t low, int64_t high) {
+    for (int64_t i = low; i <= high; ++i)
+      span[i].stub();
+  };
+  // This functor unstubs a span of functions in [low, high].
+  auto unstubSpan = [&span](int64_t low, int64_t high) {
+    for (int64_t i = low; i <= high; ++i)
+      span[i].unstub();
+  };
+
+  // This function computes the lower bound as described above with a bisection.
+  // We start with a subrange and bisect by stubbing the lower have of the
+  // current subrange and then moving to the upper half while the error still
+  // reproduces. If at any point it stops reproducing, we bisect and unstub in
+  // the opposite direction until the subrange converges to a single function.
+  // Because of the flip-flopping, we have to specially handle the single
+  // function case to avoid an infinite loop or indeterminate case.
+  auto lowerBoundFail = [this, &curState, &stubSpan,
+                         &unstubSpan](int64_t low, int64_t high) {
+    [[maybe_unused]] int64_t low0 = low;
+    bool repros = true;
+    while (low < high) {
+      // Repros in the current span. Stub the first half of the span.
+      if (repros) {
+        // Stub [low, mid].
+        int64_t mid = low + (high - low) / 2;
+        log << "[stubbing span [" << low << ", " << mid << "]]\n";
+        stubSpan(low, mid);
+        if ((repros = doesRepro(*curState.ir)))
+          low = mid + 1;
+        else
+          high = mid;
+      } else {
+        // Unstub [mid, high].
+        int64_t mid = low + llvm::divideCeil(high - low, 2);
+        log << "[unstubbing span [" << mid << ", " << high << "]]\n";
+        unstubSpan(mid, high);
+        if ((repros = doesRepro(*curState.ir)))
+          low = mid;
+        else
+          high = mid - 1;
+      }
+    }
+    assert(low == high && "invalid exit condition");
+    if (repros) {
+      log << "[point testing " << low << "]\n";
+      stubSpan(low, low);
+      if (doesRepro(*curState.ir)) {
+        return low + 1;
+      }
+      unstubSpan(low, low);
+      return low;
+    }
+    log << "[double check " << low << "]\n";
+    unstubSpan(low, low);
+    if (doesRepro(*curState.ir)) {
+      return low;
+    }
+    // This must be the initial state, and because we know we're in the initial
+    // state, we know it must reproduce so this is invalid.
+    assert(low == low0);
+    llvm_unreachable("everything got unstubbed but not original repro?");
+  };
+
+  // This functor does the same but to find the upper bound. The index
+  // computations are moved around a bit.
+  auto upperBoundFail = [this, &curState, &stubSpan,
+                         &unstubSpan](int64_t low, int64_t high) -> int64_t {
+    [[maybe_unused]] int64_t high0 = high;
+    bool repros = true;
+    while (low < high) {
+      // Repros in the current span. Stub the first half of the span.
+      if (repros) {
+        int64_t mid = low + llvm::divideCeil(high - low, 2);
+        log << "[stubbing span [" << mid << ", " << high << "]]\n";
+        stubSpan(mid, high);
+        if ((repros = doesRepro(*curState.ir)))
+          high = mid - 1;
+        else
+          low = mid;
+      } else {
+        int64_t mid = low + (high - low) / 2;
+        log << "[unstubbing span [" << low << ", " << mid << "]]\n";
+        unstubSpan(low, mid);
+        if ((repros = doesRepro(*curState.ir)))
+          high = mid;
+        else
+          low = mid + 1;
+      }
+    }
+    assert(low == high && "invalid exit condition");
+    if (repros) {
+      log << "[point testing " << low << "]\n";
+      stubSpan(low, low);
+      if (doesRepro(*curState.ir)) {
+        return low - 1;
+      }
+      unstubSpan(low, low);
+      return low;
+    }
+    log << "[double check " << low << "]\n";
+    unstubSpan(low, low);
+    if (doesRepro(*curState.ir)) {
+      return low;
+    }
+    assert(low == high0);
+    llvm_unreachable("everything got unstubbed but not original repro?");
+  };
+
+  int64_t low = 0;
+  int64_t high = span.size() - 1;
+
+  while (low < high) {
+    if (auto err = maybeSnapshot(*curState.ir))
+      return err.takeError();
+
+    int64_t ub = lowerBoundFail(low, high);
+    log << "[" << low << ", " << high << "]\n";
+    log << "ub: " << ub << "\n";
+    if (ub >= high) {
+      assert((ub == high) || (ub == (high + 1)));
+      return success();
+    }
+    low = ub + 1;
+
+    if (auto err = maybeSnapshot(*curState.ir))
+      return err.takeError();
+
+    int64_t lb = upperBoundFail(low, high);
+    log << "[" << low << ", " << high << "]\n";
+    log << "lb: " << lb << "\n";
+    if (lb <= low) {
+      assert((lb == low) || (lb == (low - 1)));
+      return success();
+    }
+    high = lb - 1;
   }
 
   return success();
@@ -381,7 +620,35 @@ ErrorOrSuccess Reducer::reduceOps(IRState &curState) {
   return success();
 }
 
-ErrorOrSuccess Reducer::tryDCE(IRState &curState) {
+ErrorOrSuccess Reducer::reduceDCE(IRState &curState) {
+  ErrorOr<bool> result = tryDCE(curState);
+  if (failed(result))
+    return result.takeError();
+  if (*result)
+    return success();
+
+  std::vector<KGEN::FuncOp> funcs;
+  for (auto func : curState.ir->getOps<KGEN::FuncOp>()) {
+    // Ignore stubbed functions.
+    if (isStubbed(func.getBodyRegion()))
+      continue;
+    funcs.push_back(func);
+  }
+
+  for (KGEN::FuncOp func : funcs) {
+    func.setExported();
+    ErrorOr<bool> result = tryDCE(curState);
+    if (failed(result))
+      return result.takeError();
+    if (*result)
+      return success();
+    func.setNotExported();
+  }
+
+  return success();
+}
+
+ErrorOr<bool> Reducer::tryDCE(IRState &curState) {
   // Clone the module and attempt to run DCE.
   IRState nextState(curState.ir->clone());
   if (failed(dcePm.run(*nextState.ir)))
@@ -391,11 +658,11 @@ ErrorOrSuccess Reducer::tryDCE(IRState &curState) {
   if (doesRepro(*nextState.ir)) {
     log << "[kgen-reduce] fails with DCE\n";
     curState.ir = std::move(nextState.ir);
-    return success();
+    return true;
   }
   log << "[kgen-reduce] does not fail with DCE\n";
 
-  return success();
+  return false;
 }
 
 int main(int argc, char **argv) {
