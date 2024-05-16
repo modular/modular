@@ -900,10 +900,6 @@ def RaiseForLoops: Pass<"raise-for-loops", "KGEN::FuncOp"> {
   }];
 
   let dependentDialects = ["HLCF::HLCFDialect"];
-  let options = [
-    Option<"warnFailure", "warn-failure", "bool", "true",
-           "If true, failure to raise for loop will warn.">
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -921,7 +917,7 @@ def LoopUnrolling : Pass<"loop-unrolling", "KGEN::FuncOp"> {
   let dependentDialects = ["HLCF::HLCFDialect"];
 
   let options = [
-    Option<"optimizationLevel", "opt-level", "unsigned", "3",
+    Option<"optimizationLevel", "optimization-level", "unsigned", "3",
            "The compilation optimization level.">
   ];
 }
@@ -1022,7 +1018,7 @@ def DeadArgumentElimination:
 def RemoveUnusedParams : Pass<"remove-unused-params", "mlir::ModuleOp"> {
   let summary = "Rewrites functions to remove unused args & params";
   let description = [{
-    Replaces a function with a new function that drops all unused 
+    Replaces a function with a new function that drops all unused
     parameters and arguments, updating all the callers to reflect
     the new function call.
   }];

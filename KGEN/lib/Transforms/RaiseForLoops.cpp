@@ -16,6 +16,8 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 
+#define DEBUG_TYPE "raise-for-loops"
+
 using namespace M;
 using namespace HLCF;
 using namespace KGEN;
@@ -36,8 +38,6 @@ namespace {
 // TODO: raise any LoopOp with or without an unroll factor if possible.
 struct RaiseForLoops : impl::RaiseForLoopsBase<RaiseForLoops> {
   using RaiseForLoopsBase::RaiseForLoopsBase;
-  explicit RaiseForLoops(const RaiseForLoopsOptions &options = {})
-      : RaiseForLoopsBase(options) {}
 
   void runOnOperation() override;
 
@@ -397,10 +397,8 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
 
   // Only raise a loop with no early exits which should have only one BreakOp
   // and one ContinueOp.
-  if (iter->second.size() <= 1) {
-    diag.attachNote(loop->getLoc()) << "loop has no exit";
-    return failure();
-  }
+  if (iter->second.size() <= 1)
+    return diag.attachNote(loop->getLoc()) << "loop has no exit";
 
   if (iter->second.size() > 2) {
     SmallVector<Operation *> breakOps;
@@ -443,44 +441,41 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
   if (!breakOp)
     breakOp = dyn_cast<BreakOp>(iter->second.back());
   if (!continueOp) {
-    diag.attachNote(loop->getLoc()) << "cannot infer loop bounds and steps";
-    return failure();
+    return diag.attachNote(loop->getLoc())
+           << "cannot infer loop bounds and steps";
   }
 
-  if (!breakOp) {
-    diag.attachNote(loop->getLoc()) << "loop has no exit";
-    return failure();
-  }
+  if (!breakOp)
+    return diag.attachNote(loop->getLoc()) << "loop has no exit";
 
   Block &body = loop.getBody().front();
   Operation *term = body.getTerminator();
 
   if (!isa<ContinueOp>(term)) {
-    diag.attachNote(loop->getLoc()) << "cannot infer loop bounds and steps";
-    return failure();
+    return diag.attachNote(loop->getLoc())
+           << "cannot infer loop bounds and steps";
   }
 
   IfOp ifOp = dyn_cast<IfOp>(breakOp->getParentOp());
 
   if (!ifOp) {
-    diag.attachNote(loop->getLoc()) << "cannot infer loop bounds and steps";
-    return failure();
+    return diag.attachNote(loop->getLoc())
+           << "cannot infer loop bounds and steps";
   }
 
   if (hasComplexExitLogic(loop, ifOp)) {
     // TODO: handle exit logic in loop unrolling and lower loops, which requires
     // raise ForOp to keep track of the exit block.
-    diag.attachNote(loop->getLoc()) << "loop has complex exit logic";
-    return failure();
+    return diag.attachNote(loop->getLoc()) << "loop has complex exit logic";
   }
 
   std::optional<ForLoopBoundsAndSteps> loopInfo =
       inferLoopCount(loop, continueOp, breakOp);
 
   if (!loopInfo.has_value()) {
-    diag.attachNote(loop->getLoc())
-        << "cannot infer loop bounds and steps as constants for fully unroll";
-    return failure();
+    return diag.attachNote(loop->getLoc())
+           << "cannot infer loop bounds and steps as constants for fully "
+              "unroll";
   }
 
   mlir::IRRewriter rewriter{OpBuilder(loop)};
@@ -493,9 +488,8 @@ LogicalResult RaiseForLoops::raiseForLoops(LoopOp loop,
     } else {
       // Assuming that we only handle break has operands that are all
       // BlockArguments.
-      diag.attachNote(loop->getLoc())
-          << "complex loop structure, cannot infer loop bounds and steps";
-      return failure();
+      return diag.attachNote(loop->getLoc())
+             << "complex loop structure, cannot infer loop bounds and steps";
     }
   }
 
@@ -577,24 +571,13 @@ void RaiseForLoops::runOnOperation() {
   walkLoopsPreorder(getOperation());
   // raise for-loops from inner to outer
   for (LoopOp loop : llvm::reverse(loopsToRaiseInOrder)) {
-    // FIXME(#29784) https://github.com/modularml/modular/issues/29784
-    // Revert this warning back to compilation error when we have more
-    // sophisticated analysis to extra loop bounds and step info with general
-    // patterns (e.g. SCEV). `@unroll` should be a compilation guarantee instead
-    // of as a hint.
     InFlightDiagnostic diag =
         mlir::emitWarning(loop->getLoc(), " loop is decorated with @unroll, "
                                           "but compiler can't fully unroll it");
-
-    if (failed(raiseForLoops(loop, diag)) && loop.isFullUnroll()) {
-      if (!warnFailure) {
-        // Don't warn failure because it's possible the loop can be raised if we
-        // run this pass again.
-        diag.abandon();
-      }
-      continue;
-    }
-
-    diag.abandon();
+    (void)raiseForLoops(loop, diag);
+    bool dropDiag = true;
+    LLVM_DEBUG(dropDiag = false;);
+    if (dropDiag)
+      diag.abandon();
   }
 }
