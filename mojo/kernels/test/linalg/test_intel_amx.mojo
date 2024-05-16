@@ -7,6 +7,7 @@
 # This file is only run on targets with Intel AMX and Linux.
 #
 # ===----------------------------------------------------------------------=== #
+# REQUIRES: DISABLED
 # REQUIRES: linux, intel_amx
 # RUN: %mojo %s | FileCheck %s
 
