@@ -17,7 +17,6 @@ from .MatmulUtils import (
     GemmShape,
     get_matmul_prefetch_b_distance_k,
 )
-from .MatmulLoadStore import LoadStore_i8mm
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from math import align_up
@@ -27,6 +26,114 @@ from .accumulate import _Accumulator
 
 from utils.index import Index, StaticIntTuple
 from utils.loop import unroll
+
+
+struct LoadStore_i8mm[
+    type: DType,
+    simd_size: Int,
+    skip_boundary_check: Bool,
+    single_row: Bool,
+    tile_rows: Int,
+    tile_columns: Int,
+]:
+    alias num_simd_cols = tile_columns // simd_size
+    var output_tile: _Accumulator[
+        type, tile_rows, Self.num_simd_cols, simd_size
+    ]
+
+    @always_inline
+    fn __init__(inout self):
+        self.output_tile = _Accumulator[
+            type, tile_rows, Self.num_simd_cols, simd_size
+        ]()
+
+    @always_inline
+    fn _initialize_c_tile(inout self):
+        self.output_tile.init(0)
+
+    @always_inline
+    fn _load_c_tile(
+        inout self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        var c_ptr_loc = c_ptr.offset(tile_n_idx)
+
+        @always_inline
+        @parameter
+        fn body[idx0: Int, idx1: Int]():
+            var c_data: SIMD[type, simd_size] = 0
+            if skip_boundary_check or (idx1 * 2 + 2 <= c_bound[1] - tile_n_idx):
+                var t0 = c_ptr_loc.load[width=2](
+                    c_stride * (2 * idx0 + 0) + 2 * idx1
+                )
+                var t1 = c_ptr_loc.load[width=2](
+                    c_stride * (2 * idx0 + 1) + 2 * idx1
+                ) if not single_row else SIMD[type, 2](0)
+                c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
+            elif idx1 * 2 <= c_bound[1]:
+                var t0 = partial_simd_load[2](
+                    c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
+                    0,
+                    c_bound[1] - tile_n_idx - idx1 * 2,
+                    0,
+                )
+                var t1 = partial_simd_load[2](
+                    c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
+                    0,
+                    c_bound[1] - tile_n_idx - idx1 * 2,
+                    0,
+                ) if not single_row else SIMD[type, 2](0)
+                c_data = rebind[SIMD[type, simd_size]](t0.join(t1))
+
+            self.output_tile[idx0, idx1] = c_data
+
+        unroll[body, tile_rows, tile_columns // simd_size]()
+
+    @always_inline
+    fn _store_c_tile(
+        inout self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        var c_ptr_loc = c_ptr.offset(tile_n_idx)
+
+        @always_inline
+        @parameter
+        fn body[idx0: Int, idx1: Int]():
+            var c_data = self.output_tile[idx0, idx1]
+            if skip_boundary_check or (idx1 * 2 + 2 <= c_bound[1] - tile_n_idx):
+                c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1).store[
+                    width=2
+                ](c_data.slice[2]())
+
+                @parameter
+                if not single_row:
+                    c_ptr_loc.offset(
+                        c_stride * (2 * idx0 + 1) + 2 * idx1
+                    ).store[width=2](c_data.slice[2, offset=2]())
+            elif idx1 * 2 <= c_bound[1]:
+                partial_simd_store(
+                    c_ptr_loc.offset(c_stride * (2 * idx0 + 0) + 2 * idx1),
+                    0,
+                    c_bound[1] - tile_n_idx - idx1 * 2,
+                    c_data.slice[2](),
+                )
+
+                @parameter
+                if not single_row:
+                    partial_simd_store(
+                        c_ptr_loc.offset(c_stride * (2 * idx0 + 1) + 2 * idx1),
+                        0,
+                        c_bound[1] - tile_n_idx - idx1 * 2,
+                        c_data.slice[2, offset=2](),
+                    )
+
+        unroll[body, tile_rows, tile_columns // simd_size]()
 
 
 # Define a struct that conforms to the InnerMatmulKernel trait that

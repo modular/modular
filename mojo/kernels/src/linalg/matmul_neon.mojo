@@ -12,12 +12,10 @@ from buffer.list import DimList
 from .MatmulUtils import (
     GemmShape,
 )
-from .MatmulLoadStore import LoadStore_neon
 
 from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from .Matmul import InnerMatmulKernel
-from .MatmulLoadStore import LoadStoreOutputTile
 from .accumulate import _Accumulator
 
 from utils.index import Index, StaticIntTuple
@@ -124,17 +122,17 @@ struct Inner_matmul_neon(InnerMatmulKernel):
             global_offset.M, global_offset.N
         )
 
-        var acc = LoadStore_neon[
-            c.type, simd_size, skip_boundary_check, kernel_rows, kernel_cols
+        var acc = _Accumulator[
+            c.type, kernel_rows, kernel_cols // simd_size, simd_size
         ]()
 
         for idx_n in range(0, tile_n_k[0], kernel_cols):
             # Initialize accumulation buffer
             #  either zero filling or load existing value.
             if global_offset.K == 0:
-                acc._initialize_c_tile()
+                acc.init(0)
             else:
-                acc._load_c_tile(
+                acc.load(
                     rebind[DTypePointer[c.type]](c_ptr),
                     c_stride,
                     idx_n,
@@ -146,7 +144,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
                 self._accumulate_lane[simd_size, simd_size](
                     a,
                     b_packed,
-                    acc.output_tile,
+                    acc,
                     global_offset,
                     Index(idx_n, idx_k0),
                 )
@@ -156,10 +154,10 @@ struct Inner_matmul_neon(InnerMatmulKernel):
                 self._accumulate_lane[simd_size, 1](
                     a,
                     b_packed,
-                    acc.output_tile,
+                    acc,
                     global_offset,
                     Index(idx_n, idx_k1),
                 )
-            acc._store_c_tile(
+            acc.store(
                 rebind[DTypePointer[c.type]](c_ptr), c_stride, idx_n, c_bound
             )

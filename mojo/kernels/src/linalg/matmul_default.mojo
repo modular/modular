@@ -21,7 +21,6 @@ from memory import stack_allocation
 from memory.unsafe import DTypePointer
 from math import fma
 from .Matmul import InnerMatmulKernel
-from .MatmulLoadStore import LoadStore_default
 from .accumulate import _Accumulator
 
 from utils.index import Index, StaticIntTuple
@@ -126,17 +125,17 @@ struct Inner_matmul_default(InnerMatmulKernel):
             global_offset.M, global_offset.N
         )
 
-        var acc = LoadStore_default[
-            c.type, simd_size, skip_boundary_check, kernel_rows, kernel_cols
+        var acc = _Accumulator[
+            c.type, kernel_rows, kernel_cols // simd_size, simd_size
         ]()
 
         for idx_n in range(0, tile_n_k[0], kernel_cols):
             # Initialize accumulation buffer
             #  either zero filling or load existing value.
             if global_offset.K == 0:
-                acc._initialize_c_tile()
+                acc.init(0)
             else:
-                acc._load_c_tile(
+                acc.load[skip_boundary_check](
                     rebind[DTypePointer[c.type]](c_ptr),
                     c_stride,
                     idx_n,
@@ -150,10 +149,10 @@ struct Inner_matmul_default(InnerMatmulKernel):
                 self._accumulate[simd_size](
                     a,
                     b_packed,
-                    acc.output_tile,
+                    acc,
                     global_offset,
                     Index(idx_n, idx_k),
                 )
-            acc._store_c_tile(
+            acc.store[skip_boundary_check](
                 rebind[DTypePointer[c.type]](c_ptr), c_stride, idx_n, c_bound
             )

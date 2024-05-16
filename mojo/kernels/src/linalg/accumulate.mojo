@@ -35,6 +35,8 @@ struct _Accumulator[
         simd_width: Number of lanes of a SIMD vector.
     """
 
+    alias tile_columns = num_cols * simd_width
+
     # The output buffer, should have num_rows x num_cols x simd_width.
     var _storage: Buffer[type, num_rows * num_cols * simd_width]
 
@@ -122,6 +124,217 @@ struct _Accumulator[
             self[m, n] = ptr.load[width=simd_width]()
 
         self._transfer[do_transfer](base_ptr, stride)
+
+    @always_inline
+    fn load[
+        skip_boundary_check: Bool = False
+    ](
+        inout self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        self._transfer[skip_boundary_check, True](
+            c_ptr, c_stride, tile_n_idx, c_bound
+        )
+
+    @always_inline
+    fn store[
+        skip_boundary_check: Bool = False
+    ](
+        inout self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        self._transfer[skip_boundary_check, False](
+            c_ptr, c_stride, tile_n_idx, c_bound
+        )
+
+    @always_inline
+    fn _transfer[
+        skip_boundary_check: Bool,
+        is_load: Bool,
+    ](
+        inout self,
+        c_ptr: DTypePointer[type],
+        c_stride: Int,
+        tile_n_idx: Int,
+        c_bound: StaticIntTuple[2],
+    ):
+        var c_ptr_loc = c_ptr.offset(tile_n_idx)
+
+        @parameter
+        if skip_boundary_check:
+
+            @parameter
+            if is_load:
+                self.load(c_ptr_loc, c_stride)
+            else:
+                self.store(c_ptr_loc, c_stride)
+        else:
+            var transfer_count = min(
+                c_bound[1] - tile_n_idx, num_cols * simd_width
+            )
+            var row_ptrs = stack_allocation[num_rows, DTypePointer[type]]()
+
+            @unroll
+            for row in range(num_rows):
+                row_ptrs[row] = c_ptr_loc + row * c_stride
+
+            self._transfer_loop[0, is_load](transfer_count, row_ptrs, c_stride)
+
+    @always_inline
+    fn _transfer_columns[
+        base_column: Int,
+        column_count: Int,
+        is_load: Bool,
+    ](inout self, row_ptrs: Pointer[DTypePointer[type]], stride: Int):
+        """Loads or stores one or more columns from the base column for each
+        row of the tile."""
+        alias column_step = min(column_count, simd_width)
+
+        @parameter
+        @always_inline
+        fn body(row: Int, col: Int):
+            @parameter
+            if is_load:
+
+                @parameter
+                if has_neon():
+                    var data = row_ptrs[row].load[width=column_step](col)
+                    self._partial_set(row * Self.tile_columns + col, data)
+                else:
+                    var data = row_ptrs[0].load[width=column_step](
+                        stride * row + col
+                    )
+                    self._partial_set(row * Self.tile_columns + col, data)
+            else:
+                var data = self._partial_get[column_step](
+                    row * Self.tile_columns + col
+                )
+
+                @parameter
+                if has_neon():
+                    row_ptrs[row].store[width=column_step](col, data)
+                else:
+                    row_ptrs[0].store[width=column_step](
+                        stride * row + col, data
+                    )
+
+        @unroll
+        for row in range(num_rows):
+            # Iterate twice for a pairwise load/store or once for any other access.
+
+            @unroll
+            for col in range(
+                base_column, base_column + column_count, column_step
+            ):
+                body(row, col)
+
+    @always_inline
+    fn _transfer_loop[
+        base_column: Int, is_load: Bool
+    ](
+        inout self,
+        transfer_count: Int,
+        row_ptrs: Pointer[DTypePointer[type]],
+        stride: Int,
+    ):
+        """Loads/stores all pairwise vectors of the tile and dispatches the
+        remaining non-pairwise elements."""
+        alias tile_columns_remaining = Self.tile_columns - base_column
+        # Support fusion of LDP/STP instructions by emitting pairs of load/store with neon
+        alias column_groups = 2 if has_neon() else 1
+
+        # vector instructions.
+        @parameter
+        if tile_columns_remaining >= column_groups * simd_width:
+            if transfer_count >= base_column + column_groups * simd_width:
+                self._transfer_columns[
+                    base_column, column_groups * simd_width, is_load
+                ](row_ptrs, stride)
+                self._transfer_loop[
+                    base_column + column_groups * simd_width, is_load
+                ](transfer_count, row_ptrs, stride)
+                return
+
+        @parameter
+        if tile_columns_remaining >= simd_width:
+
+            @parameter
+            if has_neon():
+                self._transfer_tail[base_column, simd_width, is_load](
+                    transfer_count, row_ptrs, stride
+                )
+            else:
+                self._transfer_tail_mask[base_column, is_load](
+                    transfer_count, row_ptrs, stride
+                )
+
+    @always_inline
+    fn _transfer_tail[
+        base_column: Int, tail_size: Int, is_load: Bool
+    ](
+        inout self,
+        transfer_count: Int,
+        row_ptrs: Pointer[DTypePointer[type]],
+        stride: Int,
+    ):
+        """Loads/stores the last elements of the tile that cannot be accessed
+        pairwise."""
+
+        if transfer_count & tail_size:
+            self._transfer_columns[base_column, tail_size, is_load](
+                row_ptrs, stride
+            )
+            alias tile_columns_remaining = Self.tile_columns - base_column - tail_size
+
+            @parameter
+            if tile_columns_remaining >= tail_size // 2 and tail_size > 1:
+                self._transfer_tail[
+                    base_column + tail_size, tail_size // 2, is_load
+                ](transfer_count, row_ptrs, stride)
+            return
+
+        @parameter
+        if tail_size > 1:
+            self._transfer_tail[base_column, tail_size // 2, is_load](
+                transfer_count, row_ptrs, stride
+            )
+
+    @always_inline
+    fn _transfer_tail_mask[
+        base_column: Int, is_load: Bool
+    ](
+        inout self,
+        transfer_count: Int,
+        row_ptrs: Pointer[DTypePointer[type]],
+        stride: Int,
+    ):
+        var tail_size = transfer_count - base_column
+
+        @unroll
+        for row in range(num_rows):
+            alias col = base_column // simd_width
+
+            @parameter
+            if is_load:
+                self[row, col] = partial_simd_load[simd_width](
+                    row_ptrs[0].offset(stride * row + base_column),
+                    0,
+                    tail_size,
+                    0,
+                )
+            else:
+                partial_simd_store(
+                    row_ptrs[0].offset(stride * row + base_column),
+                    0,
+                    tail_size,
+                    self[row, col],
+                )
 
     # TODO: merge with store
     @always_inline
