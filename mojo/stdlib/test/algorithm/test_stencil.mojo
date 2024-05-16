@@ -5,12 +5,11 @@
 # ===----------------------------------------------------------------------=== #
 # Issue #23536
 # RUN: %mojo %s | FileCheck %s
-import math
-from math.limit import neginf
 
 from algorithm.functional import stencil
 from buffer import NDBuffer
 from buffer.list import DimList
+from utils.numerics import min_or_neg_inf
 
 alias _map_fn_type = fn[rank: Int] (StaticIntTuple[rank]) capturing -> (
     StaticIntTuple[rank],
@@ -430,7 +429,7 @@ fn test_stencil_max_pool_dilation_2():
     @always_inline
     @parameter
     fn max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
-        return neginf[dtype]()
+        return min_or_neg_inf[dtype]()
 
     @always_inline
     @parameter
