@@ -129,7 +129,7 @@ fn multistage_gemm[
     a_type: DType,
     a_shape: DimList,
     b_type: DType,
-    b_layout: Layout,
+    b_shape: DimList,
     transpose_b: Bool,
     BM: Int,
     BN: Int,
@@ -141,7 +141,7 @@ fn multistage_gemm[
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
-    b: LayoutTensor[b_type, b_layout],
+    b: NDBuffer[b_type, 2, b_shape],
 ):
     constrained[
         c_type == DType.float32
@@ -155,8 +155,8 @@ fn multistage_gemm[
     alias simd_size = simdwidthof[c_type]()
 
     var M = c.dim[0]()
-    var N = c.dim[1]()
-    alias K = a_shape.get[1]()
+    alias N = b_shape.get[1]()
+    alias K = b_shape.get[0]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
@@ -192,6 +192,11 @@ fn multistage_gemm[
         a.data.offset(BlockIdx.y() * BM * K)
     )
 
+    alias b_layout = Layout.row_major(
+        N, K
+    ) if transpose_b else Layout.row_major(K, N)
+    var b_tsr = LayoutTensor[b_type, b_layout](b.data)
+
     # Prefetch (num_pipeline_stages - 1) stages.
     @unroll
     for stage in range(num_pipeline_stages - 1):
@@ -225,7 +230,7 @@ fn multistage_gemm[
                 swizzle= xor_2bits_per8T,
             ](
                 b_smem_tile.vectorize[1, simd_size](),
-                b.tile[BN, BK](BlockIdx.x(), stage).vectorize[1, simd_size](),
+                b_tsr.tile[BN, BK](BlockIdx.x(), stage).vectorize[1, simd_size](),
             )
         else:
             copy_dram_to_sram_async[
@@ -233,7 +238,7 @@ fn multistage_gemm[
                 dst_thread_layout=Layout.row_major(num_threads * simd_size // BN, BN // simd_size),
             ](
                 b_smem_tile.vectorize[1, simd_size](),
-                b.tile[BK, BN](stage, BlockIdx.x()).vectorize[1, simd_size](),
+                b_tsr.tile[BK, BN](stage, BlockIdx.x()).vectorize[1, simd_size](),
             )
         # fmt: on
 
@@ -503,7 +508,7 @@ fn multistage_gemm[
                             swizzle=xor_2bits_per8T,
                         ](
                             b_smem_prefetch_tile.vectorize[1, simd_size](),
-                            b.tile[BN, BK](
+                            b_tsr.tile[BN, BK](
                                 BlockIdx.x(), prefetch_tile_id % num_k_tiles
                             ).vectorize[1, simd_size](),
                         )
@@ -517,7 +522,7 @@ fn multistage_gemm[
                             ),
                         ](
                             b_smem_prefetch_tile.vectorize[1, simd_size](),
-                            b.tile[BK, BN](
+                            b_tsr.tile[BK, BN](
                                 prefetch_tile_id % num_k_tiles, BlockIdx.x()
                             ).vectorize[1, simd_size](),
                         )
@@ -619,7 +624,7 @@ fn test[transpose_b: Bool]() raises:
         DType.float32,
         a_shape,
         DType.float32,
-        b_layout,
+        b_shape,
         transpose_b,
         BM,
         BN,
@@ -650,7 +655,7 @@ fn test[transpose_b: Bool]() raises:
                 func(
                     c_buffer,
                     a_buffer,
-                    b_tensor,
+                    b_buffer,
                     grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
                     block_dim=(num_threads, 1, 1),
                     shared_mem_bytes=shared_mem_bytes,
@@ -662,7 +667,7 @@ fn test[transpose_b: Bool]() raises:
             func(
                 c_buffer,
                 a_buffer,
-                b_tensor,
+                b_buffer,
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
                 block_dim=(num_threads, 1, 1),
                 shared_mem_bytes=shared_mem_bytes,
@@ -685,7 +690,7 @@ fn test[transpose_b: Bool]() raises:
     func(
         c_buffer,
         a_buffer,
-        b_tensor,
+        b_buffer,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
         block_dim=(num_threads, 1, 1),
         shared_mem_bytes=shared_mem_bytes,
