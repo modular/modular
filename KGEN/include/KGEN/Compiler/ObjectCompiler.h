@@ -121,11 +121,12 @@ private:
                  RCRef<Cache::BlobCacheBackend> transformCache,
                  CompilationOptions options, bool isJIT, bool isSearch);
 
-  /// Lower the given LLVM module to an object file.
-  LLCL::AnyAsyncValueRef
-  lowerLLVMModuleToObject(llvm::Module &module, Location loc,
-                          MLIRContext *mlirContext,
-                          std::optional<size_t> moduleIdx = std::nullopt);
+  /// Lower the given LLVM module to an object file (parLLC = false) or
+  /// multiple object files per function (parLLC = true).
+  SmallVector<LLCL::AnyAsyncValueRef>
+  lowerLLVMModuleToObjects(llvm::Module &module, Location loc,
+                           MLIRContext *mlirContext, bool parLLC,
+                           std::optional<size_t> moduleIdx = std::nullopt);
 
   /// The caches needed for compilation.
   RCRef<Cache::TransformCache> transformCache;
@@ -218,7 +219,6 @@ private:
 //===----------------------------------------------------------------------===//
 // compileLLVMToObject
 //===----------------------------------------------------------------------===//
-
 /// Compile the given LLVM module to an object file and write it to objStream.
 LogicalResult
 compileLLVMToObject(llvm::Module &module, llvm::TargetMachine &targetMachine,

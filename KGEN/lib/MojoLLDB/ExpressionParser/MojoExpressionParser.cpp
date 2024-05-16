@@ -122,8 +122,13 @@ MojoExpressionParser::Impl::Impl(ExecutionContextScope *exeScope,
   // TODO(#33931) HACK, HACK, HACK!!!
   // To make CompilationOptions being properly passed to KGEN compiler
   // without breaking existing tests.
+  // TODO(MOTO-247) workaround to LLVM Module splitting which works
+  // for ORC JIT but not always for MCJIT.
+  // Disable splitting and parallelize LLC pipeline
+  // (which is based on splitting) for REPL.
   KGEN::CompilationOptions hackCompilationOptions;
   hackCompilationOptions.enableLLVMPerFunctionSplitting = false;
+  hackCompilationOptions.enableParallelLLC = false;
 
   populateElaborateModulePasses(*compilationPM, targetInfo,
                                 hackCompilationOptions);

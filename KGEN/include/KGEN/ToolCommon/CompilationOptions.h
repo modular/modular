@@ -101,6 +101,7 @@ public:
   // performance.
   // - ...
   bool enableLLVMPerFunctionSplitting = false;
+  bool enableParallelLLC = true;
 };
 } // namespace M::KGEN
 

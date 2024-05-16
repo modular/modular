@@ -4,13 +4,16 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "LowerToObject.h"
 #include "KGEN/Compiler/JITSupport.h"
+#include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/KGENVersion/KGENVersion.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/NameMangling.h"
 #include "KGEN/ToolCommon/CompilationOptions.h"
+#include "LLCL/Runtime/Algorithms.h"
 #include "LLVMPassesPipeline.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/MArchTarget/Host.h"
@@ -18,6 +21,8 @@
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/ExecutionEngine/Orc/ObjectFileInterface.h"
 #include "llvm/ExecutionEngine/Orc/Shared/OrcError.h"
@@ -227,6 +232,146 @@ runLlcPasses(llvm::Module &module, llvm::TargetMachine &targetMachine,
   return success();
 }
 
+/// Compile optimized llvm::Module module to object through the llc pipeline
+/// asynchronously and cache the transformation.
+static LLCL::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
+    llvm::Module &module, Location loc, LLCL::Runtime &runtime, bool isJIT,
+    bool emitAssembly, CompilationOptions options,
+    RCRef<Cache::TransformCache> transformCache) {
+  WriteableBufferRef keyBuf = WriteableBuffer::get();
+  options.print(*keyBuf << "compileOptimizedLLVMModuleToObject(");
+  *keyBuf << ")";
+  size_t nonBitcodeKeySize = keyBuf->getBufferSize();
+
+  llvm::WriteBitcodeToFile(module, *keyBuf);
+
+  auto runTransformation = [nonBitcodeKeySize, loc, &runtime, emitAssembly,
+                            keyBuf = keyBuf.copy(), options,
+                            isJIT](WriteableBufferRef buf,
+                                   LLCL::AnyAsyncValueRef chain) mutable {
+    auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
+    chain.andThenAsync([nonBitcodeKeySize, loc, &runtime, emitAssembly,
+                        output = output.copy(), buf = buf.copy(),
+                        keyBuf = std::move(keyBuf), options, isJIT]() mutable {
+      BufferRef keyBufRef(std::move(keyBuf));
+      StringRef bitcodeBuffer = keyBufRef->getBuffer();
+      bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
+
+      // Load the cached bytecode into a new context. This is necessary to
+      // avoid data races during multi-threading.
+      llvm::LLVMContext ctx;
+      llvm::Expected<std::unique_ptr<llvm::Module>> moduleOr =
+          llvm::parseBitcodeFile(
+              llvm::MemoryBufferRef(bitcodeBuffer, "<split-module-llc>"), ctx);
+      if (!moduleOr) {
+        return std::move(output).setToError(
+            LLCL::getMLIRDiagnostic("failed to load LLVM IR bitcode", loc));
+      }
+      std::unique_ptr<llvm::Module> module = std::move(*moduleOr);
+
+      // Create TargetMachine for this module. This is also necessary to
+      // avoid data races during multi-threading.
+      ErrorOr<std::unique_ptr<llvm::TargetMachine>> machineOr =
+          createTargetMachine(options, isJIT);
+      if (failed(machineOr)) {
+        return std::move(output).setToError(
+            LLCL::getMLIRDiagnostic("failed to create TargetMachine", loc));
+      }
+
+      // Run llc passes.
+      if (failed(runLlcPasses(
+              *module, **machineOr, *buf,
+              emitAssembly ? llvm::CodeGenFileType::AssemblyFile
+                           : llvm::CodeGenFileType::ObjectFile,
+              runtime.context->get<M::Telemetry::TelemetryContext>()))) {
+        return std::move(output).setToError(LLCL::getMLIRDiagnostic(
+            "llc failed to codegen LLVM IR to object code", loc));
+      }
+      std::move(output).emplace(buf.copy());
+    });
+    return output;
+  };
+
+  auto onCacheHit = [](BufferRef buf) { return buf.copy(); };
+
+  return Cache::cachedTransform(
+      LLCL::MLIRLocationDecoder::getEncodedLocation(loc), transformCache.copy(),
+      LLCL::AsyncValueRef<Chain>::createReady(runtime), keyBuf.copy(),
+      std::move(runTransformation), onCacheHit);
+}
+
+static LogicalResult writeTempModule(const std::string &phase,
+                                     const std::string &saveTempsPrefix,
+                                     llvm::Module &module) {
+  if (saveTempsPrefix.empty())
+    return success();
+  std::string outPath = saveTempsPrefix + "." + phase + ".ll";
+  auto outFile = mlir::openOutputFile(outPath);
+  if (!outFile)
+    return failure();
+  outFile->os() << module;
+  outFile->keep();
+  return success();
+};
+
+LogicalResult KGEN::optimizeLLVMModule(llvm::Module &module,
+                                       llvm::TargetMachine &targetMachine,
+                                       CompilationOptions &options,
+                                       LLCL::Runtime &runtime,
+                                       std::optional<size_t> moduleIdx) {
+  CompilerTimeTraceScope traceScope("optimize-llvm", module.getName());
+  module.setDataLayout(targetMachine.createDataLayout());
+
+  std::string saveTempsPrefix = options.saveTempsPrefix;
+  if (moduleIdx && !options.saveTempsPrefix.empty())
+    saveTempsPrefix += "." + std::to_string(moduleIdx.value());
+
+  if (failed(writeTempModule("pre-opt", saveTempsPrefix, module)))
+    return failure();
+
+  if (failed(runLLVMOptPasses(module, targetMachine, options, runtime)))
+    return failure();
+
+  if (failed(writeTempModule("post-opt", saveTempsPrefix, module)))
+    return failure();
+
+  return success();
+}
+
+SmallVector<LLCL::AnyAsyncValueRef> KGEN::compileOptimizedLLVMToObjects(
+    llvm::Module &module, mlir::Location loc, CompilationOptions &options,
+    LLCL::Runtime &runtime, RCRef<Cache::TransformCache> transformCache,
+    bool isParLLC, bool isJIT, bool emitAssembly,
+    std::optional<size_t> moduleIdx) {
+  CompilerTimeTraceScope traceScope("compile-optimized-llvm-to-object",
+                                    module.getName());
+
+  SmallVector<LLCL::AnyAsyncValueRef> cacheResults;
+  auto compileToObject = [&](llvm::Module *inputModule, int64_t idx,
+                             bool sync) {
+    if (!inputModule)
+      return;
+
+    std::string saveTempsPrefix = options.saveTempsPrefix;
+    if (!saveTempsPrefix.empty())
+      saveTempsPrefix += "." + std::to_string(idx);
+    (void)writeTempModule("llc-split", saveTempsPrefix, *inputModule);
+
+    cacheResults.push_back(compileOptimizedLLVMModuleToObject(
+        *inputModule, loc, runtime, isJIT, emitAssembly, options,
+        transformCache));
+  };
+
+  if (isParLLC) {
+    splitPerFunction(module, runtime.getWorkQueue()->getParallelismLevel(),
+                     compileToObject);
+  } else {
+    cacheResults.push_back(compileOptimizedLLVMModuleToObject(
+        module, loc, runtime, isJIT, emitAssembly, options, transformCache));
+  }
+  return cacheResults;
+}
+
 LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         llvm::TargetMachine &targetMachine,
                                         llvm::raw_pwrite_stream &objStream,
@@ -236,31 +381,20 @@ LogicalResult KGEN::compileLLVMToObject(llvm::Module &module,
                                         std::optional<size_t> moduleIdx) {
   CompilerTimeTraceScope traceScope("compile-llvm-to-object", module.getName());
   module.setDataLayout(targetMachine.createDataLayout());
+  module.setPICLevel(llvm::PICLevel::BigPIC);
 
   std::string saveTempsPrefix = options.saveTempsPrefix;
-  if (moduleIdx)
+  if (moduleIdx && !options.saveTempsPrefix.empty())
     saveTempsPrefix += "." + std::to_string(moduleIdx.value());
 
-  if (!options.saveTempsPrefix.empty()) {
-    std::string outPath = saveTempsPrefix + ".pre-opt.ll";
-    auto outFile = mlir::openOutputFile(outPath);
-    if (!outFile)
-      return failure();
-    outFile->os() << module;
-    outFile->keep();
-  }
+  if (failed(writeTempModule("pre-opt", saveTempsPrefix, module)))
+    return failure();
 
   if (failed(runLLVMOptPasses(module, targetMachine, options, runtime)))
     return failure();
 
-  if (!options.saveTempsPrefix.empty()) {
-    std::string outPath = saveTempsPrefix + ".post-opt.ll";
-    auto outFile = mlir::openOutputFile(outPath);
-    if (!outFile)
-      return failure();
-    outFile->os() << module;
-    outFile->keep();
-  }
+  if (failed(writeTempModule("post-opt", saveTempsPrefix, module)))
+    return failure();
 
   if (failed(
           runLlcPasses(module, targetMachine, objStream,
