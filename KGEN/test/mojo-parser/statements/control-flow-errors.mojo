@@ -74,11 +74,14 @@ struct MyList_range_no_next:
 struct MyList_no_iter:
     fn __init__(inout self): pass
 
+@value
+struct MyFloat:
+    pass
 
 struct my_iter_wrong_int:
     fn __init__(inout self): pass
     fn __next__(inout self) -> Int: return 0
-    fn __len__(self: my_iter_wrong_int) -> Float32: return 0.0
+    fn __len__(self: my_iter_wrong_int) -> MyFloat: return MyFloat()
 
 
 struct MyList_invalid_boxed_type:
@@ -104,7 +107,7 @@ fn main():
     for item in my_list_no_iter:
         pass
 
-    # expected-error @+1 {{'SIMD[float32, 1]' does not implement the '__index__' method}}
+    # expected-error @+1 {{'MyFloat' does not implement the '__index__' method}}
     for item in my_list_invalid_int:
         pass
 
