@@ -11,6 +11,7 @@ add_modular_library(MojoBuild
   Server.cpp
 
   LINK_LIBS PUBLIC
+  KGENSupport
   MSupport
   MVersion
 

@@ -8,6 +8,7 @@
 #define KGEN_MOJOBUILD_BSPCLIENT_H
 
 #include "KGEN/MojoBuild/Protocol.h"
+#include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
 
 #include "mlir/Tools/lsp-server-support/Transport.h"
@@ -75,6 +76,8 @@ private:
   /// An internal counter that represents the ID of the next request to be sent.
   /// This is incremented each time a request is sent to the server.
   int currentRequestID = 0;
+  /// The result of the client's communications with the build server.
+  ErrorOrSuccess clientResult;
 
   /// A function that, when invoked, sends a "build/initialize" request with the
   /// given params and request ID.

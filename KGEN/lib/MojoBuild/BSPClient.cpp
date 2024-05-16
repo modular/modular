@@ -91,7 +91,7 @@ ErrorOrSuccess BSPClient::run() {
     // changed state. If it is set, the server must have exited.
     if (waitInfo.Pid) {
       if (waitInfo.ReturnCode == 0)
-        return success();
+        return std::move(clientResult);
       return Error(llvm::formatv("'{0}' exited unsuccessfully: exit code {1}",
                                  serverPath, waitInfo.ReturnCode));
     }
@@ -144,8 +144,18 @@ void BSPClient::onBuildTargetCompileResponse(
         });
   }
 
-  // TODO: Determine whether the build was successful, based on the server
-  // response.
+  // TODO: Build errors and build cancellation reasons are not yet communicated
+  // from server to client.
+  switch (result->statusCode) {
+  case StatusCode::Ok:
+    break;
+  case StatusCode::Error:
+    clientResult = Error("server could not build");
+    break;
+  case StatusCode::Cancelled:
+    clientResult = Error("server cancelled build");
+    break;
+  }
 
   // We're done building; send the shutdown request to the server.
   shutdownFn(NoParams{}, currentRequestID++);
