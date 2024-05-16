@@ -2182,7 +2182,7 @@ fn matmul[
     b: NDBuffer[b_type, 2, input_1_static_shape],
     c: NDBuffer[c_type, 2, input_2_static_shape],
     ctx: MojoCallContextPtr,
-):
+) raises:
     alias transpose_a = False
     alias transpose_b = transpose_in_1
     alias b_packed = packed_in_1
@@ -2245,6 +2245,7 @@ fn matmul[
             c,
             a,
             b,
+            ctx,
         )
 
 
