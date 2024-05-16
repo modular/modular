@@ -76,19 +76,26 @@ ErrorOrSuccess BSPServer::run() {
 void BSPServer::onBuildInitialize(
     const InitializeBuildParams &params,
     mlir::lsp::Callback<InitializeBuildResult> callback) {
+  if (isInitialized())
+    return callback(error("server has already been initialized",
+                          lsp::ErrorCode::InvalidRequest));
+
+  // Initialize the server with the specified workspace path.
+  workspacePath = params.rootUri;
+
   std::error_code ec;
   bool exists = std::filesystem::exists(params.rootUri, ec);
   if (ec)
     return callback(error(
         llvm::formatv("server could not be initialized, an error occurred when "
                       "accessing rootUri '{0}': {1}",
-                      params.rootUri, ec.message()),
+                      workspacePath, ec.message()),
         lsp::ErrorCode::InvalidParams));
   if (!exists)
     return callback(error(
         llvm::formatv(
             "server could not be initialized, rootUri '{0}' does not exist",
-            params.rootUri),
+            workspacePath),
         lsp::ErrorCode::InvalidParams));
 
   callback(InitializeBuildResult{
@@ -99,6 +106,9 @@ void BSPServer::onBuildInitialize(
 
 void BSPServer::onBuildTargetCompile(
     const CompileParams &params, mlir::lsp::Callback<CompileResult> callback) {
+  if (auto err = errorIfUninitialized())
+    return callback(std::move(err));
+
   // TODO: Run the equivalent of `mojo package`, using the workspace root URI as
   // the input.
   CompileResult result;
@@ -110,6 +120,9 @@ void BSPServer::onBuildTargetCompile(
 
 void BSPServer::onBuildShutdown(const NoParams &params,
                                 mlir::lsp::Callback<NoParams> callback) {
+  if (auto err = errorIfUninitialized())
+    return callback(std::move(err));
+
   serverResult = success();
   callback(NoParams{});
 }
@@ -117,4 +130,13 @@ void BSPServer::onBuildShutdown(const NoParams &params,
 llvm::Error BSPServer::error(Twine message, mlir::lsp::ErrorCode code) {
   serverResult = failure();
   return llvm::make_error<lsp::LSPError>(message.str(), code);
+}
+
+bool BSPServer::isInitialized() const { return !workspacePath.empty(); }
+
+llvm::Error BSPServer::errorIfUninitialized() {
+  if (!isInitialized())
+    return error("server has not been initialized",
+                 lsp::ErrorCode::ServerNotInitialized);
+  return llvm::Error::success();
 }

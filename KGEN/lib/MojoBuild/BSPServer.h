@@ -13,6 +13,7 @@
 #include "mlir/Tools/lsp-server-support/Transport.h"
 
 #include <cstddef>
+#include <filesystem>
 
 namespace M::Build {
 
@@ -47,6 +48,12 @@ private:
   /// Fails the server and returns an error with the given message and code.
   llvm::Error error(Twine message, mlir::lsp::ErrorCode code);
 
+  /// Returns whether the server has already been initialized.
+  bool isInitialized() const;
+  /// Returns an error and fails the server if it has not yet been initialized,
+  /// otherwise returns success.
+  llvm::Error errorIfUninitialized();
+
   /// A JSON-RPC transport that reads requests from stdin, and writes responses
   /// and notifications to stdout.
   mlir::lsp::JSONTransport transport;
@@ -56,6 +63,10 @@ private:
   /// If non-null, indicates that the server should shut down and exit with the
   /// specified result.
   std::optional<mlir::LogicalResult> serverResult = std::nullopt;
+
+  /// The root workspace path. This is set when the server is initialized with a
+  /// root URI, via the `build/initialize` request.
+  std::filesystem::path workspacePath;
 };
 } // namespace M::Build
 
