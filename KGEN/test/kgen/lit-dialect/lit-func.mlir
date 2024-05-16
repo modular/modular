@@ -215,3 +215,14 @@ lit.func @inferred<+ a: i1, + b, c = 1, |>() {
   kgen.param.constant: !lit.signature<<+ "a": i1, + "b": index, "c": index = 1, |>() -> ()> = <@inferred>
   kgen.return
 }
+
+// CHECK-LABEL: lit.func @different_param_name
+lit.func @different_param_name() {
+  // CHECK: lit.func nested_fn<["a"]param, |>()
+  lit.func nested_fn<["a"]param, |>() {
+    kgen.return
+  }
+  // CHECK: ref: !lit.signature<<"a": index, |>() -> ()> = <nested_fn>
+  kgen.param.declare ref: !lit.signature<<"a": index, |>() -> ()> = <nested_fn>
+  kgen.return
+}

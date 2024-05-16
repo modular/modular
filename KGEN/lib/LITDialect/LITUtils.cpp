@@ -174,6 +174,7 @@ static ParseResult parseVariadicness(AsmParser &p,
 ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
                                             ParamDeclArrayAttr &inputParamDecls,
                                             PogListAttr &paramListAttr) {
+  MLIRContext *ctx = p.getContext();
   SmallVector<StringAttr> paramNames;
   SmallVector<PassingKind> paramPassingKinds;
   SmallVector<TypedAttr> defaultPosParams;
@@ -195,6 +196,14 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
         res.has_value())
       return res.value();
 
+    StringAttr paramName;
+    if (succeeded(p.parseOptionalLSquare())) {
+      std::string str;
+      if (p.parseString(&str) || p.parseRSquare())
+        return failure();
+      paramName = StringAttr::get(ctx, str);
+    }
+
     ParamDeclAttr decl;
     if (failed(parseParamDecl(p, decl)))
       return failure();
@@ -202,9 +211,11 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
 
     // We store an empty string for the name of implicit parameters.
     bool isImplicit = passingKindParser.isCurrentImplicit();
-    paramNames.emplace_back(StringAttr::get(
-        p.getContext(),
-        isImplicit ? "" : demangleParameterName(decl.getName())));
+    if (!paramName) {
+      paramName = StringAttr::get(
+          ctx, isImplicit ? "" : demangleParameterName(decl.getName()));
+    }
+    paramNames.emplace_back(paramName);
 
     if (failed(parseVariadicness(p, variadicIndices, packIndex, idx++)))
       return failure();
@@ -247,8 +258,8 @@ ParseResult LIT::parseOptionalParameterSpec(AsmParser &p,
   passingKindParser.populatePassingKinds(paramPassingKinds);
 
   paramListAttr = PogListAttr::get(
-      p.getContext(), paramNames, paramPassingKinds, defaultPosParams,
-      defaultKwOnlyParams, variadicIndices, packIndex, origPackConvention);
+      ctx, paramNames, paramPassingKinds, defaultPosParams, defaultKwOnlyParams,
+      variadicIndices, packIndex, origPackConvention);
   return success();
 }
 
@@ -352,6 +363,12 @@ void LIT::printOptionalParameterSpec(AsmPrinter &p,
   auto printWithDefault = [&](ParamDeclAttr decl) {
     passingKindPrinter.printOptionalStarSlash(idx);
 
+    StringAttr name = paramListAttr.getName(idx);
+    // If we can't encode the parameter name inside the mangled decl name, then
+    // print it explicitly.
+    if (paramListAttr.getPassingKind(idx) != PassingKind::Implicit &&
+        name != demangleParameterName(decl.getName()))
+      p << '[' << name << ']';
     printParamDecl(p, decl);
     printVariadicness(p, variadicness[idx]);
 
