@@ -151,6 +151,9 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
 ///   }                          }
 ///   C                          return %x
 /// }                          }
+///
+/// This also works with 'break' and 'continue'.
+template <typename TerminatorOpT>
 struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -158,16 +161,26 @@ struct HoistUnconditionalReturn : public OpRewritePattern<IfOp> {
                                 PatternRewriter &rewriter) const override {
     // TODO: This should also work for BreakOp and ContinueOp (provided
     // thenTerm and elseTerm are of the same type)
-    if (!isa<KGEN::ReturnOp>(op.getThenTerminator()) ||
-        !isa<KGEN::ReturnOp>(op.getElseTerminator()))
+    auto thenTerm = dyn_cast<TerminatorOpT>(op.getThenTerminator());
+    auto elseTerm = dyn_cast<TerminatorOpT>(op.getElseTerminator());
+    if (!thenTerm || !elseTerm)
       return failure();
+
+    if constexpr (!std::is_same_v<TerminatorOpT, KGEN::ReturnOp>) {
+      // Ensure both terminators branch to the same operation. It doesn't matter
+      // if it's the immediate parent.
+      if (thenTerm.getLabelAttr() != elseTerm.getLabelAttr())
+        return failure();
+    }
+    DictionaryAttr attrs = thenTerm->getAttrDictionary();
 
     // Create a new IfOp and put a return right after it. We have to create new
     // op because the number of results might be different compared to the
     // original IfOp.
     auto newIfOp = rewriter.create<IfOp>(
         op.getLoc(), op.getThenTerminator()->getOperandTypes(), op.getCond());
-    rewriter.create<KGEN::ReturnOp>(op.getLoc(), newIfOp->getResults());
+    rewriter.create<TerminatorOpT>(op.getLoc(), TypeRange(),
+                                   newIfOp->getResults(), attrs.getValue());
 
     // Move the 'then' block from the original IfOp to the new one and replace
     // the return terminator with yield.
@@ -368,7 +381,9 @@ struct IfRemoveUnusedResults : public OpRewritePattern<IfOp> {
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet &results,
                                        MLIRContext *context) {
-  results.add<RemoveStaticCondition, HoistUnconditionalReturn,
+  results.add<RemoveStaticCondition, HoistUnconditionalReturn<KGEN::ReturnOp>,
+              HoistUnconditionalReturn<HLCF::BreakOp>,
+              HoistUnconditionalReturn<HLCF::ContinueOp>,
               HoistConditionalReturn, HoistYieldResults, IfRemoveUnusedResults>(
       context);
 }
