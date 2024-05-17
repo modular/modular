@@ -1316,11 +1316,12 @@ def KGEN_FloatLiteralConvertOp : KGENOp<"float_literal.convert",
 
     ```mlir
     %0 = kgen.float_literal.convert %arg0 : to f64
+    %1 = kgen.float_literal.convert %arg0 : to f16
     ```
   }];
 
   let arguments = (ins KGEN_FloatLiteralType:$input);
-  let results = (outs F64:$output);
+  let results = (outs AnyFloat:$output);
 
   let assemblyFormat = [{
     $input attr-dict `:` `to` qualified(type($output))

@@ -11,7 +11,7 @@
 
 fn foo() -> Float32:
   return 3.14
-# CHECK: 3.14
+# CHECK: 3.1400001049041748
 print(foo())
 
 fn foo() -> Float64:
