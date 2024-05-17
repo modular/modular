@@ -76,13 +76,13 @@ export class JSONRPCStream {
 
     // Then we extract the contents of the packet.
     const contentBegPos = index + JSONRPCStream.protocolLineSeparator.length;
-    const contents =
-        this.buffer.substring(contentBegPos, contentBegPos + contentLength);
-    if (contents.length != contentLength)
+    const contentBytes = Buffer.from(this.buffer.substring(contentBegPos));
+    if (contentBytes.length < contentLength)
       return undefined;
+    const contents = contentBytes.subarray(0, contentLength).toString();
 
     // We update the buffer to point past this packet.
-    this.buffer = this.buffer.substring(contentBegPos + contentLength);
+    this.buffer = this.buffer.substring(contentBegPos + contents.length);
     return JSON.parse(contents);
   }
 }

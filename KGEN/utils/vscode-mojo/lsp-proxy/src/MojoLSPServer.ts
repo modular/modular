@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 import {ChildProcess, spawn} from 'child_process';
-import {EventEmitter} from 'events';
 import {firstValueFrom, Subject} from 'rxjs';
 
 import {JSONRPCStream, LineSeparatedStream} from './streams';
@@ -102,9 +101,9 @@ export class MojoLSPServer {
    * protocol.
    */
   private sendPacket<T>(packet: T): void {
-    const strPayload = JSON.stringify(packet);
-    this.serverProcess.stdin?.write(`${protocolHeader}${strPayload.length}${
-        protocolLineSeparator}${strPayload}`);
+    const payload = Buffer.from(JSON.stringify(packet));
+    this.serverProcess.stdin?.write(
+        `${protocolHeader}${payload.length}${protocolLineSeparator}${payload}`);
   }
 
   /**
