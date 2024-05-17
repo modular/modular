@@ -173,9 +173,15 @@ void SharedState::setLocationDebugScope(LIT::FuncOp funcOp) {
       funcOp.getContext(),
       llvm::map_to_vector(funcOp.getArgumentTypes(), mapUnresolvedType),
       llvm::map_to_vector(funcOp.getResultTypes(), mapUnresolvedType));
+
+  // The linkage name is derived either from the symbol name or the param decl
+  // name, if it's a nested function.
+  StringAttr linkageName = funcOp.getSymNameAttr();
+  if (!linkageName)
+    linkageName = funcOp.getParamDeclAttr().getName();
+
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard = diBuilder->pushSubprogram(
-      getSourceName(funcOp), funcOp.getNameAttr(),
-      diBuilder->createFile(fileLineCol), fileLineCol.getLine(),
-      fileLineCol.getLine(), spFlags, type);
+      getSourceName(funcOp), linkageName, diBuilder->createFile(fileLineCol),
+      fileLineCol.getLine(), fileLineCol.getLine(), spFlags, type);
   funcOp->setLoc(diBuilder->createScopedLoc(fileLineCol));
 }

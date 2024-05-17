@@ -271,7 +271,7 @@ bool LowerSemanticCF::lowerLITLoop(LIT::LoopOp loopOp,
   // Create the new HLCF::LoopOp.
   ImplicitLocOpBuilder builder(loopOp->getLoc(), loopOp);
   builder.setInsertionPointAfter(loopOp);
-  auto newLoop = builder.create<HLCF::LoopOp>(loopOp.getUnrollLevelAttr());
+  auto newLoop = builder.create<HLCF::LoopOp>();
   // Each loop gets a unique label.
   newLoop.setLabelAttr(builder.getStringAttr("_loop_" + Twine(loopCounter++)));
 

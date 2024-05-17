@@ -1730,11 +1730,6 @@ def LIT_LoopOp: LITOp<"loop"> {
     ```
   }];
 
-  let arguments = (ins
-    OptionalAttr<AnyAttrOf<[HLCF_UnrollLevelAttr,
-                            TypedAttrInterface]>>:$unrollLevel
-  );
-
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$condRegion,
                         SizedRegion<1>:$bodyRegion,
@@ -1748,9 +1743,7 @@ def LIT_LoopOp: LITOp<"loop"> {
   }];
 
   let builders = [
-    OpBuilder<(ins "mlir::Attribute":$level), [{
-      build($_builder, $_state, {}, level);
-    }]>
+    OpBuilder<(ins), [{ build($_builder, $_state, {}); }]>
   ];
 }
 

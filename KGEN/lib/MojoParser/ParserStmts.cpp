@@ -225,11 +225,10 @@ struct StmtParser : public ParserBase {
                         size_t curIndent);
   ParseResult parseParamIf(Location ifLoc, LexerCursor startCursor,
                            size_t curIndent);
-  ParseResult parseWhileStmt(LexerCursor startCursor, size_t curIndent);
+  ParseResult parseWhileStmt(size_t curIndent);
   ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseForElse(size_t curIndent, ExprNode *seqExpr,
-                           StringAttr target, SMLoc smLoc, SMLoc targetLoc,
-                           Attribute unrollAttr);
+                           StringAttr target, SMLoc smLoc, SMLoc targetLoc);
   ParseResult parseParamFor(size_t curIndent, ExprNode *seqExpr,
                             StringAttr target, SMLoc smLoc, SMLoc targetLoc);
   ParseResult parseTryStmt(size_t curIndent);
@@ -588,8 +587,9 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     rejectSimpleStmt(); // Not a simple_stmt.
     return parseForStmt(startCursor, stmtIndent);
   case Token::kw_while:
+    rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
-    return parseWhileStmt(startCursor, stmtIndent);
+    return parseWhileStmt(stmtIndent);
   case Token::kw_try:
     rejectDecorator(); // Decorators not allowed.
     rejectSimpleStmt();
@@ -857,78 +857,13 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
   return success();
 }
 
-static ParseResult parseLoopDecorators(StmtParser &parser,
-                                       LexerCursor startCursor,
-                                       size_t curIndent, Token::Kind kind,
-                                       Attribute &unrollAttr,
-                                       bool &isParamFor) {
-  StringRef kindName = parser.getToken().getSpelling();
-
-  if (startCursor != parser.getLexer().getCursor()) {
-    startCursor.restore(parser.getLexer());
-    for (auto [decorator, cursor] : parser.parseDecorators(curIndent)) {
-      // Handle recognized decorators.
-      if (auto *dre = dyn_cast<DeclRefNode>(decorator)) {
-        if (dre->spelling == "unroll") {
-          unrollAttr = HLCF::UnrollLevelAttr::getFull(parser.getContext());
-          continue;
-        }
-        if (dre->spelling == "parameter") {
-          isParamFor = true;
-          continue;
-        }
-      } else if (auto *callNode = dyn_cast<CallNode>(decorator)) {
-        if (auto dre = dyn_cast<DeclRefNode>(callNode->callee)) {
-          if (dre->spelling == "unroll" && callNode->operands.size() == 1) {
-            ExprNode *unrollFactorExpr = callNode->operands[0].expr;
-            if (callNode->operands[0].isPositional()) {
-              if (auto *intExpr = dyn_cast<IntLiteralNode>(unrollFactorExpr)) {
-                int32_t factor;
-                if (llvm::to_integer(intExpr->spelling, factor)) {
-                  unrollAttr =
-                      HLCF::UnrollLevelAttr::get(parser.getContext(), factor);
-                  continue;
-                }
-              }
-            }
-
-            CValue unrollFactor =
-                parser.getParamEmitter(EC_Decorator)
-                    .emitMLIRIndex(unrollFactorExpr, EC_Decorator);
-            if (PValue paramFactor = unrollFactor.getIfPValue()) {
-              unrollAttr = paramFactor.get();
-              continue;
-            }
-          }
-        }
-      }
-
-      // TODO: Parse unroll with a integer number or a parameter expression
-      return parser.emitError(decorator->getLoc(),
-                              "unsupported decorator on '" + kindName +
-                                  "' statement")
-             << decorator->getRange();
-    }
-  }
-  return success();
-}
-
 //===----------------------------------------------------------------------===//
 // Compound statements.
 //===----------------------------------------------------------------------===//
 
 /// while_stmt ::=  "while" assignment_expression ":" suite
 ///                 ["else" ":" suite]
-ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
-                                       size_t curIndent) {
-  // We parse the decorators for the 'while' if they exist.
-  Attribute unrollAttr = HLCF::UnrollLevelAttr::getNone(getContext());
-
-  bool unused;
-  if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_while,
-                          unrollAttr, unused))
-    return success();
-
+ParseResult StmtParser::parseWhileStmt(size_t curIndent) {
   Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
 
   ExprNode *condExp = nullptr;
@@ -940,7 +875,7 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   llvm::SaveAndRestore builderSaver(builder);
 
   // Create the LoopOp
-  auto loopOp = builder.create<LIT::LoopOp>(whileLoc, unrollAttr);
+  auto loopOp = builder.create<LIT::LoopOp>(whileLoc);
   Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
   Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
   Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
@@ -987,11 +922,21 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
   bool isParamFor = false;
 
   // We parse the decorators for the 'for' if they exist.
-  Attribute unrollAttr = HLCF::UnrollLevelAttr::getNone(getContext());
+  if (startCursor != getLexer().getCursor()) {
+    startCursor.restore(getLexer());
+    for (auto [decorator, cursor] : parseDecorators(curIndent)) {
+      // Handle recognized decorators.
+      if (auto *dre = dyn_cast<DeclRefNode>(decorator)) {
+        if (dre->spelling == "parameter") {
+          isParamFor = true;
+          continue;
+        }
+      }
 
-  if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_for,
-                          unrollAttr, isParamFor))
-    return success();
+      emitError(decorator->getLoc(), "unsupported decorator on 'for' statement")
+          << decorator->getRange();
+    }
+  }
 
   SMLoc smLoc = consumeToken(Token::kw_for).getLoc();
 
@@ -1022,7 +967,7 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
 
   if (isParamFor)
     return parseParamFor(curIndent, seqExpr, target, smLoc, targetLoc);
-  return parseForElse(curIndent, seqExpr, target, smLoc, targetLoc, unrollAttr);
+  return parseForElse(curIndent, seqExpr, target, smLoc, targetLoc);
 }
 
 ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
@@ -1111,7 +1056,7 @@ ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
 
 ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
                                      StringAttr target, SMLoc smLoc,
-                                     SMLoc targetLoc, Attribute unrollAttr) {
+                                     SMLoc targetLoc) {
   Location forLoc = translateLocation(targetLoc);
   VarDeclOp varDeclOp = getEmitter().emitVarDecl(target, getUnresolvedType(),
                                                  forLoc, VarDeclKind::Implicit);
@@ -1125,7 +1070,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   // unknown declaration” errors on it besides whatever error is raised while
   // processing the loop header.
   auto avoidDroppingDeclOnFail = llvm::make_scope_exit([&]() {
-    std::ignore = parseLocalScopeSuite(
+    (void)parseLocalScopeSuite(
         curIndent, ScopeDecl{&*varDeclOp, targetLoc, target, [&](ASTDecl &d) {
                                notifyVarDecl(d);
                                d.setErroneous();
@@ -1151,7 +1096,7 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
   }
 
   // Create the LoopOp
-  auto loopOp = builder.create<LIT::LoopOp>(forLoc, unrollAttr);
+  auto loopOp = builder.create<LIT::LoopOp>(forLoc);
   Block *condBlock = builder.createBlock(&loopOp.getCondRegion());
   Block *bodyBlock = builder.createBlock(&loopOp.getBodyRegion());
   Block *elseBlock = builder.createBlock(&loopOp.getElseRegion());
@@ -1205,7 +1150,6 @@ ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
       return failure();
   }
   builder.create<LIT::LoopYieldOp>(forLoc);
-
   return success();
 }
 
