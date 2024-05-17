@@ -68,6 +68,17 @@ fn xor_2bits_per8T[type: DType](tid: Scalar[type]) -> Scalar[type]:
     return Swizzle[2, 0, 3]()(tid)
 
 
+# Figure out the math using BN, BK, dtype to define swizzle parameters.
+@always_inline
+fn xor_3bits_per16T[type: DType](tid: Scalar[type]) -> Scalar[type]:
+    return Swizzle[3, 0, 4]()(tid)
+
+
+@always_inline
+fn identity[type: DType](tid: Scalar[type]) -> Scalar[type]:
+    return tid
+
+
 @always_inline
 fn ld_mma[
     num_matrices: Int,
@@ -81,11 +92,13 @@ fn ld_mma[
     __element_layout: Layout,
     __index_type: DType,
     __masked: Bool,
+    __dtype: DType,
     # Nvidia GPU register is 4B.
     __register_width: Int = 4,
+    __output_width: Int = num_matrices * __register_width // sizeof[__dtype](),
 ](
     mat: LayoutTensor[
-        _,
+        __dtype,
         __layout,
         address_space = AddressSpace.SHARED,
         element_layout=__element_layout,
@@ -93,11 +106,8 @@ fn ld_mma[
         masked=__masked,
     ],
     offset: Int,
-) -> SIMD[mat.dtype, num_matrices * __register_width // sizeof[mat.dtype]()]:
-    constrained[
-        num_matrices == 2 or num_matrices == 4,
-        "Only support loading 2 or 4 matrices.",
-    ]()
+) -> SIMD[mat.dtype, __output_width]:
+    constrained[num_matrices == 4, "Only support loading 4 matrices."]()
 
     # TODO: Either optimize signed int division or restrict this to uint32.
     var lane_id = UInt32(ThreadIdx.x()) % WARP_SIZE
@@ -107,7 +117,7 @@ fn ld_mma[
 
     # TODO: the index calculation can be refactored when layout(i) works on GPU.
     # var row_offset = thread_layout(lane_id)
-    var row_offset = lane_id % 16 * stride + lane_id // 16 if num_matrices == 4 else lane_id % 8 * stride + lane_id // 8
+    var row_offset = lane_id % 16 * stride + lane_id // 16
     row_offset += offset
 
     @parameter
@@ -117,11 +127,9 @@ fn ld_mma[
 
     row_offset = row_offset * simd_size
 
-    return ld_matrix[
-        mat.dtype,
-        num_matrices * __register_width // sizeof[mat.dtype](),
-        transposed,
-    ](mat.ptr + row_offset)
+    return ld_matrix[mat.dtype, __output_width, transposed](
+        mat.ptr + row_offset
+    )
 
 
 fn multistage_gemm[
@@ -233,6 +241,7 @@ fn multistage_gemm[
             copy_dram_to_sram_async[
                 src_thread_layout=Layout.row_major(num_threads * simd_size // BN, BN // simd_size),
                 dst_thread_layout=Layout.row_major(num_threads * simd_size // BN, BN // simd_size),
+                swizzle= xor_3bits_per16T if b_type == DType.bfloat16 else identity,
             ](
                 b_smem_tile.vectorize[1, simd_size](),
                 b.tile[BK, BN](stage, BlockIdx.x()).vectorize[1, simd_size](),
@@ -352,16 +361,19 @@ fn multistage_gemm[
                         rebind[Scalar[b_type]](b_mma_frag[1]),
                     )
                 )
-        # Use transposed ldmatrix for half precision because the matrix is
+        # Use transposed ldmatrix for half precision since the matrix is square.
         else:
 
             @parameter
             for n_mma2 in range(num_n_mmas // 2):
-                var b_mma_tile = b_warp_tile.tile[BK, 2 * MMA_N](0, n_mma2)
+                var b_mma_tile = b_warp_tile.tile[MMA_K, WN](0, 0)
                 var vec = ld_mma[
                     4,
                     Layout(IntTuple(16, 2), IntTuple(BN // simd_size, 1)),
-                    swizzle=None,
+                    swizzle = OptionalReg[_swizzle_signature](
+                        xor_3bits_per16T
+                    ) if b_type
+                    == DType.bfloat16 else None,
                     transposed=True,
                 ](b_mma_tile, 0)
                 b_reg_tiles[0][2 * n_mma2, 0] = rebind[b_frag_type](
@@ -476,17 +488,20 @@ fn multistage_gemm[
 
                     @parameter
                     for n_mma2 in range(num_n_mmas // 2):
-                        var b_mma_tile = b_warp_tile.tile[MMA_K, 2 * MMA_N](
-                            (k_mma + 1) % num_k_mmas, n_mma2
+                        var b_mma_tile = b_warp_tile.tile[MMA_K, WN](
+                            (k_mma + 1) % num_k_mmas, 0
                         )
                         var vec = ld_mma[
                             4,
                             Layout(
                                 IntTuple(16, 2), IntTuple(BN // simd_size, 1)
                             ),
-                            swizzle=None,
+                            swizzle = OptionalReg[_swizzle_signature](
+                                xor_3bits_per16T
+                            ) if b_type
+                            == DType.bfloat16 else None,
                             transposed=True,
-                        ](b_mma_tile, 0)
+                        ](b_mma_tile, 2 * n_mma2)
                         b_reg_tiles[next][2 * n_mma2, 0] = rebind[b_frag_type](
                             SIMD[b_type, 4](vec[0], vec[1], vec[2], vec[3])
                         )
@@ -563,6 +578,8 @@ fn multistage_gemm[
                             dst_thread_layout = Layout.row_major(
                                 num_threads * simd_size // BN, BN // simd_size
                             ),
+                            swizzle = xor_3bits_per16T if b_type
+                            == DType.bfloat16 else identity,
                         ](
                             b_smem_prefetch_tile.vectorize[1, simd_size](),
                             b.tile[BK, BN](
