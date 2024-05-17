@@ -57,6 +57,7 @@ enum ExprContext {
   EC_BoolCondition,         // if x  /  while x  /  x and y  /  a if x else b
   EC_CondExpr,              // x if a else y
   EC_BoolParamCondition,    // @parameter if x
+  EC_ForParamSeq,           // @parameter for y in x
   EC_ForIterator,           // for x internal details
   EC_WithContextMgr,        // with x:
   EC_WithExitResult,        // with (result of __exit__ call)

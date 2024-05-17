@@ -85,6 +85,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return " in 'if' expression value";
   case EC_BoolParamCondition:
     return " in '@parameter if' condition";
+  case EC_ForParamSeq:
+    return " in '@parameter for' sequence initializer";
   case EC_ForIterator:
     return " in 'for' iterator expression";
   case EC_WithContextMgr:

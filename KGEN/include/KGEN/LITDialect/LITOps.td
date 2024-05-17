@@ -136,6 +136,11 @@ def LIT_FuncOp : LITOp<"func", [
   let builders = [
     // Create a func with a region and a body block.
     OpBuilder<(ins)>,
+    OpBuilder<(ins "StringAttr":$declName, "StringRef":$sourceName,
+                   "FunctionType":$funcType,
+                   "ArrayRef<ParamDeclAttr>":$paramDecls,
+                   CArg<"FnEffects", "{}">:$fnEffects,
+                   CArg<"InlineLevel", "InlineLevel::Automatic">:$inlineLevel)>,
     OpBuilder<(ins "StringAttr":$name, "StringAttr":$sourceName,
                    "SignatureType":$signature,
                    CArg<"SpecialFunctionKind", "{}">:$specialFnID)>,

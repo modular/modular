@@ -227,6 +227,11 @@ struct StmtParser : public ParserBase {
                            size_t curIndent);
   ParseResult parseWhileStmt(LexerCursor startCursor, size_t curIndent);
   ParseResult parseForStmt(LexerCursor startCursor, size_t curIndent);
+  ParseResult parseForElse(size_t curIndent, ExprNode *seqExpr,
+                           StringAttr target, SMLoc smLoc, SMLoc targetLoc,
+                           Attribute unrollAttr);
+  ParseResult parseParamFor(size_t curIndent, ExprNode *seqExpr,
+                            StringAttr target, SMLoc smLoc, SMLoc targetLoc);
   ParseResult parseTryStmt(size_t curIndent);
   ParseResult parseWithStmt(size_t curIndent);
 
@@ -855,7 +860,8 @@ ParseResult StmtParser::parseBreakOrContinueStmt(Token::Kind kind,
 static ParseResult parseLoopDecorators(StmtParser &parser,
                                        LexerCursor startCursor,
                                        size_t curIndent, Token::Kind kind,
-                                       Attribute &unrollAttr) {
+                                       Attribute &unrollAttr,
+                                       bool &isParamFor) {
   StringRef kindName = parser.getToken().getSpelling();
 
   if (startCursor != parser.getLexer().getCursor()) {
@@ -865,6 +871,10 @@ static ParseResult parseLoopDecorators(StmtParser &parser,
       if (auto *dre = dyn_cast<DeclRefNode>(decorator)) {
         if (dre->spelling == "unroll") {
           unrollAttr = HLCF::UnrollLevelAttr::getFull(parser.getContext());
+          continue;
+        }
+        if (dre->spelling == "parameter") {
+          isParamFor = true;
           continue;
         }
       } else if (auto *callNode = dyn_cast<CallNode>(decorator)) {
@@ -914,8 +924,9 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
   // We parse the decorators for the 'while' if they exist.
   Attribute unrollAttr = HLCF::UnrollLevelAttr::getNone(getContext());
 
+  bool unused;
   if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_while,
-                          unrollAttr))
+                          unrollAttr, unused))
     return success();
 
   Location whileLoc = translateLocation(consumeToken(Token::kw_while).getLoc());
@@ -972,14 +983,17 @@ ParseResult StmtParser::parseWhileStmt(LexerCursor startCursor,
 ///              ["else" ":" suite]
 ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
                                      size_t curIndent) {
+  // This is enabled with the @parameter decorator.
+  bool isParamFor = false;
+
   // We parse the decorators for the 'for' if they exist.
   Attribute unrollAttr = HLCF::UnrollLevelAttr::getNone(getContext());
 
   if (parseLoopDecorators(*this, startCursor, curIndent, Token::kw_for,
-                          unrollAttr))
+                          unrollAttr, isParamFor))
     return success();
 
-  Location forLoc = translateLocation(consumeToken(Token::kw_for).getLoc());
+  SMLoc smLoc = consumeToken(Token::kw_for).getLoc();
 
   // parse [target_list] in [starred_list]
   // for now, we expect target_list to be an identifier
@@ -998,13 +1012,107 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
     return failure();
 
   ExprNode *seqExpr = nullptr;
-  if (parseExpression(seqExpr))
+  if (parseExpression(seqExpr) ||
+      parseToken(Token::colon, "expected ':' after expression"))
     return failure();
 
   // We will be moving the builder into sub-regions that are created, make sure
   // we end up after it when this is done.
   llvm::SaveAndRestore builderSaver(builder);
 
+  if (isParamFor)
+    return parseParamFor(curIndent, seqExpr, target, smLoc, targetLoc);
+  return parseForElse(curIndent, seqExpr, target, smLoc, targetLoc, unrollAttr);
+}
+
+ParseResult StmtParser::parseParamFor(size_t curIndent, ExprNode *seqExpr,
+                                      StringAttr target, SMLoc smLoc,
+                                      SMLoc targetLoc) {
+  // To codegen an `@parameter for`, we'll parse the body of the loop into a
+  // lambda and then simply emit a call to the `parameter_for` genereator
+  // defined in the builtins, passing the sequence value as a PValue.
+  Location forLoc = translateLocation(targetLoc);
+  ASTDecl &scope = getParentDecl();
+
+  // Declare a nested function of type `fn[Int]() -> None`.
+  Type intType = shared.lookupNamedType("Int", scope, smLoc);
+  if (!intType)
+    return failure();
+  auto funcType =
+      builder.getFunctionType({}, KGEN::NoneType::get(getContext()));
+  auto indVarDecl =
+      ParamDeclAttr::get(scope.mangleParamName(target.getValue()), intType);
+  StringRef name = "__parmeter_for_body";
+  auto bodyFunc = builder.create<LIT::FuncOp>(
+      forLoc, scope.mangleParamName(name), name, funcType, indVarDecl,
+      FnEffects().setCapturing(), InlineLevel::Always);
+  builder.setInsertionPointToStart(bodyFunc.getBody());
+
+  // Make sure to generate a new subprogram scope for the function and parse its
+  // body with it.
+  {
+    shared.setLocationDebugScope(bodyFunc);
+    DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+    if (shared.diBuilder)
+      diScopeGuard = shared.diBuilder->pushScopeGuard(bodyFunc.getLocScope());
+
+    // Bind the induction variable to the param decl in the function.
+    if (parseLocalScopeSuite(
+            curIndent, ScopeDecl{PValue(ParamDeclRefAttr::get(indVarDecl)),
+                                 targetLoc, target}))
+      return failure();
+    builder.create<LIT::ReturnOp>(
+        bodyFunc.getLoc(), Value(builder.create<ParamConstantOp>(
+                               bodyFunc.getLoc(), shared.getNoneAttr())));
+    builder.create<LIT::EndFuncOp>(bodyFunc.getLoc());
+  }
+
+  // Emit the sequence as a PValue parameter.
+  builder.setInsertionPointAfter(bodyFunc);
+  PValue seqPValue = getEmitter().emitExprPValue(seqExpr, EC_ForParamSeq);
+  if (!seqPValue)
+    return failure();
+
+  // Bind the sequence PValue and the body function to `parameter_for` and emit
+  // a call.
+  ArrayRef<ASTDecl *> paramForImpl = shared.getBuiltinFunction(
+      scope, "builtin._stubs", "parameter_for", smLoc);
+  if (paramForImpl.empty())
+    return failure();
+  ParamBindings bindings(
+      TypeCheckScopeInfo{scope, /*isParamContext=*/false, shared});
+  bindings.add(seqExpr, seqPValue);
+  bindings.add(seqExpr, ParamDeclRefAttr::get(bodyFunc.getParamDeclAttr()));
+  OverloadSet call("parameter_for", paramForImpl, std::move(bindings), seqExpr,
+                   CallSyntax::kDirectCall);
+  ValueDest dest(EC_ForParamSeq);
+  ExprEmitter emitter = getEmitter();
+  if (!call.emitCall(CallOperands(), dest, emitter))
+    return failure();
+
+  // FIXME: SignatureType needs to have a lifetime parameter! CheckLifetimes
+  // can't reason about parameter closures, so manually extend the lifetimes of
+  // any values used within the body.
+  mlir::AttrTypeWalker walker;
+  SmallVector<TypedAttr> lifetimes;
+  walker.addWalk([&](TypedAttr value) {
+    if (isa<LifetimeType>(value.getType()))
+      lifetimes.push_back(value);
+  });
+  mlir::visitUsedValuesDefinedAbove(
+      bodyFunc.getBodyRegion(),
+      [&](OpOperand *value) { walker.walk(value->get().getType()); });
+  if (!lifetimes.empty()) {
+    builder.create<OwnershipUseLifetimeOp>(
+        forLoc, LifetimeUnionAttr::get(getContext(), lifetimes));
+  }
+  return success();
+}
+
+ParseResult StmtParser::parseForElse(size_t curIndent, ExprNode *seqExpr,
+                                     StringAttr target, SMLoc smLoc,
+                                     SMLoc targetLoc, Attribute unrollAttr) {
+  Location forLoc = translateLocation(targetLoc);
   VarDeclOp varDeclOp = getEmitter().emitVarDecl(target, getUnresolvedType(),
                                                  forLoc, VarDeclKind::Implicit);
   auto notifyVarDecl = [&](ASTDecl &decl) {
@@ -1029,8 +1137,6 @@ ParseResult StmtParser::parseForStmt(LexerCursor startCursor,
       getEmitter().emitExpr(seqExpr, EC_ForIterator), seqExpr};
   if (!loadedSeq.ir)
     return {};
-  if (parseToken(Token::colon, "expected ':' after expression"))
-    return failure();
 
   // Emit a call to __iter__ into a var with an inferred type.
   VarDeclOp rangeRef = getEmitter().emitVarDecl(

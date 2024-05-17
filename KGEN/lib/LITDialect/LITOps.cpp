@@ -895,6 +895,29 @@ void LIT::FuncOp::build(OpBuilder &builder, OperationState &result) {
   result.addRegion()->push_back(new Block());
 }
 
+void LIT::FuncOp::build(OpBuilder &b, OperationState &state,
+                        StringAttr declName, StringRef sourceName,
+                        FunctionType funcType,
+                        ArrayRef<ParamDeclAttr> paramDecls, FnEffects effects,
+                        InlineLevel inlineLevel) {
+  MLIRContext *ctx = b.getContext();
+  mlir::UnitAttr none;
+  SmallVector<ArgConvention> convs(funcType.getNumInputs());
+  auto sig = LITSignatureType::remapToSignature(
+      paramDecls, {}, funcType, convs, effects,
+      FnMetadataAttr::get(ctx, paramDecls.size(), funcType.getNumInputs()));
+  build(b, state, StringAttr(), ParamDeclAttr::get(declName, sig),
+        TypeAttr::get(sig), TypeAttr::get(funcType),
+        ParamDeclArrayAttr::get(ctx, paramDecls), DecoratorsAttr::get(ctx, {}),
+        /*isStatic=*/none, /*isDef=*/none, /*isInherited=*/none,
+        /*isSynthetic=*/none, ExportKindAttr::get(ctx, ExportKind::NotExported),
+        InlineLevelAttr::get(ctx, inlineLevel), b.getI8IntegerAttr(0),
+        FlatSymbolRefAttr(), StringAttr(), StringAttr(),
+        b.getStringAttr(sourceName), DocStringAttr(), StringAttr(),
+        DictionaryAttr::get(ctx));
+  state.regions[0]->push_back(new Block());
+}
+
 /// Build a function in a default configuration, used by member synthesization.
 void LIT::FuncOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name, StringAttr sourceName,
