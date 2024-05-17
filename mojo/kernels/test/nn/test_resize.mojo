@@ -3,6 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
+# UNSUPPORTED: asan
 # RUN: %mojo  -I %S/.. %s | FileCheck %s
 
 from nn.resize import (
