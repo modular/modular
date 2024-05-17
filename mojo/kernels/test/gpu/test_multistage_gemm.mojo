@@ -36,6 +36,7 @@ from gpu.memory import (
     async_copy_wait_group,
     dynamic_shared_memory,
 )
+from gpu.intrinsics import convert
 from testing import assert_almost_equal
 from sys import argv
 from layout.int_tuple import IntTuple
@@ -178,7 +179,9 @@ fn multistage_gemm[
     var warp_x = warp_id % num_warps_n
     var warp_y = warp_id // num_warps_n
 
-    var a_smem = dynamic_shared_memory[Scalar[a_type], alignment=4]()
+    var a_smem = dynamic_shared_memory[
+        Scalar[a_type], alignment = alignof[SIMD[a_type, simd_size]]()
+    ]()
     var b_smem = (a_smem + num_pipeline_stages * BM * BK).bitcast[
         Scalar[b_type]
     ]()
@@ -577,32 +580,102 @@ fn multistage_gemm[
     var c_gmem_tile = c.tile[BM, BN](BlockIdx.y(), BlockIdx.x())
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](int(warp_y), int(warp_x))
 
+    # For bf16, each thread's fragment has 2x2 fp32 values. Casting to bf16 and
+    # directly storing to global memory results in 2 4B writes. Following cutlass,
+    # we stage the fragments in shared memory so that each thread can store 16B
+    # bf16 data.
     @parameter
-    for m_mma in range(num_m_mmas):
+    if a_type == DType.bfloat16:
+        # Reuse a_smem for c tile in smem
+        var accum_smem_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(BM, BN),
+            address_space = AddressSpace.SHARED,
+        ](a_smem.bitcast[Scalar[accum_type]]())
+        var accum_smem_warp_tile = accum_smem_tile.tile[WM, WN](
+            int(warp_y), int(warp_x)
+        )
 
         @parameter
-        for n_mma in range(num_n_mmas):
-            var c_gmem_mma_tile = c_gmem_warp_tile.tile[MMA_M, MMA_N](
-                m_mma, n_mma
-            )
-            var c_frag = c_gmem_mma_tile.vectorize[1, 2]().distribute[
-                Layout.row_major(8, 4)
-            ](int(lane_id))
-            var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
-            c_frag.aligned_store[2](
-                0,
-                0,
-                SIMD[c_type, 2](
-                    c_reg[0].cast[c_type](), c_reg[1].cast[c_type]()
-                ),
-            )
-            c_frag.aligned_store[2](
-                1,
-                0,
-                SIMD[c_type, 2](
-                    c_reg[2].cast[c_type](), c_reg[3].cast[c_type]()
-                ),
-            )
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                var accum_smem_mma_tile = accum_smem_warp_tile.tile[
+                    MMA_M, MMA_N
+                ](m_mma, n_mma)
+                var accum_frag = accum_smem_mma_tile.vectorize[
+                    1, 2
+                ]().distribute[Layout.row_major(8, 4)](int(lane_id))
+                var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
+                accum_frag.aligned_store[2](0, 0, c_reg.slice[2]())
+                accum_frag.aligned_store[2](1, 0, c_reg.slice[2, offset=2]())
+
+        barrier()
+
+        var c_gmem_store_frag = c_gmem_tile.vectorize[
+            1, simd_size
+        ]().distribute[
+            Layout.row_major(num_threads * simd_size // BN, BN // simd_size)
+        ](
+            int(tid)
+        )
+
+        var accum_smem_load_frag = accum_smem_tile.vectorize[
+            1, simd_size
+        ]().distribute[
+            Layout.row_major(num_threads * simd_size // BN, BN // simd_size)
+        ](
+            int(tid)
+        )
+
+        alias num_stores_per_thread = c_gmem_store_frag.layout.size()
+
+        @parameter
+        for i in range(num_stores_per_thread):
+            var accum_vec = accum_smem_load_frag.aligned_load[simd_size](i, 0)
+            var c_vec: SIMD[c_type, simd_size] = 0
+
+            @parameter
+            fn cvt[j: Int]():
+                var vec_converted = convert[accum_type, c_type, 2](
+                    SIMD[accum_type, 2](accum_vec[2 * j], accum_vec[2 * j + 1])
+                )
+                c_vec[2 * j] = vec_converted[0]
+                c_vec[2 * j + 1] = vec_converted[1]
+
+            unroll[cvt, simd_size // 2]()
+
+            c_gmem_store_frag.aligned_store[simd_size](i, 0, c_vec)
+
+    else:
+
+        @parameter
+        for m_mma in range(num_m_mmas):
+
+            @parameter
+            for n_mma in range(num_n_mmas):
+                var c_gmem_mma_tile = c_gmem_warp_tile.tile[MMA_M, MMA_N](
+                    m_mma, n_mma
+                )
+                var c_frag = c_gmem_mma_tile.vectorize[1, 2]().distribute[
+                    Layout.row_major(8, 4)
+                ](int(lane_id))
+                var c_reg = c_reg_tile[m_mma * num_n_mmas + n_mma, 0]
+                c_frag.aligned_store[2](
+                    0,
+                    0,
+                    SIMD[c_type, 2](
+                        c_reg[0].cast[c_type](), c_reg[1].cast[c_type]()
+                    ),
+                )
+                c_frag.aligned_store[2](
+                    1,
+                    0,
+                    SIMD[c_type, 2](
+                        c_reg[2].cast[c_type](), c_reg[3].cast[c_type]()
+                    ),
+                )
 
 
 fn test[type: DType, transpose_b: Bool]() raises:
