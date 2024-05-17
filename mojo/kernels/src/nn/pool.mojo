@@ -142,8 +142,8 @@ fn pool_shape_impl[
         or dilations_buf.dim(0) != input_rank - 2
     ):
         raise Error(
-            "[pooling] requires (len(strides) == len(dilations) == input rank"
-            " - 2)"
+            "[pooling] requires (len(filter) == len(strides) == len(dilations)"
+            " == input rank - 2)"
         )
 
     if paddings_buf.dim(0) != 2 * (input_rank - 2):
@@ -154,36 +154,23 @@ fn pool_shape_impl[
     # Assume input has layout NHWC
     var batch_size = input_buf.dim(0)
     var input_channels = input_buf.dim(3)
-    var input_height = input_buf.dim(1)
-    var input_width = input_buf.dim(2)
+    var output_shape = StaticIntTuple[input_rank]()
+    output_shape[0] = batch_size
+    output_shape[input_rank - 1] = input_channels
 
-    var filter_height = int(filter_buf[0])
-    var filter_width = int(filter_buf[1])
-
-    var stride_height = int(strides_buf[0])
-    var stride_width = int(strides_buf[1])
-
-    var dilation_height = int(dilations_buf[0])
-    var dilation_width = int(dilations_buf[1])
-
-    var pad_height = int(paddings_buf[0] + paddings_buf[1])
-    var pad_width = int(paddings_buf[2] + paddings_buf[3])
-
-    var output_height = get_sliding_window_out_dim[ceil_mode](
-        input_height, filter_height, dilation_height, stride_height, pad_height
-    )
-    var output_width = get_sliding_window_out_dim[ceil_mode](
-        input_width, filter_width, dilation_width, stride_width, pad_width
-    )
-
-    if output_height <= 0:
-        raise Error("[pooling] output height must be positive")
-    if output_width <= 0:
-        raise Error("[pooling] output width must be positive")
-
-    var output_shape = StaticIntTuple[input_rank](
-        batch_size, output_height, output_width, input_channels
-    )
+    @unroll
+    for i in range(0, input_rank - 2):
+        var input_spatial_dim = int(input_buf.dim(i + 1))
+        var filter = int(filter_buf[i])
+        var stride = int(strides_buf[i])
+        var dilation = int(dilations_buf[i])
+        var pad = int(paddings_buf[2 * i] + paddings_buf[2 * i + 1])
+        var output_spatial_dim = get_sliding_window_out_dim[ceil_mode](
+            input_spatial_dim, filter, dilation, stride, pad
+        )
+        if output_spatial_dim <= 0:
+            raise Error("[pooling] output spatial dim must be positive")
+        output_shape[i + 1] = output_spatial_dim
 
     return output_shape
 
