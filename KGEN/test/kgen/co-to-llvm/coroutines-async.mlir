@@ -222,7 +222,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %1 = builtin.unrealized_conversion_cast %0 : !co.routine to !llvm.ptr loc(#loc8)
 
     // CHECK-LABEL: llvm.func internal @foo_af_suspend_0(%arg0: !llvm.ptr loc({{.*}}))
-    // CHECK-NEXT:    %0 = llvm.mlir.constant(1 : i64) : i64 loc(#[[LOC1_INL:.*]])
+    // CHECK-NEXT:    %0 = llvm.mlir.constant(1 : i64) : i64 loc(#[[LOC_INL_CONST:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP1:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP1]])
     co.suspend -> %hdl0 {
@@ -231,7 +231,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     } loc(#loc11)
 
     // CHECK-LABEL: llvm.func internal @foo_af_suspend_1(%arg0: !llvm.ptr loc({{.*}}))
-    // CHECK-NEXT:    %0 = llvm.mlir.constant(2 : i64) : i64 loc(#[[LOC2_INL:.*]])
+    // CHECK-NEXT:    %0 = llvm.mlir.constant(2 : i64) : i64 loc(#[[LOC_INL_CONST:.*]])
     // CHECK-NEXT:    llvm.return loc(#[[LOC_SUSP2:.*]])
     // CHECK-NEXT:  } loc(#[[LOC_SUSP2]])
     co.suspend -> %hdl1 {
@@ -253,8 +253,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-DAG: #[[LOC_CALLEE2:.*]] = loc(fused<#[[SP_AF]]>[#[[LOC2]]])
 // CHECK-DAG: #[[LOC_SUSP1]] = loc(fused<#[[SP1]]>[#[[LOC1]]])
 // CHECK-DAG: #[[LOC_SUSP2]] = loc(fused<#[[SP2]]>[#[[LOC2]]])
-// CHECK-DAG: #[[LOC1_INL]] = loc(callsite(#[[LOC_CALLEE1]] at #[[LOC_SUSP1]]))
-// CHECK-DAG: #[[LOC2_INL]] = loc(callsite(#[[LOC_CALLEE2]] at #[[LOC_SUSP2]]))
+// CHECK-DAG: #[[LOC_INL_CONST]] = loc(unknown)
 
 #loc10 = loc(fused<#subprogram>["foo.mlir":42:16])
 #loc11 = loc(fused<#subprogram>["foo.mlir":44:38])

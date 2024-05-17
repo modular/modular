@@ -24,7 +24,7 @@
 // CHECK-LABEL: kgen.generator @parent
 kgen.generator @parent() -> index {
   // CHECK: %[[RES:.*]] = hlcf.loop "[[LABEL:.*]]" () -> index
-    // CHECK-NEXT: index.constant 0 loc(#[[INLINED_LOC:.*]])
+    // CHECK-NEXT: index.constant 0 loc(#[[CONST_LOC:.*]])
     // CHECK: hlcf.if
       // CHECK-NEXT: hlcf.break "[[LABEL]]" %idx0 : index loc(#[[BREAK_LOC0:.*]])
     // CHECK: kgen.param.declare.region SomeClosure = () {
@@ -59,7 +59,7 @@ kgen.generator @callee() -> index always_inline {
   kgen.return %0 : index loc(#ret1)
 } loc(#calleeLoc)
 
-// CHECK: #[[INLINED_LOC]] = loc(callsite(#[[CALLEE_LOC]] at #[[CALL_LOC]]))
+// CHECK: #[[CONST_LOC]] = loc(unknown)
 // CHECK: #[[BREAK_LOC0]] = loc(callsite(#[[RET_LOC0]] at #[[CALL_LOC]]))
 // CHECK: #[[BREAK_LOC1]] = loc(callsite(#[[RET_LOC1]] at #[[CALL_LOC]]))
 
@@ -795,7 +795,6 @@ kgen.generator @parent<T: type>(%arg0: index) {
 
 // CHECK-LABEL: kgen.generator @nodebug_inline_me
 kgen.generator @nodebug_inline_me<T: type>(%arg0: !kgen.paramref<T>) always_inline_no_debug {
-  debuginfo.value #local_variable = %arg0 : !kgen.paramref<T> loc(#loc)
   kgen.return loc(#loc)
 } loc(#loc)
 
