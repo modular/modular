@@ -39,6 +39,12 @@ cc_test(
         "MODULAR_MOJO_ORCRT_PATH": "$(location @llvm-project//compiler-rt:orc_rt)",
         "MODULAR_PATH": ".",
     },
+    # TODO: Disable only ODR checks when https://github.com/bazelbuild/bazel/pull/22420 is in
+    # __jit_debug_descriptor exists in liblldb and libMojoLLDB
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":Support",
         "//Support:Globals",

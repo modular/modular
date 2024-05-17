@@ -35,6 +35,10 @@ cc_test(
         "MODULAR_PATH": ".",
         "MODULAR_CRASH_REPORTING_HANDLER_PATH": "$(location @crashpad//:modular-crashpad-handler)",
     },
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":Support",
         "//Support:Globals",

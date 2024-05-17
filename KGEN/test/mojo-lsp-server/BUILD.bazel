@@ -11,6 +11,10 @@ lit_tests(
     mojo_deps = [
         "//Kernels/mojo/stdlib",
     ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tools = [
         "//KGEN/tools/mojo-lsp-server",
     ],
