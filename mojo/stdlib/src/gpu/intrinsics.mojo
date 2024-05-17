@@ -102,3 +102,36 @@ fn warpgroup_reg_dealloc[count: Int]():
         inlined_assembly[
             "setmaxnreg.dec.sync.aligned.u32 $0;", NoneType, constraints="i"
         ](UInt32(count))
+
+
+# ===----------------------------------------------------------------------===#
+# Convertion
+# ===----------------------------------------------------------------------===#
+
+
+@always_inline
+fn convert[
+    src_type: DType, dst_type: DType, width: Int
+](src: SIMD[src_type, width]) -> SIMD[dst_type, width]:
+    """Convert data types with different precisions.
+    This is for conversions not covered by `cast`."""
+
+    constrained[
+        src_type == DType.float32 and dst_type == DType.bfloat16 and width == 2,
+        "Only support 2xfp32 to 2xbf16 conversion",
+    ]()
+
+    var bf16x2_as_uint32 = inlined_assembly[
+        "cvt.rn.bf16x2.f32 $0, $1, $2;",
+        UInt32,
+        Float32,
+        Float32,
+        constraints="=r,f,f",
+    ](src[0].cast[DType.float32](), src[1].cast[DType.float32]())
+
+    # Reinterpret cast uint32 to 2 bf16.
+    var ptr = Pointer.address_of(bf16x2_as_uint32).bitcast[
+        SIMD[dst_type, width]
+    ]()
+
+    return ptr[0]
