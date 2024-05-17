@@ -314,7 +314,7 @@ def test_ndbuffer_tofile():
     with open(TEMP_FILE, "r") as f:
         var str = f.read()
         var buf_read = NDBuffer[DType.float32, 2, DimList(2, 2)](
-            str.unsafe_ptr().bitcast[DType.float32]()
+            str.unsafe_ptr().bitcast[Float32]()
         )
         for i in range(2):
             for j in range(2):
