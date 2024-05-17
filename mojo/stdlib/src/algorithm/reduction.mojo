@@ -31,6 +31,7 @@ from buffer import Buffer, NDBuffer
 from buffer.buffer import prod_dims
 from buffer.list import Dim, DimList
 from builtin.dtype import _uint_type_of_width
+from collections import Optional
 from gpu.host import Stream
 from memory.unsafe import bitcast
 
@@ -131,7 +132,7 @@ fn _get_nd_indices_from_flat_index[
                 curr_index = curr_index._positive_div(shape[i])
     else:
 
-        @unroll
+        @parameter
         for i in reversed(range(rank)):
             # There is one dimension we skip, this represents the inner loop that
             # is being traversed.
@@ -849,7 +850,7 @@ fn _reduce_along_inner_dimension[
                 num_reductions,
             ]()
 
-            @unroll
+            @parameter
             for i in range(num_reductions):
                 acc_unrolled_simd_tup[i] = SIMD[
                     init_type,
@@ -998,7 +999,7 @@ fn _reduce_along_outer_dimension[
                     SIMD[init_type, simd_width], num_reductions
                 ]()
 
-                @unroll
+                @parameter
                 for i in range(num_reductions):
                     acc_simd_tup[i] = SIMD[init_type, simd_width].splat(init[i])
 
@@ -1626,9 +1627,7 @@ fn none_true(src: Buffer) -> Bool:
 # ===----------------------------------------------------------------------===#
 
 
-fn _argn[
-    is_max: Bool
-](input: NDBuffer, axis: Int, output: NDBuffer,) raises:
+fn _argn[is_max: Bool](input: NDBuffer, axis: Int, output: NDBuffer) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
 
@@ -1654,13 +1653,16 @@ fn _argn[
     if canonical_axis != rank - 1:
         raise Error("axis other than innermost not supported yet")
 
-    @unroll
-    for subaxis in range(rank):
+    @always_inline
+    @parameter
+    fn check_dim_body[subaxis: Int]() raises:
         if subaxis == canonical_axis:
             if output.dim(subaxis) != 1:
                 raise Error("expected axis to have size 1 in output")
         elif input.dim(subaxis) != output.dim(subaxis):
             raise Error("input and output dims must match aside from 'axis'")
+
+    unroll[check_dim_body, rank]()
 
     var axis_size = input.dim(canonical_axis)
     var input_stride: Int

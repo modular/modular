@@ -112,7 +112,7 @@ fn block_reduce[
 
     if lane_id() == 0:
 
-        @unroll
+        @parameter
         for i in range(num_reductions):
             # bank conflict for sub 4 byte data elems
             shared.store[width=simd_width](
@@ -125,14 +125,14 @@ fn block_reduce[
 
     if ThreadIdx.x() < (BlockDim.x() // WARP_SIZE):
 
-        @unroll
+        @parameter
         for i in range(num_reductions):
             last_accum[i] = shared.load[width=simd_width](
                 (num_reductions * lane_id() + i) * simd_width
             )
     else:
 
-        @unroll
+        @parameter
         for i in range(num_reductions):
             last_accum[i] = init[i]
 
@@ -226,7 +226,7 @@ fn row_reduce[
     var accum = StaticTuple[SIMD[accum_type, simd_width], num_reductions]()
     var init_cast = StaticTuple[Scalar[accum_type], num_reductions]()
 
-    @unroll
+    @parameter
     for i in range(num_reductions):
         init_cast[i] = init[i].cast[accum_type]()
         accum[i] = init_cast[i]
@@ -323,7 +323,7 @@ fn reduce_kernel[
         if ThreadIdx.x() == 0:
             var row_accum_cast = StaticTuple[Scalar[type], num_reductions]()
 
-            @unroll
+            @parameter
             for i in range(num_reductions):
                 row_accum_cast[i] = row_accum[i].cast[type]()
 

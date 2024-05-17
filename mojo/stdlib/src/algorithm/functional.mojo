@@ -21,6 +21,7 @@ from gpu.host import Device, Function, Stream
 from runtime import tracing
 from runtime.llcl import Runtime, TaskGroup, TaskGroupTaskList
 from runtime.tracing import Trace, TraceLevel
+from builtin._stubs import parameter_for
 
 from utils.numerics import FlushDenormals
 from utils.index import Index, StaticIntTuple
@@ -232,7 +233,7 @@ fn vectorize[
             func[size - vector_end_simd](vector_end_simd)
         else:
 
-            @unroll
+            @parameter
             for i in range(vector_end_simd, size):
                 func[1](i)
 
@@ -254,7 +255,7 @@ fn _perfect_vectorized_impl[
     @always_inline
     @parameter
     fn unrolled_func(unrolled_simd_idx: Int):
-        @unroll
+        @parameter
         for idx in range(unroll_factor):
             func[simd_width](unrolled_simd_idx + idx * simd_width)
 
@@ -1127,7 +1128,7 @@ fn _get_start_indices_of_nth_subvolume[
     var out = StaticIntTuple[rank](0)
     var curr_index = n
 
-    @unroll
+    @parameter
     for i in reversed(range(rank - subvolume_rank)):
         out[i] = curr_index._positive_rem(shape[i])
         curr_index = curr_index._positive_div(shape[i])
@@ -1444,7 +1445,7 @@ fn _elementwise_impl_gpu[
             if handle_uneven_simd:
                 if start_indices[rank - 1] + simd_width >= shape[rank - 1]:
 
-                    @unroll
+                    @parameter
                     for off in range(simd_width):
                         func[1, rank](
                             _get_start_indices_of_nth_subvolume[rank, 0](
