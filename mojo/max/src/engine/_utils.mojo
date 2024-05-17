@@ -19,6 +19,17 @@ struct CString:
 
     var ptr: DTypePointer[DType.int8]
 
+    fn __init__(inout self, ptr: UnsafePointer[UInt8]):
+        """
+        Construct a `CString` from a string data pointer.
+
+        Args:
+            ptr: The string data pointer to wrap.
+        """
+
+        # TODO: Remove cast once UInt8 string types transition is complete.
+        self.ptr = DTypePointer(ptr.bitcast[Int8]())
+
     fn get_as_string_ref(self) -> StringRef:
         """
         Get the `CString` as `StringRef`. Lifetime is tied to C API.
