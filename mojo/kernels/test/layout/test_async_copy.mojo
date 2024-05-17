@@ -113,7 +113,7 @@ fn multistage_copy[
     )
 
     # Prefetch (num_pipeline_stages - 1) stages.
-    @unroll
+    @parameter
     for stage in range(num_pipeline_stages - 1):
         copy_dram_to_sram_async[
             src_thread_layout=thread_layout,

@@ -312,7 +312,7 @@ struct LayoutTensor[
     fn _toStatic[t: IntTuple]() -> StaticIntTuple[len(t)]:
         var st = StaticIntTuple[len(t)]()
 
-        @unroll
+        @parameter
         for i in range(len(t)):
             st[i] = to_int(t[i])
         return st
@@ -324,7 +324,7 @@ struct LayoutTensor[
     ](stride: StaticIntTuple[rank], vals: VariadicList[Int]) -> Int:
         var offset = 0
 
-        @unroll
+        @parameter
         for i in range(rank):
             offset += vals[i] * stride[i]
         return offset
@@ -340,7 +340,7 @@ struct LayoutTensor[
         ]()
         var offset = 0
 
-        @unroll
+        @parameter
         for i in range(rank_1):
             offset += vals[i] * stride[i]
         return offset
@@ -481,7 +481,7 @@ struct LayoutTensor[
             count,
         ]()
 
-        @unroll
+        @parameter
         for i in range(count):
             tiles[i] = LayoutTensor[
                 dtype,
@@ -1008,7 +1008,7 @@ struct LayoutTensor[
     fn fill(self, val: Scalar[dtype]):
         alias num_elements = layout.size() * Self.element_size
 
-        @unroll
+        @parameter
         for i in range(num_elements):
             self.ptr[i] = val
 
@@ -1105,10 +1105,10 @@ fn outer_product_acc[
     constrained[lhs.shape[0]() == M, "lhs shape mismatch"]()
     constrained[rhs.shape[0]() == N, "rhs shape mismatch"]()
 
-    @unroll
+    @parameter
     for i in range(M):
 
-        @unroll
+        @parameter
         for j in range(N):
             res[i, j] += lhs[i].cast[dtype]() * rhs[j].cast[dtype]()
 

@@ -191,14 +191,14 @@ fn _get_element_idx[
 
     # evaluate according to
     # iterate over outer most
-    @unroll
+    @parameter
     for i in range(rank):
         result += (
             curr_linear_crd % element_layout.shape[i]
         ) * element_layout.stride[i]
         curr_linear_crd = curr_linear_crd // element_layout.shape[i]
 
-    @unroll
+    @parameter
     for i in range(rank):
         result += (
             curr_linear_crd % buff.dynamic_shape[i]
@@ -216,7 +216,7 @@ fn _get_element_idx[
     var result = 0
     var curr_linear_crd = linear_coord
 
-    @unroll
+    @parameter
     for i in range(rank):
         result += (
             curr_linear_crd % buff.dynamic_shape[i]
@@ -237,7 +237,7 @@ fn _get_element_idx[
 
     # evaluate according to
     # iterate over outer most
-    @unroll
+    @parameter
     for i in range(rank):
         result += (
             curr_linear_crd % element_layout.shape[i]
