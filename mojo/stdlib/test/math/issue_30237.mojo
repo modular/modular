@@ -30,7 +30,7 @@ fn eval1(x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
 
     var result = x.fma(c_last, c_second_from_last)
 
-    @unroll
+    @parameter
     for idx in range(coefficients_len - 2):
         var c = coefficients[coefficients_len - 3 - idx]
         result = x.fma(result, c)
