@@ -23,6 +23,7 @@ public:
   CacheTelemetryContext(Telemetry::TelemetryContext &ctx);
 
   static CacheTelemetryContext &getCacheTelemetryContext(ContextRef context);
+  static CacheTelemetryContext &getCacheTelemetryContext(Context *context);
 
   /// Record a cache hit event.
   void recordCacheHit(llvm::StringRef pipelineName);
