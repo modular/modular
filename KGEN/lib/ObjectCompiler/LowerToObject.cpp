@@ -5,6 +5,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "LowerToObject.h"
+#include "Cache/CacheTelemetryContext.h"
 #include "KGEN/Compiler/JITSupport.h"
 #include "KGEN/Compiler/LLVMIRUtils.h"
 #include "KGEN/Compiler/ObjectCompiler.h"
@@ -250,9 +251,24 @@ static LLCL::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
                             isJIT](WriteableBufferRef buf,
                                    LLCL::AnyAsyncValueRef chain) mutable {
     auto output = LLCL::AsyncValueRef<BufferRef>::allocate(runtime);
+#ifdef MODULAR_ENABLE_TELEMETRY
+    Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
+        .recordCacheMiss("compileOptimizedLLVMModuleToObject");
+#endif
+
     chain.andThenAsync([nonBitcodeKeySize, loc, &runtime, emitAssembly,
                         output = output.copy(), buf = buf.copy(),
                         keyBuf = std::move(keyBuf), options, isJIT]() mutable {
+
+#ifdef MODULAR_ENABLE_TELEMETRY
+      [[maybe_unused]] auto timeScope =
+          runtime.context->get<M::Telemetry::TelemetryContext>()
+              ->createUInt64Timer<std::chrono::milliseconds>(
+                  "mojo.compile.cache.miss.time", M::Telemetry::Level::L2,
+                  {{"pipeline", "compileOptimizedLLVMModuleToObject"}});
+
+#endif
+
       BufferRef keyBufRef(std::move(keyBuf));
       StringRef bitcodeBuffer = keyBufRef->getBuffer();
       bitcodeBuffer = bitcodeBuffer.drop_front(nonBitcodeKeySize);
@@ -292,7 +308,13 @@ static LLCL::AnyAsyncValueRef compileOptimizedLLVMModuleToObject(
     return output;
   };
 
-  auto onCacheHit = [](BufferRef buf) { return buf.copy(); };
+  auto onCacheHit = [&runtime](BufferRef buf) {
+#ifdef MODULAR_ENABLE_TELEMETRY
+    Cache::CacheTelemetryContext::getCacheTelemetryContext(runtime.context)
+        .recordCacheHit("compileOptimizedLLVMModuleToObject");
+#endif
+    return buf.copy();
+  };
 
   return Cache::cachedTransform(
       LLCL::MLIRLocationDecoder::getEncodedLocation(loc), transformCache.copy(),

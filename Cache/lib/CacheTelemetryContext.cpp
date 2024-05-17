@@ -19,9 +19,14 @@ CacheTelemetryContext::CacheTelemetryContext(Telemetry::TelemetryContext &ctx)
           /*attributes=*/{}, "Number of compilation cache misses.")) {}
 
 CacheTelemetryContext &
-CacheTelemetryContext::getCacheTelemetryContext(ContextRef context) {
+CacheTelemetryContext::getCacheTelemetryContext(Context *context) {
   auto &telemetryCtx = *context->get<M::Telemetry::TelemetryContext>();
   return context->emplaceIfMissing<CacheTelemetryContext>(telemetryCtx);
+}
+
+CacheTelemetryContext &
+CacheTelemetryContext::getCacheTelemetryContext(ContextRef context) {
+  return getCacheTelemetryContext(context.getPointer());
 }
 
 void CacheTelemetryContext::recordCacheHit(llvm::StringRef pipelineName) {
