@@ -34,6 +34,7 @@ struct ParameterStruct[value: Int]:
             "mojo",
             "Unexpected empty documentation string",
             /*relatedInformation=*/std::nullopt,
+            /*tags*/ {},
             /*category=*/std::nullopt};
   };
 
