@@ -49,7 +49,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             # 2nd best case, we know the length but not all the values.
             # We can store the values in memory which doesn't need to be heap
             # allocated.
-            @unroll
+            @parameter
             for i in range(Self._length):
                 self.stack_alloc_data[i] = other[i]
         else:
@@ -79,7 +79,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
             # allocated.
             self.stack_alloc_data = StaticIntTuple[Self._safe_len]()
 
-            @unroll
+            @parameter
             for i in range(Self._length):
                 self.stack_alloc_data[i] = elems[i]
         else:
@@ -127,7 +127,7 @@ struct IntList[static_values: DimList = DimList()](Sized):
         @parameter
         if Self.has_static_length():
 
-            @unroll
+            @parameter
             for i in range(Self._length):
                 new.stack_alloc_data[i] = 0
         else:

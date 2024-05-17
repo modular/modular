@@ -1041,7 +1041,6 @@ fn slice_impl[
     var new_shape = IntList[x.same_rank_param()]()
     var new_stride = IntList[x.same_rank_param()]()
 
-    @unroll
     for i in range(x.rank()):
         var start = int(starts.simd_load[1](i))
         var stop = int(stops.simd_load[1](i))

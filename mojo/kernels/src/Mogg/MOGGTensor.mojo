@@ -414,7 +414,7 @@ struct Tensor[
         var shape = StaticIntTuple[rank]()
         var strides = StaticIntTuple[rank]()
 
-        @unroll
+        @parameter
         for i in range(rank):
             shape[i] = self.shape[i]
             strides[i] = self.strides[i]

@@ -432,7 +432,7 @@ fn get_int_from_shape[
 fn shape_to_ndbuffer[
     shape_rank: Int, buf_rank: Int, type: DType
 ](shape: StaticIntTuple[shape_rank], buf: NDBuffer[type, buf_rank]):
-    @unroll
+    @parameter
     for i in range(shape_rank):
         buf[i] = shape[i]
 
@@ -916,13 +916,11 @@ fn broadcast_to_shape[
     # move the output shape from buffer into a static int tuple
     var output_shape = StaticIntTuple[output_rank]()
 
-    @unroll
     for axis in range(output_rank):
         output_shape[axis] = int(target_shape_buf[axis])
 
     # Validate the compatibility between input and output shapes
     # NOTE we don't need to check the padded dims
-    @unroll
     for i in range(input_rank):
         var input_axis = input_rank - i - 1
         var output_axis = output_rank - i - 1
@@ -1125,7 +1123,6 @@ fn concat_shape[
     fn shape_equal_ignore_axis(
         s1: StaticIntTuple[input_rank], s2: StaticIntTuple[input_rank]
     ) -> Bool:
-        @unroll
         for i in range(input_rank):
             if i != axis and s1[i] != s2[i]:
                 return False
@@ -1133,7 +1130,6 @@ fn concat_shape[
 
     var concat_axis_dim_sum = 0
 
-    @unroll
     for i in range(input_bufs.__len__()):
         concat_axis_dim_sum += input_bufs[i].dim(axis)
         if not shape_equal_ignore_axis(
@@ -2025,7 +2021,6 @@ fn transpose_shape[
     if perms.dim(0) != rank:
         raise Error("[transpose] permutation size must match input rank")
 
-    @unroll
     for i in range(rank):
         var perm = int(perms[i])
         if perm < 0 or rank <= perm:
@@ -2863,7 +2858,6 @@ fn random_shape[
 ](shape: NDBuffer[shapeType, 1, DimList(rank)],) -> StaticIntTuple[rank]:
     var unrolledShape = StaticIntTuple[rank]()
 
-    @unroll
     for i in range(rank):
         unrolledShape[i] = int(shape[i])
     return unrolledShape
@@ -2927,7 +2921,6 @@ fn resize_shape[
 ) -> StaticIntTuple[rank]:
     var shape = StaticIntTuple[rank]()
 
-    @unroll
     for i in range(rank):
         shape[i] = int(size[i])
     return shape
@@ -3028,7 +3021,6 @@ fn split_ith_output_shape[
 
     var split_sizes_sum = 0
 
-    @unroll
     for i in range(split_sizes_buf.dim(0)):
         split_sizes_sum += int(split_sizes_buf[i])
     if split_sizes_sum != input_buf.dim(split_axis):
@@ -3111,7 +3103,7 @@ fn conv[
     var stride_tuple = StaticIntTuple[input_rank - 2](0)
     var dilation_tuple = StaticIntTuple[input_rank - 2](0)
 
-    @unroll
+    @parameter
     for i in range(input_rank - 2):
         stride_tuple[i] = int(stride_flat[i])
         dilation_tuple[i] = int(dilation_flat[i])
@@ -3269,7 +3261,7 @@ fn conv_transpose[
     var stride_tuple = StaticIntTuple[input_rank - 2](0)
     var dilation_tuple = StaticIntTuple[input_rank - 2](0)
 
-    @unroll
+    @parameter
     for i in range(input_rank - 2):
         stride_tuple[i] = int(strides[i])
         dilation_tuple[i] = int(dilation[i])
