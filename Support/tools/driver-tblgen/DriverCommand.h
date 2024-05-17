@@ -151,6 +151,9 @@ public:
   /// Return the option group's index value, if one is defined.
   std::optional<int64_t> getIndex() const;
 
+  /// Return whether the option group is hidden from help text.
+  bool isHidden() const;
+
   /// Given an LLVM `Option` record, either add it to the sorted list of group
   /// options, or return the option that was already added. If the option record
   /// is to be newly added but is invalid, this returns an error.

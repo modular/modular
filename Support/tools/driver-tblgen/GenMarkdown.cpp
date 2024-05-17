@@ -99,6 +99,10 @@ static void genOptionsSection(raw_ostream &os,
   os << "## Options\n\n";
 
   for (const CommandOptionGroup &group : groups) {
+    // Skip any hidden option groups.
+    if (group.isHidden())
+      continue;
+
     // Print each option group, and its help text if available.
     os << "### " << group.getGroup()->getValueAsString("Name") << "\n\n";
     if (std::optional<StringRef> helpText =

@@ -121,6 +121,10 @@ static void genOptionsSection(raw_ostream &os,
   os << ".SH \"OPTIONS\"\n";
 
   for (const CommandOptionGroup &group : groups) {
+    // Skip any hidden option groups.
+    if (group.isHidden())
+      continue;
+
     // Print each option group as a subsection.
     os << escape(llvm::formatv(".SS \"{0}\"\n",
                                group.getGroup()->getValueAsString("Name")));

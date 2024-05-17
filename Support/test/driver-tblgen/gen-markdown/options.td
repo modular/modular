@@ -51,3 +51,11 @@ def : Joined<["-"], "F1">, Group<FirstOptionGroup>, Index<2>,
 defm bar : CommandOptionWithValues<["--", "-"], "bar", FirstOptionGroup,
   Index<2>, MetaVarName<"BAR">,
   HelpText<"Takes a bar and does something with it.">, Values<"a,b,c">>;
+
+// Hidden option groups don't appear in Markdown.
+// CHECK-NOT: Second Options
+// CHECK-NOT: blong
+def SecondOptionGroup : OptionGroup<"Second Options">, Index<1>,
+  Flags<[HelpHidden]>;
+def : Flag<["--"], "blong">, Group<SecondOptionGroup>, Index<0>,
+  HelpText<"Blongs.">;

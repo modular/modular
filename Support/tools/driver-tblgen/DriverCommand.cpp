@@ -57,6 +57,15 @@ getValueAsOptionalIndex(const llvm::Record *record) {
   return i->getValue();
 }
 
+/// Given an LLVMOption TableGen record, return whether "HelpHidden" appears in
+/// its "Flags" list value. "Flags" must be defined on this record, as it is for
+/// `OptionGroup` and `Option` records.
+static bool isRecordHidden(const llvm::Record *record) {
+  return llvm::any_of(
+      record->getValueAsListOfDefs("Flags"),
+      [](llvm::Record *flag) { return flag->getName() == "HelpHidden"; });
+}
+
 //===----------------------------------------------------------------------===//
 // CommandAlias
 //===----------------------------------------------------------------------===//
@@ -271,7 +280,13 @@ M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
                         group.getGroupName()));
     }
 
-    if (llvm::none_of(group.getOptions(), [](const CommandOption &option) {
+    if (group.isHidden() && group.getOptions().empty())
+      invalid |= printError(
+          group.getGroup()->getLoc(),
+          llvm::formatv("group '{0}' has no options", group.getGroupName()));
+
+    if (!group.isHidden() &&
+        llvm::none_of(group.getOptions(), [](const CommandOption &option) {
           return !CommandOption::isHidden(option.getOption());
         }))
       invalid |= printError(
@@ -290,6 +305,8 @@ M::CommandOptionGroup::getAll(const llvm::RecordKeeper &records) {
 std::optional<int64_t> CommandOptionGroup::getIndex() const {
   return getValueAsOptionalIndex(group);
 }
+
+bool CommandOptionGroup::isHidden() const { return isRecordHidden(group); }
 
 ErrorOr<CommandOption &>
 M::CommandOptionGroup::findOrCreateOption(const llvm::Record *option) {
@@ -340,6 +357,13 @@ M::CommandOptionGroup::findOrCreateOption(const llvm::Record *option) {
                       "it will appear in a non-deterministic order",
                       name));
 
+  if (isHidden() && CommandOption::isHidden(option))
+    invalid |= printError(
+        option->getLoc(),
+        llvm::formatv("option group '{0}' is already hidden, marking its "
+                      "option '{1}' as hidden is redundant",
+                      getGroupName(), name));
+
   if (invalid)
     return Error("option failed to validate");
 
@@ -355,9 +379,7 @@ std::optional<int64_t> CommandOption::getIndex() const {
 }
 
 bool CommandOption::isHidden(const llvm::Record *option) {
-  return llvm::any_of(
-      option->getValueAsListOfDefs("Flags"),
-      [](llvm::Record *flag) { return flag->getName() == "HelpHidden"; });
+  return isRecordHidden(option);
 }
 
 LogicalResult CommandOption::addAlias(const llvm::Record *aliasRecord) {

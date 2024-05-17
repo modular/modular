@@ -89,3 +89,11 @@ def SecondOptionGroup : OptionGroup<"Second Options">, Index<1>,
 // CHECK-NEXT: .sp
 def : Joined<["-"], "I">, Group<SecondOptionGroup>, Index<0>,
   HelpText<"Specify the \"I\", as in \"igloo.\"">, MetaVarName<"IGLOO">;
+
+// Hidden option groups don't appear in manual pages.
+// CHECK-NOT: Third Options
+// CHECK-NOT: blong
+def ThirdOptionGroup : OptionGroup<"Third Options">, Index<2>,
+  Flags<[HelpHidden]>;
+def : Flag<["--"], "blong">, Group<ThirdOptionGroup>, Index<0>,
+  HelpText<"Blongs.">;
