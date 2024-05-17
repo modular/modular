@@ -21,7 +21,7 @@ import _mlir
 
 fn _init_dylib(ignored: UnsafePointer[NoneType]) -> UnsafePointer[NoneType]:
     var mof_lib_path_str_ptr = external_call[
-        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.int8]
+        "KGEN_CompilerRT_getMAXConfigValue", DTypePointer[DType.uint8]
     ](StringRef(".graph_lib"))
 
     if not mof_lib_path_str_ptr:

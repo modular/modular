@@ -53,7 +53,7 @@ def save(tensor_dict: TensorDict, path: Path):
     """
     # Write header and metadata
     # TODO: Using _SERIALIZATION_HEADER raises errors.
-    var header_buf = List[Int8](
+    var header_buf = List[UInt8](
         0x93, 0xF0, 0x9F, 0x94, 0xA5, 0x2B, 0x2B, 0x93, 0x0
     )
     var header = String(header_buf)
@@ -143,7 +143,7 @@ def save(tensor_dict: TensorDict, path: Path):
 fn _read_int[type: DType](f: FileHandle) raises -> Scalar[type]:
     """Reads an int value from a file."""
     var size = sizeof[type]()
-    var bytes_tensor = Tensor[DType.int8](f.read_bytes(size))
+    var bytes_tensor = Tensor[DType.uint8](f.read_bytes(size))
     var result = bytes_tensor.unsafe_ptr().bitcast[type]().load()
     _ = bytes_tensor^
     return result
@@ -192,7 +192,7 @@ def load(path: Path) -> TensorDict:
         TensorDict containing loaded Tensors.
     """
     # TODO: Using _SERIALIZATION_HEADER raises errors.
-    var header_buf = List[Int8](
+    var header_buf = List[UInt8](
         0x93, 0xF0, 0x9F, 0x94, 0xA5, 0x2B, 0x2B, 0x93, 0x0
     )
     with open(path, "rb") as f:
