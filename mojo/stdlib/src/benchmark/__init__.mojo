@@ -137,7 +137,7 @@ r = benchmark.run[sleeper](1, 2, 3, 4)
 Note that the min total time will take precedence over max iterations
 """
 
-from ._bencher import (
+from .bencher import (
     BenchConfig,
     BenchId,
     BenchmarkInfo,
