@@ -9,6 +9,7 @@
 from math import ceildiv, isclose
 from buffer import NDBuffer
 from buffer.list import DimList
+from builtin.io import _printf
 from collections.optional import OptionalReg
 from memory.unsafe import DTypePointer
 from memory.reference import _GPUAddressSpace as AddressSpace
@@ -155,8 +156,8 @@ fn multistage_gemm[
     alias simd_size = simdwidthof[c_type]()
 
     var M = c.dim[0]()
-    alias N = b_shape.get[1]()
-    alias K = b_shape.get[0]()
+    var N = c.dim[1]()
+    var K = a.dim[1]()
 
     alias num_warps_m = BM // WM
     alias num_warps_n = BN // WN
@@ -179,23 +180,19 @@ fn multistage_gemm[
         Scalar[b_type]
     ]()
 
-    alias async_copy_a_layout = Layout.row_major(
+    alias thread_async_copy_a_layout = Layout.row_major(
         num_threads * simd_size // BK, BK // simd_size
+    )
+
+    alias thread_async_copy_b_layout = Layout.row_major(
+        num_threads * simd_size // BK, BK // simd_size
+    ) if transpose_b else Layout.row_major(
+        num_threads * simd_size // BN, BN // simd_size
     )
 
     alias b_smem_layout = Layout.row_major(
         BN, BK
     ) if transpose_b else Layout.row_major(BK, BN)
-
-    alias a_gmem_layout = Layout.row_major(BM, K)
-    var a_slice = LayoutTensor[a_type, a_gmem_layout](
-        a.data.offset(BlockIdx.y() * BM * K)
-    )
-
-    alias b_layout = Layout.row_major(
-        N, K
-    ) if transpose_b else Layout.row_major(K, N)
-    var b_tsr = LayoutTensor[b_type, b_layout](b.data)
 
     # Prefetch (num_pipeline_stages - 1) stages.
     @parameter
@@ -212,33 +209,43 @@ fn multistage_gemm[
             address_space = AddressSpace.SHARED,
         ](b_smem + stage * BN * BK)
 
-        copy_dram_to_sram_async[
-            src_thread_layout=async_copy_a_layout,
-            dst_thread_layout=async_copy_a_layout,
+        copy_from_nd_buffer[
+            thread_layout=thread_async_copy_a_layout,
+            is_async=True,
             swizzle=xor_2bits_per8T,
         ](
-            a_smem_tile.vectorize[1, simd_size](),
-            a_slice.tile[BM, BK](0, stage).vectorize[1, simd_size](),
+            a_smem_tile.vectorize[1, simd_size]().distribute[
+                thread_async_copy_a_layout
+            ](ThreadIdx.x()),
+            a.tile[BM, BK]((BlockIdx.y(), stage)),
+            ThreadIdx.x(),
         )
 
         # fmt: off
         @parameter
         if transpose_b:
-            copy_dram_to_sram_async[
-                src_thread_layout=Layout.row_major(num_threads * simd_size // BK, BK // simd_size),
-                dst_thread_layout=Layout.row_major(num_threads * simd_size // BK, BK // simd_size),
-                swizzle= xor_2bits_per8T,
+            copy_from_nd_buffer[
+                thread_layout=thread_async_copy_b_layout,
+                is_async=True,
+                swizzle=xor_2bits_per8T,
             ](
-                b_smem_tile.vectorize[1, simd_size](),
-                b_tsr.tile[BN, BK](BlockIdx.x(), stage).vectorize[1, simd_size](),
+                b_smem_tile.vectorize[1, simd_size]().distribute[
+                    thread_async_copy_b_layout
+                ](ThreadIdx.x()),
+                b.tile[BN, BK]((BlockIdx.x(), stage)),
+                ThreadIdx.x(),
             )
         else:
-            copy_dram_to_sram_async[
-                src_thread_layout=Layout.row_major(num_threads * simd_size // BN, BN // simd_size),
-                dst_thread_layout=Layout.row_major(num_threads * simd_size // BN, BN // simd_size),
+            copy_from_nd_buffer[
+                thread_layout=thread_async_copy_b_layout,
+                is_async=True,
+                swizzle=xor_2bits_per8T,
             ](
-                b_smem_tile.vectorize[1, simd_size](),
-                b_tsr.tile[BK, BN](stage, BlockIdx.x()).vectorize[1, simd_size](),
+                b_smem_tile.vectorize[1, simd_size]().distribute[
+                    thread_async_copy_b_layout
+                ](ThreadIdx.x()),
+                b.tile[BK, BN]((stage, BlockIdx.x())),
+                ThreadIdx.x(),
             )
         # fmt: on
 
@@ -485,46 +492,54 @@ fn multistage_gemm[
 
                     # TODO: Extend the async copy instrinsic to creat dummy copies. The
                     # prefetch for the three two iterations should be dummy.
-                    copy_dram_to_sram_async[
-                        src_thread_layout=async_copy_a_layout,
-                        dst_thread_layout=async_copy_a_layout,
+                    copy_from_nd_buffer[
+                        thread_layout=thread_async_copy_a_layout,
+                        is_async=True,
                         swizzle=xor_2bits_per8T,
                     ](
-                        a_smem_prefetch_tile.vectorize[1, simd_size](),
-                        a_slice.tile[BM, BK](
-                            0, prefetch_tile_id % num_k_tiles
-                        ).vectorize[1, simd_size](),
+                        a_smem_prefetch_tile.vectorize[
+                            1, simd_size
+                        ]().distribute[thread_async_copy_a_layout](
+                            ThreadIdx.x()
+                        ),
+                        a.tile[BM, BK](
+                            (BlockIdx.y(), prefetch_tile_id % num_k_tiles)
+                        ),
+                        ThreadIdx.x(),
                     )
 
                     @parameter
                     if transpose_b:
-                        copy_dram_to_sram_async[
-                            src_thread_layout = Layout.row_major(
-                                num_threads * simd_size // BK, BK // simd_size
-                            ),
-                            dst_thread_layout = Layout.row_major(
-                                num_threads * simd_size // BK, BK // simd_size
-                            ),
+                        copy_from_nd_buffer[
+                            thread_layout=thread_async_copy_b_layout,
+                            is_async=True,
                             swizzle=xor_2bits_per8T,
                         ](
-                            b_smem_prefetch_tile.vectorize[1, simd_size](),
-                            b_tsr.tile[BN, BK](
-                                BlockIdx.x(), prefetch_tile_id % num_k_tiles
-                            ).vectorize[1, simd_size](),
+                            b_smem_prefetch_tile.vectorize[
+                                1, simd_size
+                            ]().distribute[thread_async_copy_b_layout](
+                                ThreadIdx.x()
+                            ),
+                            b.tile[BN, BK](
+                                (BlockIdx.x(), prefetch_tile_id % num_k_tiles)
+                            ),
+                            ThreadIdx.x(),
                         )
                     else:
-                        copy_dram_to_sram_async[
-                            src_thread_layout = Layout.row_major(
-                                num_threads * simd_size // BN, BN // simd_size
-                            ),
-                            dst_thread_layout = Layout.row_major(
-                                num_threads * simd_size // BN, BN // simd_size
-                            ),
+                        copy_from_nd_buffer[
+                            thread_layout=thread_async_copy_b_layout,
+                            is_async=True,
+                            swizzle=xor_2bits_per8T,
                         ](
-                            b_smem_prefetch_tile.vectorize[1, simd_size](),
-                            b_tsr.tile[BK, BN](
-                                prefetch_tile_id % num_k_tiles, BlockIdx.x()
-                            ).vectorize[1, simd_size](),
+                            b_smem_prefetch_tile.vectorize[
+                                1, simd_size
+                            ]().distribute[thread_async_copy_b_layout](
+                                ThreadIdx.x()
+                            ),
+                            b.tile[BK, BN](
+                                (prefetch_tile_id % num_k_tiles, BlockIdx.x())
+                            ),
+                            ThreadIdx.x(),
                         )
 
                 async_copy_commit_group()
@@ -607,12 +622,12 @@ fn test[transpose_b: Bool]() raises:
     _copy_host_to_device(a_device, a_host, M * K)
     _copy_host_to_device(b_device, b_trans_host, K * N)
 
+    alias b_shape = DimList(K, N) if not transpose_b else DimList(N, K)
     var c_buffer = NDBuffer[DType.float32, 2, DimList(M, N)](c_device)
     var a_buffer = NDBuffer[DType.float32, 2, DimList(M, K)](a_device)
-    var b_buffer = NDBuffer[DType.float32, 2, DimList(K, N)](b_device)
+    var b_buffer = NDBuffer[DType.float32, 2, b_shape](b_device)
     alias c_shape = DimList(M, N)
     alias a_shape = DimList(M, K)
-    alias b_shape = DimList(K, N)
 
     var c_tensor = LayoutTensor[DType.float32, c_layout](c_device)
     var a_tensor = LayoutTensor[DType.float32, a_layout](a_device)
