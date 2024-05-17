@@ -66,7 +66,7 @@ struct Inner_matmul_neon(InnerMatmulKernel):
             kernel_rows, SIMD[c_local.type, a_col_size]
         ]()
 
-        @unroll
+        @parameter
         for row in range(kernel_rows):
             var global_m = global_offset.M + row
             var a_val = a.load[width=a_col_size](global_m, global_k).cast[
@@ -74,16 +74,16 @@ struct Inner_matmul_neon(InnerMatmulKernel):
             ]()
             a_vals[row] = a_val
 
-        @unroll
+        @parameter
         for lane in range(a_col_size):
 
-            @unroll
+            @parameter
             for col in range(kernel_cols // simd_size):
                 var b_val = b_ptr.offset(col * simd_size).load[
                     width=simd_size
                 ]().cast[c_local.type]()
 
-                @unroll
+                @parameter
                 for row in range(kernel_rows):
                     var a_val = a_vals[row]
                     var c_idx = Index(row, col * simd_size)

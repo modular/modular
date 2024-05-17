@@ -167,7 +167,6 @@ fn matrix_solve_shape[
     if a_buff.dim(rank - 2) != b_buff.dim(rank - 2):
         raise Error("[matrix-solve] inputs outter dimensions must match")
 
-    @unroll
     for i in range(rank - 2):
         if a_buff.dim(i) != b_buff.dim(i):
             raise Error("[matrix-solve] inputs batch dimensions must match")

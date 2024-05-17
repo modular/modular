@@ -107,10 +107,10 @@ struct _Accumulator[
     ](inout self, base_ptr: DTypePointer[type], stride: Int):
         var row_ptr = base_ptr
 
-        @unroll
+        @parameter
         for m in range(num_rows):
 
-            @unroll
+            @parameter
             for n in range(num_cols):
                 func(m, n, row_ptr.offset(n * simd_width))
             row_ptr += stride
@@ -180,7 +180,7 @@ struct _Accumulator[
             )
             var row_ptrs = stack_allocation[num_rows, DTypePointer[type]]()
 
-            @unroll
+            @parameter
             for row in range(num_rows):
                 row_ptrs[row] = c_ptr_loc + row * c_stride
 
@@ -224,11 +224,11 @@ struct _Accumulator[
                         stride * row + col, data
                     )
 
-        @unroll
+        @parameter
         for row in range(num_rows):
             # Iterate twice for a pairwise load/store or once for any other access.
 
-            @unroll
+            @parameter
             for col in range(
                 base_column, base_column + column_count, column_step
             ):
@@ -316,7 +316,7 @@ struct _Accumulator[
     ):
         var tail_size = transfer_count - base_column
 
-        @unroll
+        @parameter
         for row in range(num_rows):
             alias col = base_column // simd_width
 
@@ -353,10 +353,10 @@ struct _Accumulator[
     @always_inline
     fn init(inout self, val: Scalar[type] = 0.0):
         # TODO: refactor with _transfer
-        @unroll
+        @parameter
         for m in range(num_rows):
 
-            @unroll
+            @parameter
             for n in range(num_cols):
                 self[m, n] = val
 
@@ -619,7 +619,7 @@ struct _Accumulator[
             @parameter
             if prefetch_offset:
 
-                @unroll
+                @parameter
                 for j in range(num_cols):
                     (
                         b_ptr
@@ -632,12 +632,12 @@ struct _Accumulator[
                         .to_data_cache()
                     ]()
 
-            @unroll
+            @parameter
             for i in range(row_start, row_stop):
                 # Broadcast an scalar from A to a simd vector.
                 var a_splat_vec = SIMD[a.type, simd_width](a[l + i * a_stride])
 
-                @unroll
+                @parameter
                 for j in range(num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
@@ -680,7 +680,7 @@ struct _Accumulator[
             @parameter
             if prefetch_offset:
 
-                @unroll
+                @parameter
                 for j in range(num_cols):
                     (
                         b_ptr
@@ -693,13 +693,13 @@ struct _Accumulator[
                         .to_data_cache()
                     ]()
 
-            @unroll
+            @parameter
             for i in range(row_start, row_stop):
                 # Broadcast an scalar from A to a simd vector.
                 var a_idx = a_base_offsets[i].value + a_offset + l
                 var a_splat_vec = SIMD[a.type, simd_width](a[a_idx])
 
-                @unroll
+                @parameter
                 for j in range(num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
@@ -779,23 +779,23 @@ struct _Accumulator[
             var a_vecs = stack_allocation[num_rows, SIMD[a.type, num_lanes]]()
 
             # Load vectors of size num_lanes from input.
-            @unroll
+            @parameter
             for i in range(row_start, row_stop):
                 a_vecs[i] = a.load[width=num_lanes](offset + i * a_stride)
 
             var b_ptr = b + offset * b_stride
 
-            @unroll
+            @parameter
             for lane in range(num_lanes):
 
-                @unroll
+                @parameter
                 for j in range(num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         simd_width, partial_load_b
                     ](b_ptr, j * simd_width, partial_load_b_size)
 
-                    @unroll
+                    @parameter
                     for i in range(row_start, row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.
@@ -835,24 +835,24 @@ struct _Accumulator[
             var a_vecs = stack_allocation[num_rows, SIMD[a.type, num_lanes]]()
 
             # Load vectors of size num_lanes from input.
-            @unroll
+            @parameter
             for i in range(row_start, row_stop):
                 var a_idx = a_base_offsets[i].value + a_offset + offset
                 a_vecs[i] = a.load[width=num_lanes](a_idx)
 
             var b_ptr = b + offset * b_stride
 
-            @unroll
+            @parameter
             for lane in range(num_lanes):
 
-                @unroll
+                @parameter
                 for j in range(num_cols):
                     # Load a simd vector from B.
                     var b_vec = _simd_load_maybe_partial[
                         simd_width, partial_load_b
                     ](b_ptr, j * simd_width, partial_load_b_size)
 
-                    @unroll
+                    @parameter
                     for i in range(row_start, row_stop):
                         # The following should be lifted to registers and show up as
                         # FMA instructions.

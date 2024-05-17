@@ -55,7 +55,7 @@ fn gemv[
         if elementwise_lambda_fn:
             alias func = elementwise_lambda_fn.value()
 
-            @unroll
+            @parameter
             for i in range(width):
                 func[out_type, 1]((idx[0] + i, 0), value[i])
         else:

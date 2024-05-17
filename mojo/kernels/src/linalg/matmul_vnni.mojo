@@ -90,7 +90,7 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
             if prefetch_distance > 0:
                 alias prefetch_offset = prefetch_distance * kernel_cols
 
-                @unroll
+                @parameter
                 for idx in range(kernel_cols // simd_size):
                     b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
                         PrefetchOptions()
@@ -121,10 +121,10 @@ struct Inner_matmul_vnni[saturated_vnni: Bool](InnerMatmulKernel):
                     a_local[4 * idx0 + idx_k] = a_base_ptr[idx0 * K + idx_k]
 
         # Loop over local accumulator tiles.
-        @unroll
+        @parameter
         for idx0 in range(kernel_rows):
 
-            @unroll
+            @parameter
             for idx1 in range(kernel_cols // simd_size):
                 # width K bytes or K/4 ints, a_ptr is pointer to ints
                 var a_val = bitcast[c_type, 1](

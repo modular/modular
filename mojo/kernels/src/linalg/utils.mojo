@@ -690,12 +690,12 @@ fn packA_i8mm[
         var j = t0 + offset
         for l in range(0, k, 8):
 
-            @unroll
+            @parameter
             for idx in range(nrow):
                 var t0 = a_ptr.load[width=8]((j + idx) * k + l)
                 a_packed_ptr.store(kh * j + 2 * l + 8 * idx, t0)
 
-        @unroll
+        @parameter
         for idx in range(nrow):
             var t0 = partial_simd_load[8](
                 a_ptr.offset((j + idx) * k + kl), 0, k - kl, 0

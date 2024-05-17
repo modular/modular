@@ -201,7 +201,7 @@ fn sgemm_warp_tiling_kernel[
                 aa_ptr.offset(int((inner_row_a + offset) * K + inner_col_a * 4))
             )
 
-            @unroll
+            @parameter
             for i in range(4):
                 a_sram[
                     int(
@@ -223,10 +223,10 @@ fn sgemm_warp_tiling_kernel[
 
         for dot_idx in range(BK):
             # Populate registers for whole warptile.
-            @unroll
+            @parameter
             for w_sub_row_idx in range(WMITER):
 
-                @unroll
+                @parameter
                 for i in range(0, int(TM), 4):
                     var vec = a_sram.load[width=4, alignment=16](
                         int(
@@ -239,10 +239,10 @@ fn sgemm_warp_tiling_kernel[
                     )
                     reg_m.store(Index(w_sub_row_idx, i), vec)
 
-            @unroll
+            @parameter
             for w_sub_col_idx in range(WNITER):
 
-                @unroll
+                @parameter
                 for i in range(0, int(TN), 4):
                     var vec = b_sram.load[width=4, alignment=16](
                         int(
@@ -255,16 +255,16 @@ fn sgemm_warp_tiling_kernel[
                     reg_n.store(Index(w_sub_col_idx, i), vec)
 
             # Execute warptile matmul.
-            @unroll
+            @parameter
             for w_sub_row_idx in range(WMITER):
 
-                @unroll
+                @parameter
                 for w_sub_col_idx in range(WNITER):
                     # Calculate per-thread results.
-                    @unroll
+                    @parameter
                     for res_idx_m in range(TM):
 
-                        @unroll
+                        @parameter
                         for res_idx_n in range(TN):
                             thread_results[
                                 Index(
@@ -282,10 +282,10 @@ fn sgemm_warp_tiling_kernel[
         barrier()
 
     # Write out the results.
-    @unroll
+    @parameter
     for w_sub_row_idx in range(WMITER):
 
-        @unroll
+        @parameter
         for w_sub_col_idx in range(WNITER):
             # Move C pointer to current warp subtile.
             var M_offset_subtile = w_sub_row_idx * w_sub_m
@@ -294,10 +294,10 @@ fn sgemm_warp_tiling_kernel[
                 int((M_offset_subtile) * N + N_offset_subtile)
             )
 
-            @unroll
+            @parameter
             for res_idx_m in range(TM):
 
-                @unroll
+                @parameter
                 for res_idx_n in range(0, int(TN), 4):
                     var M_offset_val = thread_row_in_warp * TM + res_idx_m
                     var N_offset_val = thread_col_in_warp * TN + res_idx_n
@@ -819,7 +819,7 @@ fn sgemm_double_buffer_kernel[
         # The shared memory buffer to be prefetched
         var prefetch_id = 1 if k_tile_id % 2 == 0 else 0
 
-        @unroll
+        @parameter
         for k in range(BK):
             var next_k = (k + 1) % BK
 

@@ -185,17 +185,17 @@ struct Inner_matmul_i8mm(InnerMatmulKernel):
         if prefetch_distance > 0:
             alias prefetch_offset = prefetch_distance * kernel_cols
 
-            @unroll
+            @parameter
             for idx in range(kernel_cols // simd_size):
                 b_ptr.offset(prefetch_offset + idx * simd_size).prefetch[
                     PrefetchOptions().for_read().high_locality().to_data_cache()
                 ]()
 
         # Loop over local accumulator tiles.
-        @unroll
+        @parameter
         for idx0 in range(kernel_rows):
 
-            @unroll
+            @parameter
             for idx1 in range(kernel_cols // simd_size):
                 alias alignment = alignof[SIMD[c_local.type, simd_size]]()
                 var a_val = a_ptr.load[width = simd_size * 4](2 * idx0 * K)

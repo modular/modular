@@ -615,7 +615,6 @@ fn batched_matmul_shape[
     # Check batch dimensions
     var foundMismatch = False
 
-    @unroll
     for i in range(rank - 2):
         if a_buff.dim(i) != b_buff.dim(i):
             foundMismatch = True

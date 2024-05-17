@@ -383,7 +383,7 @@ fn _permute_data[
     Ensures that output[i] = input[perms[i]] for i ∈ [0, size)
     """
 
-    @unroll
+    @parameter
     for idx in range(size):
         var perm_axis = perms.load(idx)[0]
         var perm_data = input.load(perm_axis)
@@ -418,7 +418,7 @@ fn _fill_strides[
     constrained[rank > 0]()
     strides[rank - 1] = 1
 
-    @unroll
+    @parameter
     for idx in range(rank - 1):
         var axis = rank - idx - 2
         var next_axis_stride = strides[axis + 1]

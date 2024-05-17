@@ -428,7 +428,7 @@ struct PackMatrixCols[
             for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(nr):
 
-                    @unroll
+                    @parameter
                     for l in range(4):
                         var local_idx = Index(i + l, p + nr * j)
                         var val = 0 if local_idx[0] >= kc or local_idx[

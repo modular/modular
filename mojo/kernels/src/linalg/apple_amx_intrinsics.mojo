@@ -411,19 +411,19 @@ fn dot_at_b_impl(
     # _set() has the side effect of clearing the z tile
     _set()
 
-    @unroll
+    @parameter
     for j in range(2):
 
-        @unroll
+        @parameter
         for i in range(8):
             ldx((i << 56) | int(b_buffer.offset((j * 8 + i) * b.dim[0]())))
             ldy((i << 56) | int(a_buffer.offset((j * 8 + i) * a.dim[0]())))
 
-        @unroll
+        @parameter
         for i in range(8):
             fma32((i << 6 << 10) | (i << 6))
 
-    @unroll
+    @parameter
     for i in range(0, 64, 4):
         stz((i << 56) | int(c_buffer.offset((i >> 2) * c.dim[0]())))
 
@@ -455,19 +455,19 @@ fn dot_at_b_impl(
     # _set() has the side effect of clearing the z tile
     _set()
 
-    @unroll
+    @parameter
     for j in range(4):
 
-        @unroll
+        @parameter
         for i in range(8):
             ldx((i << 56) | int(b_buffer.offset((j * 8 + i) * b.dim[0]())))
             ldy((i << 56) | int(a_buffer.offset((j * 8 + i) * a.dim[0]())))
 
-        @unroll
+        @parameter
         for i in range(8):
             fma16((i << 6 << 10) | (i << 6))
 
-    @unroll
+    @parameter
     for i in range(0, 64, 2):
         stz((i << 56) | int(c_buffer.offset((i >> 1) * c.dim[0]())))
 
