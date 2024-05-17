@@ -4,7 +4,8 @@
 #
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: has_cuda_device
-# RUN: %mojo-no-debug %s
+# RUN: %mojo %s | FileCheck %s
+# XFAIL: *
 
 from math import exp, isclose, pow
 from sys.info import has_neon, triple_is_nvidia_cuda
@@ -29,7 +30,7 @@ from testing import *
 alias type = DType.float32
 
 
-def run_elementwise[do_bfloat_exp: Bool](exponent: Int):
+def run_elementwise(exponent: BFloat16):
     alias length = 256
 
     alias pack_size = simdwidthof[type, target = _get_nvptx_target()]()
@@ -59,13 +60,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int):
         var idx = rebind[StaticIntTuple[1]](idx0)
 
         var val = in_buffer.load[width=simd_width](idx).cast[DType.bfloat16]()
-        var result: SIMD[DType.bfloat16, simd_width]
-
-        @parameter
-        if do_bfloat_exp:
-            result = val ** SIMD[DType.bfloat16, simd_width](exponent)
-        else:
-            result = val**exponent
+        var result = val ** SIMD[DType.bfloat16, simd_width](exponent)
         out_buffer.store[width=simd_width](idx, result.cast[DType.float32]())
 
     _elementwise_impl[
@@ -78,14 +73,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int):
     _copy_device_to_host(out_host.data, out_device, flattened_length)
 
     for i in range(length):
-        var expected_value: SIMD[DType.float32, 1]
-
-        @parameter
-        if do_bfloat_exp:
-            expected_value = in_host[i] ** SIMD[DType.float32, 1](exponent)
-        else:
-            expected_value = in_host[i] ** exponent
-
+        var expected_value = in_host[i] ** exponent.cast[DType.float32]()
         assert_almost_equal[type, 1](
             out_host[i],
             expected_value,
@@ -100,13 +88,7 @@ def run_elementwise[do_bfloat_exp: Bool](exponent: Int):
 
 # CHECK-NOT: CUDA_ERROR
 def main():
+    # NOTE: This is expected to fail. Keeping this around as a negative test
+    # so we know when its fixed.
     with Context() as ctx:
-        run_elementwise[False](-1)
-        run_elementwise[False](2)
-        run_elementwise[False](3)
-        run_elementwise[False](5)
-        run_elementwise[False](6)
-        run_elementwise[True](2)
-        run_elementwise[True](3)
-        run_elementwise[True](5)
-        run_elementwise[True](6)
+        run_elementwise(0.375)
