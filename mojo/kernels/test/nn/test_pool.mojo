@@ -3,7 +3,7 @@
 # This file is Modular Inc proprietary.
 #
 # ===----------------------------------------------------------------------=== #
-# RUN: %mojo %s | FileCheck %s
+# RUN: %mojo -I %S/../ %s | FileCheck %s
 
 import builtin
 from buffer import Buffer, NDBuffer
@@ -12,27 +12,20 @@ from memory import stack_allocation
 from nn.image import Image2DLayout, ImageData, ImageShape
 from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape
 from tensor import Tensor
-
 from utils.index import StaticIntTuple
+from closed_source_utils._test_utils import ndbuffer_from_list
 
 
-fn fill_tensor[rank: Int](tensor: Tensor[DType.float32]):
-    for j in range(tensor.num_elements()):
-        tensor._to_ndbuffer[rank]().flatten()[j] = Float32(j)
+fn fill_tensor(tensor: DTypePointer[DType.float32], num_elements: Int):
+    for j in range(num_elements):
+        tensor[j] = Float32(j)
 
 
-fn fill_tensor[rank: Int](tensor: Tensor[DType.float32], val: Float32):
-    for j in range(tensor.num_elements()):
-        tensor._to_ndbuffer[rank]().flatten()[j] = val
-
-
-fn _static_int_tuple_to_tensor[
-    rank: Int
-](tuple: StaticIntTuple[rank]) -> Tensor[DType.int32]:
-    var tensor = Tensor[DType.int32](rank)
-    for i in range(rank):
-        tensor[i] = tuple[i]
-    return tensor
+fn fill_tensor(
+    tensor: DTypePointer[DType.float32], num_elements: Int, val: Float32
+):
+    for j in range(num_elements):
+        tensor[j] = val
 
 
 fn print_buffer[rank: Int](buf: NDBuffer[DType.float32, 4]):
@@ -47,51 +40,60 @@ fn print_buffer[rank: Int](buf: NDBuffer[DType.float32, 4]):
 fn pool[count_boundary: Bool = False](pool_method: PoolMethod):
     alias in_shape = DimList(2, 5, 7, 2)
     alias out_shape = DimList(2, 2, 2, 2)
+    alias input_size = int(in_shape.product[4]())
+    alias output_size = int(out_shape.product[4]())
 
-    var input_tensor = Tensor[DType.float32](2, 5, 7, 2)
-    var output_tensor = Tensor[DType.float32](2, 2, 2, 2)
-    fill_tensor[4](input_tensor)
-    fill_tensor[4](output_tensor, 0.0)
+    var input_tensor_ptr = DTypePointer[DType.float32].alloc(input_size)
+    fill_tensor(input_tensor_ptr, input_size)
+    var input_tensor = NDBuffer[DType.float32, 4](input_tensor_ptr, in_shape)
 
-    var paddings = StaticIntTuple[4](0, 0, 0, 0)
-    var filter = StaticIntTuple[2](3, 2)
-    var stride = StaticIntTuple[2](2, 3)
-    var dilation = StaticIntTuple[2](1, 1)
+    var output_tensor_ptr = DTypePointer[DType.float32].alloc(output_size)
+    fill_tensor(output_tensor_ptr, output_size, 0)
+    var output_tensor = NDBuffer[DType.float32, 4](output_tensor_ptr, out_shape)
 
-    var paddings_tensor = _static_int_tuple_to_tensor(paddings)
-    var filter_tensor = _static_int_tuple_to_tensor(filter)
-    var stride_tensor = _static_int_tuple_to_tensor(stride)
-    var dilation_tensor = _static_int_tuple_to_tensor(dilation)
+    var paddings = List[Int32](0, 0, 0, 0)
+    var filter = List[Int32](3, 2)
+    var stride = List[Int32](2, 3)
+    var dilation = List[Int32](1, 1)
+
+    var paddings_tensor = ndbuffer_from_list[DType.int32, 1](
+        DimList(4), paddings
+    )
+    var filter_tensor = ndbuffer_from_list[DType.int32, 1](DimList(2), filter)
+    var stride_tensor = ndbuffer_from_list[DType.int32, 1](DimList(2), stride)
+    var dilation_tensor = ndbuffer_from_list[DType.int32, 1](
+        DimList(2), dilation
+    )
 
     alias simd_width = simdwidthof[DType.float32]()
 
     if pool_method == PoolMethod.MAX:
         max_pool[int_type = DType.int32](
-            input_tensor._to_ndbuffer[4](),
-            filter_tensor._to_ndbuffer[1](),
-            stride_tensor._to_ndbuffer[1](),
-            dilation_tensor._to_ndbuffer[1](),
-            paddings_tensor._to_ndbuffer[1](),
-            output_tensor._to_ndbuffer[4](),
+            input_tensor,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
+            output_tensor,
         )
     else:
         avg_pool[int_type = DType.int32, count_boundary=count_boundary](
-            input_tensor._to_ndbuffer[4](),
-            filter_tensor._to_ndbuffer[1](),
-            stride_tensor._to_ndbuffer[1](),
-            dilation_tensor._to_ndbuffer[1](),
-            paddings_tensor._to_ndbuffer[1](),
-            output_tensor._to_ndbuffer[4](),
+            input_tensor,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
+            output_tensor,
         )
 
-    print_buffer[4](output_tensor._to_ndbuffer[4]())
+    print_buffer[4](output_tensor)
 
-    _ = input_tensor
-    _ = output_tensor
-    _ = paddings_tensor
-    _ = filter_tensor
-    _ = stride_tensor
-    _ = dilation_tensor
+    input_tensor_ptr.free()
+    output_tensor_ptr.free()
+    paddings_tensor.data.free()
+    filter_tensor.data.free()
+    stride_tensor.data.free()
+    dilation_tensor.data.free()
 
 
 # CHECK-LABEL: test_max_pool_2d
@@ -100,7 +102,7 @@ fn test_max_pool_2d():
 
     # output should have form
     # ([[[[ 30.,  31.],
-    #    [ 35.,  37.]],
+    #    [ 36.,  37.]],
     #   [[ 58.,  59.],
     #    [ 64.,  65.]]],
     #  [[[ 100.,  101.],
@@ -162,43 +164,53 @@ fn test_avg_pool_2d():
 
 fn test_avg_pool_2d_with_padding[count_boundary: Bool = False]():
     print("== test_avg_pool_2d_count_boundary:", count_boundary)
+
     alias in_shape = DimList(1, 7, 7, 1)
     alias out_shape = DimList(1, 7, 7, 1)
+    alias input_size = int(in_shape.product[4]())
+    alias output_size = int(out_shape.product[4]())
 
-    var input_tensor = Tensor[DType.float32](1, 7, 7, 1)
-    var output_tensor = Tensor[DType.float32](1, 7, 7, 1)
-    fill_tensor[4](input_tensor)
-    fill_tensor[4](output_tensor, 0.0)
+    var input_tensor_ptr = DTypePointer[DType.float32].alloc(input_size)
+    fill_tensor(input_tensor_ptr, input_size)
+    var input_tensor = NDBuffer[DType.float32, 4](input_tensor_ptr, in_shape)
 
-    var paddings = StaticIntTuple[4](1, 1, 1, 1)
-    var filter = StaticIntTuple[2](3, 3)
-    var stride = StaticIntTuple[2](1, 1)
-    var dilation = StaticIntTuple[2](1, 1)
+    var output_tensor_ptr = DTypePointer[DType.float32].alloc(output_size)
+    fill_tensor(output_tensor_ptr, output_size, 0)
+    var output_tensor = NDBuffer[DType.float32, 4](output_tensor_ptr, out_shape)
 
-    var paddings_tensor = _static_int_tuple_to_tensor(paddings)
-    var filter_tensor = _static_int_tuple_to_tensor(filter)
-    var stride_tensor = _static_int_tuple_to_tensor(stride)
-    var dilation_tensor = _static_int_tuple_to_tensor(dilation)
+    var paddings = List[Int32](1, 1, 1, 1)
+    var filter = List[Int32](3, 3)
+    var stride = List[Int32](1, 1)
+    var dilation = List[Int32](1, 1)
+
+    var paddings_tensor = ndbuffer_from_list[DType.int32, 1](
+        DimList(4), paddings
+    )
+    var filter_tensor = ndbuffer_from_list[DType.int32, 1](DimList(2), filter)
+    var stride_tensor = ndbuffer_from_list[DType.int32, 1](DimList(2), stride)
+    var dilation_tensor = ndbuffer_from_list[DType.int32, 1](
+        DimList(2), dilation
+    )
 
     alias simd_width = simdwidthof[DType.float32]()
 
     avg_pool[int_type = DType.int32, count_boundary=count_boundary](
-        input_tensor._to_ndbuffer[4](),
-        filter_tensor._to_ndbuffer[1](),
-        stride_tensor._to_ndbuffer[1](),
-        dilation_tensor._to_ndbuffer[1](),
-        paddings_tensor._to_ndbuffer[1](),
-        output_tensor._to_ndbuffer[4](),
+        input_tensor,
+        filter_tensor,
+        stride_tensor,
+        dilation_tensor,
+        paddings_tensor,
+        output_tensor,
     )
 
-    print_buffer[4](output_tensor._to_ndbuffer[4]())
+    print_buffer[4](output_tensor)
 
-    _ = input_tensor
-    _ = output_tensor
-    _ = paddings_tensor
-    _ = filter_tensor
-    _ = stride_tensor
-    _ = dilation_tensor
+    input_tensor_ptr.free()
+    output_tensor_ptr.free()
+    paddings_tensor.data.free()
+    filter_tensor.data.free()
+    stride_tensor.data.free()
+    dilation_tensor.data.free()
 
 
 fn pool_ceil_test[
@@ -207,20 +219,30 @@ fn pool_ceil_test[
     alias in_shape = DimList(1, 4, 4, 1)
     alias out_shape = DimList(1, 2, 2, 1)
 
-    var input_tensor = Tensor[DType.float32](1, 4, 4, 1)
-    var output_tensor = Tensor[DType.float32](1, 2, 2, 1)
-    fill_tensor[4](input_tensor)
-    fill_tensor[4](output_tensor, 0.0)
+    alias input_size = int(in_shape.product[4]())
+    alias output_size = int(out_shape.product[4]())
 
-    var paddings = StaticIntTuple[4](0, 0, 0, 0)
-    var filter = StaticIntTuple[2](3, 3)
-    var stride = StaticIntTuple[2](2, 2)
-    var dilation = StaticIntTuple[2](1, 1)
+    var input_tensor_ptr = DTypePointer[DType.float32].alloc(input_size)
+    fill_tensor(input_tensor_ptr, input_size)
+    var input_tensor = NDBuffer[DType.float32, 4](input_tensor_ptr, in_shape)
 
-    var paddings_tensor = _static_int_tuple_to_tensor(paddings)
-    var filter_tensor = _static_int_tuple_to_tensor(filter)
-    var stride_tensor = _static_int_tuple_to_tensor(stride)
-    var dilation_tensor = _static_int_tuple_to_tensor(dilation)
+    var output_tensor_ptr = DTypePointer[DType.float32].alloc(output_size)
+    fill_tensor(output_tensor_ptr, output_size, 0)
+    var output_tensor = NDBuffer[DType.float32, 4](output_tensor_ptr, out_shape)
+
+    var paddings = List[Int32](0, 0, 0, 0)
+    var filter = List[Int32](3, 3)
+    var stride = List[Int32](2, 2)
+    var dilation = List[Int32](1, 1)
+
+    var paddings_tensor = ndbuffer_from_list[DType.int32, 1](
+        DimList(4), paddings
+    )
+    var filter_tensor = ndbuffer_from_list[DType.int32, 1](DimList(2), filter)
+    var stride_tensor = ndbuffer_from_list[DType.int32, 1](DimList(2), stride)
+    var dilation_tensor = ndbuffer_from_list[DType.int32, 1](
+        DimList(2), dilation
+    )
 
     alias simd_width = simdwidthof[DType.float32]()
 
@@ -234,101 +256,109 @@ fn pool_ceil_test[
         True,
         ceil_mode,
     ](
-        input_tensor._to_ndbuffer[4](),
-        filter_tensor._to_ndbuffer[1](),
-        stride_tensor._to_ndbuffer[1](),
-        dilation_tensor._to_ndbuffer[1](),
-        paddings_tensor._to_ndbuffer[1](),
+        input_tensor,
+        filter_tensor,
+        stride_tensor,
+        dilation_tensor,
+        paddings_tensor,
     )
 
     if pool_method == PoolMethod.MAX:
         max_pool[int_type = DType.int32](
-            input_tensor._to_ndbuffer[4](),
-            filter_tensor._to_ndbuffer[1](),
-            stride_tensor._to_ndbuffer[1](),
-            dilation_tensor._to_ndbuffer[1](),
-            paddings_tensor._to_ndbuffer[1](),
-            output_tensor._to_ndbuffer[4](),
+            input_tensor,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
+            output_tensor,
             ceil_mode,
         )
     else:
         avg_pool[int_type = DType.int32, count_boundary=count_boundary](
-            input_tensor._to_ndbuffer[4](),
-            filter_tensor._to_ndbuffer[1](),
-            stride_tensor._to_ndbuffer[1](),
-            dilation_tensor._to_ndbuffer[1](),
-            paddings_tensor._to_ndbuffer[1](),
-            output_tensor._to_ndbuffer[4](),
+            input_tensor,
+            filter_tensor,
+            stride_tensor,
+            dilation_tensor,
+            paddings_tensor,
+            output_tensor,
             ceil_mode,
         )
 
-    print_buffer[4](output_tensor._to_ndbuffer[4]())
+    print_buffer[4](output_tensor)
 
-    _ = input_tensor
-    _ = output_tensor
-    _ = paddings_tensor
-    _ = filter_tensor
-    _ = stride_tensor
-    _ = dilation_tensor
+    input_tensor_ptr.free()
+    output_tensor.data.free()
+    paddings_tensor.data.free()
+    filter_tensor.data.free()
+    stride_tensor.data.free()
+    dilation_tensor.data.free()
 
 
 fn test_maxpool_2d_ceil() raises:
     print("== test_max_pool_2d_ceil")
-
     pool_ceil_test(PoolMethod.MAX)
 
 
 fn test_average_pool_2d_ceil_excludeBound() raises:
     print("== test_average_pool_2d_ceil_excludeBound")
-
     pool_ceil_test(PoolMethod.AVG)
 
 
 fn test_average_pool_2d_ceil_includeBound() raises:
     print("== test_average_pool_2d_ceil_includeBound")
-
     pool_ceil_test[True, True](PoolMethod.AVG)
 
 
 fn test_max_pool_pad_dilation_2d():
     print("== test_max_pool_pad_dilation_2d")
+
     alias in_shape = DimList(1, 4, 4, 1)
     alias out_shape = DimList(1, 1, 3, 1)
 
-    var input_tensor = Tensor[DType.float32](1, 4, 4, 1)
-    var output_tensor = Tensor[DType.float32](1, 1, 3, 1)
-    fill_tensor[4](input_tensor)
-    fill_tensor[4](output_tensor, 0.0)
+    alias input_size = int(in_shape.product[4]())
+    alias output_size = int(out_shape.product[4]())
 
-    var paddings = StaticIntTuple[4](0, 0, 2, 0)
-    var filter = StaticIntTuple[2](2, 2)
-    var stride = StaticIntTuple[2](1, 1)
-    var dilation = StaticIntTuple[2](3, 3)
+    var input_tensor_ptr = DTypePointer[DType.float32].alloc(input_size)
+    fill_tensor(input_tensor_ptr, input_size)
+    var input_tensor = NDBuffer[DType.float32, 4](input_tensor_ptr, in_shape)
 
-    var paddings_tensor = _static_int_tuple_to_tensor(paddings)
-    var filter_tensor = _static_int_tuple_to_tensor(filter)
-    var stride_tensor = _static_int_tuple_to_tensor(stride)
-    var dilation_tensor = _static_int_tuple_to_tensor(dilation)
+    var output_tensor_ptr = DTypePointer[DType.float32].alloc(output_size)
+    fill_tensor(output_tensor_ptr, output_size, 0)
+    var output_tensor = NDBuffer[DType.float32, 4](output_tensor_ptr, out_shape)
+
+    var paddings = List[Int32](0, 0, 2, 0)
+    var filter = List[Int32](2, 2)
+    var stride = List[Int32](1, 1)
+    var dilation = List[Int32](3, 3)
+
+    var paddings_tensor = ndbuffer_from_list[DType.int32, 1](
+        DimList(4), paddings
+    )
+    var filter_tensor = ndbuffer_from_list[DType.int32, 1](DimList(2), filter)
+    var stride_tensor = ndbuffer_from_list[DType.int32, 1](DimList(2), stride)
+    var dilation_tensor = ndbuffer_from_list[DType.int32, 1](
+        DimList(2), dilation
+    )
 
     alias simd_width = simdwidthof[DType.float32]()
 
     max_pool[int_type = DType.int32](
-        input_tensor._to_ndbuffer[4](),
-        filter_tensor._to_ndbuffer[1](),
-        stride_tensor._to_ndbuffer[1](),
-        dilation_tensor._to_ndbuffer[1](),
-        paddings_tensor._to_ndbuffer[1](),
-        output_tensor._to_ndbuffer[4](),
+        input_tensor,
+        filter_tensor,
+        stride_tensor,
+        dilation_tensor,
+        paddings_tensor,
+        output_tensor,
     )
 
-    print_buffer[4](output_tensor._to_ndbuffer[4]())
+    print_buffer[4](output_tensor)
 
-    _ = input_tensor
-    _ = output_tensor
-    _ = paddings_tensor
-    _ = filter_tensor
-    _ = stride_tensor
-    _ = dilation_tensor
+    input_tensor_ptr.free()
+    output_tensor_ptr.free()
+    paddings_tensor.data.free()
+    filter_tensor.data.free()
+    stride_tensor.data.free()
+    dilation_tensor.data.free()
 
 
 fn main() raises:
