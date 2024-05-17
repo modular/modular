@@ -49,6 +49,23 @@ fn main():
     print(-1 * 0.0)  # CHECK-NEXT: -0.0
     print(-1 * -0.0)  # CHECK-NEXT: 0.0
 
+    # Very special cases of float literals were rounding incorrectly:
+    # Specifically, where long division would end due to the mantissa being
+    # sufficiently long (including rounding bits), with the least significant
+    # (non-rounding) bit being zero, with the most significant rounding bit
+    # being 1 but the rest being 0, but with a nonzero remainder after that
+    # implying some future bit also being zero, was incorrectly not rounded up.
+
+    # Should not round up.
+    print(
+        Float64(FloatLiteral(1 << 60) / FloatLiteral(1 << 3))
+    )  # CHECK-NEXT: 1.4411518807585587e+17
+    # Should round up, but wasn't due to ignoring nonzero remainder in very
+    # specific case.
+    print(
+        Float64(FloatLiteral((1 << 60) + (1 << 7) + 7) / FloatLiteral(1 << 3))
+    )  # CHECK-NEXT: 1.441151880758559e+17
+
     # TODO - with Python semantics this should raise an error, though because
     # they are float literals this would be a static error rather than a dynamic
     # error.

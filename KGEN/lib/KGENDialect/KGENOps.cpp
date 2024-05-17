@@ -1836,6 +1836,14 @@ static APInt floatLiteralConvertGetBitstring(IPRational input,
     significand = (significand << nBitsToShift) + quotient;
   }
 
+  // If we finished long division with “enough” rounding bits, but the remainder
+  // is still not zero, it means that eventually there will be another 1 bit,
+  // which would break a rounding tie.  Appending any further 1 bit will have
+  // the same effect on rounding (no effect other than tie breaking), so we just
+  // add the next one.
+  if (remainder != 0)
+    significand = (significand << 1) + 1;
+
   // Early return for obvious zero case because our later logic requires a
   // non-zero significand.
   if (significand == 0)
