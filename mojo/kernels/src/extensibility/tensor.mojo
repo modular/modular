@@ -22,7 +22,7 @@ from utils._serialize import _serialize
 fn empty_tensor[
     type: DType, rank: Int
 ](shape: StaticIntTuple[rank]) -> Tensor[type, rank]:
-    """Creates an empty [`Tensor`](/engine/reference/mojo/extensibility/Tensor)
+    """Creates an empty [`Tensor`](/max/reference/mojo/extensibility/Tensor)
     with the given shape.
 
     For example, here's how to create a new tensor that matches an input shape:
@@ -42,7 +42,7 @@ fn empty_tensor[
         shape: The tensor shape.
 
     Returns:
-        An empty [`Tensor`](/engine/reference/mojo/extensibility/Tensor) with
+        An empty [`Tensor`](/max/reference/mojo/extensibility/Tensor) with
         the specified type and shape.
     """
     var ptr = DTypePointer[type].alloc(shape.flattened_length())
@@ -80,7 +80,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
 
     Then, you must create a Mojo package with this op and load it with your
     model into MAX Engine. For more information, read about [MAX
-    extensibility](/engine/extensibility/).
+    extensibility](/max/extensibility/).
 
     Parameters:
         type: DType of the underlying data.
@@ -102,7 +102,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
         """Constructs a new `Tensor`.
 
         You usually should not instantiate a `Tensor` directly. Instead use
-        [`empty_tensor()`](/engine/reference/mojo/extensibility/empty_tensor).
+        [`empty_tensor()`](/max/reference/mojo/extensibility/empty_tensor).
 
         Args:
             ptr: A pointer to the tensor data.
@@ -130,7 +130,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
         """Constructs a new `Tensor`.
 
         You usually should not instantiate a `Tensor` directly. Instead use
-        [`empty_tensor()`](/engine/reference/mojo/extensibility/empty_tensor).
+        [`empty_tensor()`](/max/reference/mojo/extensibility/empty_tensor).
 
         Args:
             ptr: A pointer to the tensor data.
