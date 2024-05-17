@@ -401,7 +401,7 @@ fn _compute_nd_index[
 
     result[rank - 1] = index
 
-    @unroll
+    @parameter
     for idx in range(rank - 1):
         result[rank - idx - 2] = result[rank - idx - 1]._positive_div(
             buf.dim(rank - idx - 1)
@@ -447,7 +447,7 @@ fn _compute_ndbuffer_offset[
     ):
         var result: Int32 = 0
 
-        @unroll
+        @parameter
         for i in range(rank):
             result = fma(Int32(buf.stride(i)), Int32(index[i]), result)
 
@@ -456,7 +456,7 @@ fn _compute_ndbuffer_offset[
     else:
         var result: Int = 0
 
-        @unroll
+        @parameter
         for i in range(rank):
             result = fma(buf.stride(i), index[i], result)
 
@@ -519,7 +519,7 @@ fn _compute_ndbuffer_offset[
     if triple_is_nvidia_cuda() and address_space == _GPUAddressSpace.SHARED:
         var result: Int32 = 0
 
-        @unroll
+        @parameter
         for i in range(rank):
             result = fma(Int32(buf.stride(i)), Int32(index[i]), result)
 
@@ -528,7 +528,7 @@ fn _compute_ndbuffer_offset[
     else:
         var result: Int = 0
 
-        @unroll
+        @parameter
         for i in range(rank):
             result = fma(buf.stride(i), index[i], result)
 
@@ -851,7 +851,7 @@ struct NDBuffer[
         """
         var res = StaticIntTuple[rank]()
 
-        @unroll
+        @parameter
         for i in range(rank):
             res[i] = self.dim(i)
         return res
@@ -895,7 +895,7 @@ struct NDBuffer[
         """
         var product: Int = 1
 
-        @unroll
+        @parameter
         for i in range(rank):
             product *= self.dim(i)
 
@@ -1458,10 +1458,10 @@ struct NDBuffer[
 
         alias simd_size = simdwidthof[DType.float32]()
 
-        @unroll
+        @parameter
         for i in range(TM):
 
-            @unroll
+            @parameter
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
                 var vec = self.data.load[width=simd_size](i * TN + j)
@@ -1483,10 +1483,10 @@ struct NDBuffer[
 
         alias simd_size = simdwidthof[type]()
 
-        @unroll
+        @parameter
         for i in range(TM):
 
-            @unroll
+            @parameter
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
                 var vec = self.data.load[width=simd_size](idx)
@@ -1511,10 +1511,10 @@ struct NDBuffer[
 
         alias simd_size = simdwidthof[type]()
 
-        @unroll
+        @parameter
         for i in range(TM):
 
-            @unroll
+            @parameter
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
                 var vec = self.data.load[width=simd_size](idx)
@@ -1543,7 +1543,7 @@ struct NDBuffer[
 
         var res = Self.stack_allocation()
 
-        @unroll
+        @parameter
         for i in range(m):
             res[i] = self.data.load(i) * rhs.data.load(i)
 
@@ -1569,7 +1569,7 @@ struct NDBuffer[
 
         var res = Self.stack_allocation()
 
-        @unroll
+        @parameter
         for i in range(m):
             res[i] = self[i] + rhs[i].cast[type]()
 
@@ -1595,7 +1595,7 @@ struct NDBuffer[
 
         var res = Self.stack_allocation()
 
-        @unroll
+        @parameter
         for i in range(m):
             res.data.store[width=simd_size](
                 i, self.data.load(i) - rhs.data.load(i)
@@ -1628,10 +1628,10 @@ struct NDBuffer[
 
         var res = Self.stack_allocation()
 
-        @unroll
+        @parameter
         for i in range(m):
 
-            @unroll
+            @parameter
             for j in range(0, n, simd_size):
                 var idx = i * n + j
                 res.data.store[width=simd_size](
@@ -1919,7 +1919,7 @@ struct DynamicRankBuffer:
     fn _shape_to_static_tuple[rank: Int](self) -> StaticIntTuple[rank]:
         var result = StaticIntTuple[rank]()
 
-        @unroll
+        @parameter
         for idx in range(rank):
             result[idx] = self.dim(idx)
         return result
