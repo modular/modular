@@ -69,7 +69,7 @@ export class MojoLSPServer {
   public async sendRequest<T>(params: T, method: string): Promise<any> {
     const request = this.wrapRequest(params, method);
     const id = request.id;
-    this.sendPacket(request);
+    await this.sendPacket(request);
 
     const subject = new Subject<any>();
     this.pendingRequests.set(id, subject);
@@ -100,10 +100,14 @@ export class MojoLSPServer {
    *  Sends some arbitrary data that is sent to the server using the JSON RPC
    * protocol.
    */
-  private sendPacket<T>(packet: T): void {
+  private async sendPacket<T>(packet: T): Promise<void> {
     const payload = Buffer.from(JSON.stringify(packet));
-    this.serverProcess.stdin?.write(
-        `${protocolHeader}${payload.length}${protocolLineSeparator}${payload}`);
+    return new Promise((resolve, _reject) => {
+      return this.serverProcess.stdin?.write(
+          `${protocolHeader}${payload.length}${protocolLineSeparator}${
+              payload}`,
+          () => resolve());
+    });
   }
 
   /**
