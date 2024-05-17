@@ -19,21 +19,17 @@
 
 #locCaller = loc(fused<#callerSp>[#locCallsite])
 
-#valueLoc = loc(fused<#calleeSp>[#locCallsite])
-
 // Test nodebug behavior for debuginfo.value ops.
 
 kgen.func @nodebug_inline_me(%arg0: index) -> index always_inline_no_debug {
-  %0 = index.add %arg0, %arg0 loc(#valueLoc)
-  debuginfo.value #local_variable = %arg0 : index loc(#valueLoc)
-  kgen.return %0: index loc(#valueLoc)
-} loc(#valueLoc)
+  %0 = index.add %arg0, %arg0 loc(#locCallsite)
+  kgen.return %0: index loc(#locCallsite)
+} loc(#locCallsite)
 
 // CHECK-LABEL: kgen.func @call_nodebug_inline_me
 kgen.func @call_nodebug_inline_me() -> index {
   %0 = index.constant 3
   // CHECK: index.add %idx3, %idx3
-  // CHECK-NOT: debuginfo.value
   %1 = kgen.call @nodebug_inline_me(%0) : (index) -> index
   kgen.return %1 : index
 }
@@ -85,7 +81,7 @@ kgen.func @async_wrapper() -> !co.routine always_inline {
 
 // CHECK-LABEL: kgen.func @call_async_indirect
 kgen.func @call_async_indirect() -> !co.routine {
-  // CHECK-NEXT: %idx3 = index.constant 3 loc(#[[INLINED_LOC:.*]])
+  // CHECK-NEXT: %idx3 = index.constant 3 loc(#[[CONST_LOC:.*]])
   // CHECK-NEXT: co.execute : index
   // CHECK-NEXT:   debuginfo.value #local_variable = %idx3 : index loc(#[[LOC_VALUE]])
   // CHECK-NEXT:   kgen.return %idx3 : index loc(#[[LOC_ASYNC_EXECUTE_RET2:.*]])
@@ -108,16 +104,16 @@ kgen.func @call_async_no_debuginfo() -> !co.routine {
 // Test nodebug behavior for func with multiple exists.
 
 kgen.func @nodebug_inline_me_multiple_exits(%arg0: index) -> index always_inline_no_debug {
-  %idx1 = index.constant 1 loc(#valueLoc)
-  %0 = index.add %arg0, %arg0 loc(#valueLoc)
-  %1 = index.cmp sgt (%arg0, %idx1) loc(#valueLoc)
+  %idx1 = index.constant 1 loc(#locCallsite)
+  %0 = index.add %arg0, %arg0 loc(#locCallsite)
+  %1 = index.cmp sgt (%arg0, %idx1) loc(#locCallsite)
   hlcf.if %1 {
-    kgen.return %0: index loc(#valueLoc)
+    kgen.return %0: index loc(#locCallsite)
   } else  {
-    hlcf.yield loc(#valueLoc)
-  } loc(#valueLoc)
-  kgen.return %arg0: index loc(#valueLoc)
-} loc(#valueLoc)
+    hlcf.yield loc(#locCallsite)
+  } loc(#locCallsite)
+  kgen.return %arg0: index loc(#locCallsite)
+} loc(#locCallsite)
 
 // CHECK-LABEL: kgen.func @call_nodebug_inline_me_multiple_exits
 kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
@@ -131,8 +127,9 @@ kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
 // CHECK-DAG: #[[LOC_ASYNC_CALLER:.*]] = loc("bar.mlir":18:7)
 // CHECK-DAG: #[[LOC_SCOPED_CALLER]] = loc(fused<#[[SP_ASYNC:.*]]>[#[[LOC_ASYNC_CALLER]]])
 // CHECK-DAG: #[[LOC_CALLSITE_FILE:.*]] = loc("bar.mlir":27:8)
-// CHECK-DAG: #[[LOC_CALLSITE:.*]] = loc(fused<{{.*}}#[[LOC_CALLSITE_FILE]]
-// CHECK-DAG: #[[INLINED_LOC]] = loc(callsite(#[[LOC_SCOPED_CALLER]] at
+// CHECK-DAG: #[[SP_CALLER:.*]] = #debuginfo.subprogram<name = <"caller">
+// CHECK-DAG: #[[LOC_CALLSITE:.*]] = loc(fused<#[[SP_CALLER]]>[#[[LOC_CALLSITE_FILE]]
+// CHECK-DAG: #[[CONST_LOC]] = loc(unknown)
 
 // CHECK-DAG: #[[SP_ASYNC]] = #debuginfo.subprogram<name = <"call_async">
 // CHECK-DAG: #[[LOC:loc[0-9]+]] = loc("foo.mlir":13:1)
@@ -141,7 +138,8 @@ kgen.func @call_nodebug_inline_me_multiple_exits() -> index {
 // CHECK-DAG: #[[LOC_VALUE_INLINED]] = loc(callsite(#[[LOC_VALUE:loc[0-9]+]] at #[[LOC_CALLSITE]]))
 // CHECK-DAG: #[[LOC_VALUE]] = loc(fused<#[[SP]]>[#[[LOC_ARG]]])
 // CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_LOC1:.*]] = #debuginfo.call_loc<#[[LOC_SCOPED_CALLER]]>
-// CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_LOC2:.*]] = #debuginfo.call_loc<#[[INLINED_LOC]]>
+// CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_LOC2_CALLSITE:.*]] = loc(callsite(#[[LOC_SCOPED_CALLER]] at #[[LOC_CALLSITE]]))
+// CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_LOC2:.*]] = #debuginfo.call_loc<#[[LOC_ASYNC_EXEC_CALL_LOC2_CALLSITE]]>
 // CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_ENCODED1:.*]] = loc(fused<#[[LOC_ASYNC_EXEC_CALL_LOC1]]>[#[[LOC]]])
 // CHECK-DAG: #[[LOC_ASYNC_EXEC_CALL_ENCODED2:.*]] = loc(fused<#[[LOC_ASYNC_EXEC_CALL_LOC2]]>[#[[LOC]]])
 // CHECK-DAG: #[[LOC_ASYNC_EXECUTE1]] = loc(fused<#[[SP]]>[#[[LOC_ASYNC_EXEC_CALL_ENCODED1]]])

@@ -10,6 +10,7 @@
 #callerSp = #debuginfo.subprogram<name = <"caller">> : !debuginfo.subroutine<(!debuginfo.unresolved<index>) -> (!debuginfo.unresolved<index>): DW_CC_normal>
 
 #asyncCallerSp = #debuginfo.subprogram<name = <"call_async">> : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!co.routine>): DW_CC_normal>
+// CHECK-DAG: #[[INLINED_VAR_FOO:.*]] = #debuginfo.local_variable<{{.*}}name = "foo"
 #local_variable0 = #debuginfo.local_variable<scope = #callee0Sp, name = "foo"> : !debuginfo.unresolved<index>
 #local_variable1 = #debuginfo.local_variable<scope = #callee1Sp, name = "bar"> : !debuginfo.unresolved<index>
 
@@ -64,10 +65,11 @@ kgen.func @call_async() -> !co.routine {
   // CHECK-NEXT: [[IDX2:%.*]] = index.constant 2 loc(#[[LOC_SCOPED_CALLER:.*]])
   %idx2 = index.constant 2 loc(#locAsyncCaller)
   // CHECK-NEXT: [[V0:%.*]]co.execute : index {
-  // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_VALUE:.*]])
-  // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_ASYNC_EXECUTE:.*]])
-  // DEFERRED-NEXT: } {inliner_debuginfo_update = 3 : i8} loc(#[[LOC_ASYNC_EXECUTE]])
-  // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE]])
+  // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_ADD:.*]])
+  // CHECK-NEXT:   debuginfo.value #[[INLINED_VAR_FOO]] = [[V1]]
+  // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_INLINED_RETURN:.*]])
+  // DEFERRED-NEXT: } {inliner_debuginfo_update = 1 : i8} loc(#[[LOC_ASYNC_EXECUTE:.*]])
+  // IMMEDIATE-NEXT: } loc(#[[LOC_ASYNC_EXECUTE:.*]])
   %0 = co.invoke[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
   // CHECK-NEXT: kgen.return
   kgen.return %0: !co.routine loc(#locAsyncCaller)
@@ -78,6 +80,8 @@ kgen.func @call_async() -> !co.routine {
 // CHECK-DAG: #[[SP_ASYNC:.*]] = #debuginfo.subprogram<name = <"call_async">
 // CHECK-DAG: #[[LOC_ASYNC_CALLER:.*]] = loc("bar.mlir":18:7)
 // CHECK-DAG: #[[LOC_SCOPED_CALLER]] = loc(fused<#[[SP_ASYNC]]>[#[[LOC_ASYNC_CALLER]]])
+// CHECK-DAG: #[[LOC_ADD]] = loc("{{.*}}":{{[0-9]+}}:{{[0-9]+}})
+// CHECK-DAG: #[[LOC_INLINED_RETURN]] = loc("{{.*}}":{{[0-9]+}}:{{[0-9]+}})
 // CHECK-DAG: #[[CALL_LOC:.*]] = #debuginfo.call_loc<#[[LOC_SCOPED_CALLER]]>
 // CHECK-DAG: #[[LOC_ASYNC_EXECUTE]] = loc(fused<#[[CALL_LOC]]>[#[[LOC_ASYNC_FILE_LOC:.*]]])
 
@@ -94,9 +98,12 @@ kgen.func @no_debuginfo() -> index {
 
 // CHECK-LABEL: kgen.func @has_debuginfo
 kgen.func @has_debuginfo() {
-  // CHECK: index.constant 0 loc([[LOC:#.*]])
+  // CHECK: index.constant 0 loc(#[[LOC:.*]])
   kgen.call @no_debuginfo() : () -> index loc(#loc)
   kgen.return loc(#loc)
 } loc(#loc)
 
-// CHECK: [[LOC]] = loc(unknown)
+// CHECK-DAG: #[[LOC_CALLER:.+]] = loc("foo.mlir":0:0)
+// CHECK-DAG: #[[LOC]] = loc(unknown)
+// CHECK-DAG: #[[SP:.+]] = #debuginfo.subprogram<name = <"foo">>
+// CHECK-DAG: #[[LOC_CALLER_SP:.+]] = loc(fused<#[[SP]]>[#[[LOC_CALLER]]])

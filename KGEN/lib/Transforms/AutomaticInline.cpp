@@ -262,9 +262,6 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
         continue;
 
       IRMapping map;
-      // Nuke debuginfo from the callee if inlining a function without
-      // debuginfo into one that does.
-      bool noDebug = !callee->func.getLocScope() && caller->func.getLocScope();
       // Mark callsite location explicitly.
       if (debugCallsite && callee->func.getLocScope())
         OpBuilder(call).create<DebugInfo::LineTableLocOp>(call->getLoc());
@@ -272,7 +269,7 @@ void CallGraph::inlineNode(CallGraphNode *caller, uint64_t threshold) {
       auto [scope, singleExit] =
           inlineRegion(map, call, callee->func.getBodyRegion());
 
-      maybeUpdateDebugInfo(scope, updateAttrName, singleExit, noDebug);
+      maybeUpdateDebugInfo(scope, updateAttrName, singleExit);
       callee->numTimesInlined++;
     }
 

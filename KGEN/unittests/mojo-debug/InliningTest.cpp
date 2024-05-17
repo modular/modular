@@ -37,6 +37,16 @@ TEST(InliningTest, testBreakingOnInlinedCalsite) {
   EXPECT_EQ((int)ctx.frame.GetLineEntry().GetLine(), expectedBreakingLines[0]);
 }
 
+TEST(InliningTest, testInlinedVariableCalledFromNoDebug) {
+  // Tests that debug functions inlined into no-debug functions are still
+  // debuggable after being inlined again into a regular function.
+
+  StopContext ctx = buildAndLaunch("inlined_variable.mojo");
+
+  SBValue number = ctx.frame.FindVariable("nested_var");
+  EXPECT_EQ((int)number.GetValueAsSigned(), 2);
+}
+
 TEST(InliningTest, testLiftedInlinedInoutArgModification) {
   // Tests that modifications to inlined inout args that are lifted by mem2reg
   // show up.

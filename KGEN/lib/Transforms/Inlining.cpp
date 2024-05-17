@@ -537,11 +537,6 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     propagateNewDecls(decl, topLevelGraph, *callScope, declOp, scopeRegion);
   }
 
-  // Nuke debuginfo if inlining an `always_inline_no_debug` function, or if the
-  // either the callee or caller lack debuginfo.
-  bool stripDebugInfo = level == InlineLevel::AlwaysNoDebug ||
-                        !callee.getLocScope() || !caller.getLocScope();
-
   // Handle all terminators.
   unsigned numReturns = 0;
   callee.getBodyRegion().walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
@@ -571,7 +566,7 @@ static void inlineGeneratorCall(GeneratorOp caller, CallOp call,
     updateAttrName = StringAttr();
   bool singleExit =
       numReturns == 1 && isa<ReturnOp>(callee.getBody()->getTerminator());
-  maybeUpdateDebugInfo(scope, updateAttrName, singleExit, stripDebugInfo);
+  maybeUpdateDebugInfo(scope, updateAttrName, singleExit);
 }
 
 //===----------------------------------------------------------------------===//
@@ -974,10 +969,6 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
     bool singleExit;
     // Check if this is the last use of the function.
     callee->mutex.lock_shared();
-    // Nuke debuginfo from the callee if inlining a function without debuginfo
-    // into one that does.
-    bool noDebug = callee->level == InlineLevel::AlwaysNoDebug ||
-                   (!callee->func.getLocScope() && caller->func.getLocScope());
     // Mark callsite location explicitly.
     if (!optimizationLevel && callee->func.getLocScope())
       OpBuilder(call).create<DebugInfo::LineTableLocOp>(call->getLoc());
@@ -998,7 +989,7 @@ void InliningGraph::performInlining(InliningGraphNode *caller) {
       callee->mutex.unlock_shared();
     }
 
-    maybeUpdateDebugInfo(scope, updateAttrName, singleExit, noDebug);
+    maybeUpdateDebugInfo(scope, updateAttrName, singleExit);
   }
 
   // Run the function pipeline. Make sure the verifier is off. Note that

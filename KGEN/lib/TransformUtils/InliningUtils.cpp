@@ -164,33 +164,16 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
   // Unpack the bits.
   auto value = static_cast<uint8_t>(tag.getInt());
   auto singleExit = static_cast<bool>(value & 1);
-  auto noDebug = static_cast<bool>(value >> 1);
 
   // The scope operations contains the location of the call.
   Region &body = scope->getRegion(0);
   Location callLoc = scope->getLoc();
 
-  bool scopeIsNotSubprogram = !isa<DebugInfo::SubprogramScoped>(scope);
-  // Whether to strip values depends on the closest surrounding subprogram.
-  // If it no longer has subprogram scope, all debug values inside should be
-  // stripped. If scope is a simple loop, this checks the caller environment.
-  // Otherwise, this checks the scope itself.
-  DebugInfo::SubprogramScoped surroundingSubprogram =
-      scopeIsNotSubprogram
-          ? scope->getParentOfType<DebugInfo::SubprogramScoped>()
-          : cast<DebugInfo::SubprogramScoped>(scope);
-  bool stripValues = !surroundingSubprogram.getSubprogramScope();
+  bool insideInlinedSubprogram = isa<DebugInfo::InlinedSubprogramScoped>(scope);
   body.walk<mlir::WalkOrder::PreOrder>([&](Operation *op) {
-    // Erase DebugInfo operations when inlining without debug info.
-    if ((noDebug || stripValues) &&
-        llvm::isa_and_nonnull<DebugInfo::DebugInfoDialect>(op->getDialect())) {
-      op->erase();
-      return WalkResult::skip();
-    }
-
-    // Inline the location if needed.
-    if (noDebug || scopeIsNotSubprogram)
-      DebugInfo::updateInlinedLoc(op, callLoc, noDebug);
+    // Inline the location if not inside an inlined subprogram.
+    if (!insideInlinedSubprogram)
+      DebugInfo::updateInlinedLoc(op, callLoc);
 
     // Don't recurse into nested functions.
     if (isa<FuncInterface>(op))
@@ -198,15 +181,11 @@ void KGEN::updateScopeDebugInfoFrom(Operation *scope, IntegerAttr tag,
 
     // Recurse into the body if needed and allowed.
     if (isa<DebugInfo::InlinedSubprogramScoped>(op)) {
-      // Recurse inside if the inlined subprogram has a tag (deferred update),
-      // or noDebug is requried (immediate update, and need to go inside to
-      // erase pre-existing debug info).
+      // Recurse inside if the inlined subprogram has a tag (deferred update).
       IntegerAttr tag;
       if (updateAttrName &&
           (tag = op->getAttrOfType<IntegerAttr>(updateAttrName)))
         updateScopeDebugInfoFrom(op, tag, updateAttrName);
-      else if (noDebug)
-        updateScopeDebugInfoFrom(op, tag, nullptr);
 
       // Always skip walking directly into subprogram scopes.
       return WalkResult::skip();
@@ -241,12 +220,12 @@ void KGEN::updateScopeDebugInfo(FuncOp func, StringAttr updateAttrName) {
 
 void KGEN::maybeUpdateDebugInfo(Operation *scope,
                                 std::optional<StringAttr> updateAttrName,
-                                bool singleExit, bool noDebug) {
+                                bool singleExit) {
   if (updateAttrName) {
-    // We don't know where the op will end up, so tag it with an
-    // attribute. Encode information {singleExit, noDebug} as bits.
-    IntegerAttr tag = OpBuilder(scope->getContext())
-                          .getI8IntegerAttr(singleExit | (noDebug << 1));
+    // We don't know where the op will end up, so tag it with an attribute.
+    // Encode information {singleExit} as bits.
+    IntegerAttr tag =
+        OpBuilder(scope->getContext()).getI8IntegerAttr(singleExit);
     if (*updateAttrName) {
       // Deferred debuginfo update.
       scope->setAttr(*updateAttrName, tag);

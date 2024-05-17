@@ -540,18 +540,18 @@ void DebugInfo::updateSubprogram(mlir::FunctionOpInterface funcOp,
   replacer.recursivelyReplaceElementsIn(funcOp);
 }
 
-void DebugInfo::updateInlinedLoc(Operation *op, Location callerLoc,
-                                 bool stripDebugInfo) {
+void DebugInfo::updateInlinedLoc(Operation *op, Location callerLoc) {
   if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
-    if (stripDebugInfo)
-      inlined.setCallLocAttr(callerLoc);
-    else if (LocationAttr callLoc = inlined.getCallLocAttr())
+    if (LocationAttr callLoc = inlined.getCallLocAttr())
       inlined.setCallLocAttr(mlir::CallSiteLoc::get(callLoc, callerLoc));
+    else
+      inlined.setCallLocAttr(callerLoc);
   } else if (!isa<DebugInfo::SubprogramScoped>(op)) {
-    if (stripDebugInfo) {
-      op->setLoc(op->hasTrait<OpTrait::ConstantLike>()
-                     ? UnknownLoc::get(op->getContext())
-                     : callerLoc);
+    if (op->hasTrait<OpTrait::ConstantLike>()) {
+      // Workaround to handle CSE hoisting constants out of
+      // InlinedSubprogramScoped ops into an outer scope and causing debug
+      // scope mismatch (Tracker: https://linear.app/modularml/issue/MOCO-143).
+      op->setLoc(UnknownLoc::get(op->getContext()));
     } else {
       op->setLoc(mlir::CallSiteLoc::get(op->getLoc(), callerLoc));
     }

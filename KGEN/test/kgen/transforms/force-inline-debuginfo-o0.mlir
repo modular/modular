@@ -24,9 +24,8 @@ kgen.func @callee_debug() -> index always_inline {
 
 // CHECK-LABEL: kgen.func @caller
 kgen.func @caller() {
-  // COM: Enable with PR 39026.
-  // COM: CHECK: debuginfo.line_table_loc loc(#[[LOC_CALLEE_INNER_AT_CALLEE:.+]])
   // CHECK-NEXT: index.constant 1
+  // CHECK-NEXT: debuginfo.line_table_loc loc(#[[LOC_CALLEE_INNER_AT_CALLEE:.+]])
   // CHECK-NEXT: index.constant 0
   kgen.call @callee_nodebug() : () -> index loc(#locCaller)
 

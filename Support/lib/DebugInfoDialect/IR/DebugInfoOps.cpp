@@ -152,19 +152,6 @@ LogicalResult ValueOp::verify() {
     }
   }
 
-  // The surrounding subprogram op must have a subprogram scope.
-  auto scope = (*this)->getParentOfType<SubprogramScoped>();
-  if (!scope)
-    return success();
-  if (!isa_and_nonnull<DISubprogramAttr>(scope.getLocScope())) {
-    return emitOpError(
-               "is contained within a SubprogramScoped operation that's "
-               "missing a subprogram scope (hint: the parent is likely a "
-               "@nodebug function)")
-               .attachNote(scope.getLoc())
-           << "see surrounding scope function here";
-  }
-
   return success();
 }
 
