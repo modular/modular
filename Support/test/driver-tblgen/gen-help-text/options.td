@@ -35,7 +35,9 @@ def : CommandDescription<
 
 // CHECK: OPTIONS
 // CHECK: First Options
-def FirstOptionGroup : OptionGroup<"First Options">, Index<0>;
+// CHECK: The first group of options.
+def FirstOptionGroup : OptionGroup<"First Options">, Index<0>,
+  HelpText<"The first group of options.">;
 
 // CHECK: --foo <FOO>, -F<ALSO-FOO>, -F1 (FOO=1)
 // CHECK-NEXT: Takes a foo and does something with it.
@@ -50,5 +52,18 @@ def : Joined<["-"], "F1">, Group<FirstOptionGroup>, Index<2>,
 // CHECK: --bar <BAR>
 // CHECK-NEXT: Takes a bar and does something with it.
 defm bar : CommandOptionWithValues<["--", "-"], "bar", FirstOptionGroup,
-  Index<2>, MetaVarName<"BAR">,
+  Index<1>, MetaVarName<"BAR">,
   HelpText<"Takes a bar and does something with it.">, Values<"a,b,c">>;
+
+// Hidden options don't appear in help text.
+// CHECK-NOT: Don't show this option in help text
+def baz : Flag<["--"], "baz">, Group<FirstOptionGroup>, Index<2>,
+  Flags<[HelpHidden]>, HelpText<"Don't show me this option in help text.">;
+
+// Hidden option groups don't appear in help text.
+// CHECK-NOT: Second Options
+// CHECK-NOT: blong
+def SecondOptionGroup : OptionGroup<"Second Options">, Index<1>,
+  Flags<[HelpHidden]>;
+def : Flag<["--"], "blong">, Group<SecondOptionGroup>, Index<0>,
+  HelpText<"Blongs.">;

@@ -35,10 +35,19 @@ def s : Joined<["-"], "s">, Group<FunOptionGroup>, Alias<stool>;
 def slide : JoinedOrSeparate<["--", "-"], "slide">, Group<FunOptionGroup>,
   HelpText<"The slide to use.">, MetaVarName<"path">;
 
-def SecretOptionGroup : OptionGroup<"Secret Options">;
+// CHECK: error: group 'Fun Options' has no index
 
-def whisper : Flag<["-"], "whisper">, Group<SecretOptionGroup>, Index<0>,
+def HappyOptionGroup : OptionGroup<"Happy Options">, Flags<[HelpHidden]>;
+// CHECK: error: option group 'Happy Options' is already hidden, marking its option 'smile' as hidden is redundant
+def smile : Flag<["-"], "smile">, Group<HappyOptionGroup>, Index<0>,
+  Flags<[HelpHidden]>, HelpText<"Sometimes it's all you can do.">;
+
+def VoiceOptionGroup : OptionGroup<"Voice Options">;
+def whisper : Flag<["-"], "whisper">, Group<VoiceOptionGroup>, Index<0>,
   Flags<[HelpHidden]>, HelpText<"Use an inside voice.">;
 
-// CHECK: error: group 'Fun Options' has no index
-// CHECK: error: publicly documented group 'Secret Options' has no publicly documented options
+// CHECK: error: publicly documented group 'Voice Options' has no publicly documented options
+
+def StanceOptions : OptionGroup<"Stance Options">, Flags<[HelpHidden]>;
+
+// CHECK: error: group 'Stance Options' has no options
