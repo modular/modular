@@ -1053,7 +1053,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         """
         var result = indices[0]
 
-        @unroll
+        @parameter
         for i in range(rank - 1):
             result = self.dim(i + 1) * result + indices[i + 1]
         return result
@@ -1093,7 +1093,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         )
         var shape = StaticIntTuple[rank](0)
 
-        @unroll
+        @parameter
         for i in range(rank):
             shape[i] = self.dim(i)
 

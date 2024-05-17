@@ -115,7 +115,7 @@ struct Tensor[type: DType, static_rank: Int](Stringable):
         var stride = 1
 
         # Walk backwards to compute the fully contiguous strides.
-        @unroll
+        @parameter
         for i in reversed(range(static_rank)):
             self.strides[i] = stride
             stride *= self.shape[i]
