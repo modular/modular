@@ -743,6 +743,15 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         return self._ptr
 
     @always_inline
+    fn unsafe_uint8_ptr(self) -> DTypePointer[DType.uint8]:
+        """Gets the underlying Data pointer to the Tensor.
+
+        Returns:
+          The underlying data pointer of the tensor.
+        """
+        return rebind[DTypePointer[DType.uint8]](self._ptr)
+
+    @always_inline
     fn rank(self) -> Int:
         """Gets the rank of the tensor.
 
@@ -1226,7 +1235,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
           The tensor read from file.
         """
-        var byte_tensor = Tensor[DType.int8](path.read_bytes())
+        var byte_tensor = Tensor[DType.uint8](path.read_bytes())
         var num_elements = byte_tensor.num_elements()
         return Self(
             num_elements // type.sizeof(),
@@ -1253,7 +1262,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
         Returns:
           The tensor read from file.
         """
-        var bytes = Tensor[DType.int8](path.read_bytes())
+        var bytes = Tensor[DType.uint8](path.read_bytes())
         var minimum_size = len(_SERIALIZATION_HEADER) + (3 * sizeof[UInt32]())
 
         if bytes.num_elements() < minimum_size:
@@ -1263,7 +1272,7 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
             if bytes[i] != _SERIALIZATION_HEADER[i]:
                 raise "given file is not a serialized mojo tensor."
 
-        fn _uint32_from_bytes(data: DTypePointer[DType.int8]) -> UInt32:
+        fn _uint32_from_bytes(data: DTypePointer[DType.uint8]) -> UInt32:
             var ptr = data._as_scalar_pointer().bitcast[UInt32]()
             return move_from_pointee(ptr.address)
 
@@ -1304,14 +1313,14 @@ struct Tensor[type: DType](Stringable, CollectionElement, EqualityComparable):
 alias _SERIALIZATION_MAJOR_FORMAT: UInt32 = 0
 alias _SERIALIZATION_MINOR_FORMAT: UInt32 = 1
 # 0x93 🔥 0x93
-alias _SERIALIZATION_HEADER = StaticTuple[Int8, 6](
+alias _SERIALIZATION_HEADER = StaticTuple[UInt8, 6](
     0x93, 0xF0, 0x9F, 0x94, 0xA5, 0x93
 )
 
 
 fn _serialize_as_tensor[
     type: AnyRegType
-](object: Reference[type, _, _, AddressSpace.GENERIC]) -> Tensor[DType.int8]:
+](object: Reference[type, _, _, AddressSpace.GENERIC]) -> Tensor[DType.uint8]:
     """Serialize the given object into a Tensor of bytes.
 
     Args:
@@ -1320,9 +1329,9 @@ fn _serialize_as_tensor[
     Returns:
       Tensor containing the bytes of object.
     """
-    var self_ptr = LegacyPointer.address_of(object[]).bitcast[Int8]()
+    var self_ptr = LegacyPointer.address_of(object[]).bitcast[UInt8]()
     alias size = sizeof[type]()
-    var bytes = Tensor[DType.int8](size)
+    var bytes = Tensor[DType.uint8](size)
     memcpy(bytes.unsafe_ptr(), self_ptr, size)
     return bytes^
 
@@ -1336,7 +1345,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
       path: Path of file.
     """
     var header_size = len(_SERIALIZATION_HEADER)
-    var header_bytes = Tensor[DType.int8](header_size)
+    var header_bytes = Tensor[DType.uint8](header_size)
 
     for i in range(header_size):
         header_bytes.store(i, _SERIALIZATION_HEADER[i])
@@ -1350,7 +1359,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     var spec = tensor.spec()
     var spec_bytes = _serialize_as_tensor(spec)
 
-    var bytes = Tensor[DType.int8](
+    var bytes = Tensor[DType.uint8](
         header_bytes.num_elements()
         + major_format_bytes.num_elements()
         + minor_format_bytes.num_elements()
@@ -1362,7 +1371,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
 
     @always_inline("nodebug")
     fn _copy_bytes(
-        inout dest: Tensor[DType.int8], offset: Int, src: Tensor[DType.int8]
+        inout dest: Tensor[DType.uint8], offset: Int, src: Tensor[DType.uint8]
     ) -> Int:
         var size = src.num_elements()
         memcpy(
@@ -1382,7 +1391,7 @@ fn _serialize_to_file[type: DType](tensor: Tensor[type], path: Path) raises:
     # TODO: Avoid this copy.
     memcpy(
         bytes.unsafe_ptr() + copied,
-        tensor.unsafe_ptr().bitcast[DType.int8](),
+        tensor.unsafe_ptr().bitcast[DType.uint8](),
         tensor.num_elements() * type.sizeof(),
     )
     copied += tensor.num_elements() * type.sizeof()

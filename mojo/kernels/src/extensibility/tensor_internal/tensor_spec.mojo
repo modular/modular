@@ -209,7 +209,7 @@ struct TensorSpec(Stringable, CollectionElement, EqualityComparable):
         return str(self.shape) + "x" + str(self.dtype())
 
     @staticmethod
-    fn from_bytes(data: DTypePointer[DType.int8]) -> TensorSpec:
+    fn from_bytes(data: DTypePointer[DType.uint8]) -> TensorSpec:
         """Create a TensorSpec object from serialized bytes.
 
         Args:
