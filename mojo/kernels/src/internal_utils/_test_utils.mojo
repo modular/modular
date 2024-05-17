@@ -7,8 +7,8 @@
 from sys.info import alignof
 from utils import InlineArray
 from math import isclose
-from buffer.list import DimList
-from buffer import NDBuffer
+from buffer import DimList, NDBuffer
+from testing import assert_equal
 
 
 fn get_minmax[
@@ -85,7 +85,16 @@ fn ndbuffer_from_list[
     dtype: DType, rank: Int
 ](shape: DimList, values: List[Scalar[dtype]]) -> NDBuffer[dtype, rank]:
     var N = len(values)
+    # assert_equal(N, int(shape.product[rank]()))
     var buffer = DTypePointer[dtype].alloc(N)
     for i in range(N):
         buffer[i] = values[i]
+    return NDBuffer[dtype, rank](buffer, shape)
+
+
+fn ndbuffer_from_shape[
+    dtype: DType, rank: Int
+](shape: DimList) -> NDBuffer[dtype, rank]:
+    var N = int(shape.product[rank]())
+    var buffer = DTypePointer[dtype].alloc(N)
     return NDBuffer[dtype, rank](buffer, shape)
