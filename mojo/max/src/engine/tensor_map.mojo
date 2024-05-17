@@ -255,7 +255,9 @@ struct TensorMap(CollectionElement, SizedRaising, Stringable):
             [`TensorSpec`](/mojo/stdlib/tensor/tensor_spec/TensorSpec).
         """
         var tensor_ptr = self._ptr.get_tensor_by_name(
-            key.unsafe_ptr(), self._lib
+            # TODO: Remove cast when transition to UInt8 strings is complete.
+            key.unsafe_ptr().bitcast[UInt8](),
+            self._lib,
         )
         var mof_tensor = EngineTensor(tensor_ptr, self._lib, self._session)
         return mof_tensor.spec()
