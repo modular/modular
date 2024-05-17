@@ -91,17 +91,5 @@ int M::invokeLLDB(const State &state, ArrayRef<std::string> lldbArgs,
     return 0;
   }
 
-  // We use execv to ensure LLDB replaces the same process so that we can more
-  // easily debug it with `lldb -- mojo debug` or `lldb -- mojo repl`.
-  size_t size = subprocessArgs.size();
-  char **execvArgs = new char *[size + 1];
-  for (size_t i = 0; i < size; ++i)
-    execvArgs[i] = const_cast<char *>(subprocessArgs[i].data());
-  execvArgs[size] = nullptr;
-
-#if defined(_WIN32)
-  return llvm::sys::ExecuteAndWait(lldb.get(), lldbArgs);
-#else
-  return execv(lldb.get().c_str(), execvArgs);
-#endif
+  return llvm::sys::ExecuteAndWait(lldb.get(), subprocessArgs);
 }

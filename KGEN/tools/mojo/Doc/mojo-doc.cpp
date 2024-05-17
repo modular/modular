@@ -90,8 +90,9 @@ static int doc(const State &subcommandState) {
   // Initialize telemetry, making sure to redact any arguments that may contain
   // user-sensitive data.
   auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, StringRef(state.subcommand), args,
-                      /*privateArgs=*/{options::OPT_I, options::OPT_o});
+  auto scopedThread = logToolInvocationEventAsync(
+      telemetryCtx, StringRef(state.subcommand), args,
+      /*privateArgs=*/{options::OPT_I, options::OPT_o});
 
   // Resolve the input, or exit with an error.
   auto pathOrErr =

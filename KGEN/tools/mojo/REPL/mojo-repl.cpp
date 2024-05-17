@@ -40,7 +40,8 @@ static int repl(const State &state) {
 
   // Initialize telemetry.
   auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, StringRef(state.subcommand), args);
+  auto scopedThread = logToolInvocationEventAsync(
+      telemetryCtx, StringRef(state.subcommand), args);
 
   if (args.hasArg(options::OPT_help)) {
     return state.printHelp(

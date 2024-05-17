@@ -11,10 +11,9 @@
 
 using namespace M;
 
-void M::initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
-                            StringRef message,
-                            const llvm::opt::InputArgList &args,
-                            ArrayRef<unsigned> privateArgs) {
+ScopedThread M::logToolInvocationEventAsync(
+    M::Telemetry::TelemetryContext &telemetryCtx, StringRef message,
+    const llvm::opt::InputArgList &args, ArrayRef<unsigned> privateArgs) {
 
   // TODO: The API for adding resources when initializing a telemetry context is
   // not implemented yet. We should add the current mojo version as an attribute
@@ -49,5 +48,8 @@ void M::initializeTelemetry(M::Telemetry::TelemetryContext &telemetryCtx,
       " ");
   // Notify an invocation event of the current subcommand and arguments.
   auto logger = telemetryCtx.getLogger("mojo");
-  logger->emitL1Event("invoke." + message.str(), {{"args", s}});
+  return ScopedThread(
+      [logger = std::move(logger), message = message.str(), s = std::move(s)] {
+        logger->emitL1Event("invoke." + message, {{"args", s}});
+      });
 }

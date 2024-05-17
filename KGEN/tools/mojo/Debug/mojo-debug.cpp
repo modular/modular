@@ -98,7 +98,8 @@ static int debug(const State &state) {
 
   // Initialize telemetry.
   auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, StringRef(state.subcommand), parsedArgs);
+  auto scopedThread = logToolInvocationEventAsync(
+      telemetryCtx, StringRef(state.subcommand), parsedArgs);
 
   // LLVMOption treats all "positional arguments" (arguments that do not have a
   // "-" or "--" prefix) as `INPUT`. The very first of these is our launch input
