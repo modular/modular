@@ -12,7 +12,6 @@ from collections import OptionalReg
 from buffer.buffer import NDBuffer
 from .BatchedMatmul import _reshape_nd_buffer_with_batch_to_3d
 from utils.index import Index
-from .MatmulUtils import elementwise_epilogue_type
 from algorithm import elementwise, vectorize
 from algorithm.functional import parallelize_over_rows
 from buffer.list import DimList
@@ -25,14 +24,13 @@ from .BatchedMatmul import (
     elementwise_epilogue_type as batched_matmul_elementwise_epilogue_type,
 )
 from algorithm.functional import _get_start_indices_of_nth_subvolume
-
+from pathlib import Path
 
 # ===----------------------------------------------------------------------===#
 # Constants
 # ===----------------------------------------------------------------------===#
 
 alias LIB_ACC_PATH = "/System/Library/Frameworks/Accelerate.framework/Accelerate"
-alias LIB_ACC_PLIST = "/System/Library/Frameworks/Accelerate.framework/Versions/Current/Resources/Info.plist"
 
 
 # ===----------------------------------------------------------------------===#
@@ -60,7 +58,7 @@ fn _get_dylib_function[
 ]() -> result_type:
     constrained[os_is_macos(), "operating system must be macOS"]()
     return _ffi_get_dylib_function[
-        "ACCELERATE_PATH",
+        "APPLE_ACCELERATE",
         func_name,
         _init_dylib,
         _destroy_dylib,
@@ -79,7 +77,11 @@ fn use_apple_accelerate_lib[
     a_type: DType,
     b_type: DType,
 ]() -> Bool:
-    return os_is_macos() and a_type == b_type == c_type == DType.float32
+    return (
+        os_is_macos()
+        and a_type == b_type == c_type == DType.float32
+        and Path(LIB_ACC_PATH).exists()
+    )
 
 
 @value
@@ -191,7 +193,7 @@ fn apple_gemv[
     b_type: DType,
     b_packed: Bool,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
 ](
     c: NDBuffer[c_type, 2, c_shape],
     a: NDBuffer[a_type, 2, a_shape],
@@ -206,8 +208,10 @@ fn apple_gemv[
 
     var transposed_b = NDBuffer[b_type, 2]()
     var transposed_b_ptr = DTypePointer[b_type]()
+
     # If both b_packed and transpose_b are False, we need to transpose B at
     # runtime (which is suboptimal, but enables faster gemv below).
+    @parameter
     if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(b.dim[1](), b.dim[0]())
         transposed_b_ptr = DTypePointer[b_type].alloc(b.num_elements())
@@ -226,6 +230,7 @@ fn apple_gemv[
     # to adjust K accordingly.
     # We will also need to use the original B instead of transposed_b in the
     # calculations further below.
+    @parameter
     if b_packed == False and transpose_b == True:
         K = b.dim(1)
 
@@ -294,7 +299,7 @@ fn apple_gemv[
 fn apple_matmul[
     *,
     transpose_b: Bool = False,
-    elementwise_lambda_fn: OptionalReg[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: OptionalReg[matmul_elementwise_epilogue_type] = None,
 ](c: NDBuffer, a: NDBuffer, b: NDBuffer):
     @parameter
     if a.type == b.type == c.type == DType.float32:
@@ -379,16 +384,11 @@ fn apple_batched_matmul[
         fn elementwise_lambda_2d[
             c_type: DType, width: Int
         ](out_coords: StaticIntTuple[2], out_val: SIMD[c_type, width]):
-            # the caller provided the elementwise epilogue fn over the original
-            # buffer rank, not the collapsed buffer rank
-            # so un-collapse the batch dims here
-            @parameter
-            if elementwise_epilogue_fn:
-                batch_coords[rank - 1] = out_coords[1]
-                batch_coords[rank - 2] = out_coords[0]
+            batch_coords[rank - 1] = out_coords[1]
+            batch_coords[rank - 2] = out_coords[0]
 
-                alias func = elementwise_epilogue_fn.value()
-                func[c_type, width, rank](batch_coords, out_val)
+            alias func = elementwise_epilogue_fn.value()
+            func[c_type, width, rank](batch_coords, out_val)
 
         apple_matmul[
             transpose_b=transpose_b,
