@@ -194,9 +194,9 @@ fn conv_transpose_shape[
     """
 
     if input_rank != 4 and input_rank != 5:
-        raise Error("[conv_transpose] requires (input_rank == 4 or 5))")
+        raise Error("[conv_transpose] requires (input_rank == 4 or 5)")
     if input_rank != kernel_rank:
-        raise Error("[conv_transpose] requires (input_rank == kernel_rank))")
+        raise Error("[conv_transpose] requires (input_rank == kernel_rank)")
     if strides.dim(0) != input_rank - 2 or dilations.dim(0) != input_rank - 2:
         raise Error(
             "[conv_transpose] requires (len(strides) == len(dilations) =="
@@ -207,93 +207,68 @@ fn conv_transpose_shape[
             "[conv_transpose] requires (len(paddings) == 2 * (input rank - 2))"
         )
 
-    # Channel last layout, NHWC or NDHWC.
+    # Assume input has channel last layout, NHWC or NDHWC.
     var batch_size = input.dim(0)
+    var output_shape = StaticIntTuple[input_rank]()
+    # Assume kernel has layout RSFC or QRSFC. The output channel is F because
+    # this is a convolution transpose shape function (inverse of regular
+    # convolution).
+    var output_channels = kernel.dim(input_rank - 2)
+
+    # Check input and kernel channels
+    if input.dim(input_rank - 1) != kernel.dim(input_rank - 1):
+        raise Error(
+            "[conv_transpose] requires input channel to match output channel in"
+            " kernel"
+        )
+
+    # Compute output shape
+    output_shape[0] = batch_size
+    output_shape[input_rank - 1] = output_channels
 
     @parameter
-    if input_rank == 4:
-        var input_channels = input.dim(3)
-
-        # Assume kernel has layout RSCF, the output channel is C because this is a
-        # convolution transpose shape function (inverse of regular convolution).
-        var output_channels = kernel.dim(2)
-
-        # compute and return the output shape
-        # The padding is in order [h_begin, h_end, w_begin, w_end]
-        var output_height = (
-            int(strides[0]) * (input.dim(1) - 1)
-            + int(output_pads[0])
-            + ((kernel.dim(0) - 1) * int(dilations[0]) + 1)
-            - int(pads[0])
-            - int(pads[1])
-        )
-        var output_width = (
-            int(strides[1]) * (input.dim(2) - 1)
-            + int(output_pads[1])
-            + ((kernel.dim(1) - 1) * int(dilations[1]) + 1)
-            - int(pads[2])
-            - int(pads[3])
+    @always_inline
+    fn compute_output_spatial_dim(
+        input_spatial_dim: Int,
+        kernel_spatial_dim: Int,
+        stride: Int,
+        dilation: Int,
+        pre_pad: Int,
+        post_pad: Int,
+        out_pad: Int,
+    ) -> Int:
+        return (
+            stride * (input_spatial_dim - 1)
+            + out_pad
+            + ((kernel_spatial_dim - 1) * dilation + 1)
+            - pre_pad
+            - post_pad
         )
 
-        if output_height <= 0:
-            raise Error("[conv_transpose] output height must be positive")
-        if output_width <= 0:
-            raise Error("[conv_transpose] output width must be positive")
-
-        var output_shape = StaticIntTuple[input_rank]()
-        output_shape[0] = batch_size
-        output_shape[1] = output_height
-        output_shape[2] = output_width
-        output_shape[3] = output_channels
-
-        return output_shape
-
-    else:
-        # NDHWC layout.
-        var input_channels = input.dim(4)
-
-        # QRSFC layout, F is output channel.
-        var output_channels = kernel.dim(3)
-
-        # compute and return the output shape
-        # A paddings in MO are orderred as D_lower, D_upper, H_lower, ...
-        var output_depth = (
-            int(strides[0]) * (input.dim(1) - 1)
-            + int(output_pads[0])
-            + ((kernel.dim(0) - 1) * int(dilations[0]) + 1)
-            - int(pads[0])
-            - int(pads[1])
+    # Compute the spatial dims
+    @unroll
+    for i in range(input_rank - 2):
+        var input_spatial_dim = input.dim(i + 1)
+        var kernel_spatial_dim = kernel.dim(i)
+        var stride = int(strides[i])
+        var dilation = int(dilations[i])
+        var pre_pad = int(pads[2 * i])
+        var post_pad = int(pads[2 * i + 1])
+        var out_pad = int(output_pads[i])
+        var output_spatial_dim = compute_output_spatial_dim(
+            input_spatial_dim,
+            kernel_spatial_dim,
+            stride,
+            dilation,
+            pre_pad,
+            post_pad,
+            out_pad,
         )
-        var output_height = (
-            int(strides[1]) * (input.dim(2) - 1)
-            + int(output_pads[1])
-            + ((kernel.dim(1) - 1) * int(dilations[1]) + 1)
-            - int(pads[2])
-            - int(pads[3])
-        )
-        var output_width = (
-            int(strides[2]) * (input.dim(3) - 1)
-            + int(output_pads[2])
-            + ((kernel.dim(2) - 1) * int(dilations[2]) + 1)
-            - int(pads[4])
-            - int(pads[5])
-        )
+        if output_spatial_dim <= 0:
+            raise Error("[conv_transpose] output spatial dim must be positive")
+        output_shape[i + 1] = output_spatial_dim
 
-        if output_depth <= 0:
-            raise Error("[conv_transpose] output depth must be positive")
-        if output_height <= 0:
-            raise Error("[conv_transpose] output height must be positive")
-        if output_width <= 0:
-            raise Error("[conv_transpose] output width must be positive")
-
-        var output_shape = StaticIntTuple[input_rank]()
-        output_shape[0] = batch_size
-        output_shape[1] = output_depth
-        output_shape[2] = output_height
-        output_shape[3] = output_width
-        output_shape[4] = output_channels
-
-        return output_shape
+    return output_shape
 
 
 # ===----------------------------------------------------------------------=== #
