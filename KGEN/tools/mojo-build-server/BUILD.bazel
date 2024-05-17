@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 kgen_kernel(
     name = "mojo_build_server",
     src = "mojo_build_server.mojo",
+    features = ["-asan"],  # TODO: Fails to link __asan_gen likely only with older clang versions
     deps = [
         "//Kernels/mojo/stdlib",
     ],
@@ -12,6 +13,7 @@ kgen_kernel(
 
 cc_binary(
     name = "mojo-build-server",
+    srcs = ["empty.c"],
     deps = [
         ":mojo_build_server",
         "//KGEN:CompilerRT",

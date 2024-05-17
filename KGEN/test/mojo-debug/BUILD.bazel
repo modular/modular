@@ -38,6 +38,10 @@ lit_tests(
     mojo_deps = [
         "//Kernels/mojo/stdlib",
     ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],  # __jit_debug_descriptor exists in liblldb and libMojoLLDB
+        "//conditions:default": [],
+    }),
     tools = [
         "//KGEN/tools/mojo",
     ],
