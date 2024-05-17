@@ -11,8 +11,12 @@ from nn.resize import (
     resize_linear,
     resize_nearest_neighbor,
 )
-from tensor import Tensor, TensorShape
+from closed_source_utils._test_utils import (
+    ndbuffer_from_list,
+    ndbuffer_from_shape,
+)
 from testing import assert_almost_equal
+from buffer import NDBuffer, DimList
 
 
 fn test_case_nearest[
@@ -20,14 +24,14 @@ fn test_case_nearest[
     coord_transform: CoordinateTransformationMode,
     round_mode: RoundMode,
     type: DType,
-](input: Tensor[type], output: Tensor[type]):
+](input: NDBuffer[type, rank], output: NDBuffer[type, rank]):
     resize_nearest_neighbor[coord_transform, round_mode,](
-        input._to_ndbuffer[rank](),
-        output._to_ndbuffer[rank](),
+        input,
+        output,
     )
 
     for i in range(output.num_elements()):
-        print(output._to_buffer()[i], end=",")
+        print(output.data[i], end=",")
     print("")
 
 
@@ -36,16 +40,17 @@ fn test_case_linear[
     coord_transform: CoordinateTransformationMode,
     antialias: Bool,
     type: DType,
-](input: Tensor[type], output: Tensor[type], reference: Tensor[type]) raises:
-    resize_linear[coord_transform, antialias](
-        input._to_ndbuffer[rank](),
-        output._to_ndbuffer[rank](),
-    )
+](
+    input: NDBuffer[type, rank],
+    output: NDBuffer[type, rank],
+    reference: NDBuffer[type, rank],
+) raises:
+    resize_linear[coord_transform, antialias](input, output)
 
     for i in range(output.num_elements()):
         assert_almost_equal(
-            output._to_buffer()[i],
-            reference._to_buffer()[i],
+            output.data[i],
+            reference.data[i],
             atol=1e-5,
             rtol=1e-4,
         )
@@ -55,8 +60,10 @@ def main():
     fn test_upsample_sizes_nearest_1() raises:
         print("== test_upsample_sizes_nearest_1")
         alias type = DType.float32
-        var input = Tensor[type](TensorShape(1, 1, 2, 2), 1, 2, 3, 4)
-        var output = Tensor[type](1, 1, 4, 6)
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 2), List[Scalar[type]](1, 2, 3, 4)
+        )
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 4, 6))
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
         ](input, output)
@@ -68,10 +75,10 @@ def main():
     fn test_downsample_sizes_nearest() raises:
         print("== test_downsample_sizes_nearest")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 2, 4), 1, 2, 3, 4, 5, 6, 7, 8
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 4), List[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8)
         )
-        var output = Tensor[type](1, 1, 1, 2)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 1, 2))
 
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
@@ -84,17 +91,19 @@ def main():
     fn test_downsample_sizes_nearest_half_pixel_1D() raises:
         print("== test_downsample_sizes_nearest_half_pixel_1D")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 4, 4),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 4, 4),
             List[Scalar[type]](
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
-        var output = Tensor[type](1, 1, 1, 2)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 1, 2))
 
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel1D, RoundMode.HalfDown
         ](input, output)
+        input.data.free()
+        output.data.free()
 
     # CHECK-LABEL: test_downsample_sizes_nearest_half_pixel_1D
     # CHECK: 0.0,2.0,
@@ -103,14 +112,16 @@ def main():
     fn test_upsample_sizes_nearest_2() raises:
         print("== test_upsample_sizes_nearest_2")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 2, 2), List[Scalar[type]](1, 2, 3, 4)
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 2), List[Scalar[type]](1, 2, 3, 4)
         )
-        var output = Tensor[type](1, 1, 7, 8)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 7, 8))
 
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.HalfDown
         ](input, output)
+        input.data.free()
+        output.data.free()
 
     # CHECK-LABEL: test_upsample_sizes_nearest_2
     # CHECK: 1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,
@@ -119,17 +130,20 @@ def main():
     fn test_upsample_sizes_nearest_floor_align_corners() raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 4, 4),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 4, 4),
             List[Scalar[type]](
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
-        var output = Tensor[type](1, 1, 8, 8)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 8, 8))
 
         test_case_nearest[
             4, CoordinateTransformationMode.AlignCorners, RoundMode.Floor
         ](input, output)
+
+        input.data.free()
+        output.data.free()
 
     # CHECK-LABEL: test_upsample_sizes_nearest_floor_align_corners
     # CHECK: 1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,5.0,5.0,5.0,6.0,6.0,7.0,7.0,8.0,5.0,5.0,5.0,6.0,6.0,7.0,7.0,8.0,9.0,9.0,9.0,10.0,10.0,11.0,11.0,12.0,9.0,9.0,9.0,10.0,10.0,11.0,11.0,12.0,13.0,13.0,13.0,14.0,14.0,15.0,15.0,16.0,
@@ -138,17 +152,20 @@ def main():
     fn test_upsample_sizes_nearest_round_half_up_asymmetric() raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 4, 4),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 4, 4),
             List[Scalar[type]](
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
-        var output = Tensor[type](1, 1, 8, 8)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 8, 8))
 
         test_case_nearest[
             4, CoordinateTransformationMode.Asymmetric, RoundMode.HalfUp
         ](input, output)
+
+        input.data.free()
+        output.data.free()
 
     # CHECK-LABEL: test_upsample_sizes_nearest_round_half_up_asymmetric
     # CHECK: 1.0,2.0,2.0,3.0,3.0,4.0,4.0,4.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,
@@ -157,17 +174,20 @@ def main():
     fn test_upsample_sizes_nearest_ceil_half_pixel() raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 4, 4),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 4, 4),
             List[Scalar[type]](
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
             ),
         )
-        var output = Tensor[type](1, 1, 8, 8)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 8, 8))
 
         test_case_nearest[
             4, CoordinateTransformationMode.HalfPixel, RoundMode.Ceil
         ](input, output)
+
+        input.data.free()
+        output.data.free()
 
     # CHECK-LABEL: test_upsample_sizes_nearest_ceil_half_pixel
     # CHECK: 1.0,2.0,2.0,3.0,3.0,4.0,4.0,4.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,
@@ -176,19 +196,19 @@ def main():
     fn test_upsample_sizes_linear() raises:
         print("== test_upsample_sizes_linear")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 2, 2),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 2),
             List[Scalar[type]](1, 2, 3, 4),
         )
-        var output = Tensor[type](1, 1, 4, 4)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 4, 4))
 
         # TORCH REFERENCE:
         # x = np.array([[[[1, 2], [3, 4]]]])
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (4, 4), mode="bilinear")
         # print(y.flatten())
 
-        var reference = Tensor[type](
-            TensorShape(1, 1, 4, 4),
+        var reference = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 4, 4),
             List[Scalar[type]](
                 1.0000,
                 1.2500,
@@ -213,6 +233,10 @@ def main():
             input, output, reference
         )
 
+        input.data.free()
+        output.data.free()
+        reference.data.free()
+
     # CHECK-LABEL: test_upsample_sizes_linear
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_linear()
@@ -220,19 +244,19 @@ def main():
     fn test_upsample_sizes_linear_align_corners() raises:
         print("== test_upsample_sizes_linear_align_corners")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 2, 2),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 2),
             List[Scalar[type]](1, 2, 3, 4),
         )
-        var output = Tensor[type](1, 1, 4, 4)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 4, 4))
 
         # TORCH REFERENCE:
         # x = np.array([[[[1, 2], [3, 4]]]])
         # y = torch.nn.functional.interpolate(
         # torch.Tensor(x), (4, 4), mode="bilinear", align_corners=True)
         # print(y.flatten())
-        var reference = Tensor[type](
-            TensorShape(1, 1, 4, 4),
+        var reference = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 4, 4),
             List[Scalar[type]](
                 1.0000,
                 1.3333,
@@ -257,6 +281,10 @@ def main():
             input, output, reference
         )
 
+        input.data.free()
+        output.data.free()
+        reference.data.free()
+
     # CHECK-LABEL: test_upsample_sizes_linear_align_corners
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_linear_align_corners()
@@ -264,22 +292,26 @@ def main():
     fn test_downsample_sizes_linear() raises:
         print("== test_downsample_sizes_linear")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 2, 4),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 4),
             List[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8),
         )
-        var output = Tensor[type](1, 1, 1, 2)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 1, 2))
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
         # y = torch.nn.functional.interpolate(torch.Tensor(x), (1, 2), mode="bilinear")
         # print(y.flatten())
-        var reference = Tensor[type](
-            TensorShape(1, 1, 1, 2), List[Scalar[type]](3.50000, 5.50000)
+        var reference = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 1, 2), List[Scalar[type]](3.50000, 5.50000)
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
             input, output, reference
         )
+
+        input.data.free()
+        output.data.free()
+        reference.data.free()
 
     # CHECK-LABEL: test_downsample_sizes_linear
     # CHECK-NOT: ASSERT ERROR
@@ -288,23 +320,27 @@ def main():
     fn test_downsample_sizes_linear_align_corners() raises:
         print("== test_downsample_sizes_linear_align_corners")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 2, 4), List[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8)
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 4), List[Scalar[type]](1, 2, 3, 4, 5, 6, 7, 8)
         )
-        var output = Tensor[type](1, 1, 1, 2)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 1, 2))
         # TORCH REFERENCE:
         # x = np.arange(1, 9).reshape((1, 1, 2, 4))
         # y = torch.nn.functional.interpolate(
         #     torch.Tensor(x), (1, 2), mode="bilinear", align_corners=True
         # )
         # print(y.flatten())
-        var reference = Tensor[type](
-            TensorShape(1, 1, 1, 2), List[Scalar[type]](1, 4)
+        var reference = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 1, 2), List[Scalar[type]](1, 4)
         )
 
         test_case_linear[4, CoordinateTransformationMode.AlignCorners, False](
             input, output, reference
         )
+
+        input.data.free()
+        output.data.free()
+        reference.data.free()
 
     # CHECK-LABEL: test_downsample_sizes_linear_align_corners
     # CHECK-NOT: ASSERT ERROR
@@ -313,13 +349,13 @@ def main():
     fn test_upsample_sizes_trilinear() raises:
         print("== test_upsample_sizes_trilinear")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 4, 2, 2),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 4, 2, 2),
             List[Scalar[type]](
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
-        var output = Tensor[type](1, 6, 4, 4)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 6, 4, 4))
 
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 2, 2))
@@ -327,8 +363,8 @@ def main():
         #     torch.Tensor(x), (6, 4, 4), mode="trilinear"
         # )
         # print(y.flatten())
-        var reference = Tensor[type](
-            TensorShape(1, 6, 4, 4),
+        var reference = ndbuffer_from_list[type, 4](
+            DimList(1, 6, 4, 4),
             # fmt: off
             List[Scalar[type]](0.00000,  0.25000,  0.75000,  1.00000,  0.50000,  0.75000,  1.25000,
                 1.50000,  1.50000,  1.75000,  2.25000,  2.50000,  2.00000,  2.25000,
@@ -351,6 +387,10 @@ def main():
             input, output, reference
         )
 
+        input.data.free()
+        output.data.free()
+        reference.data.free()
+
     # CHECK-LABEL: test_upsample_sizes_trilinear
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_trilinear()
@@ -358,13 +398,13 @@ def main():
     fn test_downsample_sizes_linear_antialias() raises:
         print("== test_downsample_sizes_linear_antialias")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 4, 4),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 4, 4),
             List[Scalar[type]](
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
             ),
         )
-        var output = Tensor[type](1, 1, 2, 2)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 2, 2))
 
         # TORCH REFERENCE:
         # x = np.arange(16).reshape((1, 1, 4, 4))
@@ -372,14 +412,18 @@ def main():
         #     torch.Tensor(x), (2, 2), mode="bilinear", antialias=True
         # )
         # print(y.flatten())
-        var reference = Tensor[type](
-            TensorShape(1, 1, 2, 2),
+        var reference = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 2),
             List[Scalar[type]](3.57143, 5.14286, 9.85714, 11.42857),
         )
 
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, True](
             input, output, reference
         )
+
+        input.data.free()
+        output.data.free()
+        reference.data.free()
 
     # CHECK-LABEL: test_downsample_sizes_linear_antialias
     # CHECK-NOT: ASSERT ERROR
@@ -388,14 +432,14 @@ def main():
     fn test_no_resize() raises:
         print("== test_no_resize")
         alias type = DType.float32
-        var input = Tensor[type](
-            TensorShape(1, 1, 2, 2),
+        var input = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 2),
             List[Scalar[type]](1, 1, 1, 1),
         )
-        var output = Tensor[type](1, 1, 2, 2)
+        var output = ndbuffer_from_shape[type, 4](DimList(1, 1, 2, 2))
 
-        var reference = Tensor[type](
-            TensorShape(1, 1, 2, 2),
+        var reference = ndbuffer_from_list[type, 4](
+            DimList(1, 1, 2, 2),
             List[Scalar[type]](
                 1.0000,
                 1.0000,
@@ -407,5 +451,9 @@ def main():
         test_case_linear[4, CoordinateTransformationMode.HalfPixel, False](
             input, output, reference
         )
+
+        input.data.free()
+        output.data.free()
+        reference.data.free()
 
     test_no_resize()
