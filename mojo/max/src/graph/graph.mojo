@@ -85,7 +85,7 @@ struct _GraphLayerContext:
 struct Graph(CollectionElement, Stringable):
     """Represents a single MAX graph.
 
-    A `Graph` is a callable routine in [MAX Engine](/engine/), similar to a
+    A `Graph` is a callable routine in [MAX Engine](/max/engine), similar to a
     function in Mojo. Like functions, graphs have a name and signature. Unlike
     a function, which follows an imperative programming model, a `Graph`
     follows a [dataflow](https://en.wikipedia.org/wiki/Dataflow_programming)
@@ -93,8 +93,8 @@ struct Graph(CollectionElement, Stringable):
     sequential instructions.
 
     When you instantiate a graph, you must specify the input shapes
-    as one or more [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
-    [`ListType`](/engine/reference/mojo/graph/type/ListType) values. Then, build a
+    as one or more [`TensorType`](/max/reference/mojo/graph/type/TensorType) or
+    [`ListType`](/max/reference/mojo/graph/type/ListType) values. Then, build a
     sequence of ops and set the graph output with [`output()`](#output). For
     example:
 
@@ -118,7 +118,7 @@ struct Graph(CollectionElement, Stringable):
 
     You can't call a `Graph` directly from Mojo. You must compile it and
     execute it with MAX Engine. For more detail, see the tutorial about how to
-    [build a graph with MAX Graph](/engine/graph/get-started).
+    [build a graph with MAX Graph](/max/graph/get-started).
     """
 
     var _graph: _GraphRef
@@ -132,8 +132,8 @@ struct Graph(CollectionElement, Stringable):
 
         Args:
             in_type: The graph's input type, as a single
-                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
-                [`ListType`](/engine/reference/mojo/graph/type/ListType) value.
+                [`TensorType`](/max/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/max/reference/mojo/graph/type/ListType) value.
         """
         self.__init__("graph", List[Type](in_type))
 
@@ -150,11 +150,11 @@ struct Graph(CollectionElement, Stringable):
 
         Args:
             in_types: The graph's input types, as one or more
-                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
-                [`ListType`](/engine/reference/mojo/graph/type/ListType) values.
+                [`TensorType`](/max/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/max/reference/mojo/graph/type/ListType) values.
             out_types: The graph's output types, as one or more
-                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
-                [`ListType`](/engine/reference/mojo/graph/type/ListType) values.
+                [`TensorType`](/max/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/max/reference/mojo/graph/type/ListType) values.
                 Deprecated. This will be inferred by the `output` call.
         """
         self.__init__("graph", in_types, out_types)
@@ -174,11 +174,11 @@ struct Graph(CollectionElement, Stringable):
         Args:
             name: A name for the graph.
             in_types: The graph's input types, as one or more
-                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
-                [`ListType`](/engine/reference/mojo/graph/type/ListType) values.
+                [`TensorType`](/max/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/max/reference/mojo/graph/type/ListType) values.
             out_types: The graph's output types, as one or more
-                [`TensorType`](/engine/reference/mojo/graph/type/TensorType) or
-                [`ListType`](/engine/reference/mojo/graph/type/ListType) values.
+                [`TensorType`](/max/reference/mojo/graph/type/TensorType) or
+                [`ListType`](/max/reference/mojo/graph/type/ListType) values.
                 Deprecated.  This will be inferred by the `output` call.
         """
         var ctx = _mlir.Context()

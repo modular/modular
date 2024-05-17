@@ -22,7 +22,7 @@ from max.tensor import TensorSpec
 struct EngineTensorSpec(Stringable, CollectionElement):
     """
     Describes the input and output tensor specifications of a
-    [`Model`](/engine/reference/mojo/engine/model/Model).
+    [`Model`](/max/reference/mojo/engine/model/Model).
 
     Holds a description of the input/output tensor, given to or produced by
     MAX Engine. This is similar to
@@ -30,9 +30,9 @@ struct EngineTensorSpec(Stringable, CollectionElement):
     standard library, but is specific to MAX Engine.
 
     This is the data type returned from
-    [`Model.get_model_input_metadata()`](/engine/reference/mojo/engine/model/Model#get_model_input_metadata)
+    [`Model.get_model_input_metadata()`](/max/reference/mojo/engine/model/Model#get_model_input_metadata)
     and
-    [`Model.get_model_output_metadata()`](/engine/reference/mojo/engine/model/Model#get_model_output_metadata).
+    [`Model.get_model_output_metadata()`](/max/reference/mojo/engine/model/Model#get_model_output_metadata).
     """
 
     var _ptr: CTensorSpec

@@ -24,7 +24,7 @@ struct Model:
     """Represents a model that's loaded and ready for execution.
 
     Do not instantiate this object directly. Instead, create it with
-    [`InferenceSession.load()`](/engine/reference/mojo/engine/session/InferenceSession#load).
+    [`InferenceSession.load()`](/max/reference/mojo/engine/session/InferenceSession#load).
     For example:
 
     ```mojo
@@ -34,8 +34,8 @@ struct Model:
 
     Then you can run inference by passing your inputs to [`execute()`](#execute)
     as a NumPy array, a
-    [`TensorMap`](/engine/reference/mojo/engine/tensor_map/TensorMap), or one
-    of the other [tensor types](/engine/reference/mojo/engine/tensor).
+    [`TensorMap`](/max/reference/mojo/engine/tensor_map/TensorMap), or one
+    of the other [tensor types](/max/reference/mojo/engine/tensor).
     """
 
     var _ctx: CRuntimeContext
@@ -322,7 +322,7 @@ struct Model:
 
     fn get_model_input_metadata(self) raises -> List[EngineTensorSpec]:
         """Get metadata about the model's input tensors, as a list of
-        [`EngineTensorSpec`](/engine/reference/mojo/engine/tensor_spec/EngineTensorSpec)
+        [`EngineTensorSpec`](/max/reference/mojo/engine/tensor_spec/EngineTensorSpec)
         objects.
 
         Returns:
@@ -332,7 +332,7 @@ struct Model:
 
     fn get_model_output_metadata(self) raises -> List[EngineTensorSpec]:
         """Get metadata about the model's output tensors, as a list of
-        [`EngineTensorSpec`](/engine/reference/mojo/engine/tensor_spec/EngineTensorSpec)
+        [`EngineTensorSpec`](/max/reference/mojo/engine/tensor_spec/EngineTensorSpec)
         objects.
 
         Returns:

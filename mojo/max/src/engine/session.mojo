@@ -228,7 +228,7 @@ struct InputSpec(CollectionElement):
 
     When loading a TorchScript model, you must specify the shape and data type
     for each input with an `InputSpec`, which you then pass to
-    [`InferenceSession.load()`](/engine/reference/mojo/engine/session/InferenceSession#load).
+    [`InferenceSession.load()`](/max/reference/mojo/engine/session/InferenceSession#load).
     For example:
 
     ```mojo
@@ -306,7 +306,7 @@ struct InputSpec(CollectionElement):
 
         Args:
             spec: Shape of the input, as a list of
-                  [`ShapeElement`](/engine/reference/mojo/engine/shape_element/ShapeElement)
+                  [`ShapeElement`](/max/reference/mojo/engine/shape_element/ShapeElement)
                   values.
             dtype: Datatype of the input, from the standard library
                    [`DType`](/mojo/stdlib/builtin/dtype/DType).
@@ -337,7 +337,7 @@ struct _TorchLoadOptions(CollectionElement):
 
     This is used only internally.  To provide load options, pass them as
     keyword arguments to
-    [`InferenceSession.load()`](/engine/reference/mojo/engine/session/InferenceSession#load).
+    [`InferenceSession.load()`](/max/reference/mojo/engine/session/InferenceSession#load).
     """
 
     var _source: Optional[ModelSource]
@@ -447,10 +447,10 @@ struct InferenceSession:
 
         If you're loading a TorchScript model, you must specify the `input_specs`
         argument with a list of
-        [`InputSpec`](/engine/reference/mojo/engine/session/InputSpec) objects
+        [`InputSpec`](/max/reference/mojo/engine/session/InputSpec) objects
         that specify the model's input specs (which may have dynamic shapes).
         For details, see how to [specify input
-        specs](/engine/model-formats#specify-torchscript-input-specs).
+        specs](/max/model-formats#specify-torchscript-input-specs).
 
         Args:
             path: Location of model in filesystem. You may pass a string here
@@ -482,7 +482,7 @@ struct InferenceSession:
         input_specs: Optional[List[InputSpec]] = None,
     ) raises -> Model:
         """Compile and initialize a model in MAX Engine, with the given
-           [`Graph`](/engine/reference/mojo/graph/graph/Graph) and config.
+           [`Graph`](/max/reference/mojo/graph/graph/Graph) and config.
 
         Args:
             graph: MAX Graph.
