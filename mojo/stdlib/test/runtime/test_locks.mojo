@@ -28,8 +28,7 @@ fn test_basic_lock() raises:
 
     @parameter
     async fn inc() capturing -> Int:
-        var addr = UnsafePointer[BlockingSpinLock].address_of(lock)
-        with BlockingScopedLock(addr) as l:
+        with BlockingScopedLock(lock):
             rawCounter += 1
             _ = counter.fetch_add(1)
             return 0

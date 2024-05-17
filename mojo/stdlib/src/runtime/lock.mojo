@@ -49,6 +49,12 @@ struct BlockingScopedLock:
     ):
         self.lock = lock
 
+    fn __init__(
+        inout self,
+        inout lock: Self.LockType,
+    ):
+        self.lock = UnsafePointer.address_of(lock)
+
     @no_inline
     fn __enter__(inout self):
         """Acquire the lock on entry.
