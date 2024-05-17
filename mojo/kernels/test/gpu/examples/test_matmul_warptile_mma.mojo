@@ -212,7 +212,7 @@ fn sgemm_warp_tiling_kernel[
                 aa_ptr.offset(int((inner_row_a + offset) * K + inner_col_a * 4))
             )
 
-            @unroll
+            @parameter
             for i in range(4):
                 a_sram[
                     int(
@@ -248,7 +248,7 @@ fn sgemm_warp_tiling_kernel[
             # Populate registers for the whole warp tile (hence the for loop)
             # for A (loading values from shared memory).
             # Note: indexing here takes into account that a_sram is transposed.
-            @unroll
+            @parameter
             for w_sub_row_idx in range(WMITER):
                 # Indicates the start 16x8 sub-warp tile row in the context of
                 # block tile.
@@ -293,7 +293,7 @@ fn sgemm_warp_tiling_kernel[
 
             # Populate registers for the whole warp tile (hence the for loop)
             # for A (loading values from shared memory).
-            @unroll
+            @parameter
             for w_sub_col_idx in range(WNITER):
                 # Indicates the start 16x8 sub-warp tile row in the context of
                 # the block tile.
@@ -323,10 +323,10 @@ fn sgemm_warp_tiling_kernel[
             # Execute matmul at the warp tile level (sequentially loop over all
             # WMITER x WNITER sub-warp tiles of size MMA_M x MMA_N at the
             # output)
-            @unroll
+            @parameter
             for w_sub_row_idx in range(WMITER):
 
-                @unroll
+                @parameter
                 for w_sub_col_idx in range(WNITER):
                     # MMA_M*MMA_N*MMA_K mma library function call.
                     mma(
@@ -343,10 +343,10 @@ fn sgemm_warp_tiling_kernel[
         barrier()
 
     # Write out the results.
-    @unroll
+    @parameter
     for w_sub_row_idx in range(WMITER):
 
-        @unroll
+        @parameter
         for w_sub_col_idx in range(WNITER):
             # Move C pointer to current sub-warp tile.
             var C_interim: DTypePointer[c_type] = cc_ptr.offset(

@@ -198,7 +198,7 @@ fn multistage_gemm[
     var b_tsr = LayoutTensor[b_type, b_layout](b.data)
 
     # Prefetch (num_pipeline_stages - 1) stages.
-    @unroll
+    @parameter
     for stage in range(num_pipeline_stages - 1):
         var a_smem_tile = LayoutTensor[
             a_type,
@@ -306,7 +306,7 @@ fn multistage_gemm[
     )
 
     # TODO: possbile to not rebind?
-    @unroll
+    @parameter
     for m_mma in range(num_m_mmas):
         var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
         a_reg_tiles[0][m_mma, 0] = rebind[a_frag_type](
@@ -322,7 +322,7 @@ fn multistage_gemm[
         # Use ld_matrix because with transposed B the thread layout in mma is
         # row-major(8, 4). TF32 mma needs 2 8x4 matrices but we can combine 2
         # mmas and load 4 matrics per iteration, reducing instruction count.
-        @unroll
+        @parameter
         for n_mma2 in range(num_n_mmas // 2):
             var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
             var vec = ld_mma[
@@ -339,7 +339,7 @@ fn multistage_gemm[
 
     else:
         # Use normal scalar load because the thread layout in mma is column-majored.
-        @unroll
+        @parameter
         for n_mma in range(num_n_mmas):
             var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](0, n_mma)
             var b_mma_frag = b_mma_tile.distribute[Layout.col_major(4, 8)](
@@ -376,7 +376,7 @@ fn multistage_gemm[
 
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
-        @unroll
+        @parameter
         for k_mma in range(num_k_mmas):
             var current = k_mma % 2
             var next = (k_mma + 1) % 2
@@ -400,7 +400,7 @@ fn multistage_gemm[
                     b_wtile_coord0, b_wtile_coord1
                 )
 
-            @unroll
+            @parameter
             for m_mma in range(num_m_mmas):
                 var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
                 a_reg_tiles[next][m_mma, 0] = rebind[a_frag_type](
@@ -417,7 +417,7 @@ fn multistage_gemm[
             @parameter
             if transpose_b:
 
-                @unroll
+                @parameter
                 for n_mma2 in range(num_n_mmas // 2):
                     var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
                     var vec = ld_mma[
@@ -436,7 +436,7 @@ fn multistage_gemm[
                     )
             else:
 
-                @unroll
+                @parameter
                 for n_mma in range(num_n_mmas):
                     var b_mma_tile = b_warp_tile.tile[MMA_K, MMA_N](
                         (k_mma + 1) % num_k_mmas, n_mma
@@ -451,10 +451,10 @@ fn multistage_gemm[
                         )
                     )
 
-            @unroll
+            @parameter
             for m_mma in range(num_m_mmas):
 
-                @unroll
+                @parameter
                 for n_mma in range(num_n_mmas):
                     mma(
                         c_reg_tile[m_mma * num_n_mmas + n_mma, 0],
@@ -537,10 +537,10 @@ fn multistage_gemm[
     var c_gmem_tile = c.tile[BM, BN]((BlockIdx.y(), BlockIdx.x()))
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN]((int(warp_y), int(warp_x)))
 
-    @unroll
+    @parameter
     for m_mma in range(num_m_mmas):
 
-        @unroll
+        @parameter
         for n_mma in range(num_n_mmas):
             var c_gmem_mma_tile = c_gmem_warp_tile.tile[MMA_M, MMA_N](
                 (m_mma, n_mma)

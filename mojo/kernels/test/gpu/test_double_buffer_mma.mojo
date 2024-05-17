@@ -76,7 +76,7 @@ fn loada[
     # Point to the current buffer
 
     # Load A from global memory to shared memory.
-    @unroll
+    @parameter
     for i in range(num_loada_iters):
         var mma_tile_id = warp_id // 4 + i * num_loada_tiles_per_iter
         var mma_tile_x = mma_tile_id // num_loada_tiles_m
@@ -128,7 +128,7 @@ fn loadb[
     alias num_loadb_tiles_per_iter = num_warps
 
     # Load B from global memory to shared memory.
-    @unroll
+    @parameter
     for i in range(num_loadb_iters):
         var mma_tile_id = warp_id + i * num_loadb_tiles_per_iter
         var mma_tile_x = mma_tile_id % num_loadb_tiles_n
@@ -266,7 +266,7 @@ fn sgemm_double_buffer[
     alias align2 = alignof[SIMD[c_type, 2]]()
 
     # Load A fragments to the first buffer.
-    @unroll
+    @parameter
     for i in range(num_mma_m):
         var vec = loada_smem_ptr.load[width=4, alignment=align4](
             i * MMA_M * MMA_K + lane_id * 4
@@ -276,7 +276,7 @@ fn sgemm_double_buffer[
         )
 
     # Load B fragments to the first buffer.
-    @unroll
+    @parameter
     for i in range(num_mma_n):
         var vec = loadb_smem_ptr.load[width=2, alignment=align2](
             i * MMA_K * MMA_N + lane_id * 2
@@ -292,7 +292,7 @@ fn sgemm_double_buffer[
     # Update (num_k_tile - 1) tiles while switching buffers.
     for k_tile_id in range(num_k_tiles - 1):
 
-        @unroll
+        @parameter
         for k in range(0, BK, MMA_K):
             var next_k = (k + MMA_K) % int(BK)
 
@@ -317,7 +317,7 @@ fn sgemm_double_buffer[
                 b_gmem_tile += BK * N
 
             # Fill the other A fragments buffer.
-            @unroll
+            @parameter
             for i in range(num_mma_m):
                 var vec = loada_smem_ptr.load[width=4, alignment=align4](
                     next_k * BM + i * MMA_M * MMA_K + lane_id * 4
@@ -328,7 +328,7 @@ fn sgemm_double_buffer[
                 )
 
             # Fill the other B fragments buffer.
-            @unroll
+            @parameter
             for i in range(num_mma_n):
                 var vec = loadb_smem_ptr.load[width=2, alignment=align2](
                     next_k * BN + i * MMA_K * MMA_N + lane_id * 2
@@ -348,10 +348,10 @@ fn sgemm_double_buffer[
                     M, N, K, warp_id, lane_id, b_gmem_tile, storeb_smem_ptr
                 )
 
-            @unroll
+            @parameter
             for i in range(num_mma_m):
 
-                @unroll
+                @parameter
                 for j in range(num_mma_n):
                     var d = c_reg.load[width=4]((i, j, 0))
                     mma(
@@ -367,13 +367,13 @@ fn sgemm_double_buffer[
             next_buffer_id ^= 0x1
 
     # Last k tile.
-    @unroll
+    @parameter
     for k in range(0, BK, MMA_K):
         var next_k = (k + MMA_K) % int(BK)
 
         if k < int(BK - MMA_K):
 
-            @unroll
+            @parameter
             for i in range(num_mma_m):
                 var vec = loada_smem_ptr.load[width=4, alignment=align4](
                     next_k * BM + i * MMA_M * MMA_K + lane_id * 4
@@ -383,7 +383,7 @@ fn sgemm_double_buffer[
                     SIMD[a_type, 4](vec[0], vec[2], vec[1], vec[3]),
                 )
 
-            @unroll
+            @parameter
             for i in range(num_mma_n):
                 var vec = loadb_smem_ptr.load[width=2, alignment=align2](
                     next_k * BN + i * MMA_K * MMA_N + lane_id * 2
@@ -392,10 +392,10 @@ fn sgemm_double_buffer[
                     (next_buffer_id, i * 2), vec
                 )
 
-        @unroll
+        @parameter
         for i in range(num_mma_m):
 
-            @unroll
+            @parameter
             for j in range(num_mma_n):
                 var d = c_reg.load[width=4]((i, j, 0))
                 mma(
@@ -414,10 +414,10 @@ fn sgemm_double_buffer[
     var c_gmem_ptr = c.data + (c_row + warp_y * WM) * N + (c_col + warp_x * WN)
     # c_gmem_ptr += mma_y * simd_size * N + mma_x * simd_size
 
-    @unroll
+    @parameter
     for i in range(num_mma_m):
 
-        @unroll
+        @parameter
         for j in range(num_mma_n):
             var c_mma_tile = c_gmem_ptr + (i * MMA_M) * N + j * MMA_N
             c_mma_tile.store[width=2, alignment=align2](

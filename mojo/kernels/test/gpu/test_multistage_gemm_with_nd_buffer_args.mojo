@@ -183,7 +183,7 @@ fn multistage_gemm[
     )
 
     # Prefetch (num_pipeline_stages - 1) stages.
-    @unroll
+    @parameter
     for stage in range(num_pipeline_stages - 1):
         var a_smem_tile = LayoutTensor[
             a_type,
@@ -265,7 +265,7 @@ fn multistage_gemm[
     var b_warp_tile = b_smem_tile0.tile[WN, BK](int(warp_x), 0)
 
     # TODO: possbile to not rebind?
-    @unroll
+    @parameter
     for m_mma in range(num_m_mmas):
         var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
         a_reg_tiles[0][m_mma, 0] = rebind[a_frag_type](
@@ -278,7 +278,7 @@ fn multistage_gemm[
 
     # TF32 mma only needs 2 8x4 matrices but we can combine 2 mmas and load
     # 4 matrics per iteration. This reduces the instruction count.
-    @unroll
+    @parameter
     for n_mma2 in range(num_n_mmas // 2):
         var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
         var vec = ld_mma[
@@ -316,7 +316,7 @@ fn multistage_gemm[
 
         # Perform prefetch registers and mma until current shared memory tile's
         # data has all been loaded to registers.
-        @unroll
+        @parameter
         for k_mma in range(num_k_mmas):
             var current = k_mma % 2
             var next = (k_mma + 1) % 2
@@ -338,7 +338,7 @@ fn multistage_gemm[
                 a_warp_tile = a_smem_next_tile.tile[WM, BK](int(warp_y), 0)
                 b_warp_tile = b_smem_next_tile.tile[WN, BK](int(warp_x), 0)
 
-            @unroll
+            @parameter
             for m_mma in range(num_m_mmas):
                 var a_mma_tile = a_warp_tile.tile[MMA_M, BK](m_mma, 0)
                 a_reg_tiles[next][m_mma, 0] = rebind[a_frag_type](
@@ -349,7 +349,7 @@ fn multistage_gemm[
                     ](a_mma_tile, (k_mma + 1) % num_k_mmas * MMA_K // simd_size)
                 )
 
-            @unroll
+            @parameter
             for n_mma2 in range(num_n_mmas // 2):
                 var b_mma_tile = b_warp_tile.tile[2 * MMA_N, BK](n_mma2, 0)
                 var vec = ld_mma[
@@ -364,10 +364,10 @@ fn multistage_gemm[
                     SIMD[b_type, 2](vec[1], vec[3])
                 )
 
-            @unroll
+            @parameter
             for m_mma in range(num_m_mmas):
 
-                @unroll
+                @parameter
                 for n_mma in range(num_n_mmas):
                     mma(
                         c_reg_tile[m_mma * num_n_mmas + n_mma, 0],
@@ -436,10 +436,10 @@ fn multistage_gemm[
     var c_gmem_tile = c.tile[BM, BN]((BlockIdx.y(), BlockIdx.x()))
     var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN]((int(warp_y), int(warp_x)))
 
-    @unroll
+    @parameter
     for m_mma in range(num_m_mmas):
 
-        @unroll
+        @parameter
         for n_mma in range(num_n_mmas):
             var c_gmem_mma_tile = c_gmem_warp_tile.tile[MMA_M, MMA_N](
                 (m_mma, n_mma)
