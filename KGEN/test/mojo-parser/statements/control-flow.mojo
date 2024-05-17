@@ -149,6 +149,26 @@ fn unroll_factor_parameter():
       _ = i
   # CHECK: } {unrollLevel = #kgen.param.expr<apply, #kgen.symbol.constant
 
+struct MyType:
+    pass
+
+fn use(value: MyType):
+    pass
+
+# CHECK-LABEL: lit.func @"parameter_for
+# CHECK-SAME: [mut [[LT:.*]]]<a: !Int>(%value: !lit.ref<!MyType, mut [[LT]]>
+fn parameter_for[a: Int](owned value: MyType):
+    # CHECK-NEXT: lit.func [[BODY:.*]]<[""][[I:.*]]: !Int, |>() capturing -> !kgen.none always_inline
+    @parameter
+    for i in range(a):
+        # CHECK: [[IMM:%.*]] = lit.ref.immut %value
+        # CHECK: use{{.*}}[muttoimm [[LT]]]([[IMM]])
+        use(value)
+        # CHECK: return %none
+
+    # CHECK: call {{.*}}parameter_for{{.*}}<:!IntIterable #ZeroStartingRange{{.*}}, :!ZeroStartingRange apply({{.*}}store_to_mem(a){{.*}}[[BODY]]
+    # CHECK-NEXT: lit.ownership.use_lifetime mut [[LT]]
+
 ##===----------------------------------------------------------------------===##
 
 # TODO(Issue #6139)

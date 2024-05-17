@@ -213,6 +213,19 @@ FnMetadataAttr FnMetadataAttr::get(MLIRContext *context) {
   return FnMetadataAttr::get(context, list, list, 0);
 }
 
+FnMetadataAttr FnMetadataAttr::get(MLIRContext *ctx, size_t numParams,
+                                   size_t numArgs,
+                                   size_t numImplicitLifetimeDecls) {
+  SmallVector<PogMetadataAttr> params, args;
+  auto normal = PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly,
+                                     /*isVariadic=*/false);
+  params.resize(numParams, normal);
+  args.resize(numArgs, normal);
+  return FnMetadataAttr::get(PogListAttr::get(ctx, args),
+                             PogListAttr::get(ctx, params),
+                             numImplicitLifetimeDecls);
+}
+
 FnMetadataAttr FnMetadataAttr::get(PogListAttr argListAttrs,
                                    PogListAttr paramListAttrs,
                                    size_t numImplicitLifetimeDecls) {
