@@ -71,7 +71,8 @@ static int demangle(const State &state) {
 
   // Initialize telemetry.
   auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, StringRef(state.subcommand), args);
+  auto scopedThread = logToolInvocationEventAsync(
+      telemetryCtx, StringRef(state.subcommand), args);
 
   // Initialize the MLIR context with all of KGEN's dialects.
   DialectRegistry registry;

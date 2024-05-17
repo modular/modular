@@ -106,7 +106,8 @@ static int buildProject(const State &subcommandState) {
 
   // Initialize telemetry.
   auto &telemetryCtx = *ctx->get<M::Telemetry::TelemetryContext>();
-  initializeTelemetry(telemetryCtx, state.programName, args);
+  auto scopedThread =
+      logToolInvocationEventAsync(telemetryCtx, state.programName, args);
 
   // If `--help` appears anywhere within the arguments, print help text.
   if (args.hasArg(options::OPT_help)) {
