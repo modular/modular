@@ -70,13 +70,13 @@ fn kernel[
         for k in range(NR):
             var b_next_tile = b_row.tile[1, NR](0, k + 4)
 
-            @unroll
+            @parameter
             for n in range(0, NR, simd_size):
                 b_next_tile.prefetch(0, n)
 
             var b_tile = b_row.tile[1, NR](0, k)
 
-            @unroll
+            @parameter
             for m in range(MR):
                 var av = a_tile[m, k]
 

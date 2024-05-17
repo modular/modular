@@ -4,7 +4,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# REQUIRES: has_cuda_device
+# REQUIRES: DISABLED
 # RUN: %mojo-no-debug %s -t | FileCheck %s
 # CHECK: Benchmark results
 

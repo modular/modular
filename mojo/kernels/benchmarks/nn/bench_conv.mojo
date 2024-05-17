@@ -44,7 +44,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
 
     var output_dims = StaticIntTuple[spec.static_info.rank](1)
 
-    @unroll
+    @parameter
     for i in range(spec.static_info.rank):
         output_dims[i] = (
             spec.input_dims[i]
@@ -56,7 +56,7 @@ fn bench_conv(inout m: Bench, spec: ConvSpec) raises:
 
     var packed_filter_shape = StaticIntTuple[spec.static_info.rank + 3](1)
 
-    @unroll
+    @parameter
     for i in range(spec.static_info.rank):
         packed_filter_shape[i + 1] = output_dims[i]
     packed_filter_shape[0] = spec.num_groups * ceildiv(
@@ -231,7 +231,7 @@ struct ConvSpec[static_info: ConvSpecStatic](Stringable):
     fn flops(self) -> Int:
         var output_dims = StaticIntTuple[static_info.rank](1)
 
-        @unroll
+        @parameter
         for i in range(static_info.rank):
             output_dims[i] = (
                 self.input_dims[i]

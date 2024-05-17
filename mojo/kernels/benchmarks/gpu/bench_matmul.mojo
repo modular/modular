@@ -21,7 +21,7 @@ from buffer import NDBuffer, DimList, Dim
 fn _size[rank: Int](dims: StaticIntTuple[rank]) -> Int:
     var size = 1
 
-    @unroll
+    @parameter
     for i in range(rank):
         size *= dims[i]
     return size
