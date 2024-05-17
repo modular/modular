@@ -381,14 +381,16 @@ fn apple_batched_matmul[
         )
 
         @parameter
+        @__copy_capture(batch_coords)
         fn elementwise_lambda_2d[
             c_type: DType, width: Int
         ](out_coords: StaticIntTuple[2], out_val: SIMD[c_type, width]):
-            batch_coords[rank - 1] = out_coords[1]
-            batch_coords[rank - 2] = out_coords[0]
+            var local_batch_coords = batch_coords
+            local_batch_coords[rank - 1] = out_coords[1]
+            local_batch_coords[rank - 2] = out_coords[0]
 
             alias func = elementwise_epilogue_fn.value()
-            func[c_type, width, rank](batch_coords, out_val)
+            func[c_type, width, rank](local_batch_coords, out_val)
 
         apple_matmul[
             transpose_b=transpose_b,
