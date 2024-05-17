@@ -10,7 +10,7 @@ from buffer import Buffer, NDBuffer
 from buffer.list import DimList
 from memory import stack_allocation
 from nn.image import Image2DLayout, ImageData, ImageShape
-from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape
+from nn.pool import PoolMethod, avg_pool, max_pool, pool_shape_impl
 from tensor import Tensor
 from utils.index import StaticIntTuple
 from closed_source_utils._test_utils import ndbuffer_from_list
@@ -246,7 +246,7 @@ fn pool_ceil_test[
 
     alias simd_width = simdwidthof[DType.float32]()
 
-    var output_shape = pool_shape[
+    var output_shape = pool_shape_impl[
         4,
         DType.float32,
         DType.int32,

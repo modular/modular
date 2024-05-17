@@ -50,7 +50,7 @@ fn pool_shape_ceil[
     dilations_buf: NDBuffer[dilations_type, 1],
     paddings_buf: NDBuffer[paddings_type, 1],
 ) raises -> StaticIntTuple[input_rank]:
-    return pool_shape[
+    return pool_shape_impl[
         input_rank,
         input_type,
         filter_type,
@@ -58,7 +58,7 @@ fn pool_shape_ceil[
         dilations_type,
         paddings_type,
         single_thread_blocking_override,
-        True,
+        ceil_mode=True,
     ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
 
 
@@ -72,7 +72,35 @@ fn pool_shape[
     dilations_type: DType,
     paddings_type: DType,
     single_thread_blocking_override: Bool,
-    ceil_mode: Bool = False,
+](
+    input_buf: NDBuffer[input_type, input_rank],
+    filter_buf: NDBuffer[filter_type, 1],
+    strides_buf: NDBuffer[strides_type, 1],
+    dilations_buf: NDBuffer[dilations_type, 1],
+    paddings_buf: NDBuffer[paddings_type, 1],
+) raises -> StaticIntTuple[input_rank]:
+    return pool_shape_impl[
+        input_rank,
+        input_type,
+        filter_type,
+        strides_type,
+        dilations_type,
+        paddings_type,
+        single_thread_blocking_override,
+        ceil_mode=False,
+    ](input_buf, filter_buf, strides_buf, dilations_buf, paddings_buf)
+
+
+@always_inline
+fn pool_shape_impl[
+    input_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    strides_type: DType,
+    dilations_type: DType,
+    paddings_type: DType,
+    single_thread_blocking_override: Bool,
+    ceil_mode: Bool,
 ](
     input_buf: NDBuffer[input_type, input_rank],
     filter_buf: NDBuffer[filter_type, 1],
