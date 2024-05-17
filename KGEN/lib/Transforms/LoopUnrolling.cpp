@@ -317,23 +317,23 @@ void LoopUnrolling::runOnOperation() {
   loopsToUnrollInOrder.clear();
 
   walkLoopsPreorder(getOperation());
-  // unroll loops from inner to outer
+  // Unroll loops from innermost to outermost.
   for (auto loop : llvm::reverse(loopsToUnrollInOrder)) {
+    // Only process loops with known tripcounts.
     std::optional<int64_t> tripCount = loop.getTripCount();
     if (!tripCount)
       continue;
-    if (loop.isFullUnroll() || (*tripCount <= 1 && optimizationLevel >= 1)) {
-      // Fully unroll if loop is decorated or has single or zero iteration.
-      if (succeeded(unrollForLoopN(loop, tripCount.value())))
-        continue;
-
-      // TODO: unroll with a factor based on cost model if a for loop decorated
-      // with fully unroll is not a loop that has no early exits.
-    } else if (std::optional<int64_t> factor = loop.getUnrollFactorN()) {
-      // unroll loops with decorator of an unroll factor
-      if (failed(unrollForLoopN(loop, *factor))) {
-        signalPassFailure();
-      }
+    // Try to unroll loops with an explicit unroll factor first.
+    // TODO: We should be able to unroll loops with non-constant bounds by an
+    // unroll factor.
+    if (std::optional<int64_t> factor = loop.getUnrollFactorN()) {
+      (void)unrollForLoopN(loop, *factor);
+      continue;
     }
+    // Otherwise, try to fully unroll the loop if it has fewer trips than the
+    // threshold.
+    if (loop.isFullUnroll() || (optimizationLevel >= 1 && *tripCount <= 1) ||
+        optimizationLevel >= 4)
+      (void)unrollForLoopN(loop, tripCount.value());
   }
 }

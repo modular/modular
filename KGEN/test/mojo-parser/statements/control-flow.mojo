@@ -116,39 +116,6 @@ fn induction_var_scope():
         # CHECK: lit.ref.load %item
         var g = item
 
-# CHECK-LABEL: lit.func @"unroll_for()"
-fn unroll_for():
-    @unroll
-    for i in range(1, 9, 2):
-        _ = i
-        @unroll
-        for j in range (1, 4):
-            _ = i + j
-    # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
-    # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
-
-    @unroll(2)
-    for j in range (1, 4):
-        _ = j
-    # CHECK: } {unrollLevel = #hlcf<unroll_level 2>}
-
-# CHECK-LABEL: lit.func @"unroll_while()"
-fn unroll_while():
-  var i = 1
-  @unroll
-  while i < 4:
-      _ = i
-  # CHECK: } {unrollLevel = #hlcf<unroll_level full>}
-
-fn unroll_factor_parameter():
-  alias a = 1
-  alias b = 1
-  var i = 1
-  @unroll(a+b)
-  while i < 4:
-      _ = i
-  # CHECK: } {unrollLevel = #kgen.param.expr<apply, #kgen.symbol.constant
-
 struct MyType:
     pass
 

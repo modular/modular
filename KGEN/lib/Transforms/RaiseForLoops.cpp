@@ -572,8 +572,7 @@ void RaiseForLoops::runOnOperation() {
   // raise for-loops from inner to outer
   for (LoopOp loop : llvm::reverse(loopsToRaiseInOrder)) {
     InFlightDiagnostic diag =
-        mlir::emitWarning(loop->getLoc(), " loop is decorated with @unroll, "
-                                          "but compiler can't fully unroll it");
+        mlir::emitWarning(loop->getLoc(), "failed to raise loop");
     (void)raiseForLoops(loop, diag);
     bool dropDiag = true;
     LLVM_DEBUG(dropDiag = false;);
