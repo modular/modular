@@ -508,7 +508,7 @@ fn test_pad_constant_nd[
     # Create a padding array
     var paddings = Buffer[DType.index, 2 * rank].stack_allocation()
 
-    @unroll
+    @parameter
     for i in range(rank):
         paddings[2 * i] = d_pre
         paddings[2 * i + 1] = d_post
@@ -588,7 +588,7 @@ fn test_pad_reflect_nd[
     # Create a padding array
     var paddings = Buffer[DType.index, 2 * rank].stack_allocation()
 
-    @unroll
+    @parameter
     for i in range(rank):
         paddings[2 * i] = d_pre
         paddings[2 * i + 1] = d_post

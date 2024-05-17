@@ -190,7 +190,7 @@ def test_case[
     fn build_shape(x: Int, y: Int) -> StaticIntTuple[rank]:
         var shape = StaticIntTuple[rank]()
 
-        @unroll
+        @parameter
         for i in range(batch_rank):
             shape[i] = cfg.batch_dims[i]
 
@@ -361,12 +361,12 @@ def test_case_split_kv[
             # Unsqueeze the output shape with a 1-dim.
             shape[0] = 1
 
-            @unroll
+            @parameter
             for i in range(batch_rank):
                 shape[i + 1] = cfg.batch_dims[i]
         else:
             # Copy the batch dims without unsqueezing.
-            @unroll
+            @parameter
             for i in range(batch_rank):
                 shape[i] = cfg.batch_dims[i]
 

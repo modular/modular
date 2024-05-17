@@ -246,7 +246,6 @@ fn conv_transpose_shape[
         )
 
     # Compute the spatial dims
-    @unroll
     for i in range(input_rank - 2):
         var input_spatial_dim = input.dim(i + 1)
         var kernel_spatial_dim = kernel.dim(i)

@@ -193,7 +193,7 @@ fn gather_reduce[
                         gather_axis_size,
                     )
 
-                    @unroll
+                    @parameter
                     for unroll_idx in range(0, unroll_factor):
                         var gather_chunk = input.load[width=simd_width](
                             int(idxs[unroll_idx]), k
@@ -213,7 +213,7 @@ fn gather_reduce[
                 var accum = SIMD[type, simd_width].splat(reduce_init)
 
                 # TODO: use tree reduction here by generalizing simd reduce method
-                @unroll
+                @parameter
                 for unroll_idx in range(j_tile_size):
                     accum = reduce_fn(accum, accums[unroll_idx])
 
@@ -814,7 +814,6 @@ fn scatter_nd_shape[
             " input_rank - num_sliced_dims)"
         )
 
-    @unroll
     for i in range(indices_rank - 1):
         if indices.dim(i) != updates.dim(i):
             raise Error(
@@ -822,7 +821,6 @@ fn scatter_nd_shape[
                 " match"
             )
 
-    @unroll
     for i in range(input_rank - num_sliced_dims):
         if input.dim(i + num_sliced_dims) != updates.dim(i + indices_rank - 1):
             raise Error(
@@ -898,7 +896,6 @@ fn gather_shape[
     # NOTE it's written this way instead of 3 separate for-loops because
     # currently KGEN unrolling only works for strictly static bounds, but `axis`
     # only becomes static after inlining `axis_buf`.
-    @unroll
     for out_dim in range(output_rank):
         if out_dim < axis:
             output_shape[out_dim] = input_shape[out_dim]
@@ -1026,7 +1023,6 @@ fn scatter_elements_shape[
         )
 
     # Check individual dimensions
-    @unroll
     for axis in range(rank):
         var input_dim = input.dim(axis)
         var indices_dim = indices.dim(axis)
@@ -1156,12 +1152,10 @@ fn gather_nd_shape[
 
     var input_shape = input_buf.get_shape()
 
-    @unroll
     for i in range(batch_dims):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
 
-    @unroll
     for i in range(batch_dims, indices_rank - 1):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1

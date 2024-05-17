@@ -62,7 +62,7 @@ fn extend_shape_3d[
 ](in_shape: StaticIntTuple[rank]) -> StaticIntTuple[3]:
     var out_shape = StaticIntTuple[3](1)
 
-    @unroll
+    @parameter
     for i in range(rank):
         out_shape[2 - i] = in_shape[rank - i - 1]
 
@@ -108,7 +108,7 @@ fn test_conv_transposed[
 
     var output_dims = StaticIntTuple[rank](1)
 
-    @unroll
+    @parameter
     for i in range(rank):
         output_dims[i] = (
             (input_dims[i] - 1) * stride[i]

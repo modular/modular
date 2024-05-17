@@ -35,7 +35,7 @@ fn slice_as_view[
     # offset of the data.
     var new_data = tensor.data
 
-    @unroll
+    @parameter
     for i in range(rank):
         var start = int(starts[i])
         var stop = int(ends[i])
@@ -138,14 +138,12 @@ fn slice_shape[
     if input_rank != step_buf.dim(0):
         raise Error("[slice] step indices size must equal input rank")
 
-    @unroll
     for axis in range(input_rank):
         if step_buf[axis] == 0:
             raise Error("[slice] step must be non-zero")
 
     var output_shape = StaticIntTuple[input_rank]()
 
-    @unroll
     for i in range(input_rank):
         var start = int(start_buf[i])
         var stop = int(stop_buf[i])

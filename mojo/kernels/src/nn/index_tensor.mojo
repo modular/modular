@@ -61,11 +61,11 @@ fn index_tensor_shape[
     alias combined_indices_rank = batch_dims + indices_rank
     var indices_shape = StaticIntTuple[combined_indices_rank]()
 
-    @unroll
+    @parameter
     for i in range(batch_dims):
         indices_shape[i] = input_buf.get_shape()[i]
 
-    @unroll
+    @parameter
     for i in range(indices_rank):
         indices_shape[batch_dims + i] = indices_buf.get_shape()[i]
 
@@ -88,12 +88,12 @@ fn index_tensor_shape[
 
     var input_shape = input_buf.get_shape()
 
-    @unroll
+    @parameter
     for i in range(batch_dims):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
 
-    @unroll
+    @parameter
     for i in range(batch_dims, combined_indices_rank - 1):
         output_shape[next_out_dim] = indices_shape[i]
         next_out_dim += 1
@@ -161,7 +161,7 @@ fn index_tensor_1d[
     var data_shape = data.get_shape()
     var batch_volume: Int = 1
 
-    @unroll
+    @parameter
     for i in range(batch_dims):
         batch_volume *= data_shape[i]
 
@@ -257,11 +257,11 @@ fn index_tensor[
     alias combined_indices_rank = batch_dims + indices_rank
     var indices_shape = StaticIntTuple[combined_indices_rank]()
 
-    @unroll
+    @parameter
     for i in range(batch_dims):
         indices_shape[i] = data.get_shape()[i]
 
-    @unroll
+    @parameter
     for i in range(indices_rank):
         indices_shape[batch_dims + i] = indices.get_shape()[i]
     debug_assert(

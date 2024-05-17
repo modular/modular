@@ -409,13 +409,13 @@ fn _mm[
     alias simd_size = simdwidthof[DType.float32]()
     alias alignment = alignof[SIMD[DType.float32, simd_size]]()
 
-    @unroll
+    @parameter
     for k in range(K):
         # load a element starting from (row, k) or (k, row) if transposed.
         @parameter
         if transpose_a:
             # vector load
-            @unroll
+            @parameter
             for offset in range(0, TM, simd_size):
                 reg_m.store[width=simd_size](
                     offset,
@@ -425,21 +425,21 @@ fn _mm[
                 )
         else:
             # scalar load
-            @unroll
+            @parameter
             for i in range(TM):
                 reg_m[i] = a[(row + i) * leading_dim_a + k]
 
-        @unroll
+        @parameter
         for offset in range(0, TN, simd_size):
             var vec = b.load[width=simd_size, alignment=alignment](
                 k * N + col + offset
             )
             reg_n.store(offset, vec)
 
-        @unroll
+        @parameter
         for i in range(TM):
 
-            @unroll
+            @parameter
             for j in range(TN):
                 reg_res[i * TN + j] = reg_res[i * TN + j] + reg_m[i] * reg_n[j]
 
@@ -451,11 +451,11 @@ fn _fill[
     alias simd_width = simdwidthof[val.type]()
     alias vector_end = align_down(len, simd_width)
 
-    @unroll
+    @parameter
     for i in range(0, vector_end, simd_width):
         ptr.store(i, SIMD[type, simd_width].splat(val))
 
-    @unroll
+    @parameter
     for i in range(vector_end, len, 1):
         ptr[i] = val
 
@@ -662,10 +662,10 @@ fn flash_attention_kernel[
             q_tile_idx * BM + mm_row
         ) * seq_len + kv_tile_start_row + mm_col
 
-        @unroll
+        @parameter
         for i in range(TM):
 
-            @unroll
+            @parameter
             for j in range(0, TN, simd_size):
                 var idx = i * TN + j
                 var vec = reg_result.load[width=simd_size](idx)
@@ -676,12 +676,12 @@ fn flash_attention_kernel[
                 reg_result.store(idx, vec * scale + mask_vec)
 
         # Online Softmax
-        @unroll
+        @parameter
         for i in range(TM):
             var curr_rowmax = rowmax[i]
 
             # Find thread register tile's max at i-th row.
-            @unroll
+            @parameter
             for j in range(TN):
                 curr_rowmax = max(reg_result[i * TN + j], curr_rowmax)
             # Reduce the max of block tile's row.
@@ -689,7 +689,7 @@ fn flash_attention_kernel[
 
             correction[i] = exp(rowmax[i] - curr_rowmax)
 
-            @unroll
+            @parameter
             for j in range(TN):
                 reg_result[i * TN + j] = exp(
                     reg_result[i * TN + j] - curr_rowmax
@@ -698,7 +698,7 @@ fn flash_attention_kernel[
             var curr_rowsum = Float32(0.0)
 
             # Sum thread register tile at the i-th row.
-            @unroll
+            @parameter
             for j in range(TN):
                 curr_rowsum += reg_result[i * TN + j]
             # Reduce the sum of block tile's row.
@@ -708,10 +708,10 @@ fn flash_attention_kernel[
             rowsum[i] = rowsum[i] * correction[i] + curr_rowsum
 
         # Correct previous output.
-        @unroll
+        @parameter
         for i in range(TM):
 
-            @unroll
+            @parameter
             for j in range(TN):
                 o_thread_tile[i * TN + j] *= correction[i]
 
@@ -733,10 +733,10 @@ fn flash_attention_kernel[
             # Store thread register tile to p sub-tile.
             if mm_col >= storep_col_start and mm_col < storep_col_start + BK:
 
-                @unroll
+                @parameter
                 for i in range(TM):
 
-                    @unroll
+                    @parameter
                     for j in range(0, TN, simd_size):
                         p_tile.store[width=simd_size, alignment=alignment](
                             (mm_row + i) * BK + mm_col - storep_col_start + j,
@@ -783,10 +783,10 @@ fn flash_attention_kernel[
     # Current thread's tile starts at (mm_row, mm_col).
     var o_global_row_offset = global_q_offset + mm_row * row_stride
 
-    @unroll
+    @parameter
     for i in range(TM):
 
-        @unroll
+        @parameter
         for offset in range(0, TN, simd_size):
             # Apply the denominator of softmax.
             var vec = o_thread_tile.load[width=simd_size](
@@ -986,14 +986,14 @@ fn flash_attention_kernel_flexible_seqlen[
                     )
 
                     # Transpose k tile.
-                    @unroll
+                    @parameter
                     for j in range(4):
                         kv_tile[
                             (loadk_col + j) * BN_padded + row_in_tile
                         ] = vec[j]
                 else:
 
-                    @unroll
+                    @parameter
                     for j in range(4):
                         kv_tile[(loadk_col + j) * BN_padded + row_in_tile] = 0
 
@@ -1025,12 +1025,12 @@ fn flash_attention_kernel_flexible_seqlen[
         var mask_col = kv_tile_start_row + mm_col
         if mask_row < seq_len and mask_col < num_keys:
 
-            @unroll
+            @parameter
             for i in range(TM):
                 # Scalar load in case mask dimension is not multiple of simd_size.
                 if mask_row + i < seq_len:
 
-                    @unroll
+                    @parameter
                     for j in range(TN):
                         if mask_col + j < num_keys:
                             var idx = i * TN + j
@@ -1043,7 +1043,7 @@ fn flash_attention_kernel_flexible_seqlen[
         ##
 
         # Online Softmax
-        @unroll
+        @parameter
         for i in range(TM):
             var curr_rowmax = rowmax[i]
 
@@ -1054,7 +1054,7 @@ fn flash_attention_kernel_flexible_seqlen[
                     reg_result[i * TN + j] = neg_inf[DType.float32]()
 
             # Shuffle TN elemnents per thread and choose the max among them.
-            @unroll
+            @parameter
             for j in range(TN):
                 curr_rowmax = max(
                     warp_reduce[shuffle_xor, _max_capturing](
@@ -1064,7 +1064,7 @@ fn flash_attention_kernel_flexible_seqlen[
                 )
             correction[i] = exp(rowmax[i] - curr_rowmax)
 
-            @unroll
+            @parameter
             for j in range(TN):
                 var idx = i * TN + j
                 reg_result[idx] = exp(reg_result[idx] - curr_rowmax)
@@ -1075,7 +1075,7 @@ fn flash_attention_kernel_flexible_seqlen[
 
             var curr_rowsum = Float32(0.0)
 
-            @unroll
+            @parameter
             for j in range(TN):
                 curr_rowsum += warp_reduce[shuffle_xor, _add_capturing](
                     reg_result[i * TN + j]
@@ -1084,10 +1084,10 @@ fn flash_attention_kernel_flexible_seqlen[
             rowmax[i] = curr_rowmax
             rowsum[i] = rowsum[i] * correction[i] + curr_rowsum
 
-        @unroll
+        @parameter
         for i in range(TM):
 
-            @unroll
+            @parameter
             for j in range(0, TN, simd_size):
                 p_tile.store[width=simd_size, alignment=alignment](
                     ((mm_row + i) * BN + mm_col + j),
@@ -1103,7 +1103,7 @@ fn flash_attention_kernel_flexible_seqlen[
         alias loadv_num_iters = BK // loadv_num_rows_per_iter
         for subtile_start_row in range(0, BN, BK):
             ##
-            @unroll
+            @parameter
             for i in range(loadv_num_iters):
                 var row_in_tile = loadv_row + i * loadv_num_rows_per_iter
                 if (
@@ -1143,10 +1143,10 @@ fn flash_attention_kernel_flexible_seqlen[
             barrier()
 
         # Update output tile
-        @unroll
+        @parameter
         for i in range(TM):
 
-            @unroll
+            @parameter
             for j in range(TN):
                 var idx = i * TN + j
                 o_thread_tile[idx] = (
@@ -1161,11 +1161,11 @@ fn flash_attention_kernel_flexible_seqlen[
     # Current thread's tile starts at (mm_row, mm_col).
     var o_global_row_offset = global_q_offset + mm_row * row_stride
 
-    @unroll
+    @parameter
     for i in range(TM):
         if global_q_start_row + mm_row + i < seq_len:
 
-            @unroll
+            @parameter
             for offset in range(0, TN, simd_size):
                 # Apply the denominator of softmax.
                 var vec = o_thread_tile.load[width=simd_size](

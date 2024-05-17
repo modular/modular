@@ -146,7 +146,7 @@ fn resize_nearest_neighbor[
     ](out_coords: StaticIntTuple[_rank]):
         var in_coords = StaticIntTuple[rank](0)
 
-        @unroll
+        @parameter
         for i in range(rank):
             in_coords[i] = min(
                 int(

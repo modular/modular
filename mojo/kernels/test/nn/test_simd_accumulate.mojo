@@ -59,7 +59,7 @@ def test_accumulate[
     for i in range(2 * length):
         var b_ptr = b + i * num_cols * simd_size
 
-        @unroll
+        @parameter
         for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
@@ -145,7 +145,7 @@ def test_accumulate_with_offsets[
     for i in range(2 * length):
         var b_ptr = b + i * num_cols * simd_size
 
-        @unroll
+        @parameter
         for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
@@ -236,10 +236,10 @@ def test_load_store[
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
     #     [ 4x1.0, 4x2.0, -1.0],]
-    @unroll
+    @parameter
     for i in range(num_rows):
 
-        @unroll
+        @parameter
         for j in range(num_cols):
             a.store(
                 i * row_size + j * simd_size,
@@ -295,7 +295,7 @@ def test_load_store[
     fn simd_insert(inout x: SIMD[type, _], y: SIMD[type, _]):
         constrained[x.size >= y.size]()
 
-        @unroll
+        @parameter
         for i in range(y.size):
             x[i] = y[i]
 

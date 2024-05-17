@@ -54,7 +54,7 @@ fn arg_nonzero[
                 j += 1
 
                 # Write each of the output values to the output buffer.
-                @unroll
+                @parameter
                 for k in range(rank):
                     out_indices[1] = k
                     output_buffer[out_indices] = indices[k]

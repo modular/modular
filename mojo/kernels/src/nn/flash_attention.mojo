@@ -102,20 +102,20 @@ struct _Matmul[
         fn loop_body[lane_count: Int](k: Int):
             var a_tile = InlineArray[SIMD[type, lane_count], tile_m](0)
 
-            @unroll
+            @parameter
             for m in range(tile_m):
                 a_tile[m] = ak_ptr.load[width=lane_count](m * a_stride)
 
             ak_ptr += lane_count
 
-            @unroll
+            @parameter
             for k in range(lane_count):
 
-                @unroll
+                @parameter
                 for n in range(tile_n):
                     var b_data = bk_ptr.load[width=simd_width](n * simd_width)
 
-                    @unroll
+                    @parameter
                     for m in range(tile_m):
                         c_tile.fma(m, n, a_tile[m][k], b_data)
 
@@ -143,18 +143,18 @@ struct _Matmul[
         fn loop_body[unroll_factor: Int](k: Int):
             var b_tile = InlineArray[SIMD[type, simd_width], tile_n](0)
 
-            @unroll
+            @parameter
             for k in range(unroll_factor):
 
-                @unroll
+                @parameter
                 for n in range(tile_n):
                     b_tile[n] = bk_ptr.load[width=simd_width](n * simd_width)
 
-                @unroll
+                @parameter
                 for m in range(tile_m):
                     var a_data = ak_ptr.load(m * a_stride)
 
-                    @unroll
+                    @parameter
                     for n in range(tile_n):
                         c_tile.fma(m, n, a_data, b_tile[n])
 
@@ -243,14 +243,14 @@ struct _Matmul[
             if transpose_width == tile_n == tile_k:
                 # Use an optimized path to transpose a square tile of the
                 # input tensor.
-                @unroll
+                @parameter
                 for i in range(transpose_width):
                     var val = input_b_fn[simd_width=transpose_width](n + i, k)
                     transpose_buffer.store(Index(i, 0), val)
 
                 transpose_inplace(transpose_buffer)
 
-                @unroll
+                @parameter
                 for i in range(transpose_width):
                     var val = transpose_buffer.load[width=transpose_width](
                         Index(i, 0)
@@ -263,11 +263,11 @@ struct _Matmul[
                 # Note that in the common case, `K` is statically known and is
                 # a multiple of `transpose_width`, so the case to optimize for
                 # `tile_n=1` and `tile_k=transpose_width`.
-                @unroll
+                @parameter
                 for nn in range(tile_n):
                     var val = input_b_fn[simd_width=tile_k](n + nn, k)
 
-                    @unroll
+                    @parameter
                     for kk in range(tile_k):
                         packed_ptr.store(
                             (k + kk) * aligned_n + (n + nn), val[kk]
@@ -331,7 +331,7 @@ struct _Matmul[
                 for k in range(start, end, _simd_width):
                     var a_data = a_ptr.load[width=_simd_width](k)
 
-                    @unroll
+                    @parameter
                     for nn in range(tile_n):
                         var b_data = input_b_fn[_simd_width](n + nn, k)
                         accum[nn] = b_data.fma(a_data, accum[nn])
@@ -347,7 +347,7 @@ struct _Matmul[
                     SIMD[type, target_width], tile_n
                 ](0)
 
-                @unroll
+                @parameter
                 for nn in range(tile_n):
                     accum_reduce[nn] = accum[nn].reduce_add[target_width]()
                 return accum_reduce
@@ -368,7 +368,7 @@ struct _Matmul[
             var scalar_accum = do_reduce_accum[1](simd_accum)
             do_reduce(simd_loop_end, K, scalar_accum)
 
-            @unroll
+            @parameter
             for nn in range(tile_n):
                 cn_ptr.store(nn, scalar_accum[nn])
 

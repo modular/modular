@@ -471,7 +471,7 @@ fn extend_shape[
     out_shape[0] = first
     out_shape[rank + 1] = last
 
-    @unroll
+    @parameter
     for i in range(rank):
         out_shape[i + 1] = in_shape[i]
 
@@ -489,7 +489,7 @@ fn append_shape[
     out_shape[rank] = last2nd
     out_shape[rank + 1] = last
 
-    @unroll
+    @parameter
     for i in range(rank):
         out_shape[i] = in_shape[i]
 

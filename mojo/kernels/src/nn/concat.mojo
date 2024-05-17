@@ -1285,7 +1285,7 @@ fn _concat_inner_most_single_dim[
     if index > output.num_elements():
         return
 
-    @unroll
+    @parameter
     for i in range(num_inputs):
         var out_index = index
         out_index[rank - 1] = i
@@ -1331,7 +1331,8 @@ fn _concat_gpu_elementwise[
         var in_index = out_index
         in_index[axis] = out_index[axis]
 
-        @unroll
+        # FIXME: @parameter for doesn't support early returns yet.
+        # @parameter
         for i in range(num_inputs):
             var input = inputs[i]
             var input_shape = input.get_shape()
@@ -1379,8 +1380,9 @@ fn _concat_gpu[
     fn _concat_buffers_contiguously() raises:
         var input_size = 0
 
-        @unroll
-        for i in range(num_inputs):
+        @always_inline
+        @parameter
+        fn copy_body[i: Int]() raises:
             # Skip empty inputs.
             if inputs[i].num_elements() > 0:
                 _copy_device_to_device_async(
@@ -1390,6 +1392,8 @@ fn _concat_gpu[
                     stream,
                 )
                 input_size += inputs[i].num_elements()
+
+        unroll[copy_body, num_inputs]()
 
     # If outer_dims are ones use device-to-device copies.
     if outer_dims == 1:

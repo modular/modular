@@ -262,7 +262,6 @@ fn pad_shape[
     # compute and return the output shape
     var output_shape = StaticIntTuple[input_rank]()
 
-    @unroll
     for axis in range(input_rank):
         var pre_pad = int(paddings_buf[axis, 0])
         var post_pad = int(paddings_buf[axis, 1])
@@ -467,7 +466,7 @@ fn _pad_constant_impl[
         _AxisParams[rank, type, paddings_type], rank
     ]()
 
-    @unroll
+    @parameter
     for r in range(rank):
         axis_params[r] = _AxisParams[rank, type, paddings_type](
             r, paddings, output_shape

@@ -691,7 +691,7 @@ struct ConvDirectNHWC[
             DType.int32, micro_kernel_height
         ].stack_allocation()
 
-        @unroll
+        @parameter
         for i in range(micro_kernel_height):
             input_base_offsets.store[width=1](
                 i,
@@ -879,10 +879,10 @@ struct ConvDirectNHWC[
         """
         var output_ptr = output_base
 
-        @unroll
+        @parameter
         for i in range(micro_kernel_height):
 
-            @unroll
+            @parameter
             for j in range(micro_kernel_width):
 
                 @parameter
@@ -937,10 +937,10 @@ struct ConvDirectNHWC[
         """
         var output_ptr = output_base
 
-        @unroll
+        @parameter
         for i in range(micro_kernel_height):
 
-            @unroll
+            @parameter
             for j in range(micro_kernel_width):
                 var output_vec = output_micro_tile.load[width=simd_size](
                     Index(i, j * simd_size)
@@ -2675,7 +2675,7 @@ fn pack_filter[
             for row in range(outer_dims_prod):
                 var filter_ptr = filter.data + row * F + g * F_per_group + f_tile_start
 
-                @unroll
+                @parameter
                 for i in range(f_tile_size // simd_size):
                     packed_filter_ptr.store(
                         i * simd_size,
@@ -2805,8 +2805,8 @@ fn conv_shape[
     output_shape[0] = batch_size
     output_shape[input_rank - 1] = output_channels
 
-    @unroll
-    for i in range(1, input_rank - 1):
+    for _i in range(input_rank - 2):
+        var i = _i + 1
         var input_spatial_dim = input_buf.dim(i)
         var filter_spatial_dim = filter_buf.dim(i - 1)
 

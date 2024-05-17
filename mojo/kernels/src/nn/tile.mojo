@@ -235,7 +235,6 @@ fn tile_shape[
     # Compute and return the output shape.
     var output_shape = StaticIntTuple[input_rank]()
 
-    @unroll
     for i in range(input_rank):
         output_shape[i] = input_buf.dim(i) * int(repeats_buf[i])
 

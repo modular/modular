@@ -51,7 +51,7 @@ fn test[
 
     var output_dims = StaticIntTuple[rank](1)
 
-    @unroll
+    @parameter
     for i in range(rank):
         output_dims[i] = (
             input_dims[i]
