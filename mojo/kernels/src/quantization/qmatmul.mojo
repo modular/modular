@@ -198,7 +198,7 @@ fn _unpack_weights[
 
     for ko in range(0, batch_k, group_size):
 
-        @unroll
+        @parameter
         for col in range(tile_n):
             var b_scale = (
                 b_packed_ptr.bitcast[DType.float16]()
@@ -216,7 +216,7 @@ fn _unpack_weights[
 
         for k in range(0, group_size, 8):
 
-            @unroll
+            @parameter
             for col in range(tile_n):
                 var b_data_packed = b_packed_ptr.load[width = simd_width * 4](
                     col * simd_width * 4
@@ -271,7 +271,7 @@ fn _unpack_weights[
         @parameter
         if needs_correction:
 
-            @unroll
+            @parameter
             for col in range(tile_n):
                 b_correction_ptr.store(simd_width * col, -b_column_sums[col])
 
@@ -295,7 +295,7 @@ fn _scale_and_accumulate[
     var b_scale = InlineArray[SIMD[DType.float32, simd_width], tile_n](0)
 
     # Load the per-column scale values for the B matrix.
-    @unroll
+    @parameter
     for col in range(tile_n):
         b_scale[col] = b_scale_ptr.load[width=simd_width](
             col * simd_width
@@ -303,11 +303,11 @@ fn _scale_and_accumulate[
 
     # Convert and rescale the integer accumulators and accumulate to the output
     # float accumulators.
-    @unroll
+    @parameter
     for row in range(tile_m):
         var a_scale = a_scale_ptr.load(row * (K // group_size))
 
-        @unroll
+        @parameter
         for col in range(tile_n):
             c_float[row, col] += (
                 c_int32[row, col].cast[DType.float32]() * a_scale * b_scale[col]
@@ -415,12 +415,12 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
             0
         )
 
-        @unroll
+        @parameter
         for k in range(0, group_size, 8):
             var a_val_lo = bitcast[DType.int32, 1](a_ptr.load[width=4](k))
             var a_val_hi = bitcast[DType.int32, 1](a_ptr.load[width=4](k + 4))
 
-            @unroll
+            @parameter
             for col in range(tile_n):
                 var b_data_packed = b_ptr.load[width = simd_width * 4](
                     b_offset
@@ -454,7 +454,7 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
                     bitcast[DType.int32, simd_width](b_data_i4_hi),
                 )
 
-        @unroll
+        @parameter
         for col in range(tile_n):
             c_int32[0, col] -= b_column_sums[col]
 
@@ -480,29 +480,29 @@ struct _MatmulQInt4Kernel_x86(_MatmulQInt4Kernel):
         var c_int32 = _Accumulator[DType.int32, tile_m, tile_n, simd_width]()
 
         # Initialize the integer accumulators with the zero point corrections.
-        @unroll
+        @parameter
         for col in range(tile_n):
             var correction_val = b_correction_ptr.load[width=simd_width](
                 col * simd_width
             )
 
-            @unroll
+            @parameter
             for row in range(tile_m):
                 c_int32[row, col] = correction_val
 
         var b_offset = 0
 
-        @unroll
+        @parameter
         for k in range(0, group_size, 4):
 
-            @unroll
+            @parameter
             for col in range(tile_n):
                 var b_val = bitcast[DType.int32, simd_width](
                     b_ptr.load[width = simd_width * 4](b_offset)
                 )
                 b_offset += simd_width * 4
 
-                @unroll
+                @parameter
                 for row in range(tile_m):
                     var a_val = SIMD[DType.int32, simd_width](
                         bitcast[DType.int32, 1](
@@ -562,14 +562,14 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
         # Skip over the float16 scales.
         var b_offset = DType.float16.sizeof() * tile_n * simd_width
 
-        @unroll
+        @parameter
         for k in range(0, group_size, 16):
             var a_val = a_ptr.load[width=16](k)
 
             @parameter
             @always_inline
             fn dotprod_fn[idx: Int]():
-                @unroll
+                @parameter
                 for col in range(tile_n):
                     var b_data_packed = b_ptr.load[width = simd_width * 4](
                         b_offset
@@ -617,23 +617,23 @@ struct _MatmulQInt4Kernel_neon_dotprod(_MatmulQInt4Kernel):
 
         var b_offset = 0
 
-        @unroll
+        @parameter
         for k in range(0, group_size, 16):
             var a_tile = InlineArray[SIMD[DType.int8, 16], tile_m](0)
 
-            @unroll
+            @parameter
             for row in range(tile_m):
                 a_tile[row] = a_ptr.load[width=16](K * row + k)
 
             @parameter
             @always_inline
             fn dotprod_fn[idx: Int]():
-                @unroll
+                @parameter
                 for col in range(tile_n):
                     var b_val = b_ptr.load[width = simd_width * 4](b_offset)
                     b_offset += simd_width * 4
 
-                    @unroll
+                    @parameter
                     for row in range(tile_m):
                         c_int32[row, col] = _neon_dotprod_lane[idx](
                             c_int32[row, col], b_val, a_tile[row]
@@ -756,7 +756,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         var a_offset = 0
         var b_offset = 0
 
-        @unroll
+        @parameter
         for k in range(0, group_size, 8):
             var a_tile = InlineArray[SIMD[DType.int8, simd_width * 4], block_m](
                 0
@@ -765,7 +765,7 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
             @parameter
             if tile_m > 1:
 
-                @unroll
+                @parameter
                 for row in range(block_m):
                     a_tile[row] = a_ptr.load[width = simd_width * 4](a_offset)
                     a_offset += simd_width * 4
@@ -776,12 +776,12 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
                 )
                 a_offset += simd_width * 2
 
-            @unroll
+            @parameter
             for col in range(tile_n * 2):
                 var b_val = b_ptr.load[width = simd_width * 4](b_offset)
                 b_offset += simd_width * 4
 
-                @unroll
+                @parameter
                 for row in range(block_m):
                     c_int32_block[row, col] = _neon_matmul(
                         c_int32_block[row, col], a_tile[row], b_val
@@ -795,10 +795,10 @@ struct _MatmulQInt4Kernel_neon_i8mm(_MatmulQInt4Kernel):
         # Note that these linear accumulators have a lifetime that overlaps the
         # blocked accumulators from above. Only an extra register is needed to
         # do the swizzling.
-        @unroll
+        @parameter
         for row in range(0, tile_m, 2):
 
-            @unroll
+            @parameter
             for col in range(tile_n):
                 var c_val_0 = c_int32_block[row // 2, col * 2]
                 var c_val_1 = c_int32_block[row // 2, col * 2 + 1]

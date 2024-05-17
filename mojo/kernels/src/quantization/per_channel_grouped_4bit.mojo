@@ -683,7 +683,7 @@ fn _process_rows[
         var a_scale_ptr = a_scale._offset(Index(m, 0))
         var b_ptr = b._offset(Index(n, 0))
 
-        @unroll
+        @parameter
         for row in range(row_count):
             accum_fp_tile.store(Index(row, 0), SIMD[type, simd_width](0))
 
@@ -693,7 +693,7 @@ fn _process_rows[
             var a_scale = a_scale_ptr[0].cast[type]()
 
             # 5. Process `row_batch_count` rows of `b` at a time.
-            @unroll
+            @parameter
             for row in range(row_count):
                 # Dequantize a group of Q4_0 nibbles to int8.
                 var b_row_ptr = b_ptr.offset(row * N_packed_bytes)
@@ -715,7 +715,7 @@ fn _process_rows[
             a_scale_ptr = a_scale_ptr.offset(1)
             b_ptr = b_ptr.offset(block_size)
 
-        @unroll
+        @parameter
         for row in range(row_count):
             var accum_fp = accum_fp_tile.load[width=simd_width](Index(row, 0))
             c.store(Index(m, row + n), accum_fp.reduce_add())
