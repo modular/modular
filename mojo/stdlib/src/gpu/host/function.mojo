@@ -27,6 +27,7 @@ from ._utils import (
 from .dim import Dim
 from .module import Module
 from .stream import Stream
+from gpu.host.device_context import DeviceBuffer
 
 # ===----------------------------------------------------------------------===#
 # CacheConfig
@@ -165,6 +166,26 @@ struct _GlobalPayload:
 # ===----------------------------------------------------------------------===#
 # Function
 # ===----------------------------------------------------------------------===#
+
+
+# Function __call__ parameters wrapper, adding some introspection into CUDA
+# kernel invocations.
+@value
+@register_passable
+struct FunctionArgument:
+    var ptr: Pointer[NoneType]
+
+    fn __init__[type: AnyType](inout self, owned value: type):
+        # Type erased pointer to the actual value
+        self.ptr = Pointer[type].address_of(value).bitcast[NoneType]()
+
+    fn __init__[type: AnyRegType](inout self, owned ptr: Pointer[type]):
+        # Support for legacy pointers
+        self.ptr = Pointer.address_of(ptr).bitcast[NoneType]()
+
+    fn __init__[type: AnyRegType](inout self, owned buffer: DeviceBuffer[type]):
+        # DeviceBuffer support
+        self.ptr = Pointer.address_of(buffer.ptr).bitcast[NoneType]()
 
 
 @value
@@ -310,11 +331,9 @@ struct Function[
 
     @always_inline
     @parameter
-    fn __call__[
-        *Ts: AnyType
-    ](
+    fn __call__(
         self,
-        *args: *Ts,
+        *args: FunctionArgument,
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int = 0,
@@ -323,63 +342,17 @@ struct Function[
         alias num_captures = Self._impl.num_captures
         alias populate = Self._impl.populate
 
-        self._call_impl_pack[num_captures, populate](
-            args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            stream=stream,
+        var args_stack = Pointer[UnsafePointer[NoneType]].alloc(
+            num_captures + len(args)
         )
 
-    @always_inline
-    fn _call_impl[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        *Ts: AnyType,
-    ](
-        self,
-        *args: *Ts,
-        grid_dim: Dim,
-        block_dim: Dim,
-        shared_mem_bytes: Int = 0,
-        stream: Optional[Stream] = None,
-    ) raises:
-        self._call_impl_pack[num_captures, populate](
-            args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            stream=stream,
-        )
-
-    @always_inline
-    fn _call_impl_pack[
-        num_captures: Int,
-        populate: _populate_fn_type,
-        *Ts: AnyType,
-        elt_is_mutable: __mlir_type.i1,
-        lifetime: AnyLifetime[Bool {value: elt_is_mutable}].type,
-    ](
-        self,
-        # TODO(unpacking): this is just because we can't forward packs!
-        args: VariadicPack[elt_is_mutable, lifetime, AnyType, Ts],
-        grid_dim: Dim,
-        block_dim: Dim,
-        shared_mem_bytes: Int = 0,
-        stream: Optional[Stream] = None,
-    ) raises:
-        var args_stack = stack_allocation[
-            num_captures + len(VariadicList(Ts)), UnsafePointer[NoneType]
-        ]()
         populate(args_stack.bitcast[NoneType]())
 
-        @parameter
-        fn unrolled[i: Int]():
+        for i in range(len(args)):
             var arg_offset = num_captures + i
-            var elt_addr = UnsafePointer.address_of(args[i])
-            args_stack[arg_offset] = elt_addr.bitcast[NoneType]()
-
-        unroll[unrolled, args.__len__()]()
+            args_stack[arg_offset] = UnsafePointer[NoneType](
+                address=int(args[i].ptr)
+            )
 
         self.__call_impl(
             args_stack,
@@ -388,6 +361,8 @@ struct Function[
             shared_mem_bytes=shared_mem_bytes,
             stream=stream,
         )
+
+        args_stack.free()
 
     @always_inline
     fn __call_impl(

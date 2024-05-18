@@ -15,3 +15,4 @@ from .result import *
 from .stream import *
 from .sync import *
 from .cuda_instance import *
+from .device_context import *
