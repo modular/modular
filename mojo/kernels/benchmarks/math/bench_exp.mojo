@@ -125,7 +125,7 @@ fn ldexp2kf[
     var msb = y
     var idx = 0
     for i in range(32):
-        if msb & 0x1:
+        if ((msb & 0x1) != 0).reduce_and():
             idx = i
             break
         msb = msb >> 1
