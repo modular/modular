@@ -94,7 +94,7 @@ from nn.gather_scatter import scatter_nd as _scatter_nd
 from nn.gather_scatter import scatter_nd_generator, scatter_nd_shape
 from nn.index_tensor import index_tensor_1d as _index_tensor
 from nn.math import add, ceil, div, floor, mod, mul, sub, tanh
-from nn.mha import flash_attention
+from nn.mha import flash_attention as gpu_flash_attention
 from nn.mha import fused_attention as cpu_fused_attention_impl
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import layer_norm as _layer_norm, layer_norm_shape
@@ -3948,7 +3948,7 @@ fn multi_head_flash_attention[
         "mojo.flash_attention",
         Trace[TraceLevel.OP]._get_detail_str[description_fn](),
     ) as t:
-        flash_attention[
+        gpu_flash_attention[
             rank,
             input_0_static_shape,
             input_1_static_shape,
