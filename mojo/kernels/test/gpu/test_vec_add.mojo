@@ -10,13 +10,7 @@ from pathlib import Path
 
 from benchmark._cuda import run as benchmark_run
 from gpu import *
-from gpu.host import Context, Dim, Function, Stream, synchronize
-from gpu.host.memory import (
-    _copy_device_to_host,
-    _copy_host_to_device,
-    _free,
-    _malloc,
-)
+from gpu.host import Context, Dim, Function, Stream, CudaInstance, Device
 
 
 fn vec_func(
@@ -34,7 +28,7 @@ fn vec_func(
 # CHECK-LABEL: run_vec_add
 # COM: Force the capture to be captured instead of inlined away.
 @no_inline
-fn run_vec_add() raises:
+fn run_vec_add(ctx: Context) raises:
     print("== run_vec_add")
 
     alias length = 1024
@@ -47,14 +41,14 @@ fn run_vec_add() raises:
         in0_host[i] = i
         in1_host[i] = 2
 
-    var in0_device = _malloc[Float32](length)
-    var in1_device = _malloc[Float32](length)
-    var out_device = _malloc[Float32](length)
+    var in0_device = ctx.malloc[Float32](length)
+    var in1_device = ctx.malloc[Float32](length)
+    var out_device = ctx.malloc[Float32](length)
 
-    _copy_host_to_device(in0_device, in0_host, length)
-    _copy_host_to_device(in1_device, in1_host, length)
+    ctx.copy_host_to_device(in0_device, in0_host, length)
+    ctx.copy_host_to_device(in1_device, in1_host, length)
 
-    var func = Function[__type_of(vec_func), vec_func]()
+    var func = Function[__type_of(vec_func), vec_func](ctx)
 
     var block_dim = 32
 
@@ -76,7 +70,7 @@ fn run_vec_add() raises:
     # CHECK: Benchmark Report (s)
     report.print()
 
-    _copy_device_to_host(out_host, out_device, length)
+    ctx.copy_device_to_host(out_host, out_device, length)
 
     # CHECK: at index 0 the value is 2.0
     # CHECK: at index 1 the value is 3.0
@@ -91,9 +85,9 @@ fn run_vec_add() raises:
     for i in range(10):
         print("at index", i, "the value is", out_host.load(i))
 
-    _free(in0_device)
-    _free(in1_device)
-    _free(out_device)
+    ctx.free(in0_device)
+    ctx.free(in1_device)
+    ctx.free(out_device)
 
     in0_host.free()
     in1_host.free()
@@ -105,7 +99,8 @@ fn run_vec_add() raises:
 # CHECK-NOT: CUDA_ERROR
 def main():
     try:
-        with Context() as ctx:
-            run_vec_add()
+        with CudaInstance() as instance:
+            with Context(Device(instance)) as ctx:
+                run_vec_add(ctx)
     except e:
         print("CUDA_ERROR:", e)

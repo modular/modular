@@ -134,7 +134,12 @@ fn test_layout_mma[
 
     var mma_kernel = Function[__type_of(mma_func), mma_func]()
     mma_kernel(
-        mat_c, mat_a, mat_b, grid_dim=(1, 1), block_dim=(32), stream=stream
+        mat_c.tensor.ptr,
+        mat_a.tensor.ptr,
+        mat_b.tensor.ptr,
+        grid_dim=(1, 1),
+        block_dim=(32),
+        stream=stream,
     )
 
     synchronize()
@@ -145,9 +150,9 @@ fn test_layout_mma[
     ]
     var naive_kernel = Function[__type_of(naive_func), naive_func]()
     naive_kernel(
-        mat_c_n,
-        mat_a_n,
-        mat_b_n,
+        mat_c_n.tensor.ptr,
+        mat_a_n.tensor.ptr,
+        mat_b_n.tensor.ptr,
         grid_dim=(ceildiv(M, warps_per_block), ceildiv(N, warps_per_block)),
         block_dim=(warps_per_block, warps_per_block),
     )
