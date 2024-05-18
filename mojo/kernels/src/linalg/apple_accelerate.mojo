@@ -77,11 +77,7 @@ fn use_apple_accelerate_lib[
     a_type: DType,
     b_type: DType,
 ]() -> Bool:
-    return (
-        os_is_macos()
-        and a_type == b_type == c_type == DType.float32
-        and Path(LIB_ACC_PATH).exists()
-    )
+    return os_is_macos() and a_type == b_type == c_type == DType.float32
 
 
 @value
