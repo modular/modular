@@ -47,4 +47,4 @@ def main():
 
 
 # CHECK: bench_empty_async
-# CHECK-NEXT: bench_empty_sync
+# CHECK-SAME: bench_empty_sync
