@@ -675,6 +675,9 @@ public:
   BValue getIfBValue() const { return BValue::getFrom(storage); }
   PValue getIfPValue() const { return dyn_cast<PValue>(getStorage()); }
 
+  /// Get the RValue type of the value if it can be resolved to one.
+  ASTType getRValueTypeIfResolvable(SharedState &shared) const;
+
   void dump() const;
 };
 raw_ostream &operator<<(raw_ostream &os, AnyValue value);

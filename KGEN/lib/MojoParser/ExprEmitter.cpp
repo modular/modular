@@ -662,6 +662,8 @@ SRValue ExprEmitter::emitPValueToSRValue(ASTExprAnd<PValue> value,
     // or an variadic list that should be bound to an empty list.
     if (!signature.getParamTypes().empty()) {
       ParamBindings paramBindings(getScopeInfo());
+      // Try to fully bind the signature, in case it can be made concrete with
+      // default values, etc.
       auto [bindingAttr, _] = paramBindings.verifyBindings(signature);
       if (!bindingAttr) {
         // If it didn't work out, then it is an error because parameterized
@@ -1790,7 +1792,8 @@ ASTType ExprEmitter::emitExprType(const ExprNode *expr, bool allowUnbound) {
   for (TypedAttr binding : type.getParamBindings())
     paramBindings.addPrechecked(binding);
 
-  // Check the existing bindings against the full signature of the type.
+  // Check the existing bindings against the full signature of the type and make
+  // sure it is fully bound.
   ParameterExprArrayAttr bindingValuesAttr = paramBindings.verifyBindings(
       structDecl, structDecl.getSignature(), expr->getLoc(),
       ParamBindings::Boundness::Full);

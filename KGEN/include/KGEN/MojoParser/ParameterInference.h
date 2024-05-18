@@ -1,0 +1,145 @@
+//===----------------------------------------------------------------------===//
+//
+// This file is Modular Inc proprietary.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef KGEN_MOJOPARSER_PARAMETERINFERENCE_H
+#define KGEN_MOJOPARSER_PARAMETERINFERENCE_H
+
+#include "KGEN/MojoParser/CallEmission.h"
+#include "KGEN/MojoParser/ParserParamEvaluator.h"
+
+namespace M::KGEN::LIT {
+class ExprNode;
+class LITSignatureType;
+
+//===----------------------------------------------------------------------===//
+// InferenceFailure
+//===----------------------------------------------------------------------===//
+
+/// These are the different failure modes that we know happen.
+struct InferenceFailure {
+  /// This failure happens when a parameter is found of the wrong type.
+  struct TypeConflictFailure {
+    ASTType paramType, argParamType;
+  };
+
+  /// This failure happens when a parameter is inferred to two different values.
+  struct ValueConflictFailure {
+    TypedAttr v1, v2;
+  };
+
+  /// This failure happens when the parameter isn't found at all.
+  struct NotFoundFailure {};
+
+  template <typename Failure>
+  InferenceFailure(Failure info) : info(info) {}
+
+  // Describe what went wrong.
+  void emitSpecificNote(function_ref<InflightDiag &()> attachNote) const;
+
+private:
+  SmartVariant<TypeConflictFailure, ValueConflictFailure, NotFoundFailure> info;
+};
+
+//===----------------------------------------------------------------------===//
+// ParameterInferenceDiagnostics
+//===----------------------------------------------------------------------===//
+
+class ParameterInferenceDiagnostics {
+public:
+  /// Indicate that parameter inference failed to infer the parameter at
+  /// `paramIdx` from the argument at `argPos`.
+  void addFailure(size_t paramIdx, const ExprNode *argExpr,
+                  InferenceFailure &&info) {
+    diags.push_back({paramIdx, argExpr, std::move(info)});
+  }
+
+  /// Attach failed parameter inference diagnostics for parameters with no
+  /// values to the overload resolution diagnostic.
+  void attach(LITSignatureType signature, InflightDiag &diag, size_t numActual);
+
+  struct FailedInference {
+    size_t paramIdx;
+    const ExprNode *argExpr;
+    InferenceFailure info;
+  };
+  using DiagStorage = SmallVector<FailedInference, 1>;
+
+  DiagStorage saveDiags() { return diags; }
+  void resetDiags(DiagStorage &&newDiags) { diags = std::move(newDiags); }
+
+private:
+  DiagStorage diags;
+};
+
+//===----------------------------------------------------------------------===//
+// ParameterInferenceState
+//===----------------------------------------------------------------------===//
+
+/// This class provides the implementation details that help to infer
+/// information about the specified parameter.
+class ParameterInferenceState : public TypeCheckScopeInfo {
+public:
+  ParameterInferenceState(const ParamBindings &givenBindings,
+                          ArrayRef<TypedAttr> bindingsSoFar,
+                          const ParserParamEvaluator &evaluator,
+                          ParameterInferenceDiagnostics &diags,
+                          bool allowImplicitConversions)
+      : TypeCheckScopeInfo(givenBindings), givenBindings(givenBindings),
+        evaluator(evaluator),
+        inferredParams(bindingsSoFar.begin(), bindingsSoFar.end()),
+        diags(diags), allowImplicitConversions(allowImplicitConversions) {}
+
+  LogicalResult infer(LITSignatureType signature,
+                      const CallOperands &callOperands,
+                      const KeywordOperands &variadicKwOperands);
+
+  /// After inferring parameter values, this allows access to the results.
+  TypedAttr getInferredValue(size_t idx) const {
+    return idx < inferredParams.size() ? inferredParams[idx] : TypedAttr();
+  }
+
+private:
+  LogicalResult matchTypes(Type actualType, Type expectedType);
+  LogicalResult matchParams(TypedAttr actualAttr, TypedAttr expectedAttr);
+  LogicalResult matchSingleEltStruct(TypedAttr actualAddrSpace,
+                                     TypedAttr expectedAddrSpace);
+
+  /// Infer parameters from an operand being passed into this function. This is
+  /// only called on the top level function operands being matched up, not
+  /// anything in recursive functiontype positions.
+  LogicalResult inferOneOperand(ASTExprAnd<AnyValue> operand,
+                                ASTType expectedType,
+                                ArgConvention expectedConvention);
+  void addFailure(size_t parameterIndex, InferenceFailure &&info) {
+    diags.addFailure(parameterIndex, curArgExpr, std::move(info));
+  }
+
+  /// Infer parameters from a single parameter binding.
+  LogicalResult inferOneParam(const ParamBindings::Binding &binding,
+                              Type expectedType);
+
+  /// These are the bindings originally provided to the callable. These are used
+  /// to infer parameters from other parameter values.
+  OperandContainer<ParamBindings::Binding> givenBindings;
+
+  ParserParamEvaluator evaluator;
+
+  /// One entry for each parameter from the original binding list.  If
+  /// non-null, we've already inferred a value for that parameter.
+  SmallVector<TypedAttr> inferredParams;
+
+  size_t paramIndexRefDepth = 0;
+  ParameterInferenceDiagnostics &diags;
+
+  // True if implicit conversions in argument lists are permitted.
+  bool allowImplicitConversions;
+
+  const ExprNode *curArgExpr = nullptr;
+};
+
+} // namespace M::KGEN::LIT
+
+#endif // KGEN_MOJOPARSER_PARAMETERINFERENCE_H
