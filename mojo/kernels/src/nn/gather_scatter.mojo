@@ -36,8 +36,12 @@ fn normalize_neg_index[
     """
     debug_assert(
         (
-            -SIMD[type, width](dim_size) <= idx < SIMD[type, width](dim_size)
-        ).reduce_and(),
+            # TODO: no way to do `__neg__` on `Bool` today
+            # See https://github.com/modularml/modular/pull/39750
+            -SIMD[type, width](dim_size).reduce_and()
+            <= int(idx.reduce_and())
+            < int(SIMD[type, width](dim_size).reduce_and())
+        ),
         "indices must be in range [-dim_size, dim_size)",
     )
     constrained[
