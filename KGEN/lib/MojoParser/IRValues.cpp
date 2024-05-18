@@ -124,6 +124,17 @@ void AnyValue::dump() const {
   printStorage(llvm::errs(), getStorage(), true) << '\n';
 }
 
+ASTType AnyValue::getRValueTypeIfResolvable(SharedState &shared) const {
+  if (auto cValue = getIfCValue())
+    return cValue.getRValueType(shared);
+  // Otherwise, try to narrow an overload set to a PValue.
+  if (auto ovSet = getIfOverloadSet())
+    if (auto pValue = ovSet->getIfPValue())
+      return pValue.getRValueType();
+  // Initializer lists have no implied type.
+  return ASTType();
+}
+
 static ASTType getTypeFrom(AnyValue::Storage storage) {
   if (isa<NullRepresentation>(storage))
     return {};

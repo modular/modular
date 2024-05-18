@@ -370,6 +370,13 @@ std::string LIT::nameForPosOnly(size_t idx, const Twine &argOrParam) {
   return ("positional-only " + argOrParam + " #" + Twine(idx)).str();
 }
 
+void LIT::printNameOrIdx(StringAttr name, size_t idx, InflightDiag &diag) {
+  if (!name.empty())
+    diag << "'" << name.getValue() << "'";
+  else
+    diag << "#" << idx;
+}
+
 void LIT::emitModuleCallSubscriptDiag(InflightDiag &diag,
                                       AnyStructType metaType,
                                       const Twine &callOrSubscript, SMLoc loc,
