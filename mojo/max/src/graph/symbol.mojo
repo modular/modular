@@ -179,7 +179,7 @@ struct Symbol(CollectionElement, Stringable):
     fn __getitem__(self, i: Int, axis: Int = 0) raises -> Symbol:
         """Symbolic slicing - indexes a value by a single constant index.
 
-        Uses the `mo.slice` op and automatically wraps `i` inside a
+        Uses the `mo.gather` op and automatically wraps `i` inside a
         `mo.constant`.
 
         Args:
@@ -189,7 +189,11 @@ struct Symbol(CollectionElement, Stringable):
         Returns:
             The slicing result.
         """
-        return ops.slice(self, self.graph().scalar(Int64(i)), axis=axis)
+        # TODO(GRA-528): This should just gather with a scalar index but can't.
+        return ops.squeeze(
+            ops.gather(self, self.graph().scalar(Int64(i), rank=1), axis=axis),
+            axis,
+        )
 
     fn __getitem__(self, *s: SymbolicSlice) raises -> Symbol:
         """Range-based slicing.
